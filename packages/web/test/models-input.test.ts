@@ -11,6 +11,9 @@
  *   model_id changes) moves the pointer along.
  * - Which env fallback variables a key hint may promise (detectedEnvKeys):
  *   only those the server reported a value for.
+ * - Whether a row has a key (hasKey) and what the card prints for it
+ *   (keyStatusText): the shared hasConfiguredKey rule (stored key or a masked
+ *   env fallback) plus the dialog's unsaved-edit notions.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -20,10 +23,13 @@ import {
   detectedEnvKeys,
   digitsOnly,
   fastModeState,
+  hasKey,
+  keyStatusText,
   nextPointers,
   rowRef,
   toRow,
 } from "../src/features/models/models-page";
+import { S } from "../src/lib/strings";
 
 describe("digitsOnly (context window)", () => {
   it("keeps digits only", () => {
@@ -69,6 +75,66 @@ describe("detectedEnvKeys (variables a key hint may promise)", () => {
     ];
     expect(detectedEnvKeys(rows)).toEqual(new Set(["ANTHROPIC_API_KEY"]));
     expect(detectedEnvKeys([])).toEqual(new Set());
+  });
+});
+
+describe("hasKey / keyStatusText (the model card's key judgement)", () => {
+  const stored = toRow({
+    provider: "moonshot",
+    modelId: "kimi-k2.6",
+    credential: { apiKeyMasked: "sk-o\u20261111" },
+    isDefault: false,
+  });
+  const envBacked = toRow({
+    provider: "anthropic",
+    modelId: "claude-sonnet-4-6",
+    envKey: "ANTHROPIC_API_KEY",
+    envKeyMasked: "sk-a\u20263456",
+    isDefault: false,
+  });
+  const bare = toRow({ provider: "custom", modelId: "my-model", isDefault: false });
+
+  it("a stored key or a masked env fallback both count; a bare row does not", () => {
+    expect(hasKey(stored)).toBe(true);
+    expect(hasKey(envBacked)).toBe(true);
+    expect(hasKey(bare)).toBe(false);
+    // Variable name only: nothing proves it is set, so it is still key-less.
+    const nameOnly = toRow({
+      provider: "deepseek",
+      modelId: "deepseek-v4-pro",
+      envKey: "DEEPSEEK_API_KEY",
+      isDefault: false,
+    });
+    expect(hasKey(nameOnly)).toBe(false);
+  });
+
+  it("a key typed in the dialog counts before it is saved", () => {
+    expect(hasKey({ ...bare, apiKeyInput: "  sk-new  " })).toBe(true);
+    expect(hasKey({ ...bare, apiKeyInput: "   " })).toBe(false);
+  });
+
+  it("clearApiKey drops the stored key only: an env-backed row keeps its key", () => {
+    expect(hasKey({ ...stored, clearApiKey: true })).toBe(false);
+    // The environment cannot be cleared from the dialog, so clearing leaves it behind.
+    expect(
+      hasKey({ ...envBacked, credential: { apiKeyMasked: "sk-a\u20269999" }, clearApiKey: true }),
+    ).toBe(true);
+  });
+
+  it("the status line shows the most specific source it has", () => {
+    expect(keyStatusText(stored)).toBe("sk-o\u20261111");
+    expect(keyStatusText(envBacked)).toBe("sk-a\u20263456");
+    expect(keyStatusText(bare)).toBe(S.models.noKey);
+    // A key typed but not yet saved has no mask of its own.
+    expect(keyStatusText({ ...bare, apiKeyInput: "sk-new" })).toBe(S.models.keyConfigured);
+    // Clearing a stored key falls back to the environment's mask rather than "no key".
+    expect(
+      keyStatusText({
+        ...envBacked,
+        credential: { apiKeyMasked: "sk-a\u20269999" },
+        clearApiKey: true,
+      }),
+    ).toBe("sk-a\u20263456");
   });
 });
 

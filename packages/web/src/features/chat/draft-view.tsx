@@ -48,7 +48,6 @@ import type {
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
-import { adoptDockScope } from "../terminal/terminal-dock-state";
 import { S } from "../../lib/strings";
 import { formatMonthDay } from "../../lib/format";
 import { apiErrorText } from "../../lib/api-error";
@@ -64,6 +63,8 @@ import { toastError } from "../../components/ui/toast";
 import { useVersionInfo } from "../../lib/use-version-info";
 import { ChatInput } from "./chat-input";
 import type { ComposerControl } from "./chat-input";
+import { adoptDockScope } from "../dock/dock-state";
+import { setDockCwd } from "../dock/dock-terminal";
 import { EXAMPLE_FOLDERS } from "./example-tasks";
 import type { ExampleFolderId, ExampleTask } from "./example-tasks";
 import { ExampleFolderRow, exampleRowClass } from "./example-folder-row";
@@ -125,12 +126,15 @@ function saveAppliedRouteKey(field: RouteStateField, key: string): void {
  * Agents entry uses (NAV_ICONS.agents) — deliberately not a generic refresh loop, because the
  * app already has one glyph that means "agent" and a folder of agent examples should wear it.
  * Duplicated as a literal rather than imported: sidebar.tsx imports from chat-page.tsx, which
- * renders this file, so importing it back would close an import cycle.
+ * renders this file, so importing it back would close an import cycle. schedules: a clock face
+ * with hands — the plainest mark for "fires on a timer", and distinct from the hourglass that
+ * already means a Session is waiting.
  */
 const FOLDER_GLYPHS: Record<ExampleFolderId, string> = {
   webapps:
     "M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6zM3 9h18M6 6.5h.01M9 6.5h.01",
   agents: "M12 3v3m-6 4a6 6 0 0 1 12 0v5a3 3 0 0 1-3 3H9a3 3 0 0 1-3-3v-5zm3 3h.01M15 13h.01",
+  schedules: "M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20M12 6.5V12l3.5 2",
 };
 
 export function DraftView({
@@ -179,6 +183,12 @@ export function DraftView({
     cached.agentId ?? currentAgent?.agentId ?? null,
   );
   const [workspace, setWorkspace] = useState(cached.workspace ?? "");
+  // A terminal opened while drafting starts in the Workspace chosen here; "" is the
+  // temporary Workspace, whose directory the server only creates with the Session, so
+  // that case falls back to home (setDockCwd's null).
+  useEffect(() => {
+    setDockCwd(workspace || null);
+  }, [workspace]);
   const [approvalMode, setApprovalMode] = useState<ApprovalMode>(
     cached.approvalMode ?? "allow-all",
   );
@@ -628,9 +638,9 @@ export function DraftView({
         const fresh = await api.getSession(res.sessionId).catch(() => null);
         add(fresh?.session ?? created.session);
         discardDraft();
-        // The draft now has an id of its own, so its terminals move with it: every draft
-        // shares one dock scope, and anything left behind under that key would surface in
-        // the NEXT new conversation instead (terminal-dock-state.ts).
+        // The draft now has an id of its own, so its docks move with it: anything left
+        // behind under the draft's scope would surface in the NEXT new conversation
+        // instead (dock-state.ts).
         adoptDockScope(res.sessionId);
         navigate(`/chat/${res.sessionId}`, { replace: true });
         return true;
@@ -674,8 +684,10 @@ export function DraftView({
   /**
    * The open example folder — bookmark-style, and ALWAYS exactly one: selecting another closes
    * the previous, and clicking the open one is a no-op rather than collapsing it. Never
-   * nullable on purpose. "One open" is what bounds the block's height: only one folder's rows
-   * are ever on screen, so nothing below shifts as folders are switched.
+   * nullable on purpose. With the folders kept within one row of each other, "one open" is
+   * what keeps the block's height near-constant: the examples area can neither collapse to
+   * bare folder rows nor grow to the whole catalog, so switching folders moves what sits
+   * below it by at most one row.
    */
   const [openFolder, setOpenFolder] = useState<ExampleFolderId | typeof SHORTCUTS_FOLDER_ID>(
     EXAMPLE_FOLDERS[0].id,
@@ -754,16 +766,16 @@ export function DraftView({
             the composer with the prompt and the user sends it (see fillExample). The last folder
             is the user's own saved prompts (see shortcuts-folder.tsx).
             Bookmark-style folders with ALWAYS exactly one open — selecting another closes the
-            previous, and the open one cannot be collapsed. The block is therefore a BOUNDED
-            height: one row per folder plus one folder's rows, whichever folder that is. The
-            built-in folders are kept within a row of each other's length and need no scroll
-            container — a scrollbar inside a short showcase reads as a defect; the user folder
-            holds however many shortcuts were saved, so it alone is pinned to the tallest
-            built-in folder's height and scrolls inside that. Each example is a single-line
-            title; its one-sentence description rides in the row tooltip rather than a second
-            line. Rows stay disabled until the Agent's installed skills are known — that is all
-            a fill still waits for, and without it the preselect would silently drop the
-            example's skills (a saved shortcut pins none, so it never waits). */}
+            previous, and the open one cannot be collapsed. The block is therefore four folder
+            rows plus one folder's rows, with every folder kept within one row of the others
+            (3–4 examples each; the user folder is capped so its shortcuts plus its add row come
+            to the same), so switching folders moves what sits below by at most one row and no
+            folder needs a scroll container — a scrollbar inside a short showcase reads as a
+            defect. Each example is a single-line title; its one-sentence description rides in
+            the row tooltip rather than a second line. Rows stay disabled until the Agent's
+            installed skills are known — that is all a fill still waits for, and without it the
+            preselect would silently drop the example's skills (a saved shortcut pins none, so
+            it never waits). */}
         <div className="mt-6 space-y-1">
           {EXAMPLE_FOLDERS.map((folder) => {
             const open = folder.id === openFolder;

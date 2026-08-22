@@ -42,7 +42,7 @@ import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { SettingsEmpty } from "../../components/ui/empty-state";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { FormPicker } from "../../components/ui/form-picker";
-import { FieldError, FieldLabel } from "../../components/ui/field";
+import { FieldError, FieldHint, FieldLabel } from "../../components/ui/field";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { ModelSelect, PickerList } from "../chat/model-select";
 import { WorkspaceSelect } from "../chat/workspace-select";
@@ -682,6 +682,7 @@ export function SchedulesTab({
                       onChange={(workspace) => set({ workspace })}
                       variant="form"
                     />
+                    <FieldHint>{S.chat.workspaceHintShort}</FieldHint>
                   </div>
                 </>
               )}

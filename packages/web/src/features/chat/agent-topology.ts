@@ -99,7 +99,7 @@ export function modelTaskStartCount(items: readonly ChatItem[]): number {
  * Count of Task-starting user items (the reducer's startTask predicate: user_text/user_image —
  * steering chips and internal injections such as compaction summaries never become such items,
  * so they never count). The subagents panel's task-boundary signal: an INCREASE means the user
- * started a new Task in this session (see advancePanelTaskScope in use-subagents-panel.ts).
+ * started a new Task in this session (see advancePanelTaskScope in panel-task-scope.ts).
  */
 export function taskStartCount(items: readonly ChatItem[]): number {
   let n = 0;

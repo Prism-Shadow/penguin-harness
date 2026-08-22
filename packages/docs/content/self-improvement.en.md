@@ -9,7 +9,7 @@ Self-improvement in PenguinHarness uses Skills to orchestrate the ordinary Agent
 
 | Role | Responsibility |
 | --- | --- |
-| Builder | Top-level Agent that directly follows `agent-creation` and then `benchmark-design` |
+| Builder | Top-level Agent that directly follows `agent-initialization` and then `benchmark-design` |
 | Target Agent | The Agent being improved; runs evaluation tasks only inside its own Workspace |
 | Evaluator | Leaf worker created through `run_subagent`; runs and scores one Benchmark Case run |
 | Optimizer | New top-level Agent that directly follows `agent-optimization` |
@@ -18,7 +18,7 @@ The Builder and Optimizer directly follow their Skills in their own top-level Se
 
 ## Two independent steps
 
-The first top-level Session creates the Agent and its capability evaluation. The Builder first uses `agent-creation`, then uses `benchmark-design` to build a multi-Case Benchmark. It may build the complete initial Case set before Pilot 1 and may refine multiple Cases or difficulty dimensions in a later iteration. The evaluation contract and private standard must be clear and fixed, while the public Statement need not uniquely determine the Gold. A Benchmark may use incomplete public information, conflicting signals, and a fixed private decision standard when that standard expresses a reusable policy, priority, or inference boundary and is not rewritten after seeing the run's answer.
+The first top-level Session creates the Agent and its capability evaluation. The Builder first uses `agent-initialization`, then uses `benchmark-design` to build a multi-Case Benchmark. It may build the complete initial Case set before Pilot 1 and may refine multiple Cases or difficulty dimensions in a later iteration. The evaluation contract and private standard must be clear and fixed, while the public Statement need not uniquely determine the Gold. A Benchmark may use incomplete public information, conflicting signals, and a fixed private decision standard when that standard expresses a reusable policy, priority, or inference boundary and is not rewritten after seeing the run's answer.
 
 Before the first dispatch of every new or changed Case, the Builder checks that the Statement is internally coherent, the Rubric agrees with the current Statement and fixed private standard, and every scoring item relies only on defined, provided, or explicitly private premises; this does not require the public materials to reproduce the private standard. It repeats the full review across all Cases before Freeze. Most points should rest on decisions or concise artifacts for which the intended behavior and a plausible shortcut produce different results, rather than giving a high floor for format, evidence enumeration, or analysis completeness.
 
@@ -80,7 +80,7 @@ Scores are not black-box output: every number can be traced back to the run that
 
 | Skill | Purpose |
 | --- | --- |
-| `agent-creation` | Turn a requirement into a working Agent: write its `AGENTS.md`, install the Skills it needs |
+| `agent-initialization` | Turn a requirement into a working Agent: write its `AGENTS.md`, install the Skills it needs |
 | `benchmark-design` | Design and calibrate a multi-Case capability Benchmark |
 | `agent-evaluation` | Run and score one isolated Benchmark Case run |
 | `agent-optimization` | Improve an Agent from Benchmark results |

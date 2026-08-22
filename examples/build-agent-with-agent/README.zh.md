@@ -4,7 +4,7 @@
 
 这个示例是 **“构建 Agent 的 Harness”** 支柱的可运行版本。仅用 PenguinHarness SDK，它会：
 
-1. **构建**一个全新的 Agent（`commit-helper`）——用 `agent-creation` skill 驱动 `default_agent`，
+1. **构建**一个全新的 Agent（`commit-helper`）——用 `agent-initialization` skill 驱动 `default_agent`，
    根据一句大白话需求把它搭建出来；然后
 2. **运行**这个刚创建的 Agent，证明生成的 `AGENTS.md` 确实塑造了它的行为（它会写出一条
    Conventional Commits 提交信息）。
