@@ -3,6 +3,7 @@
 - **Date:** 2026-08-21
 - **Type:** change
 - **Scope:** `skills`, `web`, `docs`
+- **PR:** [#400](https://github.com/Prism-Shadow/penguin-harness/pull/400)
 - **Breaking:** 技能库中不再有名为 `agent-creation` 的 Skill
 
 [English](2026-08-21-agent-initialization-skill.md)
