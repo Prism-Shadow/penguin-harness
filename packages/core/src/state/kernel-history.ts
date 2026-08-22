@@ -345,7 +345,7 @@ export const KERNEL_HASH_HISTORY: Readonly<Record<string, Readonly<Record<string
     "compaction.mode": "e58fac0b4b9c0f29b3d224da119dff5f6517a40d139faf92e309705b98bd410a",
     "compaction.prompt": "8ed55781e8071083f8246ed70d9e063ee729d3872d5bc6a2bedfa9c99aed6ae5",
     "memory.enabled": "b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b",
-    "memory.prompt": "b266e4fda1f702f29f56364fc18bfa636fb4d5c4d54a3bbeee86dd521087d583",
+    "memory.prompt": "cc0cd99c49ecb0cd3131a589e6662c7b80adb6ed592b77b367c3c0d80256cab8",
     "memory.workspace_prompt": "76c5a8e18a568f471593ef1da6d75d2596f27619cb877703b2dd28bb0554e0d5",
     "vault.enabled": "b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b",
     "vault.prompt": "66e607aa4e205413f1816a677bed31af2d8c24218e71b55adba54aff5aa094ce",

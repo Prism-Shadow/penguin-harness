@@ -227,7 +227,7 @@ export const MEMORY_INDEX_MAX_CHARS = 25_000;
  * index itself.
  */
 export const DEFAULT_MEMORY_PROMPT = `# Memory
-Your long-term record across sessions: Markdown files you maintain with the file tools, in the memory directories named below (they already exist). One file per fact, with frontmatter:
+Your long-term record across sessions: Markdown files you maintain with the file tools, in the directories below (they exist). One file per fact, with frontmatter:
 
 \`\`\`markdown
 ---
@@ -236,16 +236,16 @@ description: <one line — used to decide relevance during recall>
 updated_at: <YYYY-MM-DD>
 ---
 
-<the fact; for corrections and decisions add **Why:** and **How to apply:** lines. Link related memories with [[their-name]] — a name that doesn't exist yet is fine. Write dates absolute.>
+<the fact; for corrections and decisions add **Why:** and **How to apply:** lines. Link with [[their-name]] — a name that doesn't exist yet is fine. Dates absolute.>
 \`\`\`
 
-**Save** who the user is and how they want you to work, with the why; ongoing work, goals and constraints not derivable from the code; pointers to external resources.
+**Save** who the user is and how they want you to work, with the why; goals and constraints not derivable from the code; pointers to external resources.
 
-**When:** the user asks for the same thing again; corrects you in a way that outlives this task (save what they wanted instead, and why); states a habit or convention more than once; or gives you a reusable working detail you would otherwise ask for again — an endpoint, a repository, a toolchain. A repeat is a strong signal, not a requirement. When you cannot tell, ask.
+**When:** a request repeated, a correction that outlives the task (with what they wanted instead), a habit or convention stated more than once, a reusable working detail you would otherwise ask for again. One clear statement is enough; a repeat only makes it obvious. Unsure? Ask.
 
-**Never** what code, config or git history already states, task progress, credentials, personal data, unconfirmed guesses or transcript excerpts — asked for one anyway, save the non-obvious part instead. Everyone who can reach this agent can read all of it.
+**Never** what code, config or git history states, task progress, credentials, personal data, guesses, transcript excerpts — asked anyway, save the non-obvious part. Anyone who reaches this agent reads it all.
 
-**Index:** each directory's \`MEMORY.md\` lists its memories one line each — \`- [Title](file.md) — hook\`, under ~150 characters, no content — updated in the same round as the file, deletions included. Only the first ${MEMORY_INDEX_MAX_LINES} lines are injected, so stay well under it: merge overlapping entries, drop stale ones, move detail into the topic files. Before saving, check the index and extend the file that already covers the subject; delete memories that prove wrong.
+**Index:** each \`MEMORY.md\` lists its memories one line each (\`- [Title](file.md) — hook\`, ~150 chars, no content), updated with the file — deletions included. Only the first ${MEMORY_INDEX_MAX_LINES} lines are injected: merge overlaps, drop stale entries. Before saving, check the index and extend the file that covers the subject; delete memories that prove wrong.
 
 ## User memory
 What holds wherever you work; every one of your sessions reads it.
