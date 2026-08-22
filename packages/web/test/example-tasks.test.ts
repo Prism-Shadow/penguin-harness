@@ -193,7 +193,7 @@ describe("short example prompts", () => {
         "板块",
         "股票",
         "依据",
-        "CLI",
+        "查股工具",
       ],
       enMarkers: [
         "Penguin SDK",
@@ -203,7 +203,7 @@ describe("short example prompts", () => {
         "sector",
         "stocks",
         "evidence",
-        "CLI",
+        "stock-lookup tool",
       ],
     },
     { id: "dailyPlan", zhMarkers: ["计划"], enMarkers: ["plan"] },
@@ -213,14 +213,16 @@ describe("short example prompts", () => {
 
   it.each(shortExamples)("$id stays within the length ceiling", ({ id }) => {
     // investmentCopilot sits highest: it carries four requirements plus a reference URL, which
-    // is ~21 characters of literal that no rewording can compress.
+    // is ~21 characters of literal that no rewording can compress. The English ceiling is the
+    // wider one because English runs about three times the character count of the same Chinese,
+    // not because the English is allowed to say more.
     expect(zh.chat.exampleTasks[id].prompt.length).toBeLessThanOrEqual(170);
-    expect(en.chat.exampleTasks[id].prompt.length).toBeLessThanOrEqual(460);
+    expect(en.chat.exampleTasks[id].prompt.length).toBeLessThanOrEqual(500);
   });
 
   // What is left after the cut: what to build, and the constraints without which the result
   // would be the wrong thing (a rhythm game is a game synced to music; the investment Copilot
-  // is a Penguin SDK app that refreshes from startup and ships a single-ticker CLI).
+  // is a Penguin SDK app that refreshes from startup and gives the assistant a stock-lookup tool).
   it.each(shortExamples)("$id keeps its core in both locales", ({ id, zhMarkers, enMarkers }) => {
     for (const marker of zhMarkers) {
       expect(zh.chat.exampleTasks[id].prompt).toContain(marker);
