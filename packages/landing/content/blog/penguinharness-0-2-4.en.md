@@ -1,5 +1,5 @@
 ---
-title: "PenguinHarness 0.2.4: a model that can see, a workspace you can arrange, and costs you can read"
+title: "PenguinHarness 0.2.4: a DeepSeek vision model, a more flexible workspace, and a clearer cost center"
 date: 2026-08-21
 category: news
 excerpt: DeepSeek gained a vision model and moved onto the Responses protocol. The chat page's side panels and terminals became tabs in two docks you arrange yourself. Long-running commands go to the background and report back when they finish. And the cost center was rebuilt around one time axis, so every chart on the page answers the same question about the same window.

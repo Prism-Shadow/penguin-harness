@@ -1,5 +1,5 @@
 ---
-title: "PenguinHarness 0.2.4：会看图的模型、可自行编排的工作区，以及读得懂的成本"
+title: "PenguinHarness 0.2.4：DeepSeek 视觉模型、更灵活的工作区，以及成本中心优化"
 date: 2026-08-21
 category: news
 excerpt: DeepSeek 多了一个视觉模型，并切换到 Responses 协议。对话页的侧边面板与终端都变成两个 Dock 里的标签页，由你自行编排。耗时命令转入后台执行，跑完再回报结果。成本中心则围绕同一条时间轴重建——页面上每张图回答的都是同一个时间窗里的同一个问题。
