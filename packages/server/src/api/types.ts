@@ -231,6 +231,19 @@ export interface ServerSettingsUpdateRequest {
   attachmentTotalMb?: number;
 }
 
+/**
+ * One draft-screen shortcut: a prompt the user wrote, filed under a name they chose. Clicking it
+ * fills the composer exactly like a built-in example does, and sends nothing. Deliberately holds
+ * no Skill list — a saved prompt is not authored against a known Skill catalog the way a shipped
+ * example is, and the Agent it will run under is picked after the click.
+ */
+export interface DraftShortcut {
+  /** Stable client-generated id: what an edit or a delete addresses the row by. Unique per user. */
+  id: string;
+  title: string;
+  prompt: string;
+}
+
 /** User UI preferences (SQLite ui_prefs, free-form JSON; known keys declared here). */
 export interface UiPrefs {
   theme?: "light" | "dark";
@@ -245,6 +258,13 @@ export interface UiPrefs {
   showCliSessions?: boolean;
   /** The initial-password notice banner (app layout) was permanently dismissed by the user. */
   initialPasswordBannerDismissed?: boolean;
+  /**
+   * The draft screen's user-defined shortcuts, in display order. Replaced whole on every write
+   * (the merge is shallow, so the array is one field like any other) and bounded on write by
+   * services/draft-shortcuts.ts — count, title length and prompt length — because this is the one
+   * known key holding user-authored text rather than a flag or an id.
+   */
+  draftShortcuts?: DraftShortcut[];
   [key: string]: unknown;
 }
 
