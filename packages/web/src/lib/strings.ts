@@ -1116,7 +1116,6 @@ export const zh = {
        * nothing — saving what was just typed is the path this folder exists to shorten.
        */
       newFromComposer: "以输入框中的内容作为起点",
-      full: (max: number) => `最多保存 ${max} 条快捷指令`,
       createTitle: "新建快捷指令",
       editTitle: "编辑快捷指令",
       titleLabel: "名称",

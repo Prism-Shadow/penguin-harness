@@ -1154,7 +1154,6 @@ export const en: Strings = {
       folder: "My shortcuts",
       new: "New shortcut",
       newFromComposer: "Starts from whatever is in the composer",
-      full: (max: number) => `At most ${max} shortcuts`,
       createTitle: "New shortcut",
       editTitle: "Edit shortcut",
       titleLabel: "Name",

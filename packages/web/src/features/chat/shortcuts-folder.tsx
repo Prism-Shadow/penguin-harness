@@ -158,7 +158,7 @@ export function ShortcutsFolder({
         open={open}
         glyph={SHORTCUTS_GLYPH}
         label={S.chat.shortcuts.folder}
-        count={shortcuts.length}
+        count={`${shortcuts.length}/${SHORTCUT_MAX_COUNT}`}
         onOpen={onOpen}
       />
 
@@ -191,22 +191,21 @@ export function ShortcutsFolder({
                   />
                 </li>
               ))}
-              <li>
-                <button
-                  type="button"
-                  disabled={!canAddShortcut(shortcuts)}
-                  title={S.chat.shortcuts.newFromComposer}
-                  onClick={startCreate}
-                  className={`flex w-full items-center gap-2 ${exampleRowClass}`}
-                >
-                  <PlusIcon size={ICON_SIZE.inlineGlyph} />
-                  <span className="min-w-0 flex-1 truncate">
-                    {canAddShortcut(shortcuts)
-                      ? S.chat.shortcuts.new
-                      : S.chat.shortcuts.full(SHORTCUT_MAX_COUNT)}
-                  </span>
-                </button>
-              </li>
+              {/* Gone at the cap rather than disabled: the header already reads 3/3, so a row
+                  explaining why it cannot be pressed would say the same thing twice. */}
+              {canAddShortcut(shortcuts) && (
+                <li>
+                  <button
+                    type="button"
+                    title={S.chat.shortcuts.newFromComposer}
+                    onClick={startCreate}
+                    className={`flex w-full items-center gap-2 ${exampleRowClass}`}
+                  >
+                    <PlusIcon size={ICON_SIZE.inlineGlyph} />
+                    <span className="min-w-0 flex-1 truncate">{S.chat.shortcuts.new}</span>
+                  </button>
+                </li>
+              )}
             </ul>
           )}
         </div>

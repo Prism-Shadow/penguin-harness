@@ -207,10 +207,25 @@ describe("the examples block keeps its height", () => {
   });
 
   it("keeps the user folder within one row of the built-in ones", () => {
-    // Its rows are the saved shortcuts plus the always-present New shortcut row. The cap is what
-    // holds this — not a pinned height with a scrollbar inside it.
+    // Its tallest state is either the cap with no add row, or one below the cap plus the add
+    // row — both SHORTCUT_MAX_COUNT rows. The cap is what holds this, not a pinned height with
+    // a scrollbar inside it.
     const tallestBuiltIn = Math.max(...EXAMPLE_FOLDERS.map((f) => f.tasks.length));
-    expect(SHORTCUT_MAX_COUNT + 1 - tallestBuiltIn).toBeLessThanOrEqual(1);
+    const tallestUser = Math.max(SHORTCUT_MAX_COUNT, SHORTCUT_MAX_COUNT - 1 + 1);
+    expect(tallestUser - tallestBuiltIn).toBeLessThanOrEqual(1);
+  });
+
+  it("drops the add row at the cap instead of disabling it", () => {
+    // The header already reads 3/3; a disabled row explaining the same thing is the second
+    // telling, and it is the row that would otherwise make the folder one taller than its cap.
+    const source = read("../src/features/chat/shortcuts-folder.tsx");
+    expect(source).toContain("canAddShortcut(shortcuts) && (");
+    expect(source).not.toContain("disabled={!canAddShortcut");
+  });
+
+  it("labels the folder used/limit rather than a bare count", () => {
+    const source = read("../src/features/chat/shortcuts-folder.tsx");
+    expect(source).toContain("count={`${shortcuts.length}/${SHORTCUT_MAX_COUNT}`}");
   });
 
   it("gives the user folder no scroll box of its own", () => {

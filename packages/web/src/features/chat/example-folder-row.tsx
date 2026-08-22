@@ -21,8 +21,8 @@ export function ExampleFolderRow({
   /** 24x24 path for the folder's own mark — what the eye scans to pick a category. */
   glyph: string;
   label: string;
-  /** Rows inside the folder, shown right of the name. */
-  count: number;
+  /** Rows inside the folder, shown right of the name — a bare count, or `used/limit` where one applies. */
+  count: number | string;
   onOpen: () => void;
 }) {
   return (
