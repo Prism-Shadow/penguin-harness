@@ -388,6 +388,15 @@ export function createRuntimeApp(deps: AppDeps): Hono<AppEnv> {
   // session, so it mounts outside authMiddleware (and only in desktop mode).
   if (deps.desktop) {
     app.route("/api/desktop", desktopRoutes(deps));
+    // The client-update surface is runtime-owned like the rest of /api/desktop (the
+    // platform declines that whole prefix): it reads the updater snapshot the shell
+    // pushes over the parentPort this process wires at startup, and forwards
+    // check/install back. Cookie-authed, unlike the Bearer-token shutdown above, so it
+    // carries the auth middleware on its own subtree — the routes then gate on
+    // `sessionVia === "desktop"`, i.e. the shell's own window.
+    app.use("/api/desktop/update", authMiddleware(deps.authService));
+    app.use("/api/desktop/update/*", authMiddleware(deps.authService));
+    app.route("/api/desktop/update", desktopUpdateRoutes(deps));
   }
   // Hot platform APIs authenticate themselves (local-agent Bearer token OR
   // admin cookie session, see hot/routes.ts), so they mount outside the
@@ -795,12 +804,6 @@ export function createApp(
   // Protected routes: cookie -> auth_session -> user, over the runtime's auth service.
   app.use("/api/*", authMiddleware(deps.authService));
   app.route("/api/me", meRoutes(deps));
-  // Cookie-authed (unlike the Bearer-token shutdown, which the runtime keeps): the page
-  // reads updater state and posts check/install here, gated to the shell's own window
-  // inside the routes.
-  if (deps.desktop) {
-    app.route("/api/desktop/update", desktopUpdateRoutes(deps));
-  }
   app.route("/api/version", versionRoutes(deps));
   app.route("/api/admin/users", adminUsersRoutes(deps));
   app.route("/api/admin/settings", adminSettingsRoutes(deps));
