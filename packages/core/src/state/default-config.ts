@@ -239,11 +239,13 @@ updated_at: <YYYY-MM-DD>
 <the fact; for corrections and decisions add **Why:** and **How to apply:** lines. Link related memories with [[their-name]] — a name that doesn't exist yet is fine. Write dates absolute.>
 \`\`\`
 
-Worth saving: who the user is (role, expertise, preferences) and how they want you to work, with the why; ongoing work, goals and constraints not derivable from the code; pointers to external resources.
+**Save** who the user is and how they want you to work, with the why; ongoing work, goals and constraints not derivable from the code; pointers to external resources.
 
-Watch for the moments that produce them: the user asks for the same thing again, or corrects what you produced in a way that will hold beyond this task — save what they wanted instead, and why; states a habit, convention or development practice more than once; or hands you a reusable working detail you would otherwise ask for again — a service endpoint, a ticket or repository identifier, a preferred toolchain. Save the detail, never a credential and nothing personal. A repeat is a strong signal, not a requirement: one clear statement of a standing preference is enough. When you cannot tell whether something is worth keeping, ask.
+**When:** the user asks for the same thing again; corrects you in a way that outlives this task (save what they wanted instead, and why); states a habit or convention more than once; or gives you a reusable working detail you would otherwise ask for again — an endpoint, a repository, a toolchain. A repeat is a strong signal, not a requirement. When you cannot tell, ask.
 
-Each directory's \`MEMORY.md\` is its index, injected below: one line per memory, under ~150 characters (\`- [Title](file.md) — hook\`), no content, updated in the same round as the file — deletions included. Only the first ${MEMORY_INDEX_MAX_LINES} lines of an index are injected — keep it well under that: merge overlapping entries, drop stale ones, move detail into the topic files. Before saving, check the index and update the file that already covers the subject instead of duplicating; delete memories that prove wrong. Never save what code, config or git history already states, task progress, secrets, unconfirmed guesses, or transcript excerpts — if asked to, save the non-obvious part instead. Memory is readable by everyone who can reach this agent: no sensitive personal data.
+**Never** what code, config or git history already states, task progress, credentials, personal data, unconfirmed guesses or transcript excerpts — asked for one anyway, save the non-obvious part instead. Everyone who can reach this agent can read all of it.
+
+**Index:** each directory's \`MEMORY.md\` lists its memories one line each — \`- [Title](file.md) — hook\`, under ~150 characters, no content — updated in the same round as the file, deletions included. Only the first ${MEMORY_INDEX_MAX_LINES} lines are injected, so stay well under it: merge overlapping entries, drop stale ones, move detail into the topic files. Before saving, check the index and extend the file that already covers the subject; delete memories that prove wrong.
 
 ## User memory
 What holds wherever you work; every one of your sessions reads it.

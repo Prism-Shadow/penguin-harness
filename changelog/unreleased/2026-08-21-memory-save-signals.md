@@ -24,6 +24,8 @@ told to ask in the conversation.
 
 ## Details
 
+- The block was tightened while the guidance went in: what to save, when, what never to, and the index rules are now four labelled lines rather than dense paragraphs, and the prose is shorter than before this change despite covering more ground.
+
 - The prompt is a kernel-managed config leaf. The `2026-08-21` generation's `memory.prompt` hash was
   revised in place rather than appended to, that generation having shipped in no release. The five
   frozen older generations keep their previous hashes, so an Agent whose stored prompt is still an
