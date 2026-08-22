@@ -67,6 +67,8 @@ import { adoptDockScope } from "../dock/dock-state";
 import { setDockCwd } from "../dock/dock-terminal";
 import { EXAMPLE_FOLDERS } from "./example-tasks";
 import type { ExampleFolderId, ExampleTask } from "./example-tasks";
+import { ExampleFolderRow, exampleRowClass } from "./example-folder-row";
+import { SHORTCUTS_FOLDER_ID, ShortcutsFolder } from "./shortcuts-folder";
 import { clearDraft, draftKey, loadDraft, saveDraft } from "./draft-cache";
 import type { DraftCache } from "./draft-cache";
 import {
@@ -670,6 +672,14 @@ export function DraftView({
     // S is a live binding swapped on locale change: read the prompt at click time, not at render.
     composerRef.current?.fillExample(S.chat.exampleTasks[task.id].prompt, task.skills);
   }, []);
+  /**
+   * A saved shortcut takes the same path with no Skills to pin: its prompt is the user's own text,
+   * not a card authored against the Skill catalog this product ships (see user-shortcuts.ts). An
+   * empty pin list leaves the composer's Skill selection exactly as the user set it.
+   */
+  const fillShortcut = useCallback((prompt: string) => {
+    composerRef.current?.fillExample(prompt, []);
+  }, []);
 
   /**
    * The open example folder — bookmark-style, and ALWAYS exactly one: selecting another closes
@@ -679,7 +689,9 @@ export function DraftView({
    * bare folder rows nor grow to the whole catalog, so switching folders moves what sits
    * below it by at most one row.
    */
-  const [openFolder, setOpenFolder] = useState<ExampleFolderId>(EXAMPLE_FOLDERS[0].id);
+  const [openFolder, setOpenFolder] = useState<ExampleFolderId | typeof SHORTCUTS_FOLDER_ID>(
+    EXAMPLE_FOLDERS[0].id,
+  );
 
   const selectedAgent = agents.find((a) => a.agentId === agentId) ?? null;
 
@@ -751,57 +763,31 @@ export function DraftView({
         </div>
 
         {/* Example tasks: canned builds showing off the one-sentence → app flow; a click fills
-            the composer with the prompt and the user sends it (see fillExample).
+            the composer with the prompt and the user sends it (see fillExample). The last folder
+            is the user's own saved prompts (see shortcuts-folder.tsx).
             Bookmark-style folders with ALWAYS exactly one open — selecting another closes the
-            previous, and the open one cannot be collapsed. The block is therefore three
-            folder rows plus one folder's rows, with the folders kept within one row of each
-            other (3–4 examples each), so switching folders moves what sits below by at most
-            one row and no scroll container is needed — a scrollbar inside a seven-line
-            showcase reads as a defect. Each example is a single-line title; its one-sentence
-            description rides in the row tooltip rather than a second line. Rows stay disabled
-            until the Agent's installed skills are known — that is all a fill still waits for,
-            and without it the preselect would silently drop the example's skills. */}
+            previous, and the open one cannot be collapsed. The block is therefore four folder
+            rows plus one folder's rows, with every folder kept within one row of the others
+            (3–4 examples each; the user folder is capped so its shortcuts plus its add row come
+            to the same), so switching folders moves what sits below by at most one row and no
+            folder needs a scroll container — a scrollbar inside a short showcase reads as a
+            defect. Each example is a single-line title; its one-sentence description rides in
+            the row tooltip rather than a second line. Rows stay disabled until the Agent's
+            installed skills are known — that is all a fill still waits for, and without it the
+            preselect would silently drop the example's skills (a saved shortcut pins none, so
+            it never waits). */}
         <div className="mt-6 space-y-1">
           {EXAMPLE_FOLDERS.map((folder) => {
             const open = folder.id === openFolder;
             return (
               <div key={folder.id}>
-                {/* A tab, not a disclosure: the open folder stays open (clicking it is a
-                    no-op) and carries the selected fill, so the block always shows one
-                    folder's examples and its height never changes. */}
-                <button
-                  type="button"
-                  aria-expanded={open}
-                  onClick={() => setOpenFolder(folder.id)}
-                  className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors duration-150 ${
-                    open
-                      ? "bg-gray-100 dark:bg-gray-800/70"
-                      : "hover:bg-gray-100 dark:hover:bg-gray-800/70"
-                  }`}
-                >
-                  <span className="shrink-0 text-brand-500 dark:text-brand-400">
-                    <svg
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.7"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden
-                    >
-                      <path d={FOLDER_GLYPHS[folder.id]} />
-                    </svg>
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-700 dark:text-gray-300">
-                    {S.chat.exampleFolders[folder.id]}
-                  </span>
-                  <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
-                    {folder.tasks.length}
-                  </span>
-                  <Chevron open={open} size={14} className="text-gray-400" />
-                </button>
+                <ExampleFolderRow
+                  open={open}
+                  glyph={FOLDER_GLYPHS[folder.id]}
+                  label={S.chat.exampleFolders[folder.id]}
+                  count={folder.tasks.length}
+                  onOpen={() => setOpenFolder(folder.id)}
+                />
 
                 {open && (
                   <ul className="mt-0.5 space-y-0.5 pl-4">
@@ -814,7 +800,7 @@ export function DraftView({
                             title={`${copy.desc}\n${S.chat.exampleFillHint}`}
                             disabled={!skillsLoaded}
                             onClick={() => fillExample(task)}
-                            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-gray-600 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-900 disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent dark:text-gray-400 dark:hover:bg-gray-800/70 dark:hover:text-gray-200"
+                            className={`flex w-full items-center gap-2 ${exampleRowClass}`}
                           >
                             <span className="min-w-0 flex-1 truncate">{copy.label}</span>
                           </button>
@@ -826,6 +812,12 @@ export function DraftView({
               </div>
             );
           })}
+          <ShortcutsFolder
+            open={openFolder === SHORTCUTS_FOLDER_ID}
+            onOpen={() => setOpenFolder(SHORTCUTS_FOLDER_ID)}
+            readComposerText={() => textRef.current}
+            onFill={fillShortcut}
+          />
         </div>
       </div>
 

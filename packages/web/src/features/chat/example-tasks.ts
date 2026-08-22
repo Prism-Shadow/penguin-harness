@@ -9,7 +9,9 @@
  * Keep the folders within one row of each other (3–4 examples each today): the draft page
  * reserves no scroll area for this block, so its height is the folder rows plus the open
  * folder's rows — a folder much longer than its siblings is what would make that height jump
- * as folders are switched.
+ * as folders are switched. The draft screen appends one more folder that this registry does not
+ * describe — the user's own saved shortcuts, whose length is theirs and not ours; it is exempt
+ * from the rule by capping how many shortcuts it holds, not by scrolling (shortcuts-folder.tsx).
  *
  * Copy and prompts live in the active locale dictionary at `S.chat.exampleFolders[id]` and
  * `S.chat.exampleTasks[id]`, which is also where the rule for how long a prompt may get is
