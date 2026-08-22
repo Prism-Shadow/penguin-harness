@@ -161,7 +161,7 @@ describe("loadSkillGroups / groupSkills", () => {
     expect(groups[2]!.title).toBe("AI App Development");
     expect(groups[2]!.titleZh).toBe("AI 应用开发");
     expect(groups[3]!.skills.map((s) => s.name)).toEqual([
-      "agent-creation",
+      "agent-initialization",
       "benchmark-design",
       "agent-evaluation",
       "agent-optimization",
@@ -178,7 +178,7 @@ describe("loadSkillGroups / groupSkills", () => {
 
   it("groupSkills: appends an Other group for unlisted skills (Chinese and English titles)", () => {
     const stray = fakeSkill("stray-skill");
-    const groups = groupSkills([fakeSkill("agent-creation"), stray]);
+    const groups = groupSkills([fakeSkill("agent-initialization"), stray]);
     expect(groups.map((g) => g.id)).toEqual([
       "office-productivity",
       "software-development",
@@ -230,7 +230,12 @@ describe("loadSkillGroups / groupSkills", () => {
       },
       {
         id: "agent-tuning",
-        skills: ["agent-creation", "benchmark-design", "agent-evaluation", "agent-optimization"],
+        skills: [
+          "agent-initialization",
+          "benchmark-design",
+          "agent-evaluation",
+          "agent-optimization",
+        ],
       },
     ]);
   });

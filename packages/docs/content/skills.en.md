@@ -73,7 +73,7 @@ The built-in Skills, by group (the group manifest is `SKILL_GROUPS` in `packages
 | | `ollama` | Deploy and serve local models with Ollama: pull and run them, then expose the OpenAI-compatible endpoint to apps and agents |
 | | `llamafactory` | Fine-tune LLMs with LlamaFactory: register datasets, train via YAML configs, merge LoRA adapters and serve the result |
 | | `skill-porting` | Port skills from external sources — plugin marketplaces, skills.sh registries, GitHub repos or local folders — into the agent after review and normalization |
-| Agent Tuning | `agent-creation` | Create or configure an Agent State from a user requirement by writing AGENTS.md, setting identity metadata and installing needed Skills |
+| Agent Tuning | `agent-initialization` | Initialize an Agent's settings from a user requirement by writing AGENTS.md, setting identity metadata and installing needed Skills |
 | | `benchmark-design` | Design and calibrate a multi-Case capability Benchmark for a specified Agent and establish a traceable Formal Baseline |
 | | `agent-evaluation` | Internal leaf worker that executes and privately scores exactly one Case run from a complete evaluation protocol |
 | | `agent-optimization` | Improve a specified Agent from a complete current baseline on a frozen Benchmark |

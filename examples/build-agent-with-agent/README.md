@@ -6,7 +6,7 @@ This example is the **"Harness for Building Agents"** pillar in runnable code. U
 PenguinHarness SDK, it:
 
 1. **builds** a brand-new agent (`commit-helper`) by driving `default_agent` with the
-   `agent-creation` skill from a plain-language requirement, then
+   `agent-initialization` skill from a plain-language requirement, then
 2. **runs** that freshly-created agent to prove the generated `AGENTS.md` actually shapes its
    behavior (it writes a Conventional Commits message).
 

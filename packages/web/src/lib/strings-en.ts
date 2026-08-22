@@ -36,9 +36,7 @@ export const en: Strings = {
     /** Tab strip ×: kills the shell itself (server-side), unlike closing the dock. */
     killShell: "Kill this terminal",
     /** Boundary drag handle between the dock and the main content (double-click resets). */
-    resize: "Resize terminal panel",
     /** Hover menu when the user has no live terminal yet. */
-    noTerminals: "No terminals",
     /** Pane body when creating/attaching a shell failed (the server message follows). */
     createFailed: "Could not start a terminal",
     /** A create that 404s: the server predates the terminal API (or the shell attached to an older one). */
@@ -46,7 +44,6 @@ export const en: Strings = {
       "this server has no terminal API: the running runtime predates it. A hot push replaces the platform and Web App, but the terminal endpoints are runtime-owned — the runtime itself has to be updated (restarting will not help)",
     /** Codex-style handoff: opens /terminal?id=… in a new window, the dock lets go. */
     detach: "Open in new window",
-    close: "Close",
     status: {
       connecting: "connecting",
       ready: "ready",
@@ -55,6 +52,27 @@ export const en: Strings = {
     },
     /** Suffix shown after `status.exited`; `code` is the shell's numeric exit code. */
     exitedWithCode: (code: string): string => `exit code ${code}`,
+  },
+
+  dock: {
+    addTab: "Add panel",
+    closeTab: "Close panel",
+    hideDock: "Hide sidebar",
+    moveToRight: "Move to the right",
+    moveToBottom: "Move to the bottom",
+    resize: "Resize panel",
+    rightDock: "Right sidebar",
+    bottomDock: "Bottom panel",
+    draftEmpty: "Available once the conversation starts",
+    killConfirmTitle: "Close this terminal?",
+    killConfirmBody: (name: string): string =>
+      `This ends the shell "${name}" — it cannot be restored.`,
+  },
+
+  tracePanel: {
+    empty: "No traces yet",
+    emptyHint: "This session has not produced a Trace file yet",
+    loadFailed: "Failed to load traces",
   },
 
   settings: {
@@ -205,12 +223,12 @@ export const en: Strings = {
   common: {
     save: "Save",
     cancel: "Cancel",
+    close: "Close",
     create: "Create",
     delete: "Delete",
     edit: "Edit",
     settings: "Settings",
     confirm: "Confirm",
-    close: "Close",
     loading: "Loading…",
     saved: "Saved",
     saving: "Saving…",
@@ -293,9 +311,9 @@ export const en: Strings = {
       "2–64 chars: starts with a lowercase letter; lowercase letters, digits and underscores only. Cannot be changed later.",
     idPrefixHint:
       "The id is prefixed with your username and a hyphen; append lowercase letters, digits or underscores. Cannot be changed later.",
-    name: "Display name (optional, defaults to the Project id)",
-    /** The display-name field in Project settings (required there, unlike the create dialog's optional one). */
     displayName: "Display name",
+    /** Create dialog only: leaving the name empty falls back to the id. In Project settings the saved name cannot be blanked. */
+    displayNameHint: "Leave empty to use the Project id as the name",
     settings: "Project settings",
     settingsTitle: "Project settings",
     members: "Members",
@@ -309,7 +327,6 @@ export const en: Strings = {
     chatDefaultsNotSet: "Not set",
     chatDefaultsApprovalNotSet: "Not set (defaults to allow all)",
     chatDefaultsThinkingNotSet: "Not set (follow the agent's config)",
-    chatDefaultsWorkspaceHint: "Empty = temporary workspace",
     /** The model default is single-sourced with the Models page (the same default_model); this is just another entry point. */
     chatDefaultsModelHint: "Same default model as the Models page",
     /** Settings dialog tab rail. */
@@ -334,7 +351,7 @@ export const en: Strings = {
     commandPolicyOff: "Disabled",
     commandPolicyRuleName: "Name",
     commandPolicyRulePattern: "Regular expression",
-    commandPolicyRuleDesc: "Description (optional)",
+    commandPolicyRuleDesc: "Description",
     commandPolicyInvalidPattern: "Invalid regular expression",
     deleteProject: "Delete Project",
     deleteConfirm:
@@ -832,7 +849,7 @@ export const en: Strings = {
     editWhy:
       "Content edits are made by the agent in a chat: confirm the prompt to open a new conversation, and the agent updates the memory file and its MEMORY.md index together.",
     editRequirementLabel: "What to change",
-    editRequirementPlaceholder: "Describe the change (optional — you can finish it in the chat)",
+    editRequirementPlaceholder: "Describe the change — you can finish it in the chat",
     editPromptLabel: "Prompt preview",
     editCopyPrompt: "Copy prompt",
     editOpenChat: "Open a new chat",
@@ -946,7 +963,7 @@ export const en: Strings = {
     prompt: "Prompt",
     enabled: "Enabled",
     startAt: "Start at",
-    endAt: "End at (optional)",
+    endAt: "End at",
     period: "Period",
     periodPlaceholder: "30m / 12h / 7d; leave empty for a one-off task",
     target: "Target",
@@ -958,7 +975,7 @@ export const en: Strings = {
     sessionSearch: "Search title or Session id…",
     sessionNoMatch: "No matching Session",
     sessionEmpty: "This agent has no Sessions yet",
-    workspace: "Workspace (optional; a temporary workspace is created when empty)",
+    workspace: "Workspace",
     model: "Model",
     modelDefault: "Project default",
     deleteTitle: "Delete scheduled task",
@@ -1147,6 +1164,7 @@ export const en: Strings = {
     exampleFolders: {
       webapps: "Build web apps",
       agents: "Build and optimize agents",
+      schedules: "Create scheduled tasks",
     },
     /** Second tooltip line on an example row: the click fills the composer, it does not send. */
     exampleFillHint: "Click to fill the composer — edit it if you like, then send",
@@ -1216,6 +1234,28 @@ Penguin visual style (see the web-design skill), dark by default. On phones the 
 
 When done, open index.html in a browser and self-test once.`,
       },
+      rhythmRunner: {
+        label: "Rhythm runner mini game",
+        desc: "A Muse Dash-style rhythm runner: a penguin lead, notes locked to the beat, graded Perfect / Great / Miss",
+        prompt:
+          "Build a Muse Dash-style rhythm runner: a penguin runs forward on its own, and notes — " +
+          "drawn as music-note icons — fly in locked to the beat for me to hit. Show Perfect / " +
+          "Great / Miss for each hit, score combos, and let the difficulty climb as the track goes " +
+          "on. Pure front end, one file, playable straight from file://.",
+      },
+      investmentCopilot: {
+        label: "Conversational investment analyst",
+        desc: "A conversational market Copilot on the Penguin SDK: the home page lists what is trending, with the market factors behind every call",
+        prompt:
+          "Build a conversational stock-market Copilot on the Penguin SDK, along the lines of " +
+          "perplexity.ai/finance: from startup it pulls live market data every 5 minutes, and the " +
+          "home page lists the stocks trending strongest lately alongside how the sectors compare. " +
+          "Every call has to name the market factors behind it — policy, sector news, fund flows, " +
+          "earnings, macro data — rather than technical indicators. Analysis of public data, not " +
+          "investment advice. Its stock-lookup tool has to handle questions like \"look up Zhipu's " +
+          'stock for me": resolve a company name to its ticker itself, and when there is no match ' +
+          "or the company is not listed, say so rather than inventing a quote.",
+      },
       rag: {
         label: "Build a Claude Code docs RAG agent",
         desc: "Collect the claude-code-docs repo into a conversational RAG knowledge app with source citations",
@@ -1232,7 +1272,7 @@ When done, open index.html in a browser and self-test once.`,
       agentBenchmarkBuild: {
         label: "Build a general-purpose decision agent and its benchmark",
         desc: "Create a general decision Agent and test it on football, after-sales, and investment tasks",
-        prompt: `Use \`agent-creation\` followed by \`benchmark-design\` to create a decision Agent and produce a frozen Benchmark with a Formal Baseline.
+        prompt: `Use \`agent-initialization\` followed by \`benchmark-design\` to create a decision Agent and produce a frozen Benchmark with a Formal Baseline.
 
 Agent:
 - id: \`finite_choice_agent\`
@@ -1262,6 +1302,32 @@ Scenarios:
 - desired_score: \`>=95\`
 - candidate_round_limit: \`5\``,
       },
+      dailyPlan: {
+        label: "A 9am daily planning check-in",
+        desc: "09:00 every day: talk through the day's plan in this same chat, and review yesterday's progress",
+        prompt:
+          "Set up a scheduled task: every day at 9am, in this same conversation, plan today's work " +
+          "with me. Read back over the conversation first and say what yesterday's plan got done and " +
+          "where it stuck, then offer an ordered shortlist for today with a line of reasoning each, " +
+          "and write up what I confirm as a checklist.",
+      },
+      githubDigest: {
+        label: "Daily GitHub project digest",
+        desc: "A daily pass over one repo's issues, PRs and CI, ending in prioritized recommendations",
+        prompt:
+          "Set up a scheduled task: every morning, use gh to digest one GitHub repo's issues, PRs " +
+          "and CI — surface what has stalled, what is waiting on review and what is failing — and " +
+          "end with recommendations ranked by priority, each saying why it sits where it does.",
+      },
+      memoryReview: {
+        label: "Friday memory review",
+        desc: "Friday evening: go through what is worth remembering from the week and write it into Memory",
+        prompt:
+          "Set up a scheduled task: every Friday evening, in this same conversation, go through " +
+          "what is worth remembering from the week with me. Check the existing memory index first so " +
+          "nothing is duplicated, then take it item by item — what to record, what to revise — and " +
+          "write what I confirm into Memory.",
+      },
     },
     sessionList: "Sessions",
     defaultSessionTitle: "New chat",
@@ -1270,6 +1336,8 @@ Scenarios:
     workspace: "Workspace",
     workspaceHint:
       "Leave empty for an auto-created temporary workspace; if set, it must be an existing directory on the server",
+    /** The same rule as `workspaceHint`, short enough to sit under a form field. */
+    workspaceHintShort: "Leave empty for a temporary workspace",
     approvalMode: "Approval mode",
     approvalModeNames: {
       "allow-all": "Approve everything",
@@ -1426,13 +1494,9 @@ Scenarios:
     historyLoadFailed: "Failed to load history",
     statsLabel: "Stats",
     removeImage: "Remove image",
-    openWorkspace: "Open workspace",
     openAgents: "Agents panel",
     /** Panel switcher (chat toolbar top-right): the "create" dropdown and its pin toggles. */
-    panelsCreate: "Create",
     workspacePanel: "Workspace",
-    pinPanel: "Pin to toolbar",
-    unpinPanel: "Unpin",
     filesInMessage: (n: number) => `${n} ${n === 1 ? "file" : "files"}`,
     imagesInMessage: (n: number) => `${n} ${n === 1 ? "image" : "images"}`,
     openPreview: "Click to preview",
@@ -1445,7 +1509,6 @@ Scenarios:
     memoryViewTitle: "Memory",
     memoryChangedMark: "Changed in this conversation",
     memoryContentUnavailable: "Content unavailable (the file may have been moved or deleted)",
-    openMemoryPanel: "Open memory",
     memoryRowOpen: "View content",
     memoryBack: "Back to the list",
     memoryEmptyAll: "No memory yet — say “remember …” in a chat to have the agent save one",
@@ -1605,12 +1668,12 @@ Scenarios:
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */
   subagentPanel: {
-    title: "Agents panel",
     topologyLabel: "Call graph",
     mainSessionNote: "The main conversation stays in the chat area",
     empty: "No subagents in the current task yet",
     nodeRunning: "running",
     nodeDone: "done",
+    openAsSession: "Jump to this session",
   },
 
   files: {
@@ -1636,7 +1699,6 @@ Scenarios:
     htmlRendered: "Rendered",
     htmlSource: "Source",
     backToList: "Back to list",
-    resizeHandle: "Drag to resize, double-click to reset",
   },
 
   usage: {
@@ -1696,6 +1758,8 @@ Scenarios:
     legendToolExec: "tool exec",
     legendOther: "Other",
     toolParams: "Parameter schema",
+    /** Spoken form of the red "*" in the schema table, where no control carries `aria-required`. */
+    requiredParam: "required",
     legendApprovalWait: "approval wait",
     task: (n: number) => `Turn ${n}`,
     globalSummary: "Overall",

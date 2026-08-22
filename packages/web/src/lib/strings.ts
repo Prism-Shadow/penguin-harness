@@ -37,10 +37,6 @@ export const zh = {
     newShell: "新建 Shell",
     /** Tab strip ×: kills the shell itself (server-side), unlike closing the dock. */
     killShell: "关闭此终端",
-    /** Boundary drag handle between the dock and the main content (double-click resets). */
-    resize: "调整终端面板大小",
-    /** Hover menu when the user has no live terminal yet. */
-    noTerminals: "暂无终端",
     /** Pane body when creating/attaching a shell failed (the server message follows). */
     createFailed: "终端创建失败",
     /** A create that 404s: the server predates the terminal API (or the shell attached to an older one). */
@@ -48,7 +44,6 @@ export const zh = {
       "该服务端没有终端接口：运行中的 runtime 早于该功能。热更新只替换平台与前端，终端接口属于 runtime，需更新 runtime 本身（重启无效）",
     /** Codex-style handoff: opens /terminal?id=… in a new window, the dock lets go. */
     detach: "在新窗口打开",
-    close: "关闭",
     status: {
       connecting: "连接中",
       ready: "已连接",
@@ -57,6 +52,35 @@ export const zh = {
     },
     /** Suffix shown after `status.exited`; `code` is the shell's numeric exit code. */
     exitedWithCode: (code: string): string => `退出码 ${code}`,
+  },
+
+  /** The dock surfaces (right / bottom) every side element renders in as a tab. */
+  dock: {
+    /** The dock header's "+" menu: panels and shells this dock can take a tab for. */
+    addTab: "添加面板",
+    /** A panel tab's × (its content closes; terminal tabs use terminal.killShell instead). */
+    closeTab: "关闭面板",
+    /** The dock header's ×: the dock hides, its tabs stay for the next open. */
+    hideDock: "收起侧边栏",
+    moveToRight: "移到右侧",
+    moveToBottom: "移到下方",
+    /** Boundary drag handle between a dock and the chat content (double-click resets). */
+    resize: "调整面板大小",
+    /** The toolbar's two pull-open buttons (aria-expanded carries the open state). */
+    rightDock: "右侧栏",
+    bottomDock: "下侧栏",
+    /** A session-bound panel's body on the draft page, where no Session exists yet. */
+    draftEmpty: "发送第一条消息后可用",
+    /** Terminal tab ×: ends the shell for real, so it asks first. `name` is the tab label. */
+    killConfirmTitle: "关闭此终端？",
+    killConfirmBody: (name: string): string => `将结束 Shell「${name}」的进程，无法恢复。`,
+  },
+
+  /** The Trace dock panel (the current conversation's Trace files). */
+  tracePanel: {
+    empty: "暂无轨迹",
+    emptyHint: "该会话还没有产生 Trace 文件",
+    loadFailed: "轨迹加载失败",
   },
 
   settings: {
@@ -198,12 +222,12 @@ export const zh = {
   common: {
     save: "保存",
     cancel: "取消",
+    close: "关闭",
     create: "创建",
     delete: "删除",
     edit: "编辑",
     settings: "设置",
     confirm: "确认",
-    close: "关闭",
     loading: "加载中…",
     saved: "已保存",
     saving: "保存中…",
@@ -280,9 +304,9 @@ export const zh = {
     id: "Project id",
     idHint: "2~64 位：小写字母开头，仅小写字母、数字与下划线；创建后不可修改",
     idPrefixHint: "id 固定以「用户名-」为前缀，后接小写字母、数字或下划线；创建后不可修改",
-    name: "显示名（可选，缺省为 Project id）",
-    /** Display-name field in Project settings (required here, unlike the create dialog's "optional" wording). */
     displayName: "显示名",
+    /** Create dialog only: leaving the name empty falls back to the id. In Project settings the saved name cannot be blanked. */
+    displayNameHint: "留空则使用 Project id 作为名称",
     settings: "Project 设置",
     settingsTitle: "Project 设置",
     members: "成员",
@@ -295,7 +319,6 @@ export const zh = {
     chatDefaultsNotSet: "未设置",
     chatDefaultsApprovalNotSet: "未设置（默认全部放行）",
     chatDefaultsThinkingNotSet: "未设置（跟随智能体配置）",
-    chatDefaultsWorkspaceHint: "留空表示使用临时工作区",
     /** The model default shares its source with the Models page (the same default_model); this is just another entry point. */
     chatDefaultsModelHint: "与模型页的默认模型同步",
     /** Settings dialog tab rail. */
@@ -320,7 +343,7 @@ export const zh = {
     commandPolicyOff: "已停用",
     commandPolicyRuleName: "名称",
     commandPolicyRulePattern: "正则表达式",
-    commandPolicyRuleDesc: "描述（可选）",
+    commandPolicyRuleDesc: "描述",
     commandPolicyInvalidPattern: "正则表达式无效",
     deleteProject: "删除 Project",
     deleteConfirm: "确认删除该 Project？项目目录将被递归删除，不可恢复。",
@@ -803,7 +826,7 @@ export const zh = {
     editWhy:
       "内容修改由 agent 在对话中完成：确认引导语后打开新对话，agent 会同步更新记忆文件与 MEMORY.md 索引。",
     editRequirementLabel: "修改要求",
-    editRequirementPlaceholder: "描述要怎么改（可留空，跳转后在对话中补充）",
+    editRequirementPlaceholder: "描述要怎么改，跳转后可在对话中补充",
     editPromptLabel: "引导语预览",
     editCopyPrompt: "复制 Prompt",
     editOpenChat: "打开新对话",
@@ -910,7 +933,7 @@ export const zh = {
     prompt: "Prompt",
     enabled: "启用",
     startAt: "开始时间",
-    endAt: "结束时间（可选）",
+    endAt: "结束时间",
     period: "周期",
     periodPlaceholder: "30m / 12h / 7d，留空为一次性",
     target: "目标",
@@ -922,7 +945,7 @@ export const zh = {
     sessionSearch: "搜索标题或 Session id…",
     sessionNoMatch: "无匹配的 Session",
     sessionEmpty: "该 Agent 暂无 Session",
-    workspace: "Workspace（可选，留空自动创建临时工作区）",
+    workspace: "Workspace",
     model: "Model",
     modelDefault: "Project 默认",
     deleteTitle: "删除定时任务",
@@ -1103,13 +1126,17 @@ export const zh = {
     exampleFolders: {
       webapps: "搭建网页应用",
       agents: "搭建和优化智能体",
+      schedules: "创建定时任务",
     },
     /** Second tooltip line on an example row: the click fills the composer, it does not send. */
     exampleFillHint: "点击填入输入框，可修改后自行发送",
     /**
      * Example task cards on the draft screen: one click fills the composer with the canned
-     * prompt, which the user then sends. These are the FULL working prompts — descriptions stay
-     * short, but the prompts remain detailed because execution quality depends on them.
+     * prompt, which the user reads, edits and sends. That is why a prompt is SHORT — a short
+     * paragraph, around 100 Chinese characters, carrying what to build plus the constraints the
+     * result would be wrong without. File layouts, field lists, step-by-step headings and
+     * self-test instructions are what the Agent works out or asks about, so they stay out; the
+     * older briefs below are still far longer and are being trimmed to match.
      */
     exampleTasks: {
       game: {
@@ -1174,6 +1201,24 @@ Penguin 视觉风格（见 web-design 技能），默认深色。手机端侧边
 
 完成后在浏览器打开 index.html 自测一次。`,
       },
+      rhythmRunner: {
+        label: "音乐节奏跑酷小游戏",
+        desc: "喵斯快跑式的音乐节奏跑酷：企鹅主角，音符踩着节拍飞来，判定分 Perfect / Great / Miss",
+        prompt:
+          "做一个喵斯快跑（Muse Dash）式的音乐节奏跑酷小游戏：主角是一只企鹅，自动向前跑；" +
+          "音符画成音符图标，严格踩着节拍飞来，玩家按键击打，判定显示 Perfect / Great / Miss 三档，" +
+          "连击计分，难度随曲子推进。纯前端单文件，file:// 直接打开即玩。",
+      },
+      investmentCopilot: {
+        label: "对话式投资分析助理",
+        desc: "用 Penguin SDK 做对话式看盘 Copilot：首页列出近期走势较好的股票，每个判断都说清市场因素",
+        prompt:
+          "用 Penguin SDK 做一个对话式的股市 Copilot，形态参考 perplexity.ai/finance：启动后每 5 分钟实时抓取大盘行情，" +
+          "首页直接列出近期走势较好的股票和板块强弱，每个判断都要说清背后的市场因素——政策、行业消息、" +
+          "资金流向、财报或宏观数据，而不是技术指标，" +
+          "只做分析不是投资建议。它的查股工具要能答「帮我查一下智谱的股票」这类问题：" +
+          "按公司名（中文也行）自己对应到股票代码，查不到或没上市就直说，不要编。",
+      },
       rag: {
         label: "构建 Claude Code 文档 RAG 智能体",
         desc: "收集 claude-code-docs 仓库，生成可对话、带来源引用的 RAG 知识应用",
@@ -1189,7 +1234,7 @@ Penguin 视觉风格（见 web-design 技能），默认深色。手机端侧边
       agentBenchmarkBuild: {
         label: "构建通用决策智能体和评测基准",
         desc: "创建一个通用决策 Agent，并用足球、售后和投资任务检验它",
-        prompt: `请依次使用 \`agent-creation\` 和 \`benchmark-design\`，创建决策 Agent，并产出 Frozen Benchmark 与 Formal Baseline。
+        prompt: `请依次使用 \`agent-initialization\` 和 \`benchmark-design\`，创建决策 Agent，并产出 Frozen Benchmark 与 Formal Baseline。
 
 Agent：
 - id：\`finite_choice_agent\`
@@ -1219,6 +1264,28 @@ Benchmark：
 - desired_score：\`>=95\`
 - candidate_round_limit：\`5\``,
       },
+      dailyPlan: {
+        label: "每天早 9 点的计划对话",
+        desc: "每天 09:00 在同一个会话里聊当天计划，并回顾昨天的进展",
+        prompt:
+          "建一个定时任务：每天早上 9 点在这个会话里和我聊今天的计划。" +
+          "先回看上文说清昨天定的事做完了多少、哪些卡住，再给我一份排好序的今日候选、每条一句理由，" +
+          "我确认后写成清单。",
+      },
+      githubDigest: {
+        label: "每天汇总 GitHub 项目状态",
+        desc: "定时跑一遍仓库的 Issue、PR 与 CI，日报结尾给出按优先级排序的建议",
+        prompt:
+          "建一个定时任务：每天早上用 gh 汇总一个 GitHub 仓库的 Issue、PR 与 CI 状态，" +
+          "挑出停滞的、待评审的和挂掉的，结尾给出按优先级排序的建议，每条说清为什么排在这个位置。",
+      },
+      memoryReview: {
+        label: "每周五晚回顾并记录 Memory",
+        desc: "周五傍晚一起过一遍这周值得长期记住的事，确认后由你写进 Memory",
+        prompt:
+          "建一个定时任务：每周五傍晚在这个会话里和我过一遍这周值得长期记住的事。" +
+          "先看已有记忆索引避免重复，再逐条问我该记什么、要不要改已有的，我确认后你写进 Memory。",
+      },
     },
     sessionList: "Session",
     defaultSessionTitle: "新对话",
@@ -1226,6 +1293,8 @@ Benchmark：
     model: "Model",
     workspace: "Workspace",
     workspaceHint: "留空自动创建临时工作区；指定时必须是服务器上已存在的目录",
+    /** The same rule as `workspaceHint`, short enough to sit under a form field. */
+    workspaceHintShort: "留空自动创建临时工作区",
     approvalMode: "审批模式",
     /** Short description (the trigger button shows only the description, not the mode id). */
     approvalModeNames: {
@@ -1378,13 +1447,8 @@ Benchmark：
     historyLoadFailed: "历史消息加载失败",
     statsLabel: "统计信息",
     removeImage: "移除图片",
-    openWorkspace: "打开工作区",
     openAgents: "智能体面板",
-    /** Panel switcher (chat toolbar top-right): the "create" dropdown and its pin toggles. */
-    panelsCreate: "创建",
     workspacePanel: "工作区",
-    pinPanel: "置顶到栏目",
-    unpinPanel: "取消置顶",
     /** File summary card at the end of a message (Codex-style): title, inline preview action, and collapsed row. */
     filesInMessage: (n: number) => `${n} 个文件`,
     imagesInMessage: (n: number) => `${n} 张图片`,
@@ -1399,7 +1463,6 @@ Benchmark：
     memoryViewTitle: "记忆",
     memoryChangedMark: "本次对话已更改",
     memoryContentUnavailable: "无法加载内容（文件可能已被移动或删除）",
-    openMemoryPanel: "打开记忆",
     memoryRowOpen: "查看内容",
     memoryBack: "返回列表",
     memoryEmptyAll: "还没有任何记忆——在对话里说「记住……」即可让 agent 保存",
@@ -1558,12 +1621,13 @@ Benchmark：
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */
   subagentPanel: {
-    title: "智能体面板",
     topologyLabel: "调用关系",
     mainSessionNote: "主会话请在对话区查看",
     empty: "本次任务尚未派生子智能体",
     nodeRunning: "运行中",
     nodeDone: "已完成",
+    /** Identity-strip jump: opens the selected subagent's own Session in the chat area. */
+    openAsSession: "跳转到该会话",
   },
 
   files: {
@@ -1588,7 +1652,6 @@ Benchmark：
     htmlRendered: "渲染视图",
     htmlSource: "源码",
     backToList: "返回列表",
-    resizeHandle: "拖拽调整宽度，双击恢复默认",
   },
 
   usage: {
@@ -1648,6 +1711,8 @@ Benchmark：
     legendToolExec: "工具调用执行",
     legendOther: "其他",
     toolParams: "参数 Schema",
+    /** Spoken form of the red "*" in the schema table, where no control carries `aria-required`. */
+    requiredParam: "必填",
     legendApprovalWait: "审批等待",
     task: (n: number) => `第 ${n} 轮`,
     globalSummary: "全局统计",

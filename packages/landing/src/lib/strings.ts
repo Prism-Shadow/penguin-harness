@@ -434,7 +434,12 @@ export const zh = {
       },
       {
         title: "Agent 调优",
-        skills: ["agent-creation", "benchmark-design", "agent-evaluation", "agent-optimization"],
+        skills: [
+          "agent-initialization",
+          "benchmark-design",
+          "agent-evaluation",
+          "agent-optimization",
+        ],
       },
     ],
   },

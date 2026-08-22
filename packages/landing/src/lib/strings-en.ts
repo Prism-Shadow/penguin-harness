@@ -445,7 +445,12 @@ export const en: Strings = {
       },
       {
         title: "Agent Tuning",
-        skills: ["agent-creation", "benchmark-design", "agent-evaluation", "agent-optimization"],
+        skills: [
+          "agent-initialization",
+          "benchmark-design",
+          "agent-evaluation",
+          "agent-optimization",
+        ],
       },
     ],
   },

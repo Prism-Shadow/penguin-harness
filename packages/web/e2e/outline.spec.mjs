@@ -95,7 +95,8 @@ test("minimap ticks + hover preview + jump, five-turn gate, sticky group header,
   // …and no toolbar fallback either while a docked panel eats the gutter. Wait until the
   // stream really is too narrow for the rail (the exact condition the fallback keys on)
   // plus a paint, so the button's absence proves the gate — not a panel still opening.
-  await page.getByRole("button", { name: "打开工作区" }).click();
+  await page.getByTestId("dock-toggle-right").click();
+  await page.getByTestId("dock-pick-workspace").click();
   await page.waitForFunction(() => {
     const c = document.querySelector("[data-outline-anchor]")?.closest(".overflow-y-auto");
     return c ? (c.clientWidth - 768) / 2 < 56 : false;
@@ -104,7 +105,7 @@ test("minimap ticks + hover preview + jump, five-turn gate, sticky group header,
     () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))),
   );
   await expect(menuButton).toHaveCount(0);
-  await page.getByRole("button", { name: "打开工作区" }).click();
+  await page.getByTestId("dock-toggle-right").click();
 
   // The fifth exchange crosses the gate: one tick per exchange in the gutter minimap;
   // auto-follow parked the stream at the bottom, so the newest exchange is the active
@@ -150,7 +151,7 @@ test("minimap ticks + hover preview + jump, five-turn gate, sticky group header,
   // the index moves to the toolbar dropdown (navigation stays reachable, and the dropdown
   // lists ALL entries — no windowing there); closing the panel restores the rail (live
   // measurement, not a breakpoint).
-  await page.getByRole("button", { name: "打开工作区" }).click();
+  await page.getByTestId("dock-toggle-right").click();
   await expect(ticks).toHaveCount(0);
   await menuButton.click();
   const menuEntries = page.locator("[data-outline-menu-entry]");
@@ -158,7 +159,7 @@ test("minimap ticks + hover preview + jump, five-turn gate, sticky group header,
   await expect(menuEntries.first()).toContainText("第一问：项目结构");
   await menuEntries.nth(2).click(); // jump and close
   await expect(menuEntries).toHaveCount(0);
-  await page.getByRole("button", { name: "打开工作区" }).click();
+  await page.getByTestId("dock-toggle-right").click();
   await expect(ticks).toHaveCount(5);
   await expect(menuButton).toHaveCount(0);
 
@@ -297,7 +298,7 @@ test("the tick rail windows to the turns around the reading position on long con
 
   // The toolbar dropdown (shown once the docked panel hides the rail) still lists EVERY
   // turn — the window is rail-only; the dropdown list scrolls instead.
-  await page.getByRole("button", { name: "打开工作区" }).click();
+  await page.getByTestId("dock-toggle-right").click();
   await expect(ticks).toHaveCount(0);
   await page.getByRole("button", { name: "对话索引" }).click();
   await expect(page.locator("[data-outline-menu-entry]")).toHaveCount(TURNS);

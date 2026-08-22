@@ -16,8 +16,7 @@ and only what shapes a value stays on screen.
 
 - The security-policy page opened with a five-sentence paragraph covering both shell entry
   points, the fixed denial text the model receives, the matching algorithm and the evasion
-  caveat. It was cut to two sentences behind a "?" on the page heading; the rule editor
-  keeps its visible "Regular expression" placeholder.
+  caveat. It was cut to two sentences behind a "?" on the page heading.
 - The dialog's pane heading gained an optional explanation slot, so any of its pages can
   carry one.
 - On the same page, adding a rule opened its form below every existing rule. The factory

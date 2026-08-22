@@ -32,8 +32,15 @@ export function UploadsSection() {
   // last digit would snap the field back to a value the user is in the middle of replacing).
   const [maxMb, setMaxMb] = useState("");
   const [totalMb, setTotalMb] = useState("");
-  /** Inline error under whichever field the server rejected. */
-  const [limitError, setLimitError] = useState<string | null>(null);
+  /**
+   * Inline error, and which fields it is about. The local shape check knows the offending field;
+   * the server's `invalid_attachment_limit` is a statement about the pair, so it marks both.
+   */
+  const [limitError, setLimitError] = useState<{
+    text: string;
+    max: boolean;
+    total: boolean;
+  } | null>(null);
   const [busy, setBusy] = useState(false);
 
   /** Adopt server-side truth: the baseline and the drafts move together. */
@@ -65,13 +72,14 @@ export function UploadsSection() {
     const parsedTotal = Number(totalMb.trim());
     // Shape-check locally so an empty or non-numeric field never becomes a NaN in the request
     // body; the RANGE is left to the server, which owns it (this form only reports its verdict).
-    if (
-      maxMb.trim() === "" ||
-      totalMb.trim() === "" ||
-      !Number.isInteger(parsedMax) ||
-      !Number.isInteger(parsedTotal)
-    ) {
-      setLimitError(S.errors.byCode.invalid_attachment_limit);
+    const maxBad = maxMb.trim() === "" || !Number.isInteger(parsedMax);
+    const totalBad = totalMb.trim() === "" || !Number.isInteger(parsedTotal);
+    if (maxBad || totalBad) {
+      setLimitError({
+        text: S.errors.byCode.invalid_attachment_limit,
+        max: maxBad,
+        total: totalBad,
+      });
       return;
     }
     if (parsedMax === settings.attachmentMaxMb && parsedTotal === settings.attachmentTotalMb) {
@@ -92,7 +100,7 @@ export function UploadsSection() {
       toastSuccess(S.common.saved);
     } catch (e) {
       if (e instanceof ApiError && e.code === "invalid_attachment_limit") {
-        setLimitError(apiErrorText(e));
+        setLimitError({ text: apiErrorText(e), max: true, total: true });
       } else {
         toastError(apiErrorText(e));
       }
@@ -112,6 +120,7 @@ export function UploadsSection() {
     >
       <Input
         label={S.settings.attachmentMaxMb}
+        required
         size="sm"
         type="number"
         inputMode="numeric"
@@ -123,6 +132,7 @@ export function UploadsSection() {
         )}
         value={maxMb}
         disabled={!hydrated}
+        {...(limitError?.max === true ? { error: limitError.text } : {})}
         onChange={(e) => {
           setMaxMb(e.target.value);
           if (limitError !== null) setLimitError(null);
@@ -130,6 +140,7 @@ export function UploadsSection() {
       />
       <Input
         label={S.settings.attachmentTotalMb}
+        required
         size="sm"
         type="number"
         inputMode="numeric"
@@ -141,7 +152,13 @@ export function UploadsSection() {
         )}
         value={totalMb}
         disabled={!hydrated}
-        {...(limitError !== null ? { error: limitError } : {})}
+        {...(limitError?.total === true
+          ? // The message renders once, on the first field at fault; a second faulty field is
+            // marked without repeating the sentence.
+            limitError.max
+            ? { invalid: true }
+            : { error: limitError.text }
+          : {})}
         onChange={(e) => {
           setTotalMb(e.target.value);
           if (limitError !== null) setLimitError(null);

@@ -18,6 +18,7 @@ import { S } from "../../lib/strings";
 import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
 import { formatTime, humanizeTokens } from "../../lib/format";
 import { Badge, stopReasonTone } from "../../components/ui/badge";
+import { RequiredMark } from "../../components/ui/field";
 import type { BadgeTone } from "../../components/ui/badge";
 import { ZoomableImage } from "../../components/ui/image-zoom";
 
@@ -256,7 +257,7 @@ function ParamsTable({ schema }: { schema: Record<string, unknown> }) {
           <tr key={name} className="align-top">
             <td className="whitespace-nowrap pr-3 font-mono text-gray-700 dark:text-gray-300">
               {name}
-              {required.has(name) && <span className="ml-0.5 text-red-500">*</span>}
+              {required.has(name) && <RequiredMark label={S.traces.requiredParam} />}
             </td>
             <td className="whitespace-nowrap pr-3 font-mono text-gray-400 dark:text-gray-500">
               {typeOf(s)}

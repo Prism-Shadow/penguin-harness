@@ -8,10 +8,7 @@
  * returned action under its own layout guards.
  */
 import { describe, expect, it } from "vitest";
-import {
-  advancePanelTaskScope,
-  createPanelTaskScope,
-} from "../src/features/chat/use-subagents-panel";
+import { advancePanelTaskScope, createPanelTaskScope } from "../src/features/chat/panel-task-scope";
 
 const obs = (sessionId: string | null, taskCount: number, liveSpawn = false) => ({
   sessionId,
