@@ -106,7 +106,7 @@ import { buildInputHistory } from "./input-history";
 import { buildOutline } from "./outline-model";
 import { GoalStatusBanner } from "./goal-banner";
 import { handoffMessage, modelSwitchMessage } from "./agent-handoff";
-import { sameModelRef } from "../models/model-grouping";
+import { hasConfiguredKey, sameModelRef } from "../models/model-grouping";
 import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
 import { FilesPanel } from "./files-panel";
 import { useFilesPanel } from "./use-files-panel";
@@ -998,6 +998,8 @@ export function ChatPage() {
   // gated by the server prefs' credentialGuideSeen — previously it checked "default model has no
   // key" and popped up a dialog on every visit to the chat page, which was repeated nagging for
   // users who simply don't intend to configure a key / use environment variables instead.
+  // "Has a key" is hasConfiguredKey, the same rule the model library and the model picker use: a
+  // model backed by an exported environment variable is configured and must not be nagged.
   useEffect(() => {
     if (!projectId) return;
     let cancelled = false;
@@ -1010,7 +1012,7 @@ export function ChatPage() {
         const { prefs } = await api.getPrefs();
         if (cancelled || prefs.credentialGuideSeen) return;
         const def = res.models.find((m) => sameModelRef(m, res.defaultModel));
-        const missing = !res.defaultModel || !def?.credential?.apiKeyMasked;
+        const missing = !res.defaultModel || !def || !hasConfiguredKey(def);
         if (missing) setCredentialGuide(true);
         // Mark as "seen" regardless of whether the dialog actually popped up: only ever once.
         void api.putPrefs({ credentialGuideSeen: true }).catch(() => undefined);

@@ -99,19 +99,29 @@ export function orderModelsLikeLibrary<T extends ModelRowLike>(rows: T[]): T[] {
   return groupModelRows(rows, "").flatMap((g) => g.rows);
 }
 
-/** Row shape for the configured-key filter: adds the read-only credential display (the DTO's ModelInfo is a superset). */
+/**
+ * Row shape for the configured-key filter: adds the read-only credential display and the masked
+ * env-fallback preview (the DTO's ModelInfo is a superset).
+ */
 export interface ModelCredentialRowLike extends ModelRowLike {
   credential?: { apiKeyMasked?: string };
+  /**
+   * Masked preview of the env-fallback value: the server emits it only for a variable that
+   * currently holds a non-empty value, so its presence is proof the environment can authenticate
+   * this entry.
+   */
+  envKeyMasked?: string;
 }
 
 /**
- * Whether the model has an API key configured: judged solely by the stored (masked) key — the
- * same standard as the chat credential guide and the model page's key status. `envKey` is only
- * the NAME of a fallback environment variable; its presence says nothing about whether that
- * variable is actually set, so it never counts as configured.
+ * Whether the model has an API key behind it — the single rule shared by the model library, the
+ * chat model picker and the chat credential guide: a stored (masked) key **or** a masked env
+ * fallback, since a user who exported the variable has configured the key just as deliberately as
+ * one who typed it into the dialog. `envKey` is only the NAME of that variable and says nothing
+ * about whether it is set, so it never counts on its own.
  */
 export function hasConfiguredKey(m: ModelCredentialRowLike): boolean {
-  return !!m.credential?.apiKeyMasked;
+  return !!m.credential?.apiKeyMasked || !!m.envKeyMasked;
 }
 
 /**
@@ -143,10 +153,10 @@ export interface VisibleChatModelsOptions {
 }
 
 /**
- * Candidate list for the chat model dropdown: library order → keep only key-configured models
- * (plus the selected and the default model, unless showAll) → the query then filters whatever
- * is visible. When NO model has a configured key, the key filter degrades to showAll
- * (everything listed), so the dropdown is never uselessly empty.
+ * Candidate list for the chat model dropdown: library order → keep only models with a key
+ * (hasConfiguredKey: stored or env-backed; plus the selected and the default model, unless
+ * showAll) → the query then filters whatever is visible. When NO model has a key, the filter
+ * degrades to showAll (everything listed), so the dropdown is never uselessly empty.
  */
 export function visibleChatModels<T extends ModelCredentialRowLike>(
   models: T[],
