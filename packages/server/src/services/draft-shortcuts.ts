@@ -9,15 +9,15 @@
  * of these numbers for its counters, and a request that never goes through that editor still
  * cannot store more than this.
  *
- * The numbers: 20 shortcuts is past the point where a click-to-pick list turns into a search
- * problem; 40 characters is what one folder row shows without truncating; 4000 characters is
- * roughly three times the longest built-in example prompt. Together they bound one user's row at
- * about 80 KB.
+ * The numbers: 3 shortcuts keeps the folder inside the examples block's height, so it never needs
+ * a scrollbar and the block does not move as folders are switched; 40 characters is what one
+ * folder row shows without truncating; 4000 characters is roughly three times the longest built-in
+ * example prompt. Together they bound one user's row at about 12 KB.
  */
 import { HttpError } from "../http/errors.js";
 import type { DraftShortcut } from "../api/types.js";
 
-export const DRAFT_SHORTCUT_MAX_COUNT = 20;
+export const DRAFT_SHORTCUT_MAX_COUNT = 3;
 export const DRAFT_SHORTCUT_TITLE_MAX = 40;
 export const DRAFT_SHORTCUT_PROMPT_MAX = 4000;
 /** Client-generated id (`sc-` + hex); the length only has to stop an id being used as storage. */

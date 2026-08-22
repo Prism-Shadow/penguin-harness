@@ -10,7 +10,7 @@
  * for this block, so a folder much longer than its siblings is what would make the height jump
  * between them. The draft screen appends one more folder that this registry does not describe —
  * the user's own saved shortcuts, whose length is theirs and not ours; it is exempt from the rule
- * by being pinned to EXAMPLE_FOLDER_ROWS and scrolling inside that (shortcuts-folder.tsx).
+ * by capping how many shortcuts it holds, not by scrolling (shortcuts-folder.tsx).
  *
  * Copy and full prompts live in the active locale dictionary at `S.chat.exampleFolders[id]`
  * and `S.chat.exampleTasks[id]`. Skills listed here are preselected in the composer only when
@@ -48,12 +48,3 @@ export type ExampleTaskId = ExampleTask["id"];
 export const EXAMPLE_TASKS: readonly ExampleTask[] = EXAMPLE_FOLDERS.flatMap((folder) => [
   ...folder.tasks,
 ]);
-
-/**
- * Rows the tallest built-in folder shows. Derived, never typed out: it is the height the draft
- * screen pins the user's shortcuts folder to, and a literal here would silently stop matching the
- * registry the first time a folder gains an example.
- */
-export const EXAMPLE_FOLDER_ROWS: number = Math.max(
-  ...EXAMPLE_FOLDERS.map((folder) => folder.tasks.length),
-);

@@ -8,10 +8,11 @@
  * - **Its rows are server state**, per user (`ui_prefs.draftShortcuts`), fetched on mount and
  *   written back on every change. Optimistic: the list updates first and rolls back with a toast
  *   if the write fails, because the value being written is already on screen.
- * - **Its length is the user's**, not the registry's. The examples block reserves no scroll area
- *   and its height must not move as folders are switched, so this folder's body is *pinned* to the
- *   tallest built-in folder's height and scrolls inside it — empty or full, it measures the same
- *   (see shortcutListHeightRem).
+ * - **Its length is the user's**, not the registry's — but bounded to SHORTCUT_MAX_COUNT, chosen
+ *   so the folder plus its New-shortcut row stays within a row of a built-in folder's height. The
+ *   examples block reserves no scroll area, and rather than pinning a height and scrolling inside
+ *   it, the cap is what keeps this folder the same shape as its siblings: no scrollbar, and the
+ *   block below moves by at most one row.
  * - **Its rows carry their own actions.** Edit and delete are plain icon buttons that are always
  *   visible, deliberately not the sidebar's hover-revealed pair: those rows have a long-press menu
  *   behind them on touch, and these have nothing, so hover-gating would put a user's own prompts
@@ -40,7 +41,6 @@ import {
   normalizeShortcuts,
   removeShortcut,
   shortcutDraftError,
-  shortcutListHeightRem,
   upsertShortcut,
 } from "./user-shortcuts";
 import type { ShortcutDraft, UserShortcut } from "./user-shortcuts";
@@ -92,14 +92,11 @@ function RowAction({
 export function ShortcutsFolder({
   open,
   onOpen,
-  rows,
   readComposerText,
   onFill,
 }: {
   open: boolean;
   onOpen: () => void;
-  /** Rows the tallest built-in folder shows: the height this folder's body is pinned to. */
-  rows: number;
   /** The composer's current text, read at click time — a new shortcut starts from what was typed. */
   readComposerText: () => string;
   /** Hand the saved prompt to the composer. Pins no Skills; see user-shortcuts.ts. */
@@ -152,7 +149,6 @@ export function ShortcutsFolder({
     setDraft(null);
   };
 
-  const bodyHeight = `${shortcutListHeightRem(rows)}rem`;
   const draftError = draft === null ? null : shortcutDraftError(draft);
   const editing = draft !== null && draft.id !== null;
 
@@ -167,9 +163,9 @@ export function ShortcutsFolder({
       />
 
       {open && (
-        /* Fixed height, scrolling inside: the block below the composer must not move when a
-           folder with an arbitrary number of rows is opened. */
-        <div className="mt-0.5 overflow-y-auto pl-4" style={{ height: bodyHeight }}>
+        /* No fixed height and no scroll: SHORTCUT_MAX_COUNT bounds this folder to a built-in
+           folder's height plus the New-shortcut row. */
+        <div className="mt-0.5 pl-4">
           {loaded && (
             <ul className="space-y-0.5">
               {shortcuts.map((shortcut) => (

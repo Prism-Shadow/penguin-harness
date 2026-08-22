@@ -27,7 +27,7 @@ import type { DraftShortcut } from "@prismshadow/penguin-server/api";
 export type UserShortcut = DraftShortcut;
 
 /** Most shortcuts one user may keep. Past this a click-to-pick list is a search problem. */
-export const SHORTCUT_MAX_COUNT = 20;
+export const SHORTCUT_MAX_COUNT = 3;
 /** Longest title, in characters: what one folder row shows without truncating. */
 export const SHORTCUT_TITLE_MAX = 40;
 /** Longest prompt body, in characters: about three times the longest built-in example. */
@@ -149,21 +149,4 @@ export function defaultShortcutTitle(prompt: string): string {
   const line = prompt.split("\n").find((l) => l.trim() !== "");
   if (line === undefined) return "";
   return line.trim().replace(/\s+/g, " ").slice(0, SHORTCUT_TITLE_MAX);
-}
-
-/**
- * Height of the shortcut list's scroll box, in rem, for a folder body of `rows` rows.
- *
- * The examples block reserves no scroll area and sits between two equal spacers, so its height
- * must not change as folders are switched. A built-in folder's height is its row count; this
- * folder holds however many shortcuts the user saved, so it is instead *pinned* to the tallest
- * built-in folder's height and scrolls inside it — full or empty, the block measures the same.
- *
- * rem rather than px: a row is 1.25rem of line box inside 0.375rem of padding top and bottom, and
- * rows are separated by 0.125rem, so all three terms scale with the root font size. A px box would
- * clip its last row for a reader who enlarged it.
- */
-export function shortcutListHeightRem(rows: number): number {
-  const n = Math.max(1, rows);
-  return n * 2 + (n - 1) * 0.125;
 }

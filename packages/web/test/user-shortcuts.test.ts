@@ -19,7 +19,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { buildExampleFill } from "../src/features/chat/example-fill";
-import { EXAMPLE_FOLDERS, EXAMPLE_FOLDER_ROWS } from "../src/features/chat/example-tasks";
+import { EXAMPLE_FOLDERS } from "../src/features/chat/example-tasks";
 import {
   SHORTCUT_MAX_COUNT,
   SHORTCUT_PROMPT_MAX,
@@ -30,7 +30,6 @@ import {
   normalizeShortcuts,
   removeShortcut,
   shortcutDraftError,
-  shortcutListHeightRem,
   upsertShortcut,
 } from "../src/features/chat/user-shortcuts";
 import type { UserShortcut } from "../src/features/chat/user-shortcuts";
@@ -207,25 +206,19 @@ describe("the examples block keeps its height", () => {
     expect(Math.max(...lengths) - Math.min(...lengths)).toBeLessThanOrEqual(1);
   });
 
-  it("derives the pinned height from the registry rather than a literal", () => {
-    expect(EXAMPLE_FOLDER_ROWS).toBe(Math.max(...EXAMPLE_FOLDERS.map((f) => f.tasks.length)));
+  it("keeps the user folder within one row of the built-in ones", () => {
+    // Its rows are the saved shortcuts plus the always-present New shortcut row. The cap is what
+    // holds this — not a pinned height with a scrollbar inside it.
+    const tallestBuiltIn = Math.max(...EXAMPLE_FOLDERS.map((f) => f.tasks.length));
+    expect(SHORTCUT_MAX_COUNT + 1 - tallestBuiltIn).toBeLessThanOrEqual(1);
   });
 
-  it("measures a row box the way the rows are actually built", () => {
-    // One row: a 1.25rem line box inside 0.375rem of padding top and bottom; rows are separated
-    // by 0.125rem. rem, not px, so an enlarged root font size does not clip the last row.
-    expect(shortcutListHeightRem(1)).toBeCloseTo(2);
-    expect(shortcutListHeightRem(3)).toBeCloseTo(6.25);
-    expect(shortcutListHeightRem(5)).toBeCloseTo(10.5);
-    // A zero-row registry would otherwise collapse the folder to nothing.
-    expect(shortcutListHeightRem(0)).toBeCloseTo(2);
-  });
-
-  it("pins the user folder to that height and lets it scroll inside it", () => {
+  it("gives the user folder no scroll box of its own", () => {
+    // A scrollbar inside a folder of at most a few rows reads as a defect; the cap removes the
+    // need for one, so the markup must not reintroduce it.
     const source = read("../src/features/chat/shortcuts-folder.tsx");
-    expect(source).toContain("shortcutListHeightRem(rows)");
-    expect(source).toContain("overflow-y-auto");
-    expect(source).toContain("style={{ height: bodyHeight }}");
+    expect(source).not.toContain("overflow-y-auto");
+    expect(source).not.toContain("bodyHeight");
   });
 });
 

@@ -64,7 +64,7 @@ import { toastError } from "../../components/ui/toast";
 import { useVersionInfo } from "../../lib/use-version-info";
 import { ChatInput } from "./chat-input";
 import type { ComposerControl } from "./chat-input";
-import { EXAMPLE_FOLDERS, EXAMPLE_FOLDER_ROWS } from "./example-tasks";
+import { EXAMPLE_FOLDERS } from "./example-tasks";
 import type { ExampleFolderId, ExampleTask } from "./example-tasks";
 import { ExampleFolderRow, exampleRowClass } from "./example-folder-row";
 import { SHORTCUTS_FOLDER_ID, ShortcutsFolder } from "./shortcuts-folder";
@@ -803,7 +803,6 @@ export function DraftView({
           <ShortcutsFolder
             open={openFolder === SHORTCUTS_FOLDER_ID}
             onOpen={() => setOpenFolder(SHORTCUTS_FOLDER_ID)}
-            rows={EXAMPLE_FOLDER_ROWS}
             readComposerText={() => textRef.current}
             onFill={fillShortcut}
           />
