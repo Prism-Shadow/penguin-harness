@@ -1221,15 +1221,18 @@ When done, open index.html in a browser and self-test once.`,
         prompt:
           "Build a Muse Dash-style rhythm runner: the character runs forward on its own, notes " +
           "travel in with the music, and I hit them on the beat — audio and visuals have to stay " +
-          "tightly in sync.",
+          "tightly in sync. Grade each hit perfect/good/miss, score combos, and let the difficulty " +
+          "climb as the track goes on. Pure front end, one file, playable straight from file://.",
       },
       investmentCopilot: {
         label: "Conversational investment analyst",
         desc: "A market-watching Copilot on the Penguin SDK: refreshes the market view on a cycle from startup, with the evidence behind every call",
         prompt:
-          "Build a stock-market Copilot on the Penguin SDK: from startup it refreshes the market " +
-          "and sector picture every 5 minutes and states the evidence behind each trend call — " +
-          "analysis of public data, not investment advice. Add a CLI that looks up one ticker.",
+          "Build a stock-market Copilot on the Penguin SDK: from startup it pulls live market data " +
+          "every 5 minutes, weighs the sectors against each other and picks out the stocks trending " +
+          "strongest, giving the evidence behind every call — the data, the indicators, the window it " +
+          "read. Analysis of public data, not investment advice. Add a CLI that looks up one ticker " +
+          "and runs the same analysis on it.",
       },
       rag: {
         label: "Build a Claude Code docs RAG agent",
@@ -1282,21 +1285,26 @@ Scenarios:
         desc: "09:00 every day: talk through the day's plan in this same chat, and review yesterday's progress",
         prompt:
           "Set up a scheduled task: every day at 9am, in this same conversation, plan today's work " +
-          "with me and review yesterday's progress.",
+          "with me. Read back over the conversation first and say what yesterday's plan got done and " +
+          "where it stuck, then offer an ordered shortlist for today with a line of reasoning each, " +
+          "and write up what I confirm as a checklist.",
       },
       githubDigest: {
         label: "Daily GitHub project digest",
         desc: "A daily pass over one repo's issues, PRs and CI, ending in prioritized recommendations",
         prompt:
-          "Set up a scheduled task: every morning, digest one GitHub repo's issues, PRs and CI, " +
-          "ending with recommendations ranked by priority.",
+          "Set up a scheduled task: every morning, use gh to digest one GitHub repo's issues, PRs " +
+          "and CI — surface what has stalled, what is waiting on review and what is failing — and " +
+          "end with recommendations ranked by priority, each saying why it sits where it does.",
       },
       memoryReview: {
         label: "Friday memory review",
         desc: "Friday evening: go through what is worth remembering from the week and write it into Memory",
         prompt:
           "Set up a scheduled task: every Friday evening, in this same conversation, go through " +
-          "what is worth remembering from the week with me, and write what I confirm into Memory.",
+          "what is worth remembering from the week with me. Check the existing memory index first so " +
+          "nothing is duplicated, then take it item by item — what to record, what to revise — and " +
+          "write what I confirm into Memory.",
       },
     },
     sessionList: "Sessions",

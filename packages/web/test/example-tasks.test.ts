@@ -170,10 +170,11 @@ describe("scheduled-task examples", () => {
 });
 
 /**
- * These five are written to be read by the user before they run, so each is a sentence or two
- * carrying only what the request would be wrong without. The caps below are a ceiling against
- * re-inflation, not a target. Only these five are covered: the older briefs in the catalog are
- * still long and are being shortened separately.
+ * These five are written to be read by the user before they run, so each is a short paragraph —
+ * around 100 Chinese characters — carrying what to build plus the constraints the result would be
+ * wrong without, and none of the step-by-step detail the Agent works out or asks about. The caps
+ * below are a ceiling against re-inflation, not a target. Only these five are covered: the older
+ * briefs in the catalog are still far longer and are being shortened separately.
  */
 describe("short example prompts", () => {
   const shortExamples = [
@@ -184,8 +185,16 @@ describe("short example prompts", () => {
     },
     {
       id: "investmentCopilot",
-      zhMarkers: ["Penguin SDK", "启动后", "板块", "依据", "CLI"],
-      enMarkers: ["Penguin SDK", "from startup", "sector", "evidence", "CLI"],
+      zhMarkers: ["Penguin SDK", "启动后", "实时抓取", "板块", "股票", "依据", "CLI"],
+      enMarkers: [
+        "Penguin SDK",
+        "from startup",
+        "live market",
+        "sector",
+        "stocks",
+        "evidence",
+        "CLI",
+      ],
     },
     { id: "dailyPlan", zhMarkers: ["计划"], enMarkers: ["plan"] },
     { id: "githubDigest", zhMarkers: ["GitHub", "优先级"], enMarkers: ["GitHub", "priority"] },
@@ -193,8 +202,8 @@ describe("short example prompts", () => {
   ] as const;
 
   it.each(shortExamples)("$id stays within the length ceiling", ({ id }) => {
-    expect(zh.chat.exampleTasks[id].prompt.length).toBeLessThanOrEqual(90);
-    expect(en.chat.exampleTasks[id].prompt.length).toBeLessThanOrEqual(280);
+    expect(zh.chat.exampleTasks[id].prompt.length).toBeLessThanOrEqual(140);
+    expect(en.chat.exampleTasks[id].prompt.length).toBeLessThanOrEqual(420);
   });
 
   // What is left after the cut: what to build, and the constraints without which the result

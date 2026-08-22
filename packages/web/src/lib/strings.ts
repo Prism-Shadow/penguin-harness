@@ -1107,10 +1107,11 @@ export const zh = {
     },
     /**
      * Example task cards on the draft screen: one click loads the canned prompt for the user.
-     * Keep a prompt SHORT — a sentence or two carrying only what the request would be wrong
-     * without. File layouts, field lists, step-by-step headings and self-test instructions are
-     * what the Agent works out or asks about, so they stay out; the older briefs below are still
-     * long and are being trimmed to match.
+     * Keep a prompt SHORT — a short paragraph, around 100 Chinese characters, carrying what to
+     * build plus the constraints the result would be wrong without. File layouts, field lists,
+     * step-by-step headings and self-test instructions are what the Agent works out or asks
+     * about, so they stay out; the older briefs below are still far longer and are being trimmed
+     * to match.
      */
     exampleTasks: {
       game: {
@@ -1180,14 +1181,16 @@ Penguin 视觉风格（见 web-design 技能），默认深色。手机端侧边
         desc: "喵斯快跑式的音乐节奏跑酷：音符随音乐推进，踩着节拍击打",
         prompt:
           "做一个喵斯快跑（Muse Dash）式的音乐节奏跑酷小游戏：角色自动前进，音符随音乐推进，" +
-          "踩着节拍击打，音画要严格对齐。",
+          "踩着节拍击打，音画要严格对齐。判定分完美/良好/失误三档，连击计分，难度随曲子推进。" +
+          "纯前端单文件，file:// 直接打开即玩。",
       },
       investmentCopilot: {
         label: "对话式投资分析助理",
         desc: "用 Penguin SDK 做能看盘的 Copilot：启动即周期刷新大盘与板块，每个判断都给出依据",
         prompt:
-          "用 Penguin SDK 做一个股市 Copilot：启动后每 5 分钟刷新大盘与板块，判断走势并给出依据" +
-          "（只做分析，不是投资建议），另配一个查单只股票的 CLI。",
+          "用 Penguin SDK 做一个股市 Copilot：启动后每 5 分钟实时抓取大盘行情，" +
+          "分析板块强弱、挑出走势较好的股票，每个判断都给出依据（数据、指标、时间区间），" +
+          "只做分析不是投资建议；另配一个 CLI，可以查询特定股票的行情与同样的分析。",
       },
       rag: {
         label: "构建 Claude Code 文档 RAG 智能体",
@@ -1237,19 +1240,24 @@ Benchmark：
       dailyPlan: {
         label: "每天早 9 点的计划对话",
         desc: "每天 09:00 在同一个会话里聊当天计划，并回顾昨天的进展",
-        prompt: "建一个定时任务：每天早上 9 点在这个会话里和我聊今天的计划，并回顾昨天的进展。",
+        prompt:
+          "建一个定时任务：每天早上 9 点在这个会话里和我聊今天的计划。" +
+          "先回看上文说清昨天定的事做完了多少、哪些卡住，再给我一份排好序的今日候选、每条一句理由，" +
+          "我确认后写成清单。",
       },
       githubDigest: {
         label: "每天汇总 GitHub 项目状态",
         desc: "定时跑一遍仓库的 Issue、PR 与 CI，日报结尾给出按优先级排序的建议",
         prompt:
-          "建一个定时任务：每天早上汇总一个 GitHub 仓库的 Issue、PR 与 CI 状态，结尾给出按优先级排序的建议。",
+          "建一个定时任务：每天早上用 gh 汇总一个 GitHub 仓库的 Issue、PR 与 CI 状态，" +
+          "挑出停滞的、待评审的和挂掉的，结尾给出按优先级排序的建议，每条说清为什么排在这个位置。",
       },
       memoryReview: {
         label: "每周五晚回顾并记录 Memory",
         desc: "周五傍晚一起过一遍这周值得长期记住的事，确认后由你写进 Memory",
         prompt:
-          "建一个定时任务：每周五傍晚在这个会话里和我过一遍这周值得长期记住的事，我确认后你写进 Memory。",
+          "建一个定时任务：每周五傍晚在这个会话里和我过一遍这周值得长期记住的事。" +
+          "先看已有记忆索引避免重复，再逐条问我该记什么、要不要改已有的，我确认后你写进 Memory。",
       },
     },
     sessionList: "Session",
