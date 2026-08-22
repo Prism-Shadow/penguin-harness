@@ -390,3 +390,70 @@ describe("upgrade assets: an unchanged set is not copied again", () => {
     expect(fsSync.existsSync(path.join(dir, ".materialized"))).toBe(true);
   });
 });
+
+/** A bundle whose create() throws — the boot-failure shape a bad push lands in. */
+const BOOM_PLATFORM = `
+const anySchema = {
+  strictParse: (doc) => ({ ok: true, value: doc === undefined ? {} : doc }),
+  describe: () => ({ kind: "any" }),
+};
+const iface = {
+  kind: "iface",
+  name: "platform",
+  version: 1,
+  context: anySchema,
+  methods: ["park", "info"],
+  children: {},
+  migrations: {},
+};
+const impl = {
+  create() {
+    throw new Error("boom: create failed");
+  },
+};
+export const hotPlatform = { id: "boom", iface, impl, context: {} };
+`;
+
+describe("upgrade boot failure: the previous version is re-booted, not left half-dead", () => {
+  let t: TestApp | undefined;
+
+  afterEach(async () => {
+    if (t) await t.cleanup();
+    t = undefined;
+  });
+
+  it("a failing push errors, and the machine keeps serving on a RE-BOOTED previous version", async () => {
+    t = await createTestApp();
+    const cookie = (await loginAdmin(t.app)).cookie;
+    const before = await t.deps.hmr.ensure();
+
+    const res = await pushPlatform(t.app, cookie, BOOM_PLATFORM);
+    expect(res.status).toBe(400);
+    expect(JSON.stringify(await res.json())).toMatch(/failed to boot.*boom/);
+
+    // Recovery is a fresh boot of the previous version — a NEW instance, not the
+    // disposed old one limping on through its closures (whose manager is closed and
+    // whose current-App pointer is released).
+    const after = await t.deps.hmr.ensure();
+    expect(after).not.toBe(before);
+    expect(after.api.info()).toMatchObject({ impl: "packaged" });
+    // The business surface answers — the half-dead symptom this recovery exists to
+    // prevent was "routes answer but the App behind them is stopped".
+    const client = apiClient(t.app, cookie);
+    const me = await client.get("/api/me");
+    expect(me.status).toBe(200);
+
+    // And the channel is not poisoned: the next good push lands normally.
+    const good = await pushPlatform(
+      t.app,
+      cookie,
+      platformServing(["/api/demo/after-recovery"], "recovered-push"),
+    );
+    expect(good.status).toBe(200);
+    const served = await t.app.request("/api/demo/after-recovery", {
+      headers: { cookie },
+    });
+    expect(served.status).toBe(200);
+    expect((await served.json()) as object).toMatchObject({ servedBy: "recovered-push" });
+  });
+});

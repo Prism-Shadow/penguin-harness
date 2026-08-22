@@ -13,13 +13,12 @@
  *   single-writer; the ServerConfig object — the listen callback writes the real port
  *   back into it and every reader must observe that write).
  *
- * A platform booted by a runtime that publishes none of this (an older runtime, or a
- * bare kernel in tests) simply builds no business surface — the capability being absent
- * IS the signal, and terminals keep working regardless.
+ * What a booting platform does when the capabilities are missing or wrong — refuse, or
+ * run terminals-only for a declared bare kernel — is {@link RuntimeClaim}'s story, below.
  *
- * The reverse direction is ONE entry: the pointer to the current App ({@link
- * PlatformCurrent}) — deps, route table and graceful wrap-up published together in a
- * single registry write.
+ * There is no reverse direction here: the runtime reaches the current App through the
+ * instance `hmr.ensure()` already returns (in-process api members), never through the
+ * registry.
  */
 import type { DatabaseSync } from "node:sqlite";
 import type { Resources } from "@prismshadow/penguin-core/kernel";
@@ -27,9 +26,9 @@ import type { ServerConfig } from "../config.js";
 import type { AuthService } from "../auth/service.js";
 import type { ChannelHub } from "../runtime/channel.js";
 import type { ProxySettings } from "../net/proxy.js";
+import type { BuildDepsOverrides } from "../app.js";
 import type { HmrHost } from "../hmr/host.js";
 import type { DesktopService } from "../services/desktop-service.js";
-import type { AppDeps } from "../app.js";
 
 /**
  * What one side of the seam speaks: a family, and a Go-style structural interface per
@@ -119,10 +118,15 @@ export const RUNTIME_INTERFACES: RuntimeInterfaces = {
     "changePassword",
     "loginDesktop",
     "setPasswordDesktop",
+    "setProvisioner",
   ],
-  channels: ["get", "peek", "broadcast", "dispose"],
+  channels: ["get", "peek", "broadcast", "dispose", "setActivityProbe"],
   proxy: [],
-  hmr: ["resources", "ensure", "resolveWebSource", "dispose"],
+  hmr: ["resources", "ensure", "resolveWebSource", "assetsDir", "dispose"],
+  // The construction-override seam (BuildDepsOverrides): production publishes {}, tests
+  // publish live collaborators (loader fakes, clocks). Presence-only — its fields are all
+  // optional, so there are no members to verify.
+  overrides: [],
   desktop: ["onShutdownRequest", "requestShutdown", "verifyToken", "redeemLoginToken"],
 };
 
@@ -186,8 +190,6 @@ export const RUNTIME_HMR_RESOURCE_ID = "runtime:hmr-host";
 export const RUNTIME_DESKTOP_RESOURCE_ID = "runtime:desktop";
 /** Test-only: BuildDepsOverrides published by bootAppDeps for the platform boot to claim. */
 export const RUNTIME_OVERRIDES_RESOURCE_ID = "runtime:overrides";
-/** Reverse direction: THE pointer to the current App (see {@link PlatformCurrent}). */
-export const PLATFORM_CURRENT_RESOURCE_ID = "platform:current";
 
 /**
  * The {@link Interfaces} descriptor each App leaves for its successor, naming the
@@ -203,22 +205,16 @@ export const PLATFORM_CURRENT_RESOURCE_ID = "platform:current";
  */
 export const RESOURCE_IFACES_RESOURCE_ID = "resource-interfaces";
 
-/**
- * The one object a swap publishes — deps, route table and wrap-up together, so flipping
- * to a new App is a single registry write and no reader can ever see a half-swapped pair
- * (new deps with the old routes, or the reverse). Everything runtime-side that needs the
- * current App resolves this pointer at use time: the seam middleware dispatches into
- * `app`, auth late-binds provisioning through `deps`, index.ts's shutdown awaits
- * `shutdown`.
+/*
+ * There is deliberately NO reverse-direction registry entry. The runtime already holds
+ * the current App — it is `hmr.ensure()`'s instance — and everything it needs from the
+ * business side is an in-process member on that instance's api (`business()`,
+ * `shutdown()`, `drained()`) or a hook the App installs over a claimed capability
+ * (ChannelHub.setActivityProbe, AuthService.setProvisioner). A "current App" pointer in
+ * the registry was a duplicate of the host's own instance field, and the registry should
+ * carry only what has no other channel: resources, capabilities, and the contract
+ * declarations about them.
  */
-export interface PlatformCurrent {
-  /** The business deps this App built, or null when the runtime published no capabilities. */
-  deps: AppDeps | null;
-  /** The App's whole Hono route table (terminal + business), fetch-shaped for cross-bundle safety. */
-  app: { fetch(request: Request): Response | Promise<Response> };
-  /** Process-exit graceful drain (manager ≤5s wrap-up); absent when no business runs. */
-  shutdown?: () => Promise<void>;
-}
 
 /** Applies proxy settings to the RUNTIME's global dispatcher (see net/proxy.ts). */
 export type ProxyControl = (settings: ProxySettings) => void;
@@ -233,34 +229,61 @@ export interface RuntimeCapabilities {
   hmr: HmrHost;
   /** Null on a non-desktop server (a real value, not an absent capability). */
   desktop: DesktopService | null;
+  /** The construction-override seam; {} outside tests. */
+  overrides: BuildDepsOverrides;
 }
 
 /**
- * Claims the full capability set, or null when any piece is missing — a partial claim
- * would build a business surface over half a runtime, which is worse than the honest
- * "this runtime publishes no business capabilities" degradation.
+ * The outcome of asking the host what it is, decided entirely by what it published:
+ *
+ * - `claimed` — a descriptor of this family offering the full capability set, with every
+ *   live object carrying the members the descriptor names.
+ * - `bare` — a descriptor of this family offering NONE of the capabilities: the host's
+ *   own declaration that there is no business runtime behind it (a bare kernel in
+ *   tests). Terminals-only is legal there. The declaration rides the descriptor the
+ *   handshake already reads — a host that offers nothing SAYS so, in the same document
+ *   every host describes itself in, rather than through a side-channel marker.
+ * - `refused` — everything else, with the reason: no descriptor (a runtime too old for
+ *   the handshake), a different family, a partial offer, or a live object that does not
+ *   carry what the descriptor promised. Booting a business platform over any of these
+ *   would put a new frontend in front of an older runtime's own routes.
  */
-export function claimRuntimeCapabilities(resources: Resources): RuntimeCapabilities | null {
-  // The handshake first: a runtime speaking different interfaces (or one too old to
-  // publish a descriptor at all) must not be claimed against — the members behind the IDs
-  // are exactly what the descriptor stands for.
-  const mismatch = interfaceMismatch(
-    resources.claim<Interfaces>(RUNTIME_INTERFACES_RESOURCE_ID),
-    RUNTIME_INTERFACES,
-  );
-  if (mismatch !== null) {
-    console.warn(`[platform] runtime interfaces: ${mismatch}; declining the claim`);
-    return null;
+export type RuntimeClaim =
+  | { kind: "claimed"; caps: RuntimeCapabilities }
+  | { kind: "bare" }
+  | { kind: "refused"; reason: string };
+
+export function claimRuntimeCapabilities(resources: Resources): RuntimeClaim {
+  const offered = resources.claim<Interfaces>(RUNTIME_INTERFACES_RESOURCE_ID);
+  if (offered === undefined) {
+    return { kind: "refused", reason: "no interface descriptor published" };
   }
+  if (offered.family !== RUNTIME_INTERFACES.family) {
+    return {
+      kind: "refused",
+      reason: `family '${String(offered.family)}' != '${String(RUNTIME_INTERFACES.family)}'`,
+    };
+  }
+  // A family-matching descriptor that offers none of the required capabilities IS the
+  // bare-kernel declaration; offering SOME of them is a broken runtime, refused below.
+  const required = Object.keys(RUNTIME_INTERFACES).filter((name) => name !== "family");
+  if (required.every((name) => members(offered, name) === undefined)) {
+    return { kind: "bare" };
+  }
+  const mismatch = interfaceMismatch(offered, RUNTIME_INTERFACES);
+  if (mismatch !== null) return { kind: "refused", reason: mismatch };
   const config = resources.claim<ServerConfig>(RUNTIME_CONFIG_RESOURCE_ID);
   const db = resources.claim<DatabaseSync>(RUNTIME_DB_RESOURCE_ID);
   const authService = resources.claim<AuthService>(RUNTIME_AUTH_RESOURCE_ID);
   const channels = resources.claim<ChannelHub>(RUNTIME_CHANNELS_RESOURCE_ID);
   const proxyControl = resources.claim<ProxyControl>(RUNTIME_PROXY_RESOURCE_ID);
   const hmr = resources.claim<HmrHost>(RUNTIME_HMR_RESOURCE_ID);
-  if (!config || !db || !authService || !channels || !proxyControl || !hmr) return null;
+  if (!config || !db || !authService || !channels || !proxyControl || !hmr) {
+    return { kind: "refused", reason: "a declared capability was not actually published" };
+  }
   // Desktop is nullable by meaning, so it sits outside the all-present check.
   const desktop = resources.claim<DesktopService | null>(RUNTIME_DESKTOP_RESOURCE_ID) ?? null;
+  const overrides = resources.claim<BuildDepsOverrides>(RUNTIME_OVERRIDES_RESOURCE_ID) ?? {};
   // …then the objects themselves. A descriptor is a claim about what is there; this is
   // the part that checks it, so an honest-but-wrong runtime is caught here rather than at
   // the first call site. `desktop` is exempt when null — that is a value, not a shortfall.
@@ -278,9 +301,11 @@ export function claimRuntimeCapabilities(resources: Resources): RuntimeCapabilit
     if (!Array.isArray(need)) continue;
     const lacking = lacksMembers(value, need);
     if (lacking.length > 0) {
-      console.warn(`[platform] runtime ${name} lacks ${lacking.join(", ")}; declining the claim`);
-      return null;
+      return { kind: "refused", reason: `runtime ${name} lacks ${lacking.join(", ")}` };
     }
   }
-  return { config, db, authService, channels, proxyControl, hmr, desktop };
+  return {
+    kind: "claimed",
+    caps: { config, db, authService, channels, proxyControl, hmr, desktop, overrides },
+  };
 }

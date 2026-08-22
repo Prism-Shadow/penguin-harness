@@ -34,12 +34,10 @@ import { buildAppDeps, createApp, type AppDeps, type BuildDepsOverrides } from "
 import { seamHttp } from "./hono-seam.js";
 import {
   PENGUIN_FAMILY,
-  PLATFORM_CURRENT_RESOURCE_ID,
   RESOURCE_IFACES_RESOURCE_ID,
-  RUNTIME_OVERRIDES_RESOURCE_ID,
   claimRuntimeCapabilities,
 } from "./capabilities.js";
-import type { Interfaces, MembersOf, PlatformCurrent } from "./capabilities.js";
+import type { Interfaces, MembersOf } from "./capabilities.js";
 
 export interface PlatformApi extends Park {
   info(): Json;
@@ -56,6 +54,20 @@ export interface PlatformApi extends Park {
    */
   terminals(): TerminalManager;
   attachStream(ws: WebSocket, session: TerminalSession, url: URL, log: (l: string) => void): void;
+  /**
+   * The business deps this App built (null on a declared bare kernel). In-process member,
+   * NOT a registry entry: the runtime holds this instance already (hmr.ensure()), so a
+   * "current App" pointer in the registry would be a duplicate channel.
+   */
+  business(): AppDeps | null;
+  /** Process-exit graceful drain (manager ≤5s wrap-up, workflow park); no-op without business. */
+  shutdown(): Promise<void>;
+  /**
+   * The asynchronous tail of this App's dispose — set by the dispose effect, awaited by
+   * the KERNEL between dispose and the successor's boot (see core kernel/upgrade.ts), so
+   * a new App never races the old one's aborted work. Undefined until disposed.
+   */
+  drained(): Promise<void> | undefined;
 }
 
 /**
@@ -84,7 +96,6 @@ export const PlatformIface = defineIface<PlatformApi, PlatformCtx>({
 interface ParkedInterfaces extends Interfaces {
   family: string;
   terminal: MembersOf<TerminalSession>;
-  platform: MembersOf<PlatformCurrent>;
 }
 
 export const DECLARED_RESOURCES: ParkedInterfaces = {
@@ -113,12 +124,32 @@ export const DECLARED_RESOURCES: ParkedInterfaces = {
     "kill",
     "dispose",
   ],
-  // The current-App pointer (see PlatformCurrent).
-  platform: ["deps", "app"],
 };
+
+/**
+ * How long a swap or a process exit waits for aborted work to actually end (the kernel
+ * awaits api.drained() between dispose and the successor's boot). A cap, not a sleep: the
+ * drain resolves the moment the last aborted run settles.
+ */
+const DRAIN_GRACE_MS = 5000;
 
 export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
   async create(ctx, context) {
+    // The claim comes FIRST, before a single registry read is acted on, and "refused" is a
+    // throw — what each outcome means and why lives on RuntimeClaim (capabilities.ts).
+    // The check sits HERE, in the bundle, because the runtime that needs it is by
+    // definition too old to receive it; failing this early costs nothing — doUpgradeAll
+    // rolls the whole upgrade back, and a hot upgrade cannot land what a fresh start
+    // would refuse (bootAppDeps treats a business-less platform as fatal too).
+    const claim = claimRuntimeCapabilities(ctx.resources);
+    if (claim.kind === "refused") {
+      throw new Error(
+        `this runtime publishes no business capabilities this platform can claim ` +
+          `(${claim.reason}) — update the installation itself; a push replaces the ` +
+          `platform, never the runtime`,
+      );
+    }
+    const caps = claim.kind === "claimed" ? claim.caps : null;
     // Resource-interface reconciliation, BEFORE anything is adopted: integrate the groups
     // the predecessor declared at the version this build also declares, hard-stop the
     // rest — a version bump or a dropped group means this create() does not speak the
@@ -140,23 +171,26 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     // declaration, whatever generation it is.
     ctx.resources.register(RESOURCE_IFACES_RESOURCE_ID, DECLARED_RESOURCES);
 
-    const terminals = new TerminalManager(ctx.resources);
+    const terminals = new TerminalManager(ctx.resources, {
+      // A pushed bundle's node-pty binaries live where the host materialized them.
+      assets: () => caps?.hmr.assetsDir() ?? null,
+    });
     // Shells started before this instance existed are still running in the registry: claim
     // them back so a push is invisible to whoever was typing in one.
     terminals.adopt(context.terminals ?? []);
-    const identity = identityFrom(ctx.resources);
+    // Ordinary code over the claimed capability (see terminal/identity.ts): the resolver
+    // wraps caps.authService, the same object the business routes authenticate with. A
+    // bare kernel has no auth — terminals stay fail-closed there.
+    const identity = identityFrom(caps?.authService ?? null);
 
     // The business deps, built per App over the runtime's published capabilities — see
-    // app.ts's buildAppDeps and ./capabilities.ts. A runtime that publishes nothing
-    // (an older runtime, a bare kernel) gets a terminals-only platform rather than a
-    // failed boot.
+    // app.ts's buildAppDeps and ./capabilities.ts. Null only for a declared bare kernel;
+    // every other capability-less host was refused above.
     let deps: AppDeps | null = null;
-    const caps = claimRuntimeCapabilities(ctx.resources);
     if (caps === null) {
-      console.warn("[platform] runtime publishes no business capabilities; terminals only");
+      console.warn("[platform] bare kernel: terminals only, no business surface");
     } else {
-      const overrides = ctx.resources.claim<BuildDepsOverrides>(RUNTIME_OVERRIDES_RESOURCE_ID);
-      deps = buildAppDeps(caps, overrides ?? {});
+      deps = buildAppDeps(caps, caps.overrides);
       // Schedule scheduler: startup reconciliation (missed, don't backfill) + periodic
       // scan; only active while this App is.
       await deps.scheduler.start();
@@ -173,23 +207,57 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     // wrap-up as a single registry write, so no reader can observe a half-swapped pair.
     const app = createApp(deps, terminals, identity);
     const business = deps;
-    const current: PlatformCurrent = {
-      deps,
-      app,
-      // Process exit wants the manager's graceful ≤5s drain, which a synchronous dispose
-      // effect cannot await — carried on the pointer for index.ts's shutdown to call.
-      ...(business === null ? {} : { shutdown: () => business.manager.shutdown(5000) }),
-    };
-    ctx.resources.register(PLATFORM_CURRENT_RESOURCE_ID, current);
+    // The runtime's two mid-request needs of the CURRENT App are hooks installed over the
+    // claimed capabilities — ordinary capability use, overwrite-only across swaps (a dead
+    // generation's hook is replaced, never removed, so nothing ever un-installs a
+    // successor's): "is this session busy" for channel sweep, and "what does a fresh user
+    // get" for login provisioning.
+    if (caps !== null && business !== null) {
+      caps.channels.setActivityProbe((key) => business.manager.statusOf(key) !== "idle");
+      caps.authService.setProvisioner((user, isAdmin) =>
+        business.projectService.provisionInitialProject(user, isAdmin),
+      );
+    }
+    // PARK — the App's complete resource inventory, split by fate. Everything stateful
+    // this App creates is on one of these three lists; a new resource must pick its list
+    // when it is added, or the swap leaks it.
+    //
+    // DELIVERED (survives the swap; the successor adopts it at load):
+    //   - pty sessions        registry `terminal:*` + parked handle ids → terminals.adopt
+    //   - runtime singletons  db / auth / channels / config / proxy / desktop —
+    //                         runtime-owned, re-claimed by every App; not this App's to park
+    // SUSPENDED (stopped here; the successor rebuilds it fresh at load):
+    //   - scheduler           stop() now; successor start() reconciles missed fires
+    //   - agent runs          approvals → deny, drives → abort; goal rows reconciled by
+    //                         the successor's abortOrphanedActive
+    //   - session environments dispose() after the drive settles — kills background
+    //                         commands (dev servers etc.) that would otherwise run on
+    //                         orphaned and invisible to the successor's fresh Session
+    //   - reap timers         TerminalManager.quiesce runs them now (dead ptys only)
+    // DETACHED (the object survives, this App's grip on it does not):
+    //   - pty exit listeners  unsubscribed, so a dead generation never releases a
+    //                         registry id the successor owns
+    // Known exceptions, accepted with reasons: an in-flight self-update child (rare,
+    // bounded by its own 10-minute cap, and a successful update restarts the process
+    // anyway) and SSE subscriber closures (they serve the old generation's stream until
+    // the client reloads on web_updated — the channel hub itself is runtime-owned).
+    // A build that adds a service with state of its own (sandbox settings, workflow
+    // refs, ssh tunnels, an in-flight job) adds it to the right list here — the list is
+    // the contract, not a description of today's services.
+    //
+    // The synchronous part runs here; the ASYNC part (waiting for aborted runs to
+    // actually end) cannot — dispose is sync — so it is exposed as api.drained(), which
+    // the KERNEL awaits between dispose and the successor's boot (kernel/upgrade.ts).
+    // Nothing about the handover touches the registry.
+    let drained: Promise<void> | undefined;
     ctx.effect(() => {
-      // Swap semantics for unparked state: HARD STOP. Pending approvals converge to
-      // deny, active runs abort, the scheduler's timer dies with this App; the next
-      // App rebuilds all of it. Only parked resources (terminals) ride across.
+      terminals.quiesce();
+      const drains: Promise<unknown>[] = [];
       if (business !== null) {
         business.scheduler.stop();
-        void business.manager.shutdown(0);
+        drains.push(business.manager.shutdown(DRAIN_GRACE_MS));
       }
-      ctx.resources.release(PLATFORM_CURRENT_RESOURCE_ID);
+      drained = Promise.allSettled(drains).then(() => undefined);
     });
 
     const http = seamHttp(app);
@@ -208,6 +276,13 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       http,
       terminals: () => terminals,
       attachStream: (ws, session, url, log) => bindTerminalStream(ws, session, url, log),
+      business: () => business,
+      // Process exit wants the manager's graceful ≤5s drain, which a synchronous dispose
+      // effect cannot await — exposed for index.ts's shutdown to call before disposing.
+      shutdown: async () => {
+        if (business !== null) await business.manager.shutdown(DRAIN_GRACE_MS);
+      },
+      drained: () => drained,
     };
   },
 };

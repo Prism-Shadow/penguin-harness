@@ -45,11 +45,23 @@ export class TerminalManager {
    */
   constructor(
     private readonly resources: Resources,
-    private readonly graceMs: number = EXITED_SESSION_GRACE_MS,
+    private readonly opts: {
+      graceMs?: number;
+      /** Where a pushed bundle's node-pty assets live (hmr.assetsDir); absent falls back to the packaged require. */
+      assets?: () => string | null;
+    } = {},
   ) {}
+
+  private get graceMs(): number {
+    return this.opts.graceMs ?? EXITED_SESSION_GRACE_MS;
+  }
 
   private readonly sessions = new Map<string, TerminalSession>();
   private readonly reapTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** Exit-listener unsubscribers, so quiesce() can detach this manager from delivered ptys. */
+  private readonly exitUnsubs = new Set<() => void>();
+  /** Paired unregister per pty (register's return): the only way an entry leaves the registry. */
+  private readonly unregisters = new Map<string, () => void>();
 
   async create(request: CreateTerminalRequest): Promise<TerminalSession> {
     const cwd = await resolveCwd(request.cwd);
@@ -85,7 +97,7 @@ export class TerminalManager {
       ownerUserId: request.ownerUserId,
       seq,
       name,
-      resources: this.resources,
+      ...(this.opts.assets !== undefined ? { assets: this.opts.assets } : {}),
       ...(request.cols !== undefined ? { cols: request.cols } : {}),
       ...(request.rows !== undefined ? { rows: request.rows } : {}),
       ...(request.shell !== undefined ? { shell: request.shell } : {}),
@@ -118,8 +130,11 @@ export class TerminalManager {
    */
   private track(session: TerminalSession): void {
     this.sessions.set(session.id, session);
-    session.onExit(() => this.scheduleReap(session.id));
-    this.resources.register(resourceId(session.id), session, () => session.dispose());
+    this.exitUnsubs.add(session.onExit(() => this.scheduleReap(session.id)));
+    this.unregisters.set(
+      session.id,
+      this.resources.register(resourceId(session.id), session, () => session.dispose()),
+    );
   }
 
   /**
@@ -132,8 +147,40 @@ export class TerminalManager {
       const session = this.resources.claim<TerminalSession>(resourceId(id));
       if (session === undefined) continue;
       this.sessions.set(session.id, session);
-      session.onExit(() => this.scheduleReap(session.id));
+      this.exitUnsubs.add(session.onExit(() => this.scheduleReap(session.id)));
+      // Re-register under THIS generation: the overwrite retires the previous owner's
+      // paired unregister (it no-ops from now on), and ours becomes the live one — the
+      // registry's ownership rule, applied to adoption.
+      this.unregisters.set(
+        session.id,
+        this.resources.register(resourceId(session.id), session, () => session.dispose()),
+      );
+      // Died during the swap freeze: its exit fired into the PREVIOUS generation (whose
+      // listeners are detached by then), so this listener will never fire — reap it here
+      // or nobody ever releases its registry entry.
+      if (!session.alive) this.scheduleReap(session.id);
     }
+  }
+
+  /**
+   * Park-side detach (hot swap only — never process exit): the ptys are DELIVERED to the
+   * next App through the registry, so this manager must stop acting on them. Exit
+   * listeners are unsubscribed (the successor adopts and re-listens), and every pending
+   * reap — each targeting an already-dead session that was therefore NOT parked for
+   * adoption — runs immediately instead of firing later from a dead generation, where it
+   * would release a registry id out from under whoever owns it next.
+   */
+  quiesce(): void {
+    for (const unsub of this.exitUnsubs) unsub();
+    this.exitUnsubs.clear();
+    for (const [id, timer] of this.reapTimers) {
+      clearTimeout(timer);
+      this.sessions.delete(id);
+      // Unregister disposes as it removes — one call, paired and identity-safe.
+      this.unregisters.get(id)?.();
+      this.unregisters.delete(id);
+    }
+    this.reapTimers.clear();
   }
 
   /** Handle ids for the parked context document — live sessions only. */
@@ -176,10 +223,12 @@ export class TerminalManager {
     if (existing) clearTimeout(existing);
     const timer = setTimeout(() => {
       this.reapTimers.delete(id);
-      this.sessions.get(id)?.dispose();
       this.sessions.delete(id);
-      // Out of the registry too: a disposed pty must not be claimable by the next boot.
-      this.resources.release(resourceId(id));
+      // The paired unregister both removes the entry and disposes the session ("out of
+      // the registry means shut down"), and only ever acts on our own registration — a
+      // reap can never touch an entry a successor re-registered.
+      this.unregisters.get(id)?.();
+      this.unregisters.delete(id);
     }, delayMs);
     timer.unref?.();
     this.reapTimers.set(id, timer);

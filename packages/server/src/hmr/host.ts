@@ -127,14 +127,6 @@ export interface UpgradeAllTarget {
 }
 
 /**
- * Where the runtime publishes the unpacked assets directory for the booting platform.
- * The resource registry is the only runtime→platform channel the kernel offers (ctx
- * carries `resources`, nothing else), and it is kind-agnostic by design — see
- * ./resources.ts.
- */
-export const ASSETS_RESOURCE_ID = "runtime:assets-dir";
-
-/**
  * Written into an assets directory once every file in it is on disk. Its absence marks a
  * directory whose materialization was interrupted; no asset path can collide with it
  * (assets arrive as `node_modules/...` paths).
@@ -168,6 +160,8 @@ export class HmrHost {
 
   private instance: Instance<PlatformApi> | null = null;
   private implId = packagedPlatform.id;
+  /** Current version's materialized native assets dir (see assetsDir()). */
+  private assets: string | null = null;
   private readonly hmrDir: string;
   private readonly storeDir: string;
   private readonly manifestPath: string;
@@ -343,7 +337,7 @@ export class HmrHost {
     // Assets land BEFORE the boot: the platform's create() may load a native module out of
     // them. A failed boot puts the pointer back, so the surviving old platform keeps
     // claiming the assets it booted with.
-    const previousAssets = this.resources.claim<string>(ASSETS_RESOURCE_ID) ?? null;
+    const previousAssets = this.assets;
     const assetsDir = target.assets ? await this.materializeAssets(target.assets) : null;
     if (assetsDir !== null) this.publishAssets(assetsDir);
 
@@ -369,6 +363,21 @@ export class HmrHost {
         missing: result.missing,
         invalid: result.invalid,
       };
+    }
+    if (result.status === "failed") {
+      // The pushed platform's boot threw AFTER the old tree was disposed
+      // (validate-then-swap disposes first so the new tree can adopt what the old one
+      // delivered). Without recovery the process is half-dead: `this.instance` still
+      // answers HTTP out of closures, but its manager is closed and the current-App
+      // pointer is released — until a restart. So re-boot the PREVIOUS platform from the
+      // parked document the kernel handed back. The park-by-inventory contract is what
+      // makes this an ordinary load: the old App's dispose suspended and detached
+      // everything, so the recovered App adopts the delivered resources and restarts the
+      // suspended machinery like any successor. The pusher still gets an error — the
+      // push DID fail — but the machine it failed on keeps working.
+      this.publishAssets(previousAssets);
+      await this.recoverPrevious(result.doc);
+      throw new Error(`the pushed platform failed to boot: ${errMsg(result.error)}`);
     }
 
     // Boot succeeded: commit web to memory too, then persist platform + cli + web
@@ -397,6 +406,38 @@ export class HmrHost {
       web: { rev: digest.slice(0, 12) },
       persisted,
     };
+  }
+
+  /**
+   * Boot-failure recovery: re-boot the version that was running before the failed
+   * upgrade, from its own parked document. The committed manifest still names that
+   * version (a failed push persists nothing), so the bundle comes from there — or it is
+   * the packaged default when nothing was ever pushed. Best-effort by design: a double
+   * fault only warns and leaves the disposed instance in place, because /api/hmr is
+   * runtime-owned and therefore still reachable for a follow-up push, and a process
+   * restart restores the committed version regardless.
+   */
+  private async recoverPrevious(doc: Json): Promise<void> {
+    try {
+      let bundle: PlatformBundle = packagedPlatform;
+      if (this.implId !== packagedPlatform.id) {
+        const manifest = JSON.parse(await fsp.readFile(this.manifestPath, "utf8")) as Manifest;
+        if (manifest.platform === undefined) throw new Error("harness.json has no `platform`");
+        bundle = await this.importBundleFile(path.join(this.hmrDir, manifest.platform.bundle));
+      }
+      this.instance = (await boot(
+        bundle.impl,
+        bundle.iface,
+        doc,
+        this.resources,
+      )) as Instance<PlatformApi>;
+      // implId unchanged: the previous version is the running version again.
+    } catch (err) {
+      this.warn(
+        `boot-failure recovery failed too — the process serves a half-stopped App until ` +
+          `a successful push or a restart: ${errMsg(err)}`,
+      );
+    }
   }
 
   /** Layer (a) core: import one JS file, cache-busted so re-imports load fresh code. */
@@ -505,8 +546,17 @@ export class HmrHost {
 
   /** Points the registry at this version's assets (or clears it when a push has none). */
   private publishAssets(dir: string | null): void {
-    if (dir === null) this.resources.release(ASSETS_RESOURCE_ID);
-    else this.resources.register(ASSETS_RESOURCE_ID, dir);
+    this.assets = dir;
+  }
+
+  /**
+   * Where the current version's native-module assets live, or null when none were
+   * pushed. A declared member of the hmr capability (see RUNTIME_INTERFACES), read by
+   * the bundle's pty loader — not a registry key: the host is already the claimed
+   * object, so its per-push state belongs on it.
+   */
+  assetsDir(): string | null {
+    return this.assets;
   }
 
   private async persistVersion(

@@ -25,8 +25,14 @@ import {
   claimRuntimeCapabilities,
 } from "../src/hmr/capabilities.js";
 
-/** Boots the packaged platform against `r` (capability-less: terminals-only, quiet). */
+/**
+ * Boots the packaged platform against `r` as a BARE KERNEL: capability-less, terminals-only,
+ * quiet. The empty (family-only) descriptor is what makes that legal — the host's own
+ * declaration that no business runtime stands behind it. Without any descriptor the boot
+ * is refused, which is the rule the last describe in this file drives.
+ */
 async function bootPlatform(r: HotResources) {
+  r.register(RUNTIME_INTERFACES_RESOURCE_ID, { family: PENGUIN_FAMILY });
   const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
   try {
     return await boot(
@@ -270,28 +276,35 @@ describe("runtime capability handshake", () => {
     r.register(RUNTIME_HMR_RESOURCE_ID, carrying("hmr"));
   }
 
-  it("declines when the runtime publishes no descriptor (a runtime older than the handshake)", () => {
+  it("refuses when the runtime publishes no descriptor (a runtime older than the handshake)", () => {
     const r = new HotResources();
     stubCaps(r);
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    expect(claimRuntimeCapabilities(r)).toBeNull();
-    warn.mockRestore();
+    expect(claimRuntimeCapabilities(r)).toMatchObject({
+      kind: "refused",
+      reason: expect.stringContaining("no interface descriptor") as unknown,
+    });
   });
 
-  it("declines when one interface is missing a member the claimer names", () => {
+  it("reads a family-only descriptor as the bare-kernel declaration", () => {
+    // Offering NOTHING, in the same document every host describes itself in, is the
+    // honest statement "no business runtime stands behind me" — terminals-only is legal.
+    const r = new HotResources();
+    r.register(RUNTIME_INTERFACES_RESOURCE_ID, { family: PENGUIN_FAMILY });
+    expect(claimRuntimeCapabilities(r)).toEqual({ kind: "bare" });
+  });
+
+  it("refuses when one interface is missing a member the claimer names", () => {
     const r = new HotResources();
     stubCaps(r);
     r.register(RUNTIME_INTERFACES_RESOURCE_ID, { ...RUNTIME_INTERFACES, auth: ["login"] });
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    expect(claimRuntimeCapabilities(r)).toBeNull();
-    warn.mockRestore();
+    expect(claimRuntimeCapabilities(r)).toMatchObject({ kind: "refused" });
   });
 
   it("claims on a matching descriptor", () => {
     const r = new HotResources();
     stubCaps(r);
     r.register(RUNTIME_INTERFACES_RESOURCE_ID, RUNTIME_INTERFACES);
-    expect(claimRuntimeCapabilities(r)).not.toBeNull();
+    expect(claimRuntimeCapabilities(r)).toMatchObject({ kind: "claimed" });
   });
 
   it("declines when the descriptor is honest but the live object is not", () => {
@@ -300,18 +313,17 @@ describe("runtime capability handshake", () => {
     stubCaps(r);
     r.register(RUNTIME_AUTH_RESOURCE_ID, { login: () => undefined }); // missing the rest
     r.register(RUNTIME_INTERFACES_RESOURCE_ID, RUNTIME_INTERFACES);
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    expect(claimRuntimeCapabilities(r)).toBeNull();
-    warn.mockRestore();
+    expect(claimRuntimeCapabilities(r)).toMatchObject({
+      kind: "refused",
+      reason: expect.stringContaining("auth lacks") as unknown,
+    });
   });
 
   it("declines a different family outright — the names are not comparable", () => {
     const r = new HotResources();
     stubCaps(r);
     r.register(RUNTIME_INTERFACES_RESOURCE_ID, { ...RUNTIME_INTERFACES, family: "acme" });
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    expect(claimRuntimeCapabilities(r)).toBeNull();
-    warn.mockRestore();
+    expect(claimRuntimeCapabilities(r)).toMatchObject({ kind: "refused" });
   });
 
   it("an interface the claimer never names may differ freely", () => {
@@ -320,6 +332,38 @@ describe("runtime capability handshake", () => {
     const r = new HotResources();
     stubCaps(r);
     r.register(RUNTIME_INTERFACES_RESOURCE_ID, { ...RUNTIME_INTERFACES, extra: ["x"] });
-    expect(claimRuntimeCapabilities(r)).not.toBeNull();
+    expect(claimRuntimeCapabilities(r)).toMatchObject({ kind: "claimed" });
+  });
+});
+
+describe("a runtime too old to publish capabilities", () => {
+  it("is refused, not degraded to terminals-only", async () => {
+    // The shape this rule exists for. A runtime that publishes nothing is NOT a bare
+    // kernel: it still answers the business API out of its own older routes, so a
+    // terminals-only App would leave the frontend this same push just shipped talking to
+    // the previous version's API — which is how `/api/me` came back without the fields the
+    // new frontend reads off it.
+    const r = new HotResources();
+    await expect(
+      boot(
+        packagedPlatform.impl,
+        packagedPlatform.iface,
+        initialDoc(packagedPlatform.iface, packagedPlatform.context),
+        r,
+      ),
+    ).rejects.toThrow(/no business capabilities/);
+    // Refused before the registry was touched at all: the running App's declaration and
+    // its parked groups are exactly as they were, so a rejected push costs it nothing.
+    expect(r.claim(RESOURCE_IFACES_RESOURCE_ID)).toBeUndefined();
+  });
+
+  it("boots terminals-only when the host declares itself a bare kernel", async () => {
+    const r = new HotResources();
+    const inst = await bootPlatform(r);
+    try {
+      expect(inst.api.info()).toMatchObject({ impl: "packaged" });
+    } finally {
+      inst.dispose();
+    }
   });
 });

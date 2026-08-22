@@ -1051,6 +1051,21 @@ describe("session-manager", () => {
     expect((err as { code: string }).code).toBe("workspace_missing");
   });
 
+  it("shutdown disposes each Session's environment, so background commands die with the App", async () => {
+    // A hot swap that skipped this would orphan e.g. a dev server the conversation
+    // started: the OS process keeps running while the successor's freshly resumed
+    // Session starts with an empty process list — the stop control has gone blind.
+    const fake = approvalFakeSession("session-1");
+    let disposed = 0;
+    (fake as { dispose?: () => void }).dispose = () => {
+      disposed++;
+    };
+    const manager = makeManager(loaderOf(fake));
+    manager.adopt(ROW, fake);
+    await manager.shutdown();
+    expect(disposed).toBe(1);
+  });
+
   it("rejects new Tasks once shutdown is set (503 shutting_down)", async () => {
     const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
     await manager.shutdown();

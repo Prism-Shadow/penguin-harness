@@ -15,8 +15,6 @@
  */
 import { createRequire } from "node:module";
 import path from "node:path";
-import type { Resources } from "@prismshadow/penguin-core/kernel";
-import { ASSETS_RESOURCE_ID } from "../hmr/host.js";
 
 /** The slice of node-pty this package uses (kept narrow so the fallback stays checkable). */
 export interface NodePty {
@@ -39,16 +37,17 @@ let cached: NodePty | null = null;
  * Resolves node-pty once per platform instance. `resources` comes from the kernel's node
  * context; a runtime that published no assets simply leaves the fallback unused.
  */
-export function loadNodePty(resources: Resources): NodePty {
+export function loadNodePty(assets?: () => string | null): NodePty {
   if (cached !== null) return cached;
 
   const attempts: Array<() => NodePty> = [
     // Packaged server: this module is part of the runtime's own graph.
     () => createRequire(import.meta.url)("node-pty") as NodePty,
-    // Pushed bundle: the binary rides along as an asset, laid out as a real package dir.
+    // Pushed bundle: the binary rides along as an asset, laid out as a real package dir —
+    // located through the hmr capability's declared assetsDir(), not a registry key.
     () => {
-      const dir = resources.claim<string>(ASSETS_RESOURCE_ID);
-      if (dir === undefined) throw new Error("no assets directory published");
+      const dir = assets?.() ?? null;
+      if (dir === null) throw new Error("no assets directory available");
       // A require anchored inside the assets dir resolves `node_modules/node-pty` there,
       // which lets node-pty's own relative loader find its binary as it normally would.
       return createRequire(path.join(dir, "index.mjs"))("node-pty") as NodePty;

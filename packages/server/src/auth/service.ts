@@ -98,10 +98,20 @@ export interface AuthServiceDeps {
 }
 
 export class AuthService {
+  /**
+   * What a fresh user is provisioned with is business policy, answered by the CURRENT
+   * App: the platform installs its answer at create over the claimed auth capability
+   * (ordinary capability use, not a registry entry), and each swap's successor overwrites
+   * it. Starts as the constructor-supplied fallback so standalone/test constructions
+   * keep working unchanged.
+   */
+  private provisioner: (user: UserRow, isAdmin: boolean) => Promise<void>;
+
   private readonly now: () => Date;
   private readonly hashCost: number;
 
   constructor(private readonly deps: AuthServiceDeps) {
+    this.provisioner = deps.provisionInitialProject;
     this.now = deps.now ?? (() => new Date());
     this.hashCost = deps.passwordHashCost ?? SCRYPT_COST;
   }
@@ -135,12 +145,17 @@ export class AuthService {
     };
     this.deps.users.insert(user);
     try {
-      await this.deps.provisionInitialProject(user, true);
+      await this.provisioner(user, true);
     } catch (err) {
       this.deps.users.delete(user.userId);
       throw err;
     }
     return password;
+  }
+
+  /** Installs the current App's provisioning policy (see the `provisioner` field). */
+  setProvisioner(provision: (user: UserRow, isAdmin: boolean) => Promise<void>): void {
+    this.provisioner = provision;
   }
 
   /** Whether the built-in admin still runs on its initial password (drives the startup reminder notice). */

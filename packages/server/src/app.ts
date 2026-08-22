@@ -3,10 +3,11 @@
  *
  * The RUNTIME shell — `createRuntimeApp(deps)` — mounts the mechanism surface: the network
  * guards, `/api/auth`, `/api/desktop`, `/api/hmr`, the platform seam, and static hosting.
- * `bootAppDeps(config)` builds the runtime core (database, auth, channels, HmrHost),
- * publishes its capabilities into the resource registry (see hmr/capabilities.ts), and
- * boots the platform — which returns the merged view. Neither listens on a port: tests
- * inject requests via `app.request()`, and the startup entry point is index.ts.
+ * `bootAppDeps(config)` builds the shell's own core (database, auth, channels, HmrHost),
+ * publishes its capabilities into the resource registry (see hmr/capabilities.ts), boots the
+ * platform — which builds the business surface over those capabilities — and returns that
+ * App's deps, read off the booted instance. Neither app listens on a port: tests inject
+ * requests via `app.request()`, and the startup entry point is index.ts.
  *
  * The BUSINESS surface — `buildAppDeps` + `createApp`, at the bottom of this
  * file — is what a hot push replaces. Both are called from `platformImpl.create`
@@ -26,7 +27,6 @@ import type { DatabaseSync } from "node:sqlite";
 import type { ServerConfig } from "./config.js";
 import { applyProxySettings, mergedNoProxy } from "./net/proxy.js";
 import {
-  PLATFORM_CURRENT_RESOURCE_ID,
   RUNTIME_INTERFACES,
   RUNTIME_INTERFACES_RESOURCE_ID,
   RUNTIME_AUTH_RESOURCE_ID,
@@ -39,7 +39,7 @@ import {
   RUNTIME_PROXY_RESOURCE_ID,
   RuntimeCapabilities,
 } from "./hmr/capabilities.js";
-import type { PlatformCurrent, ProxyControl } from "./hmr/capabilities.js";
+import type { ProxyControl } from "./hmr/capabilities.js";
 import { openDatabase } from "./db/database.js";
 import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
 import { ErrorsRepo } from "./db/repos/errors.js";
@@ -50,8 +50,7 @@ import { SessionsRepo } from "./db/repos/sessions.js";
 import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
 import { UsersRepo } from "./db/repos/users.js";
 import type { UserRow } from "./db/repos/users.js";
-import { authMiddleware, jsonOnlyWrites, SESSION_COOKIE } from "./auth/middleware.js";
-import { IDENTITY_RESOURCE_ID } from "./terminal/identity.js";
+import { authMiddleware, jsonOnlyWrites } from "./auth/middleware.js";
 import type { Identity } from "./terminal/identity.js";
 import { terminalRoutes } from "./terminal/routes.js";
 import type { TerminalManager } from "./terminal/manager.js";
@@ -216,17 +215,11 @@ export async function bootAppDeps(
   // against it.
   const hmr = new HmrHost(config.root);
 
-  // Channel idle reclamation skips active Sessions (running/compacting can go a long time
-  // without a publish, e.g. while waiting for approval). The manager lives platform-side
-  // and is rebuilt by every swap: resolve the CURRENT one through the registry at sweep
-  // time rather than capturing any one incarnation.
-  const channels = new ChannelHub({
-    isActive: (key) => {
-      const manager = hmr.resources.claim<PlatformCurrent>(PLATFORM_CURRENT_RESOURCE_ID)?.deps
-        ?.manager;
-      return manager !== undefined && manager.statusOf(key) !== "idle";
-    },
-  });
+  // Channel idle reclamation must skip active Sessions, but "is this session busy" is a
+  // business question: the App installs the answer itself via setActivityProbe at every
+  // create (see hmr/platform.ts) — ordinary use of the claimed capability, re-installed
+  // by each generation. Until the first App boots, nothing is active.
+  const channels = new ChannelHub();
 
   // Any password update for the built-in admin makes the persisted initial-password
   // plaintext stale (either the password is no longer initial, or a reset replaced it
@@ -239,13 +232,11 @@ export async function bootAppDeps(
     users: usersRepo,
     authSessions: authSessionsRepo,
     // Auth is runtime mechanism, but WHAT a fresh user is provisioned with is business
-    // policy — late-bound through the registry so it always reaches the current App.
-    provisionInitialProject: (user, isAdmin) => {
-      const deps = hmr.resources.claim<PlatformCurrent>(PLATFORM_CURRENT_RESOURCE_ID)?.deps;
-      if (deps == null) {
-        throw new Error("no business platform is running to provision the initial Project");
-      }
-      return deps.projectService.provisionInitialProject(user, isAdmin);
+    // policy: the App installs the real provisioner via setProvisioner at every create
+    // (see hmr/platform.ts). This constructor fallback only answers before the first
+    // boot, which the startup order below makes unreachable in practice.
+    provisionInitialProject: () => {
+      throw new Error("no business platform is running to provision the initial Project");
     },
     seedAdminPassword: config.seedAdminPassword,
     onPasswordChanged,
@@ -257,15 +248,6 @@ export async function bootAppDeps(
     ...(overrides.now ? { now: overrides.now } : {}),
   });
 
-  // The seam runs before the auth middleware, so a platform serving an API of its own has
-  // no `c.var.user`. Authenticating is the runtime's job, not something a bundle should
-  // re-implement against cookie names and session TTLs — so it is published as a
-  // capability the booting platform claims (see terminal/identity.ts).
-  hmr.resources.register(IDENTITY_RESOURCE_ID, async (request: Request) => {
-    const token = readSessionCookie(request.headers.get("cookie"));
-    const authed = token === null ? null : authService.authenticateWithMeta(token);
-    return authed === null ? null : { userId: authed.user.userId };
-  });
   // The capability set buildAppDeps claims (see hmr/capabilities.ts) — every
   // entry must be in place before ensure() below performs the first boot. The interface
   // descriptor leads: it is what a bundle's handshake reads before trusting any of the rest.
@@ -281,13 +263,20 @@ export async function bootAppDeps(
   hmr.resources.register(RUNTIME_DESKTOP_RESOURCE_ID, desktop);
 
   // Boot the platform now rather than on the first request: the business surface —
-  // services, routes, the scheduler — is assembled inside its create().
-  await hmr.ensure();
-  const deps = hmr.resources.claim<PlatformCurrent>(PLATFORM_CURRENT_RESOURCE_ID)?.deps;
-  if (deps == null) {
+  // services, routes, the scheduler — is assembled inside its create(). The check reads
+  // the in-process api member, not a registry entry: the instance IS the current App.
+  const instance = await hmr.ensure();
+  const business = instance.api.business();
+  if (business === null) {
     throw new Error("the packaged platform built no business surface");
   }
-  return deps;
+  // The App's own deps, read off the booted instance — the same bag every caller of this
+  // function always received. Callers that outlive swaps (index.ts, the runtime app) may
+  // only touch its swap-stable members: the runtime singletons published above, and the
+  // stateless repos over this process's own db handle. The business machinery on it
+  // (manager, services, scheduler) belongs to THIS generation and goes stale at the next
+  // push — per-request business dispatch rides the seam, never this reference.
+  return business;
 }
 
 /** Assembles the Hono app (does not listen on a port). */
@@ -511,18 +500,6 @@ function registerStaticRoutes(app: Hono<AppEnv>, resolveSource: () => Promise<We
       headers: { "Content-Type": type },
     });
   });
-}
-
-/** The session cookie out of a raw Cookie header (the seam hands over a plain Request). */
-function readSessionCookie(header: string | null): string | null {
-  if (header === null) return null;
-  for (const part of header.split(";")) {
-    const eq = part.indexOf("=");
-    if (eq === -1) continue;
-    if (part.slice(0, eq).trim() !== SESSION_COOKIE) continue;
-    return decodeURIComponent(part.slice(eq + 1).trim());
-  }
-  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -755,8 +732,10 @@ const RUNTIME_PREFIXES = ["/api/auth", "/api/desktop", "/api/hmr"];
  * group and the business groups — registered together, so a swap replaces the whole route
  * table as a unit (routes + auth + error shaping; no listening, no logging).
  *
- * `deps` is null when the runtime published no business capabilities (an older runtime, a
- * bare kernel): the terminal group still serves, everything else declines.
+ * `deps` is null when the host published no business capabilities — a declared bare kernel:
+ * the terminal group still serves, everything else declines. A runtime merely too OLD to
+ * publish them never reaches here; the platform refuses to boot on one (hmr/platform.ts's
+ * create), because that runtime still answers the business API out of its own routes.
  */
 export function createApp(
   deps: AppDeps | null,

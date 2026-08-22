@@ -22,10 +22,17 @@ export interface Resources {
    * `dispose` is how a resource says what "shut down" means for it — the registry
    * itself knows nothing about kinds, so a platform can introduce a resource type the
    * runtime has never heard of and still have it cleaned up at process exit.
+   *
+   * Returns the PAIRED unregister for this exact registration: it removes the entry AND
+   * runs its dispose — out of the registry means shut down, or the process-exit sweep
+   * could no longer reach it. Both are identity-checked: a later overwrite by a successor
+   * turns the handle into a no-op and moves shutdown responsibility to the new
+   * registration — a dead generation can never touch a slot it no longer owns. This is
+   * the only way to remove a single entry; there is deliberately no release-by-id, which
+   * would be an unpaired delete aimed at whatever happens to occupy the slot.
    */
-  register(id: string, resource: unknown, dispose?: () => void): void;
+  register(id: string, resource: unknown, dispose?: () => void): () => void;
   claim<T = unknown>(id: string): T | undefined;
-  release(id: string): void;
   /**
    * Disposes and removes every entry whose id belongs to the group (`terminal` covers
    * `terminal:*`), in reverse registration order — later entries may depend on earlier
