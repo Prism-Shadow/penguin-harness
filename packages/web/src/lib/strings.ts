@@ -280,9 +280,9 @@ export const zh = {
     id: "Project id",
     idHint: "2~64 位：小写字母开头，仅小写字母、数字与下划线；创建后不可修改",
     idPrefixHint: "id 固定以「用户名-」为前缀，后接小写字母、数字或下划线；创建后不可修改",
-    name: "显示名（可选，缺省为 Project id）",
-    /** Display-name field in Project settings (required here, unlike the create dialog's "optional" wording). */
     displayName: "显示名",
+    /** Create dialog only: leaving the name empty falls back to the id. In Project settings the saved name cannot be blanked. */
+    displayNameHint: "留空则使用 Project id 作为名称",
     settings: "Project 设置",
     settingsTitle: "Project 设置",
     members: "成员",
@@ -295,7 +295,6 @@ export const zh = {
     chatDefaultsNotSet: "未设置",
     chatDefaultsApprovalNotSet: "未设置（默认全部放行）",
     chatDefaultsThinkingNotSet: "未设置（跟随智能体配置）",
-    chatDefaultsWorkspaceHint: "留空表示使用临时工作区",
     /** The model default shares its source with the Models page (the same default_model); this is just another entry point. */
     chatDefaultsModelHint: "与模型页的默认模型同步",
     /** Settings dialog tab rail. */
@@ -320,7 +319,7 @@ export const zh = {
     commandPolicyOff: "已停用",
     commandPolicyRuleName: "名称",
     commandPolicyRulePattern: "正则表达式",
-    commandPolicyRuleDesc: "描述（可选）",
+    commandPolicyRuleDesc: "描述",
     commandPolicyInvalidPattern: "正则表达式无效",
     deleteProject: "删除 Project",
     deleteConfirm: "确认删除该 Project？项目目录将被递归删除，不可恢复。",
@@ -803,7 +802,7 @@ export const zh = {
     editWhy:
       "内容修改由 agent 在对话中完成：确认引导语后打开新对话，agent 会同步更新记忆文件与 MEMORY.md 索引。",
     editRequirementLabel: "修改要求",
-    editRequirementPlaceholder: "描述要怎么改（可留空，跳转后在对话中补充）",
+    editRequirementPlaceholder: "描述要怎么改，跳转后可在对话中补充",
     editPromptLabel: "引导语预览",
     editCopyPrompt: "复制 Prompt",
     editOpenChat: "打开新对话",
@@ -910,7 +909,7 @@ export const zh = {
     prompt: "Prompt",
     enabled: "启用",
     startAt: "开始时间",
-    endAt: "结束时间（可选）",
+    endAt: "结束时间",
     period: "周期",
     periodPlaceholder: "30m / 12h / 7d，留空为一次性",
     target: "目标",
@@ -922,7 +921,7 @@ export const zh = {
     sessionSearch: "搜索标题或 Session id…",
     sessionNoMatch: "无匹配的 Session",
     sessionEmpty: "该 Agent 暂无 Session",
-    workspace: "Workspace（可选，留空自动创建临时工作区）",
+    workspace: "Workspace",
     model: "Model",
     modelDefault: "Project 默认",
     deleteTitle: "删除定时任务",
@@ -1224,6 +1223,8 @@ Benchmark：
     model: "Model",
     workspace: "Workspace",
     workspaceHint: "留空自动创建临时工作区；指定时必须是服务器上已存在的目录",
+    /** The same rule as `workspaceHint`, short enough to sit under a form field. */
+    workspaceHintShort: "留空自动创建临时工作区",
     approvalMode: "审批模式",
     /** Short description (the trigger button shows only the description, not the mode id). */
     approvalModeNames: {
@@ -1646,6 +1647,8 @@ Benchmark：
     legendToolExec: "工具调用执行",
     legendOther: "其他",
     toolParams: "参数 Schema",
+    /** Spoken form of the red "*" in the schema table, where no control carries `aria-required`. */
+    requiredParam: "必填",
     legendApprovalWait: "审批等待",
     task: (n: number) => `第 ${n} 轮`,
     globalSummary: "全局统计",

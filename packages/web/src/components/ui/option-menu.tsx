@@ -75,7 +75,7 @@ export function OptionMenu<T extends string>({
   label?: string;
   /** Field-value error: red border + message below, exactly like Input. */
   error?: string;
-  /** Renders a red "*" after the label to mark the field as required. */
+  /** Renders a red "*" after the label. An optional field passes nothing — no counterpart mark, and no "optional" in the label. */
   required?: boolean;
   /** Stretch the trigger button to fill the container width, as a replacement for native Select in dense form areas. */
   fullWidth?: boolean;

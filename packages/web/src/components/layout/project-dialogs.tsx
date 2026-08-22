@@ -164,7 +164,8 @@ export function CreateProjectDialog({
           />
         )}
         <Input
-          label={S.project.name}
+          label={S.project.displayName}
+          hint={S.project.displayNameHint}
           size="sm"
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -777,7 +778,7 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
                 onChange={setWorkspace}
                 variant="form"
               />
-              <FieldHint>{S.project.chatDefaultsWorkspaceHint}</FieldHint>
+              <FieldHint>{S.chat.workspaceHintShort}</FieldHint>
             </div>
           </div>
           <div className="mt-3 flex justify-end">
@@ -859,9 +860,10 @@ export function RuleEditor({
 
   const apply = () => {
     const n = name.trim();
-    if (!n || !pattern) return;
+    const p = pattern.trim();
+    if (!n || !p) return;
     try {
-      new RegExp(pattern);
+      new RegExp(p);
     } catch {
       setErr(S.project.commandPolicyInvalidPattern);
       return;
@@ -869,7 +871,7 @@ export function RuleEditor({
     const d = desc.trim();
     onApply({
       name: n,
-      pattern,
+      pattern: p,
       ...(d !== "" ? { description: d } : {}),
       enabled: initial?.enabled ?? true,
     });
@@ -877,49 +879,56 @@ export function RuleEditor({
 
   return (
     <div className="space-y-2 py-3">
+      {/* Name and pattern are both mandatory — Apply stays disabled without either — and the red
+          "*" is what says so; the description carries no mark because it is optional. The flex
+          sizing sits on the wrappers because a labelled Input renders its own <label> block
+          around the control, so the control itself is not the flex item. */}
       <div className="flex flex-col gap-2 sm:flex-row">
-        <Input
-          size="sm"
-          className="sm:w-40"
-          placeholder={S.project.commandPolicyRuleName}
-          value={name}
-          maxLength={64}
-          // The editor mounts only on an explicit Add / Edit click, so taking focus is what
-          // that click asked for: it puts the caret in the first field for a keyboard user,
-          // and the browser's scroll-on-focus keeps the form in view on a short viewport.
-          autoFocus
-          onChange={(e) => setName(e.target.value)}
-        />
-        <Input
-          size="sm"
-          className="min-w-0 flex-1 font-mono"
-          placeholder={S.project.commandPolicyRulePattern}
-          value={pattern}
-          maxLength={512}
-          invalid={Boolean(err)}
-          onChange={(e) => {
-            setPattern(e.target.value);
-            if (err) setErr(undefined);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") apply();
-          }}
-        />
+        <div className="sm:w-40">
+          <Input
+            size="sm"
+            label={S.project.commandPolicyRuleName}
+            required
+            value={name}
+            maxLength={64}
+            // The editor mounts only on an explicit Add / Edit click, so taking focus is what
+            // that click asked for: it puts the caret in the first field for a keyboard user,
+            // and the browser's scroll-on-focus keeps the form in view on a short viewport.
+            autoFocus
+            onChange={(e) => setName(e.target.value)}
+          />
+        </div>
+        <div className="min-w-0 flex-1">
+          <Input
+            size="sm"
+            className="font-mono"
+            label={S.project.commandPolicyRulePattern}
+            required
+            value={pattern}
+            maxLength={512}
+            {...(err !== undefined ? { error: err } : {})}
+            onChange={(e) => {
+              setPattern(e.target.value);
+              if (err) setErr(undefined);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") apply();
+            }}
+          />
+        </div>
       </div>
       <Input
         size="sm"
-        className="w-full"
-        placeholder={S.project.commandPolicyRuleDesc}
+        label={S.project.commandPolicyRuleDesc}
         value={desc}
         maxLength={300}
         onChange={(e) => setDesc(e.target.value)}
       />
-      {err !== undefined && <FieldError>{err}</FieldError>}
       <div className="flex justify-end gap-2">
         <Button size="sm" variant="ghost" onClick={onCancel}>
           {S.common.cancel}
         </Button>
-        <Button size="sm" disabled={!name.trim() || !pattern} onClick={apply}>
+        <Button size="sm" disabled={!name.trim() || !pattern.trim()} onClick={apply}>
           {S.project.commandPolicyApplyRule}
         </Button>
       </div>

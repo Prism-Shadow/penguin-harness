@@ -293,9 +293,9 @@ export const en: Strings = {
       "2–64 chars: starts with a lowercase letter; lowercase letters, digits and underscores only. Cannot be changed later.",
     idPrefixHint:
       "The id is prefixed with your username and a hyphen; append lowercase letters, digits or underscores. Cannot be changed later.",
-    name: "Display name (optional, defaults to the Project id)",
-    /** The display-name field in Project settings (required there, unlike the create dialog's optional one). */
     displayName: "Display name",
+    /** Create dialog only: leaving the name empty falls back to the id. In Project settings the saved name cannot be blanked. */
+    displayNameHint: "Leave empty to use the Project id as the name",
     settings: "Project settings",
     settingsTitle: "Project settings",
     members: "Members",
@@ -309,7 +309,6 @@ export const en: Strings = {
     chatDefaultsNotSet: "Not set",
     chatDefaultsApprovalNotSet: "Not set (defaults to allow all)",
     chatDefaultsThinkingNotSet: "Not set (follow the agent's config)",
-    chatDefaultsWorkspaceHint: "Empty = temporary workspace",
     /** The model default is single-sourced with the Models page (the same default_model); this is just another entry point. */
     chatDefaultsModelHint: "Same default model as the Models page",
     /** Settings dialog tab rail. */
@@ -334,7 +333,7 @@ export const en: Strings = {
     commandPolicyOff: "Disabled",
     commandPolicyRuleName: "Name",
     commandPolicyRulePattern: "Regular expression",
-    commandPolicyRuleDesc: "Description (optional)",
+    commandPolicyRuleDesc: "Description",
     commandPolicyInvalidPattern: "Invalid regular expression",
     deleteProject: "Delete Project",
     deleteConfirm:
@@ -832,7 +831,7 @@ export const en: Strings = {
     editWhy:
       "Content edits are made by the agent in a chat: confirm the prompt to open a new conversation, and the agent updates the memory file and its MEMORY.md index together.",
     editRequirementLabel: "What to change",
-    editRequirementPlaceholder: "Describe the change (optional — you can finish it in the chat)",
+    editRequirementPlaceholder: "Describe the change — you can finish it in the chat",
     editPromptLabel: "Prompt preview",
     editCopyPrompt: "Copy prompt",
     editOpenChat: "Open a new chat",
@@ -946,7 +945,7 @@ export const en: Strings = {
     prompt: "Prompt",
     enabled: "Enabled",
     startAt: "Start at",
-    endAt: "End at (optional)",
+    endAt: "End at",
     period: "Period",
     periodPlaceholder: "30m / 12h / 7d; leave empty for a one-off task",
     target: "Target",
@@ -958,7 +957,7 @@ export const en: Strings = {
     sessionSearch: "Search title or Session id…",
     sessionNoMatch: "No matching Session",
     sessionEmpty: "This agent has no Sessions yet",
-    workspace: "Workspace (optional; a temporary workspace is created when empty)",
+    workspace: "Workspace",
     model: "Model",
     modelDefault: "Project default",
     deleteTitle: "Delete scheduled task",
@@ -1268,6 +1267,8 @@ Scenarios:
     workspace: "Workspace",
     workspaceHint:
       "Leave empty for an auto-created temporary workspace; if set, it must be an existing directory on the server",
+    /** The same rule as `workspaceHint`, short enough to sit under a form field. */
+    workspaceHintShort: "Leave empty for a temporary workspace",
     approvalMode: "Approval mode",
     approvalModeNames: {
       "allow-all": "Approve everything",
@@ -1694,6 +1695,8 @@ Scenarios:
     legendToolExec: "tool exec",
     legendOther: "Other",
     toolParams: "Parameter schema",
+    /** Spoken form of the red "*" in the schema table, where no control carries `aria-required`. */
+    requiredParam: "required",
     legendApprovalWait: "approval wait",
     task: (n: number) => `Turn ${n}`,
     globalSummary: "Overall",
