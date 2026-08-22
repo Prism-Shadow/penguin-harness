@@ -1229,11 +1229,12 @@ When done, open index.html in a browser and self-test once.`,
         desc: "A market-watching Copilot on the Penguin SDK: refreshes the market view on a cycle from startup, with the evidence behind every call",
         prompt:
           "Build a stock-market Copilot on the Penguin SDK, along the lines of perplexity.ai/finance: " +
-          "from startup it pulls live market data " +
-          "every 5 minutes, weighs the sectors against each other and picks out the stocks trending " +
-          "strongest, giving the evidence behind every call — the data, the indicators, the window it " +
-          "read. Analysis of public data, not investment advice. Give the assistant a stock-lookup " +
-          "tool so it can pull a specific ticker mid-conversation and reason about it the same way.",
+          "from startup it pulls live market data every 5 minutes, and the home page lists the stocks " +
+          "trending strongest lately alongside how the sectors compare, with the evidence behind every " +
+          "call — the data, the indicators, the window it read. Analysis of public data, not investment " +
+          "advice. Give the assistant a stock-lookup tool that handles questions like \"look up Zhipu's " +
+          'stock for me": resolve a company name to its ticker itself, and when there is no match or ' +
+          "the company is not listed, say so rather than inventing a quote.",
       },
       rag: {
         label: "Build a Claude Code docs RAG agent",

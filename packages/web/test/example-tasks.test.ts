@@ -190,20 +190,26 @@ describe("short example prompts", () => {
         "perplexity.ai/finance",
         "启动后",
         "实时抓取",
+        "首页",
         "板块",
-        "股票",
+        "走势较好的股票",
         "依据",
         "查股工具",
+        "公司名",
+        "不要编",
       ],
       enMarkers: [
         "Penguin SDK",
         "perplexity.ai/finance",
         "from startup",
         "live market",
+        "home page",
         "sector",
-        "stocks",
+        "trending strongest",
         "evidence",
         "stock-lookup tool",
+        "company name",
+        "not listed",
       ],
     },
     { id: "dailyPlan", zhMarkers: ["计划"], enMarkers: ["plan"] },
@@ -212,17 +218,18 @@ describe("short example prompts", () => {
   ] as const;
 
   it.each(shortExamples)("$id stays within the length ceiling", ({ id }) => {
-    // investmentCopilot sits highest: it carries four requirements plus a reference URL, which
-    // is ~21 characters of literal that no rewording can compress. The English ceiling is the
+    // investmentCopilot sits highest by a wide margin: six requirements plus a reference URL and a
+    // quoted sample question, both literals no rewording compresses. The English ceiling is the
     // wider one because English runs about three times the character count of the same Chinese,
     // not because the English is allowed to say more.
-    expect(zh.chat.exampleTasks[id].prompt.length).toBeLessThanOrEqual(170);
-    expect(en.chat.exampleTasks[id].prompt.length).toBeLessThanOrEqual(500);
+    expect(zh.chat.exampleTasks[id].prompt.length).toBeLessThanOrEqual(210);
+    expect(en.chat.exampleTasks[id].prompt.length).toBeLessThanOrEqual(650);
   });
 
   // What is left after the cut: what to build, and the constraints without which the result
   // would be the wrong thing (a rhythm game is a game synced to music; the investment Copilot
-  // is a Penguin SDK app that refreshes from startup and gives the assistant a stock-lookup tool).
+  // is a Penguin SDK app that refreshes from startup, surfaces trending stocks on its home page,
+  // and gives the assistant a name-resolving stock-lookup tool).
   it.each(shortExamples)("$id keeps its core in both locales", ({ id, zhMarkers, enMarkers }) => {
     for (const marker of zhMarkers) {
       expect(zh.chat.exampleTasks[id].prompt).toContain(marker);
