@@ -3,6 +3,7 @@
 - **Date:** 2026-08-23
 - **Type:** fix
 - **Scope:** `desktop`
+- **PR:** [#412](https://github.com/Prism-Shadow/penguin-harness/pull/412)
 
 [中文版](2026-08-23-desktop-renderer-reload-budget.zh.md)
 
