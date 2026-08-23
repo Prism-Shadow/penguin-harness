@@ -888,7 +888,11 @@ export class ContextEngine {
       // (harness user messages) and steering ([user_steering] user messages) ride alongside
       // this turn's tool outputs (or alone as the continuation input when the turn produced
       // no tool calls, instead of ending the Task — subject to the max-turns guard at the
-      // top of the loop). Notices first; the user's own words come last.
+      // top of the loop). Notices first; the user's own words come last. The whole batch is
+      // user-side and reaches AgentHub as ONE user message (streamGenerate merges a
+      // request's input into a single UniMessage), so injections never put two adjacent
+      // user messages on the wire — the per-message granularity exists only in the
+      // OmniMessage stream and the Trace.
       const injected = [
         ...(yield* this.deliverBackgroundNotices()),
         ...(yield* this.deliverSteering()),
