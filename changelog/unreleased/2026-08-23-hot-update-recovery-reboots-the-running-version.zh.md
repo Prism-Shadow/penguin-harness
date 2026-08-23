@@ -3,6 +3,7 @@
 - **Date:** 2026-08-23
 - **Type:** fix
 - **Scope:** `server`
+- **PR:** [#421](https://github.com/Prism-Shadow/penguin-harness/pull/421)
 
 [English](2026-08-23-hot-update-recovery-reboots-the-running-version.md)
 
