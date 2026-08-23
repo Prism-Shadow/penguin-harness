@@ -3,6 +3,7 @@
 - **Date:** 2026-08-23
 - **Type:** process
 - **Scope:** `skills`
+- **PR:** [#417](https://github.com/Prism-Shadow/penguin-harness/pull/417)
 
 [中文版](2026-08-23-skills-teach-openai-chat-client-type.zh.md)
 
