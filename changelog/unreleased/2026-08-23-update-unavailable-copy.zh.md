@@ -3,6 +3,7 @@
 - **Date:** 2026-08-23
 - **Type:** fix
 - **Scope:** `desktop`, `web`
+- **PR:** [#413](https://github.com/Prism-Shadow/penguin-harness/pull/413)
 
 [English](2026-08-23-update-unavailable-copy.md)
 
