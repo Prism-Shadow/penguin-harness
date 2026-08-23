@@ -3,6 +3,7 @@
 - **Date:** 2026-08-23
 - **Type:** fix
 - **Scope:** `skills`
+- **PR:** [#419](https://github.com/Prism-Shadow/penguin-harness/pull/419)
 
 [中文版](2026-08-23-skill-library-loader-keeps-non-text-files-out.zh.md)
 
