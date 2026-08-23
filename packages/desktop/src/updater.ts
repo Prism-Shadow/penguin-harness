@@ -241,10 +241,12 @@ export async function checkForUpdatesManually(): Promise<void> {
       platform: process.platform,
       env: process.env,
     });
+    // `linux-not-appimage` covers every Linux form that is not an AppImage — a deb install,
+    // but also an unpacked tree — so the wording names the rule rather than assuming dpkg.
     const detail =
       support.supported || support.reason === "dev"
         ? "This build does not update itself."
-        : "This copy was installed from a system package; update it with your package manager.";
+        : "Only the AppImage build updates itself on Linux. Update a package install with your package manager, or download the latest release manually.";
     await dialog.showMessageBox({ type: "info", message: "Updates are unavailable.", detail });
     return;
   }
