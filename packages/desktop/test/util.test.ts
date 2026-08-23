@@ -4,6 +4,7 @@ import {
   desktopLoginUrl,
   isAppUrl,
   isLocalSurfaceUrl,
+  isRendererCrash,
   parsePortFile,
   restartDelayMs,
 } from "../src/util.js";
@@ -63,5 +64,17 @@ describe("isLocalSurfaceUrl", () => {
 describe("restartDelayMs", () => {
   it("doubles from 1s and caps at 8s", () => {
     expect([0, 1, 2, 3, 4].map(restartDelayMs)).toEqual([1000, 2000, 4000, 8000, 8000]);
+  });
+});
+
+describe("isRendererCrash", () => {
+  it("treats every abnormal end of the render process as a crash", () => {
+    for (const reason of ["crashed", "oom", "killed", "abnormal-exit", "launch-failed"]) {
+      expect(isRendererCrash(reason)).toBe(true);
+    }
+  });
+
+  it("excludes a clean exit, which is the window on its way out", () => {
+    expect(isRendererCrash("clean-exit")).toBe(false);
   });
 });

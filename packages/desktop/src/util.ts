@@ -62,6 +62,18 @@ export function isLocalSurfaceUrl(url: string, origin: string | null): boolean {
 /** Max automatic server restarts before giving up with an error dialog. */
 export const MAX_SERVER_RESTARTS = 3;
 
+/** Max automatic reloads after a renderer crash before the page is left for a manual one. */
+export const MAX_RENDERER_RELOADS = 3;
+
+/**
+ * Whether a `render-process-gone` reason is a crash the shell should reload past.
+ * `clean-exit` is the render process going away on purpose — the window closing, the app
+ * quitting — where a reload would race the teardown instead of recovering anything.
+ */
+export function isRendererCrash(reason: string): boolean {
+  return reason !== "clean-exit";
+}
+
 /** Restart backoff: 1s, 2s, 4s (attempt is 0-based). */
 export function restartDelayMs(attempt: number): number {
   return Math.min(1000 * 2 ** attempt, 8000);

@@ -45,6 +45,8 @@ import {
   desktopLoginUrl,
   isAppUrl,
   isLocalSurfaceUrl,
+  isRendererCrash,
+  MAX_RENDERER_RELOADS,
   MAX_SERVER_RESTARTS,
   restartDelayMs,
 } from "./util.js";
@@ -143,9 +145,53 @@ function createWindow(url: string): void {
       void shell.openExternal(target);
     }
   });
-  win.webContents.on("render-process-gone", () => win?.webContents.reload());
+  armRendererRecovery(win);
   armSmokeProbe(win);
   void win.loadURL(url);
+}
+
+/** How long a loaded page must stay up for the reload budget to reset. */
+const RENDERER_HEALTHY_MS = 60_000;
+
+/**
+ * Renderer crash recovery. A gone render process leaves an empty window behind, so the page
+ * is reloaded — but on a budget: a page that crashes on every load (an OOM its own content
+ * causes) would otherwise reload forever at full speed. The budget resets once a load has
+ * stayed up, the same rule the embedded server's restart budget follows; past it the crashed
+ * page stays put and the View menu's Reload is the way back.
+ */
+function armRendererRecovery(target: BrowserWindow): void {
+  let reloads = 0;
+  let healthy: NodeJS.Timeout | null = null;
+  const clearHealthy = (): void => {
+    if (healthy !== null) clearTimeout(healthy);
+    healthy = null;
+  };
+  target.webContents.on("did-finish-load", () => {
+    clearHealthy();
+    healthy = setTimeout(() => {
+      reloads = 0;
+    }, RENDERER_HEALTHY_MS);
+    healthy.unref();
+  });
+  target.on("closed", clearHealthy);
+  target.webContents.on("render-process-gone", (_event, details) => {
+    clearHealthy();
+    // A clean exit and a quit in progress are both the window on its way out; reloading a
+    // destroyed webContents throws.
+    if (quitting || !isRendererCrash(details.reason) || target.isDestroyed()) return;
+    if (reloads >= MAX_RENDERER_RELOADS) {
+      process.stdout.write(
+        `[shell] renderer gone (${details.reason}); reload budget spent — reload from the View menu\n`,
+      );
+      return;
+    }
+    reloads += 1;
+    process.stdout.write(
+      `[shell] renderer gone (${details.reason}); reloading (${reloads}/${MAX_RENDERER_RELOADS})\n`,
+    );
+    target.webContents.reload();
+  });
 }
 
 /**
