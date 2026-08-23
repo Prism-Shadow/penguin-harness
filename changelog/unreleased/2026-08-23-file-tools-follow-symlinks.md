@@ -3,6 +3,7 @@
 - **Date:** 2026-08-23
 - **Type:** fix
 - **Scope:** `core`, `docs`
+- **PR:** [#414](https://github.com/Prism-Shadow/penguin-harness/pull/414)
 
 [中文版](2026-08-23-file-tools-follow-symlinks.zh.md)
 
