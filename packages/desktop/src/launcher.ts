@@ -134,6 +134,44 @@ exec "$APPIMAGE_PATH" -e '${appImageBootstrapJs()}' -- "$@"
 }
 
 /**
+ * A string as one POSIX shell word: single-quoted, with every embedded single quote
+ * spliced as `'\''` (close, escaped quote, reopen). Nothing inside single quotes is
+ * special to the shell, so a quoted word is safe whatever the value holds.
+ */
+export function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
+/**
+ * A string as an AppleScript literal for `osascript -e`: backslash and double quote are
+ * the two characters AppleScript escapes inside a quoted string. Applied AFTER
+ * {@link shellQuote}, whose `'\''` splice contributes a backslash of its own.
+ */
+export function appleScriptString(value: string): string {
+  return `"${value.replace(/[\\"]/g, (c) => `\\${c}`)}"`;
+}
+
+/**
+ * The privileged half of the macOS `penguin` install (see cli-install.ts): the
+ * `osascript` source that creates the link directory and points it at the app's bundled
+ * launcher, run when the unprivileged symlink was refused.
+ *
+ * `target` is derived from the app bundle's own location, which the user controls — a
+ * bundle kept under `~/Anne's Apps/` puts an apostrophe in the middle of the command.
+ * Both quoting layers are applied here so the value can never leave its shell word,
+ * which under `with administrator privileges` is the difference between a failed install
+ * and a root shell.
+ */
+export function adminSymlinkAppleScript(target: string, link: string): string {
+  const dir = link.slice(0, link.lastIndexOf("/")) || "/";
+  const command = [
+    `mkdir -p ${shellQuote(dir)}`,
+    `ln -sf ${shellQuote(target)} ${shellQuote(link)}`,
+  ].join(" && ");
+  return `do shell script ${appleScriptString(command)} with administrator privileges`;
+}
+
+/**
  * Idempotent HKCU\\Environment PATH append: returns the new value to write, or null
  * when `binDir` is already present (comparison ignores case, surrounding quotes and
  * trailing slashes). The existing value is preserved verbatim — only `;binDir` is
