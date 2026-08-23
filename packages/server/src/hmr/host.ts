@@ -287,13 +287,14 @@ export class HmrHost {
       }
       // Republished before boot, same ordering as an upgrade: a resumed platform loads its
       // native modules out of the assets the version was committed with.
+      let restoredAssets: string | null = null;
       if (manifest.assets !== undefined) {
-        const assetsDir = path.join(this.hmrDir, manifest.assets.dir);
-        if (!fs.existsSync(assetsDir)) {
+        restoredAssets = path.join(this.hmrDir, manifest.assets.dir);
+        if (!fs.existsSync(restoredAssets)) {
           throw new Error(`assets dir '${manifest.assets.dir}' does not exist`);
         }
-        this.publishAssets(assetsDir);
       }
+      this.publishAssets(restoredAssets);
       const bundle = await this.importBundleFile(path.join(this.hmrDir, manifest.platform.bundle));
       const gz = await fsp.readFile(path.join(this.hmrDir, manifest.web.manifest));
       const webMem = filesMapFromGzip(gz);
@@ -310,6 +311,10 @@ export class HmrHost {
       this.liveBundle = bundle;
       this.webMem = webMem;
     } catch (err) {
+      // Falling back to the packaged platform, which carries no pushed assets: leaving
+      // the pointer at the version that just failed to restore would hand the packaged
+      // bundle another version's binaries.
+      this.publishAssets(null);
       this.warn(
         `persisted version failed to restore (platform+cli+web are committed as one unit); ` +
           `using the packaged default: ${errMsg(err)}`,
@@ -349,7 +354,13 @@ export class HmrHost {
     // claiming the assets it booted with.
     const previousAssets = this.assets;
     const assetsDir = target.assets ? await this.materializeAssets(target.assets) : null;
-    if (assetsDir !== null) this.publishAssets(assetsDir);
+    // The CANDIDATE, unconditionally — including null. Publishing only a non-null one
+    // left a version that carries no assets pointing at its predecessor's directory: the
+    // live process kept loading the previous version's binaries while the manifest it
+    // wrote said there were none, so a restart behaved differently, and pruning that
+    // directory later broke terminal creation outright. Every failure path below puts
+    // the previous value back.
+    this.publishAssets(assetsDir);
 
     let result;
     try {

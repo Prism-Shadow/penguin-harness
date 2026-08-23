@@ -385,6 +385,25 @@ describe("upgrade assets: an unchanged set is not copied again", () => {
     }
   });
 
+  it("a successful push carrying NO assets clears the pointer, not leaves the old one", async () => {
+    t = await createTestApp();
+    const cookie = (await loginAdmin(t.app)).cookie;
+    expect((await pushWithAssets(t.app, cookie, "with-assets")).status).toBe(200);
+    expect(t.deps.hmr.assetsDir()).toBe(await assetsDirOf(t.root));
+
+    // A version with no assets committed a manifest that omits them — while the LIVE
+    // pointer kept naming its predecessor's directory. The process went on loading the
+    // previous version's binaries, a restart behaved differently, and pruning that
+    // directory later broke terminal creation outright.
+    const none = await pushPlatform(
+      t.app,
+      cookie,
+      platformServing(["/api/demo/no-assets"], "no-assets"),
+    );
+    expect(none.status).toBe(200);
+    expect(t.deps.hmr.assetsDir()).toBeNull();
+  });
+
   it("repairs a directory whose materialization was interrupted", async () => {
     t = await createTestApp();
     const cookie = (await loginAdmin(t.app)).cookie;
