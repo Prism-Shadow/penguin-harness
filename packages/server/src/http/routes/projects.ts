@@ -47,7 +47,7 @@ export function projectsRoutes(deps: AppDeps): Hono<AppEnv> {
   });
 
   app.delete("/:projectId", async (c) => {
-    // Defensive id validation (FD-4): deleteProject constructs the project directory path and recursively deletes it.
+    // Defensive id validation: deleteProject constructs the project directory path and recursively deletes it.
     await deps.projectService.deleteProject(c.var.user.userId, requireValidId(c, "projectId"));
     return c.body(null, 204);
   });

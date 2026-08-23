@@ -406,7 +406,7 @@ export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
   // `cli=1` widens the list to CLI-created Sessions (Trace-directory discovery + adoption);
   // the default serves web rows straight from the DB (see SessionService.listSessions).
   app.get("/", async (c) => {
-    // Id validity is checked before any path is constructed (FD-4: guards against agentId path traversal across Projects).
+    // Id validity is checked before any path is constructed: guards against agentId path traversal across Projects.
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
@@ -815,7 +815,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
   app.get("/:sessionId/stream", (c) => {
     const row = resolveSession(c);
     const channel = deps.channels.get(row.sessionId);
-    // FD-1: the first event of every new subscription (including reconnects and resync
+    // The first event of every new subscription (including reconnects and resync
     // rebuilds) is always a snapshot of the current running state — the frontend treats
     // this as authoritative, eliminating input-area lockup or premature Task closure
     // caused by a stale running/idle in the list; followed by replaying all still-pending

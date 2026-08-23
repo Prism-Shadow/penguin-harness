@@ -14,7 +14,7 @@
  *     The listing consults the sessions table read-only (titles, archived, workspace,
  *     client); discovery itself still comes from the Trace directory tree via the index.
  *   - GET /api/projects/:p/agents/:a/traces/:sessionId/:index (including /analysis, /download) —
- *     read-only Trace detail endpoints (FD-3): locate the Trace file directly by
+ *     read-only Trace detail endpoints: locate the Trace file directly by
  *     (projectId, agentId, sessionId), without depending on the sessions table for
  *     tracking — any entry visible in the directory tree (subagent child Sessions,
  *     CLI-created Sessions) can be opened and read; access is enforced by requireProjectAccess.
@@ -52,7 +52,7 @@ export function agentTracesRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.get("/", async (c) => {
-    // Id validation happens before any path construction (FD-4: prevents agentId path traversal for cross-Project privilege escalation).
+    // Id validation happens before any path construction: prevents agentId path traversal for cross-Project privilege escalation.
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);

@@ -251,7 +251,7 @@ export function agentSkillsRoutes(deps: AppDeps): Hono<AppEnv> {
   });
 
   app.get("/", async (c) => {
-    // Defensive id validation happens before any path construction (FD-4: prevents path traversal for cross-Project privilege escalation).
+    // Defensive id validation happens before any path construction: prevents path traversal for cross-Project privilege escalation.
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);

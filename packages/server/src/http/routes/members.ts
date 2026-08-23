@@ -17,7 +17,7 @@ export function membersRoutes(deps: AppDeps): Hono<AppEnv> {
   app.use("*", rejectInDesktopMode(deps));
 
   app.get("/", (c) => {
-    // Defensive id validation (FD-4).
+    // Defensive id validation.
     const members = deps.projectService.listMembers(
       c.var.user.userId,
       requireValidId(c, "projectId"),
