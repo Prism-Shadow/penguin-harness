@@ -105,6 +105,7 @@ export const zh = {
       windows: { name: "Windows", require: "Windows 10 及以上（x64），NSIS 安装程序" },
       linux: { name: "Linux", require: "x64，AppImage 免安装运行，或 deb 交给包管理器" },
     },
+    statusProbing: "正在为你测试下载源，选出更快的那个……",
     statusOss: (version: string) => `已连接 OSS 国内镜像（${version}），点击即从镜像高速下载。`,
     statusGithub: "下载指向 GitHub Releases 的最新版本。",
     altGithub: "改从 GitHub 下载",

@@ -20,15 +20,50 @@
  * two numbers are comparable — the alternative, reading OSS through CORS, would time the JS-side
  * buffering on one side only. GitHub's duration additionally covers the two redirect hops its
  * release URLs take, which can only make it read slower than it is, never faster.
+ *
+ * Unlike the installers, this runs with someone watching a page, so every wait is bounded twice:
+ * each request has its own cap, and PROBE_BUDGET_MS caps the whole sequence. A visitor who cannot
+ * reach GitHub at all is the one this matters most for, and they are also the one whose GitHub
+ * request will never come back — so the answer has to be reached on a clock, not on completion.
  */
+
+import { GITHUB_LATEST_DOWNLOAD, OSS_LATEST_JSON_URL, OSS_ORIGIN } from "./links";
 
 export const SPEED_PROBE_GITHUB_MIN_BYTES_PER_SECOND = 262144;
 
 /** How much faster the mirror has to be before its paid bandwidth beats a free GitHub download. */
 export const SPEED_PROBE_OSS_SWITCH_RATIO = 1.5;
 
-/** The installers' large-probe cap: a source that cannot deliver the probe in this long loses. */
-export const SPEED_PROBE_TIMEOUT_MS = 8000;
+/**
+ * The whole sequence — mirror pointer, manifest, and up to two probes — from its first request.
+ * Every phase below clamps to what is left of it, so the buttons cannot stay behind a spinner
+ * longer than this no matter which request is the one hanging.
+ */
+export const PROBE_BUDGET_MS = 9000;
+
+/** Cap for the two small JSON/TSV lookups, which are a round trip and a few hundred bytes. */
+const METADATA_TIMEOUT_MS = 2500;
+
+/** A source that has not sent response headers by here is treated as unreachable, not as slow. */
+const CONNECT_TIMEOUT_MS = 2500;
+
+/**
+ * Cap for a probe's body. The large probe is 1 MiB, which is exactly the minimum's worth of bytes
+ * in 4s, so anything still running at this point is already below the minimum and the extra second
+ * is only there to absorb GitHub's redirect hops rather than to refine a number.
+ *
+ * The installers allow 8s here, and that difference is deliberate. A source slower than 1 MiB per
+ * cap reads as unmeasured rather than as a number, so this cap sets the floor under which the
+ * tie-break rule stops seeing a speed at all: ~210 KB/s here against ~131 KB/s there. Between those
+ * two figures a slow GitHub the installers would have kept goes to the mirror instead — a bandwidth
+ * cost on a connection that is slow whichever source it uses, traded for a page that answers in
+ * seconds. Widening it to match would put the worst case past PROBE_BUDGET_MS, with someone sitting
+ * in front of it.
+ */
+const TRANSFER_TIMEOUT_MS = 5000;
+
+/** Cap for the small probe, which is only ever asked whether a source answers at all. */
+const REACHABILITY_TIMEOUT_MS = 2500;
 
 export type DownloadSource = "github" | "oss";
 
@@ -37,6 +72,13 @@ export interface ReleaseProbe {
   file: string;
   /** Its exact size, the numerator of every measurement — the opaque body cannot be counted. */
   size: number;
+}
+
+export interface ReleaseProbes {
+  /** 64 KiB: cheap enough to ask "does this source answer" without paying for a megabyte. */
+  small: ReleaseProbe;
+  /** 1 MiB: long enough that a throughput reading is not swallowed by connection setup. */
+  large: ReleaseProbe;
 }
 
 /**
@@ -51,35 +93,59 @@ export function selectDownloadSource(
   return ossBytesPerSecond > githubBytesPerSecond * SPEED_PROBE_OSS_SWITCH_RATIO ? "oss" : "github";
 }
 
+/** A shrinking budget shared by every phase, the browser's form of the installers' total timeout. */
+export interface ProbeDeadline {
+  /** This phase's cap, clamped to what is left; 0 means the budget is spent. */
+  slice(capMs: number): number;
+}
+
+export function createDeadline(budgetMs: number = PROBE_BUDGET_MS): ProbeDeadline {
+  const endsAt = Date.now() + budgetMs;
+  return { slice: (capMs) => Math.max(0, Math.min(capMs, endsAt - Date.now())) };
+}
+
 const SAFE_ASSET_NAME = /^[A-Za-z0-9._+-]+$/;
 
-/**
- * The large probe row of a release's download manifest, validated the way the installers validate
- * it: the header has to name this exact tag, and the file name has to be a plain asset name so a
- * tampered manifest cannot point the probe at another path.
- */
-export function parseLargeProbe(manifest: string, tag: string): ReleaseProbe | null {
-  const lines = manifest.split("\n");
-  if (lines[0] !== `penguin-release-download-manifest\t1\t${tag}`) return null;
-  for (const line of lines.slice(1)) {
-    const fields = line.split("\t");
-    if (fields[0] !== "probe" || fields[1] !== "large") continue;
-    if (fields.length !== 5) return null;
-    const file = fields[2] ?? "";
-    const size = Number(fields[3]);
-    if (!SAFE_ASSET_NAME.test(file) || file.includes("..")) return null;
-    if (!Number.isSafeInteger(size) || size <= 0) return null;
-    return { file, size };
-  }
-  return null;
+function parseProbeRow(fields: string[]): ReleaseProbe | null {
+  if (fields.length !== 5) return null;
+  const file = fields[2] ?? "";
+  const size = Number(fields[3]);
+  if (!SAFE_ASSET_NAME.test(file) || file.includes("..")) return null;
+  if (!Number.isSafeInteger(size) || size <= 0) return null;
+  return { file, size };
 }
 
 /**
- * A fresh query string per probe: a cached hit would time the disk rather than the network, and it
- * keeps every measurement on a resource timing entry name of its own.
+ * The probe rows of a release's download manifest, validated the way the installers validate them:
+ * the header has to name this exact tag, and a file name has to be a plain asset name so a tampered
+ * manifest cannot point a request at another path.
+ */
+export function parseProbes(manifest: string, tag: string): ReleaseProbes | null {
+  const lines = manifest.split("\n");
+  if (lines[0] !== `penguin-release-download-manifest\t1\t${tag}`) return null;
+  let small: ReleaseProbe | null = null;
+  let large: ReleaseProbe | null = null;
+  for (const line of lines.slice(1)) {
+    const fields = line.split("\t");
+    if (fields[0] !== "probe") continue;
+    const probe = parseProbeRow(fields);
+    if (!probe) return null;
+    if (fields[1] === "small") small = probe;
+    if (fields[1] === "large") large = probe;
+  }
+  return small && large ? { small, large } : null;
+}
+
+/**
+ * A fresh query string per request: a cached hit would time the disk rather than the network, and
+ * it keeps every measurement on a resource timing entry name of its own.
  */
 function probeUrl(base: string, file: string): string {
   return `${base}/${file}?probe=${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /** The entry's duration in ms, or null when none is recorded before the deadline. */
@@ -107,30 +173,80 @@ function awaitResourceTiming(url: string, timeoutMs: number): Promise<number | n
   });
 }
 
-/** Bytes per second for one probe download; 0 when it did not complete inside the deadline. */
-export async function measureBytesPerSecond(
+/**
+ * Starts an opaque request and resolves once its headers land, or null if they do not land inside
+ * `connectMs`. The returned `settled` promise is the transfer itself; the caller decides how long
+ * to wait for the body and keeps `abort` armed until then, so a stalled body is cut off rather than
+ * measured. Opaque is the only option for GitHub, whose release assets refuse cross-origin reads.
+ */
+function startProbeRequest(
+  url: string,
+  connectMs: number,
+): { reachable: Promise<boolean>; abort: () => void } {
+  const controller = new AbortController();
+  if (connectMs <= 0) {
+    controller.abort();
+    return { reachable: Promise.resolve(false), abort: () => controller.abort() };
+  }
+  const headers = fetch(url, {
+    mode: "no-cors",
+    cache: "no-store",
+    signal: controller.signal,
+  }).then(
+    () => true,
+    () => false,
+  );
+  const reachable = Promise.race([headers, delay(connectMs).then(() => false)]).then((ok) => {
+    if (!ok) controller.abort();
+    return ok;
+  });
+  return { reachable, abort: () => controller.abort() };
+}
+
+/** Whether a source answers at all, asked with the cheap 64 KiB probe. */
+export async function probeReachable(url: string, deadline: ProbeDeadline): Promise<boolean> {
+  const { reachable, abort } = startProbeRequest(url, deadline.slice(REACHABILITY_TIMEOUT_MS));
+  const ok = await reachable;
+  abort();
+  return ok;
+}
+
+/**
+ * What one probe learned about a source. The two fields answer two different questions, and the
+ * installers keep them apart too: their small-probe pair settles reachability before any throughput
+ * probe runs. A source that never answered loses to one that did, full stop; a source that answered
+ * but could not finish the probe is merely unmeasured, and the rule's tie-break decides it.
+ */
+export interface Measurement {
+  /** Response headers landed inside the connect cap. */
+  reachable: boolean;
+  /** Throughput, or 0 when the transfer did not finish inside the transfer cap. */
+  bytesPerSecond: number;
+}
+
+const UNREACHABLE: Measurement = { reachable: false, bytesPerSecond: 0 };
+
+/** Measures one probe download under both caps. */
+export async function measureSource(
   url: string,
   sizeBytes: number,
-  timeoutMs: number = SPEED_PROBE_TIMEOUT_MS,
-  signal?: AbortSignal,
-): Promise<number> {
-  const controller = new AbortController();
-  const deadline = setTimeout(() => controller.abort(), timeoutMs);
-  signal?.addEventListener("abort", () => controller.abort(), { once: true });
-  if (signal?.aborted) controller.abort();
-  const timing = awaitResourceTiming(url, timeoutMs);
+  deadline: ProbeDeadline,
+): Promise<Measurement> {
+  const { reachable, abort } = startProbeRequest(url, deadline.slice(CONNECT_TIMEOUT_MS));
   try {
-    // An opaque fetch settles once the headers land, not once the body does. The timing entry is
-    // what waits for the transfer to finish; the abort above is what bounds it, and stays armed
-    // until then so a stalled body is cut off rather than measured.
-    await fetch(url, { mode: "no-cors", cache: "no-store", signal: controller.signal });
-    const durationMs = await timing;
-    if (controller.signal.aborted || durationMs === null || durationMs <= 0) return 0;
-    return Math.round((sizeBytes * 1000) / durationMs);
+    if (!(await reachable)) return UNREACHABLE;
+    const transferMs = deadline.slice(TRANSFER_TIMEOUT_MS);
+    if (transferMs <= 0) return { reachable: true, bytesPerSecond: 0 };
+    const durationMs = await awaitResourceTiming(url, transferMs);
+    const measured = durationMs !== null && durationMs > 0;
+    return {
+      reachable: true,
+      bytesPerSecond: measured ? Math.round((sizeBytes * 1000) / durationMs) : 0,
+    };
   } catch {
-    return 0;
+    return UNREACHABLE;
   } finally {
-    clearTimeout(deadline);
+    abort();
   }
 }
 
@@ -140,41 +256,92 @@ export interface ProbeSources {
 }
 
 /**
- * Applies the rule to one release. OSS is measured only once GitHub has failed the minimum: above
- * it GitHub has already won, and the mirror's bandwidth is not spent on a probe that could not
- * change the answer. The two run one after the other on purpose — concurrent transfers share the
- * link and would each read as half as fast, which an absolute threshold cannot tolerate.
+ * The two questions the decision below can ask of a source, injected so the branch structure can be
+ * tested without a network: `measure` runs the large probe, `answers` runs the cheap 64 KiB one.
  */
-export async function probeDownloadSource(
-  sources: ProbeSources,
-  probe: ReleaseProbe,
-  signal?: AbortSignal,
-): Promise<DownloadSource> {
-  const measure = (base: string) =>
-    measureBytesPerSecond(probeUrl(base, probe.file), probe.size, SPEED_PROBE_TIMEOUT_MS, signal);
-  const github = await measure(sources.githubBase);
-  if (github >= SPEED_PROBE_GITHUB_MIN_BYTES_PER_SECOND) return "github";
-  return selectDownloadSource(github, await measure(sources.ossBase));
+export interface SourceProbes {
+  measure(base: string, probe: ReleaseProbe): Promise<Measurement>;
+  answers(base: string, probe: ReleaseProbe): Promise<boolean>;
 }
 
 /**
- * The release's large probe row, read from the mirror — the one origin of the two that answers a
- * cross-origin read at all, and the same file the installers parse.
+ * Applies the rule to one release, in the same order the installers apply it.
+ *
+ * GitHub is measured first. At or above the minimum it wins outright and the mirror is never
+ * touched — no paid bandwidth spent on a probe that could not change the answer.
+ *
+ * A GitHub that never answered is a different finding from one that answered slowly, and the two
+ * take different branches, exactly as they do in install.sh. Unreachable is settled on reachability
+ * alone: the mirror wins if it answers, which the 64 KiB probe establishes in a fraction of the
+ * time a second megabyte would. Reachable-but-unmeasured is a throughput question, so the mirror is
+ * measured on the same large probe and the tie-break rule decides — collapsing the two would hand
+ * the mirror downloads the rule says GitHub should keep.
+ *
+ * The measurements run one after another on purpose: concurrent transfers share the link and would
+ * each read as half as fast, which an absolute threshold cannot tolerate.
  */
-export async function fetchLargeProbe(
-  ossBase: string,
-  tag: string,
-  signal?: AbortSignal,
-): Promise<ReleaseProbe | null> {
+export async function decideDownloadSource(
+  sources: ProbeSources,
+  probes: ReleaseProbes,
+  io: SourceProbes,
+): Promise<DownloadSource> {
+  const github = await io.measure(sources.githubBase, probes.large);
+  if (github.bytesPerSecond >= SPEED_PROBE_GITHUB_MIN_BYTES_PER_SECOND) return "github";
+  if (!github.reachable) {
+    return (await io.answers(sources.ossBase, probes.small)) ? "oss" : "github";
+  }
+  const oss = await io.measure(sources.ossBase, probes.large);
+  return selectDownloadSource(github.bytesPerSecond, oss.bytesPerSecond);
+}
+
+/** The decision above, wired to real requests under the shared budget. */
+export function probeDownloadSource(
+  sources: ProbeSources,
+  probes: ReleaseProbes,
+  deadline: ProbeDeadline,
+): Promise<DownloadSource> {
+  return decideDownloadSource(sources, probes, {
+    measure: (base, probe) => measureSource(probeUrl(base, probe.file), probe.size, deadline),
+    answers: (base, probe) => probeReachable(probeUrl(base, probe.file), deadline),
+  });
+}
+
+/** Reads a small JSON/TSV lookup under the shared budget; null on any failure. */
+async function fetchMetadata(url: string, deadline: ProbeDeadline): Promise<Response | null> {
+  const timeoutMs = deadline.slice(METADATA_TIMEOUT_MS);
+  if (timeoutMs <= 0) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(`${ossBase}/release-download-manifest.tsv`, {
-      signal,
-      cache: "no-store",
-    });
-    return res.ok ? parseLargeProbe(await res.text(), tag) : null;
+    const res = await fetch(url, { cache: "no-store", signal: controller.signal });
+    return res.ok ? res : null;
   } catch {
     return null;
+  } finally {
+    clearTimeout(timer);
   }
+}
+
+/**
+ * The release's probe rows, read from the mirror — the one origin of the two that answers a
+ * cross-origin read at all, and the same file the installers parse.
+ */
+export async function fetchProbes(
+  ossBase: string,
+  tag: string,
+  deadline: ProbeDeadline,
+): Promise<ReleaseProbes | null> {
+  const res = await fetchMetadata(`${ossBase}/release-download-manifest.tsv`, deadline);
+  return res ? parseProbes(await res.text(), tag) : null;
+}
+
+/** Reads the mirror pointer under the shared budget. */
+export async function fetchMirrorPointer(
+  url: string,
+  deadline: ProbeDeadline,
+): Promise<unknown | null> {
+  const res = await fetchMetadata(url, deadline);
+  return res ? await res.json() : null;
 }
 
 /** Data Saver is a request not to spend a megabyte on measuring; the unprobed default stands. */
@@ -182,4 +349,93 @@ export function probingAllowed(): boolean {
   if (typeof navigator === "undefined") return false;
   const connection = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection;
   return connection?.saveData !== true;
+}
+
+/** The OSS mirror the buttons would use: an immutable per-tag directory in the release bucket. */
+export interface Mirror {
+  tag: string;
+  base: string;
+}
+
+/** What the probe settled on, plus the mirror it would use. Never partially applied. */
+export interface Resolution {
+  source: DownloadSource;
+  mirror: Mirror | null;
+}
+
+const RELEASE_TAG = /^v[0-9A-Za-z][0-9A-Za-z._-]*$/;
+
+/**
+ * The only shape a mirror is ever allowed to take: a safe release tag, and the exact bucket path
+ * that tag implies. Every way a mirror can enter the page goes through here — the live pointer and
+ * the session cache alike — so neither metadata nor stored state can aim a download at some other
+ * host. Keep it that way: a second definition is a second thing to get wrong.
+ */
+export function toMirror(tag: unknown, base: unknown): Mirror | null {
+  if (typeof tag !== "string" || !RELEASE_TAG.test(tag)) return null;
+  if (base !== `${OSS_ORIGIN}/releases/${tag}`) return null;
+  return { tag, base };
+}
+
+/** latest.json validated like the installer forwarders validate it: schema 1, then the shape above. */
+export function parseMirror(value: unknown): Mirror | null {
+  if (typeof value !== "object" || value === null) return null;
+  const manifest = value as { schemaVersion?: unknown; tag?: unknown; releaseBaseUrl?: unknown };
+  if (manifest.schemaVersion !== 1) return null;
+  return toMirror(manifest.tag, manifest.releaseBaseUrl);
+}
+
+/**
+ * The result survives the rest of the browser session, so coming back to the page — or bouncing off
+ * it to a release page and returning — spends neither another megabyte nor another spinner. It is
+ * per-tab and short-lived on purpose: network conditions change, and a stale answer is only ever one
+ * reload away from being re-measured. What comes back out is validated exactly like a live pointer,
+ * so a tampered entry cannot aim a download anywhere the live lookup could not.
+ */
+const CACHE_KEY = "penguin.downloadSource.v1";
+
+export function readCachedResolution(): Resolution | null {
+  try {
+    const raw = sessionStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null) return null;
+    const { source, mirror } = parsed as { source?: unknown; mirror?: unknown };
+    if (source !== "github" && source !== "oss") return null;
+    if (mirror === null) return { source, mirror: null };
+    if (typeof mirror !== "object") return null;
+    const { tag, base } = mirror as { tag?: unknown; base?: unknown };
+    const validated = toMirror(tag, base);
+    return validated ? { source, mirror: validated } : null;
+  } catch {
+    // Private mode, blocked site data and a corrupt entry all land here; the page measures again.
+    return null;
+  }
+}
+
+export function cacheResolution(resolution: Resolution): void {
+  try {
+    sessionStorage.setItem(CACHE_KEY, JSON.stringify(resolution));
+  } catch {
+    // Storage being unavailable costs a re-measure next visit, nothing more.
+  }
+}
+
+/**
+ * Resolves the mirror pointer, then measures. Every failure lands on GitHub, the free source that
+ * always has a valid version-less URL, so no path here can leave the page without a download.
+ */
+export async function resolveDownloadSource(): Promise<Resolution> {
+  const deadline = createDeadline();
+  const mirror = parseMirror(await fetchMirrorPointer(OSS_LATEST_JSON_URL, deadline));
+  if (!mirror) return { source: "github", mirror: null };
+  if (!probingAllowed()) return { source: "github", mirror };
+  const probes = await fetchProbes(mirror.base, mirror.tag, deadline);
+  if (!probes) return { source: "github", mirror };
+  const source = await probeDownloadSource(
+    { githubBase: GITHUB_LATEST_DOWNLOAD, ossBase: mirror.base },
+    probes,
+    deadline,
+  );
+  return { source, mirror };
 }
