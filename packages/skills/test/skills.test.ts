@@ -239,6 +239,19 @@ describe("loadSkillGroups / groupSkills", () => {
       },
     ]);
   });
+
+  /**
+   * The package README repeats the manifest as a table for human readers. Derived from the
+   * library rather than pinned, so adding a Skill fails here instead of leaving the table
+   * quietly short — the same guard the docs pages get from docs' skills-sync test.
+   */
+  it("the package README's group table names every library Skill", async () => {
+    const readme = await fs.readFile(path.resolve(import.meta.dirname, "../README.md"), "utf8");
+    const missing = loadLibrarySkills()
+      .map((skill) => skill.name)
+      .filter((name) => !readme.includes(`\`${name}\``));
+    expect(missing, "skills missing from README.md").toEqual([]);
+  });
 });
 
 describe("librarySkill", () => {
