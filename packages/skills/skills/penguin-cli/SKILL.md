@@ -28,7 +28,7 @@ penguin config model add --provider <group> --model-id <upstream_id> [--api-key 
 ```
 
 - A model is identified by the `(provider, model_id)` pair, so `--provider` and `--model-id` are **both required** — the group is never inferred from the model id, because gateways resell vendor models under their upstream ids and a wrong guess would send the key to another vendor's endpoint. `--model-id` takes the provider's upstream model id (what the API expects) and is persisted as the entry's request id, so it reaches the API unchanged; `--provider` names the group (`deepseek`, `openai`, `anthropic`, `google`, `openrouter`, `siliconflow`, … — `custom` for any other endpoint).
-- For any OpenAI chat-completion compatible endpoint use `--client-type openai --base-url <endpoint>`; omit `--client-type` to auto-route by model id.
+- For any OpenAI chat-completion compatible endpoint use `--client-type openai-chat --base-url <endpoint>`; omit `--client-type` to auto-route by model id. (The bare `openai` spelling still works as a deprecated alias and is normalized to `openai-chat` when the entry is written.)
 - Prices are USD per million tokens (cache read / cache write / output).
 - `--vision` / `--no-vision` mark whether the model accepts images; omitting both keeps the current value (default is vision-capable).
 - `--fast-mode` / `--no-fast-mode` turn on faster output at premium pricing (off by default); omitting both keeps the current value. Enabling it on a model whose AgentHub client has no fast tier still writes the entry but warns on stderr — the parameter would be rejected at request time.

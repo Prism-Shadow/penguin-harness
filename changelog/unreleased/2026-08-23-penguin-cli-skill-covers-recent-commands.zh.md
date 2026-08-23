@@ -17,6 +17,8 @@ Agent 完全看不见。这次一并补上（skill `v9`）：`penguin config mod
   的非零退出，以及删除后随之清空的默认模型 / 视觉模型指针。
 - `--fast-mode` / `--no-fast-mode` 进入 `model add` 的命令行摘要与选项列表，和 `--vision` 一样是
   三态；也写明了对没有 fast 档位的 AgentHub 客户端会在 stderr 给出告警。
+- OpenAI 兼容端点的写法改用 `openai-chat`——AgentHub 0.4.2 起的正式名称——并点明 bare `openai`
+  只是会被归一化过去的废弃别名。
 - "Running agents" 一节补上 `--thinking <level>`——它的回退链、在会话创建时定档因而被子 Agent
   继承、以及 `--resume` 下转为按轮覆盖的含义——和 `--goal [budget]`，包括 token 预算取值与
   `penguin chat` 里的 `/goal` 写法。

@@ -20,6 +20,9 @@ on `model add`, and `--thinking` and `--goal` on `run` / `chat`.
 - `--fast-mode` / `--no-fast-mode` joined the `model add` synopsis and its option list as a
   tri-state alongside `--vision`, including the stderr warning for a model whose AgentHub
   client has no fast tier.
+- The OpenAI-compatible endpoint recipe now spells the client type `openai-chat`, the
+  canonical name since AgentHub 0.4.2, and names the bare `openai` form as the deprecated
+  alias it is normalized from.
 - The "Running agents" section gained `--thinking <level>` — its fallback chain, the
   session-creation pinning that subagents inherit, and its per-turn meaning under `--resume`
   — and `--goal [budget]`, with the token-budget value and the `/goal` form inside
