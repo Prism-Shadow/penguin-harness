@@ -8,7 +8,8 @@
 #                              installer defaults to its own version, an unstamped source copy to latest
 #   PENGUIN_INSTALL_DIR=<dir> install dir; default ~/.penguin
 #   PENGUIN_ARCHIVE=<file>    install a local Release archive without network access (same as --archive <file>)
-#   PENGUIN_DOWNLOAD_SOURCE=auto|oss|github choose the online source; default auto (OSS, then same-version GitHub)
+#   PENGUIN_DOWNLOAD_SOURCE=auto|oss|github choose the online source; default auto (speed-probed,
+#                              with the same-version other source as fallback)
 #   PENGUIN_DOWNLOAD_SPEED_PROBE=0 disable same-version OSS/GitHub probe timing in auto mode
 #   PENGUIN_DOWNLOAD_BASE_URL=<url> exact online asset directory selected by the stable forwarder
 #   PENGUIN_DOWNLOAD_FALLBACK_BASE_URL=<url> fallback for PENGUIN_DOWNLOAD_BASE_URL
@@ -42,11 +43,29 @@ SOURCE_MODE="${PENGUIN_DOWNLOAD_SOURCE:-auto}"
 DOWNLOAD_BASE_URL="${PENGUIN_DOWNLOAD_BASE_URL:-}"
 DOWNLOAD_FALLBACK_BASE_URL="${PENGUIN_DOWNLOAD_FALLBACK_BASE_URL:-}"
 DOWNLOAD_SPEED_PROBE="${PENGUIN_DOWNLOAD_SPEED_PROBE:-1}"
-SPEED_PROBE_TOTAL_TIMEOUT_SECONDS=16
+# Auto-mode source selection, one rule shared by install.sh, install.ps1 and the download page on
+# penguin.ooo (packages/landing/src/lib/download-source.ts):
+#
+#   1. Measure GitHub on the release's large probe file. At or above
+#      SPEED_PROBE_GITHUB_MIN_BYTES_PER_SECOND it wins outright and OSS is never touched.
+#   2. Only below that is OSS measured, and it takes over only when it is more than
+#      SPEED_PROBE_OSS_SWITCH_RATIO_PERCENT of GitHub — a mirror that is merely a little quicker
+#      does not justify its bandwidth bill, and a slow GitHub download still resumes.
+#
+# GitHub is the free source, so every tie and every unmeasurable comparison stays there. The two
+# constants are duplicated because these three implementations cannot import from each other — an
+# installer is a standalone file fetched over the network. Change them in all three at once, which
+# scripts/test-installer.sh pins.
+#
+# The total budget covers the whole probe: manifest, the small reachability pair, and up to two
+# large probes. It is deliberately the sum of their caps, so the second large probe always gets its
+# full window rather than being squeezed into declaring a healthy mirror unreachable.
 SPEED_PROBE_MANIFEST_TIMEOUT_SECONDS=5
 SPEED_PROBE_SMALL_TIMEOUT_SECONDS=5
 SPEED_PROBE_LARGE_TIMEOUT_SECONDS=8
+SPEED_PROBE_TOTAL_TIMEOUT_SECONDS=26
 SPEED_PROBE_GITHUB_MIN_BYTES_PER_SECOND=262144
+SPEED_PROBE_OSS_SWITCH_RATIO_PERCENT=150
 SPEED_PROBE_STARTED_AT=0
 PAYLOAD_NAME="payload.tar.gz"
 # The release workflow replaces this token with the immutable tag before publishing both the
@@ -331,6 +350,8 @@ load_release_download_manifest() {
   SPEED_PROBE_LARGE_PROBE="$(awk -F '\t' '$1 == "probe" && $2 == "large" { print $3; exit }' "$lrdm_manifest")"
   SPEED_PROBE_LARGE_SIZE="$(awk -F '\t' '$1 == "probe" && $2 == "large" { print $4; exit }' "$lrdm_manifest")"
   SPEED_PROBE_LARGE_HASH="$(awk -F '\t' '$1 == "probe" && $2 == "large" { print $5; exit }' "$lrdm_manifest")"
+  # Not part of the decision — an integrity check that this manifest belongs to a release which
+  # actually carries this target's bundle, so a mismatched manifest cannot steer the probe.
   SPEED_PROBE_ASSET_SIZE="$(awk -F '\t' -v asset="$ASSET" '$1 == "asset" && $2 == asset { print $3; exit }' "$lrdm_manifest")"
 
   for lrdm_file in "$SPEED_PROBE_SMALL_PROBE" "$SPEED_PROBE_LARGE_PROBE"; do
@@ -406,26 +427,32 @@ probe_status() {
   fi
 }
 
-select_speed_probe_source_from_metrics() {
-  sfm_github_metrics="$1"
-  awk -v github_min="$SPEED_PROBE_GITHUB_MIN_BYTES_PER_SECOND" '
-    function read_metrics(path, out, line, fields) {
-      if ((getline line < path) <= 0) return 0
-      close(path)
-      split(line, fields, " ")
-      if (fields[1] != "ok") return 0
-      out["start"] = fields[2] + 0
-      out["total"] = fields[3] + 0
-      out["speed"] = fields[4] + 0
-      return 1
-    }
-    BEGIN {
-      github_ok = read_metrics(ARGV[1], github)
-      ARGV[1] = ""
-      if (github_ok && github["speed"] >= github_min) { print "github"; exit }
-      print "oss"
-    }
-  ' "$sfm_github_metrics"
+# Throughput a completed probe measured, in whole bytes per second; 0 when it did not complete,
+# which sorts it below any real measurement in the comparison below.
+probe_bytes_per_second() {
+  pbs_metrics="$1"
+  if [ ! -f "$pbs_metrics" ]; then
+    printf '%s\n' 0
+    return 0
+  fi
+  awk 'NR == 1 && $1 == "ok" && $4 + 0 > 0 { printf "%d\n", $4 + 0; measured = 1 }
+       END { if (!measured) print 0 }' "$pbs_metrics"
+}
+
+# The shared rule, in one place: GitHub clears the minimum and wins outright, otherwise the mirror
+# has to beat it by the switch ratio to take over. A POSIX shell has no floating point, so the ratio
+# is applied to the GitHub side as an integer percent — scaling the mirror's side instead could
+# overflow a 32-bit shell on a fast link, while this one is bounded by the minimum itself.
+select_speed_probe_source() {
+  ssp_github_speed="$1"
+  ssp_oss_speed="$2"
+  if [ "$ssp_github_speed" -ge "$SPEED_PROBE_GITHUB_MIN_BYTES_PER_SECOND" ]; then
+    printf '%s\n' "github"
+  elif [ "$ssp_oss_speed" -gt "$((ssp_github_speed * SPEED_PROBE_OSS_SWITCH_RATIO_PERCENT / 100))" ]; then
+    printf '%s\n' "oss"
+  else
+    printf '%s\n' "github"
+  fi
 }
 
 speed_probe_release_sources() {
@@ -459,26 +486,34 @@ speed_probe_release_sources() {
     return 1
   fi
 
-  if [ "$SPEED_PROBE_ASSET_SIZE" -lt 33554432 ]; then
-    SPEED_PROBE_BASE_URL="$OSS_SPEED_PROBE_BASE_URL"
-    SPEED_PROBE_FALLBACK_BASE_URL="$GITHUB_SPEED_PROBE_BASE_URL"
-    echo "Selected OSS mirror (download source test did not need throughput probing)."
-    return 0
-  fi
-
   GITHUB_PROBE_METRICS="$TMP/probe-github-$SPEED_PROBE_LARGE_PROBE.metrics"
   probe_download_source github "$GITHUB_SPEED_PROBE_BASE_URL" "$SPEED_PROBE_LARGE_PROBE" "$SPEED_PROBE_LARGE_SIZE" "$SPEED_PROBE_LARGE_HASH" "$GITHUB_PROBE_METRICS" "$SPEED_PROBE_LARGE_TIMEOUT_SECONDS"
-  brs_choice="$(select_speed_probe_source_from_metrics "$GITHUB_PROBE_METRICS")"
+  brs_github_speed="$(probe_bytes_per_second "$GITHUB_PROBE_METRICS")"
+
+  # OSS is measured only once GitHub has failed the minimum: above it GitHub has already won, and
+  # the mirror's bandwidth is not spent on a probe that could not change the answer. Probing runs
+  # one source at a time on purpose — two concurrent transfers share the link and would each read
+  # as half as fast, which an absolute threshold cannot tolerate.
+  brs_oss_speed=0
+  if [ "$brs_github_speed" -lt "$SPEED_PROBE_GITHUB_MIN_BYTES_PER_SECOND" ]; then
+    OSS_PROBE_METRICS="$TMP/probe-oss-$SPEED_PROBE_LARGE_PROBE.metrics"
+    probe_download_source oss "$OSS_SPEED_PROBE_BASE_URL" "$SPEED_PROBE_LARGE_PROBE" "$SPEED_PROBE_LARGE_SIZE" "$SPEED_PROBE_LARGE_HASH" "$OSS_PROBE_METRICS" "$SPEED_PROBE_LARGE_TIMEOUT_SECONDS"
+    brs_oss_speed="$(probe_bytes_per_second "$OSS_PROBE_METRICS")"
+  fi
+
+  brs_choice="$(select_speed_probe_source "$brs_github_speed" "$brs_oss_speed")"
   if [ "$brs_choice" = "github" ]; then
     SPEED_PROBE_BASE_URL="$GITHUB_SPEED_PROBE_BASE_URL"
     SPEED_PROBE_FALLBACK_BASE_URL="$OSS_SPEED_PROBE_BASE_URL"
-    echo "Selected GitHub (meets minimum download speed)."
-  elif [ "$brs_choice" = "oss" ]; then
+    if [ "$brs_github_speed" -ge "$SPEED_PROBE_GITHUB_MIN_BYTES_PER_SECOND" ]; then
+      echo "Selected GitHub (meets minimum download speed)."
+    else
+      echo "Selected GitHub (the OSS mirror was not enough faster to be worth switching)."
+    fi
+  else
     SPEED_PROBE_BASE_URL="$OSS_SPEED_PROBE_BASE_URL"
     SPEED_PROBE_FALLBACK_BASE_URL="$GITHUB_SPEED_PROBE_BASE_URL"
-    echo "Selected OSS mirror (GitHub did not meet minimum download speed)."
-  else
-    return 1
+    echo "Selected OSS mirror (clearly faster than GitHub here)."
   fi
   return 0
 }

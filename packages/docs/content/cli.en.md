@@ -182,7 +182,7 @@ penguin update             # upgrade to the latest release, after confirming
 
 The target flag is `--release`, not `--version`, because `-v, --version` is the CLI's own version flag and would take precedence.
 
-Release discovery and tarball downloads honor `PENGUIN_DOWNLOAD_SOURCE=auto|oss|github`, using the same policy as the stable installer entry point. The default `auto` mode reads the OSS `latest.json`, prefers that immutable release, and falls back to the matching GitHub tag. Forced `oss` and `github` modes are strict; `--release <tag>` skips latest-version discovery while retaining the selected source policy. An explicit HTTPS `PENGUIN_DOWNLOAD_BASE_URL` has highest priority for installer and payload downloads, with an optional `PENGUIN_DOWNLOAD_FALLBACK_BASE_URL` for the payload.
+Release discovery and tarball downloads honor `PENGUIN_DOWNLOAD_SOURCE=auto|oss|github`, using the same policy as the stable installer entry point. The default `auto` mode reads the OSS `latest.json`, prefers that immutable release, and falls back to the matching GitHub tag; the package itself is then served by whichever source the installer's speed probe picks. Forced `oss` and `github` modes are strict; `--release <tag>` skips latest-version discovery while retaining the selected source policy. An explicit HTTPS `PENGUIN_DOWNLOAD_BASE_URL` has highest priority for installer and payload downloads, with an optional `PENGUIN_DOWNLOAD_FALLBACK_BASE_URL` for the payload.
 
 | Install kind | How it upgrades |
 | --- | --- |
