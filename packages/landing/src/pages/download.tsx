@@ -1,26 +1,22 @@
 /**
  * Desktop download page. The buttons resolve to one of two sources: GitHub's static
  * `releases/latest/download/<name>` links — always valid because installer names are
- * version-less — or the OSS mirror's immutable per-tag URLs, which it gets only when it
- * earns them. The bucket's `latest.json` pointer has to resolve, and the speed probe in
- * lib/download-source.ts has to find the mirror clearly faster than GitHub here, by the
- * same rule install.sh and install.ps1 apply. Any failure along the way — CORS not
- * configured on the bucket, the mirror unreachable, Data Saver on — lands on the free
- * GitHub links.
+ * version-less — or the OSS mirror's immutable per-tag URLs.
  *
- * The buttons wait for that answer rather than advertising a guess, because the visitor
- * this matters most for is the one who cannot reach GitHub at all: showing them GitHub
- * links while the probe runs would hand them a download that never starts. Waiting is
- * safe only because the probe is on a clock — PROBE_BUDGET_MS bounds the whole sequence —
- * and the result is cached for the session, so the wait happens at most once. Whatever
- * the probe decides, the visitor can still switch sources by hand below the cards.
+ * Two passes decide, for the reason spelled out in lib/download-source.ts: whether a
+ * source answers is a round trip, while how fast it is cannot be judged in under a
+ * second at any probe size. So the buttons wait only on the first — one second at the
+ * outside — and go live knowing nobody has been handed a link that will never start.
+ * The throughput comparison then runs behind the live page and upgrades the links to the
+ * mirror if it turns out to be worth switching to, which can cost a slower download but
+ * never a broken one. Nothing is cached: conditions change between visits, so every load
+ * measures again. Whatever the passes decide, the visitor can still switch by hand.
  *
- * Plain-anchor downloads are never CORS-gated; only the version lookup and the probe are.
+ * Plain-anchor downloads are never CORS-gated; only the lookups and the probes are.
  * Below the cards, a first-launch FAQ covers the unsigned builds — one collapsible item
  * per platform (macOS quarantine removal, SmartScreen, AppImage execute bit), with the
  * visitor's own platform pre-expanded.
- */
-import { useEffect, useState } from "react";
+ */ import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import type { ReactNode } from "react";
 import { S } from "../lib/strings";
@@ -35,11 +31,16 @@ import {
 import { detectPlatform } from "../lib/platform";
 import type { Platform } from "../lib/platform";
 import {
-  cacheResolution,
-  readCachedResolution,
-  resolveDownloadSource,
+  GATE_BUDGET_MS,
+  MIRROR_POINTER_MS,
+  THROUGHPUT_BUDGET_MS,
+  createDeadline,
+  fetchMirror,
+  gateDownloadSource,
+  refineDownloadSource,
+  worthRefining,
 } from "../lib/download-source";
-import type { DownloadSource, Resolution } from "../lib/download-source";
+import type { DownloadSource, Mirror } from "../lib/download-source";
 import { Section } from "../components/section";
 import { CodeCard } from "../components/code-card";
 import { ChevronDownIcon, DownloadIcon, ExternalLinkIcon, SpinnerIcon } from "../components/icons";
@@ -77,30 +78,41 @@ function FaqItem({
 }
 
 export function DownloadPage() {
-  /** null while the probe is still running: the buttons wait rather than advertise a guess. */
-  const [resolution, setResolution] = useState<Resolution | null>(readCachedResolution);
-  /** The visitor's own choice, which outranks the probe for the rest of the visit. */
+  const [mirror, setMirror] = useState<Mirror | null>(null);
+  /** null until the reachability pass ends — the only thing the buttons wait on. */
+  const [source, setSource] = useState<DownloadSource | null>(null);
+  /** True while the throughput pass is still running behind the live buttons. */
+  const [refining, setRefining] = useState(false);
+  /** The visitor's own choice, which outranks both passes for the rest of the visit. */
   const [override, setOverride] = useState<DownloadSource | null>(null);
   useEffect(() => {
-    // The session cache already answered, so there is nothing to measure and no spinner to show.
-    if (resolution) return;
     let cancelled = false;
-    void resolveDownloadSource().then((resolved) => {
-      cacheResolution(resolved);
-      if (!cancelled) setResolution(resolved);
+    // The pointer starts now and is handed to the gate still in flight: the gate only needs it on
+    // the path where GitHub stayed silent, and the buttons should not wait on it otherwise.
+    const mirrorPromise = fetchMirror(createDeadline(MIRROR_POINTER_MS));
+    void mirrorPromise.then((resolved) => {
+      if (!cancelled) setMirror(resolved);
     });
+    void (async () => {
+      const gated = await gateDownloadSource(mirrorPromise, createDeadline(GATE_BUDGET_MS));
+      if (cancelled) return;
+      setSource(gated);
+      const resolved = await mirrorPromise;
+      if (cancelled || !worthRefining(resolved) || !resolved) return;
+      setRefining(true);
+      const refined = await refineDownloadSource(resolved, createDeadline(THROUGHPUT_BUDGET_MS));
+      if (cancelled) return;
+      setSource(refined);
+      setRefining(false);
+    })();
     return () => {
       cancelled = true;
     };
-    // Deliberately once per mount: `resolution` is read above only to skip a redundant re-run, and
-    // listing it would restart the probe the moment its own result arrives.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const detected = detectPlatform();
-  const probing = resolution === null;
-  const mirror = resolution?.mirror ?? null;
-  const selected: DownloadSource = override ?? resolution?.source ?? "github";
+  const probing = source === null;
+  const selected: DownloadSource = override ?? source ?? "github";
   const viaMirror = mirror !== null && selected === "oss";
   const hrefFor = (file: string) =>
     viaMirror ? `${mirror.base}/${file}` : `${GITHUB_LATEST_DOWNLOAD}/${file}`;
@@ -171,6 +183,14 @@ export function DownloadPage() {
           ) : (
             <>
               {viaMirror ? S.download.statusOss(mirror.tag) : S.download.statusGithub}{" "}
+              {refining && (
+                <>
+                  <span className="inline-flex items-center gap-1.5 text-gray-500 dark:text-gray-500">
+                    <SpinnerIcon className="h-3.5 w-3.5 animate-spin" />
+                    {S.download.statusRefining}
+                  </span>{" "}
+                </>
+              )}
               {mirror !== null && (
                 <button
                   type="button"
