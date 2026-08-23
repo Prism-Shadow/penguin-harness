@@ -106,11 +106,36 @@ const SKILLS_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 export const SKILL_NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 /**
+ * UTF-8 decoder that rejects malformed byte sequences rather than substituting U+FFFD.
+ * `ignoreBOM` keeps a leading BOM in the string, so decoding matches what reading the file with
+ * the "utf8" encoding produced — the byte-for-byte content is what gets installed.
+ */
+const strictUtf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+
+/**
+ * Decodes a skill file's bytes as UTF-8 text, or returns undefined when they are not text this
+ * loader can carry — malformed UTF-8, or a NUL byte (which is what a UTF-16 or otherwise binary
+ * file looks like once the byte sequence happens to decode). Auxiliary files travel as strings all
+ * the way to disk on install, so anything that is not UTF-8 text would be written back with its
+ * bytes replaced; refusing it here keeps a corrupted copy from ever being installed. Exported for
+ * the test that asserts the whole library stays text.
+ */
+export function decodeSkillFile(bytes: Uint8Array): string | undefined {
+  let text: string;
+  try {
+    text = strictUtf8.decode(bytes);
+  } catch {
+    return undefined;
+  }
+  return text.includes("\0") ? undefined : text;
+}
+
+/**
  * Recursively collects a skill directory's auxiliary files — every regular file except the
  * top-level SKILL.md and icon.svg, which are carried by dedicated fields — keyed by POSIX-relative
  * path. These are resources a SKILL.md may reference (e.g. `reference/API.md`), installed alongside
- * it. Read as UTF-8 text; symlinks and other non-regular entries are skipped. Returns undefined
- * when the directory has no such files.
+ * it. Read as UTF-8 text; symlinks, other non-regular entries and non-text files (see
+ * decodeSkillFile) are skipped. Returns undefined when the directory has no such files.
  */
 function readSkillFiles(dir: string): Record<string, string> | undefined {
   const files: Record<string, string> = {};
@@ -122,7 +147,8 @@ function readSkillFiles(dir: string): Record<string, string> | undefined {
       } else if (entry.isFile()) {
         // SKILL.md and icon.svg at the root are carried by the content / icon fields.
         if (rel === "" && (entry.name === "SKILL.md" || entry.name === "icon.svg")) continue;
-        files[childRel] = fs.readFileSync(path.join(abs, entry.name), "utf8");
+        const text = decodeSkillFile(fs.readFileSync(path.join(abs, entry.name)));
+        if (text !== undefined) files[childRel] = text;
       }
     }
   };

@@ -3,13 +3,15 @@
  * files into a manifest (including auxiliary files a SKILL.md references), loadPreinstalledSkills'
  * preinstall filter, loadSkillGroups grouping, groupSkills' Other group and missing-member
  * tolerance, librarySkill's traversal-name rejection, doc conventions (`## Before you start` is
- * mandatory), and parseSkillFrontmatter's error tolerance.
+ * mandatory), decodeSkillFile keeping non-text files out of the manifest, and
+ * parseSkillFrontmatter's error tolerance.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   SKILL_GROUPS,
+  decodeSkillFile,
   groupSkills,
   librarySkill,
   loadLibrarySkills,
@@ -382,5 +384,52 @@ describe("parseSkillFrontmatter", () => {
       version: 1,
       updated: "",
     });
+  });
+});
+/**
+ * Auxiliary files travel as strings from the library to the installed skill directory, so a file
+ * that is not UTF-8 text would be written back with its bytes replaced. The guard keeps such a
+ * file out of the manifest instead; the library-wide check is what makes sure one never ships.
+ */
+describe("decodeSkillFile", () => {
+  const bytes = (...values: number[]): Uint8Array => Uint8Array.from(values);
+
+  it("decodes UTF-8 text, multi-byte sequences included", () => {
+    expect(decodeSkillFile(new TextEncoder().encode("# Title\n中文 — em dash\n"))).toBe(
+      "# Title\n中文 — em dash\n",
+    );
+    // A UTF-8 BOM is valid UTF-8 and is carried through as written (the frontmatter parser strips it).
+    expect(decodeSkillFile(bytes(0xef, 0xbb, 0xbf, 0x68, 0x69))).toBe("\uFEFFhi");
+    expect(decodeSkillFile(bytes())).toBe("");
+  });
+
+  it("rejects malformed UTF-8 (a PNG header, a lone continuation byte)", () => {
+    expect(decodeSkillFile(bytes(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a))).toBeUndefined();
+    expect(decodeSkillFile(bytes(0x80))).toBeUndefined();
+    expect(decodeSkillFile(bytes(0xc3))).toBeUndefined();
+  });
+
+  it("rejects a NUL byte, which is what UTF-16 text looks like as UTF-8", () => {
+    // "hi" in UTF-16LE: every ASCII character carries a NUL, and each pair decodes as valid UTF-8.
+    expect(decodeSkillFile(bytes(0x68, 0x00, 0x69, 0x00))).toBeUndefined();
+  });
+
+  it("every file in the library is text (nothing would be corrupted on install)", async () => {
+    const walk = async (dir: string): Promise<string[]> => {
+      const out: string[] = [];
+      for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
+        const abs = path.join(dir, entry.name);
+        if (entry.isDirectory()) out.push(...(await walk(abs)));
+        else if (entry.isFile()) out.push(abs);
+      }
+      return out;
+    };
+    const binary: string[] = [];
+    for (const file of await walk(skillsRoot)) {
+      if (decodeSkillFile(await fs.readFile(file)) === undefined) {
+        binary.push(path.relative(skillsRoot, file));
+      }
+    }
+    expect(binary, "non-text files in the skill library").toEqual([]);
   });
 });
