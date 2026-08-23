@@ -3,6 +3,7 @@
 - **Date:** 2026-08-23
 - **Type:** process
 - **Scope:** `skills`
+- **PR:** [#415](https://github.com/Prism-Shadow/penguin-harness/pull/415)
 
 [English](2026-08-23-penguin-cli-skill-covers-recent-commands.md)
 
