@@ -3,8 +3,8 @@ name: ollama
 description: Deploy and serve local models with Ollama — pull and run them, then expose the OpenAI-compatible endpoint to apps and agents.
 short_description: Run local models with Ollama.
 short_description_zh: 用 Ollama 运行本地模型。
-version: 1
-updated: 2026-07-22T00:00:00Z
+version: 2
+updated: 2026-08-23T15:42:44Z
 ---
 
 # Ollama Serving
@@ -32,7 +32,7 @@ If port 11434 is already serving, reuse that instance — never kill an existing
 2. Pick the engine the user prefers: Ollama is the default; vLLM covers high-throughput GPU serving.
 3. Install Ollama if missing, then `ollama pull qwen3.5:0.8b`.
 4. Verify with `curl http://localhost:11434/v1/models`.
-5. Register the endpoint: `penguin config model add ... --client-type openai --base-url http://localhost:11434/v1` — a pulled Ollama model is not visible to Penguin until added.
+5. Register the endpoint: `penguin config model add ... --client-type openai-chat --base-url http://localhost:11434/v1` — a pulled Ollama model is not visible to Penguin until added.
 6. Confirm the new entry with `penguin config model list`.
 
 ## Install
@@ -85,7 +85,7 @@ ollama create qwen3.5-32k -f Modelfile
 Model configuration is the penguin CLI's job — `penguin config model add` registers an endpoint and `penguin config model list` shows what has been registered. A pulled Ollama model is not visible to Penguin until you add it:
 
 ```bash
-penguin config model add --provider custom --client-type openai \
+penguin config model add --provider custom --client-type openai-chat \
   --base-url http://localhost:11434/v1 --model-id qwen3.5:0.8b --api-key ollama
 penguin config model list   # the new entry should now be listed
 ```
