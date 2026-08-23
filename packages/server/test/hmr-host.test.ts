@@ -27,7 +27,7 @@ const iface = {
   name: "platform",
   version: 1,
   context: anySchema,
-  methods: ["park", "info"],
+  methods: ["park", "info", "http", "terminals", "attachStream", "business", "shutdown"],
   children: {},
   migrations: {},
 };
@@ -36,6 +36,12 @@ const impl = {
   create(_ctx, context) {
     return {
       park: () => context,
+      // The host ABI a real platform provides; a bundle that omits any of it is
+      // refused at load (see capabilities.ts's HOST_PLATFORM_METHODS).
+      terminals: () => ({ handleIds: () => [] }),
+      attachStream: () => {},
+      business: () => null,
+      shutdown: async () => {},
       info: () => ({ impl: ${JSON.stringify(id)} }),
       http(request) {
         const { pathname } = new URL(request.url);
@@ -77,7 +83,7 @@ const iface = {
   name: "platform",
   version: 1,
   context: anySchema,
-  methods: ["park", "info"],
+  methods: ["park", "info", "http", "terminals", "attachStream", "business", "shutdown"],
   children: {},
   migrations: {},
 };
@@ -85,6 +91,12 @@ const impl = {
   create(_ctx, context) {
     return {
       park: () => context,
+      // The host ABI a real platform provides; a bundle that omits any of it is
+      // refused at load (see capabilities.ts's HOST_PLATFORM_METHODS).
+      terminals: () => ({ handleIds: () => [] }),
+      attachStream: () => {},
+      business: () => null,
+      shutdown: async () => {},
       info: () => ({ impl: ${JSON.stringify(id)}, n: context.n }),
       http(request) {
         const { pathname } = new URL(request.url);
@@ -114,7 +126,7 @@ const iface = {
   name: "platform",
   version: 1,
   context: anySchema,
-  methods: ["park", "info"],
+  methods: ["park", "info", "http", "terminals", "attachStream", "business", "shutdown"],
   children: {},
   migrations: {},
 };
@@ -391,6 +403,34 @@ describe("upgrade assets: an unchanged set is not copied again", () => {
   });
 });
 
+describe("the host ABI is the host's, and a bundle cannot shrink it", () => {
+  let t: TestApp | undefined;
+  afterEach(async () => {
+    if (t) await t.cleanup();
+    t = undefined;
+  });
+
+  it("a bundle declaring fewer methods than the runtime calls is refused", async () => {
+    t = await createTestApp();
+    const cookie = (await loginAdmin(t.app)).cookie;
+    // park/info/http only: enough for the seam, missing the two the runtime calls
+    // directly (business() per request assembly, shutdown() at process exit). Boot
+    // checks an impl against the bundle's OWN iface, so this used to land and TypeError
+    // later — at a request, at shutdown, or at the next swap.
+    const shrunken = platformServing(["/api/demo/ping"], "shrunken").replace(
+      /methods: \[[^\]]*\]/,
+      'methods: ["park", "info", "http"]',
+    );
+    const res = await pushPlatform(t.app, cookie, shrunken);
+    expect(res.status).toBe(400);
+    expect(await res.text()).toMatch(/does not declare the host ABI: missing \[.*business.*\]/);
+
+    // …and the running platform is untouched: a refused push changes nothing.
+    const api = apiClient(t.app, cookie);
+    expect((await api.get("/api/demo/ping")).status).toBe(404);
+  });
+});
+
 /** A bundle whose create() throws — the boot-failure shape a bad push lands in. */
 const BOOM_PLATFORM = `
 const anySchema = {
@@ -402,7 +442,7 @@ const iface = {
   name: "platform",
   version: 1,
   context: anySchema,
-  methods: ["park", "info"],
+  methods: ["park", "info", "http", "terminals", "attachStream", "business", "shutdown"],
   children: {},
   migrations: {},
 };
@@ -455,5 +495,42 @@ describe("upgrade boot failure: the previous version is re-booted, not left half
     });
     expect(served.status).toBe(200);
     expect((await served.json()) as object).toMatchObject({ servedBy: "recovered-push" });
+  });
+
+  it("recovers the version that was RUNNING, even when it was never persisted", async () => {
+    t = await createTestApp();
+    const cookie = (await loginAdmin(t.app)).cookie;
+    const api = apiClient(t.app, cookie);
+
+    // `hmr/store` as a plain file makes persistVersion fail while the live swap still
+    // applies (see the persisted-flag test above): the running version exists only in
+    // memory, and the manifest names nothing.
+    await fs.mkdir(path.join(t.root, "hmr"), { recursive: true });
+    await fs.writeFile(path.join(t.root, "hmr", "store"), "not a directory");
+    const first = await pushPlatform(
+      t.app,
+      cookie,
+      platformServing(["/api/demo/live-only"], "live-only"),
+    );
+    expect(((await first.json()) as { persisted: boolean }).persisted).toBe(false);
+    expect((await api.get("/api/demo/live-only")).status).toBe(200);
+    const before = await t.deps.hmr.ensure();
+
+    // Now fail a push. Recovery used to read the "previous version" back off disk, so
+    // with no manifest entry it failed outright and left a disposed App behind; where an
+    // older entry did exist it booted that older CODE against this version's document.
+    const bad = await pushPlatform(t.app, cookie, BOOM_PLATFORM);
+    expect(bad.status).toBe(400);
+
+    // Instance identity is the discriminator, not the route: a DISPOSED App still answers
+    // out of its closures, which is the half-dead symptom recovery exists to end. A new
+    // instance means the running version was actually re-booted.
+    const after = await t.deps.hmr.ensure();
+    expect(after).not.toBe(before);
+    // …and it is the version that was live, not the packaged default it was never
+    // persisted over.
+    const served = await api.get("/api/demo/live-only");
+    expect(served.status).toBe(200);
+    expect((await served.json()) as object).toMatchObject({ servedBy: "live-only" });
   });
 });

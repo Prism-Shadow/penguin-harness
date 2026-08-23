@@ -76,6 +76,7 @@ import { HotResources } from "./resources.js";
 import type { Manifest } from "./manifest.js";
 import type { PlatformApi } from "../hmr/platform.js";
 import { packagedPlatform } from "../hmr/platform.js";
+import { HOST_PLATFORM_METHODS } from "./capabilities.js";
 import type { AnyIface, AnyImpl } from "@prismshadow/penguin-core/kernel";
 
 /**
@@ -160,6 +161,14 @@ export class HmrHost {
 
   private instance: Instance<PlatformApi> | null = null;
   private implId = packagedPlatform.id;
+  /**
+   * The bundle behind {@link instance} — the one actually RUNNING, which is not always
+   * the one on disk: persisting a pushed version is allowed to fail (the push still
+   * reports `persisted: false` and keeps serving). Recovery from a failed boot re-boots
+   * THIS, so it can never resurrect an older committed version against a newer version's
+   * parked document, and never fail outright because nothing was ever committed.
+   */
+  private liveBundle: PlatformBundle = packagedPlatform;
   /** Current version's materialized native assets dir (see assetsDir()). */
   private assets: string | null = null;
   private readonly hmrDir: string;
@@ -298,6 +307,7 @@ export class HmrHost {
       )) as Instance<PlatformApi>;
       this.instance = instance;
       this.implId = bundle.id;
+      this.liveBundle = bundle;
       this.webMem = webMem;
     } catch (err) {
       this.warn(
@@ -386,6 +396,7 @@ export class HmrHost {
     // is never written to disk — see the module doc: code persists, state does not.
     this.instance = result.instance as Instance<PlatformApi>;
     this.implId = bundle.id;
+    this.liveBundle = bundle;
     this.webMem = webMem;
 
     const digest = filesDigest(target.web);
@@ -419,12 +430,12 @@ export class HmrHost {
    */
   private async recoverPrevious(doc: Json): Promise<void> {
     try {
-      let bundle: PlatformBundle = packagedPlatform;
-      if (this.implId !== packagedPlatform.id) {
-        const manifest = JSON.parse(await fsp.readFile(this.manifestPath, "utf8")) as Manifest;
-        if (manifest.platform === undefined) throw new Error("harness.json has no `platform`");
-        bundle = await this.importBundleFile(path.join(this.hmrDir, manifest.platform.bundle));
-      }
+      // The RUNNING bundle, held in memory — not whatever the manifest names. Reading it
+      // back off disk was wrong twice over: a version whose persist step failed has no
+      // manifest entry at all (recovery then failed outright, leaving a disposed App), and
+      // where an older entry did exist, recovery booted that older CODE against the newer
+      // version's parked document.
+      const bundle = this.liveBundle;
       this.instance = (await boot(
         bundle.impl,
         bundle.iface,
@@ -448,6 +459,17 @@ export class HmrHost {
     const mod = (await import(url)) as { hotPlatform?: PlatformBundle };
     if (mod.hotPlatform === undefined) {
       throw new Error(`${file} does not export 'hotPlatform'`);
+    }
+    const declared = mod.hotPlatform.iface.methods;
+    const missing = HOST_PLATFORM_METHODS.filter((m) => !declared.includes(m));
+    if (missing.length > 0) {
+      // The bundle ships its own iface and boot only checks the impl against THAT, so a
+      // shrunken declaration used to land and TypeError later — at the request, the
+      // shutdown, or the next swap that called one of these. Refused here instead, on
+      // every path that loads a bundle: push, restore, and boot-failure recovery.
+      throw new Error(
+        `${file}'s platform iface does not declare the host ABI: missing [${missing.join(", ")}]`,
+      );
     }
     if (mod.hotPlatform.context === undefined) {
       // Every bundle carries its own initial context now (see PlatformBundle above):

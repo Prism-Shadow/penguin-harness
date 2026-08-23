@@ -36,6 +36,7 @@ import {
   PENGUIN_FAMILY,
   RESOURCE_IFACES_RESOURCE_ID,
   claimRuntimeCapabilities,
+  HOST_PLATFORM_METHODS,
 } from "./capabilities.js";
 import type { Interfaces, MembersOf } from "./capabilities.js";
 
@@ -81,7 +82,8 @@ export const PlatformIface = defineIface<PlatformApi, PlatformCtx>({
   name: "platform",
   version: 1,
   context: schema<PlatformCtx>(type({ motd: "string", "terminals?": "string[]" })),
-  methods: ["park", "info", "http", "terminals", "attachStream"],
+  // The host ABI, verbatim: what the runtime calls is what a platform must provide.
+  methods: [...HOST_PLATFORM_METHODS],
 });
 
 /**

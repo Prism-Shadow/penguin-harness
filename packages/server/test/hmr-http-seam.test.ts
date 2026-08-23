@@ -129,7 +129,7 @@ const iface = {
   name: "platform",
   version: 1,
   context: anySchema,
-  methods: ["park", "info"],
+  methods: ["park", "info", "http", "terminals", "attachStream", "business", "shutdown"],
   children: {},
   migrations: {},
 };
@@ -138,6 +138,12 @@ const impl = {
   create(_ctx, context) {
     return {
       park: () => context,
+      // The host ABI a real platform provides; a bundle that omits any of it is
+      // refused at load (see capabilities.ts's HOST_PLATFORM_METHODS).
+      terminals: () => ({ handleIds: () => [] }),
+      attachStream: () => {},
+      business: () => null,
+      shutdown: async () => {},
       info: () => ({ impl: ${JSON.stringify(id)} }),
       http(request) {
         const { pathname } = new URL(request.url);
@@ -256,7 +262,7 @@ const iface = {
   name: "platform",
   version: 1,
   context: anySchema,
-  methods: ["park", "info"],
+  methods: ["park", "info", "http", "terminals", "attachStream", "business", "shutdown"],
   children: {},
   migrations: {},
 };
@@ -265,6 +271,12 @@ const impl = {
     await new Promise((resolve) => setTimeout(resolve, ${delayMs}));
     return {
       park: () => context,
+      // The host ABI a real platform provides; a bundle that omits any of it is
+      // refused at load (see capabilities.ts's HOST_PLATFORM_METHODS).
+      terminals: () => ({ handleIds: () => [] }),
+      attachStream: () => {},
+      business: () => null,
+      shutdown: async () => {},
       info: () => ({ impl: ${JSON.stringify(id)} }),
       http(request) {
         const { pathname } = new URL(request.url);

@@ -31,7 +31,7 @@ const iface = {
   name: "platform",
   version: 1,
   context: anySchema,
-  methods: ["park", "info"],
+  methods: ["park", "info", "http", "terminals", "attachStream", "business", "shutdown"],
   children: {},
   migrations: {},
 };
@@ -41,6 +41,12 @@ const impl = {
     return {
       park: () => context,
       info: () => ({ impl: "http-fixture" }),
+      // The host ABI a real platform provides; a bundle that omits any of it is refused
+      // at load (see the server's capabilities.ts HOST_PLATFORM_METHODS).
+      terminals: () => ({ handleIds: () => [] }),
+      attachStream: () => {},
+      business: () => null,
+      shutdown: async () => {},
 
       /**
        * The seam: answer the requests this platform owns, decline everything else with null.

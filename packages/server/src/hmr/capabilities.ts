@@ -132,6 +132,29 @@ export const RUNTIME_INTERFACES: RuntimeInterfaces = {
 
 export const RUNTIME_INTERFACES_RESOURCE_ID = "runtime:interfaces";
 
+/**
+ * The platform ABI the RUNTIME calls, and therefore the set no bundle may shrink.
+ *
+ * A pushed bundle ships its own iface, and boot only checks the impl against THAT — so a
+ * bundle declaring fewer methods used to land successfully and TypeError later, at the
+ * request, the shutdown or the next swap that called one of the missing ones. The host
+ * validates this set against a bundle's declaration before booting it (see host.ts's
+ * importBundleFile); boot's own check then covers the live object, because a declaration
+ * that names these is only satisfiable by an impl that has them.
+ *
+ * `drained` is deliberately absent: it is optional by contract (the kernel calls it with
+ * `?.`), so a bundle with no asynchronous teardown tail legitimately omits it.
+ */
+export const HOST_PLATFORM_METHODS: readonly string[] = [
+  "park",
+  "info",
+  "http",
+  "terminals",
+  "attachStream",
+  "business",
+  "shutdown",
+];
+
 /** The member set an entry names, or [] when the entry is absent or is the family tag. */
 function members(descriptor: Interfaces, name: string): readonly string[] | undefined {
   const entry = descriptor[name];
