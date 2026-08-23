@@ -3,7 +3,7 @@
 - **Date:** 2026-08-23
 - **Type:** feature
 - **Scope:** `tooling`, `landing`, `docs`
-- **PR:** [#403](https://github.com/Prism-Shadow/penguin-harness/pull/403), [#406](https://github.com/Prism-Shadow/penguin-harness/pull/406)
+- **PR:** [#403](https://github.com/Prism-Shadow/penguin-harness/pull/403), [#406](https://github.com/Prism-Shadow/penguin-harness/pull/406), [#420](https://github.com/Prism-Shadow/penguin-harness/pull/420)
 
 [English](2026-08-23-download-source-rule.md)
 
