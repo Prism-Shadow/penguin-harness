@@ -6,7 +6,15 @@
  * ordering contract and the runtime-capability version handshake (hmr/capabilities.ts).
  */
 import { describe, expect, it, vi } from "vitest";
-import { boot, initialDoc, upgrade } from "@prismshadow/penguin-core/kernel";
+import {
+  boot,
+  defineIface,
+  initialDoc,
+  schema,
+  type,
+  upgrade,
+} from "@prismshadow/penguin-core/kernel";
+import type { Json } from "@prismshadow/penguin-core/kernel";
 import { HotResources } from "../src/hmr/resources.js";
 import { TerminalManager } from "../src/terminal/manager.js";
 import type { TerminalSession } from "../src/terminal/session.js";
@@ -31,14 +39,17 @@ import {
  * declaration that no business runtime stands behind it. Without any descriptor the boot
  * is refused, which is the rule the last describe in this file drives.
  */
-async function bootPlatform(r: HotResources) {
+async function bootPlatform(r: HotResources, context?: { terminals?: string[] }) {
   r.register(RUNTIME_INTERFACES_RESOURCE_ID, { family: PENGUIN_FAMILY });
   const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
   try {
     return await boot(
       packagedPlatform.impl,
       packagedPlatform.iface,
-      initialDoc(packagedPlatform.iface, packagedPlatform.context),
+      initialDoc(packagedPlatform.iface, {
+        ...(packagedPlatform.context as Record<string, Json>),
+        ...context,
+      }),
       r,
     );
   } finally {
@@ -134,6 +145,41 @@ describe("resource-interface reconciliation at create()", () => {
     } finally {
       inst.dispose();
     }
+  });
+
+  it("a boot that fails leaves the doomed group ALIVE for the recovered predecessor", async () => {
+    // A registry that fails the FIRST pty adoption — standing in for every step between
+    // the reconciliation decision and the commit that can throw (adoption itself, and on
+    // a capability-carrying host the business assembly and the scheduler).
+    class FailsLate extends HotResources {
+      private adoptions = 0;
+      override register(id: string, resource: unknown, dispose?: () => void): () => void {
+        // The re-registration adoption performs, not the test's own seeding.
+        if (id.startsWith("terminal:") && this.adoptions++ > 0) {
+          throw new Error("adoption blew up");
+        }
+        return super.register(id, resource, dispose);
+      }
+    }
+    const r = new FailsLate();
+    const disposeDoomed = vi.fn();
+    // `terminal` is offered in full and rides across; `sandbox` is a group this build no
+    // longer declares, so it is DOOMED — and must still be alive after the failure.
+    r.register(RESOURCE_IFACES_RESOURCE_ID, { ...PARKED, sandbox: ["x"] });
+    r.register("sandbox:thing", "live", disposeDoomed);
+    r.register(
+      "terminal:pty1",
+      { id: "pty1", onExit: () => () => {}, alive: () => true },
+      () => {},
+    );
+    await expect(bootPlatform(r, { terminals: ["pty1"] })).rejects.toThrow(/adoption blew up/);
+    // Disposing is irreversible — a killed pty does not come back — so it must not happen
+    // until the App that decided it is actually standing. Recovery re-boots the previous
+    // bundle, which can only be honest if what it re-adopts is still alive.
+    expect(disposeDoomed).not.toHaveBeenCalled();
+    expect(r.claim("sandbox:thing")).toBe("live");
+    // The declaration is untouched too: the predecessor's is still the live one.
+    expect(r.claim(RESOURCE_IFACES_RESOURCE_ID)).toMatchObject({ sandbox: ["x"] });
   });
 
   it("a group this build stops declaring is disposed — unused resources must not leak", async () => {
@@ -367,3 +413,78 @@ describe("a runtime too old to publish capabilities", () => {
     }
   });
 });
+
+describe("teardown is a transaction, not a sequence of hopeful steps", () => {
+  interface Api {
+    park(): { v: string };
+    drained?(): Promise<void>;
+  }
+  const Iface = defineIface<Api, { v: string }>({
+    name: "t",
+    version: 1,
+    context: schema<{ v: string }>(type({ v: "string" })),
+    methods: ["park"],
+  });
+  const doc = (): Json => initialDoc(Iface, { v: "a" });
+
+  it("a partly-built boot unwinds the effects it already registered", async () => {
+    const ran: string[] = [];
+    await expect(
+      boot(
+        {
+          create(ctx) {
+            ctx.effect(() => ran.push("first"));
+            ctx.effect(() => ran.push("second"));
+            throw new Error("half-built");
+          },
+        },
+        Iface,
+        doc(),
+        new HotResources(),
+      ),
+    ).rejects.toThrow(/half-built/);
+    // Nothing else can reach them — the caller got an exception, not an instance — so a
+    // leak here is permanent: a watcher, a listener or a child process for the process's
+    // lifetime. Reverse order, the same convention a successful dispose follows.
+    expect(ran).toEqual(["second", "first"]);
+  });
+
+  it("a rejected drain fails the upgrade instead of escaping over a disposed tree", async () => {
+    const resources = new HotResources();
+    let oldDisposed = false;
+    const current = await boot(
+      {
+        create(ctx) {
+          ctx.effect(() => {
+            oldDisposed = true;
+          });
+          return {
+            park: () => ({ v: "a" }),
+            drained: () => Promise.reject(new Error("drain blew up")),
+          };
+        },
+      },
+      Iface,
+      doc(),
+      resources,
+    );
+    const result = await upgrade({
+      current,
+      impl: { create: () => ({ park: () => ({ v: "a" }) }) },
+      iface: Iface,
+      resources,
+    });
+    // The old tree IS down by then, so the caller must get the parked document back —
+    // an escaping rejection would leave nothing booted and no state to recover from.
+    expect(oldDisposed).toBe(true);
+    expect(result.status).toBe("failed");
+    if (result.status === "failed") {
+      expect(errText(result.error)).toMatch(/drain blew up/);
+      expect(result.doc).toMatchObject({ self: { v: "a" } });
+    }
+  });
+});
+
+function errText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
