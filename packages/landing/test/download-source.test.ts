@@ -6,11 +6,13 @@
  */
 import { beforeEach, describe, expect, it } from "vitest";
 import { OSS_ORIGIN } from "../src/lib/links";
+import type { Measurement } from "../src/lib/download-source";
 import {
   PROBE_BUDGET_MS,
   SPEED_PROBE_GITHUB_MIN_BYTES_PER_SECOND,
   cacheResolution,
   createDeadline,
+  decideDownloadSource,
   parseMirror,
   parseProbes,
   readCachedResolution,
@@ -203,5 +205,78 @@ describe("session cache", () => {
     });
     expect(() => cacheResolution({ source: "oss", mirror: MIRROR })).not.toThrow();
     expect(readCachedResolution()).toBeNull();
+  });
+});
+
+const SOURCES = {
+  githubBase: "https://github.test/latest",
+  ossBase: `${OSS_ORIGIN}/releases/${TAG}`,
+};
+const PROBES = {
+  small: { file: "probe-64k.bin", size: 65536 },
+  large: { file: "probe-1m.bin", size: 1048576 },
+};
+
+/** Records which questions were asked of which source, so "never touched" is testable. */
+function fakeProbes(github: Measurement, oss: Measurement, ossAnswers = oss.reachable) {
+  const asked: string[] = [];
+  return {
+    asked,
+    io: {
+      measure: async (base: string) => {
+        asked.push(`measure:${base === SOURCES.githubBase ? "github" : "oss"}`);
+        return base === SOURCES.githubBase ? github : oss;
+      },
+      answers: async (base: string) => {
+        asked.push(`answers:${base === SOURCES.githubBase ? "github" : "oss"}`);
+        return ossAnswers;
+      },
+    },
+  };
+}
+
+const reachable = (bytesPerSecond: number): Measurement => ({ reachable: true, bytesPerSecond });
+const unreachable: Measurement = { reachable: false, bytesPerSecond: 0 };
+
+describe("decideDownloadSource", () => {
+  it("keeps GitHub at the minimum without spending a byte of the mirror's bandwidth", async () => {
+    const { asked, io } = fakeProbes(reachable(MIN), reachable(MIN * 10));
+    await expect(decideDownloadSource(SOURCES, PROBES, io)).resolves.toBe("github");
+    expect(asked).toEqual(["measure:github"]);
+  });
+
+  it("settles an unreachable GitHub on whether the mirror answers, not on its speed", async () => {
+    const { asked, io } = fakeProbes(unreachable, reachable(1));
+    await expect(decideDownloadSource(SOURCES, PROBES, io)).resolves.toBe("oss");
+    // The cheap question, not a second megabyte: this is the branch someone waits through.
+    expect(asked).toEqual(["measure:github", "answers:oss"]);
+  });
+
+  it("keeps GitHub when neither source answers", async () => {
+    const { asked, io } = fakeProbes(unreachable, unreachable, false);
+    await expect(decideDownloadSource(SOURCES, PROBES, io)).resolves.toBe("github");
+    expect(asked).toEqual(["measure:github", "answers:oss"]);
+  });
+
+  // The divergence this branch split exists to prevent: a GitHub that answered but came in under
+  // the minimum is a throughput question, and the mirror has to win it by the switch ratio. Reading
+  // it as "unreachable" would hand the download to a mirror only 1.2x faster.
+  it("makes a slow-but-reachable GitHub a throughput question, ratio and all", async () => {
+    const slow = reachable(MIN / 2);
+    for (const [ossSpeed, expected] of [
+      [MIN / 2 + 1, "github"],
+      [(MIN / 2) * 1.5, "github"],
+      [(MIN / 2) * 1.51, "oss"],
+    ] as const) {
+      const { asked, io } = fakeProbes(slow, reachable(ossSpeed));
+      await expect(decideDownloadSource(SOURCES, PROBES, io)).resolves.toBe(expected);
+      expect(asked).toEqual(["measure:github", "measure:oss"]);
+    }
+  });
+
+  it("lets any measured mirror beat a GitHub that answered but finished nothing", async () => {
+    const { asked, io } = fakeProbes(reachable(0), reachable(1));
+    await expect(decideDownloadSource(SOURCES, PROBES, io)).resolves.toBe("oss");
+    expect(asked).toEqual(["measure:github", "measure:oss"]);
   });
 });

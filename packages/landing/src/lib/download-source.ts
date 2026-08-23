@@ -51,6 +51,14 @@ const CONNECT_TIMEOUT_MS = 2500;
  * Cap for a probe's body. The large probe is 1 MiB, which is exactly the minimum's worth of bytes
  * in 4s, so anything still running at this point is already below the minimum and the extra second
  * is only there to absorb GitHub's redirect hops rather than to refine a number.
+ *
+ * The installers allow 8s here, and that difference is deliberate. A source slower than 1 MiB per
+ * cap reads as unmeasured rather than as a number, so this cap sets the floor under which the
+ * tie-break rule stops seeing a speed at all: ~210 KB/s here against ~131 KB/s there. Between those
+ * two figures a slow GitHub the installers would have kept goes to the mirror instead — a bandwidth
+ * cost on a connection that is slow whichever source it uses, traded for a page that answers in
+ * seconds. Widening it to match would put the worst case past PROBE_BUDGET_MS, with someone sitting
+ * in front of it.
  */
 const TRANSFER_TIMEOUT_MS = 5000;
 
@@ -203,23 +211,40 @@ export async function probeReachable(url: string, deadline: ProbeDeadline): Prom
   return ok;
 }
 
-/** Bytes per second for one probe download; 0 when it did not complete inside its caps. */
-export async function measureBytesPerSecond(
+/**
+ * What one probe learned about a source. The two fields answer two different questions, and the
+ * installers keep them apart too: their small-probe pair settles reachability before any throughput
+ * probe runs. A source that never answered loses to one that did, full stop; a source that answered
+ * but could not finish the probe is merely unmeasured, and the rule's tie-break decides it.
+ */
+export interface Measurement {
+  /** Response headers landed inside the connect cap. */
+  reachable: boolean;
+  /** Throughput, or 0 when the transfer did not finish inside the transfer cap. */
+  bytesPerSecond: number;
+}
+
+const UNREACHABLE: Measurement = { reachable: false, bytesPerSecond: 0 };
+
+/** Measures one probe download under both caps. */
+export async function measureSource(
   url: string,
   sizeBytes: number,
   deadline: ProbeDeadline,
-): Promise<number> {
-  const connectMs = deadline.slice(CONNECT_TIMEOUT_MS);
-  const { reachable, abort } = startProbeRequest(url, connectMs);
+): Promise<Measurement> {
+  const { reachable, abort } = startProbeRequest(url, deadline.slice(CONNECT_TIMEOUT_MS));
   try {
-    if (!(await reachable)) return 0;
+    if (!(await reachable)) return UNREACHABLE;
     const transferMs = deadline.slice(TRANSFER_TIMEOUT_MS);
-    if (transferMs <= 0) return 0;
+    if (transferMs <= 0) return { reachable: true, bytesPerSecond: 0 };
     const durationMs = await awaitResourceTiming(url, transferMs);
-    if (durationMs === null || durationMs <= 0) return 0;
-    return Math.round((sizeBytes * 1000) / durationMs);
+    const measured = durationMs !== null && durationMs > 0;
+    return {
+      reachable: true,
+      bytesPerSecond: measured ? Math.round((sizeBytes * 1000) / durationMs) : 0,
+    };
   } catch {
-    return 0;
+    return UNREACHABLE;
   } finally {
     abort();
   }
@@ -231,38 +256,54 @@ export interface ProbeSources {
 }
 
 /**
- * Applies the rule to one release. OSS is measured only once GitHub has failed the minimum: above
- * it GitHub has already won, and the mirror's bandwidth is not spent on a probe that could not
- * change the answer. The two run one after the other on purpose — concurrent transfers share the
- * link and would each read as half as fast, which an absolute threshold cannot tolerate.
- *
- * When GitHub produced no measurement at all — blocked, or too slow to finish a megabyte inside its
- * cap — the rule reduces to whether the mirror answers, since anything above zero beats zero. That
- * question is asked with the 64 KiB probe rather than a second megabyte: same answer, a fraction of
- * the wait, and it is the case where someone is most likely to be watching a spinner.
+ * The two questions the decision below can ask of a source, injected so the branch structure can be
+ * tested without a network: `measure` runs the large probe, `answers` runs the cheap 64 KiB one.
  */
-export async function probeDownloadSource(
+export interface SourceProbes {
+  measure(base: string, probe: ReleaseProbe): Promise<Measurement>;
+  answers(base: string, probe: ReleaseProbe): Promise<boolean>;
+}
+
+/**
+ * Applies the rule to one release, in the same order the installers apply it.
+ *
+ * GitHub is measured first. At or above the minimum it wins outright and the mirror is never
+ * touched — no paid bandwidth spent on a probe that could not change the answer.
+ *
+ * A GitHub that never answered is a different finding from one that answered slowly, and the two
+ * take different branches, exactly as they do in install.sh. Unreachable is settled on reachability
+ * alone: the mirror wins if it answers, which the 64 KiB probe establishes in a fraction of the
+ * time a second megabyte would. Reachable-but-unmeasured is a throughput question, so the mirror is
+ * measured on the same large probe and the tie-break rule decides — collapsing the two would hand
+ * the mirror downloads the rule says GitHub should keep.
+ *
+ * The measurements run one after another on purpose: concurrent transfers share the link and would
+ * each read as half as fast, which an absolute threshold cannot tolerate.
+ */
+export async function decideDownloadSource(
+  sources: ProbeSources,
+  probes: ReleaseProbes,
+  io: SourceProbes,
+): Promise<DownloadSource> {
+  const github = await io.measure(sources.githubBase, probes.large);
+  if (github.bytesPerSecond >= SPEED_PROBE_GITHUB_MIN_BYTES_PER_SECOND) return "github";
+  if (!github.reachable) {
+    return (await io.answers(sources.ossBase, probes.small)) ? "oss" : "github";
+  }
+  const oss = await io.measure(sources.ossBase, probes.large);
+  return selectDownloadSource(github.bytesPerSecond, oss.bytesPerSecond);
+}
+
+/** The decision above, wired to real requests under the shared budget. */
+export function probeDownloadSource(
   sources: ProbeSources,
   probes: ReleaseProbes,
   deadline: ProbeDeadline,
 ): Promise<DownloadSource> {
-  const github = await measureBytesPerSecond(
-    probeUrl(sources.githubBase, probes.large.file),
-    probes.large.size,
-    deadline,
-  );
-  if (github >= SPEED_PROBE_GITHUB_MIN_BYTES_PER_SECOND) return "github";
-  if (github === 0) {
-    return (await probeReachable(probeUrl(sources.ossBase, probes.small.file), deadline))
-      ? "oss"
-      : "github";
-  }
-  const oss = await measureBytesPerSecond(
-    probeUrl(sources.ossBase, probes.large.file),
-    probes.large.size,
-    deadline,
-  );
-  return selectDownloadSource(github, oss);
+  return decideDownloadSource(sources, probes, {
+    measure: (base, probe) => measureSource(probeUrl(base, probe.file), probe.size, deadline),
+    answers: (base, probe) => probeReachable(probeUrl(base, probe.file), deadline),
+  });
 }
 
 /** Reads a small JSON/TSV lookup under the shared budget; null on any failure. */
