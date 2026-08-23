@@ -3,6 +3,7 @@
 - **Date:** 2026-08-23
 - **Type:** fix
 - **Scope:** `desktop`
+- **PR:** [#411](https://github.com/Prism-Shadow/penguin-harness/pull/411)
 
 [English](2026-08-23-desktop-cli-install-quoting.md)
 
