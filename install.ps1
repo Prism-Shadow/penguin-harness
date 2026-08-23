@@ -65,7 +65,7 @@ $SpeedProbeManifestTimeoutSeconds = 5
 $SpeedProbeSmallTimeoutSeconds = 5
 $SpeedProbeLargeTimeoutSeconds = 8
 $SpeedProbeTotalTimeoutSeconds = 26
-$SpeedProbeGitHubMinBytesPerSecond = 204800
+$SpeedProbeGitHubMinBytesPerSecond = 262144
 $SpeedProbeOssSwitchRatio = 1.5
 $PayloadName = "payload.zip"
 # The release workflow replaces this token with the immutable tag before publishing both the

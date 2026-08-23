@@ -22,7 +22,7 @@
  * release URLs take, which can only make it read slower than it is, never faster.
  */
 
-export const SPEED_PROBE_GITHUB_MIN_BYTES_PER_SECOND = 204800;
+export const SPEED_PROBE_GITHUB_MIN_BYTES_PER_SECOND = 262144;
 
 /** How much faster the mirror has to be before its paid bandwidth beats a free GitHub download. */
 export const SPEED_PROBE_OSS_SWITCH_RATIO = 1.5;

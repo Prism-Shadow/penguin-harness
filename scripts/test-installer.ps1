@@ -85,7 +85,7 @@ function global:Invoke-WebRequest {
   if ($f.Mode -eq "speed-probe-missing-manifest" -and $Uri -like "*/release-download-manifest.tsv") {
     throw "fixture missing release download manifest"
   }
-  # 1 MiB in 6.0s is ~175 KB/s, under the 200 KB/s minimum; the mirror answering the same probe in
+  # 1 MiB in 6.0s is ~175 KB/s, under the 256 KB/s minimum; the mirror answering the same probe in
   # 5.0s is ~210 KB/s — faster than GitHub, but only 1.2x, short of the 1.5x switch ratio.
   if ($f.Mode -in @("speed-probe-oss-clearly-faster", "speed-probe-oss-not-worth-switching") -and
       $Uri -like "https://github.com/*/probe-1m.bin") {

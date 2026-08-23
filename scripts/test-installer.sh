@@ -31,7 +31,7 @@ check_shared_constant() {
 }
 
 LANDING_RULE="packages/landing/src/lib/download-source.ts"
-check_shared_constant "the GitHub minimum" "204800" install.sh install.ps1 "$LANDING_RULE"
+check_shared_constant "the GitHub minimum" "262144" install.sh install.ps1 "$LANDING_RULE"
 # The same 1.5, written as an integer percent in install.sh because a POSIX shell has no floats.
 check_shared_constant "the OSS switch ratio" "SPEED_PROBE_OSS_SWITCH_RATIO_PERCENT=150" install.sh
 check_shared_constant "the OSS switch ratio" '$SpeedProbeOssSwitchRatio = 1.5' install.ps1
@@ -410,9 +410,9 @@ if [ -n "$writeout" ]; then
   case "$MODE:$url" in
     speed-probe-github-fast:https://github.com/*/probe-1m.bin) printf '%s' '0.020 0.120 8738133' ;;
     speed-probe-github-fast:*aliyuncs.com*/probe-1m.bin) printf '%s' '0.100 2.100 499321' ;;
-    # GitHub under the 204800 minimum, mirror well past 1.5x it: worth paying for.
+    # GitHub under the 262144 minimum, mirror well past 1.5x it: worth paying for.
     speed-probe-oss-clearly-faster:https://github.com/*/probe-1m.bin) printf '%s' '0.020 10.240 102400' ;;
-    speed-probe-oss-clearly-faster:*aliyuncs.com*/probe-1m.bin) printf '%s' '0.020 4.000 262144' ;;
+    speed-probe-oss-clearly-faster:*aliyuncs.com*/probe-1m.bin) printf '%s' '0.020 3.413 307200' ;;
     # GitHub equally slow, mirror only 1.4x faster: not worth paying for, GitHub keeps it.
     speed-probe-oss-not-worth-switching:https://github.com/*/probe-1m.bin) printf '%s' '0.020 10.240 102400' ;;
     speed-probe-oss-not-worth-switching:*aliyuncs.com*/probe-1m.bin) printf '%s' '0.020 7.314 143360' ;;
