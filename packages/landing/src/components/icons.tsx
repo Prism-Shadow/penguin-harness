@@ -157,6 +157,15 @@ export function RefreshIcon(props: IconProps) {
   );
 }
 
+/** Pair it with `animate-spin`: the gap in the ring is what makes the rotation readable. */
+export function SpinnerIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M21 12a9 9 0 1 1-6.22-8.56" />
+    </Icon>
+  );
+}
+
 export function CpuIcon(props: IconProps) {
   return (
     <Icon {...props}>

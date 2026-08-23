@@ -103,6 +103,7 @@ export const en: Strings = {
         require: "x64 — AppImage runs in place, deb goes to your package manager",
       },
     },
+    statusProbing: "Testing the download sources to pick the faster one …",
     statusOss: (version: string) =>
       `Connected to the OSS mirror (${version}) — downloads are served from the mirror.`,
     statusGithub: "Downloads point at the latest GitHub Release.",

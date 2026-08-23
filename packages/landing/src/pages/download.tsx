@@ -1,16 +1,24 @@
 /**
- * Desktop download page. The buttons are static GitHub `releases/latest/download/<name>`
- * links by default — always valid because installer names are version-less — and swap to
- * the OSS mirror's immutable per-tag URLs only when the mirror earns them: the bucket's
- * `latest.json` pointer has to resolve (validated the same way the installers validate
- * it), and the speed probe in lib/download-source.ts has to find the mirror clearly
- * faster than GitHub here, by the same rule install.sh and install.ps1 apply. Any failure
- * along the way — CORS not configured on the bucket, the mirror unreachable, Data Saver
- * on — silently keeps the free GitHub links. Plain-anchor downloads are never CORS-gated;
- * only the version lookup and the probe are. Whatever the probe decides, the visitor can
- * still switch sources by hand below the cards. Below that, a first-launch FAQ covers the
- * unsigned builds — one collapsible item per platform (macOS quarantine removal,
- * SmartScreen, AppImage execute bit), with the visitor's own platform pre-expanded.
+ * Desktop download page. The buttons resolve to one of two sources: GitHub's static
+ * `releases/latest/download/<name>` links — always valid because installer names are
+ * version-less — or the OSS mirror's immutable per-tag URLs, which it gets only when it
+ * earns them. The bucket's `latest.json` pointer has to resolve, and the speed probe in
+ * lib/download-source.ts has to find the mirror clearly faster than GitHub here, by the
+ * same rule install.sh and install.ps1 apply. Any failure along the way — CORS not
+ * configured on the bucket, the mirror unreachable, Data Saver on — lands on the free
+ * GitHub links.
+ *
+ * The buttons wait for that answer rather than advertising a guess, because the visitor
+ * this matters most for is the one who cannot reach GitHub at all: showing them GitHub
+ * links while the probe runs would hand them a download that never starts. Waiting is
+ * safe only because the probe is on a clock — PROBE_BUDGET_MS bounds the whole sequence —
+ * and the result is cached for the session, so the wait happens at most once. Whatever
+ * the probe decides, the visitor can still switch sources by hand below the cards.
+ *
+ * Plain-anchor downloads are never CORS-gated; only the version lookup and the probe are.
+ * Below the cards, a first-launch FAQ covers the unsigned builds — one collapsible item
+ * per platform (macOS quarantine removal, SmartScreen, AppImage execute bit), with the
+ * visitor's own platform pre-expanded.
  */
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
@@ -22,24 +30,21 @@ import {
   GITHUB_LATEST_DOWNLOAD,
   LINUX_APPIMAGE_CHMOD_CMD,
   MAC_UNQUARANTINE_CMD,
-  OSS_LATEST_JSON_URL,
-  OSS_ORIGIN,
   RELEASES_URL,
 } from "../lib/links";
 import { detectPlatform } from "../lib/platform";
 import type { Platform } from "../lib/platform";
-import { fetchLargeProbe, probeDownloadSource, probingAllowed } from "../lib/download-source";
-import type { DownloadSource } from "../lib/download-source";
+import {
+  cacheResolution,
+  readCachedResolution,
+  resolveDownloadSource,
+} from "../lib/download-source";
+import type { DownloadSource, Resolution } from "../lib/download-source";
 import { Section } from "../components/section";
 import { CodeCard } from "../components/code-card";
-import { ChevronDownIcon, DownloadIcon, ExternalLinkIcon } from "../components/icons";
+import { ChevronDownIcon, DownloadIcon, ExternalLinkIcon, SpinnerIcon } from "../components/icons";
 
 const PLATFORMS: Platform[] = ["mac", "windows", "linux"];
-
-interface Mirror {
-  tag: string;
-  base: string;
-}
 
 /**
  * One collapsible item of the first-launch FAQ. `defaultOpen` pre-expands the visitor's
@@ -71,58 +76,31 @@ function FaqItem({
   );
 }
 
-/** latest.json validated like the installer forwarders validate it: schema 1, safe v-tag, fixed bucket base. */
-function parseMirror(value: unknown): Mirror | null {
-  if (typeof value !== "object" || value === null) return null;
-  const manifest = value as { schemaVersion?: unknown; tag?: unknown; releaseBaseUrl?: unknown };
-  if (manifest.schemaVersion !== 1 || typeof manifest.tag !== "string") return null;
-  if (!/^v[0-9A-Za-z][0-9A-Za-z._-]*$/.test(manifest.tag)) return null;
-  if (manifest.releaseBaseUrl !== `${OSS_ORIGIN}/releases/${manifest.tag}`) return null;
-  return { tag: manifest.tag, base: manifest.releaseBaseUrl };
-}
-
 export function DownloadPage() {
-  const [mirror, setMirror] = useState<Mirror | null>(null);
-  /** What the probe settled on; null while it is still running or never ran. */
-  const [probed, setProbed] = useState<DownloadSource | null>(null);
+  /** null while the probe is still running: the buttons wait rather than advertise a guess. */
+  const [resolution, setResolution] = useState<Resolution | null>(readCachedResolution);
   /** The visitor's own choice, which outranks the probe for the rest of the visit. */
   const [override, setOverride] = useState<DownloadSource | null>(null);
   useEffect(() => {
-    const controller = new AbortController();
-    const lookupTimer = setTimeout(() => controller.abort(), 5000);
+    // The session cache already answered, so there is nothing to measure and no spinner to show.
+    if (resolution) return;
     let cancelled = false;
-    // Resolve the mirror, then measure. Every failure lands on GitHub, which the buttons already
-    // point at — nothing here can leave the page without a working download.
-    void (async () => {
-      let found: Mirror | null = null;
-      try {
-        const res = await fetch(OSS_LATEST_JSON_URL, { signal: controller.signal });
-        found = res.ok ? parseMirror(await res.json()) : null;
-      } catch {
-        found = null;
-      }
-      clearTimeout(lookupTimer);
-      if (cancelled || !found) return;
-      setMirror(found);
-      if (!probingAllowed()) return;
-      const probe = await fetchLargeProbe(found.base, found.tag, controller.signal);
-      if (cancelled || !probe) return;
-      const source = await probeDownloadSource(
-        { githubBase: GITHUB_LATEST_DOWNLOAD, ossBase: found.base },
-        probe,
-        controller.signal,
-      );
-      if (!cancelled) setProbed(source);
-    })();
+    void resolveDownloadSource().then((resolved) => {
+      cacheResolution(resolved);
+      if (!cancelled) setResolution(resolved);
+    });
     return () => {
       cancelled = true;
-      clearTimeout(lookupTimer);
-      controller.abort();
     };
+    // Deliberately once per mount: `resolution` is read above only to skip a redundant re-run, and
+    // listing it would restart the probe the moment its own result arrives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const detected = detectPlatform();
-  const selected: DownloadSource = override ?? probed ?? "github";
+  const probing = resolution === null;
+  const mirror = resolution?.mirror ?? null;
+  const selected: DownloadSource = override ?? resolution?.source ?? "github";
   const viaMirror = mirror !== null && selected === "oss";
   const hrefFor = (file: string) =>
     viaMirror ? `${mirror.base}/${file}` : `${GITHUB_LATEST_DOWNLOAD}/${file}`;
@@ -159,10 +137,22 @@ export function DownloadPage() {
               {DESKTOP_INSTALLERS[platform].map(({ file, variant }) => (
                 <a
                   key={file}
-                  href={hrefFor(file)}
-                  className="inline-flex items-center justify-center gap-1.5 rounded-md bg-gray-900 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-300"
+                  // No href while probing: an anchor without one is not a link, which is exactly
+                  // the state this is in — the source is not decided yet. The label and the box
+                  // keep their size, so nothing shifts under the pointer when it resolves.
+                  href={probing ? undefined : hrefFor(file)}
+                  aria-disabled={probing || undefined}
+                  className={`inline-flex items-center justify-center gap-1.5 rounded-md px-3.5 py-2 text-sm font-medium transition-colors ${
+                    probing
+                      ? "cursor-progress bg-gray-200 text-gray-500 dark:bg-gray-800 dark:text-gray-500"
+                      : "bg-gray-900 text-white hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-300"
+                  }`}
                 >
-                  <DownloadIcon className="h-4 w-4" />
+                  {probing ? (
+                    <SpinnerIcon className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <DownloadIcon className="h-4 w-4" />
+                  )}
                   {variant}
                 </a>
               ))}
@@ -172,16 +162,25 @@ export function DownloadPage() {
       </div>
 
       <div className="mx-auto mt-8 max-w-4xl text-center text-sm text-gray-600 dark:text-gray-400">
-        <p>
-          {viaMirror ? S.download.statusOss(mirror.tag) : S.download.statusGithub}{" "}
-          {mirror !== null && (
-            <button
-              type="button"
-              className={textLink}
-              onClick={() => setOverride(viaMirror ? "github" : "oss")}
-            >
-              {viaMirror ? S.download.altGithub : S.download.altOss}
-            </button>
+        <p aria-live="polite">
+          {probing ? (
+            <span className="inline-flex items-center gap-1.5">
+              <SpinnerIcon className="h-3.5 w-3.5 animate-spin" />
+              {S.download.statusProbing}
+            </span>
+          ) : (
+            <>
+              {viaMirror ? S.download.statusOss(mirror.tag) : S.download.statusGithub}{" "}
+              {mirror !== null && (
+                <button
+                  type="button"
+                  className={textLink}
+                  onClick={() => setOverride(viaMirror ? "github" : "oss")}
+                >
+                  {viaMirror ? S.download.altGithub : S.download.altOss}
+                </button>
+              )}
+            </>
           )}
         </p>
         <p className="mt-2">
