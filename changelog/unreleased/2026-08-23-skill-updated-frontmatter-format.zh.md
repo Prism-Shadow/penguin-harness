@@ -3,6 +3,7 @@
 - **Date:** 2026-08-23
 - **Type:** process
 - **Scope:** `docs`, `skills`, `server`
+- **PR:** [#418](https://github.com/Prism-Shadow/penguin-harness/pull/418)
 
 [English](2026-08-23-skill-updated-frontmatter-format.md)
 
