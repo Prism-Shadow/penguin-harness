@@ -264,15 +264,41 @@ describe("runGoalLoop", () => {
     expect(parsed.objective).toBe("Ship the landing page");
   });
 
-  it("treats a round the engine cut off (failed final assistant text) as terminal", async () => {
-    // The max_turns cutoff: a final assistant notice with stop_reason "failed", no abort
-    // event, and the model never reached the goal file — re-firing would loop forever.
+  it("treats the max_turns cutoff as a round boundary, not terminal", async () => {
+    // The engine's max_turns sentinel (a failed final assistant notice, no abort event) bounds
+    // one Task, not the goal: the loop starts the next round with a fresh turn budget.
     const session = fakeSession([
       { messages: [assistantText("[reached max turns (100); stopping]", "failed")] },
+      { then: () => setStatus("complete") },
+    ]);
+    const { outcome } = await drain(runGoalLoop(session, { text: "o", goalFilePath: file }));
+    expect(outcome).toEqual({ outcome: "complete", rounds: 2, tokensUsed: 0 });
+    expect(session.prompts).toHaveLength(2);
+    expect(session.prompts[1]).toContain("round: 2");
+    expect(await readGoalStatus(file)).toBe("complete");
+  });
+
+  it("a non-max-turns failed final text (an output-length finish) stays terminal", async () => {
+    // A "failed" final assistant text that is NOT the engine's max_turns sentinel — an
+    // output-length finish, say — is an unrecoverable stop, not a round boundary.
+    const session = fakeSession([
+      { messages: [assistantText("truncated by the output limit", "failed")] },
     ]);
     const { outcome } = await drain(runGoalLoop(session, { text: "o", goalFilePath: file }));
     expect(outcome).toEqual({ outcome: "aborted", rounds: 1, tokensUsed: 0 });
-    // The on-disk goal stays active: the workspace and goal file remain the resume point.
+    expect(await readGoalStatus(file)).toBe("active");
+  });
+
+  it("a goal that hits max_turns every round still stops at the round cap", async () => {
+    const cutoffs = Array.from({ length: 3 }, () => ({
+      messages: [assistantText("[reached max turns (100); stopping]", "failed")],
+    }));
+    const session = fakeSession(cutoffs);
+    const { outcome } = await drain(
+      runGoalLoop(session, { text: "o", goalFilePath: file, maxRounds: 3 }),
+    );
+    expect(outcome).toEqual({ outcome: "aborted", rounds: 3, tokensUsed: 0 });
+    expect(session.prompts).toHaveLength(3);
     expect(await readGoalStatus(file)).toBe("active");
   });
 

@@ -14,14 +14,19 @@
  *   normalize to `blocked` — see goal-file.ts),
  * - the loop's own token accounting against the budget (internal counters; the budget
  *   line in each round's block is composed from them, never read from anywhere),
- * - a round the engine cut off rather than finished — a main-session abort (LLM failure,
- *   user interrupt) or a final assistant notice with `stop_reason: "failed"` (the engine's
- *   max_turns cutoff emits exactly that, and no abort event): the model never got to write
- *   the file, so re-firing would loop the same cutoff forever, and
+ * - a main-session abort (LLM failure after retries, user interrupt) or a final assistant
+ *   notice with `stop_reason: "failed"` that is NOT the engine's own max_turns sentinel
+ *   (an output-length finish, say): the model never reached the file in a way that would
+ *   change the outcome, so re-firing would loop the same failure forever, and
  * - a hard round cap (`maxRounds`, default 100) as a runaway backstop independent of the
  *   budget — without it an unbudgeted goal whose model simply never writes the file would
  *   loop without bound; an explicit -1 disables the cap.
- * All of these stop the loop without re-firing. The loop writes GOAL.yaml exactly once,
+ * All of these stop the loop without re-firing. A round the engine cut off at the per-Task
+ * turn cap (`max_turns`) is NOT one of them: it ends that Task and the loop starts the next
+ * round, which carries a fresh turn budget (`max_turns` bounds one Task, not the goal). The
+ * workspace, goal file, and the cut-off round's unsubmitted tool outputs (held as engine
+ * carry-over) survive into the next round, so progress is preserved. The loop writes GOAL.yaml
+ * exactly once,
  * at creation; afterwards it only READS `status` — every ending leaves the model's own
  * last write on disk (system endings exist only as the `goal_finished` outcome), which is
  * exactly the resume point an interrupted goal wants.
@@ -72,9 +77,8 @@ function isMainAbort(msg: OmniMessage): boolean {
 }
 
 /**
- * The main session's assistant text, or null. Used to track how a round ended: the engine's
- * max_turns cutoff finishes the stream with an assistant notice carrying
- * `stop_reason: "failed"` (and no abort event) — the only failure mode that neither
+ * The main session's assistant text's `stop_reason`, or null. Used to track how a round
+ * ended: a "failed" final text with no abort event is the one failure mode that neither
  * `isMainAbort` nor the goal file can see.
  */
 function mainAssistantStopReason(msg: OmniMessage): string | null {
@@ -82,6 +86,20 @@ function mainAssistantStopReason(msg: OmniMessage): string | null {
   if (!isModelMessage(msg) || msg.payload.type !== "text") return null;
   const p = msg.payload as { role?: string; stop_reason?: string };
   return p.role === "assistant" ? (p.stop_reason ?? "completed") : null;
+}
+
+/**
+ * Whether this is the engine's max_turns cutoff notice: the main session's final assistant
+ * text carrying the engine's own `[reached max turns (…); stopping]` sentinel. The sentinel
+ * text is matched because the engine emits it verbatim (see `ContextEngine.emitMaxTurns`) and
+ * stamps it with the same `stop_reason: "failed"` it stamps an output-length finish — the
+ * sentinel is what marks a recoverable round boundary rather than a real failure.
+ */
+function isMaxTurnsCutoff(msg: OmniMessage): boolean {
+  if (msg.origin && msg.origin.length > 0) return false;
+  if (!isModelMessage(msg) || msg.payload.type !== "text") return false;
+  const p = msg.payload as { role?: string; text?: string };
+  return p.role === "assistant" && (p.text ?? "").startsWith("[reached max turns (");
 }
 
 export async function* runGoalLoop(
@@ -121,9 +139,10 @@ export async function* runGoalLoop(
       used += goalTokenDelta(msg);
       if (isMainAbort(msg)) aborted = true;
       // The LAST assistant text decides: a mid-round failed notice followed by normal text
-      // means the round recovered; the max_turns cutoff is always the final message.
+      // means the round recovered. The engine's max_turns sentinel is a round boundary, not a
+      // failure — excluded here so it falls through to the next round below.
       const stop = mainAssistantStopReason(msg);
-      if (stop !== null) roundFailed = stop === "failed";
+      if (stop !== null) roundFailed = stop === "failed" && !isMaxTurnsCutoff(msg);
       yield msg;
     }
   }
@@ -159,9 +178,12 @@ export async function* runGoalLoop(
       yield finish(status);
       return;
     }
-    // A round the engine cut off (final assistant notice with stop_reason "failed" — the
-    // max_turns path) is terminal, not a reason to re-fire: the model never reached the
-    // file, and the next round would hit the same cutoff. A written terminal status above
+    // A round the engine cut off with a non-recoverable "failed" final text (an output-length
+    // finish, say) is terminal, not a reason to re-fire: the model never reached the file in a
+    // way that would change the outcome, so re-firing would loop the same failure. The engine's
+    // max_turns cutoff is excluded from `roundFailed` above and falls through as a round
+    // boundary instead — `max_turns` bounds one Task, not the goal, and the next round carries
+    // a fresh turn budget plus the cut-off round's carry-over. A written terminal status above
     // still wins (a post-completion cutoff doesn't undo the completion).
     if (roundFailed) {
       yield finish("aborted");

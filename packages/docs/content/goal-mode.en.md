@@ -50,7 +50,7 @@ An objective may carry attached images — "make the page match this mockup" is 
 
 The chat page shows the attachments in full under round 1's bubble and collapses them into a one-line chip on later rounds (click to expand): they are part of every round's input, but a twenty-round goal shouldn't repeat the same picture twenty times.
 
-A round that ends in an abort (user stop, LLM failure) ends the whole goal without re-firing — on-disk state stays `active`, so the workspace and goal file remain a clean resume point. In the Web App the regular stop button aborts the entire loop; in the CLI, Ctrl-C does. The same applies to a round the engine cut off at the per-Task turn cap (`max_turns`): the model never got to write the goal file, so the loop ends as `aborted` instead of re-firing the same cutoff forever.
+A round that ends in an abort (user stop, LLM failure) ends the whole goal without re-firing — on-disk state stays `active`, so the workspace and goal file remain a clean resume point. In the Web App the regular stop button aborts the entire loop; in the CLI, Ctrl-C does. A round the engine cut off at the per-Task turn cap (`max_turns`) is different: `max_turns` bounds one Task, not the goal, so the loop treats the cutoff as a round boundary and starts the next round with a fresh turn budget. The cut-off round's unsubmitted tool outputs are held as carry-over and replayed into the next round, so progress is preserved.
 
 ## Token budget
 
