@@ -9,6 +9,7 @@ import {
   abortEvent,
   approvalDecision,
   assistantText,
+  buildBackgroundTaskDoneMessage,
   compactionBegin,
   compactionEnd,
   imageUrlMessage,
@@ -931,6 +932,84 @@ describe("trace-service", () => {
   });
 
   // The Web's live-stream twin of this case lives in stream-model.test.ts.
+  it("Task grouping: a steered background notice stays in the same Task; an unstamped notice task keeps its own turn", async () => {
+    const T = (sec: string) => `2026-07-05T10:05:${sec}Z`;
+    const steered = buildBackgroundTaskDoneMessage(
+      {
+        kind: "command",
+        id: "proc-1",
+        status: "completed",
+        detail: "exit code 0",
+        delivery: "steering",
+      },
+      "Background command finished",
+    );
+    const plain = buildBackgroundTaskDoneMessage(
+      { kind: "command", id: "proc-2", status: "failed", detail: "exit code 1" },
+      "Background command failed",
+    );
+    await writeTraceFile(root, P, A, "2026-07-05", S, 14, [
+      sessionMeta(metaPayload()),
+      // Task 0: the reply round produced no tool call — the steered notice is exactly what
+      // continues the loop, and it must not open a turn of its own.
+      at(T("00.000"), userText("build it")),
+      at(T("01.000"), requestBegin()),
+      at(T("02.000"), assistantText("kicked off")),
+      at(T("02.500"), requestEnd("completed")),
+      at(T("08.000"), userText(steered, "harness")),
+      at(T("08.500"), requestBegin()),
+      at(T("09.000"), assistantText("finished cleanly")),
+      at(T("09.500"), requestEnd("completed")),
+      // Idle delivery later: the unstamped notice is a task's own input — independent turn.
+      at(T("20.000"), userText(plain, "harness")),
+      at(T("21.000"), requestBegin()),
+      at(T("22.000"), assistantText("reacting to the failure")),
+      at(T("22.500"), requestEnd("completed")),
+    ]);
+    const a = await service.analyze(P, A, S, 14);
+    expect(a.requests.map((r) => r.taskIndex)).toEqual([0, 0, 1]);
+    expect(a.tasks.map((t) => t.taskIndex)).toEqual([0, 1]);
+    // Injected messages never move the duration start (first request_begin rule).
+    expect(a.tasks[0]!.startTs).toBe(T("01.000"));
+    expect(a.tasks[1]!.startTs).toBe(T("21.000"));
+  });
+
+  it("Task grouping: a notice drained at run start rides behind the fresh Prompt without merging turns", async () => {
+    // A notice queued while the session sat idle can be consumed by a user run's start
+    // instead of the idle launcher: core writes it right after the Prompt, steering-stamped.
+    // The Prompt's own continuation break must win — the new turn opens normally, with the
+    // notice inside its span rather than gluing it onto the previous turn.
+    const T = (sec: string) => `2026-07-05T10:06:${sec}Z`;
+    const steered = buildBackgroundTaskDoneMessage(
+      {
+        kind: "command",
+        id: "proc-3",
+        status: "completed",
+        detail: "exit code 0",
+        delivery: "steering",
+      },
+      "Background command finished",
+    );
+    await writeTraceFile(root, P, A, "2026-07-05", S, 15, [
+      sessionMeta(metaPayload()),
+      at(T("00.000"), userText("q1")),
+      at(T("01.000"), requestBegin()),
+      at(T("02.000"), assistantText("a1")),
+      at(T("02.500"), requestEnd("completed")),
+      // The next send: Prompt, then the ride-along notice, then the request.
+      at(T("10.000"), userText("q2")),
+      at(T("10.100"), userText(steered, "harness")),
+      at(T("11.000"), requestBegin()),
+      at(T("12.000"), assistantText("a2")),
+      at(T("12.500"), requestEnd("completed")),
+    ]);
+    const a = await service.analyze(P, A, S, 15);
+    expect(a.requests.map((r) => r.taskIndex)).toEqual([0, 1]);
+    expect(a.tasks.map((t) => t.taskIndex)).toEqual([0, 1]);
+    // Both the Prompt and the ride-along notice belong to the second turn's span.
+    expect(a.tasks[1]!.messageFrom).toBe(5);
+  });
+
   it("Task grouping: images sent with a steering message don't start a Task either (a Prompt's do)", async () => {
     const T = (sec: string) => `2026-07-05T10:04:${sec}Z`;
     await writeTraceFile(root, P, A, "2026-07-05", S, 13, [

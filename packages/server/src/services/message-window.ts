@@ -38,6 +38,7 @@
  */
 import { parseUserSteeringText } from "@prismshadow/penguin-core";
 import {
+  isSteeredBackgroundNotice,
   parseGoalMessage,
   parseHandoffMessage,
   parseModelSwitchMessage,
@@ -45,7 +46,7 @@ import {
 import type { OmniMessage } from "@prismshadow/penguin-core";
 
 /** Bump when any counting/boundary rule changes: cached page_stats records with an older version are recomputed. */
-export const CACHE_VERSION = 1;
+export const CACHE_VERSION = 2;
 
 /** Cumulative totals at a point in the trace (all values are "before this point"). */
 export interface WindowPriorStats {
@@ -251,6 +252,15 @@ export async function scanMessages(
           touchTask(state, ms);
           breakRuns(state);
           state.steeringOpen = true;
+          continue;
+        }
+        // A steered background notice (delivery: steering on its block) rides inside the
+        // running Task like steering — a banner item, no Task start, no cut, no entry — but
+        // opens no trailing-image window (notices carry none). The unstamped form falls
+        // through to onTaskStart: an idle-launched notice task keeps its independent turn.
+        if (isSteeredBackgroundNotice(text)) {
+          touchTask(state, ms);
+          breakRuns(state);
           continue;
         }
         onTaskStart(state, ms, outlineEligibleText(text), (stats) => onBoundary(i, stats));

@@ -17,6 +17,7 @@ import {
   attachedFileLine,
   attachedImageLine,
   isSessionMeta,
+  isSteeredBackgroundNotice,
   matchAttachedFileLine,
   matchAttachedImageLine,
   modelVisiblePath,
@@ -103,6 +104,9 @@ function isTaskStartingUser(msg: OmniMessage): boolean {
   if (p.type === "image_url") return true;
   if (p.type !== "text" || p.role !== "user" || typeof p.text !== "string") return false;
   if (parseUserSteeringText(p.text) !== null) return false;
+  // A steered background notice rides inside the running Task exactly like steering; only
+  // the unstamped form (an idle-launched notice task's own input) starts a Task.
+  if (isSteeredBackgroundNotice(p.text)) return false;
   return !p.text.startsWith("[context_summary]") && !p.text.startsWith("<context_summary>");
 }
 
@@ -913,14 +917,22 @@ export class TraceService {
       // running Task): never a turn starter — same exclusion idea as the compaction summary —
       // and it forces the next request to be a continuation (a steering-only continuation
       // turn has no preceding tool call, but it is still the same Task).
-      const isSteeringText =
+      const isMainUserText =
         !hasOrigin &&
         msg.type === "model_msg" &&
         p.type === "text" &&
         p.role === "user" &&
-        typeof p.text === "string" &&
-        parseUserSteeringText(p.text) !== null;
-      if (isSteeringText) continuation = true;
+        typeof p.text === "string";
+      const isSteeringText = isMainUserText && parseUserSteeringText(p.text as string) !== null;
+      // A background completion notice steered into the running Task (`delivery: steering`
+      // on its block) gets the same treatment as steering. An unstamped notice is an
+      // idle-launched notice task's own input and keeps its independent turn.
+      const isSteeredNotice = isMainUserText && isSteeredBackgroundNotice(p.text as string);
+      // The continuation force only applies to a gap delivery (between two requests of the
+      // running Task). A notice drained at run start rides behind a fresh user Prompt —
+      // pendingFrom is then already open for the new turn, whose own `continuation = false`
+      // must win, or the new turn would merge into the previous one.
+      if ((isSteeringText || isSteeredNotice) && pendingFrom === null) continuation = true;
       // Images sent with a steering message ride immediately behind its text, exactly as a
       // Prompt's images ride behind theirs — and they inherit its exclusion: still the same
       // Task, so `steeringImages` keeps the window open across the whole run of them and
@@ -936,6 +948,7 @@ export class TraceService {
         !hasOrigin &&
         !compactionActive &&
         !isSteeringText &&
+        !isSteeredNotice &&
         !steeringImages &&
         msg.type === "model_msg" &&
         ((p.type === "text" && p.role === "user") || p.type === "image_url");

@@ -52,6 +52,7 @@
 import {
   isEventMessage,
   isPartialPayload,
+  isSteeredBackgroundNotice,
   parseUserSteeringText,
 } from "@prismshadow/penguin-core/omnimessage";
 import type {
@@ -115,6 +116,24 @@ export interface UserSteeringItem {
    * which the chip restores at render time like any user message.)
    */
   images?: string[];
+  /** Message timestamp (milliseconds): shown on footer hover. */
+  atMs?: number;
+}
+
+/**
+ * A background completion notice steered into the running Task (`delivery: steering` on its
+ * `[background_task_done]` block — see core's Session notice queue): rendered as the
+ * completion banner **inside** the running Task's flow, like a steering chip it never starts
+ * a new Task — so the turn's stats row still arrives exactly once, at task end. An unstamped
+ * notice (an idle-launched notice task's own input) stays an ordinary `user_text` item and
+ * keeps its independent turn. `text` is the raw message text (block included): the renderer
+ * and the topology's terminal-state scan both re-parse it, exactly as they do for the
+ * unstamped form.
+ */
+export interface BackgroundNoticeItem {
+  kind: "background_notice";
+  id: number;
+  text: string;
   /** Message timestamp (milliseconds): shown on footer hover. */
   atMs?: number;
 }
@@ -345,6 +364,7 @@ export interface TaskStatsItem {
 export type ChatItem =
   | UserTextItem
   | UserSteeringItem
+  | BackgroundNoticeItem
   | UserImageItem
   | AssistantTextItem
   | ThinkingItem
@@ -1145,6 +1165,26 @@ function handleComplete(
           model.items.push(item);
           // Open the window for the images core delivers right behind this text.
           model.openSteering = item;
+          return;
+        }
+        // A background notice steered into the running Task (delivery: steering on its
+        // block): same exclusion as steering — rendered inside the Task as the completion
+        // banner, never a Task starter, so no stats row is flushed at the injection point.
+        // The unstamped form falls through to the user_text branch below: an idle-launched
+        // notice task keeps its independent turn (and its stats row placement).
+        if (isSteeredBackgroundNotice(p.text)) {
+          // A wrap-up compaction may have settled the round early; an injected notice is
+          // exactly what keeps the Task going past it, so it opens the continuation's own
+          // round rather than joining a closed one (same rule as the steering chip above).
+          if (model.reopenTaskAtSteering && !model.taskOpen) startTask(model, timestamp, nowMs);
+          touchTask(model, timestamp);
+          const noticeMs = tsOf(timestamp);
+          model.items.push({
+            kind: "background_notice",
+            id: nextId(model),
+            text: p.text,
+            ...(noticeMs !== undefined ? { atMs: noticeMs } : {}),
+          });
           return;
         }
         // A complete text message on the main session's user side: starts a new Task.

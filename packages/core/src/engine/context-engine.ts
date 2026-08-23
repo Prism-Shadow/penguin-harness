@@ -244,8 +244,11 @@ export interface ContextEngineDeps {
    * drains at every input-assembly point — run start included — yielding each message to the
    * output stream and writing it to Trace (like steering, this text never reached the
    * consumer any other way); `pending` is the boundary peek that keeps a discard/summary
-   * from ending the run while notices still wait. Absent = no notice source (tests,
-   * standalone embedders).
+   * from ending the run while notices still wait. This drain IS the steering delivery path:
+   * the source builds each message with `delivery: steering` on its block, marking it as
+   * injected into an already-started Task rather than a task-starting input (only the host's
+   * idle take produces the unstamped form). Absent = no notice source (tests, standalone
+   * embedders).
    */
   backgroundNotices?: { drain(): OmniMessage[]; pending(): number };
 }
