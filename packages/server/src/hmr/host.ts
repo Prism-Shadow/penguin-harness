@@ -160,6 +160,16 @@ export class HmrHost {
 
   private instance: Instance<PlatformApi> | null = null;
   private implId = packagedPlatform.id;
+  /**
+   * The bundle behind the RUNNING instance, held as the loaded object rather than a
+   * pointer to re-read: it is what boot-failure recovery re-boots (see recoverPrevious).
+   * A bundle's `id` cannot stand in for this — the packaged export IS what a push
+   * delivers (hmr/entry.ts re-exports `packagedPlatform` as `hotPlatform`), so every
+   * pushed bundle carries the packaged id and comparing ids cannot tell a pushed version
+   * from the compiled-in default. Nor can the manifest: a push whose disk commit failed
+   * (`persisted: false`) is running a version harness.json does not name.
+   */
+  private current: PlatformBundle = packagedPlatform;
   /** Current version's materialized native assets dir (see assetsDir()). */
   private assets: string | null = null;
   private readonly hmrDir: string;
@@ -225,6 +235,7 @@ export class HmrHost {
           initialDoc(bundle.iface, bundle.context),
           this.resources,
         )) as Instance<PlatformApi>;
+        this.current = bundle;
       }
       return this.instance;
     } catch (err) {
@@ -298,6 +309,7 @@ export class HmrHost {
       )) as Instance<PlatformApi>;
       this.instance = instance;
       this.implId = bundle.id;
+      this.current = bundle;
       this.webMem = webMem;
     } catch (err) {
       this.warn(
@@ -386,6 +398,7 @@ export class HmrHost {
     // is never written to disk — see the module doc: code persists, state does not.
     this.instance = result.instance as Instance<PlatformApi>;
     this.implId = bundle.id;
+    this.current = bundle;
     this.webMem = webMem;
 
     const digest = filesDigest(target.web);
@@ -410,28 +423,25 @@ export class HmrHost {
 
   /**
    * Boot-failure recovery: re-boot the version that was running before the failed
-   * upgrade, from its own parked document. The committed manifest still names that
-   * version (a failed push persists nothing), so the bundle comes from there — or it is
-   * the packaged default when nothing was ever pushed. Best-effort by design: a double
-   * fault only warns and leaves the disposed instance in place, because /api/hmr is
+   * upgrade, from its own parked document. The bundle is `this.current` — the object
+   * that was running, still loaded — rather than anything re-read from disk: the
+   * manifest names the last DURABLE version, which is a different version whenever the
+   * running one could not be persisted, and a bundle's `id` cannot distinguish pushed
+   * from packaged at all (see the field's doc). Best-effort by design: a double fault
+   * only warns and leaves the disposed instance in place, because /api/hmr is
    * runtime-owned and therefore still reachable for a follow-up push, and a process
    * restart restores the committed version regardless.
    */
   private async recoverPrevious(doc: Json): Promise<void> {
     try {
-      let bundle: PlatformBundle = packagedPlatform;
-      if (this.implId !== packagedPlatform.id) {
-        const manifest = JSON.parse(await fsp.readFile(this.manifestPath, "utf8")) as Manifest;
-        if (manifest.platform === undefined) throw new Error("harness.json has no `platform`");
-        bundle = await this.importBundleFile(path.join(this.hmrDir, manifest.platform.bundle));
-      }
+      const bundle = this.current;
       this.instance = (await boot(
         bundle.impl,
         bundle.iface,
         doc,
         this.resources,
       )) as Instance<PlatformApi>;
-      // implId unchanged: the previous version is the running version again.
+      // implId and current unchanged: the previous version is the running version again.
     } catch (err) {
       this.warn(
         `boot-failure recovery failed too — the process serves a half-stopped App until ` +
