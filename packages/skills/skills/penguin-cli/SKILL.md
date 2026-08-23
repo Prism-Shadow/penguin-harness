@@ -3,8 +3,8 @@ name: penguin-cli
 description: Manage model API keys, default models and per-agent vault secrets with the penguin CLI.
 short_description: Manage models and secrets with the penguin CLI.
 short_description_zh: 用 penguin CLI 管理模型与密钥。
-version: 8
-updated: 2026-07-25T00:00:00Z
+version: 9
+updated: 2026-08-23T15:42:44Z
 ---
 
 # Penguin CLI
@@ -22,6 +22,7 @@ Add or update a model (upsert by the `(provider, model_id)` pair; re-run with mo
 ```bash
 penguin config model add --provider <group> --model-id <upstream_id> [--api-key <key>] [--base-url <url>] \
   [--client-type <type>] [--context-window <n>] [--max-tokens <n>] [--vision | --no-vision] \
+  [--fast-mode | --no-fast-mode] \
   [--price-cache-read <n>] [--price-cache-write <n>] [--price-output <n>] \
   [--project-id <id>] [--root <dir>] [--set-default]
 ```
@@ -30,6 +31,7 @@ penguin config model add --provider <group> --model-id <upstream_id> [--api-key 
 - For any OpenAI chat-completion compatible endpoint use `--client-type openai --base-url <endpoint>`; omit `--client-type` to auto-route by model id.
 - Prices are USD per million tokens (cache read / cache write / output).
 - `--vision` / `--no-vision` mark whether the model accepts images; omitting both keeps the current value (default is vision-capable).
+- `--fast-mode` / `--no-fast-mode` turn on faster output at premium pricing (off by default); omitting both keeps the current value. Enabling it on a model whose AgentHub client has no fast tier still writes the entry but warns on stderr — the parameter would be rejected at request time.
 - `--max-tokens <n>` pins a per-model output cap (positive integer), overriding the Agent's `model.max_tokens`; omit to inherit. Lower it for small-context models — the per-Agent default (32000) cannot fit into e.g. a 32k context window together with any prompt.
 - All `penguin config model ...` and `penguin config vault ...` commands accept `--root <dir>` to target another data root (default `PENGUIN_HOME`, then `~/.penguin/data`). Two configuration targets — treat the difference as a hard rule:
   - **Penguin's own model** (self-configuration: the model Penguin itself runs on): the default root without `--root` is correct.
@@ -42,7 +44,10 @@ Other model commands:
 penguin config model default --model-id <upstream_id> --provider <group> [--root <dir>]   # set the project default model
 penguin config model vision --model-id <upstream_id> --provider <group> [--root <dir>]    # set the project vision model (reads images for text-only sessions)
 penguin config model list [--root <dir>]                      # list models; api_key is shown masked
+penguin config model remove --model-id <upstream_id> --provider <group> [--root <dir>]    # delete a model entry and its inline credential
 ```
+
+`model remove` matches the `(provider, model_id)` pair exactly, so the same upstream id under another group is left alone, and it exits non-zero when the pair is not configured. Removing the entry the default model or the vision model pointed at clears that pointer as well — a pointer naming a model that is no longer configured would fail the next session outright.
 
 ## Vault (per-agent secrets)
 
@@ -65,7 +70,10 @@ penguin config lang <en|zh>   # persist the CLI language via PENGUIN_LANG in you
 
 ## Running agents
 
-`penguin run -m "<task>" [--provider <group> --model-id <id>] [--agent-id <id>] [--workspace <path>] [--approve <mode>]` runs one task; `penguin chat [--resume [session_id]]` starts or resumes an interactive chat with the same options. The model reference stays a pair here too: pass `--provider` and `--model-id` together, or neither to run on the project's default model — one without the other is rejected.
+`penguin run -m "<task>" [--provider <group> --model-id <id>] [--agent-id <id>] [--workspace <path>] [--approve <mode>] [--thinking <level>] [--goal [budget]]` runs one task; `penguin chat [--resume [session_id]]` starts or resumes an interactive chat with the same options (minus `-m`, plus `--verbose`). The model reference stays a pair here too: pass `--provider` and `--model-id` together, or neither to run on the project's default model — one without the other is rejected.
+
+- `--thinking <level>` (`low` / `medium` / `high` / `xhigh` / `max`) sets the session's thinking level; omit it to take the configured chain (the agent's `model.thinking_level`, else the project's `default_chat.thinking_level`, else `medium`). It is pinned at session creation, so spawned subagent sessions follow it. With `--resume` it becomes the initial per-turn override instead.
+- `--goal [budget]` runs the task in goal mode: rounds repeat on one session until the objective completes, and the exit code is 0 only then. The optional value is a token budget (`--goal 500k`); a bare `--goal` runs unbudgeted. Inside `penguin chat` the same mode is `/goal[:<budget>] <objective>`.
 
 ## Storage
 
