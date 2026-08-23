@@ -3,6 +3,7 @@
 - **Date:** 2026-08-23
 - **Type:** process
 - **Scope:** `skills`
+- **PR:** [#416](https://github.com/Prism-Shadow/penguin-harness/pull/416)
 
 [English](2026-08-23-skills-readme-group-table.md)
 
