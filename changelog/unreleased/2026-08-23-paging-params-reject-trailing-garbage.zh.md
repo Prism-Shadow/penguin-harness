@@ -3,6 +3,7 @@
 - **Date:** 2026-08-23
 - **Type:** fix
 - **Scope:** `server`
+- **PR:** [#410](https://github.com/Prism-Shadow/penguin-harness/pull/410)
 
 [English](2026-08-23-paging-params-reject-trailing-garbage.md)
 
