@@ -141,7 +141,7 @@ POSIX 上 Ctrl-C 向会话进程组发送 `SIGINT`，中断前台命令。Window
 
 ### 文件工具
 
-`read_file` / `edit_file` / `write_file` 与 Shell 工具一样以用户完整权限运行：相对路径按 Workspace 解析，也接受绝对路径。三者均为非流式（一次性输出最终结果），从不抛异常——失败以解释性文本收尾，`stop_reason` 为 `failed`。
+`read_file` / `edit_file` / `write_file` 与 Shell 工具一样以用户完整权限运行：相对路径按 Workspace 解析，也接受绝对路径。软链接路径会被解析到它指向的文件——读取、编辑、写入都落在该文件上，链接本身仍然是链接。三者均为非流式（一次性输出最终结果），从不抛异常——失败以解释性文本收尾，`stop_reason` 为 `failed`。
 
 ```ts
 // read_file — cat -n 风格输出(行号、制表符、内容);超长单行会被截断,

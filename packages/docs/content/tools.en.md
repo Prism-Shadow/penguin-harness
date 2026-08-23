@@ -142,7 +142,7 @@ On POSIX, Ctrl-C sends `SIGINT` to the session's process group, interrupting the
 
 ### File tools
 
-`read_file` / `edit_file` / `write_file` run with the user's full permissions, same as the shell tool; relative paths resolve against the Workspace and absolute paths are allowed. They are non-streaming (a single final output) and never throw — failures come back as explanatory text with `stop_reason: failed`.
+`read_file` / `edit_file` / `write_file` run with the user's full permissions, same as the shell tool; relative paths resolve against the Workspace and absolute paths are allowed. A symlinked path is followed to the file it names — reads, edits and writes all land on that file, and the link stays a link. They are non-streaming (a single final output) and never throw — failures come back as explanatory text with `stop_reason: failed`.
 
 ```ts
 // read_file — cat -n style output (line number, tab, content); overlong single lines are
