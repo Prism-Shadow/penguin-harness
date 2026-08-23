@@ -3,6 +3,7 @@
 - **Date:** 2026-08-23
 - **Type:** feature
 - **Scope:** `core`, `server`, `web`
+- **PR:** [#407](https://github.com/Prism-Shadow/penguin-harness/pull/407)
 
 [English](2026-08-23-steered-background-notices.md)
 
