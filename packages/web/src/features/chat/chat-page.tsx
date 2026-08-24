@@ -34,7 +34,6 @@ import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { pathFileName } from "../../lib/file-path";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import {
   formatDateTime,
@@ -299,9 +298,6 @@ export function ChatPage() {
     cacheWrite: number;
     output: number;
   } | null>(null);
-  // Latest trace file path (single-session GET only — list rows don't carry it), fetched
-  // when the details popover opens; null = none yet (brand-new session) or still loading.
-  const [tracePath, setTracePath] = useState<string | null>(null);
   // A mid-chat thinking-level pick staged behind the confirm dialog (issue #310): some
   // providers key their prompt PREFIX on the thinking level, so switching with history in
   // place invalidates the provider's prefix cache and the next request re-bills the whole
@@ -689,7 +685,7 @@ export function ChatPage() {
   // Session switch: resets the usage-fetch marker, the file-card existence cache, any
   // thinking-level switch staged behind its dialog (per-session UI state — a compaction
   // that self-heals to a new session id routes through here too and drops the held pick),
-  // and the popover's per-session data (process list / token buckets / trace path),
+  // and the popover's per-session data (process list / token buckets),
   // avoiding stale data from the previous Session (the panel jump commands reset in their
   // own effect above, and the cost hold re-keys itself inside advanceCostStat). The thinking level itself needs no reset — it is read off the
   // selected Session row, so it changes with the session by construction.
@@ -699,7 +695,6 @@ export function ChatPage() {
     statCacheRef.current = new Map();
     setProcesses([]);
     setUsageBuckets(null);
-    setTracePath(null);
   }, [routeSessionId]);
 
   // Batched existence check for file summaries: cache stable positive results and share in-flight
@@ -867,23 +862,6 @@ export function ChatPage() {
     (processId: string) => runProcessAction(processId, api.removeSessionProcess, [404, 409]),
     [runProcessAction],
   );
-
-  // Trace file path for the popover's trace row: the single-session GET is the only
-  // surface carrying it, so fetch lazily on open (and once per session — the path only
-  // ever moves forward when a new trace file starts, which a reopen picks up).
-  useEffect(() => {
-    if (!infoOpen || !selectedSessionId) return;
-    let cancelled = false;
-    api
-      .getSession(selectedSessionId)
-      .then((res) => {
-        if (!cancelled) setTracePath(res.session.tracePath ?? null);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [infoOpen, selectedSessionId]);
 
   // Model config (context window + credential guide): fetched once per Project.
   //
@@ -1905,49 +1883,6 @@ export function ChatPage() {
                       </li>
                     ))}
                   </ul>
-                </div>
-              )}
-              {/* Trace file, same section anatomy as the rows above (label + mono value):
-                  the value is the file NAME on a single line (#312 — the full path wrapped
-                  over several lines; it now lives in the tooltip and the copy button, which
-                  copies the FULL path). The name itself is the click target and
-                  SPA-navigates to the Trace page deep-linked to the owning Agent AND this
-                  Session (?agentId= focuses/expands the Agent group, ?sessionId=
-                  auto-selects — a Session beyond the first loaded page resolves via the
-                  Trace page's full-fetch fallback). Hidden until a trace exists (a
-                  brand-new session has no file to open); only reachable for a real
-                  Session — this whole header renders behind the `selected` guard, so a
-                  draft never shows it. */}
-              {tracePath !== null && (
-                <div>
-                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                    {S.chat.traceFile}
-                  </p>
-                  <div className="flex items-center gap-1.5">
-                    {/* Wrapper (not flex-1 on the button itself) keeps the click target no
-                        wider than the name while the copy button still sits at the row's
-                        right edge, mirroring the Session id row. */}
-                    <div className="min-w-0 flex-1">
-                      <button
-                        type="button"
-                        title={tracePath}
-                        onClick={() => {
-                          setInfoOpen(false);
-                          navigate(
-                            `/traces?agentId=${encodeURIComponent(selected.agentId)}&sessionId=${encodeURIComponent(selected.sessionId)}`,
-                          );
-                        }}
-                        className="max-w-full truncate text-left font-mono text-xs leading-5 text-gray-600 underline decoration-gray-300 underline-offset-2 transition-colors duration-150 hover:text-gray-900 dark:text-gray-300 dark:decoration-gray-600 dark:hover:text-gray-100"
-                      >
-                        {pathFileName(tracePath)}
-                      </button>
-                    </div>
-                    <CopyButton
-                      text={tracePath}
-                      label={S.chat.copyTracePath}
-                      className={ROW_COPY_CLASS}
-                    />
-                  </div>
                 </div>
               )}
             </div>

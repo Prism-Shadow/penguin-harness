@@ -8,11 +8,10 @@
  * tool / skill / memory / vault-key / schedule counts deep-link to the settings page's matching
  * tab (?tab=tools|skills|memory|vault|schedules) and appear in the settings tabs' order.
  * Buttons sit to the right of the sparkline: "New Chat" (draft state, same as sidebar group
- * header) and "Settings" (goes to settings page) show text labels; "Usage" / "Traces" (deep link
- * via ?agentId= to the usage center / trace observability; traces use an eye line icon =
- * observability) and "Delete" (with confirmation; built-in Agents show a non-interactive light
- * gray placeholder with an undeletable tooltip) are square icon buttons (tooltip shows the full
- * name); "Create Agent" only fills in name + description.
+ * header) and "Settings" (goes to settings page) show text labels; "Usage" (deep links via
+ * ?agentId= to the usage center) and "Delete" (with confirmation; built-in Agents show a
+ * non-interactive light gray placeholder with an undeletable tooltip) are square icon buttons
+ * (tooltip shows the full name); "Create Agent" only fills in name + description.
  */
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
@@ -62,8 +61,6 @@ const CARD_ICONS = {
     "M12 6.5C10.5 5 8 4.5 4 5v12c4-.5 6.5 0 8 1.5 1.5-1.5 4-2 8-1.5V5c-4-.5-6.5 0-8 1.5zm0 0V18",
   /** Usage (bar chart, same as sidebar "Usage Center") */
   usage: "M4 20V10m6 10V4m6 16v-7m4 7H2",
-  /** Traces (eye line icon: observability; follows text color, no fill) */
-  traces: "M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z",
   /** Memory (brain: two hemispheres + inner fold, lucide simplified), opens the settings tab */
   memory:
     "M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18ZM12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18ZM15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4",
@@ -383,18 +380,6 @@ export function AgentsPage() {
                     >
                       <GlyphIcon
                         d={CARD_ICONS.usage}
-                        size={15}
-                        className="text-gray-600 dark:text-gray-300"
-                      />
-                    </Button>
-                    <Button
-                      size="icon"
-                      title={S.nav.traces}
-                      aria-label={S.nav.traces}
-                      onClick={() => navigate(`/traces?agentId=${encodeURIComponent(a.agentId)}`)}
-                    >
-                      <GlyphIcon
-                        d={CARD_ICONS.traces}
                         size={15}
                         className="text-gray-600 dark:text-gray-300"
                       />
