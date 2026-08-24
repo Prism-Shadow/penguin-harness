@@ -6,11 +6,12 @@
  * streaming, nested tool cards, chips for deeper spawns, and pending approvals all keep
  * working inside the panel.
  *
- * Which Task: the LATEST by default (toolbar open / session switch — a new Task then resets
- * the graph to its own agents as it streams); a chip click pins `taskScope` to that chip's
- * Task instead (the chat page's subagentTaskScope), so a chip on an older turn shows that turn's
- * HISTORICAL graph via extractTopologyForChild — falling back to the latest Task when the
- * anchor is no longer referenced (e.g. a resync swapped the model).
+ * Which Task: the most recent SUBAGENT-BEARING one by default — a plain user message never
+ * wipes the graph; a new Task takes over the moment it spawns its own child (see
+ * extractTopology). A chip click pins `taskScope` to that chip's Task instead (the chat
+ * page's subagentTaskScope), so a chip on an older turn shows that turn's HISTORICAL graph
+ * via extractTopologyForChild — falling back to the default scope when the anchor is no
+ * longer referenced (e.g. a resync swapped the model).
  *
  * Selection: an explicit chip click (focusRequest) or a node click wins; with no explicit
  * choice the first child of the displayed Task is auto-focused (so opening the panel while a
@@ -21,12 +22,20 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
-import type { SessionInfo, SubagentRuntimeInfo } from "@prismshadow/penguin-server/api";
+import type {
+  ApprovalMode,
+  ModelInfo,
+  SessionInfo,
+  SkillMetadataItem,
+  SubagentRuntimeInfo,
+  TaskInputPart,
+} from "@prismshadow/penguin-server/api";
 import { ApiError } from "../../api/client";
-import { abortSubagent, steerSubagent } from "../../api/endpoints";
+import { abortSubagent, getAgentSkills, messageSubagent } from "../../api/endpoints";
+import { toastError } from "../../components/ui/toast";
 import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
-import type { StreamModel } from "../../lib/omni/stream-model";
+import type { NestedSessionMeta, StreamModel } from "../../lib/omni/stream-model";
+import { ChatInput } from "./chat-input";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { EmptyState } from "../../components/ui/empty-state";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
@@ -62,6 +71,10 @@ export function SubagentsView({
   focusRequest,
   taskScope,
   subagents,
+  models,
+  approvalMode,
+  onChangeApprovalMode,
+  modeSaving,
 }: {
   session: SessionInfo;
   model: StreamModel;
@@ -75,6 +88,12 @@ export function SubagentsView({
   taskScope: { anchorSessionId: string } | null;
   /** Live subagent children from the server's task_state (structural liveness): overrides the topology's text heuristics; empty for dead runtimes. */
   subagents: SubagentRuntimeInfo[];
+  /** Project model list (the child composer's locked-model badge and context-window lookup). */
+  models: ModelInfo[];
+  /** The PARENT session's approval mode — child approvals are judged by it (the same value the main composer edits). */
+  approvalMode: ApprovalMode;
+  onChangeApprovalMode: (mode: ApprovalMode) => void;
+  modeSaving: boolean;
 }) {
   const { agents, setCurrentAgentId } = useProject();
   const { sessions } = useSessions();
@@ -224,24 +243,6 @@ export function SubagentsView({
               <StatusIcon state="running" size={10} label={S.chat.subagentRunning} />
             )}
             <span className="min-w-0 flex-1" />
-            {/* Stop the child's CURRENT run only (the session survives for follow-ups) —
-                the panel counterpart of the model's input_subagent abort (#272). */}
-            {activeRunning && (
-              <button
-                type="button"
-                title={S.subagentPanel.stopRun}
-                aria-label={S.subagentPanel.stopRun}
-                data-testid="subagent-stop-run"
-                onClick={() => {
-                  void abortSubagent(session.sessionId, active.sessionId).catch(() => undefined);
-                }}
-                className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-              >
-                <svg width="12" height="12" viewBox="0 0 14 14" aria-hidden className="block">
-                  <rect x="2" y="2" width="10" height="10" rx="2" fill="currentColor" />
-                </svg>
-              </button>
-            )}
             {/* Jump out of the panel: the child conversation as a full Session. */}
             <button
               type="button"
@@ -274,6 +275,13 @@ export function SubagentsView({
             sessionId={session.sessionId}
             childSessionId={active.sessionId}
             running={activeRunning}
+            meta={activeModel.meta}
+            contextNow={activeModel.stats.contextNow}
+            deliveredInputs={countDeliveredInputs(activeModel)}
+            models={models}
+            approvalMode={approvalMode}
+            onChangeApprovalMode={onChangeApprovalMode}
+            modeSaving={modeSaving}
           />
         </>
       )}
@@ -282,78 +290,141 @@ export function SubagentsView({
 }
 
 /**
- * Single-line message input for the selected child (#272): a message sent while the child
- * runs is a steering interjection (the main composer's mid-run semantics, applied to the
- * child); sent while it is idle, it continues the child with a follow-up round. Both land on
- * the same core channel the model's input_subagent uses.
+ * User-side inputs already visible in the child's stream (follow-up prompts and delivered
+ * steering interjections alike): the composer's "queued" hint retires when this grows past
+ * its value at queue time — whichever way the message reached the child.
+ */
+function countDeliveredInputs(model: StreamModel): number {
+  let n = 0;
+  for (const item of model.items) {
+    if (item.kind === "user_text" || item.kind === "user_steering") n += 1;
+  }
+  return n;
+}
+
+/**
+ * The selected child's composer (#272): the SAME ChatInput as the main conversation, in its
+ * subagent variant — body, skills and slash skill commands, per-turn thinking level, context
+ * ring (the child's own usage), locked-model badge, and the approval-mode selector (the
+ * PARENT session's mode — child approvals are judged by it). Send semantics are a user input
+ * on the child, whatever its state: steering while it runs, a follow-up round while idle, a
+ * revival (resume-session) when it was released; the stop face on the action button aborts
+ * only the child's current run. All of it lands on the same core channel input_subagent uses.
  */
 function SubagentComposer({
   sessionId,
   childSessionId,
   running,
+  meta,
+  contextNow,
+  deliveredInputs,
+  models,
+  approvalMode,
+  onChangeApprovalMode,
+  modeSaving,
 }: {
   sessionId: string;
   childSessionId: string;
   running: boolean;
+  meta: NestedSessionMeta | null;
+  contextNow: number;
+  deliveredInputs: number;
+  models: ModelInfo[];
+  approvalMode: ApprovalMode;
+  onChangeApprovalMode: (mode: ApprovalMode) => void;
+  modeSaving: boolean;
 }) {
-  const [text, setText] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
+  const { currentProject } = useProject();
+  const projectId = currentProject?.projectId ?? null;
+  // Skills of the CHILD's agent (it may differ from the parent's): candidates for the
+  // toolbar dropdown and the slash menu; a failed fetch reads as no skills.
+  const [skills, setSkills] = useState<SkillMetadataItem[]>([]);
+  useEffect(() => {
+    let stale = false;
+    setSkills([]);
+    const agentId = meta?.agentId;
+    if (!projectId || !agentId) return;
+    getAgentSkills(projectId, agentId)
+      .then((res) => {
+        if (!stale) setSkills(res.skills);
+      })
+      .catch(() => undefined);
+    return () => {
+      stale = true;
+    };
+  }, [projectId, meta?.agentId]);
 
-  const send = async (): Promise<void> => {
-    const message = text.trim();
-    if (!message || busy) return;
-    setBusy(true);
-    setNotice(null);
-    try {
-      await steerSubagent(sessionId, childSessionId, message);
-      setText("");
-    } catch (err) {
-      setNotice(
-        err instanceof ApiError && err.code === "subagent_gone"
-          ? S.subagentPanel.subagentGone
-          : err instanceof Error
-            ? err.message
-            : String(err),
-      );
-    } finally {
-      setBusy(false);
-    }
+  // Per-turn thinking level for the child's NEXT round ("" = untouched, follow the child's
+  // own config): mirrors the main composer's per-session pick, scoped to this child.
+  const [turnLevel, setTurnLevel] = useState("");
+
+  const modelRef = meta ? { provider: meta.provider, modelId: meta.modelId } : null;
+  const contextWindow = modelRef
+    ? models.find((m) => m.provider === modelRef.provider && m.modelId === modelRef.modelId)
+        ?.contextWindow
+    : undefined;
+
+  const send = (text: string) =>
+    messageSubagent(sessionId, childSessionId, text, turnLevel || undefined);
+  const sendFailure = (err: unknown): void => {
+    toastError(
+      err instanceof ApiError && err.code === "subagent_gone"
+        ? S.subagentPanel.subagentGone
+        : err instanceof Error
+          ? err.message
+          : String(err),
+    );
   };
 
   return (
-    <div className="shrink-0 border-t border-gray-100 px-2 py-1.5 dark:border-gray-800/60">
-      {notice !== null && <p className={`mb-1 px-1 text-[11px] ${toneInk.danger}`}>{notice}</p>}
-      <div className="flex items-center gap-1.5">
-        <input
-          type="text"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-              e.preventDefault();
-              void send();
-            }
-          }}
-          placeholder={
-            running ? S.subagentPanel.steerPlaceholder : S.subagentPanel.resumePlaceholder
+    <div className="shrink-0 border-t border-gray-100 dark:border-gray-800/60">
+      <ChatInput
+        variant="subagent"
+        status={running ? "running" : "idle"}
+        onSend={async (input: TaskInputPart[]) => {
+          const text = input
+            .filter((p): p is { type: "text"; text: string } => p.type === "text")
+            .map((p) => p.text)
+            .join("\n\n")
+            .trim();
+          if (!text) return false;
+          try {
+            await send(text);
+            return true;
+          } catch (err) {
+            sendFailure(err);
+            return false;
           }
-          disabled={busy}
-          data-testid="subagent-composer-input"
-          className="min-w-0 flex-1 rounded-md border border-gray-200 bg-transparent px-2 py-1 text-xs text-gray-800 outline-none placeholder:text-gray-400 focus:border-gray-400 disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:placeholder:text-gray-600 dark:focus:border-gray-500"
-        />
-        <button
-          type="button"
-          title={S.subagentPanel.sendMessage}
-          aria-label={S.subagentPanel.sendMessage}
-          data-testid="subagent-composer-send"
-          onClick={() => void send()}
-          disabled={busy || text.trim().length === 0}
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 disabled:cursor-default disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-        >
-          <GlyphIcon d="M12 19V5M5 12l7-7 7 7" size={ICON_SIZE.rowLead} />
-        </button>
-      </div>
+        }}
+        onSteer={async (text: string) => {
+          try {
+            await send(text);
+            // steered/started/resumed alike: the message reached the child (the race where
+            // the round settled mid-send simply started the next one). The queued hint
+            // retires when the child's stream shows the delivered input.
+            return "queued";
+          } catch (err) {
+            sendFailure(err);
+            return "failed";
+          }
+        }}
+        steeringDeliveredCount={deliveredInputs}
+        onStop={async () => {
+          await abortSubagent(sessionId, childSessionId).catch(() => undefined);
+        }}
+        modelRef={modelRef}
+        models={models}
+        turnThinkingLevel={turnLevel}
+        onChangeTurnThinkingLevel={setTurnLevel}
+        {...(contextWindow !== undefined ? { contextWindow } : {})}
+        contextNow={contextNow}
+        vision={false}
+        approvalMode={approvalMode}
+        onChangeApprovalMode={onChangeApprovalMode}
+        modeSaving={modeSaving}
+        agents={[]}
+        skills={skills}
+      />
     </div>
   );
 }

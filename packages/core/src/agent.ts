@@ -63,6 +63,7 @@ import type { CompactionSettings } from "./engine/context-engine.js";
 import type {
   GenerativeModelConfig,
   ProxyEnvPolicy,
+  SubagentHandle,
   SubagentRunner,
   ThinkingLevelName,
   ToolDefinition,
@@ -700,71 +701,96 @@ export class Agent {
           subagentDepth: subagentDepth + 1,
           source: "subagent",
         });
-        // All child-session messages are tagged with an origin (the child Session id,
-        // prepended as one hop from outer to inner); the first turn forwards the
-        // child's session_meta first (including agent_state and other metadata) so the
-        // parent frontend can recognize the nested session (for rendering, stats,
-        // approval visibility); the parent Trace skips these accordingly (the child
-        // Session has its own Trace, linked by session id).
-        const hop: MessageOrigin = childSession.sessionId;
-        let metaSent = false;
-        return {
-          sessionId: hop,
-          // One-shot upfront meta for background launches (see SubagentHandle.takeMeta):
-          // shares metaSent with run, so the meta reaches the parent stream exactly once
-          // whichever side sends it first.
-          takeMeta() {
-            if (metaSent) return null;
-            metaSent = true;
-            return withOrigin(childSession.metaMessage, hop);
-          },
-          async *run({ prompt, signal, approve }) {
-            if (!metaSent) {
-              metaSent = true;
-              yield withOrigin(childSession.metaMessage, hop);
-            }
-            // Pass through the parent's approval callback: the child Session inherits
-            // the parent Agent's approval mode (with no callback, the child engine
-            // defaults to deny). The tool_call received for approval also carries the
-            // origin, so the approval UI can identify which tool a subagent is calling.
-            const childApprove = approve
-              ? (tc: OmniMessage<ToolCallPayload>) => approve(withOrigin(tc, hop))
-              : undefined;
-            // The engine writes a run's input to the CHILD's own Trace but never replays
-            // it to its consumer (a session's normal caller typed that input itself) —
-            // here the consumer is the PARENT, whose frontend has never seen the child's
-            // prompt. Forward the input message itself (origin-tagged, ahead of the run's
-            // output) so the live nested view shows the child's user side exactly like a
-            // reloaded one (history expansion splices the child Trace, which carries this
-            // same message). The parent engine drops origin messages from the parent
-            // Trace, so replay never duplicates it. Later rounds (input_subagent
-            // follow-up prompts) come through this same generator and are forwarded the
-            // same way.
-            // sender "parent_agent": in the child's Trace this user turn came from the
-            // parent agent (run_subagent's prompt / input_subagent's follow-up), not a human.
-            const input = userText(prompt, "parent_agent");
-            yield withOrigin(input, hop);
-            for await (const msg of childSession.run([input], {
-              ...(signal ? { signal } : {}),
-              ...(childApprove ? { approve: childApprove } : {}),
-            })) {
-              yield withOrigin(msg, hop);
-            }
-          },
-          // Mid-run steering rides the child Session's own steering queue — the same
-          // mechanism a user steers the main session with. The queued message keeps its
-          // caller-chosen sender ("parent_agent" from input_subagent, none from a human
-          // panel), and the delivered [user_steering] message streams back out through
-          // `run` with the origin hop like every other child message.
-          steer(messages) {
-            return childSession.steer(messages);
-          },
-          dispose() {
-            childSession.dispose();
-          },
-        };
+        return subagentHandleFor(childSession);
+      },
+      // Host-path resume fallback: revives a RELEASED child session (its own history, model
+      // and Workspace — resumeSession semantics) so the panel can keep talking to it. The
+      // owning Agent comes from the host's session registry; self-owned sessions reuse the
+      // parent Agent instance.
+      async resume({ agentId, sessionId }) {
+        assertValidId("agent_id", agentId);
+        const childAgent =
+          agentId === parentAgentId
+            ? parentAgent
+            : await createAgent({
+                root,
+                projectId,
+                agentId,
+                ...(parentAgent.proxyEnv ? { proxyEnv: parentAgent.proxyEnv } : {}),
+              });
+        const childSession = await childAgent.resumeSession({ sessionId });
+        return subagentHandleFor(childSession);
       },
     };
+
+    /**
+     * Wraps a child Session as a SubagentHandle — shared by spawn and resume. All
+     * child-session messages are tagged with an origin (the child Session id, prepended as
+     * one hop from outer to inner); the first turn forwards the child's session_meta first
+     * (including agent_state and other metadata) so the parent frontend can recognize the
+     * nested session (for rendering, stats, approval visibility); the parent Trace skips
+     * these accordingly (the child Session has its own Trace, linked by session id).
+     */
+    function subagentHandleFor(childSession: Session): SubagentHandle {
+      const hop: MessageOrigin = childSession.sessionId;
+      let metaSent = false;
+      return {
+        sessionId: hop,
+        // One-shot upfront meta for background launches (see SubagentHandle.takeMeta):
+        // shares metaSent with run, so the meta reaches the parent stream exactly once
+        // whichever side sends it first.
+        takeMeta() {
+          if (metaSent) return null;
+          metaSent = true;
+          return withOrigin(childSession.metaMessage, hop);
+        },
+        async *run({ prompt, signal, approve, thinkingLevel: turnThinkingLevel }) {
+          if (!metaSent) {
+            metaSent = true;
+            yield withOrigin(childSession.metaMessage, hop);
+          }
+          // Pass through the parent's approval callback: the child Session inherits
+          // the parent Agent's approval mode (with no callback, the child engine
+          // defaults to deny). The tool_call received for approval also carries the
+          // origin, so the approval UI can identify which tool a subagent is calling.
+          const childApprove = approve
+            ? (tc: OmniMessage<ToolCallPayload>) => approve(withOrigin(tc, hop))
+            : undefined;
+          // The engine writes a run's input to the CHILD's own Trace but never replays
+          // it to its consumer (a session's normal caller typed that input itself) —
+          // here the consumer is the PARENT, whose frontend has never seen the child's
+          // prompt. Forward the input message itself (origin-tagged, ahead of the run's
+          // output) so the live nested view shows the child's user side exactly like a
+          // reloaded one (history expansion splices the child Trace, which carries this
+          // same message). The parent engine drops origin messages from the parent
+          // Trace, so replay never duplicates it. Later rounds (input_subagent
+          // follow-up prompts) come through this same generator and are forwarded the
+          // same way.
+          // sender "parent_agent": in the child's Trace this user turn came from the
+          // parent agent (run_subagent's prompt / input_subagent's follow-up), not a human.
+          const input = userText(prompt, "parent_agent");
+          yield withOrigin(input, hop);
+          for await (const msg of childSession.run([input], {
+            ...(signal ? { signal } : {}),
+            ...(childApprove ? { approve: childApprove } : {}),
+            ...(turnThinkingLevel !== undefined ? { thinkingLevel: turnThinkingLevel } : {}),
+          })) {
+            yield withOrigin(msg, hop);
+          }
+        },
+        // Mid-run steering rides the child Session's own steering queue — the same
+        // mechanism a user steers the main session with. The queued message keeps its
+        // caller-chosen sender ("parent_agent" from input_subagent, none from a human
+        // panel), and the delivered [user_steering] message streams back out through
+        // `run` with the origin hop like every other child message.
+        steer(messages) {
+          return childSession.steer(messages);
+        },
+        dispose() {
+          childSession.dispose();
+        },
+      };
+    }
 
     // Tool exposure is capped by depth: a (leaf) child Agent that has reached the
     // max spawn depth no longer gets run_subagent, input_subagent or kill_subagent

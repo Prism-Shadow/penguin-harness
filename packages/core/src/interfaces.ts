@@ -296,6 +296,8 @@ export interface SubagentHandle {
     signal?: AbortSignal;
     /** The parent Agent's approval callback; forwarded to the child Session to inherit the parent's approval mode. */
     approve?: ApproveFn;
+    /** Per-turn thinking level for THIS round only (a host follow-up's picker); omitted keeps the child Session's own level. */
+    thinkingLevel?: ThinkingLevelName;
   }): AsyncGenerator<OmniMessage>;
   /**
    * Queues a steering message for the child Session's running Task (the same mechanism as a
@@ -357,6 +359,14 @@ export interface SubagentRunner {
      */
     thinkingLevel?: ThinkingLevelName;
   }): Promise<SubagentHandle>;
+  /**
+   * Revives a released child Session by id (`resumeSession` semantics: its own history,
+   * model and Workspace) and hands back a handle for re-management — the host-path resume
+   * fallback (see SubagentMessageOptions.resume). `agentId` names the owning Agent. A missing
+   * or unrecoverable session is expressed by throwing. Optional — a runner without it simply
+   * leaves the resume fallback unavailable.
+   */
+  resume?(input: { agentId: string; sessionId: string }): Promise<SubagentHandle>;
 }
 
 /**
@@ -516,14 +526,29 @@ export interface BackgroundSubagentInfo {
 }
 
 /**
- * Outcome of a host-initiated subagent message (`steerBackgroundSubagent`): `steered` = the
+ * Outcome of a host-initiated subagent message (`sendToBackgroundSubagent`): `steered` = the
  * child was mid-run and the text was queued as a steering message; `started` = the child was
- * idle and the text began a follow-up run on the same child Session; `busy` = the child is
- * mid-run but its handle predates steering (a foreign SubagentRunner without `steer`);
- * `gone` = no live child with that session id (finished and released, killed, or never
- * tracked).
+ * idle and the text began a follow-up run on the same child Session; `resumed` = no live
+ * child bore the id, so the session was revived through `SubagentRunner.resume` and the text
+ * began its next round; `busy` = the child cannot take the message right now (mid-run on a
+ * handle that predates steering, or no room to re-manage a resumed session); `gone` = no
+ * live child and no way to resume (resume not requested/available, or the session's record
+ * is unrecoverable).
  */
-export type SubagentSteerOutcome = "steered" | "started" | "busy" | "gone";
+export type SubagentMessageOutcome = "steered" | "started" | "resumed" | "busy" | "gone";
+
+/** Options of a host-initiated subagent message (see EnvironmentInterface.sendToBackgroundSubagent). */
+export interface SubagentMessageOptions {
+  /** Per-turn thinking level for a follow-up/resumed round; steering an already-running round cannot change that round's level. */
+  thinkingLevel?: ThinkingLevelName;
+  /**
+   * Enables the resume fallback when no live child bears the session id: the child Session
+   * is revived (its own history, model and Workspace — `resumeSession` semantics) and
+   * re-managed, and the text starts its next round. `agentId` names the Agent that owns the
+   * child session (the host reads it from its session registry).
+   */
+  resume?: { agentId: string };
+}
 
 /**
  * Environment interface: executes approved tool calls within the Workspace.
@@ -558,10 +583,15 @@ export interface EnvironmentInterface {
   listBackgroundSubagents?(): BackgroundSubagentInfo[];
   /**
    * Host-initiated message to one child session, by child Session id: steering while the
-   * child runs, a follow-up run while it is idle (see SubagentSteerOutcome). The human and
-   * the model (`input_subagent`) converge on the managed session's same channel. Optional.
+   * child runs, a follow-up run while it is idle, a revival (`opts.resume`) when the session
+   * is no longer live (see SubagentMessageOutcome/SubagentMessageOptions). The human and the
+   * model (`input_subagent`) converge on the managed session's same channel. Optional.
    */
-  steerBackgroundSubagent?(childSessionId: string, text: string): SubagentSteerOutcome;
+  sendToBackgroundSubagent?(
+    childSessionId: string,
+    text: string,
+    opts?: SubagentMessageOptions,
+  ): Promise<SubagentMessageOutcome>;
   /**
    * Host-initiated abort of one child session's CURRENT run (the child-session equivalent of
    * the user's stop button): the session survives for follow-ups, unlike kill_subagent's
@@ -575,6 +605,15 @@ export interface EnvironmentInterface {
    * Optional, same single-listener pattern as setBackgroundTaskListener.
    */
   setSubagentStateListener?(listener: () => void): void;
+  /**
+   * Attaches the host's session-lifetime fallback approval sink for child sessions: a child
+   * approval with no window sink (an active run_subagent/input_subagent call) and no
+   * background-launch standing sink is consulted through this instead of waiting for the
+   * model's next poll — the host escalates it to the user, the parent session idle included.
+   * Window sinks and standing sinks keep precedence while present. Optional: hosts that
+   * never attach one (e.g. the CLI) keep the poll-window-only approval semantics.
+   */
+  setSubagentApprovalFallback?(approve: ApproveFn): void;
   /**
    * Refreshes the listen-port probe behind `BackgroundCommandInfo.serviceUrl` for running
    * sessions whose output printed no URL (TTL-cached and time-bounded per session; see

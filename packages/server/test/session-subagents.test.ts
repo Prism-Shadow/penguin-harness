@@ -1,9 +1,11 @@
 /**
  * Integration tests for the panel's subagent endpoints and the child-liveness broadcast:
- *   - POST /api/sessions/:id/subagents/:childSessionId/steer — steering while the child runs
- *     ({outcome:"steered"}), a follow-up run while it is idle ({outcome:"started"}); 404
- *     subagent_gone when no live child bears the id or the parent runtime is unloaded, 409
- *     subagent_busy when the child cannot accept steering, 400 on an empty text;
+ *   - POST /api/sessions/:id/subagents/:childSessionId/message — a user input on the child,
+ *     whatever its state: {outcome:"steered"} while it runs, {outcome:"started"} while idle,
+ *     {outcome:"resumed"} when the released child was revived; the optional thinkingLevel
+ *     rides through to the round the message starts, and the resume option carries the
+ *     child's owning agent from its session row; 404 subagent_gone when nothing can be
+ *     revived, 409 subagent_busy when the child cannot take the message, 400 without text;
  *   - POST /api/sessions/:id/subagents/:childSessionId/abort — 202 when a run was aborted,
  *     204 when the child is idle/unknown (nothing left to stop);
  *   - `task_state` republished with the live `subagents` listing on every child state ping,
@@ -11,24 +13,36 @@
  *   - 404 for foreign/unknown sessions (the shared resolveSession semantics).
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { toolCall, withOrigin } from "@prismshadow/penguin-core";
 import type { BackgroundSubagentInfo, OmniMessage } from "@prismshadow/penguin-core";
-import type { ApproveFn, SubagentSteerOutcome } from "@prismshadow/penguin-core";
-import type { ServerEvent, SubagentSteerResponse } from "../src/api/types.js";
+import { ApprovalRegistry } from "../src/runtime/approvals.js";
+import type {
+  ApproveFn,
+  SubagentMessageOptions,
+  SubagentMessageOutcome,
+} from "@prismshadow/penguin-core";
+import type { ServerEvent, SubagentMessageResponse } from "../src/api/types.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
 const SID = "session-2026-08-24-10-00-00-ccdd0041";
-const SID_UNLOADED = "session-2026-08-24-10-00-00-ccdd0042";
 const CHILD_RUNNING = "session-2026-08-24-10-01-00-child001";
 const CHILD_IDLE = "session-2026-08-24-10-01-00-child002";
+const CHILD_RELEASED = "session-2026-08-24-10-01-00-child003";
 
-/** Fake Session over a mutable child list; steering/abort mutate it like core's manager would. */
+interface SentMessage {
+  childSessionId: string;
+  text: string;
+  opts?: SubagentMessageOptions;
+}
+
+/** Fake Session over a mutable child list; message/abort mutate it like core's manager would. */
 function subagentsFakeSession(
   sessionId: string,
   children: BackgroundSubagentInfo[],
-  steers: { childSessionId: string; text: string }[],
+  sent: SentMessage[],
   aborts: string[],
   stateListeners: (() => void)[],
 ): RuntimeSession {
@@ -42,10 +56,22 @@ function subagentsFakeSession(
     async *run(_input: OmniMessage[], _opts: { approve: ApproveFn; signal: AbortSignal }) {},
     async *compact() {},
     listBackgroundSubagents: () => children.map((c) => ({ ...c })),
-    steerBackgroundSubagent: (childSessionId: string, text: string): SubagentSteerOutcome => {
+    sendToBackgroundSubagent: async (
+      childSessionId: string,
+      text: string,
+      opts?: SubagentMessageOptions,
+    ): Promise<SubagentMessageOutcome> => {
+      sent.push({ childSessionId, text, ...(opts !== undefined ? { opts } : {}) });
       const child = children.find((c) => c.sessionId === childSessionId);
-      if (!child) return "gone";
-      steers.push({ childSessionId, text });
+      if (!child) {
+        // The released child revives only when the host resolved an owning agent for it —
+        // exactly core's resume-fallback condition.
+        if (opts?.resume) {
+          children.push({ sessionId: childSessionId, subagentId: null, running: true });
+          return "resumed";
+        }
+        return "gone";
+      }
       if (child.running) return "steered";
       child.running = true;
       return "started";
@@ -60,6 +86,7 @@ function subagentsFakeSession(
     onSubagentState: (listener: () => void) => {
       stateListeners.push(listener);
     },
+    setSubagentApprovalFallback: () => {},
   };
 }
 
@@ -68,7 +95,7 @@ describe("session subagent routes and liveness", () => {
   let api: ReturnType<typeof apiClient>;
   let outsider: ReturnType<typeof apiClient>;
   let children: BackgroundSubagentInfo[];
-  let steers: { childSessionId: string; text: string }[];
+  let sent: SentMessage[];
   let aborts: string[];
   let stateListeners: (() => void)[];
 
@@ -95,61 +122,67 @@ describe("session subagent routes and liveness", () => {
       { sessionId: CHILD_RUNNING, subagentId: "subagent-child001", running: true },
       { sessionId: CHILD_IDLE, subagentId: null, running: false },
     ];
-    steers = [];
+    sent = [];
     aborts = [];
     stateListeners = [];
     t.deps.sessionsRepo.insert(sessionRow(SID));
     t.deps.manager.adopt(
       sessionRow(SID),
-      subagentsFakeSession(SID, children, steers, aborts, stateListeners),
+      subagentsFakeSession(SID, children, sent, aborts, stateListeners),
     );
-    // A second session with no runtime entry: its children are gone with the process.
-    t.deps.sessionsRepo.insert(sessionRow(SID_UNLOADED));
+    // A released child with its own session row: the message route resolves its owning agent
+    // from this row and asks core to revive it.
+    t.deps.sessionsRepo.insert(sessionRow(CHILD_RELEASED));
   });
   afterEach(async () => {
     await t.cleanup();
   });
 
-  it("steer: steering while the child runs, a follow-up run while it is idle", async () => {
-    const mid = await api.post(`/api/sessions/${SID}/subagents/${CHILD_RUNNING}/steer`, {
+  it("message: steering while the child runs, a follow-up run while it is idle", async () => {
+    const mid = await api.post(`/api/sessions/${SID}/subagents/${CHILD_RUNNING}/message`, {
       text: "focus on the tests",
     });
     expect(mid.status).toBe(200);
-    expect((await mid.json()) as SubagentSteerResponse).toEqual({ outcome: "steered" });
+    expect((await mid.json()) as SubagentMessageResponse).toEqual({ outcome: "steered" });
 
-    const idle = await api.post(`/api/sessions/${SID}/subagents/${CHILD_IDLE}/steer`, {
+    const idle = await api.post(`/api/sessions/${SID}/subagents/${CHILD_IDLE}/message`, {
       text: "one more round",
+      thinkingLevel: "high",
     });
     expect(idle.status).toBe(200);
-    expect((await idle.json()) as SubagentSteerResponse).toEqual({ outcome: "started" });
+    expect((await idle.json()) as SubagentMessageResponse).toEqual({ outcome: "started" });
 
-    expect(steers).toEqual([
-      { childSessionId: CHILD_RUNNING, text: "focus on the tests" },
-      { childSessionId: CHILD_IDLE, text: "one more round" },
-    ]);
+    expect(sent).toHaveLength(2);
+    expect(sent[0]!.childSessionId).toBe(CHILD_RUNNING);
+    expect(sent[0]!.text).toBe("focus on the tests");
+    // The per-turn thinking level rides through to core.
+    expect(sent[1]!.opts?.thinkingLevel).toBe("high");
   });
 
-  it("steer: 404 subagent_gone for unknown children and unloaded runtimes; 400 without text", async () => {
-    const ghost = await api.post(`/api/sessions/${SID}/subagents/session-ghost/steer`, {
+  it("message: a released child with a session row revives (outcome resumed, owning agent resolved)", async () => {
+    const res = await api.post(`/api/sessions/${SID}/subagents/${CHILD_RELEASED}/message`, {
+      text: "wake up",
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()) as SubagentMessageResponse).toEqual({ outcome: "resumed" });
+    // The route resolved the child's owning agent from its own session row.
+    expect(sent[0]!.opts?.resume).toEqual({ agentId: "default_agent" });
+  });
+
+  it("message: 404 subagent_gone when no session row backs the child; 400 without text", async () => {
+    const ghost = await api.post(`/api/sessions/${SID}/subagents/session-ghost/message`, {
       text: "hello",
     });
     expect(ghost.status).toBe(404);
     expect(((await ghost.json()) as { error: { code: string } }).error.code).toBe("subagent_gone");
+    // No row for the ghost child, so no resume option reached core.
+    expect(sent[0]!.opts?.resume).toBeUndefined();
 
-    const unloaded = await api.post(
-      `/api/sessions/${SID_UNLOADED}/subagents/${CHILD_RUNNING}/steer`,
-      { text: "hello" },
-    );
-    expect(unloaded.status).toBe(404);
-    expect(((await unloaded.json()) as { error: { code: string } }).error.code).toBe(
-      "subagent_gone",
-    );
-
-    const empty = await api.post(`/api/sessions/${SID}/subagents/${CHILD_RUNNING}/steer`, {
+    const empty = await api.post(`/api/sessions/${SID}/subagents/${CHILD_RUNNING}/message`, {
       text: "   ",
     });
     expect(empty.status).toBe(400);
-    expect(steers).toEqual([]);
+    expect(sent).toHaveLength(1);
   });
 
   it("abort: 202 ends the running child's round; 204 when idle or unknown", async () => {
@@ -161,11 +194,6 @@ describe("session subagent routes and liveness", () => {
     expect(again.status).toBe(204);
     const ghost = await api.post(`/api/sessions/${SID}/subagents/session-ghost/abort`, {});
     expect(ghost.status).toBe(204);
-    const unloaded = await api.post(
-      `/api/sessions/${SID_UNLOADED}/subagents/${CHILD_RUNNING}/abort`,
-      {},
-    );
-    expect(unloaded.status).toBe(204);
     expect(aborts).toEqual([CHILD_RUNNING]);
   });
 
@@ -197,22 +225,45 @@ describe("session subagent routes and liveness", () => {
     expect(frame).toContain(`"subagents":[{"sessionId":"${CHILD_RUNNING}"`);
   });
 
+  it("denyMain resolves only origin-less approvals; a child's stays pending for the user", async () => {
+    const registry = new ApprovalRegistry();
+    const main = registry.wait(
+      toolCall({ name: "exec_command", arguments: "{}", toolCallId: "m1" }),
+    );
+    const child = registry.wait(
+      withOrigin(
+        toolCall({ name: "exec_command", arguments: "{}", toolCallId: "c1" }),
+        "session-child",
+      ),
+    );
+    // The task-boundary convergence (run end / user stop): the main approval dies with its
+    // run, the subagent child's question survives — its session is still blocked on it.
+    registry.denyMain();
+    expect(await main).toBe("deny");
+    expect(registry.size).toBe(1);
+    expect(registry.decide("c1", "allow")).toBe(true);
+    expect(await child).toBe("allow");
+  });
+
   it("foreign and unknown sessions → 404 (same auth semantics as the other session routes)", async () => {
     expect(
-      (await outsider.post(`/api/sessions/${SID}/subagents/${CHILD_RUNNING}/steer`, { text: "x" }))
-        .status,
+      (
+        await outsider.post(`/api/sessions/${SID}/subagents/${CHILD_RUNNING}/message`, {
+          text: "x",
+        })
+      ).status,
     ).toBe(404);
     expect(
       (await outsider.post(`/api/sessions/${SID}/subagents/${CHILD_RUNNING}/abort`, {})).status,
     ).toBe(404);
     expect(
       (
-        await api.post(`/api/sessions/session-ghost/subagents/${CHILD_RUNNING}/steer`, {
+        await api.post(`/api/sessions/session-ghost/subagents/${CHILD_RUNNING}/message`, {
           text: "x",
         })
       ).status,
     ).toBe(404);
-    expect(steers).toEqual([]);
+    expect(sent).toEqual([]);
     expect(aborts).toEqual([]);
   });
 });

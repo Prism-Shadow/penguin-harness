@@ -27,7 +27,7 @@ import type {
   SessionProcessesResponse,
   SessionResponse,
   SessionsResponse,
-  SubagentSteerResponse,
+  SubagentMessageResponse,
   RetryNowResponse,
   TaskCreateResponse,
 } from "../../api/types.js";
@@ -972,32 +972,40 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     return c.json((await recalledResponse(recall)) satisfies RecalledMessageResponse);
   });
 
-  // Panel message to one subagent child of this session (#272): steering while the child
-  // runs, a follow-up run while it is idle — the same core channel input_subagent uses.
-  // 404 subagent_gone when no live child bears the id (finished and released, killed, or
-  // the parent runtime is not loaded — after a restart the in-process children are gone);
-  // 409 subagent_busy when the child is mid-run but cannot accept steering.
-  app.post("/:sessionId/subagents/:childSessionId/steer", async (c) => {
+  // Panel message to one subagent child of this session (#272): a user input on the child,
+  // whatever its state — steering while it runs, a follow-up run while it is idle, a revival
+  // (resume-session semantics) when it was released — the same core channel input_subagent
+  // uses. The optional thinkingLevel pins only a round this message starts. The parent
+  // runtime loads on demand (the same get-or-resume path a task uses). 404 subagent_gone
+  // when the child's record does not exist or cannot be revived; 409 subagent_busy when the
+  // child cannot take the message right now.
+  app.post("/:sessionId/subagents/:childSessionId/message", async (c) => {
     const row = resolveSession(c);
     const body = await readJson(c);
     const text = typeof body.text === "string" ? body.text.trim() : "";
     if (!text) throw badRequest("text must carry the message.");
-    const outcome = deps.manager.steerSubagent(row.sessionId, pathParam(c, "childSessionId"), text);
+    const thinkingLevel = optionalEnum(body, "thinkingLevel", THINKING_LEVELS);
+    const outcome = await deps.manager.sendToSubagent(
+      row.sessionId,
+      pathParam(c, "childSessionId"),
+      text,
+      thinkingLevel,
+    );
     if (outcome === "gone") {
       throw new HttpError(
         404,
         "subagent_gone",
-        "This subagent session is no longer live; it may have finished and been released.",
+        "This subagent session no longer exists and could not be revived.",
       );
     }
     if (outcome === "busy") {
       throw new HttpError(
         409,
         "subagent_busy",
-        "This subagent is still running and cannot accept a message right now.",
+        "This subagent cannot take a message right now; try again in a moment.",
       );
     }
-    return c.json({ outcome } satisfies SubagentSteerResponse);
+    return c.json({ outcome } satisfies SubagentMessageResponse);
   });
 
   // Panel stop for one subagent child (#272): aborts the child's CURRENT run only — the

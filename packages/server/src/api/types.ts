@@ -1434,14 +1434,15 @@ export interface SubagentRuntimeInfo {
 }
 
 /**
- * Response of POST /api/sessions/:sessionId/subagents/:childSessionId/steer: how the message
- * reached the child — queued as a mid-run steering interjection, or started as a follow-up
- * run on the idle child. The two failure shapes are HTTP statuses instead: 404 when no live
- * child bears the id (or the parent runtime is not loaded), 409 when the child is mid-run but
- * cannot accept steering.
+ * Response of POST /api/sessions/:sessionId/subagents/:childSessionId/message — a user input
+ * on the child, whatever its state: `steered` = queued as a mid-run interjection, `started` =
+ * began a follow-up run on the idle child, `resumed` = the released child session was revived
+ * (resume-session semantics) and the message began its next round. The failure shapes are
+ * HTTP statuses instead: 404 when the child's session record does not exist or cannot be
+ * revived, 409 when the child cannot take the message right now.
  */
-export interface SubagentSteerResponse {
-  outcome: "steered" | "started";
+export interface SubagentMessageResponse {
+  outcome: "steered" | "started" | "resumed";
 }
 
 /**

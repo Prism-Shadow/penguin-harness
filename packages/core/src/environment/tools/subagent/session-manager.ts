@@ -9,7 +9,7 @@
  * evicted; if there's still no room, the tool rejects spawning a new one.
  * Docs: /docs/tools § "Background session caps".
  */
-import type { BackgroundSubagentInfo } from "../../../interfaces.js";
+import type { ApproveFn, BackgroundSubagentInfo } from "../../../interfaces.js";
 import { BackgroundRegistry } from "../background/index.js";
 import type { ManagedSubagentSession } from "./session.js";
 
@@ -35,6 +35,8 @@ export class SubagentSessionManager {
   private readonly live = new Set<ManagedSubagentSession>();
   /** Single aggregate run-state listener (the Environment's notifier); pinged on any child's run start/settle. */
   private stateListener: (() => void) | null = null;
+  /** Host fallback approval sink, applied to every tracked session (see EnvironmentInterface.setSubagentApprovalFallback). */
+  private approvalFallback: ApproveFn | null = null;
 
   /** Whether the manager has been disposed (the host Session has ended). */
   get isDisposed(): boolean {
@@ -45,6 +47,19 @@ export class SubagentSessionManager {
   track(session: ManagedSubagentSession): void {
     this.live.add(session);
     session.onStateChange(() => this.stateListener?.());
+    if (this.approvalFallback) session.setFallbackApprovalSink(this.approvalFallback);
+  }
+
+  /** Attaches the host fallback approval sink, applying it to already-tracked live sessions too. */
+  setApprovalFallback(approve: ApproveFn): void {
+    this.approvalFallback = approve;
+    for (const session of [...this.live]) {
+      if (session.disposed) {
+        this.live.delete(session);
+        continue;
+      }
+      session.setFallbackApprovalSink(approve);
+    }
   }
 
   /** Attaches the single aggregate run-state listener (see track). */

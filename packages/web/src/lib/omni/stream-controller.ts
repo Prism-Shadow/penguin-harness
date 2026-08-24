@@ -248,10 +248,26 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     outlineOffset = page.earlierTurns;
   };
 
+  /** Full clear (resync rebuilds): the server resends every still-pending approval_request on the same connection, child ones included. */
   const clearPending = (): void => {
     if (pending.size === 0) return;
     pending.clear();
     deps.onPendingChange();
+  };
+
+  // Main-session approvals only (the task-idle flip): an origin-tagged approval belongs to a
+  // subagent child that outlives the parent's task — the server keeps it pending across idle
+  // (see the registry's denyMain), so dropping its card here would hide a question that
+  // still blocks the child. Child cards leave via their approval_decision instead.
+  const clearMainPending = (): void => {
+    let dropped = false;
+    for (const [key, entry] of [...pending]) {
+      if (entry.origin === undefined || entry.origin.length === 0) {
+        pending.delete(key);
+        dropped = true;
+      }
+    }
+    if (dropped) deps.onPendingChange();
   };
 
   const feedOmni = (msg: OmniMessage, dedup: Set<string> | null): void => {
@@ -299,9 +315,11 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
         deps.onPendingFollowUps?.(ev.pendingFollowUps ?? []);
         deps.onSubagents?.(ev.subagents ?? []);
         if (ev.state === "idle") {
-          // Task ended (or the snapshot confirms idle): finalize the current Task's stats; pending approvals have already converged server-side.
+          // Task ended (or the snapshot confirms idle): finalize the current Task's stats.
+          // The main session's approvals converged server-side with the run; a subagent
+          // child's stay pending — and rendered — until the user decides.
           notifyTaskIdle(model);
-          clearPending();
+          clearMainPending();
           deps.onModelChange();
         }
         return;

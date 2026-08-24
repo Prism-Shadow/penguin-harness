@@ -31,15 +31,41 @@ the child session, reachable by the model and the human alike.
 
 ## For the user (subagents panel)
 
-- The selected child's identity strip gains a **stop button** (visible while it runs), and
-  the nested conversation gains a **message input**: steering while the child runs, a
-  follow-up round while it is idle. Two new endpoints
-  (`POST /api/sessions/:id/subagents/:childSessionId/steer|abort`) route through the parent
-  session's active runtime into the same core channel `input_subagent` uses.
-- Children are reachable from spawn — a child still inside `run_subagent`'s foreground
-  window can be messaged and stopped too, not just backgrounded ones. The first host-path
-  touch also attaches the live forwarding tap, so a panel-driven child streams to the
-  frontend without waiting for the model's next poll.
+- The selected child is driven by the **same composer as the main conversation** (a subagent
+  variant of the one component): text body, skills and slash skill commands, a per-turn
+  thinking level (applies to the round the message starts), the context ring showing the
+  child's own usage, the locked-model badge, and the approval-mode selector — which edits
+  the parent session's mode, the one child approvals are judged by. The stop control is the
+  composer's running-state stop face, right where the main conversation has it. Goal mode,
+  image/file attachments, `/model`, `/agent`, `/compact` and the follow-up queue are not
+  offered — a child has no semantics for them.
+- A message is a user input on the child **whatever its state**: steering while it runs, a
+  follow-up round while it is idle — and when the session was already released (finished in
+  a foreground window, killed, or the server restarted), it is **revived** through the
+  resume-session path: same history, model and Workspace, re-managed under the parent (the
+  model can address it again by its `subagent_id`), and the message starts its next round.
+  "This subagent has ended" is no longer a dead end; the only error left is a session whose
+  record no longer exists.
+- Two endpoints serve this (`POST /api/sessions/:id/subagents/:childSessionId/message` with
+  optional `thinkingLevel`, and `…/abort`), routed through the parent session's runtime —
+  loaded on demand like a task would, so it works after a restart. Children are reachable
+  from spawn (a child still inside `run_subagent`'s foreground window included), and the
+  first host-path touch attaches the live forwarding tap, so a panel-driven child streams
+  to the frontend without waiting for the model's next poll.
+- The panel stays put: it shows the most recent Task that actually spawned subagents, so a
+  plain follow-up message no longer wipes the graph — a new Task takes the panel over the
+  moment it spawns its own child.
+
+## Child approvals reach the user
+
+A background child that hit a tool approval used to get auto-denied — the parent task's end
+converged every pending approval, and a child with no active poll window had no way to ask.
+Both halves are fixed: the web server now attaches a session-lifetime fallback approval sink
+(child approvals with no window and no background-launch standing sink escalate to the user
+as ordinary approval cards, the parent session sitting idle included), and a parent task
+ending or being stopped converges only the **main** session's approvals — an origin-tagged
+child approval stays pending, and its card stays rendered, until the user decides. The CLI
+keeps the poll-window-only semantics (it attaches no fallback sink).
 
 ## Live child states (issue #274)
 

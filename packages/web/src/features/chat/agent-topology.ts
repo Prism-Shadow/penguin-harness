@@ -3,9 +3,10 @@
  * test/agent-topology.test.ts; rendering lives in agent-topology-view.tsx — same split as the
  * usage charts' chart-geom.ts / chart-svg.tsx).
  *
- * Extraction walks a single Task's slice of the main model — by default the LATEST Task (from
- * the last user_text / user_image item — the same "starts a new Task" predicate the reducer
- * uses; user_steering never starts one), or, for a chip clicked on an older turn, the
+ * Extraction walks a single Task's slice of the main model — by default the most recent
+ * Task that REFERENCES A SUBAGENT (task boundaries from the "starts a new Task" predicate
+ * the reducer uses — user_text / user_image; user_steering never starts one — so a plain
+ * user message never wipes the panel), or, for a chip clicked on an older turn, the
  * HISTORICAL Task slice containing that chip's child (extractTopologyForChild). It collects
  * spawned children from bound run_subagent tool cards and standalone SubagentItems, then
  * recurses into each child model's own items for deeper spawns. Nodes are deduped by session id
@@ -143,11 +144,26 @@ export function descriptionFromRunSubagentArgs(argsJson: string): string | null 
   return runSubagentArg(argsJson, "description");
 }
 
+/** Whether one Task slice `[start, end)` references any spawned child (a bound run_subagent card or a standalone SubagentItem). */
+function sliceHasSubagent(items: readonly ChatItem[], start: number, end: number): boolean {
+  for (let i = start; i < end; i++) {
+    const item = items[i]!;
+    if ((item.kind === "tool_call" && item.subagent !== undefined) || item.kind === "subagent") {
+      return true;
+    }
+  }
+  return false;
+}
+
 /**
- * Extract the latest Task's spawn tree: root first, then children in DFS preorder (document
- * order). `liveStates` is the server's structural child liveness (task_state.subagents,
- * session id → running): when it knows a child, it overrides the text heuristics below —
- * dead/unloaded runtimes and old servers simply leave the map empty and the heuristics stand.
+ * Extract the panel's default spawn tree: the most recent Task that actually references a
+ * subagent — a plain user message must not wipe the graph, so when the latest Task has no
+ * spawns the walk pins the newest one that does (the latest Task takes over the moment it
+ * spawns its own child; with no subagent-bearing Task at all, the latest Task's empty graph
+ * stands). Root first, then children in DFS preorder (document order). `liveStates` is the
+ * server's structural child liveness (task_state.subagents, session id → running): when it
+ * knows a child, it overrides the text heuristics below — dead/unloaded runtimes and old
+ * servers simply leave the map empty and the heuristics stand.
  */
 export function extractTopology(
   model: StreamModel,
@@ -155,10 +171,33 @@ export function extractTopology(
   taskRunning: boolean,
   liveStates?: ReadonlyMap<string, boolean>,
 ): TopologyNode[] {
+  const items = model.items;
+  let start = latestTaskStart(items);
+  let end = items.length;
+  if (!sliceHasSubagent(items, start, end)) {
+    for (let cursor = start; cursor > 0;) {
+      let prevStart = 0;
+      for (let i = cursor - 1; i >= 0; i--) {
+        if (isScopeStart(items[i]!)) {
+          prevStart = i;
+          break;
+        }
+      }
+      if (sliceHasSubagent(items, prevStart, cursor)) {
+        start = prevStart;
+        end = cursor;
+        break;
+      }
+      if (prevStart === 0) break;
+      cursor = prevStart;
+    }
+  }
   return extractFromSlice(
-    model.items.slice(latestTaskStart(model.items)),
+    items.slice(start, end),
     rootSessionId,
-    { running: taskRunning },
+    // A pinned older Task has ended by definition (the next user message closed it): its
+    // root never reads as running.
+    { running: end === items.length && taskRunning },
     liveStates,
   );
 }

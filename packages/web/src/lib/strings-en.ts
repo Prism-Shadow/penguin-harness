@@ -1692,11 +1692,7 @@ Scenarios:
     nodeRunning: "running",
     nodeDone: "done",
     openAsSession: "Jump to this session",
-    stopRun: "Stop the current run (the session stays for follow-ups)",
-    sendMessage: "Send",
-    steerPlaceholder: "Interject — delivered to this subagent mid-run",
-    resumePlaceholder: "Message this subagent to continue with another round",
-    subagentGone: "This subagent session is no longer live; it may have finished and been released",
+    subagentGone: "This subagent session no longer exists and could not be revived",
   },
 
   files: {

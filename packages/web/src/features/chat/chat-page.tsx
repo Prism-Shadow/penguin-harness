@@ -1484,6 +1484,10 @@ export function ChatPage() {
             focusRequest={subagentFocus}
             taskScope={subagentTaskScope}
             subagents={stream.subagents}
+            models={models?.models ?? []}
+            approvalMode={selected.approvalMode}
+            onChangeApprovalMode={onChangeApprovalMode}
+            modeSaving={modeSaving}
           />
         );
       case "workspace":

@@ -48,7 +48,8 @@ import type {
   ProxyEnvPolicy,
   SessionMetaPayload,
   SessionTitleResult,
-  SubagentSteerOutcome,
+  SubagentMessageOptions,
+  SubagentMessageOutcome,
   TextPayload,
   ThinkingLevelName,
 } from "@prismshadow/penguin-core";
@@ -165,8 +166,14 @@ export interface RuntimeSession {
   hasRunningBackgroundSubagents?(): boolean;
   /** All live subagent child sessions of the Session's environment (core `Session.listBackgroundSubagents`). Optional, like listBackgroundCommands. */
   listBackgroundSubagents?(): BackgroundSubagentInfo[];
-  /** Host message to one child session — steering mid-run, a follow-up run when idle (core `Session.steerBackgroundSubagent`). Optional. */
-  steerBackgroundSubagent?(childSessionId: string, text: string): SubagentSteerOutcome;
+  /** Host message to one child session — steering mid-run, a follow-up run when idle, a revival when released (core `Session.sendToBackgroundSubagent`). Optional. */
+  sendToBackgroundSubagent?(
+    childSessionId: string,
+    text: string,
+    opts?: SubagentMessageOptions,
+  ): Promise<SubagentMessageOutcome>;
+  /** Subscribes the host's session-lifetime fallback approval sink for child sessions (core `Session.setSubagentApprovalFallback`). Optional. */
+  setSubagentApprovalFallback?(approve: ApproveFn): void;
   /** Aborts one child session's current run, keeping the session (core `Session.abortBackgroundSubagentRun`); false when unknown or idle. Optional. */
   abortBackgroundSubagentRun?(childSessionId: string): boolean;
   /** Subscribes subagent run-state changes (core `Session.onSubagentState`): the manager republishes `task_state` with the fresh live listing. Optional. */
@@ -529,16 +536,33 @@ export class SessionManager {
   }
 
   /**
-   * Host message to one child session of an active runtime entry: steering while the child
-   * runs, a follow-up run while it is idle (core `Session.steerBackgroundSubagent`). "gone"
-   * both when the child is unknown and when the parent runtime itself is not loaded — either
-   * way there is no live child to receive the text.
+   * Host message to one child session — a user input on the child, whatever its state:
+   * steering while it runs, a follow-up run while it is idle, a revival (resume-session
+   * semantics) when it is no longer live (core `Session.sendToBackgroundSubagent`). The
+   * parent runtime itself is loaded on demand (ensureEntry — the same get-or-resume path a
+   * task uses), so messaging a child of a long-idle conversation works after a restart too;
+   * the resume fallback names the child's owning Agent from its own session row, which must
+   * belong to the parent's project.
    */
-  steerSubagent(sessionId: string, childSessionId: string, text: string): SubagentSteerOutcome {
-    const entry = this.entries.get(sessionId);
-    if (!entry) return "gone";
+  async sendToSubagent(
+    sessionId: string,
+    childSessionId: string,
+    text: string,
+    thinkingLevel?: ThinkingLevelName,
+  ): Promise<SubagentMessageOutcome> {
+    const entry = await this.ensureEntry(sessionId);
     entry.lastActivityMs = Date.now();
-    return entry.session.steerBackgroundSubagent?.(childSessionId, text) ?? "gone";
+    const childRow = this.deps.sessions.findById(childSessionId);
+    const resume =
+      childRow && childRow.projectId === entry.projectId
+        ? { agentId: childRow.agentId }
+        : undefined;
+    return (
+      (await entry.session.sendToBackgroundSubagent?.(childSessionId, text, {
+        ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
+        ...(resume ? { resume } : {}),
+      })) ?? "gone"
+    );
   }
 
   /** Host abort of one child session's current run (core `Session.abortBackgroundSubagentRun`); false when the parent runtime is not loaded, the child is unknown, or it is idle. */
@@ -632,6 +656,32 @@ export class SessionManager {
     session.onSubagentState?.(() => {
       const entry = this.entries.get(sessionId);
       if (entry) this.publishState(entry, entry.status);
+    });
+    // The entry-lifetime approve doubles as the children's fallback approval sink: a child
+    // approval with no window and no background-launch standing sink escalates to the user
+    // (SSE approval_request) instead of parking until the model's next poll — the parent
+    // session idle included.
+    const entry = this.entries.get(sessionId);
+    if (entry) session.setSubagentApprovalFallback?.(this.entryApprove(entry));
+  }
+
+  /**
+   * The entry-lifetime approval callback: the registry, the per-decision approval-mode
+   * re-read, and the SSE escalation are all entry-scoped, so one instance serves every run
+   * of the entry and the children's session-lifetime fallback sink alike.
+   */
+  private entryApprove(entry: RuntimeEntry): ApproveFn {
+    return makeApprove({
+      // Re-reads approval_mode from the DB on every decision (a PATCH takes effect immediately).
+      getMode: () => this.deps.sessions.findById(entry.sessionId)?.approvalMode ?? "always-ask",
+      toolPermission: (name) => entry.session.toolPermission(name),
+      registry: entry.approvals,
+      publishRequest: (pending) =>
+        this.publishEvent(entry, {
+          type: "approval_request",
+          toolCall: pending.toolCall,
+          ...(pending.origin !== undefined ? { origin: pending.origin } : {}),
+        }),
     });
   }
 
@@ -811,17 +861,7 @@ export class SessionManager {
       entry.pendingInputs = [...entry.pendingInputs, ...args.input];
       entry.pendingBootstrap = [];
       this.publishState(entry, "running");
-      const approve = makeApprove({
-        getMode: () => this.deps.sessions.findById(entry.sessionId)?.approvalMode ?? "always-ask",
-        toolPermission: (name) => entry.session.toolPermission(name),
-        registry: entry.approvals,
-        publishRequest: (pending) =>
-          this.publishEvent(entry, {
-            type: "approval_request",
-            toolCall: pending.toolCall,
-            ...(pending.origin !== undefined ? { origin: pending.origin } : {}),
-          }),
-      });
+      const approve = this.entryApprove(entry);
       const goalId = this.deps.goals?.create({
         sessionId: entry.sessionId,
         projectId: entry.projectId,
@@ -985,18 +1025,7 @@ export class SessionManager {
     for (const msg of input) channel.publish(msg);
     this.publishState(entry, "running");
 
-    const approve = makeApprove({
-      // Re-reads approval_mode from the DB on every decision (a PATCH takes effect immediately).
-      getMode: () => this.deps.sessions.findById(entry.sessionId)?.approvalMode ?? "always-ask",
-      toolPermission: (name) => entry.session.toolPermission(name),
-      registry: entry.approvals,
-      publishRequest: (pending) =>
-        this.publishEvent(entry, {
-          type: "approval_request",
-          toolCall: pending.toolCall,
-          ...(pending.origin !== undefined ? { origin: pending.origin } : {}),
-        }),
-    });
+    const approve = this.entryApprove(entry);
     const gen = entry.session.run(input, {
       approve,
       signal: ac.signal,
@@ -1189,7 +1218,9 @@ export class SessionManager {
   abortTask(sessionId: string): boolean {
     const entry = this.entries.get(sessionId);
     if (!entry || !entry.abort) return false;
-    entry.approvals.denyAll();
+    // Deny only the MAIN session's pending approvals: an approval blocks the run the user is
+    // stopping. A subagent child survives the parent's stop, and so does its question.
+    entry.approvals.denyMain();
     entry.abort.abort();
     return true;
   }
@@ -1730,7 +1761,9 @@ export class SessionManager {
       // to the Trace, so its held input (and the aborted connect pair) are the only copy
       // a reload can show until the next run carries the input forward and persists it.
       // Runs that issued a request already cleared them at their first request_begin.
-      entry.approvals.denyAll();
+      // Main approvals only: an origin-tagged approval belongs to a subagent child that
+      // outlives this task — it stays pending for the user (see ApprovalRegistry.denyMain).
+      entry.approvals.denyMain();
       entry.status = "idle";
       entry.abort = null;
       entry.running = null;

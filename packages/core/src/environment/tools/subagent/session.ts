@@ -35,7 +35,7 @@
  */
 import type { OmniMessage } from "../../../omnimessage/index.js";
 import type { ApprovalDecision, ToolCallPayload } from "../../../omnimessage/index.js";
-import type { ApproveFn, SubagentHandle } from "../../../interfaces.js";
+import type { ApproveFn, SubagentHandle, ThinkingLevelName } from "../../../interfaces.js";
 import type { ToolResult } from "../types.js";
 import { CappedTextBuffer, WakeSignal } from "../background/index.js";
 
@@ -141,17 +141,17 @@ export class ManagedSubagentSession {
 
   /**
    * Starts a new round of the task on the child Session (async pump, doesn't block the caller).
-   * Throws if already disposed or still running (converted to an explanatory output by the
-   * caller).
+   * `thinkingLevel` pins this round only (a host follow-up's per-turn picker). Throws if
+   * already disposed or still running (converted to an explanatory output by the caller).
    */
-  startRun(prompt: string): void {
+  startRun(prompt: string, thinkingLevel?: ThinkingLevelName): void {
     if (this.killed) throw new Error("subagent session disposed");
     if (this.isRunning) throw new Error("subagent is still running");
     this.isRunning = true;
     this.exitInfo = null;
     this.runCtrl = new AbortController();
     this.notifyState();
-    void this.pump(prompt, this.runCtrl);
+    void this.pump(prompt, this.runCtrl, thinkingLevel);
   }
 
   /**
@@ -229,6 +229,25 @@ export class ManagedSubagentSession {
     void this.pumpApprovals();
   }
 
+  /**
+   * Host-provided session-lifetime fallback approval sink (see
+   * EnvironmentInterface.setSubagentApprovalFallback): consulted when neither a window sink
+   * nor a background launch's standing sink exists, so a child's approval escalates to the
+   * user instead of parking until the model's next poll. Lowest precedence of the three.
+   */
+  private fallbackApprove: ApproveFn | null = null;
+
+  /** Attaches the host fallback approval sink (see fallbackApprove) and drains anything already queued. */
+  setFallbackApprovalSink(approve: ApproveFn): void {
+    this.fallbackApprove = approve;
+    void this.pumpApprovals();
+  }
+
+  /** The active standing sink: a background launch's own, else the host fallback; null without either. */
+  private standingApprove(): ApproveFn | null {
+    return this.persistentApprove ?? this.fallbackApprove;
+  }
+
   /** Whether a live forwarding tap is attached (host paths attach one on first touch; see setMessageTap). */
   get hasMessageTap(): boolean {
     return this.forwardTap !== null;
@@ -293,7 +312,11 @@ export class ManagedSubagentSession {
   // -------------------------------------------------------------------------
 
   /** Drives one round of `handle.run`: buffers messages and text, settling the terminal state when it ends. */
-  private async pump(prompt: string, runCtrl: AbortController): Promise<void> {
+  private async pump(
+    prompt: string,
+    runCtrl: AbortController,
+    thinkingLevel?: ThinkingLevelName,
+  ): Promise<void> {
     let wroteAny = false;
     let childAbort: string | null = null;
     try {
@@ -302,6 +325,7 @@ export class ManagedSubagentSession {
         prompt,
         signal: AbortSignal.any([this.abortCtrl.signal, runCtrl.signal]),
         approve: this.childApprove,
+        ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
       })) {
         this.bufferMessage(msg);
         if ((msg.origin?.length ?? 0) === 1) {
@@ -404,11 +428,11 @@ export class ManagedSubagentSession {
     if (this.pumpingApprovals) return;
     this.pumpingApprovals = true;
     try {
-      while ((this.sink !== null || this.persistentApprove !== null) && this.approvals.length > 0) {
+      while ((this.sink !== null || this.standingApprove() !== null) && this.approvals.length > 0) {
         const req = this.approvals[0]!;
         const sink = this.sink;
         if (sink === null) {
-          await this.persistentApprove!(req.toolCall).then(
+          await this.standingApprove()!(req.toolCall).then(
             (d) => this.settle(req, d),
             () => this.settle(req, "deny"), // An approval sink error is treated as a denial (avoids leaving the child session stuck forever)
           );
@@ -421,7 +445,7 @@ export class ManagedSubagentSession {
         await Promise.race([answer, sink.detached]);
         if (req.settled) continue;
         if (this.sink && this.sink !== sink) continue; // The sink was replaced by a new call: retry with the new sink
-        if (this.persistentApprove !== null) continue; // Window gone but a standing sink exists: fall through to it next round
+        if (this.standingApprove() !== null) continue; // Window gone but a standing sink exists: fall through to it next round
         break; // The sink was detached and still unresolved: stay queued for the next sink
       }
     } finally {

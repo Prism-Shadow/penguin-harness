@@ -799,7 +799,7 @@ describe("subagent steering and per-run abort", () => {
       ]);
 
       // Host steering while running: human sender (field absent), same handle channel.
-      expect(env.steerBackgroundSubagent(HOP, "from the panel")).toBe("steered");
+      expect(await env.sendToBackgroundSubagent(HOP, "from the panel")).toBe("steered");
       expect(child.steers).toHaveLength(1);
       const payload = child.steers[0]![0]!.payload as { text?: string; sender?: string };
       expect(payload.text).toBe("from the panel");
@@ -812,7 +812,7 @@ describe("subagent steering and per-run abort", () => {
 
       // Host message on the idle child starts a follow-up round; its messages reach the
       // frontend live through the tap the first host touch attached.
-      expect(env.steerBackgroundSubagent(HOP, "round two")).toBe("started");
+      expect(await env.sendToBackgroundSubagent(HOP, "round two")).toBe("started");
       await until(() => env.listBackgroundSubagents()[0]?.running === false);
       expect(child.prompts).toEqual(["task", "round two"]);
       await until(() =>
@@ -822,8 +822,115 @@ describe("subagent steering and per-run abort", () => {
         }),
       );
 
-      expect(env.steerBackgroundSubagent("session-unknown", "x")).toBe("gone");
+      expect(await env.sendToBackgroundSubagent("session-unknown", "x")).toBe("gone");
       expect(env.abortBackgroundSubagentRun("session-unknown")).toBe(false);
+    } finally {
+      env.dispose();
+    }
+  });
+
+  it("escalates a windowless child approval through the host fallback sink", async () => {
+    const runner = runnerOf(async function* ({ approve }: RunInput) {
+      yield withOrigin(partialText("delta", "working "), HOP);
+      const decision = approve
+        ? await approve(
+            withOrigin(toolCall({ name: "exec_command", arguments: "{}", toolCallId: "t1" }), HOP),
+          )
+        : "deny";
+      yield withOrigin(partialText("delta", `approved:${decision}`), HOP);
+    });
+    const env = new Environment({
+      workspaceDir: "/tmp/ws",
+      toolConfig: { customTools: [DEF], mcpServers: [] },
+      services: { subagentRunner: runner },
+    });
+    try {
+      const consulted: string[] = [];
+      env.setSubagentApprovalFallback(async (tc) => {
+        consulted.push(tc.payload.tool_call_id);
+        return "allow";
+      });
+      // The spawning call carries NO approve: no window sink, no background-launch standing
+      // sink — previously this approval parked until the model's next poll. With the host
+      // fallback it resolves inside the window and the child finishes normally.
+      const gen = env.executeTool({
+        toolCall: toolCall({
+          name: "run_subagent",
+          arguments: JSON.stringify({ prompt: "task", yield_time_ms: 3000 }),
+          toolCallId: "c_fallback",
+        }),
+      });
+      const out: OmniMessage[] = [];
+      for (;;) {
+        const res = await gen.next();
+        if (res.done) break;
+        out.push(res.value);
+      }
+      const complete = out[out.length - 1]!.payload as { output?: string };
+      expect(complete.output).toContain("approved:allow");
+      expect(consulted).toEqual(["t1"]);
+    } finally {
+      env.dispose();
+    }
+  });
+
+  it("revives a released child through the runner's resume and starts its next round", async () => {
+    const prompts: string[] = [];
+    const levels: (string | undefined)[] = [];
+    const resumes: { agentId: string; sessionId: string }[] = [];
+    const run = async function* ({
+      prompt,
+      thinkingLevel,
+    }: RunInput & { thinkingLevel?: string }): AsyncGenerator<OmniMessage> {
+      prompts.push(prompt);
+      levels.push(thinkingLevel);
+      yield withOrigin(partialText("delta", `ran:${prompt}`), HOP);
+    };
+    const runner: SubagentRunner = {
+      async spawn() {
+        return { sessionId: HOP, run, dispose() {} };
+      },
+      async resume(input) {
+        resumes.push(input);
+        return { sessionId: HOP, run, dispose() {} };
+      },
+    };
+    const env = new Environment({
+      workspaceDir: "/tmp/ws",
+      toolConfig: { customTools: [DEF], mcpServers: [] },
+      services: { subagentRunner: runner },
+    });
+    try {
+      // The child finishes inside the foreground window: never registered, killed at the end
+      // of the call — released, exactly the state the panel later messages into.
+      const gen = env.executeTool({
+        toolCall: toolCall({
+          name: "run_subagent",
+          arguments: JSON.stringify({ prompt: "task" }),
+          toolCallId: "c_resume",
+        }),
+      });
+      for (;;) {
+        const res = await gen.next();
+        if (res.done) break;
+      }
+      expect(env.listBackgroundSubagents()).toEqual([]);
+
+      // Without the resume option the child is simply gone; with it, the session revives,
+      // re-registers (the model can address it again), and runs the message as a new round.
+      expect(await env.sendToBackgroundSubagent(HOP, "wake up")).toBe("gone");
+      expect(
+        await env.sendToBackgroundSubagent(HOP, "wake up", {
+          thinkingLevel: "high",
+          resume: { agentId: "owner_agent" },
+        }),
+      ).toBe("resumed");
+      expect(resumes).toEqual([{ agentId: "owner_agent", sessionId: HOP }]);
+      await until(() => env.listBackgroundSubagents()[0]?.running === false);
+      expect(env.listBackgroundSubagents()[0]!.subagentId).toBe(`subagent-${HOP.slice(-8)}`);
+      expect(prompts).toEqual(["task", "wake up"]);
+      // The per-turn thinking level rides only the round the message starts.
+      expect(levels).toEqual([undefined, "high"]);
     } finally {
       env.dispose();
     }

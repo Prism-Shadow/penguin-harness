@@ -175,7 +175,7 @@ POSIX 上 Ctrl-C 向会话进程组发送 `SIGINT`，中断前台命令。Window
 
 `run_subagent` 把一段能一次说清的子任务交给子 Agent 执行，同样是两段式：前台窗口(默认 300000ms)过后转入后台并返回 `subagent_id`，由 `input_subagent` 驱动；子 Agent 的待审批项会在轮询等待期间浮出。`input_subagent` 覆盖四种手势：`prompt` 为空仅轮询；子会话**运行中**发 `prompt` 即中途插话（与用户对主会话的运行中 steering 同一机制——在子会话下一步以 `[user_steering]` 消息送达，写入子 Trace、sender 记为 `parent_agent`）；空闲时发 `prompt` 即在同一会话上续跑一轮；`abort: true` 只停止子会话**当前这一轮**——会话保留、可继续插话或续跑，与 `prompt` 同给即打断并改道。传 `run_in_background: true` 则启动即返回 `subagent_id`，每轮完成都以自动 user message 送达（见[后台完成回报](#后台完成回报)）；`kill_subagent` 中止并**移除**后台 Subagent（空闲的也可移除，腾出并发额度）。
 
-Web App 的智能体面板给用户提供同样两个操作：选中子会话后，身份条上的停止按钮（`abort` 的面板对应物）与对话下方的消息输入行（运行中即插话、空闲即续跑）。两者与 `input_subagent` 收敛到 core 的同一通道；面板的运行标识以服务端实况为准，不再从对话文本推断。
+Web App 的智能体面板用**与主对话相同的 composer**（子会话变体）驱动选中的子会话：正文、技能与 slash 技能命令、per-turn 思考等级（作用于这条消息开启的一轮）、上下文圆环（子会话自身用量）、锁定模型徽标，以及审批模式选择——它读写的是父会话的模式，子会话审批本就按其判定。发消息就是对子会话的一次用户输入，无论其状态如何：运行中即插话，空闲即续跑一轮，会话已被释放则**复活**——服务端按 resume 口径恢复该子 Session（沿用其历史、模型与 Workspace）并重新纳管，对话直接继续。操作按钮的停止面只中止子会话当前这一轮。这一切与 `input_subagent` 收敛到 core 的同一通道；面板的运行标识以服务端实况为准，不再从对话文本推断。
 
 ```ts
 // run_subagent
@@ -259,6 +259,8 @@ type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalDec
 | Web / Server | 同样四种模式，按 Session 设置；每次决策前从数据库重读，改模式立即生效；人工决策经 API 送达 |
 
 deny 会合成一条 `aborted` 的 `tool_call_output` 供模型据此调整策略——`Tool call denied by user.`，被[命令策略](/configuration#沙箱安全策略)拒绝时为 `Tool call denied by policy.`，策略命中因此不会被读成「有人取消了」。见 [ApproveFn](/interfaces#approvefn)。每次决策都以 `approval_decision` 事件写入 Trace（策略拦截即记 `forbidden`），构成完整的审计记录。审批发生在 [Agent 运行循环](/agent-loop) 的工具执行阶段。
+
+子会话的审批不会因父任务结束而被自动拒绝。Web 服务端为每个会话运行时挂一个**会话生命周期的兜底审批出口**：没有活跃轮询窗口、也没有后台启动常驻出口的子会话审批请求直接上报用户（父会话空闲时亦然）；父任务结束或被停止时只收敛**主会话**自身的未决审批——带 origin 的子会话审批保持待决、审批卡持续显示，直到用户决定。未挂兜底出口的宿主（CLI）保持旧口径：子会话请求排队，等 `run_subagent` / `input_subagent` 调用活跃时透传。
 
 ## 自定义与 MCP
 

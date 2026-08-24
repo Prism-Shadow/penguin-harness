@@ -31,12 +31,15 @@ import path from "node:path";
 import { partialToolCallOutput, toolCallOutput, userText } from "../omnimessage/index.js";
 import type { McpServerConnectResult, OmniMessage, StopReason } from "../omnimessage/index.js";
 import type {
+  ApproveFn,
   BackgroundCommandInfo,
   BackgroundSubagentInfo,
   BackgroundTaskDoneEvent,
   EnvironmentConfig,
   EnvironmentInterface,
-  SubagentSteerOutcome,
+  SubagentMessageOptions,
+  SubagentMessageOutcome,
+  SubagentRunner,
   ToolConfig,
   ToolDefinition,
   ToolExecutionRequest,
@@ -46,7 +49,7 @@ import type { BuiltinTool, ToolResult } from "./tools/types.js";
 import { BUILTIN_TOOL_FACTORIES } from "./tools/registry.js";
 import { McpToolProvider } from "./mcp/provider.js";
 import { CommandSessionManager } from "./tools/command/index.js";
-import { SubagentSessionManager } from "./tools/subagent/index.js";
+import { ManagedSubagentSession, SubagentSessionManager } from "./tools/subagent/index.js";
 import {
   TRUNCATED_TOOL_OUTPUT_FILE_LIMIT_BYTES,
   TruncatedToolOutputArchive,
@@ -148,6 +151,8 @@ export class Environment implements EnvironmentInterface {
   private readonly commandSessions: CommandSessionManager;
   /** Background subagent session registry: constructed within this Environment and shared between run_subagent / input_subagent. */
   private readonly subagentSessions: SubagentSessionManager;
+  /** The injected child-agent runner (null for embedders without one): the host resume fallback needs it outside any tool call. */
+  private readonly subagentRunner: SubagentRunner | null;
 
   constructor(config: EnvironmentConfig) {
     this.workspaceDir = config.workspaceDir;
@@ -167,6 +172,7 @@ export class Environment implements EnvironmentInterface {
       ...(config.proxyEnv !== undefined ? { proxyEnv: config.proxyEnv } : {}),
     });
     this.subagentSessions = new SubagentSessionManager();
+    this.subagentRunner = config.services?.subagentRunner ?? null;
     const services = {
       ...config.services,
       commandSessions: this.commandSessions,
@@ -277,23 +283,66 @@ export class Environment implements EnvironmentInterface {
   }
 
   /**
-   * Host-initiated message to one child session: steering mid-run, a follow-up run when idle
-   * (see EnvironmentInterface.steerBackgroundSubagent). Converges on the same managed-session
-   * channel input_subagent uses; the message carries no sender (human origin), unlike the
-   * model path's "parent_agent".
+   * Host-initiated message to one child session — a user's input on the child, whatever its
+   * state: steering mid-run, a follow-up run when idle, a revival through the runner when the
+   * session is no longer live (see EnvironmentInterface.sendToBackgroundSubagent). Converges
+   * on the same managed-session channel input_subagent uses; the message carries no sender
+   * (human origin), unlike the model path's "parent_agent". `opts.thinkingLevel` pins only a
+   * round this call starts — steering cannot change the round already in flight.
    */
-  steerBackgroundSubagent(childSessionId: string, text: string): SubagentSteerOutcome {
+  async sendToBackgroundSubagent(
+    childSessionId: string,
+    text: string,
+    opts?: SubagentMessageOptions,
+  ): Promise<SubagentMessageOutcome> {
     const session = this.subagentSessions.bySessionId(childSessionId);
-    if (!session) return "gone";
+    if (!session) return this.resumeAndRun(childSessionId, text, opts);
     this.attachHostTap(session);
     if (session.steer([userText(text)])) return "steered";
     if (session.running) return "busy";
     try {
-      session.startRun(text);
+      session.startRun(text, opts?.thinkingLevel);
     } catch {
       return "gone";
     }
     return "started";
+  }
+
+  /**
+   * The resume fallback of sendToBackgroundSubagent: revives the released child Session
+   * (resumeSession semantics via SubagentRunner.resume), re-manages it — live index,
+   * background registration (so the model can address it again by subagent_id), forwarding
+   * tap, and the host approval fallback via track — and starts its next round with the text.
+   */
+  private async resumeAndRun(
+    childSessionId: string,
+    text: string,
+    opts?: SubagentMessageOptions,
+  ): Promise<SubagentMessageOutcome> {
+    const agentId = opts?.resume?.agentId;
+    const runner = this.subagentRunner;
+    if (agentId === undefined || !runner?.resume || this.subagentSessions.isDisposed) {
+      return "gone";
+    }
+    // Same admission rule as a spawn: never evict a running child to make room.
+    if (!this.subagentSessions.makeRoom()) return "busy";
+    let session: ManagedSubagentSession;
+    try {
+      session = new ManagedSubagentSession(
+        await runner.resume({ agentId, sessionId: childSessionId }),
+      );
+    } catch {
+      return "gone"; // No trace to resume from, or the agent is gone: nothing to revive.
+    }
+    this.subagentSessions.track(session);
+    this.subagentSessions.register(session);
+    this.attachHostTap(session);
+    try {
+      session.startRun(text, opts?.thinkingLevel);
+    } catch {
+      return "gone";
+    }
+    return "resumed";
   }
 
   /** Host-initiated abort of one child session's current run (see EnvironmentInterface.abortBackgroundSubagentRun). */
@@ -309,6 +358,13 @@ export class Environment implements EnvironmentInterface {
     this.subagentSessions.setStateListener(() => {
       if (!this.bgDisposed) listener();
     });
+  }
+
+  /** Attaches the host's session-lifetime fallback approval sink for child sessions (see EnvironmentInterface.setSubagentApprovalFallback). */
+  setSubagentApprovalFallback(approve: ApproveFn): void {
+    this.subagentSessions.setApprovalFallback((toolCall) =>
+      this.bgDisposed ? Promise.resolve("deny") : approve(toolCall),
+    );
   }
 
   /**
