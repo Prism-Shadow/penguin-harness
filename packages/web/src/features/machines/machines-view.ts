@@ -7,8 +7,16 @@
  * is still installing — the button must refuse, but the running job's log still belongs on
  * screen, under the alias it is actually installing to. That is why the job panel renders
  * from `state.job` directly and only the button consults the selection.
+ *
+ * "Already installed" is a THIRD thing, and it comes from the machine's own persisted
+ * record rather than from the job: the job is one slot, so deriving it from there made an
+ * installed machine vanish as soon as anything else was installed or the server restarted.
  */
-import type { MachineInstallJob, MachinesResponse } from "@prismshadow/penguin-server/api";
+import type {
+  MachineInfo,
+  MachineInstallJob,
+  MachinesResponse,
+} from "@prismshadow/penguin-server/api";
 
 /** The finished job's verdict, in the shape the page renders. */
 export type MachineVerdict =
@@ -40,19 +48,20 @@ export function verdictOf(job: MachineInstallJob): MachineVerdict | null {
  * reads as a click that did nothing.
  */
 export function installButtonState(
-  selectedId: string | null,
+  selected: MachineInfo | null,
   state: MachinesResponse,
   starting: boolean,
 ): InstallButtonState {
   const job = state.job;
   const runningSomewhere = job?.running === true;
-  const selectedIsRunning = runningSomewhere && job.machineId === selectedId;
-  // "Reinstall" only for the machine whose finished job is the one on screen — every other
-  // selection is an ordinary first install as far as this page knows.
-  const settledHere =
-    job !== null && !runningSomewhere && job.machineId === selectedId && job.result !== null;
+  const selectedIsRunning = runningSomewhere && job.machineId === selected?.id;
   return {
-    action: selectedIsRunning || starting ? "installing" : settledHere ? "reinstall" : "install",
-    disabled: selectedId === null || runningSomewhere || starting || state.imageVersion === null,
+    action:
+      selectedIsRunning || starting
+        ? "installing"
+        : selected?.installed != null
+          ? "reinstall"
+          : "install",
+    disabled: selected === null || runningSomewhere || starting || state.imageVersion === null,
   };
 }

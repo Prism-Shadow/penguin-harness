@@ -96,12 +96,14 @@ In every on-state the effective NO_PROXY always includes `localhost,127.0.0.1,::
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | /api/machines | The host aliases of the SERVER's own `~/.ssh/config`, the version this server would install, and the running or last install job: `{machines: [{id, alias}], imageVersion, job}` |
+| GET | /api/machines | The host aliases of the SERVER's own `~/.ssh/config`, the version this server would install, and the running or last install job: `{machines: [{id, alias, installed}], imageVersion, job}` |
 | POST | /api/machines/:machineId/install | Start installing this build on that host; `202` with the same body, the job now running |
 
 Admin only on a personal server as much as a multi-user one: the install spawns ssh with the **server account's** keys and writes a program directory on another machine, which is an owner's capability rather than a visitor's. Nothing writes to the ssh config — it is read, and `ssh -G` resolves an alias only at install time, so a config declaring hundreds of hosts costs one file read.
 
 `imageVersion` is what would be pushed, or `null` when this server has no image at all (a development checkout that has never been hot-pushed to is the one such shape) — every install then refuses with `409` `no_install_image`. The version is the running install's own: a hot-pushed server sends the bundle it runs (`0.0.0-hmr.<cli>.<web>`), a tarball or packaged one sends its own tree, so the two ends match by construction.
+
+`installed` is the last install THIS server carried out on that machine — `{version, at}`, or `null` when it never has. It is persisted under the data root, so it survives a restart, a hot push, and installing on some other machine; a record of what was done rather than a survey of the far side, so a machine wiped by hand still reads as installed until the next install corrects it. A failed install records nothing.
 
 An install is a job, not a request: it probes the far side, may fetch and verify a Node runtime, and copies an image over scp — minutes in the bad case. `POST` starts it and returns at once; the client polls `GET` for `job.log`, which carries the far side's own words (ssh's diagnostics, the remote installer's output). `job.result` is `null` while running, then `{ok: true, kind: "installed" | "already-installed", version}` or `{ok: false, step, message}`. One job at a time; the job lives in memory and does not survive a hot push or a restart, and re-running is the recovery — every step is idempotent.
 

@@ -2,24 +2,36 @@
  * machines-view unit tests: what the Machines page's install control offers, given the
  * server's single install job and whatever is selected in the picker.
  *
- * The case worth pinning is that the two come apart: the server runs one job at a time, so
- * selecting a second host while the first installs must refuse — without pretending the
- * selection is the thing installing, and without losing the running job.
+ * Two cases worth pinning. The server runs one job at a time, so selecting a second host
+ * while the first installs must refuse — without pretending the selection is the thing
+ * installing. And "already installed" comes from the machine's own persisted record, never
+ * from the job: reading it off the one job slot is what used to make an installed machine
+ * stop looking installed as soon as anything else was installed.
  */
 import { describe, expect, it } from "vitest";
-import type { MachineInstallJob, MachinesResponse } from "@prismshadow/penguin-server/api";
+import type {
+  MachineInfo,
+  MachineInstallJob,
+  MachinesResponse,
+} from "@prismshadow/penguin-server/api";
 import { installButtonState, verdictOf } from "../src/features/machines/machines-view";
+
+const INSTALLED = { version: "9.9.9", at: "2026-08-24T12:00:00.000Z" };
+
+const fresh = (alias: string): MachineInfo => ({ id: `ssh:${alias}`, alias, installed: null });
+const carrying = (alias: string): MachineInfo => ({
+  id: `ssh:${alias}`,
+  alias,
+  installed: INSTALLED,
+});
 
 function response(
   job: MachineInstallJob | null,
-  imageVersion: string | null = "9.9.9",
+  opts: { imageVersion?: string | null; machines?: MachineInfo[] } = {},
 ): MachinesResponse {
   return {
-    machines: [
-      { id: "ssh:build-box", alias: "build-box" },
-      { id: "ssh:nas", alias: "nas" },
-    ],
-    imageVersion,
+    machines: opts.machines ?? [fresh("build-box"), fresh("nas")],
+    imageVersion: opts.imageVersion === undefined ? "9.9.9" : opts.imageVersion,
     job,
   };
 }
@@ -71,15 +83,15 @@ describe("installButtonState", () => {
     });
   });
 
-  it("a selection with no job running is ready to go", () => {
-    expect(installButtonState("ssh:nas", response(null), false)).toEqual({
+  it("a never-installed selection with no job running is ready to go", () => {
+    expect(installButtonState(fresh("nas"), response(null), false)).toEqual({
       action: "install",
       disabled: false,
     });
   });
 
   it("the selected machine's own running job reads as installing", () => {
-    expect(installButtonState("ssh:nas", response(job()), false)).toEqual({
+    expect(installButtonState(fresh("nas"), response(job()), false)).toEqual({
       action: "installing",
       disabled: true,
     });
@@ -88,43 +100,62 @@ describe("installButtonState", () => {
   it("picking ANOTHER host mid-install refuses without claiming that host is installing", () => {
     // The job belongs to ssh:nas; the picker moved to ssh:build-box. One job at a time, so
     // the button is disabled — but it must not say "installing" about a host that is not.
-    expect(installButtonState("ssh:build-box", response(job()), false)).toEqual({
+    expect(installButtonState(fresh("build-box"), response(job()), false)).toEqual({
       action: "install",
       disabled: true,
     });
   });
 
   it("a POST still in flight reads as installing before the server reports a job", () => {
-    expect(installButtonState("ssh:nas", response(null), true)).toEqual({
+    expect(installButtonState(fresh("nas"), response(null), true)).toEqual({
       action: "installing",
       disabled: true,
     });
   });
 
-  it("a finished job leaves ITS machine on reinstall, and every other one on install", () => {
-    expect(installButtonState("ssh:nas", response(done), false)).toEqual({
+  it("a machine carrying the program offers a reinstall — from its record, not the job", () => {
+    // No job at all: this is the page after a restart, which is exactly the case that used
+    // to read as "never installed".
+    expect(installButtonState(carrying("nas"), response(null), false)).toEqual({
       action: "reinstall",
       disabled: false,
     });
-    expect(installButtonState("ssh:build-box", response(done), false)).toEqual({
+  });
+
+  it("installing elsewhere leaves an installed machine still reading as installed", () => {
+    const elsewhere = job({
+      machineId: "ssh:build-box",
+      alias: "build-box",
+      running: false,
+      result: { ok: true, kind: "installed", version: "9.9.9" },
+    });
+    expect(installButtonState(carrying("nas"), response(elsewhere), false)).toEqual({
+      action: "reinstall",
+      disabled: false,
+    });
+    // ...and the machine that job belongs to reads as installed off its own record too.
+    expect(installButtonState(carrying("build-box"), response(elsewhere), false).action).toBe(
+      "reinstall",
+    );
+  });
+
+  it("a failed install leaves the selection on plain install: nothing was recorded", () => {
+    const failed = job({
+      running: false,
+      result: { ok: false, step: "connect", message: "Permission denied (publickey)." },
+    });
+    expect(installButtonState(fresh("nas"), response(failed), false)).toEqual({
       action: "install",
       disabled: false,
     });
   });
 
-  it("a failed job is still a reinstall offer", () => {
-    const failed = job({
-      running: false,
-      result: { ok: false, step: "connect", message: "Permission denied (publickey)." },
-    });
-    expect(installButtonState("ssh:nas", response(failed), false)).toEqual({
-      action: "reinstall",
-      disabled: false,
-    });
-  });
-
   it("no install image disables the button whatever is selected", () => {
-    expect(installButtonState("ssh:nas", response(null, null), false).disabled).toBe(true);
-    expect(installButtonState("ssh:build-box", response(done, null), false).disabled).toBe(true);
+    expect(
+      installButtonState(fresh("nas"), response(null, { imageVersion: null }), false).disabled,
+    ).toBe(true);
+    expect(
+      installButtonState(carrying("nas"), response(null, { imageVersion: null }), false).disabled,
+    ).toBe(true);
   });
 });

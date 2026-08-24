@@ -48,6 +48,8 @@ export const zh = {
     noMatch: "没有匹配的主机。",
     /** How many matches the visible rows leave out — a silent truncation would read as "not in my config". */
     more: (count: number) => `另有 ${count} 台未显示——继续输入以缩小范围。`,
+    /** What the selected machine already carries, remembered on the server across restarts. */
+    installedAt: (version: string, when: string) => `已安装 ${version}（${when}）。`,
     install: "安装",
     installing: "安装中…",
     reinstall: "重新安装",

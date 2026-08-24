@@ -8,16 +8,25 @@
  * surface is a person installing on one machine, and a second concurrent push would compete
  * for the same runtime cache directory.
  *
- * Nothing here is supervised or persisted. A job lives in this App's memory and dies with it
- * (see the park list in ../hmr/platform.ts — it is on the SUSPENDED side): a hot push during
- * an install loses the progress log, and the recovery is to run it again, which is safe
- * because every step is idempotent — the far side's installer stages, smoke-tests and swaps,
- * and an unchanged version is a no-op.
+ * The JOB is not persisted. It lives in this App's memory and dies with it (see the park
+ * list in ../hmr/platform.ts — it is on the SUSPENDED side): a hot push during an install
+ * loses the progress log, and the recovery is to run it again, which is safe because every
+ * step is idempotent — the far side's installer stages, smoke-tests and swaps, and an
+ * unchanged version is a no-op.
+ *
+ * The RESULT is. Which machines carry this program is not a property of the last job — it
+ * has to outlive the job, the process and the next install somewhere else — so a successful
+ * install is written to `<data root>/machines-installs.json` (installs.ts) and read back
+ * into every list(). Without it "installed" would blink out the moment anything else
+ * happened, which is exactly what it did before this file wrote anything down.
  */
+import fs from "node:fs";
 import path from "node:path";
 import type { MachineInfo, MachineInstallJob } from "../api/types.js";
 import { listHostAliases, resolveTarget } from "./targets.js";
 import { installOnRemote, resolvePayloadImage } from "./install-server.js";
+import { parseInstallRecords, withInstallRecord } from "./installs.js";
+import type { InstallRecord } from "./installs.js";
 
 /** Why a start was refused before any ssh ran. */
 export type InstallRefusal = "busy" | "unknown-machine" | "unresolvable" | "no-image";
@@ -34,6 +43,8 @@ export interface MachinesEffects {
   resolveTarget: typeof resolveTarget;
   resolveImage: typeof resolvePayloadImage;
   install: typeof installOnRemote;
+  /** Injected so a test can pin the recorded timestamp instead of asserting around the clock. */
+  now: () => Date;
 }
 
 export class MachinesService {
@@ -54,13 +65,35 @@ export class MachinesService {
       resolveTarget,
       resolveImage: resolvePayloadImage,
       install: installOnRemote,
+      now: () => new Date(),
       ...effects,
     };
   }
 
-  /** The ssh config's host aliases. Empty when there is no config, which is not an error. */
+  /** Where the install records live — beside the other per-machine state in the data root. */
+  get #recordsFile(): string {
+    return path.join(this.dataRoot, "machines-installs.json");
+  }
+
+  /** The records file's text, or null when there is none yet (or it cannot be read). */
+  #readRecords(): string | null {
+    try {
+      return fs.readFileSync(this.#recordsFile, "utf8");
+    } catch {
+      return null; // Never installed from this server yet, or an unreadable file: nothing remembered.
+    }
+  }
+
+  /**
+   * The ssh config's host aliases, each carrying what this server last installed there.
+   * Empty when there is no config, which is not an error.
+   */
   list(): MachineInfo[] {
-    return this.#effects.listAliases().map((alias) => ({ id: `ssh:${alias}`, alias }));
+    const records = parseInstallRecords(this.#readRecords());
+    return this.#effects.listAliases().map((alias) => {
+      const id = `ssh:${alias}`;
+      return { id, alias, installed: records[id] ?? null };
+    });
   }
 
   /**
@@ -127,11 +160,12 @@ export class MachinesService {
           job.result = { ok: false, step: outcome.step, message: outcome.detail };
           return;
         }
-        job.result = {
-          ok: true,
-          kind: outcome.kind,
-          version: outcome.kind === "already-installed" ? outcome.version : image.version,
-        };
+        const version = outcome.kind === "already-installed" ? outcome.version : image.version;
+        // Remember it BEFORE the job settles, so the first poll that sees `running: false`
+        // already sees the machine marked installed — otherwise the page would flash the
+        // verdict and a still-uninstalled row in the same frame.
+        this.#remember(machineId, { version, at: this.#effects.now().toISOString() });
+        job.result = { ok: true, kind: outcome.kind, version };
       } catch (err) {
         job.result = {
           ok: false,
@@ -144,5 +178,34 @@ export class MachinesService {
     })();
 
     return { ok: true };
+  }
+
+  /**
+   * Writes one machine's record.
+   *
+   * Through a temp file and a rename rather than straight onto the target: a plain write
+   * truncates first, so a crash mid-write leaves bytes the parser reads as "nothing
+   * installed anywhere" — treating damage as empty is right for a cache, but it means a
+   * torn write silently forgets every OTHER machine too, not just the one being recorded.
+   * Rename is one step; a reader sees the old file or the new one.
+   *
+   * A failure here is swallowed: the install itself already succeeded, and the far side has
+   * the program whether or not this side managed to note it down. Forgetting costs one
+   * needless reinstall, which is a no-op on the remote.
+   */
+  #remember(machineId: string, record: InstallRecord): void {
+    const next = withInstallRecord(this.#readRecords(), machineId, record);
+    const tmp = `${this.#recordsFile}.tmp-${process.pid}`;
+    try {
+      fs.mkdirSync(path.dirname(this.#recordsFile), { recursive: true });
+      fs.writeFileSync(tmp, next);
+      fs.renameSync(tmp, this.#recordsFile);
+    } catch {
+      try {
+        fs.rmSync(tmp, { force: true });
+      } catch {
+        /* the temp file is litter at worst */
+      }
+    }
   }
 }

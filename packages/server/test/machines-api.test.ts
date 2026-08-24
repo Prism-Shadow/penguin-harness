@@ -8,13 +8,22 @@
  * push actually does over ssh is covered by machines-push.test.ts, against a fake ssh
  * binary and the real installOnRemote.
  */
+import fs from "node:fs";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { MachinesResponse } from "../src/api/types.js";
 import { MachinesService } from "../src/machines/service.js";
 import type { MachinesEffects } from "../src/machines/service.js";
 import type { RemoteInstallOutcome } from "../src/machines/install-server.js";
 import type { RemoteIdentity } from "../src/machines/detect.js";
-import { apiClient, createTestApp, loginAdmin, provisionUser, waitFor } from "./helpers.js";
+import {
+  apiClient,
+  createTestApp,
+  loginAdmin,
+  makeTempRoot,
+  provisionUser,
+  waitFor,
+} from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
 const IDENTITY: RemoteIdentity = {
@@ -40,6 +49,7 @@ function effects(over: Partial<MachinesEffects> = {}): Partial<MachinesEffects> 
       machine: `deploy@${alias}`,
     }),
     resolveImage: () => ({ version: "9.9.9", pack: () => Buffer.alloc(0) }),
+    now: () => new Date("2026-08-24T12:00:00.000Z"),
     install: async (opts): Promise<RemoteInstallOutcome> => {
       opts.onProgress?.("Pushing…");
       return { kind: "installed", output: "done", identity: IDENTITY };
@@ -51,16 +61,22 @@ function effects(over: Partial<MachinesEffects> = {}): Partial<MachinesEffects> 
 describe("machines API", () => {
   let t: TestApp;
   let admin: ReturnType<typeof apiClient>;
+  /** The service's own data root — where it writes the install records this suite reads back. */
+  let machinesRoot: string;
 
   const boot = async (over: Partial<MachinesEffects> = {}) => {
-    t = await createTestApp({
-      machines: new MachinesService("/tmp/penguin-test-root", effects(over)),
-    });
+    machinesRoot = await makeTempRoot();
+    t = await createTestApp({ machines: new MachinesService(machinesRoot, effects(over)) });
     admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
   };
 
+  /** The records file as the service left it on disk. */
+  const recordsOnDisk = (): unknown =>
+    JSON.parse(fs.readFileSync(path.join(machinesRoot, "machines-installs.json"), "utf8"));
+
   afterEach(async () => {
     await t.cleanup();
+    fs.rmSync(machinesRoot, { recursive: true, force: true });
   });
 
   describe("permission", () => {
@@ -83,8 +99,8 @@ describe("machines API", () => {
       await boot();
       const body = (await (await admin.get("/api/machines")).json()) as MachinesResponse;
       expect(body.machines).toEqual([
-        { id: "ssh:build-box", alias: "build-box" },
-        { id: "ssh:nas", alias: "nas" },
+        { id: "ssh:build-box", alias: "build-box", installed: null },
+        { id: "ssh:nas", alias: "nas", installed: null },
       ]);
       expect(body.imageVersion).toBe("9.9.9");
       expect(body.job).toBeNull();
@@ -176,6 +192,86 @@ describe("machines API", () => {
       await admin.post("/api/machines/ssh:nas/install");
       await waitFor(() => t.deps.machines.job()?.running === false);
       expect(t.deps.machines.job()?.result).toMatchObject({ ok: false, message: "scp vanished" });
+    });
+  });
+
+  describe("what stays installed", () => {
+    /** GET /api/machines, as the page reads it. */
+    const listed = async () =>
+      ((await (await admin.get("/api/machines")).json()) as MachinesResponse).machines;
+
+    it("a successful install is remembered, and is already visible on the first settled poll", async () => {
+      await boot();
+      await admin.post("/api/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+
+      const machines = await listed();
+      expect(machines.find((m) => m.id === "ssh:nas")?.installed).toEqual({
+        version: "9.9.9",
+        at: "2026-08-24T12:00:00.000Z",
+      });
+      // The machine that was never installed to is untouched.
+      expect(machines.find((m) => m.id === "ssh:build-box")?.installed).toBeNull();
+    });
+
+    it("survives the process: a fresh service over the same data root reads it back", async () => {
+      await boot();
+      await admin.post("/api/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+
+      // A new instance has no job and no memory — only the file. This is the restart case,
+      // and the hot-push case: the App is rebuilt, the data root is not.
+      const reborn = new MachinesService(machinesRoot, effects());
+      expect(reborn.job()).toBeNull();
+      expect(reborn.list().find((m) => m.id === "ssh:nas")?.installed).toEqual({
+        version: "9.9.9",
+        at: "2026-08-24T12:00:00.000Z",
+      });
+    });
+
+    it("installing elsewhere does not erase the first machine", async () => {
+      // The job is one slot, so before the records file existed this is exactly what made an
+      // installed machine disappear: the second install overwrote the only evidence.
+      await boot();
+      await admin.post("/api/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      await admin.post("/api/machines/ssh:build-box/install");
+      await waitFor(() => t.deps.machines.job()?.machineId === "ssh:build-box");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+
+      const machines = await listed();
+      expect(machines.every((m) => m.installed !== null)).toBe(true);
+      expect(recordsOnDisk()).toEqual({
+        "ssh:nas": { version: "9.9.9", at: "2026-08-24T12:00:00.000Z" },
+        "ssh:build-box": { version: "9.9.9", at: "2026-08-24T12:00:00.000Z" },
+      });
+    });
+
+    it("records what the REMOTE already had when nothing needed sending", async () => {
+      await boot({
+        install: async () => ({ kind: "already-installed", version: "8.8.8", identity: IDENTITY }),
+      });
+      await admin.post("/api/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect((await listed()).find((m) => m.id === "ssh:nas")?.installed?.version).toBe("8.8.8");
+    });
+
+    it("a failed install records nothing", async () => {
+      await boot({
+        install: async () => ({ kind: "failed", step: "connect", detail: "no route to host" }),
+      });
+      await admin.post("/api/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect((await listed()).every((m) => m.installed === null)).toBe(true);
+      expect(fs.existsSync(path.join(machinesRoot, "machines-installs.json"))).toBe(false);
+    });
+
+    it("a damaged records file reads as nothing remembered, not as a broken list", async () => {
+      await boot();
+      fs.writeFileSync(path.join(machinesRoot, "machines-installs.json"), "{ not json");
+      const machines = await listed();
+      expect(machines).toHaveLength(2);
+      expect(machines.every((m) => m.installed === null)).toBe(true);
     });
   });
 

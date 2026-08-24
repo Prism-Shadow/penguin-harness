@@ -21,6 +21,10 @@
  * One job exists at a time server-side, so the panel below follows THE JOB and names the
  * alias it belongs to, while the button follows the SELECTION: picking another host while
  * one installs must not hide the install that is running.
+ *
+ * Which hosts already carry this program comes from each machine's own persisted record,
+ * not from the job — the job is one slot, so reading "installed" off it made a host stop
+ * looking installed the moment anything else was installed or the server restarted.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MachinesResponse } from "@prismshadow/penguin-server/api";
@@ -28,6 +32,7 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
+import { formatDateTime } from "../../lib/format";
 import { toneInk, toneStrip } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
 import { ICON_SIZE } from "../../lib/icon-scale";
@@ -137,7 +142,7 @@ export function MachinesPage() {
   const button =
     state === null
       ? { action: "install" as const, disabled: true }
-      : installButtonState(selectedId, state, starting);
+      : installButtonState(selected, state, starting);
 
   return (
     <div className="h-full overflow-y-auto p-4 md:p-6">
@@ -242,6 +247,13 @@ export function MachinesPage() {
                               </span>
                             ))}
                       </span>
+                      {/* Which hosts already carry this program — the version, not a bare
+                          tick, because a stale one is the reason to reinstall. */}
+                      {machine.installed !== null && (
+                        <span className={`shrink-0 text-xs ${toneInk.success}`}>
+                          {machine.installed.version}
+                        </span>
+                      )}
                     </button>
                   ))}
                   {visible.length === 0 && (
@@ -268,6 +280,15 @@ export function MachinesPage() {
                       : S.machines.install}
                 </Button>
               </div>
+            )}
+
+            {selected?.installed != null && (
+              <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                {S.machines.installedAt(
+                  selected.installed.version,
+                  formatDateTime(selected.installed.at),
+                )}
+              </p>
             )}
 
             {/* The job, whichever machine it belongs to — named, so a selection change
