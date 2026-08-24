@@ -33,6 +33,20 @@ const IDENTITY: RemoteIdentity = {
   harness: null,
 };
 
+/**
+ * A tunnel that reads as live. `process.pid` deliberately: tunnelPortFor checks the pid
+ * against the real process table, so a made-up number would (correctly) read as a dead
+ * tunnel and no origin — which is its own test further down.
+ */
+const liveTunnel = (port = 7364) => ({
+  port,
+  pid: process.pid,
+  exited: () => false,
+  stderr: () => "",
+  close: () => {},
+  detach: () => {},
+});
+
 /** An effects set that names two hosts and installs successfully, with the parts a test cares about overridden. */
 function effects(over: Partial<MachinesEffects> = {}): Partial<MachinesEffects> {
   return {
@@ -50,6 +64,17 @@ function effects(over: Partial<MachinesEffects> = {}): Partial<MachinesEffects> 
     }),
     resolvePlan: () => ({ baseVersion: "9.9.9", harness: null, hmrDir: null, version: "9.9.9" }),
     now: () => new Date("2026-08-24T12:00:00.000Z"),
+    startServer: async () => ({ ok: true }),
+    portBusy: async () => false,
+    waitForHttp: async () => ({ ok: true }),
+    openTunnel: () => ({
+      port: 7364,
+      pid: process.pid,
+      exited: () => false,
+      stderr: () => "",
+      close: () => {},
+      detach: () => {},
+    }),
     probe: async () => ({ state: { kind: "running", port: 7364, pid: 4242 }, machineId: null }),
     install: async (opts): Promise<RemoteInstallOutcome> => {
       opts.onProgress?.("Pushing…");
@@ -113,6 +138,7 @@ describe("machines API", () => {
           machineId: null,
           installed: null,
           local: false,
+          origin: null,
           status: null,
         },
         {
@@ -121,6 +147,7 @@ describe("machines API", () => {
           machineId: null,
           installed: null,
           local: false,
+          origin: null,
           status: null,
         },
       ]);
@@ -478,6 +505,186 @@ describe("machines API", () => {
       id = "PO_VCwpQrw1hQLV-";
       await admin.post("/api/machines/probe");
       expect((await byId("ssh:nas"))?.machineId).toBe(id);
+    });
+  });
+
+  describe("connecting", () => {
+    const listed = async () =>
+      ((await (await admin.get("/api/machines")).json()) as MachinesResponse).machines;
+    const byId = async (id: string) => (await listed()).find((machine) => machine.id === id);
+    const connectJob = () => t.deps.machines.connectJob();
+
+    /** Install first: connect refuses a machine with nothing on it. */
+    const installed = async (id = "ssh:nas") => {
+      await admin.post(`/api/machines/${id}/install`);
+      await waitFor(() => t.deps.machines.job()?.running === false);
+    };
+
+    it("starts the remote server, opens a tunnel, and reports the origin", async () => {
+      await boot();
+      await installed();
+      expect((await admin.post("/api/machines/ssh:nas/connect")).status).toBe(202);
+      await waitFor(() => connectJob()?.running === false);
+      expect(connectJob()?.result).toEqual({ ok: true, origin: "http://localhost:7364" });
+      expect((await byId("ssh:nas"))?.origin).toBe("http://localhost:7364");
+    });
+
+    it("does not start a server that is already up, and keeps ITS port", async () => {
+      let started = 0;
+      await boot({
+        probe: async () => ({ state: { kind: "running", port: 7401, pid: 9 }, machineId: null }),
+        startServer: async () => {
+          started++;
+          return { ok: true };
+        },
+        openTunnel: (opts) => ({
+          port: opts.port,
+          pid: process.pid,
+          exited: () => false,
+          stderr: () => "",
+          close: () => {},
+          detach: () => {},
+        }),
+      });
+      await installed();
+      await admin.post("/api/machines/ssh:nas/connect");
+      await waitFor(() => connectJob()?.running === false);
+      // The remote is bound to 7401; both ends must use the same number.
+      expect(connectJob()?.result).toEqual({ ok: true, origin: "http://localhost:7401" });
+      expect(started).toBe(0);
+    });
+
+    it("a second connect adopts the live tunnel instead of fighting for the port", async () => {
+      let tunnels = 0;
+      await boot({
+        openTunnel: () => {
+          tunnels++;
+          return {
+            port: 7364,
+            pid: process.pid,
+            exited: () => false,
+            stderr: () => "",
+            close: () => {},
+            detach: () => {},
+          };
+        },
+      });
+      await installed();
+      await admin.post("/api/machines/ssh:nas/connect");
+      await waitFor(() => connectJob()?.running === false);
+      await admin.post("/api/machines/ssh:nas/connect");
+      await waitFor(() => connectJob()?.running === false);
+      expect(connectJob()?.result).toMatchObject({ ok: true });
+      expect(tunnels).toBe(1);
+    });
+
+    it("carries ssh's own words when the tunnel never answers", async () => {
+      await boot({
+        waitForHttp: async () => ({ ok: false, detail: "no HTTP answer through the tunnel" }),
+        openTunnel: () => ({
+          port: 7364,
+          pid: process.pid,
+          exited: () => false,
+          stderr: () => "bind: Address already in use",
+          close: () => {},
+          detach: () => {},
+        }),
+      });
+      await installed();
+      await admin.post("/api/machines/ssh:nas/connect");
+      await waitFor(() => connectJob()?.running === false);
+      expect(connectJob()?.result).toMatchObject({
+        ok: false,
+        message: "bind: Address already in use",
+      });
+      // A failed connect leaves no origin behind for the proxy to trust.
+      expect((await byId("ssh:nas"))?.origin).toBeNull();
+    });
+
+    it("refuses the machine this server runs on, by its id and not by its alias", async () => {
+      const mine = t.deps?.machines;
+      void mine;
+      await boot();
+      const res = await admin.post("/api/machines/local/connect");
+      expect(res.status).toBe(409);
+      expect(((await res.json()) as { error: { code: string } }).error.code).toBe("self_connect");
+    });
+
+    it("refuses a machine with nothing installed on it", async () => {
+      await boot();
+      const res = await admin.post("/api/machines/ssh:nas/connect");
+      expect(res.status).toBe(409);
+      expect(((await res.json()) as { error: { code: string } }).error.code).toBe("not_installed");
+    });
+
+    it("409s a second connect while one runs, without touching the install job", async () => {
+      let release = () => {};
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await boot({
+        waitForHttp: async () => {
+          await held;
+          return { ok: true };
+        },
+      });
+      await installed();
+      await installed("ssh:build-box");
+      expect((await admin.post("/api/machines/ssh:nas/connect")).status).toBe(202);
+      const second = await admin.post("/api/machines/ssh:build-box/connect");
+      expect(second.status).toBe(409);
+      expect(((await second.json()) as { error: { code: string } }).error.code).toBe(
+        "connect_running",
+      );
+      // The install job is a separate slot and is untouched by a connect.
+      expect(t.deps.machines.job()?.running).toBe(false);
+      release();
+      await waitFor(() => connectJob()?.running === false);
+    });
+
+    it("disconnect drops the tunnel and the origin with it", async () => {
+      let closed = 0;
+      await boot({
+        openTunnel: () => ({
+          port: 7364,
+          pid: process.pid,
+          exited: () => false,
+          stderr: () => "",
+          close: () => {
+            closed++;
+          },
+          detach: () => {},
+        }),
+      });
+      await installed();
+      await admin.post("/api/machines/ssh:nas/connect");
+      await waitFor(() => connectJob()?.running === false);
+      expect((await byId("ssh:nas"))?.origin).toBe("http://localhost:7364");
+
+      await admin.post("/api/machines/ssh:nas/disconnect");
+      expect(closed).toBe(1);
+      expect((await byId("ssh:nas"))?.origin).toBeNull();
+    });
+
+    it("a tunnel whose ssh process is gone is not an origin, however the file reads", async () => {
+      await boot({
+        openTunnel: () => ({
+          // A pid that cannot be alive: the state file will name it, and the liveness check
+          // is what must refuse it rather than the proxy being pointed at a dead port.
+          port: 7364,
+          pid: 2_147_483_600,
+          exited: () => false,
+          stderr: () => "",
+          close: () => {},
+          detach: () => {},
+        }),
+      });
+      await installed();
+      await admin.post("/api/machines/ssh:nas/connect");
+      await waitFor(() => connectJob()?.running === false);
+      expect(connectJob()?.result).toMatchObject({ ok: true });
+      expect(t.deps.machines.tunnelPortFor("ssh:nas")).toBeNull();
+      expect((await byId("ssh:nas"))?.origin).toBeNull();
     });
   });
 

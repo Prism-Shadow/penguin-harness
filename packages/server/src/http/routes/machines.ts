@@ -6,6 +6,9 @@
  * POST /api/machines/probe              — refresh the statuses of the installed machines
  *                                         (one ssh round trip each), then answer the list.
  * POST /api/machines/:machineId/install — start an install; 202, or 409 when one runs.
+ * POST /api/machines/:machineId/connect — bring that machine's server up and hold a tunnel
+ *                                         to it; 202, or 409 when a connect already runs.
+ * POST /api/machines/:machineId/disconnect — drop the tunnel (the remote server stays up).
  *
  * Admin rather than any logged-in user, on a multi-user server as much as a personal one:
  * installing spawns ssh with the SERVER ACCOUNT's keys and writes a program directory on
@@ -37,6 +40,7 @@ export function machinesRoutes(deps: AppDeps): Hono<AppEnv> {
     machines: deps.machines.list(),
     imageVersion: deps.machines.imageVersion(),
     job: deps.machines.job(),
+    connect: deps.machines.connectJob(),
   });
 
   app.get("/", (c) => c.json(state()));
@@ -81,6 +85,39 @@ export function machinesRoutes(deps: AppDeps): Hono<AppEnv> {
       );
     }
     return c.json(state(), 202);
+  });
+
+  app.post("/:machineId/connect", async (c) => {
+    const started = await deps.machines.startConnect(c.req.param("machineId"));
+    if (!started.ok) {
+      if (started.why === "busy") {
+        throw new HttpError(409, "connect_running", "A connect is already running.");
+      }
+      if (started.why === "unknown-machine") {
+        throw new HttpError(404, "unknown_machine", "No such host in this server's ssh config.");
+      }
+      if (started.why === "self") {
+        throw new HttpError(
+          409,
+          "self_connect",
+          "That is the machine this server runs on — you are already on it.",
+        );
+      }
+      if (started.why === "not-installed") {
+        throw new HttpError(
+          409,
+          "not_installed",
+          "Nothing is installed on that machine yet. Install it first.",
+        );
+      }
+      throw new HttpError(409, "connect_refused", "That machine cannot be connected to.");
+    }
+    return c.json(state(), 202);
+  });
+
+  app.post("/:machineId/disconnect", (c) => {
+    deps.machines.disconnect(c.req.param("machineId"));
+    return c.json(state());
   });
 
   return app;
