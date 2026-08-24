@@ -1,4 +1,7 @@
 import { defineConfig } from "tsup";
+// Inlines this checkout's git identity into the artifact — see the helper's module doc:
+// the app bundles the server and the CLI whole, and a shipped bundle has no path back to the checkout it came from.
+import { buildGitDefine } from "../../scripts/build-git-stamp.mjs";
 
 /**
  * Five self-contained bundles, no shared chunks: the shell itself, the server it forks as a
@@ -42,4 +45,5 @@ export default defineConfig({
   // `noExternal: [/.*/]` gets you. Everything else is bundled by default: tsup externalizes
   // this package's `dependencies`, and it deliberately declares none.
   external: ["electron"],
+  define: buildGitDefine(),
 });

@@ -59,8 +59,8 @@ describe("penguin version", () => {
   });
 
   it("reports the harness pushed to the root it was pointed at", async () => {
-    // The one fact the version line cannot carry: a hot-pushed CLI bundle sits in no
-    // checkout, so only the store's recorded provenance names the revision behind it.
+    // What the version line cannot carry: the store describes the ROOT, not this process,
+    // so it still answers when the packaged CLI runs on a machine holding a pushed one.
     const root = await fsp.mkdtemp(path.join(os.tmpdir(), "penguin-cli-version-"));
     try {
       await fsp.mkdir(path.join(root, "hmr"), { recursive: true });

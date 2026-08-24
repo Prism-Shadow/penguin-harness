@@ -202,7 +202,7 @@ This is the one thing the version line cannot report. A pushed bundle lands outs
 
 It describes the store, not the process: `penguin` runs the packaged CLI while `penguin-hmr` runs the store's, so a non-null `harness` does not by itself mean the command printing it is the pushed code. `source` is null for a version pushed by a client that recorded no provenance, including anything pushed before it was recorded at all.
 
-An installed penguin never shells out to git: it reads the stamped constants. Only an unstamped build asks git, and only about the checkout it was itself built from — running `penguin version` inside an unrelated repository reports the harness's revision, not that repository's.
+An installed penguin never shells out to git: it reads constants stamped into the build. A release gets them from the release workflow; every other build gets its git position inlined by the bundler that produced it, so an artifact still identifies itself after it has left the checkout it came from — a hot-pushed bundle under `<root>/hmr/store/` reports the revision it was built at, on a machine with no checkout and no git installed. Asking git at run time is only the fallback, for an un-bundled `tsx` run; even then it asks about its own checkout, so `penguin version` inside an unrelated repository reports the harness's revision and not that repository's.
 
 ## penguin update
 

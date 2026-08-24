@@ -174,6 +174,96 @@ describe("readCheckout", () => {
   });
 });
 
+describe("stampedCheckout", () => {
+  // The stamp is a string literal a bundler substituted for a declared-but-never-defined
+  // identifier. These drive it through the same globalThis slot the substitution produces,
+  // because the alternative — running a real bundler per case — tests esbuild, not this.
+  const KEY = "__PENGUIN_BUILD_GIT__";
+  const withStamp = <T>(value: unknown, body: () => T): T => {
+    const had = KEY in (globalThis as Record<string, unknown>);
+    const before = (globalThis as Record<string, unknown>)[KEY];
+    (globalThis as Record<string, unknown>)[KEY] = value;
+    try {
+      return body();
+    } finally {
+      if (had) (globalThis as Record<string, unknown>)[KEY] = before;
+      else delete (globalThis as Record<string, unknown>)[KEY];
+    }
+  };
+
+  it("reads an inlined stamp, so an artifact identifies itself away from its checkout", () => {
+    const stamp = JSON.stringify({
+      described: "v0.2.4-3-gfeedface-dirty",
+      commit: "f".repeat(40),
+      branch: "topic",
+      dirty: true,
+    });
+    const info = withStamp(stamp, () => {
+      resetBuildInfoCache();
+      return resolveBuildInfo({ version: "0.2.4", buildDate: null, commit: null });
+    });
+
+    expect(info.describe).toBe("v0.2.4-3-gfeedface-dirty");
+    expect(info.commit).toBe("f".repeat(40));
+    expect(info.branch).toBe("topic");
+    expect(info.dirty).toBe(true);
+  });
+
+  it("prefers the stamp over the tree it happens to be sitting in", () => {
+    // A stale `dist/` inside a checkout that has moved on must report the revision it was
+    // BUILT from — that is the code actually executing — not the tree's current HEAD.
+    const stamp = JSON.stringify({
+      described: "v0.0.1-1-gstale00",
+      commit: "0".repeat(40),
+      branch: "old",
+      dirty: false,
+    });
+    const info = withStamp(stamp, () => {
+      resetBuildInfoCache();
+      return resolveBuildInfo({ version: "0.2.4", buildDate: null, commit: null });
+    });
+
+    expect(info.describe).toBe("v0.0.1-1-gstale00");
+    expect(info.commit).toBe("0".repeat(40));
+    // This suite runs from a real checkout, so the fallback would have answered otherwise.
+    expect(findCheckoutRoot(process.cwd())).not.toBeNull();
+  });
+
+  it("falls back to git for a malformed or half-substituted stamp", () => {
+    for (const bad of ["not json at all", "", "null", '{"described":42}']) {
+      const info = withStamp(bad, () => {
+        resetBuildInfoCache();
+        return resolveBuildInfo({ version: "0.2.4", buildDate: null, commit: null });
+      });
+      // Never a throw, and never the garbage: either git answered or every field is null.
+      expect(info.describe).toMatch(/^v\d/);
+      expect(info.commit === null || /^[0-9a-f]{40}$/.test(info.commit)).toBe(true);
+    }
+  });
+
+  it("is ignored entirely by a stamped release", () => {
+    const stamp = JSON.stringify({
+      described: "v9.9.9-1-gbadbad0",
+      commit: "9".repeat(40),
+      branch: "nope",
+      dirty: true,
+    });
+    const info = withStamp(stamp, () => {
+      resetBuildInfoCache();
+      return resolveBuildInfo({
+        version: "1.0.0",
+        buildDate: "2026-08-20",
+        commit: "a".repeat(40),
+      });
+    });
+
+    expect(info.channel).toBe("release");
+    expect(info.describe).toBe("v1.0.0");
+    expect(info.commit).toBe("a".repeat(40));
+    expect(info.branch).toBeNull();
+  });
+});
+
 describe("composeDescribe", () => {
   it("passes a tag description through unchanged", () => {
     expect(composeDescribe("0.2.3", "v0.2.3")).toBe("v0.2.3");

@@ -202,7 +202,7 @@ JSON 与 `GET /api/version` 返回的是同一份记录，因此在 HTTP 边界�
 
 它描述的是 store 而非当前进程：`penguin` 运行的是随包发布的 CLI，`penguin-hmr` 才运行 store 里的那份，因此 `harness` 非 null 并不意味着打印它的这条命令本身就是被推送的代码。若推送方未记录来源（包括在该机制存在之前推送的版本），`source` 为 null。
 
-已安装的 penguin 从不调用 git，只读取打入的常量；只有未打入的构建才会问 git，且只问自己被构建时所在的那个 checkout——在无关仓库里执行 `penguin version`，报告的仍是 harness 自身的版本，而非该仓库的。
+已安装的 penguin 从不调用 git，只读取构建时打入的常量：发布版由发布流程打入，其余构建则由打包器把 git 位置内联进产物，因此产物离开生成它的 checkout 之后依然能说明自己的身份——位于 `<root>/hmr/store/` 下被热推送的 bundle，在既无 checkout 也未安装 git 的机器上，仍会报告它被构建时的 revision。运行时询问 git 只是兜底，用于未经打包的 `tsx` 运行；即便如此它也只问自己所在的那个 checkout，所以在无关仓库里执行 `penguin version` 报告的仍是 harness 自身的版本，而非该仓库的。
 
 ## penguin update
 

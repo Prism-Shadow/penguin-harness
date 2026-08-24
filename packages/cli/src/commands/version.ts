@@ -8,9 +8,10 @@
  * the HTTP boundary and say the same thing.
  *
  * The JSON carries a second half the line cannot: the harness this data root has in its HMR
- * store. That is the case the version number is least able to describe on its own — a
- * hot-pushed CLI bundle is not in any checkout, so it reports the plain version it was
- * compiled from, and only the store's recorded provenance names the revision behind it.
+ * store — what a hot update put there, which a restart resumes. It is a property of the root
+ * rather than of this process, so it answers "what was pushed to this machine" where the line
+ * answers "what am I". The two differ whenever `penguin` runs the packaged CLI on a machine
+ * that has a pushed one in its store.
  *
  * The subcommand exists alongside `-v, --version` rather than replacing it: both render
  * `describe`, so they agree, but a subcommand can take options where the global flag cannot

@@ -9,13 +9,15 @@
 
 新增 `penguin version`，以单行输出当前构建的身份：发布版为 `v0.2.3`，源码 checkout 构建则为 `git describe --tags --dirty` 的结果，形如 `v0.2.3-14-g9e8f7d6-dirty`。`-v, --version` 输出同一行。`penguin version --json` 输出完整记录，`GET /api/version` 提供的正是同一份记录，因此两者不会对同一个安装给出不同说法。
 
-记录中的 `harness` 部分说明这台机器上被热更新推送的是什么：推送过去的 bundle 落在任何 checkout 之外，只能以自己被编译时的版本号自称，唯有 store 中记录的来源信息能指明其背后的 revision。
+记录中的 `harness` 部分说明这台机器上被热更新推送的是什么，取自该数据根目录的 HMR store。推送过去的 bundle 落在任何 checkout 之外，因此它的 revision 会以两条路径抵达目标机器：构建时内联进产物本身，以及记录在其旁边的 `harness.json` 中。
 
 ## 细节
 
 - core 新增 `buildInfo()`，作为 `BuildInfo` 记录的唯一生产者：`version`、`describe`、`channel`（`release` 或 `source`）、`buildDate`、`commit`、`branch`、`dirty`，以及记录 Node 版本、平台与架构的 `runtime` 块。CLI 与 version 路由只负责呈现，不添加任何自己的字段。
 - 发布版的身份由常量携带：发布流程原本就打入 `VERSION` 与 `BUILD_DATE`，现在还会用 `GITHUB_SHA` 打入 tag 所在提交的 `BUILD_COMMIT`。发布产物与 npm 发布这两个打入任务都会写入，因此两条发布通道报告的是同一个提交。早于该常量的旧 tag、以及在 Actions 之外的重放，会尽可能打入，其余部分如实报告为未打入，而不是直接失败。
-- 已安装的 penguin 从不执行 git，只读取这些常量。只有未打入的构建才会问 git，且只问自己被构建时所在的那个 checkout——从运行中模块自身所在目录逐级向上，寻找同时含有 `.git` 与 `pnpm-workspace.yaml` 的目录来定位。以模块而非工作目录为起点，正是「在别的仓库里执行 `penguin version` 仍报告 harness 自身版本」的原因；要求 workspace 标记存在，则避免了仅仅位于某个无关仓库之下的安装（例如家目录本身就是 dotfiles 仓库）报告出该仓库的提交。`.git` 为文件的 linked worktree 同样能被识别。
+- 其余构建的 git 位置——描述、提交、分支、是否有未提交改动——由生成它的打包器内联进产物，取值来自同一个 `scripts/build-git-stamp.mjs`，接入 core、cli、desktop 的 tsup 配置以及 `scripts/deploy.mjs` 的 esbuild。构建产物没有任何回溯到其来源的路径：被推送到 `<root>/hmr/store/` 的 bundle 位于任何 checkout 之外，而工作目录给出的是用户自己仓库的答案。该 stamp 不含任何在相同源码的两次构建之间会变化的内容，因此 HMR store 的内容寻址依然能把未改动代码的重复推送归并为同一个条目。
+- 内联的 stamp 优先于运行时询问 git，因为它描述的是正在执行的代码，而非其周围工作树此后的走向：位于已前进十个提交的 checkout 中的旧 `dist/`，报告的是它被构建时的 revision。
+- 已安装的 penguin 从不执行 git，只读取这些常量。询问 git 只是未经打包运行（`tsx`、`vitest`、`pnpm dev`）时的兜底，且只询问运行中模块所在的那个 checkout——从其自身所在目录逐级向上，寻找同时含有 `.git` 与 `pnpm-workspace.yaml` 的目录来定位。以模块而非工作目录为起点，正是「在别的仓库里执行 `penguin version` 仍报告 harness 自身版本」的原因；要求 workspace 标记存在，则避免了仅仅位于某个无关仓库之下的安装（例如家目录本身就是 dotfiles 仓库）报告出该仓库的提交。`.git` 为文件的 linked worktree 同样能被识别。
 - 发布版的 `dirty` 是 null 而非 false：发布流程会先把常量写进工作区再构建，因此「是否干净」对发布产物本就不是一个属性。
 - `scripts/test-installer.sh` 会把发布流程的打入代码块对着 fixture 重放，覆盖成功打入提交、无 `GITHUB_SHA` 运行、以及源码早于该常量的 tag 三种情形。
 
