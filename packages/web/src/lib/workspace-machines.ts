@@ -80,9 +80,9 @@ export function machineLabel(machines: WorkspaceMachine[], id: string | null): s
   return id;
 }
 
-/** True when this workspace's machine is not the one the window is currently working on. */
-export function isElsewhere(workspaceMachineId: string | null, activeId: string | null): boolean {
-  return (workspaceMachineId ?? null) !== (activeId ?? null);
+/** True when a workspace lives on some machine other than this one. */
+export function isElsewhere(workspaceMachineId: string | null | undefined): boolean {
+  return (workspaceMachineId ?? null) !== null;
 }
 
 /** The machine a directory picked on `machine` should be recorded against. */
@@ -95,22 +95,3 @@ export function recordedMachineId(machine: WorkspaceMachine | undefined): string
 /** Reads the machine off a machine list entry, for callers holding a raw MachineInfo. */
 export const machineIdOf = (machine: MachineInfo): string | null =>
   machine.local ? null : machine.machineId;
-
-/**
- * Which machine a freshly opened picker should browse.
- *
- * The distinction this exists to keep straight, because getting it wrong is silent: `null`
- * is not "unset", it is a REAL value meaning the local server. A picker that defaults to
- * `null` while the window is working on a remote browses this machine's filesystem under
- * that machine's session — the listing simply does not change when you switch servers, and
- * nothing about it looks wrong.
- *
- * So: an explicit prop wins (editing a workspace that already names a machine), otherwise
- * the machine the window is ALREADY on.
- */
-export function initialBrowseMachine(
-  fromProp: string | null | undefined,
-  activeId: string | null,
-): string | null {
-  return fromProp !== undefined ? fromProp : activeId;
-}

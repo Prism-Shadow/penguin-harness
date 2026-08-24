@@ -27,12 +27,7 @@ import { toastError } from "../../components/ui/toast";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { FOLDER_ICON } from "../../components/ui/group-list";
 import { ICON_SIZE } from "../../lib/icon-scale";
-import {
-  initialBrowseMachine,
-  machineLabel,
-  workspaceMachineOffer,
-} from "../../lib/workspace-machines";
-import { activeServerId } from "../../lib/server-context";
+import { machineLabel, workspaceMachineOffer } from "../../lib/workspace-machines";
 import type { WorkspaceMachine } from "../../lib/workspace-machines";
 
 /** Shared style for pill trigger buttons (ChatGPT project button style: small rounded pill + icon + short name + collapse arrow). */
@@ -99,14 +94,11 @@ export function WorkspaceSelect({
    * the browser without touching the window's active server, which is the whole point —
    * a workspace on another machine is chosen from here, not by going there.
    *
-   * It starts at the machine this window is ALREADY working on, not at the local one. `null`
-   * is a real value here meaning "force the local server", so defaulting to it would send
-   * every directory listing home while the rest of the window was on a remote — the browser
-   * would show this machine's filesystem under another machine's session.
+   * Starts on this machine unless the caller names one — a workspace being edited that
+   * already lives elsewhere. The window itself never moves, so "here" is always the honest
+   * starting point.
    */
-  const [machine, setMachine] = useState<string | null>(
-    initialBrowseMachine(machineId, activeServerId()),
-  );
+  const [machine, setMachine] = useState<string | null>(machineId ?? null);
   const [machines, setMachines] = useState<WorkspaceMachine[]>([]);
   /** Installed machines that cannot be browsed yet — named in the row rather than hidden. */
   const [unreachable, setUnreachable] = useState(0);

@@ -16,7 +16,6 @@ import type {
   MachinesResponse,
 } from "@prismshadow/penguin-server/api";
 import {
-  activeMachine,
   connectAction,
   installButtonState,
   installedMachines,
@@ -301,27 +300,6 @@ describe("connectAction", () => {
   it("reads as connecting while this row's POST is still in flight", () => {
     expect(connectAction(carrying("nas"), null, "ssh:nas")).toBe("connecting");
     expect(connectAction(carrying("build-box"), null, "ssh:nas")).toBe("connect");
-  });
-});
-
-describe("activeMachine", () => {
-  const ID = "noeSE0FFHhNXl2J5";
-  const remote = (): MachineInfo => ({ ...carrying("nas"), machineId: ID });
-
-  it("is null when this window is on the local server", () => {
-    expect(activeMachine(response(null, { machines: [here(), remote()] }), null)).toBeNull();
-  });
-
-  it("finds the machine by its own id, not by its address", () => {
-    const state = response(null, { machines: [here(), remote()] });
-    expect(activeMachine(state, ID)?.alias).toBe("nas");
-    expect(activeMachine(state, "ssh:nas")).toBeNull();
-  });
-
-  it("is null for an id nothing in the list claims, rather than guessing", () => {
-    // The window is pointed somewhere this server no longer lists; the banner falls back to
-    // the raw id rather than naming the wrong machine.
-    expect(activeMachine(response(null, { machines: [here()] }), ID)).toBeNull();
   });
 });
 

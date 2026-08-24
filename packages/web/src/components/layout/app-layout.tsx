@@ -25,7 +25,6 @@ import { ChangePasswordDialog } from "../account/change-password-dialog";
 import { TerminalDockRuntime } from "../../features/terminal/terminal-view-pool";
 import { setDockScope } from "../../features/dock/dock-state";
 import { toneStrip } from "../../lib/tone";
-import { activeServerId, setActiveServer } from "../../lib/server-context";
 
 /** "Last conversation" glyph (chat lines + resume arrow), used only by the rail. */
 const LAST_CHAT_ICON = "M8 10h8M8 14h5M21 12a9 9 0 1 1-4.2-7.6L21 4v5h-5";
@@ -202,27 +201,6 @@ export function AppLayout() {
   // dismissed banner never flashes before disappearing. Hydration only runs when the banner
   // would show at all; unreachable prefs fail open (treated as not dismissed, banner shows).
   const [passwordBannerDismissed, setPasswordBannerDismissed] = useState<boolean | null>(null);
-  /**
-   * The machine this window is pointed at, by the label a person recognises. Read from the
-   * LOCAL machines list, since the active server's own list is a different fleet — and
-   * falling back to the raw id keeps the banner honest when that lookup cannot be made.
-   */
-  const activeServerId_ = activeServerId();
-  const [activeServer, setActiveServerLabel] = useState<string | null>(activeServerId_);
-  useEffect(() => {
-    if (activeServerId_ === null) return;
-    let cancelled = false;
-    void api
-      .getMachines()
-      .then((res) => {
-        const match = res.machines.find((machine) => machine.machineId === activeServerId_);
-        if (!cancelled && match !== undefined) setActiveServerLabel(match.alias);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [activeServerId_]);
   const passwordBannerRelevant = Boolean(user?.passwordIsInitial) && !desktopMode;
   useEffect(() => {
     if (!passwordBannerRelevant) return;
@@ -304,29 +282,6 @@ export function AppLayout() {
           </button>
           <span className="text-sm font-semibold">{S.appName}</span>
         </header>
-
-        {/* Which SERVER this window is driving. Not dismissible and not subtle: every page
-            below — sessions, agents, workspaces, terminals — is that machine's, and a
-            person who has forgotten they switched would read someone else's fleet as their
-            own. The way back is in the banner, because the Machines page it came from is
-            itself proxied while an active server is set. */}
-        {activeServer !== null && (
-          <div
-            className={`flex shrink-0 items-center justify-center gap-3 border-b px-8 py-1.5 text-xs ${toneStrip.success}`}
-          >
-            <span>{S.machines.onMachine(activeServer)}</span>
-            <button
-              type="button"
-              className="shrink-0 font-medium underline underline-offset-2"
-              onClick={() => {
-                setActiveServer(null);
-                window.location.assign("/");
-              }}
-            >
-              {S.machines.backToLocal}
-            </button>
-          </div>
-        )}
 
         {/* Initial-password notice banner (seed/admin-set password): disappears once passwordIsInitial clears after a successful change.
             Hidden in desktop mode — the seed password there is random and never shown, so "change it" is meaningless nagging.

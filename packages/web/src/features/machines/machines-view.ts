@@ -153,21 +153,6 @@ export function connectAction(
 }
 
 /**
- * The machine this window's calls are currently routed to, or null for the local server.
- *
- * Matched on the machine's own id rather than the address, because that is what the active
- * server is stored as — and a machine that has since been re-aliased, or dropped from the
- * ssh config while its tunnel keeps forwarding, must still be recognisable as where we are.
- */
-export function activeMachine(
-  state: MachinesResponse,
-  activeId: string | null,
-): MachineInfo | null {
-  if (activeId === null) return null;
-  return state.machines.find((machine) => machine.machineId === activeId) ?? null;
-}
-
-/**
  * True when a machine carries a different build from the one this server would install.
  *
  * Any difference, not "older": versions here are content hashes of a pushed build
