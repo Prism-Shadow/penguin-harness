@@ -20,9 +20,12 @@
  *   than declining, and quietly running the runtime's older handler instead would answer with
  *   different semantics than the caller was promised. The error surfaces as a 500.
  *
- * Streaming responses (SSE, long downloads) stay runtime-side for now: the handler returns a
- * whole Response, which is enough for the request/response API surface and keeps the contract
- * one function wide.
+ * The contract is one function wide — Request in, whole Response out — and a streaming body
+ * rides it unchanged: the platform's SSE endpoints (`/api/events`, a session's event stream)
+ * hand back a Response as soon as the stream exists and go on writing to it afterwards. What
+ * the seam cannot carry is a live SOCKET, because there is no Response to return for one;
+ * that is why the terminal WebSocket handshake reaches the App through in-process members
+ * (`terminals()`, `attachStream()`) instead.
  */
 import type { MiddlewareHandler } from "hono";
 import type { HmrHost } from "./host.js";
