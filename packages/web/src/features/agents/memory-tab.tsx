@@ -640,8 +640,10 @@ export function MemoryTab({
                     </span>
                   </button>
                   {/* Whole-group transfer, icon + label (the labels are what say which way a
-                      transfer goes): export for any member, import for the owner. The tooltip
-                      carries what the label cannot — that the whole group travels. */}
+                      transfer goes, wherever the row is wide enough to keep them): export for any
+                      member, import for the owner. The tooltip carries what the label cannot —
+                      that the whole group travels — and on a narrow row, where the label is gone,
+                      it carries the direction too, alongside the aria-label. */}
                   <span className="shrink-0">
                     <Button
                       size="sm"
