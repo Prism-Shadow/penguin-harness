@@ -27,7 +27,7 @@ import { toastError } from "../../components/ui/toast";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { FOLDER_ICON } from "../../components/ui/group-list";
 import { ICON_SIZE } from "../../lib/icon-scale";
-import { machineLabel, workspaceMachineOffer } from "../../lib/workspace-machines";
+import { machineLabel, workspaceMachines } from "../../lib/workspace-machines";
 import type { WorkspaceMachine } from "../../lib/workspace-machines";
 
 /** Shared style for pill trigger buttons (ChatGPT project button style: small rounded pill + icon + short name + collapse arrow). */
@@ -100,8 +100,6 @@ export function WorkspaceSelect({
    */
   const [machine, setMachine] = useState<string | null>(machineId ?? null);
   const [machines, setMachines] = useState<WorkspaceMachine[]>([]);
-  /** Installed machines that cannot be browsed yet — named in the row rather than hidden. */
-  const [unreachable, setUnreachable] = useState(0);
   const [machineOpen, setMachineOpen] = useState(false);
   /**
    * Menu docking, measured on each open: the pill follows the agent pill in a wrapping row, so
@@ -258,10 +256,7 @@ export function WorkspaceSelect({
     void api
       .getMachines()
       .then((res) => {
-        if (cancelled) return;
-        const offer = workspaceMachineOffer(res);
-        setMachines(offer.machines);
-        setUnreachable(offer.unreachable);
+        if (!cancelled) setMachines(workspaceMachines(res));
       })
       .catch(() => undefined);
     return () => {
@@ -307,10 +302,11 @@ export function WorkspaceSelect({
             </button>
           }
         >
-          {machines.map((entry) => (
+          {machines.map((entry, index) => (
             <button
-              key={entry.id ?? "local"}
+              key={entry.selectable ? (entry.id ?? "local") : `unusable-${index}`}
               type="button"
+              disabled={!entry.selectable}
               onClick={() => {
                 setMachineOpen(false);
                 if (entry.id === machine) return;
@@ -318,11 +314,23 @@ export function WorkspaceSelect({
                 // Start over at that machine's home directory.
                 loadDirRef.current(entry.id);
               }}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800"
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors duration-150 hover:bg-gray-100 disabled:cursor-not-allowed disabled:hover:bg-transparent dark:hover:bg-gray-800 dark:disabled:hover:bg-transparent"
             >
-              <span className="min-w-0 flex-1 truncate">{entry.label}</span>
+              <span
+                className={`min-w-0 flex-1 truncate ${entry.selectable ? "" : "text-gray-400 dark:text-gray-500"}`}
+              >
+                {entry.label}
+              </span>
               {entry.local && (
                 <span className="shrink-0 text-gray-400">{S.chat.workspaceHere}</span>
+              )}
+              {/* A machine that cannot be browsed is shown, disabled, saying why — right
+                  where "why can I not pick that one?" is asked. Leaving it out, or counting
+                  it in a footnote, answers somewhere the question was not. */}
+              {entry.reason !== undefined && (
+                <span className="shrink-0 text-gray-400 dark:text-gray-500">
+                  {S.chat.workspaceMachineWhy[entry.reason]}
+                </span>
               )}
             </button>
           ))}
