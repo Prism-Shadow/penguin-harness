@@ -19,6 +19,7 @@ import {
   agentsMdPath,
   BUILTIN_AGENT_IDS,
   createAgent as coreCreateAgent,
+  installSkill,
   isValidId,
   loadAgentVault,
   memoryDir,
@@ -30,6 +31,8 @@ import type { AgentsRepo } from "../db/repos/agents.js";
 import { SEMANTIC_ID_PATTERN, SEMANTIC_ID_RULE } from "./ids.js";
 import type { AgentConfigService } from "./agent-config-service.js";
 import { isTopicFileName } from "./memory-service.js";
+import { resolveLibrarySkills } from "./skill-library.js";
+import { resolveDirectorySkills } from "./directory-skills.js";
 
 export interface AgentListItem {
   agentId: string;
@@ -230,13 +233,20 @@ export class AgentService {
    * Create an Agent: the id is chosen by the creator (a semantic id, checked for
    * duplicates against both the DB and the directory within the Project — a 409
    * if taken, which naturally also blocks built-in Agent ids) → initialize State →
-   * write name/description (name defaults to the id).
+   * write name/description (name defaults to the id) → install the seed Skills.
+   *
+   * `skillNames` are library Skill names picked at creation; they go through the same
+   * `installSkill` writer the Skills tab uses, inside the same cleanup window as the rest of
+   * initialization, so an Agent never survives with only part of its picked set. They are
+   * resolved before anything is created, so an unknown name creates no directory at all.
    */
   async createAgent(
     projectId: string,
     agentId: string,
     name?: string,
     description?: string,
+    skillNames?: readonly string[],
+    directory?: { path: string; names: readonly string[] },
   ): Promise<AgentListItem> {
     if (!SEMANTIC_ID_PATTERN.test(agentId)) {
       throw new HttpError(
@@ -255,11 +265,23 @@ export class AgentService {
       throw new HttpError(409, "agent_exists", `Agent id is already taken: ${agentId}.`);
     }
     const displayName = name ?? agentId;
+    // Both sources are resolved before a single file is written, so a name that has since left the
+    // library or the directory fails while the Agent still does not exist. Directory Skills are
+    // installed after the library ones and so win a name collision: the user picked that directory
+    // for this Agent specifically, which is a narrower intent than "install the built-in one".
+    const librarySeed = resolveLibrarySkills(skillNames ?? []);
+    const directorySeed = directory
+      ? await resolveDirectorySkills(directory.path, directory.names)
+      : [];
+    const seedSkills = [...librarySeed, ...directorySeed];
     await coreCreateAgent({ root: this.root, projectId, agentId });
     try {
       await this.agentConfig.updateConfig(projectId, agentId, {
         config: { name: displayName, ...(description !== undefined ? { description } : {}) },
       });
+      for (const skill of seedSkills) {
+        await installSkill(this.root, projectId, agentId, skill);
+      }
     } catch (err) {
       // If initialization fails partway through, clean up the directory: an orphaned
       // directory would make retries with this agent id 409 forever.

@@ -101,6 +101,8 @@ import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { noAutofill } from "../../components/ui/input";
 import { toastError, toastInfo } from "../../components/ui/toast";
 import { SkillIcon } from "../skills/skill-icon-view";
+import { SkillPickList } from "../skills/skill-pick-list";
+import { toggleSkillName } from "../skills/skill-selection";
 import { ZoomableImage } from "../../components/ui/image-zoom";
 import { ProviderLogo } from "../../components/ui/provider-logo";
 import { sameModelRef } from "../models/model-grouping";
@@ -108,13 +110,7 @@ import { filterAgents, stagedSendRoute } from "./agent-handoff";
 import { ModelMenuList, ModelSelect, PickerList, modelLabel } from "./model-select";
 import { matchSlash, removeSlashToken } from "./slash-token";
 import { SELECTABLE_THINKING_LEVELS, thinkingLevelLabel } from "./thinking-level";
-import {
-  BOOK_ICON,
-  buildSkillsMessage,
-  filterSkills,
-  localizedShortText,
-  skillSlashItems,
-} from "./skill-use";
+import { BOOK_ICON, buildSkillsMessage, localizedShortText, skillSlashItems } from "./skill-use";
 import { GOAL_ICON, UNLIMITED_BUDGET, parseBudgetInput } from "./goal-use";
 import { mergeRecalledDraft } from "./recall-draft";
 import { buildExampleFill } from "./example-fill";
@@ -477,12 +473,12 @@ function SteerModeRow({
 /**
  * Multi-select skills dropdown (bottom toolbar, after approval mode): styled like the model
  * selector — button = book icon + "Skills" label + selected-count badge (no badge at 0; when the
- * card is narrower than @md the label hides, leaving just icon + badge); menu = top search box
- * (filters by name and localized description) + option rows (name in monospace + truncated
- * description + selected checkmark). Multi-select semantics: clicking a row toggles its
- * selection and **the menu stays open**; closes on Escape / click outside (built into Dropdown).
- * Shows empty-state copy when no skills are installed (prompting to add some from the skill
- * library). Popup direction depends on context (same as the approval mode selector).
+ * card is narrower than @md the label hides, leaving just icon + badge); the menu body is the
+ * shared SkillPickList (search box + toggle rows), without its bulk row — picking skills to send
+ * a message with is a per-message act on a handful of names, not a set to fill in. Multi-select
+ * semantics: clicking a row toggles its selection and **the menu stays open**; closes on Escape /
+ * click outside (built into Dropdown). Popup direction depends on context (same as the approval
+ * mode selector).
  */
 function SkillSelect({
   skills,
@@ -497,10 +493,7 @@ function SkillSelect({
   disabled: boolean;
   direction?: "up" | "down";
 }) {
-  const { locale } = useLocale();
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const filtered = filterSkills(skills, locale, query);
   return (
     <Dropdown
       open={open}
@@ -515,11 +508,8 @@ function SkillSelect({
           aria-label={S.chat.skillsSelect}
           title={S.chat.skillsSelect}
           disabled={disabled}
-          onClick={() => {
-            const next = !open;
-            setOpen(next);
-            if (next) setQuery(""); // Always start from the full list each time it opens
-          }}
+          // The panel is unmounted while closed, so its search box starts empty on every open.
+          onClick={() => setOpen(!open)}
           className="flex h-8 max-w-44 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
         >
           <GlyphIcon d={BOOK_ICON} className="shrink-0" />
@@ -535,55 +525,12 @@ function SkillSelect({
         </button>
       }
     >
-      {/* Quick search: filters by skill name and localized description */}
-      <div className="border-b border-gray-100 px-2 pb-1.5 pt-0.5 dark:border-gray-800">
-        <input
-          autoFocus
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder={S.chat.skillsSearchPlaceholder}
-          aria-label={S.chat.skillsSearchPlaceholder}
-          {...noAutofill}
-          className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-xs text-gray-700 placeholder:text-gray-400 focus:outline-none dark:text-gray-200 dark:placeholder:text-gray-500"
-        />
-      </div>
-      <div className="max-h-56 overflow-y-auto">
-        {skills.length === 0 ? (
-          <p className="px-3 py-1.5 text-xs text-gray-400">{S.chat.skillsEmptyHint}</p>
-        ) : filtered.length === 0 ? (
-          <p className="px-3 py-1.5 text-xs text-gray-400">{S.chat.skillsNoMatch}</p>
-        ) : (
-          filtered.map((s) => {
-            const on = selected.includes(s.name);
-            return (
-              <button
-                key={s.name}
-                type="button"
-                aria-pressed={on}
-                onClick={() => onToggle(s.name)}
-                className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800 ${
-                  on
-                    ? "font-medium text-gray-900 dark:text-gray-100"
-                    : "text-gray-600 dark:text-gray-400"
-                }`}
-              >
-                {/* Each skill's custom icon (icon.svg, sanitized and inlined; falls back to the book icon if missing). */}
-                <SkillIcon
-                  icon={s.icon}
-                  size={ICON_SIZE.inlineGlyph}
-                  className="shrink-0 text-gray-400 dark:text-gray-500"
-                />
-                <span className="shrink-0 font-mono">{s.name}</span>
-                {/* Prefers the short description (falls back to the full description if missing), per the UI language. */}
-                <span className="min-w-0 flex-1 truncate text-gray-400 dark:text-gray-500">
-                  {localizedShortText(locale, s)}
-                </span>
-                <span className="w-3 shrink-0 text-center">{on ? "✓" : ""}</span>
-              </button>
-            );
-          })
-        )}
-      </div>
+      <SkillPickList
+        skills={skills}
+        selected={selected}
+        onToggle={onToggle}
+        emptyHint={S.chat.skillsEmptyHint}
+      />
     </Dropdown>
   );
 }
@@ -1433,9 +1380,7 @@ export function ChatInput({
   /** Toggle a skill on/off (shared by dropdown option clicks and the slash skill command); the change callback lets the parent write it into the draft. */
   const toggleSkill = useCallback(
     (name: string) => {
-      const next = selectedSkills.includes(name)
-        ? selectedSkills.filter((n) => n !== name)
-        : [...selectedSkills, name];
+      const next = toggleSkillName(selectedSkills, name);
       setSelectedSkills(next);
       onSkillsChange?.(next);
     },

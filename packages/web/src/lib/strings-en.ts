@@ -376,6 +376,20 @@ export const en: Strings = {
       "2–64 chars: starts with a lowercase letter; lowercase letters, digits and underscores only. Cannot be changed later.",
     nameHint: "Leave empty to use the agent id as the name",
     description: "Description",
+    createSkills: "Skills",
+    createSkillsPlaceholder: "No skills selected",
+    createSkillsPicked: (n: number): string => `${n} skill${n === 1 ? "" : "s"} selected`,
+    createSkillsHint:
+      "Installed into the agent at creation; add or remove them later in its Skills tab.",
+    createSkillsEmpty: "The skill library has nothing to install.",
+    createDirSkills: "Import Skills from a project directory",
+    createDirSkillsPick: "No directory selected",
+    createDirSkillsHint:
+      "Pick a project directory to read the Skills under its .agents/skills and .claude/skills",
+    createDirSkillsEmpty: "This directory carries no installable Skills",
+    createDirSkillsFound: (n: number): string =>
+      `${n} skill${n === 1 ? "" : "s"} found in this directory`,
+    createDirSkillsClear: "Clear the selected directory",
     sessionCount: (n: number): string => `${n} session${n === 1 ? "" : "s"}`,
     toolCount: (n: number): string => `${n} tool${n === 1 ? "" : "s"}`,
     vaultKeyCount: (n: number): string => `${n} vault key${n === 1 ? "" : "s"}`,
@@ -986,6 +1000,9 @@ export const en: Strings = {
     quickInvokeText: (name: string): string => `use the ${name} skill`,
     /** Title on a disabled quick-start button: quick start opens a draft on the currently selected agent, so a skill it hasn't installed (e.g. a preinstall:false skill like remote-claude-code) can't be quick-started until it's installed on that agent. */
     quickInvokeNeedsInstall: "Install this skill on the current agent first to quick-start",
+    selectAll: "Select all",
+    selectNone: "Select none",
+    selectedCount: (n: number): string => `${n} selected`,
     manageInstall: "Manage installs",
     manageInstallTitle: (name: string): string => `Manage installs: ${name}`,
     install: "Install",

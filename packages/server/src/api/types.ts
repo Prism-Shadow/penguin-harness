@@ -774,6 +774,21 @@ export interface AgentCreateRequest {
   /** Display name; defaults to agentId. */
   name?: string;
   description?: string;
+  /**
+   * Library Skill names installed into the new Agent, seeding it at creation. Every name must
+   * exist in the library (404 `unknown_skill` otherwise, before anything is created); omitted or
+   * empty leaves the Agent with no Skills, which is what a plain Agent gets by default.
+   */
+  skills?: string[];
+  /**
+   * Skills imported from a directory on disk instead of the library. `skillsDirectory` is the
+   * absolute path the user picked and `directorySkills` are the names to install from it, read
+   * back from `.agents/skills` / `.claude/skills` at creation time. Both are required together,
+   * and every name must still be there (404 `unknown_skill` otherwise, before anything is
+   * created) — the client sends names, never Skill content.
+   */
+  skillsDirectory?: string;
+  directorySkills?: string[];
 }
 
 export interface AgentCreateResponse {
@@ -1140,6 +1155,19 @@ export interface DirListResponse {
   parent: string | null;
   /** Subdirectory list (sorted by name, files excluded). */
   entries: DirEntryInfo[];
+}
+
+/** One Skill found in a picked directory: metadata plus which of the two layouts it came from. */
+export interface DirectorySkillItem extends SkillMetadataItem {
+  /** `.agents/skills` or `.claude/skills` — shown so the origin of an offered Skill is visible. */
+  source: string;
+}
+
+export interface DirectorySkillsResponse {
+  /** Absolute path that was scanned (realpath). */
+  path: string;
+  /** Installable Skills found under the directory's Skill layouts; empty when it carries none. */
+  skills: DirectorySkillItem[];
 }
 
 export interface SessionCreateRequest {
