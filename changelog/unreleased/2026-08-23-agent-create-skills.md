@@ -41,10 +41,17 @@ not picked.
   directory for this Agent is the narrower intent.
 - A directory carrying nothing installable is a stated fact in the field, not an error, and what is
   passed over is passed over silently: a directory with no `SKILL.md`, one whose `SKILL.md` has no
-  frontmatter, a name the installer would reject, and a symlinked Skill directory.
+  frontmatter, a name the installer would reject, a symlinked Skill directory, and a Skill whose
+  files cannot be read or exceed the caps — one bad Skill does not hide the rest of the directory.
 - Reading a picked directory reuses the archive import's caps and its walk discipline — 200 files,
-  5MB per file, 20MB total, with symlinks and other non-regular entries skipped — so the numbers
-  live in one place for both entry points rather than two.
+  5MB per file, 20MB total — so the numbers live in one place for both entry points rather than
+  two. Every file is read only after a stat says it is a regular file within the cap, `SKILL.md`
+  and `icon.svg` included, so a symlink cannot hand back a file from outside the Skill directory,
+  a FIFO cannot block the read, and an oversized file is refused before it is in memory.
+- Listing a directory reads only what describes a Skill; the auxiliary files that make up the
+  installable payload are read for the picked names alone.
+- Both entry points admit a client-supplied path the same way — absolute, existing, a directory,
+  resolved through `realpath` — through one helper the `dirs` browser now shares.
 - The client sends names, never Skill content: creation re-reads the files from disk, and both
   sources resolve completely before anything is written, so a name that has since disappeared fails
   while the Agent still does not exist.

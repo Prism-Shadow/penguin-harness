@@ -5,6 +5,10 @@
  * than offered (no frontmatter, a symlinked Skill directory, an unsafe name), the empty directory
  * being a normal answer, path and authorization rejections, and Agent creation installing the
  * picked names — including a directory Skill shadowing a library Skill of the same name.
+ *
+ * It also pins the read discipline the module promises: `SKILL.md` and `icon.svg` are read only
+ * when they are regular files the Skill directory owns, so a symlink cannot hand back a file
+ * outside it; and one Skill that cannot be read does not take the rest of the directory with it.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -123,6 +127,65 @@ describe("directory skills api", () => {
     expect(res.skills.map((s) => s.name)).toEqual(["real"]);
   });
 
+  it("does not follow a symlinked SKILL.md or icon.svg out of the Skill directory", async () => {
+    const secret = path.join(dir, "outside", "id_rsa");
+    await fs.mkdir(path.dirname(secret), { recursive: true });
+    await fs.writeFile(secret, "-----BEGIN PRIVATE KEY-----\nSECRET\n");
+
+    // A real Skill whose icon.svg is a link to that file: the Skill is still offered, without an
+    // icon — the link's target never reaches the response, nor the Agent it would be installed on.
+    await writeSkill(".agents/skills", "linked-icon");
+    await fs.rm(path.join(dir, ".agents/skills/linked-icon/icon.svg"), { force: true });
+    await fs.symlink(secret, path.join(dir, ".agents/skills/linked-icon/icon.svg"));
+    // A Skill whose SKILL.md is itself a link is not a Skill at all.
+    const outsideMd = path.join(dir, "outside", "SKILL.md");
+    await fs.writeFile(outsideMd, skillMd("linked-md"));
+    await fs.mkdir(path.join(dir, ".agents/skills/linked-md"), { recursive: true });
+    await fs.symlink(outsideMd, path.join(dir, ".agents/skills/linked-md/SKILL.md"));
+
+    const res = (await (await owner.get(listUrl(dir))).json()) as DirectorySkillsResponse;
+    expect(res.skills.map((s) => s.name)).toEqual(["linked-icon"]);
+    expect(res.skills[0]).not.toHaveProperty("icon");
+    expect(JSON.stringify(res)).not.toContain("SECRET");
+
+    const created = await owner.post(`/api/projects/${projectId}/agents`, {
+      agentId: "no_link_agent",
+      skillsDirectory: dir,
+      directorySkills: ["linked-icon"],
+    });
+    expect(created.status).toBe(201);
+    await expect(
+      fs.readFile(
+        path.join(skillsDir(t.root, projectId, "no_link_agent"), "linked-icon", "icon.svg"),
+        "utf8",
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("passes over a Skill that busts the size caps instead of hiding the whole directory", async () => {
+    await writeSkill(".agents/skills", "small");
+    await writeSkill(".agents/skills", "fat", {
+      // One auxiliary file over the 5MB per-file cap.
+      files: { "blob.bin": "x".repeat(6 * 1024 * 1024) },
+    });
+    const res = await owner.get(listUrl(dir));
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as DirectorySkillsResponse).skills.map((s) => s.name)).toEqual([
+      "fat",
+      "small",
+    ]);
+    // Picking the oversized one is still refused, and no Agent is left behind.
+    const created = await owner.post(`/api/projects/${projectId}/agents`, {
+      agentId: "fat_agent",
+      skillsDirectory: dir,
+      directorySkills: ["fat"],
+    });
+    expect(created.status).toBe(413);
+    expect(
+      (await owner.post(`/api/projects/${projectId}/agents`, { agentId: "fat_agent" })).status,
+    ).toBe(201);
+  });
+
   it("answers an empty list for a directory that carries no Skills", async () => {
     const res = await owner.get(listUrl(dir));
     expect(res.status).toBe(200);
@@ -194,6 +257,16 @@ describe("directory skills api", () => {
       (await owner.post(`/api/projects/${projectId}/agents`, { agentId: "ghost_dir_agent" }))
         .status,
     ).toBe(201);
+  });
+
+  it("rejects a relative skillsDirectory on create, like the discovery route does", async () => {
+    const res = await owner.post(`/api/projects/${projectId}/agents`, {
+      agentId: "rel_agent",
+      skillsDirectory: "relative/path",
+      directorySkills: ["alpha"],
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("dir_not_absolute");
   });
 
   it("rejects half of the directory pair rather than ignoring it", async () => {

@@ -183,6 +183,9 @@ export function AgentsPage() {
       return;
     }
     let cancelled = false;
+    // The previous directory's Skills go first: keeping them would leave their rows on offer and
+    // their picked names submittable against the newly picked directory.
+    setDirSkills(null);
     setDirSkillsError(null);
     api
       .listDirectorySkills(projectId, skillsDir)
@@ -203,11 +206,14 @@ export function AgentsPage() {
   // submit a name the new one does not carry.
   useEffect(() => {
     if (dirSkills === null) {
-      setCreateDirSkills([]);
+      setCreateDirSkills((prev) => (prev.length === 0 ? prev : []));
       return;
     }
     const available = new Set(dirSkills.map((skill) => skill.name));
-    setCreateDirSkills((prev) => prev.filter((name) => available.has(name)));
+    setCreateDirSkills((prev) => {
+      const next = prev.filter((name) => available.has(name));
+      return next.length === prev.length ? prev : next;
+    });
   }, [dirSkills]);
 
   const create = async () => {
@@ -609,7 +615,7 @@ export function AgentsPage() {
                 }
                 onSelectAll={(names) => setCreateSkills((prev) => addSkillNames(prev, names))}
                 onSelectNone={(names) => setCreateSkills((prev) => removeSkillNames(prev, names))}
-                emptyHint={S.agent.createSkillsEmpty}
+                emptyHint={library === null ? S.common.loading : S.agent.createSkillsEmpty}
               />
             </FormPicker>
             {libraryError ? (
@@ -628,8 +634,10 @@ export function AgentsPage() {
               workspace={skillsDir}
               onChange={setSkillsDir}
               variant="form"
+              fieldLabel={S.agent.createDirSkills}
               emptyLabel={S.agent.createDirSkillsPick}
               menuHint={S.agent.createDirSkillsHint}
+              clearLabel={S.agent.createDirSkillsClear}
             />
             {skillsDir && dirSkills !== null && dirSkills.length > 0 && (
               <div className="mt-2">

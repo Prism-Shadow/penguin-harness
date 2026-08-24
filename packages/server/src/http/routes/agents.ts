@@ -13,6 +13,7 @@ import {
   optionalString,
   optionalStringArray,
   readJson,
+  requireProjectDir,
   requireString,
   requireValidId,
 } from "../validate.js";
@@ -68,13 +69,16 @@ export function agentsRoutes(deps: AppDeps): Hono<AppEnv> {
       label: "skillsDirectory",
     });
     const directorySkills = optionalStringArray(body, "directorySkills");
-    if ((skillsDirectory === undefined) !== (directorySkills === undefined)) {
-      throw badRequest("skillsDirectory and directorySkills must be sent together.");
+    let directory: { path: string; names: string[] } | undefined;
+    if (skillsDirectory !== undefined || directorySkills !== undefined) {
+      if (skillsDirectory === undefined || directorySkills === undefined) {
+        throw badRequest("skillsDirectory and directorySkills must be sent together.");
+      }
+      // The same admission the discovery route applies, so the two entry points cannot disagree
+      // on what a valid directory is: a relative path would otherwise resolve against the server
+      // process's cwd instead of being rejected.
+      directory = { path: await requireProjectDir(skillsDirectory), names: directorySkills };
     }
-    const directory =
-      skillsDirectory !== undefined && directorySkills !== undefined
-        ? { path: skillsDirectory, names: directorySkills }
-        : undefined;
     const item = await deps.agentService.createAgent(
       projectId,
       agentId,

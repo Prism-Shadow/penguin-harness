@@ -4,6 +4,8 @@
  *
  * No validation library: each helper checks one basic shape, throwing a 400 HttpError on failure.
  */
+import fs from "node:fs/promises";
+import path from "node:path";
 import type { Context } from "hono";
 import { isValidId } from "@prismshadow/penguin-core";
 import { HttpError } from "./errors.js";
@@ -156,6 +158,44 @@ export function optionalStringArray(
     }
     return item;
   });
+}
+
+/**
+ * Admits a client-supplied filesystem path for a Project-scoped route and returns its realpath:
+ * absolute, existing, and a directory. Shared by every route that takes a path from the client —
+ * the `dirs` browser, Skill discovery, and Agent creation's `skillsDirectory` — so the three
+ * cannot drift on what a valid path is or on which error code says so. The caller must already
+ * have checked Project access.
+ */
+export async function requireProjectDir(raw: string | undefined): Promise<string> {
+  const target = raw?.trim();
+  if (!target || !path.isAbsolute(target)) {
+    throw new HttpError(400, "dir_not_absolute", "Directory must be an absolute path.");
+  }
+  let real: string;
+  try {
+    real = await fs.realpath(target);
+  } catch {
+    throw new HttpError(
+      404,
+      "dir_not_found",
+      `Directory does not exist or is inaccessible: ${target}.`,
+    );
+  }
+  // stat can still fail if the directory goes away between realpath and here; that is the same
+  // "not there" the caller is being told about, not a server fault.
+  const isDir = await fs.stat(real).then(
+    (s) => s.isDirectory(),
+    () => {
+      throw new HttpError(
+        404,
+        "dir_not_found",
+        `Directory does not exist or is inaccessible: ${target}.`,
+      );
+    },
+  );
+  if (!isDir) throw new HttpError(400, "not_a_dir", "Not a directory.");
+  return real;
 }
 
 export function requireEnum<T extends string>(

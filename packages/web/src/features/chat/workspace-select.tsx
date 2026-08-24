@@ -43,8 +43,10 @@ export function WorkspaceSelect({
   onChange,
   variant = "pill",
   trigger,
+  fieldLabel,
   emptyLabel,
   menuHint,
+  clearLabel,
 }: {
   projectId: string;
   workspace: string;
@@ -60,11 +62,18 @@ export function WorkspaceSelect({
   /**
    * Copy overrides for a host that browses for a directory which is not going to be a Workspace —
    * the Agent create dialog picks one to read Skills out of, where "temporary workspace" would
-   * describe something this field does not do.
+   * describe something this field does not do. `fieldLabel` names the field itself: it is the
+   * accessible name of both triggers and of the path input, and the label the tooltip puts in
+   * front of the picked path, so a host that overrides the visible copy is not left announcing
+   * itself as "Workspace".
    */
+  fieldLabel?: string;
   emptyLabel?: string;
   menuHint?: string;
+  /** Copy for the "back to a temporary workspace" link, which for a non-Workspace host just clears the field. */
+  clearLabel?: string;
 }) {
+  const fieldName = fieldLabel ?? S.chat.workspace;
   const [open, setOpen] = useState(false);
   /**
    * Menu docking, measured on each open: the pill follows the agent pill in a wrapping row, so
@@ -202,7 +211,7 @@ export function WorkspaceSelect({
           <input
             value={pathDraft}
             placeholder="…"
-            aria-label={S.chat.workspace}
+            aria-label={fieldName}
             {...noAutofill}
             onChange={(e) => setPathDraft(e.target.value)}
             onBlur={commitPathEdit}
@@ -294,7 +303,7 @@ export function WorkspaceSelect({
           }}
           className="text-xs text-gray-500 underline decoration-gray-300 underline-offset-2 transition-colors duration-150 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
         >
-          {S.chat.workspaceClear}
+          {clearLabel ?? S.chat.workspaceClear}
         </button>
       )}
       {/* Hint text (bottom of the menu) */}
@@ -331,8 +340,8 @@ export function WorkspaceSelect({
         leading={folderIcon("")}
         label={label}
         {...(trimmed ? { labelClassName: "font-mono" } : {})}
-        title={trimmed ? trimmed : (menuHint ?? S.chat.workspaceHint)}
-        ariaLabel={S.chat.workspace}
+        title={trimmed ? `${fieldName}：${trimmed}` : (menuHint ?? S.chat.workspaceHint)}
+        ariaLabel={fieldName}
         ariaHaspopup="dialog"
         menuClass="w-80"
       >
@@ -353,8 +362,8 @@ export function WorkspaceSelect({
       button={
         <button
           type="button"
-          title={trimmed ? trimmed : (menuHint ?? S.chat.workspaceHint)}
-          aria-label={S.chat.workspace}
+          title={trimmed ? `${fieldName}：${trimmed}` : (menuHint ?? S.chat.workspaceHint)}
+          aria-label={fieldName}
           onClick={toggle}
           className={pillClass}
         >

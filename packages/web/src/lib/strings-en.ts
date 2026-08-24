@@ -387,7 +387,9 @@ export const en: Strings = {
     createDirSkillsHint:
       "Pick a project directory to read the Skills under its .agents/skills and .claude/skills",
     createDirSkillsEmpty: "This directory carries no installable Skills",
-    createDirSkillsFound: (n: number): string => `${n} Skills found in this directory`,
+    createDirSkillsFound: (n: number): string =>
+      `${n} skill${n === 1 ? "" : "s"} found in this directory`,
+    createDirSkillsClear: "Clear the selected directory",
     sessionCount: (n: number): string => `${n} session${n === 1 ? "" : "s"}`,
     toolCount: (n: number): string => `${n} tool${n === 1 ? "" : "s"}`,
     vaultKeyCount: (n: number): string => `${n} vault key${n === 1 ? "" : "s"}`,

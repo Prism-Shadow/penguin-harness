@@ -9,18 +9,17 @@
  *
  * Authorization and path handling are the `dirs` route's, deliberately: `projectId` is the anchor
  * and the caller must have access to it, the path must be absolute, and it is resolved through
- * realpath before anything is read. A directory carrying no Skills answers with an empty list
+ * realpath before anything is read (`requireProjectDir`, shared with that route and with the
+ * create route's `skillsDirectory`). A directory carrying no Skills answers with an empty list
  * rather than an error — pointing at one is a normal thing to do.
  */
-import fs from "node:fs/promises";
-import path from "node:path";
 import { Hono } from "hono";
 import type { DirectorySkillsResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import { HttpError } from "../errors.js";
-import { requireValidId } from "../validate.js";
+import { requireProjectDir, requireValidId } from "../validate.js";
 import type { AppDeps } from "../../app.js";
 import { discoverDirectorySkills } from "../../services/directory-skills.js";
+import { toMetadataItem } from "../../services/skill-library.js";
 
 export function directorySkillsRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
@@ -29,32 +28,16 @@ export function directorySkillsRoutes(deps: AppDeps): Hono<AppEnv> {
     const projectId = requireValidId(c, "projectId");
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
 
-    const raw = c.req.query("path");
-    const target = raw?.trim();
-    if (!target || !path.isAbsolute(target)) {
-      throw new HttpError(400, "dir_not_absolute", "Directory must be an absolute path.");
-    }
-    let real: string;
-    try {
-      real = await fs.realpath(target);
-    } catch {
-      throw new HttpError(
-        404,
-        "dir_not_found",
-        `Directory does not exist or is inaccessible: ${target}.`,
-      );
-    }
-    if (!(await fs.stat(real)).isDirectory()) {
-      throw new HttpError(400, "not_a_dir", "Not a directory.");
-    }
+    const real = await requireProjectDir(c.req.query("path"));
 
     const skills = await discoverDirectorySkills(real);
     return c.json({
       path: real,
-      // Content and auxiliary files are deliberately not returned: the picker needs to describe a
-      // Skill, and creation re-reads it from disk, so a megabyte of SKILL bodies never crosses the
-      // wire and the install can never be driven by a body the client made up.
-      skills: skills.map(({ content: _content, files: _files, ...item }) => item),
+      // The picker needs a description, not a payload: the body and the resolved server-side
+      // path are projected away by the shared allowlist, and creation re-reads the Skill from
+      // disk, so a megabyte of SKILL bodies never crosses the wire and the install can never be
+      // driven by a body the client made up.
+      skills: skills.map((skill) => ({ ...toMetadataItem(skill), source: skill.source })),
     } satisfies DirectorySkillsResponse);
   });
 
