@@ -43,6 +43,8 @@ export function WorkspaceSelect({
   onChange,
   variant = "pill",
   trigger,
+  emptyLabel,
+  menuHint,
 }: {
   projectId: string;
   workspace: string;
@@ -55,6 +57,13 @@ export function WorkspaceSelect({
    * clip an in-flow panel. The same browse menu, byte for byte.
    */
   trigger?: (open: boolean, toggle: () => void) => ReactNode;
+  /**
+   * Copy overrides for a host that browses for a directory which is not going to be a Workspace —
+   * the Agent create dialog picks one to read Skills out of, where "temporary workspace" would
+   * describe something this field does not do.
+   */
+  emptyLabel?: string;
+  menuHint?: string;
 }) {
   const [open, setOpen] = useState(false);
   /**
@@ -175,7 +184,9 @@ export function WorkspaceSelect({
 
   const trimmed = workspace.trim();
   // Pill short name: the last segment of the directory name (root gives "/"); shows "temporary workspace" when empty.
-  const label = trimmed ? (trimmed.split("/").filter(Boolean).pop() ?? "/") : S.chat.workspaceAuto;
+  const label = trimmed
+    ? (trimmed.split("/").filter(Boolean).pop() ?? "/")
+    : (emptyLabel ?? S.chat.workspaceAuto);
   const parentPath = dir?.parent ?? null;
   // Hidden directories (starting with .) are excluded from the list.
   const entries = (dir?.entries ?? []).filter((e) => !e.name.startsWith("."));
@@ -288,7 +299,7 @@ export function WorkspaceSelect({
       )}
       {/* Hint text (bottom of the menu) */}
       <p className="px-0.5 text-xs leading-5 text-gray-400 dark:text-gray-500">
-        {S.chat.workspaceHint}
+        {menuHint ?? S.chat.workspaceHint}
       </p>
     </div>
   );
@@ -320,7 +331,7 @@ export function WorkspaceSelect({
         leading={folderIcon("")}
         label={label}
         {...(trimmed ? { labelClassName: "font-mono" } : {})}
-        title={trimmed ? `${S.chat.workspace}：${trimmed}` : S.chat.workspaceHint}
+        title={trimmed ? trimmed : (menuHint ?? S.chat.workspaceHint)}
         ariaLabel={S.chat.workspace}
         ariaHaspopup="dialog"
         menuClass="w-80"
@@ -342,7 +353,7 @@ export function WorkspaceSelect({
       button={
         <button
           type="button"
-          title={trimmed ? `${S.chat.workspace}：${trimmed}` : S.chat.workspaceHint}
+          title={trimmed ? trimmed : (menuHint ?? S.chat.workspaceHint)}
           aria-label={S.chat.workspace}
           onClick={toggle}
           className={pillClass}

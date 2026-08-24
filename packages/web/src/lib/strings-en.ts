@@ -382,6 +382,12 @@ export const en: Strings = {
     createSkillsHint:
       "Installed into the agent at creation; add or remove them later in its Skills tab.",
     createSkillsEmpty: "The skill library has nothing to install.",
+    createDirSkills: "Import Skills from a project directory",
+    createDirSkillsPick: "No directory selected",
+    createDirSkillsHint:
+      "Pick a project directory to read the Skills under its .agents/skills and .claude/skills",
+    createDirSkillsEmpty: "This directory carries no installable Skills",
+    createDirSkillsFound: (n: number): string => `${n} Skills found in this directory`,
     sessionCount: (n: number): string => `${n} session${n === 1 ? "" : "s"}`,
     toolCount: (n: number): string => `${n} tool${n === 1 ? "" : "s"}`,
     vaultKeyCount: (n: number): string => `${n} vault key${n === 1 ? "" : "s"}`,

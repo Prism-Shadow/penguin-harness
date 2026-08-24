@@ -45,13 +45,16 @@ import {
   requireValidId,
 } from "../validate.js";
 import { resolveLibrarySkills } from "../../services/skill-library.js";
+import {
+  MAX_ARCHIVE_FILES,
+  MAX_FILE_BYTES,
+  MAX_TOTAL_BYTES,
+  skillTooLarge,
+} from "../../services/skill-import-limits.js";
 
 /** Decoded zip cap: aligned with the Agent snapshot import (stays within the 20MB body limit after base64). */
 const MAX_ARCHIVE_BYTES = 14 * 1024 * 1024;
 /** Uncompressed limits (guard against zip bombs): entry count / per-file / total. */
-const MAX_ARCHIVE_FILES = 200;
-const MAX_FILE_BYTES = 5 * 1024 * 1024;
-const MAX_TOTAL_BYTES = 20 * 1024 * 1024;
 
 /**
  * Strips the content off a LibrarySkill: the API only sends metadata; the full body is
@@ -193,11 +196,7 @@ async function collectSkillArchive(dir: string, name: string): Promise<Record<st
         data.byteLength > MAX_FILE_BYTES ||
         total > MAX_TOTAL_BYTES
       ) {
-        throw new HttpError(
-          413,
-          "skill_too_large",
-          `Skill directory exceeds the archive limits (${MAX_ARCHIVE_FILES} files, 5MB per file, 20MB total).`,
-        );
+        throw skillTooLarge();
       }
       out[relChild] = data;
     }

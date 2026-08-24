@@ -23,3 +23,29 @@ library at once, and creating the Agent installs them into it.
   `unknown_skill` and creates nothing — and are installed through the same writer the Skills tab's
   install uses, inside the same cleanup window as the rest of Agent initialization.
 - Creating an Agent with nothing picked installs no skills, as before.
+
+## Importing a checkout's own Skills
+
+The same dialog can also install the Skills a project directory already carries, which a coding
+agent leaves in `.agents/skills/` or `.claude/skills/`. Pick a directory and its Skills appear in
+a picker of their own, with the same Select all / Select none row; nothing is installed that was
+not picked.
+
+- The directory field is its own field rather than more entries in the library picker, because a
+  directory Skill may share a library Skill's name and still be the one installed — one flat list
+  of picked names could not say which was meant.
+- `.claude` is very often a symlink to `.agents`, which would otherwise offer every Skill twice:
+  the two roots are resolved through `realpath` and a shared target is read once. Where both exist
+  as real directories and carry the same name, `.agents` wins.
+- A directory Skill installs over a library Skill of the same name picked alongside it: choosing a
+  directory for this Agent is the narrower intent.
+- A directory carrying nothing installable is a stated fact in the field, not an error, and what is
+  passed over is passed over silently: a directory with no `SKILL.md`, one whose `SKILL.md` has no
+  frontmatter, a name the installer would reject, and a symlinked Skill directory.
+- Reading a picked directory reuses the archive import's caps and its walk discipline — 200 files,
+  5MB per file, 20MB total, with symlinks and other non-regular entries skipped — so the numbers
+  live in one place for both entry points rather than two.
+- The client sends names, never Skill content: creation re-reads the files from disk, and both
+  sources resolve completely before anything is written, so a name that has since disappeared fails
+  while the Agent still does not exist.
+

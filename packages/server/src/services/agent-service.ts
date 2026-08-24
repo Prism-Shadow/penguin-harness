@@ -32,6 +32,7 @@ import { SEMANTIC_ID_PATTERN, SEMANTIC_ID_RULE } from "./ids.js";
 import type { AgentConfigService } from "./agent-config-service.js";
 import { isTopicFileName } from "./memory-service.js";
 import { resolveLibrarySkills } from "./skill-library.js";
+import { resolveDirectorySkills } from "./directory-skills.js";
 
 export interface AgentListItem {
   agentId: string;
@@ -245,6 +246,7 @@ export class AgentService {
     name?: string,
     description?: string,
     skillNames?: readonly string[],
+    directory?: { path: string; names: readonly string[] },
   ): Promise<AgentListItem> {
     if (!SEMANTIC_ID_PATTERN.test(agentId)) {
       throw new HttpError(
@@ -263,7 +265,15 @@ export class AgentService {
       throw new HttpError(409, "agent_exists", `Agent id is already taken: ${agentId}.`);
     }
     const displayName = name ?? agentId;
-    const seedSkills = resolveLibrarySkills(skillNames ?? []);
+    // Both sources are resolved before a single file is written, so a name that has since left the
+    // library or the directory fails while the Agent still does not exist. Directory Skills are
+    // installed after the library ones and so win a name collision: the user picked that directory
+    // for this Agent specifically, which is a narrower intent than "install the built-in one".
+    const librarySeed = resolveLibrarySkills(skillNames ?? []);
+    const directorySeed = directory
+      ? await resolveDirectorySkills(directory.path, directory.names)
+      : [];
+    const seedSkills = [...librarySeed, ...directorySeed];
     await coreCreateAgent({ root: this.root, projectId, agentId });
     try {
       await this.agentConfig.updateConfig(projectId, agentId, {

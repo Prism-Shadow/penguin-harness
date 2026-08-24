@@ -44,6 +44,7 @@ import { STAT_ICONS } from "../../lib/stat-icons";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { parkActiveDraft } from "../chat/draft-sessions";
 import { ActivitySparkline } from "./activity-sparkline";
+import { WorkspaceSelect } from "../chat/workspace-select";
 import { SkillPickList } from "../skills/skill-pick-list";
 import { addSkillNames, removeSkillNames, toggleSkillName } from "../skills/skill-selection";
 import { ICON_SIZE } from "../../lib/icon-scale";
@@ -111,6 +112,16 @@ export function AgentsPage() {
   /** Library skills to install into the new Agent, in pick order. */
   const [createSkills, setCreateSkills] = useState<string[]>([]);
   const [skillsOpen, setSkillsOpen] = useState(false);
+  /**
+   * Skills imported from a directory instead of the library, kept as its own field rather than
+   * merged into the list above: the server lets a directory Skill and a library Skill share a
+   * name (the directory one wins), which one flat list of picked names could not express.
+   */
+  const [skillsDir, setSkillsDir] = useState("");
+  const [dirSkills, setDirSkills] = useState<SkillMetadataItem[] | null>(null);
+  const [dirSkillsError, setDirSkillsError] = useState<string | null>(null);
+  const [createDirSkills, setCreateDirSkills] = useState<string[]>([]);
+  const [dirSkillsOpen, setDirSkillsOpen] = useState(false);
 
   /** Open the create dialog: don't keep the previous draft, always start from an empty form. */
   const openCreate = () => {
@@ -120,6 +131,11 @@ export function AgentsPage() {
     setIdError(undefined);
     setCreateSkills([]);
     setSkillsOpen(false);
+    setSkillsDir("");
+    setDirSkills(null);
+    setDirSkillsError(null);
+    setCreateDirSkills([]);
+    setDirSkillsOpen(false);
     setCreateOpen(true);
   };
 
@@ -158,6 +174,42 @@ export function AgentsPage() {
 
   const projectId = currentProject?.projectId;
 
+  // Re-read whenever the picked directory changes. A directory that carries no Skills answers with
+  // an empty list, which the field states in place of its hint rather than treating as a failure.
+  useEffect(() => {
+    if (!createOpen || !skillsDir || !projectId) {
+      setDirSkills(null);
+      setDirSkillsError(null);
+      return;
+    }
+    let cancelled = false;
+    setDirSkillsError(null);
+    api
+      .listDirectorySkills(projectId, skillsDir)
+      .then((res) => {
+        if (!cancelled) setDirSkills(res.skills);
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        setDirSkills(null);
+        setDirSkillsError(apiErrorText(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [createOpen, projectId, skillsDir]);
+
+  // Picked names are dropped when they are no longer on offer, so switching directories cannot
+  // submit a name the new one does not carry.
+  useEffect(() => {
+    if (dirSkills === null) {
+      setCreateDirSkills([]);
+      return;
+    }
+    const available = new Set(dirSkills.map((skill) => skill.name));
+    setCreateDirSkills((prev) => prev.filter((name) => available.has(name)));
+  }, [dirSkills]);
+
   const create = async () => {
     if (!projectId) return;
     const id = agentId.trim();
@@ -173,7 +225,14 @@ export function AgentsPage() {
     setIdError(undefined);
     try {
       // Name defaults to the id (leave blank to let the server fill it in from the id).
-      const body: { agentId: string; name?: string; description?: string; skills?: string[] } = {
+      const body: {
+        agentId: string;
+        name?: string;
+        description?: string;
+        skills?: string[];
+        skillsDirectory?: string;
+        directorySkills?: string[];
+      } = {
         agentId: id,
       };
       if (name.trim()) body.name = name.trim();
@@ -181,6 +240,12 @@ export function AgentsPage() {
       // Picked Skills are seeded server-side inside the same create call, so a failure leaves no
       // half-equipped Agent behind.
       if (createSkills.length > 0) body.skills = createSkills;
+      // The pair only means anything together, so it is sent only when a directory actually
+      // contributed something — picking a directory and then no Skills from it is a plain Agent.
+      if (skillsDir && createDirSkills.length > 0) {
+        body.skillsDirectory = skillsDir;
+        body.directorySkills = createDirSkills;
+      }
       const res = await api.createAgent(projectId, body);
       setCreateOpen(false);
       await reloadAgents();
@@ -551,6 +616,66 @@ export function AgentsPage() {
               <FieldError>{libraryError}</FieldError>
             ) : (
               <FieldHint>{S.agent.createSkillsHint}</FieldHint>
+            )}
+          </div>
+          {/* Skills a checkout already carries: pick the project directory, then pick from what
+              its .agents/skills / .claude/skills hold. Separate from the library field because a
+              directory Skill may share a library Skill's name and still be the one installed. */}
+          <div>
+            <FieldLabel>{S.agent.createDirSkills}</FieldLabel>
+            <WorkspaceSelect
+              projectId={projectId ?? ""}
+              workspace={skillsDir}
+              onChange={setSkillsDir}
+              variant="form"
+              emptyLabel={S.agent.createDirSkillsPick}
+              menuHint={S.agent.createDirSkillsHint}
+            />
+            {skillsDir && dirSkills !== null && dirSkills.length > 0 && (
+              <div className="mt-2">
+                <FormPicker
+                  open={dirSkillsOpen}
+                  setOpen={setDirSkillsOpen}
+                  label={
+                    createDirSkills.length === 0
+                      ? S.agent.createSkillsPlaceholder
+                      : S.agent.createSkillsPicked(createDirSkills.length)
+                  }
+                  muted={createDirSkills.length === 0}
+                  title={S.agent.createDirSkills}
+                  ariaLabel={S.agent.createDirSkills}
+                  disabled={busy}
+                  menuClass="w-[26rem]"
+                >
+                  <SkillPickList
+                    skills={dirSkills}
+                    selected={createDirSkills}
+                    onToggle={(skillName) =>
+                      setCreateDirSkills((prev) => toggleSkillName(prev, skillName))
+                    }
+                    onSelectAll={(names) =>
+                      setCreateDirSkills((prev) => addSkillNames(prev, names))
+                    }
+                    onSelectNone={(names) =>
+                      setCreateDirSkills((prev) => removeSkillNames(prev, names))
+                    }
+                    emptyHint={S.agent.createDirSkillsEmpty}
+                  />
+                </FormPicker>
+              </div>
+            )}
+            {dirSkillsError ? (
+              <FieldError>{dirSkillsError}</FieldError>
+            ) : (
+              <FieldHint>
+                {!skillsDir
+                  ? S.agent.createDirSkillsHint
+                  : dirSkills === null
+                    ? S.common.loading
+                    : dirSkills.length === 0
+                      ? S.agent.createDirSkillsEmpty
+                      : S.agent.createDirSkillsFound(dirSkills.length)}
+              </FieldHint>
             )}
           </div>
         </div>

@@ -9,6 +9,7 @@ import type { AgentCreateResponse, AgentsResponse, AgentSummary } from "../../ap
 import type { AppEnv } from "../../auth/middleware.js";
 import { settleWithin } from "../settle.js";
 import {
+  badRequest,
   optionalString,
   optionalStringArray,
   readJson,
@@ -59,7 +60,29 @@ export function agentsRoutes(deps: AppDeps): Hono<AppEnv> {
     // Library Skills to seed the new Agent with (the create dialog's picker); unknown names are
     // rejected before the Agent directory exists.
     const skills = optionalStringArray(body, "skills");
-    const item = await deps.agentService.createAgent(projectId, agentId, name, description, skills);
+    // Skills imported from a directory the user picked. The pair only means anything together, so
+    // half of it is a bad request rather than a silently ignored field.
+    const skillsDirectory = optionalString(body, "skillsDirectory", {
+      minLen: 1,
+      maxLen: 4096,
+      label: "skillsDirectory",
+    });
+    const directorySkills = optionalStringArray(body, "directorySkills");
+    if ((skillsDirectory === undefined) !== (directorySkills === undefined)) {
+      throw badRequest("skillsDirectory and directorySkills must be sent together.");
+    }
+    const directory =
+      skillsDirectory !== undefined && directorySkills !== undefined
+        ? { path: skillsDirectory, names: directorySkills }
+        : undefined;
+    const item = await deps.agentService.createAgent(
+      projectId,
+      agentId,
+      name,
+      description,
+      skills,
+      directory,
+    );
     const agent: AgentSummary = {
       ...item,
       activeSessionCount: 0,
