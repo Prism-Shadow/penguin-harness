@@ -1,6 +1,13 @@
 /**
- * The same-origin server proxy: `/server/<id>/api/…` on THIS server forwards to machine
- * `<id>`'s server through its tunnel. The window never leaves the local origin — the web
+ * The same-origin server proxy: `/server/<machineId>/api/…` on THIS server forwards to that
+ * machine's server through its tunnel.
+ *
+ * Addressed by the MACHINE'S OWN id (`/server/QS7J4YVgSovi-Z2c/api/me`), not by the ssh
+ * alias it was reached through. An alias is a line in one config file: rename it and every
+ * URL and cookie below would change identity, silently logging the user out of a machine
+ * that never moved, and two aliases for one host would open two tunnels and two sessions to
+ * one server. The machine id is minted by that machine and never changes — and being
+ * base64url, it needs no percent-encoding to sit in a path. The window never leaves the local origin — the web
  * app stays served from here and re-points its API (and SSE) calls by prefix, so no
  * navigation gate, no origin switch, no per-origin storage split. Platform code on the
  * seam, like everything else in this module: the whole capability ships by hot push.
@@ -31,27 +38,32 @@ export const SERVER_PROXY_PREFIX = "/server/";
 
 /** A parsed proxy path: which machine, and the remote-side path to request. */
 export interface ProxyPath {
-  /** The machine address (`ssh:<alias>`), URL-decoded. */
-  id: string;
+  /** The machine's own id — what it minted, not the alias it was reached through. */
+  machineId: string;
   /** The path forwarded to the remote, always starting `/api/`. */
   remotePath: string;
 }
 
-/** Parses `/server/<id>/api/…` (query preserved by the caller); null for anything else. */
+/** Parses `/server/<machineId>/api/…` (query preserved by the caller); null for anything else. */
 export function parseProxyPath(pathname: string): ProxyPath | null {
   if (!pathname.startsWith(SERVER_PROXY_PREFIX)) return null;
   const rest = pathname.slice(SERVER_PROXY_PREFIX.length);
   const slash = rest.indexOf("/");
   if (slash <= 0) return null;
-  const id = decodeURIComponent(rest.slice(0, slash));
+  const machineId = decodeURIComponent(rest.slice(0, slash));
   const remotePath = rest.slice(slash);
   if (!remotePath.startsWith("/api/") && remotePath !== "/api") return null;
-  return { id, remotePath };
+  return { machineId, remotePath };
 }
 
-/** Cookie-name-safe marker for one machine (cookie names cannot carry an alias verbatim). */
-export function cookieMarker(id: string): string {
-  return `penguin_s_${Buffer.from(id, "utf8").toString("hex")}_`;
+/**
+ * Cookie-name-safe marker for one machine. Keyed by the machine's own id so a browser's
+ * remembered session belongs to the MACHINE: re-aliasing the host in ssh config leaves it
+ * untouched, and reaching one machine through two aliases finds the same session rather
+ * than asking for a second login.
+ */
+export function cookieMarker(machineId: string): string {
+  return `penguin_s_${Buffer.from(machineId, "utf8").toString("hex")}_`;
 }
 
 /**
@@ -59,9 +71,9 @@ export function cookieMarker(id: string): string {
  * and nothing else. Local cookies (the local session included) never leak to a remote;
  * another machine's cookies never leak across.
  */
-export function rewriteRequestCookies(header: string | null, id: string): string | null {
+export function rewriteRequestCookies(header: string | null, machineId: string): string | null {
   if (header === null) return null;
-  const marker = cookieMarker(id);
+  const marker = cookieMarker(machineId);
   const kept: string[] = [];
   for (const part of header.split(";")) {
     const cookie = part.trim();
@@ -71,16 +83,16 @@ export function rewriteRequestCookies(header: string | null, id: string): string
 }
 
 /** A Set-Cookie from the remote, renamed into this machine's namespace on the local origin. */
-export function rewriteSetCookie(header: string, id: string): string {
+export function rewriteSetCookie(header: string, machineId: string): string {
   const eq = header.indexOf("=");
   if (eq <= 0) return header;
-  return `${cookieMarker(id)}${header}`;
+  return `${cookieMarker(machineId)}${header}`;
 }
 
 /** An absolute-path Location from the remote, re-rooted under the proxy prefix. */
-export function rewriteLocation(header: string, id: string): string {
+export function rewriteLocation(header: string, machineId: string): string {
   return header.startsWith("/")
-    ? `${SERVER_PROXY_PREFIX}${encodeURIComponent(id)}${header}`
+    ? `${SERVER_PROXY_PREFIX}${encodeURIComponent(machineId)}${header}`
     : header;
 }
 
@@ -103,7 +115,7 @@ export function proxyToTunnel(request: Request, path: ProxyPath, port: number): 
       if (!DROP_REQUEST_HEADERS.has(name.toLowerCase())) headers[name] = value;
     });
     headers["host"] = `localhost:${port}`;
-    const forwardedCookies = rewriteRequestCookies(request.headers.get("cookie"), path.id);
+    const forwardedCookies = rewriteRequestCookies(request.headers.get("cookie"), path.machineId);
     if (forwardedCookies !== null) headers["cookie"] = forwardedCookies;
 
     const upstream = http.request(
@@ -121,10 +133,10 @@ export function proxyToTunnel(request: Request, path: ProxyPath, port: number): 
           out.set(name, Array.isArray(value) ? value.join(", ") : value);
         }
         for (const cookie of res.headers["set-cookie"] ?? []) {
-          out.append("set-cookie", rewriteSetCookie(cookie, path.id));
+          out.append("set-cookie", rewriteSetCookie(cookie, path.machineId));
         }
         if (res.headers.location !== undefined) {
-          out.set("location", rewriteLocation(res.headers.location, path.id));
+          out.set("location", rewriteLocation(res.headers.location, path.machineId));
         }
         resolve(
           new Response(
@@ -142,7 +154,7 @@ export function proxyToTunnel(request: Request, path: ProxyPath, port: number): 
           {
             error: {
               code: "server_unreachable",
-              message: `The tunnel to ${path.id} did not answer: ${err.message}`,
+              message: `The tunnel to ${path.machineId} did not answer: ${err.message}`,
             },
           },
           { status: 502 },
@@ -164,18 +176,18 @@ export function proxyToTunnel(request: Request, path: ProxyPath, port: number): 
  * connect first".
  */
 export function machinesProxy(
-  portFor: (id: string) => Promise<number | null>,
+  portFor: (machineId: string) => Promise<number | null>,
 ): (request: Request) => Promise<Response | null> {
   return async (request) => {
     const path = parseProxyPath(new URL(request.url).pathname);
     if (path === null) return null;
-    const port = await portFor(path.id);
+    const port = await portFor(path.machineId);
     if (port === null) {
       return Response.json(
         {
           error: {
             code: "not_connected",
-            message: `No live tunnel to ${path.id}; connect to it first.`,
+            message: `No live tunnel to ${path.machineId}; connect to it first.`,
           },
         },
         { status: 503 },

@@ -780,13 +780,17 @@ export function createApp(
     await next();
   });
 
-  // `/server/<id>/api/…` — a connected machine's API, forwarded down its tunnel. Mounted
+  // `/server/<machineId>/api/…` — a connected machine's API, forwarded down its tunnel,
+  // addressed by the machine's OWN id so a re-aliased host keeps its URLs and its browser
+  // session. Mounted
   // BEFORE the auth middleware and deliberately outside it: the remote authenticates every
   // forwarded request with its own cookies (renamed per machine on the way through), so a
   // local session is not a credential over there and requiring one would mean two logins
   // for one window. The tunnel port it forwards to is already reachable from this machine,
   // so the route adds no exposure the tunnel had not.
-  const serverProxy = machinesProxy(async (id) => deps.machines.tunnelPortFor(id));
+  const serverProxy = machinesProxy(async (machineId) =>
+    deps.machines.tunnelPortForMachine(machineId),
+  );
   app.all(`${SERVER_PROXY_PREFIX}*`, async (c) => {
     const answer = await serverProxy(c.req.raw);
     return answer ?? c.notFound();

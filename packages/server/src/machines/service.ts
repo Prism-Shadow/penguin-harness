@@ -234,9 +234,7 @@ export class MachinesService {
         // this process without another round trip. An id NEVER changes for a machine, so a
         // probe that answers a different one means a different machine behind that alias —
         // the alias was repointed — and the newer answer is the true one.
-        if (probe.machineId !== null && machine.installed !== null) {
-          this.#remember(machine.id, { ...machine.installed, machineId: probe.machineId });
-        }
+        this.#rememberMachineId(machine.id, probe.machineId);
       }
     });
     await Promise.all(workers);
@@ -382,6 +380,24 @@ export class MachinesService {
   }
 
   /**
+   * The live tunnel port for a machine addressed by its OWN id — what the proxy asks.
+   *
+   * A machine is looked up by identity rather than by the alias it happens to be reached
+   * through, so a re-aliased host keeps working and two aliases for one machine resolve to
+   * the one tunnel instead of two.
+   */
+  tunnelPortForMachine(machineId: string): number | null {
+    for (const [address, entry] of Object.entries(parseConnectState(this.#readConnectState()))) {
+      if (entry.machineId !== machineId) continue;
+      // Liveness goes through the same address-keyed check, so a dead pid is cleared here
+      // exactly as it is anywhere else.
+      const port = this.tunnelPortFor(address);
+      if (port !== null) return port;
+    }
+    return null;
+  }
+
+  /**
    * Brings a machine's server up and holds a tunnel to it, as a job — the same shape as an
    * install and for the same reason (a start plus a readiness wait is minutes in the bad
    * case), in its own slot so connecting somewhere cannot cancel an install elsewhere.
@@ -456,11 +472,14 @@ export class MachinesService {
     const target = { alias, user: resolved.settings.user };
 
     say("Asking what is running there…");
-    const { state } = await this.#effects.probe(target);
+    const probed = await this.#effects.probe(target);
+    const state = probed.state;
     if (state.kind === "unreachable") {
       job.result = { ok: false, message: state.detail };
       return;
     }
+    let machineId = probed.machineId;
+    this.#rememberMachineId(id, machineId);
 
     const remembered = parseConnectState(this.#readConnectState())[id];
     // A server already up over there keeps its port — it is bound to it, and we forward the
@@ -489,6 +508,10 @@ export class MachinesService {
         job.result = { ok: false, message: started.detail };
         return;
       }
+      // Ask again now that it is up: a machine mints its id when its server starts, so one
+      // that was down had none a moment ago — and the proxy addresses it by that id.
+      machineId = (await this.#effects.probe(target)).machineId ?? machineId;
+      this.#rememberMachineId(id, machineId);
     }
 
     say("Opening the tunnel…");
@@ -506,6 +529,7 @@ export class MachinesService {
     this.#tunnels.set(id, tunnel);
     this.#writeConnectState(id, {
       port,
+      ...(machineId === null ? {} : { machineId }),
       ...(tunnel.pid === null ? {} : { tunnelPid: tunnel.pid }),
       connectedAt: this.#effects.now().toISOString(),
     });
@@ -522,6 +546,14 @@ export class MachinesService {
     }
     say(`Connected on ${origin}.`);
     job.result = { ok: true, origin };
+  }
+
+  /** Records an id a probe just heard, when there is one and a record to hang it on. */
+  #rememberMachineId(id: string, machineId: string | null): void {
+    if (machineId === null) return;
+    const record = parseInstallRecords(this.#readRecords())[id];
+    if (record === undefined || record.machineId === machineId) return;
+    this.#remember(id, { ...record, machineId });
   }
 
   /**

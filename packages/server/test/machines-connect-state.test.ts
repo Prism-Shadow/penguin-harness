@@ -15,7 +15,12 @@ import {
   withConnectState,
 } from "../src/machines/connect-state.js";
 
-const state = { port: 7364, tunnelPid: 4242, connectedAt: "2026-08-24T12:00:00.000Z" };
+const state = {
+  port: 7364,
+  machineId: "QS7J4YVgSovi-Z2c",
+  tunnelPid: 4242,
+  connectedAt: "2026-08-24T12:00:00.000Z",
+};
 
 describe("parseConnectState", () => {
   it("reads back what withConnectState wrote", () => {
@@ -40,6 +45,19 @@ describe("parseConnectState", () => {
       "ssh:string": { port: "7364" },
     });
     expect(parseConnectState(raw)).toEqual({ "ssh:ok": { port: 7364 } });
+  });
+
+  it("carries the far end's identity, so a live tunnel is addressable without the ssh config", () => {
+    // The proxy names a machine by its own id; looking the tunnel up through the config
+    // would strand it the moment someone renamed or deleted that Host entry.
+    expect(parseConnectState(withConnectState(null, "ssh:nas", state))["ssh:nas"]?.machineId).toBe(
+      "QS7J4YVgSovi-Z2c",
+    );
+  });
+
+  it("keeps a port while dropping an empty identity — an unnamed tunnel is still a tunnel", () => {
+    const raw = JSON.stringify({ "ssh:nas": { port: 7364, machineId: "" } });
+    expect(parseConnectState(raw)).toEqual({ "ssh:nas": { port: 7364 } });
   });
 
   it("keeps a port while dropping a nonsensical pid — the tunnel is gone, the port is not", () => {

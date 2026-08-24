@@ -666,6 +666,68 @@ describe("machines API", () => {
       expect((await byId("ssh:nas"))?.origin).toBeNull();
     });
 
+    it("the proxy finds the tunnel by the machine's id, not by the alias", async () => {
+      const ID = "QS7J4YVgSovi-Z2c";
+      await boot({
+        probe: async () => ({ state: { kind: "running", port: 7364, pid: 9 }, machineId: ID }),
+        openTunnel: () => liveTunnel(),
+      });
+      await installed();
+      await admin.post("/api/machines/ssh:nas/connect");
+      await waitFor(() => connectJob()?.running === false);
+
+      expect(t.deps.machines.tunnelPortForMachine(ID)).toBe(7364);
+      // The address still works for acting ON the machine; it is not how the proxy is keyed.
+      expect(t.deps.machines.tunnelPortForMachine("ssh:nas")).toBeNull();
+      expect(t.deps.machines.tunnelPortForMachine("some-other-machine")).toBeNull();
+    });
+
+    it("stays addressable after its ssh alias is renamed or deleted", async () => {
+      const ID = "QS7J4YVgSovi-Z2c";
+      let aliases = ["nas", "build-box"];
+      await boot({
+        listAliases: () => aliases,
+        probe: async () => ({ state: { kind: "running", port: 7364, pid: 9 }, machineId: ID }),
+        openTunnel: () => liveTunnel(),
+      });
+      await installed();
+      await admin.post("/api/machines/ssh:nas/connect");
+      await waitFor(() => connectJob()?.running === false);
+      expect(t.deps.machines.tunnelPortForMachine(ID)).toBe(7364);
+
+      // The host is renamed in ssh config; the tunnel is still forwarding.
+      aliases = ["nas-renamed", "build-box"];
+      expect(t.deps.machines.tunnelPortForMachine(ID)).toBe(7364);
+
+      // ...and removed from the config outright. A live connection does not care.
+      aliases = [];
+      expect(t.deps.machines.tunnelPortForMachine(ID)).toBe(7364);
+    });
+
+    it("learns the id of a machine whose server it had to start", async () => {
+      const ID = "QS7J4YVgSovi-Z2c";
+      let up = false;
+      await boot({
+        // Down at first, so it has minted nothing; up (and identified) once started.
+        probe: async () =>
+          up
+            ? { state: { kind: "running" as const, port: 7364, pid: 9 }, machineId: ID }
+            : { state: { kind: "stopped" as const }, machineId: null },
+        startServer: async () => {
+          up = true;
+          return { ok: true };
+        },
+        openTunnel: () => liveTunnel(),
+      });
+      await installed();
+      await admin.post("/api/machines/ssh:nas/connect");
+      await waitFor(() => connectJob()?.running === false);
+      expect(connectJob()?.result).toMatchObject({ ok: true });
+      // Without the second probe the proxy would have no id to be addressed by.
+      expect((await byId("ssh:nas"))?.machineId).toBe(ID);
+      expect(t.deps.machines.tunnelPortForMachine(ID)).toBe(7364);
+    });
+
     it("a tunnel whose ssh process is gone is not an origin, however the file reads", async () => {
       await boot({
         openTunnel: () => ({
