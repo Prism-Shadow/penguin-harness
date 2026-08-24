@@ -49,6 +49,11 @@ export interface RemoteTarget {
   user: string;
 }
 
+/** The connection flags every ssh/scp here shares; exported for the shared-shell channel. */
+export function connectionOptionsFor(target: RemoteTarget): string[] {
+  return connectionOptions(target);
+}
+
 function connectionOptions(target: RemoteTarget): string[] {
   return [
     "-o",

@@ -13,6 +13,7 @@
 import { MACHINE_ID_MARK, SERVER_ALIVE_MARK, readServerStateCommand, sshArgs } from "./commands.js";
 import type { RemoteTarget } from "./commands.js";
 import { run } from "./exec.js";
+import type { ExecResult } from "./exec.js";
 import { parseMachineId } from "./machine-id.js";
 
 /** Long enough for a slow link, short enough that a dead host does not hold a refresh open. */
@@ -76,11 +77,21 @@ export function parseServerState(stdout: string): MachineServerState {
   return { kind: "stopped" };
 }
 
-/** Probes one machine. Never throws: every failure is one of the states above. */
-export async function probeServerState(target: RemoteTarget): Promise<MachineProbe> {
-  const result = await run("ssh", sshArgs(target, readServerStateCommand()), {
-    timeoutMs: PROBE_TIMEOUT_MS,
-  });
+/**
+ * Probes one machine. Never throws: every failure is one of the states above.
+ *
+ * `exec` lets the caller supply a channel — the machines service passes the machine's shared
+ * shell, so a probe every few minutes does not open a connection every few minutes. Left
+ * out, it is a one-shot ssh, which is what a caller with no session to reuse should get.
+ */
+export async function probeServerState(
+  target: RemoteTarget,
+  exec?: (target: RemoteTarget, command: string) => Promise<ExecResult>,
+): Promise<MachineProbe> {
+  const result =
+    exec === undefined
+      ? await run("ssh", sshArgs(target, readServerStateCommand()), { timeoutMs: PROBE_TIMEOUT_MS })
+      : await exec(target, readServerStateCommand());
   if (result.code !== 0) {
     const detail = result.stderr.trim();
     return {

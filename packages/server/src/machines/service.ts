@@ -34,12 +34,14 @@ import { readServerLock } from "../lock.js";
 import { listHostAliases, resolveTarget } from "./targets.js";
 import { sshArgs } from "./commands.js";
 import { run } from "./exec.js";
+import type { ExecResult } from "./exec.js";
 import { installOnRemote, resolvePushPlan } from "./install-server.js";
 import { parseInstallRecords, withInstallRecord } from "./installs.js";
 import type { InstallRecord } from "./installs.js";
 import { probeServerState } from "./server-state.js";
 import { DIR_LIST_MARK, listDirsCommand } from "./commands.js";
 import { upgradeRemote } from "./upgrade.js";
+import { closeShell, runOnShell } from "./ssh-session.js";
 import { readOrCreateMachineId } from "./machine-id.js";
 import { localPortBusy, openTunnel, waitForTunneledHttp } from "./tunnel.js";
 import type { Tunnel } from "./tunnel.js";
@@ -64,10 +66,7 @@ export interface MachinesEffects {
   install: typeof installOnRemote;
   probe: typeof probeServerState;
   /** One command on a machine — the seam the directory browser and any future reader share. */
-  runOn: (
-    target: { alias: string; user: string },
-    command: string,
-  ) => Promise<{ code: number; stdout: string; stderr: string }>;
+  runOn: (target: { alias: string; user: string }, command: string) => Promise<ExecResult>;
   startServer: typeof startRemoteServer;
   stopServer: typeof stopRemoteServer;
   upgrade: typeof upgradeRemote;
@@ -159,7 +158,14 @@ export class MachinesService {
       resolvePlan: resolvePushPlan,
       install: installOnRemote,
       probe: probeServerState,
-      runOn: (target, command) => run("ssh", sshArgs(target, command), { timeoutMs: 30_000 }),
+      // Over the machine's SHARED shell, not a fresh connection: a probe every few minutes
+      // and a directory listing per click should not each pay for a handshake. Merged
+      // streams are fine for both — their own markers delimit what matters, and failure is
+      // read from the exit code (see ssh-session.ts).
+      runOn: async (target, command) => {
+        const result = await runOnShell(`ssh:${target.alias}`, target, command);
+        return { code: result.code, stdout: result.output, stderr: "", timedOut: false };
+      },
       startServer: startRemoteServer,
       stopServer: stopRemoteServer,
       upgrade: upgradeRemote,
@@ -301,10 +307,10 @@ export class MachinesService {
           });
           continue;
         }
-        const probe = await this.#effects.probe({
-          alias: machine.alias,
-          user: resolved.settings.user,
-        });
+        const probe = await this.#effects.probe(
+          { alias: machine.alias, user: resolved.settings.user },
+          (target, command) => this.#effects.runOn(target, command),
+        );
         const state = probe.state;
         this.#statuses.set(machine.id, {
           state: state.kind,
@@ -784,6 +790,9 @@ export class MachinesService {
    * be this side deciding something that is not its to decide.
    */
   disconnect(machineId: string): void {
+    // The shared shell goes with the tunnel: keeping a connection open to a machine somebody
+    // just disconnected from would be holding on to exactly what they let go of.
+    closeShell(machineId);
     this.#tunnels.get(machineId)?.close();
     this.#tunnels.delete(machineId);
     const entry = parseConnectState(this.#readConnectState())[machineId];

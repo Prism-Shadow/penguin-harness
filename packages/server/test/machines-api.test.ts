@@ -78,7 +78,7 @@ function effects(over: Partial<MachinesEffects> = {}): Partial<MachinesEffects> 
       detach: () => {},
     }),
     probe: async () => ({ state: { kind: "running", port: 7364, pid: 4242 }, machineId: null }),
-    runOn: async () => ({ code: 0, stdout: "", stderr: "" }),
+    runOn: async () => ({ code: 0, stdout: "", stderr: "", timedOut: false }),
     install: async (opts): Promise<RemoteInstallOutcome> => {
       opts.onProgress?.("Pushing…");
       return { kind: "installed", output: "done", identity: IDENTITY };
@@ -655,7 +655,7 @@ describe("machines API", () => {
     const withDirs = async (stdout: string, code = 0) => {
       await boot({
         probe: async () => ({ state: { kind: "running", port: 7364, pid: 1 }, machineId: ID }),
-        runOn: async () => ({ code, stdout, stderr: "" }),
+        runOn: async () => ({ code, stdout, stderr: "", timedOut: false }),
       });
       await admin.post("/api/machines/ssh:nas/install");
       await waitFor(() => t.deps.machines.job()?.running === false);
