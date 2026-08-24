@@ -30,7 +30,7 @@ interface ToolExecutionContext {
 
 interface ToolResult {
   stopReason?: StopReason; // the tool's self-reported terminal state (lowest priority, see below)
-  note?: string; // terminal marker appended outside the truncation window (e.g. exit code)
+  note?: string; // terminal marker appended outside the output budget (e.g. exit code)
   images?: string[]; // data-URL images, appended after the text output
 }
 ```
@@ -38,22 +38,22 @@ interface ToolResult {
 A tool only yields incremental `partial_tool_call_output` deltas; the Environment handles the close-out centrally:
 
 - streaming framing (start / stop) and `tool_call_id` threading;
-- timeout merging, and head-kept truncation once output exceeds `maxOutputLength` (default 16000 characters);
+- timeout merging, and head+tail-window truncation once output exceeds `maxOutputLength` (default 16000 characters): the budget splits in half, the head window streams live, and the last tail window arrives at finalization after a `[output truncated: kept first H and last T of C chars]` marker — the total C tells the model whether the recovery file is worth reading; output that ends past the head window but within the budget is flushed verbatim at finalization instead, with no marker;
 - stop_reason priority: user interrupt > timeout > tool throw > tool self-report;
 - never-empty output (`[no output]` is substituted when a tool produced nothing);
-- `note` (e.g. the exit code) and images are appended outside the truncation window, so the terminal marker survives even when long output is cut.
+- `note` (e.g. the exit code) and images are appended outside the output budget, so the terminal marker survives even when long output is cut.
 
 Tools and the Environment never throw into the engine: errors collapse into `tool_call_output` messages the model can read and react to. See the [OmniMessage Protocol](/omni-message) for message structure.
 
 ### Recovering oversized output
 
-When tool text in an Agent Session exceeds `maxOutputLength`, the model and Web/CLI still receive the same head window, truncation marker, and terminal marker, and the streaming invariant that user-visible output equals model-visible output does not change. Environment also appends a short archive status/path note outside that visible-output cap and saves a Session-owned recovery file. The file is exact within the per-call archive budget and otherwise contains bounded head/tail windows. This is the complete text **received by Environment**: a producer such as a command or subagent session may already have replaced overflow with an `[..., N chars of earlier output dropped ...]` marker in its own bounded unread buffer, and the downstream archive cannot recover text lost before that point.
+When tool text in an Agent Session exceeds `maxOutputLength`, the model and Web/CLI still receive the same head and tail windows, counting truncation marker, and terminal marker, and the streaming invariant that user-visible output equals model-visible output does not change. Environment also appends a short archive status/path note outside that visible-output cap and saves a Session-owned recovery file. The file is exact within the per-call archive budget and otherwise contains bounded head/tail windows. This is the complete text **received by Environment**: a producer such as a command or subagent session may already have replaced overflow with an `[..., N chars of earlier output dropped ...]` marker in its own bounded unread buffer, and the downstream archive cannot recover text lost before that point.
 
 The Agent can inspect ordinary multiline archives with the existing `read_file` (`offset` / `limit`). For byte tails or very long lines, it must construct a targeted shell command such as `rg` / `tail`; no dedicated retrieval tool is added. The note carries a plain absolute path, always the last element inside the bracket. On Windows it is written with forward slashes: `exec_command` runs through (Git) Bash and Node's fs APIs accept them, so one spelling works in JSON tool arguments and shell commands alike; POSIX paths pass through unchanged, and Session paths are ordinary absolute paths (never `\\?\`-prefixed), so the separator swap is lossless. As with any path, quote it inside shell commands when it contains spaces. The same spelling rule covers every path core composes for the model — the system prompt's App Data Dir / CWD lines, `[attached image/file: …]` lines and the goal-file line (`modelVisiblePath` in the SDK).
 
 Recovery files live under the Session's `scratchpad/<session-id>/truncated-tool-output/`, are created only after actual truncation, and use private permissions where the platform supports them. One call stores at most 8 MiB (the production byte limit is one byte lower so `read_file` remains below its 8 MiB scan cap); larger output keeps bounded head/tail windows in the file with an explicit middle-gap marker. The limit is per call only: a Session has no aggregate archive byte or file-count quota, and concurrent captures independently retain up to one call's budget. Files remain readable across Tasks, runtime disposal, and Session resume until explicit Session deletion removes the entire scratchpad; no separate archive cleanup lifecycle is added.
 
-Recovery files contain the unredacted tool text received by Environment. Accidentally reading credentials or other sensitive data can therefore increase local at-rest retention from the visible head window to the archive budget. Trace does not duplicate those bytes, but it records the same absolute Session path shown to the model and Web/CLI, exposing the host's data-root layout. Archive-write failure never changes the original tool's `stop_reason`; the visible note and stderr warning carry only a short error code (and stderr's tool name), not the path or raw error message.
+Recovery files contain the unredacted tool text received by Environment. Accidentally reading credentials or other sensitive data can therefore increase local at-rest retention from the visible windows to the archive budget. Trace does not duplicate those bytes, but it records the same absolute Session path shown to the model and Web/CLI, exposing the host's data-root layout. Archive-write failure never changes the original tool's `stop_reason`; the visible note and stderr warning carry only a short error code (and stderr's tool name), not the path or raw error message.
 
 ## Configuration fields
 
