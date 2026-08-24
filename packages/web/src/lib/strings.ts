@@ -42,6 +42,12 @@ export const zh = {
     noImage:
       "本服务端没有可推送的安装镜像。打包安装或 tarball 安装自带镜像；源码检出则在第一次热推后获得。",
     empty: "~/.ssh/config 中没有可用的主机。",
+    /** The picker: an ssh config can declare hundreds of hosts, so the panel is a fuzzy search over aliases. */
+    pick: "选择机器…",
+    search: "搜索主机…",
+    noMatch: "没有匹配的主机。",
+    /** How many matches the visible rows leave out — a silent truncation would read as "not in my config". */
+    more: (count: number) => `另有 ${count} 台未显示——继续输入以缩小范围。`,
     install: "安装",
     installing: "安装中…",
     reinstall: "重新安装",
