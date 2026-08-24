@@ -29,7 +29,8 @@ a round trip; how fast it is cannot be judged in under a second at any probe siz
 minimum is 256 KB/s against a 1 MiB probe and the boundary case is therefore a four-second
 transfer.
 
-- The buttons wait only on the first pass — capped under one second — and go live knowing nobody
+- The buttons wait only on the first pass — capped at about a second, a target rather than a
+  guarantee — and go live knowing nobody
   has been handed a link that will never start. Until then they render without an `href`, dimmed,
   `aria-disabled`, with a spinner in place of the download icon.
 - That pass asks GitHub one question over a version-less URL that needs no manifest and no tag: does

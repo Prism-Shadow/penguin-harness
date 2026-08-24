@@ -50,7 +50,13 @@ export const SPEED_PROBE_OSS_SWITCH_RATIO = 1.5;
 /**
  * Three clocks, because the gate and the mirror pointer must not share one. The gate hinges on
  * GitHub — a GitHub that answers keeps the download whatever the mirror is doing — so GitHub gets
- * its own short window, and the gate as a whole is capped under a second.
+ * its own window, and the gate as a whole is capped at roughly a second.
+ *
+ * That one second is a target, not a guarantee, and the caps are set accordingly. A cap only ever
+ * bites a source that is slow or silent: a healthy GitHub answers in a few hundred milliseconds and
+ * never notices it. So the cost of a generous cap falls entirely on the blocked case, which is
+ * already waiting, while the cost of a tight one falls on a distant-but-working GitHub that gets
+ * written off and has its download handed to the mirror we pay for. Prefer the generous side.
  *
  * The pointer's clock is longer than the gate's on purpose. It used to share the gate's, which
  * meant a pointer that arrived late was discarded, and a visitor who could not reach GitHub was
@@ -58,8 +64,8 @@ export const SPEED_PROBE_OSS_SWITCH_RATIO = 1.5;
  * gate: the gate takes it only if it is there in time, and a late arrival still reaches the page,
  * where it enables the manual switch and lets the throughput pass correct the answer.
  */
-export const GITHUB_REACHABILITY_MS = 600;
-export const GATE_BUDGET_MS = 900;
+export const GITHUB_REACHABILITY_MS = 800;
+export const GATE_BUDGET_MS = 1000;
 export const MIRROR_POINTER_MS = 2500;
 export const THROUGHPUT_BUDGET_MS = 9000;
 
