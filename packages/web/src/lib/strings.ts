@@ -64,6 +64,11 @@ export const zh = {
     connect: "连接",
     connecting: "连接中…",
     disconnect: "断开",
+    /** Each machine is a separate server with its own accounts; this browser signs in per machine. */
+    signIn: "登录",
+    signingIn: "登录中…",
+    signedIn: "已登录",
+    signInTo: (alias: string) => `登录到 ${alias}`,
     /** A connected machine: its filesystem and API can be reached from here. */
     reachable: "可访问",
     /** Manual re-probe, for when you already know something changed. */

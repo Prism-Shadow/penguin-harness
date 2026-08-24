@@ -62,6 +62,11 @@ export const en: Strings = {
     connect: "Connect",
     connecting: "Connecting\u2026",
     disconnect: "Disconnect",
+    /** Each machine is a separate server with its own accounts; this browser signs in per machine. */
+    signIn: "Sign in",
+    signingIn: "Signing in\u2026",
+    signedIn: "signed in",
+    signInTo: (alias: string) => `Sign in to ${alias}`,
     /** A connected machine: its filesystem and API can be reached from here. */
     reachable: "Reachable",
     /** Manual re-probe, for when you already know something changed. */

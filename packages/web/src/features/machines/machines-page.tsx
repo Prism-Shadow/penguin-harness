@@ -37,6 +37,9 @@ import { toneInk, toneStrip } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
 import { ICON_SIZE } from "../../lib/icon-scale";
 import { Button } from "../../components/ui/button";
+import { Modal } from "../../components/ui/modal";
+import { Input } from "../../components/ui/input";
+import { PasswordInput } from "../../components/ui/password-input";
 import { Dropdown } from "../../components/ui/dropdown";
 import { EmptyState } from "../../components/ui/empty-state";
 import { InfoPopover } from "../../components/ui/info-popover";
@@ -44,6 +47,7 @@ import { Skeleton } from "../../components/ui/skeleton";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { ChevronDown, NAV_ICONS } from "../../components/ui/icons";
 import {
+  canSignIn,
   connectAction,
   installButtonState,
   installedMachines,
@@ -52,7 +56,7 @@ import {
   statusTone,
   verdictOf,
 } from "./machines-view";
-import type { MachineVerdict } from "./machines-view";
+import type { MachineSignIn, MachineVerdict } from "./machines-view";
 import { MAX_VISIBLE_MACHINES, highlightSegments, matchMachines } from "./machines-match";
 import { probeDelayMs, probeFingerprint } from "./probe-schedule";
 
@@ -143,6 +147,17 @@ export function MachinesPage() {
   const local = useMemo(() => (state === null ? null : localMachine(state)), [state]);
   /** The machine whose connect POST is in flight — the server has no job to report yet. */
   const [connecting, setConnecting] = useState<string | null>(null);
+  /**
+   * Which machines this browser already holds a session on. A machine is a separate server
+   * with its own accounts, so the local session says nothing about it — the only way to
+   * know is to ask, which is what this caches.
+   */
+  const [signedIn, setSignedIn] = useState<Record<string, MachineSignIn>>({});
+  const [signInTo, setSignInTo] = useState<MachineInfo | null>(null);
+  const [signInUser, setSignInUser] = useState("admin");
+  const [signInPassword, setSignInPassword] = useState("");
+  const [signInError, setSignInError] = useState<string | null>(null);
+  const [signingIn, setSigningIn] = useState(false);
   /** Aliases the picker offers: everything except this machine, which is not a target. */
   const pickable = useMemo(() => machines.filter((machine) => !machine.local), [machines]);
   const matched = useMemo(() => matchMachines(pickable, query), [pickable, query]);
@@ -216,6 +231,47 @@ export function MachinesPage() {
       setError(null);
     } catch (err) {
       setError(apiErrorText(err));
+    }
+  };
+
+  // Ask each connected machine whether we are signed in there. Cheap (one /api/me each),
+  // and only for machines that can answer at all.
+  const connectedIds = machines
+    .filter((machine) => canSignIn(machine))
+    .map((machine) => machine.machineId!)
+    .join(",");
+  useEffect(() => {
+    if (connectedIds === "") return;
+    let cancelled = false;
+    for (const machineId of connectedIds.split(",")) {
+      void api
+        .meOnMachine(machineId)
+        .then(() => {
+          if (!cancelled) setSignedIn((prev) => ({ ...prev, [machineId]: "signed-in" }));
+        })
+        .catch(() => {
+          if (!cancelled) setSignedIn((prev) => ({ ...prev, [machineId]: "signed-out" }));
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [connectedIds]);
+
+  const submitSignIn = async () => {
+    if (signInTo?.machineId == null) return;
+    const machineId = signInTo.machineId;
+    setSigningIn(true);
+    setSignInError(null);
+    try {
+      await api.loginOnMachine(machineId, { userId: signInUser, password: signInPassword });
+      setSignedIn((prev) => ({ ...prev, [machineId]: "signed-in" }));
+      setSignInTo(null);
+      setSignInPassword("");
+    } catch (err) {
+      setSignInError(apiErrorText(err));
+    } finally {
+      setSigningIn(false);
     }
   };
 
@@ -482,6 +538,20 @@ export function MachinesPage() {
                             <span className={`shrink-0 text-xs ${toneInk.success}`}>
                               {S.machines.reachable}
                             </span>
+                            {/* A machine is a separate server with its own accounts, so
+                                being connected is not being signed in. Shown per machine,
+                                because there is nothing here that could vouch for you
+                                there. */}
+                            {machine.machineId !== null &&
+                              (signedIn[machine.machineId] === "signed-in" ? (
+                                <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
+                                  {S.machines.signedIn}
+                                </span>
+                              ) : (
+                                <Button size="sm" onClick={() => setSignInTo(machine)}>
+                                  {S.machines.signIn}
+                                </Button>
+                              ))}
                             <Button
                               size="sm"
                               variant="ghost"
@@ -545,6 +615,41 @@ export function MachinesPage() {
           </>
         )}
       </div>
+
+      {/* Signing in to another server. Its own accounts, its own password — this server has
+          no way to vouch for anyone there, which is exactly why it asks. */}
+      <Modal
+        open={signInTo !== null}
+        title={S.machines.signInTo(signInTo?.alias ?? "")}
+        onClose={() => setSignInTo(null)}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setSignInTo(null)}>
+              {S.common.cancel}
+            </Button>
+            <Button variant="primary" disabled={signingIn} onClick={() => void submitSignIn()}>
+              {signingIn ? S.machines.signingIn : S.machines.signIn}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <Input
+            label={S.common.username}
+            value={signInUser}
+            onChange={(e) => setSignInUser(e.target.value)}
+          />
+          <PasswordInput
+            label={S.auth.password}
+            value={signInPassword}
+            onChange={(e) => setSignInPassword(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void submitSignIn();
+            }}
+          />
+          {signInError !== null && <p className={`text-sm ${toneInk.danger}`}>{signInError}</p>}
+        </div>
+      </Modal>
     </div>
   );
 }
