@@ -3,6 +3,7 @@
 - **Date:** 2026-08-23
 - **Type:** process
 - **Scope:** `server`
+- **PR:** [#425](https://github.com/Prism-Shadow/penguin-harness/pull/425)
 
 [中文版](2026-08-23-double-fault-upgrade-channel-is-covered.zh.md)
 
