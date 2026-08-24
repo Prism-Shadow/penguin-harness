@@ -302,6 +302,16 @@ describe("harness environment variables never reach a spawned command", () => {
     "PENGUIN_DESKTOP_TOKEN",
     "PENGUIN_PORT_FILE",
     "PENGUIN_SEED_ADMIN_PASSWORD",
+    "PENGUIN_HOME",
+    "PENGUIN_WEB_DB",
+    // A sample of the PENGUIN_* the prefix rule covers that no by-name list ever named: the
+    // resolved shell, the release feed, the UI language and the install location. Whether these
+    // specific ones are set at run time is beside the point — the rule is the prefix, and a new
+    // variable added next release has to be covered without anyone remembering this file.
+    "PENGUIN_SHELL",
+    "PENGUIN_UPDATE_FEED_URL",
+    "PENGUIN_LANG",
+    "PENGUIN_INSTALL_DIR",
   ] as const;
   const saved: Partial<Record<(typeof KEYS)[number], string | undefined>> = {};
 
@@ -318,6 +328,14 @@ describe("harness environment variables never reach a spawned command", () => {
     process.env.PENGUIN_DESKTOP_TOKEN = "secret-desktop-token";
     process.env.PENGUIN_PORT_FILE = "/tmp/port-file";
     process.env.PENGUIN_SEED_ADMIN_PASSWORD = "penguin-0000";
+    // The data roots this very process is serving from. Inherited, they aim an Agent-started
+    // harness at the running one's data — where the lock is already held, so it cannot start.
+    process.env.PENGUIN_HOME = "/home/someone/.penguin/data";
+    process.env.PENGUIN_WEB_DB = "/home/someone/.penguin/data/web.db";
+    process.env.PENGUIN_SHELL = "/opt/penguin/bin/bash";
+    process.env.PENGUIN_UPDATE_FEED_URL = "https://example.invalid/feed";
+    process.env.PENGUIN_LANG = "zh";
+    process.env.PENGUIN_INSTALL_DIR = "/opt/penguin";
   });
   afterEach(() => {
     for (const k of KEYS) {
@@ -379,14 +397,17 @@ describe("harness environment variables never reach a spawned command", () => {
   });
 
   it("the rest of the host environment still passes through", async () => {
-    process.env.PENGUIN_TEST_PASSTHROUGH = "kept";
+    // Deliberately not a PENGUIN_* name any more. This case asserts that stripping is narrow —
+    // that a variable the user's own project relies on survives — and a harness-prefixed name
+    // can no longer stand for that, since the prefix is itself the rule.
+    process.env.MY_PROJECT_TEST_PASSTHROUGH = "kept";
     try {
       const res = await runTool(env, "exec_command", {
-        cmd: `node -e "console.log('V=[' + (process.env.PENGUIN_TEST_PASSTHROUGH ?? '') + ']')"`,
+        cmd: `node -e "console.log('V=[' + (process.env.MY_PROJECT_TEST_PASSTHROUGH ?? '') + ']')"`,
       });
       expect(res.output).toContain("V=[kept]");
     } finally {
-      delete process.env.PENGUIN_TEST_PASSTHROUGH;
+      delete process.env.MY_PROJECT_TEST_PASSTHROUGH;
     }
   });
 
@@ -401,6 +422,43 @@ describe("harness environment variables never reach a spawned command", () => {
         cmd: `node -e "console.log('PORT=[' + (process.env.PORT ?? '') + ']')"`,
       });
       expect(res.output).toContain("PORT=[3000]");
+    } finally {
+      vaultEnv.dispose();
+    }
+  });
+
+  it("a PENGUIN_* nobody has invented yet is stripped, because the rule is the prefix", async () => {
+    // The point of matching on the prefix: this variable exists in no list, and a feature that
+    // adds one next release inherits the protection without anyone editing this file.
+    process.env.PENGUIN_SOME_FUTURE_SETTING = "leaked";
+    try {
+      const res = await runTool(env, "exec_command", {
+        cmd: `node -e "console.log('X=[' + (process.env.PENGUIN_SOME_FUTURE_SETTING ?? '') + ']')"`,
+      });
+      expect(res.output).toContain("X=[]");
+    } finally {
+      delete process.env.PENGUIN_SOME_FUTURE_SETTING;
+    }
+  });
+
+  it("the vault can put PENGUIN_HOME back, which is how a shared data root is asked for", async () => {
+    // Sharing a root with the running harness is a legitimate config decision; inheriting it from
+    // whichever process happens to be serving is not. The vault is where that decision is made.
+    // The value is deliberately not path-shaped. Git Bash's MSYS layer rewrites POSIX-looking
+    // *values* into Windows paths when it launches a native program, so a real root would come
+    // back as `C:/Program Files/Git/home/...` on ci-windows and say nothing about the vault. What
+    // is under test is that a stripped name is restored at all — the sibling PORT case above uses
+    // a plain "3000" for the same reason.
+    const vaultEnv = new Environment({
+      workspaceDir: tmp,
+      toolConfig: sessionConfig(),
+      vault: { PENGUIN_HOME: "vault-supplied-root" },
+    });
+    try {
+      const res = await runTool(vaultEnv, "exec_command", {
+        cmd: `node -e "console.log('PENGUIN_HOME=[' + (process.env.PENGUIN_HOME ?? '') + ']')"`,
+      });
+      expect(res.output).toContain("PENGUIN_HOME=[vault-supplied-root]");
     } finally {
       vaultEnv.dispose();
     }

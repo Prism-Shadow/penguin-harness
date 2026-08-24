@@ -40,7 +40,7 @@ import { Skeleton } from "../../components/ui/skeleton";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { SkillsTab } from "./skills-tab";
 import { MemoryTab } from "./memory-tab";
-import { kernelFieldLabel } from "./kernel-labels";
+import { kernelTabLabel } from "./kernel-labels";
 import { VaultTab } from "./vault-tab";
 import { SchedulesTab } from "./schedules-tab";
 import { McpServersSection } from "./mcp-servers-section";
@@ -551,7 +551,7 @@ function OverviewTab({
         {kernelResult !== null && kernelResult.kept.length > 0 && (
           <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
             {S.agent.kernelUpdateKeptIntro}
-            {kernelResult.kept.map(kernelFieldLabel).join(S.agent.kernelListSeparator)}
+            {kernelResult.kept.map(kernelTabLabel).join(S.agent.kernelListSeparator)}
           </p>
         )}
       </section>

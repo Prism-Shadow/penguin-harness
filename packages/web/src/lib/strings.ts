@@ -364,6 +364,18 @@ export const zh = {
     idHint: "2~64 位：小写字母开头，仅小写字母、数字与下划线；创建后不可修改",
     nameHint: "留空则使用 Agent id 作为名称",
     description: "描述",
+    /** Create dialog's skill picker: the library skills installed into the new Agent. */
+    createSkills: "技能",
+    createSkillsPlaceholder: "未选择技能",
+    createSkillsPicked: (n: number): string => `已选 ${n} 个技能`,
+    createSkillsHint: "创建时安装到该 Agent，之后可在其「技能」标签页增删",
+    createSkillsEmpty: "技能库暂无可安装的技能",
+    createDirSkills: "从项目目录导入技能",
+    createDirSkillsPick: "未选择目录",
+    createDirSkillsHint: "选择一个项目目录，读取其 .agents/skills 与 .claude/skills 下的技能",
+    createDirSkillsEmpty: "该目录下没有可安装的技能",
+    createDirSkillsFound: (n: number): string => `该目录下找到 ${n} 个技能`,
+    createDirSkillsClear: "清除已选目录",
     sessionCount: (n: number): string => `${n} 个 Session`,
     toolCount: (n: number): string => `${n} 个工具`,
     vaultKeyCount: (n: number): string => `${n} 个密钥`,
@@ -546,36 +558,13 @@ export const zh = {
     kernelLatest: "最新",
     kernelUpdateAction: "更新内核",
     kernelUpdateConfirmBody:
-      "将把未自定义的字段更新为当前内置默认值；自定义过的字段保持不变并在结果中列出。名称、描述、版本号与 MCP Server 不受影响。确认继续？",
+      "将把未自定义的设置页更新为当前内置默认值；改动过的设置页整页保持不变，并在结果中列出。名称、描述、版本号与 MCP Server 不受影响。确认继续？",
     kernelUpdateDone: (version: string, advanced: number): string =>
       advanced > 0
-        ? `内核已更新至 ${version}，${advanced} 个字段跟进新默认`
-        : `内核已更新至 ${version}，字段均已是当前默认或保持自定义`,
-    kernelUpdateKeptIntro: "以下字段因自定义被保留：",
+        ? `内核已更新至 ${version}，${advanced} 个设置页跟进新默认`
+        : `内核已更新至 ${version}，设置页均已是当前默认或保持自定义`,
+    kernelUpdateKeptIntro: "以下设置页因自定义被整体保留：",
     kernelListSeparator: "、",
-    /** Display name of a per-tool merge leaf (`tools.builtin.<name>`) in the kept/advanced lists. */
-    kernelFieldTool: (name: string): string => `工具 ${name}`,
-    /** Display names of the fixed kernel merge leaves (dotted config paths); unknown paths fall back to the raw path. */
-    kernelFields: {
-      system_prompt: "系统提示词模板",
-      max_turns: "单任务最大轮数",
-      "model.max_tokens": "模型最大输出 Token",
-      "model.thinking_level": "思考力度",
-      "model.timeoutMs": "请求超时",
-      "compaction.max_context_length": "压缩上下文阈值",
-      "compaction.max_session_turns": "压缩会话轮数阈值",
-      "compaction.mode": "压缩模式",
-      "compaction.prompt": "压缩提示词",
-      "memory.enabled": "记忆开关",
-      "memory.prompt": "记忆提示词",
-      "memory.workspace_prompt": "工作区记忆提示词",
-      "vault.enabled": "Vault 小节开关",
-      "vault.prompt": "Vault 提示词",
-      "skills.enabled": "技能小节开关",
-      "skills.prompt": "技能提示词",
-      "schedules.enabled": "定时任务小节开关",
-      "schedules.prompt": "定时任务提示词",
-    } as Record<string, string>,
   },
 
   models: {
@@ -811,6 +800,8 @@ export const zh = {
     emptyScope: "这个工作区还没有记忆——agent 会在会话中自行记下值得保留的信息",
     emptyUserScope: "还没有用户记忆——在对话里说「记住……」即可让 agent 保存",
     add: "添加",
+    /** Accessible name for the group header's add entry, which drops its visible label on a narrow row. */
+    addScopeLabel: (scope: string): string => `向${scope}添加`,
     addTitle: "添加记忆",
     addWhy: "记忆整理由 agent 在对话中完成：填写内容后打开新对话，由 agent 整理保存。",
     addContentLabel: "要记住的内容或来源",
@@ -973,6 +964,10 @@ export const zh = {
     quickInvokeText: (name: string): string => `使用 ${name} 技能`,
     /** Title on a disabled quick-invoke button: quick invoke opens a draft on the currently selected agent, so a skill it hasn't installed (e.g. preinstall:false skills like remote-claude-code) can't be quick-invoked until it's installed on that agent. */
     quickInvokeNeedsInstall: "先在当前 Agent 安装该技能后才能快捷调用",
+    /** Bulk controls of the multi-select skill panel; both act on the rows the search box currently leaves visible. */
+    selectAll: "全选",
+    selectNone: "全不选",
+    selectedCount: (n: number): string => `已选 ${n} 个`,
     manageInstall: "管理安装",
     manageInstallTitle: (name: string): string => `管理安装：${name}`,
     install: "安装",
@@ -1442,9 +1437,6 @@ Benchmark：
     /** Info-dropdown Session id row: the id itself is a click-to-copy button. */
     sessionIdLabel: "Session id",
     copySessionId: "复制 Session id",
-    /** Info-dropdown trace row: labels the Session's trace file, shown as its NAME (clicking deep-links to the Trace page; the button beside it copies the full path). */
-    traceFile: "轨迹文件",
-    copyTracePath: "复制完整路径",
     /** Info-dropdown list of background processes the conversation started, and its per-row actions (Stop on running rows, Remove on exited ones). */
     processList: "会话进程",
     processStop: "停止",

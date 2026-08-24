@@ -99,13 +99,14 @@ export function TracesPage() {
   const { byAgent, showCliSessions } = useSessions();
   const projectId = currentProject?.projectId ?? null;
   const tree = useTraceTree(projectId, showCliSessions);
-  // ?agentId= deep link (from the Agents page's "traces" entry point): forces agent
-  // grouping for this visit (the target must be a visible, expanded group) WITHOUT
-  // overwriting the stored preference; only the target Agent defaults to expanded.
+  // ?agentId= deep link: forces agent grouping for this visit (the target must be a visible,
+  // expanded group) WITHOUT overwriting the stored preference; only the target Agent defaults to
+  // expanded. Nothing in the app produces these URLs any more — they arrive from links shared
+  // while the Agents page still had a Trace entry point, so they have to keep resolving.
   const [searchParams] = useSearchParams();
   const focusAgentId = searchParams.get("agentId");
-  // ?sessionId= deep link (jumped to directly from the evaluation center's
-  // runs): auto-selects once the target Agent's Session list is ready.
+  // ?sessionId= deep link: auto-selects once the target Agent's Session list is ready. The
+  // evaluation center's Run rows used to produce these; they now show the Session id as text.
   const focusSessionId = searchParams.get("sessionId");
   // Grouping mode: the same persisted preference as the chat sidebar
   // (penguin.sidebarGroupMode) so the two surfaces always group alike, narrowed to the

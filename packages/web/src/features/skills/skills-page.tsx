@@ -271,7 +271,7 @@ export function SkillsPage() {
             </Button>
           </div>
         ) : groups === null ? (
-          <div className="mt-6 grid gap-2.5 sm:grid-cols-2">
+          <div className="mt-6 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
             {Array.from({ length: 4 }, (_, i) => (
               <SkeletonCard key={i} className="p-4">
                 <Skeleton className="h-4 w-32" />
@@ -324,9 +324,16 @@ export function SkillsPage() {
                   >
                     {/* inert while collapsed: cards at zero height shouldn't still be Tab-focusable or clickable. */}
                     <div className="overflow-hidden" inert={!open}>
-                      {/* Generously sized cards: 2 columns ≥sm, 1 column on narrow screens. */}
+                      {/* Generously sized cards: 2 columns ≥sm, 1 column on narrow screens.
+                          `grid-cols-1` is load-bearing, not redundant: with no declared track the
+                          single implicit column is `auto`-sized, and an auto track never goes below
+                          the widest card's min-content width — which `truncate` does not lower,
+                          since `nowrap` leaves no wrap opportunity and `overflow: hidden` only
+                          clips at paint time. A card then overflows the section's `overflow-hidden`
+                          and its action buttons land off-viewport, unreachable. Tailwind's
+                          `grid-cols-*` is `minmax(0, 1fr)`, which clamps that floor to 0. */}
                       <div
-                        className={`grid gap-2.5 p-2.5 transition-opacity duration-200 sm:grid-cols-2 ${open ? "opacity-100" : "opacity-0"}`}
+                        className={`grid grid-cols-1 gap-2.5 p-2.5 transition-opacity duration-200 sm:grid-cols-2 ${open ? "opacity-100" : "opacity-0"}`}
                       >
                         {group.skills.map((skill) => (
                           <SkillCard

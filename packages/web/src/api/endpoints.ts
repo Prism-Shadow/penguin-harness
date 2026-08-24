@@ -33,6 +33,7 @@ import type {
   CommandPolicyRuleDto,
   DefaultModelResponse,
   DefaultModelUpdateRequest,
+  DirectorySkillsResponse,
   DirListResponse,
   EndpointModelListRequest,
   EndpointModelListResponse,
@@ -453,6 +454,15 @@ export const listSessions = (
 export const listDirs = (projectId: string, path = "") =>
   apiFetch<DirListResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/dirs?path=${encodeURIComponent(path)}`,
+  );
+
+/**
+ * Skills a directory carries under `.agents/skills` / `.claude/skills`: what picking it at Agent
+ * creation would offer to install. `path` must be absolute.
+ */
+export const listDirectorySkills = (projectId: string, path: string) =>
+  apiFetch<DirectorySkillsResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/dir-skills?path=${encodeURIComponent(path)}`,
   );
 
 export const createSession = (projectId: string, agentId: string, body: SessionCreateRequest) =>

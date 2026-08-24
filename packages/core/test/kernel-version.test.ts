@@ -1,9 +1,10 @@
 /**
  * Agent config kernel versions: the pinned-hash guard (the mechanical definition of "the
- * defaults changed substantively, bump the kernel version"), the seeded pre-#257 generation's
- * reconstruction proof, and the smart-merge semantics of applyKernelUpdate (untouched old
- * defaults advance, customizations and unknown generations are kept, identity fields and
- * user data are never touched, YAML comments survive, the config is re-stamped).
+ * defaults changed substantively, bump the kernel version"), the record's internal
+ * consistency, the pre-#257 generation's reconstruction proof, and the tab-wise merge
+ * semantics of applyKernelUpdate (an untouched old default tab advances whole, a tab with any
+ * customization is kept whole, identity fields and user data are never touched, YAML comments
+ * survive, the config is re-stamped).
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -13,7 +14,10 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import {
   DEFAULT_AGENT_ID,
   DEFAULT_PROJECT_ID,
-  KERNEL_HASH_HISTORY,
+  KERNEL_DEFAULT_TAB_HASHES,
+  KERNEL_SUPERSEDED_TAB_HASHES,
+  KERNEL_TABS,
+  KERNEL_TAB_KEYS,
   KERNEL_VERSION,
   LEGACY_SKILLS_SECTION,
   LEGACY_VAULT_SECTION,
@@ -21,20 +25,17 @@ import {
   SKILLS_PLACEHOLDER,
   VAULT_PLACEHOLDER,
   applyKernelUpdate,
-  computeKernelHashes,
+  computeKernelTabHashes,
   defaultSystemConfig,
-  hashKernelValue,
   isKernelOutdated,
-  kernelLeafEntries,
+  kernelTabHash,
   loadOrInitAgentState,
   resetSystemConfigToDefaults,
   systemConfigPath,
+  type KernelSupersededTabHashes,
+  type KernelTab,
   type SystemConfig,
 } from "../src/index.js";
-
-/** The two seeded generations (see KERNEL_HASH_HISTORY's doc comment). */
-const PRE_TOGGLES_GENERATION = "2026-08-10";
-const TOGGLES_GENERATION = "2026-08-11";
 
 /** A mutable plain-object clone of a config, for seeding on-disk scenarios. */
 function mutableConfig(config: SystemConfig): Record<string, unknown> {
@@ -45,11 +46,10 @@ function mutableConfig(config: SystemConfig): Record<string, unknown> {
  * Reconstructs a pre-#257 (pre-toggles) shaped config from the current defaults: the frozen
  * LEGACY_* sections swapped back into the template in place of the section placeholders, no
  * `{{SCHEDULES}}` line, and no vault/skills/schedules config sections (the recipe
- * prompt-sections.test.ts proves byte-exact for the template). Leaves outside the swap — the
- * tool entries — carry the *current* defaults, so the smart-merge tests below treat them as
- * already-current; the seeding exercises the old-template migration paths regardless. The
- * reconstruction proof below therefore speaks only for the leaves whose default has not
- * drifted since the toggles generation (see there).
+ * prompt-sections.test.ts proves byte-exact for the template). Everything outside the swap —
+ * the runtime, tools and memory tabs — carries the *current* defaults, so the merge tests
+ * below treat those tabs as already-current; the seeding exercises the old-template migration
+ * paths regardless.
  */
 function preTogglesDefaultConfig(): SystemConfig {
   const current = defaultSystemConfig();
@@ -72,69 +72,78 @@ function preTogglesDefaultConfig(): SystemConfig {
   };
 }
 
-describe("kernel hash history (pinned-hash guard)", () => {
-  it("KERNEL_VERSION is a date and the newest history key", () => {
+describe("kernel tab hash record (pinned-hash guard)", () => {
+  it("KERNEL_VERSION is a date", () => {
     expect(KERNEL_VERSION).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    const keys = Object.keys(KERNEL_HASH_HISTORY);
-    expect(keys.length).toBeGreaterThanOrEqual(2);
-    for (const key of keys) expect(key).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    expect([...keys].sort().at(-1)).toBe(KERNEL_VERSION);
+  });
+
+  it("the record covers every tab and lists nothing that could never fire", () => {
+    expect(Object.keys(KERNEL_DEFAULT_TAB_HASHES).sort()).toEqual([...KERNEL_TAB_KEYS].sort());
+    for (const [tab, hashes] of Object.entries(KERNEL_SUPERSEDED_TAB_HASHES)) {
+      expect(KERNEL_TAB_KEYS, `${tab} is not a kernel tab`).toContain(tab);
+      expect(hashes.length, tab).toBeGreaterThan(0);
+      expect(new Set(hashes).size, `${tab} repeats a superseded hash`).toBe(hashes.length);
+      // A kernel update short-circuits on the current default before consulting the record,
+      // so the current hash sitting in `superseded` would be dead weight.
+      expect(hashes, `${tab} lists its own current default`).not.toContain(
+        KERNEL_DEFAULT_TAB_HASHES[tab as KernelTab],
+      );
+    }
   });
 
   // THE guard: this failing means the built-in defaults changed substantively without a
   // kernel bump (or vice versa). It is the mechanical definition of "substantive change".
-  it("the current defaults hash exactly to the latest history entry — bump KERNEL_VERSION when this fails", () => {
-    const recomputed = computeKernelHashes(defaultSystemConfig());
-    const pinned = KERNEL_HASH_HISTORY[KERNEL_VERSION] ?? {};
-    const paths = new Set([...Object.keys(recomputed), ...Object.keys(pinned)]);
-    const mismatches = [...paths].filter((p) => recomputed[p] !== pinned[p]).sort();
+  it("the current defaults hash exactly to KERNEL_DEFAULT_TAB_HASHES — advance the kernel when this fails", () => {
+    const recomputed = computeKernelTabHashes(defaultSystemConfig());
+    const moved = KERNEL_TAB_KEYS.filter(
+      (tab) => recomputed[tab] !== KERNEL_DEFAULT_TAB_HASHES[tab],
+    );
     expect(
-      mismatches,
-      "The built-in default config changed substantively (the listed leaf paths no longer " +
-        "hash to the latest KERNEL_HASH_HISTORY entry). Advance the kernel: set " +
-        "KERNEL_VERSION in core/src/state/kernel-history.ts to today's date and append a new " +
-        "history entry with the recomputed hashes (computeKernelHashes(defaultSystemConfig())). " +
-        "Several changes on the same day may revise that day's entry in place instead; never " +
-        "edit an older generation's entry — those are frozen.",
+      moved,
+      "The built-in default config changed substantively (the listed settings tabs no longer " +
+        "hash to KERNEL_DEFAULT_TAB_HASHES). Advance the kernel in " +
+        "core/src/state/kernel-history.ts: set KERNEL_VERSION to today's date (several " +
+        "changes on the same day may reuse it), then, for each tab listed, append its OLD " +
+        "KERNEL_DEFAULT_TAB_HASHES hash to the end of KERNEL_SUPERSEDED_TAB_HASHES[tab] " +
+        "(creating the entry if this is its first change; never edit the hashes already " +
+        "there, they are frozen) and write the recomputed hash in — take it from " +
+        "computeKernelTabHashes(defaultSystemConfig()). Finally note what moved in the " +
+        "generation list above KERNEL_DEFAULT_TAB_HASHES.",
     ).toEqual([]);
   });
 
-  // Keeps the oldest seeded generation honest: its pinned hashes are the only record of what
-  // a pre-#257 `system_config.yaml` actually contains, and nothing else can catch a typo in
-  // them. The recipe reads the *current* defaults, so it can only speak for leaves whose
-  // default has not drifted since the toggles generation — chiefly `system_prompt`, the leaf
-  // the LEGACY_* swap is actually about. Retirement is therefore per leaf and automatic: a
-  // generation that changes some other leaf (e.g. run_subagent's thinking_level in
-  // "2026-08-18") drops just that leaf and leaves the proof standing.
-  it("the pre-toggles generation's pinned hashes equal the LEGACY_* reconstruction", () => {
-    const preToggles = KERNEL_HASH_HISTORY[PRE_TOGGLES_GENERATION]!;
-    const toggles = KERNEL_HASH_HISTORY[TOGGLES_GENERATION]!;
-    const current = computeKernelHashes(defaultSystemConfig());
-    const reconstructed = computeKernelHashes(preTogglesDefaultConfig());
-    const reconstructible = Object.keys(preToggles).filter((p) => current[p] === toggles[p]);
-    // If the template itself ever moves, this proof has nothing left to say and must be
-    // re-anchored (or retired) deliberately rather than quietly passing on leftovers.
-    expect(reconstructible).toContain("system_prompt");
-    expect(Object.fromEntries(reconstructible.map((p) => [p, reconstructed[p]]))).toEqual(
-      Object.fromEntries(reconstructible.map((p) => [p, preToggles[p]])),
-    );
-    // The recipe's other half: an era config carries no vault/skills/schedules sections at all.
-    expect(Object.keys(reconstructed).filter((p) => /^(vault|skills|schedules)\./.test(p))).toEqual(
-      [],
-    );
+  // Keeps the oldest recorded generation honest: its pinned hash is the only record of what a
+  // pre-#257 `system_config.yaml` actually contains, and nothing else can catch a typo in it.
+  // The recipe reads the *current* template, so the proof stands only while `system_prompt`
+  // has not drifted since the toggles generation. A change to it moves the prompt tab, fails
+  // this test, and the proof must then be re-anchored (or retired) deliberately rather than
+  // quietly passing on leftovers.
+  it("the pre-toggles prompt tab equals the LEGACY_* reconstruction", () => {
+    const reconstructed = preTogglesDefaultConfig();
+    expect(kernelTabHash(reconstructed, "prompt")).toBe(KERNEL_SUPERSEDED_TAB_HASHES.prompt?.[0]);
+    // The recipe's other half: an era config carries no vault/skills/schedules sections at all,
+    // which is why those tabs have no superseded hash — they are materialized on absence.
+    for (const tab of ["vault", "skills", "schedules"] as const) {
+      expect(kernelTabHash(reconstructed, tab), tab).toBeNull();
+    }
   });
 
-  it("excludes identity fields and mcpServers from the managed leaves", () => {
-    const paths = kernelLeafEntries({
-      ...defaultSystemConfig(),
-      name: "n",
-      description: "d",
-      tools: { builtin: [], mcpServers: [{ name: "m", config: {} }] },
-    }).map((leaf) => leaf.path);
-    for (const excluded of ["name", "description", "version", "kernel_version"]) {
-      expect(paths).not.toContain(excluded);
+  it("no kernel tab owns identity fields, the State version or MCP servers", () => {
+    const owned = KERNEL_TAB_KEYS.flatMap((tab) => [...KERNEL_TABS[tab]]);
+    for (const excluded of ["name", "description", "version", "kernel_version", "tools"]) {
+      expect(owned).not.toContain(excluded);
     }
-    expect(paths.some((p) => p.startsWith("tools.mcpServers"))).toBe(false);
+    // And writing user data into them moves no tab hash, so none of it can be clobbered.
+    const defaults = defaultSystemConfig();
+    expect(
+      computeKernelTabHashes({
+        ...defaults,
+        name: "n",
+        description: "d",
+        version: 7,
+        tools: { ...defaults.tools, mcpServers: [{ name: "m", config: {} }] },
+      }),
+    ).toEqual(computeKernelTabHashes(defaults));
   });
 });
 
@@ -191,15 +200,7 @@ describe("applyKernelUpdate", () => {
     await seedConfig(mutableConfig(preTogglesDefaultConfig()));
     const result = await update();
     expect(result.kept).toEqual([]);
-    expect(result.advanced).toEqual([
-      "system_prompt",
-      "vault.enabled",
-      "vault.prompt",
-      "skills.enabled",
-      "skills.prompt",
-      "schedules.enabled",
-      "schedules.prompt",
-    ]);
+    expect(result.advanced).toEqual(["prompt", "skills", "vault", "schedules"]);
     const defaults = defaultSystemConfig();
     const written = await readConfig();
     expect(written.system_prompt).toBe(defaults.system_prompt);
@@ -211,34 +212,40 @@ describe("applyKernelUpdate", () => {
     expect(await update()).toEqual({ advanced: [], kept: [], kernelVersion: KERNEL_VERSION });
   });
 
-  it("keeps customized fields (reported) while still stamping", async () => {
+  it("keeps a customized tab whole (reported) while its untouched siblings advance", async () => {
     const config = mutableConfig(preTogglesDefaultConfig());
     config.system_prompt = "MY CUSTOM PROMPT";
     (config.memory as Record<string, unknown>).prompt = "my memory prompt";
     await seedConfig(config);
     const result = await update();
-    expect(result.kept).toEqual(["system_prompt", "memory.prompt"]);
+    expect(result.kept).toEqual(["prompt", "memory"]);
+    expect(result.advanced).toEqual(["skills", "vault", "schedules"]);
     const written = await readConfig();
     expect(written.system_prompt).toBe("MY CUSTOM PROMPT");
     expect(written.memory?.prompt).toBe("my memory prompt");
-    // Untouched siblings of a kept leaf still advance independently.
+    // The rest of the kept tab is kept with it — nothing inside it is rewritten.
+    expect(written.memory?.workspace_prompt).toBe(
+      preTogglesDefaultConfig().memory?.workspace_prompt,
+    );
     expect(written.vault).toEqual(defaultSystemConfig().vault);
     expect(written.kernel_version).toBe(KERNEL_VERSION);
   });
 
-  it("keeps values from unknown (unseeded) generations conservatively", async () => {
+  it("keeps a tab from an unrecorded generation conservatively, missing fields included", async () => {
     const config = mutableConfig(defaultSystemConfig());
     delete config.kernel_version;
-    // An ancient default wording we cannot reconstruct: it matches no recorded hash.
+    // An ancient compaction wording we cannot reconstruct, with the rest of the section gone:
+    // the runtime tab matches no recorded hash, so it is kept exactly as written.
     config.compaction = { mode: "summarize", prompt: "Ancient compaction wording." };
     await seedConfig(config);
     const result = await update();
-    expect(result.kept).toContain("compaction.prompt");
-    // The section's *missing* leaves are materialized to the defaults alongside.
-    expect(result.advanced).toContain("compaction.max_context_length");
+    expect(result.kept).toEqual(["runtime"]);
+    expect(result.advanced).toEqual([]);
     const written = await readConfig();
     expect(written.compaction?.prompt).toBe("Ancient compaction wording.");
-    expect(written.compaction?.max_context_length).toBe(256000);
+    // The tab is kept whole: its absent fields stay absent and keep falling back to the
+    // built-in defaults at runtime, rather than being materialized field by field.
+    expect(written.compaction?.max_context_length).toBeUndefined();
   });
 
   it("never touches name, description, version or mcpServers", async () => {
@@ -250,9 +257,7 @@ describe("applyKernelUpdate", () => {
       { name: "custom-mcp", config: { command: "custom-server" } },
     ];
     await seedConfig(config);
-    const result = await update();
-    expect(result.advanced).not.toContain("name");
-    expect(result.kept).not.toContain("name");
+    await update();
     const written = await readConfig();
     expect(written.name).toBe("Custom Name");
     expect(written.description).toBe("Custom description");
@@ -262,11 +267,10 @@ describe("applyKernelUpdate", () => {
     ]);
   });
 
-  it("merges tools.builtin per tool name: the edited one is kept, user-added entries survive, removals stay removed", async () => {
+  it("keeps the whole tools tab once any tool is edited, added or removed", async () => {
     const config = mutableConfig(defaultSystemConfig());
     delete config.kernel_version;
     const tools = config.tools as { builtin: Array<Record<string, unknown>> };
-    // Customize one default tool, remove another, append a user-defined one.
     const readFile = tools.builtin.find((t) => t.name === "read_file")!;
     readFile.description = "my own description";
     tools.builtin = tools.builtin.filter((t) => t.name !== "edit_file");
@@ -274,51 +278,38 @@ describe("applyKernelUpdate", () => {
     await seedConfig(config);
 
     const result = await update();
-    expect(result.kept).toEqual(["tools.builtin.read_file", "tools.builtin.edit_file"]);
+    expect(result.kept).toEqual(["tools"]);
     expect(result.advanced).toEqual([]);
 
     const written = await readConfig();
     const names = (written.tools?.builtin ?? []).map((t) => t.name);
     expect(names).not.toContain("edit_file"); // a deliberate removal is preserved
-    expect(names).toContain("my_tool"); // user-added entries survive, unreported
-    const writtenReadFile = written.tools?.builtin?.find((t) => t.name === "read_file");
-    expect(writtenReadFile?.description).toBe("my own description");
-    // The untouched rest still equals the defaults.
-    const writtenExec = written.tools?.builtin?.find((t) => t.name === "exec_command");
-    expect(writtenExec).toEqual(
-      defaultSystemConfig().tools?.builtin?.find((t) => t.name === "exec_command"),
+    expect(names).toContain("my_tool"); // user-added entries survive
+    expect(written.tools?.builtin?.find((t) => t.name === "read_file")?.description).toBe(
+      "my own description",
     );
   });
 
-  it("advances a stored tool entry that matches an older generation's hash", async () => {
-    // The path every existing config takes when a tool's default schema changes (the first
-    // such bump is run_subagent's thinking_level, "2026-08-18"): the stored entry is not the
-    // current default, but it hash-matches a recorded generation, so it is an untouched old
-    // default and must be replaced — not kept as if the user had edited it. Driven through
-    // the history seam so the test cannot rot when the real generations move on.
-    const defaults = defaultSystemConfig();
-    const current = computeKernelHashes(defaults);
-    const currentEntry = defaults.tools?.builtin?.find((t) => t.name === "run_subagent");
-    const oldEntry = { ...currentEntry!, description: "the previous generation's wording" };
-    const history = {
-      "2000-01-01": { ...current, "tools.builtin.run_subagent": hashKernelValue(oldEntry) },
-      [KERNEL_VERSION]: current,
-    };
-    const config = mutableConfig(defaults);
-    config.kernel_version = "2000-01-01";
+  it("advances a tools tab that matches a superseded default, bringing tools added since", async () => {
+    // The path every existing config takes when the default toolset changes: the stored tab is
+    // not the current default, but it hash-matches a superseded one, so it is an untouched old
+    // default and the whole tab is rewritten — which is also how a tool added by a later
+    // kernel reaches the config. Driven through the seam so the test cannot rot when the real
+    // record moves on.
+    const config = mutableConfig(defaultSystemConfig());
+    delete config.kernel_version;
     const tools = config.tools as { builtin: Array<Record<string, unknown>> };
-    tools.builtin = tools.builtin.map((t) =>
-      t.name === "run_subagent" ? (oldEntry as unknown as Record<string, unknown>) : t,
-    );
+    tools.builtin = tools.builtin.slice(0, -1); // an old default, missing a tool added since
+    const supersededTabs: KernelSupersededTabHashes = { tools: [kernelTabHash(config, "tools")!] };
     await seedConfig(config);
 
     const result = await applyKernelUpdate(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID, {
-      history,
+      supersededTabs,
     });
-    expect(result.advanced).toEqual(["tools.builtin.run_subagent"]);
+    expect(result.advanced).toEqual(["tools"]);
     expect(result.kept).toEqual([]);
     const written = await readConfig();
-    expect(written.tools?.builtin?.find((t) => t.name === "run_subagent")).toEqual(currentEntry);
+    expect(written.tools?.builtin).toEqual(defaultSystemConfig().tools?.builtin);
     expect(written.kernel_version).toBe(KERNEL_VERSION);
   });
 
@@ -328,55 +319,29 @@ describe("applyKernelUpdate", () => {
     delete config.tools;
     await seedConfig(config);
     const result = await update();
-    const defaults = defaultSystemConfig();
-    expect(result.advanced).toEqual(
-      (defaults.tools?.builtin ?? []).map((t) => `tools.builtin.${t.name}`),
-    );
-    expect((await readConfig()).tools?.builtin).toEqual(defaults.tools?.builtin);
-  });
-
-  it("appends a tool only when it is new in the latest generation (history seam)", async () => {
-    const defaults = defaultSystemConfig();
-    const current = computeKernelHashes(defaults);
-    // A fabricated older generation that already knew read_file but never edit_file: a
-    // present array missing read_file is then a deliberate removal (kept), while the same
-    // absence of edit_file means the config simply predates the tool (appended).
-    const history = {
-      "2000-01-01": { "tools.builtin.read_file": current["tools.builtin.read_file"]! },
-      [KERNEL_VERSION]: current,
-    };
-    const config = mutableConfig(defaults);
-    delete config.kernel_version;
-    const tools = config.tools as { builtin: Array<Record<string, unknown>> };
-    tools.builtin = tools.builtin.filter((t) => t.name !== "read_file" && t.name !== "edit_file");
-    await seedConfig(config);
-
-    const result = await applyKernelUpdate(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID, {
-      history,
-    });
-    expect(result.kept).toContain("tools.builtin.read_file");
-    expect(result.advanced).toContain("tools.builtin.edit_file");
-    const names = ((await readConfig()).tools?.builtin ?? []).map((t) => t.name);
-    expect(names).not.toContain("read_file");
-    expect(names).toContain("edit_file");
+    expect(result.advanced).toEqual(["tools"]);
+    expect((await readConfig()).tools?.builtin).toEqual(defaultSystemConfig().tools?.builtin);
   });
 
   it("tolerates dangling/invalid section keys (a hand-edited `tools:` with no value parses as null)", async () => {
     await loadOrInitAgentState({ root });
     await fs.writeFile(
       configPath(),
-      // model is an invalid scalar, tools a dangling key: both sections read as missing and
-      // must be materialized to the defaults instead of crashing setIn.
+      // `tools` is a dangling key: the whole tab reads absent and must be materialized instead
+      // of crashing setIn. `model: 3` leaves the runtime tab present but matching nothing, so
+      // that tab is kept exactly as the user left it.
       "system_prompt: custom\nmodel: 3\ntools:\n",
       "utf8",
     );
     const result = await update();
-    expect(result.kept).toEqual(["system_prompt"]);
+    expect(result.kept).toEqual(["prompt", "runtime"]);
+    expect(result.advanced).toEqual(["tools", "skills", "memory", "vault", "schedules"]);
     const defaults = defaultSystemConfig();
     const written = await readConfig();
-    expect(written.model).toEqual(defaults.model);
     expect(written.tools?.builtin).toEqual(defaults.tools?.builtin);
+    expect(written.memory).toEqual(defaults.memory);
     expect(written.system_prompt).toBe("custom");
+    expect(written.model as unknown).toBe(3);
     expect(written.kernel_version).toBe(KERNEL_VERSION);
   });
 
@@ -389,8 +354,8 @@ describe("applyKernelUpdate", () => {
       "utf8",
     );
     const result = await update();
-    // max_turns 5 is a customization (no generation ever defaulted to 5) — kept.
-    expect(result.kept).toEqual(["max_turns"]);
+    // max_turns 5 is a customization (no generation ever defaulted to 5) — its tab is kept.
+    expect(result.kept).toEqual(["runtime"]);
     const after = await fs.readFile(configPath(), "utf8");
     expect(after).toContain("# my precious comment");
     expect((await readConfig()).max_turns).toBe(5);

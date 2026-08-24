@@ -16,8 +16,7 @@ import path from "node:path";
 import { Hono } from "hono";
 import type { DirListResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import { HttpError } from "../errors.js";
-import { requireValidId } from "../validate.js";
+import { requireProjectDir, requireValidId } from "../validate.js";
 import type { AppDeps } from "../../app.js";
 
 export function dirsRoutes(deps: AppDeps): Hono<AppEnv> {
@@ -29,25 +28,7 @@ export function dirsRoutes(deps: AppDeps): Hono<AppEnv> {
 
     // Default starting point: home directory; an explicit path must be absolute (the frontend always sends back the realpath result).
     const raw = c.req.query("path");
-    const target = raw && raw.trim() ? raw.trim() : os.homedir();
-    if (!path.isAbsolute(target)) {
-      throw new HttpError(400, "dir_not_absolute", "Directory must be an absolute path.");
-    }
-
-    let real: string;
-    try {
-      real = await fs.realpath(target);
-    } catch {
-      throw new HttpError(
-        404,
-        "dir_not_found",
-        `Directory does not exist or is inaccessible: ${target}.`,
-      );
-    }
-    const stat = await fs.stat(real);
-    if (!stat.isDirectory()) {
-      throw new HttpError(400, "not_a_dir", "Not a directory.");
-    }
+    const real = await requireProjectDir(raw && raw.trim() ? raw.trim() : os.homedir());
 
     let dirents: import("node:fs").Dirent[] = [];
     try {

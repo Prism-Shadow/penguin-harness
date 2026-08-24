@@ -24,49 +24,31 @@ import {
   skillsDir,
 } from "@prismshadow/penguin-core";
 import {
-  librarySkill,
   loadSkillGroups,
   parseSkillFrontmatter,
   SKILL_NAME_PATTERN,
 } from "@prismshadow/penguin-skills";
-import type { LibrarySkill, SkillMetadata } from "@prismshadow/penguin-skills";
-import type {
-  AgentSkillsResponse,
-  SkillLibraryResponse,
-  SkillMetadataItem,
-} from "../../api/types.js";
+import type { AgentSkillsResponse, SkillLibraryResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { AppDeps } from "../../app.js";
 import { HttpError } from "../errors.js";
-import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
+import {
+  badRequest,
+  optionalStringArray,
+  readJson,
+  requireString,
+  requireValidId,
+} from "../validate.js";
+import { resolveLibrarySkills, toMetadataItem } from "../../services/skill-library.js";
+import {
+  MAX_ARCHIVE_FILES,
+  MAX_FILE_BYTES,
+  MAX_TOTAL_BYTES,
+  skillTooLarge,
+} from "../../services/skill-import-limits.js";
 
 /** Decoded zip cap: aligned with the Agent snapshot import (stays within the 20MB body limit after base64). */
 const MAX_ARCHIVE_BYTES = 14 * 1024 * 1024;
-/** Uncompressed limits (guard against zip bombs): entry count / per-file / total. */
-const MAX_ARCHIVE_FILES = 200;
-const MAX_FILE_BYTES = 5 * 1024 * 1024;
-const MAX_TOTAL_BYTES = 20 * 1024 * 1024;
-
-/**
- * Strips the content off a LibrarySkill: the API only sends metadata; the full body is
- * written to disk on install and read by the model on demand. The optional short
- * description (shortDescription(Zh)) and custom icon (icon.svg source) are conditionally
- * passed through — both the library side (LibrarySkill) and the installed side (core
- * InstalledSkill) carry these fields.
- */
-function toMetadataItem(skill: SkillMetadata & { icon?: string }): SkillMetadataItem {
-  return {
-    name: skill.name,
-    description: skill.description,
-    ...(skill.shortDescription !== undefined ? { shortDescription: skill.shortDescription } : {}),
-    ...(skill.shortDescriptionZh !== undefined
-      ? { shortDescriptionZh: skill.shortDescriptionZh }
-      : {}),
-    ...(skill.icon !== undefined ? { icon: skill.icon } : {}),
-    version: skill.version,
-    updated: skill.updated,
-  };
-}
 
 /** Library listing response: the files are the source of truth — read and parse the library directory fresh on every request (files are small, requests infrequent, no caching needed). */
 function libraryResponse(): SkillLibraryResponse {
@@ -187,11 +169,7 @@ async function collectSkillArchive(dir: string, name: string): Promise<Record<st
         data.byteLength > MAX_FILE_BYTES ||
         total > MAX_TOTAL_BYTES
       ) {
-        throw new HttpError(
-          413,
-          "skill_too_large",
-          `Skill directory exceeds the archive limits (${MAX_ARCHIVE_FILES} files, 5MB per file, 20MB total).`,
-        );
+        throw skillTooLarge();
       }
       out[relChild] = data;
     }
@@ -221,15 +199,11 @@ function explicitSkillVersion(skillMd: string): number | null {
 
 /** Validate the POST request body: names must be a non-empty array of strings. */
 function parseInstallNames(body: Record<string, unknown>): string[] {
-  if (!Array.isArray(body.names) || body.names.length === 0) {
-    throw badRequest("names must be a non-empty array.");
-  }
-  return body.names.map((v, i) => {
-    if (typeof v !== "string" || v.length === 0) {
-      throw badRequest(`names[${i}] must be a non-empty string.`);
-    }
-    return v;
-  });
+  // The shape and the per-entry check are the shared validator's; install additionally requires
+  // at least one name, unlike the optional field on Agent creation.
+  const names = optionalStringArray(body, "names") ?? [];
+  if (names.length === 0) throw badRequest("names must be a non-empty array.");
+  return names;
 }
 
 /** GET /api/skills: Skill library groups & metadata (any logged-in user; no Project check). */
@@ -281,11 +255,7 @@ export function agentSkillsRoutes(deps: AppDeps): Hono<AppEnv> {
     await deps.agentConfigService.requireExists(projectId, agentId);
     const names = parseInstallNames(await readJson(c));
     // Verify all names up front before writing anything: if any name isn't in the library, reject the whole request rather than leaving a half-installed state.
-    const skills: LibrarySkill[] = names.map((name) => {
-      const skill = librarySkill(name);
-      if (!skill) throw new HttpError(404, "unknown_skill", `Skill is not in the library: ${name}`);
-      return skill;
-    });
+    const skills = resolveLibrarySkills(names);
     for (const skill of skills) {
       await installSkill(deps.config.root, projectId, agentId, skill);
     }

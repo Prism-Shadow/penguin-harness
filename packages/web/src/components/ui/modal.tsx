@@ -11,7 +11,7 @@
  * portaling, every modal is a sibling child of body and stacks naturally in DOM
  * order.
  */
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
 import { CloseButton } from "./icons";
@@ -71,18 +71,26 @@ export function Modal({
   headerless,
   bare,
 }: ModalProps) {
+  // Latest-callback ref, so the effect below re-runs ONLY on open/close: call sites pass an
+  // inline arrow for onClose, and re-running on its identity would pop and re-push this
+  // dialog's esc-layer on every render — jumping it back above a menu opened inside it, so
+  // Escape would close the whole dialog instead of just the menu. Dropdown keeps the same
+  // guard for the same reason.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     if (!open) return;
     const id = pushEscLayer();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && isTopEscLayer(id)) onClose();
+      if (e.key === "Escape" && isTopEscLayer(id)) onCloseRef.current();
     };
     window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("keydown", onKey);
       popEscLayer(id);
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
   return createPortal(

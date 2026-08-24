@@ -96,9 +96,10 @@ describe("POST agent config kernel-update", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as AgentKernelUpdateResponse;
     expect(body.kernelVersion).toBe(KERNEL_VERSION);
-    expect(body.advanced).toContain("system_prompt");
-    expect(body.advanced).toContain("vault.prompt");
-    expect(body.kept).toEqual(["memory.prompt"]);
+    // Tab-wise: the prompt tab hash-matches the pre-toggles default and advances, the three
+    // missing sections are materialized, and the edited memory tab is kept whole.
+    expect(body.advanced).toEqual(["prompt", "skills", "vault", "schedules"]);
+    expect(body.kept).toEqual(["memory"]);
 
     // Persisted: the template advanced, the customization survived, the stamp is current.
     const after = (await (await alice.get(configUrl())).json()) as AgentConfigResponse;
