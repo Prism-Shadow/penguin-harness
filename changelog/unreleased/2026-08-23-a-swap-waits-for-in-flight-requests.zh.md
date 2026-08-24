@@ -3,6 +3,7 @@
 - **Date:** 2026-08-23
 - **Type:** fix
 - **Scope:** `server`
+- **PR:** [#424](https://github.com/Prism-Shadow/penguin-harness/pull/424)
 
 [English](2026-08-23-a-swap-waits-for-in-flight-requests.md)
 
