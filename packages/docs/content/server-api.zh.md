@@ -122,6 +122,8 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 `installed` 是**本服务端**最近一次在该机器上完成的安装——`{version, at}`，从未安装过则为 `null`。它持久化在数据根目录下，因此能跨重启、跨热推、跨「在别的机器上安装」而保留；它记录的是本端做过什么，而非对远端的实地探查，所以被手工清空的远端仍显示为已安装，直到下一次安装将其修正。安装失败不写入任何记录。
 
+`machineId` 是该机器**自身**的 id——由运行在那里的服务端铸造的 UUID（`<数据根目录>/machine-id`），跨改名、改别名与重装都保持不变，是所有存储引用应当指向的东西。该机器上的服务端尚未启动过时为 `null`，因为还没有任何东西铸造过它；它与 `status` 在同一次往返中获取，并记录在安装记录旁。同一主机的两个别名会报告相同的 `machineId`。
+
 `local` 标记服务端自身所在的机器。它始终出现在列表中、始终是已安装、始终在运行——它就是正在应答的那一个——并且永远不是安装目标：对它 `POST …/install` 返回 `409` `self_install`。
 
 `status` 为 `{state, checkedAt, port?, detail?}`，`state` 取 `running` / `stopped` / `unreachable` 之一；该机器尚未被探测时为 `null`。没有单独的 ssh 状态：ssh 是传输方式，因此连不上的机器就是 `unreachable`，并在 `detail` 中保留 OpenSSH 自己的原话。`GET` 从不发起探测——它只报告最近一次的答案——因为一次探测是每台机器一次 ssh 往返，而列表本身只是配置文件的文本。真正花费这些往返的是 `POST /api/machines/probe`，且只针对安装过的机器。

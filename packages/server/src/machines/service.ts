@@ -30,6 +30,7 @@ import { installOnRemote, resolvePushPlan } from "./install-server.js";
 import { parseInstallRecords, withInstallRecord } from "./installs.js";
 import type { InstallRecord } from "./installs.js";
 import { probeServerState } from "./server-state.js";
+import { readOrCreateMachineId } from "./machine-id.js";
 
 /** Why a start was refused before any ssh ran. */
 export type InstallRefusal = "busy" | "unknown-machine" | "unresolvable" | "no-image" | "self";
@@ -118,6 +119,9 @@ export class MachinesService {
     return {
       id: LOCAL_MACHINE_ID,
       alias: os.hostname(),
+      // Our own id comes from the same file a remote's does — this server IS the server
+      // that mints it here, so there is nothing to probe.
+      machineId: readOrCreateMachineId(this.dataRoot),
       installed: { version: VERSION, at: lock?.startedAt ?? this.#effects.now().toISOString() },
       local: true,
       status: {
@@ -137,10 +141,12 @@ export class MachinesService {
     const records = parseInstallRecords(this.#readRecords());
     const remotes = this.#effects.listAliases().map((alias): MachineInfo => {
       const id = `ssh:${alias}`;
+      const record = records[id] ?? null;
       return {
         id,
         alias,
-        installed: records[id] ?? null,
+        machineId: record?.machineId ?? null,
+        installed: record,
         local: false,
         status: this.#statuses.get(id) ?? null,
       };
@@ -173,16 +179,24 @@ export class MachinesService {
           });
           continue;
         }
-        const state = await this.#effects.probe({
+        const probe = await this.#effects.probe({
           alias: machine.alias,
           user: resolved.settings.user,
         });
+        const state = probe.state;
         this.#statuses.set(machine.id, {
           state: state.kind,
           checkedAt,
           ...(state.kind === "running" ? { port: state.port } : {}),
           ...(state.kind === "unreachable" ? { detail: state.detail } : {}),
         });
+        // A machine that just told us who it is: write it down, so the identity outlives
+        // this process without another round trip. An id NEVER changes for a machine, so a
+        // probe that answers a different one means a different machine behind that alias —
+        // the alias was repointed — and the newer answer is the true one.
+        if (probe.machineId !== null && machine.installed !== null) {
+          this.#remember(machine.id, { ...machine.installed, machineId: probe.machineId });
+        }
       }
     });
     await Promise.all(workers);

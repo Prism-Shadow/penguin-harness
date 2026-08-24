@@ -3035,6 +3035,15 @@ export interface MachineInfo {
    */
   installed: { version: string; at: string } | null;
   /**
+   * The machine's OWN id — a UUID minted by the server that runs there, stable across
+   * renames, re-aliasing and reinstalls. Null until a server has started on that machine,
+   * since nothing has minted one yet.
+   *
+   * This is what anything stored should point at; `id` above is an address (`ssh:<alias>`),
+   * and `alias` is what people read. Two aliases for one host share a `machineId`.
+   */
+  machineId: string | null;
+  /**
    * True for the machine this server itself runs on. It is listed because "where is this
    * program running" is the same question the rest of the page answers, and it is the one
    * entry that is always installed and always up — it is the thing serving the request.

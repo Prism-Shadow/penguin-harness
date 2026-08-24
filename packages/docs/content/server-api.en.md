@@ -122,6 +122,8 @@ Admin only on a personal server as much as a multi-user one: the install spawns 
 
 `installed` is the last install THIS server carried out on that machine — `{version, at}`, or `null` when it never has. It is persisted under the data root, so it survives a restart, a hot push, and installing on some other machine; a record of what was done rather than a survey of the far side, so a machine wiped by hand still reads as installed until the next install corrects it. A failed install records nothing.
 
+`machineId` is that machine's OWN id — a UUID minted by the server running there (`<data root>/machine-id`), stable across renames, re-aliasing and reinstalls, and the thing stored references should point at. It is `null` until a server has started on that machine, since nothing has minted one yet; it is learned on the same round trip as `status` and remembered beside the install record. Two aliases for one host report the same `machineId`.
+
 `local` marks the machine this server runs on. It is always listed, always installed, always running — it is the thing answering — and is never an install target: `POST …/install` on it is `409` `self_install`.
 
 `status` is `{state, checkedAt, port?, detail?}` with `state` one of `running` / `stopped` / `unreachable`, or `null` when that machine has not been probed. There is no separate ssh status: ssh is the transport, so a machine it cannot reach is `unreachable` and carries OpenSSH's own message in `detail`. `GET` never probes — it reports the last answer — because a probe is an ssh round trip per machine while the list itself is only the config's text. `POST /api/machines/probe` is what spends them, and only on machines something was installed on.

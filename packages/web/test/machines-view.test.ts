@@ -27,6 +27,7 @@ const INSTALLED = { version: "9.9.9", at: "2026-08-24T12:00:00.000Z" };
 const fresh = (alias: string): MachineInfo => ({
   id: `ssh:${alias}`,
   alias,
+  machineId: null,
   installed: null,
   local: false,
   status: null,
@@ -36,6 +37,7 @@ const carrying = (alias: string): MachineInfo => ({ ...fresh(alias), installed: 
 const here = (): MachineInfo => ({
   id: "local",
   alias: "workstation",
+  machineId: "1b4e28ba-2fa1-11d2-883f-0016d3cca427",
   installed: INSTALLED,
   local: true,
   status: { state: "running", checkedAt: INSTALLED.at, port: 7364 },

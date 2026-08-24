@@ -373,7 +373,12 @@ export function MachinesPage() {
                   <span className="shrink-0 text-gray-500 dark:text-gray-400">
                     <GlyphIcon d={NAV_ICONS.machines} size={ICON_SIZE.rowLead} />
                   </span>
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium">{local.alias}</span>
+                  <span
+                    className="min-w-0 flex-1 truncate text-sm font-medium"
+                    title={local.machineId ?? undefined}
+                  >
+                    {local.alias}
+                  </span>
                   {local.installed !== null && (
                     <span className={`shrink-0 text-xs ${toneInk.success}`}>
                       {local.installed.version}
@@ -417,7 +422,12 @@ export function MachinesPage() {
                       <span className="shrink-0 text-gray-500 dark:text-gray-400">
                         <GlyphIcon d={NAV_ICONS.machines} size={ICON_SIZE.rowLead} />
                       </span>
-                      <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                      {/* The alias is the label — it is what someone chose and recognises.
+                          The machine's own id is the identity, kept to the tooltip. */}
+                      <span
+                        className="min-w-0 flex-1 truncate text-sm font-medium"
+                        title={machine.machineId ?? undefined}
+                      >
                         {machine.alias}
                       </span>
                       <span className={`shrink-0 text-xs ${toneInk.success}`}>

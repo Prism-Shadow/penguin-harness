@@ -10,9 +10,10 @@
  * ssh's own failure is not a separate condition to report — it IS the answer "cannot reach
  * this machine", carrying OpenSSH's diagnostic so a refused key or a dead host says why.
  */
-import { SERVER_ALIVE_MARK, readServerStateCommand, sshArgs } from "./commands.js";
+import { MACHINE_ID_MARK, SERVER_ALIVE_MARK, readServerStateCommand, sshArgs } from "./commands.js";
 import type { RemoteTarget } from "./commands.js";
 import { run } from "./exec.js";
+import { parseMachineId } from "./machine-id.js";
 
 /** Long enough for a slow link, short enough that a dead host does not hold a refresh open. */
 const PROBE_TIMEOUT_MS = 20_000;
@@ -25,11 +26,36 @@ export type MachineServerState =
   /** ssh did not answer at all — unreachable, refused, or authentication that cannot proceed. */
   | { kind: "unreachable"; detail: string };
 
+/** What one probe learned: the server's state, and who that machine says it is. */
+export interface MachineProbe {
+  state: MachineServerState;
+  /**
+   * The machine's own id, when it has one. Absent until a server has STARTED there — the id
+   * is minted by that server, not by the install — so a freshly installed machine answers
+   * `stopped` with no id, and gains one the first time it runs.
+   */
+  machineId: string | null;
+}
+
 /**
  * Reads the probe's output. The lock text is whatever `cat` printed before the alive marker;
  * a malformed or missing lock reads as "nothing running", exactly like the local reader
  * does — a damaged lock and an absent one mean the same thing to a caller.
  */
+export function parseProbe(stdout: string): MachineProbe {
+  const [beforeId, afterId] = splitOnce(stdout, MACHINE_ID_MARK);
+  return {
+    state: parseServerState(beforeId),
+    machineId: afterId === null ? null : parseMachineId(afterId),
+  };
+}
+
+/** `text` up to the first `mark`, and what followed it (null when the mark is absent). */
+function splitOnce(text: string, mark: string): [string, string | null] {
+  const at = text.indexOf(mark);
+  return at === -1 ? [text, null] : [text.slice(0, at), text.slice(at + mark.length)];
+}
+
 export function parseServerState(stdout: string): MachineServerState {
   const alive = stdout.includes(SERVER_ALIVE_MARK);
   const text = stdout.split(SERVER_ALIVE_MARK)[0] ?? "";
@@ -51,16 +77,19 @@ export function parseServerState(stdout: string): MachineServerState {
 }
 
 /** Probes one machine. Never throws: every failure is one of the states above. */
-export async function probeServerState(target: RemoteTarget): Promise<MachineServerState> {
+export async function probeServerState(target: RemoteTarget): Promise<MachineProbe> {
   const result = await run("ssh", sshArgs(target, readServerStateCommand()), {
     timeoutMs: PROBE_TIMEOUT_MS,
   });
   if (result.code !== 0) {
     const detail = result.stderr.trim();
     return {
-      kind: "unreachable",
-      detail: detail === "" ? "ssh exited without a message." : detail,
+      state: {
+        kind: "unreachable",
+        detail: detail === "" ? "ssh exited without a message." : detail,
+      },
+      machineId: null,
     };
   }
-  return parseServerState(result.stdout);
+  return parseProbe(result.stdout);
 }

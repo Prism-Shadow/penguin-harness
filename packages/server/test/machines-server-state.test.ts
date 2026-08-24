@@ -4,8 +4,12 @@
  * parsing that turns it back into a state, and the cases that must NOT read as "running".
  */
 import { describe, expect, it } from "vitest";
-import { SERVER_ALIVE_MARK, readServerStateCommand } from "../src/machines/commands.js";
-import { parseServerState } from "../src/machines/server-state.js";
+import {
+  MACHINE_ID_MARK,
+  SERVER_ALIVE_MARK,
+  readServerStateCommand,
+} from "../src/machines/commands.js";
+import { parseProbe, parseServerState } from "../src/machines/server-state.js";
 
 const lock = (over: Record<string, unknown> = {}) =>
   JSON.stringify({ pid: 4242, port: 7364, startedAt: "2026-08-24T12:00:00.000Z", ...over });
@@ -54,6 +58,37 @@ describe("parseServerState", () => {
     });
     expect(parseServerState(`${lock({ port: 7364.5 })}\n${SERVER_ALIVE_MARK}\n`)).toEqual({
       kind: "stopped",
+    });
+  });
+});
+
+describe("parseProbe", () => {
+  const ID = "1b4e28ba-2fa1-11d2-883f-0016d3cca427";
+
+  it("reads the state and the machine's own id out of one round trip", () => {
+    const out = `${lock()}\n${SERVER_ALIVE_MARK}\n${MACHINE_ID_MARK}\n${ID}\n`;
+    expect(parseProbe(out)).toEqual({
+      state: { kind: "running", port: 7364, pid: 4242 },
+      machineId: ID,
+    });
+  });
+
+  it("a machine whose server has never started has a state but no id yet", () => {
+    // The id is minted by the server over there, not by the install — so this is exactly
+    // what a freshly installed, never-started machine answers.
+    expect(parseProbe("")).toEqual({ state: { kind: "stopped" }, machineId: null });
+  });
+
+  it("the id does not disturb the lock parsing that precedes it", () => {
+    const stopped = `${lock()}\n${MACHINE_ID_MARK}\n${ID}\n`;
+    expect(parseProbe(stopped)).toEqual({ state: { kind: "stopped" }, machineId: ID });
+  });
+
+  it("a damaged id is no id, and does not cost the state", () => {
+    const out = `${lock()}\n${SERVER_ALIVE_MARK}\n${MACHINE_ID_MARK}\nnot-a-uuid\n`;
+    expect(parseProbe(out)).toEqual({
+      state: { kind: "running", port: 7364, pid: 4242 },
+      machineId: null,
     });
   });
 });
