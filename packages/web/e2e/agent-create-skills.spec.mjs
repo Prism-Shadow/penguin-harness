@@ -22,8 +22,16 @@ const P = "password123";
 /** The bulk row's running count (exact: the trigger carries the same prefix with a trailing noun). */
 const pickedCount = (page, n) => page.getByText(`已选 ${n} 个`, { exact: true });
 
-/** One library skill row in the picker panel (rows lead with the skill name in monospace). */
-const row = (page, name) => page.getByRole("button", { name: new RegExp(`^${name}`) });
+/**
+ * One library skill row in the picker panel. The row's accessible name is the skill name followed
+ * by its description, so the match is anchored at the start AND closed at a non-name character:
+ * a bare `^name` prefix would match `web-design` and `web-design-pro` both, and resolve to two
+ * buttons the moment the library grows such a pair.
+ */
+const row = (page, name) =>
+  page.getByRole("button", {
+    name: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`),
+  });
 
 test("agent create: pick library skills (select all / none, filtered) -> they are installed on the new Agent", async ({
   page,

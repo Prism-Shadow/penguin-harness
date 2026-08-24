@@ -71,8 +71,14 @@ describe("directory skills api", () => {
   });
 
   afterEach(async () => {
-    await fs.rm(dir, { recursive: true, force: true });
-    await t.cleanup();
+    // The app teardown must run even if the scratch checkout resists removal: a throw here would
+    // skip `t.cleanup()`, leaking the db/hmr host into every later file in this worker — the
+    // ci-windows cascade helpers.ts documents. Same maxRetries discipline, same reason.
+    try {
+      await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    } finally {
+      await t.cleanup();
+    }
   });
 
   it("finds Skills in both layouts and says which one each came from", async () => {
