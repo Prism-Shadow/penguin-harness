@@ -581,34 +581,13 @@ export const en: Strings = {
     kernelLatest: "latest",
     kernelUpdateAction: "Update kernel",
     kernelUpdateConfirmBody:
-      "Fields you have not customized will be updated to the current built-in defaults; customized fields stay unchanged and are listed in the result. Name, description, the State version and MCP servers are unaffected. Continue?",
+      "Settings tabs you have not customized will be updated to the current built-in defaults; a tab you have edited stays unchanged in full and is listed in the result. Name, description, the State version and MCP servers are unaffected. Continue?",
     kernelUpdateDone: (version: string, advanced: number): string =>
       advanced > 0
-        ? `Kernel updated to ${version}; ${advanced} field(s) now follow the new defaults`
-        : `Kernel updated to ${version}; every field was already current or kept as customized`,
-    kernelUpdateKeptIntro: "Kept because customized:",
+        ? `Kernel updated to ${version}; ${advanced} tab(s) now follow the new defaults`
+        : `Kernel updated to ${version}; every tab was already current or kept as customized`,
+    kernelUpdateKeptIntro: "Kept whole because customized:",
     kernelListSeparator: ", ",
-    kernelFieldTool: (name: string): string => `tool ${name}`,
-    kernelFields: {
-      system_prompt: "system prompt template",
-      max_turns: "max turns per task",
-      "model.max_tokens": "model max output tokens",
-      "model.thinking_level": "thinking level",
-      "model.timeoutMs": "request timeout",
-      "compaction.max_context_length": "compaction context threshold",
-      "compaction.max_session_turns": "compaction session-turn threshold",
-      "compaction.mode": "compaction mode",
-      "compaction.prompt": "compaction prompt",
-      "memory.enabled": "memory switch",
-      "memory.prompt": "memory prompt",
-      "memory.workspace_prompt": "workspace memory prompt",
-      "vault.enabled": "Vault section switch",
-      "vault.prompt": "Vault prompt",
-      "skills.enabled": "Skills section switch",
-      "skills.prompt": "Skills prompt",
-      "schedules.enabled": "Schedules section switch",
-      "schedules.prompt": "Schedules prompt",
-    } as Record<string, string>,
   },
 
   models: {

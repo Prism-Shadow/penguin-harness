@@ -546,36 +546,13 @@ export const zh = {
     kernelLatest: "最新",
     kernelUpdateAction: "更新内核",
     kernelUpdateConfirmBody:
-      "将把未自定义的字段更新为当前内置默认值；自定义过的字段保持不变并在结果中列出。名称、描述、版本号与 MCP Server 不受影响。确认继续？",
+      "将把未自定义的设置页更新为当前内置默认值；改动过的设置页整页保持不变，并在结果中列出。名称、描述、版本号与 MCP Server 不受影响。确认继续？",
     kernelUpdateDone: (version: string, advanced: number): string =>
       advanced > 0
-        ? `内核已更新至 ${version}，${advanced} 个字段跟进新默认`
-        : `内核已更新至 ${version}，字段均已是当前默认或保持自定义`,
-    kernelUpdateKeptIntro: "以下字段因自定义被保留：",
+        ? `内核已更新至 ${version}，${advanced} 个设置页跟进新默认`
+        : `内核已更新至 ${version}，设置页均已是当前默认或保持自定义`,
+    kernelUpdateKeptIntro: "以下设置页因自定义被整体保留：",
     kernelListSeparator: "、",
-    /** Display name of a per-tool merge leaf (`tools.builtin.<name>`) in the kept/advanced lists. */
-    kernelFieldTool: (name: string): string => `工具 ${name}`,
-    /** Display names of the fixed kernel merge leaves (dotted config paths); unknown paths fall back to the raw path. */
-    kernelFields: {
-      system_prompt: "系统提示词模板",
-      max_turns: "单任务最大轮数",
-      "model.max_tokens": "模型最大输出 Token",
-      "model.thinking_level": "思考力度",
-      "model.timeoutMs": "请求超时",
-      "compaction.max_context_length": "压缩上下文阈值",
-      "compaction.max_session_turns": "压缩会话轮数阈值",
-      "compaction.mode": "压缩模式",
-      "compaction.prompt": "压缩提示词",
-      "memory.enabled": "记忆开关",
-      "memory.prompt": "记忆提示词",
-      "memory.workspace_prompt": "工作区记忆提示词",
-      "vault.enabled": "Vault 小节开关",
-      "vault.prompt": "Vault 提示词",
-      "skills.enabled": "技能小节开关",
-      "skills.prompt": "技能提示词",
-      "schedules.enabled": "定时任务小节开关",
-      "schedules.prompt": "定时任务提示词",
-    } as Record<string, string>,
   },
 
   models: {
