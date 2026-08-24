@@ -90,6 +90,7 @@ import { ChatDropRegion } from "./drop-zone";
 import { ConversationOutline, OutlineMenuButton, useOutlineRailFit } from "./conversation-outline";
 import { DraftView } from "./draft-view";
 import { parkActiveDraft } from "./draft-sessions";
+import { sessionForProject, sessionProbeKey } from "./session-project";
 import { CHAT_DEFAULTS_CHANGED_EVENT, chatDefaultsChangedDetail } from "./chat-defaults-event";
 import { advanceCostStat, applyUsageFetch, createCostStatHold } from "./header-stats";
 import type { CostStatDisplay } from "./header-stats";
@@ -584,9 +585,10 @@ export function ChatPage() {
   // The Session list is paged: a deep-linked Session (old bookmark, cross-page jump) may sit
   // beyond the loaded pages. Look it up directly and insert it before the auto-select effect
   // below concludes it doesn't exist; only a failed probe releases that redirect.
-  const [probeFailedId, setProbeFailedId] = useState<string | null>(null);
+  const probeKey = projectId && routeSessionId ? sessionProbeKey(projectId, routeSessionId) : null;
+  const [probeFailedKey, setProbeFailedKey] = useState<string | null>(null);
   useEffect(() => {
-    if (draft || !routeSessionId || sessionsLoading) return;
+    if (draft || !projectId || !routeSessionId || !probeKey || sessionsLoading) return;
     if (sessions.some((s) => s.sessionId === routeSessionId)) return;
     // We deleted this Session ourselves: the row is gone from the list on purpose, so the
     // lookup below could only 404 (and the server would record that as an error). Deleting
@@ -594,22 +596,34 @@ export function ChatPage() {
     // this path runs on every such delete. Treat it as an already-failed probe, which
     // releases the redirect effect below to move on to another conversation.
     if (isSessionDeleted(routeSessionId)) {
-      setProbeFailedId(routeSessionId);
+      setProbeFailedKey(probeKey);
       return;
     }
     let cancelled = false;
     api.getSession(routeSessionId).then(
       (res) => {
-        if (!cancelled) addSession(res.session);
+        if (cancelled) return;
+        const session = sessionForProject(res.session, projectId);
+        if (session) addSession(session);
+        else setProbeFailedKey(probeKey);
       },
       () => {
-        if (!cancelled) setProbeFailedId(routeSessionId);
+        if (!cancelled) setProbeFailedKey(probeKey);
       },
     );
     return () => {
       cancelled = true;
     };
-  }, [draft, routeSessionId, sessionsLoading, sessions, addSession, isSessionDeleted]);
+  }, [
+    draft,
+    projectId,
+    routeSessionId,
+    probeKey,
+    sessionsLoading,
+    sessions,
+    addSession,
+    isSessionDeleted,
+  ]);
 
   // Auto-select the most recent conversation when the route doesn't select one (newest loaded
   // active/schedule Session — archived rows are hidden by choice and subagent Sessions belong
@@ -619,10 +633,10 @@ export function ChatPage() {
     if (sessionsLoading || draft) return;
     if (routeSessionId && sessions.some((s) => s.sessionId === routeSessionId)) return;
     // A routed id missing from the paged list isn't gone until the direct lookup fails.
-    if (routeSessionId && probeFailedId !== routeSessionId) return;
+    if (routeSessionId && probeFailedKey !== probeKey) return;
     const last = latestConversation(sessions);
     navigate(last ? `/chat/${last.sessionId}` : `/chat/${DRAFT_SESSION_ID}`, { replace: true });
-  }, [sessionsLoading, draft, routeSessionId, probeFailedId, sessions, navigate]);
+  }, [sessionsLoading, draft, routeSessionId, probeKey, probeFailedKey, sessions, navigate]);
 
   // Sync task_state to the sidebar list badge.
   //
