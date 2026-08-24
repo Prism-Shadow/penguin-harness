@@ -519,6 +519,12 @@ export const listSessions = (
     workspaceGroup?: string;
     withCounts?: boolean;
   },
+  /**
+   * Which machine to ask. This path is NOT session-scoped, so nothing about it can be routed
+   * from the id — it asks a server which Sessions IT has, and only the caller knows which
+   * servers are worth asking. Omitted (or null) means this one.
+   */
+  machineId?: string | null,
 ) => {
   const qs = opts
     ? `?limit=${opts.limit}&offset=${opts.offset}` +
@@ -528,6 +534,7 @@ export const listSessions = (
     : "";
   return apiFetch<SessionsResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/sessions${qs}`,
+    { server: machineId ?? null },
   );
 };
 
