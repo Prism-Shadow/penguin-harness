@@ -891,13 +891,13 @@ export interface AgentConfigResponse {
 
 /**
  * POST …/config/kernel-update result: the smart merge's outcome (core's applyKernelUpdate).
- * Paths are dotted config leaves (`system_prompt`, `memory.prompt`, `tools.builtin.<name>`…)
- * in defaults-traversal order; the client maps them to display names.
+ * The entries are Agent settings **tabs** (`prompt`, `runtime`, `tools`, `skills`, `memory`,
+ * `vault`, `schedules`) in the settings page's tab order; the client maps them to tab labels.
  */
 export interface AgentKernelUpdateResponse {
-  /** Leaves advanced to the new default (previously missing, or an untouched old default). */
+  /** Tabs advanced to the current defaults (previously absent, or an untouched old default). */
   advanced: string[];
-  /** Leaves kept because the stored value matches no recorded defaults generation (user customizations, kept conservatively). */
+  /** Tabs kept whole because they match no recorded default (customized, kept conservatively). */
   kept: string[];
   /** The kernel stamp written (the current defaults generation). */
   kernelVersion: string;

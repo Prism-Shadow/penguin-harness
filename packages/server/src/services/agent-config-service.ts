@@ -284,8 +284,9 @@ export class AgentConfigService {
 
   /**
    * Smart-merges the config up to the current defaults generation (core's applyKernelUpdate):
-   * leaves still carrying a recorded generation's default follow the new defaults, user
-   * customizations are kept and reported; the config is stamped with the new kernel version.
+   * a settings tab still carrying a recorded generation's default follows the new defaults,
+   * a tab the user changed is kept whole and reported; the config is stamped with the new
+   * kernel version.
    * The destructive full-refresh alternative stays resetConfig.
    */
   async kernelUpdate(projectId: string, agentId: string): Promise<AgentKernelUpdateResponse> {
