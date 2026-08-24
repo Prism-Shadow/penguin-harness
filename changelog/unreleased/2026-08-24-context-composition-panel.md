@@ -3,6 +3,7 @@
 - **Date:** 2026-08-24
 - **Type:** feature
 - **Scope:** `web`, `server`
+- **PR:** [#442](https://github.com/Prism-Shadow/penguin-harness/pull/442)
 
 [中文版](2026-08-24-context-composition-panel.zh.md)
 
