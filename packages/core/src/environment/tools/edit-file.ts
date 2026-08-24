@@ -26,7 +26,7 @@ import { partialToolCallOutput } from "../../omnimessage/index.js";
 import type { OmniMessage } from "../../omnimessage/index.js";
 import type { ToolDefinitionConfig } from "../../interfaces.js";
 import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
-import { atomicWriteFile } from "./file-utils.js";
+import { atomicWriteFile } from "../../internal/atomic-write.js";
 import { buildReplacementHunks, renderHunk } from "./diff.js";
 import { missingPathHint } from "./path-hint.js";
 

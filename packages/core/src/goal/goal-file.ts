@@ -19,6 +19,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { atomicWriteFile } from "../internal/atomic-write.js";
 
 /** Budget option value meaning "no budget" (also used for an absent budget option). */
 export const UNLIMITED_BUDGET = -1;
@@ -48,7 +49,7 @@ export function serializeGoalFile(goal: GoalFile): string {
  */
 export async function writeGoalFile(filePath: string, goal: GoalFile): Promise<void> {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
-  await fs.writeFile(filePath, serializeGoalFile(goal), "utf8");
+  await atomicWriteFile(filePath, serializeGoalFile(goal));
 }
 
 /**

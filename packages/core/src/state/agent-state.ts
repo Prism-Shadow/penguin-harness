@@ -20,6 +20,7 @@ import {
   type SkillMetadata,
 } from "@prismshadow/penguin-skills";
 import type { ToolConfig, ToolDefinitionConfig } from "../interfaces.js";
+import { atomicWriteFile } from "../internal/atomic-write.js";
 import {
   AGENT_ID_PLACEHOLDER,
   AGENTS_MD_PLACEHOLDER,
@@ -199,7 +200,7 @@ export async function loadOrInitAgentState(opts?: {
         ? loadPreinstalledSkills()
         : (opts?.preset?.skills ?? []);
     await Promise.all([
-      fs.writeFile(mdPath, agentsMd, "utf8"),
+      atomicWriteFile(mdPath, agentsMd, { followSymlinks: true }),
       ...skills.map((skill) => installSkill(root, projectId, agentId, skill)),
       // The example Benchmark is only provisioned alongside default_agent (so the evaluation
       // center has data out of the box): idempotently skipped if benchmarks/ already exists,
@@ -211,7 +212,7 @@ export async function loadOrInitAgentState(opts?: {
     // system_config.yaml is written last: its existence is the "initialization complete" marker
     // (the load/init decision point). If this fails partway (disk full / crash), the next run
     // still takes the init path and self-heals, so no half-initialized state with missing Skills is left behind.
-    await fs.writeFile(configPath, stringifyYaml(systemConfig), "utf8");
+    await atomicWriteFile(configPath, stringifyYaml(systemConfig), { followSymlinks: true });
   }
 
   return { root, projectId, agentId, stateDir, systemConfig, agentsMd };
@@ -279,7 +280,7 @@ export async function resetSystemConfigToDefaults(
     ...defaultSystemConfig(),
     version: agentStateVersion(prev),
   };
-  await fs.writeFile(configPath, stringifyYaml(next), "utf8");
+  await atomicWriteFile(configPath, stringifyYaml(next), { followSymlinks: true });
   return next;
 }
 
@@ -450,7 +451,7 @@ function assertSafeSkillFile(rel: string): void {
  * Installs a Skill into the target Agent: writes `skills/<name>/SKILL.md` verbatim (the full
  * SKILL.md content including frontmatter, ensuring a trailing newline). An optional icon.svg and
  * any auxiliary `files` the SKILL.md references (e.g. `reference/API.md`, subdirectories
- * preserved) are written alongside it. The directory is replaced wholesale first, so reinstalling
+ * preserved) are written alongside it. The directory is replaced wholesale, so reinstalling
  * updates to the latest content and drops files the new version no longer ships — the directory
  * content always matches the Skill being installed. Each file path is checked to stay within the
  * skill directory before anything is written.
@@ -468,26 +469,51 @@ export async function installSkill(
   const auxiliary = Object.entries(skill.files ?? {});
   for (const [rel] of auxiliary) assertSafeSkillFile(rel);
   const dir = path.join(skillsDir(root, projectId, agentId), skill.name);
-  // Clean replace: drop the old directory so no stale file survives a reinstall (same semantics
-  // as the archive route), then write SKILL.md, the optional icon, and every auxiliary file.
-  await fs.rm(dir, { recursive: true, force: true });
-  await fs.mkdir(dir, { recursive: true });
   const content = skill.content.endsWith("\n") ? skill.content : `${skill.content}\n`;
-  const writes: Array<Promise<unknown>> = [
-    fs.writeFile(path.join(dir, "SKILL.md"), content, "utf8"),
+  const files: Array<[string, string]> = [
+    ["SKILL.md", content],
+    ...(skill.icon !== undefined ? ([["icon.svg", skill.icon]] as Array<[string, string]>) : []),
+    ...auxiliary,
   ];
-  if (skill.icon !== undefined) {
-    writes.push(fs.writeFile(path.join(dir, "icon.svg"), skill.icon, "utf8"));
-  }
-  for (const [rel, data] of auxiliary) {
-    const file = path.join(dir, rel);
-    writes.push(
-      fs
-        .mkdir(path.dirname(file), { recursive: true })
-        .then(() => fs.writeFile(file, data, "utf8")),
+  // Clean replace: no stale file survives a reinstall (same semantics as the archive route).
+  await replaceSkillDirectory(dir, files);
+}
+
+/**
+ * Replaces one Skill directory with exactly `files` (relative path → content, subdirectories
+ * created as needed). Everything is written into a staging directory and swapped in as the last
+ * step, so an interrupted install cannot leave a half-written Skill standing under the real name
+ * — the loader's only completeness criterion is that `<name>/SKILL.md` exists, which a directory
+ * written file-by-file satisfies long before it is complete. The staging name is dot-prefixed
+ * (never a valid Skill name, so it is skipped by the listings) and is cleared first, so a
+ * leftover from an earlier crash is never merged into this install.
+ *
+ * Shared with the server's archive-import route, which installs the same directory from a zip.
+ */
+export async function replaceSkillDirectory(
+  dir: string,
+  files: Iterable<[string, string | Uint8Array]>,
+): Promise<void> {
+  const staging = `${path.join(path.dirname(dir), `.${path.basename(dir)}`)}.incoming`;
+  await fs.rm(staging, { recursive: true, force: true });
+  await fs.mkdir(staging, { recursive: true });
+  try {
+    await Promise.all(
+      [...files].map(async ([rel, data]) => {
+        const file = path.join(staging, rel);
+        await fs.mkdir(path.dirname(file), { recursive: true });
+        await fs.writeFile(file, data);
+      }),
     );
+    // rename(2) refuses to replace a non-empty directory, so the old one goes first. The window
+    // between the two is the one case this cannot make atomic; it is bounded by a single rm and
+    // leaves the Skill absent rather than corrupt.
+    await fs.rm(dir, { recursive: true, force: true });
+    await fs.rename(staging, dir);
+  } catch (err) {
+    await fs.rm(staging, { recursive: true, force: true }).catch(() => undefined);
+    throw err;
   }
-  await Promise.all(writes);
 }
 
 /** Uninstalls a Skill: deletes the entire `skills/<name>/` directory; idempotent, no error if it doesn't exist. */
@@ -539,6 +565,9 @@ export async function listInstalledSkills(
   const skills: InstalledSkill[] = [];
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
+    // A Skill name never starts with a dot (assertValidId), so a dot-prefixed directory is
+    // this Agent's staging directory, mid-install or left behind by an interrupted one.
+    if (entry.name.startsWith(".")) continue;
     let raw: string;
     try {
       raw = await fs.readFile(path.join(dir, entry.name, "SKILL.md"), "utf8");

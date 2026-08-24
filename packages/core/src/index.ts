@@ -55,6 +55,11 @@ export { appendAttachmentLines } from "./internal/session-support.js";
 // Model-visible path spelling (forward slashes on Windows); the server uses it for its
 // [attached file: ...] lines so every path the model reads has one spelling per platform.
 export { modelVisiblePath } from "./internal/model-visible-path.js";
+// Atomic file replacement: the writer behind every Harness state file, shared with the server so
+// both sides of the same file (core's saveProjectConfig, the server's writeRaw) replace it the
+// same way.
+export { atomicWriteFile } from "./internal/atomic-write.js";
+export type { AtomicWriteOptions } from "./internal/atomic-write.js";
 export { Agent, createAgent } from "./agent.js";
 export type { CreateAgentOptions, CreateSessionOptions, ResumeSessionOptions } from "./agent.js";
 

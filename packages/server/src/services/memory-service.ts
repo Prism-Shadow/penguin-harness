@@ -25,12 +25,12 @@
  * Files are the source of truth and are read fresh on every request (they are small, requests
  * are rare, and the model edits the same files from its side).
  */
-import { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
   MEMORY_INDEX_FILENAME,
   USER_SCOPE_KEY,
+  atomicWriteFile,
   hasMemoryPlaceholder,
   insertMemoryPlaceholder,
   memoryDir,
@@ -434,7 +434,7 @@ export class MemoryService {
     const added: string[] = [];
     for (const file of planned) {
       if (request.mode === "skip" && present.has(file.name)) continue;
-      await this.writeScopeFile(dir, file.target, file.content);
+      await this.writeScopeFile(file.target, file.content);
       if (!present.has(file.name)) added.push(file.name);
     }
     for (const name of removed) {
@@ -447,7 +447,7 @@ export class MemoryService {
     let indexWritten = false;
     if (index !== null) {
       if (replacesIndex || !(await this.hasIndexFile(dir))) {
-        await this.writeScopeFile(dir, path.join(dir, MEMORY_INDEX_FILENAME), index);
+        await this.writeScopeFile(path.join(dir, MEMORY_INDEX_FILENAME), index);
         indexWritten = true;
       } else {
         indexWritten = await this.extendIndex(dir, index, written);
@@ -479,28 +479,23 @@ export class MemoryService {
     }
     if (additions.length === 0) return false;
     const head = current === "" || current.endsWith("\n") ? current : `${current}\n`;
-    await this.writeScopeFile(dir, indexPath, `${head}${additions.join("\n")}\n`);
+    await this.writeScopeFile(indexPath, `${head}${additions.join("\n")}\n`);
     return true;
   }
 
   /**
-   * The write path for imported content, shared by the topic files and the index.
+   * The write path for every change this service makes to Memory content, shared by the imported
+   * topic files and the index.
    *
    * The target has already been through `resolveFile` (or is the reserved index name, which is
    * never client-supplied), so it names a file directly inside this scope. The write goes to a
    * temporary dotfile — invisible to every topic listing — and is renamed over the target, so a
-   * symlink standing at that name is replaced rather than followed out of the Memory directory,
-   * and a reader never sees a half-written memory.
+   * reader never sees a half-written memory. Symlinks are deliberately not followed: the Memory
+   * directory is model-writable, and a link planted at a topic's name would otherwise carry the
+   * write out of it. Replacing the link keeps the write inside the scope.
    */
-  private async writeScopeFile(dir: string, target: string, content: string): Promise<void> {
-    const tmp = path.join(dir, `.import-${randomBytes(6).toString("hex")}.tmp`);
-    try {
-      await fs.writeFile(tmp, content, "utf8");
-      await fs.rename(tmp, target);
-    } catch (err) {
-      await fs.rm(tmp, { force: true });
-      throw err;
-    }
+  private async writeScopeFile(target: string, content: string): Promise<void> {
+    await atomicWriteFile(target, content);
   }
 
   /** Reads a regular file as text, null when it is absent, unreadable, or not a regular file (lstat, so a symlink is never followed). */
@@ -548,7 +543,7 @@ export class MemoryService {
     const lines = content.split("\n");
     const kept = lines.filter((line) => !link.test(line));
     if (kept.length === lines.length) return;
-    await fs.writeFile(indexPath, kept.join("\n"), "utf8");
+    await this.writeScopeFile(indexPath, kept.join("\n"));
   }
 
   private async fileInfo(dir: string, name: string): Promise<MemoryFileInfo | null> {

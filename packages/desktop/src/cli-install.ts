@@ -150,8 +150,13 @@ function installAppImage(win: BrowserWindow | null): void {
   }
   try {
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(wrapper, script, { mode: 0o755 });
-    fs.chmodSync(wrapper, 0o755); // writeFileSync mode is ignored when the file existed.
+    // Written to a temp file and renamed over the wrapper: a failed write leaves the previous
+    // command in place instead of a truncated script on PATH. chmod before the rename, since
+    // writeFileSync's mode is masked by the umask.
+    const tmp = `${wrapper}.tmp`;
+    fs.writeFileSync(tmp, script, { mode: 0o755, flush: true });
+    fs.chmodSync(tmp, 0o755);
+    fs.renameSync(tmp, wrapper);
   } catch (err) {
     showResult(win, false, String(err));
     return;

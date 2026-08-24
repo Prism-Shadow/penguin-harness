@@ -21,6 +21,7 @@ import {
   installSkill,
   listInstalledSkills,
   removeSkill,
+  replaceSkillDirectory,
   skillsDir,
 } from "@prismshadow/penguin-core";
 import {
@@ -325,14 +326,10 @@ export function agentSkillsRoutes(deps: AppDeps): Hono<AppEnv> {
         throw new HttpError(409, "skill_exists", `Skill is already installed: ${skill.name}`);
       }
     }
-    // Replace semantics (same as reinstalling from the library): drop the old directory
-    // first so no stale file survives, then write every archive file (subdirectories kept).
-    await fs.rm(dir, { recursive: true, force: true });
-    for (const [rel, data] of skill.files) {
-      const file = path.join(dir, rel);
-      await fs.mkdir(path.dirname(file), { recursive: true });
-      await fs.writeFile(file, data);
-    }
+    // Replace semantics (same as reinstalling from the library): the archive's files are
+    // staged and swapped in, so no stale file survives and an interrupted import leaves no
+    // half-written Skill behind (subdirectories kept).
+    await replaceSkillDirectory(dir, skill.files);
     return c.json(await listResponse(projectId, agentId), 201);
   });
 

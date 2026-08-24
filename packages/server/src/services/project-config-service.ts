@@ -28,6 +28,7 @@ import path from "node:path";
 import { parse as parseToml } from "smol-toml";
 import {
   CHAT_APPROVAL_MODES,
+  atomicWriteFile,
   DEFAULT_CHAT_THINKING_LEVELS,
   DEFAULT_COMMAND_POLICY_RULES,
   effectiveCommandPolicyRules,
@@ -290,9 +291,8 @@ export class ProjectConfigService {
 
   /**
    * Writes the whole object to disk: the file inlines secrets like api_key, always
-   * written with mode 0600 (the `mode` option only applies at creation time, so
-   * chmod is used to enforce it on existing files too — matching core's
-   * saveProjectConfig behavior).
+   * written with mode 0600, and replaced atomically so a crash mid-write cannot
+   * truncate it — matching core's saveProjectConfig behavior.
    */
   async writeRaw(projectId: string, data: RawTable): Promise<void> {
     const file = this.filePath(projectId);
@@ -300,8 +300,10 @@ export class ProjectConfigService {
     // Rendering goes through core's single writer: paired references become inline
     // tables, models is placed last — matching the CLI's output format exactly
     // (the same file should never have two formats).
-    await fs.writeFile(file, renderProjectConfigToml(data), { encoding: "utf8", mode: 0o600 });
-    await fs.chmod(file, 0o600);
+    await atomicWriteFile(file, renderProjectConfigToml(data), {
+      mode: 0o600,
+      followSymlinks: true,
+    });
     // Every service write funnels through here: invalidate synchronously so the next
     // read re-parses (external writers are caught by readTable's stat instead).
     this.cache.delete(projectId);

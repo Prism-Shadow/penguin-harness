@@ -150,7 +150,8 @@ export class AgentService {
     }
     const present = await Promise.all(
       dirents
-        .filter((d) => d.isDirectory())
+        // Dot-prefixed directories are install staging, never a Skill (a Skill name has no dot).
+        .filter((d) => d.isDirectory() && !d.name.startsWith("."))
         .map(async (d) => {
           try {
             await fs.access(path.join(base, d.name, "SKILL.md"));

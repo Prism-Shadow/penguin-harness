@@ -20,6 +20,7 @@ import {
   LEGACY_VAULT_SECTION,
   agentsMdPath,
   applyKernelUpdate,
+  atomicWriteFile,
   isKernelOutdated,
   agentStateDir,
   agentStateVersion,
@@ -265,7 +266,9 @@ export class AgentConfigService {
       await this.applyConfigUpdate(projectId, agentId, req.config);
     }
     if (req.agentsMd !== undefined) {
-      await fs.writeFile(agentsMdPath(this.root, projectId, agentId), req.agentsMd, "utf8");
+      await atomicWriteFile(agentsMdPath(this.root, projectId, agentId), req.agentsMd, {
+        followSymlinks: true,
+      });
     }
   }
 
@@ -381,7 +384,7 @@ export class AgentConfigService {
       doc.setIn(["tools", "mcpServers"], validateMcpServers(cfg.mcpServers));
     }
 
-    await fs.writeFile(yamlPath, doc.toString(), "utf8");
+    await atomicWriteFile(yamlPath, doc.toString(), { followSymlinks: true });
   }
 
   /**
