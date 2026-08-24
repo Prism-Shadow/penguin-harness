@@ -918,7 +918,7 @@ export function ModelsPage() {
                     {/* inert while collapsed: a card with zero height shouldn't still be Tab-focusable or clickable. */}
                     <div className="overflow-hidden" inert={!open}>
                       <div
-                        className={`grid gap-2 border-t border-gray-200 p-2.5 transition-opacity duration-200 sm:grid-cols-2 lg:grid-cols-3 dark:border-gray-800 ${open ? "opacity-100" : "opacity-0"}`}
+                        className={`grid grid-cols-1 gap-2 border-t border-gray-200 p-2.5 transition-opacity duration-200 sm:grid-cols-2 lg:grid-cols-3 dark:border-gray-800 ${open ? "opacity-100" : "opacity-0"}`}
                       >
                         {group.rows.length === 0 ? (
                           // An empty group only ever occurs for custom (always shown when there's no search query, to host the add entry point).

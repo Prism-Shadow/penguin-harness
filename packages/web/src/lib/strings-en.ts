@@ -833,6 +833,7 @@ export const en: Strings = {
       "No memories for this Workspace yet — the agent saves what is worth keeping as it works",
     emptyUserScope: 'No user memories yet — say "remember …" in a chat and the agent will save it',
     add: "Add",
+    addScopeLabel: (scope: string): string => `Add to ${scope}`,
     addTitle: "Add memory",
     addWhy:
       "The agent organizes and saves memories in a chat: fill in the content, open a new conversation, and the agent does the rest.",
