@@ -28,6 +28,7 @@ import type { DirListResponse, MachinesResponse } from "../../api/types.js";
 import { HttpError } from "../errors.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { AppDeps } from "../../app.js";
+import { rewriteSetCookie } from "../../machines/proxy.js";
 
 export function machinesRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
@@ -133,6 +134,31 @@ export function machinesRoutes(deps: AppDeps): Hono<AppEnv> {
       );
     }
     return c.json(listing satisfies DirListResponse);
+  });
+
+  /**
+   * Signs this browser in ON that machine, without its password crossing the wire: the
+   * sign-in happens over ssh on the machine itself and only the cookie comes back, renamed
+   * here into that machine's namespace exactly as the proxy would. A person can still sign
+   * in by hand — this is the case where they should not have to.
+   */
+  app.post("/:machineId/signin", async (c) => {
+    const machineId = c.req.param("machineId");
+    const outcome = await deps.machines.signInOn(machineId);
+    if (outcome === null) {
+      throw new HttpError(404, "unknown_machine", "No such machine.");
+    }
+    if (outcome.kind !== "signed-in") {
+      throw new HttpError(
+        outcome.kind === "refused" ? 409 : 502,
+        outcome.kind === "refused" ? "signin_refused" : "signin_failed",
+        outcome.detail,
+      );
+    }
+    for (const cookie of outcome.setCookie) {
+      c.header("set-cookie", rewriteSetCookie(cookie, machineId), { append: true });
+    }
+    return c.json({ signedIn: true });
   });
 
   app.post("/:machineId/disconnect", (c) => {

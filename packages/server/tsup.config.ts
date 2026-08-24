@@ -44,9 +44,8 @@ export default defineConfig({
     for (const name of ["install.sh", "install.ps1"]) {
       fs.copyFileSync(path.join(here, "..", "..", name), path.join(here, "dist", name));
     }
-    fs.copyFileSync(
-      path.join(here, "src", "machines", "remote-upgrade.cjs"),
-      path.join(here, "dist", "remote-upgrade.cjs"),
-    );
+    for (const name of ["remote-upgrade.cjs", "remote-signin.cjs"]) {
+      fs.copyFileSync(path.join(here, "src", "machines", name), path.join(here, "dist", name));
+    }
   },
 });
