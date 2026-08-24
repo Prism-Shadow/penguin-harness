@@ -111,6 +111,19 @@ export class MachinesService {
    * is what a successor reads to find one it did not spawn.
    */
   readonly #tunnels = new Map<string, Tunnel>();
+  /**
+   * Machines with a heavy ssh operation in flight — an install, or the automatic sync.
+   *
+   * Both copy tens of megabytes over the same connection, and running them at once against
+   * one host is how a 30-second command ends up timing out with nothing to say. This exists
+   * because the automatic sync fires on every App boot: without it, a push landing while
+   * someone was installing had two transfers racing for one machine, and the loser reported
+   * a refusal it never received.
+   *
+   * Deliberately NOT taken by the probe or the directory browser: those are single short
+   * commands, and making a picker wait behind a 30 MB transfer would be its own bug.
+   */
+  readonly #busy = new Set<string>();
   #connect: MachineConnectJob | null = null;
   readonly #effects: MachinesEffects;
 
@@ -415,6 +428,7 @@ export class MachinesService {
     // path does not turn into a `failed` outcome itself.
     void (async () => {
       try {
+        this.#busy.add(machineId);
         say(`Installing ${plan.version} on ${resolved.machine}…`);
         // No identity passed: installOnRemote runs the probe itself as its first step and
         // narrates it, so the page shows what the machine turned out to be.
@@ -447,6 +461,7 @@ export class MachinesService {
           message: err instanceof Error ? err.message : String(err),
         };
       } finally {
+        this.#busy.delete(machineId);
         job.running = false;
       }
     })();
@@ -664,6 +679,59 @@ export class MachinesService {
    * password was changed so the far side cannot log itself in, simply stays out of sync —
    * and the Machines page already says so, with Update as the way to force it the slow way.
    */
+  /**
+   * Opens a tunnel to every installed machine that has none, quietly.
+   *
+   * Called when an App boots, so the machines a person installed are reachable without
+   * anyone clicking Connect first — the tunnel is plumbing, and being asked to establish it
+   * by hand before a machine will answer is not a decision, it is a chore.
+   *
+   * It reuses the same steps a manual connect takes, INCLUDING starting a server that is
+   * down: a connect is exactly the decision that a machine should be serving, and making it
+   * automatic without that step would leave it succeeding at nothing. What it does not do is
+   * touch a machine that is already busy, or one whose server cannot be started — those stay
+   * as they were and the Machines page keeps showing it.
+   *
+   * The connect JOB slot is deliberately untouched: this is background work, and clobbering
+   * the log of a connect somebody is watching would be worse than not running at all.
+   */
+  async autoConnect(): Promise<void> {
+    const candidates = this.list().filter(
+      (machine) => !machine.local && machine.installed !== null && machine.origin === null,
+    );
+    const queue = [...candidates];
+    const workers = Array.from({ length: Math.min(2, queue.length) }, async () => {
+      for (let machine = queue.shift(); machine !== undefined; machine = queue.shift()) {
+        await this.#withMachine(machine.id, async () => {
+          const silent = () => {};
+          try {
+            await this.#runConnect(machine.id, machine.alias, silent, {
+              machineId: machine.id,
+              alias: machine.alias,
+              running: true,
+              log: [],
+              result: null,
+            });
+          } catch {
+            // Best effort: an unreachable machine stays unconnected, and the page says so.
+          }
+        });
+      }
+    });
+    await Promise.all(workers);
+  }
+
+  /** Runs `work` with this machine's slot held, or returns null when it is already busy. */
+  async #withMachine<T>(id: string, work: () => Promise<T>): Promise<T | null> {
+    if (this.#busy.has(id)) return null;
+    this.#busy.add(id);
+    try {
+      return await work();
+    } finally {
+      this.#busy.delete(id);
+    }
+  }
+
   async syncOutOfDate(): Promise<void> {
     const plan = this.#effects.resolvePlan(this.dataRoot);
     if (plan === null) return; // Nothing to hand on: this server stands on no release.
@@ -678,12 +746,16 @@ export class MachinesService {
       for (let machine = queue.shift(); machine !== undefined; machine = queue.shift()) {
         const resolved = await this.#effects.resolveTarget(machine.alias);
         if (resolved === null) continue;
-        const outcome = await this.#effects.upgrade({
-          target: { alias: machine.alias, user: resolved.settings.user },
-          dataRoot: this.dataRoot,
-          assets: this.#assets,
-        });
-        if (outcome.kind !== "upgraded") continue;
+        // Skipped rather than queued when the machine is busy: this is automatic work, and
+        // the next push runs it again. A person's install must never wait behind it.
+        const outcome = await this.#withMachine(machine.id, () =>
+          this.#effects.upgrade({
+            target: { alias: machine.alias, user: resolved.settings.user },
+            dataRoot: this.dataRoot,
+            assets: this.#assets,
+          }),
+        );
+        if (outcome === null || outcome.kind !== "upgraded") continue;
         // It is running our build now; record that, so the next boot skips it.
         const record = parseInstallRecords(this.#readRecords())[machine.id];
         if (record !== undefined) {

@@ -1154,7 +1154,6 @@ export const zh = {
     workspaceHere: "本机",
     /** Why a listed machine cannot be picked — shown ON its row, where the question is asked. */
     workspaceMachineWhy: {
-      "not-connected": "未连接",
       "no-identity": "待识别",
     },
     workspaceUseThis: "使用此目录",

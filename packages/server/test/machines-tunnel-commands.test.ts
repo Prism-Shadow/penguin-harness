@@ -4,6 +4,7 @@
  * whether a remote start silently does nothing.
  */
 import { describe, expect, it } from "vitest";
+import { execFailureText } from "../src/machines/exec.js";
 import {
   serverLogTailCommand,
   startServerCommand,
@@ -89,5 +90,31 @@ describe("tunnelArgs", () => {
 
   it("refuses a port that is not one", () => {
     for (const bad of [0, -1, 70000, 1.5]) expect(() => tunnelArgs(target, bad)).toThrow();
+  });
+});
+
+describe("execFailureText", () => {
+  it("names a timeout, which otherwise looks exactly like a refusal", () => {
+    // A killed child has a non-zero code and empty stderr — the same shape as the remote
+    // rejecting the command. Reported as a refusal, it sent someone looking at their
+    // machine's disk for a problem that was on this side.
+    expect(
+      execFailureText({ code: 1, stdout: "", stderr: "", timedOut: true }, "could not do it"),
+    ).toBe("the machine did not answer in time");
+  });
+
+  it("prefers the far side's own words when there are any", () => {
+    expect(
+      execFailureText(
+        { code: 1, stdout: "", stderr: "mkdir: No space left on device", timedOut: false },
+        "could not do it",
+      ),
+    ).toBe("mkdir: No space left on device");
+  });
+
+  it("falls back to the caller's sentence only when the failure is silent", () => {
+    expect(
+      execFailureText({ code: 1, stdout: "", stderr: "  ", timedOut: false }, "could not do it"),
+    ).toBe("could not do it");
   });
 });

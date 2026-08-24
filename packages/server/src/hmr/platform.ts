@@ -212,7 +212,13 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     // it hands the same build on to any machine still carrying a different one. Not awaited
     // — boot must not wait on ssh — and cheap when there is nothing to do, since which
     // machines are behind is read from the install records, not asked over the network.
-    if (deps !== null) void deps.machines.syncOutOfDate();
+    if (deps !== null) {
+      void deps.machines.syncOutOfDate();
+      // ...and the machines a person installed are reachable without anyone clicking
+      // Connect first. A tunnel is plumbing; having to establish it by hand before a
+      // machine will answer is a chore, not a decision.
+      void deps.machines.autoConnect();
+    }
 
     // ONE app, ONE pointer: every route this App serves — terminal group and business
     // groups — registers into a single Hono table, and the swap publishes deps + table +
