@@ -63,6 +63,11 @@ interface SessionsContextValue {
   isLoadedFor: (agentId: string, category: SessionCategory, workspaceGroup?: string) => boolean;
   /** Whether the server still holds unfetched Sessions of a category for an Agent (or for one of its Workspace groups) — an unloaded pair answers from the counts. */
   hasMoreFor: (agentId: string, category: SessionCategory, workspaceGroup?: string) => boolean;
+  /**
+   * Whether the list is still being assembled — INCLUDING the Agent set it is fetched for,
+   * which is cleared and refetched on every Project switch. Consumers gate their "no sessions"
+   * empty state on this, so it must not read false while the answer is merely not known yet.
+   */
   loading: boolean;
   reload: () => Promise<void>;
   /** Fetches a category's first page for each given unloaded Agent and the next page for each loaded one with more (no-op otherwise); `workspaceGroup` pages that group's own stream instead of the Agent's whole one. */
@@ -235,6 +240,9 @@ export function createSessionsStore() {
 
       reload: async () => {
         const { projectId, agentIds } = get();
+        // No context to fetch against yet. `loading` is deliberately left alone rather than
+        // cleared: nothing was loaded, so reporting "done" here would be a lie — and one the
+        // empty state renders. The Provider covers this window with agentsLoading instead.
         if (!projectId || agentIds.length === 0) return;
         const g = ++gen;
         set({ loading: true });
@@ -587,7 +595,7 @@ export function applyUserEvent(
 }
 
 export function SessionsProvider({ children }: { children: ReactNode }) {
-  const { currentProject, agents } = useProject();
+  const { currentProject, agents, agentsLoading } = useProject();
   const projectId = currentProject?.projectId ?? null;
   // Stable key for the Agent set: the list object is a new reference on every reload,
   // so join the ids to avoid unnecessary reloads.
@@ -677,7 +685,12 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       workspaceCountsByAgent: state.workspaceCountsByAgent,
       isLoadedFor,
       hasMoreFor,
-      loading: state.loading,
+      // An Agent set still being fetched is a list still LOADING, not a list that is empty.
+      // reload() cannot run without one and returns early leaving this flag as it was — so
+      // after any successful load, the window where the Agents are refetched (every Project
+      // switch clears them) would otherwise report "loaded, nothing here" and paint the
+      // no-sessions empty state for a frame or two before the rows arrive.
+      loading: state.loading || agentsLoading,
       reload: state.reload,
       loadMoreFor: state.loadMoreFor,
       add: state.add,
@@ -687,7 +700,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       setStatus: state.setStatus,
       setTitle: state.setTitle,
     };
-  }, [state, isLoadedFor, hasMoreFor, isDeleted]);
+  }, [state, agentsLoading, isLoadedFor, hasMoreFor, isDeleted]);
 
   return <SessionsContext.Provider value={value}>{children}</SessionsContext.Provider>;
 }
