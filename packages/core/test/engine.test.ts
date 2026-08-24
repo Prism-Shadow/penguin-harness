@@ -662,6 +662,101 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
     expect((received[1]![1]!.payload as TextPayload).text).toBe("continue the fix");
   });
 
+  it("shouldPark parks at the turn boundary silently, and an empty-input run resumes from the carry-over", async () => {
+    const received: OmniMessage[][] = [];
+    const llm: LLMInterface = {
+      async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
+        received.push(params.newMessages);
+        if (received.length === 1) {
+          yield toolCall({
+            name: "exec_command",
+            arguments: JSON.stringify({ cmd: "true" }),
+            toolCallId: "c1",
+            stopReason: "completed",
+          });
+          yield tokenUsage(emptyTokenCounts(), {
+            cache_read: 0,
+            cache_write: 0,
+            output: 1,
+            total: 1,
+          });
+          return { status: "completed" };
+        }
+        yield assistantText("Done");
+        return { status: "completed" };
+      },
+    };
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({ llm, environment });
+
+    // Turn 1 completes (tool call + output); the park request lands before turn 2.
+    const all: OmniMessage[] = [];
+    for await (const msg of engine.run([userText("go")], {
+      approve: allowAll,
+      shouldPark: () => received.length >= 1,
+    })) {
+      all.push(msg);
+    }
+    // Parked, not aborted: exactly one request went out, and the stream carries no
+    // abort/max-turns notice — parking is silent so the resumed transcript reads
+    // continuously.
+    expect(received).toHaveLength(1);
+    expect(all.some((m) => (m.payload as { type?: string }).type === "abort")).toBe(false);
+    expect(turnAbortedCount(all)).toBe(0);
+
+    // The resume relaunch: an EMPTY input run — the parked turn's pending tool output
+    // rides in as carry-over, pairing the committed tool_call (same shape issue #33 pins
+    // for the max-turns hold).
+    const resumed = await collectRun(engine, [], allowAll);
+    expect(received).toHaveLength(2);
+    const resumedTypes = received[1]!.map((m) => (m.payload as { type?: string }).type);
+    expect(resumedTypes).toEqual(["tool_call_output"]);
+    expect((received[1]![0]!.payload as { tool_call_id?: string }).tool_call_id).toBe("c1");
+    expect(
+      resumed.some(
+        (m) => isCompleteModelMessage(m) && m.payload.type === "text" && m.payload.text === "Done",
+      ),
+    ).toBe(true);
+  });
+
+  it("shouldPark before the first turn holds the prompt; a run with nothing to send is a no-op", async () => {
+    const received: OmniMessage[][] = [];
+    const llm: LLMInterface = {
+      async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
+        received.push(params.newMessages);
+        yield assistantText("Done");
+        return { status: "completed" };
+      },
+    };
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({ llm, environment });
+
+    // Parked before the first request: the prompt is held, no request is issued.
+    for await (const _ of engine.run([userText("go")], {
+      approve: allowAll,
+      shouldPark: () => true,
+    })) {
+      // drain
+    }
+    expect(received).toHaveLength(0);
+
+    // Resume resends the held prompt.
+    await collectRun(engine, [], allowAll);
+    expect(received).toHaveLength(1);
+    expect((received[0]![0]!.payload as TextPayload).text).toBe("go");
+
+    // With the carry-over consumed, an empty-input run has nothing to send and issues
+    // no request at all (the guard behind a resume that reconstructed nothing).
+    await collectRun(engine, [], allowAll);
+    expect(received).toHaveLength(1);
+  });
+
   it("aborts before run: emits abort and carries the (wrapped) input over to the next run", async () => {
     const received: OmniMessage[][] = [];
     const llm: LLMInterface = {

@@ -114,6 +114,8 @@ export interface RuntimeSession {
       thinkingLevel?: ThinkingLevelName;
       /** Present = goal mode: core loops rounds inside this one run (see core SessionRunOptions). */
       goal?: { budget?: number };
+      /** Turn-boundary park request (core RunOptions.shouldPark); drives the hot-swap handoff (see quiesce). */
+      shouldPark?: () => boolean;
     },
   ): AsyncGenerator<OmniMessage>;
   compact(opts: { signal: AbortSignal }): AsyncGenerator<OmniMessage>;
@@ -380,6 +382,50 @@ interface RuntimeEntry {
   pendingSteering: PendingSteeringEntry[];
   /** Timestamp of last activity (refreshed on load / status flip / drive completion), used for idle-eviction checks. */
   lastActivityMs: number;
+  /**
+   * Turn-boundary handoff state of the current run, set by launchTask for plain Task runs
+   * only — goals and compactions stay null and keep hard-abort swap semantics. `requested`
+   * is flipped by quiesce(); the run's `shouldPark` callback reads it at every turn
+   * boundary and records the park in `parked`, which the handoff's `settled` promise
+   * reports AFTER drive's finally — so it is deliberately not reset there, only at the
+   * next launch.
+   */
+  handoff: { requested: boolean; parked: boolean } | null;
+}
+
+/**
+ * A running Task handed across a hot swap: the OLD generation's drive keeps running to
+ * its next turn boundary (lame duck) while the successor App serves everything else. The
+ * successor adopts this handle (adoptHandoffs) to keep the run controllable in the
+ * meantime — status reads "running", approval decisions and interrupts forward to the old
+ * generation's registries — and to resume the parked run from its Trace once it settles.
+ * The object is shared memory across generations (it rides the hot-resource registry), so
+ * the mutable flags are the cross-generation coordination: `aborted` cancels the resume,
+ * `resumed` keeps a stale re-adoption from double-firing it.
+ */
+export interface RunHandoff {
+  sessionId: string;
+  projectId: string;
+  agentId: string;
+  /** The status at quiesce time ("running"); what the successor's statusOf reports until settled. */
+  status: SessionStatus;
+  /** The old generation's pending-approval registry: decisions forward here. */
+  approvals: ApprovalRegistry;
+  /** Interrupt: converge approvals to deny, abort the drive, and cancel the pending resume. */
+  abort: () => void;
+  /** Set by abort(); a parked settle with this set is not resumed. */
+  aborted: boolean;
+  /** Set by the first adopter that schedules the resume. */
+  resumed: boolean;
+  /** Resolves when the lame-duck drive settles; `parked` = it ended at a turn boundary for handoff (resume it) rather than completing or aborting on its own. */
+  settled: Promise<{ parked: boolean }>;
+}
+
+/** What quiesce() hands the swap: runs that outlive it, and aborted work the successor's boot should still wait out. */
+export interface QuiesceResult {
+  handoffs: RunHandoff[];
+  /** Drive promises of hard-aborted runs (goals, compactions): the dispose drain awaits these, same as shutdown did. */
+  aborted: Promise<void>[];
 }
 
 /** Active-table idle eviction: same convention as the SSE channel (an idle entry with no activity for 30 minutes releases its memory). */
@@ -478,6 +524,13 @@ export class SessionManager {
   private readonly agentGenerations = new Map<string, number>();
   /** Open streaming fragments of running sessions (fed by drive, served to GET /messages; see live-tail.ts). */
   private readonly liveTail = new LiveTailTracker();
+  /**
+   * Lame-duck runs adopted from the previous generation (see RunHandoff): still driven by
+   * the OLD App's closures, controlled through this manager. An adopted session reads as
+   * busy (statusOf/asserts), so no second writer can be loaded onto its Trace while the
+   * old drive still appends to it.
+   */
+  private readonly foreign = new Map<string, RunHandoff>();
   private readonly sweepTimer: NodeJS.Timeout;
   /** Clock for persisted timestamps (see SessionManagerDeps.now); wall clock unless injected. */
   private readonly now: () => Date;
@@ -492,15 +545,23 @@ export class SessionManager {
   // —— Query surface (used by Session listing / Agent active-count / SSE subscription replay) ——
 
   statusOf(sessionId: string): SessionStatus {
-    return this.entries.get(sessionId)?.status ?? "idle";
+    return this.entries.get(sessionId)?.status ?? this.foreign.get(sessionId)?.status ?? "idle";
   }
 
   pendingApprovalCount(sessionId: string): number {
-    return this.entries.get(sessionId)?.approvals.size ?? 0;
+    return (
+      this.entries.get(sessionId)?.approvals.size ??
+      this.foreign.get(sessionId)?.approvals.size ??
+      0
+    );
   }
 
   pendingApprovals(sessionId: string): PendingApproval[] {
-    return this.entries.get(sessionId)?.approvals.list() ?? [];
+    return (
+      this.entries.get(sessionId)?.approvals.list() ??
+      this.foreign.get(sessionId)?.approvals.list() ??
+      []
+    );
   }
 
   /** Number of queued follow-up tasks (`queueIfBusy`) awaiting auto-start. */
@@ -572,6 +633,7 @@ export class SessionManager {
       pendingBootstrap: [],
       pendingSteering: [],
       lastActivityMs: Date.now(),
+      handoff: null,
     });
     // Same wiring as ensureEntry: adopt IS the entry path for a session created in this
     // process (POST /sessions), and a listener registered only on the loader path left
@@ -660,6 +722,7 @@ export class SessionManager {
     this.assertOpen();
     this.assertAgentNotDeleting(sessionId);
     this.assertSessionNotDeleting(sessionId);
+    this.assertNoForeignRun(sessionId);
     const entry = this.entries.get(sessionId);
     if (entry && !opts?.queueIfBusy) this.assertIdle(entry);
   }
@@ -675,6 +738,7 @@ export class SessionManager {
       this.assertOpen();
       this.assertAgentNotDeleting(sessionId);
       this.assertSessionNotDeleting(sessionId);
+      this.assertNoForeignRun(sessionId);
       const entry = this.entries.get(sessionId);
       if (entry) this.assertIdle(entry);
       return operation();
@@ -701,6 +765,7 @@ export class SessionManager {
       this.assertOpen();
       this.assertAgentNotDeleting(sessionId);
       this.assertSessionNotDeleting(sessionId);
+      this.assertNoForeignRun(sessionId);
       const entry = await this.ensureEntry(sessionId);
       if (entry.status !== "idle" && opts?.queueIfBusy) {
         entry.followUps.push({
@@ -745,6 +810,7 @@ export class SessionManager {
       this.assertOpen();
       this.assertAgentNotDeleting(sessionId);
       this.assertSessionNotDeleting(sessionId);
+      this.assertNoForeignRun(sessionId);
       const entry = await this.ensureEntry(sessionId);
       this.assertIdle(entry);
       // The objective is the user's own text (leading skill-invocation blocks stripped) —
@@ -955,10 +1021,21 @@ export class SessionManager {
           ...(pending.origin !== undefined ? { origin: pending.origin } : {}),
         }),
     });
+    // Plain Task runs are handoff-capable: a hot swap parks them at the next turn
+    // boundary instead of aborting (see quiesce). The callback records the park on the
+    // entry so the handoff's `settled` can report it — deterministic, because a true
+    // return IS the park (the engine returns immediately after).
+    const handoff = { requested: false, parked: false };
+    entry.handoff = handoff;
     const gen = entry.session.run(input, {
       approve,
       signal: ac.signal,
       ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
+      shouldPark: () => {
+        if (!handoff.requested) return false;
+        handoff.parked = true;
+        return true;
+      },
     });
     // This call's input user text is the whole title source: drive persists its first
     // words as the immediate fallback and hands it to the LLM as the generation material
@@ -1000,6 +1077,7 @@ export class SessionManager {
       this.assertOpen();
       this.assertAgentNotDeleting(sessionId);
       this.assertSessionNotDeleting(sessionId);
+      this.assertNoForeignRun(sessionId);
       const entry = await this.ensureEntry(sessionId);
       this.assertIdle(entry);
       // When there's nothing to compact, core's compact() yields no messages at all: we
@@ -1025,9 +1103,10 @@ export class SessionManager {
 
   /** Submit an approval decision; returns false if the pending approval doesn't exist (already decided/unknown). */
   decideApproval(sessionId: string, toolCallId: string, decision: "allow" | "deny"): boolean {
-    const entry = this.entries.get(sessionId);
-    if (!entry) return false;
-    return entry.approvals.decide(toolCallId, decision);
+    const approvals =
+      this.entries.get(sessionId)?.approvals ?? this.foreign.get(sessionId)?.approvals;
+    if (!approvals) return false;
+    return approvals.decide(toolCallId, decision);
   }
 
   /**
@@ -1146,7 +1225,14 @@ export class SessionManager {
    */
   abortTask(sessionId: string): boolean {
     const entry = this.entries.get(sessionId);
-    if (!entry || !entry.abort) return false;
+    if (!entry || !entry.abort) {
+      // A lame-duck run from the previous generation: forward the interrupt through its
+      // handle (denies pending approvals, aborts the old drive, cancels the resume).
+      const foreign = this.foreign.get(sessionId);
+      if (!foreign) return false;
+      foreign.abort();
+      return true;
+    }
     entry.approvals.denyAll();
     entry.abort.abort();
     return true;
@@ -1228,6 +1314,11 @@ export class SessionManager {
    */
   abortProject(projectId: string): Promise<void>[] {
     const runnings: Promise<void>[] = [];
+    for (const h of this.foreign.values()) {
+      if (h.projectId !== projectId) continue;
+      h.abort();
+      runnings.push(h.settled.then(() => undefined));
+    }
     for (const [key, entry] of [...this.entries]) {
       if (entry.projectId !== projectId) continue;
       entry.approvals.denyAll();
@@ -1251,6 +1342,11 @@ export class SessionManager {
   beginAgentDeletion(projectId: string, agentId: string): Promise<void>[] {
     this.deletingAgents.add(agentKey(projectId, agentId));
     const runnings: Promise<void>[] = [];
+    for (const h of this.foreign.values()) {
+      if (h.projectId !== projectId || h.agentId !== agentId) continue;
+      h.abort();
+      runnings.push(h.settled.then(() => undefined));
+    }
     for (const [key, entry] of [...this.entries]) {
       if (entry.projectId !== projectId || entry.agentId !== agentId) continue;
       entry.approvals.denyAll();
@@ -1279,6 +1375,11 @@ export class SessionManager {
    */
   beginSessionDeletion(sessionId: string): Promise<void>[] {
     this.deletingSessions.add(sessionId);
+    const foreign = this.foreign.get(sessionId);
+    if (foreign) {
+      foreign.abort();
+      return [foreign.settled.then(() => undefined)];
+    }
     const entry = this.entries.get(sessionId);
     if (!entry) return [];
     entry.approvals.denyAll();
@@ -1292,11 +1393,120 @@ export class SessionManager {
     this.deletingSessions.delete(sessionId);
   }
 
+  /**
+   * Hot-swap handoff: the counterpart of shutdown() for a platform swap. New work is
+   * rejected from here on (requests route to the successor App anyway), but running
+   * Task drives are NOT aborted: each is asked to park at its next turn boundary
+   * (entry.handoff.requested → the run's shouldPark), and handed to the successor as a
+   * RunHandoff — approvals stay answerable, interrupt stays possible, and the successor
+   * resumes the parked run from its Trace (see adoptHandoffs). Goals and compactions
+   * have no parkable boundary contract yet and keep the hard-abort semantics; their
+   * drive promises are returned for the swap's drain to wait out, exactly as shutdown's
+   * wait did. Session environments are disposed once their drive settles either way —
+   * the old generation's background processes die with it, and the successor's resumed
+   * Session starts with a fresh environment (same as a process restart).
+   *
+   * Returns immediately: the lame-duck drives deliberately outlive this call.
+   */
+  quiesce(): QuiesceResult {
+    this.closed = true;
+    clearInterval(this.sweepTimer);
+    const handoffs: RunHandoff[] = [];
+    const aborted: Promise<void>[] = [];
+    // Lame-duck runs this manager itself adopted (a second push while the first push's
+    // handoffs are still settling): pass them along unchanged, so the chain of
+    // generations never drops a live run. Their settled hooks on THIS manager become
+    // no-ops through the closed flag; the next adopter's hooks take over.
+    for (const h of this.foreign.values()) handoffs.push(h);
+    for (const entry of this.entries.values()) {
+      const dispose = (): void => entry.session.dispose?.();
+      if (entry.running !== null && entry.handoff !== null) {
+        const handoffState = entry.handoff;
+        handoffState.requested = true;
+        const h: RunHandoff = {
+          sessionId: entry.sessionId,
+          projectId: entry.projectId,
+          agentId: entry.agentId,
+          status: entry.status,
+          approvals: entry.approvals,
+          aborted: false,
+          resumed: false,
+          abort: () => {
+            h.aborted = true;
+            entry.approvals.denyAll();
+            entry.abort?.abort();
+          },
+          settled: entry.running.then(
+            () => ({ parked: handoffState.parked }),
+            () => ({ parked: false }),
+          ),
+        };
+        handoffs.push(h);
+        void entry.running.then(dispose, dispose);
+        continue;
+      }
+      // Not handoff-capable (goal, compaction) or not running: today's swap semantics.
+      entry.approvals.denyAll();
+      entry.abort?.abort();
+      if (entry.running) {
+        aborted.push(entry.running);
+        void entry.running.then(dispose, dispose);
+      } else {
+        dispose();
+      }
+    }
+    this.entries.clear();
+    return { handoffs, aborted };
+  }
+
+  /**
+   * Successor side of the swap: adopt the predecessor's lame-duck runs. Each adopted
+   * session reads as busy until its old drive settles (foreign map — see the field doc);
+   * a run that settled parked (and was not interrupted meanwhile) is then resumed as an
+   * empty-input task on a freshly loaded Session — the parked turn's pending messages
+   * come back as Trace-replayed carry-over, so the transcript continues where it parked.
+   */
+  adoptHandoffs(handoffs: RunHandoff[]): void {
+    for (const h of handoffs) {
+      this.foreign.set(h.sessionId, h);
+      void h.settled.then(({ parked }) => {
+        if (this.foreign.get(h.sessionId) === h) this.foreign.delete(h.sessionId);
+        if (this.closed || !parked || h.aborted || h.resumed) return;
+        h.resumed = true;
+        void this.resumeParked(h.sessionId);
+      });
+    }
+  }
+
+  /** Relaunches a parked run on this generation (revalidated under the session lock, like every auto-start). */
+  private async resumeParked(sessionId: string): Promise<void> {
+    try {
+      await this.withLock(sessionId, async () => {
+        if (this.closed || this.deletingSessions.has(sessionId)) return;
+        const row = this.deps.sessions.findById(sessionId);
+        if (!row || this.deletingAgents.has(agentKey(row.projectId, row.agentId))) return;
+        const entry = await this.ensureEntry(sessionId);
+        if (entry.status !== "idle") return;
+        // Empty input: the parked turn's pending messages ride in as the resumed
+        // Session's replayed carry-over; the engine no-ops if nothing was reconstructed.
+        this.launchTask(entry, []);
+      });
+    } catch (err) {
+      this.log(`[handoff] resume failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
   /** Graceful shutdown: reject new tasks (503), interrupt all active runs, and wait for them to finish (default ≤5s). */
   async shutdown(timeoutMs = 5000): Promise<void> {
     this.closed = true;
     clearInterval(this.sweepTimer);
     const pending: Promise<void>[] = [];
+    // Adopted lame-duck runs stop with the process too: their drives live in the old
+    // generation's closures, but the process is going away for both generations.
+    for (const h of this.foreign.values()) {
+      h.abort();
+      pending.push(h.settled.then(() => undefined));
+    }
     for (const entry of this.entries.values()) {
       entry.approvals.denyAll();
       entry.abort?.abort();
@@ -1384,6 +1594,18 @@ export class SessionManager {
     }
   }
 
+  /**
+   * A lame-duck run from the previous generation still drives this session's Trace → 409,
+   * the same refusal a same-generation running Task gets. This is the single-writer rule
+   * across generations: ensureEntry would otherwise load a second Session onto a Trace
+   * file the old drive is still appending to.
+   */
+  private assertNoForeignRun(sessionId: string): void {
+    if (this.foreign.has(sessionId)) {
+      throw new HttpError(409, "task_in_progress", "This Session already has a Task in progress.");
+    }
+  }
+
   private assertIdle(entry: RuntimeEntry): void {
     if (entry.status === "running") {
       throw new HttpError(409, "task_in_progress", "This Session already has a Task in progress.");
@@ -1461,6 +1683,7 @@ export class SessionManager {
       pendingBootstrap: [],
       pendingSteering: [],
       lastActivityMs: Date.now(),
+      handoff: null,
     };
     this.entries.set(currentId, entry);
     this.registerNoticeListener(currentId, session);

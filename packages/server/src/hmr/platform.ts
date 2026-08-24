@@ -33,6 +33,7 @@ import { bindTerminalStream } from "../terminal/stream.js";
 import type { SandboxProviderSource, SandboxSettings } from "../sandbox/index.js";
 import { SandboxService } from "../sandbox/index.js";
 import { buildAppDeps, createApp, type AppDeps, type BuildDepsOverrides } from "../app.js";
+import type { RunHandoff } from "../runtime/session-manager.js";
 import { seamHttp } from "./hono-seam.js";
 import {
   PENGUIN_FAMILY,
@@ -132,7 +133,19 @@ export const PlatformIface = defineIface<PlatformApi, PlatformCtx>({
 interface ParkedInterfaces extends Interfaces {
   family: string;
   terminal: MembersOf<TerminalSession>;
+  /** Lame-duck agent runs handed across a swap (one list entry per run — see AGENT_RUNS_RESOURCE_ID). */
+  "agent-runs": MembersOf<RunHandoff>;
 }
+
+/**
+ * The ONE registry entry carrying the predecessor's lame-duck runs (a RunHandoff[]),
+ * registered by the dispose effect and claimed by the successor's create(). A single
+ * entry rather than per-run ids: the successor needs the whole set at once, and nothing
+ * about a run belongs in the parked document (its durable state is the Trace). The
+ * `agent-runs:` prefix keeps it inside its declared group, so an incompatible successor
+ * hard-stops it through disposeGroup like any other resource.
+ */
+const AGENT_RUNS_RESOURCE_ID = "agent-runs:handoff";
 
 export const DECLARED_RESOURCES: ParkedInterfaces = {
   family: PENGUIN_FAMILY,
@@ -159,6 +172,21 @@ export const DECLARED_RESOURCES: ParkedInterfaces = {
     "onExit",
     "kill",
     "dispose",
+  ],
+  // A handed-off agent run, as its adopter uses it (session-manager's adoptHandoffs and
+  // the foreign-run forwarding): identity for the busy/deletion checks, the approval
+  // registry decisions forward into, the interrupt, the two coordination flags, and the
+  // settle promise the resume hangs off. Same completeness rule as `terminal` above.
+  "agent-runs": [
+    "sessionId",
+    "projectId",
+    "agentId",
+    "status",
+    "approvals",
+    "abort",
+    "aborted",
+    "resumed",
+    "settled",
   ],
 };
 
@@ -303,6 +331,13 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       // now — nothing is running in THIS App yet — so the chat banner never restores a
       // phantom "running" goal. GOAL.yaml on disk stays `active` as the resume point.
       deps.goalsRepo.abortOrphanedActive();
+      // Lame-duck agent runs the predecessor handed off (its quiesce left them running
+      // to their next turn boundary): adopt them, so they stay controllable — busy
+      // status, approvals, interrupt — and resume from their Traces once they settle.
+      // An incompatible predecessor's set was already hard-stopped by the group
+      // reconciliation above, so whatever this claim returns speaks this build's
+      // RunHandoff contract.
+      deps.manager.adoptHandoffs(ctx.resources.claim<RunHandoff[]>(AGENT_RUNS_RESOURCE_ID) ?? []);
     }
 
     // ONE app, ONE pointer: every route this App serves — terminal group and business
@@ -334,12 +369,17 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     //
     // DELIVERED (survives the swap; the successor adopts it at load):
     //   - pty sessions        registry `terminal:*` + parked handle ids → terminals.adopt
+    //   - agent Task runs     registry `agent-runs:handoff` (manager.quiesce → RunHandoff[]):
+    //                         the old drive runs to its next turn boundary as a lame duck,
+    //                         the successor adopts the handles (busy status, approvals,
+    //                         interrupt) and resumes each parked run from its Trace
     //   - runtime singletons  db / auth / channels / config / proxy / desktop —
     //                         runtime-owned, re-claimed by every App; not this App's to park
     // SUSPENDED (stopped here; the successor rebuilds it fresh at load):
     //   - scheduler           stop() now; successor start() reconciles missed fires
-    //   - agent runs          approvals → deny, drives → abort; goal rows reconciled by
-    //                         the successor's abortOrphanedActive
+    //   - goal runs / compactions  approvals → deny, drives → abort (no parkable turn
+    //                         boundary contract); goal rows reconciled by the successor's
+    //                         abortOrphanedActive
     //   - session environments dispose() after the drive settles — kills background
     //                         commands (dev servers etc.) that would otherwise run on
     //                         orphaned and invisible to the successor's fresh Session
@@ -365,7 +405,28 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       const drains: Promise<unknown>[] = [];
       if (business !== null) {
         business.scheduler.stop();
-        drains.push(business.manager.shutdown(DRAIN_GRACE_MS));
+        const runs = business.manager.quiesce();
+        // Handed-off Task runs OUTLIVE the swap by design — they must not gate the
+        // successor's boot. Registered even when empty, so a stale predecessor list is
+        // always retired by the overwrite; the disposer covers the process-exit sweep
+        // (a lame duck with no adopter left still stops with the process).
+        ctx.resources.register(AGENT_RUNS_RESOURCE_ID, runs.handoffs, () => {
+          for (const h of runs.handoffs) h.abort();
+        });
+        // Hard-aborted work (goals, compactions) still gates the boot, with the same
+        // grace shutdown() gave it: the successor must not race a dying drive's Trace
+        // writes on a session it may immediately reload.
+        if (runs.aborted.length > 0) {
+          const done = Promise.allSettled(runs.aborted).then(() => undefined);
+          drains.push(
+            Promise.race([
+              done,
+              new Promise<void>((resolve) => {
+                setTimeout(resolve, DRAIN_GRACE_MS).unref?.();
+              }),
+            ]),
+          );
+        }
       }
       drained = Promise.allSettled(drains).then(() => undefined);
     });

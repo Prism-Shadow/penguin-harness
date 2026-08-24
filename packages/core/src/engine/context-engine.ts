@@ -136,6 +136,18 @@ export interface RunOptions {
    * construction-time default (no override). Omitted = the LLM object's default.
    */
   thinkingLevel?: ThinkingLevelName;
+  /**
+   * Consulted at every turn boundary (before a turn's LLM request is issued): returning
+   * true PARKS the run — the pending turn input is held as carry-over, exactly like the
+   * max-turns stop, and the generator returns without emitting anything. A parked run is
+   * resumable: the next `run` call resends the held input (in-process via the engine's
+   * carry-over; across a process or hot-swap generation change via Trace replay's
+   * positional carry-over reconstruction — everything pending at a boundary is already
+   * written to the Trace). Deliberately silent on the stream, so the transcript reads
+   * continuously once the resuming run picks up. The turn in progress when the callback
+   * first returns true still completes — this is a boundary check, not an abort.
+   */
+  shouldPark?: () => boolean;
 }
 
 /**
@@ -691,7 +703,23 @@ export class ContextEngine {
     const startNotices = yield* this.deliverBackgroundNotices();
     if (startNotices.length > 0) nextInput = [...nextInput, ...startNotices];
 
+    // Nothing to send at all (an empty Prompt with no carry-over, no summary and no
+    // notices): end without issuing a request. This is what makes a resume-after-park
+    // relaunch with an empty input safe when the parked input turns out to have been
+    // purely synthetic (synthetic carry-over is never written to Trace, so replay can
+    // reconstruct nothing) — the alternative is an LLM request with no new input.
+    if (nextInput.length === 0) return;
+
     for (;;) {
+      // Handoff parking (see RunOptions.shouldPark): hold this turn's pending input as
+      // carry-over — the same hold as the max-turns stop below — and end the generator
+      // without emitting anything. `nextInput` is non-empty here (the loop is only
+      // re-entered with pending work), and everything real in it is already in the
+      // Trace, so a successor generation resumes it by replay.
+      if (opts?.shouldPark?.()) {
+        this.pendingCarryOver = nextInput;
+        return;
+      }
       // max_turns guard: emit a length notice and stop once exceeded. A non-positive cap
       // (-1 per the config contract "must be > 0 or -1") disables the guard entirely —
       // same convention as maxSessionTurns in shouldCompact (issue #55: -1 used to trip
