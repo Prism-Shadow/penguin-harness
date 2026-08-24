@@ -112,12 +112,14 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | /api/machines | **服务端自身** `~/.ssh/config` 中的主机别名、本服务端会安装的版本，以及正在运行或最近一次的安装任务：`{machines: [{id, alias}], imageVersion, job}` |
+| GET | /api/machines | **服务端自身** `~/.ssh/config` 中的主机别名、本服务端会安装的版本，以及正在运行或最近一次的安装任务：`{machines: [{id, alias, installed}], imageVersion, job}` |
 | POST | /api/machines/:machineId/install | 在该主机上安装当前构建；返回 `202` 与同样的响应体，此时任务已在运行 |
 
 无论个人服务端还是多用户服务端都仅限管理员：安装会以**服务端账户**的密钥派生 ssh，并在另一台机器上写入程序目录——这是所有者的能力，而非访客的。ssh 配置只读不写，`ssh -G` 仅在真正安装时才解析别名，因此哪怕配置声明了几百台主机，列表也只是一次文件读取。
 
 `imageVersion` 是将被推送的版本；为 `null` 表示本服务端根本没有安装镜像（只有从未被热推过的源码检出会是这种形态），此时任何安装都会以 `409` `no_install_image` 拒绝。该版本取自当前运行的安装自身：热推过的服务端推送它正在运行的 bundle（`0.0.0-hmr.<cli>.<web>`），tarball 或打包安装则推送自己的程序树，因此两端的一致是构造性的。
+
+`installed` 是**本服务端**最近一次在该机器上完成的安装——`{version, at}`，从未安装过则为 `null`。它持久化在数据根目录下，因此能跨重启、跨热推、跨「在别的机器上安装」而保留；它记录的是本端做过什么，而非对远端的实地探查，所以被手工清空的远端仍显示为已安装，直到下一次安装将其修正。安装失败不写入任何记录。
 
 安装是任务而非请求：它要探测对端，可能下载并校验一份 Node 运行时，再经 scp 复制镜像——最坏情况以分钟计。`POST` 启动后立即返回，客户端轮询 `GET` 读取 `job.log`，其中是对端自己的原话（ssh 的诊断、远端安装器的输出）。运行期间 `job.result` 为 `null`，结束后为 `{ok: true, kind: "installed" | "already-installed", version}` 或 `{ok: false, step, message}`。同一时刻只允许一个任务；任务存于内存，热推与重启都不保留，重跑即是恢复手段——每一步都是幂等的。
 

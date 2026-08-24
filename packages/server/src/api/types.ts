@@ -3023,6 +3023,17 @@ export interface MachineInfo {
    * costs one file read; an alias is resolved only when it is actually installed to.
    */
   alias: string;
+  /**
+   * The last install THIS server carried out there, remembered on disk so it survives a
+   * restart, a hot push, and installing on some other machine. Null when this server has
+   * never installed there.
+   *
+   * A record of what was done, not a survey of the far side: a machine wiped by hand still
+   * reads as installed until the next install probes it and corrects the record. Asking the
+   * remote instead would cost an ssh round trip per host at page load, which is the price
+   * the config-text list exists to avoid.
+   */
+  installed: { version: string; at: string } | null;
 }
 
 /**
