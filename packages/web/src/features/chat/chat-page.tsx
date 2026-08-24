@@ -625,6 +625,19 @@ export function ChatPage() {
     isSessionDeleted,
   ]);
 
+  /**
+   * The route names a Session we cannot answer for YET: it is not in the loaded pages and the
+   * direct lookup that settles it has not failed. The list is paged, so this is ordinary — a
+   * deep link, a Session just created, a row beyond the first page.
+   *
+   * It exists because the render used to conclude "no Sessions yet" here while the effect
+   * below explicitly refuses to conclude anything, and the two disagreeing is what put an
+   * empty state on screen for a frame in front of a conversation that was about to appear.
+   * Whatever the route is waiting for, an empty state is never the honest answer to it.
+   */
+  const routeSessionUnresolved =
+    !draft && !!routeSessionId && selected === null && probeFailedKey !== probeKey;
+
   // Auto-select the most recent conversation when the route doesn't select one (newest loaded
   // active/schedule Session — archived rows are hidden by choice and subagent Sessions belong
   // to their parent, so neither is auto-opened); if there is none, fall back to draft state
@@ -2024,7 +2037,7 @@ export function ChatPage() {
                     </div>
                   </>
                 )
-              ) : sessionsLoading ? (
+              ) : sessionsLoading || routeSessionUnresolved ? (
                 <div className="space-y-3 p-6">
                   <Skeleton className="h-5 w-1/2" />
                 </div>
