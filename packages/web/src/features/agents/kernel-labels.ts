@@ -1,18 +1,21 @@
 /**
- * Display names for kernel merge leaves (the dotted config paths a kernel update reports in
- * `advanced` / `kept`): fixed paths map through the dictionary, `tools.builtin.<name>`
- * renders per tool, and unknown paths (a future default the dictionary does not know yet)
- * fall back to the raw path — never hidden, never crashing.
+ * Display names for the settings tabs a kernel update reports in `advanced` / `kept`: a known
+ * tab key renders as that tab's own label, and an unknown key (a tab a newer server manages
+ * and this build does not know) falls back to the raw key — never hidden, never crashing.
+ *
+ * Built per call rather than at module scope: `S` is swapped on a language change.
  */
 import { S } from "../../lib/strings";
 
-const TOOL_PATH_PREFIX = "tools.builtin.";
-
-export function kernelFieldLabel(path: string): string {
-  const fixed = S.agent.kernelFields[path];
-  if (fixed !== undefined) return fixed;
-  if (path.startsWith(TOOL_PATH_PREFIX) && path.length > TOOL_PATH_PREFIX.length) {
-    return S.agent.kernelFieldTool(path.slice(TOOL_PATH_PREFIX.length));
-  }
-  return path;
+export function kernelTabLabel(tab: string): string {
+  const labels: Record<string, string> = {
+    prompt: S.agent.tabPrompt,
+    runtime: S.agent.tabRuntime,
+    tools: S.agent.tabTools,
+    skills: S.agent.tabSkills,
+    memory: S.agent.tabMemory,
+    vault: S.agent.tabVault,
+    schedules: S.agent.tabSchedules,
+  };
+  return labels[tab] ?? tab;
 }
