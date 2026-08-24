@@ -1192,10 +1192,25 @@ export class MachinesService {
     if (resolved === null) {
       return { kind: "failed", detail: "ssh could not resolve that host." };
     }
-    const signedIn = await this.#effects.signIn({
-      target: { alias: machine.alias, user: resolved.settings.user },
-      assets: this.#assets,
-    });
+    const target = { alias: machine.alias, user: resolved.settings.user };
+    // The machine's own CLI first, for the same reason the model sync prefers it: it needs no
+    // password, so it still works on a machine whose admin password a person has set — which
+    // is precisely the machine a browser could not otherwise be signed in to from here.
+    const minted = await mintTokenOnRemote(target, (t, command) => this.#effects.runOn(t, command));
+    if (minted.kind === "minted") {
+      // Synthesized as the Set-Cookie that machine's own login would have sent: the caller's
+      // job is to rename one into the machine's namespace, and it should not have to know
+      // this one was minted rather than issued. No Secure — the browser is talking to THIS
+      // origin through the proxy, not to the machine.
+      // Kept, not just handed on: this is the same session the work on this machine needs.
+      this.#sessions.set(machineId, minted.token);
+      return {
+        kind: "signed-in",
+        setCookie: [`${SESSION_COOKIE}=${minted.token}; Path=/; HttpOnly; SameSite=Lax`],
+      };
+    }
+    if (minted.kind === "failed") return { kind: "failed", detail: minted.detail };
+    const signedIn = await this.#effects.signIn({ target, assets: this.#assets });
     if (signedIn.kind === "signed-in") {
       for (const line of signedIn.setCookie) {
         const token = sessionTokenOf(line);
