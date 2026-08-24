@@ -17,6 +17,7 @@ import {
   requireString,
   requireValidId,
 } from "../validate.js";
+import { readArchiveBase64 } from "./agent-transfer.js";
 import type { AppDeps } from "../../app.js";
 
 /** Window size in days for the card's activity sparkline (last 30 days, including today). */
@@ -79,6 +80,9 @@ export function agentsRoutes(deps: AppDeps): Hono<AppEnv> {
       // process's cwd instead of being rejected.
       directory = { path: await requireProjectDir(skillsDirectory), names: directorySkills };
     }
+    // Optional snapshot seed: the new Agent starts from an exported package instead of the
+    // default template (the service rejects combining it with skill seeding).
+    const archive = body.dataBase64 === undefined ? undefined : readArchiveBase64(body);
     const item = await deps.agentService.createAgent(
       projectId,
       agentId,
@@ -86,6 +90,7 @@ export function agentsRoutes(deps: AppDeps): Hono<AppEnv> {
       description,
       skills,
       directory,
+      archive,
     );
     const agent: AgentSummary = {
       ...item,

@@ -66,7 +66,7 @@ benchmarks/<id>/
 
 ## Snapshot 与版本
 
-每轮优化前，Agent State 被打包为 `snapshots/v<version>.tar.gz`（Vault 除外——密钥永不进入快照）。`system_config.yaml` 的 `version` 在优化成功后自增。Web UI 支持导出与导入快照，导入版本不高于当前版本时需要显式确认。
+每轮优化前，Agent State 被打包为 `snapshots/v<version>.tar.gz`（Vault 除外——密钥永不进入快照）。`system_config.yaml` 的 `version` 在优化成功后自增。Web UI 支持导出与导入快照，导入版本不高于当前版本时需要显式确认。也可以在智能体页的创建弹窗里直接从导出的快照包新建 Agent：新 Agent 以包内状态与版本创建，无需确认。
 
 ## 全程可审计
 

@@ -390,6 +390,13 @@ export const en: Strings = {
     createDirSkillsFound: (n: number): string =>
       `${n} skill${n === 1 ? "" : "s"} found in this directory`,
     createDirSkillsClear: "Clear the selected directory",
+    createSnapshot: "Initialize from a snapshot",
+    createSnapshotPick: "Choose a snapshot package",
+    createSnapshotHint:
+      "Optional: pick an exported Agent State snapshot package (.tar.gz) — the new agent starts from the package's state; name and description left empty keep the package's values.",
+    createSnapshotSkillsOff:
+      "The snapshot package carries its own skills, so skill seeding is unavailable.",
+    createSnapshotClear: "Remove the selected package",
     sessionCount: (n: number): string => `${n} session${n === 1 ? "" : "s"}`,
     toolCount: (n: number): string => `${n} tool${n === 1 ? "" : "s"}`,
     vaultKeyCount: (n: number): string => `${n} vault key${n === 1 ? "" : "s"}`,

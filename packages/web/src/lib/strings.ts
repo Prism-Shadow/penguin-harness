@@ -376,6 +376,13 @@ export const zh = {
     createDirSkillsEmpty: "该目录下没有可安装的技能",
     createDirSkillsFound: (n: number): string => `该目录下找到 ${n} 个技能`,
     createDirSkillsClear: "清除已选目录",
+    /** Create dialog's optional snapshot seed: the new Agent starts from an exported package. */
+    createSnapshot: "从快照初始化",
+    createSnapshotPick: "选择快照包",
+    createSnapshotHint:
+      "可选：选择导出的 Agent State 快照包（.tar.gz），新 Agent 以包内状态创建；名称与描述留空则沿用包内值",
+    createSnapshotSkillsOff: "快照包自带技能，与技能选择互斥",
+    createSnapshotClear: "移除已选快照包",
     sessionCount: (n: number): string => `${n} 个 Session`,
     toolCount: (n: number): string => `${n} 个工具`,
     vaultKeyCount: (n: number): string => `${n} 个密钥`,

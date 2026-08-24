@@ -84,7 +84,7 @@ The files panel browses the Workspace tree, previews files (Markdown / HTML rend
 
 ## Agent Management (/agents)
 
-The list page creates and deletes Agents; clicking through opens the `/agents/:agentId` settings page, organized into tabs:
+The list page creates and deletes Agents — the create dialog can initialize the new agent from an exported Agent State snapshot package (name and description left empty keep the package's values, and skill picking is unavailable then, since the package carries its own skills) — and clicking through opens the `/agents/:agentId` settings page, organized into tabs:
 
 | Tab | Contents |
 | --- | --- |

@@ -30,6 +30,7 @@ import {
 import type { AgentsRepo } from "../db/repos/agents.js";
 import { SEMANTIC_ID_PATTERN, SEMANTIC_ID_RULE } from "./ids.js";
 import type { AgentConfigService } from "./agent-config-service.js";
+import type { SnapshotService } from "./snapshot-service.js";
 import { isTopicFileName } from "./memory-service.js";
 import { resolveLibrarySkills } from "./skill-library.js";
 import { resolveDirectorySkills } from "./directory-skills.js";
@@ -62,6 +63,7 @@ export class AgentService {
     private readonly root: string,
     private readonly agents: AgentsRepo,
     private readonly agentConfig: AgentConfigService,
+    private readonly snapshots: SnapshotService,
   ) {}
 
   /** Union of DB index ∪ directory scan; unmanaged directory Agents are backfilled into the DB. */
@@ -239,6 +241,12 @@ export class AgentService {
    * `installSkill` writer the Skills tab uses, inside the same cleanup window as the rest of
    * initialization, so an Agent never survives with only part of its picked set. They are
    * resolved before anything is created, so an unknown name creates no directory at all.
+   *
+   * `archive` is an exported Agent State snapshot package: the fresh Agent is seeded from
+   * it instead of the default template (explicit name/description override the package's
+   * values, absent ones keep them — no id fallback). Mutually exclusive with skill seeding:
+   * the package carries its own skills. An invalid package fails the whole creation inside
+   * the same cleanup window, leaving no empty Agent behind.
    */
   async createAgent(
     projectId: string,
@@ -247,12 +255,20 @@ export class AgentService {
     description?: string,
     skillNames?: readonly string[],
     directory?: { path: string; names: readonly string[] },
+    archive?: Buffer,
   ): Promise<AgentListItem> {
     if (!SEMANTIC_ID_PATTERN.test(agentId)) {
       throw new HttpError(
         400,
         "invalid_agent_id",
         `Agent id must be 2–64 characters: ${SEMANTIC_ID_RULE}.`,
+      );
+    }
+    if (archive !== undefined && (skillNames?.length || directory)) {
+      throw new HttpError(
+        400,
+        "snapshot_with_skills",
+        "Snapshot initialization and skill seeding are mutually exclusive: the package carries its own skills.",
       );
     }
     const taken =
@@ -276,9 +292,29 @@ export class AgentService {
     const seedSkills = [...librarySeed, ...directorySeed];
     await coreCreateAgent({ root: this.root, projectId, agentId });
     try {
-      await this.agentConfig.updateConfig(projectId, agentId, {
-        config: { name: displayName, ...(description !== undefined ? { description } : {}) },
-      });
+      if (archive !== undefined) {
+        // Seed the fresh state from the snapshot package. No pre-import snapshot and no
+        // version confirmation: both guards protect existing State, and this Agent has
+        // none yet — its template state is not worth preserving.
+        await this.snapshots.importArchive(projectId, agentId, archive, {
+          confirm: true,
+          preSnapshot: false,
+        });
+        // Explicit name/description override the package's values; absent ones keep them.
+        // No id fallback here: the package is the identity being copied in.
+        if (name !== undefined || description !== undefined) {
+          await this.agentConfig.updateConfig(projectId, agentId, {
+            config: {
+              ...(name !== undefined ? { name } : {}),
+              ...(description !== undefined ? { description } : {}),
+            },
+          });
+        }
+      } else {
+        await this.agentConfig.updateConfig(projectId, agentId, {
+          config: { name: displayName, ...(description !== undefined ? { description } : {}) },
+        });
+      }
       for (const skill of seedSkills) {
         await installSkill(this.root, projectId, agentId, skill);
       }
@@ -292,22 +328,27 @@ export class AgentService {
     }
     const createdAt = new Date().toISOString();
     this.agents.insertOrIgnore({ projectId, agentId, createdAt });
-    // The init template ships with a default toolset and version number; read back the actual values.
+    // Read back the actual values: the init template ships a default toolset and version
+    // number, and a snapshot seed brings the package's own name, description, version,
+    // skills, schedules and memory.
     const meta = await this.agentConfig.readCardMeta(projectId, agentId);
+    const cardName = archive !== undefined ? (meta.name ?? agentId) : displayName;
+    const cardDescription = archive !== undefined ? meta.description : description;
     return {
       agentId,
-      name: displayName,
-      ...(description !== undefined ? { description } : {}),
+      name: cardName,
+      ...(cardDescription !== undefined ? { description: cardDescription } : {}),
       createdAt,
       updatedAt: createdAt,
       toolCount: meta.toolCount,
       version: meta.version,
       kernelOutdated: meta.kernelOutdated,
+      // The vault never travels in a snapshot, so this is 0 either way; the other counts
+      // are real reads because a package may carry any of them.
       vaultKeyCount: 0,
-      scheduleCount: 0,
-      // Read the real count: coreCreateAgent seeds the default skill set for default_agent.
+      scheduleCount: await this.scheduleCount(projectId, agentId),
       skillCount: await this.skillCount(projectId, agentId),
-      memoryCount: 0,
+      memoryCount: await this.memoryCount(projectId, agentId),
     };
   }
 }

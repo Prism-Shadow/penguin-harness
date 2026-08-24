@@ -17,6 +17,7 @@
  * all / select none. A plain new Agent otherwise starts with none.
  */
 import { useEffect, useRef, useState } from "react";
+import type { ChangeEvent } from "react";
 import { useLocation, useNavigate } from "react-router";
 import type { SkillMetadataItem } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
@@ -44,6 +45,14 @@ import { STAT_ICONS } from "../../lib/stat-icons";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { parkActiveDraft } from "../chat/draft-sessions";
 import { ActivitySparkline } from "./activity-sparkline";
+import {
+  SNAPSHOT_ACCEPT,
+  SNAPSHOT_BUTTON_CLASS,
+  agentIdFromSnapshotName,
+  fileToBase64,
+} from "./snapshot-file";
+import { HiddenFileInput } from "../../components/ui/hidden-file-input";
+import { CloseIcon } from "../../components/ui/icons";
 import { WorkspaceSelect } from "../chat/workspace-select";
 import { SkillPickList } from "../skills/skill-pick-list";
 import { addSkillNames, removeSkillNames, toggleSkillName } from "../skills/skill-selection";
@@ -120,6 +129,12 @@ export function AgentsPage() {
   const [dirSkillsError, setDirSkillsError] = useState<string | null>(null);
   const [createDirSkills, setCreateDirSkills] = useState<string[]>([]);
   const [dirSkillsOpen, setDirSkillsOpen] = useState(false);
+  /**
+   * Snapshot package to initialize the new Agent from (null = default template). Picking one
+   * hides the two skill fields: the package carries its own skills, and the server rejects
+   * the combination.
+   */
+  const [snapshotFile, setSnapshotFile] = useState<File | null>(null);
 
   /** Open the create dialog: don't keep the previous draft, always start from an empty form. */
   const openCreate = () => {
@@ -134,7 +149,25 @@ export function AgentsPage() {
     setDirSkillsError(null);
     setCreateDirSkills([]);
     setDirSkillsOpen(false);
+    setSnapshotFile(null);
     setCreateOpen(true);
+  };
+
+  const onPickSnapshot = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setSnapshotFile(file);
+    // Skill seeding and the package are mutually exclusive; drop any picks made before.
+    setCreateSkills([]);
+    setSkillsDir("");
+    setCreateDirSkills([]);
+    // Suggest the id from the package name (exported as <agentId>-v<n>.tar.gz) while the
+    // field is still empty; the suggestion stays editable, an unusable derivation is dropped.
+    if (!agentId.trim()) {
+      const derived = agentIdFromSnapshotName(file.name);
+      if (SEMANTIC_ID_PATTERN.test(derived)) setAgentId(derived);
+    }
   };
 
   // The library is fetched the first time the dialog opens, not on page load: the list itself
@@ -236,19 +269,26 @@ export function AgentsPage() {
         skills?: string[];
         skillsDirectory?: string;
         directorySkills?: string[];
+        dataBase64?: string;
       } = {
         agentId: id,
       };
       if (name.trim()) body.name = name.trim();
       if (description.trim()) body.description = description.trim();
-      // Picked Skills are seeded server-side inside the same create call, so a failure leaves no
-      // half-equipped Agent behind.
-      if (createSkills.length > 0) body.skills = createSkills;
-      // The pair only means anything together, so it is sent only when a directory actually
-      // contributed something — picking a directory and then no Skills from it is a plain Agent.
-      if (skillsDir && createDirSkills.length > 0) {
-        body.skillsDirectory = skillsDir;
-        body.directorySkills = createDirSkills;
+      if (snapshotFile !== null) {
+        // Initialize from the picked package; skill seeding is mutually exclusive (the
+        // package carries its own skills), and picking the file already cleared those fields.
+        body.dataBase64 = await fileToBase64(snapshotFile);
+      } else {
+        // Picked Skills are seeded server-side inside the same create call, so a failure leaves no
+        // half-equipped Agent behind.
+        if (createSkills.length > 0) body.skills = createSkills;
+        // The pair only means anything together, so it is sent only when a directory actually
+        // contributed something — picking a directory and then no Skills from it is a plain Agent.
+        if (skillsDir && createDirSkills.length > 0) {
+          body.skillsDirectory = skillsDir;
+          body.directorySkills = createDirSkills;
+        }
       }
       const res = await api.createAgent(projectId, body);
       setCreateOpen(false);
@@ -579,104 +619,147 @@ export function AgentsPage() {
             value={description}
             onChange={(e) => setDescription(e.target.value)}
           />
-          {/* Seed Skills: the form-variant picker (same trigger as the schedule dialog's model
+          {/* Optional snapshot seed: the new Agent starts from an exported package instead of
+              the default template. Picking one hides the two skill fields below — the package
+              carries its own skills, and the server rejects the combination. */}
+          <div>
+            <FieldLabel>{S.agent.createSnapshot}</FieldLabel>
+            {snapshotFile === null ? (
+              <label
+                className={`${SNAPSHOT_BUTTON_CLASS} ${busy ? "pointer-events-none opacity-60" : ""}`}
+              >
+                <HiddenFileInput
+                  accept={SNAPSHOT_ACCEPT}
+                  disabled={busy}
+                  onChange={onPickSnapshot}
+                />
+                {S.agent.createSnapshotPick}
+              </label>
+            ) : (
+              <div className="flex min-w-0 items-center gap-1.5">
+                <span className="min-w-0 truncate rounded-md border border-gray-300 bg-gray-50 px-2.5 py-1 font-mono text-xs dark:border-gray-700 dark:bg-gray-900">
+                  {snapshotFile.name}
+                </span>
+                <button
+                  type="button"
+                  title={S.agent.createSnapshotClear}
+                  aria-label={S.agent.createSnapshotClear}
+                  disabled={busy}
+                  onClick={() => setSnapshotFile(null)}
+                  className="shrink-0 rounded-md p-1 text-gray-400 transition-colors duration-150 hover:text-gray-600 dark:hover:text-gray-300"
+                >
+                  <CloseIcon size={12} />
+                </button>
+              </div>
+            )}
+            <FieldHint>
+              {snapshotFile === null ? S.agent.createSnapshotHint : S.agent.createSnapshotSkillsOff}
+            </FieldHint>
+          </div>
+          {snapshotFile === null && (
+            <>
+              {/* Seed Skills: the form-variant picker (same trigger as the schedule dialog's model
               and workspace pickers) over the shared multi-select panel, so a dialog field and the
               composer's dropdown offer one list with one set of row semantics. */}
-          <div>
-            <FieldLabel>{S.agent.createSkills}</FieldLabel>
-            <FormPicker
-              open={skillsOpen}
-              setOpen={setSkillsOpen}
-              label={
-                createSkills.length === 0
-                  ? S.agent.createSkillsPlaceholder
-                  : S.agent.createSkillsPicked(createSkills.length)
-              }
-              muted={createSkills.length === 0}
-              title={S.agent.createSkills}
-              ariaLabel={S.agent.createSkills}
-              disabled={busy}
-              menuClass="w-[26rem]"
-            >
-              <SkillPickList
-                skills={library ?? []}
-                selected={createSkills}
-                onToggle={(skillName) =>
-                  setCreateSkills((prev) => toggleSkillName(prev, skillName))
-                }
-                onSelectAll={(names) => setCreateSkills((prev) => addSkillNames(prev, names))}
-                onSelectNone={(names) => setCreateSkills((prev) => removeSkillNames(prev, names))}
-                emptyHint={library === null ? S.common.loading : S.agent.createSkillsEmpty}
-              />
-            </FormPicker>
-            {libraryError ? (
-              <FieldError>{libraryError}</FieldError>
-            ) : (
-              <FieldHint>{S.agent.createSkillsHint}</FieldHint>
-            )}
-          </div>
-          {/* Skills a checkout already carries: pick the project directory, then pick from what
-              its .agents/skills / .claude/skills hold. Separate from the library field because a
-              directory Skill may share a library Skill's name and still be the one installed. */}
-          <div>
-            <FieldLabel>{S.agent.createDirSkills}</FieldLabel>
-            <WorkspaceSelect
-              projectId={projectId ?? ""}
-              workspace={skillsDir}
-              onChange={setSkillsDir}
-              variant="form"
-              fieldLabel={S.agent.createDirSkills}
-              emptyLabel={S.agent.createDirSkillsPick}
-              menuHint={S.agent.createDirSkillsHint}
-              clearLabel={S.agent.createDirSkillsClear}
-            />
-            {skillsDir && dirSkills !== null && dirSkills.length > 0 && (
-              <div className="mt-2">
+              <div>
+                <FieldLabel>{S.agent.createSkills}</FieldLabel>
                 <FormPicker
-                  open={dirSkillsOpen}
-                  setOpen={setDirSkillsOpen}
+                  open={skillsOpen}
+                  setOpen={setSkillsOpen}
                   label={
-                    createDirSkills.length === 0
+                    createSkills.length === 0
                       ? S.agent.createSkillsPlaceholder
-                      : S.agent.createSkillsPicked(createDirSkills.length)
+                      : S.agent.createSkillsPicked(createSkills.length)
                   }
-                  muted={createDirSkills.length === 0}
-                  title={S.agent.createDirSkills}
-                  ariaLabel={S.agent.createDirSkills}
+                  muted={createSkills.length === 0}
+                  title={S.agent.createSkills}
+                  ariaLabel={S.agent.createSkills}
                   disabled={busy}
                   menuClass="w-[26rem]"
                 >
                   <SkillPickList
-                    skills={dirSkills}
-                    selected={createDirSkills}
+                    skills={library ?? []}
+                    selected={createSkills}
                     onToggle={(skillName) =>
-                      setCreateDirSkills((prev) => toggleSkillName(prev, skillName))
+                      setCreateSkills((prev) => toggleSkillName(prev, skillName))
                     }
-                    onSelectAll={(names) =>
-                      setCreateDirSkills((prev) => addSkillNames(prev, names))
-                    }
+                    onSelectAll={(names) => setCreateSkills((prev) => addSkillNames(prev, names))}
                     onSelectNone={(names) =>
-                      setCreateDirSkills((prev) => removeSkillNames(prev, names))
+                      setCreateSkills((prev) => removeSkillNames(prev, names))
                     }
-                    emptyHint={S.agent.createDirSkillsEmpty}
+                    emptyHint={library === null ? S.common.loading : S.agent.createSkillsEmpty}
                   />
                 </FormPicker>
+                {libraryError ? (
+                  <FieldError>{libraryError}</FieldError>
+                ) : (
+                  <FieldHint>{S.agent.createSkillsHint}</FieldHint>
+                )}
               </div>
-            )}
-            {dirSkillsError ? (
-              <FieldError>{dirSkillsError}</FieldError>
-            ) : (
-              <FieldHint>
-                {!skillsDir
-                  ? S.agent.createDirSkillsHint
-                  : dirSkills === null
-                    ? S.common.loading
-                    : dirSkills.length === 0
-                      ? S.agent.createDirSkillsEmpty
-                      : S.agent.createDirSkillsFound(dirSkills.length)}
-              </FieldHint>
-            )}
-          </div>
+              {/* Skills a checkout already carries: pick the project directory, then pick from what
+              its .agents/skills / .claude/skills hold. Separate from the library field because a
+              directory Skill may share a library Skill's name and still be the one installed. */}
+              <div>
+                <FieldLabel>{S.agent.createDirSkills}</FieldLabel>
+                <WorkspaceSelect
+                  projectId={projectId ?? ""}
+                  workspace={skillsDir}
+                  onChange={setSkillsDir}
+                  variant="form"
+                  fieldLabel={S.agent.createDirSkills}
+                  emptyLabel={S.agent.createDirSkillsPick}
+                  menuHint={S.agent.createDirSkillsHint}
+                  clearLabel={S.agent.createDirSkillsClear}
+                />
+                {skillsDir && dirSkills !== null && dirSkills.length > 0 && (
+                  <div className="mt-2">
+                    <FormPicker
+                      open={dirSkillsOpen}
+                      setOpen={setDirSkillsOpen}
+                      label={
+                        createDirSkills.length === 0
+                          ? S.agent.createSkillsPlaceholder
+                          : S.agent.createSkillsPicked(createDirSkills.length)
+                      }
+                      muted={createDirSkills.length === 0}
+                      title={S.agent.createDirSkills}
+                      ariaLabel={S.agent.createDirSkills}
+                      disabled={busy}
+                      menuClass="w-[26rem]"
+                    >
+                      <SkillPickList
+                        skills={dirSkills}
+                        selected={createDirSkills}
+                        onToggle={(skillName) =>
+                          setCreateDirSkills((prev) => toggleSkillName(prev, skillName))
+                        }
+                        onSelectAll={(names) =>
+                          setCreateDirSkills((prev) => addSkillNames(prev, names))
+                        }
+                        onSelectNone={(names) =>
+                          setCreateDirSkills((prev) => removeSkillNames(prev, names))
+                        }
+                        emptyHint={S.agent.createDirSkillsEmpty}
+                      />
+                    </FormPicker>
+                  </div>
+                )}
+                {dirSkillsError ? (
+                  <FieldError>{dirSkillsError}</FieldError>
+                ) : (
+                  <FieldHint>
+                    {!skillsDir
+                      ? S.agent.createDirSkillsHint
+                      : dirSkills === null
+                        ? S.common.loading
+                        : dirSkills.length === 0
+                          ? S.agent.createDirSkillsEmpty
+                          : S.agent.createDirSkillsFound(dirSkills.length)}
+                  </FieldHint>
+                )}
+              </div>
+            </>
+          )}
         </div>
       </Modal>
 
