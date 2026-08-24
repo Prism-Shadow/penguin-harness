@@ -31,7 +31,7 @@ const job = JSON.parse(fs.readFileSync(path.join(here, "job.json"), "utf8"));
 const isWindows = process.platform === "win32";
 const log = (line) => process.stdout.write(`${line}\n`);
 
-// --- the pack reader (mirror of packages/desktop/src/remote/pack.ts) ------------------------
+// --- the pack reader (mirror of pack.ts) ------------------------
 function unpack(packPath, destDir) {
   const raw = zlib.gunzipSync(fs.readFileSync(packPath));
   const headerLength = raw.readUInt32BE(0);

@@ -1,15 +1,17 @@
 /**
- * The pure half of "install a server on that machine": reading ~/.ssh/config and `ssh -G`,
- * reading what the identity probe answered, choosing the Node runtime to send, the container
- * the image travels in, and the exact ssh/scp commands all of that turns into. No network, no
- * ssh binary, no Electron.
+ * The pure half of the machines capability (platform code — see ../src/hmr/README.md):
+ * reading ~/.ssh/config and `ssh -G`, reading what the identity probe answered, choosing
+ * the Node runtime to send, the container the image travels in, finding the running
+ * server's own pushable image, and the exact ssh/scp commands all of that turns into.
+ * No network, no ssh binary.
  */
 import fs from "node:fs";
+import zlib from "node:zlib";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { machineIdentity, parseHostAliases, parseSshSettings } from "../src/remote/ssh-config.js";
-import { parseProbeOutput, POSIX_PROBE, WINDOWS_PROBE } from "../src/remote/detect.js";
+import { machineIdentity, parseHostAliases, parseSshSettings } from "../src/machines/ssh-config.js";
+import { parseProbeOutput, POSIX_PROBE, WINDOWS_PROBE } from "../src/machines/detect.js";
 import {
   checksumFor,
   ensureRuntimeArchive,
@@ -18,8 +20,8 @@ import {
   remoteNodeIsUsable,
   runtimeArtifact,
   sha256Of,
-} from "../src/remote/runtime.js";
-import { packDirectory, unpackTo } from "../src/remote/pack.js";
+} from "../src/machines/runtime.js";
+import { packDirectory, unpackTo } from "../src/machines/pack.js";
 import {
   cleanupCommand,
   cmdQuote,
@@ -29,8 +31,8 @@ import {
   scpArgs,
   shQuote,
   sshArgs,
-} from "../src/remote/commands.js";
-import { payloadSourcesReady, resolvePayloadSources } from "../src/remote/install-server.js";
+} from "../src/machines/commands.js";
+import { resolvePayloadImage } from "../src/machines/install-server.js";
 
 describe("parseHostAliases", () => {
   const noIncludes = () => [];
@@ -352,32 +354,162 @@ describe("ssh / scp invocations", () => {
   });
 });
 
-describe("resolvePayloadSources", () => {
-  it("packaged: the image and the Node installer ride as app resources", () => {
-    expect(
-      resolvePayloadSources({
-        packaged: true,
-        resourcesPath: "/Applications/PenguinHarness.app/Contents/Resources",
-        repoRoot: "/ignored",
+describe("resolvePayloadImage", () => {
+  const manifest = JSON.stringify({ name: "@prismshadow/penguin-cli", version: "9.9.9" });
+
+  it("tarball install: packs its own program directory, without runtime or launchers", () => {
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-image-"));
+    try {
+      const root = path.join(work, "penguin");
+      fs.mkdirSync(path.join(root, "lib", "dist"), { recursive: true });
+      fs.mkdirSync(path.join(root, "lib", "runtime", "bin"), { recursive: true });
+      fs.mkdirSync(path.join(root, "bin"), { recursive: true });
+      fs.writeFileSync(path.join(root, "lib", "dist", "penguin.js"), "//\n");
+      fs.writeFileSync(path.join(root, "lib", "package.json"), manifest);
+      fs.writeFileSync(path.join(root, "lib", "runtime", "bin", "node"), "elf");
+      fs.writeFileSync(path.join(root, "bin", "penguin"), "#!/bin/sh\n");
+
+      const image = resolvePayloadImage(null, path.join(root, "lib", "dist", "penguin.js"));
+      expect(image?.version).toBe("9.9.9");
+      const dest = path.join(work, "unpacked");
+      const entries = unpackTo(image!.pack(), dest).map((entry) => entry.path);
+      expect(entries).toContain("penguin/lib/dist/penguin.js");
+      expect(entries).toContain("penguin/lib/package.json");
+      // This machine's Node and the old launchers must not ride in a universal image.
+      expect(entries.some((p) => p.startsWith("penguin/lib/runtime/"))).toBe(false);
+      expect(entries.some((p) => p.startsWith("penguin/bin/"))).toBe(false);
+    } finally {
+      fs.rmSync(work, { recursive: true, force: true });
+    }
+  });
+
+  it("desktop app: the staged payload beside the app resources", () => {
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-image-"));
+    try {
+      const serverDist = path.join(
+        work,
+        "resources",
+        "app",
+        "node_modules",
+        "@prismshadow",
+        "penguin-server",
+        "dist",
+      );
+      fs.mkdirSync(serverDist, { recursive: true });
+      const payload = path.join(work, "resources", "payload", "penguin", "lib");
+      fs.mkdirSync(path.join(payload, "dist"), { recursive: true });
+      fs.writeFileSync(path.join(payload, "dist", "penguin.js"), "//\n");
+      fs.writeFileSync(path.join(payload, "package.json"), manifest);
+
+      const image = resolvePayloadImage(null, path.join(serverDist, "index.js"));
+      expect(image?.version).toBe("9.9.9");
+      const dest = path.join(work, "unpacked");
+      const entries = unpackTo(image!.pack(), dest).map((entry) => entry.path);
+      expect(entries).toContain("penguin/lib/dist/penguin.js");
+    } finally {
+      fs.rmSync(work, { recursive: true, force: true });
+    }
+  });
+
+  it("a dev checkout has no pushable image", () => {
+    expect(resolvePayloadImage(null, "/repo/packages/server/src/index.ts")).toBeNull();
+    expect(resolvePayloadImage(null, undefined)).toBeNull();
+  });
+});
+
+describe("hmrPayloadImage", () => {
+  const seedStore = (work: string) => {
+    const hmrDir = path.join(work, "hmr");
+    fs.mkdirSync(path.join(hmrDir, "store", "cli"), { recursive: true });
+    fs.mkdirSync(path.join(hmrDir, "store", "web"), { recursive: true });
+    fs.writeFileSync(
+      path.join(hmrDir, "store", "cli", "cafe0123456789ab.mjs"),
+      "console.log('penguin');\n",
+    );
+    fs.writeFileSync(
+      path.join(hmrDir, "store", "web", "beef0123456789ab.webz"),
+      zlib.gzipSync(
+        Buffer.from(
+          JSON.stringify({
+            files: { "index.html": Buffer.from("<html>").toString("base64") },
+          }),
+        ),
+      ),
+    );
+    fs.writeFileSync(
+      path.join(hmrDir, "harness.json"),
+      JSON.stringify({
+        platform: { bundle: "store/platform/x.mjs", park: "store/platform/x.park.json" },
+        cli: { bundle: "store/cli/cafe0123456789ab.mjs" },
+        web: { manifest: "store/web/beef0123456789ab.webz" },
       }),
-    ).toEqual({
-      payloadRoot: "/Applications/PenguinHarness.app/Contents/Resources/payload",
-      installerScript: "/Applications/PenguinHarness.app/Contents/Resources/remote-installer.cjs",
-    });
+    );
+  };
+
+  it("assembles a complete image from the pushed version, sha-stamped", () => {
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-hmr-image-"));
+    // The skill library resolves through the PROCESS ENTRY's resolver; under vitest
+    // argv[1] is the test runner, which resolves nothing — stand in a file of this
+    // package, the same resolution context every real entry shape has.
+    const originalArgv1 = process.argv[1];
+    process.argv[1] = new URL(import.meta.url).pathname;
+    try {
+      seedStore(work);
+      const image = resolvePayloadImage(work, "/repo/packages/server/src/index.ts");
+      expect(image?.version).toBe("0.0.0-hmr.cafe01234567.beef01234567");
+      const dest = path.join(work, "unpacked");
+      const entries = unpackTo(image!.pack(), dest).map((entry) => entry.path);
+      // The pushed bundle is a LIBRARY (it exports cli() and does nothing when executed),
+      // so the image carries it as cli.mjs and ships a bin shim as the entry.
+      expect(entries).toContain("penguin/lib/dist/cli.mjs");
+      expect(entries).toContain("penguin/lib/dist/penguin.js");
+      expect(entries).toContain("penguin/lib/package.json");
+      expect(entries).toContain("penguin/lib/web/index.html");
+      // The skill library rides along: the bundle reads it from lib/skills beside itself.
+      expect(entries.some((e) => /^penguin\/lib\/skills\/.+\/SKILL\.md$/.test(e))).toBe(true);
+      expect(
+        fs.readFileSync(path.join(dest, "penguin", "lib", "dist", "penguin.js"), "utf8"),
+      ).toContain('import { cli } from "./cli.mjs"');
+      expect(fs.readFileSync(path.join(dest, "penguin", "lib", "web", "index.html"), "utf8")).toBe(
+        "<html>",
+      );
+      const manifest = JSON.parse(
+        fs.readFileSync(path.join(dest, "penguin", "lib", "package.json"), "utf8"),
+      ) as { version: string; type?: string };
+      expect(manifest.version).toBe(image!.version);
+      // ESM on both files, and no per-run re-parse of a 10 MB bundle.
+      expect(manifest.type).toBe("module");
+    } finally {
+      if (originalArgv1 !== undefined) process.argv[1] = originalArgv1;
+      fs.rmSync(work, { recursive: true, force: true });
+    }
   });
 
-  it("dev run: straight out of the repository, so the feature works before packaging", () => {
-    expect(
-      resolvePayloadSources({ packaged: false, resourcesPath: "/ignored", repoRoot: "/repo" }),
-    ).toEqual({
-      payloadRoot: "/repo/packages/desktop/install-image",
-      installerScript: "/repo/packages/desktop/resources/remote-installer.cjs",
-    });
+  it("outranks the disk shapes — the pushed version is what this server runs", () => {
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-hmr-image-"));
+    try {
+      seedStore(work);
+      // A valid tarball shape is offered too; the pushed version still wins.
+      const root = path.join(work, "penguin");
+      fs.mkdirSync(path.join(root, "lib", "dist"), { recursive: true });
+      fs.writeFileSync(path.join(root, "lib", "dist", "penguin.js"), "//\n");
+      fs.writeFileSync(
+        path.join(root, "lib", "package.json"),
+        JSON.stringify({ name: "@prismshadow/penguin-cli", version: "9.9.9" }),
+      );
+      const image = resolvePayloadImage(work, path.join(root, "lib", "dist", "penguin.js"));
+      expect(image?.version).toBe("0.0.0-hmr.cafe01234567.beef01234567");
+    } finally {
+      fs.rmSync(work, { recursive: true, force: true });
+    }
   });
 
-  it("reports sources that are not actually there (a dev run that never staged)", () => {
-    expect(
-      payloadSourcesReady({ payloadRoot: "/nope/payload", installerScript: "/nope/installer.cjs" }),
-    ).toBe(false);
+  it("a root without pushes answers null and the disk shapes take over", () => {
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-hmr-image-"));
+    try {
+      expect(resolvePayloadImage(work, undefined)).toBeNull();
+    } finally {
+      fs.rmSync(work, { recursive: true, force: true });
+    }
   });
 });

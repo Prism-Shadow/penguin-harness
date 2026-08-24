@@ -61,16 +61,14 @@ asar: false
 npmRebuild: false
 nodeGypRebuild: false
 
-# The install image and the Node installer that unpacks it on the far side, shipped so the
-# app can put this build's server on a machine over SSH (Install Server on Remote Host).
-# install-image/ is produced by scripts/build-install-image.mjs. Deliberately NOT
-# install.sh: that is a POSIX script and the target may be Windows — the installer here is
-# plain Node and runs on the runtime the push carries with it.
+# The install image the embedded server pushes to an SSH host (the Web App's Machines page;
+# packages/server/src/machines/install-server.ts finds it here, beside app/). install-image/
+# is produced by scripts/build-install-image.mjs, and the Node installer that unpacks it on
+# the far side travels as text inside the server bundle. Deliberately NOT install.sh: that is
+# a POSIX script and the target may be Windows.
 extraResources:
   - from: install-image
     to: payload
-  - from: resources/remote-installer.cjs
-    to: remote-installer.cjs
 
 mac:
   category: public.app-category.developer-tools
