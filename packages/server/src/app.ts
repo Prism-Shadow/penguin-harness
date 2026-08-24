@@ -76,6 +76,7 @@ import {
   SessionLoader,
   SessionManager,
 } from "./runtime/session-manager.js";
+import type { SessionMonitor } from "./runtime/session-monitor.js";
 import { SessionSources } from "./runtime/session-sources.js";
 import { Scheduler } from "./runtime/scheduler.js";
 import { TitleGenerator, TitleNotifier } from "./runtime/title-generator.js";
@@ -555,6 +556,10 @@ export function buildAppDeps(
   // an agent open for as long as it has a session, and the lifecycle registers that
   // agent's workflows for exactly that window.
   agentLifecycle?: AgentLifecycle,
+  // The shared per-session monitors table (see runtime/session-monitor.ts): platform.ts
+  // claims it from the resource registry so sessions — runs, queues, mirrors — survive a
+  // platform swap; the manager attaches this generation to every monitor at construction.
+  monitors?: Map<string, SessionMonitor>,
 ): AppDeps {
   const { config, db, authService, channels, hmr } = caps;
   const log = overrides.log ?? ((line: string) => console.log(line));
@@ -666,6 +671,7 @@ export function buildAppDeps(
     // conversation (see the shared publisher above for the audience).
     notifyProjectUsers,
     ...(overrides.now ? { now: overrides.now } : {}),
+    ...(monitors !== undefined ? { monitors } : {}),
   });
 
   const projectService = new ProjectService({

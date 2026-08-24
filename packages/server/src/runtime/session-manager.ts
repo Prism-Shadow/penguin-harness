@@ -1,25 +1,29 @@
 /**
- * Active Session runtime.
+ * Active Session runtime — the facade and per-generation procedure set over the
+ * per-session monitors (see ./session-monitor.ts, the ownership model's spec).
  *
- * Responsibilities:
- *   - get-or-resume-or-heal: use it directly on an active-table hit; with a Trace,
- *     recover via `agent.resumeSession`; a stale Session that was created but never run
- *     and survived a process restart (no Trace) **self-heals** — recreated via
- *     createSession using the index row's workspace/modelId, yielding a new session_id
- *     and updating the index's primary key; the Task response body always returns the
- *     current actual id;
- *   - Vault effectiveness: a vault update bumps the Agent's config generation
- *     (invalidateAgentRuntimes); runtimes built earlier are discarded on their next
- *     idle access and re-resumed, so the next Task always runs with current values;
- *   - Per-Session mutual exclusion: only one Task/compaction may be in progress at a
- *     time;
- *   - run/compact drive: consumes the output stream in the background, publishing each
- *     message to the SSE channel and handing it to usage-recorder for persistence;
- *     on completion (including errors) resets to idle and pushes a `task_state` server
- *     event;
- *   - Approval registration and interrupt convergence: each approval decision re-reads
- *     approval_mode from the DB (takes effect immediately); an interrupt first
- *     converges pending approvals to deny, then aborts.
+ * All per-session run state lives in a SessionMonitor; this class holds none of it. What
+ * it owns is generation-scoped and cross-session:
+ *   - the procedures a monitor delegates to (GenerationOps: get-or-resume-or-heal,
+ *     launch, the drive loop, resume/follow-up/notice starters) — policy code that a hot
+ *     swap replaces wholesale through the monitor's pointer swap;
+ *   - cross-session guards (graceful shutdown, Agent/Session deletion windows) and the
+ *     per-Agent config generations behind vault invalidation;
+ *   - the shared monitors table (riding the hot-resource registry when the platform
+ *     wires it): adopted at construction — idle monitors swap to this generation
+ *     immediately, busy ones at their run's settle;
+ *   - the idle sweep and the live-tail cache of runs THIS generation drives.
+ *
+ * Responsibilities inherited from the pre-monitor design and unchanged in meaning:
+ *   - get-or-resume-or-heal (see ensureSession): recover via Trace, or self-heal rebuild
+ *     with a new session_id (the index's primary key follows);
+ *   - Vault effectiveness: a vault update bumps the Agent's config generation; sessions
+ *     loaded earlier are reloaded at their next idle access;
+ *   - Per-Session mutual exclusion: the monitor's mutex — one Task/compaction at a time;
+ *   - drive: consumes the output stream, publishing each message to the SSE channel and
+ *     handing it to usage-recorder; on completion resets to idle and pushes task_state;
+ *   - Approvals and interrupts: each decision re-reads approval_mode from the DB; an
+ *     interrupt converges pending approvals to deny, then aborts.
  *
  * The underlying implementation of get-or-resume-or-heal is injected via
  * `SessionLoader`: production uses the core SDK (createCoreSessionLoader), tests inject
@@ -61,13 +65,15 @@ import type { RecallableFile } from "../services/task-attachments.js";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
 import type { GoalsRepo } from "../db/repos/goals.js";
 import type { SessionRow, SessionsRepo } from "../db/repos/sessions.js";
-import { ApprovalRegistry, makeApprove } from "./approvals.js";
+import { makeApprove } from "./approvals.js";
 import type { PendingApproval } from "./approvals.js";
 import type { ChannelHub } from "./channel.js";
 import type { ErrorSink } from "./error-recorder.js";
 import { LiveTailTracker } from "./live-tail.js";
 import { asSessionSource } from "./session-sources.js";
 import type { SessionSources } from "./session-sources.js";
+import { SessionMonitor, followUpInfo } from "./session-monitor.js";
+import type { GenerationOps } from "./session-monitor.js";
 import { StreamErrorWatcher } from "./stream-error-watcher.js";
 import type { TitleNotifier } from "./title-generator.js";
 import type { UsageContext } from "./usage-recorder.js";
@@ -152,7 +158,7 @@ export interface RuntimeSession {
   onBackgroundNotice?(listener: () => void): void;
   /** Takes the queued background completion notices as task input (core `Session.takeBackgroundNotices`). Optional, like onBackgroundNotice. */
   takeBackgroundNotices?(): OmniMessage[];
-  /** Whether completion notices are still queued (core `Session.hasPendingBackgroundNotices`); pins the entry against idle eviction. Optional, like onBackgroundNotice. */
+  /** Whether completion notices are still queued (core `Session.hasPendingBackgroundNotices`); pins the monitor against idle eviction. Optional, like onBackgroundNotice. */
   hasPendingBackgroundNotices?(): boolean;
   /** Refreshes the listen-port probes behind the process list's `serviceUrl` (core `Session.probeBackgroundCommandServices`). Optional: test fakes may omit it. */
   probeBackgroundCommandServices?(): Promise<void>;
@@ -162,7 +168,7 @@ export interface RuntimeSession {
   listBackgroundCommands?(): BackgroundCommandInfo[];
   /** Kills one background command process (core `Session.killBackgroundCommand`); false when the id is unknown. Optional, like listBackgroundCommands. */
   killBackgroundCommand?(processId: string): boolean;
-  /** Whether a background subagent is mid-round (core `Session.hasRunningBackgroundSubagents`); pins the entry against idle eviction. Optional, like listBackgroundCommands. */
+  /** Whether a background subagent is mid-round (core `Session.hasRunningBackgroundSubagents`); pins the monitor against idle eviction. Optional, like listBackgroundCommands. */
   hasRunningBackgroundSubagents?(): boolean;
   /** Releases environment resources — kills the remaining background processes (core `Session.dispose`). Optional, idempotent. */
   dispose?(): void;
@@ -294,6 +300,14 @@ export interface SessionManagerDeps {
    * backfill assumes when it reads MAX(ts) as a session's last activity.
    */
   now?: () => Date;
+  /**
+   * The shared per-session monitors table (see SessionMonitor): ONE map for the whole
+   * process, riding the hot-resource registry when the platform wires it so the monitors
+   * — with the runs, queues and mirrors they hold — survive a platform swap. This
+   * manager attaches itself to every monitor at construction (setPending). Optional:
+   * tests and standalone embedders get a private table.
+   */
+  monitors?: Map<string, SessionMonitor>;
 }
 
 /**
@@ -308,143 +322,19 @@ export interface RecallStore {
   files: RecallableFile[];
 }
 
-/** One queued follow-up task (`queueIfBusy`): the task input plus the per-turn thinking level it was posted with. */
-interface QueuedFollowUp {
-  /** Recall handle (PendingFollowUpInfo.id), assigned at queue time. */
-  id: string;
-  input: OmniMessage[];
-  thinkingLevel?: ThinkingLevelName;
-  /** Original content for recall; absent when the queueing path predates or bypasses the route (recall then returns 409). */
-  recall?: RecallStore;
-}
-
-/** One undelivered steering entry: the display info broadcast on task_state, plus what a recall needs — the exact input list core queued (its unsteer handle) and the original content. */
-interface PendingSteeringEntry {
-  info: PendingSteeringInfo;
-  input: OmniMessage[];
-  recall: RecallStore;
-}
-
-/** Active-table entry: a loaded runtime Session plus its running state. */
-interface RuntimeEntry {
-  sessionId: string;
-  projectId: string;
-  agentId: string;
-  /** Vendor grouping for the Session's model (paired with modelId to form a model reference). */
-  provider: string;
-  modelId: string;
-  session: RuntimeSession;
-  status: SessionStatus;
-  approvals: ApprovalRegistry;
-  abort: AbortController | null;
-  /** The in-flight drive Promise (awaited during graceful shutdown). */
-  running: Promise<void> | null;
-  /**
-   * Agent config generation this runtime was built under (see
-   * invalidateAgentRuntimes): once it falls behind the Agent's current generation,
-   * the entry is discarded on its next idle access and re-resumed via the loader.
-   */
-  generation: number;
-  /**
-   * Queued follow-up tasks (`queueIfBusy`): task inputs accepted while a Task/compaction was
-   * in progress, auto-started one at a time (in order) once the session returns to idle —
-   * ordinary tasks with normal semantics, unlike the mid-run steering queue. Each entry
-   * keeps the per-turn thinkingLevel it was posted with (applied at auto-start).
-   * Deliberately NOT discarded on abort: they are future tasks the user explicitly queued.
-   */
-  followUps: QueuedFollowUp[];
-  /**
-   * The running Task's input messages, held from launch until the run ends. The engine
-   * writes these exact envelopes to the Trace only after the session bootstrap (MCP
-   * connect + discovery on the first run), so a history read during that window would
-   * miss the user's own message — and the draft flow subscribes to the stream only after
-   * the input publish, so the live channel cannot backfill it either. GET /messages
-   * appends the ones the Trace has not caught up to yet (exact-envelope dedup).
-   */
-  pendingInputs: OmniMessage[];
-  /**
-   * The running Task's streamed bootstrap records (mcp_connect begin/end,
-   * tool_list_ready), held until the run ends. Their Trace writes are deferred by the
-   * engine until after the input lands (turn attribution), and the draft flow subscribes
-   * only after they were published — so a history rebuild during the MCP connect would
-   * otherwise show nothing at all (a silent blank while a slow server times out).
-   * GET /messages appends whichever of them the Trace has not caught up to.
-   */
-  pendingBootstrap: OmniMessage[];
-  /**
-   * Steering messages queued on core but not yet delivered to the model — a display mirror
-   * of core's steering queue (same FIFO order), so the composer's "steering queued" hint and
-   * its content survive reloads: pushed on `steer`, shifted as each `[user_steering]`
-   * message appears on the drive stream, dropped wholesale when the run exits (core
-   * discards undelivered steering on abort/completion). The `info` halves are broadcast on
-   * every `task_state`; the rest is the recall handle (see recallSteering).
-   */
-  pendingSteering: PendingSteeringEntry[];
-  /** Timestamp of last activity (refreshed on load / status flip / drive completion), used for idle-eviction checks. */
-  lastActivityMs: number;
-  /**
-   * Turn-boundary handoff state of the current run, set by launchTask for plain Task runs
-   * only — goals and compactions stay null and keep hard-abort swap semantics. `requested`
-   * is flipped by quiesce(); the run's `shouldPark` callback reads it at every turn
-   * boundary and records the park in `parked`, which the handoff's `settled` promise
-   * reports AFTER drive's finally — so it is deliberately not reset there, only at the
-   * next launch.
-   */
-  handoff: { requested: boolean; parked: boolean } | null;
-}
-
-/**
- * A running Task handed across a hot swap: the OLD generation's drive keeps running to
- * its next turn boundary (lame duck) while the successor App serves everything else. The
- * successor adopts this handle (adoptHandoffs) to keep the run controllable in the
- * meantime — status reads "running", approval decisions and interrupts forward to the old
- * generation's registries — and to resume the parked run from its Trace once it settles.
- * The object is shared memory across generations (it rides the hot-resource registry), so
- * the mutable flags are the cross-generation coordination: `aborted` cancels the resume,
- * `resumed` keeps a stale re-adoption from double-firing it.
- */
-export interface RunHandoff {
-  sessionId: string;
-  projectId: string;
-  agentId: string;
-  /** The status at quiesce time ("running"); what the successor's statusOf reports until settled. */
-  status: SessionStatus;
-  /** The old generation's pending-approval registry: decisions forward here. */
-  approvals: ApprovalRegistry;
-  /** Interrupt: converge approvals to deny, abort the drive, and cancel the pending resume. */
-  abort: () => void;
-  /** Set by abort(); a parked settle with this set is not resumed. */
-  aborted: boolean;
-  /** Set by the first adopter that schedules the resume. */
-  resumed: boolean;
-  /** Resolves when the lame-duck drive settles; `parked` = it ended at a turn boundary for handoff (resume it) rather than completing or aborting on its own. */
-  settled: Promise<{ parked: boolean }>;
-}
-
-/** What quiesce() hands the swap: runs that outlive it, and aborted work the successor's boot should still wait out. */
+/** What quiesce() hands the swap's drain: hard-aborted work the successor's boot should still wait out. */
 export interface QuiesceResult {
-  handoffs: RunHandoff[];
-  /** Drive promises of hard-aborted runs (goals, compactions): the dispose drain awaits these, same as shutdown did. */
+  /** Drive promises of hard-aborted runs (goals, compactions): parked Task runs deliberately outlive the swap and are not listed. */
   aborted: Promise<void>[];
 }
 
-/** Active-table idle eviction: same convention as the SSE channel (an idle entry with no activity for 30 minutes releases its memory). */
+/** Monitor idle eviction: same convention as the SSE channel (an idle monitor with no activity for 30 minutes releases its memory). */
 const ENTRY_IDLE_MS = 30 * 60 * 1000;
 const ENTRY_SWEEP_INTERVAL_MS = 60 * 1000;
 
 /** Composite Agent key (used as a Set key, avoiding projectId/agentId concatenation ambiguity). */
 function agentKey(projectId: string, agentId: string): string {
   return `${projectId}\0${agentId}`;
-}
-
-/** The `task_state` display info of one queued follow-up (see PendingFollowUpInfo); an entry queued without a recall store truthfully reports empty content. */
-function followUpInfo(f: QueuedFollowUp): PendingFollowUpInfo {
-  return {
-    id: f.id,
-    text: f.recall?.text ?? "",
-    images: f.recall?.images.length ?? 0,
-    files: f.recall?.files.length ?? 0,
-  };
 }
 
 /** If msg is a run_subagent tool call carrying a `prompt`, return its id and prompt (for use as the subagent's title); otherwise null. */
@@ -509,28 +399,20 @@ function isPlainText(role: "user" | "assistant") {
   };
 }
 
-export class SessionManager {
-  private readonly entries = new Map<string, RuntimeEntry>();
-  /** Per-Session mutex (serializes get-or-load and status flips); auto-cleaned once the chain drains. */
-  private readonly locks = new Map<string, Promise<unknown>>();
+export class SessionManager implements GenerationOps {
+  /** The shared monitors table (see SessionManagerDeps.monitors). */
+  private readonly monitors: Map<string, SessionMonitor>;
   private readonly log: (line: string) => void;
   /** Graceful-shutdown flag: once set, new Tasks/compactions are rejected (503). */
   private closed = false;
   /** Agents currently being deleted (key = agentKey): new Tasks/compactions are always rejected with 409 during this window. */
   private readonly deletingAgents = new Set<string>();
-  /** Sessions currently being deleted (guards against the entry/Trace file being rebuilt and reviving it inside the deletion race window). */
+  /** Sessions currently being deleted (guards against the monitor/Trace file being rebuilt and reviving it inside the deletion race window). */
   private readonly deletingSessions = new Set<string>();
   /** Per-Agent config generation (key = agentKey), bumped by invalidateAgentRuntimes on vault updates. */
   private readonly agentGenerations = new Map<string, number>();
-  /** Open streaming fragments of running sessions (fed by drive, served to GET /messages; see live-tail.ts). */
+  /** Open streaming fragments of runs THIS generation drives (fed by drive, served to GET /messages; see live-tail.ts). */
   private readonly liveTail = new LiveTailTracker();
-  /**
-   * Lame-duck runs adopted from the previous generation (see RunHandoff): still driven by
-   * the OLD App's closures, controlled through this manager. An adopted session reads as
-   * busy (statusOf/asserts), so no second writer can be loaded onto its Trace while the
-   * old drive still appends to it.
-   */
-  private readonly foreign = new Map<string, RunHandoff>();
   private readonly sweepTimer: NodeJS.Timeout;
   /** Clock for persisted timestamps (see SessionManagerDeps.now); wall clock unless injected. */
   private readonly now: () => Date;
@@ -538,6 +420,13 @@ export class SessionManager {
   constructor(private readonly deps: SessionManagerDeps) {
     this.log = deps.log ?? ((line) => console.error(line));
     this.now = deps.now ?? (() => new Date());
+    this.monitors = deps.monitors ?? new Map();
+    // Adoption: attach this generation to every surviving monitor. An idle monitor swaps
+    // its code pointer to this generation immediately (all of its events are complete —
+    // the boundary is now); one with a lame-duck run still driven by the predecessor
+    // swaps when that run settles, and its parked continuation is then resumed by THIS
+    // manager (runResume) as the next event.
+    for (const m of this.monitors.values()) m.setPending(this);
     this.sweepTimer = setInterval(() => this.sweepIdle(), ENTRY_SWEEP_INTERVAL_MS);
     this.sweepTimer.unref?.();
   }
@@ -545,38 +434,30 @@ export class SessionManager {
   // —— Query surface (used by Session listing / Agent active-count / SSE subscription replay) ——
 
   statusOf(sessionId: string): SessionStatus {
-    return this.entries.get(sessionId)?.status ?? this.foreign.get(sessionId)?.status ?? "idle";
+    return this.monitors.get(sessionId)?.status ?? "idle";
   }
 
   pendingApprovalCount(sessionId: string): number {
-    return (
-      this.entries.get(sessionId)?.approvals.size ??
-      this.foreign.get(sessionId)?.approvals.size ??
-      0
-    );
+    return this.monitors.get(sessionId)?.approvals.size ?? 0;
   }
 
   pendingApprovals(sessionId: string): PendingApproval[] {
-    return (
-      this.entries.get(sessionId)?.approvals.list() ??
-      this.foreign.get(sessionId)?.approvals.list() ??
-      []
-    );
+    return this.monitors.get(sessionId)?.approvals.list() ?? [];
   }
 
   /** Number of queued follow-up tasks (`queueIfBusy`) awaiting auto-start. */
   pendingFollowUpCount(sessionId: string): number {
-    return this.entries.get(sessionId)?.followUps.length ?? 0;
+    return this.monitors.get(sessionId)?.followUps.length ?? 0;
   }
 
-  /** Steering messages queued but not yet delivered to the model (display mirror; see RuntimeEntry.pendingSteering). */
+  /** Steering messages queued but not yet delivered to the model (display mirror; see SessionMonitor.pendingSteering). */
   pendingSteeringOf(sessionId: string): PendingSteeringInfo[] {
-    return (this.entries.get(sessionId)?.pendingSteering ?? []).map((p) => p.info);
+    return (this.monitors.get(sessionId)?.pendingSteering ?? []).map((p) => p.info);
   }
 
   /** Queued follow-up tasks awaiting auto-start, as their display/recall info (id + content summary). */
   pendingFollowUpsOf(sessionId: string): PendingFollowUpInfo[] {
-    return (this.entries.get(sessionId)?.followUps ?? []).map(followUpInfo);
+    return (this.monitors.get(sessionId)?.followUps ?? []).map(followUpInfo);
   }
 
   /**
@@ -584,6 +465,7 @@ export class SessionManager {
    * streaming fragment, carrying the full accumulated content so far (see live-tail.ts).
    * Empty when idle or when nothing is streaming. GET /messages attaches this (with a
    * channel cursor) so a client joining mid-stream can render the in-progress message.
+   * Scoped to runs this generation drives: a lame-duck run's tail lives with its driver.
    */
   liveFragments(sessionId: string): OmniMessage[] {
     return this.liveTail.fragments(sessionId);
@@ -597,53 +479,38 @@ export class SessionManager {
    * (the draft flow subscribes only after the input publish) loses the user's own message.
    */
   pendingInputs(sessionId: string): OmniMessage[] {
-    return this.entries.get(sessionId)?.pendingInputs ?? [];
+    return this.monitors.get(sessionId)?.pendingInputs ?? [];
   }
 
-  /** The running Task's streamed bootstrap records (see RuntimeEntry.pendingBootstrap); empty when idle. */
+  /** The running Task's streamed bootstrap records (see SessionMonitor.pendingBootstrap); empty when idle. */
   pendingBootstrap(sessionId: string): OmniMessage[] {
-    return this.entries.get(sessionId)?.pendingBootstrap ?? [];
+    return this.monitors.get(sessionId)?.pendingBootstrap ?? [];
   }
 
   /** Number of Sessions for this Agent that are currently running / compacting. */
   activeCountForAgent(projectId: string, agentId: string): number {
     let n = 0;
-    for (const e of this.entries.values()) {
-      if (e.projectId === projectId && e.agentId === agentId && e.status !== "idle") n++;
+    for (const m of this.monitors.values()) {
+      if (m.projectId === projectId && m.agentId === agentId && m.status !== "idle") n++;
     }
     return n;
   }
 
-  /** Add a newly created Session to the active table (status idle), avoiding a redundant load on the next Task. */
+  /** Add a newly created Session's monitor (status idle), avoiding a redundant load on the next Task. */
   adopt(row: SessionRow, session: RuntimeSession): void {
-    this.entries.set(row.sessionId, {
-      sessionId: row.sessionId,
-      projectId: row.projectId,
-      agentId: row.agentId,
-      provider: row.provider,
-      modelId: row.modelId,
-      session,
-      status: "idle",
-      approvals: new ApprovalRegistry(),
-      abort: null,
-      running: null,
-      generation: this.generationOf(row.projectId, row.agentId),
-      followUps: [],
-      pendingInputs: [],
-      pendingBootstrap: [],
-      pendingSteering: [],
-      lastActivityMs: Date.now(),
-      handoff: null,
-    });
-    // Same wiring as ensureEntry: adopt IS the entry path for a session created in this
+    const m = new SessionMonitor(this, row);
+    m.session = session;
+    m.generation = this.generationOf(row.projectId, row.agentId);
+    this.monitors.set(row.sessionId, m);
+    // Same wiring as ensureSession: adopt IS the load path for a session created in this
     // process (POST /sessions), and a listener registered only on the loader path left
     // freshly created sessions unable to deliver idle-arrival completion reports.
     this.registerNoticeListener(row.sessionId, session);
   }
 
   /**
-   * Subscribes the background hooks on a runtime Session entering the active table — every
-   * insertion path must call it (ensureEntry's loads, adopt's fresh creations):
+   * Subscribes the background hooks on a runtime Session entering a monitor — every load
+   * path must call it (ensureSession's loads, adopt's fresh creations):
    * - the idle-arrival signal for completion notices (mid-run arrivals are delivered inside
    *   the run by core; this signal is the only trigger left when the session sits idle);
    * - live-forwarded background-subagent messages, published to the session channel (the
@@ -651,24 +518,24 @@ export class SessionManager {
    *   frontend in real time past the launching turn's end, until its terminal state.
    */
   private registerNoticeListener(sessionId: string, session: RuntimeSession): void {
-    session.onBackgroundNotice?.(() => void this.startBackgroundNoticeTask(sessionId));
+    session.onBackgroundNotice?.(() => this.monitors.get(sessionId)?.backgroundNotices());
     session.onBackgroundMessage?.((msg) => this.forwardBackgroundMessage(sessionId, msg));
   }
 
   /** Publishes one live background-subagent message and records its usage (fire-and-forget; the child's own Trace is the durable record). */
   private forwardBackgroundMessage(sessionId: string, msg: OmniMessage): void {
-    const entry = this.entries.get(sessionId);
-    if (!entry) return;
+    const m = this.monitors.get(sessionId);
+    if (!m) return;
     // A child producing messages IS session activity: without this stamp the idle sweep
     // measures only the launching task, and a long background run ages into eviction.
-    entry.lastActivityMs = Date.now();
-    this.deps.channels.get(entry.sessionId).publish(msg);
+    m.lastActivityMs = Date.now();
+    this.deps.channels.get(m.sessionId).publish(msg);
     const ctx: UsageContext = {
-      projectId: entry.projectId,
-      agentId: entry.agentId,
-      sessionId: entry.sessionId,
-      provider: entry.provider,
-      modelId: entry.modelId,
+      projectId: m.projectId,
+      agentId: m.agentId,
+      sessionId: m.sessionId,
+      provider: m.provider,
+      modelId: m.modelId,
     };
     void this.deps.recorder.record(ctx, msg).catch((err: unknown) => {
       this.log(`[usage] Insert failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -678,12 +545,12 @@ export class SessionManager {
 
   /**
    * After an Agent's vault is updated: bump the Agent's config generation so every
-   * runtime built before the update is discarded on its next idle access and
-   * re-resumed via the loader — resume re-reads agent_state/.vault.toml, so the next
-   * Task on any of this Agent's Sessions runs with the new values (history is
-   * preserved through the Trace). A Task already in flight is neither aborted nor
-   * hot-swapped: it keeps the values it started with, and its entry is rebuilt on
-   * the first access after it returns to idle (see ensureEntry).
+   * session loaded before the update is reloaded on its next idle access via the loader
+   * — resume re-reads agent_state/.vault.toml, so the next Task on any of this Agent's
+   * Sessions runs with the new values (history is preserved through the Trace). A Task
+   * already in flight is neither aborted nor hot-swapped: it keeps the values it started
+   * with, and its session is reloaded on the first access after it returns to idle (see
+   * ensureSession).
    */
   invalidateAgentRuntimes(projectId: string, agentId: string): void {
     const key = agentKey(projectId, agentId);
@@ -694,25 +561,25 @@ export class SessionManager {
    * After a Project's models/credentials change: invalidate every cached runtime in this
    * Project, so the next Task re-resumes with the new api_key / base_url. Same
    * effective-value semantics as invalidateAgentRuntimes — no hot swap into a Task already
-   * in flight. Iterating the active table is complete here, not a shortcut: the generation
-   * map only matters for runtimes that are already cached, and an Agent with no cached
-   * entry builds fresh through the loader anyway.
+   * in flight. Iterating the monitors table is complete here, not a shortcut: the
+   * generation map only matters for sessions that are already loaded, and an Agent with
+   * no loaded session builds fresh through the loader anyway.
    */
   invalidateProjectRuntimes(projectId: string): void {
     const agentIds = new Set<string>();
-    for (const e of this.entries.values()) {
-      if (e.projectId === projectId) agentIds.add(e.agentId);
+    for (const m of this.monitors.values()) {
+      if (m.projectId === projectId) agentIds.add(m.agentId);
     }
     for (const agentId of agentIds) this.invalidateAgentRuntimes(projectId, agentId);
   }
 
-  // —— Task / compaction drive ——
+  // —— Task / compaction entry points (thin: each delegates into the session's monitor) ——
 
   /**
    * Cheap, lock-free rehearsal of the 409/503 conditions startTask checks, throwing exactly the
-   * same HttpErrors. **Advisory only**: it neither takes the Session lock nor loads an entry, so
-   * a session that isn't in the active table reads as acceptable and a status change racing this
-   * call is not caught — the authoritative check is still the one inside startTask.
+   * same HttpErrors. **Advisory only**: it neither enters the monitor nor loads a session, so
+   * a status change racing this call is not caught — the authoritative check is still the one
+   * inside the monitor operation.
    *
    * It exists so a caller that has irreversible work to do first (POST /tasks writes the
    * message's file attachments to disk) can find out about the ordinary "a Task is already
@@ -722,38 +589,37 @@ export class SessionManager {
     this.assertOpen();
     this.assertAgentNotDeleting(sessionId);
     this.assertSessionNotDeleting(sessionId);
-    this.assertNoForeignRun(sessionId);
-    const entry = this.entries.get(sessionId);
-    if (entry && !opts?.queueIfBusy) this.assertIdle(entry);
+    const m = this.monitors.get(sessionId);
+    if (m && !opts?.queueIfBusy) this.assertIdle(m);
   }
 
   /**
-   * Run a metadata operation at an idle Session boundary under the same mutex as Task and
-   * compaction starts. Session fork uses this to snapshot an append-only Trace without a Task
-   * beginning between its status check and final read. An uncached Session is idle by definition;
-   * unlike startTask this path deliberately does not load a heavyweight runtime.
+   * Run a metadata operation at an idle Session boundary under the same monitor mutex as
+   * Task and compaction starts. Session fork uses this to snapshot an append-only Trace
+   * without a Task beginning between its status check and final read. A session with no
+   * monitor and no index row has nothing to serialize against (startTask would 404) and
+   * runs the operation directly; this path deliberately does not load a heavyweight
+   * runtime either way.
    */
   async atIdleBoundary<T>(sessionId: string, operation: () => Promise<T>): Promise<T> {
-    return this.withLock(sessionId, async () => {
+    const m = this.monitorFor(sessionId);
+    if (m === null) {
       this.assertOpen();
       this.assertAgentNotDeleting(sessionId);
       this.assertSessionNotDeleting(sessionId);
-      this.assertNoForeignRun(sessionId);
-      const entry = this.entries.get(sessionId);
-      if (entry) this.assertIdle(entry);
       return operation();
-    });
+    }
+    return m.atIdleBoundary(operation);
   }
 
   /**
-   * Start a Task: get-or-load → 409
-   * mutual-exclusion check → publish the input messages first → drive run in the
-   * background. Returns the current actual session_id (the new id after self-heal).
-   * `opts.thinkingLevel` (optional, validated by the route) rides into this run's
-   * `session.run` options — a per-turn parameter, applied to this Task only.
-   * With `queueIfBusy`, a busy session (running/compacting) enqueues the input as a
+   * Start a Task: get-or-load → 409 mutual-exclusion check → publish the input messages
+   * first → drive run in the background. Returns the current actual session_id (the new
+   * id after self-heal). `opts.thinkingLevel` (optional, validated by the route) rides
+   * into this run's `session.run` options — a per-turn parameter, applied to this Task
+   * only. With `queueIfBusy`, a busy session (running/compacting) enqueues the input as a
    * follow-up instead of 409: it auto-starts as an ordinary next task once the session
-   * returns to idle (`queued: true` in the result; see startQueuedFollowUp), keeping its
+   * returns to idle (`queued: true` in the result; see runNextFollowUp), keeping its
    * thinkingLevel for that auto-start.
    */
   async startTask(
@@ -761,30 +627,8 @@ export class SessionManager {
     input: OmniMessage[],
     opts?: { thinkingLevel?: ThinkingLevelName; queueIfBusy?: boolean; recall?: RecallStore },
   ): Promise<{ sessionId: string; queued: boolean }> {
-    return this.withLock(sessionId, async () => {
-      this.assertOpen();
-      this.assertAgentNotDeleting(sessionId);
-      this.assertSessionNotDeleting(sessionId);
-      this.assertNoForeignRun(sessionId);
-      const entry = await this.ensureEntry(sessionId);
-      if (entry.status !== "idle" && opts?.queueIfBusy) {
-        entry.followUps.push({
-          id: randomUUID(),
-          input,
-          ...(opts.thinkingLevel !== undefined ? { thinkingLevel: opts.thinkingLevel } : {}),
-          // The original content rides the queue so a recall can hand it back (see recallFollowUp).
-          ...(opts.recall !== undefined ? { recall: opts.recall } : {}),
-        });
-        entry.lastActivityMs = Date.now();
-        // Re-publish the current state so subscribers pick up the new queued count (the
-        // input itself is published when the follow-up actually starts).
-        this.publishState(entry, entry.status);
-        return { sessionId: entry.sessionId, queued: true };
-      }
-      this.assertIdle(entry);
-      this.launchTask(entry, input, opts?.thinkingLevel);
-      return { sessionId: entry.sessionId, queued: false };
-    });
+    const m = this.requireMonitor(sessionId);
+    return m.startTask(input, opts);
   }
 
   /**
@@ -806,307 +650,21 @@ export class SessionManager {
       thinkingLevel?: ThinkingLevelName;
     },
   ): Promise<{ sessionId: string }> {
-    return this.withLock(sessionId, async () => {
-      this.assertOpen();
-      this.assertAgentNotDeleting(sessionId);
-      this.assertSessionNotDeleting(sessionId);
-      this.assertNoForeignRun(sessionId);
-      const entry = await this.ensureEntry(sessionId);
-      this.assertIdle(entry);
-      // The objective is the user's own text (leading skill-invocation blocks stripped) —
-      // the same derivation core records in GOAL.yaml; used for the run-state row, the
-      // goal_started event, and as title material.
-      // `isPlainText` leaves attached images out, so this copy carries no
-      // `[attached image: <path>]` lines — which suits its readers, since a status card and a
-      // generated title read better without absolute scratchpad paths. Core keeps its own
-      // folded copy (Session.runGoal) for what the rounds actually re-inject.
-      const text = args.input
-        .filter(isPlainText("user"))
-        .map((m) => m.payload.text)
-        .join("\n");
-      const objective = stripLeadingMarkerBlocks(text).trim() || text.trim();
-      const ac = new AbortController();
-      entry.status = "running";
-      entry.abort = ac;
-      entry.lastActivityMs = Date.now();
-      // Round-1 objective input: same pendingInputs hold as launchTask (core yields round
-      // inputs onto the stream, but the Trace write still waits for the bootstrap);
-      // append + bootstrap reset for the same abort-mid-bootstrap reasons as launchTask.
-      entry.pendingInputs = [...entry.pendingInputs, ...args.input];
-      entry.pendingBootstrap = [];
-      this.publishState(entry, "running");
-      const approve = makeApprove({
-        getMode: () => this.deps.sessions.findById(entry.sessionId)?.approvalMode ?? "always-ask",
-        toolPermission: (name) => entry.session.toolPermission(name),
-        registry: entry.approvals,
-        publishRequest: (pending) =>
-          this.publishEvent(entry, {
-            type: "approval_request",
-            toolCall: pending.toolCall,
-            ...(pending.origin !== undefined ? { origin: pending.origin } : {}),
-          }),
-      });
-      const goalId = this.deps.goals?.create({
-        sessionId: entry.sessionId,
-        projectId: entry.projectId,
-        agentId: entry.agentId,
-        objective,
-        budget: args.budget,
-      });
-      this.publishEvent(entry, {
-        type: "goal_started",
-        sessionId: entry.sessionId,
-        objective,
-        budget: args.budget,
-      });
-      // Same fallback chain as a task: the goal's own level, else the Session's pinned one.
-      const thinkingLevel = this.runThinkingLevel(entry.sessionId, args.thinkingLevel);
-      const gen = this.goalStream(entry, {
-        input: args.input,
-        budget: args.budget,
-        ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
-        approve,
-        signal: ac.signal,
-        ...(goalId !== undefined ? { goalId } : {}),
-      });
-      // The objective doubles as the title material (same role as a task's input text).
-      entry.running = this.drive(entry, gen, { userExcerpt: objective });
-      return { sessionId: entry.sessionId };
-    });
-  }
-
-  /**
-   * Taps core's goal-mode stream for `drive`: round boundaries (the injected `[goal]`
-   * inputs) become goal_round events + goal_state refreshes, and the terminal
-   * `goal_finished` event message becomes the goal_finished server event + the run-state
-   * row's final status. Token numbers mirror core's own accounting (same
-   * `goalTokenDelta`), so the UI shows exactly what the budget check uses.
-   */
-  private async *goalStream(
-    entry: RuntimeEntry,
-    args: {
-      input: OmniMessage[];
-      budget: number;
-      thinkingLevel?: ThinkingLevelName;
-      approve: ApproveFn;
-      signal: AbortSignal;
-      goalId?: number;
-    },
-  ): AsyncGenerator<OmniMessage> {
-    const gen = entry.session.run(args.input, {
-      approve: args.approve,
-      signal: args.signal,
-      ...(args.thinkingLevel !== undefined ? { thinkingLevel: args.thinkingLevel } : {}),
-      goal: { budget: args.budget },
-    });
-    let round = 0;
-    let used = 0;
-    let finished = false;
-    try {
-      for await (const msg of gen) {
-        used += goalTokenDelta(msg);
-        if (isGoalRoundInput(msg)) {
-          round++;
-          if (args.goalId !== undefined) this.deps.goals?.progress(args.goalId, round, used);
-          this.publishEvent(entry, {
-            type: "goal_round",
-            sessionId: entry.sessionId,
-            round,
-            used,
-            budget: args.budget,
-          });
-        }
-        const outcome = goalFinishedOf(msg);
-        if (outcome) {
-          finished = true;
-          if (args.goalId !== undefined) {
-            this.deps.goals?.finish(
-              args.goalId,
-              outcome.outcome,
-              outcome.rounds,
-              outcome.tokensUsed,
-            );
-          }
-          this.publishEvent(entry, {
-            type: "goal_finished",
-            sessionId: entry.sessionId,
-            outcome: outcome.outcome,
-            rounds: outcome.rounds,
-            used: outcome.tokensUsed,
-          });
-        }
-        yield msg;
-      }
-      if (!finished) {
-        // Defensive: core always ends a goal stream with goal_finished; a stream that
-        // didn't is a cut-off run — close the row so the UI never shows a forever-active
-        // goal.
-        this.finishAborted(entry, args.goalId, round, used);
-      }
-    } catch (err) {
-      // Core throws only on infrastructure failures (e.g. GOAL.yaml writes): close the
-      // run state as aborted, then let drive's defensive catch record the error. Guarded on
-      // `finished`: a throw after the terminal event must not overwrite the row's real
-      // outcome (repo.finish is an unconditional UPDATE) or publish a contradicting event.
-      if (!finished) this.finishAborted(entry, args.goalId, round, used);
-      throw err;
-    }
-  }
-
-  /** Closes a goal's run state as aborted (stream cut off / infrastructure failure). */
-  private finishAborted(
-    entry: RuntimeEntry,
-    goalId: number | undefined,
-    round: number,
-    used: number,
-  ): void {
-    if (goalId !== undefined) this.deps.goals?.finish(goalId, "aborted", round, used);
-    this.publishEvent(entry, {
-      type: "goal_finished",
-      sessionId: entry.sessionId,
-      outcome: "aborted",
-      rounds: round,
-      used,
-    });
-  }
-
-  /** Shared task launch (fresh tasks and auto-started follow-ups): flips to running, publishes the input, and drives the run with the per-turn thinking level (if any). Caller holds the session lock and has verified idle. */
-  /**
-   * Thinking level for one run: the level the request carried wins, else the level pinned
-   * on the Session row (PATCH /api/sessions/:id — the Web App's in-chat picker), else
-   * undefined so core keeps falling back to the Agent config. Resolved at LAUNCH time, so
-   * a queued follow-up that carried no level of its own picks up the pin as it stands when
-   * it finally starts, and a pin set mid-run applies from the next run.
-   */
-  private runThinkingLevel(
-    sessionId: string,
-    requested?: ThinkingLevelName,
-  ): ThinkingLevelName | undefined {
-    return requested ?? this.deps.sessions.findById(sessionId)?.thinkingLevel ?? undefined;
-  }
-
-  private launchTask(
-    entry: RuntimeEntry,
-    input: OmniMessage[],
-    requestedThinkingLevel?: ThinkingLevelName,
-  ): void {
-    const thinkingLevel = this.runThinkingLevel(entry.sessionId, requestedThinkingLevel);
-    const channel = this.deps.channels.get(entry.sessionId);
-    const ac = new AbortController();
-    entry.status = "running";
-    entry.abort = ac;
-    entry.lastActivityMs = Date.now();
-    // Publish the input messages first (visible to other subscribers; the Trace is
-    // persisted by the SDK), then flip the running status. The same envelopes are held as
-    // pendingInputs so GET /messages can serve them before the engine's Trace write
-    // catches up (delayed by the first run's MCP connect). APPEND, don't replace: inputs
-    // of a run aborted mid-bootstrap are still held (nothing reached the Trace; core
-    // carries them into this run) and must stay served until this run persists them.
-    // The previous attempt's bootstrap records are dropped instead — this run streams
-    // its own connect phase, and a stale aborted pair would render as an extra row.
-    entry.pendingInputs = [...entry.pendingInputs, ...input];
-    entry.pendingBootstrap = [];
-    for (const msg of input) channel.publish(msg);
-    this.publishState(entry, "running");
-
-    const approve = makeApprove({
-      // Re-reads approval_mode from the DB on every decision (a PATCH takes effect immediately).
-      getMode: () => this.deps.sessions.findById(entry.sessionId)?.approvalMode ?? "always-ask",
-      toolPermission: (name) => entry.session.toolPermission(name),
-      registry: entry.approvals,
-      publishRequest: (pending) =>
-        this.publishEvent(entry, {
-          type: "approval_request",
-          toolCall: pending.toolCall,
-          ...(pending.origin !== undefined ? { origin: pending.origin } : {}),
-        }),
-    });
-    // Plain Task runs are handoff-capable: a hot swap parks them at the next turn
-    // boundary instead of aborting (see quiesce). The callback records the park on the
-    // entry so the handoff's `settled` can report it — deterministic, because a true
-    // return IS the park (the engine returns immediately after).
-    const handoff = { requested: false, parked: false };
-    entry.handoff = handoff;
-    const gen = entry.session.run(input, {
-      approve,
-      signal: ac.signal,
-      ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
-      shouldPark: () => {
-        if (!handoff.requested) return false;
-        handoff.parked = true;
-        return true;
-      },
-    });
-    // This call's input user text is the whole title source: drive persists its first
-    // words as the immediate fallback and hands it to the LLM as the generation material
-    // (user input only — generation never waits for model output).
-    const userExcerpt = input
-      .filter(isPlainText("user"))
-      .map((m) => m.payload.text)
-      .join("\n");
-    entry.running = this.drive(entry, gen, { userExcerpt });
-  }
-
-  /**
-   * Auto-start of queued follow-ups: called from drive's finally whenever a Task or
-   * compaction finishes (abort included — follow-ups are future tasks the user queued, so
-   * an abort of the current run does not discard them). Re-validates everything under the
-   * session lock (another task may have snuck in, the server may be shutting down, the
-   * session may be getting deleted) and launches exactly one queued input — the next
-   * finish picks up the one after, keeping order and one-at-a-time semantics.
-   */
-  private async startQueuedFollowUp(sessionId: string): Promise<void> {
-    try {
-      await this.withLock(sessionId, async () => {
-        if (this.closed || this.deletingSessions.has(sessionId)) return;
-        const row = this.deps.sessions.findById(sessionId);
-        if (row && this.deletingAgents.has(agentKey(row.projectId, row.agentId))) return;
-        const entry = this.entries.get(sessionId);
-        if (!entry || entry.status !== "idle" || entry.followUps.length === 0) return;
-        const next = entry.followUps.shift()!;
-        this.launchTask(entry, next.input, next.thinkingLevel);
-      });
-    } catch (err) {
-      this.log(`[followup] auto-start failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
+    const m = this.requireMonitor(sessionId);
+    return m.startGoal(args);
   }
 
   /** Manually compact the context: 409 if already running; compaction output also flows into the SSE channel. */
   async startCompact(sessionId: string): Promise<{ sessionId: string }> {
-    return this.withLock(sessionId, async () => {
-      this.assertOpen();
-      this.assertAgentNotDeleting(sessionId);
-      this.assertSessionNotDeleting(sessionId);
-      this.assertNoForeignRun(sessionId);
-      const entry = await this.ensureEntry(sessionId);
-      this.assertIdle(entry);
-      // When there's nothing to compact, core's compact() yields no messages at all: we
-      // can't just return 202 and walk away, or the frontend would wait forever for a
-      // compaction banner that never comes (this is exactly the "/compact does nothing
-      // after an interrupt" complaint). Reject explicitly, and **say why** clearly —
-      // "just compacted" and "haven't talked yet" share the same internal state
-      // (sessionTurns === 0), but are two completely different messages to the user:
-      // telling someone who just compacted that there's "no completed conversation turn
-      // yet" tells them nothing.
-      const why = entry.session.compactability();
-      if (why !== "ok") throw compactUnavailable(why);
-      const ac = new AbortController();
-      entry.status = "compacting";
-      entry.abort = ac;
-      entry.lastActivityMs = Date.now();
-      this.publishState(entry, "compacting");
-      const gen = entry.session.compact({ signal: ac.signal });
-      entry.running = this.drive(entry, gen);
-      return { sessionId: entry.sessionId };
-    });
+    const m = this.requireMonitor(sessionId);
+    return m.startCompact();
   }
 
   /** Submit an approval decision; returns false if the pending approval doesn't exist (already decided/unknown). */
   decideApproval(sessionId: string, toolCallId: string, decision: "allow" | "deny"): boolean {
-    const approvals =
-      this.entries.get(sessionId)?.approvals ?? this.foreign.get(sessionId)?.approvals;
-    if (!approvals) return false;
-    return approvals.decide(toolCallId, decision);
+    const m = this.monitors.get(sessionId);
+    if (!m) return false;
+    return m.approvals.decide(toolCallId, decision);
   }
 
   /**
@@ -1115,24 +673,25 @@ export class SessionManager {
    * event of its own; the messages arrive through the stream the drive loop already
    * publishes). 409 when the Session isn't running a Task (idle / compacting / not loaded)
    * or the run finished in the race window — the caller falls back to submitting a normal
-   * task, which carries the same text and images.
+   * task, which carries the same text and images. A lame-duck run still driven by the
+   * previous generation steers the same way: the monitor holds the live session.
    *
    * `recall` is the queued message's original content: its summary (with a fresh id) is
-   * mirrored on the entry and broadcast via `task_state` (and the SSE subscribe snapshot)
+   * mirrored on the monitor and broadcast via `task_state` (and the SSE subscribe snapshot)
    * until the delivered `[user_steering]` message is observed on the stream — that is what
    * keeps the composer's "steering queued" hint, content included, alive across reloads —
    * and the content itself is what a recall (recallSteering) hands back to the composer.
    */
   steer(sessionId: string, input: OmniMessage[], recall: RecallStore): void {
-    const entry = this.entries.get(sessionId);
-    if (!entry || entry.status !== "running" || !entry.session.steer(input)) {
+    const m = this.monitors.get(sessionId);
+    if (!m || m.status !== "running" || !(m.session?.steer(input) ?? false)) {
       throw new HttpError(
         409,
         "not_running",
         "This Session has no Task in progress; send the message as a new task instead.",
       );
     }
-    entry.pendingSteering.push({
+    m.pendingSteering.push({
       info: {
         id: randomUUID(),
         text: recall.text,
@@ -1142,8 +701,8 @@ export class SessionManager {
       input,
       recall,
     });
-    entry.lastActivityMs = Date.now();
-    this.publishState(entry, entry.status);
+    m.lastActivityMs = Date.now();
+    this.publishState(m, m.status);
   }
 
   /**
@@ -1155,19 +714,19 @@ export class SessionManager {
    * id is unknown — all the same outcome for the caller: nothing left to take back.
    */
   recallSteering(sessionId: string, steerId: string): RecallStore {
-    const entry = this.entries.get(sessionId);
-    const i = entry?.pendingSteering.findIndex((p) => p.info.id === steerId) ?? -1;
-    const pending = i >= 0 ? entry!.pendingSteering[i]! : undefined;
-    if (!entry || !pending || !(entry.session.unsteer?.(pending.input) ?? false)) {
+    const m = this.monitors.get(sessionId);
+    const i = m?.pendingSteering.findIndex((p) => p.info.id === steerId) ?? -1;
+    const pending = i >= 0 ? m!.pendingSteering[i]! : undefined;
+    if (!m || !pending || !(m.session?.unsteer?.(pending.input) ?? false)) {
       throw new HttpError(
         409,
         "not_pending",
         "This steering message was already delivered to the model and can no longer be recalled.",
       );
     }
-    entry.pendingSteering.splice(i, 1);
-    entry.lastActivityMs = Date.now();
-    this.publishState(entry, entry.status);
+    m.pendingSteering.splice(i, 1);
+    m.lastActivityMs = Date.now();
+    this.publishState(m, m.status);
     return pending.recall;
   }
 
@@ -1175,26 +734,26 @@ export class SessionManager {
    * Recall a queued follow-up task (#287): remove it from the queue before it auto-starts,
    * re-broadcast state, and hand back its original content (plus the thinking level it was
    * queued with). 409 `not_pending` when the id is not in the queue — it already
-   * auto-started (or the runtime was evicted/restarted, which empties the queue) — or the
+   * auto-started (or the monitor was evicted/restarted, which empties the queue) — or the
    * entry has no recall store to give back.
    */
   recallFollowUp(
     sessionId: string,
     followUpId: string,
   ): { recall: RecallStore; thinkingLevel?: ThinkingLevelName } {
-    const entry = this.entries.get(sessionId);
-    const i = entry?.followUps.findIndex((f) => f.id === followUpId) ?? -1;
-    const queued = i >= 0 ? entry!.followUps[i]! : undefined;
-    if (!entry || !queued?.recall) {
+    const m = this.monitors.get(sessionId);
+    const i = m?.followUps.findIndex((f) => f.id === followUpId) ?? -1;
+    const queued = i >= 0 ? m!.followUps[i]! : undefined;
+    if (!m || !queued?.recall) {
       throw new HttpError(
         409,
         "not_pending",
         "This follow-up message already started and can no longer be recalled.",
       );
     }
-    entry.followUps.splice(i, 1);
-    entry.lastActivityMs = Date.now();
-    this.publishState(entry, entry.status);
+    m.followUps.splice(i, 1);
+    m.lastActivityMs = Date.now();
+    this.publishState(m, m.status);
     return {
       recall: queued.recall,
       ...(queued.thinkingLevel !== undefined ? { thinkingLevel: queued.thinkingLevel } : {}),
@@ -1210,41 +769,31 @@ export class SessionManager {
    * manager → RuntimeSession → core Session → engine.
    */
   retryNow(sessionId: string): boolean {
-    const entry = this.entries.get(sessionId);
+    const m = this.monitors.get(sessionId);
     // Both running Tasks and compactions can be parked in a reconnect backoff.
-    if (!entry || entry.status === "idle") return false;
-    const skipped = entry.session.skipReconnectWait();
-    if (skipped) entry.lastActivityMs = Date.now();
+    if (!m || m.status === "idle") return false;
+    const skipped = m.session?.skipReconnectWait() ?? false;
+    if (skipped) m.lastActivityMs = Date.now();
     return skipped;
   }
 
   /**
    * Interrupt the current Task/compaction: pending approvals converge to deny first,
    * then the AbortSignal fires. Returns false if nothing is in progress (the route
-   * treats this as a 204 no-op).
+   * treats this as a 204 no-op). A lame-duck run's controller lives in its monitor, so
+   * this reaches it whichever generation drives it.
    */
   abortTask(sessionId: string): boolean {
-    const entry = this.entries.get(sessionId);
-    if (!entry || !entry.abort) {
-      // A lame-duck run from the previous generation: forward the interrupt through its
-      // handle (denies pending approvals, aborts the old drive, cancels the resume).
-      const foreign = this.foreign.get(sessionId);
-      if (!foreign) return false;
-      foreign.abort();
-      return true;
-    }
-    entry.approvals.denyAll();
-    entry.abort.abort();
-    return true;
+    return this.monitors.get(sessionId)?.interrupt() ?? false;
   }
 
   /**
-   * Background command processes of a LOADED session (empty when the entry is not in
-   * the active table — a resumed entry starts with a fresh environment and can only
-   * ever report an empty list, so nothing is resurrected just to answer a poll).
+   * Background command processes of a LOADED session (empty when no session object is
+   * held — a reloaded session starts with a fresh environment and can only ever report
+   * an empty list, so nothing is resurrected just to answer a poll).
    */
   listProcesses(sessionId: string): BackgroundCommandInfo[] {
-    return this.entries.get(sessionId)?.session.listBackgroundCommands?.() ?? [];
+    return this.monitors.get(sessionId)?.session?.listBackgroundCommands?.() ?? [];
   }
 
   /**
@@ -1254,15 +803,15 @@ export class SessionManager {
    * timeout and TTL; a session that isn't loaded has no processes to probe.
    */
   async probeProcessServices(sessionId: string): Promise<void> {
-    await this.entries.get(sessionId)?.session.probeBackgroundCommandServices?.();
+    await this.monitors.get(sessionId)?.session?.probeBackgroundCommandServices?.();
   }
 
   /** Kills one background command process of a loaded session; false when the session isn't loaded or the id is unknown. */
   killProcess(sessionId: string, processId: string): boolean {
-    const entry = this.entries.get(sessionId);
-    if (!entry) return false;
-    const killed = entry.session.killBackgroundCommand?.(processId) ?? false;
-    if (killed) entry.lastActivityMs = Date.now();
+    const m = this.monitors.get(sessionId);
+    if (!m) return false;
+    const killed = m.session?.killBackgroundCommand?.(processId) ?? false;
+    if (killed) m.lastActivityMs = Date.now();
     return killed;
   }
 
@@ -1282,78 +831,53 @@ export class SessionManager {
    * a list tidy-up — the Web App says so at the button and in the docs.
    */
   removeProcess(sessionId: string, processId: string): "removed" | "running" | "not_found" {
-    const entry = this.entries.get(sessionId);
-    if (!entry) return "not_found";
-    const info = entry.session.listBackgroundCommands?.().find((p) => p.processId === processId);
+    const m = this.monitors.get(sessionId);
+    if (!m) return "not_found";
+    const info = m.session?.listBackgroundCommands?.().find((p) => p.processId === processId);
     if (!info) return "not_found";
     if (info.running) return "running";
-    const removed = entry.session.killBackgroundCommand?.(processId) ?? false;
+    const removed = m.session?.killBackgroundCommand?.(processId) ?? false;
     if (!removed) return "not_found";
-    entry.lastActivityMs = Date.now();
+    m.lastActivityMs = Date.now();
     return "removed";
   }
 
   /**
-   * Disposes a just-removed entry's runtime — after its in-flight drive (if any)
-   * settles, so interrupt cleanup never races a dying environment. Deleting a Session /
-   * Agent / Project is the one intent that must also end the background processes the
-   * conversation started (a dev server surviving its deleted conversation is
-   * unreachable from every UI, running forever).
-   */
-  private disposeRemoved(entry: RuntimeEntry): void {
-    const dispose = (): void => entry.session.dispose?.();
-    if (entry.running) void entry.running.then(dispose, dispose);
-    else dispose();
-  }
-
-  /**
-   * Before deleting a Project, converge all its active runs and clear them out of the
-   * active table. Returns the in-flight drive Promises of the affected entries: the
-   * caller (deleteProject) should await them before removing the directory, so that
+   * Before deleting a Project, converge all its active runs and clear their monitors.
+   * Returns the in-flight drive Promises of the affected sessions: the caller
+   * (deleteProject) should await them before removing the directory, so that
    * interrupt-cleanup Trace writes don't recreate the directory after deletion.
    */
   abortProject(projectId: string): Promise<void>[] {
     const runnings: Promise<void>[] = [];
-    for (const h of this.foreign.values()) {
-      if (h.projectId !== projectId) continue;
-      h.abort();
-      runnings.push(h.settled.then(() => undefined));
-    }
-    for (const [key, entry] of [...this.entries]) {
-      if (entry.projectId !== projectId) continue;
-      entry.approvals.denyAll();
-      entry.abort?.abort();
-      if (entry.running) runnings.push(entry.running);
-      this.entries.delete(key);
-      this.disposeRemoved(entry);
+    for (const [key, m] of [...this.monitors]) {
+      if (m.projectId !== projectId) continue;
+      m.interrupt();
+      if (m.running) runnings.push(m.running);
+      this.monitors.delete(key);
+      m.disposeWhenSettled();
     }
     return runnings;
   }
 
   /**
-   * Before deleting an Agent, converge all its active runs and clear them out of the
-   * active table (same semantics as abortProject). Also marks this Agent as "being
-   * deleted": new Tasks/compactions entering during the deletion process are always
-   * rejected with 409 (assertAgentNotDeleting), closing the race window where a new
-   * task recreates the directory and revives an already-deleted Agent between the
-   * abortAgent snapshot and the directory removal. The caller must call
-   * endAgentDeletion once deletion finishes (success or failure).
+   * Before deleting an Agent, converge all its active runs and clear their monitors
+   * (same semantics as abortProject). Also marks this Agent as "being deleted": new
+   * Tasks/compactions entering during the deletion process are always rejected with 409
+   * (assertAgentNotDeleting), closing the race window where a new task recreates the
+   * directory and revives an already-deleted Agent between the abortAgent snapshot and
+   * the directory removal. The caller must call endAgentDeletion once deletion finishes
+   * (success or failure).
    */
   beginAgentDeletion(projectId: string, agentId: string): Promise<void>[] {
     this.deletingAgents.add(agentKey(projectId, agentId));
     const runnings: Promise<void>[] = [];
-    for (const h of this.foreign.values()) {
-      if (h.projectId !== projectId || h.agentId !== agentId) continue;
-      h.abort();
-      runnings.push(h.settled.then(() => undefined));
-    }
-    for (const [key, entry] of [...this.entries]) {
-      if (entry.projectId !== projectId || entry.agentId !== agentId) continue;
-      entry.approvals.denyAll();
-      entry.abort?.abort();
-      if (entry.running) runnings.push(entry.running);
-      this.entries.delete(key);
-      this.disposeRemoved(entry);
+    for (const [key, m] of [...this.monitors]) {
+      if (m.projectId !== projectId || m.agentId !== agentId) continue;
+      m.interrupt();
+      if (m.running) runnings.push(m.running);
+      this.monitors.delete(key);
+      m.disposeWhenSettled();
     }
     return runnings;
   }
@@ -1363,30 +887,24 @@ export class SessionManager {
   }
 
   /**
-   * Before deleting a single Session, converge its active run and clear it out of the
-   * active table (same semantics as beginAgentDeletion). Also marks this Session as
-   * "being deleted": new Tasks/compactions entering during the deletion process are
-   * always rejected with 409 (assertSessionNotDeleting), closing the race window where
-   * a new task recreates the entry and Trace file, reviving an already-deleted Session
-   * between the abort snapshot and the file removal. The caller must call
-   * endSessionDeletion once deletion finishes (success or failure). Returns the
-   * in-flight drive Promise: the caller should await it before deleting the Trace file,
-   * so cleanup writes don't recreate the file.
+   * Before deleting a single Session, converge its active run and clear its monitor
+   * (same semantics as beginAgentDeletion). Also marks this Session as "being deleted":
+   * new Tasks/compactions entering during the deletion process are always rejected with
+   * 409 (assertSessionNotDeleting), closing the race window where a new task recreates
+   * the monitor and Trace file, reviving an already-deleted Session between the abort
+   * snapshot and the file removal. The caller must call endSessionDeletion once deletion
+   * finishes (success or failure). Returns the in-flight drive Promise: the caller
+   * should await it before deleting the Trace file, so cleanup writes don't recreate the
+   * file.
    */
   beginSessionDeletion(sessionId: string): Promise<void>[] {
     this.deletingSessions.add(sessionId);
-    const foreign = this.foreign.get(sessionId);
-    if (foreign) {
-      foreign.abort();
-      return [foreign.settled.then(() => undefined)];
-    }
-    const entry = this.entries.get(sessionId);
-    if (!entry) return [];
-    entry.approvals.denyAll();
-    entry.abort?.abort();
-    this.entries.delete(sessionId);
-    this.disposeRemoved(entry);
-    return entry.running ? [entry.running] : [];
+    const m = this.monitors.get(sessionId);
+    if (!m) return [];
+    m.interrupt();
+    this.monitors.delete(sessionId);
+    m.disposeWhenSettled();
+    return m.running ? [m.running] : [];
   }
 
   endSessionDeletion(sessionId: string): void {
@@ -1394,106 +912,29 @@ export class SessionManager {
   }
 
   /**
-   * Hot-swap handoff: the counterpart of shutdown() for a platform swap. New work is
-   * rejected from here on (requests route to the successor App anyway), but running
-   * Task drives are NOT aborted: each is asked to park at its next turn boundary
-   * (entry.handoff.requested → the run's shouldPark), and handed to the successor as a
-   * RunHandoff — approvals stay answerable, interrupt stays possible, and the successor
-   * resumes the parked run from its Trace (see adoptHandoffs). Goals and compactions
-   * have no parkable boundary contract yet and keep the hard-abort semantics; their
-   * drive promises are returned for the swap's drain to wait out, exactly as shutdown's
-   * wait did. Session environments are disposed once their drive settles either way —
-   * the old generation's background processes die with it, and the successor's resumed
-   * Session starts with a fresh environment (same as a process restart).
+   * Hot-swap exit: the counterpart of shutdown() for a platform swap. New work is
+   * rejected from here on (requests route to the successor App anyway, and the monitors
+   * submit new events to the pending generation), but running Task drives are NOT
+   * aborted: each monitor asks its run to park at the next turn boundary and keeps the
+   * run's whole control surface — approvals, interrupt, status, steering — serving
+   * through whichever generation's facade is asked (the monitor is the shared object).
+   * The parked continuation is processed by the successor as the session's next event
+   * (see SessionMonitor.completeRun). Goals and compactions have no parkable boundary
+   * contract and are hard-aborted; their drive promises are returned for the swap's
+   * drain to wait out, exactly as shutdown's wait did.
    *
-   * Returns immediately: the lame-duck drives deliberately outlive this call.
+   * Returns immediately: the lame-duck drives deliberately outlive this call, and the
+   * monitors table itself is shared state the successor adopts, not something to clear.
    */
   quiesce(): QuiesceResult {
     this.closed = true;
     clearInterval(this.sweepTimer);
-    const handoffs: RunHandoff[] = [];
     const aborted: Promise<void>[] = [];
-    // Lame-duck runs this manager itself adopted (a second push while the first push's
-    // handoffs are still settling): pass them along unchanged, so the chain of
-    // generations never drops a live run. Their settled hooks on THIS manager become
-    // no-ops through the closed flag; the next adopter's hooks take over.
-    for (const h of this.foreign.values()) handoffs.push(h);
-    for (const entry of this.entries.values()) {
-      const dispose = (): void => entry.session.dispose?.();
-      if (entry.running !== null && entry.handoff !== null) {
-        const handoffState = entry.handoff;
-        handoffState.requested = true;
-        const h: RunHandoff = {
-          sessionId: entry.sessionId,
-          projectId: entry.projectId,
-          agentId: entry.agentId,
-          status: entry.status,
-          approvals: entry.approvals,
-          aborted: false,
-          resumed: false,
-          abort: () => {
-            h.aborted = true;
-            entry.approvals.denyAll();
-            entry.abort?.abort();
-          },
-          settled: entry.running.then(
-            () => ({ parked: handoffState.parked }),
-            () => ({ parked: false }),
-          ),
-        };
-        handoffs.push(h);
-        void entry.running.then(dispose, dispose);
-        continue;
-      }
-      // Not handoff-capable (goal, compaction) or not running: today's swap semantics.
-      entry.approvals.denyAll();
-      entry.abort?.abort();
-      if (entry.running) {
-        aborted.push(entry.running);
-        void entry.running.then(dispose, dispose);
-      } else {
-        dispose();
-      }
+    for (const m of this.monitors.values()) {
+      const r = m.retire();
+      if (r.aborted) aborted.push(r.aborted);
     }
-    this.entries.clear();
-    return { handoffs, aborted };
-  }
-
-  /**
-   * Successor side of the swap: adopt the predecessor's lame-duck runs. Each adopted
-   * session reads as busy until its old drive settles (foreign map — see the field doc);
-   * a run that settled parked (and was not interrupted meanwhile) is then resumed as an
-   * empty-input task on a freshly loaded Session — the parked turn's pending messages
-   * come back as Trace-replayed carry-over, so the transcript continues where it parked.
-   */
-  adoptHandoffs(handoffs: RunHandoff[]): void {
-    for (const h of handoffs) {
-      this.foreign.set(h.sessionId, h);
-      void h.settled.then(({ parked }) => {
-        if (this.foreign.get(h.sessionId) === h) this.foreign.delete(h.sessionId);
-        if (this.closed || !parked || h.aborted || h.resumed) return;
-        h.resumed = true;
-        void this.resumeParked(h.sessionId);
-      });
-    }
-  }
-
-  /** Relaunches a parked run on this generation (revalidated under the session lock, like every auto-start). */
-  private async resumeParked(sessionId: string): Promise<void> {
-    try {
-      await this.withLock(sessionId, async () => {
-        if (this.closed || this.deletingSessions.has(sessionId)) return;
-        const row = this.deps.sessions.findById(sessionId);
-        if (!row || this.deletingAgents.has(agentKey(row.projectId, row.agentId))) return;
-        const entry = await this.ensureEntry(sessionId);
-        if (entry.status !== "idle") return;
-        // Empty input: the parked turn's pending messages ride in as the resumed
-        // Session's replayed carry-over; the engine no-ops if nothing was reconstructed.
-        this.launchTask(entry, []);
-      });
-    } catch (err) {
-      this.log(`[handoff] resume failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
+    return { aborted };
   }
 
   /** Graceful shutdown: reject new tasks (503), interrupt all active runs, and wait for them to finish (default ≤5s). */
@@ -1501,27 +942,15 @@ export class SessionManager {
     this.closed = true;
     clearInterval(this.sweepTimer);
     const pending: Promise<void>[] = [];
-    // Adopted lame-duck runs stop with the process too: their drives live in the old
-    // generation's closures, but the process is going away for both generations.
-    for (const h of this.foreign.values()) {
-      h.abort();
-      pending.push(h.settled.then(() => undefined));
-    }
-    for (const entry of this.entries.values()) {
-      entry.approvals.denyAll();
-      entry.abort?.abort();
-      if (entry.running) pending.push(entry.running);
+    for (const m of this.monitors.values()) {
+      m.interrupt();
+      if (m.running) pending.push(m.running);
       // Suspend means the environment too: dispose kills the Session's remaining
-      // background processes (a dev server the conversation started, etc.). Without
-      // this, a hot swap orphans them — the OS process keeps running while the next
-      // App's freshly resumed Session starts with an empty process list, so the stop
-      // control has gone blind. Sequenced after the in-flight drive settles, the same
-      // ordering disposeRemoved uses.
-      const dispose = (): void => entry.session.dispose?.();
-      if (entry.running) void entry.running.then(dispose, dispose);
-      else dispose();
+      // background processes (a dev server the conversation started, etc.), sequenced
+      // after the in-flight drive settles.
+      m.disposeWhenSettled();
     }
-    this.entries.clear();
+    this.monitors.clear();
     if (pending.length === 0) return;
     await Promise.race([
       Promise.allSettled(pending).then(() => undefined),
@@ -1530,36 +959,247 @@ export class SessionManager {
   }
 
   /**
-   * Active-table idle eviction: removes entries that are idle (idle status, no pending
-   * approvals, no in-flight drive) and have been inactive past the timeout, releasing
-   * the core Session's full in-memory history. This is purely memory reclamation: the
-   * next access re-resumes via the loader, so correctness is unaffected. Lock-table
-   * entries are auto-cleaned by withLock once their chain drains (including leftover
-   * entries under the old id after self-heal). `now` / `idleMs` are injectable for
-   * tests and timers.
+   * Monitor idle eviction: removes monitors that are idle (idle status, no pending
+   * approvals, no in-flight drive, nothing queued or pinned — see
+   * SessionMonitor.evictable) and inactive past the timeout, releasing the core
+   * Session's full in-memory history. This is purely memory reclamation: the next access
+   * recreates the monitor and re-resumes via the loader, so correctness is unaffected.
+   * `now` / `idleMs` are injectable for tests and timers.
    */
   sweepIdle(now: number = Date.now(), idleMs: number = ENTRY_IDLE_MS): void {
-    for (const [key, entry] of this.entries) {
-      if (entry.status !== "idle" || entry.approvals.size !== 0 || entry.running !== null) continue;
-      if (entry.followUps.length > 0) continue; // queued follow-ups must not be evicted with the entry
-      // A live background process (e.g. a dev server the conversation started) pins the
-      // entry: eviction would strand the process — a resumed entry starts with a fresh
-      // environment, so the process list and its stop control would go blind while the
-      // OS process kept running. Exited-but-listed processes don't pin anything.
-      if (entry.session.listBackgroundCommands?.().some((p) => p.running)) continue;
-      // A background subagent still working pins it for the same reason: a run_in_background
-      // child outlives the call that launched it, and its completion report and live messages
-      // are delivered through the very Session object eviction would drop.
-      if (entry.session.hasRunningBackgroundSubagents?.()) continue;
-      // Undelivered background completion notices pin the entry too: they live in the core
-      // Session object, so evicting it would silently drop them.
-      if (entry.session.hasPendingBackgroundNotices?.()) continue;
-      if (now - entry.lastActivityMs <= idleMs) continue;
-      this.entries.delete(key);
+    for (const [key, m] of this.monitors) {
+      if (m.evictable(now, idleMs)) this.monitors.delete(key);
+    }
+  }
+
+  // —— GenerationOps: the monitor-invoked procedure set (mutex held by the monitor) ——
+
+  async runStartTask(
+    m: SessionMonitor,
+    input: OmniMessage[],
+    opts?: { thinkingLevel?: ThinkingLevelName; queueIfBusy?: boolean; recall?: RecallStore },
+  ): Promise<{ sessionId: string; queued: boolean }> {
+    this.assertOpen();
+    this.assertAgentNotDeleting(m.sessionId);
+    this.assertSessionNotDeleting(m.sessionId);
+    await this.ensureSession(m);
+    if (m.status !== "idle" && opts?.queueIfBusy) {
+      m.followUps.push({
+        id: randomUUID(),
+        input,
+        ...(opts.thinkingLevel !== undefined ? { thinkingLevel: opts.thinkingLevel } : {}),
+        // The original content rides the queue so a recall can hand it back (see recallFollowUp).
+        ...(opts.recall !== undefined ? { recall: opts.recall } : {}),
+      });
+      m.lastActivityMs = Date.now();
+      // Re-publish the current state so subscribers pick up the new queued count (the
+      // input itself is published when the follow-up actually starts).
+      this.publishState(m, m.status);
+      return { sessionId: m.sessionId, queued: true };
+    }
+    this.assertIdle(m);
+    this.launchTask(m, input, opts?.thinkingLevel);
+    return { sessionId: m.sessionId, queued: false };
+  }
+
+  async runStartGoal(
+    m: SessionMonitor,
+    args: { input: OmniMessage[]; budget: number; thinkingLevel?: ThinkingLevelName },
+  ): Promise<{ sessionId: string }> {
+    this.assertOpen();
+    this.assertAgentNotDeleting(m.sessionId);
+    this.assertSessionNotDeleting(m.sessionId);
+    await this.ensureSession(m);
+    this.assertIdle(m);
+    // The objective is the user's own text (leading skill-invocation blocks stripped) —
+    // the same derivation core records in GOAL.yaml; used for the run-state row, the
+    // goal_started event, and as title material.
+    // `isPlainText` leaves attached images out, so this copy carries no
+    // `[attached image: <path>]` lines — which suits its readers, since a status card and a
+    // generated title read better without absolute scratchpad paths. Core keeps its own
+    // folded copy (Session.runGoal) for what the rounds actually re-inject.
+    const text = args.input
+      .filter(isPlainText("user"))
+      .map((msg) => msg.payload.text)
+      .join("\n");
+    const objective = stripLeadingMarkerBlocks(text).trim() || text.trim();
+    const ac = new AbortController();
+    m.status = "running";
+    m.abort = ac;
+    // Goals have no parkable boundary contract: a swap hard-aborts them (see retire).
+    m.handoff = null;
+    m.lastActivityMs = Date.now();
+    // Round-1 objective input: same pendingInputs hold as launchTask (core yields round
+    // inputs onto the stream, but the Trace write still waits for the bootstrap);
+    // append + bootstrap reset for the same abort-mid-bootstrap reasons as launchTask.
+    m.pendingInputs = [...m.pendingInputs, ...args.input];
+    m.pendingBootstrap = [];
+    this.publishState(m, "running");
+    const approve = makeApprove({
+      getMode: () => this.deps.sessions.findById(m.sessionId)?.approvalMode ?? "always-ask",
+      toolPermission: (name) => m.session!.toolPermission(name),
+      registry: m.approvals,
+      publishRequest: (pending) =>
+        this.publishEvent(m, {
+          type: "approval_request",
+          toolCall: pending.toolCall,
+          ...(pending.origin !== undefined ? { origin: pending.origin } : {}),
+        }),
+    });
+    const goalId = this.deps.goals?.create({
+      sessionId: m.sessionId,
+      projectId: m.projectId,
+      agentId: m.agentId,
+      objective,
+      budget: args.budget,
+    });
+    this.publishEvent(m, {
+      type: "goal_started",
+      sessionId: m.sessionId,
+      objective,
+      budget: args.budget,
+    });
+    // Same fallback chain as a task: the goal's own level, else the Session's pinned one.
+    const thinkingLevel = this.runThinkingLevel(m.sessionId, args.thinkingLevel);
+    const gen = this.goalStream(m, {
+      input: args.input,
+      budget: args.budget,
+      ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
+      approve,
+      signal: ac.signal,
+      ...(goalId !== undefined ? { goalId } : {}),
+    });
+    // The objective doubles as the title material (same role as a task's input text).
+    m.running = this.drive(m, gen, { userExcerpt: objective });
+    return { sessionId: m.sessionId };
+  }
+
+  async runStartCompact(m: SessionMonitor): Promise<{ sessionId: string }> {
+    this.assertOpen();
+    this.assertAgentNotDeleting(m.sessionId);
+    this.assertSessionNotDeleting(m.sessionId);
+    await this.ensureSession(m);
+    this.assertIdle(m);
+    // When there's nothing to compact, core's compact() yields no messages at all: we
+    // can't just return 202 and walk away, or the frontend would wait forever for a
+    // compaction banner that never comes (this is exactly the "/compact does nothing
+    // after an interrupt" complaint). Reject explicitly, and **say why** clearly —
+    // "just compacted" and "haven't talked yet" share the same internal state
+    // (sessionTurns === 0), but are two completely different messages to the user:
+    // telling someone who just compacted that there's "no completed conversation turn
+    // yet" tells them nothing.
+    const why = m.session!.compactability();
+    if (why !== "ok") throw compactUnavailable(why);
+    const ac = new AbortController();
+    m.status = "compacting";
+    m.abort = ac;
+    // Compactions have no parkable boundary contract either: hard-aborted at retire.
+    m.handoff = null;
+    m.lastActivityMs = Date.now();
+    this.publishState(m, "compacting");
+    const gen = m.session!.compact({ signal: ac.signal });
+    m.running = this.drive(m, gen);
+    return { sessionId: m.sessionId };
+  }
+
+  async runAtIdleBoundary<T>(m: SessionMonitor, operation: () => Promise<T>): Promise<T> {
+    this.assertOpen();
+    this.assertAgentNotDeleting(m.sessionId);
+    this.assertSessionNotDeleting(m.sessionId);
+    this.assertIdle(m);
+    return operation();
+  }
+
+  /**
+   * The parked continuation of a handed-off run, processed as the session's next event:
+   * relaunch with an EMPTY input — the parked turn's pending messages ride in as the
+   * reloaded Session's Trace-replayed carry-over, and the engine no-ops if nothing was
+   * reconstructed. Guards are early returns (this is an auto-start, not a request).
+   */
+  async runResume(m: SessionMonitor): Promise<void> {
+    try {
+      if (this.refusesAutoStart(m.sessionId)) return;
+      if (m.status !== "idle") return;
+      await this.ensureSession(m);
+      this.launchTask(m, []);
+    } catch (err) {
+      this.log(`[handoff] resume failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  /**
+   * Auto-start of the next queued follow-up, at a run-settle boundary (abort included —
+   * follow-ups are future tasks the user queued, so an abort of the current run does not
+   * discard them). Launches exactly one queued input — the next settle picks up the one
+   * after, keeping order and one-at-a-time semantics.
+   */
+  async runNextFollowUp(m: SessionMonitor): Promise<void> {
+    try {
+      if (this.refusesAutoStart(m.sessionId)) return;
+      if (m.status !== "idle" || m.followUps.length === 0) return;
+      await this.ensureSession(m);
+      const next = m.followUps.shift()!;
+      this.launchTask(m, next.input, next.thinkingLevel);
+    } catch (err) {
+      this.log(`[followup] auto-start failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  /**
+   * Auto-start of queued background completion notices: triggered when core signals an
+   * idle-session arrival, and at run settles for notices that raced the run's exit. Only
+   * an idle session with a loaded Session object launches — a busy one skips, because
+   * the running/queued task's engine drains the same queue at its own boundaries (each
+   * notice is delivered exactly once), and with no session object loaded the notices
+   * left with it.
+   */
+  async runBackgroundNotices(m: SessionMonitor): Promise<void> {
+    try {
+      if (this.refusesAutoStart(m.sessionId)) return;
+      if (m.status !== "idle" || m.followUps.length > 0) return;
+      const input = m.session?.takeBackgroundNotices?.() ?? [];
+      if (input.length === 0) return;
+      this.launchTask(m, input);
+    } catch (err) {
+      this.log(
+        `[background] notice task start failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 
   // —— Internal ——
+
+  /** Whether an auto-start (resume / follow-up / notice) must be skipped: shutting down, or a deletion window is open. */
+  private refusesAutoStart(sessionId: string): boolean {
+    if (this.closed || this.deletingSessions.has(sessionId)) return true;
+    const row = this.deps.sessions.findById(sessionId);
+    if (!row) return true;
+    return this.deletingAgents.has(agentKey(row.projectId, row.agentId));
+  }
+
+  /** The session's monitor, or a fresh one from its index row; 404 when the row does not exist. */
+  private requireMonitor(sessionId: string): SessionMonitor {
+    const m = this.monitorFor(sessionId);
+    if (m === null) {
+      throw new HttpError(
+        404,
+        "session_not_found",
+        "Session does not exist or you do not have access.",
+      );
+    }
+    return m;
+  }
+
+  /** Get-or-create WITHOUT loading a session (the load happens inside the monitor's mutex — see ensureSession); null when no index row exists. */
+  private monitorFor(sessionId: string): SessionMonitor | null {
+    const existing = this.monitors.get(sessionId);
+    if (existing) return existing;
+    const row = this.deps.sessions.findById(sessionId);
+    if (!row) return null;
+    const m = new SessionMonitor(this, row);
+    this.monitors.set(sessionId, m);
+    return m;
+  }
 
   private assertOpen(): void {
     if (this.closed) {
@@ -1583,7 +1223,7 @@ export class SessionManager {
     }
   }
 
-  /** This Session is being deleted → 409 (guards against the entry/Trace being rebuilt and reviving it inside the deletion race window). */
+  /** This Session is being deleted → 409 (guards against the monitor/Trace being rebuilt and reviving it inside the deletion race window). */
   private assertSessionNotDeleting(sessionId: string): void {
     if (this.deletingSessions.has(sessionId)) {
       throw new HttpError(
@@ -1594,23 +1234,11 @@ export class SessionManager {
     }
   }
 
-  /**
-   * A lame-duck run from the previous generation still drives this session's Trace → 409,
-   * the same refusal a same-generation running Task gets. This is the single-writer rule
-   * across generations: ensureEntry would otherwise load a second Session onto a Trace
-   * file the old drive is still appending to.
-   */
-  private assertNoForeignRun(sessionId: string): void {
-    if (this.foreign.has(sessionId)) {
+  private assertIdle(m: SessionMonitor): void {
+    if (m.status === "running") {
       throw new HttpError(409, "task_in_progress", "This Session already has a Task in progress.");
     }
-  }
-
-  private assertIdle(entry: RuntimeEntry): void {
-    if (entry.status === "running") {
-      throw new HttpError(409, "task_in_progress", "This Session already has a Task in progress.");
-    }
-    if (entry.status === "compacting") {
+    if (m.status === "compacting") {
       throw new HttpError(
         409,
         "compacting",
@@ -1623,27 +1251,20 @@ export class SessionManager {
     return this.agentGenerations.get(agentKey(projectId, agentId)) ?? 0;
   }
 
-  /** get-or-resume-or-heal: use directly on an active-table hit; otherwise load via the loader, updating the index's primary key on self-heal. */
-  private async ensureEntry(sessionId: string): Promise<RuntimeEntry> {
-    const existing = this.entries.get(sessionId);
-    if (existing) {
-      if (existing.generation === this.generationOf(existing.projectId, existing.agentId)) {
-        return existing;
-      }
-      // Built before the last vault update: discard once idle and fall through to a
-      // fresh load (resume re-reads the vault). A busy entry is returned as-is — the
-      // in-flight run keeps its values and assertIdle rejects the new Task anyway;
-      // it is rebuilt on the first access after it finishes.
-      if (
-        existing.status !== "idle" ||
-        existing.running !== null ||
-        existing.approvals.size !== 0
-      ) {
-        return existing;
-      }
-      this.entries.delete(sessionId);
+  /**
+   * get-or-resume-or-heal on the monitor: reuse the loaded session when it is current;
+   * reload via the loader when none is held (fresh monitor, post-swap, evicted) or when
+   * a vault update staled it (discarded only once idle — an in-flight run keeps its
+   * values and is rebuilt on the first access after it finishes). Self-heal may produce
+   * a new session_id: the index's primary key and the monitors table follow it.
+   */
+  private async ensureSession(m: SessionMonitor): Promise<void> {
+    if (m.session !== null) {
+      if (m.generation === this.generationOf(m.projectId, m.agentId)) return;
+      if (m.status !== "idle" || m.running !== null || m.approvals.size !== 0) return;
+      m.session = null;
     }
-    const row = this.deps.sessions.findById(sessionId);
+    const row = this.deps.sessions.findById(m.sessionId);
     if (!row) {
       throw new HttpError(
         404,
@@ -1652,109 +1273,233 @@ export class SessionManager {
       );
     }
     // Captured before the (awaited) load: a vault update racing with the load leaves
-    // this entry stale, so the access after next rebuilds it with the new values.
+    // this session stale, so the access after next rebuilds it with the new values.
     const generation = this.generationOf(row.projectId, row.agentId);
     const session = await this.deps.loader.load(row);
     // The Session/Agent was marked for deletion while loading: discard the load result,
-    // don't rebuild the entry (avoids reviving an orphaned Trace).
+    // don't attach it (avoids reviving an orphaned Trace).
     this.assertSessionNotDeleting(row.sessionId);
     this.assertAgentNotDeleting(row.sessionId);
-    let currentId = row.sessionId;
     if (session.sessionId !== row.sessionId) {
-      // Self-heal produced a new session_id: update the index's primary key; the SSE
-      // channel and pending state are naturally empty for it.
+      // Self-heal produced a new session_id: update the index's primary key and re-key
+      // the shared monitors table; the SSE channel and pending state are naturally empty
+      // for the new id.
       this.deps.sessions.replaceId(row.sessionId, session.sessionId);
-      currentId = session.sessionId;
+      this.monitors.delete(m.sessionId);
+      m.sessionId = session.sessionId;
+      this.monitors.set(m.sessionId, m);
     }
-    const entry: RuntimeEntry = {
-      sessionId: currentId,
-      projectId: row.projectId,
-      agentId: row.agentId,
-      provider: row.provider,
-      modelId: row.modelId,
-      session,
-      status: "idle",
-      approvals: new ApprovalRegistry(),
-      abort: null,
-      running: null,
-      generation,
-      followUps: [],
-      pendingInputs: [],
-      pendingBootstrap: [],
-      pendingSteering: [],
-      lastActivityMs: Date.now(),
-      handoff: null,
-    };
-    this.entries.set(currentId, entry);
-    this.registerNoticeListener(currentId, session);
-    return entry;
+    m.session = session;
+    m.generation = generation;
+    m.lastActivityMs = Date.now();
+    this.registerNoticeListener(m.sessionId, session);
   }
 
   /**
-   * Auto-start of queued background completion notices: called when core signals an
-   * idle-session arrival, and from drive's finally for notices that raced a run's exit.
-   * Revalidates under the session lock; only an idle entry launches, and only when the
-   * queue is non-empty — a busy entry skips, because the running/queued task's engine
-   * drains the same queue at its own boundaries (each notice is delivered exactly once).
+   * Taps core's goal-mode stream for `drive`: round boundaries (the injected `[goal]`
+   * inputs) become goal_round events + goal_state refreshes, and the terminal
+   * `goal_finished` event message becomes the goal_finished server event + the run-state
+   * row's final status. Token numbers mirror core's own accounting (same
+   * `goalTokenDelta`), so the UI shows exactly what the budget check uses.
    */
-  private async startBackgroundNoticeTask(sessionId: string): Promise<void> {
+  private async *goalStream(
+    m: SessionMonitor,
+    args: {
+      input: OmniMessage[];
+      budget: number;
+      thinkingLevel?: ThinkingLevelName;
+      approve: ApproveFn;
+      signal: AbortSignal;
+      goalId?: number;
+    },
+  ): AsyncGenerator<OmniMessage> {
+    const gen = m.session!.run(args.input, {
+      approve: args.approve,
+      signal: args.signal,
+      ...(args.thinkingLevel !== undefined ? { thinkingLevel: args.thinkingLevel } : {}),
+      goal: { budget: args.budget },
+    });
+    let round = 0;
+    let used = 0;
+    let finished = false;
     try {
-      await this.withLock(sessionId, async () => {
-        if (this.closed || this.deletingSessions.has(sessionId)) return;
-        const row = this.deps.sessions.findById(sessionId);
-        if (row && this.deletingAgents.has(agentKey(row.projectId, row.agentId))) return;
-        const entry = this.entries.get(sessionId);
-        if (!entry) {
-          // The runtime entry left the active table between the signal and this lock —
-          // the queued notices left with the released Session object. Say so instead of
-          // dropping the report invisibly (the sweep pins entries with pending notices,
-          // so this is a genuine anomaly worth a trace in the log).
-          this.log(`[background] notice for ${sessionId} dropped: runtime entry not loaded`);
-          return;
+      for await (const msg of gen) {
+        used += goalTokenDelta(msg);
+        if (isGoalRoundInput(msg)) {
+          round++;
+          if (args.goalId !== undefined) this.deps.goals?.progress(args.goalId, round, used);
+          this.publishEvent(m, {
+            type: "goal_round",
+            sessionId: m.sessionId,
+            round,
+            used,
+            budget: args.budget,
+          });
         }
-        // Busy or queued-behind: not a loss — the running/next run's engine drains the
-        // same notice queue at its own input-assembly boundaries.
-        if (entry.status !== "idle" || entry.followUps.length > 0) return;
-        const input = entry.session.takeBackgroundNotices?.() ?? [];
-        if (input.length === 0) return;
-        this.launchTask(entry, input);
-      });
+        const outcome = goalFinishedOf(msg);
+        if (outcome) {
+          finished = true;
+          if (args.goalId !== undefined) {
+            this.deps.goals?.finish(
+              args.goalId,
+              outcome.outcome,
+              outcome.rounds,
+              outcome.tokensUsed,
+            );
+          }
+          this.publishEvent(m, {
+            type: "goal_finished",
+            sessionId: m.sessionId,
+            outcome: outcome.outcome,
+            rounds: outcome.rounds,
+            used: outcome.tokensUsed,
+          });
+        }
+        yield msg;
+      }
+      if (!finished) {
+        // Defensive: core always ends a goal stream with goal_finished; a stream that
+        // didn't is a cut-off run — close the row so the UI never shows a forever-active
+        // goal.
+        this.finishAborted(m, args.goalId, round, used);
+      }
     } catch (err) {
-      this.log(
-        `[background] notice task start failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      // Core throws only on infrastructure failures (e.g. GOAL.yaml writes): close the
+      // run state as aborted, then let drive's defensive catch record the error. Guarded on
+      // `finished`: a throw after the terminal event must not overwrite the row's real
+      // outcome (repo.finish is an unconditional UPDATE) or publish a contradicting event.
+      if (!finished) this.finishAborted(m, args.goalId, round, used);
+      throw err;
     }
+  }
+
+  /** Closes a goal's run state as aborted (stream cut off / infrastructure failure). */
+  private finishAborted(
+    m: SessionMonitor,
+    goalId: number | undefined,
+    round: number,
+    used: number,
+  ): void {
+    if (goalId !== undefined) this.deps.goals?.finish(goalId, "aborted", round, used);
+    this.publishEvent(m, {
+      type: "goal_finished",
+      sessionId: m.sessionId,
+      outcome: "aborted",
+      rounds: round,
+      used,
+    });
+  }
+
+  /**
+   * Thinking level for one run: the level the request carried wins, else the level pinned
+   * on the Session row (PATCH /api/sessions/:id — the Web App's in-chat picker), else
+   * undefined so core keeps falling back to the Agent config. Resolved at LAUNCH time, so
+   * a queued follow-up that carried no level of its own picks up the pin as it stands when
+   * it finally starts, and a pin set mid-run applies from the next run.
+   */
+  private runThinkingLevel(
+    sessionId: string,
+    requested?: ThinkingLevelName,
+  ): ThinkingLevelName | undefined {
+    return requested ?? this.deps.sessions.findById(sessionId)?.thinkingLevel ?? undefined;
+  }
+
+  /** Shared task launch (fresh tasks, auto-started follow-ups, resumes): flips to running, publishes the input, and drives the run with the per-turn thinking level (if any). Caller holds the monitor mutex and has verified idle + loaded. */
+  private launchTask(
+    m: SessionMonitor,
+    input: OmniMessage[],
+    requestedThinkingLevel?: ThinkingLevelName,
+  ): void {
+    const thinkingLevel = this.runThinkingLevel(m.sessionId, requestedThinkingLevel);
+    const channel = this.deps.channels.get(m.sessionId);
+    const ac = new AbortController();
+    m.status = "running";
+    m.abort = ac;
+    m.lastActivityMs = Date.now();
+    // Publish the input messages first (visible to other subscribers; the Trace is
+    // persisted by the SDK), then flip the running status. The same envelopes are held as
+    // pendingInputs so GET /messages can serve them before the engine's Trace write
+    // catches up (delayed by the first run's MCP connect). APPEND, don't replace: inputs
+    // of a run aborted mid-bootstrap are still held (nothing reached the Trace; core
+    // carries them into this run) and must stay served until this run persists them.
+    // The previous attempt's bootstrap records are dropped instead — this run streams
+    // its own connect phase, and a stale aborted pair would render as an extra row.
+    m.pendingInputs = [...m.pendingInputs, ...input];
+    m.pendingBootstrap = [];
+    for (const msg of input) channel.publish(msg);
+    this.publishState(m, "running");
+
+    const approve = makeApprove({
+      // Re-reads approval_mode from the DB on every decision (a PATCH takes effect immediately).
+      getMode: () => this.deps.sessions.findById(m.sessionId)?.approvalMode ?? "always-ask",
+      toolPermission: (name) => m.session!.toolPermission(name),
+      registry: m.approvals,
+      publishRequest: (pending) =>
+        this.publishEvent(m, {
+          type: "approval_request",
+          toolCall: pending.toolCall,
+          ...(pending.origin !== undefined ? { origin: pending.origin } : {}),
+        }),
+    });
+    // Plain Task runs are handoff-capable: a hot swap parks them at the next turn
+    // boundary instead of aborting (see SessionMonitor.retire). The callback records the
+    // park on the monitor so the settle boundary can turn it into the resume event —
+    // deterministic, because a true return IS the park (the engine returns immediately
+    // after).
+    const handoff = { requested: false, parked: false };
+    m.handoff = handoff;
+    const gen = m.session!.run(input, {
+      approve,
+      signal: ac.signal,
+      ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
+      shouldPark: () => {
+        if (!handoff.requested) return false;
+        handoff.parked = true;
+        return true;
+      },
+    });
+    // This call's input user text is the whole title source: drive persists its first
+    // words as the immediate fallback and hands it to the LLM as the generation material
+    // (user input only — generation never waits for model output).
+    const userExcerpt = input
+      .filter(isPlainText("user"))
+      .map((msg) => msg.payload.text)
+      .join("\n");
+    m.running = this.drive(m, gen, { userExcerpt });
   }
 
   /**
    * Drive the output stream in the background: publish each message + persist usage +
-   * persist LLM/tool errors; on completion (including errors) resets to idle and pushes
-   * the status. `titleSource` is passed only for Task runs (compaction doesn't generate
-   * a title): its user text drives automatic title generation at run start.
+   * persist LLM/tool errors; on completion (including errors) resets to idle, pushes
+   * the status, and hands the settle boundary to the monitor (pointer swap + next
+   * event — see SessionMonitor.completeRun). `titleSource` is passed only for Task runs
+   * (compaction doesn't generate a title): its user text drives automatic title
+   * generation at run start.
    */
   private async drive(
-    entry: RuntimeEntry,
+    m: SessionMonitor,
     gen: AsyncGenerator<OmniMessage>,
     titleSource?: { userExcerpt: string },
   ): Promise<void> {
+    const session = m.session!;
     const ctx: UsageContext = {
-      projectId: entry.projectId,
-      agentId: entry.agentId,
-      sessionId: entry.sessionId,
-      provider: entry.provider,
-      modelId: entry.modelId,
+      projectId: m.projectId,
+      agentId: m.agentId,
+      sessionId: m.sessionId,
+      provider: m.provider,
+      modelId: m.modelId,
     };
     // Title policy fires at run start, from the user input alone: the generator persists
     // the input's first words as an immediate fallback and issues the LLM replacement
     // request without waiting for any model output (maybeGenerate self-guards: manual
     // renames are final, one generation in flight per session).
     if (titleSource?.userExcerpt.trim()) {
-      this.deps.titles?.maybeGenerate(ctx, entry.session, {
+      this.deps.titles?.maybeGenerate(ctx, session, {
         fallbackText: titleSource.userExcerpt,
         material: { userText: titleSource.userExcerpt, assistantText: "" },
       });
     }
-    // Every driven run (a Task, a compaction, or a whole goal loop — startGoal hands all of
+    // Every driven run (a Task, a compaction, or a whole goal loop — a goal hands all of
     // its rounds to ONE drive) writes Trace lines: flip the row's has_trace cache here, the
     // single choke point, so listing can serve it from the DB without a directory walk (see
     // SessionService.listSessions). The same statement stamps last_active_at, so a run costs
@@ -1762,7 +1507,7 @@ export class SessionManager {
     // message; activity during the run (steering, approvals, queued follow-ups) rides on the
     // run-end stamp. Guarded: this runs BEFORE the try below, so an unexpected DB failure
     // (a closed handle after shutdown) would otherwise reject drive() with no finally to
-    // reach — leaving the entry pinned "running" and every later Task 409ing for the
+    // reach — leaving the monitor pinned "running" and every later Task 409ing for the
     // process's lifetime.
     this.touchRow(ctx, (repo, at) => repo.markDriven(ctx.sessionId, at));
     // LLM request failures and tool execution failures aren't expressed via throw (core
@@ -1771,9 +1516,9 @@ export class SessionManager {
     // (subagent failures flow through this same stream too; see stream-error-watcher).
     const watcher = this.deps.errors
       ? new StreamErrorWatcher(this.deps.errors, {
-          projectId: entry.projectId,
-          agentId: entry.agentId,
-          sessionId: entry.sessionId,
+          projectId: m.projectId,
+          agentId: m.agentId,
+          sessionId: m.sessionId,
         })
       : null;
     // Subagent (origin) registration: as soon as session_meta arrives, the child Session
@@ -1811,15 +1556,15 @@ export class SessionManager {
           // Steering delivery: core emits exactly one `[user_steering]` user text per queued
           // entry, in queue order — shift the display mirror and re-broadcast so the
           // composer's "steering queued" hint retires the moment the message is on stream.
-          if (entry.pendingSteering.length > 0 && isDeliveredSteering(msg)) {
-            entry.pendingSteering.shift();
-            this.publishState(entry, entry.status);
+          if (m.pendingSteering.length > 0 && isDeliveredSteering(msg)) {
+            m.pendingSteering.shift();
+            this.publishState(m, m.status);
           }
         } else if (isSessionMeta(msg)) {
           // Subagent registration is only a "side effect" — it must never interrupt the
           // main run flow on error: wrap the whole thing in a defensive try/catch.
           try {
-            const child = this.registerChildSession(entry, msg, children);
+            const child = this.registerChildSession(m, msg, children);
             // Only a **direct** subagent (origin length 1) claims a queued parent-level
             // run_subagent prompt; deeper sessions are spawned by their own parent and
             // shouldn't consume from this queue.
@@ -1839,11 +1584,11 @@ export class SessionManager {
               if (child.prompt.trim()) {
                 this.deps.titles?.maybeGenerate(
                   { ...ctx, agentId: child.agentId, sessionId: child.sessionId },
-                  entry.session,
+                  session,
                   {
                     fallbackText: child.prompt,
                     material: { userText: child.prompt, assistantText: "" },
-                    notifyOn: entry.sessionId, // Notify the frontend via the parent Session's SSE channel
+                    notifyOn: m.sessionId, // Notify the frontend via the parent Session's SSE channel
                   },
                 );
               }
@@ -1865,7 +1610,7 @@ export class SessionManager {
         if (!msg.origin || msg.origin.length === 0) {
           const bt = (msg.payload as { type?: string }).type;
           if (bt === "mcp_connect_begin" || bt === "mcp_connect_end" || bt === "tool_list_ready") {
-            entry.pendingBootstrap.push(msg);
+            m.pendingBootstrap.push(msg);
           }
           // First request of the run: the engine writes input → bootstrap records → tool
           // list to the Trace BEFORE issuing the request, so both holds are persisted by
@@ -1874,18 +1619,18 @@ export class SessionManager {
           // more records than the window, the input would be judged "not yet in the
           // Trace" and served a second time at the end of history.
           if (bt === "request_begin") {
-            entry.pendingInputs = [];
-            entry.pendingBootstrap = [];
+            m.pendingInputs = [];
+            m.pendingBootstrap = [];
           }
         }
         // Live-tail bookkeeping in the same synchronous tick as the publish below: the
         // messages endpoint captures "channel cursor + open fragments" between two
         // publishes, so the pair is always a consistent snapshot (see live-tail.ts).
-        this.liveTail.observe(entry.sessionId, msg);
+        this.liveTail.observe(m.sessionId, msg);
         // Re-fetch the channel before every publish (matches publishEvent): the channel
         // may have been recycled and recreated during a long wait on approval, and
         // holding a stale reference would send output to an orphaned, detached channel.
-        this.deps.channels.get(entry.sessionId).publish(msg);
+        this.deps.channels.get(m.sessionId).publish(msg);
         watcher?.observe(msg);
         try {
           await this.deps.recorder.record(ctx, msg);
@@ -1906,36 +1651,36 @@ export class SessionManager {
       watcher?.close();
       // The run is over: no fragment will ever continue, so drop the live tail before the
       // idle flip (GET /messages stops attaching `live` the moment status reads idle).
-      this.liveTail.clear(entry.sessionId);
+      this.liveTail.clear(m.sessionId);
+      // Whether the run ended by parking for a hot-swap handoff (and was not interrupted
+      // meanwhile): computed before the abort controller is cleared, consumed by the
+      // monitor's settle boundary below.
+      const parked = m.handoff?.parked === true && m.abort?.signal.aborted !== true;
       // The pending holds are NOT cleared here: a run aborted mid-bootstrap wrote nothing
       // to the Trace, so its held input (and the aborted connect pair) are the only copy
       // a reload can show until the next run carries the input forward and persists it.
       // Runs that issued a request already cleared them at their first request_begin.
-      entry.approvals.denyAll();
-      entry.status = "idle";
-      entry.abort = null;
-      entry.running = null;
+      m.approvals.denyAll();
+      m.status = "idle";
+      m.abort = null;
+      m.running = null;
       // The run is over, so core has discarded any undelivered steering (see ContextEngine's
       // steeringQueue) — drop the mirror with it; the idle publish below broadcasts the
       // now-empty state.
-      entry.pendingSteering = [];
-      entry.lastActivityMs = Date.now();
+      m.pendingSteering = [];
+      m.lastActivityMs = Date.now();
       // Run-end stamp (see the run-start counterpart at the top of drive). Guarded like
       // every other write in this finally: what follows — the idle broadcast and the
-      // auto-start of queued follow-ups (this is its only call site) — must not be
-      // skippable by a DB failure, or SSE clients would sit on "running" forever with
-      // their queue stranded. A no-op UPDATE when the row is already gone: deletion
-      // normally awaits the drive first, so that only happens once its 5s wait times out.
+      // settle boundary — must not be skippable by a DB failure, or SSE clients would
+      // sit on "running" forever with their queue stranded. A no-op UPDATE when the row
+      // is already gone: deletion normally awaits the drive first, so that only happens
+      // once its 5s wait times out.
       this.touchRow(ctx, (repo, at) => repo.touchLastActive(ctx.sessionId, at));
-      this.publishState(entry, "idle");
-      // Queued follow-ups: whenever a run finishes (Task or compaction, abort included),
-      // the next queued input auto-starts as an ordinary task. Fire-and-forget — it
-      // revalidates under the session lock.
-      if (entry.followUps.length > 0) void this.startQueuedFollowUp(entry.sessionId);
-      // Background completion notices that raced this run's exit (arrived after its last
-      // input-assembly boundary): start their delivery task now. No-op when a follow-up
-      // just launched — that run's engine drains the same queue.
-      else void this.startBackgroundNoticeTask(entry.sessionId);
+      this.publishState(m, "idle");
+      // The settle boundary: the monitor swaps its code pointer if a generation is
+      // waiting, then schedules the next event (the parked continuation, else a queued
+      // follow-up, else raced background notices) on the CURRENT generation.
+      m.completeRun(parked);
     }
   }
 
@@ -1950,7 +1695,7 @@ export class SessionManager {
    * and returned; a duplicate session_meta returns null.
    */
   private registerChildSession(
-    entry: RuntimeEntry,
+    m: SessionMonitor,
     msg: OmniMessage,
     children: Map<string, ChildSession>,
   ): ChildSession | null {
@@ -1969,7 +1714,7 @@ export class SessionManager {
     const createdAt = this.now().toISOString();
     this.deps.sessions.insertOrIgnore({
       sessionId: childSid,
-      projectId: entry.projectId,
+      projectId: m.projectId,
       agentId,
       provider: p.provider,
       modelId: p.model_id,
@@ -1980,16 +1725,16 @@ export class SessionManager {
       title: null,
       // Spawned by this server's run (client NULL = web); its Trace exists by construction.
       hasTrace: true,
-      // A subagent's own runs are driven through the PARENT entry's drive, so nothing ever
+      // A subagent's own runs are driven through the PARENT session's drive, so nothing ever
       // stamps this row: it stays at its registration time (see SessionRow.lastActiveAt).
       lastActiveAt: createdAt,
       createdAt,
     });
     // Make the subagent appear immediately in the sidebar: notify via the parent
     // Session's channel (a frontend currently watching the parent run refreshes its list in place).
-    this.publishEvent(entry, {
+    this.publishEvent(m, {
       type: "session_created",
-      projectId: entry.projectId,
+      projectId: m.projectId,
       agentId,
       sessionId: childSid,
       source,
@@ -2022,19 +1767,17 @@ export class SessionManager {
     }
   }
 
-  private publishState(entry: RuntimeEntry, state: SessionStatus): void {
+  private publishState(m: SessionMonitor, state: SessionStatus): void {
     // Every state flip also reports the queued follow-up count and the undelivered steering
     // mirror, so subscribers can render both hints without a dedicated event type.
-    this.publishEvent(entry, {
+    this.publishEvent(m, {
       type: "task_state",
       state,
-      queued: entry.followUps.length,
-      ...(entry.pendingSteering.length > 0
-        ? { pendingSteering: entry.pendingSteering.map((p) => p.info) }
+      queued: m.followUps.length,
+      ...(m.pendingSteering.length > 0
+        ? { pendingSteering: m.pendingSteering.map((p) => p.info) }
         : {}),
-      ...(entry.followUps.length > 0
-        ? { pendingFollowUps: entry.followUps.map(followUpInfo) }
-        : {}),
+      ...(m.followUps.length > 0 ? { pendingFollowUps: m.followUps.map(followUpInfo) } : {}),
     });
     // The same flip again, this time on the user channel and carrying the Session id: a tab
     // subscribes to the ONE conversation it has open, so the event above can never move any
@@ -2049,7 +1792,7 @@ export class SessionManager {
       // after the write that stamps it (touchLastActive in drive's finally), so this is what a
       // list fetch would return right now and no clock of ours has to agree with the one that
       // wrote it.
-      const row = this.deps.sessions.findById(entry.sessionId);
+      const row = this.deps.sessions.findById(m.sessionId);
       if (!row) return; // Row already deleted: no list row left to light up.
       lastActiveAt = row.lastActiveAt;
       // A running Session has by definition started a Task, whatever the row cache says yet:
@@ -2063,35 +1806,16 @@ export class SessionManager {
       // outlives its drain window). A list badge is never worth breaking a run's finally over.
       return;
     }
-    notify(entry.projectId, {
+    notify(m.projectId, {
       type: "session_state",
-      sessionId: entry.sessionId,
+      sessionId: m.sessionId,
       state,
       lastActiveAt,
       hasTrace,
     });
   }
 
-  private publishEvent(entry: RuntimeEntry, event: ServerEvent): void {
-    this.deps.channels.get(entry.sessionId).publish(event, "server_event");
-  }
-
-  /** Serialize (mutually exclude) execution by sessionId; cleans up the lock-table entry once its chain drains (avoids unbounded growth). */
-  private async withLock<T>(sessionId: string, fn: () => Promise<T>): Promise<T> {
-    // What's stored in the chain is the already-caught version (used only for
-    // sequencing, never propagates errors); the caller gets the original result from `next`.
-    const prev = this.locks.get(sessionId) ?? Promise.resolve();
-    const next = prev.then(fn);
-    const settled: Promise<void> = next
-      .then(
-        () => undefined,
-        () => undefined,
-      )
-      .then(() => {
-        // Only delete if still the tail of the chain (no later waiter): preserves mutual-exclusion semantics.
-        if (this.locks.get(sessionId) === settled) this.locks.delete(sessionId);
-      });
-    this.locks.set(sessionId, settled);
-    return next;
+  private publishEvent(m: SessionMonitor, event: ServerEvent): void {
+    this.deps.channels.get(m.sessionId).publish(event, "server_event");
   }
 }

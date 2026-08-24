@@ -48,6 +48,7 @@ import type { ChannelEvent } from "../src/runtime/channel.js";
 import type { ErrorRecordArgs, ErrorSink } from "../src/runtime/error-recorder.js";
 import { SessionManager } from "../src/runtime/session-manager.js";
 import type { RuntimeSession, SessionLoader } from "../src/runtime/session-manager.js";
+import type { SessionMonitor } from "../src/runtime/session-monitor.js";
 import { SessionSources } from "../src/runtime/session-sources.js";
 import type { TitleRequest } from "../src/runtime/title-generator.js";
 import type { UsageContext } from "../src/runtime/usage-recorder.js";
@@ -124,8 +125,11 @@ describe("session-manager", () => {
     errors?: ErrorSink,
     /** Stubbed clock for persisted timestamps (see the last_active_at test). */
     now?: () => Date,
+    /** A shared monitors table, for the hot-swap tests (two generations over one table). */
+    monitors?: Map<string, SessionMonitor>,
   ): SessionManager =>
     new SessionManager({
+      ...(monitors ? { monitors } : {}),
       sessions,
       channels,
       sources,
@@ -1446,7 +1450,7 @@ describe("session-manager", () => {
     expect(notified.length).toBe(2);
   });
 
-  describe("hot-swap handoff (quiesce → adoptHandoffs → resume)", () => {
+  describe("hot-swap handoff (shared monitors: quiesce → setPending → resume)", () => {
     /**
      * A fake long run with turn boundaries: yields one message, then polls shouldPark
      * between "turns" until parked or aborted — the shape a real engine run has from the
@@ -1501,8 +1505,9 @@ describe("session-manager", () => {
       };
     }
 
-    it("quiesce parks a running Task instead of aborting; the adopter resumes it with an empty input", async () => {
+    it("quiesce parks a running Task instead of aborting; the successor resumes it with an empty input", async () => {
       sessions.updateApprovalMode("session-1", "allow-all");
+      const monitors = new Map<string, SessionMonitor>();
       const state = {
         allowPark: true,
         parked: false,
@@ -1510,22 +1515,21 @@ describe("session-manager", () => {
         disposed: 0,
         ranInputs: [] as OmniMessage[][],
       };
-      const old = makeManager(loaderOf(parkableFakeSession("session-1", state)));
+      const old = makeManager(
+        loaderOf(parkableFakeSession("session-1", state)),
+        undefined,
+        undefined,
+        monitors,
+      );
       await old.startTask("session-1", [userText("long job")]);
       await waitFor(() => old.statusOf("session-1") === "running");
 
-      const { handoffs, aborted } = old.quiesce();
+      const { aborted } = old.quiesce();
       expect(aborted).toHaveLength(0);
-      expect(handoffs).toHaveLength(1);
-      expect(handoffs[0]!).toMatchObject({
-        sessionId: "session-1",
-        projectId: "p1",
-        agentId: "a1",
-        status: "running",
-      });
 
-      // The successor generation: a fresh manager whose loader stands in for the
-      // Trace-reload path.
+      // The successor generation: a fresh manager over the SAME monitors table; its
+      // loader stands in for the Trace-reload path. Construction attaches it to every
+      // monitor (setPending).
       const resumedState = {
         allowPark: true,
         parked: false,
@@ -1533,19 +1537,23 @@ describe("session-manager", () => {
         disposed: 0,
         ranInputs: [] as OmniMessage[][],
       };
-      const next = makeManager(loaderOf(parkableFakeSession("session-1", resumedState)));
-      next.adoptHandoffs(handoffs);
+      const next = makeManager(
+        loaderOf(parkableFakeSession("session-1", resumedState)),
+        undefined,
+        undefined,
+        monitors,
+      );
 
       // Until the lame-duck drive settles, the session reads busy on the successor and a
-      // new task is refused — the cross-generation single-writer rule.
+      // new task is refused — the monitor is the single writer across generations.
       expect(next.statusOf("session-1")).toBe("running");
       const err = await next.startTask("session-1", [userText("x")]).catch((e: unknown) => e);
       expect((err as { status: number; code: string }).status).toBe(409);
 
-      // The old drive parks at its next boundary, its session is disposed, and the
-      // successor relaunches with an EMPTY input (the real loader's session carries the
-      // parked turn back as Trace-replayed carry-over).
-      await handoffs[0]!.settled;
+      // The old drive parks at its next boundary; the monitor swaps its code pointer,
+      // disposes the old generation's session object, and the successor relaunches with
+      // an EMPTY input (the real loader's session carries the parked turn back as
+      // Trace-replayed carry-over).
       await waitFor(() => resumedState.ranInputs.length === 1);
       expect(state.parked).toBe(true);
       expect(state.aborted).toBe(false);
@@ -1557,8 +1565,9 @@ describe("session-manager", () => {
       await waitFor(() => next.statusOf("session-1") === "idle");
     });
 
-    it("an interrupt during the lame-duck window forwards to the old generation and cancels the resume", async () => {
+    it("an interrupt during the lame-duck window reaches the run through the monitor and cancels the resume", async () => {
       sessions.updateApprovalMode("session-1", "allow-all");
+      const monitors = new Map<string, SessionMonitor>();
       // allowPark stays false: the run holds at a non-parking boundary, so the interrupt
       // deterministically lands before any park.
       const state = {
@@ -1568,10 +1577,15 @@ describe("session-manager", () => {
         disposed: 0,
         ranInputs: [] as OmniMessage[][],
       };
-      const old = makeManager(loaderOf(parkableFakeSession("session-1", state)));
+      const old = makeManager(
+        loaderOf(parkableFakeSession("session-1", state)),
+        undefined,
+        undefined,
+        monitors,
+      );
       await old.startTask("session-1", [userText("long job")]);
       await waitFor(() => old.statusOf("session-1") === "running");
-      const { handoffs } = old.quiesce();
+      old.quiesce();
 
       const resumedState = {
         allowPark: true,
@@ -1580,35 +1594,48 @@ describe("session-manager", () => {
         disposed: 0,
         ranInputs: [] as OmniMessage[][],
       };
-      const next = makeManager(loaderOf(parkableFakeSession("session-1", resumedState)));
-      next.adoptHandoffs(handoffs);
+      const next = makeManager(
+        loaderOf(parkableFakeSession("session-1", resumedState)),
+        undefined,
+        undefined,
+        monitors,
+      );
 
       expect(next.abortTask("session-1")).toBe(true);
-      const { parked } = await handoffs[0]!.settled;
-      expect(parked).toBe(false);
-      expect(state.aborted).toBe(true);
+      await waitFor(() => state.aborted);
       await waitFor(() => next.statusOf("session-1") === "idle");
       // No resume: the user asked the run to stop, not to survive the swap.
       await new Promise((r) => setTimeout(r, 20));
       expect(resumedState.ranInputs).toHaveLength(0);
     });
 
-    it("approval decisions forward to the lame-duck run's registry through the successor", async () => {
-      const session = approvalFakeSession("session-1");
-      const old = makeManager(loaderOf(session));
+    it("approval decisions reach the lame-duck run's registry through the successor's facade", async () => {
+      const monitors = new Map<string, SessionMonitor>();
+      const old = makeManager(
+        loaderOf(approvalFakeSession("session-1")),
+        undefined,
+        undefined,
+        monitors,
+      );
       await old.startTask("session-1", [userText("do it")]);
       await waitFor(() => old.pendingApprovalCount("session-1") === 1);
 
-      const { handoffs } = old.quiesce();
-      const next = makeManager(loaderOf(approvalFakeSession("session-1")));
-      next.adoptHandoffs(handoffs);
+      old.quiesce();
+      const next = makeManager(
+        loaderOf(approvalFakeSession("session-1")),
+        undefined,
+        undefined,
+        monitors,
+      );
 
-      // The pending approval is visible through the successor and decidable there.
+      // The pending approval lives in the monitor, so it is visible through the
+      // successor and decidable there — no forwarding machinery involved.
       expect(next.pendingApprovalCount("session-1")).toBe(1);
       expect(next.decideApproval("session-1", "tc-1", "allow")).toBe(true);
       // The old run completes on its own (not parked) — no resume follows.
-      const { parked } = await handoffs[0]!.settled;
-      expect(parked).toBe(false);
+      await waitFor(() => next.statusOf("session-1") === "idle");
+      await new Promise((r) => setTimeout(r, 20));
+      expect(next.statusOf("session-1")).toBe("idle");
     });
 
     it("a compaction has no park contract and is hard-aborted by quiesce, gating the drain", async () => {
@@ -1617,10 +1644,61 @@ describe("session-manager", () => {
       await manager.startCompact("session-1");
       await waitFor(() => manager.statusOf("session-1") === "compacting");
 
-      const { handoffs, aborted } = manager.quiesce();
-      expect(handoffs).toHaveLength(0);
+      const { aborted } = manager.quiesce();
       expect(aborted).toHaveLength(1);
       await Promise.allSettled(aborted);
+    });
+
+    it("follow-ups queued before a swap survive it and auto-start under the successor", async () => {
+      sessions.updateApprovalMode("session-1", "allow-all");
+      const monitors = new Map<string, SessionMonitor>();
+      const state = {
+        allowPark: true,
+        parked: false,
+        aborted: false,
+        disposed: 0,
+        ranInputs: [] as OmniMessage[][],
+      };
+      const old = makeManager(
+        loaderOf(parkableFakeSession("session-1", state)),
+        undefined,
+        undefined,
+        monitors,
+      );
+      await old.startTask("session-1", [userText("long job")]);
+      await waitFor(() => old.statusOf("session-1") === "running");
+      // Queued while running: a future event, owned by the monitor, not by a generation.
+      const queued = await old.startTask("session-1", [userText("after that")], {
+        queueIfBusy: true,
+      });
+      expect(queued.queued).toBe(true);
+      old.quiesce();
+
+      const resumedState = {
+        allowPark: false,
+        parked: false,
+        aborted: false,
+        disposed: 0,
+        ranInputs: [] as OmniMessage[][],
+      };
+      const next = makeManager(
+        loaderOf(parkableFakeSession("session-1", resumedState)),
+        undefined,
+        undefined,
+        monitors,
+      );
+      expect(next.pendingFollowUpCount("session-1")).toBe(1);
+
+      // The parked continuation resumes first (empty input); aborting it settles that
+      // run, and the queued follow-up auto-starts next — both under the successor.
+      await waitFor(() => resumedState.ranInputs.length === 1);
+      expect(resumedState.ranInputs[0]).toEqual([]);
+      expect(next.abortTask("session-1")).toBe(true);
+      await waitFor(() => resumedState.ranInputs.length === 2);
+      expect(resumedState.ranInputs[1]!.length).toBe(1);
+      expect(next.pendingFollowUpCount("session-1")).toBe(0);
+      expect(next.abortTask("session-1")).toBe(true);
+      await waitFor(() => next.statusOf("session-1") === "idle");
     });
   });
 });

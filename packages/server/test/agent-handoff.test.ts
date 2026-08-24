@@ -1,13 +1,14 @@
 /**
  * Agent-run handoff across a REAL platform swap (kernel upgrade over the full App):
- * a running Task is not aborted by the swap — the old generation's drive parks at its
- * next turn boundary (lame duck), its handle rides the resource registry
- * (`agent-runs:handoff`), and the successor App adopts it: the session reads busy until
- * the old drive settles, then the run is resumed on a freshly loaded Session with an
- * empty input (the real loader's session carries the parked turn back as Trace-replayed
+ * a running Task is not aborted by the swap — its monitor rides the resource registry
+ * (the `agent-sessions:table` shared map, see runtime/session-monitor.ts), the old
+ * generation's drive parks at its next turn boundary (lame duck), and the monitor swaps
+ * its code pointer to the successor at that boundary: the session reads busy until the
+ * old drive settles, then the run is resumed on a freshly loaded Session with an empty
+ * input (the real loader's session carries the parked turn back as Trace-replayed
  * carry-over). The manager-level unit coverage lives in session-manager.test.ts; this
- * file pins the platform wiring — quiesce in the dispose effect, the registry entry, and
- * adoption in the successor's create().
+ * file pins the platform wiring — quiesce in the dispose effect, the table's registry
+ * entry, and adoption in the successor's create().
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { upgrade } from "@prismshadow/penguin-core/kernel";
