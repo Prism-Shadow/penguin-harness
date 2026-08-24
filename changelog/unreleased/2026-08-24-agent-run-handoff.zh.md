@@ -3,6 +3,7 @@
 - **Date:** 2026-08-24
 - **Type:** feat
 - **Scope:** `core`, `server`
+- **PR:** [#436](https://github.com/Prism-Shadow/penguin-harness/pull/436)
 
 [English version](./2026-08-24-agent-run-handoff.md)
 
