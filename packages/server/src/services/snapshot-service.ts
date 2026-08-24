@@ -94,12 +94,17 @@ export class SnapshotService {
    * (higher than current imports directly, same version or older requires
    * `confirm`), automatically snapshots the current version before import, then
    * replaces `agent_state/` while keeping the current vault.
+   *
+   * `preSnapshot: false` skips the automatic pre-import snapshot — for seeding a
+   * freshly created Agent, whose template state is not worth preserving (its
+   * caller passes `confirm: true` for the same reason: both guards protect
+   * existing State, and a fresh Agent has none).
    */
   async importArchive(
     projectId: string,
     agentId: string,
     archive: Buffer,
-    confirm: boolean,
+    opts: { confirm: boolean; preSnapshot?: boolean },
   ): Promise<{ version: number }> {
     const current = await this.currentVersion(projectId, agentId);
     const base = agentDir(this.root, projectId, agentId);
@@ -145,7 +150,7 @@ export class SnapshotService {
       const incoming = agentStateVersion({
         version: typeof incomingRaw === "number" ? incomingRaw : undefined,
       });
-      if (incoming <= current && !confirm) {
+      if (incoming <= current && !opts.confirm) {
         throw new HttpError(
           409,
           "version_conflict",
@@ -154,7 +159,7 @@ export class SnapshotService {
       }
 
       // Automatically snapshots the current version before import (reused if one already exists for that version), so a mistaken import can be rolled back.
-      await this.ensureSnapshot(projectId, agentId);
+      if (opts.preSnapshot !== false) await this.ensureSnapshot(projectId, agentId);
 
       // Replace agent_state: first merge the current vault into the staging
       // directory to be swapped in (extraction already filtered out any vault

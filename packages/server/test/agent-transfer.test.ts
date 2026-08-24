@@ -10,7 +10,9 @@ import * as tar from "tar";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { agentStateDir, snapshotsDir } from "@prismshadow/penguin-core";
 import type {
+  AgentCreateResponse,
   AgentImportResponse,
+  AgentsResponse,
   ProjectCreateResponse,
   VaultResponse,
 } from "../src/api/types.js";
@@ -127,5 +129,83 @@ describe("agent export/import", () => {
 
     const vault = (await (await owner.get(`${base}/vault`)).json()) as VaultResponse;
     expect(vault.entries.map((e) => e.key)).toEqual(["TOKEN"]);
+  });
+
+  it("creates a new agent from an exported package: state, name and version come from it", async () => {
+    // Give the source agent a distinct name/description/version and a state marker, then export.
+    expect(
+      (
+        await owner.put(`${base}/config`, {
+          config: { name: "Tuned Agent", description: "Tuned description" },
+        })
+      ).status,
+    ).toBe(200);
+    const configPath = path.join(
+      agentStateDir(t.root, projectId, "default_agent"),
+      "system_config.yaml",
+    );
+    const yaml = await fs.readFile(configPath, "utf8");
+    await fs.writeFile(configPath, yaml.replace(/^version: .*$/m, "version: 3"), "utf8");
+    const marker = path.join(agentStateDir(t.root, projectId, "default_agent"), "marker.txt");
+    await fs.writeFile(marker, "seeded", "utf8");
+    const archive = Buffer.from(await (await owner.get(`${base}/export`)).arrayBuffer());
+
+    // Members can create from a package: creating overwrites nothing, unlike import.
+    const created = await member.post(`/api/projects/${projectId}/agents`, {
+      agentId: "cloned_agent",
+      dataBase64: archive.toString("base64"),
+    });
+    expect(created.status).toBe(201);
+    const summary = ((await created.json()) as AgentCreateResponse).agent;
+    // Name, description and version come from the package (no id fallback for the name).
+    expect(summary.name).toBe("Tuned Agent");
+    expect(summary.description).toBe("Tuned description");
+    expect(summary.version).toBe(3);
+
+    // The package's state landed, and no pre-import snapshot of the template state was taken.
+    const clonedMarker = path.join(agentStateDir(t.root, projectId, "cloned_agent"), "marker.txt");
+    await expect(fs.readFile(clonedMarker, "utf8")).resolves.toBe("seeded");
+    await expect(fs.access(snapshotsDir(t.root, projectId, "cloned_agent"))).rejects.toThrow();
+  });
+
+  it("explicit name/description override the package's values on create", async () => {
+    const archive = Buffer.from(await (await owner.get(`${base}/export`)).arrayBuffer());
+    const created = await owner.post(`/api/projects/${projectId}/agents`, {
+      agentId: "renamed_agent",
+      name: "Renamed",
+      dataBase64: archive.toString("base64"),
+    });
+    expect(created.status).toBe(201);
+    const summary = ((await created.json()) as AgentCreateResponse).agent;
+    expect(summary.name).toBe("Renamed");
+  });
+
+  it("an invalid package fails the whole creation and leaves no agent behind", async () => {
+    const res = await owner.post(`/api/projects/${projectId}/agents`, {
+      agentId: "broken_agent",
+      dataBase64: Buffer.from("junk").toString("base64"),
+    });
+    expect(res.status).toBe(400);
+    const list = (await (
+      await owner.get(`/api/projects/${projectId}/agents`)
+    ).json()) as AgentsResponse;
+    expect(list.agents.map((a) => a.agentId)).not.toContain("broken_agent");
+    // The id is immediately reusable: the failed creation left no orphaned directory.
+    expect(
+      (await owner.post(`/api/projects/${projectId}/agents`, { agentId: "broken_agent" })).status,
+    ).toBe(201);
+  });
+
+  it("snapshot initialization and skill seeding are mutually exclusive", async () => {
+    const archive = Buffer.from(await (await owner.get(`${base}/export`)).arrayBuffer());
+    const res = await owner.post(`/api/projects/${projectId}/agents`, {
+      agentId: "mixed_agent",
+      skills: ["anything"],
+      dataBase64: archive.toString("base64"),
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe(
+      "snapshot_with_skills",
+    );
   });
 });

@@ -789,6 +789,13 @@ export interface AgentCreateRequest {
    */
   skillsDirectory?: string;
   directorySkills?: string[];
+  /**
+   * Base64 of an exported Agent State snapshot package (`.tar.gz`): the new Agent is
+   * initialized from the package instead of the default template. Mutually exclusive with
+   * skill seeding (`skills` / `skillsDirectory`) — the package carries its own skills.
+   * Explicit `name` / `description` override the package's values; absent ones keep them.
+   */
+  dataBase64?: string;
 }
 
 export interface AgentCreateResponse {

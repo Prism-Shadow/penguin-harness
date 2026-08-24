@@ -83,7 +83,7 @@ penguin web
 
 ## Agent 管理（/agents）
 
-列表页支持创建与删除 Agent；点击进入 `/agents/:agentId` 设置页，按标签页组织：
+列表页支持创建与删除 Agent——创建弹窗可选从导出的 Agent State 快照包直接初始化（名称与描述留空沿用包内值；此时技能选择不可用，包自带技能）；点击进入 `/agents/:agentId` 设置页，按标签页组织：
 
 | 标签页 | 内容 |
 | --- | --- |

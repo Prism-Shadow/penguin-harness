@@ -44,6 +44,7 @@ import { kernelTabLabel } from "./kernel-labels";
 import { VaultTab } from "./vault-tab";
 import { SchedulesTab } from "./schedules-tab";
 import { McpServersSection } from "./mcp-servers-section";
+import { SNAPSHOT_ACCEPT, SNAPSHOT_BUTTON_CLASS, fileToBase64 } from "./snapshot-file";
 import { thinkingLevelOptionsFor } from "../chat/thinking-level";
 import { InfoPopover } from "../../components/ui/info-popover";
 import { ICON_SIZE } from "../../lib/icon-scale";
@@ -280,13 +281,6 @@ export function AgentSettingsPage() {
 
 type SaveFn = (update: AgentConfigUpdateRequest) => Promise<void>;
 
-/** <a download>/<label> version of the button look (matches Button secondary sm; the Button component only renders <button>). */
-const TRANSFER_BUTTON_CLASS =
-  "inline-flex cursor-pointer items-center justify-center gap-1 rounded-md border border-gray-300 " +
-  "bg-white px-2.5 py-1 text-xs font-medium text-gray-800 transition-colors duration-150 " +
-  "hover:bg-gray-50 focus-within:ring-2 focus-within:ring-gray-400/30 " +
-  "dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800";
-
 /** Kernel-outdated hint icon (rotate-cw, 24×24 line path — the skill library's update glyph). */
 const KERNEL_UPDATE_ICON = "M23 4v6h-6M20.49 15a9 9 0 1 1-2.12-9.36L23 10";
 
@@ -393,13 +387,10 @@ function OverviewTab({
     e.target.value = "";
     if (!file) return;
     setImportError(null);
-    const reader = new FileReader();
-    reader.onload = () => {
-      const url = reader.result as string;
-      void runImport(url.slice(url.indexOf(",") + 1), false); // strip the data:...;base64, prefix
-    };
-    reader.onerror = () => setImportError(S.common.unknownError);
-    reader.readAsDataURL(file);
+    fileToBase64(file).then(
+      (dataBase64) => void runImport(dataBase64, false),
+      () => setImportError(S.common.unknownError),
+    );
   };
 
   return (
@@ -439,16 +430,20 @@ function OverviewTab({
               <a
                 href={api.agentExportUrl(projectId, agentId)}
                 download
-                className={TRANSFER_BUTTON_CLASS}
+                className={SNAPSHOT_BUTTON_CLASS}
               >
                 {S.agent.exportSnapshot}
               </a>
             )}
             {isOwner && (
               <label
-                className={`${TRANSFER_BUTTON_CLASS} ${importing ? "pointer-events-none opacity-60" : ""}`}
+                className={`${SNAPSHOT_BUTTON_CLASS} ${importing ? "pointer-events-none opacity-60" : ""}`}
               >
-                <HiddenFileInput accept=".tar.gz,.tgz" disabled={importing} onChange={onPickFile} />
+                <HiddenFileInput
+                  accept={SNAPSHOT_ACCEPT}
+                  disabled={importing}
+                  onChange={onPickFile}
+                />
                 {importing ? S.agent.importing : S.agent.importSnapshot}
               </label>
             )}

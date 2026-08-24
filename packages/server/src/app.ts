@@ -550,7 +550,8 @@ export function buildAppDeps(
 
   const projectConfigService = new ProjectConfigService(config.root);
   const agentConfigService = new AgentConfigService(config.root);
-  const agentService = new AgentService(config.root, agentsRepo, agentConfigService);
+  const snapshots = new SnapshotService(config.root);
+  const agentService = new AgentService(config.root, agentsRepo, agentConfigService, snapshots);
   const memoryService = new MemoryService(config.root, agentConfigService);
   // Session-origin registry: session_meta is the single source of truth (no DB column);
   // shared by the manager (subagent registration), the loader (self-heal rebuild),
@@ -572,7 +573,6 @@ export function buildAppDeps(
   // smaller scale: a push invalidates open previews, and a preview is one reload away.)
   const previewTokens = createPreviewTokenSigner();
   const benchmarks = new BenchmarkService(config.root, workspaceFiles);
-  const snapshots = new SnapshotService(config.root);
   const usageService = new UsageService(
     usageRepo,
     errorsRepo,
