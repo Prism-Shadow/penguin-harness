@@ -30,6 +30,7 @@ const fresh = (alias: string): MachineInfo => ({
   machineId: null,
   installed: null,
   local: false,
+  origin: null,
   status: null,
 });
 const carrying = (alias: string): MachineInfo => ({ ...fresh(alias), installed: INSTALLED });
@@ -40,6 +41,7 @@ const here = (): MachineInfo => ({
   machineId: "LNrJdHAZJ91G58i0",
   installed: INSTALLED,
   local: true,
+  origin: null,
   status: { state: "running", checkedAt: INSTALLED.at, port: 7364 },
 });
 
@@ -51,6 +53,7 @@ function response(
     machines: opts.machines ?? [fresh("build-box"), fresh("nas")],
     imageVersion: opts.imageVersion === undefined ? "9.9.9" : opts.imageVersion,
     job,
+    connect: null,
   };
 }
 

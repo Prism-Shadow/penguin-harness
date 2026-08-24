@@ -23,7 +23,13 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { VERSION } from "@prismshadow/penguin-core";
-import type { MachineInfo, MachineInstallJob, MachineServerStatus } from "../api/types.js";
+import type {
+  MachineConnectFailure,
+  MachineConnectJob,
+  MachineInfo,
+  MachineInstallJob,
+  MachineServerStatus,
+} from "../api/types.js";
 import { readServerLock } from "../lock.js";
 import { listHostAliases, resolveTarget } from "./targets.js";
 import { installOnRemote, resolvePushPlan } from "./install-server.js";
@@ -31,6 +37,11 @@ import { parseInstallRecords, withInstallRecord } from "./installs.js";
 import type { InstallRecord } from "./installs.js";
 import { probeServerState } from "./server-state.js";
 import { readOrCreateMachineId } from "./machine-id.js";
+import { localPortBusy, openTunnel, waitForTunneledHttp } from "./tunnel.js";
+import type { Tunnel } from "./tunnel.js";
+import { startRemoteServer } from "./server-control.js";
+import { parseConnectState, pickTunnelPort, withConnectState } from "./connect-state.js";
+import type { ConnectState } from "./connect-state.js";
 
 /** Why a start was refused before any ssh ran. */
 export type InstallRefusal = "busy" | "unknown-machine" | "unresolvable" | "no-image" | "self";
@@ -48,12 +59,26 @@ export interface MachinesEffects {
   resolvePlan: typeof resolvePushPlan;
   install: typeof installOnRemote;
   probe: typeof probeServerState;
+  startServer: typeof startRemoteServer;
+  openTunnel: typeof openTunnel;
+  portBusy: typeof localPortBusy;
+  waitForHttp: typeof waitForTunneledHttp;
   /** Injected so a test can pin the recorded timestamp instead of asserting around the clock. */
   now: () => Date;
 }
 
 /** The id of the entry standing for the machine this server runs on. */
 export const LOCAL_MACHINE_ID = "local";
+
+/** True when a pid names a process this account can see (EPERM still means it is there). */
+function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
 
 /**
  * How many machines are probed at once. A probe is an ssh child; someone with fifty
@@ -69,6 +94,13 @@ export class MachinesService {
    * was taken, so carrying it across a restart would be reporting a fact nobody checked.
    */
   readonly #statuses = new Map<string, MachineServerStatus>();
+  /**
+   * Tunnels this App spawned, by machine address. The ssh CHILD is the durable thing (it
+   * outlives a hot swap); this map is only the current App's grip on it, and the state file
+   * is what a successor reads to find one it did not spawn.
+   */
+  readonly #tunnels = new Map<string, Tunnel>();
+  #connect: MachineConnectJob | null = null;
   readonly #effects: MachinesEffects;
 
   /**
@@ -90,6 +122,10 @@ export class MachinesService {
       resolvePlan: resolvePushPlan,
       install: installOnRemote,
       probe: probeServerState,
+      startServer: startRemoteServer,
+      openTunnel,
+      portBusy: localPortBusy,
+      waitForHttp: waitForTunneledHttp,
       now: () => new Date(),
       ...effects,
     };
@@ -122,6 +158,8 @@ export class MachinesService {
       // Our own id comes from the same file a remote's does — this server IS the server
       // that mints it here, so there is nothing to probe.
       machineId: readOrCreateMachineId(this.dataRoot),
+      // No tunnel to where you already are: this server IS the origin serving the page.
+      origin: null,
       installed: { version: VERSION, at: lock?.startedAt ?? this.#effects.now().toISOString() },
       local: true,
       status: {
@@ -142,12 +180,14 @@ export class MachinesService {
     const remotes = this.#effects.listAliases().map((alias): MachineInfo => {
       const id = `ssh:${alias}`;
       const record = records[id] ?? null;
+      const port = this.tunnelPortFor(id);
       return {
         id,
         alias,
         machineId: record?.machineId ?? null,
         installed: record,
         local: false,
+        origin: port === null ? null : `http://localhost:${port}`,
         status: this.#statuses.get(id) ?? null,
       };
     });
@@ -211,9 +251,61 @@ export class MachinesService {
     return this.#effects.resolvePlan(this.dataRoot)?.version ?? null;
   }
 
-  /** The running or last job; null before the first one. */
+  /** The running or last install job; null before the first one. */
   job(): MachineInstallJob | null {
     return this.#job;
+  }
+
+  /** The running or last connect; null before the first one. */
+  connectJob(): MachineConnectJob | null {
+    return this.#connect;
+  }
+
+  /** Where the tunnel ports and pids live — beside the install records in the data root. */
+  get #connectFile(): string {
+    return path.join(this.dataRoot, "machines-connect.json");
+  }
+
+  #readConnectState(): string | null {
+    try {
+      return fs.readFileSync(this.#connectFile, "utf8");
+    } catch {
+      return null;
+    }
+  }
+
+  #writeConnectState(machineId: string, state: ConnectState | null): void {
+    const next = withConnectState(this.#readConnectState(), machineId, state);
+    const tmp = `${this.#connectFile}.tmp-${process.pid}`;
+    try {
+      fs.mkdirSync(path.dirname(this.#connectFile), { recursive: true });
+      fs.writeFileSync(tmp, next);
+      fs.renameSync(tmp, this.#connectFile);
+    } catch {
+      try {
+        fs.rmSync(tmp, { force: true });
+      } catch {
+        /* the temp file is litter at worst */
+      }
+    }
+  }
+
+  /**
+   * The port a machine's tunnel is live on, or null. "Live" is checked against the PROCESS,
+   * not the file: a recorded pid that is gone is stale state, and answering with its port
+   * would send the proxy at a number nothing is forwarding.
+   *
+   * This is also how a hot-swapped or restarted platform adopts a tunnel it never spawned —
+   * the ssh child is a separate process and kept forwarding while we were replaced.
+   */
+  tunnelPortFor(machineId: string): number | null {
+    const entry = parseConnectState(this.#readConnectState())[machineId];
+    if (entry?.tunnelPid === undefined) return null;
+    if (!pidAlive(entry.tunnelPid)) {
+      this.#writeConnectState(machineId, { ...entry, tunnelPid: undefined });
+      return null;
+    }
+    return entry.port;
   }
 
   /**
@@ -287,6 +379,171 @@ export class MachinesService {
     })();
 
     return { ok: true };
+  }
+
+  /**
+   * Brings a machine's server up and holds a tunnel to it, as a job — the same shape as an
+   * install and for the same reason (a start plus a readiness wait is minutes in the bad
+   * case), in its own slot so connecting somewhere cannot cancel an install elsewhere.
+   *
+   * The steps are: refuse the obvious dead ends, adopt a tunnel that is already live, pick a
+   * port, start the server over there if nothing is serving, open the tunnel, and wait for
+   * an HTTP answer THROUGH it. Every one is idempotent, so a repeat is safe.
+   */
+  async startConnect(
+    machineId: string,
+  ): Promise<
+    { ok: true } | { ok: false; why: MachineConnectFailure | "busy" | "unknown-machine" }
+  > {
+    if (this.#connect?.running === true) return { ok: false, why: "busy" };
+
+    const machine = this.list().find((entry) => entry.id === machineId);
+    if (machine === undefined) return { ok: false, why: "unknown-machine" };
+    // Connecting to where you already are is a no-op with a failure mode: the tunnel would
+    // forward a port to itself. The machine's own id is what settles it — the same file read
+    // over ssh IS our file when the alias points back here.
+    if (
+      machine.local ||
+      (machine.machineId !== null && machine.machineId === readOrCreateMachineId(this.dataRoot))
+    ) {
+      return { ok: false, why: "self" };
+    }
+    if (machine.installed === null) return { ok: false, why: "not-installed" };
+
+    const job: MachineConnectJob = {
+      machineId,
+      alias: machine.alias,
+      running: true,
+      log: [],
+      result: null,
+    };
+    this.#connect = job;
+    const say = (line: string) => {
+      job.log.push(line);
+    };
+
+    void (async () => {
+      try {
+        await this.#runConnect(machine.id, machine.alias, say, job);
+      } catch (err) {
+        job.result = { ok: false, message: err instanceof Error ? err.message : String(err) };
+      } finally {
+        job.running = false;
+      }
+    })();
+    return { ok: true };
+  }
+
+  async #runConnect(
+    id: string,
+    alias: string,
+    say: (line: string) => void,
+    job: MachineConnectJob,
+  ): Promise<void> {
+    // Already connected: adopting costs nothing and re-tunnelling would fight for the port.
+    const live = this.tunnelPortFor(id);
+    if (live !== null) {
+      say(`Already connected on port ${live}.`);
+      job.result = { ok: true, origin: `http://localhost:${live}` };
+      return;
+    }
+
+    const resolved = await this.#effects.resolveTarget(alias);
+    if (resolved === null) {
+      job.result = { ok: false, message: "ssh could not resolve that host." };
+      return;
+    }
+    const target = { alias, user: resolved.settings.user };
+
+    say("Asking what is running there…");
+    const { state } = await this.#effects.probe(target);
+    if (state.kind === "unreachable") {
+      job.result = { ok: false, message: state.detail };
+      return;
+    }
+
+    const remembered = parseConnectState(this.#readConnectState())[id];
+    // A server already up over there keeps its port — it is bound to it, and we forward the
+    // same number on both ends. Otherwise pick one that is free HERE and start it there.
+    const port =
+      state.kind === "running"
+        ? state.port
+        : await pickTunnelPort({
+            remembered: remembered?.port,
+            busy: (candidate) => this.#effects.portBusy(candidate),
+          });
+    if (port === null) {
+      job.result = {
+        ok: false,
+        code: "port-conflict",
+        message: "No free local port to forward on.",
+      };
+      return;
+    }
+    if (state.kind === "running") {
+      say(`Its server is already up on port ${port}.`);
+    } else {
+      say(`Starting its server on port ${port}…`);
+      const started = await this.#effects.startServer(target, port);
+      if (!started.ok) {
+        job.result = { ok: false, message: started.detail };
+        return;
+      }
+    }
+
+    say("Opening the tunnel…");
+    const tunnel = this.#effects.openTunnel({
+      target,
+      port,
+      onExit: () => {
+        // Not restarted here: a dropped link or a rebooted machine is exactly what the
+        // person needs to see, and a silent reconnect would hide it.
+        this.#tunnels.delete(id);
+        const entry = parseConnectState(this.#readConnectState())[id];
+        if (entry !== undefined) this.#writeConnectState(id, { ...entry, tunnelPid: undefined });
+      },
+    });
+    this.#tunnels.set(id, tunnel);
+    this.#writeConnectState(id, {
+      port,
+      ...(tunnel.pid === null ? {} : { tunnelPid: tunnel.pid }),
+      connectedAt: this.#effects.now().toISOString(),
+    });
+
+    const origin = `http://localhost:${port}`;
+    const ready = await this.#effects.waitForHttp(origin, () => tunnel.exited());
+    if (!ready.ok) {
+      tunnel.close();
+      this.#tunnels.delete(id);
+      this.#writeConnectState(id, { port });
+      const said = tunnel.stderr().trim();
+      job.result = { ok: false, message: said === "" ? ready.detail : said };
+      return;
+    }
+    say(`Connected on ${origin}.`);
+    job.result = { ok: true, origin };
+  }
+
+  /**
+   * Drops a machine's tunnel. The remote server is left RUNNING: it is that machine's own
+   * server, other people may be on it, and stopping it because one window looked away would
+   * be this side deciding something that is not its to decide.
+   */
+  disconnect(machineId: string): void {
+    this.#tunnels.get(machineId)?.close();
+    this.#tunnels.delete(machineId);
+    const entry = parseConnectState(this.#readConnectState())[machineId];
+    if (entry !== undefined) this.#writeConnectState(machineId, { ...entry, tunnelPid: undefined });
+  }
+
+  /**
+   * Hot-swap handover: let go of the ssh children WITHOUT killing them. They are delivered
+   * to the successor through the state file (pid + port), so the processes must survive —
+   * but this App's exit handlers must stop firing on children it no longer owns.
+   */
+  detachTunnels(): void {
+    for (const tunnel of this.#tunnels.values()) tunnel.detach();
+    this.#tunnels.clear();
   }
 
   /**

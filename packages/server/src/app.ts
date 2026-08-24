@@ -153,6 +153,7 @@ import { machinesRoutes } from "./http/routes/machines.js";
 import { UsageRecorder } from "./runtime/usage-recorder.js";
 import { previewRoutes } from "./http/routes/preview.js";
 import { MachinesService } from "./machines/service.js";
+import { SERVER_PROXY_PREFIX, machinesProxy } from "./machines/proxy.js";
 
 export interface AppDeps {
   config: ServerConfig;
@@ -1039,6 +1040,17 @@ export function createApp(
   // For that reason /api/install is deliberately absent from RUNTIME_PREFIXES above — the
   // platform must serve it, not decline it.
   app.route("/api/install", installRoutes(deps));
+  // `/server/<id>/api/…` — a connected machine's API, forwarded down its tunnel. Mounted
+  // BEFORE the auth middleware and deliberately outside it: the remote authenticates every
+  // forwarded request with its own cookies (renamed per machine on the way through), so a
+  // local session is not a credential over there and requiring one would mean two logins
+  // for one window. The tunnel port it forwards to is already reachable from this machine,
+  // so the route adds no exposure the tunnel had not.
+  const serverProxy = machinesProxy(async (id) => deps.machines.tunnelPortFor(id));
+  app.all(`${SERVER_PROXY_PREFIX}*`, async (c) => {
+    const answer = await serverProxy(c.req.raw);
+    return answer ?? c.notFound();
+  });
 
   // Protected routes: cookie -> auth_session -> user, over the runtime's auth service.
   app.use("/api/*", authMiddleware(deps.authService, deps.config.trustProxy));

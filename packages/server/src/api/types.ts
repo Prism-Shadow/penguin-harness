@@ -3051,6 +3051,13 @@ export interface MachineInfo {
    */
   local: boolean;
   /**
+   * Origin of a live tunnel to that machine, when one is up — `http://localhost:<port>`,
+   * this server's own loopback. Null when nothing is connected. The Web App does not
+   * navigate there: it keeps its own origin and re-points API calls at
+   * `/server/<id>/api/…`, which this server forwards down the tunnel.
+   */
+  origin: string | null;
+  /**
    * Whether a server is up over there, as of the last probe. Null means "not probed yet";
    * the page probes on a widening schedule rather than at list time, because each probe is
    * an ssh round trip while the list itself is only the config's text.
@@ -3089,6 +3096,34 @@ export interface MachineInstallJob {
     | { ok: false; step: string; message: string };
 }
 
+/**
+ * A connect in flight: bringing a machine's server up and holding a tunnel to it. Same job
+ * shape as an install — it takes minutes in the bad case, so POST starts it and the page
+ * polls — but a separate slot, because connecting somewhere must not cancel an install
+ * running elsewhere.
+ */
+export interface MachineConnectJob {
+  machineId: string;
+  alias: string;
+  running: boolean;
+  log: string[];
+  result:
+    | null
+    | { ok: true; origin: string }
+    | { ok: false; code?: MachineConnectFailure; message: string };
+}
+
+/** Connect failures that are a condition rather than a message: the page renders each. */
+export type MachineConnectFailure =
+  /** No local port left to forward on. */
+  | "port-conflict"
+  /** A Windows remote, where the detached-start mechanism does not exist. */
+  | "not-supported"
+  /** Nothing installed there yet. */
+  | "not-installed"
+  /** That machine is the one this server runs on. */
+  | "self";
+
 /** GET /api/machines, and the 202 body of POST /api/machines/:machineId/install. */
 export interface MachinesResponse {
   machines: MachineInfo[];
@@ -3099,4 +3134,6 @@ export interface MachinesResponse {
    */
   imageVersion: string | null;
   job: MachineInstallJob | null;
+  /** The running or last connect; null before the first one. Separate slot from `job`. */
+  connect: MachineConnectJob | null;
 }
