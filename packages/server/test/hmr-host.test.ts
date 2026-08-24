@@ -502,7 +502,7 @@ describe("upgrade boot failure: recovery re-boots the PUSHED version, not the pa
     ).toBe(200);
 
     // v2 boots but cannot be written: `store/web` as a plain FILE makes persistVersion's
-    // `mkdir store/web` throw ENOTDIR after the platform bundle is already stored, so the
+    // `mkdir store/web` throw EEXIST after the platform bundle is already stored, so the
     // commit never happens and the manifest still names v1 while v2 serves. v1's own
     // bundle file is deliberately left readable — the point is which version recovery
     // CHOOSES, not whether it can load one at all.

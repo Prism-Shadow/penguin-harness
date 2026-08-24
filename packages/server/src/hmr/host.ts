@@ -159,7 +159,6 @@ export class HmrHost {
   readonly resources = new HotResources();
 
   private instance: Instance<PlatformApi> | null = null;
-  private implId = packagedPlatform.id;
   /**
    * The bundle behind the RUNNING instance, held as the loaded object rather than a
    * pointer to re-read: it is what boot-failure recovery re-boots (see recoverPrevious).
@@ -195,8 +194,9 @@ export class HmrHost {
     process.stderr.write(`[hmr] ${msg}\n`);
   }
 
+  /** The running version's id — derived from the running bundle, never tracked alongside it. */
   currentImplId(): string {
-    return this.implId;
+    return this.current.id;
   }
 
   /**
@@ -308,7 +308,6 @@ export class HmrHost {
         this.resources,
       )) as Instance<PlatformApi>;
       this.instance = instance;
-      this.implId = bundle.id;
       this.current = bundle;
       this.webMem = webMem;
     } catch (err) {
@@ -397,7 +396,6 @@ export class HmrHost {
     // web or cli it's paired with. `result.doc` (the swap's parked+migrated state)
     // is never written to disk — see the module doc: code persists, state does not.
     this.instance = result.instance as Instance<PlatformApi>;
-    this.implId = bundle.id;
     this.current = bundle;
     this.webMem = webMem;
 
@@ -441,7 +439,7 @@ export class HmrHost {
         doc,
         this.resources,
       )) as Instance<PlatformApi>;
-      // implId and current unchanged: the previous version is the running version again.
+      // `current` unchanged: the previous version is the running version again.
     } catch (err) {
       this.warn(
         `boot-failure recovery failed too — the process serves a half-stopped App until ` +
