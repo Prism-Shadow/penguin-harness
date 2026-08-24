@@ -4,20 +4,19 @@
  * pinned here is the decision the measurements feed and the manifest parsing that names the probe.
  * The installers run the same table against their own implementations in scripts/test-installer.sh.
  */
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { OSS_ORIGIN } from "../src/lib/links";
 import type { Measurement } from "../src/lib/download-source";
 import {
-  PROBE_BUDGET_MS,
+  MIRROR_POINTER_MS,
   SPEED_PROBE_GITHUB_MIN_BYTES_PER_SECOND,
-  cacheResolution,
   createDeadline,
   decideDownloadSource,
   parseMirror,
   parseProbes,
-  readCachedResolution,
   selectDownloadSource,
   toMirror,
+  worthRefining,
 } from "../src/lib/download-source";
 
 const MIN = SPEED_PROBE_GITHUB_MIN_BYTES_PER_SECOND;
@@ -85,8 +84,8 @@ describe("parseProbes", () => {
 
 describe("createDeadline", () => {
   it("hands each phase its cap while the budget is wide open", () => {
-    const deadline = createDeadline(PROBE_BUDGET_MS);
-    expect(deadline.slice(2500)).toBe(2500);
+    const deadline = createDeadline(MIRROR_POINTER_MS);
+    expect(deadline.slice(500)).toBe(500);
   });
 
   it("clamps a phase to what is left rather than letting it overrun the budget", () => {
@@ -133,81 +132,6 @@ describe("parseMirror", () => {
   });
 });
 
-class MemoryStorage {
-  private store = new Map<string, string>();
-  get length(): number {
-    return this.store.size;
-  }
-  key(index: number): string | null {
-    return [...this.store.keys()][index] ?? null;
-  }
-  getItem(key: string): string | null {
-    return this.store.get(key) ?? null;
-  }
-  setItem(key: string, value: string): void {
-    this.store.set(key, value);
-  }
-  removeItem(key: string): void {
-    this.store.delete(key);
-  }
-  clear(): void {
-    this.store.clear();
-  }
-}
-
-function stubStorage(storage: Partial<Storage>): void {
-  Object.defineProperty(globalThis, "sessionStorage", { value: storage, configurable: true });
-}
-
-describe("session cache", () => {
-  beforeEach(() => stubStorage(new MemoryStorage()));
-
-  // The writer and the reader agreeing on the stored shape is the whole point: when they drifted,
-  // every read failed validation and the page silently re-measured on every single visit.
-  it("round-trips what it wrote, mirror and all", () => {
-    for (const resolution of [
-      { source: "oss" as const, mirror: MIRROR },
-      { source: "github" as const, mirror: MIRROR },
-      { source: "github" as const, mirror: null },
-    ]) {
-      cacheResolution(resolution);
-      expect(readCachedResolution()).toEqual(resolution);
-    }
-  });
-
-  it("returns null when nothing was ever written", () => {
-    expect(readCachedResolution()).toBeNull();
-  });
-
-  it("refuses a stored mirror the live lookup would have refused", () => {
-    sessionStorage.setItem(
-      "penguin.downloadSource.v1",
-      JSON.stringify({ source: "oss", mirror: { tag: TAG, base: "https://example.invalid/x" } }),
-    );
-    expect(readCachedResolution()).toBeNull();
-  });
-
-  it("refuses a stored source that is not one of the two, and unparsable entries", () => {
-    for (const raw of ['{"source":"elsewhere","mirror":null}', "not json", "[]", '"github"']) {
-      sessionStorage.setItem("penguin.downloadSource.v1", raw);
-      expect(readCachedResolution()).toBeNull();
-    }
-  });
-
-  it("survives storage that throws, which is what a locked-down browser does", () => {
-    stubStorage({
-      getItem: () => {
-        throw new Error("blocked");
-      },
-      setItem: () => {
-        throw new Error("blocked");
-      },
-    });
-    expect(() => cacheResolution({ source: "oss", mirror: MIRROR })).not.toThrow();
-    expect(readCachedResolution()).toBeNull();
-  });
-});
-
 const SOURCES = {
   githubBase: "https://github.test/latest",
   ossBase: `${OSS_ORIGIN}/releases/${TAG}`,
@@ -218,7 +142,7 @@ const PROBES = {
 };
 
 /** Records which questions were asked of which source, so "never touched" is testable. */
-function fakeProbes(github: Measurement, oss: Measurement, ossAnswers = oss.reachable) {
+function fakeProbes(github: Measurement, oss: Measurement) {
   const asked: string[] = [];
   return {
     asked,
@@ -226,10 +150,6 @@ function fakeProbes(github: Measurement, oss: Measurement, ossAnswers = oss.reac
       measure: async (base: string) => {
         asked.push(`measure:${base === SOURCES.githubBase ? "github" : "oss"}`);
         return base === SOURCES.githubBase ? github : oss;
-      },
-      answers: async (base: string) => {
-        asked.push(`answers:${base === SOURCES.githubBase ? "github" : "oss"}`);
-        return ossAnswers;
       },
     },
   };
@@ -245,17 +165,11 @@ describe("decideDownloadSource", () => {
     expect(asked).toEqual(["measure:github"]);
   });
 
-  it("settles an unreachable GitHub on whether the mirror answers, not on its speed", async () => {
+  it("hands a GitHub that stopped answering to the mirror without a second probe", async () => {
+    // The reachability pass already proved the mirror replies, so nothing more need be asked.
     const { asked, io } = fakeProbes(unreachable, reachable(1));
     await expect(decideDownloadSource(SOURCES, PROBES, io)).resolves.toBe("oss");
-    // The cheap question, not a second megabyte: this is the branch someone waits through.
-    expect(asked).toEqual(["measure:github", "answers:oss"]);
-  });
-
-  it("keeps GitHub when neither source answers", async () => {
-    const { asked, io } = fakeProbes(unreachable, unreachable, false);
-    await expect(decideDownloadSource(SOURCES, PROBES, io)).resolves.toBe("github");
-    expect(asked).toEqual(["measure:github", "answers:oss"]);
+    expect(asked).toEqual(["measure:github"]);
   });
 
   // The divergence this branch split exists to prevent: a GitHub that answered but came in under
@@ -278,5 +192,15 @@ describe("decideDownloadSource", () => {
     const { asked, io } = fakeProbes(reachable(0), reachable(1));
     await expect(decideDownloadSource(SOURCES, PROBES, io)).resolves.toBe("oss");
     expect(asked).toEqual(["measure:github", "measure:oss"]);
+  });
+});
+
+describe("worthRefining", () => {
+  it("measures throughput whenever there is a mirror to compare against", () => {
+    expect(worthRefining(MIRROR)).toBe(true);
+  });
+
+  it("skips the megabyte when there is no mirror to compare against", () => {
+    expect(worthRefining(null)).toBe(false);
   });
 });
