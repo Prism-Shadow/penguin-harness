@@ -3,7 +3,7 @@
 - **Date:** 2026-08-24
 - **Type:** fix
 - **Scope:** `web`
-- **PR:** [#PLACEHOLDER](https://github.com/Prism-Shadow/penguin-harness/pull/0)
+- **PR:** [#437](https://github.com/Prism-Shadow/penguin-harness/pull/437)
 
 [English](2026-08-24-autolink-ends-at-ascii.md)
 
