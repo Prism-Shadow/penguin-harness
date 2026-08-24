@@ -3,6 +3,7 @@
 - **Date:** 2026-08-23
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#430](https://github.com/Prism-Shadow/penguin-harness/pull/430)
 
 [中文版](2026-08-23-phone-width-overflow.zh.md)
 
