@@ -53,6 +53,11 @@ explicit `PENGUIN_HOME` always wins; **a packaged (release) build falls through 
 | `pnpm --dir packages/desktop start` | `~/.penguin/dev-data` (the unpackaged rule alone) |
 | the user's installed desktop app, installed server, or installed `penguin` CLI | `~/.penguin/data` — their real Agents, Sessions and keys |
 
+`pnpm desktop` reaches `dev-data` by two mechanisms agreeing, and they are not redundant: the
+script default covers every root dev entry point, while the unpackaged rule covers a desktop launch
+that never goes through it (`pnpm --dir packages/desktop start`), which would otherwise fall through
+to `resolveRoot()` and land on the release install's data. Removing either leaves a hole.
+
 `pnpm dev:landing` and `pnpm dev:docs` are static sites and touch no data root at all.
 
 Both surfaces say which root they took: a server prints `Data root: <root>` under its start banner,

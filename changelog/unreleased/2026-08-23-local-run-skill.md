@@ -2,7 +2,7 @@
 
 - **Date:** 2026-08-23
 - **Type:** process
-- **Scope:** `skills`
+- **Scope:** `skills`, `docs`
 - **PR:** [#428](https://github.com/Prism-Shadow/penguin-harness/pull/428)
 
 [中文版](2026-08-23-local-run-skill.zh.md)
@@ -10,7 +10,7 @@
 `.agents/skills/penguin-harness-run/SKILL.md` is a new repo-development skill covering how to start
 the app on a developer machine: the four dev entry points (`pnpm dev`, `pnpm desktop`,
 `pnpm dev:landing`, `pnpm dev:docs`) with their fixed ports, and the environment traps that make a
-working setup read as a broken one.
+working setup read as a broken one. Two neighbouring documents were corrected to match it.
 
 ## Details
 
@@ -36,3 +36,10 @@ working setup read as a broken one.
 - Sign-in is covered for scripted runs: the seeded `admin` notice, `<root>/initial-admin-password`,
   `PENGUIN_SEED_ADMIN_PASSWORD`, and the `packages/web/e2e/` harness for chat flows on a root with
   no model credential.
+- `CONTRIBUTING.md`'s data-root paragraph now tells contributors to pass `PENGUIN_HOME` inline for
+  the one command that needs it rather than exporting it, and names both the unset-or-empty rule
+  that makes an exported value win and the collision an exported `~/.penguin/data` produces.
+- `penguin-harness-dev` dropped its claim that a remote branch literally named `docs` makes
+  `docs/<topic>` branch names impossible in this repo: no such branch is on the remote, and the
+  slashed form pushes normally. The `docs-<topic>` names left over from that period are explained
+  where the rule is stated, with `git ls-remote --heads origin` as the check if it ever recurs.

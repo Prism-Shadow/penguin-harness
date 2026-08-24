@@ -2,14 +2,14 @@
 
 - **Date:** 2026-08-23
 - **Type:** process
-- **Scope:** `skills`
+- **Scope:** `skills`, `docs`
 - **PR:** [#428](https://github.com/Prism-Shadow/penguin-harness/pull/428)
 
 [English](2026-08-23-local-run-skill.md)
 
 `.agents/skills/penguin-harness-run/SKILL.md` 是一个新增的仓库开发 skill，讲述如何在开发机上把应用跑起来：四个开发入口
 （`pnpm dev`、`pnpm desktop`、`pnpm dev:landing`、`pnpm dev:docs`）及其固定端口，以及那些会让正常环境显得像是坏掉了的
-环境陷阱。
+环境陷阱。另有两份相邻文档被一并校正，以与之保持一致。
 
 ## 细节
 
@@ -28,3 +28,9 @@
   上一次构建出的 `packages/web/dist`，而不是 Vite 正在 7365 上提供的内容。
 - 为脚本化运行覆盖了登录：种子 `admin` 的提示框、`<root>/initial-admin-password`、`PENGUIN_SEED_ADMIN_PASSWORD`，以及在没有
   模型凭据的根目录上用 `packages/web/e2e/` 测试设施驱动对话流程。
+- `CONTRIBUTING.md` 关于数据根目录的那一段现在要求贡献者只为需要它的那条命令内联传入 `PENGUIN_HOME`，而不是 export
+  它，并写明了「仅在未设置或为空时才生效」这条规则如何让 export 出去的值胜出，以及 export `~/.penguin/data`
+  会造成什么样的冲突。
+- `penguin-harness-dev` 删去了「远端存在一个名为 `docs` 的分支，因而本仓库无法创建 `docs/<topic>` 分支名」这一说法：
+  远端并不存在这样的分支，带斜杠的形式可以正常推送。那段时期遗留下来的 `docs-<topic>` 命名在规则所在处一并说明，
+  并给出 `git ls-remote --heads origin` 作为日后复现时的排查手段。
