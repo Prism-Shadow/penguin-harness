@@ -2,10 +2,14 @@
  * Which machines a workspace can be picked on, and how each is labelled.
  *
  * A workspace is a directory ON a machine, so choosing one means choosing where the path
- * has to exist. Only machines whose filesystem is reachable right now can be offered: this
- * machine always, and any other machine with a live tunnel. One that is installed but not
- * connected has no route to browse over — it is left out rather than offered and then
- * failing at the first click.
+ * has to exist. Only a machine whose filesystem is reachable right now can be BROWSED: this
+ * one always, and any other with a live tunnel. One that is merely installed has no route to
+ * browse over.
+ *
+ * But "cannot be offered" is not the same as "must not be mentioned". A control that
+ * disappears when there is nothing to choose teaches nobody anything — it just looks like
+ * the feature is missing. So the unreachable ones are COUNTED and reported, and the picker
+ * says how many machines are one connect away rather than silently showing a list of one.
  *
  * Identified by machine id and labelled by ssh alias, the same split as everywhere else:
  * the alias is what someone recognises, the id is what gets stored.
@@ -22,23 +26,47 @@ export interface WorkspaceMachine {
   local: boolean;
 }
 
+/** What the picker's machine row has to say: what can be chosen, and what is missing. */
+export interface WorkspaceMachineOffer {
+  /** Machines whose filesystem can be browsed right now, local first. */
+  machines: WorkspaceMachine[];
+  /**
+   * Installed machines that cannot be browsed yet — no live tunnel, or no identity to store
+   * a workspace against. Reported as a count so the row can say why the list is short
+   * instead of leaving someone to wonder whether the feature works.
+   */
+  unreachable: number;
+}
+
 /**
- * The offerable machines, local first. Anything without an identity is skipped even when
- * connected: a workspace stored against a machine that cannot be named could never be
- * matched back to it.
+ * The offer, local first. A machine without an identity is not offerable even when
+ * connected — a workspace stored against a machine that cannot be named could never be
+ * matched back to it — but it is still counted, because from the outside "installed but
+ * not usable yet" is a state worth seeing.
  */
-export function workspaceMachines(state: MachinesResponse | null): WorkspaceMachine[] {
-  if (state === null) return [];
-  const out: WorkspaceMachine[] = [];
+export function workspaceMachineOffer(state: MachinesResponse | null): WorkspaceMachineOffer {
+  if (state === null) return { machines: [], unreachable: 0 };
+  const machines: WorkspaceMachine[] = [];
+  let unreachable = 0;
   for (const machine of state.machines) {
     if (machine.local) {
-      out.push({ id: null, label: machine.alias, local: true });
+      machines.push({ id: null, label: machine.alias, local: true });
       continue;
     }
-    if (machine.origin === null || machine.machineId === null) continue;
-    out.push({ id: machine.machineId, label: machine.alias, local: false });
+    if (machine.origin !== null && machine.machineId !== null) {
+      machines.push({ id: machine.machineId, label: machine.alias, local: false });
+      continue;
+    }
+    // Hosts nothing was ever installed on are not "unreachable", they are simply not part
+    // of this feature yet; counting them would turn a 45-line ssh config into alarm.
+    if (machine.installed !== null) unreachable++;
   }
-  return out;
+  return { machines, unreachable };
+}
+
+/** The offerable machines alone (the common case for callers that only render the list). */
+export function workspaceMachines(state: MachinesResponse | null): WorkspaceMachine[] {
+  return workspaceMachineOffer(state).machines;
 }
 
 /**

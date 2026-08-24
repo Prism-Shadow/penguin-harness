@@ -9,6 +9,7 @@ import {
   isElsewhere,
   machineLabel,
   recordedMachineId,
+  workspaceMachineOffer,
   workspaceMachines,
 } from "../src/lib/workspace-machines";
 
@@ -111,5 +112,53 @@ describe("recordedMachineId", () => {
     expect(recordedMachineId({ id: "noeSE0FFHhNXl2J5", label: "far-box", local: false })).toBe(
       "noeSE0FFHhNXl2J5",
     );
+  });
+});
+
+describe("workspaceMachineOffer", () => {
+  const installedNotConnected = machine({ alias: "cold", installed: { version: "1", at: "x" } });
+  const connectedNameless = machine({
+    alias: "ghost",
+    origin: "http://localhost:7365",
+    installed: { version: "1", at: "x" },
+  });
+  const neverInstalled = machine({ alias: "just-an-ssh-host" });
+
+  it("counts an installed machine that has no tunnel, instead of dropping it silently", () => {
+    // The row has to be able to say WHY the list is short; a vanished control reads as a
+    // missing feature.
+    const offer = workspaceMachineOffer(state([here, installedNotConnected]));
+    expect(offer.machines.map((m) => m.label)).toEqual(["workstation"]);
+    expect(offer.unreachable).toBe(1);
+  });
+
+  it("counts a connected machine that has no identity yet", () => {
+    const offer = workspaceMachineOffer(state([here, connectedNameless]));
+    expect(offer.machines).toHaveLength(1);
+    expect(offer.unreachable).toBe(1);
+  });
+
+  it("does NOT count plain ssh hosts — a 45-line config is not 45 problems", () => {
+    // Nothing was ever installed on these; they are not part of this feature yet, and
+    // counting them would turn an ordinary ssh config into an alarm.
+    const offer = workspaceMachineOffer(
+      state([here, neverInstalled, machine({ alias: "another" })]),
+    );
+    expect(offer.machines).toHaveLength(1);
+    expect(offer.unreachable).toBe(0);
+  });
+
+  it("counts nothing when every installed machine is usable", () => {
+    expect(workspaceMachineOffer(state([here, connected])).unreachable).toBe(0);
+  });
+
+  it("still offers this machine alone, which is what the row now shows rather than hiding", () => {
+    const offer = workspaceMachineOffer(state([here]));
+    expect(offer.machines).toHaveLength(1);
+    expect(offer.machines.length > 0).toBe(true);
+  });
+
+  it("has nothing to offer before the list loads", () => {
+    expect(workspaceMachineOffer(null)).toEqual({ machines: [], unreachable: 0 });
   });
 });
