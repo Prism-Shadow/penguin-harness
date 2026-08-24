@@ -150,7 +150,14 @@ export function DraftView({
 }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { agents, currentAgent, setCurrentAgentId } = useProject();
+  const { agents: localAgents, currentAgent, setCurrentAgentId } = useProject();
+  /**
+   * Agents on the machine the workspace is on. They are per-server: a Session created on
+   * another machine can only name an Agent that exists THERE, so offering this machine's
+   * list would offer choices that cannot be made. Empty while loading, which the validation
+   * below already treats as "not ready" rather than "none".
+   */
+  const [remoteAgents, setRemoteAgents] = useState<AgentSummary[]>([]);
   const { add } = useSessions();
   // The draft key includes a user dimension (#68 cross-account leakage). RequireAuth
   // guarantees the user is logged in here; on the off chance there's no user (the
@@ -189,6 +196,8 @@ export function DraftView({
    * a different one on each.
    */
   const [workspaceMachine, setWorkspaceMachine] = useState<string | null>(cached.machineId ?? null);
+  /** The Agents actually offerable for this draft: the target machine's, or this one's. */
+  const agents = workspaceMachine === null ? localAgents : remoteAgents;
   // A terminal opened while drafting starts in the Workspace chosen here; "" is the
   // temporary Workspace, whose directory the server only creates with the Session, so
   // that case falls back to home (setDockCwd's null).
@@ -616,6 +625,28 @@ export function DraftView({
   };
 
   /** User edits routed through these two so a late-arriving project default cannot clobber them. */
+  useEffect(() => {
+    if (workspaceMachine === null) {
+      setRemoteAgents([]);
+      return;
+    }
+    let cancelled = false;
+    setRemoteAgents([]);
+    void api
+      .listAgents(projectId, workspaceMachine)
+      .then((res) => {
+        if (!cancelled) setRemoteAgents(res.agents);
+      })
+      .catch(() => {
+        // Unreachable or not signed in there: the list stays empty and the composer says
+        // there is nothing to pick, rather than offering an Agent that does not exist.
+        if (!cancelled) setRemoteAgents([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [workspaceMachine, projectId]);
+
   const changeWorkspace = useCallback((path: string, machineId?: string | null) => {
     touchedRef.current.workspace = true;
     setWorkspace(path);
