@@ -10,11 +10,14 @@
  */
 import { describe, expect, it } from "vitest";
 import type {
+  MachineConnectJob,
   MachineInfo,
   MachineInstallJob,
   MachinesResponse,
 } from "@prismshadow/penguin-server/api";
 import {
+  activeMachine,
+  connectAction,
   installButtonState,
   installedMachines,
   localMachine,
@@ -254,5 +257,69 @@ describe("statusTone", () => {
 
   it("recedes for a machine nothing is known about yet", () => {
     expect(statusTone(undefined)).toBe("muted");
+  });
+});
+
+describe("connectAction", () => {
+  const connected = (alias: string): MachineInfo => ({
+    ...carrying(alias),
+    machineId: "noeSE0FFHhNXl2J5",
+    origin: "http://localhost:7364",
+  });
+  const job = (over: Partial<MachineConnectJob> = {}): MachineConnectJob => ({
+    machineId: "ssh:nas",
+    alias: "nas",
+    running: true,
+    log: [],
+    result: null,
+    ...over,
+  });
+
+  it("offers nothing for this machine — you are already on it", () => {
+    expect(connectAction(here(), null, null)).toBe("unavailable");
+  });
+
+  it("offers nothing for a machine with no install: there is no server to start", () => {
+    expect(connectAction(fresh("nas"), null, null)).toBe("unavailable");
+  });
+
+  it("offers a connect for an installed machine with no tunnel", () => {
+    expect(connectAction(carrying("nas"), null, null)).toBe("connect");
+  });
+
+  it("reads as connected once there is an origin", () => {
+    expect(connectAction(connected("nas"), null, null)).toBe("connected");
+  });
+
+  it("shows the running connect on ITS machine only", () => {
+    expect(connectAction(carrying("nas"), job(), null)).toBe("connecting");
+    // A connect elsewhere must not make this row claim to be connecting.
+    expect(connectAction(carrying("build-box"), job(), null)).toBe("connect");
+  });
+
+  it("reads as connecting while this row's POST is still in flight", () => {
+    expect(connectAction(carrying("nas"), null, "ssh:nas")).toBe("connecting");
+    expect(connectAction(carrying("build-box"), null, "ssh:nas")).toBe("connect");
+  });
+});
+
+describe("activeMachine", () => {
+  const ID = "noeSE0FFHhNXl2J5";
+  const remote = (): MachineInfo => ({ ...carrying("nas"), machineId: ID });
+
+  it("is null when this window is on the local server", () => {
+    expect(activeMachine(response(null, { machines: [here(), remote()] }), null)).toBeNull();
+  });
+
+  it("finds the machine by its own id, not by its address", () => {
+    const state = response(null, { machines: [here(), remote()] });
+    expect(activeMachine(state, ID)?.alias).toBe("nas");
+    expect(activeMachine(state, "ssh:nas")).toBeNull();
+  });
+
+  it("is null for an id nothing in the list claims, rather than guessing", () => {
+    // The window is pointed somewhere this server no longer lists; the banner falls back to
+    // the raw id rather than naming the wrong machine.
+    expect(activeMachine(response(null, { machines: [here()] }), ID)).toBeNull();
   });
 });

@@ -54,6 +54,16 @@ export const en: Strings = {
     statusStopped: "Not running",
     statusUnreachable: "Unreachable",
     statusUnknown: "Not checked",
+    /** Bringing a machine's server up and holding a tunnel to it. */
+    connect: "Connect",
+    connecting: "Connecting\u2026",
+    disconnect: "Disconnect",
+    /** Pointing THIS window at a connected machine — a separate step from connecting. */
+    enter: "Enter",
+    hereNow: "You are here",
+    /** The banner shown app-wide while the window is pointed at another machine. */
+    onMachine: (alias: string) => `Working on ${alias}`,
+    backToLocal: "Back to this machine",
     /** Manual re-probe, for when you already know something changed. */
     refresh: "Refresh",
     checking: "Checking\u2026",

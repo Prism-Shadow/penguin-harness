@@ -44,6 +44,8 @@ import { Skeleton } from "../../components/ui/skeleton";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { ChevronDown, NAV_ICONS } from "../../components/ui/icons";
 import {
+  activeMachine,
+  connectAction,
   installButtonState,
   installedMachines,
   localMachine,
@@ -53,6 +55,7 @@ import {
 import type { MachineVerdict } from "./machines-view";
 import { MAX_VISIBLE_MACHINES, highlightSegments, matchMachines } from "./machines-match";
 import { probeDelayMs, probeFingerprint } from "./probe-schedule";
+import { activeServerId, setActiveServer } from "../../lib/server-context";
 
 /** How often a running job is re-read. Slow enough to be free, fast enough that a step reads as progress. */
 const POLL_MS = 1500;
@@ -115,7 +118,7 @@ export function MachinesPage() {
 
   // Poll only while a job runs. Chained timeouts rather than an interval: a slow response
   // must not stack requests behind itself.
-  const running = state?.job?.running === true;
+  const running = state?.job?.running === true || state?.connect?.running === true;
   const loadRef = useRef(load);
   loadRef.current = load;
   useEffect(() => {
@@ -139,6 +142,14 @@ export function MachinesPage() {
   const machines = useMemo(() => state?.machines ?? [], [state]);
   const installed = useMemo(() => (state === null ? [] : installedMachines(state)), [state]);
   const local = useMemo(() => (state === null ? null : localMachine(state)), [state]);
+  /** Which server this window is talking to right now (null = the local one). */
+  const activeId = activeServerId();
+  const active = useMemo(
+    () => (state === null ? null : activeMachine(state, activeId)),
+    [state, activeId],
+  );
+  /** The machine whose connect POST is in flight — the server has no job to report yet. */
+  const [connecting, setConnecting] = useState<string | null>(null);
   /** Aliases the picker offers: everything except this machine, which is not a target. */
   const pickable = useMemo(() => machines.filter((machine) => !machine.local), [machines]);
   const matched = useMemo(() => matchMachines(pickable, query), [pickable, query]);
@@ -193,6 +204,36 @@ export function MachinesPage() {
       clearTimeout(timer);
     };
   }, [hasInstalled]);
+
+  /**
+   * Points this window at a server. A full document load, not a state update: none of one
+   * server's in-memory state — sessions, streams, caches — may survive into another's.
+   */
+  const enterServer = (machineId: string | null) => {
+    setActiveServer(machineId);
+    window.location.assign("/");
+  };
+
+  const connect = async (machineId: string) => {
+    setConnecting(machineId);
+    try {
+      setState(await api.connectMachine(machineId));
+      setError(null);
+    } catch (err) {
+      setError(apiErrorText(err));
+    } finally {
+      setConnecting(null);
+    }
+  };
+
+  const disconnect = async (machineId: string) => {
+    try {
+      setState(await api.disconnectMachine(machineId));
+      setError(null);
+    } catch (err) {
+      setError(apiErrorText(err));
+    }
+  };
 
   const install = async () => {
     if (selectedId === null) return;
@@ -407,45 +448,86 @@ export function MachinesPage() {
                   </Button>
                 </div>
                 <div className="mt-2 divide-y divide-gray-200 overflow-hidden rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
-                  {installed.map((machine) => (
-                    <button
-                      key={machine.id}
-                      type="button"
-                      onClick={() => setSelectedId(machine.id)}
-                      aria-current={machine.id === selectedId ? "true" : undefined}
-                      className={`flex w-full min-w-0 items-center gap-3 px-3 py-2.5 text-left transition-colors duration-150 ${
-                        machine.id === selectedId
-                          ? "bg-gray-100 dark:bg-gray-800"
-                          : "bg-white hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800/70"
-                      }`}
-                    >
-                      <span className="shrink-0 text-gray-500 dark:text-gray-400">
-                        <GlyphIcon d={NAV_ICONS.machines} size={ICON_SIZE.rowLead} />
-                      </span>
-                      {/* The alias is the label — it is what someone chose and recognises.
+                  {installed.map((machine) => {
+                    const action = connectAction(machine, state.connect, connecting);
+                    const isActive = active?.id === machine.id;
+                    return (
+                      <div
+                        key={machine.id}
+                        className={`flex min-w-0 items-center gap-3 px-3 py-2.5 ${
+                          machine.id === selectedId
+                            ? "bg-gray-100 dark:bg-gray-800"
+                            : "bg-white dark:bg-gray-900"
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setSelectedId(machine.id)}
+                          aria-current={machine.id === selectedId ? "true" : undefined}
+                          className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                        >
+                          <span className="shrink-0 text-gray-500 dark:text-gray-400">
+                            <GlyphIcon d={NAV_ICONS.machines} size={ICON_SIZE.rowLead} />
+                          </span>
+                          {/* The alias is the label — it is what someone chose and recognises.
                           The machine's own id is the identity, kept to the tooltip. */}
-                      <span
-                        className="min-w-0 flex-1 truncate text-sm font-medium"
-                        title={machine.machineId ?? undefined}
-                      >
-                        {machine.alias}
-                      </span>
-                      <span className={`shrink-0 text-xs ${toneInk.success}`}>
-                        {machine.installed!.version}
-                      </span>
-                      {/* The server over there, as of the last probe. Never colour alone:
+                          <span
+                            className="min-w-0 flex-1 truncate text-sm font-medium"
+                            title={machine.machineId ?? undefined}
+                          >
+                            {machine.alias}
+                          </span>
+                          <span className={`shrink-0 text-xs ${toneInk.success}`}>
+                            {machine.installed!.version}
+                          </span>
+                          {/* The server over there, as of the last probe. Never colour alone:
                           the state is named in words, and unprobed says so too. */}
-                      <span
-                        className={`shrink-0 text-xs ${statusText(machine) === null ? "text-gray-400 dark:text-gray-500" : toneInk[statusTone(machine.status?.state)]}`}
-                        title={machine.status?.detail}
-                      >
-                        {statusText(machine) ?? S.machines.statusUnknown}
-                      </span>
-                      <span className="hidden shrink-0 text-xs text-gray-400 sm:inline dark:text-gray-500">
-                        {formatDateTime(machine.installed!.at)}
-                      </span>
-                    </button>
-                  ))}
+                          <span
+                            className={`shrink-0 text-xs ${statusText(machine) === null ? "text-gray-400 dark:text-gray-500" : toneInk[statusTone(machine.status?.state)]}`}
+                            title={machine.status?.detail}
+                          >
+                            {statusText(machine) ?? S.machines.statusUnknown}
+                          </span>
+                        </button>
+                        {/* Connecting is what makes a machine reachable; entering it is what
+                          points this window at it. Two steps on purpose: a tunnel can be up
+                          without the window following it. */}
+                        {action === "connected" ? (
+                          <>
+                            {isActive ? (
+                              <span className={`shrink-0 text-xs ${toneInk.busy}`}>
+                                {S.machines.hereNow}
+                              </span>
+                            ) : (
+                              <Button
+                                size="sm"
+                                onClick={() => enterServer(machine.machineId)}
+                                disabled={machine.machineId === null}
+                              >
+                                {S.machines.enter}
+                              </Button>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => void disconnect(machine.id)}
+                            >
+                              {S.machines.disconnect}
+                            </Button>
+                          </>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            disabled={action !== "connect" || state.connect?.running === true}
+                            onClick={() => void connect(machine.id)}
+                          >
+                            {action === "connecting" ? S.machines.connecting : S.machines.connect}
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </section>
             )}
