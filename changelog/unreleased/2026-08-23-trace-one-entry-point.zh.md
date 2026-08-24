@@ -3,12 +3,13 @@
 - **Date:** 2026-08-23
 - **Type:** feature
 - **Scope:** `web`, `docs`
+- **PR:** [#429](https://github.com/Prism-Shadow/penguin-harness/pull/429)
 
 [English](2026-08-23-trace-one-entry-point.md)
 
-轨迹观测此前同时有三个入口：停靠区的 Trace 面板、会话详情卡中的轨迹文件行，以及 Agent 列表
-每一行上的眼睛按钮。本次移除了通往 `/traces` 页的那两个深链接，读取某个会话的轨迹只经由停靠区
-的 Trace 面板。`/traces` 页本身及其数据与 API 均未改动，仍可通过 URL 直接访问。
+除展示当前会话轨迹的停靠区 Trace 面板之外，`/traces` 页此前还被两处深链接指向：会话详情卡中的
+轨迹文件行，以及 Agent 列表每一行上的眼睛按钮。本次移除了这两处链接，读取某个会话的轨迹只经由
+停靠区的 Trace 面板。`/traces` 页本身及其数据与 API 均未改动。
 
 ## 细节
 

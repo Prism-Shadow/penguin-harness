@@ -3,14 +3,15 @@
 - **Date:** 2026-08-23
 - **Type:** feature
 - **Scope:** `web`, `docs`
+- **PR:** [#429](https://github.com/Prism-Shadow/penguin-harness/pull/429)
 
 [中文版](2026-08-23-trace-one-entry-point.zh.md)
 
-Trace observation was reachable from three places at once: the dock's Trace panel, a Trace
-file row in the conversation's details card, and an eye button on every row of the Agent
-list. The two deep links into the `/traces` page were removed, leaving the dock's Trace
-panel as the way a conversation's Trace is read. The `/traces` page itself, its data and
-its API are untouched, and it stays addressable by URL.
+Alongside the dock's Trace panel, which shows the Trace of the conversation on screen, the
+`/traces` page was deep-linked from a Trace file row in the conversation's details card and
+from an eye button on every row of the Agent list. Both of those links were removed, leaving
+the dock's Trace panel as the way a conversation's Trace is read. The `/traces` page itself,
+its data and its API are untouched.
 
 ## Details
 
