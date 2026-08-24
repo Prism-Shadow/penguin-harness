@@ -1,7 +1,10 @@
 /**
  * Machines routes (admin only, 403 for non-admins):
- * GET  /api/machines                    — the ssh config's host aliases, the version this
- *                                         server would install, and the running or last job.
+ * GET  /api/machines                    — this machine and the ssh config's host aliases,
+ *                                         the version this server would install, the last
+ *                                         status probed for each, and the running or last job.
+ * POST /api/machines/probe              — refresh the statuses of the installed machines
+ *                                         (one ssh round trip each), then answer the list.
  * POST /api/machines/:machineId/install — start an install; 202, or 409 when one runs.
  *
  * Admin rather than any logged-in user, on a multi-user server as much as a personal one:
@@ -38,6 +41,14 @@ export function machinesRoutes(deps: AppDeps): Hono<AppEnv> {
 
   app.get("/", (c) => c.json(state()));
 
+  // Probing is a POST because it spends ssh round trips — a GET that spawns processes is a
+  // GET a proxy or a prefetch may fire on its own. The page drives the schedule, so nothing
+  // here runs when nobody is looking at the page.
+  app.post("/probe", async (c) => {
+    await deps.machines.probeInstalled();
+    return c.json(state());
+  });
+
   app.post("/:machineId/install", async (c) => {
     const started = await deps.machines.startInstall(c.req.param("machineId"));
     if (!started.ok) {
@@ -48,6 +59,13 @@ export function machinesRoutes(deps: AppDeps): Hono<AppEnv> {
       }
       if (started.why === "unknown-machine") {
         throw new HttpError(404, "unknown_machine", "No such host in this server's ssh config.");
+      }
+      if (started.why === "self") {
+        throw new HttpError(
+          409,
+          "self_install",
+          "That is the machine this server runs on; it already has this build.",
+        );
       }
       if (started.why === "no-image") {
         throw new HttpError(

@@ -119,3 +119,25 @@ export function unpackStoreCommand(platform: RemotePlatform): string {
   const root = "$HOME/.penguin/data";
   return `mkdir -p "${root}" && tar -xzf - -C "${root}"`;
 }
+// --- reading an installed server's state (POSIX only) ---------------------------------------
+
+/** Marker line the state probe prints when the lock's pid is alive over there. */
+export const SERVER_ALIVE_MARK = "---penguin-server-alive---";
+
+/**
+ * Reads the remote server's state in one round trip: the lock file's text, then the alive
+ * marker when the pid recorded there answers `kill -0`. The pid is pulled out with sed
+ * rather than a JSON parser because the far side only has a shell — the lock is written by
+ * JSON.stringify, so `"pid":<digits>` is a stable shape, not a guess.
+ *
+ * The layout is known because the install put it there: the data root is `~/.penguin/data`,
+ * which is where the server writes its lock. POSIX only, like the rest of the
+ * server-lifecycle commands: `kill -0` has no cmd.exe equivalent, and a Windows remote
+ * simply reads as "cannot tell" rather than being lied about.
+ */
+export function readServerStateCommand(): string {
+  return [
+    `lock="$HOME/.penguin/data/server.lock"`,
+    `if [ -f "$lock" ]; then cat "$lock"; pid=$(sed -n 's/.*"pid":\\([0-9][0-9]*\\).*/\\1/p' "$lock"); if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then echo; echo ${SERVER_ALIVE_MARK}; fi; fi`,
+  ].join("; ");
+}

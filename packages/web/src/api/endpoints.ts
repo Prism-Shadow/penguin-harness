@@ -1073,6 +1073,14 @@ export const importAgent = (projectId: string, agentId: string, body: AgentImpor
  */
 export const getMachines = () => apiFetch<MachinesResponse>("/api/machines");
 
+/**
+ * Re-probes the installed machines' servers (one ssh round trip each, server-side) and
+ * answers the refreshed list. A POST because it spends those round trips — a GET that
+ * spawns processes is one a prefetch or a proxy may fire on its own.
+ */
+export const probeMachines = () =>
+  apiFetch<MachinesResponse>("/api/machines/probe", { method: "POST", body: {} });
+
 /** Starts an install (202, long-running); the returned body already carries the new job. */
 export const installOnMachine = (machineId: string) =>
   apiFetch<MachinesResponse>(`/api/machines/${encodeURIComponent(machineId)}/install`, {

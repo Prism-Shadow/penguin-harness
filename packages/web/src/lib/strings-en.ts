@@ -46,6 +46,17 @@ export const en: Strings = {
     noMatch: "No host matches that.",
     /** How many matches the visible rows leave out — a silent truncation would read as "not in my config". */
     more: (count: number) => `${count} more \u2014 keep typing to narrow it down.`,
+    /** Heading of the entry for the machine this server itself runs on. */
+    localTitle: "This machine",
+    /** A machine's server state as of the last probe; `statusUnknown` = not probed yet. */
+    statusRunning: "Running",
+    statusRunningOn: (port: number) => `Running on port ${port}`,
+    statusStopped: "Not running",
+    statusUnreachable: "Unreachable",
+    statusUnknown: "Not checked",
+    /** Manual re-probe, for when you already know something changed. */
+    refresh: "Refresh",
+    checking: "Checking\u2026",
     /** Heading of the standing list of machines this server has installed on. */
     installedTitle: (count: number) => `Installed machines (${count})`,
     /** What the selected machine already carries, remembered on the server across restarts. */

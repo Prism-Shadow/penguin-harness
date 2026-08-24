@@ -50,6 +50,7 @@ function effects(over: Partial<MachinesEffects> = {}): Partial<MachinesEffects> 
     }),
     resolvePlan: () => ({ baseVersion: "9.9.9", harness: null, hmrDir: null, version: "9.9.9" }),
     now: () => new Date("2026-08-24T12:00:00.000Z"),
+    probe: async () => ({ kind: "running", port: 7364, pid: 4242 }),
     install: async (opts): Promise<RemoteInstallOutcome> => {
       opts.onProgress?.("Pushing…");
       return { kind: "installed", output: "done", identity: IDENTITY };
@@ -98,19 +99,27 @@ describe("machines API", () => {
     it("is the ssh config's aliases, with the version this server would push", async () => {
       await boot();
       const body = (await (await admin.get("/api/machines")).json()) as MachinesResponse;
-      expect(body.machines).toEqual([
-        { id: "ssh:build-box", alias: "build-box", installed: null },
-        { id: "ssh:nas", alias: "nas", installed: null },
+      // This machine heads the list: always installed, always up, never a target.
+      expect(body.machines[0]).toMatchObject({
+        id: "local",
+        local: true,
+        status: { state: "running" },
+      });
+      expect(body.machines[0]?.installed).not.toBeNull();
+      expect(body.machines.slice(1)).toEqual([
+        { id: "ssh:build-box", alias: "build-box", installed: null, local: false, status: null },
+        { id: "ssh:nas", alias: "nas", installed: null, local: false, status: null },
       ]);
       expect(body.imageVersion).toBe("9.9.9");
       expect(body.job).toBeNull();
     });
 
-    it("an empty or unreadable ssh config is a list of none, not an error", async () => {
+    it("an empty or unreadable ssh config leaves this machine alone in the list, not an error", async () => {
       await boot({ listAliases: () => [] });
       const res = await admin.get("/api/machines");
       expect(res.status).toBe(200);
-      expect(((await res.json()) as MachinesResponse).machines).toEqual([]);
+      const machines = ((await res.json()) as MachinesResponse).machines;
+      expect(machines.map((m) => m.id)).toEqual(["local"]);
     });
 
     it("reports no image when this server has none to push", async () => {
@@ -200,6 +209,9 @@ describe("machines API", () => {
     const listed = async () =>
       ((await (await admin.get("/api/machines")).json()) as MachinesResponse).machines;
 
+    /** The ssh hosts only — the local entry is always installed, so it never belongs in these. */
+    const remotes = async () => (await listed()).filter((machine) => !machine.local);
+
     it("a successful install is remembered, and is already visible on the first settled poll", async () => {
       await boot();
       await admin.post("/api/machines/ssh:nas/install");
@@ -239,7 +251,7 @@ describe("machines API", () => {
       await waitFor(() => t.deps.machines.job()?.machineId === "ssh:build-box");
       await waitFor(() => t.deps.machines.job()?.running === false);
 
-      const machines = await listed();
+      const machines = await remotes();
       expect(machines.every((m) => m.installed !== null)).toBe(true);
       expect(recordsOnDisk()).toEqual({
         "ssh:nas": { version: "9.9.9", at: "2026-08-24T12:00:00.000Z" },
@@ -262,16 +274,127 @@ describe("machines API", () => {
       });
       await admin.post("/api/machines/ssh:nas/install");
       await waitFor(() => t.deps.machines.job()?.running === false);
-      expect((await listed()).every((m) => m.installed === null)).toBe(true);
+      expect((await remotes()).every((m) => m.installed === null)).toBe(true);
       expect(fs.existsSync(path.join(machinesRoot, "machines-installs.json"))).toBe(false);
     });
 
     it("a damaged records file reads as nothing remembered, not as a broken list", async () => {
       await boot();
       fs.writeFileSync(path.join(machinesRoot, "machines-installs.json"), "{ not json");
-      const machines = await listed();
+      const machines = await remotes();
       expect(machines).toHaveLength(2);
       expect(machines.every((m) => m.installed === null)).toBe(true);
+    });
+  });
+
+  describe("server status", () => {
+    const listed = async () =>
+      ((await (await admin.get("/api/machines")).json()) as MachinesResponse).machines;
+    const byId = async (id: string) => (await listed()).find((machine) => machine.id === id);
+
+    it("this machine reports itself running without any probe", async () => {
+      await boot({
+        probe: () => {
+          throw new Error("the local entry must not be probed");
+        },
+      });
+      expect(await byId("local")).toMatchObject({ local: true, status: { state: "running" } });
+    });
+
+    it("is null until probed — listing costs no ssh", async () => {
+      let probes = 0;
+      await boot({
+        probe: async () => {
+          probes++;
+          return { kind: "running", port: 7364, pid: 1 };
+        },
+      });
+      await admin.get("/api/machines");
+      await admin.get("/api/machines");
+      expect(probes).toBe(0);
+      expect((await byId("ssh:nas"))?.status).toBeNull();
+    });
+
+    it("probes only the machines something was installed on", async () => {
+      const probed: string[] = [];
+      await boot({
+        probe: async (target) => {
+          probed.push(target.alias);
+          return { kind: "running", port: 7364, pid: 1 };
+        },
+      });
+      // Only nas gets an install; build-box has no server to ask about.
+      await admin.post("/api/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      probed.length = 0;
+
+      const res = await admin.post("/api/machines/probe");
+      expect(res.status).toBe(200);
+      expect(probed).toEqual(["nas"]);
+      expect((await byId("ssh:nas"))?.status).toMatchObject({ state: "running", port: 7364 });
+      expect((await byId("ssh:build-box"))?.status).toBeNull();
+    });
+
+    it("a stopped server and an unreachable machine are both answers, not errors", async () => {
+      await boot({ probe: async () => ({ kind: "stopped" }) });
+      await admin.post("/api/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      await admin.post("/api/machines/probe");
+      expect((await byId("ssh:nas"))?.status).toMatchObject({ state: "stopped" });
+      expect((await byId("ssh:nas"))?.status?.port).toBeUndefined();
+
+      await boot({
+        probe: async () => ({ kind: "unreachable", detail: "Permission denied (publickey)." }),
+      });
+      await admin.post("/api/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      await admin.post("/api/machines/probe");
+      expect((await byId("ssh:nas"))?.status).toMatchObject({
+        state: "unreachable",
+        detail: "Permission denied (publickey).",
+      });
+    });
+
+    it("an alias ssh can no longer resolve is unreachable, and costs no probe", async () => {
+      let probes = 0;
+      let resolvable = true;
+      await boot({
+        resolveTarget: async (alias) =>
+          resolvable
+            ? {
+                alias,
+                settings: {
+                  user: "deploy",
+                  hostname: `${alias}.example`,
+                  port: 22,
+                  identityFiles: [],
+                  proxyJump: null,
+                },
+                machine: `deploy@${alias}`,
+              }
+            : null,
+        probe: async () => {
+          probes++;
+          return { kind: "running", port: 7364, pid: 1 };
+        },
+      });
+      await admin.post("/api/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+
+      // The host disappears from ssh's view between the install and the refresh.
+      resolvable = false;
+      await admin.post("/api/machines/probe");
+      expect((await byId("ssh:nas"))?.status).toMatchObject({ state: "unreachable" });
+      // No ssh child at all: an alias ssh cannot name is a dead end before the probe.
+      expect(probes).toBe(0);
+    });
+
+    it("refuses to install onto this very machine", async () => {
+      await boot();
+      const res = await admin.post("/api/machines/local/install");
+      expect(res.status).toBe(409);
+      expect(((await res.json()) as { error: { code: string } }).error.code).toBe("self_install");
+      expect(t.deps.machines.job()).toBeNull();
     });
   });
 

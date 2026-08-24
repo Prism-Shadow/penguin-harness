@@ -3034,6 +3034,34 @@ export interface MachineInfo {
    * the config-text list exists to avoid.
    */
   installed: { version: string; at: string } | null;
+  /**
+   * True for the machine this server itself runs on. It is listed because "where is this
+   * program running" is the same question the rest of the page answers, and it is the one
+   * entry that is always installed and always up — it is the thing serving the request.
+   * Never installable: a server does not push itself onto its own machine.
+   */
+  local: boolean;
+  /**
+   * Whether a server is up over there, as of the last probe. Null means "not probed yet";
+   * the page probes on a widening schedule rather than at list time, because each probe is
+   * an ssh round trip while the list itself is only the config's text.
+   */
+  status: MachineServerStatus | null;
+}
+
+/**
+ * One machine's server state. There is deliberately no separate "ssh" status: ssh is the
+ * transport, so a machine it cannot reach reads as `unreachable` with OpenSSH's own
+ * diagnostic in `detail` rather than as two statuses a reader has to combine.
+ */
+export interface MachineServerStatus {
+  state: "running" | "stopped" | "unreachable";
+  /** ISO timestamp of the probe this answer came from. */
+  checkedAt: string;
+  /** The port it is serving on (`running`). */
+  port?: number;
+  /** Why the machine could not be reached (`unreachable`) — ssh's own words. */
+  detail?: string;
 }
 
 /**

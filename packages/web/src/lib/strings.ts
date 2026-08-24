@@ -48,6 +48,17 @@ export const zh = {
     noMatch: "没有匹配的主机。",
     /** How many matches the visible rows leave out — a silent truncation would read as "not in my config". */
     more: (count: number) => `另有 ${count} 台未显示——继续输入以缩小范围。`,
+    /** Heading of the entry for the machine this server itself runs on. */
+    localTitle: "本机",
+    /** A machine's server state as of the last probe; `statusUnknown` = not probed yet. */
+    statusRunning: "运行中",
+    statusRunningOn: (port: number) => `运行中 · 端口 ${port}`,
+    statusStopped: "未运行",
+    statusUnreachable: "连不上",
+    statusUnknown: "未检查",
+    /** Manual re-probe, for when you already know something changed. */
+    refresh: "刷新",
+    checking: "检查中…",
     /** Heading of the standing list of machines this server has installed on. */
     installedTitle: (count: number) => `已安装的机器（${count}）`,
     /** What the selected machine already carries, remembered on the server across restarts. */
