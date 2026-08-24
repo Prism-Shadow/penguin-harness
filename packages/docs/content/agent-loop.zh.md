@@ -71,7 +71,7 @@ Task 由若干连续的 Request(轮)组成，每轮：
 5. LLM 流结束时，先产出其最后一条 `token_usage`，随即产出 `request_end(status)`——**不等待工具**，仍在执行的工具输出可出现在 `request_end` 之后；
 6. 整批工具全部到达终态后，工具结果**按原始调用顺序**重排，作为下一轮输入——在此之前不会发起下一次 Request。
 
-某轮不再产生 `tool_call` 时，Task 结束。拒绝(deny)会生成一条合成的 `aborted` 工具输出(内容为 `Tool call denied by user.`)，模型据此继续。
+某轮不再产生 `tool_call` 时，Task 结束。拒绝会生成一条合成的 `aborted` 工具输出供模型据此继续——`Tool call denied by user.`，决定为[命令策略](/configuration#沙箱安全策略)的 `forbidden` 时则为 `Tool call denied by policy.`(见 [ApproveFn](/interfaces#approvefn))。
 
 ## 中断与补发(carry-over)
 
@@ -119,7 +119,7 @@ interface CompactionSettings {
 
 | reason | 触发条件 |
 | --- | --- |
-| `context` | 上一轮 `token_usage.request.total` ≥ `maxContextLength`(默认 128000；生效阈值不超过模型 `context_window` − 2048，小窗口模型——如 32k 的本地 vLLM——约在 30.7k 处压缩，而不是先撞上窗口硬限制；条目未配置 `context_window` 时按 128000 的假定默认值推导) |
+| `context` | 上一轮 `token_usage.request.total` ≥ `maxContextLength`(默认 256000；生效阈值取它与模型 `context_window` − 2048 中的较小者，故 32k 的本地 vLLM 约在 30.7k 处压缩、而不是先撞上窗口硬限制，1M 窗口的模型则在配置的 256000 处触发；条目未配置 `context_window` 时按 128000 的假定窗口推导，即约 126k) |
 | `turns` | Session 轮数 ≥ `maxSessionTurns`(默认 -1，即不限) |
 | `manual` | 用户执行 `/compact` 或调用 `session.compact()` |
 

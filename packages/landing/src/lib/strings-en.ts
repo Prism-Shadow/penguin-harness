@@ -103,6 +103,8 @@ export const en: Strings = {
         require: "x64 — AppImage runs in place, deb goes to your package manager",
       },
     },
+    statusProbing: "Finding a download source that answers …",
+    statusRefining: "Still comparing the two sources — the faster one takes over on its own.",
     statusOss: (version: string) =>
       `Connected to the OSS mirror (${version}) — downloads are served from the mirror.`,
     statusGithub: "Downloads point at the latest GitHub Release.",
@@ -445,7 +447,12 @@ export const en: Strings = {
       },
       {
         title: "Agent Tuning",
-        skills: ["agent-creation", "benchmark-design", "agent-evaluation", "agent-optimization"],
+        skills: [
+          "agent-initialization",
+          "benchmark-design",
+          "agent-evaluation",
+          "agent-optimization",
+        ],
       },
     ],
   },

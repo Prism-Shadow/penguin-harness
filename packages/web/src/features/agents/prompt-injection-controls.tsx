@@ -32,6 +32,8 @@ import { Textarea } from "../../components/ui/input";
 import { Switch } from "../../components/ui/switch";
 import { useSaveConfirm } from "../../components/ui/confirm-modal";
 import { toastError, toastSuccess } from "../../components/ui/toast";
+import { toneStrip } from "../../lib/tone";
+import { InfoPopover } from "../../components/ui/info-popover";
 
 export type PromptInjectionFeature = "skills" | "vault" | "schedules";
 
@@ -193,8 +195,10 @@ export function usePromptInjection({
   // features that can report legacySectionPresent); everything else gets the plain insert.
   const legacy = state?.legacySectionPresent === true;
   const alertStrip = state !== null && !state.templateHasPlaceholder && (
-    <div className="flex items-center justify-between gap-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 dark:border-amber-700 dark:bg-amber-950/40">
-      <p className="text-xs text-amber-800 dark:text-amber-300">
+    <div
+      className={`flex items-center justify-between gap-4 rounded-lg border px-4 py-3 ${toneStrip.attention}`}
+    >
+      <p className="text-xs">
         {legacy ? (strings.legacyTemplate ?? strings.templateMissing) : strings.templateMissing}
       </p>
       {canEdit && (
@@ -207,14 +211,10 @@ export function usePromptInjection({
 
   const promptSection = state !== null && (
     <section className="space-y-2.5 rounded-lg border border-gray-200 p-3.5 dark:border-gray-800">
-      <div>
-        <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">
-          {strings.promptSection}
-        </h3>
-        <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-          {strings.promptSectionHint}
-        </p>
-      </div>
+      <h3 className="flex items-center gap-1.5 text-sm font-semibold text-gray-800 dark:text-gray-200">
+        {strings.promptSection}
+        <InfoPopover label={strings.promptSection}>{strings.promptSectionHint}</InfoPopover>
+      </h3>
       <Textarea
         ref={promptRef}
         label={strings.promptLabel}

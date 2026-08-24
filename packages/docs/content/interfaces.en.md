@@ -144,6 +144,8 @@ interface EnvironmentServices {
   visionDescriber?: VisionDescriberService; // needed by describe_image on text-only models
   commandSessions?: CommandSessionManager;  // long-running command session registry (built by Environment)
   subagentSessions?: SubagentSessionManager;// background subagent session registry (likewise)
+  backgroundDone?: (event: BackgroundTaskDoneEvent) => void; // completion-report sink for run_in_background launches (likewise)
+  backgroundForward?: (msg: OmniMessage) => void;           // live message tap of a background subagent (likewise)
 }
 
 interface MCPServerConfig {
@@ -217,11 +219,13 @@ The CLI wires terminal I/O onto this boundary; the Server wires HTTP requests an
 ## ApproveFn
 
 ```ts
-type ApprovalDecision = "allow" | "deny";
+type ApprovalDecision = "allow" | "deny" | "forbidden"; // "forbidden" = the command policy's veto
 type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalDecision>;
 ```
 
 Constraints: called exactly once per complete `tool_call`; a throwing callback counts as `deny`; when none is injected the engine denies everything (conservative default). A Subagent inherits its parent's approval callback (invoked with an `origin` tag), so the approval policy spans the whole delegation tree.
+
+`"forbidden"` is never a host's answer: `Session.run` wraps the injected callback with the [Project command policy](/configuration#command-policy), and a vetoed command answers `"forbidden"` before the host is asked at all. The denial output is one fixed `aborted` line either way — "Tool call denied by user." for `"deny"`, "Tool call denied by policy." for `"forbidden"` — and the decision value itself rides the `approval_decision` event, so the Trace names the decider with no extra field. An existing callback returning `"allow"` / `"deny"` needs no change.
 
 ## Subagent interfaces
 

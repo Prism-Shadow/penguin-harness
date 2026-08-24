@@ -133,6 +133,41 @@ describe("session_state on the user channel", () => {
   });
 });
 
+describe("session_title on the user channel", () => {
+  const titleEvent = (sessionId: string, title: string): ServerEvent => ({
+    type: "session_title",
+    sessionId,
+    title,
+  });
+
+  it("renames the named row in place and leaves every other row alone", () => {
+    // Titles land at Task start — before the tab watching the brand-new conversation has
+    // subscribed to its Session channel — so the list depends on this delivery.
+    const store = storeWith(session("a"), session("b"));
+    applyUserEvent(store, titleEvent("b", "Login page bug"), neverReload);
+    expect(rowOf(store, "b").title).toBe("Login page bug");
+    expect(rowOf(store, "a").title).toBeUndefined();
+  });
+
+  it("ignores a Session no loaded page holds instead of inventing a row", () => {
+    const store = storeWith(session("a"));
+    const before = store.getState().sessions;
+    applyUserEvent(store, titleEvent("not-loaded", "whatever"), neverReload);
+    expect(store.getState().sessions.map((s) => s.sessionId)).toEqual(["a"]);
+    // The user channel carries every Session this user can see, most of them absent from this
+    // list: an unlisted id must not churn the array and re-render every row.
+    expect(store.getState().sessions).toBe(before);
+  });
+
+  it("is a no-op when the row already carries that title (both channels deliver it)", () => {
+    const store = storeWith(session("a"));
+    applyUserEvent(store, titleEvent("a", "Login page bug"), neverReload);
+    const after = store.getState().sessions;
+    applyUserEvent(store, titleEvent("a", "Login page bug"), neverReload);
+    expect(store.getState().sessions).toBe(after);
+  });
+});
+
 describe("hasTrace across a status flip", () => {
   // The regression this pins: `sessionActivity` checks status first, so `running` draws the
   // hourglass whatever hasTrace says — and then falls to `if (!hasTrace) return null` once the
@@ -312,7 +347,17 @@ describe("other user-channel events keep their behaviour", () => {
     const store = storeWith(session("a"));
     const before = store.getState().sessions;
     applyUserEvent(store, { type: "hello" }, neverReload);
-    applyUserEvent(store, { type: "session_title", sessionId: "a", title: "T" }, neverReload);
+    applyUserEvent(
+      store,
+      {
+        type: "schedule_queued",
+        projectId: "proj",
+        agentId: "default_agent",
+        name: "n",
+        sessionId: "a",
+      },
+      neverReload,
+    );
     expect(store.getState().sessions).toBe(before);
   });
 

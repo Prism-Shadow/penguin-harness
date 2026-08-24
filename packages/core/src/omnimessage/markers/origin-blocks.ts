@@ -283,6 +283,94 @@ export function parseModelSwitchMessage(text: string): ModelSwitchOrigin | null 
 }
 
 // ---------------------------------------------------------------------------
+// [background_task_done] — completion report of a run_in_background task
+// ---------------------------------------------------------------------------
+
+/** Structured facts of one background-task completion (the block's field lines). */
+export interface BackgroundTaskDone {
+  /** Which background family finished. */
+  kind: "command" | "subagent";
+  /** The registry handle the model already holds: `process_id` or `subagent_id`. */
+  id: string;
+  /** Terminal status of the run. */
+  status: "completed" | "failed";
+  /** One-line terminal detail (exit code / signal / subagent note); empty when there is none. */
+  detail: string;
+  /**
+   * How the notice reached the conversation. `"steering"` = the engine injected it into an
+   * already-started Task at an input-assembly boundary (the steering delivery path — stamped
+   * at delivery time, since a queued notice does not know yet which path will consume it);
+   * absent = the notice IS a task's starting input (the host launched a task with it while
+   * the session sat idle). The two deliveries are positionally identical in the Trace — both
+   * sit between a `request_end` and the next `request_begin` — so this recorded field is the
+   * only way render and stats layers can tell "same turn" from "independent turn".
+   */
+  delivery?: "steering";
+}
+
+/**
+ * Harness-injected user message reporting that a background task finished (`exec_command` /
+ * `run_subagent` launched with `run_in_background`): the `[background_task_done]` block carries
+ * the structured facts, and the body after it is the display text — what the task was, followed
+ * by the tail of its yet-undelivered output (already capped by the producer). The frontend
+ * collapses the block into a one-line notice (the Trace page shows it verbatim); the model reads
+ * the whole thing.
+ */
+export function buildBackgroundTaskDoneMessage(done: BackgroundTaskDone, body: string): string {
+  const block = markerBlock(
+    MARKER_TAGS.backgroundTaskDone,
+    [
+      "Automatic notification from the harness, not the user: a background task you started has finished.",
+      `kind: ${done.kind}`,
+      `id: ${done.id}`,
+      `status: ${done.status}`,
+      ...(done.detail ? [`detail: ${done.detail}`] : []),
+      ...(done.delivery ? [`delivery: ${done.delivery}`] : []),
+    ].join("\n"),
+  );
+  return body ? `${block}\n\n${body}` : block;
+}
+
+const BACKGROUND_DONE_PATTERNS = dualFormPatterns(
+  MARKER_TAGS.backgroundTaskDone,
+  "\\n([\\s\\S]*?)\\n",
+);
+
+/**
+ * Inverse of `buildBackgroundTaskDoneMessage`: returns the completion facts and the body when
+ * the message **starts with** a `[background_task_done]` block, otherwise null. Prefix-block
+ * semantics like `[scheduled_task]`: the body after the block is returned for normal rendering.
+ */
+export function parseBackgroundTaskDoneMessage(
+  text: string,
+): { done: BackgroundTaskDone; rest: string } | null {
+  const m = matchDualForm(BACKGROUND_DONE_PATTERNS, text);
+  if (!m || m.index !== 0) return null;
+  const done: BackgroundTaskDone = { kind: "command", id: "", status: "completed", detail: "" };
+  for (const [key, value] of fieldLines(m[1]!, ["kind", "id", "status", "detail", "delivery"])) {
+    if (key === "kind" && (value === "command" || value === "subagent")) done.kind = value;
+    else if (key === "id") done.id = value;
+    else if (key === "status" && (value === "completed" || value === "failed")) done.status = value;
+    else if (key === "detail") done.detail = value;
+    else if (key === "delivery" && value === "steering") done.delivery = value;
+  }
+  if (!done.id) return null;
+  return { done, rest: text.slice(m[0].length).replace(/^\n+/, "") };
+}
+
+/**
+ * Whether a user text is a background completion notice that was steered into a running Task
+ * (`delivery: steering` on its `[background_task_done]` block). The shared predicate behind
+ * every "what is one turn" implementation — the Web stream reducer, the outline, the server's
+ * message-window scanner and trace analysis — which all must treat such a notice like
+ * steering: inside the current Task, never starting a new one. A notice without the field is
+ * a task's own starting input and keeps its independent turn.
+ */
+export function isSteeredBackgroundNotice(text: string): boolean {
+  return parseBackgroundTaskDoneMessage(text)?.done.delivery === "steering";
+}
+
+// ---------------------------------------------------------------------------
 // Shared predicate over the whole-message origin blocks
 // ---------------------------------------------------------------------------
 

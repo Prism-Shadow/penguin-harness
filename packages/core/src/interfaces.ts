@@ -93,9 +93,47 @@ export interface ToolConfig {
  * Per-tool approval callback: the Human boundary gives allow/deny for each complete `tool_call`.
  * `context_engine` calls it once per tool call within a turn. Subagents forward the parent's
  * approval callback, so the child Agent **inherits the parent Agent's approval mode**.
+ * The third decision, `"forbidden"`, is never a host's answer: `Session.run` wraps the
+ * injected callback with the project sandbox command policy (see {@link CommandPolicyConfig}),
+ * and a vetoed call answers `"forbidden"` without the wrapped callback being consulted.
  * Docs: /docs/interfaces § "ApproveFn".
  */
 export type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalDecision>;
+
+/**
+ * One command-policy deny rule — plain project-editable data: a name (identifies the rule
+ * in the settings UI), a regex source tested against the whitespace-normalized command, an
+ * optional free-text description, and a per-rule switch.
+ * Docs: /docs/configuration § "Command policy".
+ */
+export interface CommandPolicyRule {
+  name: string;
+  /** JavaScript regex source (no flags). */
+  pattern: string;
+  /** What the rule catches (free text, shown in the settings UI). */
+  description?: string;
+  /** Per-rule switch; absent = true. */
+  enabled?: boolean;
+}
+
+/**
+ * The project sandbox command policy (the `[command_policy]` block of
+ * `.project_config.toml`, threaded into every Session the Agent creates). `Session.run`
+ * wraps the injected approval callback with it, so a hit is denied without the human being
+ * asked — under every approval mode. It is Project-owned security config, deliberately
+ * outside Agent State so the Agent cannot rewrite it. The factory rule set is seeded into
+ * new projects like model presets (copied at creation, never rewritten); an absent config
+ * or an absent `rules` list means the factory set applies, and `enabled: false` switches
+ * the whole policy off. An accident guardrail, not a security boundary — see
+ * internal/command-policy.ts for what walks past it.
+ * Docs: /docs/configuration § "Command policy".
+ */
+export interface CommandPolicyConfig {
+  /** Master switch; absent = true. */
+  enabled?: boolean;
+  /** The deny-rule list, evaluated in order; absent = the factory set (a stored empty list means no rules). */
+  rules?: CommandPolicyRule[];
+}
 
 // ---------------------------------------------------------------------------
 // LLM interface
@@ -239,6 +277,14 @@ export interface SubagentHandle {
   /** The child Session's id: the origin hop of messages produced by run; `subagent_id` is derived from its tail for the frontend to correlate. */
   sessionId: string;
   /**
+   * One-shot take of the child's origin-tagged `session_meta`: a background launch
+   * (run_subagent with `run_in_background`) forwards it synchronously so hosts learn of the
+   * child before any collect window runs; `run` then skips its own meta forwarding. Null
+   * once taken (or once `run` already sent it). Optional — older embedders' handles simply
+   * leave background launches without an upfront meta.
+   */
+  takeMeta?(): OmniMessage | null;
+  /**
    * Runs one turn of a task on the child Session. Emitted child-session messages **all already
    * carry the origin marker** (the child Session id); the first message of the first run is the
    * child Session's `session_meta`, and tool_calls received by the forwarded approval callback
@@ -331,6 +377,41 @@ export interface EnvironmentServices {
   commandSessions?: CommandSessionManager;
   /** Registry of background subagent sessions (shared by `run_subagent` / `input_subagent`); constructed and injected internally by Environment. */
   subagentSessions?: SubagentSessionManager;
+  /**
+   * Sink for background-task completion reports (`run_in_background` launches): tools arm a
+   * completion watcher that calls this when the task settles; Environment forwards it to the
+   * listener the Session attached (see EnvironmentInterface.setBackgroundTaskListener).
+   * Injected internally by Environment.
+   */
+  backgroundDone?: (event: BackgroundTaskDoneEvent) => void;
+  /**
+   * Live forwarding sink for background-launched subagents: the child's origin-tagged
+   * messages flow here the moment its pump produces them, so hosts can stream them to the
+   * frontend past the launching turn's end (display copies only — the child's own Trace is
+   * the durable record). Injected internally by Environment; forwarded to the listener the
+   * Session attached (see EnvironmentInterface.setBackgroundMessageListener).
+   */
+  backgroundForward?: (msg: OmniMessage) => void;
+}
+
+/**
+ * Completion report of one background-launched task (`exec_command` / `run_subagent` with
+ * `run_in_background`), emitted when the task settles and delivered to the Session as a
+ * harness user message (see Session's background-notice queue).
+ */
+export interface BackgroundTaskDoneEvent {
+  /** Which background family settled. */
+  kind: "command" | "subagent";
+  /** The registry handle the model holds: `process_id` or `subagent_id`. */
+  id: string;
+  /** What was launched: the command string, or the subagent prompt's first line (display only, truncated by the producer). */
+  label: string;
+  /** Terminal status of the run. */
+  status: "completed" | "failed";
+  /** One-line terminal detail (exit code / signal / subagent note); empty when there is none. */
+  detail: string;
+  /** Tail of the yet-undelivered output at settle time (capped by the producer); empty when nothing was pending. */
+  output: string;
 }
 
 /** Docs: /docs/interfaces § "ToolExecutionRequest and EnvironmentConfig". */
@@ -405,6 +486,13 @@ export interface BackgroundCommandInfo {
   cwd: string;
   startedAt: number;
   running: boolean;
+  /**
+   * The service the process serves, when one was detected: the last local URL its output
+   * printed (may carry a path), else `http://localhost:<port>` synthesized from a listen-port
+   * probe of its process group (refresh via `probeBackgroundCommandServices`). Absent when
+   * neither source has one.
+   */
+  serviceUrl?: string;
 }
 
 /**
@@ -436,7 +524,13 @@ export interface BuildInfo {
    * The one-line human identity, and the whole of `penguin version`'s output: `v0.2.3` for a
    * release, and git's own description for a source build — `v0.2.3-14-g9e8f7d6-dirty` reads
    * as fourteen commits past v0.2.3, at 9e8f7d6, with uncommitted changes. Always begins
-   * `v<version>` so any form is recognizable as a version.
+   * `v` followed by a digit, so any form reads as a version.
+   *
+   * Not necessarily `v{version}`: a tag description names the nearest reachable TAG, which
+   * during release preparation is the previous one — `VERSION` is bumped in its own commit
+   * and the new tag is created afterwards, so a build from that window truthfully reports
+   * `v0.2.3-N-g…` while `version` already reads 0.2.4. Compare `version` when you mean the
+   * release number and `describe` when you mean the position in history.
    */
   describe: string;
   /** `release` once the release workflow has stamped the build; `source` for every other build. */
@@ -525,6 +619,32 @@ export interface EnvironmentInterface {
   listBackgroundCommands?(): BackgroundCommandInfo[];
   /** Kills one background command process by id (whole process group); false when the id is unknown. Optional, like listBackgroundCommands. */
   killBackgroundCommand?(processId: string): boolean;
+  /**
+   * Whether a background subagent session is mid-round. Hosts pin a Session's runtime entry
+   * on it: a `run_in_background` child outlives the call that launched it, and evicting the
+   * Session while it works strands its completion report and live messages. Optional, like
+   * listBackgroundCommands.
+   */
+  hasRunningBackgroundSubagents?(): boolean;
+  /**
+   * Refreshes the listen-port probe behind `BackgroundCommandInfo.serviceUrl` for running
+   * sessions whose output printed no URL (TTL-cached and time-bounded per session; see
+   * command/port-probe.ts). Hosts call it before reading the list when they want probed
+   * URLs; the list itself stays synchronous. Optional, like listBackgroundCommands.
+   */
+  probeBackgroundCommandServices?(): Promise<void>;
+  /**
+   * Attaches the single listener for background-task completion reports (`run_in_background`
+   * launches). Events fired before a listener exists are buffered and flushed on attach; after
+   * `dispose()` no further events fire. Optional — environments without background tools omit it.
+   */
+  setBackgroundTaskListener?(listener: (event: BackgroundTaskDoneEvent) => void): void;
+  /**
+   * Attaches the single listener for live-forwarded background-subagent messages (see
+   * EnvironmentServices.backgroundForward). Same buffering and dispose semantics as
+   * setBackgroundTaskListener. Optional.
+   */
+  setBackgroundMessageListener?(listener: (msg: OmniMessage) => void): void;
   /** Releases runtime resources held by the environment (e.g. managed long-running command sessions); called by the host when the Session ends. Optional, idempotent. */
   dispose?(): void;
 }

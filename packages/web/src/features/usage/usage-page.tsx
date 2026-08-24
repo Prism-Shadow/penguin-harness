@@ -1,16 +1,29 @@
 /**
  * Cost and usage center:
- * top filters for Agent / Model + a date range (controls have no external
- * title, the explanation is written into the dropdown options themselves);
+ * top filters for Agent / Model + a date-range preset (trailing last hour /
+ * last 24 hours, calendar 7/30/90 days, or a custom pair of date inputs);
+ * the range alone decides the time-series precision, so there is no second
+ * control for it (controls have no external title — the explanation is
+ * written into the dropdown options themselves);
  * three summary cards (today / last 7 days / cumulative, each stat on its own row);
- * four business charts arranged two-by-two, each taking half the width — a
- * row of compositional charts (each Agent's call count pie chart, each
- * Model's success rate progress bar), and a row of time series (daily Token
- * three-segment stacked bar, daily cost line + area): Token bar width is
- * fixed at 25px, and it scrolls horizontally within the card when 30 days
- * doesn't fit the half-width; below that is a full-width "errors" panel
- * (stats + a recent-errors table).
- * Currency follows the user's settings; a row with unconfigured pricing shows its cost as "—".
+ * a 2x2 grid of time-series charts over the shared range and precision —
+ * requests + success rate broken down by Agent and, beside it, the same by
+ * Model (requests stacked on the left axis, one rate line per entity on a
+ * right 0–100% axis), then Token buckets (stacked bars + a dashed
+ * cache-hit-rate curve in front) and cost (line + points + area). Charts
+ * always fit their card — nothing scrolls; below them is a full-width
+ * "errors" panel (stats + a paged errors table). Currency follows the user's
+ * settings.
+ *
+ * Every chart draws the same buckets: compactSeries runs **once**, here, and
+ * all four are fed its result, so the grid keeps one shared x axis. It drops
+ * only the buckets where nothing at all was recorded — emptiness is a
+ * property of the interval, not of one entity in it, so a bucket any entity
+ * ran in stays and the idle entities show their zeros and dashes there. The
+ * per-entity counts arrive index-aligned with `series`, so they are
+ * re-indexed through the same `kept` list (compactCounts); one list for all
+ * of them is what keeps an entity's history from sliding onto the wrong
+ * intervals. Each chart marks the skipped intervals on its own axis.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
@@ -27,14 +40,18 @@ import { Input } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import { Skeleton } from "../../components/ui/skeleton";
 import { TrendChart } from "./trend-chart";
-import type { TokenBucketKey } from "./chart-geom";
-import { AgentPieChart, SuccessBarChart, TokenBarChart, TokenLegend } from "./usage-charts";
+import { RequestsChart, TokenBarChart, TokenLegend, type TokenLegendKey } from "./usage-charts";
+import {
+  compactCounts,
+  compactSeries,
+  presetDefaultGranularity,
+  presetRange,
+  presetTsWindow,
+  rangeDays,
+  type EntityCounts,
+  type RangePreset,
+} from "./usage-controls";
 import { ErrorsPanel } from "./errors-panel";
-
-function isoDate(d: Date): string {
-  const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
 
 /** A summary card's stat row: name on the left, value on the right — each item on its own row, so a narrow card no longer crams them into one wrapping line. */
 function SummaryRow({
@@ -133,27 +150,39 @@ export function UsagePage() {
   useEffect(() => {
     setAgentFilter(paramAgentId ?? "");
   }, [paramAgentId]);
-  const [from, setFrom] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 29);
-    return isoDate(d);
-  });
-  const [to, setTo] = useState(() => isoDate(new Date()));
+  // Date range: a trailing window (last hour / last 24 hours), a calendar
+  // preset (7/30/90 days), or a custom from/to pair — plus the time-series
+  // precision. A range change keeps the precision when the new preset still
+  // offers it, otherwise snaps to the preset's default.
+  const [preset, setPreset] = useState<RangePreset>("7d");
+  const [from, setFrom] = useState(() => presetRange("7d", new Date()).from);
+  const [to, setTo] = useState(() => presetRange("7d", new Date()).to);
+  const applyRange = (nextPreset: RangePreset, nextFrom: string, nextTo: string) => {
+    setPreset(nextPreset);
+    setFrom(nextFrom);
+    setTo(nextTo);
+  };
   const [data, setData] = useState<UsageResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // The bucket currently hovered in the legend: the legend lives in the card
-  // header (ChartCard's extra) while the bars live inside the card, so this state is lifted to this level.
-  const [tokenBucket, setTokenBucket] = useState<TokenBucketKey | null>(null);
+  // The legend / control state that lives in the card headers (ChartCard's
+  // extra) while the marks live inside the cards, lifted to this level.
+  const [tokenBucket, setTokenBucket] = useState<TokenLegendKey | null>(null);
 
   const load = useCallback(async () => {
     if (!projectId) return;
     setError(null);
     try {
+      // The trailing presets recompute their window at load time, so a reload
+      // keeps trailing "now"; the calendar presets use the stored date pair.
+      const range =
+        preset === "1h" || preset === "1d" ? presetTsWindow(preset, new Date()) : { from, to };
       const res = await api.getUsage(projectId, {
-        from,
-        to,
+        ...range,
         // The detail table has been removed, superseded by the charts above; groupBy is still a required query parameter, fixed to group by date.
         groupBy: "date",
+        // The range picks the precision — there is no separate control, and this
+        // is the only place the choice is made (see presetDefaultGranularity).
+        granularity: presetDefaultGranularity(preset, rangeDays(from, to)),
         ...(agentFilter ? { agentId: agentFilter } : {}),
         ...(modelFilter ? { provider: modelFilter.provider, modelId: modelFilter.modelId } : {}),
       });
@@ -161,7 +190,7 @@ export function UsagePage() {
     } catch (e) {
       setError(apiErrorText(e));
     }
-  }, [projectId, from, to, agentFilter, modelFilter?.provider, modelFilter?.modelId]);
+  }, [projectId, preset, from, to, agentFilter, modelFilter?.provider, modelFilter?.modelId]);
 
   useEffect(() => {
     setData(null);
@@ -194,6 +223,22 @@ export function UsagePage() {
     (summary?.last7d.hasUncosted ?? false) ||
     (summary?.total.hasUncosted ?? false);
 
+  // One compaction for the whole page (see the file header): every chart draws
+  // these buckets, and every per-entity series is re-indexed through the same
+  // kept list, so nothing can drift out of alignment with the axis.
+  const plotted = compactSeries(data?.series ?? []);
+  // The two requests charts each get one dimension's entity list, already
+  // sorted by total requests descending and arriving index-aligned with the
+  // full `series` (the server's contract) — compactCounts moves it onto the
+  // drawn buckets; the charts fold their own tails.
+  const agentEntities: EntityCounts[] = (data?.byAgentSeries ?? []).map((s) => ({
+    label: s.agentId,
+    ...compactCounts(s, plotted.kept),
+  }));
+  const modelEntities: EntityCounts[] = (data?.byModelSeries ?? []).map((s) => ({
+    label: catalogEntryFor(s.provider, s.modelId)?.displayName ?? s.modelId,
+    ...compactCounts(s, plotted.kept),
+  }));
   return (
     <div className="h-full overflow-y-auto p-4 md:p-6">
       <div className="mx-auto max-w-5xl space-y-4">
@@ -236,26 +281,53 @@ export function UsagePage() {
                 ))}
               </Select>
             </div>
-            {/* Date range: a dash between the two inputs stands in for a "from/to" label */}
-            <div className="flex items-center gap-1.5">
-              <Input
+            {/* Date range: trailing windows and quick presets, with "custom" revealing the two date inputs */}
+            <div className="w-28">
+              <Select
                 size="sm"
-                type="date"
-                aria-label={S.usage.from}
-                value={from}
-                onChange={(e) => setFrom(e.target.value)}
-              />
-              <span className="shrink-0 text-gray-400" aria-hidden>
-                –
-              </span>
-              <Input
-                size="sm"
-                type="date"
-                aria-label={S.usage.to}
-                value={to}
-                onChange={(e) => setTo(e.target.value)}
-              />
+                value={preset}
+                aria-label={S.usage.rangeLabel}
+                onChange={(e) => {
+                  const next = e.target.value as RangePreset;
+                  if (next === "7d" || next === "30d" || next === "90d") {
+                    const r = presetRange(next, new Date());
+                    applyRange(next, r.from, r.to);
+                  } else {
+                    // Trailing windows compute their bounds at load time; custom keeps the dates already picked.
+                    applyRange(next, from, to);
+                  }
+                }}
+              >
+                <option value="1h">{S.usage.rangeHour}</option>
+                <option value="1d">{S.usage.rangeDay}</option>
+                <option value="7d">{S.usage.range7d}</option>
+                <option value="30d">{S.usage.range30d}</option>
+                <option value="90d">{S.usage.range90d}</option>
+                <option value="custom">{S.usage.rangeCustom}</option>
+              </Select>
             </div>
+            {preset === "custom" && (
+              /* A dash between the two inputs stands in for a "from/to" label */
+              <div className="flex items-center gap-1.5">
+                <Input
+                  size="sm"
+                  type="date"
+                  aria-label={S.usage.from}
+                  value={from}
+                  onChange={(e) => applyRange("custom", e.target.value, to)}
+                />
+                <span className="shrink-0 text-gray-400" aria-hidden>
+                  –
+                </span>
+                <Input
+                  size="sm"
+                  type="date"
+                  aria-label={S.usage.to}
+                  value={to}
+                  onChange={(e) => applyRange("custom", from, e.target.value)}
+                />
+              </div>
+            )}
           </div>
         </div>
 
@@ -274,26 +346,46 @@ export function UsagePage() {
           </div>
         )}
 
-        {/* Four business charts two-by-two, each taking half width: a row of
-            compositional charts (pie chart / success rate), a row of time
-            series (daily Token / daily cost). Token bar width fixed at 25px, scrolls horizontally within the card when 30 days doesn't fit the half-width */}
+        {/* Time-series charts, all over the shared range + precision: requests +
+            success rate by Agent and by Model on the first row, Token buckets +
+            cache hit rate and cost on the second. Charts always fit their card — nothing scrolls. */}
         {data ? (
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-            <ChartCard title={S.usage.chartAgentCalls}>
-              <AgentPieChart data={data.byAgent} />
+            <ChartCard title={S.usage.chartRequestsByAgent}>
+              <RequestsChart
+                series={plotted.points}
+                entities={agentEntities}
+                granularity={data.granularity}
+                breaks={plotted.breaks}
+              />
             </ChartCard>
-            <ChartCard title={S.usage.chartSuccessRate}>
-              <SuccessBarChart data={data.success} />
+            <ChartCard title={S.usage.chartRequestsByModel}>
+              <RequestsChart
+                series={plotted.points}
+                entities={modelEntities}
+                granularity={data.granularity}
+                breaks={plotted.breaks}
+              />
             </ChartCard>
-            {/* The legend lives in the card header, the bars live inside the card: the hover-linked bucket state is lifted to this level to be shared */}
+            {/* The Token legend lives in its card header while its marks live inside the card, so that state is lifted to this level */}
             <ChartCard
               title={S.usage.chartTokenTrend}
               extra={<TokenLegend active={tokenBucket} onHover={setTokenBucket} />}
             >
-              <TokenBarChart trend={data.trend} legend={tokenBucket} />
+              <TokenBarChart
+                series={plotted.points}
+                granularity={data.granularity}
+                legend={tokenBucket}
+                breaks={plotted.breaks}
+              />
             </ChartCard>
             <ChartCard title={S.usage.chartCostTrend}>
-              <TrendChart points={data.trend} currency={currency} />
+              <TrendChart
+                series={plotted.points}
+                granularity={data.granularity}
+                currency={currency}
+                breaks={plotted.breaks}
+              />
             </ChartCard>
           </div>
         ) : (

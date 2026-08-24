@@ -21,5 +21,5 @@ export type {
   Resources,
 } from "./boot.js";
 export { boot, BootError, initialDoc } from "./boot.js";
-export type { UpgradeBlocked, UpgradeResult } from "./upgrade.js";
+export type { UpgradeBlocked, UpgradeFailed, UpgradeResult } from "./upgrade.js";
 export { upgrade } from "./upgrade.js";

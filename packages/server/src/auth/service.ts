@@ -17,7 +17,7 @@ import type { UserInfo } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import type { AuthSessionsRepo } from "../db/repos/auth-sessions.js";
 import type { UserRow, UsersRepo } from "../db/repos/users.js";
-import { hashPassword, verifyPassword } from "./password.js";
+import { SCRYPT_COST, hashPassword, verifyPassword } from "./password.js";
 
 export const MIN_PASSWORD_LENGTH = 8;
 
@@ -89,14 +89,31 @@ export interface AuthServiceDeps {
   onPasswordChanged?: (userId: string) => void;
   sessionTtlMs: number;
   sessionRenewMs: number;
+  /**
+   * Test double: scrypt work factor for hashes this service writes. Omitted in
+   * production, where {@link SCRYPT_COST} applies.
+   */
+  passwordHashCost?: number;
   now?: () => Date;
 }
 
 export class AuthService {
+  /**
+   * What a fresh user is provisioned with is business policy, answered by the CURRENT
+   * App: the platform installs its answer at create over the claimed auth capability
+   * (ordinary capability use, not a registry entry), and each swap's successor overwrites
+   * it. Starts as the constructor-supplied fallback so standalone/test constructions
+   * keep working unchanged.
+   */
+  private provisioner: (user: UserRow, isAdmin: boolean) => Promise<void>;
+
   private readonly now: () => Date;
+  private readonly hashCost: number;
 
   constructor(private readonly deps: AuthServiceDeps) {
+    this.provisioner = deps.provisionInitialProject;
     this.now = deps.now ?? (() => new Date());
+    this.hashCost = deps.passwordHashCost ?? SCRYPT_COST;
   }
 
   /**
@@ -121,19 +138,24 @@ export class AuthService {
     }
     const user: UserRow = {
       userId: ADMIN_USER_ID,
-      passwordHash: await hashPassword(password),
+      passwordHash: await hashPassword(password, this.hashCost),
       isAdmin: true,
       passwordIsInitial: true,
       createdAt: this.now().toISOString(),
     };
     this.deps.users.insert(user);
     try {
-      await this.deps.provisionInitialProject(user, true);
+      await this.provisioner(user, true);
     } catch (err) {
       this.deps.users.delete(user.userId);
       throw err;
     }
     return password;
+  }
+
+  /** Installs the current App's provisioning policy (see the `provisioner` field). */
+  setProvisioner(provision: (user: UserRow, isAdmin: boolean) => Promise<void>): void {
+    this.provisioner = provision;
   }
 
   /** Whether the built-in admin still runs on its initial password (drives the startup reminder notice). */
@@ -205,7 +227,7 @@ export class AuthService {
     if (newPassword.length < MIN_PASSWORD_LENGTH) {
       throw new HttpError(400, "invalid_password", "Password must be at least 8 characters.");
     }
-    this.deps.users.updatePassword(userId, await hashPassword(newPassword), false);
+    this.deps.users.updatePassword(userId, await hashPassword(newPassword, this.hashCost), false);
     this.deps.onPasswordChanged?.(userId);
   }
 
@@ -219,7 +241,7 @@ export class AuthService {
     if (newPassword.length < MIN_PASSWORD_LENGTH) {
       throw new HttpError(400, "invalid_password", "Password must be at least 8 characters.");
     }
-    this.deps.users.updatePassword(userId, await hashPassword(newPassword), false);
+    this.deps.users.updatePassword(userId, await hashPassword(newPassword, this.hashCost), false);
     this.deps.onPasswordChanged?.(userId);
   }
 

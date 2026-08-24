@@ -6,12 +6,17 @@
  * folder plus the open folder's own rows, never the whole catalog. Adding an example means
  * appending it to the folder it belongs to, not lengthening the page.
  *
- * Keep the folders similarly sized: the draft page reserves no scroll area for this block, so
- * a folder much longer than its siblings is what would make the height jump between them.
+ * Keep the folders within one row of each other (3–4 examples each today): the draft page
+ * reserves no scroll area for this block, so its height is the folder rows plus the open
+ * folder's rows — a folder much longer than its siblings is what would make that height jump
+ * as folders are switched. The draft screen appends one more folder that this registry does not
+ * describe — the user's own saved shortcuts, whose length is theirs and not ours; it is exempt
+ * from the rule by capping how many shortcuts it holds, not by scrolling (shortcuts-folder.tsx).
  *
- * Copy and full prompts live in the active locale dictionary at `S.chat.exampleFolders[id]`
- * and `S.chat.exampleTasks[id]`. Skills listed here are pinned only when the selected Agent has
- * them installed; an empty list sends the prompt unchanged.
+ * Copy and prompts live in the active locale dictionary at `S.chat.exampleFolders[id]` and
+ * `S.chat.exampleTasks[id]`, which is also where the rule for how long a prompt may get is
+ * stated. Skills listed here are preselected in the composer only when the selected Agent has
+ * them installed; an empty list fills the prompt alone.
  */
 export const EXAMPLE_FOLDERS = [
   {
@@ -20,14 +25,24 @@ export const EXAMPLE_FOLDERS = [
       { id: "game", skills: ["web-design"] },
       { id: "gamecenter", skills: ["web-design"] },
       { id: "lol", skills: ["web-design"] },
+      { id: "rhythmRunner", skills: ["web-design"] },
     ],
   },
   {
     id: "agents",
     tasks: [
+      { id: "investmentCopilot", skills: ["penguin-sdk", "web-design"] },
       { id: "rag", skills: ["penguin-sdk", "web-design"] },
       { id: "agentBenchmarkBuild", skills: [] },
       { id: "agentOptimization", skills: [] },
+    ],
+  },
+  {
+    id: "schedules",
+    tasks: [
+      { id: "dailyPlan", skills: [] },
+      { id: "githubDigest", skills: [] },
+      { id: "memoryReview", skills: [] },
     ],
   },
 ] as const;

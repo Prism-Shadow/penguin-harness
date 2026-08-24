@@ -20,6 +20,7 @@ CLI 与服务端启动时会自动加载工作目录下的 `.env` 文件。
 | `PENGUIN_SEED_ADMIN_PASSWORD` | 固定内置管理员的种子初始密码（自动化测试 / e2e 使用） | 未设置，种子时随机生成 `penguin-<四位数字>` 并打印一次 |
 | `PENGUIN_LANG` | CLI 语言（`en` / `zh`），用 `penguin config lang` 设置 | `en` |
 | `PENGUIN_UPDATE_CHECK` | 设为 `off` 关闭 Web 应用的新版本检查（服务端唯一的对外网络请求） | 开启 |
+| `PENGUIN_NO_LOGIN_SHELL_ENV` | 任意非空值可禁止桌面版在 macOS/Linux 图形界面启动时导入登录 shell 环境变量（见[桌面版速上手](/quickstart-desktop)） | 未设置，导入开启，且只补启动环境中缺失的变量 |
 
 这些变量配置的是 PenguinHarness 自身，因此 `PORT`、`HOST`、`PENGUIN_WEB_DIST` 以及内部使用的 `PENGUIN_CLI_ENTRY` **不会出现在 Agent 所执行命令的环境变量中**——否则 `exec_command` 启动的开发服务器会读到 `PORT`，去占用留给 PenguinHarness 的端口，而不是自己另选一个。宿主环境中的其余变量原样透传，但还有一处例外：`GIT_EDITOR`、`GIT_TERMINAL_PROMPT`、`TERM`、`NO_COLOR`、`PAGER`、`GIT_PAGER` 一律被固定值覆盖，以免命令因等待编辑器、凭证输入或分页器而挂起。Agent 的 [vault](#vault) 覆盖在宿主环境之上——在 vault 里设置 `PORT` 仍然可以送达命令——但覆盖不了这六个变量。
 
@@ -50,6 +51,7 @@ openrouter、fireworks、siliconflow、qwen-token-plan、qwen-pay-as-you-go 与 
 | `name` | Project 展示名（缺省显示 id） |
 | `default_model` | 缺省模型的成对引用 `{ provider, model_id }`，必须指向 `models` 中的条目 |
 | `vision_model` | 代读图片的视觉模型（供纯文本模型的 `describe_image` 使用），成对引用 |
+| `[command_policy]` | 沙箱安全策略：针对 shell 命令的拒绝规则，先于审批模式生效——见[沙箱安全策略](#沙箱安全策略) |
 | `[[models]]` | 可用模型条目列表 |
 
 模型条目（`[[models]]`）字段：
@@ -90,6 +92,46 @@ output = 0.857143
 
 该文件通过 CLI `penguin config model …` 或 Web 的 Models 页面修改——服务运行期间不要手工编辑，模型本身则永远无权读写它。
 
+### 沙箱安全策略
+
+`[command_policy]` 块是 Project 级的 shell 命令沙箱护栏：一组拒绝规则，在审批边界本身对两个能碰到 shell 的工具生效——`exec_command` 的 `cmd`（启动命令）与 `input_command` 的 `chars`（敲进已运行命令的内容）——`Session.run` 用它包装注入进来的审批回调，命中即在宿主被问到之前拒绝，任何审批模式（包括全部放行）都不能放过它，模型收到固定文案 `Tool call denied by policy.`——与人工取消可区分——从而换路。策略放在 Project 配置而不是 Agent State：Agent 改自己的配置改不到它，且每个 Session 在创建时读取快照，运行中改动要到下次加载才生效。它不是文件系统权限——能写任意路径的工具照样能改写配置文件本身。
+
+规则是**纯数据，没有特殊层级**：出厂规则集像模型预设一样播种进每个新项目——创建时拷入、之后绝不自动改写——此后每条规则都可编辑、停用、删除，也可新增。播种之前的存量项目（未存 `rules` 列表）在首次保存编辑前按出厂集生效，首次保存即把列表物化进文件；设置页的「恢复默认」把出厂集读回编辑区，由 Save 落盘。
+
+| 字段 | 说明 |
+| --- | --- |
+| `enabled` | 总开关；缺省 = **启用**（仅在关闭时落盘 `enabled = false`） |
+| `[[command_policy.rules]]` | 拒绝规则列表，按顺序匹配：`name`（在设置页标识该规则）+ `pattern`（JavaScript 正则源码，对空白归一化后的命令做匹配）+ 可选 `description` + 每条 `enabled`（缺省 = 启用）。存储空列表 = 没有规则；缺失列表 = 出厂集 |
+
+出厂规则集刻意保持很小——只收录一旦照原样执行就不可挽回的命令：同时带递归与强制标志的 `rm`、`mkfs`、`dd` 直写块设备、经典 fork bomb、以及重定向写入块设备（`/dev/null` 等仍然合法）。另有四条是同样这五条的 Windows 对应写法（`exec_command` 在 Windows 上会解析到 pwsh 或 cmd）：递归强制删除（`Remove-Item -Recurse -Force`、`rd /s /q`）、格式化卷（`format C:`、`Format-Volume`）、裸盘覆写（`\\.\PhysicalDriveN`、`Clear-Disk`）、以及 cmd 版 fork bomb。
+
+匹配会先把常规写法归一化再套规则，免得平常的敲法平白漏过去：带路径（`/bin/rm`）、带前缀命令（`sudo`、`env`、`command`、`nice`、`xargs`）、给命令词加引号或反斜杠转义（`"rm"`、`r''m`、`\rm`）、以及字面量形式的 `sh -c 'rm -rf /'` 都会命中。归一化只做一件事：去掉引号标记——不展开、不替换、不解码。
+
+```toml
+[command_policy]
+enabled = true
+
+[[command_policy.rules]]
+name = "rm-recursive-force"
+pattern = "…" # 播种自出厂集
+description = "rm with recursive + force flags in one command (rm -rf and friends)"
+
+[[command_policy.rules]]
+name = "no-force-push"
+pattern = "git push [^;|&]*--force"
+enabled = false
+```
+
+这是**防事故的护栏，不是安全边界**——这句话讲的是模式匹配本身能做到什么，而不是对这份实现的谦辞。shell 是一门编程语言，靠在程序跑起来之前读它的文本来判断它会做什么，不是加规则就能逼近的事。所以策略覆盖的是人和模型真正会敲出来的写法，到此为止：
+
+- **运行期才拼出来的命令不在覆盖范围内，将来也不会在。** 用 `$IFS` 代替空格、走变量或别名（`X=rm; $X -rf /`）、命令替换、`eval`、base64 喂给 shell、`python -c`、经管道进入的解释器。每一条都要一个从此长期维护的模式，换来的只是覆盖的表象。存心要让命令跑起来的人，总能让它跑起来。
+- **MCP 工具是另一个面。** 本策略只读 `exec_command` 与 `input_command`。MCP Server 自己的 `permission` 等级是那边现有的旋钮，但依赖它之前先看清它做什么：它只决定该 Server 的工具向审批模式报告哪个等级，仅此而已——不隔离 Server，也不限制其工具运行时能做什么（见[工具与审批](/tools)）。把匹配 shell 文本的正则伸进任意 MCP 参数，只会给一个需要真控制的面再加一层更弱的控制。
+- **不在名单上的命令。** `shred`、`wipefs`、`find -delete`、`git clean -xfd`、`chmod -R 000 /` 都不匹配任何出厂规则——名单是刻意保持小的。项目在意什么，就自己加规则。
+
+它换来的是：毁灭性单行命令不会被误跑——模型碰到 shell 的两条路都算，POSIX 与 Windows 两种写法都算，任何审批模式下都算。这是一道减速带，而在不可逆的命令前面，减速带是值得有的。要真正的边界——一个无论跑什么都碰不到文件系统其余部分的进程——机制是进程隔离（bubblewrap、dsh），那是另一层，本策略与之互补而非替代。
+
+在 Web App Project 设置的「安全策略」页管理（仅 owner 可改；成员只读展示生效策略）。
+
 ## Agent 配置
 
 `agent_state/system_config.yaml` 定义单个 Agent 的行为（YAML；经 Web UI 编辑时保留注释）：
@@ -105,7 +147,7 @@ output = 0.857143
 | `model.max_tokens` | `32000` | 单次输出 Token 天花板（-1 不设上限，用服务商默认）；每次请求会把实际值收敛到模型 `context_window` 减估算输入以内，小窗口模型不会被索要放不下的输出 |
 | `model.thinking_level` | `medium` | `none` / `low` / `medium` / `high` / `xhigh` / `max`；作为会话默认档位，可被逐轮 Task 参数覆盖 |
 | `model.timeoutMs` | `120000` | 单次 Request 超时（毫秒） |
-| `compaction.max_context_length` | `128000` | 触发压缩的上下文 Token 阈值；生效阈值不超过模型 `context_window` − 2048，压缩在小窗口溢出之前触发 |
+| `compaction.max_context_length` | `256000` | 触发压缩的上下文 Token 阈值；生效阈值取它与模型 `context_window` − 2048 中的较小者，故小窗口模型在自己的窗口内压缩，窗口大于 258048 时则在该数值处触发（条目未配置 `context_window` 时按 128000 的假定窗口计） |
 | `compaction.max_session_turns` | `-1` | Session 累计轮数阈值（`-1` 不限制） |
 | `compaction.mode` | `summarize` | `summarize` / `discard` |
 | `compaction.prompt` | 内置模板 | summarize 压缩使用的 Prompt |
@@ -119,7 +161,7 @@ output = 0.857143
 | `schedules.enabled` | `true` | 定时任务小节是否进入上下文（关闭后 server 照常触发任务，只是模型不了解任务体系） |
 | `schedules.prompt` | 内置模板 | `{{SCHEDULES}}` 区块内容，可在定时任务标签页编辑——教模型用文件工具管理任务，含 `{{SCHEDULE_LIST}}` |
 | `tools.builtin` | 缺省时为完整默认工具集 | 工具条目：`name` / `description` / `parameters` / `permission`（`r` 或 `rw`）/ `forModel` / `timeoutMs` / `maxOutputLength` / `call_description`（条目级开关：控制 `description` 调用参数，开启时为必填，缺省保留）；一旦写出即整体替换默认列表 |
-| `tools.mcpServers` | `[]` | MCP Server 配置（`name` + `config`）：transport 取 `stdio` / `http` / `sse`，工具以 `mcp__<server>__<tool>` 并入工具集，详见[工具与审批](/tools)的 MCP Server 一节 |
+| `tools.mcpServers` | `[]` | MCP Server 配置（`name` + `config`）：transport 取 `stdio` / `http` / `sse`，工具以 `mcp__<server>__<tool>` 并入工具集；`config.permission`（`auto` / `r` / `rw`，缺省 `auto`）固定该 Server 全部工具的审批等级，不再采信其 `readOnlyHint`；详见[工具与审批](/tools)的 MCP Server 一节 |
 
 工具权限与审批语义见[工具与审批](/tools)。
 
@@ -143,7 +185,7 @@ model:
   timeoutMs: 120000
 
 compaction:
-  max_context_length: 128000
+  max_context_length: 256000
   max_session_turns: -1
   mode: summarize
 
@@ -234,7 +276,7 @@ updated_at: 2026-08-07
 - 集成测试必须连接真实数据库，不使用 mock repository。
 ```
 
-frontmatter 只有这三个字段——记忆属于哪一层由所在目录表达，不设 `type` 字段（早期文件里残留的 `type:` 行会被当作未知字段忽略）。值得保存的是：用户是谁（角色、专长、长期偏好）以及希望 agent 如何工作（连同原因）；无法仅从代码推导的决策、约束与计划；外部系统、文档与服务的稳定入口。记错的主题连同其索引行一并删除；日期写绝对日期（`YYYY-MM-DD`），相对日期对后续 Session 没有意义。不应保存：可从代码、配置或 Git 历史直接获得的事实；短期任务进度与调试流水；凭据、Token 等敏感值；未经确认的推测；大段对话原文。
+frontmatter 只有这三个字段——记忆属于哪一层由所在目录表达，不设 `type` 字段（早期文件里残留的 `type:` 行会被当作未知字段忽略）。值得保存的是：用户是谁（角色、专长、长期偏好）以及希望 agent 如何工作（连同原因）；无法仅从代码推导的决策、约束与计划；外部系统、文档与服务的稳定入口。提示词还点明了这类事实出现的时机——同一诉求被再次提出、以超出当前任务的方式纠正某项结果、反复讲到的习惯或开发实践、以及交代过一次、否则还要再问一遍的可复用工作信息。「重复」是强信号而非硬性条件，长期偏好只讲一次同样成立；拿不准是否值得记住时，agent 会在对话里直接询问用户。记错的主题连同其索引行一并删除；日期写绝对日期（`YYYY-MM-DD`），相对日期对后续 Session 没有意义。不应保存：可从代码、配置或 Git 历史直接获得的事实；短期任务进度与调试流水；凭据、Token 等敏感值；未经确认的推测；大段对话原文。
 
 每份 `MEMORY.md` 一行列一条记忆——`- [标题](file.md) — 一句钩子`，链接相对本作用域目录——并与记忆文件同轮更新，两者永不脱节。
 

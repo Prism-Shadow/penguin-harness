@@ -74,7 +74,7 @@ A Task consists of consecutive Requests (turns). Each turn:
 5. when the LLM stream ends, its final `token_usage` is emitted and `request_end(status)` follows at once — **without waiting for tools**: still-running tools may emit output after `request_end`;
 6. once the whole batch is terminal, tool results are **reordered to the original call order** and become the next turn's input — the next Request never fires before that.
 
-The Task ends when a turn produces no `tool_call`. A denial produces a synthetic `aborted` tool output ("Tool call denied by user.") that the model reacts to.
+The Task ends when a turn produces no `tool_call`. A denial produces a synthetic `aborted` tool output the model reacts to — "Tool call denied by user.", or "Tool call denied by policy." when the decision is the [command policy](/configuration#command-policy)'s `forbidden` (see [ApproveFn](/interfaces#approvefn)).
 
 ## Interruption and carry-over
 
@@ -122,7 +122,7 @@ Three triggers (`compaction_begin.reason`):
 
 | reason | Condition |
 | --- | --- |
-| `context` | last turn's `token_usage.request.total` ≥ `maxContextLength` (default 128000; the effective threshold is capped at the model's `context_window` − 2048, so a small-window model — a 32k local vLLM, say — compacts at ~30.7k instead of overflowing the window first; an entry without `context_window` derives from the assumed 128000 default) |
+| `context` | last turn's `token_usage.request.total` ≥ `maxContextLength` (default 256000; the effective threshold is the smaller of that and the model's `context_window` − 2048, so a 32k local vLLM compacts at ~30.7k instead of overflowing the window first while a 1M-window model fires at the configured 256000; an entry without `context_window` derives from an assumed 128000 window, i.e. ~126k) |
 | `turns` | Session turn count ≥ `maxSessionTurns` (default -1 = unlimited) |
 | `manual` | the user runs `/compact` or calls `session.compact()` |
 

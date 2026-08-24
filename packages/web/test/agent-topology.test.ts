@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   approvalDecision,
   assistantText,
+  buildBackgroundTaskDoneMessage,
   imageUrlMessage,
   sessionMeta,
   toolCall,
@@ -37,6 +38,7 @@ import {
   latestTaskStart,
   layoutTopology,
   modelAtOrigin,
+  modelTaskStartCount,
   NODE_H,
   NODE_W,
   PAD,
@@ -492,5 +494,111 @@ describe("layoutTopology", () => {
     expect(layout.nodes).toHaveLength(1);
     expect(layout.edges).toHaveLength(0);
     expect(layout.height).toBe(PAD * 2 + NODE_H);
+  });
+});
+
+describe("background subagents in the topology", () => {
+  const LAUNCH = (id: string) =>
+    `[subagent running in background with subagent_id ${id}; its completion will arrive as a user message — no need to poll. Use input_subagent to interact or kill_subagent to stop it]`;
+  const DONE = (id: string) =>
+    buildBackgroundTaskDoneMessage(
+      { kind: "subagent", id, status: "completed", detail: "" },
+      "Background subagent finished",
+    );
+
+  /** A run_in_background spawn: meta forwarded at launch, then the card completes immediately with the launch note. */
+  function spawnBackground(m: StreamModel, toolCallId: string, sessionId: string, id: string) {
+    pushMessage(m, toolCall({ name: "run_subagent", arguments: '{"prompt":"bg"}', toolCallId }));
+    pushMessage(m, approvalDecision("allow", toolCallId));
+    pushMessage(m, withOrigin(meta(sessionId), sessionId));
+    pushMessage(m, toolCallOutput({ output: LAUNCH(id), toolCallId }));
+  }
+
+  it("stays running after its card completes, and settles on the completion notice without leaving the panel scope", () => {
+    const m = createStreamModel();
+    pushMessage(m, userText("go"));
+    spawnBackground(m, "t1", "session-child-12ab34cd", "subagent-12ab34cd");
+    let nodes = extractTopology(m, "root", false);
+    expect(nodes).toHaveLength(2);
+    expect(nodes[1]).toMatchObject({ sessionId: "session-child-12ab34cd", running: true });
+
+    // The harness notice starts a chat Task but not a panel scope: the child stays in the
+    // slice and reads settled.
+    pushMessage(m, userText(DONE("subagent-12ab34cd")));
+    nodes = extractTopology(m, "root", false);
+    expect(nodes).toHaveLength(2);
+    expect(nodes[1]!.running).toBe(false);
+  });
+
+  it("idle polls and kill notes settle it; a follow-up round's still-running note flips it back", () => {
+    const m = createStreamModel();
+    pushMessage(m, userText("go"));
+    spawnBackground(m, "t1", "session-child-99aa88bb", "subagent-99aa88bb");
+    pushMessage(m, toolCall({ name: "input_subagent", arguments: "{}", toolCallId: "t2" }));
+    pushMessage(m, approvalDecision("allow", "t2"));
+    pushMessage(
+      m,
+      toolCallOutput({
+        output:
+          "[subagent idle with subagent_id subagent-99aa88bb; send a follow-up prompt to continue]",
+        toolCallId: "t2",
+      }),
+    );
+    expect(extractTopology(m, "root", false)[1]!.running).toBe(false);
+
+    pushMessage(m, toolCall({ name: "input_subagent", arguments: "{}", toolCallId: "t3" }));
+    pushMessage(m, approvalDecision("allow", "t3"));
+    pushMessage(
+      m,
+      toolCallOutput({
+        output: "[subagent still running with subagent_id subagent-99aa88bb]",
+        toolCallId: "t3",
+      }),
+    );
+    expect(extractTopology(m, "root", false)[1]!.running).toBe(true);
+  });
+
+  it("taskStartCount and latestTaskStart ignore completion notices", () => {
+    const m = createStreamModel();
+    pushMessage(m, userText("go"));
+    pushMessage(m, userText(DONE("subagent-0011aabb")));
+    expect(taskStartCount(m.items)).toBe(1);
+    expect(latestTaskStart(m.items)).toBe(0);
+    // The model's own count still sees both: the notice DID open a Task there (and zeroed the
+    // per-Task usage buckets), which is what the header's cost fold keys on.
+    expect(modelTaskStartCount(m.items)).toBe(2);
+  });
+
+  it("a steered notice settles the child too, and counts as a task start nowhere", () => {
+    const m = createStreamModel();
+    pushMessage(m, userText("go"));
+    spawnBackground(m, "t1", "session-child-55cc66dd", "subagent-55cc66dd");
+    // The engine-injected form: delivery: steering on the block, arriving mid-run.
+    pushMessage(
+      m,
+      userText(
+        buildBackgroundTaskDoneMessage(
+          {
+            kind: "subagent",
+            id: "subagent-55cc66dd",
+            status: "completed",
+            detail: "",
+            delivery: "steering",
+          },
+          "Background subagent finished",
+        ),
+        "harness",
+      ),
+    );
+    // The reducer keeps it inside the Task as its own item kind; the terminal-state scan
+    // still reads the handle off it, so the node settles.
+    expect(m.items.some((i) => i.kind === "background_notice")).toBe(true);
+    const nodes = extractTopology(m, "root", false);
+    expect(nodes).toHaveLength(2);
+    expect(nodes[1]!.running).toBe(false);
+    // Steered delivery starts nothing: not a panel scope, and not a reducer Task either —
+    // modelTaskStartCount stays 1:1 with the reducer's startTask calls by not counting it.
+    expect(taskStartCount(m.items)).toBe(1);
+    expect(modelTaskStartCount(m.items)).toBe(1);
   });
 });

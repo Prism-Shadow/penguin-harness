@@ -189,9 +189,20 @@ describe("composeDescribe", () => {
     expect(composeDescribe("0.2.3", null)).toBe("v0.2.3");
   });
 
-  it("always produces something recognizable as a version", () => {
-    for (const described of [null, "v0.2.3", "v0.2.3-1-gabc-dirty", "abc1234", "abc1234-dirty"]) {
-      expect(composeDescribe("0.2.3", described)).toMatch(/^v0\.2\.3/);
+  it("keeps git's tag even when it names an earlier version than the constant", () => {
+    // The release-preparation window: `release: X.Y.Z` bumps VERSION in its own commit and
+    // the tag is created afterwards, so a build from that window has VERSION 0.2.4 while
+    // the nearest reachable tag is still v0.2.3. Git's answer is the truthful one — it
+    // states where in history this build sits — so it is passed through unchanged rather
+    // than rewritten to agree with the constant.
+    expect(composeDescribe("0.2.4", "v0.2.3-52-g9e8f7d6")).toBe("v0.2.3-52-g9e8f7d6");
+  });
+
+  it("always produces something that reads as a version", () => {
+    // `v` and a digit is the guarantee across every input — not `v${version}`, which only
+    // the two composed forms can promise.
+    for (const described of [null, "v0.2.3", "v0.1.0-1-gabc-dirty", "abc1234", "abc1234-dirty"]) {
+      expect(composeDescribe("0.2.3", described)).toMatch(/^v\d/);
     }
   });
 });

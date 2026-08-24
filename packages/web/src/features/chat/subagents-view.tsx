@@ -8,7 +8,7 @@
  *
  * Which Task: the LATEST by default (toolbar open / session switch — a new Task then resets
  * the graph to its own agents as it streams); a chip click pins `taskScope` to that chip's
- * Task instead (use-subagents-panel.ts), so a chip on an older turn shows that turn's
+ * Task instead (the chat page's subagentTaskScope), so a chip on an older turn shows that turn's
  * HISTORICAL graph via extractTopologyForChild — falling back to the latest Task when the
  * anchor is no longer referenced (e.g. a resync swapped the model).
  *
@@ -20,12 +20,16 @@
  * highlighted node.
  */
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import type { StreamModel } from "../../lib/omni/stream-model";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { EmptyState } from "../../components/ui/empty-state";
+import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { StatusIcon } from "../../components/ui/status-icon";
+import { ICON_SIZE } from "../../lib/icon-scale";
+import { noteSessionSeen } from "../../lib/session-seen";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import {
@@ -63,11 +67,12 @@ export function SubagentsView({
   /** Main-session render context (origin []): the child conversation derives its own from it. */
   ctx: StreamRenderContext;
   focusRequest: Selection | null;
-  /** Displayed Task scope (see use-subagents-panel.ts): null = latest; an anchor pins the historical Task containing that child. */
+  /** Displayed Task scope (the chat page's subagentTaskScope): null = latest; an anchor pins the historical Task containing that child. */
   taskScope: { anchorSessionId: string } | null;
 }) {
-  const { agents } = useProject();
+  const { agents, setCurrentAgentId } = useProject();
   const { sessions } = useSessions();
+  const navigate = useNavigate();
   const [selected, setSelected] = useState<Selection | null>(null);
 
   // A chip click focuses that child (fresh-object identity: re-clicking the same chip re-fires).
@@ -124,6 +129,21 @@ export function SubagentsView({
   const childCtx: StreamRenderContext | null = active
     ? { ...ctx, origin: active.origin, taskRunning: activeRunning }
     : null;
+
+  /**
+   * Jump to the selected subagent's own Session in the chat area. Subagent runs register
+   * as Sessions (session_created over the parent's channel), so the child opens with the
+   * full chat surface — its own composer, panels and history. Mirrors the sidebar's
+   * openSession: the seen marker is stamped and the current Agent follows the child's.
+   */
+  const openAsSession = (): void => {
+    if (!active) return;
+    const row = sessions.find((s) => s.sessionId === active.sessionId);
+    if (row) noteSessionSeen(row.projectId, row.sessionId, row.lastActiveAt);
+    const agentId = row?.agentId ?? activeModel?.meta?.agentId ?? null;
+    if (agentId !== null) setCurrentAgentId(agentId);
+    navigate(`/chat/${active.sessionId}`);
+  };
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -184,6 +204,21 @@ export function SubagentsView({
             {activeRunning && (
               <StatusIcon state="running" size={10} label={S.chat.subagentRunning} />
             )}
+            <span className="min-w-0 flex-1" />
+            {/* Jump out of the panel: the child conversation as a full Session. */}
+            <button
+              type="button"
+              title={S.subagentPanel.openAsSession}
+              aria-label={S.subagentPanel.openAsSession}
+              data-testid="subagent-open-session"
+              onClick={openAsSession}
+              className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+            >
+              <GlyphIcon
+                d="M14 4h6v6M20 4l-8 8M10 6H5a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5"
+                size={ICON_SIZE.rowLead}
+              />
+            </button>
           </div>
           <div className="min-h-0 flex-1">
             {/* Keyed by child: switching nodes resets scroll-follow instead of carrying the old position over. */}

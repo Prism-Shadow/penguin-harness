@@ -31,7 +31,7 @@ import { unsafePlaintextTarget } from "./deploy-target-safety.mjs";
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const WEB_DIST = path.join(ROOT, "packages", "web", "dist");
-const PLATFORM_ENTRY = path.join(ROOT, "packages", "server", "src", "platform", "entry.ts");
+const PLATFORM_ENTRY = path.join(ROOT, "packages", "server", "src", "hmr", "entry.ts");
 const CLI_ENTRY = path.join(ROOT, "packages", "cli", "src", "index.ts");
 const PLATFORM_BUNDLE = path.join(os.tmpdir(), `penguin-deploy-platform-${process.pid}.mjs`);
 const CLI_BUNDLE = path.join(os.tmpdir(), `penguin-deploy-cli-${process.pid}.mjs`);

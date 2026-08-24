@@ -3,19 +3,24 @@
  * Project switcher -> new chat (default_agent draft) + page nav (Agents → Evaluation Center,
  * one collapsible group behind a nav-row-wide chevron button under its last entry: arrow
  * up = click to collapse, arrow down while collapsed = the way back; state persists in
- * localStorage, the pinned new-chat block never collapses) -> Session area with two grouping modes (a small toggle in the section header; the
+ * localStorage, the pinned new-chat block never collapses) -> Session area with three grouping
+ * modes (chosen in the section header's list options; the
  * choice and each Project's group collapse and pin state persist in localStorage): by Workspace
  * (the default; groups loaded Sessions by their
  * Workspace path, temporary workspaces merged into one trailing group, header "+" starts a
- * draft in that Workspace) or by Agent (group header = Agent name + new chat + Agent settings;
- * shows all Agents, including empty groups). Groups can be pinned via the header's hover pin
- * toggle: pinned groups sort before unpinned within their mode, keeping each partition's own
- * order. Conversations can be pinned too (row context menu; persisted per Project in
+ * draft in that Workspace), by Agent (group header = Agent name + new chat + Agent settings;
+ * shows all Agents, including empty groups), or by time (last day / last month / earlier,
+ * bucketed on last activity; the buckets span every Agent, so the Subagents / Scheduled /
+ * Archived folders and the paging row sit below them as one Project-wide set). Groups can
+ * be pinned via the header's hover pin toggle: pinned groups sort before unpinned within
+ * their mode, keeping each partition's own order — the time buckets excepted, whose order
+ * IS the timeline and which therefore carry no pin. Conversations can be pinned too (row
+ * context menu; persisted per Project in
  * localStorage): pinned rows bubble to the top of their group's active list. Each row's
  * trailing slot shows the compact last-active time at rest and swaps to archive + delete
  * icon buttons on hover/focus; the full set (pin, rename, archive, delete) opens as a
  * context menu on right-click, Shift+F10, or a press-and-hold on touch
- * -> bottom user config (theme / language / logout).
+ * -> bottom user config (theme / language / System settings / logout).
  * Desktop keeps it pinned as the left column; mobile puts the whole thing in a drawer.
  * New chats always enter draft state (/chat/new, route state specifies the Agent and optionally
  * the Workspace): Model / Workspace / approval mode are all chosen on the draft input card, so
@@ -32,29 +37,28 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { formatMonthDay, formatRelativeShort } from "../../lib/format";
+import { formatRelativeShort } from "../../lib/format";
 import { sessionRowActivity } from "../../lib/session-activity";
 import type { SessionActivity } from "../../lib/session-activity";
 import { forgetSession, noteSessionSeen, useSessionSeen } from "../../lib/session-seen";
 import { apiErrorText } from "../../lib/api-error";
-import { offersChangePassword } from "../../lib/account-menu";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
-import type { LangPref } from "../../state/locale";
-import { ACCENT_SWATCHES, useTheme } from "../../state/theme";
-import type { Accent, Currency, FontScale, TerminalThemeMode, ThemeMode } from "../../state/theme";
 import { agentDisplayName, projectDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import {
   FOLDER_CATEGORIES,
   SIDEBAR_GROUP_PAGE_SIZE,
   SIDEBAR_PAGE_SIZE,
+  TIME_FOLDERS_GROUP_KEY,
   aggregateWorkspaceCounts,
+  groupSessionsByTime,
   groupSessionsByWorkspace,
   matchesSessionQuery,
   partitionSessions,
   pinnedFirst,
   sessionCategory,
+  totalCategoryCounts,
   workspaceGroupKey,
   workspaceLabel,
 } from "../../lib/session-grouping";
@@ -90,7 +94,6 @@ import {
   storeSessionSortMode,
 } from "../../lib/session-order";
 import type { SessionSortMode } from "../../lib/session-order";
-import { Switch } from "../ui/switch";
 import { Dropdown } from "../ui/dropdown";
 import { useRowContextMenu } from "../ui/context-menu";
 import {
@@ -130,7 +133,6 @@ import { Modal } from "../ui/modal";
 import { ConfirmModal } from "../ui/confirm-modal";
 import { Button } from "../ui/button";
 import { Input, noAutofill } from "../ui/input";
-import { Segmented } from "../ui/segmented";
 import { SkeletonList } from "../ui/skeleton";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
 import { WorkspaceSelect } from "../../features/chat/workspace-select";
@@ -143,11 +145,14 @@ import {
 } from "../../features/chat/draft-sessions";
 import type { DraftSessionEntry } from "../../features/chat/draft-sessions";
 import { CreateProjectDialog, ProjectSettingsDialog } from "./project-dialogs";
-import { ChangePasswordDialog } from "../account/change-password-dialog";
-import { ProxySettingsDialog } from "../account/proxy-settings-dialog";
-import { UploadLimitsDialog } from "../account/upload-limits-dialog";
+import { DesktopUpdateRow } from "../account/desktop-update-row";
+import { ServerUpdateRow } from "../account/server-update-row";
 import { UpdateDialog } from "../account/update-dialog";
+import { offersClientUpdate } from "../../lib/desktop-update";
+import { requestClientInstall, useDesktopUpdate } from "../../lib/use-desktop-update";
 import { forceUpdateCheck, updateCheckOutcome, useVersionInfo } from "../../lib/use-version-info";
+import { SettingsDialog } from "../../features/settings/settings-dialog";
+import { ICON_SIZE } from "../../lib/icon-scale";
 
 /** New-chat pencil (the pinned "New chat" button and the collapsed rail share it). */
 export const NEW_CHAT_ICON = "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z";
@@ -287,19 +292,7 @@ export function Sidebar({
 }) {
   const navigate = useNavigate();
   const { user, logout, desktopMode, sessionVia } = useAuth();
-  const {
-    mode,
-    setMode,
-    fontScale,
-    setFontScale,
-    accent,
-    setAccent,
-    currency,
-    setCurrency,
-    terminalMode,
-    setTerminalMode,
-  } = useTheme();
-  const { lang, locale, setLang } = useLocale();
+  const { locale } = useLocale();
   const {
     projects,
     currentProject,
@@ -320,8 +313,6 @@ export function Sidebar({
     loading,
     remove,
     replace,
-    showCliSessions,
-    setShowCliSessions,
   } = useSessions();
   const chatMatch = useMatch("/chat/:sessionId");
   const activeSessionId = chatMatch?.params.sessionId ?? null;
@@ -330,9 +321,15 @@ export function Sidebar({
   const [userOpen, setUserOpen] = useState(false);
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
-  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
-  const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
-  // Version row + update reminder: nothing is fetched until the dropdown first opens.
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  // Client update (desktop shell window only): the snapshot and the armed-check flag live
+  // at module level in use-desktop-update.ts; this always-mounted hook instance drives the
+  // polling, so a check armed in the menu still settles after the menu closes.
+  const clientUpdateOffered = offersClientUpdate({ desktopMode, sessionVia });
+  const clientUpdate = useDesktopUpdate(clientUpdateOffered, userOpen);
+  /** Install confirmation (restarting interrupts running tasks — same consent as the shell's native prompt). */
+  const [clientInstallOpen, setClientInstallOpen] = useState(false);
+  // Server update: nothing is fetched until the dropdown first opens.
   const { version, update } = useVersionInfo(userOpen);
   const updateAvailable = update?.updateAvailable === true;
   /**
@@ -342,47 +339,14 @@ export function Sidebar({
    * than rendering a versionless reminder.
    */
   const newVersion = updateAvailable ? (update?.latestVersion ?? null) : null;
-  // The running version's release date, stamped into core's BUILD_DATE at build time by
-  // the release workflow — displayed as-is, no network involved. Dev builds and releases
-  // that predate the stamping (v0.1.2 and earlier) carry null. Shown as the localized
-  // "last updated" tooltip on the check-for-updates row (the row itself stays uncluttered).
-  const versionDate = version?.buildDate ?? null;
-  /** Manual "check for updates" in flight (row disabled, busy label). */
+  /** Release announcement + admin self-update, opened from the update row once a release is known. */
+  const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
+  /**
+   * A manual server-update check is in flight. Held here rather than in the row, which
+   * unmounts with the menu: a check clicked and then dismissed must still settle, and the
+   * spinner must still be there when the menu is reopened mid-flight.
+   */
   const [updateChecking, setUpdateChecking] = useState(false);
-  /**
-   * Manual update check (owner request): forces a lookup past the server's TTL cache and
-   * pushes the result into the shared version-info store, so the reminder rows, badge,
-   * and dot appear immediately when a newer release is found. Every outcome also toasts —
-   * up to date, found (naming the release; the row below turns into the update entry),
-   * checks disabled, and a failed lookup (the check is fail-soft — failure arrives as the
-   * `error` field, not an exception; the catch handles our own server being unreachable).
-   */
-  const runUpdateCheck = async () => {
-    if (updateChecking) return;
-    setUpdateChecking(true);
-    try {
-      const outcome = updateCheckOutcome(await forceUpdateCheck());
-      if (outcome.kind === "disabled") toastInfo(S.update.checkDisabled);
-      else if (outcome.kind === "failed") toastError(S.update.checkFailed);
-      else if (outcome.kind === "found") toastSuccess(S.update.foundNew(outcome.latestVersion));
-      else toastSuccess(S.update.upToDate);
-    } catch (e) {
-      toastError(apiErrorText(e));
-    } finally {
-      setUpdateChecking(false);
-    }
-  };
-  /**
-   * Admin-only server-global proxy settings dialog: the menu carries only the opener
-   * row; the controls, their form semantics, and the open-time hydration all live in
-   * ProxySettingsDialog.
-   */
-  const [proxySettingsOpen, setProxySettingsOpen] = useState(false);
-  /**
-   * Admin-only server-global upload limits, alongside the proxy row and built the same way:
-   * the menu carries the opener, the form and its hydration live in UploadLimitsDialog.
-   */
-  const [uploadLimitsOpen, setUploadLimitsOpen] = useState(false);
   const currentProjectId = currentProject?.projectId ?? null;
   /** This Project's read markers; re-renders the rows whenever one is stamped. */
   const sessionSeen = useSessionSeen(currentProjectId);
@@ -478,7 +442,7 @@ export function Sidebar({
   const setGroupMode = (mode: GroupMode) => {
     storeGroupMode(mode);
     setGroupModeState(mode);
-    // The two modes have unrelated group lists: restart the reveal window, and swap in
+    // The modes have unrelated group lists: restart the reveal window, and swap in
     // this mode's own manual order (the stored sequence is read within partitions, whose
     // boundaries are exactly what the mode decides — one shared array would scramble).
     setSessionOrder(loadSessionOrder(currentProjectId, mode));
@@ -515,9 +479,13 @@ export function Sidebar({
     [workspaceGroups, pinnedGroups],
   );
 
-  /** Group key of a Session under the current mode (collapse / archived-open state). */
+  /** Group key a Session's FOLDERS hang off under the current mode (the archived-open state); time mode keeps one shared set for the whole Project. */
   const sessionGroupKey = (s: SessionInfo) =>
-    groupMode === "agent" ? s.agentId : workspaceGroupKey(s.workspace);
+    groupMode === "agent"
+      ? s.agentId
+      : groupMode === "time"
+        ? TIME_FOLDERS_GROUP_KEY
+        : workspaceGroupKey(s.workspace);
 
   const toggleGroup = (key: string) => {
     // Inert while searching: groups render force-opened then, so a click would change
@@ -565,6 +533,34 @@ export function Sidebar({
   const filterRows = (rows: SessionInfo[]) =>
     searching ? rows.filter((s) => matchesSessionQuery(s, searchQuery)) : rows;
 
+  /**
+   * Time mode's split of the loaded rows: the buckets take the active conversations, the
+   * shared folders below take the rest. Deliberately NOT memoized — the bucket boundary is
+   * `Date.now()`, and a memo would freeze it at its last dependency change; the compact
+   * relative timestamps rendered beside these rows are recomputed every render for exactly
+   * the same reason. Null outside time mode, so no other mode pays for the two passes.
+   */
+  const timeParts = groupMode === "time" ? partitionSessions(filterRows(sessions)) : null;
+  const timeGroups = timeParts === null ? [] : groupSessionsByTime(timeParts.active, Date.now());
+
+  /** Time mode's exact server share, Project-wide: its buckets span every Agent, so the shared folders and the whole-list "More" read the summed counts. */
+  const projectCounts = totalCategoryCounts(countsByAgent);
+
+  /** Agents holding rows of a category anywhere in this Project — time mode's fetch fan-out (the counts are kept in step locally, so they cover freshly added rows too). */
+  const projectAgentsFor = (category: SessionCategory) =>
+    [...countsByAgent].filter(([, counts]) => counts[category] > 0).map(([agentId]) => agentId);
+
+  /** Agents with an unfetched active page left; the whole-list "More" of time mode pages all of them at once. */
+  const timeMoreAgents = projectAgentsFor("active").filter((id) => hasMoreFor(id, "active"));
+
+  /** A time bucket's rows as a group partition: the buckets carry active conversations only. */
+  const bucketPartition = (rows: SessionInfo[]): SessionPartition => ({
+    active: rows,
+    subagent: [],
+    schedule: [],
+    archived: [],
+  });
+
   /** Close the search row and drop the filter (the toggle button, the clear ×, and Escape all land here). */
   const closeSearch = () => {
     setSearchOpen(false);
@@ -599,7 +595,9 @@ export function Sidebar({
     shownDrafts.length > 0 ||
     (groupMode === "agent"
       ? orderedAgents.some((a) => filterRows(byAgent.get(a.agentId) ?? []).length > 0)
-      : orderedWorkspaceGroups.some((g) => filterRows(g.sessions).length > 0));
+      : groupMode === "time"
+        ? timeParts !== null && Object.values(timeParts).some((rows) => rows.length > 0)
+        : orderedWorkspaceGroups.some((g) => filterRows(g.sessions).length > 0));
 
   /** In-flight key of one group's category "More" (folderKey shares the same composite for folder categories). */
   const loadKey = (groupKey: string, category: SessionCategory) => `${category}\0${groupKey}`;
@@ -659,13 +657,41 @@ export function Sidebar({
     const guard = `${groupMode}\0${activeSessionId}`;
     if (lastAutoExpandedRef.current === guard) return;
     lastAutoExpandedRef.current = guard;
-    const groupKey = groupMode === "agent" ? s.agentId : workspaceGroupKey(s.workspace);
+    const groupKey =
+      groupMode === "agent"
+        ? s.agentId
+        : groupMode === "time"
+          ? TIME_FOLDERS_GROUP_KEY
+          : workspaceGroupKey(s.workspace);
     const key = folderKey(groupKey, category);
     setOpenFolders((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
     // Same on-demand load a click-expand does, for this Session's own Agent (siblings of
     // other contributing Agents stay behind the folder's "More").
     if (!isLoadedFor(s.agentId, category)) void loadMoreFor([s.agentId], category);
   }, [activeSessionId, sessions, groupMode, isLoadedFor, loadMoreFor]);
+
+  /**
+   * Manual server-update check, from the menu's update row: forces a lookup past the
+   * server's TTL cache and pushes the result into the shared version-info store, so the
+   * row turns into the update entry and the avatar's reminder dot appears at once. Every
+   * outcome toasts — the check is fail-soft (a failed lookup arrives as the `error` field,
+   * not an exception; the catch handles our own server being unreachable).
+   */
+  const runUpdateCheck = async () => {
+    if (updateChecking) return;
+    setUpdateChecking(true);
+    try {
+      const outcome = updateCheckOutcome(await forceUpdateCheck());
+      if (outcome.kind === "disabled") toastInfo(S.update.checkDisabled);
+      else if (outcome.kind === "failed") toastError(S.update.checkFailed);
+      else if (outcome.kind === "found") toastSuccess(S.update.foundNew(outcome.latestVersion));
+      else toastSuccess(S.update.upToDate);
+    } catch (e) {
+      toastError(apiErrorText(e));
+    } finally {
+      setUpdateChecking(false);
+    }
+  };
 
   /** Archive / unarchive: persists immediately and updates in place (fails silently; the next list refresh self-corrects). */
   const toggleArchive = async (s: SessionInfo) => {
@@ -791,9 +817,14 @@ export function Sidebar({
   /** A Session always needs an Agent, so the workspace-mode "+" uses the current Agent, falling back to default_agent. */
   const workspaceNewChatAgentId = currentAgent?.agentId ?? defaultAgentId;
 
-  /** Header create-button tooltip (the created object follows the grouping mode). */
+  /** What the header's create button makes, and its tooltip (the created object follows the grouping mode). */
+  const newEntity = newEntityForGroupMode(groupMode);
   const newEntityLabel =
-    newEntityForGroupMode(groupMode) === "agent" ? S.agent.create : S.chat.newWorkspaceEntity;
+    newEntity === "agent"
+      ? S.agent.create
+      : newEntity === "chat"
+        ? S.chat.newSessionMenu
+        : S.chat.newWorkspaceEntity;
 
   /** Persist-if-changed for every registry mutation (register / alias / unregister share the same-reference fast exit). */
   const applyRegistryChange = (next: readonly WorkspaceEntry[]) => {
@@ -1123,37 +1154,31 @@ export function Sidebar({
     />
   );
 
+  /**
+   * Time mode's one shared, Project-wide set of folders (rendered once below the buckets):
+   * their rows load only on first expand, so an unloaded Session has no known bucket and no
+   * bucket could honestly claim a share of them. Counts and fetch fan-out are summed over
+   * every Agent. A null entry means the Project holds no rows of that category at all —
+   * which is also what tells the empty-list line whether it is telling the truth.
+   */
+  const timeFolders =
+    timeParts === null
+      ? []
+      : FOLDER_CATEGORIES.map((category) =>
+          renderFolder(
+            TIME_FOLDERS_GROUP_KEY,
+            category,
+            timeParts,
+            true,
+            projectAgentsFor(category),
+            projectCounts,
+          ),
+        );
+
   /** Page entries of the collapsible nav group (智能体 → 评估中心, driven by the NAV_GROUP_KEYS manifest). Always mounted — the collapse animates their height to zero and turns them inert. */
   const navItems: Array<{ to: string; label: string; icon: string }> = NAV_GROUP_KEYS.map(
     (key) => ({ to: `/${key}`, label: S.nav[key], icon: NAV_ICONS[key] }),
   );
-
-  const themeOptions: ReadonlyArray<{ value: ThemeMode; label: string }> = [
-    { value: "light", label: S.settings.themeLight },
-    { value: "dark", label: S.settings.themeDark },
-    { value: "system", label: S.settings.followSystem },
-  ];
-  const langOptions: ReadonlyArray<{ value: LangPref; label: string }> = [
-    { value: "en", label: S.settings.langEn },
-    { value: "zh", label: S.settings.langZh },
-    { value: "system", label: S.settings.followSystem },
-  ];
-  // The terminal keeps its own light/dark rather than inheriting the app's — see
-  // TerminalThemeMode. "跟随主题" is the opt-in that couples them.
-  const terminalThemeOptions: ReadonlyArray<{ value: TerminalThemeMode; label: string }> = [
-    { value: "light", label: S.settings.themeLight },
-    { value: "dark", label: S.settings.themeDark },
-    { value: "app", label: S.settings.followAppTheme },
-  ];
-  const fontOptions: ReadonlyArray<{ value: FontScale; label: string }> = [
-    { value: "sm", label: S.settings.fontSmall },
-    { value: "md", label: S.settings.fontMedium },
-    { value: "lg", label: S.settings.fontLarge },
-  ];
-  const currencyOptions: ReadonlyArray<{ value: Currency; label: string }> = [
-    { value: "USD", label: S.models.currencyUsd },
-    { value: "CNY", label: S.models.currencyCny },
-  ];
 
   return (
     <div className="flex h-full w-full flex-col">
@@ -1443,6 +1468,15 @@ export function Sidebar({
                   setListSettingsOpen(false);
                 }}
               />
+              <MenuRadioRow
+                icon={GROUP_MODE_ICONS.time}
+                label={S.chat.groupByTime}
+                checked={groupMode === "time"}
+                onSelect={() => {
+                  setGroupMode("time");
+                  setListSettingsOpen(false);
+                }}
+              />
               <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
               <p className={menuSectionClass}>{S.chat.sortModeSection}</p>
               {/* Manual order is offered only where a drag can actually happen (see canDrag). */}
@@ -1472,8 +1506,10 @@ export function Sidebar({
                 agent grouping opens the Agents page's existing create dialog (route
                 state); workspace grouping opens the SAME directory-browse menu the
                 draft's workspace picker uses — the picked directory registers as a
-                workspace group immediately, Sessions or not. */}
-            {newEntityForGroupMode(groupMode) === "agent" ? (
+                workspace group immediately, Sessions or not. Time buckets are not
+                something to create into, so that mode starts a plain new conversation
+                and wears the compose glyph without a plus badge. */}
+            {newEntity === "agent" ? (
               <button
                 type="button"
                 title={newEntityLabel}
@@ -1485,6 +1521,16 @@ export function Sidebar({
                 className={headerControlClass(false)}
               >
                 <AddBadgeIcon base={NAV_ICONS.agents} />
+              </button>
+            ) : newEntity === "chat" ? (
+              <button
+                type="button"
+                title={newEntityLabel}
+                aria-label={newEntityLabel}
+                onClick={() => newChat()}
+                className={headerControlClass(false)}
+              >
+                <Icon d={NEW_CHAT_ICON} size={ICON_SIZE.iconButton} />
               </button>
             ) : (
               <WorkspaceSelect
@@ -1523,7 +1569,7 @@ export function Sidebar({
               onToggle={() => toggleGroup(DRAFTS_GROUP_KEY)}
               icon={
                 <span className="shrink-0 text-gray-400 dark:text-gray-500">
-                  <Icon d={NEW_CHAT_ICON} size={14} />
+                  <Icon d={NEW_CHAT_ICON} size={ICON_SIZE.groupHeaderGlyph} />
                 </span>
               }
               label={S.chat.draftGroup}
@@ -1586,7 +1632,7 @@ export function Sidebar({
                           onClick={() => newChat(agent.agentId)}
                           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
                         >
-                          <Icon d="M12 5v14M5 12h14" size={18} />
+                          <Icon d="M12 5v14M5 12h14" size={ICON_SIZE.groupHeaderAction} />
                         </button>
                         <button
                           type="button"
@@ -1594,7 +1640,7 @@ export function Sidebar({
                           onClick={() => go(`/agents/${agent.agentId}`)}
                           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
                         >
-                          <Icon d={GEAR_ICON} size={16} />
+                          <Icon d={GEAR_ICON} size={ICON_SIZE.groupHeaderAction} />
                         </button>
                       </>
                     }
@@ -1617,7 +1663,7 @@ export function Sidebar({
         {groupMode === "agent" && !searching && orderedAgents.length > groupCap
           ? moreGroupsRow(orderedAgents.length)
           : null}
-        {groupMode === "agent" ? null : loading && sessions.length === 0 ? (
+        {groupMode !== "workspace" ? null : loading && sessions.length === 0 ? (
           <SkeletonList rows={5} />
         ) : orderedWorkspaceGroups.length === 0 && !searching ? (
           <p className="px-2.5 pt-3 text-xs text-gray-400 dark:text-gray-600">
@@ -1651,7 +1697,10 @@ export function Sidebar({
                     icon={
                       /* Folder opens and closes with the group */
                       <span className="shrink-0 text-gray-400 dark:text-gray-500">
-                        <Icon d={collapsed ? FOLDER_ICON : FOLDER_OPEN_ICON} size={15} />
+                        <Icon
+                          d={collapsed ? FOLDER_ICON : FOLDER_OPEN_ICON}
+                          size={ICON_SIZE.groupHeaderGlyph}
+                        />
                       </span>
                     }
                     label={group.temp ? S.chat.tempWorkspaces : group.label}
@@ -1672,7 +1721,7 @@ export function Sidebar({
                           onClick={() => newChat(workspaceNewChatAgentId, group.fullPath ?? "")}
                           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
                         >
-                          <Icon d="M12 5v14M5 12h14" size={18} />
+                          <Icon d="M12 5v14M5 12h14" size={ICON_SIZE.groupHeaderAction} />
                         </button>
                         {/* Manually-added (registry-backed) Workspaces only: rename-alias /
                             remove-from-sidebar overflow, to the right of the "+" (session-
@@ -1703,6 +1752,74 @@ export function Sidebar({
         {groupMode === "workspace" && !searching && orderedWorkspaceGroups.length > groupCap
           ? moreGroupsRow(orderedWorkspaceGroups.length)
           : null}
+
+        {/* Time mode: last day / last month / earlier, bucketed on each conversation's last
+            activity — the same stamp the rows' compact timestamps and the recency sort read,
+            so a row can never sit under a bucket its own timestamp contradicts. Empty buckets
+            are dropped, and there are at most three, so this mode has no "more groups" row.
+            The buckets span every Agent and every Workspace: a bucket's "More" only reveals
+            further loaded rows, while fetching the next page and reaching the Subagents /
+            Scheduled / Archived rows happen once for the whole Project, below. */}
+        {groupMode !== "time" || timeParts === null ? null : loading && sessions.length === 0 ? (
+          <SkeletonList rows={5} />
+        ) : (
+          <>
+            {timeGroups.map((group) => {
+              const collapsed = !searching && collapsedGroups.has(group.key);
+              return (
+                <div key={group.key} className="pt-2.5">
+                  <GroupHeader
+                    open={!collapsed}
+                    onToggle={() => toggleGroup(group.key)}
+                    icon={
+                      <span className="shrink-0 text-gray-400 dark:text-gray-500">
+                        <Icon d={GROUP_MODE_ICONS.time} size={ICON_SIZE.groupHeaderGlyph} />
+                      </span>
+                    }
+                    label={S.chat.timeGroups[group.bucket]}
+                    uppercase
+                    count={group.sessions.length}
+                  />
+                  {collapsed
+                    ? null
+                    : renderGroupBody(
+                        group.key,
+                        bucketPartition(group.sessions),
+                        true,
+                        undefined,
+                        () => [],
+                      )}
+                </div>
+              );
+            })}
+
+            {/* Empty only when the shared folders below are empty too (renderGroupBody's own
+                rule): "no Sessions yet" over an "Archived (3)" row would contradict it. */}
+            {timeGroups.length === 0 && !searching && timeFolders.every((f) => f === null) && (
+              <p className="px-2.5 pt-3 text-xs text-gray-400 dark:text-gray-600">
+                {S.chat.noSessions}
+              </p>
+            )}
+
+            {/* Whole-list paging: a fetched page lands in whichever bucket its rows' activity
+                puts them, so the row that pulls one belongs to the list, not to a bucket —
+                and its label says "conversations" where a bucket's says "more". */}
+            {!searching &&
+              timeParts.active.length < projectCounts.active &&
+              timeMoreAgents.length > 0 && (
+                <MoreRow
+                  label={S.chat.loadMoreSessions}
+                  ariaLabel={S.chat.loadMoreSessions}
+                  pending={pendingLoads.has(loadKey(TIME_FOLDERS_GROUP_KEY, "active"))}
+                  onClick={() => trackedLoadMore(TIME_FOLDERS_GROUP_KEY, "active", timeMoreAgents)}
+                  className="mt-1"
+                />
+              )}
+
+            {/* The shared, Project-wide folders (see timeFolders). */}
+            <div className="pt-2.5">{timeFolders}</div>
+          </>
+        )}
 
         {/* Quiet no-match line: the search is live and nothing — drafts included — hit. */}
         {searching && !hasSearchMatches && (
@@ -1752,163 +1869,55 @@ export function Sidebar({
             </button>
           }
         >
-          <div className="space-y-2.5 px-3 py-2">
-            <SettingRow label={S.settings.theme}>
-              <Segmented options={themeOptions} value={mode} onChange={setMode} />
-            </SettingRow>
-            <SettingRow label={S.settings.terminalTheme}>
-              <Segmented
-                options={terminalThemeOptions}
-                value={terminalMode}
-                onChange={setTerminalMode}
-              />
-            </SettingRow>
-            <SettingRow label={S.settings.fontSize}>
-              <Segmented options={fontOptions} value={fontScale} onChange={setFontScale} />
-            </SettingRow>
-            <SettingRow label={S.settings.accent}>
-              <AccentPicker value={accent} onChange={setAccent} />
-            </SettingRow>
-            <SettingRow label={S.models.currency}>
-              <Segmented
-                options={currencyOptions}
-                value={currency}
-                onChange={setCurrency}
-                cols={2}
-              />
-            </SettingRow>
-            <SettingRow label={S.settings.language}>
-              <Segmented options={langOptions} value={lang} onChange={setLang} />
-            </SettingRow>
-            {/* Off (default) = the sidebar lists only web-created Sessions, served straight
-                from the DB; on = CLI Sessions are discovered from the Trace directory too. */}
-            <SettingRow label={S.settings.showCliSessions}>
-              <Switch checked={showCliSessions} onChange={setShowCliSessions} />
-            </SettingRow>
-          </div>
-          <div className="mt-1 border-t border-gray-100 pt-1 dark:border-gray-800">
-            {/* Hidden in the desktop shell's own window: it signs in through the shell's
-                one-shot token rather than a login form, and the seed password of a
-                desktop-created root is fully random and never printed — there is no
-                password its holder has seen, or needs. Deliberately NOT keyed on
-                desktopMode alone: a browser signed into the same desktop-mode server over
-                loopback holds a password session that can, and still does, change it.
-                See offersChangePassword for the full rule. */}
-            {offersChangePassword({ desktopMode, sessionVia }) && (
-              <button
-                type="button"
-                className={menuItemClass}
-                onClick={() => {
-                  setUserOpen(false);
-                  setChangePasswordOpen(true);
-                }}
-              >
-                {S.account.changePassword}
-              </button>
-            )}
-            {/* Admin-only, server-global proxy settings: one menu row opening the
-                dialog (same idiom as Change password above) — the switch, address
-                input and their live-save semantics live in ProxySettingsDialog. */}
-            {user?.isAdmin && (
-              <button
-                type="button"
-                className={menuItemClass}
-                onClick={() => {
-                  setUserOpen(false);
-                  setProxySettingsOpen(true);
-                }}
-              >
-                {S.settings.proxyMenu}
-              </button>
-            )}
-            {/* Admin-only, server-global upload limits: same one-row idiom as the proxy
-                opener above. */}
-            {user?.isAdmin && (
-              <button
-                type="button"
-                className={menuItemClass}
-                onClick={() => {
-                  setUserOpen(false);
-                  setUploadLimitsOpen(true);
-                }}
-              >
-                {S.settings.uploadLimitsMenu}
-              </button>
-            )}
-            {/* THE update row — one button, two jobs, directly below Change password (owner
-                layout: the menu used to stack a release-notes link, an admin "Update now" row
-                and this check row on top of each other). It reads "Check for updates" and runs
-                the manual check until a newer release is known; from then on it reads "New
-                version vX available" with a leading accent dot and opens the update dialog
-                instead, which carries the release-notes link and the admin-only self-update.
-                The running version sits muted on the right — no product-name prefix, and no
-                superscript badge any more: the label itself already names the new version.
-                The "last updated" date lives in the row tooltip, keeping the row uncluttered.
-                While checking, the label swaps to the busy text and the version stays put.
-                Nothing is fetched until the menu first opens; the version span appears once
-                /api/version resolves. */}
-            {/* Hidden in desktop mode: updates are the desktop app's job (electron-updater),
-                and the dialog's admin self-update re-runs the CLI entry, which does not
-                exist under the desktop shell. */}
+          <div className="py-1">
+            {/* System settings dialog: everyone gets the row — the dialog always has the
+                personal pages, and the server-global ones inside it stay gated by the
+                section registry rather than by this row. The preference rows that used to
+                stack here live on its pages now. */}
+            <button
+              type="button"
+              className={menuItemClass}
+              onClick={() => {
+                setUserOpen(false);
+                setSettingsOpen(true);
+              }}
+            >
+              {S.settings.systemSettings}
+            </button>
+            {/* Update row, directly under the settings entry rather than on a page inside
+                it: the check is one click from the menu, and the same row turns into the
+                update entry once the lazy check (menu open) names a newer release. Desktop
+                mode never checks here — updating is the shell's job. */}
             {!desktopMode && (
-              <button
-                type="button"
-                disabled={updateChecking}
-                onClick={() => {
-                  if (newVersion !== null) {
-                    setUserOpen(false);
-                    setUpdateDialogOpen(true);
-                  } else {
-                    void runUpdateCheck();
-                  }
-                }}
-                {...(versionDate !== null
-                  ? { title: S.update.lastUpdated(formatMonthDay(versionDate, locale)) }
-                  : {})}
-                className={`${menuItemClass} flex items-center justify-between gap-2 disabled:cursor-default disabled:opacity-60`}
-              >
-                <span className="flex min-w-0 items-center gap-2">
-                  {updateChecking && (
-                    <span
-                      aria-hidden
-                      className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent opacity-70"
-                    />
-                  )}
-                  {!updateChecking && newVersion !== null && (
-                    <span
-                      aria-hidden
-                      className="h-2 w-2 shrink-0 rounded-full bg-[var(--accent-bg)]"
-                    />
-                  )}
-                  <span className="min-w-0 truncate">
-                    {updateChecking
-                      ? S.update.checking
-                      : newVersion !== null
-                        ? S.update.newVersion(newVersion)
-                        : S.update.checkNow}
-                  </span>
-                </span>
-                {version !== null && (
-                  <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
-                    {`v${version.version}`}
-                  </span>
-                )}
-              </button>
-            )}
-            {/* User management is visible only to admins (the page route also has its own
-                guard as a fallback), and never in desktop mode: the desktop app is
-                single-user and the server rejects the routes (desktop_single_user). */}
-            {user?.isAdmin && !desktopMode && (
-              <button
-                type="button"
-                className={menuItemClass}
-                onClick={() => {
+              <ServerUpdateRow
+                version={version?.version ?? null}
+                newVersion={newVersion}
+                checking={updateChecking}
+                menuItemClass={menuItemClass}
+                onCheck={() => void runUpdateCheck()}
+                onOpenDialog={() => {
                   setUserOpen(false);
-                  go("/admin/users");
+                  setUpdateDialogOpen(true);
                 }}
-              >
-                {S.admin.users}
-              </button>
+              />
+            )}
+            {/* Desktop stand-in for the row above, in the shell's own window only:
+                the same slot updates the CLIENT through the shell's own updater (relayed
+                via /api/desktop/update) — which is what "updating is the shell's job"
+                means for someone sitting in front of the app. A browser signed into the
+                same desktop-mode server gets neither row: it can't run the CLI self-update
+                there, nor restart someone else's GUI app (offersClientUpdate mirrors the
+                gate the routes enforce). */}
+            {clientUpdateOffered && (
+              <DesktopUpdateRow
+                status={clientUpdate.status}
+                checkPending={clientUpdate.checkPending}
+                menuItemClass={menuItemClass}
+                onInstallRequest={() => {
+                  setUserOpen(false);
+                  setClientInstallOpen(true);
+                }}
+              />
             )}
             {/* Hidden in desktop mode: the window IS the session — logging out would
                 strand the user on a login page whose password was never shown. */}
@@ -1928,25 +1937,40 @@ export function Sidebar({
         </Dropdown>
       </div>
 
-      <ChangePasswordDialog
-        open={changePasswordOpen}
-        onClose={() => setChangePasswordOpen(false)}
-      />
-      <ProxySettingsDialog open={proxySettingsOpen} onClose={() => setProxySettingsOpen(false)} />
-      <UploadLimitsDialog open={uploadLimitsOpen} onClose={() => setUploadLimitsOpen(false)} />
+      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+
+      {/* Release announcement, release-notes link and the admin-only self-update. Mounted
+          here rather than in the row, which unmounts as the menu closes on the click that
+          opens this. */}
       <UpdateDialog
         open={updateDialogOpen}
         onClose={() => setUpdateDialogOpen(false)}
         latestVersion={newVersion}
         releaseUrl={update?.releaseUrl ?? null}
         canUpdate={user?.isAdmin === true}
-        /* A finished self-update makes the reminder stale, and the row stops offering the
-           manual check while a newer release is known — so re-check here, or the row would
-           still read "New version vX available" after updating to exactly that version, with
-           no way back short of reloading the page. Silent: the row's own change is the
-           feedback, and a toast would fire while the user is closing the dialog. */
+        /* A finished self-update makes the known release stale — re-check silently so the
+           row stops offering the version that is now running. */
         onRunFinished={() => void forceUpdateCheck().catch(() => undefined)}
       />
+
+      {/* Client-update install consent: restarting interrupts running tasks, the same
+          warning the shell's native prompt carries — the web row must not be the one
+          path that kills work without asking. */}
+      <ConfirmModal
+        open={clientInstallOpen}
+        title={S.update.clientInstallConfirmTitle}
+        onClose={() => setClientInstallOpen(false)}
+        onConfirm={() => {
+          setClientInstallOpen(false);
+          void requestClientInstall();
+        }}
+        confirmLabel={S.update.clientInstallConfirmAction}
+        tone="primary"
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {S.update.clientInstallConfirmBody}
+        </p>
+      </ConfirmModal>
 
       <CreateProjectDialog
         open={createProjectOpen}
@@ -2163,7 +2187,7 @@ function GroupPinButton({ pinned, onToggle }: { pinned: boolean; onToggle: () =>
           : "text-gray-400 opacity-0 focus-visible:opacity-100 group-hover/header:opacity-100 dark:text-gray-500"
       }`}
     >
-      <Icon d={PIN_ICON} size={15} />
+      <Icon d={PIN_ICON} size={ICON_SIZE.groupHeaderAction} />
     </button>
   );
 }
@@ -2483,38 +2507,5 @@ function MenuRadioRow({
       </span>
       {checked && <CheckIcon className="shrink-0 text-gray-500 dark:text-gray-400" />}
     </button>
-  );
-}
-
-function SettingRow({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div>
-      <p className="mb-1 text-[11px] font-medium text-gray-500 dark:text-gray-400">{label}</p>
-      {children}
-    </div>
-  );
-}
-
-/** Accent color picker: a row of swatches, with a ring on the selected one. */
-function AccentPicker({ value, onChange }: { value: Accent; onChange: (a: Accent) => void }) {
-  return (
-    <div className="flex items-center gap-1.5">
-      {ACCENT_SWATCHES.map((s) => (
-        <button
-          key={s.value}
-          type="button"
-          title={S.settings.accentNames[s.value]}
-          aria-label={S.settings.accentNames[s.value]}
-          aria-pressed={value === s.value}
-          onClick={() => onChange(s.value)}
-          className={`h-5 w-5 rounded-full border transition-transform duration-150 hover:scale-110 ${
-            value === s.value
-              ? "border-gray-500 ring-2 ring-gray-400/50 dark:border-gray-300"
-              : "border-transparent"
-          }`}
-          style={{ backgroundColor: s.color }}
-        />
-      ))}
-    </div>
   );
 }

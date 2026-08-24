@@ -72,40 +72,45 @@ Recovery 文件保存 Environment 收到的未经脱敏的工具文本。误读�
 
 ## 内置工具
 
-共 9 个内置工具(装配入口 `packages/core/src/environment/tools/registry.ts`):
+共 11 个内置工具(装配入口 `packages/core/src/environment/tools/registry.ts`):
 
 | 工具 | 权限 | 超时(ms) | 用途 |
 | --- | --- | --- | --- |
 | `exec_command` | rw | 120000 | 在 Workspace 内以 `bash -lc` 运行命令，流式返回 stdout/stderr |
 | `input_command` | rw | 130000 | 按 `process_id` 驱动运行中的命令：写 stdin、发 Ctrl-C、轮询输出 |
+| `kill_command` | rw | 30000 | 按 `process_id` 终止命令会话（整个进程组），返回尚未送达的输出 |
 | `read_file` | r | 30000 | 按 `cat -n` 风格带行号读取文本文件，以 offset/limit 分页 |
 | `edit_file` | rw | 30000 | 对既有文件做精确字符串替换，回显校验片段 |
 | `write_file` | rw | 30000 | 新建或整体覆写文件，按需创建父目录 |
 | `run_subagent` | rw | 600000 | 把自包含子任务委派给同 Workspace 的子 Agent |
 | `input_subagent` | rw | 600000 | 轮询后台 Subagent，或在其空闲时追加后续 Prompt |
+| `kill_subagent` | rw | 30000 | 按 `subagent_id` 中止并移除后台 Subagent，返回尚未送达的文本 |
 | `read_image` | r | 60000 | 读取图片并作为图像内容返回(vision 模型) |
 | `describe_image` | r | 90000 | 由 `vision_model` 代读图片并返回文字回答(text-only 模型) |
 
-注意：既有 Agent 已落盘的 `tools.builtin` 列表按原样冻结（设置页只能编辑行、不能增行）：本工具集之前创建的 Agent 不会自动获得文件工具——需手工编辑该 Agent 的 `system_config.yaml`，把新条目补进去（可从 `packages/core/src/state/default-config.ts` 的默认定义复制）。
+注意：既有 Agent 已落盘的 `tools.builtin` 列表按原样冻结（设置页只能编辑行、不能增行）：较早创建的 Agent 不会自动获得后来新增的工具（文件工具、`kill_command`、`kill_subagent`）与新增参数（`run_in_background`）——需手工编辑该 Agent 的 `system_config.yaml`，把新条目补进去（可从 `packages/core/src/state/default-config.ts` 的默认定义复制）。
 
 ### 调用描述
 
-命令 / Subagent 类工具（`exec_command`、`input_command`、`run_subagent`、`input_subagent`）带 `description` 参数：由模型写一句"本次调用在做什么"，CLI 与 Web 在调用运行期间展示给用户。该参数作为普通的 `description` 属性直接写在各条目的 `parameters` 中（工具 schema 完全存于可编辑配置），并且是**必填**的——提供该参数的工具每次调用都会带上它，前端据 schema 即可确定这次调用的展示形态，无需在参数流式过程中猜测；同时要求模型最先输出它。整个参数由条目级 `call_description` 字段控制——缺省保留，写 `call_description: false` 时装配阶段将该属性连同其 `required` 项一起从 schema 中滤除（仅内存内，不改写 YAML）。文件工具不带此参数——其 `file_path` 参数本身已说明用途。
+命令 / Subagent 类工具（`exec_command`、`input_command`、`kill_command`、`run_subagent`、`input_subagent`、`kill_subagent`）带 `description` 参数：由模型写一句"本次调用在做什么"，CLI 与 Web 在调用运行期间展示给用户。该参数作为普通的 `description` 属性直接写在各条目的 `parameters` 中（工具 schema 完全存于可编辑配置），并且是**必填**的——提供该参数的工具每次调用都会带上它，前端据 schema 即可确定这次调用的展示形态，无需在参数流式过程中猜测；同时要求模型最先输出它。整个参数由条目级 `call_description` 字段控制——缺省保留，写 `call_description: false` 时装配阶段将该属性连同其 `required` 项一起从 schema 中滤除（仅内存内，不改写 YAML）。文件工具不带此参数——其 `file_path` 参数本身已说明用途。
 
 ### 命令会话
 
-`exec_command` 先在前台等待；命令超过 `yield_time_ms` 仍未结束时转入后台，返回已有输出和一个 `process_id`，之后用 `input_command` 驱动：
+`exec_command` 先在前台等待；命令超过 `yield_time_ms` 仍未结束时转入后台，返回已有输出和一个 `process_id`，之后用 `input_command` 驱动。传 `run_in_background: true` 则完全跳过前台窗口：调用立即返回 `process_id`，进程退出时其结果以自动 user message 送达（见[后台完成回报](#后台完成回报)）。两种方式启动的会话都可用 `kill_command` 终止：
 
 ```text
 exec_command(cmd)
   ├─ 前台窗口(yield_time_ms,默认 60000)内结束 ──► 完整输出 + 退出码
-  └─ 未结束 ──► 转入后台,返回已有输出 + process_id
-                     │
-    input_command(process_id[, chars]) ──► 写 stdin / 发 Ctrl-C / 轮询
-                     └─ 循环驱动,直至命令退出
+  ├─ 未结束 ──► 转入后台,返回已有输出 + process_id
+  │                  │
+  │  input_command(process_id[, chars]) ──► 写 stdin / 发 Ctrl-C / 轮询
+  │                  └─ 循环驱动,直至命令退出
+  └─ run_in_background: true ──► 立即返回 process_id
+                     └─ 退出时:完成回报以 user message 送达
+     kill_command(process_id) ──► 向进程组发 SIGTERM(宽限期后 SIGKILL)
 ```
 
-两个工具的参数（明确键名）：
+各工具的参数（明确键名）：
 
 ```ts
 // exec_command
@@ -113,6 +118,7 @@ exec_command(cmd)
   cmd: string;             // 必填:要执行的 shell 命令
   workdir?: string;        // 工作目录;缺省为 Workspace 根,相对路径按其解析
   yield_time_ms?: number;  // 前台等待时长;默认 60000,最小 250,上限受工具超时约束
+  run_in_background?: boolean; // true = 立即返回 process_id;完成回报以 user message 送达
   description: string;     // 开关开启时必填:一句话说明,最先输出,调用运行期间展示给用户
 }
 
@@ -120,7 +126,13 @@ exec_command(cmd)
 {
   process_id: string;      // 必填:exec_command 返回的命令会话 id
   chars?: string;          // 写入 stdin 的字符;单独发送 "\u0003" 传递 Ctrl-C;缺省仅轮询
-  yield_time_ms?: number;  // 等待时长;有写入默认 250,空轮询默认 5000
+  yield_time_ms?: number;  // 等待时长;有写入默认 250,空轮询默认 120000(一次轮询等完多数构建;想快速查看可传更小值)
+  description: string;     // 开关开启时必填
+}
+
+// kill_command
+{
+  process_id: string;      // 必填:要终止的命令会话(已退出的会话也会被移除)
   description: string;     // 开关开启时必填
 }
 ```
@@ -129,7 +141,7 @@ POSIX 上 Ctrl-C 向会话进程组发送 `SIGINT`，中断前台命令。Window
 
 ### 文件工具
 
-`read_file` / `edit_file` / `write_file` 与 Shell 工具一样以用户完整权限运行：相对路径按 Workspace 解析，也接受绝对路径。三者均为非流式（一次性输出最终结果），从不抛异常——失败以解释性文本收尾，`stop_reason` 为 `failed`。
+`read_file` / `edit_file` / `write_file` 与 Shell 工具一样以用户完整权限运行：相对路径按 Workspace 解析，也接受绝对路径。软链接路径会被解析到它指向的文件——读取、编辑、写入都落在该文件上，链接本身仍然是链接。三者均为非流式（一次性输出最终结果），从不抛异常——失败以解释性文本收尾，`stop_reason` 为 `failed`。
 
 ```ts
 // read_file — cat -n 风格输出(行号、制表符、内容);超长单行会被截断,
@@ -161,7 +173,7 @@ POSIX 上 Ctrl-C 向会话进程组发送 `SIGINT`，中断前台命令。Window
 
 ### Subagent
 
-`run_subagent` 把一段能一次说清的子任务交给子 Agent 执行，同样是两段式：前台窗口(默认 300000ms)过后转入后台并返回 `subagent_id`，由 `input_subagent` 轮询或追加 Prompt；子 Agent 的待审批项会在轮询等待期间浮出。
+`run_subagent` 把一段能一次说清的子任务交给子 Agent 执行，同样是两段式：前台窗口(默认 300000ms)过后转入后台并返回 `subagent_id`，由 `input_subagent` 轮询或追加 Prompt；子 Agent 的待审批项会在轮询等待期间浮出。传 `run_in_background: true` 则立即返回 `subagent_id`，每轮完成都以自动 user message 送达（见[后台完成回报](#后台完成回报)）；`kill_subagent` 中止并移除后台 Subagent（空闲的也可移除，腾出并发额度）。
 
 ```ts
 // run_subagent
@@ -172,6 +184,7 @@ POSIX 上 Ctrl-C 向会话进程组发送 `SIGINT`，中断前台命令。Window
   provider?: string;       // model_id 所属的 provider 组;给出 model_id 时必填
   thinking_level?: string; // "low" | "medium" | "high" | "xhigh" | "max";缺省继承父 Session 的思考等级
   yield_time_ms?: number;  // 前台等待时长;默认 300000
+  run_in_background?: boolean; // true = 立即返回 subagent_id;完成回报以 user message 送达
   description: string;     // 开关开启时必填
 }
 
@@ -180,6 +193,12 @@ POSIX 上 Ctrl-C 向会话进程组发送 `SIGINT`，中断前台命令。Window
   subagent_id: string;     // 必填:run_subagent 返回的后台 Subagent id
   prompt?: string;         // 追加任务,仅在子 Session 空闲时接受;缺省仅轮询
   yield_time_ms?: number;  // 等待时长;有追加默认 300000,空轮询默认 10000
+  description: string;     // 开关开启时必填
+}
+
+// kill_subagent
+{
+  subagent_id: string;     // 必填:要中止并移除的后台 Subagent
   description: string;     // 开关开启时必填
 }
 ```
@@ -206,6 +225,14 @@ POSIX 上 Ctrl-C 向会话进程组发送 `SIGINT`，中断前台命令。Window
 }
 ```
 
+### 后台完成回报
+
+以 `run_in_background: true` 启动的任务在结束时，以**Harness 注入的 user message** 回报完成——模型无需轮询。消息以 `[background_task_done]` 标记块开头（kind、id、status、一行 detail），其后是任务内容与尚未送达输出的尾部（上限 4000 字符；Web App 将标记块折叠为一行提示）。其 `text` payload 带 `sender: "harness"`，在 Trace 中与真人输入相区分（见 [OmniMessage](/omni-message)）。
+
+送达时机：Task 进行中时，回报搭乘下一个 turn 边界——即使最终回复已在流式输出，Task 也会为回应它再延续一个 turn。Session 空闲时，托管 Server 自动以该回报发起新 Task（SDK 嵌入方可订阅 `Session.onBackgroundNotice` / `takeBackgroundNotices`，否则回报并入下一次 run 的输入）。经 `kill_command` / `kill_subagent` 终止的任务不发回报——kill 自身的结果已说明结局。
+
+后台 Subagent 的生命周期与发起它的调用解耦：中止信号只属于它自己（仅 `kill_subagent`、Session 终结或注册表淘汰会结束它），其消息经发起 Session 实时流向前端（与前台窗口转发同一条 origin 通道），工具审批经发起调用自身的审批回调作为常驻 sink 解决——`allow-all` 下即发即忘可全程无人值守，失败也以 `status: failed` 的回报收尾，而不是子会话永久卡住。
+
 ### 后台会话上限
 
 | 会话类型 | 上限 | 淘汰策略 |
@@ -218,7 +245,8 @@ POSIX 上 Ctrl-C 向会话进程组发送 `SIGINT`，中断前台命令。Window
 每个完整的 `tool_call` 触发且只触发一次审批决策：
 
 ```ts
-type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<"allow" | "deny">;
+type ApprovalDecision = "allow" | "deny" | "forbidden"; // "forbidden" = 命令策略的拦截
+type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalDecision>;
 ```
 
 | 使用面 | 行为 |
@@ -227,7 +255,7 @@ type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<"allow" | "
 | CLI | `--approve` 四种模式：allow-all(默认)/ deny-all / read-only / always-ask;read-only 自动放行 `permission: "r"` 的工具，其余转人工 |
 | Web / Server | 同样四种模式，按 Session 设置；每次决策前从数据库重读，改模式立即生效；人工决策经 API 送达 |
 
-deny 会合成一条 aborted 的 `tool_call_output`(内容为 `Tool call denied by user.`)，模型据此调整策略。每次决策都以 `approval_decision` 事件写入 Trace，构成完整的审计记录。审批发生在 [Agent 运行循环](/agent-loop) 的工具执行阶段。
+deny 会合成一条 `aborted` 的 `tool_call_output` 供模型据此调整策略——`Tool call denied by user.`，被[命令策略](/configuration#沙箱安全策略)拒绝时为 `Tool call denied by policy.`，策略命中因此不会被读成「有人取消了」。见 [ApproveFn](/interfaces#approvefn)。每次决策都以 `approval_decision` 事件写入 Trace（策略拦截即记 `forbidden`），构成完整的审计记录。审批发生在 [Agent 运行循环](/agent-loop) 的工具执行阶段。
 
 ## 自定义与 MCP
 
@@ -258,7 +286,7 @@ tools:
 - `http`——Streamable HTTP，当前规范的远程 transport（`url` / `headers`）。
 - `sse`——旧版 HTTP+SSE，仅为未迁移的服务保留（`url` / `headers`）。
 
-`transport` 字段可省略：有 `command` 推断为 `stdio`、有 `url` 推断为 `http`；`sse` 必须显式。三种 transport 共享可选的 `connectTimeoutMs`（连接 + 工具发现预算，默认 10000）与 `timeoutMs` / `maxOutputLength`（作用于该 Server 全部工具的执行约束，缺省用 Environment 默认值）。`headers` 附加到该 Server 的每个 HTTP 请求（含 SSE 流），可承载 `Authorization` 等认证头。
+`transport` 字段可省略：有 `command` 推断为 `stdio`、有 `url` 推断为 `http`；`sse` 必须显式。三种 transport 共享可选的 `connectTimeoutMs`（连接 + 工具发现预算，默认 10000）、`timeoutMs` / `maxOutputLength`（作用于该 Server 全部工具的执行约束，缺省用 Environment 默认值）与 `permission`（`auto` / `r` / `rw`，缺省 `auto`，见下方权限条目）。`headers` 附加到该 Server 的每个 HTTP 请求（含 SSE 流），可承载 `Authorization` 等认证头。
 
 ```yaml
 tools:
@@ -272,12 +300,14 @@ tools:
         transport: http
         url: https://mcp.linear.app/mcp
         headers: { Authorization: "Bearer ..." }
+        permission: r        # auto（缺省）| r | rw
 ```
 
 行为口径：
 
 - 连接是**懒加载**的：Session 创建即时返回，首个 `run()` 开始时才并行连接全部 Server 并做一次工具发现——连接期间流式发出一对 `mcp_connect_begin` / `mcp_connect_end` 事件（前端显示连接状态；end 带总体 status 与逐 Server 结果），完成后以 `tool_list_ready` 事件下发完整工具定义（见 [OmniMessage](/omni-message)）；这三条消息在 Trace 中写在本轮输入之后，归属新轮次。运行中打断即**取消**本次连接，下次 `run()` 重新连接。发现结果是 Session 生命周期内的快照，`tools/list_changed` 通知被忽略。连接失败或条目非法只产生 stderr 警告并跳过该 Server，**不阻塞会话**。
 - 发现的工具以 `mcp__<server>__<tool>` 进入统一工具命名空间，与内置工具走同一条[执行契约](#执行契约)（超时、截断、打断）与[审批](#审批)流程。
-- 权限映射：Server 注解 `readOnlyHint: true` 的工具为 `r`（read-only 审批模式自动放行），其余一律 `rw`——注解是未受信 hint，缺省取限制方向。
+- 权限映射：缺省的 `permission: auto` 下，Server 注解 `readOnlyHint: true` 的工具为 `r`（read-only 审批模式自动放行），其余一律 `rw`——注解是未受信 hint，缺省取限制方向。把条目的 `permission` 设为 `r` 或 `rw`，则该 Server 的**全部**工具一律按此取值，覆盖注解——大量 Server 从不设置 `readOnlyHint`、因而整体落到 `rw`，这个字段就是为它们准备的。
+- `permission` 的边界：它固定该 Server 每个工具对外报出的等级，而读这个等级的审批模式只有一个。`read-only` 下 `r` 工具自动放行、`rw` 工具需人工确认；`allow-all` / `deny-all` / `always-ask` 根本不查询它，标成 `rw` 的条目在这些模式下也不会多出一次审批。除此之外该字段什么都不做：不为 Server 提供沙箱，不限制其工具运行时的行为，不会发给 Server、也不向 Server 核验，Server 依旧拥有其 transport 赋予的全部能力。把一个实际能写的 Server 标为 `r`，撤掉的就是 `read-only` 本会索要的那次确认。
 - 结果映射：text 块拼接为输出文本；image 块作为图片（data URL）随输出附带；audio 与二进制 resource 折叠为占位行；仅有 `structuredContent` 时将其序列化为 JSON；Server 报 `isError` 时落实为 `stop_reason: "failed"`，内容即 Server 给出的错误说明。
 - Session 结束（`Environment.dispose`）关闭全部 MCP 客户端，stdio 子进程一并退出。

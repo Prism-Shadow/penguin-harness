@@ -20,6 +20,7 @@ The CLI and the server automatically load a `.env` file from the working directo
 | `PENGUIN_SEED_ADMIN_PASSWORD` | Fixed initial password for the seeded built-in admin (automated tests / e2e) | unset — a random `penguin-<4 digits>` password is generated and printed once at seed time |
 | `PENGUIN_LANG` | CLI language (`en` / `zh`), set via `penguin config lang` | `en` |
 | `PENGUIN_UPDATE_CHECK` | `off` disables the web app's new-release check (the server's only outbound internet call) | enabled |
+| `PENGUIN_NO_LOGIN_SHELL_ENV` | Any non-empty value stops the desktop app from importing the login shell's environment on macOS/Linux GUI launches (see [Desktop quickstart](/quickstart-desktop)) | unset — the import runs, filling only variables the launch left unset |
 
 These configure PenguinHarness itself, so `PORT`, `HOST`, `PENGUIN_WEB_DIST` and the internal `PENGUIN_CLI_ENTRY` are **removed from the environment of commands the Agent runs** — otherwise a dev server started by `exec_command` would read `PORT` and try to bind the port meant for PenguinHarness instead of choosing its own. The rest of the host environment passes through, with one further exception: `GIT_EDITOR`, `GIT_TERMINAL_PROMPT`, `TERM`, `NO_COLOR`, `PAGER` and `GIT_PAGER` are always forced to fixed values, so that a command cannot hang waiting on an editor, a credential prompt or a pager. The Agent's [vault](#vault) is applied on top of the host environment — setting `PORT` there does reach commands — but not on top of those six.
 
@@ -50,6 +51,7 @@ The openrouter, fireworks, siliconflow, qwen-token-plan, qwen-pay-as-you-go, and
 | `name` | Project display name (the id is shown when unset) |
 | `default_model` | Paired reference `{ provider, model_id }` to the default model; must point to an entry in `models` |
 | `vision_model` | The vision model that reads images on behalf of text-only models (used by `describe_image`); a paired reference |
+| `[command_policy]` | Sandbox command policy: deny rules for shell commands, applied ahead of the approval mode — see [Command policy](#command-policy) |
 | `[[models]]` | The list of available model entries |
 
 Model entry (`[[models]]`) fields:
@@ -90,6 +92,46 @@ output = 0.857143
 
 Edit this file via the CLI (`penguin config model …`) or the Web Models page — never by hand while the service is running, and never by the model itself, which has no right to read or write it.
 
+### Command policy
+
+The `[command_policy]` block is the Project's sandbox guardrail for shell commands: a deny-rule list applied at the approval boundary itself to both tools that reach a shell — `exec_command`'s `cmd` (the launch) and `input_command`'s `chars` (what gets typed into an already-running one) — `Session.run` wraps the injected approval callback with it, so a hit is rejected before the host is asked, under every approval mode, allow-all included. The model receives the fixed line `Tool call denied by policy.` — distinct from a person's cancellation — and changes course. The policy lives in the Project config rather than in Agent State: an Agent editing its own configuration cannot reach it, and each Session snapshots it at creation, so a mid-Session edit takes effect only from the next load. It is not a filesystem permission — a tool that writes arbitrary paths can still rewrite the config file itself.
+
+The rules are **plain data with no special tiers**: the factory set is seeded into each new project exactly like the model presets — copied in at creation, never rewritten afterward — and every rule can then be edited, disabled, deleted, or joined by new ones. A project from before the seeding (no `rules` list stored) behaves as the factory set until its first saved edit materializes the list; the settings page's "Restore defaults" loads the factory set back into the editor, and Save writes it.
+
+| Field | Description |
+| --- | --- |
+| `enabled` | Master switch; absent = **on** (stored only as `enabled = false`) |
+| `[[command_policy.rules]]` | The deny-rule list, matched in order: `name` (identifies the rule in the settings UI) + `pattern` (a JavaScript regex source, matched against the whitespace-normalized command) + optional `description` + per-rule `enabled` (absent = on). A stored empty list means no rules; an absent list means the factory set |
+
+The factory set is deliberately small — commands whose verbatim execution is destructive with no undo: `rm` carrying both a recursive and a force flag, `mkfs`, `dd` writing straight to a block device, the classic fork bomb, and shell redirection onto a block device (`/dev/null` and friends stay legal). Four more are the Windows counterparts of the same five, since `exec_command` will resolve pwsh or cmd there: a recursive force delete (`Remove-Item -Recurse -Force`, `rd /s /q`), a volume format (`format C:`, `Format-Volume`), a raw disk overwrite (`\\.\PhysicalDriveN`, `Clear-Disk`), and the cmd fork bomb.
+
+Matching normalizes ordinary spellings before the rules run, so plain typing does not slip through by accident: a leading path (`/bin/rm`), a wrapper (`sudo`, `env`, `command`, `nice`, `xargs`), quoting or a backslash escape of the command word (`"rm"`, `r''m`, `\rm`), and a literal `sh -c 'rm -rf /'` payload all match. Removing quote marks is all that happens — nothing is expanded, substituted, or decoded.
+
+```toml
+[command_policy]
+enabled = true
+
+[[command_policy.rules]]
+name = "rm-recursive-force"
+pattern = "…" # seeded from the factory set
+description = "rm with recursive + force flags in one command (rm -rf and friends)"
+
+[[command_policy.rules]]
+name = "no-force-push"
+pattern = "git push [^;|&]*--force"
+enabled = false
+```
+
+This is an **accident guardrail, not a security boundary**, and that is a statement about what pattern matching can do rather than modesty about this implementation. Shell is a programming language; deciding what a program will do by reading its text before it runs is not a problem more rules get closer to solving. So the policy covers the spellings people and models actually type, and stops there:
+
+- **A command computed at run time is not covered and will not be.** `$IFS` in place of spaces, a variable or alias (`X=rm; $X -rf /`), a command substitution, `eval`, base64 piped into a shell, `python -c`, an interpreter reached through a pipe. Each would take a pattern that costs maintenance forever and buys only the appearance of coverage. Anyone who wants the command to run can get it to run.
+- **MCP tools are a different surface.** This policy reads `exec_command` and `input_command` only. An MCP server's own `permission` level is the knob that exists there, but read what it does before relying on it: it fixes the level its tools report to the approval mode and nothing else — it does not sandbox the server or restrict what its tools do when they run (see [Tools & Approval](/tools)). Extending a shell-text matcher into arbitrary MCP arguments would be a second, weaker control over a surface that needs a real one.
+- **Commands not on the list.** `shred`, `wipefs`, `find -delete`, `git clean -xfd`, `chmod -R 000 /` match no factory rule — the list is deliberately small. Add your own rules for what your project cares about.
+
+What it does buy is that a destructive one-liner does not run by accident, in either of the two ways a model reaches a shell, in either the POSIX or the Windows spelling, under any approval mode. That is a speed bump, and a speed bump is worth having in front of an irreversible command. For an actual boundary — a process that *cannot* reach the rest of the filesystem regardless of what it runs — the mechanism is confinement (bubblewrap, dsh), which is a separate layer this policy complements rather than replaces.
+
+Manage it from the Security policy tab of Project Settings in the Web App (owner-only to edit; members see the effective policy).
+
 ## Agent config
 
 `agent_state/system_config.yaml` defines a single Agent's behavior (YAML; comments are preserved when edited via the Web UI):
@@ -105,7 +147,7 @@ Edit this file via the CLI (`penguin config model …`) or the Web Models page �
 | `model.max_tokens` | `32000` | Output Token ceiling per Request (-1 = no cap, provider default); each request clamps the effective value to the model's `context_window` minus the estimated input, so a small-window model never gets asked for more than fits |
 | `model.thinking_level` | `medium` | `none` / `low` / `medium` / `high` / `xhigh` / `max`; the session default, overridable per-Task |
 | `model.timeoutMs` | `120000` | Per-Request timeout (milliseconds) |
-| `compaction.max_context_length` | `128000` | Context Token threshold that triggers compaction; the effective threshold is capped at the model's `context_window` − 2048 so compaction fires before a small window overflows |
+| `compaction.max_context_length` | `256000` | Context Token threshold that triggers compaction; the effective threshold is the smaller of this and the model's `context_window` − 2048, so a small-window model compacts inside its window while a window above 258048 fires at this number (an entry with no `context_window` assumes a 128000 window) |
 | `compaction.max_session_turns` | `-1` | Cumulative Session turn threshold (`-1` = unlimited) |
 | `compaction.mode` | `summarize` | `summarize` / `discard` |
 | `compaction.prompt` | built-in template | Prompt used for summarize compaction |
@@ -119,7 +161,7 @@ Edit this file via the CLI (`penguin config model …`) or the Web Models page �
 | `schedules.enabled` | `true` | Whether the scheduled-tasks section enters the context (with it off, the server still fires tasks — the model just isn't taught the task system) |
 | `schedules.prompt` | built-in template | The `{{SCHEDULES}}` block, editable on the Schedules tab — teaches the model file-based task management, carries `{{SCHEDULE_LIST}}` |
 | `tools.builtin` | full default toolset when omitted | Tool entries: `name` / `description` / `parameters` / `permission` (`r` or `rw`) / `forModel` / `timeoutMs` / `maxOutputLength` / `call_description` (per-tool toggle for the `description` call argument, required while on; missing = kept); once written it replaces the default list wholesale |
-| `tools.mcpServers` | `[]` | MCP Server configuration (`name` + `config`): transport is `stdio` / `http` / `sse`, and discovered tools join the toolset as `mcp__<server>__<tool>`; see the MCP Servers section of [Tools & Approval](/tools) |
+| `tools.mcpServers` | `[]` | MCP Server configuration (`name` + `config`): transport is `stdio` / `http` / `sse`, and discovered tools join the toolset as `mcp__<server>__<tool>`; `config.permission` (`auto` / `r` / `rw`, default `auto`) fixes the approval level of every tool of that Server instead of trusting its `readOnlyHint`; see the MCP Servers section of [Tools & Approval](/tools) |
 
 Tool permissions and approval semantics are covered in [Tools & Approval](/tools).
 
@@ -143,7 +185,7 @@ model:
   timeoutMs: 120000
 
 compaction:
-  max_context_length: 128000
+  max_context_length: 256000
   max_session_turns: -1
   mode: summarize
 
@@ -234,7 +276,7 @@ updated_at: 2026-08-07
 - Integration tests connect to a real database; no mock repositories.
 ```
 
-These three fields are all the frontmatter there is — which layer a memory belongs to is expressed by its directory, so there is no `type` field (a `type:` line left in an earlier file is ignored as an unknown field). Worth saving: who the user is (role, expertise, standing preferences) and how they want the Agent to work, with the why; decisions, constraints and plans not derivable from the code; stable entry points into external systems, documents and services. A topic that turns out to be wrong is deleted together with its index line, and dates are written absolute (`YYYY-MM-DD`) — relative ones mean nothing to a later Session. What must never be saved: facts the code, config or Git history already states; short-lived task progress and debugging notes; credentials, tokens or secrets; unconfirmed guesses; long transcript excerpts.
+These three fields are all the frontmatter there is — which layer a memory belongs to is expressed by its directory, so there is no `type` field (a `type:` line left in an earlier file is ignored as an unknown field). Worth saving: who the user is (role, expertise, standing preferences) and how they want the Agent to work, with the why; decisions, constraints and plans not derivable from the code; stable entry points into external systems, documents and services. The prompt also names the moments that produce such a fact — a request made a second time, a correction that holds beyond the current task, a habit or development practice stated more than once, or a reusable working detail handed over that the Agent would otherwise ask for again. A repeat is a strong signal rather than a condition, so one clear statement of a standing preference is enough; when the Agent cannot tell whether something is worth keeping, it asks in the conversation. A topic that turns out to be wrong is deleted together with its index line, and dates are written absolute (`YYYY-MM-DD`) — relative ones mean nothing to a later Session. What must never be saved: facts the code, config or Git history already states; short-lived task progress and debugging notes; credentials, tokens or secrets; unconfirmed guesses; long transcript excerpts.
 
 Each `MEMORY.md` lists its scope's memories one line each — `- [Title](file.md) — hook`, links relative to the scope directory — and is updated in the same round as the file, so the two never disagree.
 

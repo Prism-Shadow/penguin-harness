@@ -1,10 +1,10 @@
 ---
 name: penguin-sdk
-description: Build AI apps on the Penguin Harness SDK — self-contained projects, the createSession/run streaming loop with thinking and image messages, and a complete RAG recipe that ingests documents into a knowledge base and answers with citations behind a web UI.
-short_description: Build AI and RAG apps on the Penguin Harness SDK.
-short_description_zh: 基于 Penguin SDK 构建 AI 与 RAG 应用。
-version: 19
-updated: 2026-08-06T00:00:00Z
+description: Use whenever the user wants to build an agent application — their own program with an embedded agent, such as an AI app, an agentic app or a RAG app. This is writing application code on the Penguin Harness SDK, not configuring an Agent State inside PenguinHarness. Covers self-contained projects, the createSession/run streaming loop with thinking and image messages, wiring the user's existing tools in as CLI commands, and a complete RAG recipe that ingests documents into a knowledge base and answers with citations behind a web UI.
+short_description: Build agent, AI and RAG applications on the Penguin Harness SDK.
+short_description_zh: 基于 Penguin SDK 构建智能体应用、AI 与 RAG 应用。
+version: 22
+updated: 2026-08-23T15:42:44Z
 ---
 
 # Penguin Harness SDK
@@ -55,7 +55,7 @@ If the package is not on your npm registry (it is developed in the PenguinHarnes
 
 Configure a model for the app's data root, in this order — stop at the first that works:
 
-1. `penguin config model add --root <data_dir> --provider <group> --model-id <id> --api-key <key> [--base-url <url>] [--client-type openai] --set-default` — prefer `--client-type openai --base-url <endpoint>` (works with any OpenAI-compatible endpoint; exact ids in the agenthub-models skill). `--provider` is required: a model is always the `(provider, model_id)` pair and the group is never inferred from the id (`custom` for an endpoint outside the built-in groups).
+1. `penguin config model add --root <data_dir> --provider <group> --model-id <id> --api-key <key> [--base-url <url>] [--client-type openai-chat] --set-default` — prefer `--client-type openai-chat --base-url <endpoint>` (works with any OpenAI Chat Completions compatible endpoint; exact ids in the agenthub-models skill). `--provider` is required: a model is always the `(provider, model_id)` pair and the group is never inferred from the id (`custom` for an endpoint outside the built-in groups).
 2. Environment variables cover the **credential only** (`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …) — model selection still comes from the project config, whose preset default is `deepseek-v4-flash`. Env-only setup therefore works out of the box only with `DEEPSEEK_API_KEY`; for another vendor either run the CLI command above or pass a configured `{ provider, modelId }` pair to `createSession`.
 
 Keep model API keys **project-local**: configure them with the penguin CLI into the app's own data root under the working directory, so the project stays self-contained and movable. When building an AI app, **always pass `--root <data_dir>` pointing at the app's data directory inside the current working directory** (the same path you give `createAgent({ root })`, e.g. `./penguin_data`) — never run `penguin config ...` without `--root`, or it writes to the global `~/.penguin/data` instead of the project. Never read, copy or fall back to model keys stored in the user's global `~/.penguin` directory — that config belongs to the person running Penguin, not to the app you are building.
@@ -120,6 +120,12 @@ Browser flow: `<input type="file" accept="image/*">` plus paste/drag-drop → `F
 
 **Other payloads worth handling** (always narrow with the guards first): `partial_tool_call` / `partial_tool_call_output` — surface as an activity line ("running `search`…") in apps that grant tools; `request_end` (event) — a non-`completed` `status` is the error signal (`auth` → ask for a key; `message` carries the failure detail; `retry_in_ms` announces a planned in-run retry, renderable as a countdown); `token_usage` (event) — session-cumulative and last-request counts, if the app shows cost; `compaction_begin` / `compaction_end` (events) — long-lived chats only, show a brief "context being compacted" notice. Everything else is safe to ignore.
 
+## Wiring in the user's tools
+
+When the app's agent must call the user's existing tools (scripts, internal CLIs, anything with an entry point), integrate them as **CLI commands** first: wrap each one as a small executable inside the project (a script under `tools/`, or the user's own binary), and describe it in the embedded agent's persona / `AGENTS.md` — name, what it does, one usage line. The agent invokes it through the built-in `exec_command` tool, so there is nothing to register: no schema to declare, arguments are flags, stdout is the result, the `approve` callback still gates every invocation, and the same command stays testable by hand.
+
+Add an MCP server (`tools.mcpServers` in `system_config.yaml`) only when a CLI wrapper cannot express the integration — a long-lived authenticated connection, or tool schemas the model must see typed. Otherwise the CLI form is the cheaper default and keeps the project self-contained.
+
 ## RAG knowledge app
 
 The default recipe when the user wants an app that answers questions over a document set ("docs QA", "knowledge base", "chat with our docs", "become an expert on X"). The core contributes the agent loop only — retrieval is app code. Default to **lexical BM25**: no extra dependencies, no embedding credential, works offline. (Semantic upgrade: embed chunks via `@prismshadow/agenthub` — see the agenthub-models skill — and rank by cosine; only when an embedding-capable key is configured.)
@@ -127,7 +133,7 @@ The default recipe when the user wants an app that answers questions over a docu
 ```
 my-app/
   package.json       # "type": "module"; scripts: ingest / start
-  persona.md         # the embedded agent's role — write it per the agent-creation skill
+  persona.md         # the embedded agent's role — write it per the agent-initialization skill
   ingest.ts          # corpus/ → data/index.json; initializes penguin_data/, installs persona
   rag.ts             # BM25 retrieval over the chunk index
   server.ts          # POST /api/ask streams SSE; serves public/
@@ -340,7 +346,7 @@ http.createServer(async (req, res) => {
 - **No Markdown pipeline — set the output format instead**: instruct the embedded agent (in `persona.md` and the per-request prompt) to answer in plain text — short paragraphs separated by blank lines, citations as bare `[n]`, no Markdown syntax. The UI then only escapes the text, splits paragraphs and styles the `[n]` markers; there is no renderer to build. When richer structure genuinely matters, have the model emit a small whitelisted HTML subset (`<p> <ul> <li> <strong> <code>`) and sanitize to exactly that whitelist before inserting — never inject unsanitized model output.
 - **Cross-language retrieval**: the corpus and the user often speak different languages (English docs, Chinese questions), and BM25 is purely lexical — a Chinese question scores zero against English chunks. At ingest time derive a small bilingual keyword map for the corpus's core vocabulary (10–20 domain terms, e.g. `权限 → permissions / allow / deny`, `钩子 → hooks`) and expand query tokens through it in `search()` before scoring; keep the per-character CJK tokenizer. The persona already pins the answer language to the question's language.
 
-**Persona** (`persona.md`) — the embedded agent's role, written per the agent-creation skill. Shape: one role sentence ("You are an expert on X; you answer strictly from the provided context blocks"), citation and refusal rules, plain-text output (no Markdown — the output contract above), answer language follows the question.
+**Persona** (`persona.md`) — the embedded agent's role, written per the agent-initialization skill. Shape: one role sentence ("You are an expert on X; you answer strictly from the provided context blocks"), citation and refusal rules, plain-text output (no Markdown — the output contract above), answer language follows the question.
 
 ## Verify before you hand over
 

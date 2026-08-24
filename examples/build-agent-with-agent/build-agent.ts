@@ -5,7 +5,7 @@
  * open-weight model (Ollama serving qwen3.6:35b) — see README.md for the one-time setup.
  *
  * Two phases, both driven purely through the SDK:
- *   1. BUILD  — drive `default_agent` with the `agent-creation` skill to scaffold a brand-new
+ *   1. BUILD  — drive `default_agent` with the `agent-initialization` skill to scaffold a brand-new
  *               agent (`commit-helper`) from a plain-language requirement.
  *   2. RUN    — load the freshly-created agent and have it do its job (write a commit message),
  *               proving the generated AGENTS.md actually shapes its behavior.
@@ -32,14 +32,14 @@ async function runToStdout(run: AsyncGenerator<OmniMessage>): Promise<string> {
   return finalText;
 }
 
-const BUILD_REQUEST = `Use the agent-creation skill to create a brand-new agent in this project.
+const BUILD_REQUEST = `Use the agent-initialization skill to create a brand-new agent in this project.
 
 Requirement: an agent called "commit-helper" that writes high-quality git commit messages.
 Given a diff or a description of changes, it must produce a Conventional Commits message: a
 \`type(scope): subject\` header (type one of feat/fix/docs/refactor/test/chore), subject in
 imperative mood and under 50 characters, then a blank line and a short body explaining the "why".
 
-Do everything the agent-creation skill specifies: create the agent directory layout, copy the
+Do everything the agent-initialization skill specifies: create the agent directory layout, copy the
 base system_config.yaml, write a concise AGENTS.md capturing this requirement, and set the new
 agent's name and description in system_config.yaml. Report the files you created when done.`;
 
@@ -50,7 +50,7 @@ Touched packages/core/src/payment/client.ts.`;
 async function main(): Promise<void> {
   // --- Phase 1: an Agent builds an Agent ------------------------------------------------
   console.log(
-    "=== Phase 1: default_agent is building a new agent via the agent-creation skill ===\n",
+    "=== Phase 1: default_agent is building a new agent via the agent-initialization skill ===\n",
   );
   const builder = await createAgent({ agentId: "default_agent" });
   const buildSession = await builder.createSession({ workspaceDir: process.cwd() });

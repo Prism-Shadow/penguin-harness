@@ -62,11 +62,13 @@ jobs:
 
   # macOS: the same build/typecheck/test gates on macos-latest (arm64). This is the only job
   # where the terminal's pty suites run on darwin — node-pty compiles against the runner's
-  # toolchain and its darwin-only spawn-helper actually executes — and the standalone
-  # terminal smoke script then re-runs node-pty under Electron's own Node
-  # (ELECTRON_RUN_AS_NODE), the runtime the packaged app's server really uses. A macOS
-  # terminal regression that once shipped as a silently empty panel fails here instead.
-  # No format:check (same files as ubuntu) and no live-LLM e2e (ubuntu-only budget).
+  # toolchain and its darwin-only spawn-helper actually executes — and the terminal smoke
+  # script then re-runs node-pty under Electron's own Node (ELECTRON_RUN_AS_NODE), resolved
+  # from the built desktop bundle: the same module lookup, on the same runtime, that the
+  # packaged app's server performs. It runs after the build because that staged copy is a
+  # build output. A macOS terminal regression that once shipped as a silently empty panel
+  # fails here instead. No format:check (same files as ubuntu) and no live-LLM e2e
+  # (ubuntu-only budget).
   ci-macos:
     runs-on: macos-latest
     steps:
@@ -95,13 +97,33 @@ jobs:
       - name: Terminal smoke (node-pty under Electron's Node)
         run: node packages/desktop/scripts/terminal-smoke.mjs
 
-  # Windows: the same build/typecheck/test gates on windows-latest (the ubuntu job above stays the
-  # required one). The runner ships Git-Bash on PATH, so core's exec_command tests run through the
-  # shell resolver's bash pick; genuinely POSIX-only tests skip themselves via process.platform
-  # guards (not CI filters), so local Windows devs see the same behavior. Line endings come from
-  # .gitattributes (LF working tree), keeping build outputs and fixtures byte-identical.
-  # No format:check (same files as ubuntu) and no live-LLM e2e here (ubuntu-only budget).
+  # Windows: the same build/test gates on windows-latest (the ubuntu job above stays the
+  # required one), split into two shards so the process-heavy suites don't share a small
+  # runner: `server` gives the pty-streaming suites the whole machine and carries the
+  # installer checks, while `packages` runs core alone first (its exec_command suites spawn
+  # real shells and read their output under timeouts, races they lose when oversubscribed)
+  # and the remaining packages together after it. Every package's tests run exactly once
+  # across the two shards. The runner ships Git-Bash on PATH, so core's exec_command tests
+  # run through the shell resolver's bash pick; genuinely POSIX-only tests skip themselves
+  # via process.platform guards (not CI filters), so local Windows devs see the same
+  # behavior. Line endings come from .gitattributes (LF working tree), keeping build
+  # outputs and fixtures byte-identical. No format:check and no typecheck (same files as
+  # ubuntu, and both results are platform-independent, so the ubuntu job gates them); no
+  # live-LLM e2e here (ubuntu-only budget).
   ci-windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: server
+            tests: pnpm --filter @prismshadow/penguin-server test
+            installer: true
+          - shard: packages
+            tests: >-
+              pnpm --filter @prismshadow/penguin-core test &&
+              pnpm -r --filter '!@prismshadow/penguin-core' --filter '!@prismshadow/penguin-server' test
+            installer: false
+    name: ci-windows (${{ matrix.shard }})
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
@@ -120,15 +142,13 @@ jobs:
       - name: Build (tsup)
         run: pnpm build
 
-      - name: Typecheck (tsc)
-        run: pnpm typecheck
-
       - name: Unit tests (vitest)
-        run: pnpm test
+        run: ${{ matrix.tests }}
 
       # The Linux job cannot validate PowerShell syntax; parse (never execute) the installer
       # scripts with the real PowerShell parser so a broken install.ps1 cannot ship.
       - name: Parse installer scripts (PowerShell)
+        if: matrix.installer
         shell: pwsh
         run: |
           $failed = $false
@@ -148,6 +168,7 @@ jobs:
           if ($failed) { exit 1 }
 
       - name: Windows installer tests
+        if: matrix.installer
         shell: pwsh
         run: ./scripts/test-installer.ps1
 

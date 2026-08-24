@@ -10,24 +10,12 @@ import type { ReactNode } from "react";
 import { S } from "../../lib/strings";
 import type { SessionSortMode } from "../../lib/session-order";
 import { Chevron } from "./chevron";
+import { GlyphIcon } from "./glyph-icon";
+import { ICON_SIZE } from "../../lib/icon-scale";
 
-/** Minimal stroke-icon wrapper shared by the grouped lists (moved from sidebar.tsx). */
-export function Icon({ d, size = 16 }: { d: string; size?: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d={d} />
-    </svg>
-  );
+/** The grouped lists' line icon: GlyphIcon at the nav-row rung, which is what these rows are. */
+export function Icon({ d, size = ICON_SIZE.navRow }: { d: string; size?: number }) {
+  return <GlyphIcon d={d} size={size} />;
 }
 
 /** Folder outline, closed (same glyph as the draft page's Workspace pill); collapsed workspace groups and the grouping toggle use it. */
@@ -45,11 +33,32 @@ export const AGENT_GROUP_ICON =
 /** Clock (lucide clock, drawn as one path), the "most recent" sort option. */
 export const CLOCK_ICON = "M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0M12 6v6l4 2";
 
+/**
+ * Calendar (lucide calendar), the "by time" grouping option. Deliberately not the clock:
+ * that glyph already names the recency SORT one section below in the same menu, and two
+ * rows wearing one mark would read as one setting.
+ */
+export const CALENDAR_ICON =
+  "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z";
+
 /** Opposed up/down arrows (lucide arrow-up-down), the drag-reordered "manual order" sort option. */
 export const REORDER_ICON = "m21 16-4 4-4-4M17 20V4M3 8l4-4 4 4M7 4v16";
 
 /** Grouping mode of a Session list (persisted; Workspace is the default). */
-export type GroupMode = "workspace" | "agent";
+export type GroupMode = "workspace" | "agent" | "time";
+
+/**
+ * The grouping modes a Trace-file tree can offer. Its rows are trace files keyed by
+ * Session id and carry no activity timestamp, so there is nothing to cut time buckets
+ * on; a stored "time" preference reads there as the Workspace grouping it falls back to
+ * (treeGroupMode), and its two-icon toggle offers exactly these two.
+ */
+export type TreeGroupMode = "workspace" | "agent";
+
+/** The nearest mode a Trace-file tree supports (see TreeGroupMode). */
+export function treeGroupMode(mode: GroupMode): TreeGroupMode {
+  return mode === "agent" ? "agent" : "workspace";
+}
 
 /**
  * Leading glyph per grouping mode — the one place these are chosen, read by both the
@@ -60,6 +69,7 @@ export type GroupMode = "workspace" | "agent";
 export const GROUP_MODE_ICONS: Record<GroupMode, string> = {
   workspace: FOLDER_ICON,
   agent: AGENT_GROUP_ICON,
+  time: CALENDAR_ICON,
 };
 
 /**
@@ -80,7 +90,8 @@ export const SORT_MODE_ICONS: Record<SessionSortMode, string> = {
 const GROUP_MODE_KEY = "penguin.sidebarGroupMode";
 
 export function initialGroupMode(): GroupMode {
-  return localStorage.getItem(GROUP_MODE_KEY) === "agent" ? "agent" : "workspace";
+  const stored = localStorage.getItem(GROUP_MODE_KEY);
+  return stored === "agent" || stored === "time" ? stored : "workspace";
 }
 
 /**
@@ -89,22 +100,25 @@ export function initialGroupMode(): GroupMode {
  * Agents page's existing create dialog), workspace mode → a Workspace (a new-chat
  * draft — there is no Workspace entity on the server; a Workspace comes into being
  * with the conversation created in it, chosen or auto-created on the draft card).
+ * Time mode groups into buckets nothing can be created in, so its button falls back to
+ * the plain new conversation — the one object every mode's list is made of.
  */
-export function newEntityForGroupMode(mode: GroupMode): "agent" | "workspace" {
-  return mode === "agent" ? "agent" : "workspace";
+export function newEntityForGroupMode(mode: GroupMode): "agent" | "workspace" | "chat" {
+  if (mode === "agent") return "agent";
+  return mode === "time" ? "chat" : "workspace";
 }
 
 export function storeGroupMode(mode: GroupMode): void {
   localStorage.setItem(GROUP_MODE_KEY, mode);
 }
 
-/** The two-icon Workspace/Agent grouping toggle (the section header's mode switch). */
+/** The two-icon Workspace/Agent grouping toggle (the Trace tree's mode switch — see TreeGroupMode). */
 export function GroupModeToggle({
   value,
   onChange,
 }: {
-  value: GroupMode;
-  onChange: (mode: GroupMode) => void;
+  value: TreeGroupMode;
+  onChange: (mode: TreeGroupMode) => void;
 }) {
   return (
     <div className="flex items-center gap-0.5">
@@ -145,11 +159,18 @@ export const FOLDER_ROW_CLASS =
  */
 export function MoreRow({
   label,
+  ariaLabel,
   pending = false,
   onClick,
   className,
 }: {
   label: string;
+  /**
+   * Accessible name, when the row's own wording is not the shared "More" — a name that
+   * contradicted the visible text would announce a different row than the one on screen.
+   * Defaults to the shared label, which is what the count-carrying rows announce.
+   */
+  ariaLabel?: string;
   /** A fetch is in flight: disable and show the loading label. */
   pending?: boolean;
   onClick: () => void;
@@ -159,7 +180,7 @@ export function MoreRow({
   return (
     <button
       type="button"
-      aria-label={S.chat.loadMore}
+      aria-label={ariaLabel ?? S.chat.loadMore}
       disabled={pending}
       onClick={onClick}
       className={`${FOLDER_ROW_CLASS}${className ? ` ${className}` : ""} disabled:opacity-60`}

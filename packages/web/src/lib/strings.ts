@@ -37,10 +37,6 @@ export const zh = {
     newShell: "新建 Shell",
     /** Tab strip ×: kills the shell itself (server-side), unlike closing the dock. */
     killShell: "关闭此终端",
-    /** Boundary drag handle between the dock and the main content (double-click resets). */
-    resize: "调整终端面板大小",
-    /** Hover menu when the user has no live terminal yet. */
-    noTerminals: "暂无终端",
     /** Pane body when creating/attaching a shell failed (the server message follows). */
     createFailed: "终端创建失败",
     /** A create that 404s: the server predates the terminal API (or the shell attached to an older one). */
@@ -48,7 +44,6 @@ export const zh = {
       "该服务端没有终端接口：运行中的 runtime 早于该功能。热更新只替换平台与前端，终端接口属于 runtime，需更新 runtime 本身（重启无效）",
     /** Codex-style handoff: opens /terminal?id=… in a new window, the dock lets go. */
     detach: "在新窗口打开",
-    close: "关闭",
     status: {
       connecting: "连接中",
       ready: "已连接",
@@ -59,42 +54,92 @@ export const zh = {
     exitedWithCode: (code: string): string => `退出码 ${code}`,
   },
 
+  /** The dock surfaces (right / bottom) every side element renders in as a tab. */
+  dock: {
+    /** The dock header's "+" menu: panels and shells this dock can take a tab for. */
+    addTab: "添加面板",
+    /** A panel tab's × (its content closes; terminal tabs use terminal.killShell instead). */
+    closeTab: "关闭面板",
+    /** The dock header's ×: the dock hides, its tabs stay for the next open. */
+    hideDock: "收起侧边栏",
+    moveToRight: "移到右侧",
+    moveToBottom: "移到下方",
+    /** Boundary drag handle between a dock and the chat content (double-click resets). */
+    resize: "调整面板大小",
+    /** The toolbar's two pull-open buttons (aria-expanded carries the open state). */
+    rightDock: "右侧栏",
+    bottomDock: "下侧栏",
+    /** A session-bound panel's body on the draft page, where no Session exists yet. */
+    draftEmpty: "发送第一条消息后可用",
+    /** Terminal tab ×: ends the shell for real, so it asks first. `name` is the tab label. */
+    killConfirmTitle: "关闭此终端？",
+    killConfirmBody: (name: string): string => `将结束 Shell「${name}」的进程，无法恢复。`,
+  },
+
+  /** The Trace dock panel (the current conversation's Trace files). */
+  tracePanel: {
+    empty: "暂无轨迹",
+    emptyHint: "该会话还没有产生 Trace 文件",
+    loadFailed: "轨迹加载失败",
+  },
+
   settings: {
     language: "语言",
+    languageInfo: "界面语言，可跟随浏览器设置。",
+    /** Sidebar user-menu row opening the System settings dialog. */
+    systemSettings: "系统设置",
+    /** Rail headings: the viewer's own preferences vs. the whole server's. */
+    groupPersonal: "个人",
+    groupServer: "服务器",
+    /** Personal pages of the settings dialog. */
+    generalTitle: "通用",
+    appearanceTitle: "外观",
+    accountTitle: "账户",
     /** Sidebar Session list: also show CLI-created Sessions (default off — the list then never scans the Trace directories). */
     showCliSessions: "显示 CLI 会话",
-    /** Admin-only user-menu row opening the proxy options dialog. */
-    proxyMenu: "代理选项",
-    proxyDialogTitle: "代理选项",
-    /** The dialog's two switches: the server's own outbound traffic / agent command subprocess environments. */
+    showCliSessionsInfo:
+      "关闭时会话列表只列出在 Web 端创建的会话，直接由数据库返回；开启后会额外扫描轨迹目录，把 CLI 创建的会话一并列出。仅影响当前账号。",
+    /** Admin-only sub-page (server-global); its explanation is disclosed at the pane heading. */
+    proxyTitle: "代理选项",
+    proxyInfo: "服务器全局设置，保存后立即生效，无需重启。回环地址始终直连。",
+    /** The two switches: the server's own outbound traffic / agent command subprocess environments. */
     proxyForApp: "应用程序使用代理",
     proxyForAgent: "Agent 环境使用代理",
     /** The shared explicit proxy address (empty = follow the proxy environment variables). */
     proxyAddress: "代理地址",
     proxyAddressPlaceholder: "留空 = 跟随系统代理",
-    /** Admin-only user-menu row opening the upload-limits dialog. */
-    uploadLimitsMenu: "上传限制",
-    uploadLimitsDialogTitle: "上传限制",
-    /** The dialog's two number fields, both in whole MB. */
+    /** Admin-only sub-page (server-global). */
+    uploadLimitsTitle: "上传限制",
+    /** Its two number fields, both in whole MB. */
     attachmentMaxMb: "单个附件上限（MB）",
     attachmentTotalMb: "单条消息附件合计上限（MB）",
-    /** Explains what the numbers govern and what stays fixed, so the form needs no separate docs trip. */
-    uploadLimitsHint: (min: number, max: number, count: number, imageMb: number): string =>
-      `取值 ${min}–${max} MB，合计不得低于单个上限。一条消息最多 ${count} 个附件；` +
-      `对话内嵌图片另有 ${imageMb}MB 上限，不随此设置变化——图片会进入对话与轨迹，每次翻阅历史与恢复会话都要重新付出它的体积。`,
+    /** Accepted range for each field: read while typing, so it stays under the field. */
+    attachmentMaxMbHint: (min: number, max: number): string => `取值 ${min}–${max} MB`,
+    attachmentTotalMbHint: (min: number, max: number): string =>
+      `取值 ${min}–${max} MB，且不得低于单个附件上限`,
+    /** What these two numbers do NOT govern — disclosed at the pane heading. */
+    uploadLimitsInfo: (count: number, imageMb: number): string =>
+      `一条消息最多 ${count} 个附件；对话内嵌图片另有 ${imageMb}MB 上限，不随此设置变化——` +
+      `图片会进入对话与轨迹，每次翻阅历史与恢复会话都要重新付出它的体积。`,
     theme: "主题",
+    themeInfo: "应用的明暗外观。",
     themeLight: "浅色",
     themeDark: "深色",
     followSystem: "跟随系统",
     terminalTheme: "终端主题",
+    terminalThemeInfo: "终端面板的配色，默认跟随应用主题。",
     followAppTheme: "跟随主题",
     langZh: "中文",
     langEn: "English",
     fontSize: "字号",
+    fontSizeInfo: "界面整体字号。",
     fontSmall: "小",
     fontMedium: "中",
     fontLarge: "大",
     accent: "主题色",
+    accentInfo: "界面强调色。",
+    currencyInfo: "价格显示币种；存储始终为美元。",
+    changePasswordInfo: "更改当前账号的登录密码。",
     accentNames: {
       neutral: "灰白",
       blue: "蓝",
@@ -120,8 +165,8 @@ export const zh = {
      */
     checkNow: "检查更新",
     checking: "检查中…",
-    /** Success toast when the manual check finds a newer release; the row below turns into the update entry. */
-    foundNew: (v: string) => `发现新版本 v${v}，点击下方更新入口即可安装`,
+    /** Success toast when the manual check finds a newer release; the row itself turns into the update entry. */
+    foundNew: (v: string) => `发现新版本 v${v}，点击该更新入口即可安装`,
     upToDate: "已是最新版本",
     checkFailed: "检查更新失败，请稍后重试",
     checkDisabled: "更新检查已关闭（PENGUIN_UPDATE_CHECK=off）",
@@ -136,6 +181,35 @@ export const zh = {
       "将下载最新版本并安装到服务器上的安装目录（数据目录不受影响）。安装完成后需要重启服务才会生效。",
     /** Copy shown to non-admins in place of confirmBody (they can read the release notes but cannot run the update here). */
     adminOnly: "只有管理员可以在这里执行更新。",
+    /**
+     * Desktop client-update row in the sidebar user menu (shell window only): check →
+     * download progress → restart-to-install, driven by the shell's updater snapshot.
+     * It stands in for the server update surface, which desktop mode hides entirely.
+     * Null version/percent = the shell didn't name one.
+     */
+    clientCheckNow: "检查更新",
+    /** Success toast when a row-initiated check finds a release (the download starts by itself). */
+    clientFoundNew: (v: string | null) =>
+      v !== null ? `发现新版本 v${v}，正在后台下载…` : "发现新版本，正在后台下载…",
+    clientDownloading: (v: string | null, percent: number | null) =>
+      `${v !== null ? `v${v} ` : ""}下载中…${percent !== null ? ` ${percent}%` : ""}`,
+    clientRestartToInstall: (v: string | null) =>
+      v !== null ? `重启并安装 v${v}` : "重启并安装更新",
+    /** Success toast when a row-initiated check lands on a build already downloaded and waiting. */
+    clientDownloadReady: (v: string | null) =>
+      v !== null ? `新版本 v${v} 已就绪，可重启安装` : "更新已就绪，可重启安装",
+    /** Error toast carrying the shell's own updater failure text — a failed download or signature check, not only a failed lookup. */
+    clientUpdateFailed: (detail: string) => `客户端更新失败：${detail}`,
+    /** Install POST failed before the shell could act; `detail` is apiErrorText output. */
+    clientInstallFailed: (detail: string) => `无法开始安装：${detail}`,
+    clientInstallConfirmTitle: "重启并安装更新",
+    /** Mirrors the shell's native restart prompt: the interruption warning must not disappear on the web path. */
+    clientInstallConfirmBody: "PenguinHarness 将重启以完成更新，正在运行的任务会被打断。",
+    clientInstallConfirmAction: "立即重启",
+    /** Tooltip on the disabled row in a dev (unpackaged) run. */
+    clientUnsupportedDev: "开发运行不支持自更新",
+    /** Tooltip on the disabled row for installs owned by the system package manager (e.g. .deb). */
+    clientUnsupportedPackage: "此安装由系统包管理器管理，请通过包管理器更新",
   },
 
   /** Desktop task-completion notifications (window unfocused; desktop-shell sessions only). */
@@ -148,12 +222,12 @@ export const zh = {
   common: {
     save: "保存",
     cancel: "取消",
+    close: "关闭",
     create: "创建",
     delete: "删除",
     edit: "编辑",
     settings: "设置",
     confirm: "确认",
-    close: "关闭",
     loading: "加载中…",
     saved: "已保存",
     saving: "保存中…",
@@ -167,6 +241,10 @@ export const zh = {
     unknownError: "请求失败，请稍后重试",
     requiredField: "此项必填",
     copied: "已复制",
+    /** Accessible name of the circled "?" that discloses a section or field explanation. */
+    moreInfo: "说明",
+    /** The same, named for what it explains — so the trigger never repeats the heading it sits in. */
+    moreInfoAbout: (subject: string) => `说明：${subject}`,
     name: "名称",
     username: "用户名",
     role: "角色",
@@ -226,9 +304,9 @@ export const zh = {
     id: "Project id",
     idHint: "2~64 位：小写字母开头，仅小写字母、数字与下划线；创建后不可修改",
     idPrefixHint: "id 固定以「用户名-」为前缀，后接小写字母、数字或下划线；创建后不可修改",
-    name: "显示名（可选，缺省为 Project id）",
-    /** Display-name field in Project settings (required here, unlike the create dialog's "optional" wording). */
     displayName: "显示名",
+    /** Create dialog only: leaving the name empty falls back to the id. In Project settings the saved name cannot be blanked. */
+    displayNameHint: "留空则使用 Project id 作为名称",
     settings: "Project 设置",
     settingsTitle: "Project 设置",
     members: "成员",
@@ -241,9 +319,32 @@ export const zh = {
     chatDefaultsNotSet: "未设置",
     chatDefaultsApprovalNotSet: "未设置（默认全部放行）",
     chatDefaultsThinkingNotSet: "未设置（跟随智能体配置）",
-    chatDefaultsWorkspaceHint: "留空表示使用临时工作区",
     /** The model default shares its source with the Models page (the same default_model); this is just another entry point. */
     chatDefaultsModelHint: "与模型页的默认模型同步",
+    /** Settings dialog tab rail. */
+    settingsTabGeneral: "通用",
+    settingsTabMembers: "成员",
+    settingsTabDefaults: "默认值",
+    settingsTabSecurity: "安全策略",
+    projectIdLabel: "Project ID",
+    deleteProjectDesc: "项目目录将被递归删除，不可恢复。",
+    /** Security-policy page (Project settings): disclosed by the "?" beside the tab heading. */
+    commandPolicyInfo:
+      "命令文本经空白与引号归一化后逐条匹配已启用规则的正则表达式，命中即拒绝执行，不受审批模式影响。这是防事故的护栏：运行期才拼出的命令不在覆盖范围内。",
+    commandPolicyEnable: "启用策略",
+    commandPolicyEnableDesc: "关闭后所有规则都不再拦截。",
+    commandPolicyRules: "规则",
+    commandPolicyRestore: "恢复默认",
+    commandPolicyAddRule: "添加规则",
+    commandPolicyEditRule: "编辑",
+    commandPolicyApplyRule: "确定",
+    commandPolicyEmpty: "没有规则。",
+    commandPolicyOn: "已启用",
+    commandPolicyOff: "已停用",
+    commandPolicyRuleName: "名称",
+    commandPolicyRulePattern: "正则表达式",
+    commandPolicyRuleDesc: "描述",
+    commandPolicyInvalidPattern: "正则表达式无效",
     deleteProject: "删除 Project",
     deleteConfirm: "确认删除该 Project？项目目录将被递归删除，不可恢复。",
     deleteDefaultForbidden: "default_project 与 CLI 共用，不允许在 Web 端删除",
@@ -375,6 +476,17 @@ export const zh = {
     mcpUrl: "url",
     mcpHeaders: "headers",
     mcpHeadersHint: "每行一条 Header-Name: value（如 Authorization 等认证头）",
+    mcpPermission: "permission",
+    mcpPermissionAuto: "auto",
+    mcpPermissionAutoLabel: "Auto（readOnlyHint）",
+    mcpPermissionAutoDescription:
+      "每个工具按自己的 readOnlyHint 注解取值：声明了就是只读，否则为读写。",
+    mcpPermissionReadDescription:
+      "该 Server 的全部工具一律视为只读，无论其自身声明。审批模式为 read-only 时自动放行。",
+    mcpPermissionReadWriteDescription:
+      "该 Server 的全部工具一律视为读写，无论其自身声明。审批模式为 read-only 时需人工确认。",
+    mcpPermissionHint:
+      "只有 read-only 审批模式会读这个等级，allow-all / deny-all / always-ask 一律不看。它不限制 Server 本身能做什么——把并非只读的 Server 标为只读，只是撤掉了 read-only 模式本会索要的那次确认。",
     mcpConnectTimeout: "connectTimeoutMs",
     mcpBudgetsHint:
       "留空使用默认值：connectTimeoutMs 是连接与工具发现预算（默认 10000）；timeoutMs / maxOutputLength 作用于该 Server 的全部工具。",
@@ -482,12 +594,29 @@ export const zh = {
     addGroup: "新增分组",
     addGroupTitle: "新增分组",
     addGroupDesc:
-      "自建分组与 Custom 同语义：接口协议可手动选择，也可按 base URL 检测（base URL 必填，API key 留空按所选协议读取 OPENAI_* / ANTHROPIC_* 环境变量）。分组由模型条目承载，保存首个模型后即出现。",
+      "自建分组与 Custom 同语义。「导入模型」按端点检测或手选协议后，一键导入其全部模型；「仅新增分组」建组后逐个添加。分组由模型条目承载，保存首个模型后即出现。",
+    groupModeCreate: "仅新增分组",
+    groupModeImport: "导入模型",
+    groupImportAll: "批量导入模型",
+    groupImportNeedUrl: "请先填写有效的 base URL（http/https）",
+    groupImportKeyHint: "留空按协议读取 OPENAI_* / ANTHROPIC_* 环境变量",
+    groupImportListing: "正在获取模型列表…",
+    groupImportSaving: (n: number): string => `正在导入 ${n} 个模型…`,
+    groupImportUnsupported: "该协议不支持列出模型，请手动添加",
+    groupImportFailed: "获取模型列表失败",
+    groupImportEmpty: "该端点没有可导入的模型",
+    groupImported: (added: number, skipped: number): string =>
+      skipped > 0 ? `已导入 ${added} 个模型，跳过 ${skipped} 个条目` : `已导入 ${added} 个模型`,
     groupNameLabel: "分组名",
     groupNameHint: "小写字母 / 数字开头，可含 - 与 _",
     groupNameInvalid: "分组名只能用小写字母、数字、- 与 _（首字符为字母或数字），长度不超过 32",
     groupNameExists: "该分组名已被内置分组或既有条目占用",
     groupEmptyHint: "该分组暂无模型，点「新增模型」添加",
+    deleteGroup: "删除分组",
+    deleteGroupTitle: "删除分组",
+    deleteGroupConfirm: (label: string, n: number): string =>
+      `确定删除分组「${label}」？组内 ${n} 个模型及其 API key 配置将一并移除。`,
+    groupDeleted: (n: number): string => `已删除分组（${n} 个模型）`,
     searchPlaceholder: "搜索模型：id / 名称 / 厂商",
     noSearchResults: "没有匹配的模型",
     syncCatalog: "同步预置",
@@ -635,6 +764,12 @@ export const zh = {
     readOnlyHint: "member 只读；模型与 credential 修改仅 owner 可执行",
     empty: "尚未配置任何模型",
     noKey: "未配置 key",
+    /**
+     * Model dialog credential slot: sits where a stored key shows its created-at line. It
+     * names no variable — the slot next to it already shows that variable's value masked,
+     * which is what identifies the key to the reader.
+     */
+    readFromEnv: "读取自环境变量",
     /** Chat model dropdown's bottom expander row: reveals the models hidden by the configured-key filter. */
     showModelsWithoutKey: (n: number): string => `显示未配置 key 的模型（${n} 个）`,
     modelIdExists: "该模型 id 已存在",
@@ -691,7 +826,7 @@ export const zh = {
     editWhy:
       "内容修改由 agent 在对话中完成：确认引导语后打开新对话，agent 会同步更新记忆文件与 MEMORY.md 索引。",
     editRequirementLabel: "修改要求",
-    editRequirementPlaceholder: "描述要怎么改（可留空，跳转后在对话中补充）",
+    editRequirementPlaceholder: "描述要怎么改，跳转后可在对话中补充",
     editPromptLabel: "引导语预览",
     editCopyPrompt: "复制 Prompt",
     editOpenChat: "打开新对话",
@@ -703,6 +838,36 @@ export const zh = {
     /** Prefilled draft for the edit-via-chat flow; the user completes the trailing requirement line before sending. */
     editPromptLead: (title: string): string => `请帮我更新一条记忆：${title}`,
     editPromptTail: "修改要求：",
+    exportScope: "导出",
+    exportScopeHint: "将该组全部记忆下载为一份 JSON 文档",
+    exportScopeLabel: (scope: string): string => `导出${scope}`,
+    importScope: "导入",
+    importScopeHint: "从导出的 JSON 文档恢复记忆到该组",
+    importScopeLabel: (scope: string): string => `导入到${scope}`,
+    importTitle: "导入记忆",
+    importWhy:
+      "读取从本 agent 或其他 agent 导出的一组记忆：一个 JSON 文件，含这组记忆与它的 MEMORY.md 索引。",
+    importFile: (name: string, count: number): string => `${name} —— ${count} 条记忆`,
+    importModeLabel: "当这一组里已有同名记忆时",
+    importModeSkip: "保留现有的这条",
+    importModeSkipHint: "只添加这一组还没有的记忆，不会丢失任何现有内容。",
+    importModeOverwrite: "改用文件里的版本",
+    importModeOverwriteHint: "文件中没有的记忆保持不变。",
+    importModeReplace: "整组替换",
+    importModeReplaceHint: "文件中没有的记忆将被删除。",
+    importAction: "导入",
+    importInvalidFile: "这个文件不是记忆导出文件。",
+    importEmptyFile: "这个文件里没有记忆。",
+    importConfirmTitle: "确认导入",
+    importWillOverwrite: (names: string[]): string =>
+      `将覆盖 ${names.length} 条记忆：${names.join("、")}`,
+    importWillRemove: (names: string[]): string =>
+      `将删除 ${names.length} 条记忆：${names.join("、")}`,
+    importWillReplaceIndex: "这一组的 MEMORY.md 索引将被替换。",
+    importIrreversible: "此操作不可恢复。",
+    importDone: (added: number, overwritten: number, removed: number): string =>
+      `已导入：新增 ${added} 条，覆盖 ${overwritten} 条，删除 ${removed} 条`,
+    importNothingNew: "没有可导入的内容——文件里的记忆这一组都已经有了",
   },
 
   vault: {
@@ -768,7 +933,7 @@ export const zh = {
     prompt: "Prompt",
     enabled: "启用",
     startAt: "开始时间",
-    endAt: "结束时间（可选）",
+    endAt: "结束时间",
     period: "周期",
     periodPlaceholder: "30m / 12h / 7d，留空为一次性",
     target: "目标",
@@ -780,7 +945,7 @@ export const zh = {
     sessionSearch: "搜索标题或 Session id…",
     sessionNoMatch: "无匹配的 Session",
     sessionEmpty: "该 Agent 暂无 Session",
-    workspace: "Workspace（可选，留空自动创建临时工作区）",
+    workspace: "Workspace",
     model: "Model",
     modelDefault: "Project 默认",
     deleteTitle: "删除定时任务",
@@ -927,6 +1092,13 @@ export const zh = {
     /** Grouping toggle of the sidebar conversation list (workspace grouping is the default) and the workspace groups. */
     groupByWorkspace: "按工作区分组",
     groupByAgent: "按 Agent 分组",
+    groupByTime: "按时间分组",
+    /** Time-mode bucket names (last day / last month / older), by last activity. */
+    timeGroups: {
+      day: "近一天",
+      month: "近一月",
+      earlier: "更早",
+    },
     /** Session-list section header controls: search / list settings / mode-dependent create (具体新建的对象按分组方式决定). */
     searchSessions: "搜索会话",
     searchSessionsPlaceholder: "搜索会话…",
@@ -954,11 +1126,41 @@ export const zh = {
     exampleFolders: {
       webapps: "搭建网页应用",
       agents: "搭建和优化智能体",
+      schedules: "创建定时任务",
+    },
+    /** Second tooltip line on an example row: the click fills the composer, it does not send. */
+    exampleFillHint: "点击填入输入框，可修改后自行发送",
+    /** The examples block's last folder: prompts the user wrote and saved, stored per user on the server. */
+    shortcuts: {
+      folder: "我的快捷指令",
+      new: "新建快捷指令",
+      /**
+       * Tooltip on the new-shortcut row. Unconditional, and worded to hold either way: the
+       * editor opens on whatever the composer holds, which is a blank draft when it holds
+       * nothing — saving what was just typed is the path this folder exists to shorten.
+       */
+      newFromComposer: "以输入框中的内容作为起点",
+      createTitle: "新建快捷指令",
+      editTitle: "编辑快捷指令",
+      titleLabel: "名称",
+      titleHint: (max: number) => `最多 ${max} 个字符`,
+      promptLabel: "提示词",
+      promptHint: (max: number) => `最多 ${max} 个字符`,
+      /** Semantics behind the prompt field's "?": what the saved text does when clicked. */
+      promptInfo:
+        "点击这条快捷指令时，这段文字会原样填入输入框，不会自动发送；需要的 Skill 仍在输入框里自行勾选。",
+      titleTooLong: (max: number) => `名称最多 ${max} 个字符`,
+      promptTooLong: (max: number) => `提示词最多 ${max} 个字符`,
+      deleteTitle: "删除快捷指令",
+      deleteConfirm: (title: string) => `确定删除「${title}」？该快捷指令会从你的所有设备上消失。`,
     },
     /**
-     * Example task cards on the draft screen: one click auto-submits the canned prompt. These
-     * are the FULL working prompts — descriptions stay short, but the submitted instructions
-     * remain detailed because execution quality depends on them.
+     * Example task cards on the draft screen: one click fills the composer with the canned
+     * prompt, which the user reads, edits and sends. That is why a prompt is SHORT — a short
+     * paragraph, around 100 Chinese characters, carrying what to build plus the constraints the
+     * result would be wrong without. File layouts, field lists, step-by-step headings and
+     * self-test instructions are what the Agent works out or asks about, so they stay out; the
+     * older briefs below are still far longer and are being trimmed to match.
      */
     exampleTasks: {
       game: {
@@ -1023,6 +1225,24 @@ Penguin 视觉风格（见 web-design 技能），默认深色。手机端侧边
 
 完成后在浏览器打开 index.html 自测一次。`,
       },
+      rhythmRunner: {
+        label: "音乐节奏跑酷小游戏",
+        desc: "喵斯快跑式的音乐节奏跑酷：企鹅主角，音符踩着节拍飞来，判定分 Perfect / Great / Miss",
+        prompt:
+          "做一个喵斯快跑（Muse Dash）式的音乐节奏跑酷小游戏：主角是一只企鹅，自动向前跑；" +
+          "音符画成音符图标，严格踩着节拍飞来，玩家按键击打，判定显示 Perfect / Great / Miss 三档，" +
+          "连击计分，难度随曲子推进。纯前端单文件，file:// 直接打开即玩。",
+      },
+      investmentCopilot: {
+        label: "对话式投资分析助理",
+        desc: "用 Penguin SDK 做对话式看盘 Copilot：首页列出近期走势较好的股票，每个判断都说清市场因素",
+        prompt:
+          "用 Penguin SDK 做一个对话式的股市 Copilot，形态参考 perplexity.ai/finance：启动后每 5 分钟实时抓取大盘行情，" +
+          "首页直接列出近期走势较好的股票和板块强弱，每个判断都要说清背后的市场因素——政策、行业消息、" +
+          "资金流向、财报或宏观数据，而不是技术指标，" +
+          "只做分析不是投资建议。它的查股工具要能答「帮我查一下智谱的股票」这类问题：" +
+          "按公司名（中文也行）自己对应到股票代码，查不到或没上市就直说，不要编。",
+      },
       rag: {
         label: "构建 Claude Code 文档 RAG 智能体",
         desc: "收集 claude-code-docs 仓库，生成可对话、带来源引用的 RAG 知识应用",
@@ -1038,7 +1258,7 @@ Penguin 视觉风格（见 web-design 技能），默认深色。手机端侧边
       agentBenchmarkBuild: {
         label: "构建通用决策智能体和评测基准",
         desc: "创建一个通用决策 Agent，并用足球、售后和投资任务检验它",
-        prompt: `请依次使用 \`agent-creation\` 和 \`benchmark-design\`，创建决策 Agent，并产出 Frozen Benchmark 与 Formal Baseline。
+        prompt: `请依次使用 \`agent-initialization\` 和 \`benchmark-design\`，创建决策 Agent，并产出 Frozen Benchmark 与 Formal Baseline。
 
 Agent：
 - id：\`finite_choice_agent\`
@@ -1068,12 +1288,37 @@ Benchmark：
 - desired_score：\`>=95\`
 - candidate_round_limit：\`5\``,
       },
+      dailyPlan: {
+        label: "每天早 9 点的计划对话",
+        desc: "每天 09:00 在同一个会话里聊当天计划，并回顾昨天的进展",
+        prompt:
+          "建一个定时任务：每天早上 9 点在这个会话里和我聊今天的计划。" +
+          "先回看上文说清昨天定的事做完了多少、哪些卡住，再给我一份排好序的今日候选、每条一句理由，" +
+          "我确认后写成清单。",
+      },
+      githubDigest: {
+        label: "每天汇总 GitHub 项目状态",
+        desc: "定时跑一遍仓库的 Issue、PR 与 CI，日报结尾给出按优先级排序的建议",
+        prompt:
+          "建一个定时任务：每天早上用 gh 汇总一个 GitHub 仓库的 Issue、PR 与 CI 状态，" +
+          "挑出停滞的、待评审的和挂掉的，结尾给出按优先级排序的建议，每条说清为什么排在这个位置。",
+      },
+      memoryReview: {
+        label: "每周五晚回顾并记录 Memory",
+        desc: "周五傍晚一起过一遍这周值得长期记住的事，确认后由你写进 Memory",
+        prompt:
+          "建一个定时任务：每周五傍晚在这个会话里和我过一遍这周值得长期记住的事。" +
+          "先看已有记忆索引避免重复，再逐条问我该记什么、要不要改已有的，我确认后你写进 Memory。",
+      },
     },
     sessionList: "Session",
     defaultSessionTitle: "新对话",
+    agent: "Agent",
     model: "Model",
     workspace: "Workspace",
     workspaceHint: "留空自动创建临时工作区；指定时必须是服务器上已存在的目录",
+    /** The same rule as `workspaceHint`, short enough to sit under a form field. */
+    workspaceHintShort: "留空自动创建临时工作区",
     approvalMode: "审批模式",
     /** Short description (the trigger button shows only the description, not the mode id). */
     approvalModeNames: {
@@ -1146,6 +1391,7 @@ Benchmark：
     decisionDeny: "已拒绝",
     decisionManual: "手动",
     decisionAuto: "自动",
+    decisionPolicy: "策略",
     thinking: "思考",
     subagent: "子会话",
     subagentRunning: "运行中",
@@ -1225,19 +1471,28 @@ Benchmark：
     historyLoadFailed: "历史消息加载失败",
     statsLabel: "统计信息",
     removeImage: "移除图片",
-    openWorkspace: "打开工作区",
     openAgents: "智能体面板",
-    /** Panel switcher (chat toolbar top-right): the "create" dropdown and its pin toggles. */
-    panelsCreate: "创建",
     workspacePanel: "工作区",
-    pinPanel: "置顶到栏目",
-    unpinPanel: "取消置顶",
     /** File summary card at the end of a message (Codex-style): title, inline preview action, and collapsed row. */
     filesInMessage: (n: number) => `${n} 个文件`,
     imagesInMessage: (n: number) => `${n} 张图片`,
     openPreview: "点击预览",
     showMoreFiles: (n: number) => `显示其余 ${n} 个文件`,
     showLess: "收起",
+    /** Memory-change card below the file summary and the Memory side panel: titles, scope/op tooltips, collapsed row. */
+    memoryChangesTitle: (n: number) => `${n} 条记忆更新`,
+    memoryScopeWorkspace: (key: string) => `工作区记忆（${key}）`,
+    memoryOpWrite: "写入",
+    memoryOpEdit: "编辑",
+    memoryViewTitle: "记忆",
+    memoryChangedMark: "本次对话已更改",
+    memoryContentUnavailable: "无法加载内容（文件可能已被移动或删除）",
+    memoryRowOpen: "查看内容",
+    memoryBack: "返回列表",
+    memoryEmptyAll: "还没有任何记忆——在对话里说「记住……」即可让 agent 保存",
+    /** Visible label on the Memory panel's header link (not a tooltip-only glyph): says what the click does and where it lands. */
+    openAgentMemory: "在 Agent 设置中管理",
+    memoryShowMore: (n: number) => `显示其余 ${n} 条`,
     /** Reveal the next page of sidebar groups (#139); n = groups still hidden. */
     moreGroups: (n: number) => `更多分组（${n}）`,
     contextUsage: "上下文占用",
@@ -1274,6 +1529,15 @@ Benchmark：
     /** Toast when the session-state (locked) model display is clicked: points at the `/model` command. */
     modelLockedHint: "输入 /model 切换模型",
     scheduledFrom: (name: string) => `由定时任务「${name}」触发`,
+    /** One-line notice of a `[background_task_done]` harness message (run_in_background completion): the collapsed row's whole label. */
+    backgroundDone: (kind: "command" | "subagent", ok: boolean): string =>
+      kind === "command"
+        ? ok
+          ? "后台命令完成"
+          : "后台命令失败"
+        : ok
+          ? "后台任务完成"
+          : "后台任务失败",
     emptyGreeting: "开始一段新对话",
     /** Unified step-row titles (same header idiom as workRunning/workDone). */
     mcpConnectTitle: "MCP 连接",
@@ -1327,6 +1591,8 @@ Benchmark：
     pinnedSession: "已置顶",
     /** Sidebar group "reveal/load next page" row (display cap + server paging). */
     loadMore: "更多",
+    /** Time mode's whole-list paging row: its buckets span every Agent, so one row below them fetches the next page rather than each bucket claiming to. */
+    loadMoreSessions: "加载更多会话",
     /** Collapsed sidebar folders inside a group (lazy-loaded); the count is the group's exact server share. */
     folderGroups: {
       subagent: (n: number) => `子智能体（${n}）`,
@@ -1379,12 +1645,13 @@ Benchmark：
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */
   subagentPanel: {
-    title: "智能体面板",
     topologyLabel: "调用关系",
     mainSessionNote: "主会话请在对话区查看",
     empty: "本次任务尚未派生子智能体",
     nodeRunning: "运行中",
     nodeDone: "已完成",
+    /** Identity-strip jump: opens the selected subagent's own Session in the chat area. */
+    openAsSession: "跳转到该会话",
   },
 
   files: {
@@ -1409,7 +1676,6 @@ Benchmark：
     htmlRendered: "渲染视图",
     htmlSource: "源码",
     backToList: "返回列表",
-    resizeHandle: "拖拽调整宽度，双击恢复默认",
   },
 
   usage: {
@@ -1427,12 +1693,22 @@ Benchmark：
     uncostedNote: "* 只计入配置了价格的模型成本",
     filterAllAgents: "全部 Agent",
     filterAllModels: "全部模型",
-    chartAgentCalls: "各 Agent 调用次数",
-    chartSuccessRate: "各模型成功率",
-    chartTokenTrend: "Token 逐日变化",
-    chartCostTrend: "成本逐日变化",
+    rangeLabel: "日期范围",
+    rangeHour: "最近一小时",
+    rangeDay: "最近一天",
+    range7d: "近 7 天",
+    range30d: "近 30 天",
+    range90d: "近 90 天",
+    rangeCustom: "自定义",
+    chartRequestsByAgent: "各 Agent 请求与成功率",
+    chartRequestsByModel: "各模型请求与成功率",
+    legendSuccessRate: "成功率",
+    chartTokenTrend: "Token 变化",
+    chartCostTrend: "成本变化",
+    legendOther: (n: number): string => `其他 ${n} 项`,
+    bucketTotal: "合计",
+    legendHitRate: "缓存命中率",
     empty: "暂无用量记录",
-    successAborted: "已中断（不计入）",
     errors: "异常",
     errorsTotal: "总数",
     errorsUnexpected: "未预期",
@@ -1459,6 +1735,8 @@ Benchmark：
     legendToolExec: "工具调用执行",
     legendOther: "其他",
     toolParams: "参数 Schema",
+    /** Spoken form of the red "*" in the schema table, where no control carries `aria-required`. */
+    requiredParam: "必填",
     legendApprovalWait: "审批等待",
     task: (n: number) => `第 ${n} 轮`,
     globalSummary: "全局统计",
@@ -1552,6 +1830,7 @@ Benchmark：
       member_not_found: "该用户不是本 Project 的成员。",
       already_member: "该用户已是本 Project 的成员。",
       already_owner: "该用户已是本 Project 的所有者。",
+      memory_import_confirm_required: "本次导入会覆盖或删除已有记忆，请确认后继续。",
       schedule_exists: "已存在同名定时任务。",
       schedule_not_found: "该定时任务已不存在。",
       unknown_skill: "该技能不在技能库中。",

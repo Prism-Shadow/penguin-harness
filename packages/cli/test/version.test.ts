@@ -93,8 +93,9 @@ describe("penguin version", () => {
   });
 
   it("describes this build in a form that names a version", async () => {
-    const { version, describe: described } = buildInfo();
-    expect(described.startsWith(`v${version}`)).toBe(true);
+    // Not `v${version}`: git's tag description names the nearest reachable tag, which lags
+    // the constant for the whole of release preparation. `v` and a digit is the guarantee.
+    expect(buildInfo().describe).toMatch(/^v\d/);
   });
 
   it("agrees with -v", async () => {

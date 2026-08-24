@@ -95,7 +95,7 @@ describe("skills api", () => {
       "skill-porting",
     ]);
     expect(body.groups[3]!.skills.map((s) => s.name)).toEqual([
-      "agent-creation",
+      "agent-initialization",
       "benchmark-design",
       "agent-evaluation",
       "agent-optimization",
@@ -122,10 +122,10 @@ describe("skills api", () => {
     const url = base("bare_agent");
 
     // Member installs two Skills: 201 returns the updated list (sorted by name).
-    const res = await member.post(url, { names: ["penguin-sdk", "agent-creation"] });
+    const res = await member.post(url, { names: ["penguin-sdk", "agent-initialization"] });
     expect(res.status).toBe(201);
     const body = (await res.json()) as AgentSkillsResponse;
-    expect(body.skills.map((s) => s.name)).toEqual(["agent-creation", "penguin-sdk"]);
+    expect(body.skills.map((s) => s.name)).toEqual(["agent-initialization", "penguin-sdk"]);
     // The installed list likewise passes through the short description and icon
     // (icon.svg is copied on install, identical to the library's original).
     const installed = body.skills.find((s) => s.name === "penguin-sdk")!;
@@ -150,7 +150,7 @@ describe("skills api", () => {
     expect((await member.delete(`${url}/penguin-sdk`)).status).toBe(204);
     await expect(fs.access(path.dirname(skillFile("penguin-sdk")))).rejects.toThrow();
     const after = (await (await member.get(url)).json()) as AgentSkillsResponse;
-    expect(after.skills.map((s) => s.name)).toEqual(["agent-creation"]);
+    expect(after.skills.map((s) => s.name)).toEqual(["agent-initialization"]);
 
     // Deleting a Skill that isn't installed (or was already uninstalled) → 404.
     expect((await member.delete(`${url}/penguin-sdk`)).status).toBe(404);

@@ -36,6 +36,7 @@ import { Modal } from "../../components/ui/modal";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { DownloadIcon } from "../../components/ui/icons";
 import { HiddenFileInput } from "../../components/ui/hidden-file-input";
+import { SettingsEmpty } from "../../components/ui/empty-state";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { SkillIcon, skillTileColor } from "../skills/skill-icon-view";
@@ -45,6 +46,7 @@ import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
 import { parkActiveDraft } from "../chat/draft-sessions";
 import { buildImportPrompt } from "./skill-import-source";
 import { usePromptInjection } from "./prompt-injection-controls";
+import { HelpFold } from "../../components/ui/help-fold";
 
 /** <label> version of the button look (matches Button secondary sm; the Button component only renders <button>) — same as the Overview tab's snapshot-import label. */
 const UPLOAD_LABEL_CLASS =
@@ -287,27 +289,26 @@ export function SkillsTab({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-start justify-between gap-3">
-        <p className="text-xs text-gray-500 dark:text-gray-400">{S.skills.agentTabDesc}</p>
-        <Button
-          size="sm"
-          variant="primary"
-          className="shrink-0"
-          disabled={skills === null}
-          onClick={openImport}
-        >
-          {S.skills.importSkill}
-        </Button>
-      </div>
+      {/* Tab-level description: no title in the panel to anchor a "?" to (see help-fold.tsx). */}
+      <HelpFold label={S.agent.tabSkills}>{S.skills.agentTabDesc}</HelpFold>
 
       {toggleCard}
       {alertStrip}
 
+      {/* Import entry point at the head of the installed list, right-aligned — the admin users
+          page puts its create action in the same slot above its table. It renders in every list
+          state (loading, empty, populated) so the action never shifts and the dashed empty block
+          keeps a header instead of standing alone; the modal carries both install paths. */}
+      <div className="flex justify-end">
+        <Button size="sm" variant="primary" disabled={skills === null} onClick={openImport}>
+          {S.skills.importSkill}
+        </Button>
+      </div>
+
       {skills === null ? (
         <SkeletonList rows={4} />
       ) : skills.length === 0 ? (
-        // Plain-text empty state (settings area doesn't use the penguin-icon EmptyState, keeps the same gray level as the table area).
-        <p className="py-2 text-xs text-gray-400 dark:text-gray-500">{S.skills.agentTabEmpty}</p>
+        <SettingsEmpty>{S.skills.agentTabEmpty}</SettingsEmpty>
       ) : (
         <div className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
           {skills.map((skill) => (

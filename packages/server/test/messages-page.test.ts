@@ -29,7 +29,10 @@ import {
   toolCallOutput,
   userText,
 } from "@prismshadow/penguin-core";
-import { buildHandoffMessage } from "@prismshadow/penguin-core/markers";
+import {
+  buildBackgroundTaskDoneMessage,
+  buildHandoffMessage,
+} from "@prismshadow/penguin-core/markers";
 import type { OmniMessage, SessionMetaPayload, TokenCounts } from "@prismshadow/penguin-core";
 import { decodeCursor, encodeCursor } from "../src/services/message-window.js";
 import type { TraceService } from "../src/services/trace-service.js";
@@ -304,6 +307,93 @@ describe("messages windowed reads", () => {
       limit: 10,
     });
     expect(userTexts(older.messages)).toEqual(["q1"]);
+  });
+
+  it("a steered background notice never cuts a window; an idle-launched notice cuts and counts a turn", async () => {
+    // Twin of the trace-service and stream-model steered-notice cases: the four "what is one
+    // turn" implementations must agree. The steered form (delivery: steering) stays inside
+    // its unit; the unstamped form is a task's own input — a unit boundary AND an outline
+    // entry (its question is the report body, so the entry is real).
+    const steered = buildBackgroundTaskDoneMessage(
+      {
+        kind: "command",
+        id: "proc-1",
+        status: "completed",
+        detail: "exit code 0",
+        delivery: "steering",
+      },
+      "Background command finished",
+    );
+    const plain = buildBackgroundTaskDoneMessage(
+      { kind: "command", id: "proc-2", status: "failed", detail: "exit code 1" },
+      "Background command failed",
+    );
+    await writeTraceFile(root, P, A, "2026-07-20", S, 1, [
+      sessionMeta(metaPayload()),
+      ...turn(0, 1, 1000),
+      // Turn 2: reply lands, then the steered notice continues the same Task with one more request.
+      at("2026-07-20T10:01:00.000Z", userText("q2")),
+      at("2026-07-20T10:01:01.000Z", requestBegin()),
+      at("2026-07-20T10:01:02.000Z", assistantText("a2")),
+      at("2026-07-20T10:01:03.000Z", requestEnd("completed")),
+      at("2026-07-20T10:01:04.000Z", userText(steered, "harness")),
+      at("2026-07-20T10:01:05.000Z", requestBegin()),
+      at("2026-07-20T10:01:06.000Z", assistantText("noted the finish")),
+      at("2026-07-20T10:01:07.000Z", requestEnd("completed")),
+      at("2026-07-20T10:01:07.500Z", tokenUsage(counts(2000), counts(200))),
+      // Turn 3: the idle-launched notice task.
+      at("2026-07-20T10:02:00.000Z", userText(plain, "harness")),
+      at("2026-07-20T10:02:01.000Z", requestBegin()),
+      at("2026-07-20T10:02:02.000Z", assistantText("a3")),
+      at("2026-07-20T10:02:03.000Z", requestEnd("completed")),
+      at("2026-07-20T10:02:03.500Z", tokenUsage(counts(3000), counts(300))),
+    ]);
+
+    // The newest unit is the idle notice's own turn, with two entries (q1, q2) before it —
+    // the steered notice opened neither a unit nor an entry.
+    const tail = await service.readMessagesPage(P, A, S, { kind: "tail", limit: 1 });
+    expect(userTexts(tail.messages)[0]).toContain("proc-2");
+    expect(tail.prior.turns).toBe(2);
+    // The previous window is the WHOLE second turn: the cut lands at q2, never at the
+    // steered notice.
+    const older = await service.readMessagesPage(P, A, S, {
+      kind: "before",
+      cursor: decodeCursor(tail.before!)!,
+      limit: 1,
+    });
+    expect(userTexts(older.messages)[0]).toBe("q2");
+    expect(userTexts(older.messages).some((t) => t.includes("proc-1"))).toBe(true);
+    expect(older.prior.turns).toBe(1);
+  });
+
+  it("an UNSTAMPED notice in a tool-continuation gap neither cuts nor counts (pre-stamp traces)", async () => {
+    // Legacy shape: no delivery stamp, but the notice sits between a turn's tool output and
+    // the continuation request — in-task by position, mirroring the reducer and trace
+    // analysis. The window must keep the whole turn together.
+    const plain = buildBackgroundTaskDoneMessage(
+      { kind: "command", id: "proc-9", status: "completed", detail: "exit code 0" },
+      "Background command finished",
+    );
+    await writeTraceFile(root, P, A, "2026-07-20", S, 1, [
+      sessionMeta(metaPayload()),
+      ...turn(0, 1, 1000),
+      at("2026-07-20T10:01:00.000Z", userText("q2")),
+      at("2026-07-20T10:01:01.000Z", requestBegin()),
+      at("2026-07-20T10:01:02.000Z", toolCall({ name: "exec", arguments: "{}", toolCallId: "t1" })),
+      at("2026-07-20T10:01:03.000Z", requestEnd("completed")),
+      at("2026-07-20T10:01:04.000Z", toolCallOutput({ output: "launched", toolCallId: "t1" })),
+      at("2026-07-20T10:01:05.000Z", userText(plain, "harness")),
+      at("2026-07-20T10:01:06.000Z", requestBegin()),
+      at("2026-07-20T10:01:07.000Z", assistantText("done")),
+      at("2026-07-20T10:01:08.000Z", requestEnd("completed")),
+      at("2026-07-20T10:01:08.500Z", tokenUsage(counts(2000), counts(200))),
+    ]);
+    const tail = await service.readMessagesPage(P, A, S, { kind: "tail", limit: 1 });
+    // The newest unit is the WHOLE second turn — the cut lands at q2, not at the notice —
+    // and only q1 precedes it in the outline numbering.
+    expect(userTexts(tail.messages)[0]).toBe("q2");
+    expect(userTexts(tail.messages).some((t) => t.includes("proc-9"))).toBe(true);
+    expect(tail.prior.turns).toBe(1);
   });
 
   it("a text+images send is one unit and one outline turn; banner and goal-round prompts cut but never count", async () => {

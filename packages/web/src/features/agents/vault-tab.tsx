@@ -24,9 +24,11 @@ import { Input } from "../../components/ui/input";
 import { PasswordInput } from "../../components/ui/password-input";
 import { Modal } from "../../components/ui/modal";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
+import { SettingsEmpty } from "../../components/ui/empty-state";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { usePromptInjection } from "./prompt-injection-controls";
+import { HelpFold } from "../../components/ui/help-fold";
 
 /** Vault key naming rule (consistent with core/server): shell environment variable name. */
 const VAULT_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -158,12 +160,13 @@ export function VaultTab({
 
   return (
     <div className="space-y-4">
-      <div>
-        <p className="text-xs text-gray-500 dark:text-gray-400">{S.vault.desc}</p>
-        {!isOwner && (
-          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{S.vault.readOnlyHint}</p>
-        )}
-      </div>
+      {/* What the vault is and when a value takes effect is read once and then in the way; the
+          table below is what the tab is for. The panel repeats no title — the tab bar carries it —
+          so the disclosure names itself instead of hanging a "?" off nothing. */}
+      <HelpFold label={S.agent.tabVault}>
+        {S.vault.desc}
+        {!isOwner && <span className="mt-1.5 block">{S.vault.readOnlyHint}</span>}
+      </HelpFold>
 
       {toggleCard}
       {alertStrip}
@@ -171,8 +174,7 @@ export function VaultTab({
       {entries === null ? (
         <SkeletonList rows={4} />
       ) : entries.length === 0 ? (
-        // Plain-text empty state (settings area doesn't use the penguin-icon EmptyState, keeps the same gray level as the table area).
-        <p className="py-2 text-xs text-gray-400 dark:text-gray-500">{S.vault.empty}</p>
+        <SettingsEmpty>{S.vault.empty}</SettingsEmpty>
       ) : (
         <div className="overflow-x-auto overflow-y-clip rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
           <table className="w-full min-w-[420px] text-left text-sm">

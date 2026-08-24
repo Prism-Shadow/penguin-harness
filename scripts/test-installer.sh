@@ -17,6 +17,26 @@ fail_test() {
   exit 1
 }
 
+# The auto-mode rule lives in three implementations that cannot import from each other: the two
+# installers and the download page on penguin.ooo. Nothing but this check keeps their constants in
+# step, so a threshold edited in one place fails here instead of shipping three different rules.
+check_shared_constant() {
+  csc_label="$1"
+  csc_expected="$2"
+  shift 2
+  for csc_file in "$@"; do
+    grep -qF "$csc_expected" "$ROOT_DIR/$csc_file" \
+      || fail_test "$csc_file does not carry $csc_label as \"$csc_expected\""
+  done
+}
+
+LANDING_RULE="packages/landing/src/lib/download-source.ts"
+check_shared_constant "the GitHub minimum" "262144" install.sh install.ps1 "$LANDING_RULE"
+# The same 1.5, written as an integer percent in install.sh because a POSIX shell has no floats.
+check_shared_constant "the OSS switch ratio" "SPEED_PROBE_OSS_SWITCH_RATIO_PERCENT=150" install.sh
+check_shared_constant "the OSS switch ratio" '$SpeedProbeOssSwitchRatio = 1.5' install.ps1
+check_shared_constant "the OSS switch ratio" "SPEED_PROBE_OSS_SWITCH_RATIO = 1.5;" "$LANDING_RULE"
+
 write_sha256() {
   file="$1"
   (cd "$(dirname "$file")" && sha256sum "$(basename "$file")" > "$(basename "$file").sha256")
@@ -404,7 +424,7 @@ case "$MODE:$base" in
     printf '%s\n' '{"schemaVersion":1,"tag":"v0.0.0-test","releaseBaseUrl":"https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/releases/v0.0.0-test"}' > "$output"
     ;;
   speed-probe-missing-manifest:release-download-manifest.tsv) exit 22 ;;
-  speed-probe-github-fast:release-download-manifest.tsv | speed-probe-github-below-threshold:release-download-manifest.tsv | speed-probe-missing-manifest-github:release-download-manifest.tsv)
+  speed-probe-*:release-download-manifest.tsv)
     {
       printf 'penguin-release-download-manifest\t1\tv0.0.0-test\n'
       printf 'probe\tsmall\tprobe-64k.bin\t65536\t%s\n' "$PROBE64_HASH"
@@ -412,17 +432,17 @@ case "$MODE:$base" in
       printf 'asset\t%s\t%s\t%s\n' "$HOST_ASSET" "$SPEED_PROBE_ASSET_SIZE" "$HOST_ASSET_HASH"
     } > "$output"
     ;;
-  speed-probe-github-fast:probe-64k.bin | speed-probe-github-below-threshold:probe-64k.bin) cp "$PROBE64" "$output" ;;
-  speed-probe-github-fast:probe-1m.bin | speed-probe-github-below-threshold:probe-1m.bin) cp "$PROBE1M" "$output" ;;
-  forwarder-oss:install.sh | forced-oss-payload:install.sh | forwarder-auto-github:install.sh | forwarder-invalid-metadata:install.sh | canonical:install.sh | speed-probe-github-fast:install.sh | speed-probe-github-below-threshold:install.sh) cp "$ROOT_DIR/install.sh" "$output" ;;
+  speed-probe-*:probe-64k.bin) cp "$PROBE64" "$output" ;;
+  speed-probe-*:probe-1m.bin) cp "$PROBE1M" "$output" ;;
+  forwarder-oss:install.sh | forced-oss-payload:install.sh | forwarder-auto-github:install.sh | forwarder-invalid-metadata:install.sh | canonical:install.sh | speed-probe-*:install.sh) cp "$ROOT_DIR/install.sh" "$output" ;;
   404:penguin-*) exit 22 ;;
   network:penguin-*) exit 7 ;;
   outer-sha-mismatch:penguin-*.sha256) printf '%064d  %s\n' 0 "${base%.sha256}" > "$output" ;;
   outer-sha-mismatch:penguin-*) cp "$ARTIFACT_DIR/$base" "$output" ;;
   inner-sha-mismatch:penguin-*.sha256) cp "$BAD_BUNDLE.sha256" "$output" ;;
   inner-sha-mismatch:penguin-*) cp "$BAD_BUNDLE" "$output" ;;
-  speed-probe-github-fast:penguin-*.sha256 | speed-probe-github-below-threshold:penguin-*.sha256 | speed-probe-missing-manifest:penguin-*.sha256) cp "$ARTIFACT_DIR/$base" "$output" ;;
-  speed-probe-github-fast:penguin-* | speed-probe-github-below-threshold:penguin-* | speed-probe-missing-manifest:penguin-*) cp "$ARTIFACT_DIR/$base" "$output" ;;
+  speed-probe-*:penguin-*.sha256) cp "$ARTIFACT_DIR/$base" "$output" ;;
+  speed-probe-*:penguin-*) cp "$ARTIFACT_DIR/$base" "$output" ;;
   primary-network:penguin-*.sha256) cp "$ARTIFACT_DIR/$base" "$output" ;;
   primary-network:penguin-*) cp "$ARTIFACT_DIR/$base" "$output" ;;
   forced-oss-payload:penguin-*.sha256) cp "$ARTIFACT_DIR/$base" "$output" ;;
@@ -437,8 +457,12 @@ if [ -n "$writeout" ]; then
   case "$MODE:$url" in
     speed-probe-github-fast:https://github.com/*/probe-1m.bin) printf '%s' '0.020 0.120 8738133' ;;
     speed-probe-github-fast:*aliyuncs.com*/probe-1m.bin) printf '%s' '0.100 2.100 499321' ;;
-    speed-probe-github-below-threshold:https://github.com/*/probe-1m.bin) printf '%s' '0.020 4.287 245760' ;;
-    speed-probe-github-below-threshold:*aliyuncs.com*/probe-1m.bin) printf '%s' '0.020 5.140 204800' ;;
+    # GitHub under the 262144 minimum, mirror well past 1.5x it: worth paying for.
+    speed-probe-oss-clearly-faster:https://github.com/*/probe-1m.bin) printf '%s' '0.020 10.240 102400' ;;
+    speed-probe-oss-clearly-faster:*aliyuncs.com*/probe-1m.bin) printf '%s' '0.020 3.413 307200' ;;
+    # GitHub equally slow, mirror only 1.4x faster: not worth paying for, GitHub keeps it.
+    speed-probe-oss-not-worth-switching:https://github.com/*/probe-1m.bin) printf '%s' '0.020 10.240 102400' ;;
+    speed-probe-oss-not-worth-switching:*aliyuncs.com*/probe-1m.bin) printf '%s' '0.020 7.314 143360' ;;
     speed-probe-github-fast:*) printf '%s' '0.020 0.060 1092266' ;;
     *) printf '%s' '0.010 0.020 3276800' ;;
   esac
@@ -520,9 +544,16 @@ grep -q "github.com/.*/releases/download/v0.0.0-test/$HOST_ASSET\$" "$WORK_DIR/s
 run_online_case speed-probe-default-on speed-probe-github-fast "" success 6 "" "" "$STAMPED_INSTALLER" auto __unset
 grep -q "github.com/.*/releases/download/v0.0.0-test/$HOST_ASSET\$" "$WORK_DIR/speed-probe-default-on.log" \
   || fail_test "speed probe was not enabled by default"
-run_online_case speed-probe-github-below-threshold speed-probe-github-below-threshold "" success 6 "" "" "$STAMPED_INSTALLER" auto 1
-grep -q "penguin-harness-releases.oss-cn-beijing.aliyuncs.com/.*/$HOST_ASSET\$" "$WORK_DIR/speed-probe-github-below-threshold.log" \
-  || fail_test "speed probe did not keep OSS when GitHub was below the minimum speed"
+# Below the minimum the mirror is measured too, which is the seventh request of these two cases.
+run_online_case speed-probe-oss-clearly-faster speed-probe-oss-clearly-faster "" success 7 "" "" "$STAMPED_INSTALLER" auto 1
+grep -q "aliyuncs.com/.*/probe-1m.bin\$" "$WORK_DIR/speed-probe-oss-clearly-faster.log" \
+  || fail_test "speed probe did not measure the OSS mirror once GitHub was below the minimum speed"
+grep -q "penguin-harness-releases.oss-cn-beijing.aliyuncs.com/.*/$HOST_ASSET\$" "$WORK_DIR/speed-probe-oss-clearly-faster.log" \
+  || fail_test "speed probe did not switch to OSS when it was clearly faster than a slow GitHub"
+
+run_online_case speed-probe-oss-not-worth-switching speed-probe-oss-not-worth-switching "" success 7 "" "" "$STAMPED_INSTALLER" auto 1
+grep -q "github.com/.*/releases/download/v0.0.0-test/$HOST_ASSET\$" "$WORK_DIR/speed-probe-oss-not-worth-switching.log" \
+  || fail_test "speed probe left GitHub even though OSS was not faster by the switch ratio"
 
 run_online_case speed-probe-missing-manifest speed-probe-missing-manifest "" success 4 "" "" "$STAMPED_INSTALLER" auto 1
 grep -q "Download source test was inconclusive" "$WORK_DIR/speed-probe-missing-manifest.output" \

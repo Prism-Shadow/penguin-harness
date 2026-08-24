@@ -69,7 +69,11 @@ describe("GET /api/version", () => {
     expect(body).toEqual(await versionReport(t.root));
     // Non-vacuous floor, in case the report itself ever comes back degenerate.
     expect(body.version).toBe(VERSION);
-    expect(body.describe.startsWith(`v${VERSION}`)).toBe(true);
+    // `v` and a digit is the whole guarantee: a tag description names the nearest reachable
+    // tag, which is the PREVIOUS version throughout release preparation (VERSION is bumped
+    // in its own commit, the tag follows), so pinning `v${VERSION}` would fail on exactly
+    // the branch that cuts a release.
+    expect(body.describe).toMatch(/^v\d/);
     expect(["release", "source"]).toContain(body.channel);
   });
 

@@ -2,7 +2,7 @@
  * Model & credential config routes:
  * GET|PUT /api/projects/:p/models, PUT /api/projects/:p/models/default,
  * POST /api/projects/:p/models/test, POST /api/projects/:p/models/detect,
- * POST /api/projects/:p/models/detect-vision (the model
+ * POST /api/projects/:p/models/list, POST /api/projects/:p/models/detect-vision (the model
  * reference `(provider, modelId)` is sent as a pair in the request body, avoiding
  * URL-encoding issues). Any member can read (api_key is masked); only the owner can
  * modify, test, or detect.
@@ -10,6 +10,7 @@
 import { Hono } from "hono";
 import type {
   DefaultModelResponse,
+  EndpointModelListRequest,
   ModelProtocolDetectRequest,
   ModelRefDto,
   ModelsUpdateRequest,
@@ -278,6 +279,28 @@ export function modelsRoutes(deps: AppDeps): Hono<AppEnv> {
       req.modelId = requireString(body, "modelId", { minLen: 1, maxLen: 200 });
     }
     return c.json(await deps.projectConfigService.detectProtocol(projectId, req));
+  });
+
+  // Endpoint model listing (owner): given a base URL plus the protocol /detect reported,
+  // returns every model id the endpoint serves (AgentHub's listModels() on the routed
+  // client) so the add-group dialog can import a provider's whole listing in one go.
+  // Owner-only and server-fetches-a-caller-URL for exactly the reasons /detect documents
+  // above; like /detect, the reply is reduced to a DTO (ids / outcome flags / truncated
+  // reason) and the key travels only in request headers upstream.
+  app.post("/list", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    const body = await readJson(c);
+    const req: EndpointModelListRequest = {
+      baseUrl: requireString(body, "baseUrl", { minLen: 1, maxLen: 2000 }),
+      clientType: requireString(body, "clientType", { minLen: 1, maxLen: 64 }),
+    };
+    if (!isHttpUrl(req.baseUrl)) throw badRequest("baseUrl must be an absolute http(s) URL.");
+    if (body.apiKey !== undefined) {
+      if (typeof body.apiKey !== "string") throw badRequest("apiKey must be a string.");
+      if (body.apiKey) req.apiKey = body.apiKey;
+    }
+    return c.json(await deps.projectConfigService.listEndpointModels(req));
   });
 
   /**

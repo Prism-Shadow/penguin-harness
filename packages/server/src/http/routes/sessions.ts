@@ -554,7 +554,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     }
     let updated: SessionRow = { ...row };
     if (title !== undefined) {
-      // Manual renaming takes priority over auto-generation: TitleGenerator only persists a title while it's still NULL.
+      // Manual renaming takes priority over auto-generation: TitleGenerator only ever replaces the fallback title it wrote itself, never a manual rename.
       deps.sessionsRepo.updateTitle(row.sessionId, title);
       updated = { ...updated, title };
     }
@@ -1028,8 +1028,11 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
   // from the ACTIVE runtime only: an evicted or never-loaded session truthfully reports
   // none — the environment that owned them is gone, and resurrecting an entry could only
   // ever produce an empty list anyway.
-  app.get("/:sessionId/processes", (c) => {
+  app.get("/:sessionId/processes", async (c) => {
     const row = resolveSession(c);
+    // Refresh the listen-port probes first, so the first fetch already carries a probed
+    // serviceUrl (core bounds each probe with its own timeout and TTL cache).
+    await deps.manager.probeProcessServices(row.sessionId);
     const processes = deps.manager.listProcesses(row.sessionId).map((p) => ({
       processId: p.processId,
       pid: p.pid,
@@ -1037,6 +1040,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       cwd: p.cwd,
       startedAt: new Date(p.startedAt).toISOString(),
       running: p.running,
+      ...(p.serviceUrl !== undefined ? { serviceUrl: p.serviceUrl } : {}),
     }));
     return c.json({ processes } satisfies SessionProcessesResponse);
   });

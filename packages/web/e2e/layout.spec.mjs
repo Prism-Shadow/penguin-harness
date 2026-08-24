@@ -27,7 +27,7 @@
  *   chrome used to stop fitting below ~412px;
  * - the sidebar's "New chat" button has no background fill (same gray-scale style as nav items);
  * - the collapsed rail shows, in product-specified order, last conversation / new chat /
- *   Agents / Skills / Models / Cost Center / Trajectories / Evaluation Center with localized
+ *   Agents / Skills / Models / Cost Center / Evaluation Center with localized
  *   (en + zh) hover
  *   tooltips; "last conversation" targets the newest non-archived session and is disabled
  *   while none exists; expanding from the rail restores the pinned sidebar;
@@ -403,16 +403,17 @@ test("layout: collapsed rail — order, bilingual tooltips, last conversation", 
   });
   expect(put.ok(), "put models").toBeTruthy();
 
-  // --- No sessions yet: the rail renders all 8 entries, "last conversation" disabled ---
+  // --- No sessions yet: the rail renders all 7 entries, "last conversation" disabled ---
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto(`${BASE}/chat`);
   await page.getByRole("button", { name: "Collapse sidebar" }).click();
   const rail = page.locator("aside nav");
   const entries = rail.locator("a, button");
-  await expect(entries).toHaveCount(8);
+  await expect(entries).toHaveCount(7);
   await expect(rail.getByRole("button", { name: "Last conversation" })).toBeDisabled();
 
-  // --- Order and tooltips (en): aria-label defines the order, title carries the same copy ---
+  // --- Order and tooltips (en): aria-label defines the order, title carries the same copy.
+  // Traces has no rail entry — the Trace panel lives in the chat toolbar's panel switcher. ---
   const EN = [
     "Last conversation",
     "New chat",
@@ -420,7 +421,6 @@ test("layout: collapsed rail — order, bilingual tooltips, last conversation", 
     "Skills",
     "Models",
     "Cost Center",
-    "Trajectories",
     "Evaluation Center",
   ];
   const attrs = (name) =>
@@ -479,17 +479,8 @@ test("layout: collapsed rail — order, bilingual tooltips, last conversation", 
   // --- zh: tooltips follow the product-specified wording ---
   await page.addInitScript(() => localStorage.setItem("penguin.lang", "zh"));
   await page.reload();
-  await expect(entries).toHaveCount(8);
-  const ZH = [
-    "最近一次对话",
-    "新建对话",
-    "智能体",
-    "技能库",
-    "模型库",
-    "成本中心",
-    "轨迹观测",
-    "评估中心",
-  ];
+  await expect(entries).toHaveCount(7);
+  const ZH = ["最近一次对话", "新建对话", "智能体", "技能库", "模型库", "成本中心", "评估中心"];
   expect(await attrs("aria-label"), "rail order (zh)").toEqual(ZH);
   expect(await attrs("title"), "rail tooltips (zh)").toEqual(ZH);
 

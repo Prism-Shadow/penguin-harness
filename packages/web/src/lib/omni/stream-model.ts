@@ -52,6 +52,7 @@
 import {
   isEventMessage,
   isPartialPayload,
+  parseBackgroundTaskDoneMessage,
   parseUserSteeringText,
 } from "@prismshadow/penguin-core/omnimessage";
 import type {
@@ -80,12 +81,14 @@ import {
   trackSubagentUsage,
 } from "./task-stats";
 import type { TaskStats, TaskStatsTracker } from "./task-stats";
+import { classifyMemoryPath, mergeMemoryChanges } from "./memory-changes";
+import type { MemoryChangeEntry, MemoryChangeRow } from "./memory-changes";
 
 // ---------------------------------------------------------------------------
 // View model types
 // ---------------------------------------------------------------------------
 
-/** Source of an approval decision: clicked on this end (manual) / other (automatic judgment or submitted by another end). */
+/** Source of an approval decision: clicked on this end (manual) / other (automatic judgment or submitted by another end). A policy veto needs no source — its decision value is "forbidden". */
 export type DecisionSource = "manual" | "remote";
 
 export interface UserTextItem {
@@ -113,6 +116,24 @@ export interface UserSteeringItem {
    * which the chip restores at render time like any user message.)
    */
   images?: string[];
+  /** Message timestamp (milliseconds): shown on footer hover. */
+  atMs?: number;
+}
+
+/**
+ * A background completion notice steered into the running Task (`delivery: steering` on its
+ * `[background_task_done]` block — see core's Session notice queue): rendered as the
+ * completion banner **inside** the running Task's flow, like a steering chip it never starts
+ * a new Task — so the turn's stats row still arrives exactly once, at task end. An unstamped
+ * notice (an idle-launched notice task's own input) stays an ordinary `user_text` item and
+ * keeps its independent turn. `text` is the raw message text (block included): the renderer
+ * and the topology's terminal-state scan both re-parse it, exactly as they do for the
+ * unstamped form.
+ */
+export interface BackgroundNoticeItem {
+  kind: "background_notice";
+  id: number;
+  text: string;
   /** Message timestamp (milliseconds): shown on footer hover. */
   atMs?: number;
 }
@@ -336,11 +357,14 @@ export interface TaskStatsItem {
   forkPosition?: TracePosition;
   /** True only when the final assistant segment and its Request completed normally. */
   forkable?: boolean;
+  /** Memory topic files this Task changed through the structured file tools (merged, one row per file); absent when there were none. */
+  memoryChanges?: MemoryChangeRow[];
 }
 
 export type ChatItem =
   | UserTextItem
   | UserSteeringItem
+  | BackgroundNoticeItem
   | UserImageItem
   | AssistantTextItem
   | ThinkingItem
@@ -376,6 +400,8 @@ export interface StreamModel {
   nested: boolean;
   /** Child-session identity from its session_meta (nested models only; null until it arrives). */
   meta: NestedSessionMeta | null;
+  /** Absolute `agent_state` path from session_meta (null until it arrives); the Memory root `<agent_state>/memory/` for the Task summary's memory-change rows. */
+  agentState: string | null;
   /**
    * Elapsed-time stamps for the subagents panel's topology nodes (nested models only — the main
    * session's timing is covered by task stats). Stamped in routeNested: the `firstSeen` pair when
@@ -525,6 +551,7 @@ function newModel(nested: boolean, localDecisions: Set<string>): StreamModel {
     items: [],
     nested,
     meta: null,
+    agentState: null,
     stats: createTaskStatsTracker(),
     openText: null,
     openThinking: null,
@@ -646,11 +673,16 @@ export function pushMessage(
     advanceLastTs(model, msg.timestamp);
     return;
   }
-  // session_meta: never rendered as an item. For the main session it carries nothing the view
-  // model needs (identity/config are all surfaced through the Session DTO). For a NESTED child
-  // session no DTO is loaded here, so capture the identity the subagents panel needs (which
-  // agent runs this child, on which model) — a rewritten session_meta (file rotation) simply
-  // overwrites with the same values.
+  // session_meta: never rendered as an item, but read at BOTH levels. Both keep the
+  // agent_state path — the main session's Task summary classifies file-tool writes against
+  // `<agent_state>/memory/` for its memory-change rows, so a model built from a window that
+  // never carries a session_meta derives none. A NESTED child session additionally has no DTO
+  // loaded here, so it captures the identity the subagents panel needs (which agent runs this
+  // child, on which model); the main session takes the rest of its identity/config from the
+  // Session DTO. A rewritten session_meta (file rotation) overwrites with the same values.
+  if (msg.type === "session_meta") {
+    model.agentState = (msg.payload as SessionMetaPayload).agent_state;
+  }
   if (msg.type === "session_meta" && model.nested) {
     const p = msg.payload as SessionMetaPayload;
     const meta: NestedSessionMeta = {
@@ -870,6 +902,7 @@ function finalizeOpenTask(model: StreamModel): void {
   const stats = endTask(model.stats, elapsed);
   if (model.nested) return;
   const reply = collectTaskAssistant(model);
+  const memoryChanges = collectTaskMemoryChanges(model);
   // No token_usage (the reply was interrupted mid-way) → there are no stats
   // to show, but as long as this round produced any text, there still needs
   // to be a footer: the timestamp and copy are both rendered by the stats
@@ -884,6 +917,7 @@ function finalizeOpenTask(model: StreamModel): void {
     forkable: reply.completed,
     ...(reply.atMs !== undefined ? { atMs: reply.atMs } : {}),
     ...(reply.tracePosition !== undefined ? { forkPosition: reply.tracePosition } : {}),
+    ...(memoryChanges.length > 0 ? { memoryChanges } : {}),
   };
   // The stats row is inserted **before any trailing run of compaction banners**: compaction
   // is its own round, housekeeping outside this one, so it belongs after this round's ledger
@@ -932,6 +966,42 @@ function collectTaskAssistant(model: StreamModel): {
     ...(tracePosition !== undefined ? { tracePosition } : {}),
     completed,
   };
+}
+
+/**
+ * Collect this Task's memory changes (same walk as collectTaskAssistant: backward until the
+ * previous task_stats): successfully completed `write_file` / `edit_file` calls whose path
+ * falls under `<agent_state>/memory/`, merged to one row per file. Only this level's tool
+ * cards are consulted — a subagent's memory writes belong to that child's own Agent and are
+ * out of this Task summary's scope.
+ */
+function collectTaskMemoryChanges(model: StreamModel): MemoryChangeRow[] {
+  if (model.agentState === null) return [];
+  const entries: MemoryChangeEntry[] = [];
+  for (let i = model.items.length - 1; i >= 0; i--) {
+    const it = model.items[i]!;
+    if (it.kind === "task_stats") break;
+    if (it.kind !== "tool_call" || !it.outputComplete || it.outputStopReason !== "completed")
+      continue;
+    if (it.name !== "write_file" && it.name !== "edit_file") continue;
+    let args: unknown;
+    try {
+      args = JSON.parse(it.argumentsText);
+    } catch {
+      continue; // a malformed argument record can't name a file
+    }
+    const filePath = (args as { file_path?: unknown }).file_path;
+    if (typeof filePath !== "string") continue;
+    const classed = classifyMemoryPath(filePath, model.agentState);
+    if (classed === null) continue;
+    const entry: MemoryChangeEntry = {
+      ...classed,
+      op: it.name === "write_file" ? "write" : "edit",
+    };
+    if (it.callStartedAtMs !== undefined) entry.atMs = it.callStartedAtMs;
+    entries.push(entry);
+  }
+  return mergeMemoryChanges(entries.reverse()); // walked backward; merge in call order
 }
 
 // ---------------------------------------------------------------------------
@@ -1095,6 +1165,37 @@ function handleComplete(
           model.items.push(item);
           // Open the window for the images core delivers right behind this text.
           model.openSteering = item;
+          return;
+        }
+        // A background completion notice ([background_task_done] block) injected into the
+        // running Task: same exclusion as steering — rendered inside the Task as the
+        // completion banner, never a Task starter, so no stats row is flushed at the
+        // injection point. Two ways to recognize the injection:
+        //   - the delivery stamp (`delivery: steering`), written by the engine's drain;
+        //   - POSITION, for notices written by a pre-stamp core (0.2.4 traces): a Task can
+        //     never end between a turn's paired tool outputs and the continuation request,
+        //     so a notice arriving while this turn's tool outputs are still owed to the
+        //     model (turnToolOutputs) is provably in-task even without the stamp. This is
+        //     the same rule trace analysis has always applied (a tool-calling request
+        //     forces a continuation), so the two pages agree on legacy data.
+        // An unstamped notice after a NO-tool final turn still falls through to the
+        // user_text branch below: there an idle-launched notice task is genuinely possible
+        // and position cannot tell the two apart — only the stamp can, and new cores write
+        // it.
+        const notice = parseBackgroundTaskDoneMessage(p.text);
+        if (notice !== null && (notice.done.delivery === "steering" || model.turnToolOutputs)) {
+          // A wrap-up compaction may have settled the round early; an injected notice is
+          // exactly what keeps the Task going past it, so it opens the continuation's own
+          // round rather than joining a closed one (same rule as the steering chip above).
+          if (model.reopenTaskAtSteering && !model.taskOpen) startTask(model, timestamp, nowMs);
+          touchTask(model, timestamp);
+          const noticeMs = tsOf(timestamp);
+          model.items.push({
+            kind: "background_notice",
+            id: nextId(model),
+            text: p.text,
+            ...(noticeMs !== undefined ? { atMs: noticeMs } : {}),
+          });
           return;
         }
         // A complete text message on the main session's user side: starts a new Task.

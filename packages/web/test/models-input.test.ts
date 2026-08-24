@@ -9,18 +9,27 @@
  * - Ownership of the default/vision-agent model pointers after save
  *   (nextPointers): always compared as pairs; renaming (either provider or
  *   model_id changes) moves the pointer along.
+ * - Which env fallback variables a key hint may promise (detectedEnvKeys):
+ *   only those the server reported a value for.
+ * - Whether a row has a key (hasKey) and what the card prints for it
+ *   (keyStatusText): the shared hasConfiguredKey rule (stored key or a masked
+ *   env fallback) plus the dialog's unsaved-edit notions.
  */
 import { describe, expect, it } from "vitest";
 import {
   capabilityRow,
   clientTypeAfterProviderChange,
   decimalOnly,
+  detectedEnvKeys,
   digitsOnly,
   fastModeState,
+  hasKey,
+  keyStatusText,
   nextPointers,
   rowRef,
   toRow,
 } from "../src/features/models/models-page";
+import { S } from "../src/lib/strings";
 
 describe("digitsOnly (context window)", () => {
   it("keeps digits only", () => {
@@ -44,6 +53,91 @@ describe("decimalOnly (price)", () => {
   });
 });
 
+describe("detectedEnvKeys (variables a key hint may promise)", () => {
+  it("collects the variables the server reported a value for, and only those", () => {
+    const rows = [
+      toRow({
+        provider: "anthropic",
+        modelId: "claude-sonnet-4-6",
+        envKey: "ANTHROPIC_API_KEY",
+        envKeyMasked: "sk-a…3456",
+        isDefault: false,
+      }),
+      // Variable name known, no value reported: nothing here proves it is set, so a hint
+      // must not tell the user that leaving the key empty is covered.
+      toRow({
+        provider: "deepseek",
+        modelId: "deepseek-v4-pro",
+        envKey: "DEEPSEEK_API_KEY",
+        isDefault: false,
+      }),
+      toRow({ provider: "custom", modelId: "my-model", isDefault: false }),
+    ];
+    expect(detectedEnvKeys(rows)).toEqual(new Set(["ANTHROPIC_API_KEY"]));
+    expect(detectedEnvKeys([])).toEqual(new Set());
+  });
+});
+
+describe("hasKey / keyStatusText (the model card's key judgement)", () => {
+  const stored = toRow({
+    provider: "moonshot",
+    modelId: "kimi-k2.6",
+    credential: { apiKeyMasked: "sk-o\u20261111" },
+    isDefault: false,
+  });
+  const envBacked = toRow({
+    provider: "anthropic",
+    modelId: "claude-sonnet-4-6",
+    envKey: "ANTHROPIC_API_KEY",
+    envKeyMasked: "sk-a\u20263456",
+    isDefault: false,
+  });
+  const bare = toRow({ provider: "custom", modelId: "my-model", isDefault: false });
+
+  it("a stored key or a masked env fallback both count; a bare row does not", () => {
+    expect(hasKey(stored)).toBe(true);
+    expect(hasKey(envBacked)).toBe(true);
+    expect(hasKey(bare)).toBe(false);
+    // Variable name only: nothing proves it is set, so it is still key-less.
+    const nameOnly = toRow({
+      provider: "deepseek",
+      modelId: "deepseek-v4-pro",
+      envKey: "DEEPSEEK_API_KEY",
+      isDefault: false,
+    });
+    expect(hasKey(nameOnly)).toBe(false);
+  });
+
+  it("a key typed in the dialog counts before it is saved", () => {
+    expect(hasKey({ ...bare, apiKeyInput: "  sk-new  " })).toBe(true);
+    expect(hasKey({ ...bare, apiKeyInput: "   " })).toBe(false);
+  });
+
+  it("clearApiKey drops the stored key only: an env-backed row keeps its key", () => {
+    expect(hasKey({ ...stored, clearApiKey: true })).toBe(false);
+    // The environment cannot be cleared from the dialog, so clearing leaves it behind.
+    expect(
+      hasKey({ ...envBacked, credential: { apiKeyMasked: "sk-a\u20269999" }, clearApiKey: true }),
+    ).toBe(true);
+  });
+
+  it("the status line shows the most specific source it has", () => {
+    expect(keyStatusText(stored)).toBe("sk-o\u20261111");
+    expect(keyStatusText(envBacked)).toBe("sk-a\u20263456");
+    expect(keyStatusText(bare)).toBe(S.models.noKey);
+    // A key typed but not yet saved has no mask of its own.
+    expect(keyStatusText({ ...bare, apiKeyInput: "sk-new" })).toBe(S.models.keyConfigured);
+    // Clearing a stored key falls back to the environment's mask rather than "no key".
+    expect(
+      keyStatusText({
+        ...envBacked,
+        credential: { apiKeyMasked: "sk-a\u20269999" },
+        clearApiKey: true,
+      }),
+    ).toBe("sk-a\u20263456");
+  });
+});
+
 describe("clientTypeAfterProviderChange", () => {
   it("uses openai-chat when moving to Custom and otherwise preserves the current client", () => {
     expect(clientTypeAfterProviderChange("custom", "")).toBe("openai-chat");
@@ -64,6 +158,21 @@ describe("toRow (DTO → row edit state)", () => {
     expect(row.modelId).toBe("claude-sonnet-4-6");
     expect(row.original).toEqual({ provider: "anthropic", modelId: "claude-sonnet-4-6" });
     expect(rowRef(row)).toEqual({ provider: "anthropic", modelId: "claude-sonnet-4-6" });
+  });
+
+  it("carries the env-fallback name and its masked preview through to the row", () => {
+    const row = toRow({
+      provider: "anthropic",
+      modelId: "claude-sonnet-4-6",
+      envKey: "ANTHROPIC_API_KEY",
+      envKeyMasked: "sk-a…3456",
+      isDefault: false,
+    });
+    expect(row.envKey).toBe("ANTHROPIC_API_KEY");
+    expect(row.envKeyMasked).toBe("sk-a…3456");
+    expect(toRow({ provider: "custom", modelId: "m", isDefault: false }).envKeyMasked).toBe(
+      undefined,
+    );
   });
 
   it("providers outside the catalog list are kept as-is (only the display layer buckets them under custom)", () => {

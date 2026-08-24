@@ -13,7 +13,7 @@
 import type { UserInfo } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import { MIN_PASSWORD_LENGTH, toUserInfo } from "../auth/service.js";
-import { hashPassword } from "../auth/password.js";
+import { SCRYPT_COST, hashPassword } from "../auth/password.js";
 import type { AuthSessionsRepo } from "../db/repos/auth-sessions.js";
 import type { ProjectsRepo } from "../db/repos/projects.js";
 import type { UserRow, UsersRepo } from "../db/repos/users.js";
@@ -32,14 +32,21 @@ export interface AdminServiceDeps {
    * initial-password.ts); test constructions may omit it.
    */
   onPasswordChanged?: (userId: string) => void;
+  /**
+   * Test double: scrypt work factor for hashes this service writes. Omitted in
+   * production, where {@link SCRYPT_COST} applies.
+   */
+  passwordHashCost?: number;
   now?: () => Date;
 }
 
 export class AdminService {
   private readonly now: () => Date;
+  private readonly hashCost: number;
 
   constructor(private readonly deps: AdminServiceDeps) {
     this.now = deps.now ?? (() => new Date());
+    this.hashCost = deps.passwordHashCost ?? SCRYPT_COST;
   }
 
   listUsers(): UserInfo[] {
@@ -62,7 +69,7 @@ export class AdminService {
     }
     const user: UserRow = {
       userId,
-      passwordHash: await hashPassword(password),
+      passwordHash: await hashPassword(password, this.hashCost),
       isAdmin: false,
       passwordIsInitial: true,
       createdAt: this.now().toISOString(),
@@ -86,7 +93,7 @@ export class AdminService {
     if (password.length < MIN_PASSWORD_LENGTH) {
       throw new HttpError(400, "invalid_password", "Password must be at least 8 characters.");
     }
-    this.deps.users.updatePassword(userId, await hashPassword(password), true);
+    this.deps.users.updatePassword(userId, await hashPassword(password, this.hashCost), true);
     this.deps.authSessions.deleteByUser(userId);
     this.deps.onPasswordChanged?.(userId);
   }

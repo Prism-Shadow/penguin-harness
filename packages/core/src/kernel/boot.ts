@@ -22,10 +22,29 @@ export interface Resources {
    * `dispose` is how a resource says what "shut down" means for it — the registry
    * itself knows nothing about kinds, so a platform can introduce a resource type the
    * runtime has never heard of and still have it cleaned up at process exit.
+   *
+   * Returns the PAIRED unregister for this exact registration: it removes the entry AND
+   * runs its dispose — out of the registry means shut down, or the process-exit sweep
+   * could no longer reach it. Both are identity-checked: a later overwrite by a successor
+   * turns the handle into a no-op and moves shutdown responsibility to the new
+   * registration — a dead generation can never touch a slot it no longer owns. This is
+   * the only way to remove a single entry; there is deliberately no release-by-id, which
+   * would be an unpaired delete aimed at whatever happens to occupy the slot.
    */
-  register(id: string, resource: unknown, dispose?: () => void): void;
+  register(id: string, resource: unknown, dispose?: () => void): () => void;
   claim<T = unknown>(id: string): T | undefined;
-  release(id: string): void;
+  /**
+   * Disposes and removes every entry whose id belongs to the group (`terminal` covers
+   * `terminal:*`), in reverse registration order — later entries may depend on earlier
+   * ones, same convention as effects.
+   *
+   * A hook for IMPLEMENTATIONS, not a kernel mechanism: the kernel never calls it, and
+   * upgrade() has no opinion about resource compatibility. An impl's create() uses it to
+   * hard-stop the groups it cannot adopt from its predecessor (penguin does this over a
+   * declaration it leaves in the registry itself — see server hmr/platform.ts). Optional,
+   * so a registry that does not offer it simply carries every group across unchecked.
+   */
+  disposeGroup?(group: string): void;
 }
 
 export interface NodeCtx {
@@ -123,12 +142,47 @@ function parseParkedNode(doc: Json, path: string): ParkedNode {
   };
 }
 
+/**
+ * Accumulators a node fills as it builds — held by {@link bootNode} so that a failure
+ * partway through still has something to unwind.
+ */
+interface PartialNode {
+  children: Map<string, NodeInst | KeyedInst>;
+  disposers: Array<() => void>;
+}
+
 async function bootNode(
   impl: AnyImpl,
   iface: AnyIface,
   doc: Json,
   resources: Resources,
   path: string,
+): Promise<NodeInst> {
+  const partial: PartialNode = { children: new Map(), disposers: [] };
+  try {
+    return await buildNode(impl, iface, doc, resources, path, partial);
+  } catch (err) {
+    // A node that fails half-built still HAS a half: children already booted, effects
+    // already registered. Nothing else can reach them — the caller gets an exception,
+    // not an instance — so unwinding here is the only chance to run them. Same
+    // children-first convention as disposeNode; a throwing disposer must not mask the
+    // failure actually being reported.
+    try {
+      disposeNode({ iface, api: {} as NodeInst["api"], ...partial });
+    } catch {
+      // Best-effort: the original failure is what the caller needs to see.
+    }
+    throw err;
+  }
+}
+
+async function buildNode(
+  impl: AnyImpl,
+  iface: AnyIface,
+  doc: Json,
+  resources: Resources,
+  path: string,
+  partial: PartialNode,
 ): Promise<NodeInst> {
   const parked = parseParkedNode(doc, path);
   const parsed = iface.context.strictParse(parked.self, `${path}.self`);
@@ -139,7 +193,7 @@ async function bootNode(
     );
   }
 
-  const childInsts = new Map<string, NodeInst | KeyedInst>();
+  const childInsts = partial.children;
   const childHandles: Record<string, unknown> = {};
   for (const [name, decl] of Object.entries(iface.children)) {
     const childImpl = impl.children?.[name];
@@ -180,7 +234,7 @@ async function bootNode(
     }
   }
 
-  const disposers: Array<() => void> = [];
+  const disposers = partial.disposers;
   const ctx: NodeCtx = {
     resources,
     effect: (dispose) => disposers.push(dispose),

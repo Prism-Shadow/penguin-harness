@@ -72,41 +72,46 @@ Each tool is described by one `ToolDefinitionConfig`:
 
 ## Built-in tools
 
-There are 9 built-in tools (assembled via `packages/core/src/environment/tools/registry.ts`):
+There are 11 built-in tools (assembled via `packages/core/src/environment/tools/registry.ts`):
 
 | Tool | Permission | Timeout (ms) | Purpose |
 | --- | --- | --- | --- |
 | `exec_command` | rw | 120000 | Run a shell command in the Workspace via `bash -lc`, streaming stdout/stderr |
 | `input_command` | rw | 130000 | Drive a running command by `process_id`: write stdin, send Ctrl-C, poll output |
+| `kill_command` | rw | 30000 | Terminate a command session by `process_id` (whole process group), returning undelivered output |
 | `read_file` | r | 30000 | Read a text file as a line-numbered (`cat -n`) window, paged by offset/limit |
 | `edit_file` | rw | 30000 | Exact-string replacement in an existing file, echoing a verification snippet |
 | `write_file` | rw | 30000 | Create or overwrite a whole file, creating parent directories as needed |
 | `run_subagent` | rw | 600000 | Delegate a self-contained subtask to a child Agent in the same Workspace |
 | `input_subagent` | rw | 600000 | Poll a background subagent, or send a follow-up prompt once it is idle |
+| `kill_subagent` | rw | 30000 | Abort a background subagent by `subagent_id` and remove it, returning undelivered text |
 | `read_image` | r | 60000 | Read an image and return it as image content (vision models) |
 | `describe_image` | r | 90000 | Have the configured `vision_model` read the image and answer in text (text-only models) |
 
-Note that an existing agent's persisted `tools.builtin` list is frozen as written (the settings UI edits rows but adds none): agents created before this toolset do not pick up the file tools automatically — hand-edit the agent's `system_config.yaml` and add the new entries (copy them from the default definitions in `packages/core/src/state/default-config.ts`) to adopt them.
+Note that an existing agent's persisted `tools.builtin` list is frozen as written (the settings UI edits rows but adds none): agents created before this toolset do not pick up newer tools (the file tools, `kill_command`, `kill_subagent`) or newer arguments (`run_in_background`) automatically — hand-edit the agent's `system_config.yaml` and add the new entries (copy them from the default definitions in `packages/core/src/state/default-config.ts`) to adopt them.
 
 ### Call descriptions
 
-The command/subagent tools (`exec_command`, `input_command`, `run_subagent`, `input_subagent`) take a `description` argument: one model-written sentence about what the call is doing, shown by the CLI and Web UI while the call runs. The argument is declared as a normal `description` property in each entry's `parameters` in `system_config.yaml` (tool schemas live entirely in the editable config), and it is **required** there — a tool that offers the argument always gets one, so the frontends can pick a call's display form from the schema instead of guessing while the arguments stream; the model is also asked to emit it first. The per-entry `call_description` field toggles the whole thing — missing = kept, `call_description: false` filters the property (and its `required` entry) out of the schema at assembly time (in-memory only, the YAML is never rewritten). The file tools don't take it — their `file_path` argument is self-describing.
+The command/subagent tools (`exec_command`, `input_command`, `kill_command`, `run_subagent`, `input_subagent`, `kill_subagent`) take a `description` argument: one model-written sentence about what the call is doing, shown by the CLI and Web UI while the call runs. The argument is declared as a normal `description` property in each entry's `parameters` in `system_config.yaml` (tool schemas live entirely in the editable config), and it is **required** there — a tool that offers the argument always gets one, so the frontends can pick a call's display form from the schema instead of guessing while the arguments stream; the model is also asked to emit it first. The per-entry `call_description` field toggles the whole thing — missing = kept, `call_description: false` filters the property (and its `required` entry) out of the schema at assembly time (in-memory only, the YAML is never rewritten). The file tools don't take it — their `file_path` argument is self-describing.
 
 ### Command sessions
 
-`exec_command` waits in the foreground first; if the command outruns `yield_time_ms` it moves to the background and the call returns the output so far plus a `process_id`, driven from then on by `input_command`:
+`exec_command` waits in the foreground first; if the command outruns `yield_time_ms` it moves to the background and the call returns the output so far plus a `process_id`, driven from then on by `input_command`. With `run_in_background: true` it skips the foreground window entirely: the call returns the `process_id` immediately, and when the process exits its result arrives as an automatic user message (see [Background completion reports](#background-completion-reports)). `kill_command` terminates a session either way:
 
 ```text
 exec_command(cmd)
   ├─ finishes within the foreground window (yield_time_ms, default 60000)
   │        ──► full output + exit code
-  └─ still running ──► backgrounds, returns output so far + process_id
-                     │
-    input_command(process_id[, chars]) ──► write stdin / send Ctrl-C / poll
-                     └─ loop until the command exits
+  ├─ still running ──► backgrounds, returns output so far + process_id
+  │                  │
+  │  input_command(process_id[, chars]) ──► write stdin / send Ctrl-C / poll
+  │                  └─ loop until the command exits
+  └─ run_in_background: true ──► returns process_id immediately
+                     └─ on exit: completion report arrives as a user message
+     kill_command(process_id) ──► SIGTERM the process group (SIGKILL after a grace period)
 ```
 
-Both tools' arguments (explicit keys):
+The tools' arguments (explicit keys):
 
 ```ts
 // exec_command
@@ -114,6 +119,7 @@ Both tools' arguments (explicit keys):
   cmd: string;             // required: the shell command to run
   workdir?: string;        // working directory; defaults to the Workspace root, relative paths resolve against it
   yield_time_ms?: number;  // foreground wait; default 60000, minimum 250, capped below the tool timeout
+  run_in_background?: boolean; // true = return process_id immediately; completion arrives as a user message
   description: string;     // required while call_description is on: one sentence shown to the user while the call runs, emitted first
 }
 
@@ -121,7 +127,13 @@ Both tools' arguments (explicit keys):
 {
   process_id: string;      // required: the command-session id returned by exec_command
   chars?: string;          // characters for stdin; send "\u0003" alone to deliver Ctrl-C; empty = poll only
-  yield_time_ms?: number;  // wait; defaults 250 for writes, 5000 for empty polls
+  yield_time_ms?: number;  // wait; defaults 250 for writes, 120000 for empty polls (one poll waits out most builds; pass a smaller value to peek)
+  description: string;     // required while call_description is on
+}
+
+// kill_command
+{
+  process_id: string;      // required: the command session to terminate (already-exited sessions are removed too)
   description: string;     // required while call_description is on
 }
 ```
@@ -130,7 +142,7 @@ On POSIX, Ctrl-C sends `SIGINT` to the session's process group, interrupting the
 
 ### File tools
 
-`read_file` / `edit_file` / `write_file` run with the user's full permissions, same as the shell tool; relative paths resolve against the Workspace and absolute paths are allowed. They are non-streaming (a single final output) and never throw — failures come back as explanatory text with `stop_reason: failed`.
+`read_file` / `edit_file` / `write_file` run with the user's full permissions, same as the shell tool; relative paths resolve against the Workspace and absolute paths are allowed. A symlinked path is followed to the file it names — reads, edits and writes all land on that file, and the link stays a link. They are non-streaming (a single final output) and never throw — failures come back as explanatory text with `stop_reason: failed`.
 
 ```ts
 // read_file — cat -n style output (line number, tab, content); overlong single lines are
@@ -163,7 +175,7 @@ On POSIX, Ctrl-C sends `SIGINT` to the session's process group, interrupting the
 
 ### Subagents
 
-`run_subagent` hands a subtask you can fully specify in one prompt to a child Agent, with the same two-phase shape: after the foreground window (default 300000ms) it moves to the background with a `subagent_id`, driven by `input_subagent` for polling or follow-up prompts; the child's pending approvals surface while the poll waits.
+`run_subagent` hands a subtask you can fully specify in one prompt to a child Agent, with the same two-phase shape: after the foreground window (default 300000ms) it moves to the background with a `subagent_id`, driven by `input_subagent` for polling or follow-up prompts; the child's pending approvals surface while the poll waits. With `run_in_background: true` the call returns the `subagent_id` immediately and every round's completion arrives as an automatic user message (see [Background completion reports](#background-completion-reports)); `kill_subagent` aborts and removes a background subagent (an idle one is removed too, freeing its slot).
 
 ```ts
 // run_subagent
@@ -174,6 +186,7 @@ On POSIX, Ctrl-C sends `SIGINT` to the session's process group, interrupting the
   provider?: string;       // the provider group model_id belongs to; required whenever model_id is given
   thinking_level?: string; // "low" | "medium" | "high" | "xhigh" | "max"; omit to inherit the parent Session's level
   yield_time_ms?: number;  // foreground wait; default 300000
+  run_in_background?: boolean; // true = return subagent_id immediately; completion arrives as a user message
   description: string;     // required while call_description is on
 }
 
@@ -182,6 +195,12 @@ On POSIX, Ctrl-C sends `SIGINT` to the session's process group, interrupting the
   subagent_id: string;     // required: the background Subagent id returned by run_subagent
   prompt?: string;         // follow-up task, accepted only while the child Session is idle; empty = poll only
   yield_time_ms?: number;  // wait; defaults 300000 with a prompt, 10000 for empty polls
+  description: string;     // required while call_description is on
+}
+
+// kill_subagent
+{
+  subagent_id: string;     // required: the background subagent to abort and remove
   description: string;     // required while call_description is on
 }
 ```
@@ -208,6 +227,14 @@ On POSIX, Ctrl-C sends `SIGINT` to the session's process group, interrupting the
 }
 ```
 
+### Background completion reports
+
+A task launched with `run_in_background: true` reports its completion as a **user message injected by the harness** — the model does not need to poll. The message opens with a `[background_task_done]` marker block (kind, id, status, one-line detail) followed by what ran and the tail of its yet-undelivered output (capped at 4000 characters; the Web App collapses the block into a one-line notice). Its `text` payload carries `sender: "harness"`, distinguishing it from human input in the Trace (see [OmniMessage](/omni-message)).
+
+Delivery: while a Task is running, the report rides the next turn boundary — a final reply already streaming does not lose it, the Task simply continues for one more turn to react. While the Session is idle, the hosting server starts a new Task carrying the report (SDK embedders subscribe via `Session.onBackgroundNotice` / `takeBackgroundNotices`, or get it prepended to the next run). A task stopped through `kill_command` / `kill_subagent` sends no report — the kill's own result already carries the outcome.
+
+A background subagent's lifecycle is decoupled from the call that launched it: its abort signal is its own (only `kill_subagent`, Session end, or registry eviction ends it), its messages stream to the frontend live through the launching Session (same origin-tagged channel a foreground window relays), and its tool approvals resolve through the launching call's own approval callback as a standing sink — so an `allow-all` launch runs unattended, and a failure still ends in a `status: failed` report rather than a child parked forever.
+
 ### Background session caps
 
 | Session type | Cap | Eviction |
@@ -220,7 +247,8 @@ On POSIX, Ctrl-C sends `SIGINT` to the session's process group, interrupting the
 Every complete `tool_call` triggers exactly one approval decision:
 
 ```ts
-type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<"allow" | "deny">;
+type ApprovalDecision = "allow" | "deny" | "forbidden"; // "forbidden" = the command policy's veto
+type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalDecision>;
 ```
 
 | Surface | Behavior |
@@ -229,7 +257,7 @@ type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<"allow" | "
 | CLI | `--approve` takes four modes: allow-all (default) / deny-all / read-only / always-ask; read-only auto-approves `permission: "r"` tools and defers the rest to a human |
 | Web / Server | The same four modes, set per Session; the mode is re-read from the DB on every decision, so changes take effect immediately; manual decisions arrive via the API |
 
-A deny produces a synthetic aborted `tool_call_output` (`Tool call denied by user.`) for the model to react to. Every decision is written to the Trace as an `approval_decision` event, forming a complete audit record. Approval happens in the tool-execution phase of the [Agent Loop](/agent-loop).
+A deny produces a synthetic `aborted` `tool_call_output` for the model to react to — `Tool call denied by user.`, or `Tool call denied by policy.` when the [command policy](/configuration#command-policy) denied it, so a policy hit never reads as a person cancelling. See [ApproveFn](/interfaces#approvefn). Every decision is written to the Trace as an `approval_decision` event — a policy veto recorded as `forbidden` — forming a complete audit record. Approval happens in the tool-execution phase of the [Agent Loop](/agent-loop).
 
 ## Custom tools & MCP
 
@@ -261,7 +289,7 @@ Each `tools.mcpServers` entry is `{ name, config }`: `name` is restricted to let
 - `http` — Streamable HTTP, the current spec's remote transport (`url` / `headers`).
 - `sse` — the legacy HTTP+SSE transport, kept for servers that have not migrated (`url` / `headers`).
 
-The `transport` field may be omitted: an entry with `command` infers `stdio`, one with `url` infers `http`; `sse` must always be explicit. All three share the optional `connectTimeoutMs` (connect + tool-discovery budget, default 10000) and `timeoutMs` / `maxOutputLength` (execution bounds applied to every tool of that Server; Environment defaults when unset). `headers` are attached to every HTTP request to that Server (SSE stream included), so they can carry auth headers such as `Authorization`.
+The `transport` field may be omitted: an entry with `command` infers `stdio`, one with `url` infers `http`; `sse` must always be explicit. All three share the optional `connectTimeoutMs` (connect + tool-discovery budget, default 10000), `timeoutMs` / `maxOutputLength` (execution bounds applied to every tool of that Server; Environment defaults when unset) and `permission` (`auto` / `r` / `rw`, default `auto` — see the permission bullet below). `headers` are attached to every HTTP request to that Server (SSE stream included), so they can carry auth headers such as `Authorization`.
 
 ```yaml
 tools:
@@ -275,12 +303,14 @@ tools:
         transport: http
         url: https://mcp.linear.app/mcp
         headers: { Authorization: "Bearer ..." }
+        permission: r        # auto (default) | r | rw
 ```
 
 Behavior:
 
 - Connecting is **lazy**: Session creation returns instantly, and the first `run()` connects all Servers in parallel and discovers tools once — the wait streams as one `mcp_connect_begin` / `mcp_connect_end` pair (frontends show a connecting status; the end carries the overall status plus per-Server results), and the full tool definitions follow as a `tool_list_ready` event (see [OmniMessage](/omni-message)); in the Trace all three land after the run's input, inside the new turn. Aborting mid-connect **cancels** the attempt — the next `run()` reconnects. The result is a Session-lifetime snapshot and `tools/list_changed` notifications are ignored. An unreachable Server or invalid entry only produces a stderr warning and is skipped — **the session is never blocked**.
 - Discovered tools join the flat tool namespace as `mcp__<server>__<tool>` and go through the same [execution contract](#execution-contract) (timeout, truncation, interruption) and [approval](#approval) flow as builtin tools.
-- Permission mapping: a tool the Server annotates `readOnlyHint: true` is `r` (auto-approved by the read-only approval mode); everything else is `rw` — annotations are untrusted hints, so the default takes the restrictive direction.
+- Permission mapping: under the default `permission: auto`, a tool the Server annotates `readOnlyHint: true` is `r` (auto-approved by the read-only approval mode); everything else is `rw` — annotations are untrusted hints, so the default takes the restrictive direction. Setting the entry's `permission` to `r` or `rw` overrides the annotation for **every** tool of that Server, which is the way in for the many Servers that never set `readOnlyHint` and so land on `rw` wholesale.
+- What `permission` is: it fixes the level each of that Server's tools reports, and exactly one approval mode reads that level. Under `read-only` an `r` tool is auto-approved and an `rw` tool needs manual confirmation; `allow-all`, `deny-all` and `always-ask` never consult it, so marking an entry `rw` adds no prompt there. Beyond that the key does nothing: it does not sandbox the Server, does not restrict what its tools do when they run, is never sent to or verified against the Server, and the Server keeps whatever capabilities its transport gives it. Marking a Server `r` that can in fact write removes the confirmation `read-only` would have asked for.
 - Result mapping: text blocks concatenate into the output text; image blocks ride along as images (data URLs); audio and binary resources collapse to placeholder lines; a result with only `structuredContent` is serialized as JSON; a Server-reported `isError` lands as `stop_reason: "failed"` with the Server's error text as the content.
 - Session teardown (`Environment.dispose`) closes every MCP client; stdio child processes exit with it.

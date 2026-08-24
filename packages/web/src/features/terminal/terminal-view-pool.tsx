@@ -1,27 +1,20 @@
 /**
- * The dock's live terminal views, pooled OUTSIDE the pane components.
+ * The docks' live terminal views, pooled OUTSIDE the dock components.
  *
  * Each shown terminal renders one TerminalView through a portal into a per-terminal
  * container div that this module owns and never destroys while the terminal is shown.
- * Panes adopt the container into their body with a plain appendChild. Because both the
- * React element (keyed by terminal id) and the DOM subtree survive any pane change,
- * moving a terminal between panes — or moving a whole pane to another edge — never
- * remounts xterm and never drops the WebSocket; the pane chrome around it is all that
+ * Dock tab bodies adopt the container with a plain appendChild. Because both the
+ * React element (keyed by terminal id) and the DOM subtree survive any dock change,
+ * moving a terminal tab between docks — or moving a whole dock to the other edge — never
+ * remounts xterm and never drops the WebSocket; the dock chrome around it is all that
  * re-renders.
  *
- * The pool also owns the per-terminal view state (status/info) the pane headers display,
- * and the global Ctrl+` hotkey (mounted exactly once, dock visible or not).
+ * The pool also owns the per-terminal view state (status/info) consumers display.
  */
 import { useEffect, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { TerminalView, probeJson, type TerminalInfo, type TerminalStatus } from "./terminal-view";
-import {
-  paneHasSlot,
-  openPanes,
-  paneCurrent,
-  subscribeTerminalDock,
-  toggleTerminalDock,
-} from "./terminal-dock-state";
+import { dockActiveKey, isDockVisible, subscribeDock } from "../dock/dock-state";
 import { noteTerminalTitle, refreshTerminals } from "./terminal-list";
 
 export interface TerminalViewState {
@@ -75,21 +68,21 @@ function attachById(id: string) {
 }
 
 /**
- * The set of terminal ids that should have a live view right now — the whole arrangement,
- * not just what is visible. A side pane a chat panel displaced is still mounted (collapsed
- * to zero width, animating), so its view has to survive the swap: tearing it down would
- * make the panel slide in over a blank box, and coming back would flash a reconnect. Hiding
- * the dock outright is the case that disposes.
+ * The set of terminal ids that should have a live view right now: each visible dock's
+ * active tab, when it is a terminal. An inactive terminal tab has no view — switching to
+ * it reattaches (server-side restore) — and hiding a dock disposes its shown view the
+ * same way. Both docks are always consulted: below the desktop breakpoint the merged
+ * surface shows one dock's active tab, and keeping the other's view alive through the
+ * merge costs one idle attach while saving a reconnect flash on every width change.
  */
 function shownIds(): string[] {
   const ids: string[] = [];
-  for (const pane of openPanes()) {
-    // paneHasSlot, not isTerminalDockOpen: the latter answers "is anything on screen", and a
-    // displaced side pane is not — but it is still mounted and mid-animation, so tearing its
-    // view down here is what would make the panel slide in over a blank box.
-    if (!paneHasSlot(pane)) continue;
-    const id = paneCurrent(pane);
-    if (id !== null && !ids.includes(id)) ids.push(id);
+  for (const position of ["right", "bottom"] as const) {
+    if (!isDockVisible(position)) continue;
+    const key = dockActiveKey(position);
+    if (key === null || !key.startsWith("terminal:")) continue;
+    const id = key.slice("terminal:".length);
+    if (!ids.includes(id)) ids.push(id);
   }
   return ids;
 }
@@ -105,9 +98,9 @@ function shownIdsSnapshot(): string[] {
 }
 
 export function TerminalDockRuntime() {
-  const ids = useSyncExternalStore(subscribeTerminalDock, shownIdsSnapshot);
+  const ids = useSyncExternalStore(subscribeDock, shownIdsSnapshot);
 
-  // (The Ctrl+` hotkey is a module-scope listener in terminal-dock-state.ts — binding it
+  // (The Ctrl+` hotkey is a module-scope listener in dock-terminal.ts — binding it
   // in an effect here left a post-paint window where the shortcut was dead.)
 
   // Containers and view state of terminals that are no longer shown can go; a re-shown

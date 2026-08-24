@@ -2,7 +2,7 @@
  * Protocol-path suffix for the base URL field (pure mapping): which path the AgentHub
  * client appends to a custom base URL, keyed off (provider, clientType). The expected
  * paths mirror the vendored agenthub clients: Anthropic direct posts /v1/messages,
- * OpenAI and MiniMax direct use a Responses API (/responses), Google direct hits
+ * OpenAI, MiniMax and DeepSeek direct use a Responses API (/responses), Google direct hits
  * /v1beta/models/<id>:…, and every OpenAI-compatible client posts /chat/completions.
  */
 import { describe, expect, it } from "vitest";
@@ -14,6 +14,7 @@ describe("protocolPathForModel", () => {
     expect(protocolPathForModel("openai", "")).toBe("/responses");
     expect(protocolPathForModel("google", "")).toBe("/v1beta/models");
     expect(protocolPathForModel("minimax", "")).toBe("/responses");
+    expect(protocolPathForModel("deepseek", "")).toBe("/responses");
   });
 
   it("the MiniMax M3 client speaks MiniMax's Responses API, not chat completions", () => {
@@ -21,8 +22,14 @@ describe("protocolPathForModel", () => {
     expect(protocolPathForModel("myproxy", "minimax-m3")).toBe("/responses");
   });
 
+  it("the DeepSeek V4 client speaks DeepSeek's Responses API (agenthub 0.4.6)", () => {
+    // Until 0.4.6 this client posted /chat/completions; the vendored client now posts
+    // /responses, and the hint has to name the endpoint shape a custom base URL must serve.
+    expect(protocolPathForModel("deepseek", "deepseek-v4")).toBe("/responses");
+    expect(protocolPathForModel("myproxy", "deepseek-v4")).toBe("/responses");
+  });
+
   it("the remaining direct vendors speak chat completions", () => {
-    expect(protocolPathForModel("deepseek", "")).toBe("/chat/completions");
     expect(protocolPathForModel("zhipu", "")).toBe("/chat/completions");
     expect(protocolPathForModel("moonshot", "")).toBe("/chat/completions");
   });
@@ -50,6 +57,9 @@ describe("protocolPathForModel", () => {
   it("an explicit openai-chat client type wins over vendor-group membership", () => {
     expect(protocolPathForModel("anthropic", "openai-chat")).toBe("/chat/completions");
     expect(protocolPathForModel("google", "openai-chat")).toBe("/chat/completions");
+    // The gateway rows reselling DeepSeek pin openai-chat, so they stay on chat completions
+    // even though the vendor's own client moved to /responses.
+    expect(protocolPathForModel("siliconflow", "openai-chat")).toBe("/chat/completions");
   });
 
   it("the generic protocol clients (agenthub 0.4.2) map to their own endpoint shapes", () => {
@@ -69,7 +79,6 @@ describe("protocolPathForModel", () => {
     expect(protocolPathForModel("myproxy", "claude-4-6")).toBe("/v1/messages");
     expect(protocolPathForModel("myproxy", "gemini-3.6")).toBe("/v1beta/models");
     expect(protocolPathForModel("myproxy", "gpt-5.5")).toBe("/responses");
-    expect(protocolPathForModel("myproxy", "deepseek-v4")).toBe("/chat/completions");
     expect(protocolPathForModel("myproxy", "glm-5.2")).toBe("/chat/completions");
     expect(protocolPathForModel("myproxy", "kimi-k3")).toBe("/chat/completions");
   });

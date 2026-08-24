@@ -31,27 +31,13 @@ export interface UsageRecordInsert {
 export interface UsageFilter {
   from?: string;
   to?: string;
+  /** Timestamp window bounds (ISO UTC, compared as strings against the row's `ts`): refine the date range down to instants for the trailing minute/hour windows. */
+  fromTs?: string;
+  toTs?: string;
   agentId?: string;
   /** Provider filter paired with modelId (the frontend dropdown always sends them together). */
   provider?: string;
   modelId?: string;
-}
-
-/**
- * Raw request success-rate counts for a single Model (paired reference).
- * `total` is **the success-rate denominator**: all requests minus aborted — the user
- * clicking "stop" is not a model failure, and counting it would make the success rate
- * drop every time stop is pressed. `aborted` is counted separately for display.
- */
-export interface UsageStatusCount {
-  provider: string;
-  modelId: string;
-  completed: number;
-  total: number;
-  aborted: number;
-  failed: number;
-  timeout: number;
-  malformed: number;
 }
 
 /** Raw Token sums for a single Model (paired reference) — the smallest unit for cost conversion. */
@@ -69,6 +55,49 @@ export interface UsageModelSums {
 export interface UsageGroupModelSums extends UsageModelSums {
   key: string;
 }
+
+/** Time-series bucket x Model sums, with the success-rate counts folded in. */
+export interface UsageSeriesModelSums extends UsageGroupModelSums {
+  /** Successful requests in the bucket. */
+  completed: number;
+  /**
+   * Success-rate denominator: all requests in the bucket minus aborted. The user
+   * clicking "stop" is not a model failure, and counting it would drop the success
+   * rate every time stop is pressed. Every success-rate denominator in this repo
+   * follows this rule.
+   */
+  denominator: number;
+}
+
+/** Per-Agent counts per time bucket (the requests chart's series data). */
+export interface UsageAgentBucketCount {
+  key: string;
+  agentId: string;
+  requests: number;
+  /** Successful requests in the bucket. */
+  completed: number;
+  /** Success-rate denominator: all requests minus aborted, same rule as UsageSeriesModelSums. */
+  denominator: number;
+}
+
+/** Time-series precision (mirrors the API's UsageGranularity). */
+export type UsageSeriesGranularity = "minute" | "hour" | "day" | "week" | "month";
+
+/**
+ * Bucket-key SQL per granularity. Keys must agree byte-for-byte with
+ * internal/dates.ts's enumerateBuckets / enumerateTsBuckets, which zero-fill
+ * the same series: minute/hour buckets come from `ts` converted to the
+ * server's local clock (the same timezone `date` was recorded in), the rest
+ * derive from the `date` column — `date(date, '-6 days', 'weekday 1')` is the
+ * ISO week's Monday.
+ */
+const BUCKET_EXPRS: Record<UsageSeriesGranularity, string> = {
+  minute: `strftime('%Y-%m-%dT%H:%M', ts, 'localtime')`,
+  hour: `strftime('%Y-%m-%dT%H:00', ts, 'localtime')`,
+  day: "date",
+  week: `date(date, '-6 days', 'weekday 1')`,
+  month: "substr(date, 1, 7)",
+};
 
 /** groupBy dimension -> column name allowlist (prevents injection; only these four columns can be group keys). */
 const GROUP_COLUMNS: Record<UsageGroupBy, string> = {
@@ -139,6 +168,14 @@ export class UsageRepo {
       conds.push("date <= :to");
       params.to = f.to;
     }
+    if (f.fromTs !== undefined) {
+      conds.push("ts >= :fromTs");
+      params.fromTs = f.fromTs;
+    }
+    if (f.toTs !== undefined) {
+      conds.push("ts <= :toTs");
+      params.toTs = f.toTs;
+    }
     if (f.agentId !== undefined) {
       conds.push("agent_id = :agentId");
       params.agentId = f.agentId;
@@ -186,37 +223,58 @@ export class UsageRepo {
   }
 
   /**
-   * Raw success-rate counts per Model (paired reference) (completed / non-aborted requests):
-   * powers the cost center's "Model Success Rate" chart. The denominator excludes aborted
-   * (user-initiated interruption); failure breakdowns (failed / timeout / malformed) are
-   * also returned for hover display. Unknown statuses aren't broken out but still count
-   * toward the denominator (conservative: anything non-completed counts as a failure).
+   * Time-series sums (bucket key x paired reference breakdown) with per-bucket
+   * success-rate counts riding along: powers the cost center's time-series charts
+   * (requests / success rate / Token / cost) at the requested precision. The
+   * denominator excludes aborted.
    */
-  statusByModel(projectId: string, f: UsageFilter = {}): UsageStatusCount[] {
+  seriesByModel(
+    projectId: string,
+    granularity: UsageSeriesGranularity,
+    f: UsageFilter = {},
+  ): UsageSeriesModelSums[] {
+    const expr = BUCKET_EXPRS[granularity];
     const { where, params } = this.conds(projectId, f);
-    const count = (status: string) =>
-      `COALESCE(SUM(CASE WHEN status = '${status}' THEN 1 ELSE 0 END), 0) AS ${status}`;
     const rows = this.db
       .prepare(
-        `SELECT provider, model_id,
-                ${count("completed")},
-                ${count("aborted")},
-                ${count("failed")},
-                ${count("timeout")},
-                ${count("malformed")},
-                COALESCE(SUM(CASE WHEN status <> 'aborted' THEN 1 ELSE 0 END), 0) AS total
-         FROM usage_records WHERE ${where} GROUP BY provider, model_id`,
+        `SELECT ${expr} AS key, provider, model_id, ${SUM_COLUMNS},
+                COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0) AS completed,
+                COALESCE(SUM(CASE WHEN status <> 'aborted' THEN 1 ELSE 0 END), 0) AS denominator
+         FROM usage_records WHERE ${where}
+         GROUP BY key, provider, model_id`,
       )
       .all(params);
     return rows.map((r) => ({
-      provider: r.provider as string,
-      modelId: r.model_id as string,
+      key: r.key as string,
+      ...toSums(r),
       completed: r.completed as number,
-      total: r.total as number,
-      aborted: r.aborted as number,
-      failed: r.failed as number,
-      timeout: r.timeout as number,
-      malformed: r.malformed as number,
+      denominator: r.denominator as number,
+    }));
+  }
+
+  /** Per-Agent counts per time bucket (the by-Agent requests chart's series; the denominator excludes aborted). */
+  agentSeries(
+    projectId: string,
+    granularity: UsageSeriesGranularity,
+    f: UsageFilter = {},
+  ): UsageAgentBucketCount[] {
+    const expr = BUCKET_EXPRS[granularity];
+    const { where, params } = this.conds(projectId, f);
+    const rows = this.db
+      .prepare(
+        `SELECT ${expr} AS key, agent_id, COUNT(*) AS requests,
+                COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0) AS completed,
+                COALESCE(SUM(CASE WHEN status <> 'aborted' THEN 1 ELSE 0 END), 0) AS denominator
+         FROM usage_records WHERE ${where}
+         GROUP BY key, agent_id`,
+      )
+      .all(params);
+    return rows.map((r) => ({
+      key: r.key as string,
+      agentId: r.agent_id as string,
+      requests: r.requests as number,
+      completed: r.completed as number,
+      denominator: r.denominator as number,
     }));
   }
 

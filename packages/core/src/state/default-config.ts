@@ -97,11 +97,26 @@ export const SCHEDULES_PLACEHOLDER = "{{SCHEDULES}}";
 export const SCHEDULE_LIST_PLACEHOLDER = "{{SCHEDULE_LIST}}";
 
 /**
+ * Seeded `compaction.max_context_length`: the context-token threshold newly created Agents
+ * start with. Set high on purpose, because the model's own `context_window` is the backstop:
+ * the effective threshold is the smaller of this value and the window minus
+ * COMPACTION_HEADROOM, taken at use (see llm/context-limits.ts). A window with no room for
+ * this value plus that headroom therefore decides the trigger point, so a small-window model
+ * still compacts inside its window rather than never; on a roomier window — nearly every
+ * built-in catalog entry — this value is what fires. A model entry with no usable
+ * `context_window` falls back to the assumed window (128000), which is a different number
+ * from this one and must not be conflated with it.
+ *
+ * Persisted per-agent in system_config.yaml — existing agents keep their stored value.
+ */
+export const DEFAULT_MAX_CONTEXT_LENGTH = 256000;
+
+/**
  * Context compaction config (the `compaction` section of `system_config.yaml`).
  * Docs: /docs/configuration § "Agent config".
  */
 export interface CompactionConfig {
-  /** Context Token threshold (taken from the most recent token_usage's request.total); defaults to 128000, <=0 disables. */
+  /** Context Token threshold (taken from the most recent token_usage's request.total); defaults to {@link DEFAULT_MAX_CONTEXT_LENGTH}, <=0 disables. */
   max_context_length?: number;
   /** Session cumulative turn threshold (counted in LLM Requests, across Tasks); defaults to -1, <=0 means no limit. */
   max_session_turns?: number;
@@ -212,7 +227,7 @@ export const MEMORY_INDEX_MAX_CHARS = 25_000;
  * index itself.
  */
 export const DEFAULT_MEMORY_PROMPT = `# Memory
-Your long-term record across sessions: Markdown files you maintain with the file tools, in the memory directories named below (they already exist). One file per fact, with frontmatter:
+Your long-term record across sessions: Markdown files you maintain with the file tools, in the directories below (they exist). One file per fact, with frontmatter:
 
 \`\`\`markdown
 ---
@@ -221,12 +236,16 @@ description: <one line — used to decide relevance during recall>
 updated_at: <YYYY-MM-DD>
 ---
 
-<the fact; for corrections and decisions add **Why:** and **How to apply:** lines. Link related memories with [[their-name]] — a name that doesn't exist yet is fine. Write dates absolute.>
+<the fact; for corrections and decisions add **Why:** and **How to apply:** lines. Link with [[their-name]] — a name that doesn't exist yet is fine. Dates absolute.>
 \`\`\`
 
-Worth saving: who the user is (role, expertise, preferences) and how they want you to work, with the why; ongoing work, goals and constraints not derivable from the code; pointers to external resources.
+**Save** who the user is and how they want you to work, with the why; goals and constraints not derivable from the code; pointers to external resources.
 
-Each directory's \`MEMORY.md\` is its index, injected below: one line per memory, under ~150 characters (\`- [Title](file.md) — hook\`), no content, updated in the same round as the file — deletions included. Only the first ${MEMORY_INDEX_MAX_LINES} lines of an index are injected — keep it well under that: merge overlapping entries, drop stale ones, move detail into the topic files. Before saving, check the index and update the file that already covers the subject instead of duplicating; delete memories that prove wrong. Never save what code, config or git history already states, task progress, secrets, unconfirmed guesses, or transcript excerpts — if asked to, save the non-obvious part instead. Memory is readable by everyone who can reach this agent: no sensitive personal data.
+**When:** a request repeated, a correction that outlives the task (with what they wanted instead), a habit or convention stated more than once, a reusable working detail you would otherwise ask for again. One clear statement is enough; a repeat only makes it obvious. Unsure? Ask.
+
+**Never** what code, config or git history states, unconfirmed guesses, transcript excerpts — asked anyway, save the non-obvious part. Anything else is savable if the user wants it; anyone who reaches this agent reads it all.
+
+**Index:** each \`MEMORY.md\` lists its memories one line each (\`- [Title](file.md) — hook\`, ~150 chars, no content), updated with the file — deletions included. Only the first ${MEMORY_INDEX_MAX_LINES} lines are injected: merge overlaps, drop stale entries. Before saving, check the index and extend the file that covers the subject; delete memories that prove wrong.
 
 ## User memory
 What holds wherever you work; every one of your sessions reads it.
@@ -353,7 +372,7 @@ export interface SystemConfig {
     thinking_level?: ThinkingLevelName;
     timeoutMs?: number;
   };
-  /** Context compaction (enabled by default, max_context_length 128k, mode summarize). */
+  /** Context compaction (enabled by default, max_context_length 256k, mode summarize). */
   compaction?: CompactionConfig;
   /** Memory (enabled by default; only reaches the prompt through the template's `{{MEMORY}}` placeholder). */
   memory?: MemoryConfig;
@@ -669,6 +688,11 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
             description:
               "How long to wait for the command before yielding. If it is still running when this elapses, the tool returns the output so far plus a process_id, and the command keeps running in the background (drive it with input_command). Defaults to 60000; minimum 250, capped below the tool timeout.",
           },
+          run_in_background: {
+            type: "boolean",
+            description:
+              "Run the command in the background: return a process_id immediately without waiting. When it exits, its result arrives as an automatic user message — no polling needed. Use for long builds or work you want to continue past; interact via input_command, stop via kill_command. Defaults to false.",
+          },
         },
         required: ["description", "cmd"],
       },
@@ -701,7 +725,7 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
           yield_time_ms: {
             type: "number",
             description:
-              "How long to wait for new output or exit before returning. Non-empty writes default to 250; empty polls default to 5000. Minimum 250, capped below the tool timeout.",
+              "How long to wait for new output or exit before returning. Non-empty writes default to 250; empty polls default to 120000 so one poll waits out most builds (output still streams as it arrives, and the wait ends early on exit — pass a smaller value to peek at a long-lived process). Minimum 250, capped below the tool timeout.",
           },
         },
         required: ["description", "process_id"],
@@ -710,6 +734,30 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
       call_description: true,
       // An empty poll can wait out a build/test run (the yield ceiling is derived from timeoutMs, clamped inside the tool).
       timeoutMs: 130000,
+      maxOutputLength: 16000,
+    },
+    {
+      name: "kill_command",
+      description:
+        "Terminate a background command session started by exec_command: kills the whole process group (SIGTERM, then SIGKILL) and returns any output not yet delivered. Also removes an already-exited session. Identify the session with its process_id.",
+      parameters: {
+        type: "object",
+        properties: {
+          description: {
+            type: "string",
+            description:
+              "Required, and emit it first, before the other arguments: it is shown to the user while the call runs. One short sentence describing what this call is doing and why, written in the user's language.",
+          },
+          process_id: {
+            type: "string",
+            description: "The process_id returned by exec_command for the command session.",
+          },
+        },
+        required: ["description", "process_id"],
+      },
+      permission: "rw",
+      call_description: true,
+      timeoutMs: 30000,
       maxOutputLength: 16000,
     },
     {
@@ -756,6 +804,11 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
             description:
               "How long to wait for the subagent before yielding. If it is still working when this elapses, the tool returns the output so far plus a subagent_id, and the subagent keeps running in the background (drive it with input_subagent). Defaults to 300000; minimum 250, capped below the tool timeout.",
           },
+          run_in_background: {
+            type: "boolean",
+            description:
+              "Start the subagent in the background: return a subagent_id immediately without waiting. When it finishes, its answer arrives as an automatic user message — no polling needed. Good for dispatching parallel subtasks; interact via input_subagent, stop via kill_subagent. Defaults to false.",
+          },
         },
         required: ["description", "prompt"],
       },
@@ -798,6 +851,30 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
       call_description: true,
       // Same generous timeout tier as run_subagent: an empty poll can wait a long time for the subagent to wrap up.
       timeoutMs: 600000,
+      maxOutputLength: 16000,
+    },
+    {
+      name: "kill_subagent",
+      description:
+        "Terminate a background subagent started by run_subagent: aborts its run (denying its pending approvals), returns any answer text not yet delivered, and removes the session. Also removes an idle background subagent, freeing its slot. Identify the session with its subagent_id.",
+      parameters: {
+        type: "object",
+        properties: {
+          description: {
+            type: "string",
+            description:
+              "Required, and emit it first, before the other arguments: it is shown to the user while the call runs. One short sentence describing what this call is doing and why, written in the user's language.",
+          },
+          subagent_id: {
+            type: "string",
+            description: "The subagent_id returned by run_subagent for the background subagent.",
+          },
+        },
+        required: ["description", "subagent_id"],
+      },
+      permission: "rw",
+      call_description: true,
+      timeoutMs: 30000,
       maxOutputLength: 16000,
     },
     // The image-reading tools are mutually exclusive based on the session model's type
@@ -885,7 +962,7 @@ export function defaultSystemConfig(): SystemConfig {
       timeoutMs: 120000,
     },
     compaction: {
-      max_context_length: 128000,
+      max_context_length: DEFAULT_MAX_CONTEXT_LENGTH,
       max_session_turns: -1,
       mode: "summarize",
       prompt: DEFAULT_COMPACTION_PROMPT,

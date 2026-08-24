@@ -4,7 +4,7 @@
  * never does.
  */
 import { describe, expect, it } from "vitest";
-import { resolveDefaultShell, shellArgs } from "../src/platform/terminal/shell.js";
+import { resolveDefaultShell, shellArgs } from "../src/terminal/shell.js";
 
 const NO_PATH = { onPath: () => false };
 const HAS = (...names: string[]) => ({ onPath: (cmd: string) => names.includes(cmd) });

@@ -182,6 +182,8 @@ penguin version --json   # 完整构建信息
 
 不带选项时输出单行；源码构建下该行即 `git describe --tags --dirty` 的结果——`v0.2.3-14-g9e8f7d6-dirty` 表示位于 `v0.2.3` 之后 14 个提交、当前提交为 `9e8f7d6`、且工作区有未提交改动。`-v, --version` 输出的是同一行。
 
+`describe` 指向的是最近的可达 git tag，因此并不总是 `v` + `version`：发布准备会先用一个单独的提交抬升 `version`、之后才打 tag，所以这一窗口内的构建会报告 `v0.2.3-14-g9e8f7d6`，而 `version` 已经是 `0.2.4`。要版本号看 `version`，要在历史中的位置看 `describe`。
+
 JSON 与 `GET /api/version` 返回的是同一份记录，因此在 HTTP 边界的任意一侧都能采集到同样的排障信息。其中 `channel` 取 `release` 或 `source`；`buildDate` 与 `commit` 由发布流程在构建时打入，源码构建为 null；`branch` 与 `dirty` 描述源码构建的 git 位置，发布版为 null——发布流程会先把常量写进工作区再构建，所以「是否干净」对发布产物本就不成立。
 
 ### harness：这台机器上热更新推了什么
@@ -219,7 +221,7 @@ penguin update             # 确认后升级到最新版
 
 目标版本参数叫 `--release` 而不是 `--version`，因为 `-v, --version` 是 CLI 自身的版本参数，会优先生效。
 
-版本发现和 tarball 下载遵循 `PENGUIN_DOWNLOAD_SOURCE=auto|oss|github`，与稳定安装入口使用相同策略。默认的 `auto` 模式读取 OSS `latest.json`，优先选择该不可变版本，并按同一 tag 回退到 GitHub；强制 `oss` 或 `github` 时不会切换来源。`--release <tag>` 会跳过最新版查询，但仍遵循所选下载源策略。显式设置的 HTTPS `PENGUIN_DOWNLOAD_BASE_URL` 对安装脚本和发布包下载具有最高优先级，并可通过 `PENGUIN_DOWNLOAD_FALLBACK_BASE_URL` 为发布包配置后备地址。
+版本发现和 tarball 下载遵循 `PENGUIN_DOWNLOAD_SOURCE=auto|oss|github`，与稳定安装入口使用相同策略。默认的 `auto` 模式读取 OSS `latest.json`，优先选择该不可变版本，并按同一 tag 回退到 GitHub；安装包本身则由安装器测速选出的来源提供。强制 `oss` 或 `github` 时不会切换来源。`--release <tag>` 会跳过最新版查询，但仍遵循所选下载源策略。显式设置的 HTTPS `PENGUIN_DOWNLOAD_BASE_URL` 对安装脚本和发布包下载具有最高优先级，并可通过 `PENGUIN_DOWNLOAD_FALLBACK_BASE_URL` 为发布包配置后备地址。
 
 | 安装方式 | 升级方式 |
 | --- | --- |

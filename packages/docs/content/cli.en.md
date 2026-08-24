@@ -182,6 +182,8 @@ penguin version --json   # the full build info
 
 The bare form prints one line, which for a source build is `git describe --tags --dirty` output — `v0.2.3-14-g9e8f7d6-dirty` reads as fourteen commits past `v0.2.3`, at `9e8f7d6`, with uncommitted changes. `-v, --version` prints that same line.
 
+`describe` names the nearest reachable git tag, which is not always `v` + `version`: release preparation bumps `version` in its own commit and creates the tag afterwards, so a build from that window reports `v0.2.3-14-g9e8f7d6` while `version` already reads `0.2.4`. Read `version` for the release number and `describe` for the position in history.
+
 The JSON is the same record `GET /api/version` returns, so a bug report can be gathered from either side of the HTTP boundary. In it, `channel` is `release` or `source`; `buildDate` and `commit` are stamped into the build by the release workflow and are null for a source build; `branch` and `dirty` describe a source build's git position and are null for a release, where the question does not apply — the workflow stamps its constants into the tree before building.
 
 ### harness: what was hot-pushed here
@@ -219,7 +221,7 @@ penguin update             # upgrade to the latest release, after confirming
 
 The target flag is `--release`, not `--version`, because `-v, --version` is the CLI's own version flag and would take precedence.
 
-Release discovery and tarball downloads honor `PENGUIN_DOWNLOAD_SOURCE=auto|oss|github`, using the same policy as the stable installer entry point. The default `auto` mode reads the OSS `latest.json`, prefers that immutable release, and falls back to the matching GitHub tag. Forced `oss` and `github` modes are strict; `--release <tag>` skips latest-version discovery while retaining the selected source policy. An explicit HTTPS `PENGUIN_DOWNLOAD_BASE_URL` has highest priority for installer and payload downloads, with an optional `PENGUIN_DOWNLOAD_FALLBACK_BASE_URL` for the payload.
+Release discovery and tarball downloads honor `PENGUIN_DOWNLOAD_SOURCE=auto|oss|github`, using the same policy as the stable installer entry point. The default `auto` mode reads the OSS `latest.json`, prefers that immutable release, and falls back to the matching GitHub tag; the package itself is then served by whichever source the installer's speed probe picks. Forced `oss` and `github` modes are strict; `--release <tag>` skips latest-version discovery while retaining the selected source policy. An explicit HTTPS `PENGUIN_DOWNLOAD_BASE_URL` has highest priority for installer and payload downloads, with an optional `PENGUIN_DOWNLOAD_FALLBACK_BASE_URL` for the payload.
 
 | Install kind | How it upgrades |
 | --- | --- |

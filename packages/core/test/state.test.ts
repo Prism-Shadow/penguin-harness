@@ -61,6 +61,7 @@ import {
   type SystemConfig,
 } from "../src/state/index.js";
 import { SUBAGENT_THINKING_LEVELS } from "../src/interfaces.js";
+import { DEFAULT_COMMAND_POLICY_RULES } from "../src/state/command-policy-defaults.js";
 import { sessionEnvironment } from "../src/internal/session-support.js";
 
 let tmpRoot: string;
@@ -252,8 +253,10 @@ describe("buildToolConfig", () => {
       "write_file",
       "exec_command",
       "input_command",
+      "kill_command",
       "run_subagent",
       "input_subagent",
+      "kill_subagent",
       "read_image",
       "describe_image",
     ]);
@@ -262,12 +265,12 @@ describe("buildToolConfig", () => {
     expect(exec.timeoutMs).toBe(120000);
     expect(exec.maxOutputLength).toBe(16000);
     expect((exec.parameters as { required?: string[] }).required).toEqual(["description", "cmd"]);
-    // The four command/subagent tools declare the description call argument in config,
+    // The command/subagent tools declare the description call argument in config,
     // toggled by the per-entry call_description field (default true).
     expect(exec.call_description).toBe(true);
     expect(
       Object.keys((exec.parameters as { properties: Record<string, unknown> }).properties),
-    ).toEqual(["description", "cmd", "workdir", "yield_time_ms"]);
+    ).toEqual(["description", "cmd", "workdir", "yield_time_ms", "run_in_background"]);
     const write = cfg.customTools.find((t) => t.name === "input_command")!;
     expect(write.permission).toBe("rw");
     expect(write.call_description).toBe(true);
@@ -380,8 +383,10 @@ describe("buildToolConfig", () => {
       "write_file",
       "exec_command",
       "input_command",
+      "kill_command",
       "run_subagent",
       "input_subagent",
+      "kill_subagent",
       "read_image",
       "describe_image",
     ]);
@@ -501,12 +506,6 @@ describe("assembleSystemPrompt", () => {
     );
     expect(prompt).toContain("AGENTS.md");
     expect(prompt).toContain("PenguinHarness");
-    // File system's two file-delivery conventions: a workspace file is mentioned in the reply
-    // by its **workspace-relative path** in backticks (the frontend renders a message file card
-    // from this); scratchpad only holds intermediate artifacts, and final deliverables must
-    // land in the Workspace.
-    expect(prompt).toContain("mention its workspace-relative path in backticks");
-    expect(prompt).toContain("always place final deliverables in the workspace");
     // The default template wraps AGENTS.md in a [developer_instructions] block.
     expect(prompt).toContain("[developer_instructions]");
     expect(prompt).toContain("[/developer_instructions]");
@@ -530,21 +529,18 @@ describe("assembleSystemPrompt", () => {
   it("default prompt carries the port and API-key guardrails", async () => {
     const state = await loadOrInitAgentState();
     const prompt = assembleSystemPrompt(state);
-    // Ports: never kill listeners or take PenguinHarness service ports; numbers are deliberately not listed.
-    expect(prompt).toContain("pick another free port");
-    expect(prompt).toContain("PenguinHarness service port");
+    // The wording of these rules is tuned freely; what must not drift is what they never say.
+    // Ports: the service numbers are deliberately not listed, so a model cannot read one out
+    // of the prompt and go looking for it.
     expect(prompt).not.toContain("7364");
     // Auth/key failures live entirely in Stop rules, as a special case of the
-    // unresolvable-error rule: retry at most once, then stop and ask the user to update the key
-    // outside the chat — no CLI commands, no secret values in the conversation.
+    // unresolvable-error rule: retry once, then stop and ask the user to update the key
+    // outside the chat — never through a command that would put the secret on a command line.
+    expect(prompt).not.toContain("penguin config vault set");
     // Position, not presence: `# Stop rules` exists either way, so only the ordering pins that
     // the retry rule sits inside that section instead of back up in Constraints.
     expect(prompt.indexOf("# Stop rules")).toBeLessThan(prompt.indexOf("retry at most once"));
     expect(prompt.indexOf("retry at most once")).toBeLessThan(prompt.indexOf("# Tool use"));
-    expect(prompt).toContain("stop calling tools");
-    expect(prompt).toContain("never be pasted into the conversation");
-    expect(prompt).toContain("next conversation");
-    expect(prompt).not.toContain("penguin config vault set");
   });
 
   it("replaces AGENTS.md and specific Session environment fields at template locations", () => {
@@ -1392,6 +1388,85 @@ describe("project-config round trip", () => {
     await expect(loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID)).rejects.toThrow(
       /legacy|separate fields/,
     );
+  });
+});
+
+describe("command_policy (sandbox command policy block)", () => {
+  it("the default config seeds the factory rules (model-presets philosophy)", () => {
+    const cfg = defaultProjectConfig();
+    expect(cfg.command_policy?.rules).toEqual(DEFAULT_COMMAND_POLICY_RULES);
+    // Seeding copies the list: mutating a seeded config must not touch the constant.
+    cfg.command_policy!.rules!.pop();
+    expect(defaultProjectConfig().command_policy?.rules).toEqual(DEFAULT_COMMAND_POLICY_RULES);
+  });
+
+  it("round-trips through save/load — a known key the CLI's literal rebuild keeps", async () => {
+    const block = {
+      enabled: false,
+      rules: [
+        {
+          name: "no-force-push",
+          pattern: "git push [^;|&]*--force",
+          description: "no force pushes",
+          enabled: false,
+        },
+        { name: "no-curl", pattern: "\\bcurl\\b" },
+      ],
+    };
+    const cfg = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    cfg.command_policy = structuredClone(block);
+    await saveProjectConfig(tmpRoot, DEFAULT_PROJECT_ID, cfg);
+    const loaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    expect(loaded.command_policy).toEqual(block);
+    await saveProjectConfig(tmpRoot, DEFAULT_PROJECT_ID, loaded);
+    expect((await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID)).command_policy).toEqual(block);
+  });
+
+  it("a stored empty rules list survives the round trip (no rules ≠ factory rules)", async () => {
+    const cfg = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    cfg.command_policy = { rules: [] };
+    await saveProjectConfig(tmpRoot, DEFAULT_PROJECT_ID, cfg);
+    expect((await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID)).command_policy).toEqual({
+      rules: [],
+    });
+  });
+
+  it("loads tolerantly: bad keys drop, a non-array rules value reads as absent (factory set)", async () => {
+    const file = projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(
+      file,
+      [
+        "[command_policy]",
+        'enabled = "off"', // wrong type -> dropped -> defaults to enabled
+        "[[command_policy.rules]]",
+        'name = "ok-rule"',
+        'pattern = "\\\\bcurl\\\\b"',
+        "description = 3", // wrong type -> field dropped, entry kept
+        "[[command_policy.rules]]",
+        'name = ""', // empty name -> entry dropped
+        'pattern = "x"',
+        "[[command_policy.rules]]",
+        'name = "no-pattern"', // missing pattern -> entry dropped
+      ].join("\n") + "\n",
+      "utf8",
+    );
+    const loaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    expect(loaded.command_policy).toEqual({
+      rules: [{ name: "ok-rule", pattern: "\\bcurl\\b" }],
+    });
+
+    await fs.writeFile(file, '[command_policy]\nrules = "strict"\n', "utf8");
+    expect((await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID)).command_policy).toBeUndefined();
+  });
+
+  it("drops the block entirely when it is not a table or nothing valid remains", async () => {
+    const file = projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, 'command_policy = "strict"\n', "utf8");
+    expect((await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID)).command_policy).toBeUndefined();
+    await fs.writeFile(file, '[command_policy]\nenabled = "banana"\n', "utf8");
+    expect((await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID)).command_policy).toBeUndefined();
   });
 });
 

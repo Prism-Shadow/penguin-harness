@@ -19,10 +19,12 @@
  */
 import {
   abortEvent,
+  buildBackgroundTaskDoneMessage,
   mcpConnectBegin,
   mcpConnectEnd,
   sessionMeta,
   toolListReady,
+  userText,
 } from "./omnimessage/index.js";
 import type {
   McpServerConnectResult,
@@ -36,10 +38,13 @@ import { runGoalLoop } from "./goal/goal-loop.js";
 import { goalFinishedOf } from "./goal/goal-stream.js";
 import type {
   BackgroundCommandInfo,
+  BackgroundTaskDoneEvent,
+  CommandPolicyConfig,
   EnvironmentInterface,
   LLMInterface,
   ToolPermission,
 } from "./interfaces.js";
+import { withCommandPolicy } from "./internal/command-policy.js";
 import { generateTitleWithLLM } from "./internal/session-title.js";
 import type { SessionTitleResult } from "./internal/session-title.js";
 import { compactAvailability, ContextEngine } from "./engine/context-engine.js";
@@ -111,6 +116,15 @@ export interface SessionConfig {
    * (`run(input, { goal })`) is unavailable without it.
    */
   goalFilePath?: string;
+  /**
+   * Project sandbox command policy (`[command_policy]` of `.project_config.toml`): a
+   * snapshot taken when the Agent built this Session, so the Agent's own file tools cannot
+   * reach the effective copy. `run` wraps the injected approval callback with it — the
+   * refusal happens at the approval boundary, above every approval mode and below no
+   * Human implementation. Absent = the factory rule set applies; `{ enabled: false }` opts
+   * out. Docs: /docs/configuration § "Command policy".
+   */
+  commandPolicy?: CommandPolicyConfig;
 }
 
 /** Options of a goal-mode `run` (`opts.goal`): present = the input starts a goal loop. */
@@ -159,6 +173,41 @@ function raceAbort<T>(
  */
 const TITLE_USER_MATERIAL_LIMIT = 2000;
 const TITLE_ASSISTANT_MATERIAL_LIMIT = 1000;
+
+/**
+ * A background-task completion event as the harness user message that reports it: the
+ * `[background_task_done]` block carries the structured facts, the body the display text —
+ * what settled, then the tail of its yet-undelivered output. `sender: "harness"` marks the
+ * non-human origin in the Trace.
+ *
+ * Built at DELIVERY time, not queue time, because the message must record how it reached the
+ * conversation and a queued event does not know that yet: the engine's mid-run drain stamps
+ * `delivery: "steering"` (injected into an already-started Task — the render and stats layers
+ * keep it inside that turn), while the host's idle take leaves the field off (the notice is
+ * the new task's own starting input and keeps its independent turn). The two deliveries are
+ * positionally identical in the Trace, so only this recorded stamp can tell them apart.
+ */
+function backgroundDoneNotice(event: BackgroundTaskDoneEvent, delivery?: "steering"): OmniMessage {
+  const what = event.kind === "command" ? "Background command" : "Background subagent";
+  const idField = event.kind === "command" ? "process_id" : "subagent_id";
+  const verb = event.status === "completed" ? "finished" : "failed";
+  const detail = event.detail ? ` — ${event.detail}` : "";
+  const head = `${what} ${verb}: \`${event.label}\` (${idField} ${event.id})${detail}`;
+  const body = event.output.trim() ? `${head}\n\n${event.output}` : head;
+  return userText(
+    buildBackgroundTaskDoneMessage(
+      {
+        kind: event.kind,
+        id: event.id,
+        status: event.status,
+        detail: event.detail,
+        ...(delivery ? { delivery } : {}),
+      },
+      body,
+    ),
+    "harness",
+  );
+}
 
 /**
  * Accumulates title material: the body text of complete text messages from the main session
@@ -219,6 +268,7 @@ export class Session {
   private readonly imagesDir: string;
   private readonly modelHasVision: boolean;
   private readonly goalFile?: string;
+  private readonly commandPolicy?: CommandPolicyConfig;
   private metaWritten = false;
   /**
    * The image fold, bound to this Session's scratchpad — Session is the layer that knows both
@@ -233,6 +283,21 @@ export class Session {
   private titleAssistantText = "";
   /** Material-frozen flag: becomes true once the first Task containing user text finishes; subsequent runs stop accumulating. */
   private titleMaterialFrozen = false;
+  /**
+   * Background-task completion events not yet delivered. Single source of truth for
+   * delivery: a running Task's engine drains it at every input-assembly boundary (yield +
+   * Trace write + request input); an idle Session fires `noticeListener` so the host can
+   * take the queue (`takeBackgroundNotices`) and submit it as an ordinary task — whichever
+   * consumes first, each notice is delivered exactly once. With neither, the next run's
+   * start drains it. The queue holds raw EVENTS: the harness user message is built by the
+   * consuming path, which is when the delivery mode is known (see backgroundDoneNotice —
+   * the engine drain stamps `delivery: steering`, the host take does not).
+   */
+  private pendingNotices: BackgroundTaskDoneEvent[] = [];
+  /** Idle-arrival signal for the host (see `onBackgroundNotice`); null until a host subscribes. */
+  private noticeListener: (() => void) | null = null;
+  /** Live background-subagent message subscriber (see `onBackgroundMessage`); null until a host subscribes — messages are display copies and drop without one. */
+  private bgMessageListener: ((msg: OmniMessage) => void) | null = null;
 
   constructor(config: SessionConfig) {
     this.sessionId = config.meta.session_id;
@@ -248,6 +313,7 @@ export class Session {
     this.imagesDir = config.imagesDir;
     this.modelHasVision = config.modelHasVision;
     if (config.goalFilePath) this.goalFile = config.goalFilePath;
+    if (config.commandPolicy) this.commandPolicy = config.commandPolicy;
     this.bootstrap = config.bootstrap;
     this.cancelBootstrap = config.cancelBootstrap;
     this.mcpServers = config.mcpServers;
@@ -270,7 +336,22 @@ export class Session {
       // isn't given the function, which is all the engine needs to know about the subject.
       ...(config.modelHasVision ? {} : { foldInputImages: this.foldImages }),
       sessionMeta: this.meta,
+      // Background completion notices: the engine pulls from the Session's queue at every
+      // input-assembly boundary (see pendingNotices for the exactly-once contract). This is
+      // the steering delivery path — the notice joins a Task that already exists — so the
+      // built message carries the `delivery: steering` stamp.
+      backgroundNotices: {
+        drain: () => this.pendingNotices.splice(0).map((e) => backgroundDoneNotice(e, "steering")),
+        pending: () => this.pendingNotices.length,
+      },
     };
+    // Completion events of run_in_background launches flow from the Environment into the
+    // notice queue (events fired before this attach are buffered by the Environment).
+    config.environment.setBackgroundTaskListener?.((event) => this.handleBackgroundDone(event));
+    // Live-forwarded background-subagent messages flow straight to the host's subscriber —
+    // display copies only (the child's own Trace is the durable record), so with no
+    // subscriber they are simply dropped.
+    config.environment.setBackgroundMessageListener?.((msg) => this.bgMessageListener?.(msg));
   }
 
   /**
@@ -294,6 +375,15 @@ export class Session {
    * Docs: /docs/goal-mode.
    */
   async *run(newMessages: OmniMessage[], opts?: SessionRunOptions): AsyncGenerator<OmniMessage> {
+    // The sandbox command policy is applied here, at the Human boundary itself: the
+    // injected callback is wrapped so a vetoed command is refused before the host is ever
+    // asked, which is what makes the policy outrank every approval mode — no host, and no
+    // approval mode, gets a say. Wrapped once for both a plain Task and every goal round;
+    // a child Session wraps its own forwarded callback again, harmlessly. With no callback
+    // at all the engine denies everything anyway, so there is nothing to guard.
+    if (opts?.approve) {
+      opts = { ...opts, approve: withCommandPolicy(opts.approve, this.commandPolicy) };
+    }
     if (opts?.goal) {
       // Rounds run with the caller's per-call options minus `goal` (each round is a plain Task).
       const { goal, ...roundOpts } = opts;
@@ -695,9 +785,62 @@ export class Session {
     return this.environment.listBackgroundCommands?.() ?? [];
   }
 
+  /** Refreshes the listen-port probes behind `BackgroundCommandInfo.serviceUrl` (see EnvironmentInterface.probeBackgroundCommandServices). No-op for environments without it. */
+  async probeBackgroundCommandServices(): Promise<void> {
+    await this.environment.probeBackgroundCommandServices?.();
+  }
+
   /** Kills one of this Session's background command processes (whole process group); false when the id is unknown. */
   killBackgroundCommand(processId: string): boolean {
     return this.environment.killBackgroundCommand?.(processId) ?? false;
+  }
+
+  /** Whether a background subagent of this Session is mid-round (see EnvironmentInterface.hasRunningBackgroundSubagents). */
+  hasRunningBackgroundSubagents(): boolean {
+    return this.environment.hasRunningBackgroundSubagents?.() ?? false;
+  }
+
+  /** Queues a background completion event; a running Task delivers it at the next boundary, otherwise the host is signaled (see pendingNotices). */
+  private handleBackgroundDone(event: BackgroundTaskDoneEvent): void {
+    this.pendingNotices.push(event);
+    if (!(this.engine?.isTaskRunning ?? false)) this.noticeListener?.();
+  }
+
+  /**
+   * Subscribes the host's idle-arrival signal for background completion notices: called
+   * (without payload) whenever a notice is queued while no Task is running. The host then
+   * takes the queue with `takeBackgroundNotices` and submits it as an ordinary task — a host
+   * that never subscribes still gets delivery on the next run's start. One listener; a later
+   * call replaces the earlier one.
+   */
+  onBackgroundNotice(listener: () => void): void {
+    this.noticeListener = listener;
+  }
+
+  /**
+   * Takes the queued background completion notices (harness user messages) for submission as
+   * a task's input — the notices become that task's starting input, so they carry no
+   * `delivery` stamp and keep their independent turn in every render layer. Empties the
+   * queue — the caller owns delivery of what it took; anything queued after this call is
+   * signaled/drained separately.
+   */
+  takeBackgroundNotices(): OmniMessage[] {
+    return this.pendingNotices.splice(0).map((e) => backgroundDoneNotice(e));
+  }
+
+  /** Whether completion notices are still queued (hosts use it to keep a Session's runtime entry alive until they are delivered). */
+  hasPendingBackgroundNotices(): boolean {
+    return this.pendingNotices.length > 0;
+  }
+
+  /**
+   * Subscribes the host to live-forwarded background-subagent messages (origin-tagged, the
+   * same stream a foreground collect window would relay): the server publishes them to the
+   * session's event channel so the frontend sees a background child working in real time.
+   * One listener; a later call replaces the earlier one.
+   */
+  onBackgroundMessage(listener: (msg: OmniMessage) => void): void {
+    this.bgMessageListener = listener;
   }
 
   /**

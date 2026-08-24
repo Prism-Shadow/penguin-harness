@@ -3,7 +3,8 @@
  * auto-route, shared by core's default config, server's initial config, and web/cli display.
  * Data verified as of 2026-07-10 (Qwen Token Plan entries: 2026-07-20; MiniMax: 2026-08-03;
  * DeepSeek, Gemini 3.7, GLM-5.3 and the whole OpenAI line-up (direct + OpenRouter):
- * 2026-08-18, per each provider's docs).
+ * 2026-08-18; the direct Anthropic group: 2026-08-20; the DeepSeek V4 Flash Vision Exp rows:
+ * 2026-08-21 — per each provider's docs).
  * Docs: packages/docs/content/models.{zh,en}.md (site path /docs/models) documents the
  * provider groups and credential resolution described here.
  *
@@ -248,6 +249,16 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     supportsVision: false,
   },
   {
+    // The experimental vision revision of V4 Flash (added 2026-08-21): image input on top of
+    // the base model's text capabilities, at the same published price.
+    modelId: "deepseek-v4-flash-vision-exp",
+    displayName: "DeepSeek V4 Flash Vision Exp",
+    provider: "deepseek",
+    contextWindow: 1000000,
+    pricing: cny(0.05, 1.5, 4.5),
+    supportsVision: true,
+  },
+  {
     modelId: "deepseek-v4-pro",
     displayName: "DeepSeek V4 Pro",
     provider: "deepseek",
@@ -355,6 +366,20 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.0168, 0.0679, 0.168),
     supportsVision: false,
+    clientType: "openai-chat",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    // DeepSeek serves this one alone on OpenRouter, so the stored rates are its own published
+    // USD list ($0.22 / $0.66 / $0.007 cache read), and the context window is that endpoint's
+    // 1,048,576. Like the direct group, the price is the OFF-PEAK tier: the models API exposes
+    // the peak windows as `pricing.overrides` billing exactly double.
+    modelId: "deepseek/deepseek-v4-flash-vision-exp",
+    displayName: "DeepSeek V4 Flash Vision Exp",
+    provider: "openrouter",
+    contextWindow: 1048576,
+    pricing: usd(0.007, 0.22, 0.66),
+    supportsVision: true,
     clientType: "openai-chat",
     baseUrl: OPENROUTER_BASE_URL,
   },
@@ -1045,13 +1070,27 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: usd(0.05, 0.5, 3),
     supportsVision: true,
   },
-  // -- Anthropic (official USD pricing; cache write = 1.25 x input) --
+  // -- Anthropic (official USD pricing; cache write = 1.25 x input). Re-read 2026-08-20 from
+  // platform.claude.com/docs/en/about-claude/pricing. Sonnet 5's $2 input / $10 output is its
+  // standard rate rather than an introductory one, so it prices below Sonnet 4.6 — that
+  // inversion is Anthropic's list, not a transcription slip. Anthropic bills the full 1M
+  // window at a single rate, so none of the long-context tiers named in the file header apply
+  // here, and the fast-mode premium on Opus 5 / Opus 4.8 ($10 input / $50 output) is a
+  // separate tier these rows do not record. --
   {
     modelId: "claude-fable-5",
     displayName: "Claude Fable 5",
     provider: "anthropic",
     contextWindow: 1000000,
     pricing: usd(1, 12.5, 50),
+    supportsVision: true,
+  },
+  {
+    modelId: "claude-opus-5",
+    displayName: "Claude Opus 5",
+    provider: "anthropic",
+    contextWindow: 1000000,
+    pricing: usd(0.5, 6.25, 25),
     supportsVision: true,
   },
   {

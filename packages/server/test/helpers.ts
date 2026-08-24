@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import type { Hono } from "hono";
 import type { OmniMessage } from "@prismshadow/penguin-core";
-import { buildAppDeps, createApp } from "../src/app.js";
+import { bootAppDeps, createRuntimeApp } from "../src/app.js";
 import type { AppDeps, BuildDepsOverrides } from "../src/app.js";
 import { openDatabase } from "../src/db/database.js";
 import { TraceIndexRepo } from "../src/db/repos/trace-index.js";
@@ -29,6 +29,15 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Fixed seeded-admin password injected into every test app (in production the seed generates a random one). */
 export const TEST_ADMIN_PASSWORD = "penguin-0000";
+
+/**
+ * scrypt work factor for test apps: the lowest legal one. Nearly every case here seeds an
+ * admin, provisions users and logs them in, and at production strength those derivations
+ * cost more than everything else the suite does combined. The stored format, the recorded
+ * parameters and the verification path are unchanged — only the derivation is cheap — and
+ * the production strength itself is asserted in password.test.ts, which uses the default.
+ */
+const TEST_PASSWORD_HASH_COST = 2;
 
 export function testConfig(root: string): ServerConfig {
   return {
@@ -71,11 +80,14 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
   const { beforeSeed, config, ...overrides } = options;
   const root = await makeTempRoot();
   if (beforeSeed) await beforeSeed(root);
-  const deps = buildAppDeps({ ...testConfig(root), ...config }, { log: () => {}, ...overrides });
+  const deps = await bootAppDeps(
+    { ...testConfig(root), ...config },
+    { log: () => {}, passwordHashCost: TEST_PASSWORD_HASH_COST, ...overrides },
+  );
   // Consistent with the startup entrypoint: seed the built-in admin (owning default_project),
   // keeping the password it returns (only null if a beforeSeed hook ever pre-created users).
   const adminPassword = (await deps.authService.seedAdmin()) ?? TEST_ADMIN_PASSWORD;
-  const app = createApp(deps);
+  const app = createRuntimeApp(deps);
   return {
     app,
     deps,
@@ -94,6 +106,25 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
       await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     },
   };
+}
+
+/** The desktop-mode fixture token (see createDesktopApp). */
+export const TEST_DESKTOP_TOKEN = "test-desktop-token";
+
+/** A test app running in desktop mode (desktop.test.ts, desktop-update.test.ts). */
+export function createDesktopApp(): Promise<TestApp> {
+  return createTestApp({ config: { desktopToken: TEST_DESKTOP_TOKEN } });
+}
+
+/** Redeems the one-shot desktop-login for a `sessionVia: "desktop"` cookie. */
+export async function desktopLoginCookie(app: Hono<AppEnv>): Promise<string> {
+  const res = await app.request(`/api/auth/desktop-login?token=${TEST_DESKTOP_TOKEN}`);
+  if (res.status !== 302) {
+    throw new Error(`Desktop login failed: ${res.status} ${await res.text()}`);
+  }
+  const setCookie = res.headers.get("set-cookie");
+  if (!setCookie) throw new Error("Desktop login response is missing set-cookie");
+  return setCookie.split(";")[0]!;
 }
 
 /** Logs in and returns the session cookie (`penguin_session=...`). */

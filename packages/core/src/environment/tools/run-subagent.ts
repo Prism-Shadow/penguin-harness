@@ -20,7 +20,9 @@
  * Approval: `run_subagent` itself is a read-write tool (`rw`), so its invocation requires Human
  * approval; the child session's tool approval requests are forwarded to the same Human within
  * the window via the session's approval queue (tagged with origin), and queued for the next
- * access while running in the background. An interruption within the startup window kills the
+ * access while a promoted session runs in the background. A `run_in_background` launch instead
+ * attaches this call's own approval callback as a standing sink (see the branch below) — the
+ * child never parks waiting for a poll. An interruption within the startup window kills the
  * child session per exec_command semantics; precheck errors such as exceeding the depth limit or
  * a nonexistent agent are expressed by the runner as a throw, and collapsed to failed.
  * Docs: /docs/tools § "Subagents".
@@ -40,7 +42,7 @@ import {
   resultForSubagentExit,
 } from "./subagent/index.js";
 import { collectWindow } from "./subagent/collect.js";
-import { clampYield } from "./background/index.js";
+import { clampYield, reportLabel, tailForReport } from "./background/index.js";
 
 /** Tool name constant (used only within this tool module, never exposed to Environment). */
 export const SUBAGENT_NAME = "run_subagent";
@@ -111,6 +113,7 @@ export function createSubagentTool(
         return { stopReason: "failed" };
       }
       const thinkingLevel = rawThinkingLevel as ThinkingLevelName | undefined;
+      const background = args.run_in_background === true;
       const yieldMs = clampYield(
         args.yield_time_ms,
         DEFAULT_SUBAGENT_YIELD_MS,
@@ -143,6 +146,38 @@ export function createSubagentTool(
         const message = err instanceof Error ? err.message : String(err);
         yield* fail(`[run_subagent error: ${message}]`);
         return { stopReason: "failed" };
+      }
+
+      // run_in_background: no collect window — register immediately, arm the completion
+      // report (fires at the end of every round until the session is killed), start the run,
+      // and hand back the subagent_id. The completion reaches the conversation as a harness
+      // user message; the model can still poll or follow up with input_subagent, or stop it
+      // with kill_subagent. The child's messages stream to the host live through the
+      // forwarding tap below (its own Trace stays the durable record).
+      if (background) {
+        const id = manager.register(session);
+        armSubagentDoneReport(session, id, prompt, services);
+        // Decouple the child's lifecycle from this call: a standing approval sink (this
+        // call's own ctx.approve — without it the child's first read-write tool would park
+        // at the approval queue forever, since no collect window ever attaches one) and a
+        // live message tap, so the child streams to the frontend past this turn's end. The
+        // child's abort signal is its own (ManagedSubagentSession.abortCtrl) — only
+        // kill_subagent, dispose, or registry eviction ends it.
+        if (approve) session.setPersistentApprovalSink(approve);
+        const forward = services?.backgroundForward;
+        if (forward) session.setMessageTap(forward);
+        // Forward the child's session_meta upfront (run skips its own copy): the frontend's
+        // subagents panel and the server's subagent registry learn of the child at launch,
+        // not at the first input_subagent access.
+        const meta = session.takeMeta();
+        if (meta) yield meta;
+        session.startRun(prompt);
+        return {
+          stopReason: "completed",
+          note:
+            `[subagent running in background with subagent_id ${id}; its completion will arrive ` +
+            `as a user message — no need to poll. Use input_subagent to interact or kill_subagent to stop it]`,
+        };
       }
 
       // An interruption within the startup window kills the child session (consistent with
@@ -182,4 +217,32 @@ export function createSubagentTool(
       }
     },
   };
+}
+
+/**
+ * Arms the completion report of a background-launched subagent: at the end of every round
+ * (input_subagent follow-ups included) the report — id, terminal status, tail of the
+ * yet-undelivered answer text — goes to `services.backgroundDone`, which the Session turns
+ * into a harness user message. `kill_subagent` disarms it first, and a killed/disposed
+ * session never fires (see ManagedSubagentSession.onSettled).
+ */
+export function armSubagentDoneReport(
+  session: ManagedSubagentSession,
+  subagentId: string,
+  prompt: string,
+  services?: EnvironmentServices,
+): void {
+  const notify = services?.backgroundDone;
+  if (!notify) return;
+  session.onSettled(() => {
+    const exit = session.exit;
+    notify({
+      kind: "subagent",
+      id: subagentId,
+      label: reportLabel(prompt),
+      status: exit?.status ?? "completed",
+      detail: exit?.note ?? "",
+      output: tailForReport(session.drainText()),
+    });
+  });
 }

@@ -31,8 +31,8 @@ allowBuilds:
   # targets NSIS only, so the script is deliberately not run.
   electron-winstaller: false
 # pnpm 11 withholds freshly published versions by default (supply-chain gate), which
-# would resolve agenthub back to 0.4.3 and lose the max thinking level. This package is
-# first-party, so the exemption carries no third-party risk. Remove the entry at the next
-# agenthub bump — by then 0.4.4 is long past the age gate.
+# would resolve agenthub back to 0.4.5 and leave DeepSeek on Chat Completions without the
+# vision model. This package is first-party, so the exemption carries no third-party risk.
+# Remove the entry at the next agenthub bump — by then 0.4.6 is long past the age gate.
 minimumReleaseAgeExclude:
-  - "@prismshadow/agenthub@0.4.4"
+  - "@prismshadow/agenthub@0.4.6"

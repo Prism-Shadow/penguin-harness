@@ -1,19 +1,25 @@
 import { defineConfig } from "tsup";
 
 /**
- * Four self-contained bundles, no shared chunks: the shell itself, the server it forks as a
- * utilityProcess, the CLI its bin/ launchers start on the app's Electron runtime, and
- * launcher.ts, which scripts/build-assets.mjs imports (plain node, no Electron) to write
- * those launcher scripts. Because everything is bundled, the packaged app has no runtime
- * dependencies and ships no node_modules at all.
+ * Five self-contained bundles, no shared chunks: the shell itself, the server it forks as a
+ * utilityProcess, the CLI its bin/ launchers start on the app's Electron runtime, and the two
+ * modules scripts/build-assets.mjs imports (plain node, no Electron) to produce the rest of
+ * the build — launcher.ts writes the launcher scripts, pty-payload.ts stages node-pty.
  *
  * The server and the CLI are bundled from their own packages' build output, so the app runs
  * exactly what an `npm install` of those packages would, linked into one file each.
+ *
+ * Bundling absorbs every JavaScript dependency, so the app carries no dependency tree. node-pty
+ * is the one exception and cannot be one: it is a native module the server reaches through a
+ * runtime `require`, and its loader resolves the binary relative to its own package directory.
+ * build-assets.mjs stages a package directory for it at dist/node_modules/node-pty — the only
+ * node_modules the app ships (see src/pty-payload.ts).
  */
 export default defineConfig({
   entry: {
     main: "src/main.ts",
     launcher: "src/launcher.ts",
+    "pty-payload": "src/pty-payload.ts",
     server: "../server/dist/index.js",
     penguin: "../cli/dist/penguin.js",
   },

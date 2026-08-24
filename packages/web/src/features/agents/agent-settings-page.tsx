@@ -45,6 +45,8 @@ import { VaultTab } from "./vault-tab";
 import { SchedulesTab } from "./schedules-tab";
 import { McpServersSection } from "./mcp-servers-section";
 import { thinkingLevelOptionsFor } from "../chat/thinking-level";
+import { InfoPopover } from "../../components/ui/info-popover";
+import { ICON_SIZE } from "../../lib/icon-scale";
 
 type TabKey =
   "overview" | "prompt" | "runtime" | "tools" | "skills" | "memory" | "vault" | "schedules";
@@ -237,20 +239,7 @@ export function AgentSettingsPage() {
           onClick={() => navigate("/agents")}
           className="-ml-2 mb-3 text-gray-500 dark:text-gray-400"
         >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden
-          >
-            <path d="M15 18l-6-6 6-6" />
-            <path d="M9 12h12" />
-          </svg>
+          <GlyphIcon d="M15 18l-6-6 6-6M9 12h12" size={ICON_SIZE.rowLead} />
           {S.agent.backToList}
         </Button>
         <h1 className="mb-1 text-xl font-semibold">{data.config.name ?? agentId}</h1>
@@ -441,7 +430,10 @@ function OverviewTab({
           text-xs labels over dark font-semibold values. */}
       <section className="border-t border-gray-200 pt-4 dark:border-gray-800">
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-          <p className="text-sm font-medium">{S.agent.stateTitle}</p>
+          <p className="flex items-center gap-1.5 text-sm font-medium">
+            {S.agent.stateTitle}
+            <InfoPopover label={S.agent.stateTitle}>{S.agent.transferDesc}</InfoPopover>
+          </p>
           <div className="flex shrink-0 items-center gap-2">
             {projectId && (
               <a
@@ -462,7 +454,6 @@ function OverviewTab({
             )}
           </div>
         </div>
-        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{S.agent.transferDesc}</p>
         <div className="mt-3 space-y-2.5">
           <div>
             <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
@@ -815,7 +806,8 @@ function RuntimeTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveF
             />
             <Input
               label={S.agent.timeoutMs}
-              hint={S.agent.timeoutMsHint}
+              info={S.agent.timeoutMsHint}
+              infoLabel={S.agent.timeoutMs}
               size="sm"
               value={timeoutMs}
               error={fieldErrors.timeoutMs}
@@ -836,7 +828,8 @@ function RuntimeTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveF
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <Input
               label={S.agent.maxContextLength}
-              hint={S.agent.maxContextLengthHint}
+              info={S.agent.maxContextLengthHint}
+              infoLabel={S.agent.maxContextLength}
               size="sm"
               value={maxContextLength}
               onChange={(e) => setMaxContextLength(e.target.value)}
@@ -845,7 +838,8 @@ function RuntimeTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveF
             />
             <Input
               label={S.agent.maxSessionTurns}
-              hint={S.agent.maxSessionTurnsHint}
+              info={S.agent.maxSessionTurnsHint}
+              infoLabel={S.agent.maxSessionTurns}
               size="sm"
               value={maxSessionTurns}
               onChange={(e) => setMaxSessionTurns(e.target.value)}
@@ -1007,7 +1001,14 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
               <th className="px-3 py-2">{S.agent.toolPermission}</th>
               <th className="px-3 py-2">{S.agent.toolTimeout}</th>
               <th className="px-3 py-2">{S.agent.toolMaxOutput}</th>
-              <th className="px-3 py-2">{S.agent.toolCallDescription}</th>
+              <th className="px-3 py-2">
+                <span className="flex items-center gap-1.5">
+                  {S.agent.toolCallDescription}
+                  <InfoPopover label={S.agent.toolCallDescription}>
+                    {S.agent.callDescriptionHint}
+                  </InfoPopover>
+                </span>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -1063,7 +1064,6 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
           </tbody>
         </table>
       </div>
-      <p className="text-xs text-gray-400 dark:text-gray-500">{S.agent.callDescriptionHint}</p>
 
       <Button size="sm" variant="primary" onClick={submit}>
         {S.common.save}

@@ -58,7 +58,15 @@ export type StreamEventType = "start" | "delta" | "stop";
 export type MessageOrigin = string;
 
 /** The approval decision for a tool call. */
-export type ApprovalDecision = "allow" | "deny";
+/**
+ * Per-tool approval decision. `"allow"` and `"deny"` are the Human boundary's answers;
+ * `"forbidden"` is the project command policy's veto, produced by the `Session.run`
+ * wrapper without the host being asked. Every non-allow decision feeds the model one
+ * fixed `aborted` output line whose wording names the decider ("Tool call denied by
+ * user." / "Tool call denied by policy."), and the `approval_decision` event carries the
+ * decision itself — the Trace already says who denied.
+ */
+export type ApprovalDecision = "allow" | "deny" | "forbidden";
 
 /** Token counts (input/output/cache/total). */
 export interface TokenCounts {
@@ -123,10 +131,22 @@ export interface SessionMetaPayload {
  */
 export type Fidelity = Record<string, unknown>;
 
+/**
+ * Who produced a user-role text: the human user, the parent agent driving a subagent session
+ * (run_subagent / input_subagent prompts, `"parent_agent"`), the harness's automatic
+ * injections (background-task completion reports, `"harness"`), or the hosting server's own
+ * triggers (scheduled tasks, `"server"`). Absent = `"user"` — Traces written before this
+ * field existed carry only human input on the user side, so the default is also the
+ * historically correct reading.
+ */
+export type TextSender = "user" | "parent_agent" | "harness" | "server";
+
 export interface TextPayload {
   type: "text";
   role: Role;
   text: string;
+  /** Origin of a user-role text (never sent to the provider); absent = the human user. See {@link TextSender}. */
+  sender?: TextSender;
   stop_reason?: StopReason;
   /** Provider-fidelity payload (e.g. `phase` for GPT-5 segment markers, `signature`), kept as-is and restored verbatim. */
   fidelity?: Fidelity;

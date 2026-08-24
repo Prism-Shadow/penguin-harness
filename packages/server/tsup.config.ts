@@ -8,7 +8,7 @@ export default defineConfig({
   // CLI's thin loader resolves the current cli bundle through, and "./version-report" is
   // the shared assembler `penguin version` and GET /api/version both render (core plus
   // that same reader — no server). There is deliberately no
-  // "./platform" subpath: src/platform/entry.ts (this package's platform artifact
+  // "./platform" subpath: src/hmr/entry.ts (this package's platform artifact
   // compile target — see its own module doc) is compiled straight from source by
   // esbuild in scripts/deploy.mjs, never through this package's published dist,
   // so it has no reason to be a tsup entry or a subpath export.

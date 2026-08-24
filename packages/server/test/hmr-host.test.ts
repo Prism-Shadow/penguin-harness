@@ -2,7 +2,8 @@
  * HmrHost mechanism tests that don't fit the seam's own file: the single-flight first
  * boot, "code persists across a restart, state does not" (see host.ts's module doc),
  * a bundle missing `context` being rejected the same way a missing `hotPlatform` is,
- * and the durability flag an upgrade's HTTP response carries.
+ * the durability flag an upgrade's HTTP response carries, and the provenance a push
+ * commits alongside the version it describes.
  */
 import fs from "node:fs/promises";
 import fsSync from "node:fs";
@@ -278,12 +279,12 @@ describe("upgrade outcome: persisted flag", () => {
     const cookie = (await loginAdmin(t.app)).cookie;
     const api = apiClient(t.app, cookie);
 
-    // Force persistVersion's mkdir to fail without touching the live-swap path: `hmr/store`
-    // exists as a plain FILE, so `fsp.mkdir(hmr/store/platform, { recursive: true })` throws
-    // ENOTDIR. `hmr/uploads` (used earlier in doUpgradeAll, for the platform boot itself) is
-    // unaffected since it's a sibling of `store`, not nested under it.
-    await fs.mkdir(path.join(t.root, "hmr"), { recursive: true });
-    await fs.writeFile(path.join(t.root, "hmr", "store"), "not a directory");
+    // Force persistVersion's mkdir to fail without touching the live-swap path:
+    // `hmr/store/web` exists as a plain FILE, so `fsp.mkdir(hmr/store/web,
+    // { recursive: true })` throws EEXIST. `hmr/store/platform`, which doUpgradeAll
+    // writes the bundle into before booting it, is a sibling and stays usable.
+    await fs.mkdir(path.join(t.root, "hmr", "store"), { recursive: true });
+    await fs.writeFile(path.join(t.root, "hmr", "store", "web"), "not a directory");
 
     const res = await pushPlatform(
       t.app,
@@ -389,6 +390,175 @@ describe("upgrade assets: an unchanged set is not copied again", () => {
     expect((await pushWithAssets(t.app, cookie, "second")).status).toBe(200);
     expect(await fs.readFile(manifest, "utf8")).toBe('{"name":"demo-native"}');
     expect(fsSync.existsSync(path.join(dir, ".materialized"))).toBe(true);
+  });
+});
+
+/** A bundle whose create() throws — the boot-failure shape a bad push lands in. */
+const BOOM_PLATFORM = `
+const anySchema = {
+  strictParse: (doc) => ({ ok: true, value: doc === undefined ? {} : doc }),
+  describe: () => ({ kind: "any" }),
+};
+const iface = {
+  kind: "iface",
+  name: "platform",
+  version: 1,
+  context: anySchema,
+  methods: ["park", "info"],
+  children: {},
+  migrations: {},
+};
+const impl = {
+  create() {
+    throw new Error("boom: create failed");
+  },
+};
+export const hotPlatform = { id: "boom", iface, impl, context: {} };
+`;
+
+/**
+ * The same failing bundle under the id every REAL push carries: hmr/entry.ts re-exports
+ * `packagedPlatform` as `hotPlatform`, so a bundle built by scripts/deploy.mjs is
+ * indistinguishable from the compiled-in default by id alone.
+ */
+const BOOM_PLATFORM_PACKAGED_ID = BOOM_PLATFORM.replace('id: "boom"', 'id: "packaged"');
+
+describe("upgrade boot failure: the previous version is re-booted, not left half-dead", () => {
+  let t: TestApp | undefined;
+
+  afterEach(async () => {
+    if (t) await t.cleanup();
+    t = undefined;
+  });
+
+  it("a failing push errors, and the machine keeps serving on a RE-BOOTED previous version", async () => {
+    t = await createTestApp();
+    const cookie = (await loginAdmin(t.app)).cookie;
+    const before = await t.deps.hmr.ensure();
+
+    const res = await pushPlatform(t.app, cookie, BOOM_PLATFORM);
+    expect(res.status).toBe(400);
+    expect(JSON.stringify(await res.json())).toMatch(/failed to boot.*boom/);
+
+    // Recovery is a fresh boot of the previous version — a NEW instance, not the
+    // disposed old one limping on through its closures (whose manager is closed and
+    // whose current-App pointer is released).
+    const after = await t.deps.hmr.ensure();
+    expect(after).not.toBe(before);
+    expect(after.api.info()).toMatchObject({ impl: "packaged" });
+    // The business surface answers — the half-dead symptom this recovery exists to
+    // prevent was "routes answer but the App behind them is stopped".
+    const client = apiClient(t.app, cookie);
+    const me = await client.get("/api/me");
+    expect(me.status).toBe(200);
+
+    // And the channel is not poisoned: the next good push lands normally.
+    const good = await pushPlatform(
+      t.app,
+      cookie,
+      platformServing(["/api/demo/after-recovery"], "recovered-push"),
+    );
+    expect(good.status).toBe(200);
+    const served = await t.app.request("/api/demo/after-recovery", {
+      headers: { cookie },
+    });
+    expect(served.status).toBe(200);
+    expect((await served.json()) as object).toMatchObject({ servedBy: "recovered-push" });
+  });
+});
+
+describe("upgrade boot failure: recovery re-boots the PUSHED version, not the packaged default", () => {
+  let t: TestApp | undefined;
+
+  afterEach(async () => {
+    if (t) await t.cleanup();
+    t = undefined;
+  });
+
+  it("a failed push over an already-pushed version keeps that version's routes serving", async () => {
+    t = await createTestApp();
+    const cookie = (await loginAdmin(t.app)).cookie;
+
+    // A real deploy: the pushed bundle carries the packaged id, because that is the
+    // export hmr/entry.ts ships.
+    const first = await pushPlatform(t.app, cookie, platformServing(["/api/demo/v1"], "packaged"));
+    expect(first.status).toBe(200);
+    expect((await t.app.request("/api/demo/v1", { headers: { cookie } })).status).toBe(200);
+
+    const bad = await pushPlatform(t.app, cookie, BOOM_PLATFORM_PACKAGED_ID);
+    expect(bad.status).toBe(400);
+
+    // The version that was running before the failed push is running again — recovery
+    // must not fall back to the runtime's compiled-in platform, which does not serve
+    // this route at all.
+    expect((await t.app.request("/api/demo/v1", { headers: { cookie } })).status).toBe(200);
+  });
+
+  it("recovers the RUNNING version even when its own push could not be persisted", async () => {
+    t = await createTestApp();
+    const cookie = (await loginAdmin(t.app)).cookie;
+
+    // v1 lands durably; harness.json names it.
+    expect(
+      (await pushPlatform(t.app, cookie, platformServing(["/api/demo/v1"], "v1"))).status,
+    ).toBe(200);
+
+    // v2 boots but cannot be written: `store/web` as a plain FILE makes persistVersion's
+    // `mkdir store/web` throw EEXIST after the platform bundle is already stored, so the
+    // commit never happens and the manifest still names v1 while v2 serves. v1's own
+    // bundle file is deliberately left readable — the point is which version recovery
+    // CHOOSES, not whether it can load one at all.
+    const webStore = path.join(t.root, "hmr", "store", "web");
+    await fs.rm(webStore, { recursive: true, force: true });
+    await fs.writeFile(webStore, "not a directory");
+    const second = await pushPlatform(t.app, cookie, platformServing(["/api/demo/v2"], "v2"));
+    expect(second.status).toBe(200);
+    expect(((await second.json()) as { persisted: boolean }).persisted).toBe(false);
+    expect((await t.app.request("/api/demo/v2", { headers: { cookie } })).status).toBe(200);
+
+    // A failed push now recovers v2 — what was RUNNING — not v1, what was committed.
+    expect((await pushPlatform(t.app, cookie, BOOM_PLATFORM_PACKAGED_ID)).status).toBe(400);
+    expect((await t.app.request("/api/demo/v2", { headers: { cookie } })).status).toBe(200);
+  });
+});
+
+describe("the store is the only place a pushed platform bundle lands", () => {
+  let t: TestApp;
+  afterEach(async () => {
+    await t.cleanup();
+  });
+
+  it("keeps the bundle count bounded across many pushes and stages nothing outside the store", async () => {
+    t = await createTestApp();
+    const cookie = (await loginAdmin(t.app)).cookie;
+
+    // A directory left by a pre-store push: it must not survive the next commit.
+    const legacyUploads = path.join(t.root, "hmr", "uploads");
+    await fs.mkdir(legacyUploads, { recursive: true });
+    await fs.writeFile(path.join(legacyUploads, "platform-deadbeefdeadbeef.mjs"), "// stale");
+
+    // Five distinct bundles: distinct content, so five distinct content addresses.
+    for (let i = 0; i < 5; i++) {
+      const res = await pushPlatform(t.app, cookie, platformServing([`/api/demo/v${i}`], `v${i}`));
+      expect(res.status).toBe(200);
+      expect(((await res.json()) as { persisted: boolean }).persisted).toBe(true);
+    }
+
+    expect(fsSync.existsSync(legacyUploads)).toBe(false);
+
+    // Bounded by the store's own keep rule (current + one rollback), not by the number
+    // of pushes.
+    const stored = await fs.readdir(path.join(t.root, "hmr", "store", "platform"));
+    expect(stored.length).toBeLessThanOrEqual(2);
+
+    // And what the manifest names is one of the survivors.
+    const manifest = JSON.parse(
+      await fs.readFile(path.join(t.root, "hmr", "harness.json"), "utf8"),
+    ) as { platform: { bundle: string } };
+    expect(stored).toContain(path.basename(manifest.platform.bundle));
+
+    // The last push is still the one serving.
+    expect((await t.app.request("/api/demo/v4", { headers: { cookie } })).status).toBe(200);
   });
 });
 

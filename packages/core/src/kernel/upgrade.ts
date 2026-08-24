@@ -9,9 +9,12 @@
  * the kernel.
  *
  * Validate-then-swap: the running tree is only disposed after the whole
- * document reconciles. MVP accepts the residual risk that boot itself may still
- * throw after dispose — the doc is returned to the caller for persistence, so
- * the worst case is "old impl + parked doc, re-boot by hand", never data loss.
+ * document reconciles. Boot itself can still fail after the dispose — that
+ * residual risk is surfaced as a RETURNED outcome (`status: "failed"`, carrying
+ * the parked document), never a throw: the caller holds everything needed to
+ * re-boot the previous implementation from that document, so the worst case is
+ * an automatic recovery boot, never data loss and never a half-dead process
+ * whose old tree is disposed with nothing booted in its place.
  */
 import type { Json } from "./json.js";
 import { isJsonObject } from "./json.js";
@@ -29,8 +32,22 @@ export interface UpgradeBlocked {
   doc: Json;
 }
 
+export interface UpgradeFailed {
+  status: "failed";
+  /** What the new implementation's boot threw. */
+  error: unknown;
+  /**
+   * The parked document. The OLD tree is disposed by this point (validate-then-swap
+   * disposes before boot, so the new tree can adopt what the old one delivered) — this
+   * document is what the previous implementation re-boots from.
+   */
+  doc: Json;
+}
+
 export type UpgradeResult<A extends Park> =
-  { status: "ok"; mode: "silent" | "migrated"; instance: Instance<A>; doc: Json } | UpgradeBlocked;
+  | { status: "ok"; mode: "silent" | "migrated"; instance: Instance<A>; doc: Json }
+  | UpgradeBlocked
+  | UpgradeFailed;
 
 /** An undeclared child that is an empty container (no data to lose). */
 function isEmptyChildDoc(doc: Json): boolean {
@@ -133,7 +150,22 @@ export async function upgrade<A extends Park, C extends Json>(opts: {
       doc: parked,
     };
   }
-  opts.current.dispose();
-  const instance = await boot(opts.impl, opts.iface, doc, opts.resources);
+  // ONE transition, one failure channel: from here the old tree is coming down, so every
+  // way this can fail — a throwing disposer, a rejected drain, a successor that will not
+  // boot — has to hand the caller the parked document. A rejection escaping instead would
+  // leave a disposed tree with nothing booted in its place and no state to recover from,
+  // which is the one outcome this function exists to prevent.
+  let instance: Instance<A>;
+  try {
+    opts.current.dispose();
+    // A disposed tree may have an asynchronous tail — work its dispose effects aborted
+    // but could not await (effects are synchronous). An implementation exposes it as an
+    // optional in-process `drained` member; awaiting it HERE, between dispose and boot,
+    // is what makes a successor never race its predecessor.
+    await (opts.current.api as { drained?: () => Promise<void> | undefined }).drained?.();
+    instance = await boot(opts.impl, opts.iface, doc, opts.resources);
+  } catch (error) {
+    return { status: "failed", error, doc: parked };
+  }
   return { status: "ok", mode: state.migrated ? "migrated" : "silent", instance, doc };
 }

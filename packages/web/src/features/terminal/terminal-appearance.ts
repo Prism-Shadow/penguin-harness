@@ -29,7 +29,11 @@ export interface TerminalChrome {
   tabKill: string;
   /** Secondary text (a path, an error detail). */
   muted: string;
-  /** Failure headline. */
+  /** A live/healthy status mark (the header's connection dot). */
+  success: string;
+  /** An in-progress status mark waiting on something. */
+  attention: string;
+  /** Failure headline, and a failed status mark. */
   danger: string;
   /** Bordered text button (retry, detach on the standalone page). */
   outlineButton: string;
@@ -45,6 +49,10 @@ const DARK: TerminalChrome = {
   tabIdle: "text-gray-400 hover:bg-gray-800 hover:text-gray-200",
   tabKill: "bg-gray-800 hover:bg-gray-700",
   muted: "text-gray-400",
+  // The dark halves of the shared status tones (lib/tone.ts); they cannot be written as
+  // `dark:` pairs here for the reason in the file header.
+  success: "text-emerald-400",
+  attention: "text-amber-400",
   danger: "text-red-400",
   outlineButton: "border-gray-700 text-gray-300 hover:bg-gray-800",
 };
@@ -59,6 +67,9 @@ const LIGHT: TerminalChrome = {
   tabIdle: "text-gray-500 hover:bg-gray-100 hover:text-gray-800",
   tabKill: "bg-gray-100 hover:bg-gray-200",
   muted: "text-gray-500",
+  /** The light halves of the shared status tones (lib/tone.ts). */
+  success: "text-emerald-600",
+  attention: "text-amber-600",
   danger: "text-red-600",
   outlineButton: "border-gray-300 text-gray-600 hover:bg-gray-100",
 };

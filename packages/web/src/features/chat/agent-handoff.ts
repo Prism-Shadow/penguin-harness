@@ -17,11 +17,13 @@ import { buildHandoffMessage, buildModelSwitchMessage } from "@prismshadow/pengu
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
 
 export {
+  parseBackgroundTaskDoneMessage,
   parseHandoffMessage,
   parseModelSwitchMessage,
   parseScheduledMessage,
 } from "@prismshadow/penguin-core/markers";
 export type {
+  BackgroundTaskDone,
   HandoffOrigin,
   ModelSwitchOrigin,
   ScheduledOrigin,

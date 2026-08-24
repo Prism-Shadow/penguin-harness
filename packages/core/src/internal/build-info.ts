@@ -182,8 +182,12 @@ export function resolveBuildInfo(stamp: BuildStamp): BuildInfo {
 /**
  * The one-line identity: git's description when it already names a version, the version
  * number carrying git's commit when it does not, and the bare version number when there is
- * no git answer at all. Every form starts with `v<major>.<minor>` so the output of `penguin
- * version` is recognizable as a version whatever the build is.
+ * no git answer at all. Every form starts with `v` and a digit, so `penguin version` always
+ * reads as a version — but only the two composed forms start with `v{version}`: a tag
+ * description is git's own answer, passed through, and it names the nearest reachable tag
+ * rather than the version constant. The two disagree throughout release preparation, when
+ * VERSION is bumped in its own commit and the tag follows; git's answer is the honest one
+ * there, so it wins.
  */
 export function composeDescribe(version: string, described: string | null): string {
   if (described === null) return `v${version}`;

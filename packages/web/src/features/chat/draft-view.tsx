@@ -48,7 +48,6 @@ import type {
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
-import { adoptDockScope } from "../terminal/terminal-dock-state";
 import { S } from "../../lib/strings";
 import { formatMonthDay } from "../../lib/format";
 import { apiErrorText } from "../../lib/api-error";
@@ -63,9 +62,13 @@ import { PenguinLogo } from "../../components/ui/penguin-logo";
 import { toastError } from "../../components/ui/toast";
 import { useVersionInfo } from "../../lib/use-version-info";
 import { ChatInput } from "./chat-input";
-import { buildSkillsMessage } from "./skill-use";
+import type { ComposerControl } from "./chat-input";
+import { adoptDockScope } from "../dock/dock-state";
+import { setDockCwd } from "../dock/dock-terminal";
 import { EXAMPLE_FOLDERS } from "./example-tasks";
-import type { ExampleFolderId, ExampleTask, ExampleTaskId } from "./example-tasks";
+import type { ExampleFolderId, ExampleTask } from "./example-tasks";
+import { ExampleFolderRow, exampleRowClass } from "./example-folder-row";
+import { SHORTCUTS_FOLDER_ID, ShortcutsFolder } from "./shortcuts-folder";
 import { clearDraft, draftKey, loadDraft, saveDraft } from "./draft-cache";
 import type { DraftCache } from "./draft-cache";
 import {
@@ -82,6 +85,7 @@ import {
 import { effectiveThinkingLevel } from "./thinking-level";
 import { WorkspaceSelect, pillClass } from "./workspace-select";
 import { sameModelRef } from "../models/model-grouping";
+import { ICON_GAP } from "../../lib/icon-scale";
 
 /** Coalescing window for writing body text to the cache: keystrokes are frequent, so a short batch accumulates before persisting (option changes are still written immediately). */
 const DRAFT_SAVE_DEBOUNCE_MS = 300;
@@ -122,12 +126,15 @@ function saveAppliedRouteKey(field: RouteStateField, key: string): void {
  * Agents entry uses (NAV_ICONS.agents) — deliberately not a generic refresh loop, because the
  * app already has one glyph that means "agent" and a folder of agent examples should wear it.
  * Duplicated as a literal rather than imported: sidebar.tsx imports from chat-page.tsx, which
- * renders this file, so importing it back would close an import cycle.
+ * renders this file, so importing it back would close an import cycle. schedules: a clock face
+ * with hands — the plainest mark for "fires on a timer", and distinct from the hourglass that
+ * already means a Session is waiting.
  */
 const FOLDER_GLYPHS: Record<ExampleFolderId, string> = {
   webapps:
     "M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6zM3 9h18M6 6.5h.01M9 6.5h.01",
   agents: "M12 3v3m-6 4a6 6 0 0 1 12 0v5a3 3 0 0 1-3 3H9a3 3 0 0 1-3-3v-5zm3 3h.01M15 13h.01",
+  schedules: "M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20M12 6.5V12l3.5 2",
 };
 
 export function DraftView({
@@ -176,6 +183,12 @@ export function DraftView({
     cached.agentId ?? currentAgent?.agentId ?? null,
   );
   const [workspace, setWorkspace] = useState(cached.workspace ?? "");
+  // A terminal opened while drafting starts in the Workspace chosen here; "" is the
+  // temporary Workspace, whose directory the server only creates with the Session, so
+  // that case falls back to home (setDockCwd's null).
+  useEffect(() => {
+    setDockCwd(workspace || null);
+  }, [workspace]);
   const [approvalMode, setApprovalMode] = useState<ApprovalMode>(
     cached.approvalMode ?? "allow-all",
   );
@@ -593,27 +606,19 @@ export function DraftView({
     setApprovalMode(mode);
   }, []);
 
-  // One in-flight guard shared by both send entry points (composer send / example task): a
-  // second submission while one is running would create a second Session with
-  // its own first task and a racing navigation. The ref is the synchronous guard; the state
-  // drives disabled styling on the example button (the composer has its own busy state).
+  // Synchronous in-flight guard for the one send entry point (the composer): a second
+  // submission while one is running would create a second Session with its own first task and
+  // a racing navigation. A ref rather than state — the composer disables its own send button
+  // off its `busy` state, and nothing else on this page renders differently mid-send.
   const sendingRef = useRef(false);
-  const [sending, setSending] = useState(false);
 
   // First message sent: only now is the Session created (Agent / Workspace / Model / approval
   // mode are all locked in together), then the route jumps once sent; returns false on any
-  // failure, so the input area keeps the draft and can resend. `keepDraft` is set by sends
-  // that did not consume the composer text (the example task), so a typed-but-unsent draft
-  // survives the navigation instead of being silently discarded.
+  // failure, so the input area keeps the draft and can resend.
   const onSend = useCallback(
-    async (
-      input: TaskInputPart[],
-      keepDraft = false,
-      goal: { budget: number } | null = null,
-    ): Promise<boolean> => {
+    async (input: TaskInputPart[], goal: { budget: number } | null = null): Promise<boolean> => {
       if (!agentId || sendingRef.current) return false;
       sendingRef.current = true;
-      setSending(true);
       let createdId: string | null = null;
       try {
         const body: SessionCreateRequest = { approvalMode };
@@ -626,11 +631,16 @@ export function DraftView({
         const created = await api.createSession(projectId, agentId, body);
         createdId = created.session.sessionId;
         const res = await api.postTask(createdId, { input, ...(goal ? { goal } : {}) });
-        add(created.session);
-        if (!keepDraft) discardDraft();
-        // The draft now has an id of its own, so its terminals move with it: every draft
-        // shares one dock scope, and anything left behind under that key would surface in
-        // the NEXT new conversation instead (terminal-dock-state.ts).
+        // Re-fetch the row before listing it: the server persisted the fallback title at
+        // Task start (inside the postTask call), and its session_title push may have gone
+        // out before this row existed in the list, where it patched nothing. The fresh row
+        // also carries the post-self-heal id, matching where we navigate.
+        const fresh = await api.getSession(res.sessionId).catch(() => null);
+        add(fresh?.session ?? created.session);
+        discardDraft();
+        // The draft now has an id of its own, so its docks move with it: anything left
+        // behind under the draft's scope would surface in the NEXT new conversation
+        // instead (dock-state.ts).
         adoptDockScope(res.sessionId);
         navigate(`/chat/${res.sessionId}`, { replace: true });
         return true;
@@ -643,42 +653,45 @@ export function DraftView({
         return false;
       } finally {
         sendingRef.current = false;
-        setSending(false);
       }
     },
     [projectId, agentId, approvalMode, modelRef, workspace, add, discardDraft, navigate],
   );
 
-  // Example tasks: one click submits the canned prompt exactly like a hand-typed send (the
-  // busy id drives the clicked card's spinner; the shared in-flight guard and all failure
-  // handling live in onSend). keepDraft: an example never consumes the composer text, so a
-  // typed-but-unsent draft must survive. The selected model / Workspace / approval mode apply as-is.
-  const [exampleBusy, setExampleBusy] = useState<ExampleTaskId | null>(null);
-  const runExample = useCallback(
-    async (task: ExampleTask) => {
-      if (exampleBusy !== null) return;
-      setExampleBusy(task.id);
-      try {
-        const names = task.skills.filter((n) => agentSkills.some((s) => s.name === n));
-        await onSend(
-          [{ type: "text", text: buildSkillsMessage(names, S.chat.exampleTasks[task.id].prompt) }],
-          true,
-        );
-      } finally {
-        setExampleBusy(null);
-      }
-    },
-    [exampleBusy, agentSkills, onSend],
-  );
+  /**
+   * Example tasks: a click FILLS the composer — the prompt into the text body, the example's
+   * skills into the skills dropdown — and sends nothing. The user reads what landed, edits it
+   * if they want, and presses Send, which then builds the very message this card used to
+   * submit by itself (the `[use_skills]` block is the send path's job, so the textarea never
+   * shows a marker block). Filling is instant and local: there is no busy state and no
+   * in-flight guard to keep here, and everything else — where the prompt goes when text is
+   * already typed, focus, the caret — is the composer's, reached through this handle.
+   */
+  const composerRef = useRef<ComposerControl | null>(null);
+  const fillExample = useCallback((task: ExampleTask) => {
+    // S is a live binding swapped on locale change: read the prompt at click time, not at render.
+    composerRef.current?.fillExample(S.chat.exampleTasks[task.id].prompt, task.skills);
+  }, []);
+  /**
+   * A saved shortcut takes the same path with no Skills to pin: its prompt is the user's own text,
+   * not a card authored against the Skill catalog this product ships (see user-shortcuts.ts). An
+   * empty pin list leaves the composer's Skill selection exactly as the user set it.
+   */
+  const fillShortcut = useCallback((prompt: string) => {
+    composerRef.current?.fillExample(prompt, []);
+  }, []);
 
   /**
    * The open example folder — bookmark-style, and ALWAYS exactly one: selecting another closes
    * the previous, and clicking the open one is a no-op rather than collapsing it. Never
-   * nullable on purpose. With every folder the same length, "one open" is what makes the
-   * block's height a constant: the examples area can neither collapse to bare folder rows nor
-   * grow, so nothing below it shifts as folders are switched.
+   * nullable on purpose. With the folders kept within one row of each other, "one open" is
+   * what keeps the block's height near-constant: the examples area can neither collapse to
+   * bare folder rows nor grow to the whole catalog, so switching folders moves what sits
+   * below it by at most one row.
    */
-  const [openFolder, setOpenFolder] = useState<ExampleFolderId>(EXAMPLE_FOLDERS[0].id);
+  const [openFolder, setOpenFolder] = useState<ExampleFolderId | typeof SHORTCUTS_FOLDER_ID>(
+    EXAMPLE_FOLDERS[0].id,
+  );
 
   const selectedAgent = agents.find((a) => a.agentId === agentId) ?? null;
 
@@ -717,7 +730,8 @@ export function DraftView({
 
         <ChatInput
           status="idle"
-          onSend={(input, goal) => onSend(input, false, goal)}
+          controlRef={composerRef}
+          onSend={onSend}
           onStop={async () => undefined}
           onCompact={async () => undefined}
           modelRef={modelRef}
@@ -748,56 +762,32 @@ export function DraftView({
           <WorkspaceSelect projectId={projectId} workspace={workspace} onChange={changeWorkspace} />
         </div>
 
-        {/* Example tasks: one-click canned builds showing off the one-sentence → app flow.
+        {/* Example tasks: canned builds showing off the one-sentence → app flow; a click fills
+            the composer with the prompt and the user sends it (see fillExample). The last folder
+            is the user's own saved prompts (see shortcuts-folder.tsx).
             Bookmark-style folders with ALWAYS exactly one open — selecting another closes the
-            previous, and the open one cannot be collapsed. The block is therefore a FIXED
-            height: two folder rows plus one folder's rows, whichever folder that is (they are
-            kept the same length). Nothing below shifts when folders are switched, and no
-            scroll container is needed — a scrollbar inside a six-line showcase reads as a
+            previous, and the open one cannot be collapsed. The block is therefore four folder
+            rows plus one folder's rows, with every folder kept within one row of the others
+            (3–4 examples each; the user folder is capped so its shortcuts plus its add row come
+            to the same), so switching folders moves what sits below by at most one row and no
+            folder needs a scroll container — a scrollbar inside a short showcase reads as a
             defect. Each example is a single-line title; its one-sentence description rides in
-            the row tooltip rather than a second line. Rows are disabled until
-            agents/models/skills are resolved (onSend would silently no-op without an Agent). */}
+            the row tooltip rather than a second line. Rows stay disabled until the Agent's
+            installed skills are known — that is all a fill still waits for, and without it the
+            preselect would silently drop the example's skills (a saved shortcut pins none, so
+            it never waits). */}
         <div className="mt-6 space-y-1">
           {EXAMPLE_FOLDERS.map((folder) => {
             const open = folder.id === openFolder;
             return (
               <div key={folder.id}>
-                {/* A tab, not a disclosure: the open folder stays open (clicking it is a
-                    no-op) and carries the selected fill, so the block always shows one
-                    folder's examples and its height never changes. */}
-                <button
-                  type="button"
-                  aria-expanded={open}
-                  onClick={() => setOpenFolder(folder.id)}
-                  className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors duration-150 ${
-                    open
-                      ? "bg-gray-100 dark:bg-gray-800/70"
-                      : "hover:bg-gray-100 dark:hover:bg-gray-800/70"
-                  }`}
-                >
-                  <span className="shrink-0 text-brand-500 dark:text-brand-400">
-                    <svg
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.7"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden
-                    >
-                      <path d={FOLDER_GLYPHS[folder.id]} />
-                    </svg>
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-700 dark:text-gray-300">
-                    {S.chat.exampleFolders[folder.id]}
-                  </span>
-                  <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
-                    {folder.tasks.length}
-                  </span>
-                  <Chevron open={open} size={14} className="text-gray-400" />
-                </button>
+                <ExampleFolderRow
+                  open={open}
+                  glyph={FOLDER_GLYPHS[folder.id]}
+                  label={S.chat.exampleFolders[folder.id]}
+                  count={folder.tasks.length}
+                  onOpen={() => setOpenFolder(folder.id)}
+                />
 
                 {open && (
                   <ul className="mt-0.5 space-y-0.5 pl-4">
@@ -807,23 +797,12 @@ export function DraftView({
                         <li key={task.id}>
                           <button
                             type="button"
-                            title={copy.desc}
-                            disabled={
-                              exampleBusy !== null ||
-                              sending ||
-                              !skillsLoaded ||
-                              !agentId ||
-                              !models
-                            }
-                            onClick={() => void runExample(task)}
-                            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-gray-600 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-900 disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent dark:text-gray-400 dark:hover:bg-gray-800/70 dark:hover:text-gray-200"
+                            title={`${copy.desc}\n${S.chat.exampleFillHint}`}
+                            disabled={!skillsLoaded}
+                            onClick={() => fillExample(task)}
+                            className={`flex w-full items-center gap-2 ${exampleRowClass}`}
                           >
                             <span className="min-w-0 flex-1 truncate">{copy.label}</span>
-                            {exampleBusy === task.id && (
-                              <span className="shrink-0 text-xs text-gray-400">
-                                {S.common.loading}
-                              </span>
-                            )}
                           </button>
                         </li>
                       );
@@ -833,6 +812,12 @@ export function DraftView({
               </div>
             );
           })}
+          <ShortcutsFolder
+            open={openFolder === SHORTCUTS_FOLDER_ID}
+            onOpen={() => setOpenFolder(SHORTCUTS_FOLDER_ID)}
+            readComposerText={() => textRef.current}
+            onFill={fillShortcut}
+          />
         </div>
       </div>
 
@@ -952,7 +937,7 @@ function AgentSelect({
                 onSelect(a);
                 setOpen(false);
               }}
-              className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800"
+              className={`flex w-full items-center ${ICON_GAP.menu} px-3 py-1.5 text-left transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800`}
             >
               <AgentAvatar
                 id={a.agentId}

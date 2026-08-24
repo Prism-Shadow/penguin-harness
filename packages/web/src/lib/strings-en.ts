@@ -36,9 +36,7 @@ export const en: Strings = {
     /** Tab strip ×: kills the shell itself (server-side), unlike closing the dock. */
     killShell: "Kill this terminal",
     /** Boundary drag handle between the dock and the main content (double-click resets). */
-    resize: "Resize terminal panel",
     /** Hover menu when the user has no live terminal yet. */
-    noTerminals: "No terminals",
     /** Pane body when creating/attaching a shell failed (the server message follows). */
     createFailed: "Could not start a terminal",
     /** A create that 404s: the server predates the terminal API (or the shell attached to an older one). */
@@ -46,7 +44,6 @@ export const en: Strings = {
       "this server has no terminal API: the running runtime predates it. A hot push replaces the platform and Web App, but the terminal endpoints are runtime-owned — the runtime itself has to be updated (restarting will not help)",
     /** Codex-style handoff: opens /terminal?id=… in a new window, the dock lets go. */
     detach: "Open in new window",
-    close: "Close",
     status: {
       connecting: "connecting",
       ready: "ready",
@@ -57,44 +54,87 @@ export const en: Strings = {
     exitedWithCode: (code: string): string => `exit code ${code}`,
   },
 
+  dock: {
+    addTab: "Add panel",
+    closeTab: "Close panel",
+    hideDock: "Hide sidebar",
+    moveToRight: "Move to the right",
+    moveToBottom: "Move to the bottom",
+    resize: "Resize panel",
+    rightDock: "Right sidebar",
+    bottomDock: "Bottom panel",
+    draftEmpty: "Available once the conversation starts",
+    killConfirmTitle: "Close this terminal?",
+    killConfirmBody: (name: string): string =>
+      `This ends the shell "${name}" — it cannot be restored.`,
+  },
+
+  tracePanel: {
+    empty: "No traces yet",
+    emptyHint: "This session has not produced a Trace file yet",
+    loadFailed: "Failed to load traces",
+  },
+
   settings: {
     language: "Language",
+    languageInfo: "Interface language; can follow the browser.",
+    /** Sidebar user-menu row opening the System settings dialog. */
+    systemSettings: "System settings",
+    /** Rail headings: the viewer's own preferences vs. the whole server's. */
+    groupPersonal: "Personal",
+    groupServer: "Server",
+    /** Personal pages of the settings dialog. */
+    generalTitle: "General",
+    appearanceTitle: "Appearance",
+    accountTitle: "Account",
     /** Sidebar Session list: also show CLI-created Sessions (default off — the list then never scans the Trace directories). */
     showCliSessions: "Show CLI sessions",
-    /** Admin-only user-menu row opening the proxy options dialog. */
-    proxyMenu: "Proxy options…",
-    proxyDialogTitle: "Proxy options",
-    /** The dialog's two switches: the server's own outbound traffic / agent command subprocess environments. */
+    showCliSessionsInfo:
+      "Off, the conversation list holds only Sessions created in the Web App and is served straight from the database. On, the Trace directories are scanned too and CLI-created Sessions are listed alongside them. Applies to this account only.",
+    /** Admin-only sub-page (server-global); its explanation is disclosed at the pane heading. */
+    proxyTitle: "Proxy options",
+    proxyInfo:
+      "Server-global, and in force the moment it is saved — nothing to restart. Loopback addresses always go direct.",
+    /** The two switches: the server's own outbound traffic / agent command subprocess environments. */
     proxyForApp: "Application uses the proxy",
     proxyForAgent: "Agent environment uses the proxy",
     /** The shared explicit proxy address (empty = follow the proxy environment variables). */
     proxyAddress: "Proxy address",
     proxyAddressPlaceholder: "Empty = follow system proxy",
-    /** Admin-only user-menu row opening the upload-limits dialog. */
-    uploadLimitsMenu: "Upload limits…",
-    uploadLimitsDialogTitle: "Upload limits",
-    /** The dialog's two number fields, both in whole MB. */
+    /** Admin-only sub-page (server-global). */
+    uploadLimitsTitle: "Upload limits",
+    /** Its two number fields, both in whole MB. */
     attachmentMaxMb: "Max attachment size (MB)",
     attachmentTotalMb: "Max total per message (MB)",
-    /** Explains what the numbers govern and what stays fixed, so the form needs no separate docs trip. */
-    uploadLimitsHint: (min: number, max: number, count: number, imageMb: number): string =>
-      `${min}–${max} MB; the total may not be below the per-file limit. A message may carry at ` +
-      `most ${count} attachments. Images placed inline in the conversation keep a separate ` +
-      `${imageMb}MB limit that this setting does not raise — an inline image enters the ` +
-      `conversation and the Trace, where its size is paid again on every history page and resume.`,
+    /** Accepted range for each field: read while typing, so it stays under the field. */
+    attachmentMaxMbHint: (min: number, max: number): string => `${min}–${max} MB`,
+    attachmentTotalMbHint: (min: number, max: number): string =>
+      `${min}–${max} MB, and not below the per-file limit`,
+    /** What these two numbers do NOT govern — disclosed at the pane heading. */
+    uploadLimitsInfo: (count: number, imageMb: number): string =>
+      `A message may carry at most ${count} attachments. Images placed inline in the ` +
+      `conversation keep a separate ${imageMb}MB limit that this setting does not raise — an ` +
+      `inline image enters the conversation and the Trace, where its size is paid again on ` +
+      `every history page and resume.`,
     theme: "Theme",
+    themeInfo: "Light or dark look of the app.",
     themeLight: "Light",
     themeDark: "Dark",
     followSystem: "System",
     terminalTheme: "Terminal theme",
+    terminalThemeInfo: "Colors of the terminal panel; follows the app theme by default.",
     followAppTheme: "App",
     langZh: "中文",
     langEn: "English",
     fontSize: "Font size",
+    fontSizeInfo: "Overall interface font size.",
     fontSmall: "S",
     fontMedium: "M",
     fontLarge: "L",
     accent: "Accent",
+    accentInfo: "Interface accent color.",
+    currencyInfo: "Display currency for prices; storage is always USD.",
+    changePasswordInfo: "Change this account's sign-in password.",
     accentNames: {
       neutral: "Neutral",
       blue: "Blue",
@@ -120,8 +160,8 @@ export const en: Strings = {
      */
     checkNow: "Check for updates",
     checking: "Checking…",
-    /** Success toast when the manual check finds a newer release; the row below turns into the update entry. */
-    foundNew: (v: string) => `New version v${v} found — use the update entry below to install`,
+    /** Success toast when the manual check finds a newer release; the row itself turns into the update entry. */
+    foundNew: (v: string) => `New version v${v} found — use the update entry to install`,
     upToDate: "You're on the latest version",
     checkFailed: "Update check failed — try again later",
     checkDisabled: "Update checks are disabled (PENGUIN_UPDATE_CHECK=off)",
@@ -136,6 +176,41 @@ export const en: Strings = {
       "Downloads the latest release and installs it into the install directory on the server (the data directory is not touched). Restart the service afterwards for the update to take effect.",
     /** Shown in place of confirmBody to non-admins, who can read the release notes but cannot run the update. */
     adminOnly: "Only an administrator can run the update from here.",
+    /**
+     * Desktop client-update row in the sidebar user menu (shell window only): check →
+     * download progress → restart-to-install, driven by the shell's updater snapshot.
+     * It stands in for the server update surface, which desktop mode hides entirely.
+     * Null version/percent = the shell didn't name one.
+     */
+    clientCheckNow: "Check for updates",
+    /** Success toast when a row-initiated check finds a release (the download starts by itself). */
+    clientFoundNew: (v: string | null) =>
+      v !== null
+        ? `Version v${v} found — downloading in the background…`
+        : "New version found — downloading in the background…",
+    clientDownloading: (v: string | null, percent: number | null) =>
+      `Downloading${v !== null ? ` v${v}` : ""}…${percent !== null ? ` ${percent}%` : ""}`,
+    clientRestartToInstall: (v: string | null) =>
+      v !== null ? `Restart to install v${v}` : "Restart to install the update",
+    /** Success toast when a row-initiated check lands on a build already downloaded and waiting. */
+    clientDownloadReady: (v: string | null) =>
+      v !== null
+        ? `Version v${v} is ready — restart to install`
+        : "The update is ready — restart to install",
+    /** Error toast carrying the shell's own updater failure text — a failed download or signature check, not only a failed lookup. */
+    clientUpdateFailed: (detail: string) => `Client update failed: ${detail}`,
+    /** Install POST failed before the shell could act; `detail` is apiErrorText output. */
+    clientInstallFailed: (detail: string) => `Could not start the install: ${detail}`,
+    clientInstallConfirmTitle: "Restart and install the update",
+    /** Mirrors the shell's native restart prompt: the interruption warning must not disappear on the web path. */
+    clientInstallConfirmBody:
+      "PenguinHarness will restart to finish updating. Running tasks will be interrupted.",
+    clientInstallConfirmAction: "Restart now",
+    /** Tooltip on the disabled row in a dev (unpackaged) run. */
+    clientUnsupportedDev: "A dev run does not update itself",
+    /** Tooltip on the disabled row for installs owned by the system package manager (e.g. .deb). */
+    clientUnsupportedPackage:
+      "This install is managed by the system package manager — update it there",
   },
 
   /** Desktop task-completion notifications (window unfocused; desktop-shell sessions only). */
@@ -148,12 +223,12 @@ export const en: Strings = {
   common: {
     save: "Save",
     cancel: "Cancel",
+    close: "Close",
     create: "Create",
     delete: "Delete",
     edit: "Edit",
     settings: "Settings",
     confirm: "Confirm",
-    close: "Close",
     loading: "Loading…",
     saved: "Saved",
     saving: "Saving…",
@@ -168,6 +243,10 @@ export const en: Strings = {
     unknownError: "Request failed, please try again later",
     requiredField: "This field is required",
     copied: "Copied",
+    /** Accessible name of the circled "?" that discloses a section or field explanation. */
+    moreInfo: "More info",
+    /** The same, named for what it explains — so the trigger never repeats the heading it sits in. */
+    moreInfoAbout: (subject: string) => `More info: ${subject}`,
     name: "Name",
     username: "Username",
     role: "Role",
@@ -232,9 +311,9 @@ export const en: Strings = {
       "2–64 chars: starts with a lowercase letter; lowercase letters, digits and underscores only. Cannot be changed later.",
     idPrefixHint:
       "The id is prefixed with your username and a hyphen; append lowercase letters, digits or underscores. Cannot be changed later.",
-    name: "Display name (optional, defaults to the Project id)",
-    /** The display-name field in Project settings (required there, unlike the create dialog's optional one). */
     displayName: "Display name",
+    /** Create dialog only: leaving the name empty falls back to the id. In Project settings the saved name cannot be blanked. */
+    displayNameHint: "Leave empty to use the Project id as the name",
     settings: "Project settings",
     settingsTitle: "Project settings",
     members: "Members",
@@ -248,9 +327,32 @@ export const en: Strings = {
     chatDefaultsNotSet: "Not set",
     chatDefaultsApprovalNotSet: "Not set (defaults to allow all)",
     chatDefaultsThinkingNotSet: "Not set (follow the agent's config)",
-    chatDefaultsWorkspaceHint: "Empty = temporary workspace",
     /** The model default is single-sourced with the Models page (the same default_model); this is just another entry point. */
     chatDefaultsModelHint: "Same default model as the Models page",
+    /** Settings dialog tab rail. */
+    settingsTabGeneral: "General",
+    settingsTabMembers: "Members",
+    settingsTabDefaults: "Defaults",
+    settingsTabSecurity: "Security policy",
+    projectIdLabel: "Project ID",
+    deleteProjectDesc: "The project directory is removed recursively and cannot be recovered.",
+    /** Security-policy page (Project settings): disclosed by the "?" beside the tab heading. */
+    commandPolicyInfo:
+      "The command text is normalized for whitespace and quoting, then matched against each enabled rule's regular expression; a hit is refused outright whatever the approval mode allows. It is an accident guardrail: a command assembled at run time is not covered.",
+    commandPolicyEnable: "Enable policy",
+    commandPolicyEnableDesc: "When off, no rule blocks anything.",
+    commandPolicyRules: "Rules",
+    commandPolicyRestore: "Restore defaults",
+    commandPolicyAddRule: "Add rule",
+    commandPolicyEditRule: "Edit",
+    commandPolicyApplyRule: "Apply",
+    commandPolicyEmpty: "No rules.",
+    commandPolicyOn: "Enabled",
+    commandPolicyOff: "Disabled",
+    commandPolicyRuleName: "Name",
+    commandPolicyRulePattern: "Regular expression",
+    commandPolicyRuleDesc: "Description",
+    commandPolicyInvalidPattern: "Invalid regular expression",
     deleteProject: "Delete Project",
     deleteConfirm:
       "Delete this Project? Its directory will be removed recursively and cannot be recovered.",
@@ -411,6 +513,17 @@ export const en: Strings = {
     mcpUrl: "url",
     mcpHeaders: "headers",
     mcpHeadersHint: "One Header-Name: value per line (auth headers such as Authorization)",
+    mcpPermission: "permission",
+    mcpPermissionAuto: "auto",
+    mcpPermissionAutoLabel: "Auto (readOnlyHint)",
+    mcpPermissionAutoDescription:
+      "Each tool gets the level its own readOnlyHint annotation implies: read-only when it declares one, read & write otherwise.",
+    mcpPermissionReadDescription:
+      "Treat every tool of this server as read-only, whatever it declares. Auto-approved when the approval mode is read-only.",
+    mcpPermissionReadWriteDescription:
+      "Treat every tool of this server as read & write, whatever it declares. Needs manual confirmation when the approval mode is read-only.",
+    mcpPermissionHint:
+      "Only the read-only approval mode reads this level; allow-all, deny-all and always-ask ignore it. It never restricts what the server itself can do — marking a server read-only that is not one only drops the confirmation read-only mode would have asked for.",
     mcpConnectTimeout: "connectTimeoutMs",
     mcpBudgetsHint:
       "Leave empty for defaults: connectTimeoutMs is the connect + tool-discovery budget (default 10000); timeoutMs / maxOutputLength bound every tool of this Server.",
@@ -515,13 +628,32 @@ export const en: Strings = {
     addGroup: "Add group",
     addGroupTitle: "Add group",
     addGroupDesc:
-      "User-defined groups share Custom semantics: the protocol is picked manually or detected from the base URL (base URL required; an empty API key reads the OPENAI_* / ANTHROPIC_* env vars per the chosen protocol). Groups live on model entries — the group appears once its first model is saved.",
+      'User-defined groups share Custom semantics. "Import models" detects (or lets you pick) the endpoint\'s protocol, then imports every model it serves in one go; "Create only" adds models one by one after the group. Groups live on model entries — the group appears once its first model is saved.',
+    groupModeCreate: "Create only",
+    groupModeImport: "Import models",
+    groupImportAll: "Import all models",
+    groupImportNeedUrl: "Fill in a valid base URL first (http/https)",
+    groupImportKeyHint: "Leave empty to read the protocol's OPENAI_* / ANTHROPIC_* env vars",
+    groupImportListing: "Fetching model list…",
+    groupImportSaving: (n: number): string => `Importing ${n} models…`,
+    groupImportUnsupported: "This protocol cannot list models — add them manually",
+    groupImportFailed: "Fetching the model list failed",
+    groupImportEmpty: "No models to import from this endpoint",
+    groupImported: (added: number, skipped: number): string =>
+      skipped > 0
+        ? `Imported ${added} models, skipped ${skipped} entries`
+        : `Imported ${added} models`,
     groupNameLabel: "Group name",
     groupNameHint: "Starts with a lowercase letter / digit; may contain - and _",
     groupNameInvalid:
       "Group names may only use lowercase letters, digits, - and _ (starting with a letter or digit), up to 32 characters",
     groupNameExists: "This name is taken by a built-in group or an existing entry",
     groupEmptyHint: "No models in this group yet; use “Add model” to create one",
+    deleteGroup: "Delete group",
+    deleteGroupTitle: "Delete group",
+    deleteGroupConfirm: (label: string, n: number): string =>
+      `Delete the group “${label}”? Its ${n} models and their API key configuration will be removed.`,
+    groupDeleted: (n: number): string => `Group deleted (${n} models)`,
     searchPlaceholder: "Search models: id / name / provider",
     noSearchResults: "No matching models",
     syncCatalog: "Sync presets",
@@ -654,6 +786,7 @@ export const en: Strings = {
     readOnlyHint: "Members have read-only access; only owners can change models and credentials",
     empty: "No models configured yet",
     noKey: "No key",
+    readFromEnv: "Read from environment variable",
     showModelsWithoutKey: (n: number): string =>
       `Show model${n === 1 ? "" : "s"} without a key (${n})`,
     modelIdExists: "This model id already exists",
@@ -716,7 +849,7 @@ export const en: Strings = {
     editWhy:
       "Content edits are made by the agent in a chat: confirm the prompt to open a new conversation, and the agent updates the memory file and its MEMORY.md index together.",
     editRequirementLabel: "What to change",
-    editRequirementPlaceholder: "Describe the change (optional — you can finish it in the chat)",
+    editRequirementPlaceholder: "Describe the change — you can finish it in the chat",
     editPromptLabel: "Prompt preview",
     editCopyPrompt: "Copy prompt",
     editOpenChat: "Open a new chat",
@@ -728,6 +861,36 @@ export const en: Strings = {
     /** Prefilled draft for the edit-via-chat flow; the user completes the trailing requirement line before sending. */
     editPromptLead: (title: string): string => `Please update a memory: ${title}`,
     editPromptTail: "What to change: ",
+    exportScope: "Export",
+    exportScopeHint: "Download every memory in this group as one JSON document",
+    exportScopeLabel: (scope: string): string => `Export ${scope}`,
+    importScope: "Import",
+    importScopeHint: "Restore memories into this group from an exported JSON document",
+    importScopeLabel: (scope: string): string => `Import into ${scope}`,
+    importTitle: "Import memories",
+    importWhy:
+      "Reads a memory group exported from this or another agent: a JSON file holding the memories and the group's MEMORY.md index.",
+    importFile: (name: string, count: number): string => `${name} — ${count} memories`,
+    importModeLabel: "When this group already has a memory of the same name",
+    importModeSkip: "Keep the one that is here",
+    importModeSkipHint: "Adds only what this group does not have. Nothing here is lost.",
+    importModeOverwrite: "Take the file's version",
+    importModeOverwriteHint: "Memories the file does not carry are left alone.",
+    importModeReplace: "Replace the whole group",
+    importModeReplaceHint: "Every memory the file does not carry is deleted.",
+    importAction: "Import",
+    importInvalidFile: "This file is not a memory export.",
+    importEmptyFile: "This file carries no memories.",
+    importConfirmTitle: "Confirm the import",
+    importWillOverwrite: (names: string[]): string =>
+      `${names.length} memories will be overwritten: ${names.join(", ")}`,
+    importWillRemove: (names: string[]): string =>
+      `${names.length} memories will be deleted: ${names.join(", ")}`,
+    importWillReplaceIndex: "The group's MEMORY.md index will be replaced.",
+    importIrreversible: "This cannot be undone.",
+    importDone: (added: number, overwritten: number, removed: number): string =>
+      `Imported: ${added} added, ${overwritten} replaced, ${removed} deleted`,
+    importNothingNew: "Nothing to import — this group already has every memory in the file",
   },
 
   vault: {
@@ -800,7 +963,7 @@ export const en: Strings = {
     prompt: "Prompt",
     enabled: "Enabled",
     startAt: "Start at",
-    endAt: "End at (optional)",
+    endAt: "End at",
     period: "Period",
     periodPlaceholder: "30m / 12h / 7d; leave empty for a one-off task",
     target: "Target",
@@ -812,7 +975,7 @@ export const en: Strings = {
     sessionSearch: "Search title or Session id…",
     sessionNoMatch: "No matching Session",
     sessionEmpty: "This agent has no Sessions yet",
-    workspace: "Workspace (optional; a temporary workspace is created when empty)",
+    workspace: "Workspace",
     model: "Model",
     modelDefault: "Project default",
     deleteTitle: "Delete scheduled task",
@@ -967,6 +1130,13 @@ export const en: Strings = {
     /** Sidebar conversation-list grouping toggle (workspace is the default) + workspace groups. */
     groupByWorkspace: "Group by workspace",
     groupByAgent: "Group by agent",
+    groupByTime: "Group by time",
+    /** Time-mode bucket names (last day / last month / older), by last activity. */
+    timeGroups: {
+      day: "Past day",
+      month: "Past month",
+      earlier: "Earlier",
+    },
     /** Session-list section header controls: search / list settings / mode-dependent create (the created object follows the grouping mode). */
     searchSessions: "Search chats",
     searchSessionsPlaceholder: "Search chats…",
@@ -994,6 +1164,27 @@ export const en: Strings = {
     exampleFolders: {
       webapps: "Build web apps",
       agents: "Build and optimize agents",
+      schedules: "Create scheduled tasks",
+    },
+    /** Second tooltip line on an example row: the click fills the composer, it does not send. */
+    exampleFillHint: "Click to fill the composer — edit it if you like, then send",
+    shortcuts: {
+      folder: "My shortcuts",
+      new: "New shortcut",
+      newFromComposer: "Starts from whatever is in the composer",
+      createTitle: "New shortcut",
+      editTitle: "Edit shortcut",
+      titleLabel: "Name",
+      titleHint: (max: number) => `At most ${max} characters`,
+      promptLabel: "Prompt",
+      promptHint: (max: number) => `At most ${max} characters`,
+      promptInfo:
+        "Clicking this shortcut puts the text into the composer verbatim and sends nothing; Skills stay a separate pick in the composer.",
+      titleTooLong: (max: number) => `The name may be at most ${max} characters`,
+      promptTooLong: (max: number) => `The prompt may be at most ${max} characters`,
+      deleteTitle: "Delete shortcut",
+      deleteConfirm: (title: string) =>
+        `Delete "${title}"? The shortcut disappears from every device you use.`,
     },
     exampleTasks: {
       game: {
@@ -1061,6 +1252,28 @@ Penguin visual style (see the web-design skill), dark by default. On phones the 
 
 When done, open index.html in a browser and self-test once.`,
       },
+      rhythmRunner: {
+        label: "Rhythm runner mini game",
+        desc: "A Muse Dash-style rhythm runner: a penguin lead, notes locked to the beat, graded Perfect / Great / Miss",
+        prompt:
+          "Build a Muse Dash-style rhythm runner: a penguin runs forward on its own, and notes — " +
+          "drawn as music-note icons — fly in locked to the beat for me to hit. Show Perfect / " +
+          "Great / Miss for each hit, score combos, and let the difficulty climb as the track goes " +
+          "on. Pure front end, one file, playable straight from file://.",
+      },
+      investmentCopilot: {
+        label: "Conversational investment analyst",
+        desc: "A conversational market Copilot on the Penguin SDK: the home page lists what is trending, with the market factors behind every call",
+        prompt:
+          "Build a conversational stock-market Copilot on the Penguin SDK, along the lines of " +
+          "perplexity.ai/finance: from startup it pulls live market data every 5 minutes, and the " +
+          "home page lists the stocks trending strongest lately alongside how the sectors compare. " +
+          "Every call has to name the market factors behind it — policy, sector news, fund flows, " +
+          "earnings, macro data — rather than technical indicators. Analysis of public data, not " +
+          "investment advice. Its stock-lookup tool has to handle questions like \"look up Zhipu's " +
+          'stock for me": resolve a company name to its ticker itself, and when there is no match ' +
+          "or the company is not listed, say so rather than inventing a quote.",
+      },
       rag: {
         label: "Build a Claude Code docs RAG agent",
         desc: "Collect the claude-code-docs repo into a conversational RAG knowledge app with source citations",
@@ -1077,7 +1290,7 @@ When done, open index.html in a browser and self-test once.`,
       agentBenchmarkBuild: {
         label: "Build a general-purpose decision agent and its benchmark",
         desc: "Create a general decision Agent and test it on football, after-sales, and investment tasks",
-        prompt: `Use \`agent-creation\` followed by \`benchmark-design\` to create a decision Agent and produce a frozen Benchmark with a Formal Baseline.
+        prompt: `Use \`agent-initialization\` followed by \`benchmark-design\` to create a decision Agent and produce a frozen Benchmark with a Formal Baseline.
 
 Agent:
 - id: \`finite_choice_agent\`
@@ -1107,13 +1320,42 @@ Scenarios:
 - desired_score: \`>=95\`
 - candidate_round_limit: \`5\``,
       },
+      dailyPlan: {
+        label: "A 9am daily planning check-in",
+        desc: "09:00 every day: talk through the day's plan in this same chat, and review yesterday's progress",
+        prompt:
+          "Set up a scheduled task: every day at 9am, in this same conversation, plan today's work " +
+          "with me. Read back over the conversation first and say what yesterday's plan got done and " +
+          "where it stuck, then offer an ordered shortlist for today with a line of reasoning each, " +
+          "and write up what I confirm as a checklist.",
+      },
+      githubDigest: {
+        label: "Daily GitHub project digest",
+        desc: "A daily pass over one repo's issues, PRs and CI, ending in prioritized recommendations",
+        prompt:
+          "Set up a scheduled task: every morning, use gh to digest one GitHub repo's issues, PRs " +
+          "and CI — surface what has stalled, what is waiting on review and what is failing — and " +
+          "end with recommendations ranked by priority, each saying why it sits where it does.",
+      },
+      memoryReview: {
+        label: "Friday memory review",
+        desc: "Friday evening: go through what is worth remembering from the week and write it into Memory",
+        prompt:
+          "Set up a scheduled task: every Friday evening, in this same conversation, go through " +
+          "what is worth remembering from the week with me. Check the existing memory index first so " +
+          "nothing is duplicated, then take it item by item — what to record, what to revise — and " +
+          "write what I confirm into Memory.",
+      },
     },
     sessionList: "Sessions",
     defaultSessionTitle: "New chat",
+    agent: "Agent",
     model: "Model",
     workspace: "Workspace",
     workspaceHint:
       "Leave empty for an auto-created temporary workspace; if set, it must be an existing directory on the server",
+    /** The same rule as `workspaceHint`, short enough to sit under a form field. */
+    workspaceHintShort: "Leave empty for a temporary workspace",
     approvalMode: "Approval mode",
     approvalModeNames: {
       "allow-all": "Approve everything",
@@ -1189,6 +1431,7 @@ Scenarios:
     decisionDeny: "Denied",
     decisionManual: "manual",
     decisionAuto: "auto",
+    decisionPolicy: "policy",
     thinking: "Thinking",
     subagent: "Subagent",
     subagentRunning: "Running",
@@ -1269,18 +1512,27 @@ Scenarios:
     historyLoadFailed: "Failed to load history",
     statsLabel: "Stats",
     removeImage: "Remove image",
-    openWorkspace: "Open workspace",
     openAgents: "Agents panel",
     /** Panel switcher (chat toolbar top-right): the "create" dropdown and its pin toggles. */
-    panelsCreate: "Create",
     workspacePanel: "Workspace",
-    pinPanel: "Pin to toolbar",
-    unpinPanel: "Unpin",
     filesInMessage: (n: number) => `${n} ${n === 1 ? "file" : "files"}`,
     imagesInMessage: (n: number) => `${n} ${n === 1 ? "image" : "images"}`,
     openPreview: "Click to preview",
     showMoreFiles: (n: number) => `Show ${n} more ${n === 1 ? "file" : "files"}`,
     showLess: "Show less",
+    memoryChangesTitle: (n: number) => `${n} memory ${n === 1 ? "update" : "updates"}`,
+    memoryScopeWorkspace: (key: string) => `Workspace memory (${key})`,
+    memoryOpWrite: "Wrote",
+    memoryOpEdit: "Edited",
+    memoryViewTitle: "Memory",
+    memoryChangedMark: "Changed in this conversation",
+    memoryContentUnavailable: "Content unavailable (the file may have been moved or deleted)",
+    memoryRowOpen: "View content",
+    memoryBack: "Back to the list",
+    memoryEmptyAll: "No memory yet — say “remember …” in a chat to have the agent save one",
+    /** Visible label on the Memory panel's header link (not a tooltip-only glyph): says what the click does and where it lands. */
+    openAgentMemory: "Manage in agent settings",
+    memoryShowMore: (n: number) => `Show ${n} more`,
     /** Reveal the next page of sidebar groups (#139); n = groups still hidden. */
     moreGroups: (n: number) => `More groups (${n})`,
     contextUsage: "Context usage",
@@ -1316,6 +1568,15 @@ Scenarios:
     /** Toast when the session-state (locked) model display is clicked: points at the `/model` command. */
     modelLockedHint: "Type /model to switch models",
     scheduledFrom: (name: string) => `Triggered by scheduled task "${name}"`,
+    /** One-line notice of a `[background_task_done]` harness message (run_in_background completion): the collapsed row's whole label. */
+    backgroundDone: (kind: "command" | "subagent", ok: boolean) =>
+      kind === "command"
+        ? ok
+          ? "Background command finished"
+          : "Background command failed"
+        : ok
+          ? "Background task finished"
+          : "Background task failed",
     emptyGreeting: "Start a new conversation",
     /** Unified step-row titles (same header idiom as workRunning/workDone). */
     mcpConnectTitle: "MCP connect",
@@ -1372,6 +1633,8 @@ Scenarios:
     pinnedSession: "Pinned",
     /** Sidebar group "reveal/load next page" row (display cap + server paging). */
     loadMore: "More",
+    /** Time mode's whole-list paging row: its buckets span every Agent, so one row below them fetches the next page rather than each bucket claiming to. */
+    loadMoreSessions: "Load more chats",
     /** Collapsed sidebar folders inside a group (lazy-loaded); the count is the group's exact server share. */
     folderGroups: {
       subagent: (n: number) => `Subagents (${n})`,
@@ -1423,12 +1686,12 @@ Scenarios:
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */
   subagentPanel: {
-    title: "Agents panel",
     topologyLabel: "Call graph",
     mainSessionNote: "The main conversation stays in the chat area",
     empty: "No subagents in the current task yet",
     nodeRunning: "running",
     nodeDone: "done",
+    openAsSession: "Jump to this session",
   },
 
   files: {
@@ -1454,7 +1717,6 @@ Scenarios:
     htmlRendered: "Rendered",
     htmlSource: "Source",
     backToList: "Back to list",
-    resizeHandle: "Drag to resize, double-click to reset",
   },
 
   usage: {
@@ -1472,12 +1734,22 @@ Scenarios:
     uncostedNote: "* Only models with configured pricing count toward cost",
     filterAllAgents: "All agents",
     filterAllModels: "All models",
-    chartAgentCalls: "Calls per agent",
-    chartSuccessRate: "Model success rate",
-    chartTokenTrend: "Daily token trend",
-    chartCostTrend: "Daily cost trend",
+    rangeLabel: "Date range",
+    rangeHour: "Last hour",
+    rangeDay: "Last 24 hours",
+    range7d: "Last 7 days",
+    range30d: "Last 30 days",
+    range90d: "Last 90 days",
+    rangeCustom: "Custom",
+    chartRequestsByAgent: "Requests & success rate by agent",
+    chartRequestsByModel: "Requests & success rate by model",
+    legendSuccessRate: "Success rate",
+    chartTokenTrend: "Token trend",
+    chartCostTrend: "Cost trend",
+    legendOther: (n: number): string => `Other (${n})`,
+    bucketTotal: "Total",
+    legendHitRate: "Cache hit rate",
     empty: "No usage records",
-    successAborted: "Aborted (excluded)",
     errors: "Errors",
     errorsTotal: "Total",
     errorsUnexpected: "Unexpected",
@@ -1504,6 +1776,8 @@ Scenarios:
     legendToolExec: "tool exec",
     legendOther: "Other",
     toolParams: "Parameter schema",
+    /** Spoken form of the red "*" in the schema table, where no control carries `aria-required`. */
+    requiredParam: "required",
     legendApprovalWait: "approval wait",
     task: (n: number) => `Turn ${n}`,
     globalSummary: "Overall",
@@ -1592,6 +1866,8 @@ Scenarios:
       member_not_found: "This user is not a member of the Project.",
       already_member: "This user is already a member of the Project.",
       already_owner: "This user is already an owner of the Project.",
+      memory_import_confirm_required:
+        "This import would overwrite or delete memories. Confirm it to continue.",
       schedule_exists: "A scheduled task with this name already exists.",
       schedule_not_found: "This scheduled task no longer exists.",
       unknown_skill: "This skill is not in the library.",

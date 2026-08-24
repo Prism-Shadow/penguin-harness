@@ -21,6 +21,11 @@ import { stripAnsi } from "../../lib/strip-ansi";
 import { approvalKey } from "../../lib/omni/stream-model";
 import type { ToolCallItem } from "../../lib/omni/stream-model";
 import { Chevron } from "../../components/ui/chevron";
+import {
+  DISCLOSURE_OUTPUT_PRE_CLASS,
+  DISCLOSURE_ROW_CLASS,
+  DISCLOSURE_ROW_STICKY_CLASS,
+} from "./disclosure-row";
 import { ZoomableImage } from "../../components/ui/image-zoom";
 import { StatusIcon } from "../../components/ui/status-icon";
 import type { RunState } from "../../components/ui/status-icon";
@@ -226,21 +231,28 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
   // breakpoint; the icon is the single source of truth for how the call was decided.
   const decisionText = item.decision
     ? `${item.decision === "allow" ? S.chat.decisionAllow : S.chat.decisionDeny} · ${
-        item.decisionSource === "manual" ? S.chat.decisionManual : S.chat.decisionAuto
+        item.decision === "forbidden"
+          ? S.chat.decisionPolicy
+          : item.decisionSource === "manual"
+            ? S.chat.decisionManual
+            : S.chat.decisionAuto
       }`
     : null;
-  // A user denial reports stop_reason "aborted" on the output it feeds back; that abort IS the
-  // decision — the icon reads "Denied" rather than falling through to the raw stop reason. A
-  // user-abort of a RUNNING tool carries no deny decision, so the label falls through to its
-  // stop reason below.
-  const deniedByUser = item.decision === "deny" && item.outputStopReason === "aborted";
+  // A denial reports stop_reason "aborted" on the output it feeds back — a person's "deny"
+  // and the command policy's "forbidden" alike; that abort IS the decision, so the icon
+  // reads "Denied · …" (the label's second half names the decider) rather than falling
+  // through to the raw stop reason. A user-abort of a RUNNING tool carries no deny
+  // decision, so the label falls through to its stop reason below.
+  const denied =
+    (item.decision === "deny" || item.decision === "forbidden") &&
+    item.outputStopReason === "aborted";
   const stateLabel = pending
     ? S.chat.approvalWaiting
     : state === "running"
       ? S.chat.workRunning
       : state === "done"
         ? (decisionText ?? S.chat.workDone)
-        : deniedByUser
+        : denied
           ? (decisionText ?? undefined)
           : (item.outputStopReason ?? item.callStopReason);
 
@@ -282,7 +294,7 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
             requestAnimationFrame(() => rootRef.current?.scrollIntoView({ block: "nearest" }));
           }
         }}
-        className="sticky top-4 z-[4] flex w-full items-center gap-2 bg-white px-3 py-1.5 text-left transition-colors duration-150 hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800"
+        className={`${DISCLOSURE_ROW_STICKY_CLASS} ${DISCLOSURE_ROW_CLASS}`}
       >
         <StatusIcon state={state} label={stateLabel} />
         <span className="shrink-0 truncate font-mono text-xs font-semibold text-gray-700 dark:text-gray-300">
@@ -364,7 +376,7 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
             </pre>
           )}
           {(item.output || item.outputStreaming) && (
-            <pre className="max-h-72 overflow-auto whitespace-pre-wrap border-t border-gray-100 px-3 py-2 text-xs leading-5 text-gray-600 dark:border-gray-800 dark:text-gray-300">
+            <pre className={DISCLOSURE_OUTPUT_PRE_CLASS}>
               {output}
               {item.outputStreaming && <span className="animate-pulse">▌</span>}
             </pre>

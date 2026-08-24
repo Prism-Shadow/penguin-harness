@@ -24,7 +24,7 @@ export function registerResetPasswordCommand(server: Command, t: Messages): void
     .command("reset-admin-password")
     .description(t.resetPassword.desc)
     .action(async () => {
-      const root = process.env.PENGUIN_HOME ?? resolveRoot();
+      const root = resolveRoot();
       const dbPath = process.env.PENGUIN_WEB_DB ?? path.join(root, "web.db");
       const result = await resetAdminPassword(root, dbPath);
       switch (result.outcome) {

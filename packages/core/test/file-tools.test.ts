@@ -8,6 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   chmod,
+  lstat,
   mkdir,
   mkdtemp,
   readdir,
@@ -722,5 +723,106 @@ describe("write_file — overwrite diffs", () => {
     const { text } = await run(tool(), { file_path: "fresh2.txt", content: "x\ny\n" }, tmp);
     expect(text).toContain('Created "fresh2.txt"');
     expect(text).not.toContain("@@");
+  });
+});
+
+describe("edit_file / write_file — symlinked targets", () => {
+  const edit = () => createEditFileTool(def(EDIT_FILE_NAME, "rw"));
+  const write = () => createWriteFileTool(def(WRITE_FILE_NAME, "rw"));
+
+  it("edit_file writes through the link and leaves the link in place", async () => {
+    await writeFile(path.join(tmp, "real.md"), "hello\nworld\n");
+    await symlink("real.md", path.join(tmp, "link.md"));
+    const { result } = await run(
+      edit(),
+      { file_path: "link.md", old_string: "world", new_string: "there" },
+      tmp,
+    );
+    expect(result?.stopReason).toBeUndefined();
+    // The edit landed on the file the link names — not on a regular file that replaced it.
+    expect(await readFile(path.join(tmp, "real.md"), "utf8")).toBe("hello\nthere\n");
+    expect((await lstat(path.join(tmp, "link.md"))).isSymbolicLink()).toBe(true);
+  });
+
+  it("write_file overwrites through the link and leaves the link in place", async () => {
+    await writeFile(path.join(tmp, "real.txt"), "old\n");
+    await symlink("real.txt", path.join(tmp, "alias.txt"));
+    const { result, text } = await run(write(), { file_path: "alias.txt", content: "new\n" }, tmp);
+    expect(result?.stopReason).toBeUndefined();
+    expect(text).toContain('Overwrote "alias.txt"');
+    expect(await readFile(path.join(tmp, "real.txt"), "utf8")).toBe("new\n");
+    expect((await lstat(path.join(tmp, "alias.txt"))).isSymbolicLink()).toBe(true);
+  });
+
+  it("follows a chain of links to the file at its end", async () => {
+    await writeFile(path.join(tmp, "end.txt"), "start\n");
+    await symlink("end.txt", path.join(tmp, "middle.txt"));
+    await symlink("middle.txt", path.join(tmp, "head.txt"));
+    const { result } = await run(write(), { file_path: "head.txt", content: "done\n" }, tmp);
+    expect(result?.stopReason).toBeUndefined();
+    expect(await readFile(path.join(tmp, "end.txt"), "utf8")).toBe("done\n");
+    expect((await lstat(path.join(tmp, "middle.txt"))).isSymbolicLink()).toBe(true);
+    expect((await lstat(path.join(tmp, "head.txt"))).isSymbolicLink()).toBe(true);
+  });
+
+  it("resolves a link that crosses directories", async () => {
+    await mkdir(path.join(tmp, "data"), { recursive: true });
+    await writeFile(path.join(tmp, "data", "target.txt"), "before\n");
+    await symlink(path.join("data", "target.txt"), path.join(tmp, "shortcut.txt"));
+    const { result } = await run(write(), { file_path: "shortcut.txt", content: "after\n" }, tmp);
+    expect(result?.stopReason).toBeUndefined();
+    expect(await readFile(path.join(tmp, "data", "target.txt"), "utf8")).toBe("after\n");
+    expect((await lstat(path.join(tmp, "shortcut.txt"))).isSymbolicLink()).toBe(true);
+  });
+
+  it("write_file creates the file a dangling link names, including its parent", async () => {
+    await symlink(path.join("missing", "created.txt"), path.join(tmp, "dangling.txt"));
+    const { result, text } = await run(
+      write(),
+      { file_path: "dangling.txt", content: "made\n" },
+      tmp,
+    );
+    expect(result?.stopReason).toBeUndefined();
+    // Nothing was there to overwrite, so it reads as a creation.
+    expect(text).toContain('Created "dangling.txt"');
+    expect(await readFile(path.join(tmp, "missing", "created.txt"), "utf8")).toBe("made\n");
+    expect((await lstat(path.join(tmp, "dangling.txt"))).isSymbolicLink()).toBe(true);
+  });
+
+  // POSIX-only: Windows has no owner-only mode bits to preserve (chmod maps to the read-only attribute).
+  it.skipIf(process.platform === "win32")(
+    "preserves the permission bits of the file at the end of the link",
+    async () => {
+      const real = path.join(tmp, "moded.txt");
+      await writeFile(real, "old\n");
+      await chmod(real, 0o600);
+      await symlink("moded.txt", path.join(tmp, "moded-link.txt"));
+      const { result } = await run(write(), { file_path: "moded-link.txt", content: "new\n" }, tmp);
+      expect(result?.stopReason).toBeUndefined();
+      expect(await readFile(real, "utf8")).toBe("new\n");
+      expect((await stat(real)).mode & 0o777).toBe(0o600);
+    },
+  );
+
+  it("fails cleanly on a link cycle instead of hanging", async () => {
+    await symlink("b.txt", path.join(tmp, "a.txt"));
+    await symlink("a.txt", path.join(tmp, "b.txt"));
+    const { result, text } = await run(write(), { file_path: "a.txt", content: "x\n" }, tmp);
+    expect(result?.stopReason).toBe("failed");
+    expect(text).toContain("Too many levels of symbolic links");
+  });
+
+  it("leaves no temp file behind next to the resolved target", async () => {
+    await mkdir(path.join(tmp, "nested"), { recursive: true });
+    await writeFile(path.join(tmp, "nested", "t.txt"), "a\n");
+    await symlink(path.join("nested", "t.txt"), path.join(tmp, "l.txt"));
+    await run(write(), { file_path: "l.txt", content: "b\n" }, tmp);
+    // The temp file is created beside the RESOLVED target, so the nested directory is the
+    // one that has to come out clean.
+    expect(await readFile(path.join(tmp, "nested", "t.txt"), "utf8")).toBe("b\n");
+    expect((await readdir(path.join(tmp, "nested"))).filter((e) => e.includes(".tmp-"))).toEqual(
+      [],
+    );
+    expect((await readdir(tmp)).filter((e) => e.includes(".tmp-"))).toEqual([]);
   });
 });

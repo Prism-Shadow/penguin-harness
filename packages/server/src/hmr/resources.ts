@@ -17,24 +17,59 @@ import type { Resources } from "@prismshadow/penguin-core/kernel";
 export class HotResources implements Resources {
   private readonly map = new Map<string, { resource: unknown; dispose?: () => void }>();
 
-  register(id: string, resource: unknown, dispose?: () => void): void {
-    this.map.set(id, { resource, dispose });
+  register(id: string, resource: unknown, dispose?: () => void): () => void {
+    const entry = { resource, dispose };
+    // Delete before set: Map.set on an existing key KEEPS its original insertion
+    // position, so a re-registration (a successor adopting a pty, say) would still be
+    // swept in the old owner's slot — and both sweeps below promise reverse REGISTRATION
+    // order, which later entries depending on earlier ones rely on.
+    this.map.delete(id);
+    this.map.set(id, entry);
+    // The paired unregister: identity-checked, so it only ever acts on THIS registration.
+    // Out of the registry means SHUT DOWN — the map is the list of live resources, and an
+    // entry that left it silently would also leave the process-exit sweep's reach. The
+    // one way a resource outlives its registration is takeover: an overwrite by a
+    // successor retires this handle into a no-op, and shutdown responsibility moves to
+    // the new registration with it.
+    return () => {
+      if (this.map.get(id) !== entry) return;
+      this.map.delete(id);
+      entry.dispose?.();
+    };
   }
 
   claim<T = unknown>(id: string): T | undefined {
     return this.map.get(id)?.resource as T | undefined;
   }
 
-  release(id: string): void {
-    this.map.delete(id);
+  /**
+   * The reconciliation hook a booting App calls (never the kernel — see the interface in
+   * core's boot.ts): disposes and removes every entry of one ID-prefix group (`terminal`
+   * covers `terminal:*`), in reverse registration order — later entries may depend on
+   * earlier ones, the same convention effects follow. Called only for groups whose
+   * declared resource interface the two sides of a swap disagree on; a throwing disposer
+   * must not strand the rest.
+   */
+  disposeGroup(group: string): void {
+    const prefix = `${group}:`;
+    const ids = [...this.map.keys()].filter((id) => id.startsWith(prefix));
+    for (const id of ids.reverse()) {
+      try {
+        this.map.get(id)?.dispose?.();
+      } catch {
+        // Best-effort: the group is being discarded regardless.
+      }
+      this.map.delete(id);
+    }
   }
 
   /**
-   * Process-exit sweep: run every registered disposer. Not part of any upgrade path —
-   * resources are meant to outlive swaps. A throwing disposer must not strand the rest.
+   * Process-exit sweep: run every registered disposer, newest first (later registrations
+   * may depend on earlier ones). Not part of any upgrade path — resources are meant to
+   * outlive swaps. A throwing disposer must not strand the rest.
    */
   disposeAll(): void {
-    for (const entry of this.map.values()) {
+    for (const entry of [...this.map.values()].reverse()) {
       try {
         entry.dispose?.();
       } catch {

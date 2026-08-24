@@ -21,3 +21,21 @@ export function clampYield(raw: unknown, fallback: number, timeoutMs?: number): 
   if (timeoutMs === undefined || timeoutMs <= 0) return lower;
   return Math.min(lower, Math.max(timeoutMs - TIMEOUT_MARGIN_MS, MIN_YIELD_MS));
 }
+
+/** Cap (characters) on the output tail a background completion report carries. */
+export const DONE_REPORT_OUTPUT_CAP = 4000;
+
+/** Keeps the LAST `cap` characters (a run's verdict sits at the end), prefixing a drop marker when truncated. */
+export function tailForReport(text: string, cap: number = DONE_REPORT_OUTPUT_CAP): string {
+  if (text.length <= cap) return text;
+  return `[earlier output dropped: exceeded ${cap} chars]\n${text.slice(text.length - cap)}`;
+}
+
+/** Cap (characters) on a completion report's label (the command / prompt excerpt). */
+const REPORT_LABEL_CAP = 120;
+
+/** First line of `text`, truncated to the label cap with an ellipsis. */
+export function reportLabel(text: string): string {
+  const line = text.split("\n", 1)[0] ?? "";
+  return line.length <= REPORT_LABEL_CAP ? line : `${line.slice(0, REPORT_LABEL_CAP - 1)}…`;
+}

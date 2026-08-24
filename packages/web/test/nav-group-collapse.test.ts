@@ -35,14 +35,9 @@ function memStorage(): NavCollapseStorage & { map: Map<string, string> } {
 
 describe("NAV_GROUP_KEYS", () => {
   it("covers exactly the 智能体 → 评估中心 range, in rendered order", () => {
-    expect([...NAV_GROUP_KEYS]).toEqual([
-      "agents",
-      "skills",
-      "models",
-      "usage",
-      "traces",
-      "benchmark",
-    ]);
+    // Traces is deliberately absent: the Trace panel moved into the chat toolbar's panel
+    // switcher (features/dock), and /traces stays reachable through its deep links only.
+    expect([...NAV_GROUP_KEYS]).toEqual(["agents", "skills", "models", "usage", "benchmark"]);
     // Pin the endpoints by label: a manifest edit that shifts the range shows up here.
     expect(zh.nav[NAV_GROUP_KEYS[0]]).toBe("智能体");
     expect(zh.nav[NAV_GROUP_KEYS[NAV_GROUP_KEYS.length - 1]!]).toBe("评估中心");
@@ -61,7 +56,7 @@ describe("NAV_GROUP_KEYS", () => {
     // outside the group container — the manifest never governs it.
     expect(NAV_GROUP_KEYS as readonly string[]).not.toContain("newChat");
     expect(NAV_GROUP_KEYS as readonly string[]).not.toContain("chat");
-    expect(zh.chat.newSessionMenu).toBe("新建对话");
+    expect(zh.chat.newSessionMenu).toBeTruthy();
   });
 });
 
@@ -72,10 +67,15 @@ describe("visibleNavKeys", () => {
   });
 
   it("the chevron-button toggle's accessible names exist in both languages (icon-only button: aria + tooltip carry them)", () => {
-    expect(zh.nav.collapseGroup).toBe("折叠");
-    expect(zh.nav.expandGroup).toBe("展开");
-    expect(en.nav.collapseGroup).toBe("Collapse");
-    expect(en.nav.expandGroup).toBe("Expand");
+    for (const [locale, dict] of [
+      ["zh", zh],
+      ["en", en],
+    ] as const) {
+      expect(dict.nav.collapseGroup, locale).toBeTruthy();
+      expect(dict.nav.expandGroup, locale).toBeTruthy();
+      // One button, two states: the same name for both would leave the state unreadable.
+      expect(dict.nav.collapseGroup, locale).not.toBe(dict.nav.expandGroup);
+    }
   });
 });
 

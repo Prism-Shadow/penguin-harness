@@ -49,22 +49,70 @@ describe("offersChangePassword", () => {
   });
 });
 
+describe("the settings section registry", () => {
+  const source = readFileSync(
+    resolve(dirname(fileURLToPath(import.meta.url)), "../src/lib/settings-sections.ts"),
+    "utf8",
+  );
+
+  it("gates the account page on the predicate rather than listing it always", () => {
+    // The change-password row moved from the sidebar menu into the settings dialog; the
+    // predicate now decides whether that page exists at all. Without this the predicate
+    // could pass every test above while the registry ignored it.
+    expect(source).toContain("offersChangePassword(v)");
+  });
+});
+
 describe("the sidebar user menu", () => {
   const source = readFileSync(
     resolve(dirname(fileURLToPath(import.meta.url)), "../src/components/layout/sidebar.tsx"),
     "utf8",
   );
 
-  it("gates its change-password entry on the predicate rather than rendering it always", () => {
-    // Without this the predicate could pass every test above while the menu ignored it,
-    // which is the exact regression this change guards against.
-    expect(source).toContain("offersChangePassword({ desktopMode, sessionVia })");
+  it("keeps sign-out on its own desktopMode gate", () => {
+    // Sign out is hidden for the whole desktop-mode server, not just the shell's window.
+    // Anchored to sign-out's own block: the server update row above it carries the same
+    // gate, so a bare `toContain("{!desktopMode && (")` would keep passing once this one
+    // was deleted.
+    const signOut = source.indexOf("S.auth.logout");
+    expect(signOut).toBeGreaterThan(-1);
+    const gate = source.lastIndexOf("{!desktopMode && (", signOut);
+    expect(gate).toBeGreaterThan(-1);
+    // Only sign-out's own <button> stands between that gate and the label it renders.
+    expect(source.slice(gate, signOut).match(/<\w/g)).toEqual(["<b"]);
   });
 
-  it("leaves the sibling entries on their own desktopMode gate", () => {
-    // Sign out and Users are hidden for the whole desktop-mode server, not just the
-    // shell's window; the narrower rule above must not be copied onto them by accident.
-    expect(source).toContain("{!desktopMode && (");
-    expect(source).toContain("{user?.isAdmin && !desktopMode && (");
+  it("reaches the settings it no longer holds through one ungated System settings entry", () => {
+    // The preference rows, change password and user management all moved into the settings
+    // dialog, whose own section registry decides which pages this viewer sees — so the row
+    // itself carries no isAdmin test, or a non-admin would lose the personal pages along
+    // with the admin ones.
+    expect(source).toContain("setSettingsOpen(true)");
+    expect(source).not.toContain("offersChangePassword");
+    expect(source).not.toContain("S.settings.showCliSessions");
+    expect(source).not.toContain("S.settings.theme");
+    expect(source).not.toContain('go("/settings")');
+    expect(source).not.toContain('go("/admin/users")');
+  });
+
+  it("mounts no dialog for a surface the settings dialog owns", () => {
+    // A stale mount would be a build failure rather than a silent one, but the menu
+    // keeping an opener for a surface reachable elsewhere is the regression worth naming.
+    expect(source).not.toContain("ProxySettingsDialog");
+    expect(source).not.toContain("UploadLimitsDialog");
+    expect(source).not.toContain("ChangePasswordDialog");
+  });
+
+  it("keeps both update rows outside the settings dialog, in one slot under its entry", () => {
+    // Updating is deliberately not a settings page: the menu carries the check itself, and
+    // the two rows are mutually exclusive by their own gates (a desktop-mode server never
+    // offers the server check; a browser session against one gets neither).
+    expect(source).toContain("<ServerUpdateRow");
+    expect(source).toContain("<DesktopUpdateRow");
+    expect(source).toContain("<UpdateDialog");
+    // The row's install/announce dialogs hang off the Sidebar, which outlives the menu the
+    // click closes — mounting them in the rows would unmount them on that same click.
+    expect(source).toContain("setUpdateDialogOpen(true)");
+    expect(source).toContain("setClientInstallOpen(true)");
   });
 });

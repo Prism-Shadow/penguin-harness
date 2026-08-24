@@ -39,14 +39,16 @@ import { Input, Textarea } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import { Modal } from "../../components/ui/modal";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
+import { SettingsEmpty } from "../../components/ui/empty-state";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { FormPicker } from "../../components/ui/form-picker";
-import { FieldError, FieldLabel } from "../../components/ui/field";
+import { FieldError, FieldHint, FieldLabel } from "../../components/ui/field";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { ModelSelect, PickerList } from "../chat/model-select";
 import { WorkspaceSelect } from "../chat/workspace-select";
 import { sameModelRef } from "../models/model-grouping";
 import { usePromptInjection } from "./prompt-injection-controls";
+import { HelpFold } from "../../components/ui/help-fold";
 
 /** Display status → badge tone. */
 const STATUS_TONE: Record<ScheduleStatus, BadgeTone> = {
@@ -432,12 +434,11 @@ export function SchedulesTab({
 
   return (
     <div className="space-y-4">
-      <div>
-        <p className="text-xs text-gray-500 dark:text-gray-400">{S.schedule.desc}</p>
-        {!isOwner && (
-          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{S.schedule.readOnlyHint}</p>
-        )}
-      </div>
+      {/* Tab-level description: no title in the panel to anchor a "?" to (see help-fold.tsx). */}
+      <HelpFold label={S.agent.tabSchedules}>
+        {S.schedule.desc}
+        {!isOwner && <span className="mt-1.5 block">{S.schedule.readOnlyHint}</span>}
+      </HelpFold>
 
       {toggleCard}
       {alertStrip}
@@ -445,8 +446,7 @@ export function SchedulesTab({
       {data === null ? (
         <SkeletonList rows={4} />
       ) : schedules.length === 0 ? (
-        // Plain-text empty state (settings area doesn't use the penguin-icon EmptyState, keeps the same gray level as the table area).
-        <p className="py-2 text-xs text-gray-400 dark:text-gray-500">{S.schedule.empty}</p>
+        <SettingsEmpty>{S.schedule.empty}</SettingsEmpty>
       ) : (
         <div className="overflow-x-auto overflow-y-clip rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
           <table className="w-full min-w-[720px] text-left text-sm">
@@ -682,6 +682,7 @@ export function SchedulesTab({
                       onChange={(workspace) => set({ workspace })}
                       variant="form"
                     />
+                    <FieldHint>{S.chat.workspaceHintShort}</FieldHint>
                   </div>
                 </>
               )}

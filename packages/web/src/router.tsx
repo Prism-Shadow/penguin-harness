@@ -17,7 +17,6 @@ import { ModelsPage } from "./features/models/models-page";
 import { UsagePage } from "./features/usage/usage-page";
 import { TracesPage } from "./features/traces/traces-page";
 import { BenchmarkPage } from "./features/benchmark/benchmark-page";
-import { AdminUsersPage } from "./features/admin/admin-users-page";
 import { TerminalPage } from "./features/terminal/terminal-page";
 
 /** Route guard: shows blank while initializing, redirects to /login when not authenticated. */
@@ -76,7 +75,8 @@ export function AppRouter() {
           <Route path="/usage" element={<UsagePage />} />
           <Route path="/traces" element={<TracesPage />} />
           <Route path="/benchmark" element={<BenchmarkPage />} />
-          <Route path="/admin/users" element={<AdminUsersPage />} />
+          {/* System settings and user management live in the settings dialog now (see
+              SettingsDialog); their old routes fall through to the catch-all. */}
           <Route path="*" element={<Navigate to="/chat" replace />} />
         </Route>
       </Routes>

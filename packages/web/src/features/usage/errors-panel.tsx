@@ -17,6 +17,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { Badge } from "../../components/ui/badge";
 import { Empty } from "./usage-charts";
+import { toneInk } from "../../lib/tone";
 
 /** The two error categories. */
 type ErrorKindKey = "unexpected" | "expected";
@@ -56,7 +57,7 @@ function Stat({
   muted?: boolean;
 }) {
   const tone = alert
-    ? "text-rose-600 dark:text-rose-400"
+    ? toneInk.danger
     : muted
       ? "text-gray-500 dark:text-gray-400"
       : "text-gray-900 dark:text-gray-100";
@@ -68,7 +69,7 @@ function Stat({
   );
 }
 
-/** Header cell: left-aligned, recessive gray; stickiness is handled by thead. */
+/** Header cell: left-aligned, recessive gray. */
 function Th({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return <th className={`py-1.5 pr-2 font-medium ${className}`}>{children}</th>;
 }
@@ -79,7 +80,8 @@ function Th({ children, className = "" }: { children: React.ReactNode; className
  * fill the table); clicking a message expands it in place to the full text (wrapping, newlines
  * preserved — the upstream detail after the code, e.g. a provider's 402 body, is what matters),
  * and clicking again collapses it. The full text is also in the hover title. Cells align to the
- * top so an expanded multi-line message keeps the row tidy; the table scrolls past max height.
+ * top so an expanded multi-line message keeps the row tidy; height is bounded by the page size
+ * alone — the table never scrolls (paging is the way past it).
  */
 export function ErrorsPanel({
   errors,
@@ -186,9 +188,9 @@ export function ErrorsPanel({
       {items.length === 0 ? (
         <Empty text={S.usage.errorsEmpty} />
       ) : (
-        <div className="mt-2.5 max-h-72 overflow-y-auto border-t border-gray-200 dark:border-gray-800">
+        <div className="mt-2.5 border-t border-gray-200 dark:border-gray-800">
           <table className="w-full table-fixed text-xs">
-            <thead className="sticky top-0 bg-white text-left text-gray-400 dark:bg-gray-900 dark:text-gray-500">
+            <thead className="text-left text-gray-400 dark:text-gray-500">
               <tr>
                 <Th className="w-32">{S.common.time}</Th>
                 {/* Wide enough to fully fit the longest error code: a tool

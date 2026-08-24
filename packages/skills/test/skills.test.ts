@@ -161,7 +161,7 @@ describe("loadSkillGroups / groupSkills", () => {
     expect(groups[2]!.title).toBe("AI App Development");
     expect(groups[2]!.titleZh).toBe("AI 应用开发");
     expect(groups[3]!.skills.map((s) => s.name)).toEqual([
-      "agent-creation",
+      "agent-initialization",
       "benchmark-design",
       "agent-evaluation",
       "agent-optimization",
@@ -178,7 +178,7 @@ describe("loadSkillGroups / groupSkills", () => {
 
   it("groupSkills: appends an Other group for unlisted skills (Chinese and English titles)", () => {
     const stray = fakeSkill("stray-skill");
-    const groups = groupSkills([fakeSkill("agent-creation"), stray]);
+    const groups = groupSkills([fakeSkill("agent-initialization"), stray]);
     expect(groups.map((g) => g.id)).toEqual([
       "office-productivity",
       "software-development",
@@ -230,9 +230,27 @@ describe("loadSkillGroups / groupSkills", () => {
       },
       {
         id: "agent-tuning",
-        skills: ["agent-creation", "benchmark-design", "agent-evaluation", "agent-optimization"],
+        skills: [
+          "agent-initialization",
+          "benchmark-design",
+          "agent-evaluation",
+          "agent-optimization",
+        ],
       },
     ]);
+  });
+
+  /**
+   * The package README repeats the manifest as a table for human readers. Derived from the
+   * library rather than pinned, so adding a Skill fails here instead of leaving the table
+   * quietly short — the same guard the docs pages get from docs' skills-sync test.
+   */
+  it("the package README's group table names every library Skill", async () => {
+    const readme = await fs.readFile(path.resolve(import.meta.dirname, "../README.md"), "utf8");
+    const missing = loadLibrarySkills()
+      .map((skill) => skill.name)
+      .filter((name) => !readme.includes(`\`${name}\``));
+    expect(missing, "skills missing from README.md").toEqual([]);
   });
 });
 
@@ -242,267 +260,66 @@ describe("librarySkill", () => {
     expect(librarySkill("no-such-skill")).toBeUndefined();
   });
 
-  it("benchmark-design records the selected one-Run Pilot as the Formal Baseline", () => {
-    const content = librarySkill("benchmark-design")?.content;
-    expect(content).toBeDefined();
+  /**
+   * The agent-tuning skills tell an agent what to type: shell statements, CLI flags and
+   * the YAML shape an Evaluator must emit. Those literals are a contract — a typo in one
+   * breaks a run — so they are pinned here. The prose around them is not: it is edited
+   * every time a skill is reworded, and pinning sentences only made the suite fail on
+   * rewrites that changed nothing an agent executes.
+   */
+  it("agent-evaluation spells the launch environment out as separate shell statements", () => {
+    const evaluation = librarySkill("agent-evaluation")!.content;
 
-    const pilotIndex = content!.indexOf("## Refine the Benchmark");
-    const baselineIndex = content!.indexOf("## Freeze and record the Formal Baseline");
-    const normalizedContent = content!.replace(/\s+/g, " ");
-
-    expect(pilotIndex).toBeGreaterThan(-1);
-    expect(baselineIndex).toBeGreaterThan(pilotIndex);
-    expect(normalizedContent).toContain("Keep unselected Pilot results out of the Scoreboard");
-    expect(normalizedContent).toContain("requested valid-iteration limit");
-    expect(normalizedContent).toContain("lowest-scoring valid Pilot revision");
-    expect(normalizedContent).toContain("retain only one temporary restorable copy");
-    expect(normalizedContent).toContain("Store it outside `benchmarks/`");
-    expect(normalizedContent).toContain("delete the temporary lowest-revision copy");
-    expect(normalizedContent).toContain("A single iteration may refine multiple Cases");
-    expect(normalizedContent).toContain(
-      "do not require the public Statement to uniquely determine the Gold",
-    );
-    expect(normalizedContent).toContain("stable reusable policy, priority, inference boundary");
-    expect(normalizedContent).toContain(
-      "do not disclose every decisive premise or priority merely to make the public task complete",
-    );
-    expect(normalizedContent).toContain(
-      "Allocate most points within each Case to decisions or concise artifacts",
-    );
-    expect(normalizedContent).toContain(
-      "Keep generic format compliance, evidence enumeration, and analysis completeness from creating a high score floor",
-    );
-    expect(normalizedContent).toContain(
-      "Before the first dispatch of every new or changed Case revision",
-    );
-    expect(normalizedContent).toContain("current Statement is internally coherent");
-    expect(normalizedContent).toContain("current Rubric is consistent with the current Statement");
-    expect(normalizedContent).toContain("must not refer to an earlier revision or missing context");
-    expect(normalizedContent).toContain(
-      "every scoring item applies to the Case's actual requested output",
-    );
-    expect(normalizedContent).toContain(
-      "does not require the public Statement to contain enough information",
-    );
-    expect(normalizedContent).toContain(
-      "Prefer refinements that create one or more scored separating decisions",
-    );
-    expect(normalizedContent).toContain(
-      "Adding another explicit rule, exception, source, or checklist is not a difficulty increase",
-    );
-    expect(normalizedContent).toContain("Separating prediction");
-    expect(normalizedContent).toContain(
-      "If both behaviors are expected to reach the same scored result, choose another refinement",
-    );
-    expect(normalizedContent).toContain("A Rubric-only refinement is allowed but not preferred");
-    expect(normalizedContent).toContain(
-      "Do not add points merely because the previous Test Agent omitted a phrase",
-    );
-    expect(normalizedContent).toContain(
-      "Run a complete consistency review and final leak check across every Case",
-    );
-    expect(normalizedContent).toContain(
-      "Do not run another difficulty refinement merely to create more score margin",
-    );
-    expect(normalizedContent).toContain("missing the desired score alone is not a failure");
-    expect(normalizedContent).toContain("`runs = 1`");
-    expect(normalizedContent).toContain(
-      "Do not launch a fresh Formal matrix, rerun the selected Pilot, or backfill it",
-    );
-    expect(normalizedContent).toContain("Accept the selected Pilot result as the Formal Baseline");
-    expect(normalizedContent).toContain(
-      "Record the Formal Baseline even when its score does not meet the desired baseline score",
-    );
-  });
-
-  it("evaluation is the only subagent leaf and optimization has a bounded valid-round loop", () => {
-    const creation = librarySkill("agent-creation")!.content.replace(/\s+/g, " ");
-    const evaluation = librarySkill("agent-evaluation")!.content.replace(/\s+/g, " ");
-    const benchmarkDesignRaw = librarySkill("benchmark-design")!.content;
-    const benchmarkDesign = benchmarkDesignRaw.replace(/\s+/g, " ");
-    const optimizationRaw = librarySkill("agent-optimization")!.content;
-    const optimization = optimizationRaw.replace(/\s+/g, " ");
-
-    expect(creation).toContain("inherit the current Builder Session's `Provider` and `Model ID`");
-    expect(creation).toContain(
-      "read `model.thinking_level` from the Builder's own `agent_state/system_config.yaml`",
-    );
-    expect(creation).toContain("Write the resolved `thinking_level` into a brand-new target Agent");
-    expect(creation).toContain("never add either field to `system_config.yaml`");
-    expect(evaluation).toContain("request from a `run_subagent` caller");
-    expect(evaluation).toContain("Use the Penguin CLI only to launch the specified Test Agent");
     expect(evaluation).toContain('PROJECT_ID="$(basename "$PROJECT_DIR")"');
     expect(evaluation).toContain('PENGUIN_HOME="$(dirname "$PROJECT_DIR")"');
     expect(evaluation).toContain("export PENGUIN_HOME");
     expect(evaluation).toContain('--project-id "$PROJECT_ID"');
-    expect(evaluation).toContain("Perform these as separate shell statements in this order");
-    expect(evaluation).toContain("Never compress the assignments onto one command line");
-    expect(evaluation).toContain("Do not impose a numeric retry limit");
-    expect(evaluation).toContain("Never browse, query a pricing service");
-    expect(evaluation).toContain("resend only the clean protocol YAML");
     expect(evaluation).toContain('--workspace "<absolute_unique_workspace_path>"');
-    expect(evaluation).toContain("resolve it to an absolute canonical path");
-    expect(evaluation).toContain("`provider` and `model_id` must both be non-empty");
-    expect(evaluation).toContain("Never omit either model flag");
-    expect(evaluation).toContain(
-      "Read and snapshot `model.thinking_level` from this Target Agent config",
-    );
-    expect(evaluation).toContain("not Trace metadata—for `thinking_level`");
-    expect(evaluation).toContain("outside `0..100`");
+    // The assignment is its own statement: prefixed onto `penguin run` it would apply to
+    // that one command and leave the rest of the sequence pointing at the wrong home.
     expect(evaluation).not.toContain('PENGUIN_HOME="$(dirname "$PROJECT_DIR")" penguin run');
-    expect(benchmarkDesign).toContain(
-      "otherwise inherit the current Builder Session's complete `Provider` and `Model ID`",
-    );
-    expect(benchmarkDesign).toContain(
-      "Read `thinking_level` from the Test Agent's `model.thinking_level`",
-    );
-    expect(benchmarkDesign).toContain(
-      "Pass the resolved `(provider, model_id)` explicitly in every Pilot Evaluator request",
-    );
-    expect(benchmarkDesign).toContain("Every Case Rubric has a fixed maximum of 100 points");
-    expect(benchmarkDesign).toContain("average of the Case scores");
-    expect(benchmarkDesign).toContain("ignore `null` values when averaging cost");
-    expect(benchmarkDesign).toContain("stored values are authoritative");
-    expect(benchmarkDesign).toContain("obtain the current UTC timestamp from the environment");
-    expect(benchmarkDesignRaw).toMatch(/summary_title:\s*>-\n\s+<public title>/);
-    expect(benchmarkDesignRaw).toMatch(/summary:\s*>-\n\s+<public summary>/);
-    expect(benchmarkDesign).toContain(
-      "parse the complete `scoreboard.yaml` and verify the appended Evaluation",
-    );
-    expect(benchmarkDesignRaw).not.toMatch(/\n\s+max_score:/);
-    expect(benchmarkDesign).toContain(
-      "Before reading `status`, `score`, or any other protocol field",
-    );
-    expect(benchmarkDesign).toContain("Ask the same Evaluator to resend only the clean YAML");
-    expect(optimization).toContain("Delegate every evaluation to an `agent-evaluation` subagent");
-    expect(optimization).toContain("a positive `runs` value");
-    expect(optimization).toContain(
-      "do not infer it from `benchmark_config.toml` or the Formal Baseline",
-    );
-    expect(optimization).toContain(
-      "The initial Formal Baseline has one Run per Case; do not rerun or backfill it",
-    );
-    expect(optimization).toContain(
-      "Compare each Candidate's stored top-level average directly with the current Reference score even when their Run counts differ",
-    );
-    expect(optimization).toContain("frozen Case set × requested `runs` matrix");
-    expect(optimization).toContain("Before reading `status`, `score`, or any other protocol field");
-    expect(optimization).toContain("Ask the same Evaluator to resend only the clean YAML");
-    expect(optimizationRaw).toMatch(/summary_title:\s*>-\n\s+<public title>/);
-    expect(optimizationRaw).toMatch(/summary:\s*>-\n\s+<public summary>/);
-    expect(optimization).toContain(
-      "parse the complete `scoreboard.yaml` and verify the appended Evaluation",
-    );
-    expect(optimization).toContain(
-      "A round counts only after one Candidate has a complete valid Evaluation",
-    );
-    expect(optimization).toContain("keep the same Candidate and incomplete matrix");
-    expect(optimization).toContain(
-      "Do not inspect private Evaluator State or abandon the Candidate",
-    );
-    expect(optimization).toContain(
-      "Immediately append and verify every accepted Candidate Evaluation",
-    );
-    expect(optimization).toContain(
-      "distinguish the acceptance decision from whether its stated hypothesis was supported",
-    );
-    expect(optimization).toContain(
-      "At the round limit, retain the highest-scoring accepted Reference",
-    );
-    expect(optimization).toContain("Read the evaluation `(provider, model_id, thinking_level)`");
-    expect(optimization).toContain(
-      "require its actual `provider`, `model_id`, and `thinking_level` to equal the Reference runtime",
-    );
-    expect(optimization).toContain("Do not edit `system_prompt` unless requested");
-    expect(optimization).toContain("change `model.thinking_level`");
-    expect(optimization).toContain(
-      "ensure `<target>/snapshots/v<Reference version>.tar.gz` exists",
-    );
-    expect(optimization).toContain("Reuse it when present");
-    expect(optimization).toContain("create it yourself before editing");
-    expect(optimization).toContain("excluding `.vault.toml`");
-    expect(optimization).toContain("never overwrite an existing same-version snapshot");
-    expect(optimization).not.toContain("stop and ask the user to export");
-    expect(optimization).toContain("fixed `0..100` scale");
-    expect(optimization).toContain("average of the Case scores");
-    expect(optimization).toContain("stored values are authoritative");
-    expect(optimization).toContain("Obtain the current UTC timestamp from the environment");
-    expect(optimizationRaw).not.toMatch(/\n\s+max_score:/);
   });
 
-  it("remote-claude-code relays verbatim, steps keys one at a time, and splits model+level switches", () => {
-    // Issue #307: the four TUI-driving rules, version-bumped alongside the content change.
-    const skill = librarySkill("remote-claude-code")!;
-    expect(skill.version).toBeGreaterThanOrEqual(2);
-    const content = skill.content.replace(/\s+/g, " ");
+  it("the Evaluator protocol YAML keeps its block scalars and carries no max_score", () => {
+    for (const name of ["benchmark-design", "agent-optimization"]) {
+      const content = librarySkill(name)!.content;
+      expect(content, name).toMatch(/summary_title:\s*>-\n\s+<public title>/);
+      expect(content, name).toMatch(/summary:\s*>-\n\s+<public summary>/);
+      // Every Case Rubric is fixed at 100 points, so a per-Case maximum would be a second
+      // source of truth for the same number.
+      expect(content, name).not.toMatch(/\n\s+max_score:/);
+    }
+  });
 
-    // 1) Pure relay: user messages reach Claude Code word-for-word, no local work.
-    expect(content).toContain(
-      "## 4. Relaying a conversation — the user's words go through verbatim",
-    );
-    expect(content).toContain("you are a message pipe — nothing more");
-    expect(content).toContain("Forward every user message to Claude Code **verbatim**");
-    expect(content).toContain("the user is talking to Claude Code, not to you");
-    expect(content).toContain(
-      "When in doubt whether a message is task or control, relay it verbatim",
-    );
+  it("benchmark-design refines before it freezes the Formal Baseline", () => {
+    const content = librarySkill("benchmark-design")!.content;
+    const refineIndex = content.indexOf("## Refine the Benchmark");
+    const baselineIndex = content.indexOf("## Freeze and record the Formal Baseline");
 
-    // 2) "switch to fable5 max" style requests set the model AND the thinking level.
-    expect(content).toContain('"switch to fable5 max"');
-    expect(content).toContain("means **two** settings");
-    expect(content).toContain("Never read the pair as one unknown model name");
-    expect(content).toContain("shows **both** the new model and the new thinking level");
+    expect(refineIndex).toBeGreaterThan(-1);
+    expect(baselineIndex).toBeGreaterThan(refineIndex);
+  });
 
-    // 2b) The rule generalizes past its own examples: any language, level-only and model-only too.
-    expect(content).toContain("any** message naming a model, a thinking level, or both");
-    expect(content).toContain("**Level only**");
-    expect(content).toContain("**Model only**");
-    expect(content).toContain(
-      "A level word sitting next to a model name is always the thinking level",
-    );
+  it("remote-claude-code drives tmux through the commands it names", () => {
+    // Issue #307: relaying verbatim survives the transport only through the paste buffer —
+    // `send-keys -l` splits newlines and eats a trailing `;`.
+    const content = librarySkill("remote-claude-code")!.content;
 
-    // 3) Key-sequence races: one key per send-keys call, capture-verified between keys.
-    expect(content).toContain("acts on the **previous** selection");
-    expect(content).toContain("one key per `send-keys` call");
-    expect(content).toContain("never fire the next key on faith");
-    // ... and a bounded failure branch when the capture shows the state was NOT reached.
-    expect(content).toContain("**Nothing changed**");
-    expect(content).toContain("**The wrong thing changed**");
-    expect(content).toContain('Never "fix" a wrong state by pressing on toward the goal');
-    expect(content).toContain("Show the user the captured screen and ask");
-
-    // 4) Post-run composer text is an AI suggestion, not pending user input.
-    expect(content).toContain("cannot reliably tell the two apart");
-    expect(content).toContain("never treat post-run input-line text as pending user input");
-    expect(content).toContain("new text makes the suggestion disappear on its own");
-
-    // 5) Verbatim delivery survives the transport: `send-keys -l` splits newlines and eats a
-    // trailing `;`, so anything non-trivial goes through load-buffer/paste-buffer.
-    expect(content).toContain("goes through the paste buffer");
     expect(content).toContain("tmux load-buffer -");
     expect(content).toContain("tmux paste-buffer -d -p -t <sess>");
-    expect(content).toContain("The landed check is **exact, not approximate**");
-    expect(content).toContain("**Already submitted**");
-
-    // 6) The decision on a permission prompt is the user's, never the relaying agent's.
-    expect(content).toContain("Never approve a tool call on the user's behalf");
-    expect(content).toContain("**Questions travel back, not to you.**");
-
-    // 7) Mid-run messages, session/work boundary, dead session, untruncated reporting.
-    expect(content).toContain("**A message that arrives mid-turn waits.**");
-    expect(content).toContain("Escape twice in a row is not a stronger interrupt");
-    expect(content).toContain("**Split by subject, not by phrasing.**");
     expect(content).toContain("tmux has-session -t <sess>");
-    expect(content).toContain("claude --continue");
     expect(content).toContain("capture-pane -p -S -200");
+    expect(content).toContain("claude --continue");
+  });
 
-    // The keystroke rule (§3.3) precedes the relay contract (§4) that leans on it.
-    const stepIndex = skill.content.indexOf("### 3.3 One keystroke at a time");
-    const relayIndex = skill.content.indexOf("## 4. Relaying a conversation");
+  it("remote-claude-code states the keystroke rule before the relay contract that leans on it", () => {
+    const content = librarySkill("remote-claude-code")!.content;
+    const stepIndex = content.indexOf("### 3.3 One keystroke at a time");
+    const relayIndex = content.indexOf("## 4. Relaying a conversation");
+
     expect(stepIndex).toBeGreaterThan(-1);
     expect(relayIndex).toBeGreaterThan(stepIndex);
   });
-
   it("rejects illegal-character names (path traversal guard) and never hits the filesystem", () => {
     for (const name of ["../penguin-sdk", "..", "penguin-sdk/SKILL.md", "a/../b", ".", ""]) {
       expect(librarySkill(name), name).toBeUndefined();

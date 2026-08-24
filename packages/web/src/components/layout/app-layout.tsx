@@ -4,8 +4,7 @@
  * - <md: top thin bar (hamburger -> sidebar drawer + brand name) + main content.
  * All chrome uses solid backgrounds and avoids stacking contexts (frosted-glass/transform would trap overlay z-index).
  */
-import { useEffect, useLayoutEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useMatch, useNavigate } from "react-router";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -17,27 +16,14 @@ import { useSessions } from "../../state/sessions";
 import { useCompletionNotifications } from "../../state/use-completion-notifications";
 import { Drawer } from "../ui/drawer";
 import { GlyphIcon } from "../ui/glyph-icon";
-import { NAV_ICONS } from "../ui/icons";
+import { CloseIcon, NAV_ICONS } from "../ui/icons";
 import { NEW_CHAT_ICON, Sidebar } from "./sidebar";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
 import { parkActiveDraft } from "../../features/chat/draft-sessions";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
-import { TerminalDock } from "../../features/terminal/terminal-dock";
 import { TerminalDockRuntime } from "../../features/terminal/terminal-view-pool";
-import {
-  dockSlot,
-  dockSlotVersion,
-  subscribeDockSlots,
-} from "../../features/terminal/terminal-dock-slot";
-import {
-  dockStateVersion,
-  isTerminalDockOpen,
-  setDockScope,
-  paneHasSlot,
-  SIDE_SLOT_TRANSITION_MS,
-  visiblePanes,
-  subscribeTerminalDock,
-} from "../../features/terminal/terminal-dock-state";
+import { setDockScope } from "../../features/dock/dock-state";
+import { toneStrip } from "../../lib/tone";
 
 /** "Last conversation" glyph (chat lines + resume arrow), used only by the rail. */
 const LAST_CHAT_ICON = "M8 10h8M8 14h5M21 12a9 9 0 1 1-4.2-7.6L21 4v5h-5";
@@ -52,7 +38,7 @@ const railItemClass = (active: boolean) =>
 
 /**
  * Collapsed narrow rail: expand button on top; below it, in product-specified order, last
- * conversation / new chat / Agents / Skills / Models / Costs / Traces / Benchmark (every entry
+ * conversation / new chat / Agents / Skills / Models / Costs / Benchmark (every entry
  * carries a localized title + aria-label, so hover tooltips follow the UI language); user
  * avatar at the bottom. No Logo shown.
  */
@@ -91,13 +77,14 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
     navigate(`/chat/${DRAFT_SESSION_ID}`, agentId ? { state: { agentId } } : undefined);
   };
 
-  /** Page entries (rail positions 3-8): same routes, same labels as the pinned nav. */
+  /** Page entries (rail positions 3-7): same routes, same labels as the pinned nav.
+      Traces is not among them: the Trace panel lives in the chat toolbar's panel switcher
+      now, and the /traces browsing page stays reachable through its deep links. */
   const pages: ReadonlyArray<{ to: string; label: string; icon: string }> = [
     { to: "/agents", label: S.nav.agents, icon: NAV_ICONS.agents },
     { to: "/skills", label: S.nav.skills, icon: NAV_ICONS.skills },
     { to: "/models", label: S.nav.models, icon: NAV_ICONS.models },
     { to: "/usage", label: S.nav.usage, icon: NAV_ICONS.usage },
-    { to: "/traces", label: S.nav.traces, icon: NAV_ICONS.traces },
     { to: "/benchmark", label: S.nav.benchmark, icon: NAV_ICONS.benchmark },
   ];
 
@@ -114,7 +101,7 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
       </button>
       {/* The entries scroll as one block, like the pinned sidebar's nav + session list: the rail
           keeps only the expand control and the account avatar at fixed height, so a window too
-          short for eight icons scrolls them here instead of pushing them out of the rail and
+          short for the icons scrolls them here instead of pushing them out of the rail and
           growing the document. Scrollbar hidden — at 48px wide it would cost a third of the
           rail's width. */}
       <nav className="no-scrollbar mt-1 flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto">
@@ -186,61 +173,18 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
   );
 }
 
-/**
- * Keeps a side pane mounted through its 200ms collapse after its slot goes away (Ctrl+`,
- * closing the pane, moving it to another edge). Unmounting the moment the slot empties is
- * a pop: a width transition needs the node on both ends of it. The pane renders `open`
- * false for the grace period — width 0, inert — and then unmounts for real, which is what
- * finally lets the view pool dispose the xterm view.
- */
-function useLingeringSlot(slot: boolean): boolean {
-  const [lingering, setLingering] = useState(false);
-  useEffect(() => {
-    if (slot) {
-      setLingering(true);
-      return;
-    }
-    if (!lingering) return;
-    const timer = window.setTimeout(() => setLingering(false), SIDE_SLOT_TRANSITION_MS);
-    return () => window.clearTimeout(timer);
-  }, [slot, lingering]);
-  return slot || lingering;
-}
-
 export function AppLayout() {
   const { user, desktopMode } = useAuth();
-  // The terminal dock belongs to the conversation it was opened in, so switching Sessions
-  // switches the arrangement with it. Pages with no Session of their own leave the scope
-  // where it was — visiting Settings is not leaving the conversation. Layout effect, not a
-  // plain one: it has to land before the panes below paint, or the outgoing conversation's
-  // dock flashes on the incoming one.
+  // The docks belong to the conversation they were arranged in, so switching Sessions
+  // switches the arrangement with it (dock-state.ts). The draft page's route id ("new" /
+  // a parked draft id) is a scope of its own, handed to the Session the first send
+  // creates; pages with no Session scope to a placeholder. Layout effect, not a plain
+  // one: it has to land before the chat page's docks paint, or the outgoing
+  // conversation's docks flash on the incoming one.
   const dockScope = useMatch("/chat/:sessionId")?.params.sessionId ?? null;
   useLayoutEffect(() => {
-    if (dockScope !== null) setDockScope(dockScope);
+    setDockScope(dockScope);
   }, [dockScope]);
-  // Any dock-state change (panes opening/closing/moving) re-renders the slots below.
-  useSyncExternalStore(subscribeTerminalDock, dockStateVersion);
-  const dockVisible = isTerminalDockOpen();
-  // The arrangement minus anything a chat side panel is displacing (terminal-dock-state.ts).
-  const panes = visiblePanes();
-  // A displaced SIDE pane stays mounted so it can slide out and back on the same 200ms as
-  // the panel that took its place; it renders collapsed (TerminalDock's `open`). Hiding the
-  // dock outright still unmounts, which is what disposes the view. Note this cannot key off
-  // dockVisible: that already answers "is anything on screen", which a displaced pane is not.
-  const hasPane = (p: string) => dockVisible && panes.includes(p as never);
-  // Mounted through the exit collapse too — see useLingeringSlot.
-  const leftMounted = useLingeringSlot(paneHasSlot("left"));
-  const rightMounted = useLingeringSlot(paneHasSlot("right"));
-  // A page may donate a spot for its side panes (terminal-dock-slot.tsx). The chat page does,
-  // so a pane lines up with the panels it shares the slot with — below the page's own top
-  // bar, not squeezing it. Without a donation the pane stays here, beside <main>.
-  useSyncExternalStore(subscribeDockSlots, dockSlotVersion);
-  const sidePane = (position: "left" | "right", mounted: boolean) => {
-    if (!mounted) return null;
-    const pane = <TerminalDock position={position} open={hasPane(position)} />;
-    const slot = dockSlot(position);
-    return slot === null ? pane : createPortal(pane, slot);
-  };
   // Desktop shell only (gated inside): system notification when a task finishes while
   // the window is unfocused.
   useCompletionNotifications();
@@ -300,9 +244,7 @@ export function AppLayout() {
         )}
       </aside>
 
-      {/* data-dock-host: the drag-to-dock overlay measures this box for its edge bands,
-          drop-target widget and landing preview (terminal-dock-layout.tsx). */}
-      <div data-dock-host className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col">
         {/* Mobile: top thin bar (hamburger + brand) */}
         <header className="flex h-12 shrink-0 items-center gap-2 border-b border-gray-200 bg-white px-2 md:hidden dark:border-gray-800 dark:bg-gray-950">
           <button
@@ -332,7 +274,9 @@ export function AppLayout() {
             Permanently dismissible via the X on the right (per-user ui_prefs); only rendered once
             hydrated prefs confirm it was never dismissed, so it does not flash-then-vanish on load. */}
         {passwordBannerRelevant && passwordBannerDismissed === false && (
-          <div className="relative flex shrink-0 items-center justify-center gap-3 border-b border-amber-200 bg-amber-50 px-8 py-1.5 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300">
+          <div
+            className={`relative flex shrink-0 items-center justify-center gap-3 border-b px-8 py-1.5 text-xs ${toneStrip.attention}`}
+          >
             <span>{S.account.initialPasswordBanner}</span>
             <button
               type="button"
@@ -354,34 +298,17 @@ export function AppLayout() {
               onClick={dismissPasswordBanner}
               className="absolute inset-y-0.5 right-1.5 flex items-center rounded-md px-1 text-amber-500 transition-colors duration-150 hover:text-amber-950 dark:text-amber-400/70 dark:hover:text-amber-100"
             >
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 14 14"
-                fill="none"
-                stroke="currentColor"
-                aria-hidden
-              >
-                <path d="M2 2l10 10M12 2L2 12" strokeWidth="1.5" strokeLinecap="round" />
-              </svg>
+              <CloseIcon size={12} />
             </button>
           </div>
         )}
 
-        {/* Integrated terminal (Codex-style), on every page, toggled via Ctrl+` or the
-            chat toolbar. The dock is a set of PANES, at most one per edge; the xterm
-            views live in TerminalDockRuntime's pool and are adopted into pane bodies by
-            DOM handoff, so pane churn (opening, closing, moving edges) never reconnects
-            a terminal. data-dock-row anchors the drag preview's geometry. */}
-        {hasPane("top") && <TerminalDock position="top" />}
-        <div data-dock-row className="flex min-h-0 min-w-0 flex-1">
-          {sidePane("left", leftMounted)}
-          <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
-            <Outlet />
-          </main>
-          {sidePane("right", rightMounted)}
-        </div>
-        {hasPane("bottom") && <TerminalDock position="bottom" />}
+        <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
+          <Outlet />
+        </main>
+        {/* The docks themselves render inside the chat page (features/dock); the xterm
+            views live in this pool and are adopted into dock tab bodies by DOM handoff,
+            so navigating between pages never reconnects a terminal. */}
         <TerminalDockRuntime />
       </div>
 

@@ -40,12 +40,14 @@ import {
 } from "../src/llm/index.js";
 import {
   assistantText,
+  buildBackgroundTaskDoneMessage,
   imageUrlMessage,
   inlineData,
   inlineThinking,
   thinkingMessage,
   toolCall,
   toolCallOutput,
+  userSteeringText,
   userText,
 } from "../src/omnimessage/index.js";
 import type {
@@ -152,6 +154,34 @@ describe("mergeOmniToUniMessage", () => {
       images: [dataUrl],
       tool_call_id: "call_img",
     });
+  });
+
+  it("an injected request input (tool outputs + steered notice + steering) collapses into ONE user message", () => {
+    // The engine's next-input assembly appends background notices and steering behind the
+    // turn's tool outputs — several user-side OmniMessages. On the wire they must be a
+    // single user UniMessage (content_items in input order): what AgentHub receives always
+    // alternates user / assistant, and an injection can never produce two adjacent user
+    // messages. The per-message granularity exists only at the OmniMessage/Trace layer.
+    const notice = buildBackgroundTaskDoneMessage(
+      {
+        kind: "command",
+        id: "proc-1",
+        status: "completed",
+        detail: "exit code 0",
+        delivery: "steering",
+      },
+      "Background command finished",
+    );
+    const uni = mergeOmniToUniMessage([
+      toolCallOutput({ output: "total 0", toolCallId: "call_1" }),
+      userText(notice, "harness"),
+      userText(userSteeringText("also check the tests")),
+    ]);
+    expect(uni.role).toBe("user");
+    expect(uni.content_items.map((c) => c.type)).toEqual(["tool_result", "text", "text"]);
+    const texts = uni.content_items.filter((c) => c.type === "text");
+    expect((texts[0] as { text: string }).text).toBe(notice);
+    expect((texts[1] as { text: string }).text).toContain("[user_steering]");
   });
 
   it("throws on mixed roles", () => {
@@ -879,6 +909,46 @@ describe("translateEvents", () => {
     expect(sessionTokens).toEqual(requestTokens);
     const tu = messages.at(-1)!.payload as TokenUsagePayload;
     expect(tu.request.total).toBe(524);
+  });
+
+  it("drops an unused event without splitting the segment it interrupts", () => {
+    // AgentHub marks any stream event a client does not recognize `unused` and attaches no
+    // content items to it, so a frame a gateway injects mid-generation (heartbeat, cost
+    // ticker) must pass through the translator without opening, closing or splitting the
+    // text segment around it, and without disturbing the usage snapshot.
+    const { messages, requestTokens } = translateEvents([
+      ev({ event_type: "start", content_items: [] }),
+      ev({ content_items: [{ type: "text", text: "Hel" }] }),
+      ev({ event_type: "unused", content_items: [] }),
+      ev({ content_items: [{ type: "text", text: "lo" }] }),
+      ev({
+        event_type: "stop",
+        content_items: [],
+        finish_reason: "stop",
+        usage_metadata: {
+          cached_tokens: 0,
+          prompt_tokens: 12,
+          thoughts_tokens: 0,
+          response_tokens: 4,
+        },
+      }),
+    ]);
+
+    const types = messages.map((m) => (m.payload as { type: string }).type);
+    // One start, one delta per text item, one stop — the unused event adds nothing.
+    expect(types).toEqual([
+      "partial_text",
+      "partial_text",
+      "partial_text",
+      "partial_text",
+      "text",
+      "token_usage",
+    ]);
+    const complete = messages.find((m) => (m.payload as { type: string }).type === "text")!
+      .payload as TextPayload;
+    expect(complete.text).toBe("Hello");
+    expect(complete.stop_reason).toBe("completed");
+    expect(requestTokens.total).toBe(16);
   });
 });
 

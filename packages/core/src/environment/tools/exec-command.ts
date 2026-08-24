@@ -24,7 +24,8 @@ import type { OmniMessage } from "../../omnimessage/index.js";
 import type { EnvironmentServices, ToolDefinitionConfig } from "../../interfaces.js";
 import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
 import { DEFAULT_EXEC_YIELD_MS, resultForExit } from "./command/index.js";
-import { clampYield } from "./background/index.js";
+import type { ManagedSession } from "./command/index.js";
+import { clampYield, reportLabel, tailForReport } from "./background/index.js";
 
 /** Tool name constant (used only inside this tool module, not exposed to Environment). */
 export const EXEC_COMMAND_NAME = "exec_command";
@@ -71,6 +72,7 @@ export function createExecCommandTool(
         typeof rawWorkdir === "string" && rawWorkdir.length > 0
           ? path.resolve(ctx.workspaceDir, rawWorkdir)
           : ctx.workspaceDir;
+      const background = args["run_in_background"] === true;
       const yieldMs = clampYield(
         args["yield_time_ms"],
         DEFAULT_EXEC_YIELD_MS,
@@ -87,6 +89,21 @@ export function createExecCommandTool(
         const message = err instanceof Error ? err.message : String(err);
         yield delta(`[spawn error: ${message}]`);
         return { stopReason: "failed" };
+      }
+
+      // run_in_background: no collect window at all — register immediately, arm the completion
+      // report, and hand back the process_id. When the foreground process exits, the report
+      // reaches the conversation as a harness user message (see armCommandDoneReport); the
+      // model can still poll/steer it with input_command or stop it with kill_command meanwhile.
+      if (background) {
+        const id = manager.register(session);
+        armCommandDoneReport(session, id, services);
+        return {
+          stopReason: "completed",
+          note:
+            `[command running in background with process_id ${id}; its completion will arrive ` +
+            `as a user message — no need to poll. Use input_command to interact or kill_command to stop it]`,
+        };
       }
 
       // On interruption, kill the whole process group (background children included) to
@@ -120,4 +137,38 @@ export function createExecCommandTool(
       }
     },
   };
+}
+
+/**
+ * Arms the completion report of a background-launched command: when the foreground process
+ * reaches a terminal state, the report (id, exit facts, tail of the yet-undelivered output)
+ * goes to `services.backgroundDone` — the Session turns it into a harness user message.
+ * `kill_command` disarms it first (a deliberate kill reports its outcome synchronously), and a
+ * disposed Environment drops the event (see Environment.emitBackgroundDone).
+ */
+export function armCommandDoneReport(
+  session: ManagedSession,
+  processId: string,
+  services?: EnvironmentServices,
+): void {
+  const notify = services?.backgroundDone;
+  if (!notify) return;
+  session.onceExited(() => {
+    const exit = session.exit;
+    const failed =
+      session.error !== null || exit?.signal != null || (exit !== null && exit.code !== 0);
+    const detail = session.error
+      ? `spawn error: ${session.error.message}`
+      : exit?.signal != null
+        ? `terminated by signal ${exit.signal}`
+        : `exit code ${exit?.code ?? "unknown"}`;
+    notify({
+      kind: "command",
+      id: processId,
+      label: reportLabel(session.cmd),
+      status: failed ? "failed" : "completed",
+      detail,
+      output: tailForReport(session.drainPending()),
+    });
+  });
 }
