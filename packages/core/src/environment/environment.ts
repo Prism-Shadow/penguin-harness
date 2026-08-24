@@ -335,6 +335,7 @@ export class Environment implements EnvironmentInterface {
     try {
       session = new ManagedSubagentSession(
         await runner.resume({ agentId, sessionId: childSessionId }),
+        { resumeAgentId: agentId },
       );
     } catch {
       return "gone"; // No trace to resume from, or the agent is gone: nothing to revive.

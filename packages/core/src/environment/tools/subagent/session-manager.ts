@@ -126,22 +126,29 @@ export class SubagentSessionManager {
     // completed, idle ones); if still no room, register anyway, tolerating a brief overshoot
     // (see MAX_SESSIONS).
     this.registry.makeRoom(false);
-    return this.registry.register(session, session.sessionId.slice(-8));
+    const id = this.registry.register(session, session.sessionId.slice(-8));
+    // Tombstone for the revival path: a subagent session is never destroyed the way a process
+    // is — releasing it (idle eviction) only frees the slot, and this record lets a later
+    // input_subagent on the same id resume the child instead of erroring. Parent-session
+    // lifetime, one small record per registration.
+    this.registered.set(id, {
+      sessionId: session.sessionId,
+      ...(session.resumeAgentId !== undefined ? { agentId: session.resumeAgentId } : {}),
+    });
+    return id;
+  }
+
+  /** Ever-registered index by subagent_id (see register): the resume clue for ids whose session left the registry. */
+  private readonly registered = new Map<string, { sessionId: string; agentId?: string }>();
+
+  /** The resume clue for a subagent_id no longer in the registry; undefined for ids this parent session never allocated. */
+  releasedInfo(subagentId: string): { sessionId: string; agentId?: string } | undefined {
+    return this.registered.get(subagentId);
   }
 
   /** Looks up a session by subagent_id and refreshes its access time; returns undefined if not found. */
   get(subagentId: string): ManagedSubagentSession | undefined {
     return this.registry.get(subagentId);
-  }
-
-  /** Kills a background subagent by id (aborts its run, denies pending approvals, releases the child Session) and drops it from the registry; false when the id is unknown. */
-  kill(subagentId: string): boolean {
-    if (this.registry.get(subagentId) === undefined) return false;
-    this.registry.remove(subagentId);
-    // An idle child removed this way never flips a run state, so ping the host directly —
-    // its live listing just shrank.
-    this.stateListener?.();
-    return true;
   }
 
   /** Disposes: removes the fallback registration and finalizes all sessions (the process 'exit' fallback is hooked by the registry itself). Idempotent. */

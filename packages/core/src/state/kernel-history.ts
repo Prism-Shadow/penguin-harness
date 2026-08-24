@@ -152,10 +152,13 @@ export function isKernelOutdated(kernelVersion: string | null | undefined): bool
  *   `run_in_background`, `input_command`'s empty-poll default became 120000ms, and the
  *   `kill_command` / `kill_subagent` tools joined the set (five `tools.builtin.*` leaves
  *   changed or appeared).
- * - `"2026-08-24"` (current) — subagent steering: `input_subagent` steers a RUNNING child
- *   (a mid-run prompt is a steering interjection, no longer an error) and gained the `abort`
- *   argument (stop the current run, session kept); descriptions teach both. Only the
- *   `tools.builtin.run_subagent` / `tools.builtin.input_subagent` leaves changed.
+ * - `"2026-08-24"` (current) — subagents converge on the conversation model: `input_subagent`
+ *   steers a RUNNING child (a mid-run prompt is a steering interjection, no longer an error),
+ *   gained the `abort` argument (stop the current run, session kept), returns the child's
+ *   latest complete reply, and revives a released `subagent_id` automatically; `kill_subagent`
+ *   is REMOVED (a subagent session is never destroyed) and `kill_command` merged into
+ *   `input_command` as its `kill` argument (a process IS destroyed). Four `tools.builtin.*`
+ *   leaves changed, two disappeared.
  *
  * Generations older than the seeded ones cannot be fully reconstructed; their values match
  * no recorded hash and are conservatively kept by a kernel update (restore-default-config is
@@ -401,17 +404,13 @@ export const KERNEL_HASH_HISTORY: Readonly<Record<string, Readonly<Record<string
     "tools.builtin.edit_file": "165a3e2dabe3d13200a1670f3c23ed2d6561c508439db1972db066719f3549ef",
     "tools.builtin.write_file": "c98253bd5a3b6ff021accda91af016a809a9b50ce56f38a3ed60eeb673c0b130",
     "tools.builtin.exec_command":
-      "c7cf0639eb9434b2eecdd064aabeead52e22c966ddce348f987c744e93f9686f",
+      "c06fa19ecd8c65f92643ae24cb4513606bb77cf457aa3089c317e769380031c6",
     "tools.builtin.input_command":
-      "071daddb34cba05556cda2b6a87d18d5bd73fb863e6e3bd62f033626fbabf017",
-    "tools.builtin.kill_command":
-      "1d35d3be0408349c0bb099c442abfde3975c720e2c85cda3c2b749b359bef891",
+      "d95385f7752681d31a047f09f21c6295f6ed3f344fadafd6c05d6c8fae994ae3",
     "tools.builtin.run_subagent":
-      "febbe9a13d558944b641013ca798842165d8befd275232b399aafecfa0a63436",
+      "792e81a3af9048b73776d4b2e1076eb47f96fc842530c97bdeacb6cc9e209e8d",
     "tools.builtin.input_subagent":
-      "82c97bb2ae29506ee04111c86197eeff6b73c5d7291ea7f675bca145f3bd9cf9",
-    "tools.builtin.kill_subagent":
-      "8d8c11a1ae565b9b8334a498c5fc5b8903a2f657ac4e46d1c3dc9b7288e12ce4",
+      "23091c6ec336b81c64f7f1046f4d58a09047ad30499068e2090551e9d11248b6",
     "tools.builtin.read_image": "05b797a88df1e6a90fb3da67ec654b206f8d81291f89d160a505620afcea38bb",
     "tools.builtin.describe_image":
       "fad6d0cdd483eb53b5d243c0508024ab3b708ce6d3c81933acd291f05d4a265f",

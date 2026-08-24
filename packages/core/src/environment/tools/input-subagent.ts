@@ -2,24 +2,24 @@
  * input_subagent —— accesses a subagent session that `run_subagent` moved to the background
  * (BuiltinTool).
  *
- * Finds the session by `subagent_id`: when `prompt` is empty, nothing is written — it just
- * polls (collecting subagent messages and text deltas buffered during the background period,
- * or waiting for the run to end); when non-empty and the subagent is idle, it's fed in as a new
- * user message to continue on the same child Session (long-running subagent, multi-turn
- * conversation); when non-empty and the subagent is still RUNNING, it is queued as a steering
- * message on the child's own steering queue — the same mechanism a user steers the main
- * session with, delivered as a `[user_steering]` message at the child's next input assembly.
- * The boolean `abort` argument aborts the child's CURRENT run only (the session survives for
- * follow-ups, unlike kill_subagent); combined with a non-empty `prompt` it interrupts and
- * redirects — the prompt starts a fresh round once the aborted one settles. Within the window,
- * queued approval requests from the child session are also passed through (see
- * subagent/session.ts).
+ * A message here is the parent agent's input on the child, exactly like a user's input on any
+ * agent: when `prompt` is empty it just polls; when non-empty and the subagent is idle, it
+ * continues the same child Session with a new round; when non-empty and the subagent is still
+ * RUNNING, it is queued as a steering message on the child's own steering queue — the same
+ * mechanism a user steers the main session with, delivered as a `[user_steering]` message at
+ * the child's next input assembly. The boolean `abort` argument aborts the child's CURRENT
+ * run only; combined with a non-empty `prompt` it interrupts and redirects — the prompt
+ * starts a fresh round once the aborted one settles. Within the window, queued approval
+ * requests from the child session are also passed through (see subagent/session.ts).
  *
- * Difference from `input_command`: once a round of work finishes, the session is **not
- * removed** (kept to receive a follow-up prompt) — it's only released when the parent Session
- * ends, or evicted as an idle session once concurrency is full. Interruption only aborts this
- * particular access, **it never kills the child session** (the subagent was launched
- * independently earlier; the user interrupting one poll shouldn't kill it along the way).
+ * The model-facing output is the child's latest COMPLETE assistant text — every access reads
+ * as "what it last said", not an incremental delta drain (live rendering still flows to the
+ * frontend through the origin-tagged messages).
+ *
+ * Unlike a command's process, a subagent session is never destroyed: a released `subagent_id`
+ * (idle eviction freed its slot) is resumed through the runner and continues — there is no
+ * kill notion here, and interruption only aborts this particular access. The session leaves
+ * for good only with the parent Session itself.
  * Docs: /docs/tools § "Subagents".
  */
 import { partialToolCallOutput, userText } from "../../omnimessage/index.js";
@@ -29,6 +29,7 @@ import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
 import {
   DEFAULT_SUBAGENT_POLL_YIELD_MS,
   DEFAULT_SUBAGENT_YIELD_MS,
+  ManagedSubagentSession,
   resultForSubagentExit,
 } from "./subagent/index.js";
 import { approvalHint } from "./run-subagent.js";
@@ -64,11 +65,36 @@ export function createInputSubagentTool(
         yield delta('Missing required argument "subagent_id" for input_subagent.');
         return { stopReason: "failed" };
       }
-      const session = manager.get(subagentId);
+      let session = manager.get(subagentId);
+      if (!session) {
+        // A subagent session is never destroyed the way a process is: an id whose session
+        // left the registry (idle release) resumes through the runner — the same revival the
+        // panel gets. Only an id this parent never allocated, or a missing/failed resume,
+        // still errors.
+        const clue = manager.releasedInfo(subagentId);
+        const runner = services?.subagentRunner;
+        if (clue && runner?.resume && !manager.isDisposed && manager.makeRoom()) {
+          try {
+            const handle = await runner.resume({
+              sessionId: clue.sessionId,
+              ...(clue.agentId !== undefined ? { agentId: clue.agentId } : {}),
+            });
+            const revived = new ManagedSubagentSession(handle, {
+              ...(clue.agentId !== undefined ? { resumeAgentId: clue.agentId } : {}),
+            });
+            manager.track(revived);
+            manager.register(revived); // The id derives from the session tail: same handle as before.
+            session = revived;
+            yield delta(`[subagent ${subagentId} resumed]\n`);
+          } catch {
+            session = undefined;
+          }
+        }
+      }
       if (!session) {
         yield delta(
           `[input_subagent error: unknown subagent_id ${subagentId} ` +
-            `(the session may have finished and been cleared)]`,
+            `(not from this conversation, or its session could not be resumed)]`,
         );
         return { stopReason: "failed" };
       }
@@ -123,15 +149,22 @@ export function createInputSubagentTool(
         }
       }
 
+      // Text deltas do not mirror into this tool's output (includeText: false): the model
+      // reads the child's latest COMPLETE assistant text below — an idempotent "what it last
+      // said" snapshot — instead of an incremental delta drain. Messages and approvals still
+      // flow through the window as before.
       yield* collectWindow(session, {
         yieldMs,
         toolCallId,
+        includeText: false,
         ...(signal ? { signal } : {}),
         ...(approve ? { approve } : {}),
       });
 
-      // Interruption only aborts this access, it doesn't kill the child session.
+      // Interruption only aborts this access, it doesn't end the child session.
       if (signal?.aborted) return { stopReason: "aborted" };
+      const latest = session.lastAssistantText;
+      if (latest !== null) yield delta(latest);
       if (session.running) {
         return {
           stopReason: "completed",

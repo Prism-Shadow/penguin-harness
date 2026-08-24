@@ -259,7 +259,8 @@ const BG_SUBAGENT_LAUNCH_RE =
 /**
  * Terminal knowledge about background subagents in one scope slice, from the notes the
  * harness itself writes: the `[background_task_done]` notice (kind subagent), an
- * input_subagent poll reporting the session idle, and kill_subagent's removal notes all mean
+ * input_subagent poll reporting the session idle, and legacy kill_subagent removal notes
+ * (historical traces) all mean
  * "no longer running"; a later `still running` poll (or a follow-up round) flips it back.
  * Ids are the registry handles (`subagent-<hex8>`); last mention wins, in item order.
  */

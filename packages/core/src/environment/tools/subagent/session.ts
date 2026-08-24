@@ -100,9 +100,17 @@ export class ManagedSubagentSession {
   // Single wake point: new message / run finished / new approval request all wake a waiting waitWake through it.
   private readonly wakeSignal = new WakeSignal();
 
-  constructor(handle: SubagentHandle) {
+  constructor(handle: SubagentHandle, opts?: { resumeAgentId?: string }) {
     this.handle = handle;
+    this.resumeAgentId = opts?.resumeAgentId;
   }
+
+  /**
+   * The owning Agent recorded at spawn/resume for the revival path (undefined = the parent
+   * Agent's own, i.e. a self-spawn): a released session's registry tombstone carries it so a
+   * later input_subagent on the same id can resume the child (see SubagentSessionManager).
+   */
+  readonly resumeAgentId: string | undefined;
 
   /** Child Session id (one hop of a message's origin); `subagent_id` is derived from its tail so the frontend can correlate it. */
   get sessionId(): string {
@@ -179,6 +187,10 @@ export class ManagedSubagentSession {
    */
   abortRun(): boolean {
     if (this.killed || !this.isRunning) return false;
+    // An abort is always an explicit actor's gesture whose outcome that actor sees directly
+    // (the input_subagent call's own result, or the panel the user pressed stop on): the
+    // settling round must not additionally fire a completion report at the parent.
+    this.reportCurrentRun = false;
     this.runCtrl?.abort();
     return true;
   }
@@ -209,6 +221,14 @@ export class ManagedSubagentSession {
     return this.textBuffer.drain();
   }
 
+  /** The child's most recent complete assistant text, across every round; null before it says anything (see the pump). */
+  private lastAnswer: string | null = null;
+
+  /** What the child last said — the idempotent snapshot input_subagent returns and a completion report carries. */
+  get lastAssistantText(): string | null {
+    return this.lastAnswer;
+  }
+
   /** External wakeup (e.g. the parent tool call was aborted): makes a waiting `waitWake` return immediately. */
   wakeup(): void {
     this.wakeSignal.notify();
@@ -216,7 +236,7 @@ export class ManagedSubagentSession {
 
   // Settle watcher (run_in_background completion reports): fires at the end of EVERY round of a
   // background-launched session (later input_subagent rounds included), until disarmed. A kill
-  // through the kill_subagent tool disarms first — the killer already reports the outcome.
+  // by an explicit per-run abort stays silent — the aborter reads the outcome directly.
   private settleWatcher: (() => void) | null = null;
 
   /** Arms the completion-report watcher (replacing any previous one); fires immediately (microtask) when the session is already idle with a terminal state. */
@@ -359,6 +379,17 @@ export class ManagedSubagentSession {
           ) {
             wroteAny = true;
             this.appendText(p.text);
+          } else if (
+            p.type === "text" &&
+            (p as { role?: string }).role === "assistant" &&
+            typeof p.text === "string" &&
+            p.text
+          ) {
+            // The child's most recent COMPLETE utterance: what input_subagent hands the model
+            // and what a completion report carries — an idempotent "what it last said"
+            // snapshot rather than an incremental delta drain.
+            wroteAny = true;
+            this.lastAnswer = p.text;
           }
         }
         this.wakeSignal.notify();

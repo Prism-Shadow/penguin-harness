@@ -141,7 +141,10 @@ export function createSubagentTool(
           ...(provider !== undefined ? { provider } : {}),
           ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
         });
-        session = new ManagedSubagentSession(handle);
+        session = new ManagedSubagentSession(handle, {
+          // Spawn-time owner for the revival tombstone (undefined = a self-spawn of this Agent).
+          ...(agentId !== undefined ? { resumeAgentId: agentId } : {}),
+        });
         // Live index from the moment of spawn (before any registration): host paths — the
         // subagents panel's steer/abort — reach this child by its session id even while it
         // still runs inside this call's foreground collect window.
@@ -156,7 +159,7 @@ export function createSubagentTool(
       // report (fires at the end of every round until the session is killed), start the run,
       // and hand back the subagent_id. The completion reaches the conversation as a harness
       // user message; the model can still poll or follow up with input_subagent, or stop it
-      // with kill_subagent. The child's messages stream to the host live through the
+      // input_subagent (abort included). The child's messages stream to the host live through the
       // forwarding tap below (its own Trace stays the durable record).
       if (background) {
         const id = manager.register(session);
@@ -166,7 +169,7 @@ export function createSubagentTool(
         // at the approval queue forever, since no collect window ever attaches one) and a
         // live message tap, so the child streams to the frontend past this turn's end. The
         // child's abort signal is its own (ManagedSubagentSession.abortCtrl) — only
-        // kill_subagent, dispose, or registry eviction ends it.
+        // dispose or registry eviction ends it (and a released session can be revived).
         if (approve) session.setPersistentApprovalSink(approve);
         const forward = services?.backgroundForward;
         if (forward) session.setMessageTap(forward);
@@ -180,7 +183,7 @@ export function createSubagentTool(
           stopReason: "completed",
           note:
             `[subagent running in background with subagent_id ${id}; its completion will arrive ` +
-            `as a user message — no need to poll. Use input_subagent to interact or kill_subagent to stop it]`,
+            `as a user message — no need to poll. Use input_subagent to interact (abort: true stops its current run)]`,
         };
       }
 
@@ -230,8 +233,9 @@ export function createSubagentTool(
  * `services.backgroundDone`, which the Session turns into a harness user message. Rounds the
  * HOST starts (the panel's message on an idle child) stay silent: they are the user's own
  * conversation with the child, not dispatched work awaiting a result (see
- * ManagedSubagentSession.startRun's suppressDoneReport). `kill_subagent` disarms it first,
- * and a killed/disposed session never fires (see ManagedSubagentSession.onSettled).
+ * ManagedSubagentSession.startRun's suppressDoneReport), and so does a round ended by an
+ * explicit abort (input_subagent's `abort` / the panel's stop — the aborter sees the outcome
+ * directly; see abortRun). A disposed session never fires (see ManagedSubagentSession.onSettled).
  */
 export function armSubagentDoneReport(
   session: ManagedSubagentSession,
@@ -243,13 +247,16 @@ export function armSubagentDoneReport(
   if (!notify) return;
   session.onSettled(() => {
     const exit = session.exit;
+    // Drain the delta buffer regardless (bounded memory); the report itself carries the
+    // child's latest complete utterance — the same snapshot input_subagent returns.
+    session.drainText();
     notify({
       kind: "subagent",
       id: subagentId,
       label: reportLabel(prompt),
       status: exit?.status ?? "completed",
       detail: exit?.note ?? "",
-      output: tailForReport(session.drainText()),
+      output: tailForReport(session.lastAssistantText ?? ""),
     });
   });
 }

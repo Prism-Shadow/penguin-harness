@@ -361,12 +361,13 @@ export interface SubagentRunner {
   }): Promise<SubagentHandle>;
   /**
    * Revives a released child Session by id (`resumeSession` semantics: its own history,
-   * model and Workspace) and hands back a handle for re-management — the host-path resume
-   * fallback (see SubagentMessageOptions.resume). `agentId` names the owning Agent. A missing
-   * or unrecoverable session is expressed by throwing. Optional — a runner without it simply
-   * leaves the resume fallback unavailable.
+   * model and Workspace) and hands back a handle for re-management — the revival path shared
+   * by the host (see SubagentMessageOptions.resume) and by input_subagent on a released
+   * `subagent_id`. `agentId` names the owning Agent; omitted = the parent Agent's own (a
+   * self-spawn's child). A missing or unrecoverable session is expressed by throwing.
+   * Optional — a runner without it simply leaves revival unavailable.
    */
-  resume?(input: { agentId: string; sessionId: string }): Promise<SubagentHandle>;
+  resume?(input: { agentId?: string; sessionId: string }): Promise<SubagentHandle>;
 }
 
 /**
@@ -594,8 +595,8 @@ export interface EnvironmentInterface {
   ): Promise<SubagentMessageOutcome>;
   /**
    * Host-initiated abort of one child session's CURRENT run (the child-session equivalent of
-   * the user's stop button): the session survives for follow-ups, unlike kill_subagent's
-   * terminate-and-remove. False when the child is unknown or idle. Optional.
+   * the user's stop button): the session survives for follow-ups — a subagent session is
+   * never destroyed. False when the child is unknown or idle. Optional.
    */
   abortBackgroundSubagentRun?(childSessionId: string): boolean;
   /**

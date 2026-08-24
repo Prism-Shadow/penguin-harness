@@ -1009,8 +1009,8 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
   });
 
   // Panel stop for one subagent child (#272): aborts the child's CURRENT run only — the
-  // session survives for steering and follow-ups (kill via the model's kill_subagent is the
-  // one that removes it). 202 aborted; 204 when the child is already idle or unknown (both
+  // session survives for steering and follow-ups — a subagent session is never destroyed.
+  // 202 aborted; 204 when the child is already idle or unknown (both
   // are "nothing left to stop", and the panel treats them alike).
   app.post("/:sessionId/subagents/:childSessionId/abort", (c) => {
     const row = resolveSession(c);

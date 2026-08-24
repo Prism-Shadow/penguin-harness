@@ -58,7 +58,6 @@ import type {
 } from "./omnimessage/index.js";
 import { SUBAGENT_NAME } from "./environment/tools/run-subagent.js";
 import { INPUT_SUBAGENT_NAME } from "./environment/tools/input-subagent.js";
-import { KILL_SUBAGENT_NAME } from "./environment/tools/kill-subagent.js";
 import type { CompactionSettings } from "./engine/context-engine.js";
 import type {
   GenerativeModelConfig,
@@ -703,14 +702,15 @@ export class Agent {
         });
         return subagentHandleFor(childSession);
       },
-      // Host-path resume fallback: revives a RELEASED child session (its own history, model
-      // and Workspace — resumeSession semantics) so the panel can keep talking to it. The
-      // owning Agent comes from the host's session registry; self-owned sessions reuse the
-      // parent Agent instance.
+      // Revival: a RELEASED child session resumes with its own history, model and Workspace
+      // (resumeSession semantics) — reached by the panel and by input_subagent on a released
+      // id alike. The owning Agent comes from the caller's record (the host's session
+      // registry, or the spawn-time tombstone); omitted or self-owned reuses the parent
+      // Agent instance.
       async resume({ agentId, sessionId }) {
-        assertValidId("agent_id", agentId);
+        if (agentId !== undefined) assertValidId("agent_id", agentId);
         const childAgent =
-          agentId === parentAgentId
+          agentId === undefined || agentId === parentAgentId
             ? parentAgent
             : await createAgent({
                 root,
@@ -793,9 +793,9 @@ export class Agent {
     }
 
     // Tool exposure is capped by depth: a (leaf) child Agent that has reached the
-    // max spawn depth no longer gets run_subagent, input_subagent or kill_subagent
-    // (the latter two depend on the subagent_id produced by the former, so exposing
-    // them alone is meaningless).
+    // max spawn depth no longer gets run_subagent or input_subagent (the latter
+    // depends on the subagent_id produced by the former, so exposing it alone is
+    // meaningless).
     const canSpawn = subagentDepth < MAX_SUBAGENT_DEPTH;
     const baseToolConfig = buildToolConfig(this.state);
     // Select tool entries by the session model's type (marked via forModel: vision
@@ -808,7 +808,9 @@ export class Agent {
         (d) =>
           d.name !== SUBAGENT_NAME &&
           d.name !== INPUT_SUBAGENT_NAME &&
-          d.name !== KILL_SUBAGENT_NAME,
+          // Legacy entry still present in stale stored configs; the registry no longer
+          // assembles it, this just keeps the leaf filter symmetrical.
+          d.name !== "kill_subagent",
       );
     }
     const toolConfig = { ...baseToolConfig, customTools };

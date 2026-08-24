@@ -24,10 +24,31 @@ the child session, reachable by the model and the human alike.
   the session survives for steering and follow-up prompts, unlike `kill_subagent`'s
   terminate-and-remove. Combined with a `prompt`, the aborted run settles first and the
   prompt starts a fresh round: interrupt and redirect in one call.
-- The `run_subagent` / `input_subagent` tool descriptions teach both gestures. The built-in
-  default change advances the config kernel version (`2026-08-24`); existing Agents keep
-  their stored descriptions until a kernel update or restore-defaults, while the behavior
-  itself applies to every session immediately.
+- `input_subagent`'s model-facing output is now the child's **most recent complete reply** —
+  an idempotent "what it last said" snapshot on every access, instead of an incremental
+  delta drain (completion reports carry the same snapshot; the frontend's live rendering
+  still flows through the origin-tagged messages).
+- A released `subagent_id` **revives automatically** when the model messages it again: the
+  registry keeps a tombstone (child session id + spawn-time agent) per registration, and the
+  same resume path the panel uses brings the session back under the same id. The only error
+  left is an id this conversation never allocated.
+- The tool descriptions teach all of it. The built-in default change advances the config
+  kernel version (`2026-08-24`); existing Agents keep their stored descriptions until a
+  kernel update or restore-defaults, while the behavior itself applies to every session
+  immediately.
+
+## No kill for subagents; commands fold kill into input_command
+
+A subagent session is like the main agent: always resumable, never destroyed — so the kill
+notion is gone. `kill_subagent` is **removed** (stopping a run is `abort`; releasing an idle
+session is just freeing its slot, and a released id revives on the next message). A command's
+process IS a real OS object that gets destroyed, so its termination becomes a parameter:
+`kill_command` merges into `input_command` as `kill: true` (disarm the completion report,
+drain undelivered output, SIGTERM→SIGKILL the process group, drop the session — exactly the
+old tool's behavior). No backward compatibility is kept for the two removed tool names: a
+stale stored config's entries simply stop assembling, and a model calling them gets the
+standard unknown-tool failure. An explicitly aborted subagent round also sends no completion
+report — the aborter reads the outcome directly.
 
 ## For the user (subagents panel)
 

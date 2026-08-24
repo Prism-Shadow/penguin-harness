@@ -691,7 +691,7 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
           run_in_background: {
             type: "boolean",
             description:
-              "Run the command in the background: return a process_id immediately without waiting. When it exits, its result arrives as an automatic user message — no polling needed. Use for long builds or work you want to continue past; interact via input_command, stop via kill_command. Defaults to false.",
+              "Run the command in the background: return a process_id immediately without waiting. When it exits, its result arrives as an automatic user message — no polling needed. Use for long builds or work you want to continue past; interact via input_command (kill: true terminates it). Defaults to false.",
           },
         },
         required: ["description", "cmd"],
@@ -704,7 +704,7 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
     {
       name: "input_command",
       description:
-        "Interact with a running command session started by exec_command: write to its stdin, send Ctrl-C, or poll for new output. Identify the session with its process_id.",
+        "Interact with a running command session started by exec_command: write to its stdin, send Ctrl-C, poll for new output, or terminate it with kill: true. Identify the session with its process_id.",
       parameters: {
         type: "object",
         properties: {
@@ -722,6 +722,11 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
             description:
               'Characters to write to the command\'s stdin. Send "\\u0003" alone to deliver Ctrl-C (SIGINT); mixing it with other characters is an error. Empty (the default) writes nothing and only polls for new output and exit status.',
           },
+          kill: {
+            type: "boolean",
+            description:
+              "Terminate the command session: kills the whole process group (SIGTERM, then SIGKILL), returns any output not yet delivered, and removes the session — an already-exited session is just removed with its recorded exit status. Defaults to false.",
+          },
           yield_time_ms: {
             type: "number",
             description:
@@ -734,30 +739,6 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
       call_description: true,
       // An empty poll can wait out a build/test run (the yield ceiling is derived from timeoutMs, clamped inside the tool).
       timeoutMs: 130000,
-      maxOutputLength: 16000,
-    },
-    {
-      name: "kill_command",
-      description:
-        "Terminate a background command session started by exec_command: kills the whole process group (SIGTERM, then SIGKILL) and returns any output not yet delivered. Also removes an already-exited session. Identify the session with its process_id.",
-      parameters: {
-        type: "object",
-        properties: {
-          description: {
-            type: "string",
-            description:
-              "Required, and emit it first, before the other arguments: it is shown to the user while the call runs. One short sentence describing what this call is doing and why, written in the user's language.",
-          },
-          process_id: {
-            type: "string",
-            description: "The process_id returned by exec_command for the command session.",
-          },
-        },
-        required: ["description", "process_id"],
-      },
-      permission: "rw",
-      call_description: true,
-      timeoutMs: 30000,
       maxOutputLength: 16000,
     },
     {
@@ -807,7 +788,7 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
           run_in_background: {
             type: "boolean",
             description:
-              "Start the subagent in the background: return a subagent_id immediately without waiting. When it finishes, its answer arrives as an automatic user message — no polling needed. Good for dispatching parallel subtasks; message or steer it mid-run (and abort its current run) via input_subagent, remove it via kill_subagent. Defaults to false.",
+              "Start the subagent in the background: return a subagent_id immediately without waiting. When it finishes, its answer arrives as an automatic user message — no polling needed. Good for dispatching parallel subtasks; message or steer it mid-run (and abort its current run) via input_subagent. Defaults to false.",
           },
         },
         required: ["description", "prompt"],
@@ -821,7 +802,7 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
     {
       name: "input_subagent",
       description:
-        "Interact with a background subagent started by run_subagent: poll for new output, send it a message, or interrupt its current run. A prompt sent while the subagent is RUNNING is delivered mid-run as a steering message (like a user interjecting) — use it to correct course without waiting; sent while it is idle, the prompt continues the same session as a follow-up task. Set abort=true to stop the current run (the session survives for follow-ups; combine with a prompt to interrupt and redirect). Identify the session with its subagent_id. Pending tool approvals of the subagent are surfaced while this tool is waiting.",
+        "Talk to a subagent started by run_subagent, exactly like a user talking to an agent: a prompt sent while it is RUNNING is delivered mid-run as a steering message (use it to correct course without waiting); sent while it is idle, the prompt continues the same session as a follow-up task. Set abort=true to stop the current run (the session survives; combine with a prompt to interrupt and redirect). The output is the subagent's most recent complete reply. A subagent session is never destroyed: a subagent_id whose session was released resumes automatically when you message it. Pending tool approvals of the subagent are surfaced while this tool is waiting.",
       parameters: {
         type: "object",
         properties: {
@@ -842,7 +823,7 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
           abort: {
             type: "boolean",
             description:
-              "Abort the subagent's CURRENT run, like a user pressing stop: the run ends but the session stays available for steering and follow-up prompts (kill_subagent is the one that removes it). With a non-empty prompt, the aborted run settles first and the prompt then starts a fresh run — interrupt and redirect. Defaults to false; a no-op when the subagent is already idle.",
+              "Abort the subagent's CURRENT run, like a user pressing stop: the run ends but the session stays available for steering and follow-up prompts. With a non-empty prompt, the aborted run settles first and the prompt then starts a fresh run — interrupt and redirect. Defaults to false; a no-op when the subagent is already idle.",
           },
           yield_time_ms: {
             type: "number",
@@ -856,30 +837,6 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
       call_description: true,
       // Same generous timeout tier as run_subagent: an empty poll can wait a long time for the subagent to wrap up.
       timeoutMs: 600000,
-      maxOutputLength: 16000,
-    },
-    {
-      name: "kill_subagent",
-      description:
-        "Terminate a background subagent started by run_subagent: aborts its run (denying its pending approvals), returns any answer text not yet delivered, and removes the session. Also removes an idle background subagent, freeing its slot. Identify the session with its subagent_id.",
-      parameters: {
-        type: "object",
-        properties: {
-          description: {
-            type: "string",
-            description:
-              "Required, and emit it first, before the other arguments: it is shown to the user while the call runs. One short sentence describing what this call is doing and why, written in the user's language.",
-          },
-          subagent_id: {
-            type: "string",
-            description: "The subagent_id returned by run_subagent for the background subagent.",
-          },
-        },
-        required: ["description", "subagent_id"],
-      },
-      permission: "rw",
-      call_description: true,
-      timeoutMs: 30000,
       maxOutputLength: 16000,
     },
     // The image-reading tools are mutually exclusive based on the session model's type
