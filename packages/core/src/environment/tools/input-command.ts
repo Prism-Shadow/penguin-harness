@@ -9,6 +9,13 @@
  * running, returns the same `process_id`; once exited, returns the trailing output and exit
  * status and cleans up the session.
  *
+ * `kill: true` terminates the session instead (a process is a real OS object — unlike a
+ * subagent session, it IS destroyed): the pending completion report is disarmed first (this
+ * call reads the outcome right here), the yet-undelivered output drains as this call's own
+ * output, then the whole process group is killed (SIGTERM, escalating to SIGKILL) and the
+ * session leaves the registry. Works on already-exited sessions too (reports the recorded
+ * exit and removes the row).
+ *
  * Shares the same `CommandSessionManager` injected by Environment with exec_command. An
  * interruption only cancels this poll — **it does not kill the background process** (the process
  * was started independently earlier; interrupting one poll shouldn't kill it as a side effect).
@@ -63,6 +70,31 @@ export function createInputCommandTool(
           `[input_command error: unknown process_id ${processId} (the session may have exited and been cleared)]`,
         );
         return { stopReason: "failed" };
+      }
+
+      // Termination path (kill: true): disarm the report, drain, kill the group, drop the row.
+      if (args["kill"] === true) {
+        session.clearExitWatchers();
+        const pending = session.drainPending();
+        if (pending) yield delta(pending);
+        const wasRunning = session.running;
+        const exit = session.exit;
+        manager.kill(processId);
+        if (wasRunning) {
+          return {
+            stopReason: "completed",
+            note: `[process ${processId} killed (SIGTERM to the process group, SIGKILL after a grace period)]`,
+          };
+        }
+        const status = session.error
+          ? `spawn error: ${session.error.message}`
+          : exit?.signal != null
+            ? `terminated by signal ${exit.signal}`
+            : `exit code ${exit?.code ?? "unknown"}`;
+        return {
+          stopReason: "completed",
+          note: `[process ${processId} had already exited (${status}); session removed]`,
+        };
       }
 
       const chars = typeof args["chars"] === "string" ? (args["chars"] as string) : "";

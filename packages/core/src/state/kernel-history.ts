@@ -22,7 +22,7 @@ import { createHash } from "node:crypto";
  * change without it moving. (The reverse — moving it with no default change — is inert rather
  * than an error: nothing is keyed by version, so there is no table to fall out of sync with.)
  */
-export const KERNEL_VERSION = "2026-08-21";
+export const KERNEL_VERSION = "2026-08-24";
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -170,16 +170,20 @@ export function isKernelOutdated(kernelVersion: string | null | undefined): bool
  *   `thinking_level` enum: the tools tab moved again.
  * - `2026-08-20` — the seeded `compaction.max_context_length` rose to 256000, with the
  *   per-model `context_window` cap as its backstop: the runtime tab moved.
- * - `2026-08-21` (current) — background execution: `exec_command` / `run_subagent` gained
+ * - `2026-08-21` — background execution: `exec_command` / `run_subagent` gained
  *   `run_in_background`, `input_command`'s empty-poll default became 120000ms, and the
  *   `kill_command` / `kill_subagent` tools joined the set, moving the tools tab; alongside
  *   them the memory prompt was reworded to name when a fact is worth saving (PR #397), moving
  *   the memory tab.
+ * - `2026-08-24` (current) — the kill notion left: `kill_command` folded into `input_command`
+ *   as its `kill` parameter, `kill_subagent` was removed outright (a subagent session is never
+ *   destroyed — `input_subagent` resumes a released id), and `input_subagent` gained `abort`
+ *   and now returns the subagent's latest reply: the tools tab moved.
  */
 export const KERNEL_DEFAULT_TAB_HASHES: Readonly<Record<KernelTab, string>> = {
   prompt: "048198c37b8d7840352c225fdfcb15baf2679973c6eab4bf400d492daf6ce254",
   runtime: "c952d44ecdd6790e17f02bc1b5056118b56ec7f0987dc2cbe950f6051fddbd20",
-  tools: "8bbd336ff1f3fc283c4e11e54d43dd2bfe4ba2458577bf9eb3b6e3d7be4f3cde",
+  tools: "c24bcf47b1377e9da4dcfb69a1f7240dcdbfff2d420df5db0a5eaec2b7d4087d",
   skills: "7e343aa692e5eaeadfc8add6bb375fb50ac33ef81ebe460490fc219b0f3d707f",
   memory: "53d190390829cc0132bb12e468a6891f2e0576ec0c4022a9b4a5d9233666900d",
   vault: "19bd36a6d4ab442b66583c423450602b817990a9a79bafa21c9b6137fb6b47d8",
@@ -208,6 +212,7 @@ export const KERNEL_SUPERSEDED_TAB_HASHES: KernelSupersededTabHashes = {
     "238440586ad2e075bde04948cf8dc9876301da538aafeb8926cd9c6a5738081b", // before run_subagent's `thinking_level` (#306)
     "c719f2fe8a25bc5c644a4e1a78d26cf960dd0561efc453614af2e395000ed4de", // before `max` joined the ladder
     "074248073c5fe89537ff257cc5d5662159288fc79ede7703eded6b440b4e38e9", // before background execution and the kill tools
+    "8bbd336ff1f3fc283c4e11e54d43dd2bfe4ba2458577bf9eb3b6e3d7be4f3cde", // before the kill tools folded into the input tools
   ],
   // The memory prompt's wording before #397 named when a fact is worth saving.
   memory: ["c28acdda755552967cd0c99ba4ced407eddfa843b3dce228a965da4674676dc7"],

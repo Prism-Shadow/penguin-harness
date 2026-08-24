@@ -871,6 +871,7 @@ export function ChatInput({
   onRetryModelAuth,
   onNewSession,
   controlRef,
+  variant = "session",
 }: {
   status: SessionStatus;
   /**
@@ -937,7 +938,8 @@ export function ChatInput({
    */
   onHandoff?: (target: AgentSummary, input: TaskInputPart[]) => Promise<boolean>;
   onStop: () => Promise<void>;
-  onCompact: () => Promise<void>;
+  /** Manual context compaction (/compact). Optional: without it the command is not offered (the subagent variant has no compaction surface). */
+  onCompact?: () => Promise<void>;
   /** Currently selected model reference ((provider, modelId) is the unique key); null = not yet chosen. */
   modelRef: ModelRefDto | null;
   /**
@@ -1055,6 +1057,16 @@ export function ChatInput({
   modelAuthDead?: boolean;
   /** Navigates to the Models page (where the credential is actually fixed); renders the notice's primary button when supplied. */
   onOpenModels?: () => void;
+  /**
+   * Which surface this composer serves. `"session"` (default) is the main conversation with
+   * every affordance. `"subagent"` drives one subagent child from the panel: the same body,
+   * skills, slash skill commands, thinking level, approval mode, context ring and model badge
+   * — minus what a child has no semantics for (goal mode, image/file attachments and the "+"
+   * menu carrying them, paste/drop file intake; /compact and the follow-up queue are already
+   * gated by their absent callbacks). The model badge is inert here: a child cannot switch
+   * model or agent, so there is no locked-model hint to click for.
+   */
+  variant?: "session" | "subagent";
   /**
    * Clears the auth-dead state and re-enables the composer for another attempt (the state
    * re-arms on the next auth failure). The escape hatch for credential changes the
@@ -1294,6 +1306,12 @@ export function ChatInput({
   const canMidRunSend = steerAction || queueAction;
   const midRunSendLabel = midRun === "queue" ? S.chat.followUpSend : S.chat.steerSend;
   const stopAction = isStopAction(status, midRun);
+  // Locked-model badge text (session and subagent variants): the catalog's display name when
+  // the model is known, the raw id otherwise.
+  const lockedModelLabel = (() => {
+    const m = models?.find((x) => sameModelRef(x, modelRef));
+    return m ? modelLabel(m) : (modelRef?.modelId ?? "…");
+  })();
   // Queued hint: shown after a successful steer until the message shows up in the stream
   // (steeringDeliveredCount increases past the baseline captured at queue time) or the run
   // stops being observable (task no longer running).
@@ -1437,22 +1455,31 @@ export function ChatInput({
       onTextChange?.(next);
     };
     return [
-      {
-        cmd: "/compact",
-        desc: S.chat.compact,
-        run: () => {
-          clearInput();
-          void onCompact();
-        },
-      },
-      {
-        cmd: "/goal",
-        desc: S.chat.goalModeDesc,
-        run: () => {
-          clearInput();
-          toggleGoal(!goalOn);
-        },
-      },
+      ...(onCompact
+        ? [
+            {
+              cmd: "/compact",
+              desc: S.chat.compact,
+              run: () => {
+                clearInput();
+                void onCompact();
+              },
+            },
+          ]
+        : []),
+      // Goal mode is a main-session concept: the subagent variant offers no way in.
+      ...(variant === "session"
+        ? [
+            {
+              cmd: "/goal",
+              desc: S.chat.goalModeDesc,
+              run: () => {
+                clearInput();
+                toggleGoal(!goalOn);
+              },
+            },
+          ]
+        : []),
       // Model switch (active idle session only — the parent passes onSwitchModel just there;
       // draft state has its own model picker). Gated on the model list being loaded: without
       // it the picker would open empty. Running the command consumes the /model token (like
@@ -1987,6 +2014,9 @@ export function ChatInput({
   };
 
   const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
+    // The subagent variant takes text only: a pasted file/image falls through to the
+    // browser's default handling (which drops the binary and keeps any text).
+    if (variant !== "session") return;
     const files: File[] = [];
     for (const item of e.clipboardData.items) {
       if (item.kind === "file") {
@@ -2048,6 +2078,7 @@ export function ChatInput({
    * so the refusal is said out loud instead of silently swallowing the files.
    */
   const addDroppedFiles = (dropped: File[]) => {
+    if (variant !== "session") return; // Text-only surface: drops have nowhere to go.
     const batch = splitDroppedFiles(dropped);
     if (batch.images.length > 0) addFiles(batch.images);
     if (batch.files.length > 0) {
@@ -2070,7 +2101,7 @@ export function ChatInput({
           kept while a Task runs), so dropping works exactly when there is a composer to attach
           to — but bounded to the enclosing ChatDropRegion, so only the chat area reacts.
           Dropped files go through addDroppedFiles into the same intake as the "+" menu. */}
-      <FileDropZone onFiles={addDroppedFiles} />
+      {variant === "session" && <FileDropZone onFiles={addDroppedFiles} />}
       {/* Slash command menu (triggered by typing /; /compact plus one entry per installed skill).
           Height is capped to the room measured above the composer (see upwardMaxH) with internal
           scrolling, so a long skill list never pushes the menu's top edge out of view; the active
@@ -2587,47 +2618,49 @@ export function ChatInput({
                 never disables). The uploads live in here rather than as their own toolbar
                 buttons: one 8x8 slot instead of three, which is the difference between the
                 phone row scrolling and not. */}
-            <PlusMenu
-              items={[
-                {
-                  key: "image",
-                  icon: IMAGE_ICON,
-                  label: S.chat.uploadImage,
-                  // Without vision the images still send — as scratchpad file paths — so the
-                  // entry stays usable and the hint says what will happen instead. Goal mode
-                  // sends them that way on any model, since the objective is re-injected as
-                  // text every round.
-                  desc: vision && !goalOn ? S.chat.uploadImageDesc : S.chat.imagesAsPathHint,
-                  active: images.length > 0,
-                  onSelect: () => imageInputRef.current?.click(),
-                },
-                {
-                  key: "file",
-                  icon: PAPERCLIP_ICON,
-                  label: S.chat.uploadFile,
-                  // The description doubles as the explanation of where the file ends up:
-                  // it is filed into the session scratchpad and reached by path, never
-                  // inlined into the conversation.
-                  desc: S.chat.uploadFileDesc,
-                  active: attachments.length > 0,
-                  // Unlike images, a file cannot ride a goal: nothing folds it into the
-                  // objective that every round re-injects, so the server refuses it.
-                  disabled: goalOn,
-                  onSelect: () => attachmentInputRef.current?.click(),
-                },
-                {
-                  key: "goal",
-                  icon: GOAL_ICON,
-                  label: S.chat.goalMode,
-                  desc: S.chat.goalModeDesc,
-                  active: goalOn,
-                  disabled: running || compacting || busy,
-                  onSelect: () => toggleGoal(!goalOn),
-                },
-              ]}
-              footer={<SteerModeRow steerMode={steerMode} onChangeSteerMode={setSteerMode} />}
-              direction={models && onChangeModel ? "down" : "up"}
-            />
+            {variant === "session" && (
+              <PlusMenu
+                items={[
+                  {
+                    key: "image",
+                    icon: IMAGE_ICON,
+                    label: S.chat.uploadImage,
+                    // Without vision the images still send — as scratchpad file paths — so the
+                    // entry stays usable and the hint says what will happen instead. Goal mode
+                    // sends them that way on any model, since the objective is re-injected as
+                    // text every round.
+                    desc: vision && !goalOn ? S.chat.uploadImageDesc : S.chat.imagesAsPathHint,
+                    active: images.length > 0,
+                    onSelect: () => imageInputRef.current?.click(),
+                  },
+                  {
+                    key: "file",
+                    icon: PAPERCLIP_ICON,
+                    label: S.chat.uploadFile,
+                    // The description doubles as the explanation of where the file ends up:
+                    // it is filed into the session scratchpad and reached by path, never
+                    // inlined into the conversation.
+                    desc: S.chat.uploadFileDesc,
+                    active: attachments.length > 0,
+                    // Unlike images, a file cannot ride a goal: nothing folds it into the
+                    // objective that every round re-injects, so the server refuses it.
+                    disabled: goalOn,
+                    onSelect: () => attachmentInputRef.current?.click(),
+                  },
+                  {
+                    key: "goal",
+                    icon: GOAL_ICON,
+                    label: S.chat.goalMode,
+                    desc: S.chat.goalModeDesc,
+                    active: goalOn,
+                    disabled: running || compacting || busy,
+                    onSelect: () => toggleGoal(!goalOn),
+                  },
+                ]}
+                footer={<SteerModeRow steerMode={steerMode} onChangeSteerMode={setSteerMode} />}
+                direction={models && onChangeModel ? "down" : "up"}
+              />
+            )}
             <ApprovalModeSelect
               value={approvalMode}
               onChange={onChangeApprovalMode}
@@ -2691,6 +2724,19 @@ export function ChatInput({
                 onChange={onChangeModel}
                 disabled={busy}
               />
+            ) : variant === "subagent" ? (
+              /* Subagent composer: the child runs whatever model it was spawned with, and no
+                 /model command exists here — so the badge is pure display, nothing to click. */
+              <span
+                title={modelRef?.modelId ?? ""}
+                className="flex h-8 min-w-0 max-w-44 shrink items-center gap-1.5 rounded-md px-1 text-gray-400 dark:text-gray-500"
+              >
+                <ProviderLogo
+                  provider={modelRef?.provider ?? "custom"}
+                  className="h-4 w-4 shrink-0"
+                />
+                <span className="hidden min-w-0 truncate @md:block">{lockedModelLabel}</span>
+              </span>
             ) : (
               /* Read-only display in session state: both the logo and the name come from the
                  Session DTO's paired fields (no prefix parsing). A button rather than a plain
@@ -2710,12 +2756,7 @@ export function ChatInput({
                   provider={modelRef?.provider ?? "custom"}
                   className="h-4 w-4 shrink-0"
                 />
-                <span className="hidden min-w-0 truncate @md:block">
-                  {(() => {
-                    const m = models?.find((x) => sameModelRef(x, modelRef));
-                    return m ? modelLabel(m) : (modelRef?.modelId ?? "…");
-                  })()}
-                </span>
+                <span className="hidden min-w-0 truncate @md:block">{lockedModelLabel}</span>
               </button>
             )}
             {/* One action button, never two: while running an empty composer means "Stop"

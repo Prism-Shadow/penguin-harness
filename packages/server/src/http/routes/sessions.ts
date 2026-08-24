@@ -27,6 +27,7 @@ import type {
   SessionProcessesResponse,
   SessionResponse,
   SessionsResponse,
+  SubagentMessageResponse,
   RetryNowResponse,
   TaskCreateResponse,
 } from "../../api/types.js";
@@ -822,15 +823,18 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     // approval requests.
     const pendingSteering = deps.manager.pendingSteeringOf(row.sessionId);
     const pendingFollowUps = deps.manager.pendingFollowUpsOf(row.sessionId);
+    const subagents = deps.manager.subagentsOf(row.sessionId);
     const initialEvents: ServerEvent[] = [
       {
         type: "task_state",
         state: deps.manager.statusOf(row.sessionId),
         queued: deps.manager.pendingFollowUpCount(row.sessionId),
-        // Undelivered steering and queued follow-ups ride the snapshot too, so the composer's
-        // queued hints (and what they say) survive a reload.
+        // Undelivered steering, queued follow-ups and live subagent children ride the
+        // snapshot too, so the composer's queued hints and the panel's running marks
+        // survive a reload.
         ...(pendingSteering.length > 0 ? { pendingSteering } : {}),
         ...(pendingFollowUps.length > 0 ? { pendingFollowUps } : {}),
+        ...(subagents.length > 0 ? { subagents } : {}),
       },
       ...deps.manager.pendingApprovals(row.sessionId).map((p) => ({
         type: "approval_request" as const,
@@ -966,6 +970,52 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     const row = resolveSession(c);
     const recall = deps.manager.recallSteering(row.sessionId, pathParam(c, "steerId"));
     return c.json((await recalledResponse(recall)) satisfies RecalledMessageResponse);
+  });
+
+  // Panel message to one subagent child of this session (#272): a user input on the child,
+  // whatever its state — steering while it runs, a follow-up run while it is idle, a revival
+  // (resume-session semantics) when it was released — the same core channel input_subagent
+  // uses. The optional thinkingLevel pins only a round this message starts. The parent
+  // runtime loads on demand (the same get-or-resume path a task uses). 404 subagent_gone
+  // when the child's record does not exist or cannot be revived; 409 subagent_busy when the
+  // child cannot take the message right now.
+  app.post("/:sessionId/subagents/:childSessionId/message", async (c) => {
+    const row = resolveSession(c);
+    const body = await readJson(c);
+    const text = typeof body.text === "string" ? body.text.trim() : "";
+    if (!text) throw badRequest("text must carry the message.");
+    const thinkingLevel = optionalEnum(body, "thinkingLevel", THINKING_LEVELS);
+    const outcome = await deps.manager.sendToSubagent(
+      row.sessionId,
+      pathParam(c, "childSessionId"),
+      text,
+      thinkingLevel,
+    );
+    if (outcome === "gone") {
+      throw new HttpError(
+        404,
+        "subagent_gone",
+        "This subagent session no longer exists and could not be revived.",
+      );
+    }
+    if (outcome === "busy") {
+      throw new HttpError(
+        409,
+        "subagent_busy",
+        "This subagent cannot take a message right now; try again in a moment.",
+      );
+    }
+    return c.json({ outcome } satisfies SubagentMessageResponse);
+  });
+
+  // Panel stop for one subagent child (#272): aborts the child's CURRENT run only — the
+  // session survives for steering and follow-ups — a subagent session is never destroyed.
+  // 202 aborted; 204 when the child is already idle or unknown (both
+  // are "nothing left to stop", and the panel treats them alike).
+  app.post("/:sessionId/subagents/:childSessionId/abort", (c) => {
+    const row = resolveSession(c);
+    const aborted = deps.manager.abortSubagentRun(row.sessionId, pathParam(c, "childSessionId"));
+    return c.body(null, aborted ? 202 : 204);
   });
 
   // Recall a queued follow-up task back to the composer (#287): removes it from the queue

@@ -2588,6 +2588,29 @@ describe("ContextEngine mid-run steering ([user_steering])", () => {
     expect(engine.steer([userText("late")])).toBe(false);
   });
 
+  it("the delivered [user_steering] message keeps the queued input's sender", async () => {
+    const llm = new FakeLLM();
+    const trace = new Writer({ tracesDir: traces, sessionId: "sess_steer_sender" });
+    const engine = new ContextEngine({ llm, environment: steeringEnvironment(), trace });
+
+    // A parent agent steering its child (input_subagent) queues with sender "parent_agent";
+    // human steering leaves the field absent. Both must survive to the delivered message —
+    // origin is a structural fact the child's Trace records.
+    const approve: ApproveFn = async () => {
+      expect(engine.steer([userText("adjust course", "parent_agent")])).toBe(true);
+      expect(engine.steer([userText("human note")])).toBe(true);
+      return "allow";
+    };
+    const all = await collectRun(engine, [userText("go")], approve);
+
+    const delivered = all
+      .map((m) => m.payload as { role?: string; text?: string; sender?: string })
+      .filter((p) => p.role === "user" && (p.text ?? "").startsWith("[user_steering]"));
+    expect(delivered).toHaveLength(2);
+    expect(delivered[0]!.sender).toBe("parent_agent");
+    expect(delivered[1]!.sender).toBeUndefined();
+  });
+
   it("unsteer withdraws a queued entry before delivery; refuses once drained or idle", async () => {
     const llm = new FakeLLM();
     const trace = new Writer({ tracesDir: traces, sessionId: "sess_unsteer" });

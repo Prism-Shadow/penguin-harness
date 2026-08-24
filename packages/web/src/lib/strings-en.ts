@@ -1686,6 +1686,7 @@ Scenarios:
     nodeRunning: "running",
     nodeDone: "done",
     openAsSession: "Jump to this session",
+    subagentGone: "This subagent session no longer exists and could not be revived",
   },
 
   files: {

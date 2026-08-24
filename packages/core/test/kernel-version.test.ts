@@ -299,9 +299,7 @@ describe("applyKernelUpdate", () => {
     const config = mutableConfig(defaultSystemConfig());
     delete config.kernel_version;
     const tools = config.tools as { builtin: Array<Record<string, unknown>> };
-    tools.builtin = tools.builtin.filter(
-      (t) => t.name !== "kill_command" && t.name !== "kill_subagent",
-    );
+    tools.builtin = tools.builtin.slice(0, -1); // an old default, missing a tool added since
     const supersededTabs: KernelSupersededTabHashes = { tools: [kernelTabHash(config, "tools")!] };
     await seedConfig(config);
 

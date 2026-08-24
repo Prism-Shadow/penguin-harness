@@ -66,6 +66,7 @@ import type {
   OmniMessage,
   StopReason,
   TextPayload,
+  TextSender,
   ThinkingPayload,
   TokenCounts,
   TokenUsagePayload,
@@ -619,11 +620,17 @@ export class ContextEngine {
     const fold = input.some(isImageMessage) ? this.deps.foldInputImages : undefined;
     const messages = fold ? await fold(input) : input;
     const texts: string[] = [];
+    // The delivered [user_steering] message keeps the queued input's sender: a parent agent
+    // steering its child (input_subagent) records as "parent_agent" in the child's Trace,
+    // while human steering keeps the field absent — origin stays a structural fact.
+    let sender: TextSender | undefined;
     const rest: OmniMessage[] = [];
     for (const msg of messages) {
-      const p = msg.payload as { type?: string; role?: string; text?: string };
-      if (p.type === "text" && p.role === "user") texts.push(p.text ?? "");
-      else rest.push(msg);
+      const p = msg.payload as { type?: string; role?: string; text?: string; sender?: TextSender };
+      if (p.type === "text" && p.role === "user") {
+        texts.push(p.text ?? "");
+        sender ??= p.sender;
+      } else rest.push(msg);
     }
     // `foldInputImages` is public API, so a third-party adapter can return something else, and
     // both ways it can break lose the picture: an image that survived the fold goes to the one
@@ -633,7 +640,7 @@ export class ContextEngine {
     if (fold && (rest.some(isImageMessage) || texts.length === 0)) {
       throw new Error("foldInputImages must return the input's images folded into a user text.");
     }
-    return [userText(userSteeringText(texts.join("\n\n"))), ...rest];
+    return [userText(userSteeringText(texts.join("\n\n")), sender), ...rest];
   }
 
   /** The actual Task loop behind `run` (split out so run's finally can close the steering window on every exit path). */

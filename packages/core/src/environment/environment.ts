@@ -28,13 +28,18 @@
  * Docs: /docs/tools § "Execution contract".
  */
 import path from "node:path";
-import { partialToolCallOutput, toolCallOutput } from "../omnimessage/index.js";
+import { partialToolCallOutput, toolCallOutput, userText } from "../omnimessage/index.js";
 import type { McpServerConnectResult, OmniMessage, StopReason } from "../omnimessage/index.js";
 import type {
+  ApproveFn,
   BackgroundCommandInfo,
+  BackgroundSubagentInfo,
   BackgroundTaskDoneEvent,
   EnvironmentConfig,
   EnvironmentInterface,
+  SubagentMessageOptions,
+  SubagentMessageOutcome,
+  SubagentRunner,
   ToolConfig,
   ToolDefinition,
   ToolExecutionRequest,
@@ -44,7 +49,7 @@ import type { BuiltinTool, ToolResult } from "./tools/types.js";
 import { BUILTIN_TOOL_FACTORIES } from "./tools/registry.js";
 import { McpToolProvider } from "./mcp/provider.js";
 import { CommandSessionManager } from "./tools/command/index.js";
-import { SubagentSessionManager } from "./tools/subagent/index.js";
+import { ManagedSubagentSession, SubagentSessionManager } from "./tools/subagent/index.js";
 import {
   TRUNCATED_TOOL_OUTPUT_FILE_LIMIT_BYTES,
   TruncatedToolOutputArchive,
@@ -146,6 +151,8 @@ export class Environment implements EnvironmentInterface {
   private readonly commandSessions: CommandSessionManager;
   /** Background subagent session registry: constructed within this Environment and shared between run_subagent / input_subagent. */
   private readonly subagentSessions: SubagentSessionManager;
+  /** The injected child-agent runner (null for embedders without one): the host resume fallback needs it outside any tool call. */
+  private readonly subagentRunner: SubagentRunner | null;
 
   constructor(config: EnvironmentConfig) {
     this.workspaceDir = config.workspaceDir;
@@ -165,6 +172,7 @@ export class Environment implements EnvironmentInterface {
       ...(config.proxyEnv !== undefined ? { proxyEnv: config.proxyEnv } : {}),
     });
     this.subagentSessions = new SubagentSessionManager();
+    this.subagentRunner = config.services?.subagentRunner ?? null;
     const services = {
       ...config.services,
       commandSessions: this.commandSessions,
@@ -267,6 +275,120 @@ export class Environment implements EnvironmentInterface {
   /** Whether a managed subagent session is mid-round (see EnvironmentInterface.hasRunningBackgroundSubagents). */
   hasRunningBackgroundSubagents(): boolean {
     return this.subagentSessions.hasRunning();
+  }
+
+  /** All live subagent child sessions, foreground-window ones included (see EnvironmentInterface.listBackgroundSubagents). */
+  listBackgroundSubagents(): BackgroundSubagentInfo[] {
+    return this.subagentSessions.listLive();
+  }
+
+  /**
+   * Host-initiated message to one child session — a user's input on the child, whatever its
+   * state: steering mid-run, a follow-up run when idle, a revival through the runner when the
+   * session is no longer live (see EnvironmentInterface.sendToBackgroundSubagent). Converges
+   * on the same managed-session channel input_subagent uses; the message carries no sender
+   * (human origin), unlike the model path's "parent_agent". `opts.thinkingLevel` pins only a
+   * round this call starts — steering cannot change the round already in flight.
+   */
+  async sendToBackgroundSubagent(
+    childSessionId: string,
+    text: string,
+    opts?: SubagentMessageOptions,
+  ): Promise<SubagentMessageOutcome> {
+    const session = this.subagentSessions.bySessionId(childSessionId);
+    if (!session) return this.resumeAndRun(childSessionId, text, opts);
+    this.attachHostTap(session);
+    if (session.steer([userText(text)])) return "steered";
+    if (session.running) return "busy";
+    try {
+      // A host round is the user's own conversation with the child, not work the model
+      // dispatched: it must not fire a background completion notice at the parent.
+      session.startRun(text, {
+        ...(opts?.thinkingLevel !== undefined ? { thinkingLevel: opts.thinkingLevel } : {}),
+        suppressDoneReport: true,
+      });
+    } catch {
+      return "gone";
+    }
+    return "started";
+  }
+
+  /**
+   * The resume fallback of sendToBackgroundSubagent: revives the released child Session
+   * (resumeSession semantics via SubagentRunner.resume), re-manages it — live index,
+   * background registration (so the model can address it again by subagent_id), forwarding
+   * tap, and the host approval fallback via track — and starts its next round with the text.
+   */
+  private async resumeAndRun(
+    childSessionId: string,
+    text: string,
+    opts?: SubagentMessageOptions,
+  ): Promise<SubagentMessageOutcome> {
+    const agentId = opts?.resume?.agentId;
+    const runner = this.subagentRunner;
+    if (agentId === undefined || !runner?.resume || this.subagentSessions.isDisposed) {
+      return "gone";
+    }
+    // Same admission rule as a spawn: never evict a running child to make room.
+    if (!this.subagentSessions.makeRoom()) return "busy";
+    let session: ManagedSubagentSession;
+    try {
+      session = new ManagedSubagentSession(
+        await runner.resume({ agentId, sessionId: childSessionId }),
+        { resumeAgentId: agentId },
+      );
+    } catch {
+      return "gone"; // No trace to resume from, or the agent is gone: nothing to revive.
+    }
+    this.subagentSessions.track(session);
+    this.subagentSessions.register(session);
+    this.attachHostTap(session);
+    try {
+      // Host-initiated like the started path: no completion notice at the parent.
+      session.startRun(text, {
+        ...(opts?.thinkingLevel !== undefined ? { thinkingLevel: opts.thinkingLevel } : {}),
+        suppressDoneReport: true,
+      });
+    } catch {
+      return "gone";
+    }
+    return "resumed";
+  }
+
+  /** Host-initiated abort of one child session's current run (see EnvironmentInterface.abortBackgroundSubagentRun). */
+  abortBackgroundSubagentRun(childSessionId: string): boolean {
+    const session = this.subagentSessions.bySessionId(childSessionId);
+    if (!session) return false;
+    this.attachHostTap(session);
+    return session.abortRun();
+  }
+
+  /** Attaches the single subagent run-state listener (see EnvironmentInterface.setSubagentStateListener). */
+  setSubagentStateListener(listener: () => void): void {
+    this.subagentSessions.setStateListener(() => {
+      if (!this.bgDisposed) listener();
+    });
+  }
+
+  /** Attaches the host's session-lifetime fallback approval sink for child sessions (see EnvironmentInterface.setSubagentApprovalFallback). */
+  setSubagentApprovalFallback(approve: ApproveFn): void {
+    this.subagentSessions.setApprovalFallback((toolCall) =>
+      this.bgDisposed ? Promise.resolve("deny") : approve(toolCall),
+    );
+  }
+
+  /**
+   * A host touching a child proves a live-forwarding consumer exists, so attach the message
+   * tap on first touch: the child's messages then reach the frontend the moment they are
+   * produced instead of waiting for the model's next poll. Model-facing text buffering and
+   * poll semantics are unchanged; background launches already attached this tap at launch.
+   */
+  private attachHostTap(session: {
+    hasMessageTap: boolean;
+    setMessageTap(tap: (msg: OmniMessage) => void): void;
+  }): void {
+    if (session.hasMessageTap) return;
+    session.setMessageTap((msg) => this.emitBackgroundForward(msg));
   }
 
   /** Kills one background command process (whole process group) and drops it from the registry; false when the id is unknown. */

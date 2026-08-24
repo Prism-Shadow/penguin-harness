@@ -94,7 +94,7 @@ export function createExecCommandTool(
       // run_in_background: no collect window at all — register immediately, arm the completion
       // report, and hand back the process_id. When the foreground process exits, the report
       // reaches the conversation as a harness user message (see armCommandDoneReport); the
-      // model can still poll/steer it with input_command or stop it with kill_command meanwhile.
+      // model can still poll/steer it — or terminate it — with input_command meanwhile.
       if (background) {
         const id = manager.register(session);
         armCommandDoneReport(session, id, services);
@@ -102,7 +102,7 @@ export function createExecCommandTool(
           stopReason: "completed",
           note:
             `[command running in background with process_id ${id}; its completion will arrive ` +
-            `as a user message — no need to poll. Use input_command to interact or kill_command to stop it]`,
+            `as a user message — no need to poll. Use input_command to interact (kill: true stops it)]`,
         };
       }
 
@@ -143,7 +143,7 @@ export function createExecCommandTool(
  * Arms the completion report of a background-launched command: when the foreground process
  * reaches a terminal state, the report (id, exit facts, tail of the yet-undelivered output)
  * goes to `services.backgroundDone` — the Session turns it into a harness user message.
- * `kill_command` disarms it first (a deliberate kill reports its outcome synchronously), and a
+ * input_command's kill disarms it first (a deliberate kill reports its outcome synchronously), and a
  * disposed Environment drops the event (see Environment.emitBackgroundDone).
  */
 export function armCommandDoneReport(

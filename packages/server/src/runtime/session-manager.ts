@@ -42,11 +42,14 @@ import {
 import type {
   ApproveFn,
   BackgroundCommandInfo,
+  BackgroundSubagentInfo,
   CompactAvailability,
   OmniMessage,
   ProxyEnvPolicy,
   SessionMetaPayload,
   SessionTitleResult,
+  SubagentMessageOptions,
+  SubagentMessageOutcome,
   TextPayload,
   ThinkingLevelName,
 } from "@prismshadow/penguin-core";
@@ -161,6 +164,20 @@ export interface RuntimeSession {
   killBackgroundCommand?(processId: string): boolean;
   /** Whether a background subagent is mid-round (core `Session.hasRunningBackgroundSubagents`); pins the entry against idle eviction. Optional, like listBackgroundCommands. */
   hasRunningBackgroundSubagents?(): boolean;
+  /** All live subagent child sessions of the Session's environment (core `Session.listBackgroundSubagents`). Optional, like listBackgroundCommands. */
+  listBackgroundSubagents?(): BackgroundSubagentInfo[];
+  /** Host message to one child session — steering mid-run, a follow-up run when idle, a revival when released (core `Session.sendToBackgroundSubagent`). Optional. */
+  sendToBackgroundSubagent?(
+    childSessionId: string,
+    text: string,
+    opts?: SubagentMessageOptions,
+  ): Promise<SubagentMessageOutcome>;
+  /** Subscribes the host's session-lifetime fallback approval sink for child sessions (core `Session.setSubagentApprovalFallback`). Optional. */
+  setSubagentApprovalFallback?(approve: ApproveFn): void;
+  /** Aborts one child session's current run, keeping the session (core `Session.abortBackgroundSubagentRun`); false when unknown or idle. Optional. */
+  abortBackgroundSubagentRun?(childSessionId: string): boolean;
+  /** Subscribes subagent run-state changes (core `Session.onSubagentState`): the manager republishes `task_state` with the fresh live listing. Optional. */
+  onSubagentState?(listener: () => void): void;
   /** Releases environment resources — kills the remaining background processes (core `Session.dispose`). Optional, idempotent. */
   dispose?(): void;
 }
@@ -508,6 +525,54 @@ export class SessionManager {
     return (this.entries.get(sessionId)?.pendingSteering ?? []).map((p) => p.info);
   }
 
+  /**
+   * Live subagent children of an ACTIVE runtime entry (empty when the session is not loaded
+   * — after a restart there is no in-process child left to report, so empty is the truth).
+   * Rides `task_state` events and the SSE subscribe snapshot; the panel renders child
+   * running marks from this instead of parsing tool-output text.
+   */
+  subagentsOf(sessionId: string): BackgroundSubagentInfo[] {
+    return this.entries.get(sessionId)?.session.listBackgroundSubagents?.() ?? [];
+  }
+
+  /**
+   * Host message to one child session — a user input on the child, whatever its state:
+   * steering while it runs, a follow-up run while it is idle, a revival (resume-session
+   * semantics) when it is no longer live (core `Session.sendToBackgroundSubagent`). The
+   * parent runtime itself is loaded on demand (ensureEntry — the same get-or-resume path a
+   * task uses), so messaging a child of a long-idle conversation works after a restart too;
+   * the resume fallback names the child's owning Agent from its own session row, which must
+   * belong to the parent's project.
+   */
+  async sendToSubagent(
+    sessionId: string,
+    childSessionId: string,
+    text: string,
+    thinkingLevel?: ThinkingLevelName,
+  ): Promise<SubagentMessageOutcome> {
+    const entry = await this.ensureEntry(sessionId);
+    entry.lastActivityMs = Date.now();
+    const childRow = this.deps.sessions.findById(childSessionId);
+    const resume =
+      childRow && childRow.projectId === entry.projectId
+        ? { agentId: childRow.agentId }
+        : undefined;
+    return (
+      (await entry.session.sendToBackgroundSubagent?.(childSessionId, text, {
+        ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
+        ...(resume ? { resume } : {}),
+      })) ?? "gone"
+    );
+  }
+
+  /** Host abort of one child session's current run (core `Session.abortBackgroundSubagentRun`); false when the parent runtime is not loaded, the child is unknown, or it is idle. */
+  abortSubagentRun(sessionId: string, childSessionId: string): boolean {
+    const entry = this.entries.get(sessionId);
+    if (!entry) return false;
+    entry.lastActivityMs = Date.now();
+    return entry.session.abortBackgroundSubagentRun?.(childSessionId) ?? false;
+  }
+
   /** Queued follow-up tasks awaiting auto-start, as their display/recall info (id + content summary). */
   pendingFollowUpsOf(sessionId: string): PendingFollowUpInfo[] {
     return (this.entries.get(sessionId)?.followUps ?? []).map(followUpInfo);
@@ -581,11 +646,43 @@ export class SessionManager {
    *   the run by core; this signal is the only trigger left when the session sits idle);
    * - live-forwarded background-subagent messages, published to the session channel (the
    *   same feed SSE relays) and recorded for usage — a background child streams to the
-   *   frontend in real time past the launching turn's end, until its terminal state.
+   *   frontend in real time past the launching turn's end, until its terminal state;
+   * - subagent run-state changes, republished as `task_state` so the panel's running
+   *   marks track child rounds structurally instead of parsing tool-output text.
    */
   private registerNoticeListener(sessionId: string, session: RuntimeSession): void {
     session.onBackgroundNotice?.(() => void this.startBackgroundNoticeTask(sessionId));
     session.onBackgroundMessage?.((msg) => this.forwardBackgroundMessage(sessionId, msg));
+    session.onSubagentState?.(() => {
+      const entry = this.entries.get(sessionId);
+      if (entry) this.publishState(entry, entry.status);
+    });
+    // The entry-lifetime approve doubles as the children's fallback approval sink: a child
+    // approval with no window and no background-launch standing sink escalates to the user
+    // (SSE approval_request) instead of parking until the model's next poll — the parent
+    // session idle included.
+    const entry = this.entries.get(sessionId);
+    if (entry) session.setSubagentApprovalFallback?.(this.entryApprove(entry));
+  }
+
+  /**
+   * The entry-lifetime approval callback: the registry, the per-decision approval-mode
+   * re-read, and the SSE escalation are all entry-scoped, so one instance serves every run
+   * of the entry and the children's session-lifetime fallback sink alike.
+   */
+  private entryApprove(entry: RuntimeEntry): ApproveFn {
+    return makeApprove({
+      // Re-reads approval_mode from the DB on every decision (a PATCH takes effect immediately).
+      getMode: () => this.deps.sessions.findById(entry.sessionId)?.approvalMode ?? "always-ask",
+      toolPermission: (name) => entry.session.toolPermission(name),
+      registry: entry.approvals,
+      publishRequest: (pending) =>
+        this.publishEvent(entry, {
+          type: "approval_request",
+          toolCall: pending.toolCall,
+          ...(pending.origin !== undefined ? { origin: pending.origin } : {}),
+        }),
+    });
   }
 
   /** Publishes one live background-subagent message and records its usage (fire-and-forget; the child's own Trace is the durable record). */
@@ -764,17 +861,7 @@ export class SessionManager {
       entry.pendingInputs = [...entry.pendingInputs, ...args.input];
       entry.pendingBootstrap = [];
       this.publishState(entry, "running");
-      const approve = makeApprove({
-        getMode: () => this.deps.sessions.findById(entry.sessionId)?.approvalMode ?? "always-ask",
-        toolPermission: (name) => entry.session.toolPermission(name),
-        registry: entry.approvals,
-        publishRequest: (pending) =>
-          this.publishEvent(entry, {
-            type: "approval_request",
-            toolCall: pending.toolCall,
-            ...(pending.origin !== undefined ? { origin: pending.origin } : {}),
-          }),
-      });
+      const approve = this.entryApprove(entry);
       const goalId = this.deps.goals?.create({
         sessionId: entry.sessionId,
         projectId: entry.projectId,
@@ -938,18 +1025,7 @@ export class SessionManager {
     for (const msg of input) channel.publish(msg);
     this.publishState(entry, "running");
 
-    const approve = makeApprove({
-      // Re-reads approval_mode from the DB on every decision (a PATCH takes effect immediately).
-      getMode: () => this.deps.sessions.findById(entry.sessionId)?.approvalMode ?? "always-ask",
-      toolPermission: (name) => entry.session.toolPermission(name),
-      registry: entry.approvals,
-      publishRequest: (pending) =>
-        this.publishEvent(entry, {
-          type: "approval_request",
-          toolCall: pending.toolCall,
-          ...(pending.origin !== undefined ? { origin: pending.origin } : {}),
-        }),
-    });
+    const approve = this.entryApprove(entry);
     const gen = entry.session.run(input, {
       approve,
       signal: ac.signal,
@@ -1142,7 +1218,9 @@ export class SessionManager {
   abortTask(sessionId: string): boolean {
     const entry = this.entries.get(sessionId);
     if (!entry || !entry.abort) return false;
-    entry.approvals.denyAll();
+    // Deny only the MAIN session's pending approvals: an approval blocks the run the user is
+    // stopping. A subagent child survives the parent's stop, and so does its question.
+    entry.approvals.denyMain();
     entry.abort.abort();
     return true;
   }
@@ -1683,7 +1761,9 @@ export class SessionManager {
       // to the Trace, so its held input (and the aborted connect pair) are the only copy
       // a reload can show until the next run carries the input forward and persists it.
       // Runs that issued a request already cleared them at their first request_begin.
-      entry.approvals.denyAll();
+      // Main approvals only: an origin-tagged approval belongs to a subagent child that
+      // outlives this task — it stays pending for the user (see ApprovalRegistry.denyMain).
+      entry.approvals.denyMain();
       entry.status = "idle";
       entry.abort = null;
       entry.running = null;
@@ -1795,8 +1875,10 @@ export class SessionManager {
   }
 
   private publishState(entry: RuntimeEntry, state: SessionStatus): void {
-    // Every state flip also reports the queued follow-up count and the undelivered steering
-    // mirror, so subscribers can render both hints without a dedicated event type.
+    // Every state flip also reports the queued follow-up count, the undelivered steering
+    // mirror, and the live subagent children, so subscribers can render all three hints
+    // without a dedicated event type.
+    const subagents = entry.session.listBackgroundSubagents?.() ?? [];
     this.publishEvent(entry, {
       type: "task_state",
       state,
@@ -1807,6 +1889,7 @@ export class SessionManager {
       ...(entry.followUps.length > 0
         ? { pendingFollowUps: entry.followUps.map(followUpInfo) }
         : {}),
+      ...(subagents.length > 0 ? { subagents } : {}),
     });
     // The same flip again, this time on the user channel and carrying the Session id: a tab
     // subscribes to the ONE conversation it has open, so the event above can never move any

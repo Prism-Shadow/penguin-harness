@@ -21,6 +21,7 @@ import type {
   PendingFollowUpInfo,
   PendingSteeringInfo,
   SessionStatus,
+  SubagentRuntimeInfo,
 } from "@prismshadow/penguin-server/api";
 import { getGoal, getMe, getMessages } from "../../api/endpoints";
 import { openSessionStream } from "../../api/sse";
@@ -66,6 +67,12 @@ export interface SessionStreamState {
   pendingSteering: PendingSteeringInfo[];
   /** Queued follow-up tasks (from task_state events): per-entry content + recall handle; empty on old servers (the count above still renders a plain hint). */
   pendingFollowUps: PendingFollowUpInfo[];
+  /**
+   * Live subagent children of this session's runtime (from task_state events and the
+   * subscribe snapshot): the panel's structural running marks. Empty for dead/unloaded
+   * runtimes and on old servers — the topology then falls back to its text heuristics.
+   */
+  subagents: SubagentRuntimeInfo[];
   /**
    * Timestamp (ms) of the last main-session auth failure (request_end with status "auth"),
    * or null. Derived from the model, so it survives history replay and resets when
@@ -118,6 +125,7 @@ export function useSessionStream(
   const [queuedFollowUps, setQueuedFollowUps] = useState(0);
   const [pendingSteering, setPendingSteering] = useState<PendingSteeringInfo[]>([]);
   const [pendingFollowUps, setPendingFollowUps] = useState<PendingFollowUpInfo[]>([]);
+  const [subagents, setSubagents] = useState<SubagentRuntimeInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [pendingTick, setPendingTick] = useState(0);
   const [goal, setGoal] = useState<GoalBannerState | null>(null);
@@ -197,6 +205,7 @@ export function useSessionStream(
       setQueuedFollowUps(0);
       setPendingSteering([]);
       setPendingFollowUps([]);
+      setSubagents([]);
       setLoading(false);
       setError(null);
       setGoal(null);
@@ -214,6 +223,7 @@ export function useSessionStream(
     setQueuedFollowUps(0);
     setPendingSteering([]);
     setPendingFollowUps([]);
+    setSubagents([]);
     setPendingTick((t) => t + 1);
 
     // Restore an in-flight goal's banner (only when still active — a long-finished goal
@@ -242,6 +252,7 @@ export function useSessionStream(
       onQueuedFollowUps: setQueuedFollowUps,
       onPendingSteering: setPendingSteering,
       onPendingFollowUps: setPendingFollowUps,
+      onSubagents: setSubagents,
       onLoading: setLoading,
       onError: setError,
       onModelChange: bump,
@@ -326,6 +337,7 @@ export function useSessionStream(
     queuedFollowUps,
     pendingSteering,
     pendingFollowUps,
+    subagents,
     lastAuthFailureMs: (controllerRef.current?.model ?? placeholderRef.current).lastAuthFailureMs,
     dismissModelAuthDead,
     pendingApprovals: controllerRef.current?.pendingApprovals ?? EMPTY_PENDING,

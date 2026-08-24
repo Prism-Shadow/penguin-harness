@@ -1644,6 +1644,8 @@ Benchmark：
     nodeDone: "已完成",
     /** Identity-strip jump: opens the selected subagent's own Session in the chat area. */
     openAsSession: "跳转到该会话",
+    /** The child's session record no longer exists and could not be revived. */
+    subagentGone: "该子会话已不存在，无法恢复",
   },
 
   files: {
