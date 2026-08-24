@@ -67,6 +67,10 @@ function effects(over: Partial<MachinesEffects> = {}): Partial<MachinesEffects> 
     startServer: async () => ({ ok: true }),
     stopServer: async () => true,
     upgrade: async () => ({ kind: "upgraded", detail: "" }),
+    signIn: async () => ({
+      kind: "signed-in",
+      setCookie: ["penguin_session=remote-token; Path=/; HttpOnly"],
+    }),
     portBusy: async () => false,
     waitForHttp: async () => ({ ok: true }),
     openTunnel: () => ({
@@ -719,6 +723,64 @@ describe("machines API", () => {
       await boot();
       const user = await provisionUser(t.app, "member2");
       expect((await apiClient(t.app, user.cookie).get(`/api/machines/${ID}/dirs`)).status).toBe(
+        403,
+      );
+    });
+  });
+
+  describe("signing in to a machine without its password crossing the wire", () => {
+    const ID = "QS7J4YVgSovi-Z2c";
+    const identified = async (over = {}) => {
+      await boot({
+        probe: async () => ({ state: { kind: "running", port: 7364, pid: 1 }, machineId: ID }),
+        openTunnel: () => liveTunnel(),
+        ...over,
+      });
+      await admin.post("/api/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      await admin.post("/api/machines/probe");
+    };
+
+    it("hands back that machine's cookie, renamed into its own namespace", async () => {
+      await identified();
+      const res = await admin.post(`/api/machines/${ID}/signin`);
+      expect(res.status).toBe(200);
+      const setCookie = res.headers.get("set-cookie") ?? "";
+      // hex("QS7J4YVgSovi-Z2c") — the same marker the proxy forwards back to that machine.
+      expect(setCookie).toContain(`penguin_s_${Buffer.from(ID, "utf8").toString("hex")}_`);
+      expect(setCookie).toContain("penguin_session=remote-token");
+    });
+
+    it("never sets a bare cookie, which would collide with this server's own session", async () => {
+      await identified();
+      const setCookie =
+        (await admin.post(`/api/machines/${ID}/signin`)).headers.get("set-cookie") ?? "";
+      expect(setCookie.startsWith("penguin_session=")).toBe(false);
+    });
+
+    it("says so when that machine's password was changed, so a person can sign in by hand", async () => {
+      await identified({
+        signIn: async () => ({ kind: "refused", detail: "admin password has been changed" }),
+      });
+      const res = await admin.post(`/api/machines/${ID}/signin`);
+      expect(res.status).toBe(409);
+      expect(((await res.json()) as { error: { code: string } }).error.code).toBe("signin_refused");
+    });
+
+    it("distinguishes a machine that could not be reached from one that refused", async () => {
+      await identified({ signIn: async () => ({ kind: "failed", detail: "no route to host" }) });
+      expect((await admin.post(`/api/machines/${ID}/signin`)).status).toBe(502);
+    });
+
+    it("404s a machine it does not know", async () => {
+      await boot();
+      expect((await admin.post("/api/machines/NOTAMACHINEaaaa/signin")).status).toBe(404);
+    });
+
+    it("is admin-only, like the rest of this surface", async () => {
+      await identified();
+      const user = await provisionUser(t.app, "member3");
+      expect((await apiClient(t.app, user.cookie).post(`/api/machines/${ID}/signin`)).status).toBe(
         403,
       );
     });

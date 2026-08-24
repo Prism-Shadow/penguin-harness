@@ -41,6 +41,7 @@ import type { InstallRecord } from "./installs.js";
 import { probeServerState } from "./server-state.js";
 import { DIR_LIST_MARK, listDirsCommand } from "./commands.js";
 import { upgradeRemote } from "./upgrade.js";
+import { signInOnRemote } from "./signin.js";
 import { closeShell, runOnShell } from "./ssh-session.js";
 import { readOrCreateMachineId } from "./machine-id.js";
 import { localPortBusy, openTunnel, waitForTunneledHttp } from "./tunnel.js";
@@ -48,6 +49,7 @@ import type { Tunnel } from "./tunnel.js";
 import { startRemoteServer, stopRemoteServer } from "./server-control.js";
 import { parseConnectState, pickTunnelPort, withConnectState } from "./connect-state.js";
 import type { ConnectState } from "./connect-state.js";
+import type { SignInOutcome } from "./signin.js";
 
 /** Why a start was refused before any ssh ran. */
 export type InstallRefusal = "busy" | "unknown-machine" | "unresolvable" | "no-image" | "self";
@@ -70,6 +72,7 @@ export interface MachinesEffects {
   startServer: typeof startRemoteServer;
   stopServer: typeof stopRemoteServer;
   upgrade: typeof upgradeRemote;
+  signIn: typeof signInOnRemote;
   openTunnel: typeof openTunnel;
   portBusy: typeof localPortBusy;
   waitForHttp: typeof waitForTunneledHttp;
@@ -169,6 +172,7 @@ export class MachinesService {
       startServer: startRemoteServer,
       stopServer: stopRemoteServer,
       upgrade: upgradeRemote,
+      signIn: signInOnRemote,
       openTunnel,
       portBusy: localPortBusy,
       waitForHttp: waitForTunneledHttp,
@@ -725,6 +729,26 @@ export class MachinesService {
       }
     });
     await Promise.all(workers);
+  }
+
+  /**
+   * Mints a session on a machine and returns its Set-Cookie lines, or why it could not.
+   *
+   * The credential work happens over there (see signin.ts); this only names the machine and
+   * hands back what it said. `null` for a machine this server does not know — the caller
+   * turns that into a 404 rather than reaching for something.
+   */
+  async signInOn(machineId: string): Promise<SignInOutcome | null> {
+    const machine = this.list().find((entry) => entry.machineId === machineId && !entry.local);
+    if (machine === undefined) return null;
+    const resolved = await this.#effects.resolveTarget(machine.alias);
+    if (resolved === null) {
+      return { kind: "failed", detail: "ssh could not resolve that host." };
+    }
+    return await this.#effects.signIn({
+      target: { alias: machine.alias, user: resolved.settings.user },
+      assets: this.#assets,
+    });
   }
 
   /** Runs `work` with this machine's slot held, or returns null when it is already busy. */

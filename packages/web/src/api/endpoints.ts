@@ -160,6 +160,17 @@ export const getInstall = () => apiFetch<InstallResponse>("/api/install");
 export const loginOnMachine = (machineId: string, body: AuthLoginRequest) =>
   apiFetch<AuthResponse>("/api/auth/login", { method: "POST", body, server: machineId });
 
+/**
+ * Signs this browser in on that machine WITHOUT anyone typing its password: the machine
+ * mints the session itself over ssh and only the cookie comes back. Fails when its admin
+ * password was changed — the manual sign-in is the fallback for exactly that.
+ */
+export const autoSignInOnMachine = (machineId: string) =>
+  apiFetch<{ signedIn: true }>(`/api/machines/${encodeURIComponent(machineId)}/signin`, {
+    method: "POST",
+    body: {},
+  });
+
 /** Whether this browser already holds a session on that machine. */
 export const meOnMachine = (machineId: string) =>
   apiFetch<MeResponse>("/api/me", { server: machineId });

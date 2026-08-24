@@ -148,9 +148,10 @@ export function MachinesPage() {
   /** The machine whose connect POST is in flight — the server has no job to report yet. */
   const [connecting, setConnecting] = useState<string | null>(null);
   /**
-   * Which machines this browser already holds a session on. A machine is a separate server
-   * with its own accounts, so the local session says nothing about it — the only way to
-   * know is to ask, which is what this caches.
+   * Which machines this browser holds a session on. A machine is a separate server with its
+   * own accounts, so the local session says nothing about it — the only way to know is to
+   * ask. Being signed out is not a prompt: for a machine this server installed, the sign-in
+   * settles itself over ssh, and only a machine that refuses that asks a person.
    */
   const [signedIn, setSignedIn] = useState<Record<string, MachineSignIn>>({});
   const [signInTo, setSignInTo] = useState<MachineInfo | null>(null);
@@ -244,14 +245,24 @@ export function MachinesPage() {
     if (connectedIds === "") return;
     let cancelled = false;
     for (const machineId of connectedIds.split(",")) {
-      void api
-        .meOnMachine(machineId)
-        .then(() => {
+      void (async () => {
+        try {
+          await api.meOnMachine(machineId);
           if (!cancelled) setSignedIn((prev) => ({ ...prev, [machineId]: "signed-in" }));
-        })
-        .catch(() => {
+          return;
+        } catch {
+          // Not signed in there yet — which for a machine this server installed is
+          // something it can settle itself, without anyone typing that machine's password.
+        }
+        try {
+          await api.autoSignInOnMachine(machineId);
+          if (!cancelled) setSignedIn((prev) => ({ ...prev, [machineId]: "signed-in" }));
+        } catch {
+          // Its admin password was changed, or it could not be reached: the manual sign-in
+          // is the fallback, and the row offers it.
           if (!cancelled) setSignedIn((prev) => ({ ...prev, [machineId]: "signed-out" }));
-        });
+        }
+      })();
     }
     return () => {
       cancelled = true;
