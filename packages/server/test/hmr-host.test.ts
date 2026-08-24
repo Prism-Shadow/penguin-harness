@@ -414,6 +414,13 @@ const impl = {
 export const hotPlatform = { id: "boom", iface, impl, context: {} };
 `;
 
+/**
+ * The same failing bundle under the id every REAL push carries: hmr/entry.ts re-exports
+ * `packagedPlatform` as `hotPlatform`, so a bundle built by scripts/deploy.mjs is
+ * indistinguishable from the compiled-in default by id alone.
+ */
+const BOOM_PLATFORM_PACKAGED_ID = BOOM_PLATFORM.replace('id: "boom"', 'id: "packaged"');
+
 describe("upgrade boot failure: the previous version is re-booted, not left half-dead", () => {
   let t: TestApp | undefined;
 
@@ -455,5 +462,60 @@ describe("upgrade boot failure: the previous version is re-booted, not left half
     });
     expect(served.status).toBe(200);
     expect((await served.json()) as object).toMatchObject({ servedBy: "recovered-push" });
+  });
+});
+
+describe("upgrade boot failure: recovery re-boots the PUSHED version, not the packaged default", () => {
+  let t: TestApp | undefined;
+
+  afterEach(async () => {
+    if (t) await t.cleanup();
+    t = undefined;
+  });
+
+  it("a failed push over an already-pushed version keeps that version's routes serving", async () => {
+    t = await createTestApp();
+    const cookie = (await loginAdmin(t.app)).cookie;
+
+    // A real deploy: the pushed bundle carries the packaged id, because that is the
+    // export hmr/entry.ts ships.
+    const first = await pushPlatform(t.app, cookie, platformServing(["/api/demo/v1"], "packaged"));
+    expect(first.status).toBe(200);
+    expect((await t.app.request("/api/demo/v1", { headers: { cookie } })).status).toBe(200);
+
+    const bad = await pushPlatform(t.app, cookie, BOOM_PLATFORM_PACKAGED_ID);
+    expect(bad.status).toBe(400);
+
+    // The version that was running before the failed push is running again — recovery
+    // must not fall back to the runtime's compiled-in platform, which does not serve
+    // this route at all.
+    expect((await t.app.request("/api/demo/v1", { headers: { cookie } })).status).toBe(200);
+  });
+
+  it("recovers the RUNNING version even when its own push could not be persisted", async () => {
+    t = await createTestApp();
+    const cookie = (await loginAdmin(t.app)).cookie;
+
+    // v1 lands durably; harness.json names it.
+    expect(
+      (await pushPlatform(t.app, cookie, platformServing(["/api/demo/v1"], "v1"))).status,
+    ).toBe(200);
+
+    // v2 boots but cannot be written: `store/web` as a plain FILE makes persistVersion's
+    // `mkdir store/web` throw EEXIST after the platform bundle is already stored, so the
+    // commit never happens and the manifest still names v1 while v2 serves. v1's own
+    // bundle file is deliberately left readable — the point is which version recovery
+    // CHOOSES, not whether it can load one at all.
+    const webStore = path.join(t.root, "hmr", "store", "web");
+    await fs.rm(webStore, { recursive: true, force: true });
+    await fs.writeFile(webStore, "not a directory");
+    const second = await pushPlatform(t.app, cookie, platformServing(["/api/demo/v2"], "v2"));
+    expect(second.status).toBe(200);
+    expect(((await second.json()) as { persisted: boolean }).persisted).toBe(false);
+    expect((await t.app.request("/api/demo/v2", { headers: { cookie } })).status).toBe(200);
+
+    // A failed push now recovers v2 — what was RUNNING — not v1, what was committed.
+    expect((await pushPlatform(t.app, cookie, BOOM_PLATFORM_PACKAGED_ID)).status).toBe(400);
+    expect((await t.app.request("/api/demo/v2", { headers: { cookie } })).status).toBe(200);
   });
 });
