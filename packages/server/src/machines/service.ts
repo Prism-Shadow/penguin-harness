@@ -20,15 +20,19 @@
  * happened, which is exactly what it did before this file wrote anything down.
  */
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
-import type { MachineInfo, MachineInstallJob } from "../api/types.js";
+import { VERSION } from "@prismshadow/penguin-core";
+import type { MachineInfo, MachineInstallJob, MachineServerStatus } from "../api/types.js";
+import { readServerLock } from "../lock.js";
 import { listHostAliases, resolveTarget } from "./targets.js";
 import { installOnRemote, resolvePushPlan } from "./install-server.js";
 import { parseInstallRecords, withInstallRecord } from "./installs.js";
 import type { InstallRecord } from "./installs.js";
+import { probeServerState } from "./server-state.js";
 
 /** Why a start was refused before any ssh ran. */
-export type InstallRefusal = "busy" | "unknown-machine" | "unresolvable" | "no-image";
+export type InstallRefusal = "busy" | "unknown-machine" | "unresolvable" | "no-image" | "self";
 
 /**
  * The three things this service does to the world, injectable as a set. Production passes
@@ -42,12 +46,28 @@ export interface MachinesEffects {
   resolveTarget: typeof resolveTarget;
   resolvePlan: typeof resolvePushPlan;
   install: typeof installOnRemote;
+  probe: typeof probeServerState;
   /** Injected so a test can pin the recorded timestamp instead of asserting around the clock. */
   now: () => Date;
 }
 
+/** The id of the entry standing for the machine this server runs on. */
+export const LOCAL_MACHINE_ID = "local";
+
+/**
+ * How many machines are probed at once. A probe is an ssh child; someone with fifty
+ * installed machines should not have fifty of them spawned in one breath, and the page is
+ * waiting on the slowest one anyway.
+ */
+const PROBE_CONCURRENCY = 5;
+
 export class MachinesService {
   #job: MachineInstallJob | null = null;
+  /**
+   * Last probe per machine id. In memory on purpose: a status is only true for the moment it
+   * was taken, so carrying it across a restart would be reporting a fact nobody checked.
+   */
+  readonly #statuses = new Map<string, MachineServerStatus>();
   readonly #effects: MachinesEffects;
 
   /**
@@ -68,6 +88,7 @@ export class MachinesService {
       resolveTarget,
       resolvePlan: resolvePushPlan,
       install: installOnRemote,
+      probe: probeServerState,
       now: () => new Date(),
       ...effects,
     };
@@ -88,15 +109,83 @@ export class MachinesService {
   }
 
   /**
-   * The ssh config's host aliases, each carrying what this server last installed there.
-   * Empty when there is no config, which is not an error.
+   * This machine, first: always installed (it is running), always up (it is answering), and
+   * never a target — a server does not push itself onto its own machine. Its version and
+   * port are read directly rather than probed, since both are right here.
+   */
+  #localMachine(): MachineInfo {
+    const lock = readServerLock(this.dataRoot);
+    return {
+      id: LOCAL_MACHINE_ID,
+      alias: os.hostname(),
+      installed: { version: VERSION, at: lock?.startedAt ?? this.#effects.now().toISOString() },
+      local: true,
+      status: {
+        state: "running",
+        checkedAt: this.#effects.now().toISOString(),
+        ...(lock === null ? {} : { port: lock.port }),
+      },
+    };
+  }
+
+  /**
+   * This machine, then the ssh config's host aliases, each carrying what this server last
+   * installed there and the last status probed for it. An empty or missing config is not an
+   * error — it just leaves the local entry alone in the list.
    */
   list(): MachineInfo[] {
     const records = parseInstallRecords(this.#readRecords());
-    return this.#effects.listAliases().map((alias) => {
+    const remotes = this.#effects.listAliases().map((alias): MachineInfo => {
       const id = `ssh:${alias}`;
-      return { id, alias, installed: records[id] ?? null };
+      return {
+        id,
+        alias,
+        installed: records[id] ?? null,
+        local: false,
+        status: this.#statuses.get(id) ?? null,
+      };
     });
+    return [this.#localMachine(), ...remotes];
+  }
+
+  /**
+   * Probes the machines this server has installed on, refreshing their statuses. Only those:
+   * the ssh config can declare hundreds of hosts, and a host nothing was ever installed on
+   * has no server to ask about. The local entry needs no probe — it answers by existing.
+   *
+   * Failures are states, not errors (see server-state.ts), so this always resolves and
+   * always leaves every probed machine with an answer.
+   */
+  async probeInstalled(): Promise<void> {
+    const targets = this.list().filter((machine) => !machine.local && machine.installed !== null);
+    const queue = [...targets];
+    const workers = Array.from({ length: Math.min(PROBE_CONCURRENCY, queue.length) }, async () => {
+      for (let machine = queue.shift(); machine !== undefined; machine = queue.shift()) {
+        const resolved = await this.#effects.resolveTarget(machine.alias);
+        const checkedAt = this.#effects.now().toISOString();
+        if (resolved === null) {
+          // ssh itself cannot name the host any more — the alias is in the config but
+          // unresolvable, which is the same dead end as a refused connection.
+          this.#statuses.set(machine.id, {
+            state: "unreachable",
+            checkedAt,
+            detail: "ssh could not resolve that host.",
+          });
+          continue;
+        }
+        const state = await this.#effects.probe({
+          alias: machine.alias,
+          user: resolved.settings.user,
+        });
+        this.#statuses.set(machine.id, {
+          state: state.kind,
+          checkedAt,
+          ...(state.kind === "running" ? { port: state.port } : {}),
+          ...(state.kind === "unreachable" ? { detail: state.detail } : {}),
+        });
+      }
+    });
+    await Promise.all(workers);
   }
 
   /**
@@ -126,6 +215,9 @@ export class MachinesService {
 
     const machine = this.list().find((entry) => entry.id === machineId);
     if (machine === undefined) return { ok: false, why: "unknown-machine" };
+    // The local entry is a view of this very process, not a target: installing would push
+    // this build over its own program directory while running from it.
+    if (machine.local) return { ok: false, why: "self" };
 
     const plan = this.#effects.resolvePlan(this.dataRoot);
     if (plan === null) return { ok: false, why: "no-image" };

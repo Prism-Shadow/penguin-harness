@@ -24,6 +24,9 @@ export type MachineVerdict =
   | { kind: "already-installed"; version: string | null }
   | { kind: "failed"; step: string; message: string };
 
+/** How a machine's server reads right now, for the row that renders it. */
+export type StatusTone = "busy" | "success" | "attention" | "danger" | "muted";
+
 export interface InstallButtonState {
   /** What the button offers: a fresh install, one already under way, or a repeat of a finished one. */
   action: "install" | "installing" | "reinstall";
@@ -62,8 +65,26 @@ export function installButtonState(
         : selected?.installed != null
           ? "reinstall"
           : "install",
-    disabled: selected === null || runningSomewhere || starting || state.imageVersion === null,
+    disabled:
+      selected === null ||
+      // This machine is the one answering the request; it cannot be a target of itself.
+      selected.local ||
+      runningSomewhere ||
+      starting ||
+      state.imageVersion === null,
   };
+}
+
+/**
+ * The tone a status reads in. `running` and `stopped` are both ordinary outcomes, so only an
+ * unreachable machine is a problem worth colouring as one; a stopped server is settled, not
+ * broken, and an unprobed machine has nothing to say yet.
+ */
+export function statusTone(state: string | undefined): StatusTone {
+  if (state === "running") return "success";
+  if (state === "unreachable") return "danger";
+  if (state === "stopped") return "muted";
+  return "muted";
 }
 
 /**
@@ -82,12 +103,21 @@ export function installButtonState(
  * server can no longer resolve, let alone install to.
  */
 export function installedMachines(state: MachinesResponse): MachineInfo[] {
-  return state.machines
-    .map((machine, index) => ({ machine, index }))
-    .filter((entry) => entry.machine.installed != null)
-    .sort((a, b) => {
-      const at = b.machine.installed!.at.localeCompare(a.machine.installed!.at);
-      return at !== 0 ? at : a.index - b.index;
-    })
-    .map((entry) => entry.machine);
+  return (
+    state.machines
+      .map((machine, index) => ({ machine, index }))
+      // The local entry is pinned to the front rather than sorted in: it is where you are,
+      // not something you did, and its timestamp is this process's start.
+      .filter((entry) => entry.machine.installed != null && !entry.machine.local)
+      .sort((a, b) => {
+        const at = b.machine.installed!.at.localeCompare(a.machine.installed!.at);
+        return at !== 0 ? at : a.index - b.index;
+      })
+      .map((entry) => entry.machine)
+  );
+}
+
+/** The local entry, which the server always puts first. */
+export function localMachine(state: MachinesResponse): MachineInfo | null {
+  return state.machines.find((machine) => machine.local) ?? null;
 }

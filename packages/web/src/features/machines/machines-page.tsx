@@ -27,7 +27,7 @@
  * looking installed the moment anything else was installed or the server restarted.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { MachinesResponse } from "@prismshadow/penguin-server/api";
+import type { MachineInfo, MachinesResponse } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -43,12 +43,31 @@ import { InfoPopover } from "../../components/ui/info-popover";
 import { Skeleton } from "../../components/ui/skeleton";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { ChevronDown, NAV_ICONS } from "../../components/ui/icons";
-import { installButtonState, installedMachines, verdictOf } from "./machines-view";
+import {
+  installButtonState,
+  installedMachines,
+  localMachine,
+  statusTone,
+  verdictOf,
+} from "./machines-view";
 import type { MachineVerdict } from "./machines-view";
 import { MAX_VISIBLE_MACHINES, highlightSegments, matchMachines } from "./machines-match";
+import { probeDelayMs, probeFingerprint } from "./probe-schedule";
 
 /** How often a running job is re-read. Slow enough to be free, fast enough that a step reads as progress. */
 const POLL_MS = 1500;
+
+/** One machine's server state as a line of text, or null when it has not been probed yet. */
+function statusText(machine: MachineInfo): string | null {
+  const status = machine.status;
+  if (status === null) return null;
+  if (status.state === "running") {
+    return status.port === undefined
+      ? S.machines.statusRunning
+      : S.machines.statusRunningOn(status.port);
+  }
+  return status.state === "stopped" ? S.machines.statusStopped : S.machines.statusUnreachable;
+}
 
 /** A finished job's one-line verdict, and the tone that carries it. */
 function verdictLine(verdict: MachineVerdict): { text: string; tone: Tone } {
@@ -119,10 +138,61 @@ export function MachinesPage() {
 
   const machines = useMemo(() => state?.machines ?? [], [state]);
   const installed = useMemo(() => (state === null ? [] : installedMachines(state)), [state]);
-  const matched = useMemo(() => matchMachines(machines, query), [machines, query]);
+  const local = useMemo(() => (state === null ? null : localMachine(state)), [state]);
+  /** Aliases the picker offers: everything except this machine, which is not a target. */
+  const pickable = useMemo(() => machines.filter((machine) => !machine.local), [machines]);
+  const matched = useMemo(() => matchMachines(pickable, query), [pickable, query]);
   const visible = matched.slice(0, MAX_VISIBLE_MACHINES);
   const hiddenCount = matched.length - visible.length;
   const selected = machines.find((machine) => machine.id === selectedId) ?? null;
+
+  /**
+   * Re-probe the installed servers on a widening schedule (probe-schedule.ts). Separate from
+   * the job poll above: that one follows an install and stops when it settles, this one
+   * watches machines nobody is touching and has to stay cheap for hours.
+   */
+  const [probing, setProbing] = useState(false);
+  const settledRounds = useRef(0);
+  const lastPrint = useRef<string | null>(null);
+  const probe = useCallback(async () => {
+    setProbing(true);
+    try {
+      const next = await api.probeMachines();
+      const print = probeFingerprint(next.machines);
+      // A round that changed nothing widens the interval; anything moving resets it.
+      settledRounds.current = print === lastPrint.current ? settledRounds.current + 1 : 0;
+      lastPrint.current = print;
+      setState(next);
+      setError(null);
+    } catch (err) {
+      setError(apiErrorText(err));
+    } finally {
+      setProbing(false);
+    }
+  }, []);
+
+  const probeRef = useRef(probe);
+  probeRef.current = probe;
+  /** Nothing installed anywhere: there is no server to ask about, so no timer runs at all. */
+  const hasInstalled = installed.length > 0;
+  useEffect(() => {
+    if (!hasInstalled) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const arm = (delay: number) => {
+      timer = setTimeout(() => {
+        void probeRef.current().finally(() => {
+          if (!cancelled) arm(probeDelayMs(settledRounds.current));
+        });
+      }, delay);
+    };
+    // The first probe is immediate: opening the page is itself a reason to look.
+    arm(0);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [hasInstalled]);
 
   const install = async () => {
     if (selectedId === null) return;
@@ -292,14 +362,45 @@ export function MachinesPage() {
               </p>
             )}
 
+            {/* This machine, first and on its own: it is where the page is being served
+                from, always up by definition, and never something to install onto. */}
+            {local !== null && (
+              <section className="mt-6">
+                <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400">
+                  {S.machines.localTitle}
+                </h2>
+                <div className="mt-2 flex items-center gap-3 rounded-md border border-gray-200 bg-white px-3 py-2.5 dark:border-gray-800 dark:bg-gray-900">
+                  <span className="shrink-0 text-gray-500 dark:text-gray-400">
+                    <GlyphIcon d={NAV_ICONS.machines} size={ICON_SIZE.rowLead} />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium">{local.alias}</span>
+                  {local.installed !== null && (
+                    <span className={`shrink-0 text-xs ${toneInk.success}`}>
+                      {local.installed.version}
+                    </span>
+                  )}
+                  <span className={`shrink-0 text-xs ${toneInk[statusTone(local.status?.state)]}`}>
+                    {statusText(local) ?? S.machines.statusRunning}
+                  </span>
+                </div>
+              </section>
+            )}
+
             {/* What this server has already installed, standing on the page rather than
                 only inside the picker: it is the answer to "what did I do", which a panel
                 that has to be opened one row at a time cannot give. */}
             {installed.length > 0 && (
               <section className="mt-6">
-                <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400">
-                  {S.machines.installedTitle(installed.length)}
-                </h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="min-w-0 flex-1 text-sm font-semibold text-gray-500 dark:text-gray-400">
+                    {S.machines.installedTitle(installed.length)}
+                  </h2>
+                  {/* The schedule widens on its own (probe-schedule.ts); this is for when
+                      you already know something changed and do not want to wait for it. */}
+                  <Button size="sm" variant="ghost" disabled={probing} onClick={() => void probe()}>
+                    {probing ? S.machines.checking : S.machines.refresh}
+                  </Button>
+                </div>
                 <div className="mt-2 divide-y divide-gray-200 overflow-hidden rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
                   {installed.map((machine) => (
                     <button
@@ -322,7 +423,15 @@ export function MachinesPage() {
                       <span className={`shrink-0 text-xs ${toneInk.success}`}>
                         {machine.installed!.version}
                       </span>
-                      <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
+                      {/* The server over there, as of the last probe. Never colour alone:
+                          the state is named in words, and unprobed says so too. */}
+                      <span
+                        className={`shrink-0 text-xs ${statusText(machine) === null ? "text-gray-400 dark:text-gray-500" : toneInk[statusTone(machine.status?.state)]}`}
+                        title={machine.status?.detail}
+                      >
+                        {statusText(machine) ?? S.machines.statusUnknown}
+                      </span>
+                      <span className="hidden shrink-0 text-xs text-gray-400 sm:inline dark:text-gray-500">
                         {formatDateTime(machine.installed!.at)}
                       </span>
                     </button>

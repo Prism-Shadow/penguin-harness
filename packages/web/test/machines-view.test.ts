@@ -17,16 +17,28 @@ import type {
 import {
   installButtonState,
   installedMachines,
+  localMachine,
+  statusTone,
   verdictOf,
 } from "../src/features/machines/machines-view";
 
 const INSTALLED = { version: "9.9.9", at: "2026-08-24T12:00:00.000Z" };
 
-const fresh = (alias: string): MachineInfo => ({ id: `ssh:${alias}`, alias, installed: null });
-const carrying = (alias: string): MachineInfo => ({
+const fresh = (alias: string): MachineInfo => ({
   id: `ssh:${alias}`,
   alias,
+  installed: null,
+  local: false,
+  status: null,
+});
+const carrying = (alias: string): MachineInfo => ({ ...fresh(alias), installed: INSTALLED });
+/** The entry the server puts first: this very machine. */
+const here = (): MachineInfo => ({
+  id: "local",
+  alias: "workstation",
   installed: INSTALLED,
+  local: true,
+  status: { state: "running", checkedAt: INSTALLED.at, port: 7364 },
 });
 
 function response(
@@ -173,10 +185,10 @@ describe("installedMachines", () => {
 
   it("keeps only the installed ones, most recent first", () => {
     const machines: MachineInfo[] = [
-      { id: "ssh:a", alias: "a", installed: at("2026-08-20T00:00:00.000Z") },
-      { id: "ssh:b", alias: "b", installed: null },
-      { id: "ssh:c", alias: "c", installed: at("2026-08-24T00:00:00.000Z") },
-      { id: "ssh:d", alias: "d", installed: at("2026-08-22T00:00:00.000Z") },
+      { ...fresh("a"), installed: at("2026-08-20T00:00:00.000Z") },
+      fresh("b"),
+      { ...fresh("c"), installed: at("2026-08-24T00:00:00.000Z") },
+      { ...fresh("d"), installed: at("2026-08-22T00:00:00.000Z") },
     ];
     expect(installedMachines(response(null, { machines })).map((m) => m.alias)).toEqual([
       "c",
@@ -188,9 +200,9 @@ describe("installedMachines", () => {
   it("keeps the config's order among installs sharing a timestamp, so the list does not shuffle between polls", () => {
     const same = at("2026-08-24T00:00:00.000Z");
     const machines: MachineInfo[] = [
-      { id: "ssh:x", alias: "x", installed: same },
-      { id: "ssh:y", alias: "y", installed: same },
-      { id: "ssh:z", alias: "z", installed: same },
+      { ...fresh("x"), installed: same },
+      { ...fresh("y"), installed: same },
+      { ...fresh("z"), installed: same },
     ];
     const order = () => installedMachines(response(null, { machines })).map((m) => m.alias);
     expect(order()).toEqual(["x", "y", "z"]);
@@ -199,11 +211,43 @@ describe("installedMachines", () => {
 
   it("does not mutate the response's own machine order (the picker reads it too)", () => {
     const machines: MachineInfo[] = [
-      { id: "ssh:a", alias: "a", installed: at("2026-08-20T00:00:00.000Z") },
-      { id: "ssh:c", alias: "c", installed: at("2026-08-24T00:00:00.000Z") },
+      { ...fresh("a"), installed: at("2026-08-20T00:00:00.000Z") },
+      { ...fresh("c"), installed: at("2026-08-24T00:00:00.000Z") },
     ];
     const state = response(null, { machines });
     installedMachines(state);
     expect(state.machines.map((m) => m.alias)).toEqual(["a", "c"]);
+  });
+});
+
+describe("the local machine", () => {
+  it("is found by its flag, not by its id or position", () => {
+    const state = response(null, { machines: [fresh("a"), here(), fresh("b")] });
+    expect(localMachine(state)?.local).toBe(true);
+    expect(localMachine(response(null))).toBeNull();
+  });
+
+  it("is kept out of the installed list, which is about work done elsewhere", () => {
+    const state = response(null, { machines: [here(), carrying("nas")] });
+    expect(installedMachines(state).map((m) => m.id)).toEqual(["ssh:nas"]);
+  });
+
+  it("can never be an install target, however healthy it looks", () => {
+    expect(installButtonState(here(), response(null), false).disabled).toBe(true);
+  });
+});
+
+describe("statusTone", () => {
+  it("colours only a machine that cannot be reached as a problem", () => {
+    expect(statusTone("unreachable")).toBe("danger");
+  });
+
+  it("treats running as good and stopped as settled — a stopped server is not a fault", () => {
+    expect(statusTone("running")).toBe("success");
+    expect(statusTone("stopped")).toBe("muted");
+  });
+
+  it("recedes for a machine nothing is known about yet", () => {
+    expect(statusTone(undefined)).toBe("muted");
   });
 });
