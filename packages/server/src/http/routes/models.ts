@@ -179,6 +179,10 @@ export function modelsRoutes(deps: AppDeps): Hono<AppEnv> {
     deps.manager.invalidateProjectRuntimes(projectId);
     // Live unlock: open tabs clear their auth-dead composer immediately (no reload needed).
     publishCredentialsUpdated(deps, projectId);
+    // The machines run their own Agents against their own config, so a credential edited
+    // here has to reach them or their Sessions keep failing on the old one. Not awaited:
+    // the person editing a key is not the one who should wait for a set of ssh tunnels.
+    void deps.machines.syncModelsEverywhere(projectId);
     return c.json(res);
   });
 

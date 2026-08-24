@@ -22,7 +22,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { VERSION } from "@prismshadow/penguin-core";
+import { VERSION, loadProjectConfig } from "@prismshadow/penguin-core";
+import type { ProjectConfig } from "@prismshadow/penguin-core";
 import type {
   MachineConnectFailure,
   MachineConnectJob,
@@ -43,6 +44,8 @@ import { DIR_LIST_MARK, listDirsCommand } from "./commands.js";
 import { upgradeRemote } from "./upgrade.js";
 import { signInOnRemote } from "./signin.js";
 import { closeShell, runOnShell } from "./ssh-session.js";
+import { machineApi, syncModelsToMachine } from "./models-sync.js";
+import type { LocalModels } from "./models-sync.js";
 import { readOrCreateMachineId } from "./machine-id.js";
 import { localPortBusy, openTunnel, waitForTunneledHttp } from "./tunnel.js";
 import type { Tunnel } from "./tunnel.js";
@@ -73,6 +76,8 @@ export interface MachinesEffects {
   stopServer: typeof stopRemoteServer;
   upgrade: typeof upgradeRemote;
   signIn: typeof signInOnRemote;
+  /** This server's own Project config, credentials in plaintext — the source of a model sync. */
+  loadConfig: (projectId: string) => Promise<ProjectConfig>;
   openTunnel: typeof openTunnel;
   portBusy: typeof localPortBusy;
   waitForHttp: typeof waitForTunneledHttp;
@@ -173,6 +178,7 @@ export class MachinesService {
       stopServer: stopRemoteServer,
       upgrade: upgradeRemote,
       signIn: signInOnRemote,
+      loadConfig: (projectId) => loadProjectConfig(dataRoot, projectId),
       openTunnel,
       portBusy: localPortBusy,
       waitForHttp: waitForTunneledHttp,
@@ -557,6 +563,10 @@ export class MachinesService {
     const live = this.tunnelPortFor(id);
     if (live !== null) {
       say(`Already connected on port ${live}.`);
+      // Still synced: connecting again is how someone retries after a sync that failed (or
+      // after adding a model here), and re-declaring a live tunnel would be all this did.
+      const known = await this.#effects.resolveTarget(alias);
+      if (known !== null) await this.#syncModels({ alias, user: known.settings.user }, live, say);
       job.result = { ok: true, origin: `http://localhost:${live}` };
       return;
     }
@@ -642,7 +652,65 @@ export class MachinesService {
       return;
     }
     say(`Connected on ${origin}.`);
+    // Before declaring it ready: an Agent started over there resolves its model against THAT
+    // machine's config, so a machine without our credentials is connected and unusable.
+    await this.#syncModels(target, port, say);
     job.result = { ok: true, origin };
+  }
+
+  /**
+   * Hands a machine the Model credentials an Agent over there needs to run at all.
+   *
+   * Failure is reported, never fatal: a machine whose seeded admin password was changed
+   * cannot be signed into from here (machines/signin.ts), and that is a machine you can
+   * still connect to, browse and read — just not one this side can configure. Saying so on
+   * the row beats a connect that fails for a reason nobody can see.
+   */
+  async #syncModels(
+    target: { alias: string; user: string },
+    port: number,
+    say: (line: string) => void,
+    only?: string,
+  ): Promise<void> {
+    const signedIn = await this.#effects.signIn({ target });
+    if (signedIn.kind !== "signed-in") {
+      say(`Models not synced — ${signedIn.detail}`);
+      return;
+    }
+    // Set-Cookie lines reduced to the name=value pairs a request carries.
+    const cookie = signedIn.setCookie.map((line) => line.split(";")[0]?.trim() ?? "").join("; ");
+    const outcome = await syncModelsToMachine({
+      api: machineApi(port, cookie),
+      loadLocal: (projectId) => this.#localModels(projectId),
+      ...(only === undefined ? {} : { only }),
+    });
+    if (outcome.kind === "failed") say(`Models not synced — ${outcome.detail}`);
+    else if (outcome.projects.length > 0) say(`Models synced: ${outcome.projects.join(", ")}.`);
+  }
+
+  /**
+   * This side's model table for a Project, narrowed to the entries worth carrying: an entry
+   * with an inline key or its own base URL is something the machine cannot already have.
+   *
+   * A bare catalog entry is skipped on purpose. Every server seeds the same presets, so
+   * sending them back is at best a no-op — and when this Project has no config file at all,
+   * `loadProjectConfig` answers with exactly those presets, which would otherwise rewrite a
+   * machine's table on behalf of a Project nobody here has configured.
+   */
+  async #localModels(projectId: string): Promise<LocalModels | null> {
+    let config: ProjectConfig;
+    try {
+      config = await this.#effects.loadConfig(projectId);
+    } catch {
+      return null; // Unreadable or legacy-format config: not something to push anywhere.
+    }
+    const models = config.models.filter(
+      (entry) => (entry.api_key ?? "") !== "" || (entry.base_url ?? "") !== "",
+    );
+    return {
+      models,
+      ...(config.default_model !== undefined ? { defaultModel: config.default_model } : {}),
+    };
   }
 
   /**
@@ -798,6 +866,37 @@ export class MachinesService {
       }
     });
     await Promise.all(workers);
+  }
+
+  /**
+   * Pushes a Project's models to every machine currently holding a tunnel.
+   *
+   * Called when the model config changes here: a key rotated on this machine is a key the
+   * remote Agents are still failing with until they get it, and asking someone to reconnect
+   * each machine after editing a credential is asking them to remember an invisible rule.
+   *
+   * Only connected machines, and only through their existing tunnel: this must not open ssh
+   * connections to a hundred hosts because a text field changed. The rest catch up when they
+   * next connect, which is when the credential first matters to them anyway.
+   */
+  async syncModelsEverywhere(projectId: string): Promise<void> {
+    const connected = this.list().filter(
+      (machine) => !machine.local && this.tunnelPortFor(machine.id) !== null,
+    );
+    for (const machine of connected) {
+      const port = this.tunnelPortFor(machine.id);
+      if (port === null) continue; // Dropped while we were working through the list.
+      const resolved = await this.#effects.resolveTarget(machine.alias);
+      if (resolved === null) continue;
+      // Silent: nobody asked for this and there is no job log to write to. A failure here
+      // is the same failure the next connect reports, on the row, where it can be seen.
+      await this.#syncModels(
+        { alias: machine.alias, user: resolved.settings.user },
+        port,
+        () => undefined,
+        projectId,
+      );
+    }
   }
 
   /** Records an id a probe just heard, when there is one and a record to hang it on. */
