@@ -9,7 +9,7 @@ import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Hono } from "hono";
 import type { AppEnv } from "../src/auth/middleware.js";
 import { HmrHost } from "../src/hmr/host.js";
@@ -644,5 +644,149 @@ describe("upgrade provenance: recorded with the version, or not at all", () => {
 
     expect((await manifestOf(t.root)).source).toBeUndefined();
     await expect(readHarnessInfo(t.root)).resolves.toMatchObject({ source: null });
+  });
+});
+
+/**
+ * A platform that boots once and throws on every create() after that, counting on a global
+ * so the count survives the cache-busted re-import recovery does. Pushing this, then a
+ * bundle that cannot boot, produces the DOUBLE fault: the push fails, and re-booting the
+ * previous version fails too — the state host.ts's recoverPrevious describes as "the
+ * process serves a half-stopped App until a successful push or a restart".
+ */
+function platformFailingOnReboot(id: string, path: string): string {
+  return `
+const anySchema = {
+  strictParse: (doc) => ({ ok: true, value: doc === undefined ? {} : doc }),
+  describe: () => ({ kind: "any" }),
+};
+const iface = {
+  kind: "iface",
+  name: "platform",
+  version: 1,
+  context: anySchema,
+  methods: ["park", "info"],
+  children: {},
+  migrations: {},
+};
+const impl = {
+  create(_ctx, context) {
+    globalThis.__doubleFaultBoots = (globalThis.__doubleFaultBoots ?? 0) + 1;
+    if (globalThis.__doubleFaultBoots > 1) throw new Error("re-boot refused");
+    return {
+      park: () => context,
+      info: () => ({ impl: ${JSON.stringify(id)} }),
+      http(request) {
+        const { pathname } = new URL(request.url);
+        if (pathname !== ${JSON.stringify(path)}) return null;
+        return new Response(JSON.stringify({ servedBy: ${JSON.stringify(id)} }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    };
+  },
+};
+export const hotPlatform = { id: ${JSON.stringify(id)}, iface, impl, context: {} };
+`;
+}
+
+const faultGlobals = globalThis as typeof globalThis & { __doubleFaultBoots?: number };
+
+describe("double fault: the upgrade channel survives a failed push whose recovery also fails", () => {
+  let t: TestApp | undefined;
+  let freshRoot: string | undefined;
+
+  afterEach(async () => {
+    if (t) await t.cleanup();
+    if (freshRoot) await fs.rm(freshRoot, { recursive: true, force: true });
+    t = undefined;
+    freshRoot = undefined;
+    faultGlobals.__doubleFaultBoots = 0;
+  });
+
+  it("warns, keeps /api/hmr reachable, and lands the next good push", async () => {
+    faultGlobals.__doubleFaultBoots = 0;
+    t = await createTestApp();
+    const cookie = (await loginAdmin(t.app)).cookie;
+
+    expect(
+      (await pushPlatform(t.app, cookie, platformFailingOnReboot("brittle", "/api/demo/brittle")))
+        .status,
+    ).toBe(200);
+    expect((await t.app.request("/api/demo/brittle", { headers: { cookie } })).status).toBe(200);
+
+    const warnings: string[] = [];
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation(((
+      chunk: string | Uint8Array,
+    ) => {
+      warnings.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write);
+
+    let bad;
+    try {
+      bad = await pushPlatform(t.app, cookie, BOOM_PLATFORM);
+    } finally {
+      spy.mockRestore();
+    }
+
+    // The push failed for the pushed bundle's own reason, and the second failure — the
+    // previous version refusing to come back — is reported on the machine's own log, which
+    // is the operator's only signal that the App behind the routes is stopped.
+    expect(bad.status).toBe(400);
+    expect(JSON.stringify(await bad.json())).toMatch(/failed to boot.*boom/);
+    expect(warnings.join("")).toMatch(/boot-failure recovery failed too/);
+
+    // The claim under test: /api/hmr is runtime-owned, so it answers out of the runtime's
+    // own routes no matter what state the platform tree is in, and a good push repairs the
+    // installation without a restart.
+    const good = await pushPlatform(
+      t.app,
+      cookie,
+      platformServing(["/api/demo/repaired"], "repaired"),
+    );
+    expect(good.status).toBe(200);
+    const served = await t.app.request("/api/demo/repaired", { headers: { cookie } });
+    expect(served.status).toBe(200);
+    expect((await served.json()) as object).toMatchObject({ servedBy: "repaired" });
+  });
+
+  it("leaves the committed version to be restored by a restart", async () => {
+    faultGlobals.__doubleFaultBoots = 0;
+    t = await createTestApp();
+    const cookie = (await loginAdmin(t.app)).cookie;
+
+    expect(
+      (await pushPlatform(t.app, cookie, platformFailingOnReboot("brittle", "/api/demo/brittle")))
+        .status,
+    ).toBe(200);
+    const before = await t.deps.hmr.ensure();
+    expect((await pushPlatform(t.app, cookie, BOOM_PLATFORM)).status).toBe(400);
+
+    // Recovery really did fail: the disposed instance is still the one the host hands out,
+    // which is the half-stopped state a restart is the other way out of. (Compare the
+    // single-fault case above, where ensure() answers with a freshly booted instance.)
+    expect(await t.deps.hmr.ensure()).toBe(before);
+
+    // A failed push persists nothing, so harness.json still names the version that was
+    // committed before it.
+    const root = t.root;
+    freshRoot = root;
+    t.deps.hmr.dispose();
+    t.deps.channels.dispose();
+    t.deps.db.close();
+    t = undefined; // torn down by hand; skip cleanup() (it would rm(root))
+
+    // A real restart is a fresh process, so the bundle's module state starts over.
+    faultGlobals.__doubleFaultBoots = 0;
+
+    const fresh = new HmrHost(root);
+    try {
+      const instance = await fresh.ensure();
+      expect((instance.api as unknown as { info(): { impl: string } }).info().impl).toBe("brittle");
+    } finally {
+      fresh.dispose();
+    }
   });
 });
