@@ -11,10 +11,13 @@
  * registry (live processes + their output buffers), the operation queue the
  * HTTP layer gates on, and the committed on-disk state.
  *
- * Freeze semantics: requests arriving during a swap are ENQUEUED, not
- * rejected — the HTTP layer awaits waitIdle() and proceeds once the swap
- * completes, so a client never observes the stop-the-world window (it only
- * sees latency). Concurrent upgrade requests serialize on the same queue.
+ * Freeze semantics, both directions. Requests arriving during a swap are
+ * ENQUEUED, not rejected — the HTTP layer awaits the gate and proceeds once
+ * the swap completes. Requests already INSIDE the tree hold a ticket
+ * (enter()), and a swap waits for those tickets to come back before it
+ * disposes anything. A client therefore never observes the stop-the-world
+ * window in either direction; it only sees latency. Concurrent upgrade
+ * requests serialize on the same queue.
  *
  * ONE atomic push, THREE independent artifacts: platform code, the CLI's
  * command implementations, and the web dist are three separately compiled
@@ -155,6 +158,15 @@ export type UpgradeOutcome =
 /** How many past versions (platform bundle / cli bundle / web dist, each independently) the store keeps (current + one rollback). */
 const STORE_KEEP = 2;
 
+/**
+ * How long a swap waits for the requests already being served to hand their tickets back
+ * (see enter()). A cap, not a sleep: it resolves the moment the last one returns, and an
+ * ordinary request returns in milliseconds. Past the cap the swap proceeds anyway and
+ * warns — a handler that never returns must not be able to hold the upgrade channel shut,
+ * since replacing a platform is exactly how such a handler gets fixed.
+ */
+const SWAP_DRAIN_MS = 5000;
+
 export class HmrHost {
   readonly resources = new HotResources();
 
@@ -174,6 +186,10 @@ export class HmrHost {
   private initPromise: Promise<Instance<PlatformApi>> | null = null;
   /** The freeze, as a queue: everything the HTTP layer gates on chains here. */
   private opQueue: Promise<unknown> = Promise.resolve();
+  /** Tickets outstanding on the CURRENT instance (see enter()). */
+  private inflight = 0;
+  /** Woken when `inflight` falls back to zero. */
+  private idleWaiters: (() => void)[] = [];
 
   constructor(private readonly root: string) {
     this.hmrDir = path.join(root, "hmr");
@@ -198,6 +214,53 @@ export class HmrHost {
       () => undefined,
       () => undefined,
     );
+  }
+
+  /**
+   * Takes a ticket on the CURRENT platform instance, for a caller that is about to reach
+   * into the running tree (the HTTP seam's handler call, a terminal WebSocket handshake).
+   * Waits out any in-flight swap, then holds the NEXT swap off until the returned release
+   * is called.
+   *
+   * waitIdle() alone cannot do this. It answers "is a swap running right now", which is a
+   * fact about the past by the time the caller acts on it: the caller passes the gate, and
+   * an upgrade arriving one microtask later disposes the tree while that caller is still
+   * inside it. A ticket is the other half — the gate says when it is safe to start, the
+   * ticket says the work has not finished yet — and the two are taken together here, with
+   * no await between them, so an upgrade cannot land in the gap. (upgradeAll publishes
+   * itself on the queue synchronously, so a caller that reaches the gate after that point
+   * waits for the whole swap instead.)
+   *
+   * The ticket covers reaching INTO the tree, not the response's lifetime: a streaming
+   * handler hands back its Response as soon as the stream exists, and holding a ticket for
+   * as long as an SSE subscriber stays connected would mean no installation with an open
+   * browser tab could ever be upgraded.
+   */
+  async enter(): Promise<() => void> {
+    await this.waitIdle();
+    this.inflight += 1;
+    let released = false;
+    return () => {
+      if (released) return; // idempotent: a double release must not decrement twice
+      released = true;
+      this.inflight -= 1;
+      if (this.inflight > 0) return;
+      const waiters = this.idleWaiters;
+      this.idleWaiters = [];
+      for (const wake of waiters) wake();
+    };
+  }
+
+  /** Resolves once every outstanding ticket is back, or false when SWAP_DRAIN_MS elapsed first. */
+  private drainRequests(): Promise<boolean> {
+    if (this.inflight === 0) return Promise.resolve(true);
+    return new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => resolve(false), SWAP_DRAIN_MS);
+      this.idleWaiters.push(() => {
+        clearTimeout(timer);
+        resolve(true);
+      });
+    });
   }
 
   /**
@@ -340,6 +403,15 @@ export class HmrHost {
     const previousAssets = this.assets;
     const assetsDir = target.assets ? await this.materializeAssets(target.assets) : null;
     if (assetsDir !== null) this.publishAssets(assetsDir);
+
+    // The last thing before the tree is disposed: let the requests already inside it
+    // finish. Everything arriving from here on is behind the queue this upgrade published
+    // when it was enqueued, so the count only falls.
+    if (!(await this.drainRequests())) {
+      this.warn(
+        `swapping with ${this.inflight} request(s) still in flight after ${SWAP_DRAIN_MS}ms`,
+      );
+    }
 
     let result;
     try {
