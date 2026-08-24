@@ -380,8 +380,15 @@ export const importMemoryScope = (
 
 // Agent & its configuration ----------------------------------------------------------------
 
-export const listAgents = (projectId: string) =>
-  apiFetch<AgentsResponse>(`/api/projects/${encodeURIComponent(projectId)}/agents`);
+/**
+ * A project's Agents. With a machine, THAT machine's — Agents are per-server, so a Session
+ * created on one can only name an Agent that exists there.
+ */
+export const listAgents = (projectId: string, machineId?: string | null) =>
+  apiFetch<AgentsResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents`,
+    machineId === undefined ? {} : { server: machineId },
+  );
 
 export const createAgent = (projectId: string, body: AgentCreateRequest) =>
   apiFetch<AgentCreateResponse>(`/api/projects/${encodeURIComponent(projectId)}/agents`, {
