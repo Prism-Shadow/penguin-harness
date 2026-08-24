@@ -1,5 +1,11 @@
 # The program moves to the platform's data directory
 
+- **Date:** 2026-08-15
+- **Type:** change
+- **Scope:** `tooling`, `cli`, `desktop`
+
+[中文版](2026-08-15-install-layout.zh.md)
+
 Installs put the program tree in the XDG data directory (`~/.local/share/penguin`, or `%LOCALAPPDATA%\penguin` on Windows) instead of `~/.penguin`. **Your data does not move**: the data root stays `~/.penguin/data`, which is what `PENGUIN_HOME` defaults to.
 
 ## The one-time migration
