@@ -387,7 +387,7 @@ export function BenchmarkCaseBrowser({ projectId, agentId, benchmarkId, caseSumm
   };
 
   return (
-    <div className="grid min-h-[58vh] overflow-hidden rounded-md border border-gray-200 md:grid-cols-[240px_minmax(0,1fr)] dark:border-gray-800">
+    <div className="grid min-h-[58vh] grid-cols-1 overflow-hidden rounded-md border border-gray-200 md:grid-cols-[240px_minmax(0,1fr)] dark:border-gray-800">
       <aside className="border-b border-gray-200 bg-gray-50/60 md:border-b-0 md:border-r dark:border-gray-800 dark:bg-gray-950/30">
         <div className="max-h-44 overflow-y-auto md:max-h-[53vh]">
           <MaterialGroup

@@ -24,3 +24,11 @@ put something out of the reader's reach. Both now stay inside the viewport.
   three columns past the right edge, taking the whole page into a sideways scroll. The table now
   states the minimum width its four columns need and scrolls horizontally inside its own box,
   leaving the page itself unscrolled.
+
+## The same pattern elsewhere
+
+- Two more grids declared responsive column counts with no base track: the Models page's model
+  cards and the Benchmark case browser's sidebar/detail split. Both now state the single-column
+  track below their breakpoint, so neither can be widened by a child's untruncatable content the
+  way the skill cards were. An audit of every `grid-cols-` site in the Web App found no others.
+
