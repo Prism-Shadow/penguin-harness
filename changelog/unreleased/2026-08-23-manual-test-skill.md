@@ -43,3 +43,12 @@ working setup read as a broken one. Two neighbouring documents were corrected to
   `docs/<topic>` branch names impossible in this repo: no such branch is on the remote, and the
   slashed form pushes normally. The `docs-<topic>` names left over from that period are explained
   where the rule is stated, with `git ls-remote --heads origin` as the check if it ever recurs.
+
+## The override says so now
+
+`scripts/run-with-env.mjs` keeps applying its `VAR=value` arguments as defaults — an inherited value
+still wins, which is what makes `PENGUIN_HOME=/somewhere pnpm dev` work at all, since a child
+process cannot tell an inline assignment from an exported one. What changed is that it no longer
+happens in silence: any default the environment displaced is named on stderr before the command
+runs, so a shell-wide export cannot quietly redirect a dev script at another data root.
+

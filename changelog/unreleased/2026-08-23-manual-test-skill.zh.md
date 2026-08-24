@@ -34,3 +34,11 @@
 - `penguin-harness-dev` 删去了「远端存在一个名为 `docs` 的分支，因而本仓库无法创建 `docs/<topic>` 分支名」这一说法：
   远端并不存在这样的分支，带斜杠的形式可以正常推送。那段时期遗留下来的 `docs-<topic>` 命名在规则所在处一并说明，
   并给出 `git ls-remote --heads origin` 作为日后复现时的排查手段。
+
+## 被覆盖时会说出来
+
+`scripts/run-with-env.mjs` 仍然把 `VAR=value` 参数当作默认值——继承来的值依旧优先，这正是
+`PENGUIN_HOME=/somewhere pnpm dev` 得以生效的前提，因为子进程无法区分命令内联赋值与 shell 导出。
+改变的是它不再悄无声息：任何被环境顶掉的默认值，都会在命令运行前打印到 stderr，因此一个全局导出
+再也无法在无人察觉的情况下把开发脚本指向另一个数据根。
+
