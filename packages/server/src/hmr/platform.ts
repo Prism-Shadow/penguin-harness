@@ -247,6 +247,13 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       // Connect first. A tunnel is plumbing; having to establish it by hand before a
       // machine will answer is a chore, not a decision.
       void deps.machines.autoConnect();
+      // ...and the ones ALREADY connected get this server's Model config, which connecting
+      // is otherwise the only thing that carries. A tunnel outlives a push on purpose, so
+      // autoConnect skips a machine that already has one — leaving a machine connected
+      // before a credential was added here holding a config it can never run anything with.
+      // Cheap when there is nothing to do: unchanged machines are skipped from local disk,
+      // before any ssh.
+      void deps.machines.syncConnectedModels();
     }
 
     // ONE app, ONE pointer: every route this App serves — terminal group and business

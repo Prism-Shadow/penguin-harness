@@ -40,6 +40,7 @@ import type { ExecResult } from "./exec.js";
 import { installOnRemote, resolvePushPlan } from "./install-server.js";
 import { parseInstallRecords, withInstallRecord } from "./installs.js";
 import { parseMembers, withMember } from "./membership.js";
+import { fingerprintLocal, parseModelSyncState, withModelSyncState } from "./models-sync-state.js";
 import type { InstallRecord } from "./installs.js";
 import { probeServerState } from "./server-state.js";
 import { DIR_LIST_MARK, listDirsCommand } from "./commands.js";
@@ -330,6 +331,91 @@ export class MachinesService {
   /** Drops a machine from a Project. The program stays installed; only the membership goes. */
   release(projectId: string, address: string): void {
     this.#setMember(projectId, address, false);
+  }
+
+  /** Where the "what did we last send there" prints live, beside the other machine state. */
+  get #syncStateFile(): string {
+    return path.join(this.dataRoot, "machines-models-sync.json");
+  }
+
+  #readSyncState(): string | null {
+    try {
+      return fs.readFileSync(this.#syncStateFile, "utf8");
+    } catch {
+      return null;
+    }
+  }
+
+  /** Writes down what a machine now has, so an unchanged config costs nothing next boot. */
+  async #rememberSynced(address: string, projects: string[]): Promise<void> {
+    if (projects.length === 0) return;
+    const prints: Record<string, string> = {};
+    for (const projectId of projects) {
+      const local = await this.#localModels(projectId);
+      if (local !== null) prints[projectId] = fingerprintLocal(local);
+    }
+    try {
+      fs.writeFileSync(
+        this.#syncStateFile,
+        withModelSyncState(this.#readSyncState(), address, prints),
+      );
+    } catch {
+      // Unwritable: the next boot syncs again, which is wasteful but correct. Losing the
+      // ability to sync over losing the ability to remember would be the wrong trade.
+    }
+  }
+
+  /**
+   * Whether anything this side holds for that machine has changed since it last received it.
+   *
+   * Answered from local disk alone, on purpose: signing in on a machine costs a connection
+   * and an scp, and a boot happens on every hot push. Spending that to discover there was
+   * nothing to do is the cost this exists to avoid.
+   */
+  async #needsModelSync(address: string, projects: string[]): Promise<boolean> {
+    const sent = parseModelSyncState(this.#readSyncState())[address] ?? {};
+    for (const projectId of projects) {
+      const local = await this.#localModels(projectId);
+      if (local === null || local.models.length === 0) continue;
+      if (sent[projectId] !== fingerprintLocal(local)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Brings every already-connected machine up to date with this server's Model config.
+   *
+   * Called when an App boots, which is what a hot push produces — the same hook syncOutOfDate
+   * uses, and for the same reason. Connecting is what used to carry credentials across, and a
+   * tunnel deliberately outlives a push, so a machine connected before a key was added here
+   * would never have received it: autoConnect skips it (it already has a tunnel), and nothing
+   * else asked. That is invisible from the page, since the machine looks connected and well
+   * the entire time.
+   *
+   * Machines whose fingerprints all match are skipped before any ssh happens.
+   */
+  async syncConnectedModels(): Promise<void> {
+    const connected = this.#allMachines().filter(
+      (machine) => !machine.local && this.tunnelPortFor(machine.id) !== null,
+    );
+    for (const machine of connected) {
+      const port = this.tunnelPortFor(machine.id);
+      if (port === null) continue; // Dropped while we were working through the list.
+      const projects = this.projectsUsing(machine.id);
+      if (projects.length === 0) continue;
+      if (!(await this.#needsModelSync(machine.id, projects))) continue;
+      const resolved = await this.#effects.resolveTarget(machine.alias);
+      if (resolved === null) continue;
+      // Silent: nobody asked for this, and there is no job log to write to. A failure here is
+      // the same failure the next connect reports, on the row, where it can be seen.
+      await this.#syncModels(
+        machine.id,
+        { alias: machine.alias, user: resolved.settings.user },
+        port,
+        () => undefined,
+        projects,
+      );
+    }
   }
 
   /** Every Project on this server that uses a given machine — who its credentials belong to. */
@@ -678,6 +764,7 @@ export class MachinesService {
       const known = await this.#effects.resolveTarget(alias);
       if (known !== null) {
         await this.#syncModels(
+          id,
           { alias, user: known.settings.user },
           live,
           say,
@@ -771,7 +858,7 @@ export class MachinesService {
     say(`Connected on ${origin}.`);
     // Before declaring it ready: an Agent started over there resolves its model against THAT
     // machine's config, so a machine without our credentials is connected and unusable.
-    await this.#syncModels(target, port, say, this.projectsUsing(id));
+    await this.#syncModels(id, target, port, say, this.projectsUsing(id));
     job.result = { ok: true, origin };
   }
 
@@ -784,6 +871,7 @@ export class MachinesService {
    * the row beats a connect that fails for a reason nobody can see.
    */
   async #syncModels(
+    address: string,
     target: { alias: string; user: string },
     port: number,
     say: (line: string) => void,
@@ -807,6 +895,9 @@ export class MachinesService {
       say(`Models not synced — ${outcome.detail}`);
       return;
     }
+    // Recorded only for what actually landed: a Project that failed must be retried, and a
+    // fingerprint written for it would say the machine has something it does not.
+    await this.#rememberSynced(address, outcome.projects);
     // Creating a Project on somebody's machine is a thing done TO that machine, so it is
     // named rather than folded into the count.
     if (outcome.created.length > 0) say(`Created there: ${outcome.created.join(", ")}.`);
@@ -1057,6 +1148,7 @@ export class MachinesService {
       // Silent: nobody asked for this and there is no job log to write to. A failure here
       // is the same failure the next connect reports, on the row, where it can be seen.
       await this.#syncModels(
+        machine.id,
         { alias: machine.alias, user: resolved.settings.user },
         port,
         () => undefined,

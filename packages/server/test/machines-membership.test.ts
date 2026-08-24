@@ -15,6 +15,11 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { parseMembers, withMember } from "../src/machines/membership.js";
+import {
+  fingerprintLocal,
+  parseModelSyncState,
+  withModelSyncState,
+} from "../src/machines/models-sync-state.js";
 import { MachinesService } from "../src/machines/service.js";
 import type { MachinesEffects } from "../src/machines/service.js";
 
@@ -126,5 +131,39 @@ describe("machines belong to a Project", () => {
     // This is what decides whose Model keys may be written to that host.
     expect(service.projectsUsing("ssh:nas").sort()).toEqual(["default_project", "other"]);
     expect(service.projectsUsing("ssh:build-box")).toEqual([]);
+  });
+});
+
+describe("what a machine was last sent", () => {
+  it("fingerprints this side's half, so the check needs no ssh", () => {
+    const base = { models: [{ provider: "deepseek", model_id: "x", api_key: "k1" }] };
+    // Every field that would reach the machine moves it...
+    expect(fingerprintLocal(base)).not.toBe(
+      fingerprintLocal({ models: [{ provider: "deepseek", model_id: "x", api_key: "k2" }] }),
+    );
+    expect(fingerprintLocal(base)).not.toBe(
+      fingerprintLocal({ ...base, defaultModel: { provider: "deepseek", model_id: "x" } }),
+    );
+    // ...and an identical half does not, which is what makes a boot cost nothing.
+    expect(fingerprintLocal(base)).toBe(
+      fingerprintLocal({ models: [{ provider: "deepseek", model_id: "x", api_key: "k1" }] }),
+    );
+  });
+
+  it("remembers per machine and per Project, and survives damage", () => {
+    const once = withModelSyncState(null, "ssh:nas", { default_project: "aaa" });
+    const twice = withModelSyncState(once, "ssh:other", { default_project: "bbb" });
+    expect(parseModelSyncState(twice)).toEqual({
+      "ssh:nas": { default_project: "aaa" },
+      "ssh:other": { default_project: "bbb" },
+    });
+    // Merged, not replaced: a second Project on the same machine must not erase the first.
+    const third = withModelSyncState(twice, "ssh:nas", { field_work: "ccc" });
+    expect(parseModelSyncState(third)["ssh:nas"]).toEqual({
+      default_project: "aaa",
+      field_work: "ccc",
+    });
+    // Damage reads as "nothing sent yet" — one wasted sync, never a wrong skip.
+    expect(parseModelSyncState("{ not json")).toEqual({});
   });
 });
