@@ -1233,7 +1233,6 @@ export const en: Strings = {
     workspaceHere: "here",
     /** Why a listed machine cannot be picked — shown ON its row, where the question is asked. */
     workspaceMachineWhy: {
-      "not-connected": "not connected",
       "no-identity": "not identified",
     },
     workspaceUseThis: "Use this dir",

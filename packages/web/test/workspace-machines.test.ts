@@ -75,11 +75,12 @@ describe("workspaceMachines", () => {
     });
   });
 
-  it("LISTS an installed machine with no tunnel, disabled, saying why", () => {
-    // The question "why can I not pick that machine?" is asked at the row, so the answer
-    // has to be there. Omitting it is indistinguishable from a broken feature.
+  it("offers an installed machine even with no tunnel — browsing goes over ssh", () => {
+    // A tunnel is for reaching that machine's own API. Picking a workspace does not do
+    // that, so requiring a connect first made one a prerequisite for a directory listing.
     const [, cold] = workspaceMachines(state([here, installedNotConnected]));
-    expect(cold).toMatchObject({ label: "cold", selectable: false, reason: "not-connected" });
+    expect(cold).toMatchObject({ label: "cold", selectable: true });
+    expect(cold?.reason).toBeUndefined();
   });
 
   it("lists a connected machine that has no identity yet, with its own reason", () => {

@@ -28,7 +28,7 @@ export interface WorkspaceMachine {
   /** False when its filesystem cannot be reached; `reason` says what is missing. */
   selectable: boolean;
   /** Why it cannot be browsed, for the row to render. Absent when it can. */
-  reason?: "not-connected" | "no-identity";
+  reason?: "no-identity";
 }
 
 /**
@@ -61,13 +61,11 @@ export function workspaceMachines(state: MachinesResponse | null): WorkspaceMach
       });
       continue;
     }
-    out.push({
-      id: machine.machineId,
-      label: machine.alias,
-      local: false,
-      selectable: machine.origin !== null,
-      ...(machine.origin === null ? { reason: "not-connected" as const } : {}),
-    });
+    // A tunnel is NOT required: this server browses that machine's directories over ssh
+    // (see the machines service's listDirs). The tunnel is for reaching that machine's own
+    // API, which picking a workspace does not do — requiring one here made a connect a
+    // prerequisite for reading a directory listing, which it never was.
+    out.push({ id: machine.machineId, label: machine.alias, local: false, selectable: true });
   }
   return out;
 }

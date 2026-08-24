@@ -724,6 +724,183 @@ describe("machines API", () => {
     });
   });
 
+  describe("connecting without being asked", () => {
+    const listed = async () =>
+      ((await (await admin.get("/api/machines")).json()) as MachinesResponse).machines;
+
+    it("opens a tunnel to an installed machine that has none", async () => {
+      await boot({ openTunnel: () => liveTunnel() });
+      await admin.post("/api/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect((await listed()).find((m) => m.id === "ssh:nas")?.origin).toBeNull();
+
+      await t.deps.machines.autoConnect();
+      expect((await listed()).find((m) => m.id === "ssh:nas")?.origin).toBe(
+        "http://localhost:7364",
+      );
+    });
+
+    it("starts a server that is down — a connect IS that decision", async () => {
+      let started = 0;
+      let up = false;
+      await boot({
+        probe: async () =>
+          up
+            ? { state: { kind: "running" as const, port: 7364, pid: 9 }, machineId: null }
+            : { state: { kind: "stopped" as const }, machineId: null },
+        startServer: async () => {
+          started++;
+          up = true;
+          return { ok: true };
+        },
+        openTunnel: () => liveTunnel(),
+      });
+      await admin.post("/api/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      started = 0; // the install's own restart is not the subject
+      await t.deps.machines.autoConnect();
+      expect(started).toBe(1);
+    });
+
+    it("leaves alone a machine that is already connected", async () => {
+      let tunnels = 0;
+      await boot({
+        openTunnel: () => {
+          tunnels++;
+          return liveTunnel();
+        },
+      });
+      await admin.post("/api/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      await t.deps.machines.autoConnect();
+      await t.deps.machines.autoConnect();
+      expect(tunnels).toBe(1);
+    });
+
+    it("never touches a machine with nothing installed on it", async () => {
+      let tunnels = 0;
+      await boot({
+        openTunnel: () => {
+          tunnels++;
+          return liveTunnel();
+        },
+      });
+      await t.deps.machines.autoConnect();
+      expect(tunnels).toBe(0);
+    });
+
+    it("does not clobber the log of a connect somebody is watching", async () => {
+      await boot({ openTunnel: () => liveTunnel() });
+      await admin.post("/api/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      await admin.post("/api/machines/ssh:nas/connect");
+      await waitFor(() => t.deps.machines.connectJob()?.running === false);
+      const watched = t.deps.machines.connectJob();
+
+      await t.deps.machines.autoConnect();
+      // Same job object, same log: background work owns no part of the visible one.
+      expect(t.deps.machines.connectJob()).toBe(watched);
+    });
+
+    it("carries on past a machine it cannot reach", async () => {
+      await boot({
+        openTunnel: () => liveTunnel(),
+        startServer: async () => ({ ok: false, detail: "port in use" }),
+        probe: async () => ({ state: { kind: "stopped" }, machineId: null }),
+      });
+      for (const id of ["ssh:nas", "ssh:build-box"]) {
+        await admin.post(`/api/machines/${id}/install`);
+        await waitFor(() => t.deps.machines.job()?.running === false);
+      }
+      await expect(t.deps.machines.autoConnect()).resolves.toBeUndefined();
+    });
+  });
+
+  describe("one heavy operation per machine", () => {
+    it("the automatic sync skips a machine a person is installing to", async () => {
+      // Both copy tens of megabytes over one ssh connection. Racing them against a single
+      // host is how a 30-second command times out with nothing to say — which then reads
+      // as the remote refusing something it never saw.
+      let release = () => {};
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let upgrades = 0;
+      await boot({
+        install: async (o) => {
+          await held;
+          o.onProgress?.("done");
+          return { kind: "installed", output: "", identity: IDENTITY };
+        },
+        upgrade: async () => {
+          upgrades++;
+          return { kind: "upgraded", detail: "" };
+        },
+        resolvePlan: () => ({
+          baseVersion: "10.0.0",
+          harness: null,
+          hmrDir: null,
+          version: "10.0.0",
+        }),
+      });
+      await admin.post("/api/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === true);
+
+      // A push lands mid-install and fans out; nas is busy, so it is left alone.
+      await t.deps.machines.syncOutOfDate();
+      expect(upgrades).toBe(0);
+
+      release();
+      await waitFor(() => t.deps.machines.job()?.running === false);
+    });
+
+    it("syncs it once the install is done — skipping is not giving up", async () => {
+      let upgrades = 0;
+      await boot({
+        upgrade: async () => {
+          upgrades++;
+          return { kind: "upgraded", detail: "" };
+        },
+      });
+      await admin.post("/api/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      const stale = new MachinesService(
+        machinesRoot,
+        effects({
+          resolvePlan: () => ({
+            baseVersion: "10.0.0",
+            harness: null,
+            hmrDir: null,
+            version: "10.0.0",
+          }),
+          upgrade: async () => {
+            upgrades++;
+            return { kind: "upgraded", detail: "" };
+          },
+        }),
+      );
+      await stale.syncOutOfDate();
+      expect(upgrades).toBe(1);
+    });
+
+    it("a timeout says it timed out, instead of blaming the remote", async () => {
+      await boot({
+        install: async () => ({
+          kind: "failed",
+          step: "prepare",
+          // What execFailureText produces for a killed child.
+          detail: "the machine did not answer in time",
+        }),
+      });
+      await admin.post("/api/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(t.deps.machines.job()?.result).toMatchObject({
+        ok: false,
+        message: "the machine did not answer in time",
+      });
+    });
+  });
+
   describe("machine identity", () => {
     const ID = "LNrJdHAZJ91G58i0";
     const listed = async () =>
