@@ -126,7 +126,9 @@ export function ContextGauge({
       />
     </svg>
   );
-  const shell = `flex shrink-0 items-center ${color}`;
+  // Same box as every other icon control on this toolbar (h-8 w-8, matching the model selector
+  // and the send button): a 14px ring in a 23px hit area sat visibly short of its neighbours.
+  const shell = `flex h-8 w-8 shrink-0 items-center justify-center ${color}`;
 
   if (sessionId === undefined) {
     return (
@@ -137,9 +139,8 @@ export function ContextGauge({
   }
   return (
     <>
-      {/* Hover paints a background rather than a colour: the ring's own colour is the warning
-          ladder, and a hover tone would overwrite the very thing it reports. The negative margin
-          keeps the padded hit area from moving the toolbar's other controls. */}
+      {/* Hover paints only a background, not the ink its neighbours also change: the ring's colour
+          is the warning ladder, and a hover tone would overwrite the very thing it reports. */}
       <button
         ref={triggerRef}
         type="button"
@@ -148,7 +149,7 @@ export function ContextGauge({
         aria-expanded={open}
         aria-controls={panelId}
         onClick={() => setOpen((v) => !v)}
-        className={`${shell} -mx-1 cursor-pointer rounded p-1 transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800`}
+        className={`${shell} rounded-md transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800`}
       >
         {gauge}
       </button>
