@@ -444,16 +444,21 @@ describe("harness environment variables never reach a spawned command", () => {
   it("the vault can put PENGUIN_HOME back, which is how a shared data root is asked for", async () => {
     // Sharing a root with the running harness is a legitimate config decision; inheriting it from
     // whichever process happens to be serving is not. The vault is where that decision is made.
+    // The value is deliberately not path-shaped. Git Bash's MSYS layer rewrites POSIX-looking
+    // *values* into Windows paths when it launches a native program, so a real root would come
+    // back as `C:/Program Files/Git/home/...` on ci-windows and say nothing about the vault. What
+    // is under test is that a stripped name is restored at all — the sibling PORT case above uses
+    // a plain "3000" for the same reason.
     const vaultEnv = new Environment({
       workspaceDir: tmp,
       toolConfig: sessionConfig(),
-      vault: { PENGUIN_HOME: "/home/someone/.penguin/shared" },
+      vault: { PENGUIN_HOME: "vault-supplied-root" },
     });
     try {
       const res = await runTool(vaultEnv, "exec_command", {
         cmd: `node -e "console.log('PENGUIN_HOME=[' + (process.env.PENGUIN_HOME ?? '') + ']')"`,
       });
-      expect(res.output).toContain("PENGUIN_HOME=[/home/someone/.penguin/shared]");
+      expect(res.output).toContain("PENGUIN_HOME=[vault-supplied-root]");
     } finally {
       vaultEnv.dispose();
     }
