@@ -3,6 +3,7 @@
 - **Date:** 2026-08-23
 - **Type:** fix
 - **Scope:** `server`
+- **PR:** [#426](https://github.com/Prism-Shadow/penguin-harness/pull/426)
 
 [中文版](2026-08-23-hot-update-has-its-own-size-bound.zh.md)
 
