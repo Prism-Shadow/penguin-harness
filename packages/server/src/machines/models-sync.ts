@@ -1,5 +1,5 @@
 /**
- * Handing this server's Model config to a machine it manages.
+ * Handing this server's Projects, and their Model config, to a machine they were given to.
  *
  * An Agent running over there calls the model endpoint from over there: that machine's own
  * process opens the connection, so that machine needs the credential. Nothing about running
@@ -37,6 +37,7 @@ import http from "node:http";
 import type { ModelEntry, ModelRef } from "@prismshadow/penguin-core";
 import type {
   ModelInfo,
+  ModelRefDto,
   ModelUpdateEntry,
   ModelsResponse,
   ModelsUpdateRequest,
@@ -46,12 +47,21 @@ import type {
 export interface LocalModels {
   models: ModelEntry[];
   defaultModel?: ModelRef;
+  visionModel?: ModelRef;
+  /** Display name, so a Project created on the machine reads as the same Project it is. */
+  name?: string;
 }
 
 /** What a sync did, in the words the connect log shows. */
 export type ModelSyncOutcome =
-  /** Projects whose model table was written on that machine (empty = nothing needed it). */
-  { kind: "synced"; projects: string[] } | { kind: "failed"; detail: string };
+  | {
+      kind: "synced";
+      /** Projects whose model table was written on that machine (empty = nothing needed it). */
+      projects: string[];
+      /** Of those, the ones this sync had to create over there first. */
+      created: string[];
+    }
+  | { kind: "failed"; detail: string };
 
 /** Entry key: the `(provider, model_id)` pair, joined by a byte neither half can contain. */
 const refKey = (provider: string, modelId: string): string => `${provider}\u0000${modelId}`;
@@ -122,22 +132,28 @@ export function planModelSync(local: LocalModels, remote: ModelsResponse): Model
       .filter((info) => !ours.has(refKey(info.provider, info.modelId)))
       .map(fromRemote),
   ];
-  // Their default is left alone: nothing is ever removed, so whatever it named is still
-  // there, and omitting the field is what keeps it. Ours is offered only to a machine that
-  // has no default at all — otherwise this would silently repoint a machine somebody else set up.
-  const adopt =
-    remote.defaultModel === undefined &&
-    local.defaultModel !== undefined &&
-    ours.has(refKey(local.defaultModel.provider, local.defaultModel.model_id))
-      ? { provider: local.defaultModel.provider, modelId: local.defaultModel.model_id }
+  // The pointers follow ours. A Project with this id on that machine IS this Project — that
+  // is what giving the machine to it meant — and a default pointing somewhere else is how a
+  // Session started without an explicit model quietly runs on the wrong one. Only ever set to
+  // a pair in the table being sent; one we cannot satisfy is left as theirs, since omitting
+  // the field is what keeps it.
+  const follow = (ref: ModelRef | undefined): ModelRefDto | undefined =>
+    ref !== undefined && ours.has(refKey(ref.provider, ref.model_id))
+      ? { provider: ref.provider, modelId: ref.model_id }
       : undefined;
-  return { models, ...(adopt !== undefined ? { defaultModel: adopt } : {}) };
+  const defaultModel = follow(local.defaultModel);
+  const visionModel = follow(local.visionModel);
+  return {
+    models,
+    ...(defaultModel !== undefined ? { defaultModel } : {}),
+    ...(visionModel !== undefined ? { visionModel } : {}),
+  };
 }
 
 /** The machine's own API, reached through its tunnel as an authenticated caller. */
 export interface MachineApi {
   request(
-    method: "GET" | "PUT",
+    method: "GET" | "POST" | "PUT",
     path: string,
     body?: unknown,
   ): Promise<{ status: number; text: string }>;
@@ -206,46 +222,64 @@ function projectIdsIn(text: string): string[] {
 }
 
 /**
- * Gives a machine the models it needs, for the Projects that both use it and exist there.
+ * Gives a machine the Projects it was given to, and the models they need.
  *
- * Two filters, and they answer different questions. `projects` is whose credentials this
- * machine is entitled to: a machine belongs to the Projects that adopted it, and a Project
- * that does not use it has no business putting its keys on it. The intersection with the
- * machine's OWN project list is the other: an id is a directory name each server mints for
- * itself, so one this side has and that side does not is a different Project, not a missing
- * one — creating it there would be this server inventing workspaces on someone else's machine.
+ * `projects` is the entitlement, and it is the ONLY input that decides what is written: a
+ * machine belongs to the Projects that adopted it, and a Project that does not use it has no
+ * business putting its keys on it.
+ *
+ * A Project missing over there is CREATED, with the same id. That is the point of an id being
+ * stable: the Project on that machine is not a lookalike, it is this Project, and a Session
+ * started on that machine sends this id for it to resolve. Creating it is not this server
+ * inventing workspaces on a stranger's host — the host was handed to this Project, and a
+ * machine that cannot answer for the Project that owns it is a machine that cannot run
+ * anything for it.
+ *
+ * A creation that is REFUSED is reported and that Project is skipped: the machine saying no
+ * (an id already taken by someone else's Project, a shape it will not accept) is an answer
+ * about a boundary, and writing models around it is not this function's call to make.
  */
 export async function syncModelsToMachine(opts: {
   api: MachineApi;
   /** This side's table for a Project, or null when it has no config for it. */
   loadLocal: (projectId: string) => Promise<LocalModels | null>;
-  /**
-   * The Projects entitled to this machine. Omitted means every shared one, which is only
-   * right for a caller that has already decided entitlement for itself.
-   */
-  projects?: string[];
+  /** The Projects entitled to this machine — nothing outside this list is touched. */
+  projects: string[];
 }): Promise<ModelSyncOutcome> {
-  let candidates: string[];
+  let theirs: string[];
   try {
     const listed = await opts.api.request("GET", "/api/projects");
     if (listed.status !== 200) {
       return { kind: "failed", detail: `it answered ${listed.status} when asked its projects` };
     }
-    const theirs = projectIdsIn(listed.text);
-    const entitled = opts.projects;
-    candidates = entitled === undefined ? theirs : theirs.filter((id) => entitled.includes(id));
+    theirs = projectIdsIn(listed.text);
   } catch (err) {
     return { kind: "failed", detail: err instanceof Error ? err.message : String(err) };
   }
 
   const synced: string[] = [];
-  for (const projectId of candidates) {
+  const created: string[] = [];
+  for (const projectId of opts.projects) {
     const local = await opts.loadLocal(projectId);
     // Nothing configured here is not a reason to touch their table: a replace built from an
-    // empty local list would delete every model they have.
+    // empty local list would delete every model they have. It is also not a reason to create
+    // the Project — an empty shell is not worth a directory on someone's machine.
     if (local === null || local.models.length === 0) continue;
     const path = `/api/projects/${encodeURIComponent(projectId)}/models`;
     try {
+      if (!theirs.includes(projectId)) {
+        const made = await opts.api.request("POST", "/api/projects", {
+          projectId,
+          ...(local.name !== undefined && local.name !== "" ? { name: local.name } : {}),
+        });
+        if (made.status < 200 || made.status >= 300) {
+          return {
+            kind: "failed",
+            detail: `it refused to create ${projectId}: ${made.status} ${made.text.slice(0, 200)}`,
+          };
+        }
+        created.push(projectId);
+      }
       const current = await opts.api.request("GET", path);
       if (current.status !== 200) {
         return {
@@ -266,5 +300,5 @@ export async function syncModelsToMachine(opts: {
       return { kind: "failed", detail: err instanceof Error ? err.message : String(err) };
     }
   }
-  return { kind: "synced", projects: synced };
+  return { kind: "synced", projects: synced, created };
 }

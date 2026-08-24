@@ -806,8 +806,14 @@ export class MachinesService {
       loadLocal: (projectId) => this.#localModels(projectId),
       projects,
     });
-    if (outcome.kind === "failed") say(`Models not synced — ${outcome.detail}`);
-    else if (outcome.projects.length > 0) say(`Models synced: ${outcome.projects.join(", ")}.`);
+    if (outcome.kind === "failed") {
+      say(`Models not synced — ${outcome.detail}`);
+      return;
+    }
+    // Creating a Project on somebody's machine is a thing done TO that machine, so it is
+    // named rather than folded into the count.
+    if (outcome.created.length > 0) say(`Created there: ${outcome.created.join(", ")}.`);
+    if (outcome.projects.length > 0) say(`Models synced: ${outcome.projects.join(", ")}.`);
   }
 
   /**
@@ -832,6 +838,8 @@ export class MachinesService {
     return {
       models,
       ...(config.default_model !== undefined ? { defaultModel: config.default_model } : {}),
+      ...(config.vision_model !== undefined ? { visionModel: config.vision_model } : {}),
+      ...(config.name !== undefined ? { name: config.name } : {}),
     };
   }
 
