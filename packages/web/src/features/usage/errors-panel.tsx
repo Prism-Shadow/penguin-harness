@@ -81,7 +81,9 @@ function Th({ children, className = "" }: { children: React.ReactNode; className
  * preserved — the upstream detail after the code, e.g. a provider's 402 body, is what matters),
  * and clicking again collapses it. The full text is also in the hover title. Cells align to the
  * top so an expanded multi-line message keeps the row tidy; height is bounded by the page size
- * alone — the table never scrolls (paging is the way past it).
+ * alone — the table never scrolls vertically (paging is the way past it). Its four columns need
+ * a floor to stay legible, so on a viewport narrower than that floor the table scrolls
+ * sideways inside its own box rather than dragging the page along with it.
  */
 export function ErrorsPanel({
   errors,
@@ -188,8 +190,14 @@ export function ErrorsPanel({
       {items.length === 0 ? (
         <Empty text={S.usage.errorsEmpty} />
       ) : (
-        <div className="mt-2.5 border-t border-gray-200 dark:border-gray-800">
-          <table className="w-full table-fixed text-xs">
+        <div className="mt-2.5 overflow-x-auto overflow-y-clip border-t border-gray-200 dark:border-gray-800">
+          {/* The three leading columns are fixed-width and the message column takes the rest, so
+              the table has a minimum below which `table-fixed` starves the message column down to
+              zero width and pushes the other three past the edge. `min-w` states that floor, and
+              this box scrolls it sideways when the viewport is narrower — the page itself must
+              never scroll sideways (styles.css). `overflow-y-clip` keeps browsers from reserving
+              a vertical scrollbar gutter beside the horizontal one. */}
+          <table className="w-full min-w-[720px] table-fixed text-xs">
             <thead className="text-left text-gray-400 dark:text-gray-500">
               <tr>
                 <Th className="w-32">{S.common.time}</Th>
