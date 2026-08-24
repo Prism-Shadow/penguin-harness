@@ -1483,9 +1483,6 @@ Scenarios:
     /** Info-dropdown Session id row: the id itself is a click-to-copy button. */
     sessionIdLabel: "Session id",
     copySessionId: "Copy Session id",
-    /** Info-dropdown trace row: labels the Session's trace file, shown as its NAME (clicking deep-links to the Trace page; the button beside it copies the full path). */
-    traceFile: "Trace file",
-    copyTracePath: "Copy full path",
     /** Info-dropdown list of background processes the conversation started, and its per-row actions (Stop on running rows, Remove on exited ones). */
     processList: "Processes",
     processStop: "Stop",

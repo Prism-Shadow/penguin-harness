@@ -3,8 +3,8 @@
  * a task whose exec_command outlives its yield window becomes a background process —
  * the header's stats trigger gains a running-services count, the details card lists the
  * process (cmd + pid + start time) with a stop button, stopping it clears both, and the
- * card's other rows (model / workspace / created / per-line stats / trace file path)
- * render in their new layout. The mock's "background server test" branch drives it
+ * card's other rows (model / workspace / created / per-line stats) render in their
+ * new layout. The mock's "background server test" branch drives it
  * (`sleep 600` with a 300ms yield — see mock-llm.mjs).
  */
 import { test, expect } from "@playwright/test";
@@ -66,14 +66,9 @@ test("background process appears in the details card and can be stopped", async 
   // rate in parens (from the recorded usage row).
   await expect(page.getByText(/总 Token/).first()).toBeVisible();
   await expect(page.getByText(/缓存命中率 \d+%/).first()).toBeVisible();
-  // Trace file row shows just the FILE NAME on one line (#312) — anchored match, a full
-  // path would not match — with the copy-full-path button beside it (its own coverage
-  // lives in the exited-process test below).
-  await expect(page.getByText("轨迹文件")).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: new RegExp(`^${sessionId}_\\d{3}\\.jsonl$`) }),
-  ).toBeVisible();
-  await expect(page.getByRole("button", { name: "复制完整路径" })).toBeVisible();
+  // The Trace file row is gone from the details card: the conversation's Trace is read
+  // in the dock's Trace panel now, and the card no longer carries a path to copy.
+  await expect(page.getByText("轨迹文件")).toHaveCount(0);
 
   // The process list row: the command, its pid line, and a working stop button.
   await expect(page.getByText("会话进程")).toBeVisible();
@@ -94,9 +89,7 @@ test("background process appears in the details card and can be stopped", async 
   expect(procs.processes).toEqual([]);
 });
 
-test("an exited process can be removed from the list; the trace row copies the full path and deep-links", async ({
-  page,
-}) => {
+test("an exited process can be removed from the list", async ({ page }) => {
   await provisionAndLogin(page.request, U, P);
 
   const projects = await (await page.request.get(`${BASE}/api/projects`)).json();
@@ -152,23 +145,4 @@ test("an exited process can be removed from the list; the trace row copies the f
     await page.request.get(`${BASE}/api/sessions/${sessionId}/processes`)
   ).json();
   expect(procs.processes).toEqual([]);
-
-  // --- Trace file row actions (#312) ---
-  // Copy puts the FULL absolute path on the clipboard while the row shows only the name…
-  const traceName = page.getByRole("button", {
-    name: new RegExp(`^${sessionId}_\\d{3}\\.jsonl$`),
-  });
-  await expect(traceName).toBeVisible();
-  await page.getByRole("button", { name: "复制完整路径" }).click();
-  const copied = await page.evaluate(() => navigator.clipboard.readText());
-  expect(copied).toMatch(/\.jsonl$/);
-  expect(copied).toContain(`${sessionId}_`);
-  expect(copied.length).toBeGreaterThan((await traceName.textContent()).length);
-  expect(copied.endsWith(await traceName.textContent())).toBe(true);
-  // …and clicking the name deep-links into the Trace page focused on this session.
-  await traceName.click();
-  await expect(page).toHaveURL(new RegExp(`/traces\\?agentId=.*sessionId=`));
-  await expect(page.locator("main").getByText("轨迹观测").first()).toBeVisible({
-    timeout: 15_000,
-  });
 });
