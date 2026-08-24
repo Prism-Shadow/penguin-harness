@@ -36,6 +36,7 @@ import type {
   RequestSpan,
   SessionCategory,
   SessionCategoryCounts,
+  SessionContextParts,
   HistoryMessage,
   TracePosition,
   ToolCallSpan,
@@ -69,6 +70,7 @@ import type {
   ScanState,
   WindowPriorStats,
 } from "./message-window.js";
+import { buildContextBreakdown, emptyContextBreakdown } from "./context-breakdown.js";
 import { TraceIndexService, traceFilePath } from "./trace-index.js";
 
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
@@ -756,6 +758,26 @@ export class TraceService {
       this.deps.index.removeSession(projectId, agentId, newSessionId);
       throw err;
     }
+  }
+
+  /**
+   * Composition of the Session's current model context, read from its **newest** Trace shard —
+   * one shard is one complete context (see context-breakdown.ts). A Session with no Trace yet
+   * answers with zeros rather than a 404: "nothing in the context" is a true statement about it,
+   * and the caller is a display that would have to invent the same answer.
+   */
+  async contextBreakdown(
+    projectId: string,
+    agentId: string,
+    sessionId: string,
+  ): Promise<SessionContextParts> {
+    const files = await this.locateAll(projectId, agentId, sessionId);
+    const newest = files.reduce<LocatedFile | null>(
+      (best, f) => (best === null || f.index > best.index ? f : best),
+      null,
+    );
+    if (newest === null) return emptyContextBreakdown();
+    return buildContextBreakdown(await this.readShard(newest.path));
   }
 
   /** List of Trace files (index / date / size / mtime). */

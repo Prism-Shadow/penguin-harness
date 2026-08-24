@@ -89,7 +89,6 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import { formatBytes, humanizeTokens } from "../../lib/format";
-import { resolveContextWindow } from "../../lib/context";
 import { useLocale } from "../../state/locale";
 import { useAuth } from "../../state/auth";
 import { agentDisplayName } from "../../state/project";
@@ -124,9 +123,9 @@ import type { HistoryStep } from "./input-history";
 import { isStopAction, midRunAction } from "./composer-send";
 import { PAPERCLIP_ICON } from "./attached-files-banner";
 import { FileDropZone } from "./drop-zone";
+import { ContextGauge } from "./context-gauge";
 import { splitDroppedFiles } from "../../lib/file-drop";
 import { splitBySize } from "../../lib/upload-limits";
-import { toneInk } from "../../lib/tone";
 
 const APPROVAL_MODES: ApprovalMode[] = ["always-ask", "read-only", "allow-all", "deny-all"];
 
@@ -631,74 +630,6 @@ interface SlashCommand {
 }
 
 /**
- * Context usage: a **single-color** ring indicator (only conveys total usage, no bucketing) +
- * `used/window` (amber above 80%, red above 95%). When the model has no `context_window`
- * configured, resolveContextWindow falls back to 128000 and the ring is drawn as usual — the
- * usage ratio always has a reference point, instead of degrading into a lone number when config
- * is missing.
- *
- * `unknown` (after a successful compaction, before the next regular Request reports usage): draws
- * an empty ring, value shown as `—`. **Must not be drawn as 0** — that would claim the context
- * has been cleared, while the summary itself still occupies tokens; at this point we simply
- * haven't measured yet, not measured to be zero.
- */
-function ContextGauge({
-  now,
-  window: win,
-  unknown = false,
-}: {
-  now: number;
-  window?: number;
-  unknown?: boolean;
-}) {
-  const max = resolveContextWindow(win);
-  const pct = unknown ? 0 : Math.min(1, now / max);
-  const color =
-    unknown || pct <= 0.8
-      ? "text-gray-400 dark:text-gray-500"
-      : pct > 0.95
-        ? toneInk.danger
-        : toneInk.attention;
-  const R = 5;
-  const C = 2 * Math.PI * R;
-  return (
-    <span
-      title={unknown ? S.chat.contextUnknown : `${S.chat.contextUsage} ${Math.round(pct * 100)}%`}
-      className={`flex shrink-0 items-center gap-1 font-mono ${color}`}
-    >
-      <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden className="block shrink-0">
-        <circle
-          cx="7"
-          cy="7"
-          r={R}
-          fill="none"
-          stroke="currentColor"
-          strokeOpacity="0.25"
-          strokeWidth="2"
-        />
-        <circle
-          cx="7"
-          cy="7"
-          r={R}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeDasharray={`${C * pct} ${C}`}
-          transform="rotate(-90 7 7)"
-        />
-      </svg>
-      {/* The ring alone carries the meaning on phones: the numbers hide below @md (the title
-          still shows the exact usage), keeping the right-hand control group inside a 320px
-          viewport in the running state. */}
-      <span className="hidden @md:inline">
-        {unknown ? "—" : humanizeTokens(now)}/{humanizeTokens(max)}
-      </span>
-    </span>
-  );
-}
-
-/**
  * One file attachment staged in the composer. `dataUrl` is the base64 `data:` URL sent as the
  * task input's `file` part; `name` / `size` only feed the chip (the server decides the name the
  * file actually gets on disk).
@@ -848,6 +779,7 @@ export function ChatInput({
   contextWindow,
   contextNow,
   contextStale = false,
+  sessionId,
   vision,
   approvalMode,
   onChangeApprovalMode,
@@ -990,6 +922,13 @@ export function ChatInput({
   contextNow: number;
   /** After a successful compaction, before the next regular Request reports usage: usage is **unknown** (not 0); the ring is drawn empty and the value shown as `—`. */
   contextStale?: boolean;
+  /**
+   * Enables the context ring's composition panel, which is served by a Session-level endpoint.
+   * Omitted in the draft composer (no Session yet) and in the subagent composer (a child Session
+   * is not registered in the sessions table, so the endpoint cannot resolve it) — the ring stays
+   * the plain readout it has always been there.
+   */
+  sessionId?: string;
   /** Whether the current model supports image input (models config's vision; assumed supported by default). */
   vision: boolean;
   approvalMode: ApprovalMode;
@@ -2693,6 +2632,7 @@ export function ChatInput({
                 now={contextNow}
                 unknown={contextStale}
                 {...(contextWindow !== undefined ? { window: contextWindow } : {})}
+                {...(sessionId !== undefined ? { sessionId } : {})}
               />
             )}
             {/* Draft state: conversation-time thinking level (backed by Agent settings), docked left of the model selector. */}

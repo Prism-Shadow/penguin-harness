@@ -1611,6 +1611,7 @@ export function ChatPage() {
       {...(contextWindow !== undefined ? { contextWindow } : {})}
       contextNow={stream.model.stats.contextNow}
       contextStale={stream.model.stats.contextStale}
+      sessionId={selected.sessionId}
       vision={vision}
       approvalMode={selected.approvalMode}
       onChangeApprovalMode={onChangeApprovalMode}
