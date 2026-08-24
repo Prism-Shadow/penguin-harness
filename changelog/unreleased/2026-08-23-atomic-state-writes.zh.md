@@ -3,6 +3,7 @@
 - **Date:** 2026-08-23
 - **Type:** fix
 - **Scope:** `core`, `server`, `cli`, `desktop`
+- **PR:** [#423](https://github.com/Prism-Shadow/penguin-harness/pull/423)
 
 [English](2026-08-23-atomic-state-writes.md)
 
