@@ -18,6 +18,7 @@ export const zh = {
     agents: "智能体",
     skills: "技能库",
     models: "模型库",
+    machines: "机器",
     usage: "成本中心",
     traces: "轨迹观测",
     benchmark: "评估中心",
@@ -29,6 +30,28 @@ export const zh = {
     expandGroup: "展开",
     pinGroup: "置顶分组",
     unpinGroup: "取消置顶",
+  },
+
+  /** Machines page: the server's own ssh hosts, and installing this build on one. */
+  machines: {
+    pageTitle: "机器",
+    pageDesc:
+      "本服务端 ~/.ssh/config 里声明的主机。选一台即可把当前这套 PenguinHarness 装上去：探测对端、按需带上匹配的 Node 运行时、复制镜像并在对端完成安装。配置文件只读不写，安装使用服务端账户自己的 ssh 密钥。",
+    /** Version line under the title; `version` is what would be pushed. */
+    imageVersion: (version: string) => `将安装的版本：${version}`,
+    noImage:
+      "本服务端没有可推送的安装镜像。打包安装或 tarball 安装自带镜像；源码检出则在第一次热推后获得。",
+    empty: "~/.ssh/config 中没有可用的主机。",
+    install: "安装",
+    installing: "安装中…",
+    reinstall: "重新安装",
+    /** Terminal states of a finished job. */
+    installed: (version: string) => `已安装 ${version}。`,
+    alreadyInstalled: (version: string) => `已经是 ${version}，无需安装。`,
+    failedAt: (step: string) => `安装失败（${step}）。`,
+    /** The progress log's own heading, so the block is not an unlabelled wall of text. */
+    output: "安装输出",
+    adminOnly: "只有管理员可以安装到机器上。",
   },
 
   /** Server-side terminal (the in-app dock and the standalone /terminal page). */

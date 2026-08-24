@@ -17,11 +17,33 @@
  * Page entries of the collapsible nav group, in rendered order. Each key names its
  * route (`/<key>`), its S.nav label, and its NAV_ICONS glyph — the sidebar derives
  * its nav rows from this manifest, so the covered range is pinned here (and in the
- * unit tests) rather than duplicated. Traces is deliberately absent: reading a Trace
- * happens in the chat toolbar's panel switcher, which is the only place it happens.
+ * unit tests) rather than duplicated. Some entries are admin-only (see below), so the
+ * sidebar renders navKeysFor(user.isAdmin), not the raw manifest. Traces is deliberately
+ * absent: reading a Trace happens in the chat toolbar's panel switcher, which is the only
+ * place it happens.
  */
-export const NAV_GROUP_KEYS = ["agents", "skills", "models", "usage", "benchmark"] as const;
+export const NAV_GROUP_KEYS = [
+  "agents",
+  "skills",
+  "models",
+  "machines",
+  "usage",
+  "benchmark",
+] as const;
 export type NavGroupKey = (typeof NAV_GROUP_KEYS)[number];
+
+/**
+ * Entries the server refuses to a non-admin, so the sidebar does not offer them. Machines
+ * installs software on another machine over ssh with the SERVER account's keys, which
+ * `/api/machines` gates on `isAdmin` — a row that always answers 403 is worse than no row.
+ * On a personal or desktop server the only account IS the admin, so nothing is hidden there.
+ */
+const ADMIN_ONLY_NAV_KEYS: ReadonlySet<NavGroupKey> = new Set<NavGroupKey>(["machines"]);
+
+/** The manifest as this user sees it. */
+export function navKeysFor(isAdmin: boolean): readonly NavGroupKey[] {
+  return isAdmin ? NAV_GROUP_KEYS : NAV_GROUP_KEYS.filter((key) => !ADMIN_ONLY_NAV_KEYS.has(key));
+}
 
 /**
  * Page entries that are visible and reachable: collapsing hides the whole group (the
@@ -30,8 +52,8 @@ export type NavGroupKey = (typeof NAV_GROUP_KEYS)[number];
  * height tween — but at zero height, faded out, and inert: exactly this empty set of
  * reachable entries.
  */
-export function visibleNavKeys(collapsed: boolean): readonly NavGroupKey[] {
-  return collapsed ? [] : NAV_GROUP_KEYS;
+export function visibleNavKeys(collapsed: boolean, isAdmin = true): readonly NavGroupKey[] {
+  return collapsed ? [] : navKeysFor(isAdmin);
 }
 
 /** Minimal storage interface (the subset of localStorage used here); tests inject an in-memory implementation. */
