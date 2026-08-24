@@ -3,7 +3,7 @@
 - **Date:** 2026-08-24
 - **Type:** refactor
 - **Scope:** `core`, `docs`
-- **PR:** [#N](https://github.com/Prism-Shadow/penguin-harness/pull/N)
+- **PR:** [#438](https://github.com/Prism-Shadow/penguin-harness/pull/438)
 
 [中文版](2026-08-24-kernel-hash-record.zh.md)
 
