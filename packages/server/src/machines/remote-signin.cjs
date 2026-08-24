@@ -18,10 +18,18 @@
 "use strict";
 const fs = require("node:fs");
 const http = require("node:http");
+const os = require("node:os");
 const path = require("node:path");
 
 const here = __dirname;
 const job = JSON.parse(fs.readFileSync(path.join(here, "signin-job.json"), "utf8"));
+/**
+ * This machine's data root, resolved HERE. The sending side deliberately does not pass a
+ * path: it would have to write `$HOME` and have a shell expand it, and getting that quoting
+ * wrong fails silently — the literal string becomes a directory that does not exist, and the
+ * answer is an honest-looking "no server is running here".
+ */
+const dataRoot = job.dataRoot || path.join(os.homedir(), ".penguin", "data");
 const say = (line) => process.stdout.write(`${line}\n`);
 
 const OK = "---penguin-signin-ok---";
@@ -36,7 +44,7 @@ function fail(message) {
 function main() {
   let lock;
   try {
-    lock = JSON.parse(fs.readFileSync(path.join(job.dataRoot, "server.lock"), "utf8"));
+    lock = JSON.parse(fs.readFileSync(path.join(dataRoot, "server.lock"), "utf8"));
   } catch {
     return fail("no server is running here");
   }
@@ -46,7 +54,7 @@ function main() {
   // a machine a person has set up by hand. Its absence is an honest "ask them", not a bug.
   let password;
   try {
-    password = fs.readFileSync(path.join(job.dataRoot, "initial-admin-password"), "utf8").trim();
+    password = fs.readFileSync(path.join(dataRoot, "initial-admin-password"), "utf8").trim();
   } catch {
     return fail("this machine's admin password has been changed, so sign in to it by hand");
   }

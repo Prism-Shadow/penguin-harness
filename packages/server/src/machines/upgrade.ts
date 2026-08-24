@@ -113,7 +113,8 @@ export async function upgradeRemote(opts: {
     );
     fs.writeFileSync(
       path.join(localTmp, "upgrade-job.json"),
-      JSON.stringify({ payloadName, dataRoot: "~/.penguin/data".replace("~", "$HOME") }),
+      // No dataRoot: the far side resolves its own home (see remote-upgrade.cjs).
+      JSON.stringify({ payloadName }),
     );
 
     say(`Sending this build (${(payload.byteLength / 1048576).toFixed(1)} MB)…`);
@@ -131,13 +132,11 @@ export async function upgradeRemote(opts: {
     }
 
     say("Applying it there…");
-    // The job's dataRoot is expanded by the far side's shell, so `$HOME` resolves to that
-    // machine's home rather than being sent as a literal from here.
     const applied = await run(
       "ssh",
       sshArgs(
         opts.target,
-        `cd ${scratch} && sed -i "s|\\\\$HOME|$HOME|" upgrade-job.json && ` +
+        `cd ${scratch} && ` +
           `"\${XDG_DATA_HOME:-$HOME/.local/share}/penguin/lib/runtime/bin/node" remote-upgrade.cjs 2>&1 || ` +
           `node remote-upgrade.cjs 2>&1`,
       ),
