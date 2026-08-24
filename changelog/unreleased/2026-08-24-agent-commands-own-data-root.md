@@ -3,7 +3,7 @@
 - **Date:** 2026-08-24
 - **Type:** fix
 - **Scope:** `core`
-- **PR:** [#PLACEHOLDER](https://github.com/Prism-Shadow/penguin-harness/pull/0)
+- **PR:** [#434](https://github.com/Prism-Shadow/penguin-harness/pull/434)
 - **Breaking:** yes — `PENGUIN_HOME` and `PENGUIN_WEB_DB` no longer reach commands an Agent runs; set them in the Agent's vault to pass them on
 
 [中文版](2026-08-24-agent-commands-own-data-root.zh.md)
