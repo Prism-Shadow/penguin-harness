@@ -166,3 +166,17 @@ export function outOfDate(machine: MachineInfo, imageVersion: string | null): bo
   if (imageVersion === null || machine.local || machine.installed === null) return false;
   return machine.installed.version !== imageVersion;
 }
+
+/** Whether this browser holds a session on a machine, as the row renders it. */
+export type MachineSignIn = "unknown" | "signed-in" | "signed-out";
+
+/**
+ * Whether a machine can be signed in to right now.
+ *
+ * Only a connected one: the sign-in goes through that machine's tunnel, so without one
+ * there is nothing to reach. And only a machine with an identity, since the proxy is
+ * addressed by it — a sign-in has nowhere to be namespaced to otherwise.
+ */
+export function canSignIn(machine: MachineInfo): boolean {
+  return !machine.local && machine.origin !== null && machine.machineId !== null;
+}

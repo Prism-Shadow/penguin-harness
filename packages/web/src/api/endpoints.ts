@@ -148,6 +148,22 @@ export const logout = () => apiFetch<void>("/api/auth/logout", { method: "POST",
  */
 export const getInstall = () => apiFetch<InstallResponse>("/api/install");
 
+/**
+ * Signs in ON another machine, through the proxy. Its server issues the session and the
+ * proxy renames the cookie into that machine's namespace, so several servers' sessions
+ * coexist in one browser without seeing each other.
+ *
+ * A separate sign-in per machine because it IS a separate server with its own accounts —
+ * the local session is not a credential over there, and sending one would be this server
+ * vouching for a person it cannot vouch for.
+ */
+export const loginOnMachine = (machineId: string, body: AuthLoginRequest) =>
+  apiFetch<AuthResponse>("/api/auth/login", { method: "POST", body, server: machineId });
+
+/** Whether this browser already holds a session on that machine. */
+export const meOnMachine = (machineId: string) =>
+  apiFetch<MeResponse>("/api/me", { server: machineId });
+
 export const getMe = () => apiFetch<MeResponse>("/api/me");
 
 export const changePassword = (body: PasswordChangeRequest) =>

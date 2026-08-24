@@ -16,6 +16,7 @@ import type {
   MachinesResponse,
 } from "@prismshadow/penguin-server/api";
 import {
+  canSignIn,
   connectAction,
   installButtonState,
   installedMachines,
@@ -336,5 +337,31 @@ describe("installButtonState, once a machine is behind", () => {
 
   it("still says reinstall when the two ends agree", () => {
     expect(installButtonState(carrying("nas"), response(null), false).action).toBe("reinstall");
+  });
+});
+
+describe("canSignIn", () => {
+  const connected = (): MachineInfo => ({
+    ...carrying("nas"),
+    machineId: "noeSE0FFHhNXl2J5",
+    origin: "http://localhost:7364",
+  });
+
+  it("is true for a connected machine with an identity", () => {
+    expect(canSignIn(connected())).toBe(true);
+  });
+
+  it("is false without a tunnel — the sign-in has nothing to travel through", () => {
+    expect(canSignIn({ ...connected(), origin: null })).toBe(false);
+  });
+
+  it("is false without an identity — the proxy is addressed by it", () => {
+    // A sign-in with no machine id has nowhere to be namespaced to, so the cookie could
+    // never be sent back to the right server.
+    expect(canSignIn({ ...connected(), machineId: null })).toBe(false);
+  });
+
+  it("is false for this machine, which needs no second sign-in", () => {
+    expect(canSignIn(here())).toBe(false);
   });
 });
