@@ -1,9 +1,15 @@
 /**
  * Default PenguinHarness server port (internal shared constant; the barrel re-exports
- * only DEFAULT_SERVER_PORT, as the CLI `penguin server` / `penguin web` and server
- * default-port source of truth — previously each hardcoded the number). It is a
- * fallback only: the `--port` flag and the PORT environment variable override it at
- * runtime.
+ * only DEFAULT_SERVER_PORT, as the CLI `penguin server` / `penguin web`, the server and
+ * the desktop shell's embedded server all read their default from here).
+ *
+ * It is a well-known number on purpose, not merely a fallback: a client — the desktop
+ * shell, or a session reaching a machine through an SSH tunnel — finds "the server for
+ * this user" by probing this one port, and offers to install one when nothing answers.
+ * The cost is deliberate: ONE server per user per machine by default, since a second
+ * instance would collide. Running two takes an explicit `--port` / `PORT` override, and
+ * the tunnel case needs the local port to equal the remote one anyway (preview URLs are
+ * built from the server's own bound port).
  */
 
 /**
@@ -13,7 +19,7 @@
  *
  * | port | who                                | where                                       |
  * | ---- | ---------------------------------- | ------------------------------------------- |
- * | 7364 | installed server / Web UI          | `DEFAULT_SERVER_PORT` below                 |
+ * | 7364 | installed server / Web UI / desktop| `DEFAULT_SERVER_PORT` below                 |
  * | 7365 | `pnpm dev:web` (Vite)              | `packages/web/vite.config.ts`               |
  * | 7366 | `pnpm dev:landing` (Vite)          | `packages/landing/vite.config.ts`           |
  * | 7367 | `pnpm dev:docs` (Vite)             | `packages/docs/vite.config.ts`              |
@@ -31,5 +37,11 @@
  * to the left -- `dev:server` failing to bind, or the Vite proxy answering from the harness.
  */
 
-/** Default main server / Web UI port; deliberately avoids common defaults like 3000/8080. */
+/**
+ * The well-known main server / Web UI port; deliberately avoids common defaults like
+ * 3000/8080. It is an ADDRESS, not merely a default: a client — the desktop shell, an
+ * SSH-tunneled session — finds this user's server by probing this one number, and the
+ * shell binds it rather than an ephemeral port so the app origin (and the renderer's
+ * origin-scoped storage) is stable by construction.
+ */
 export const DEFAULT_SERVER_PORT = 7364;
