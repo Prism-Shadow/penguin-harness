@@ -13,6 +13,7 @@
  */
 import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
 import type { ServerEvent } from "@prismshadow/penguin-server/api";
+import { apiUrl } from "../lib/server-context";
 
 export interface StreamHandlers {
   /**
@@ -63,10 +64,10 @@ function subscribe(url: string, handlers: StreamHandlers): StreamConnection {
 
 /** Subscribes to a Session's output stream (GET /api/sessions/:sessionId/stream). */
 export function openSessionStream(sessionId: string, handlers: StreamHandlers): StreamConnection {
-  return subscribe(`/api/sessions/${encodeURIComponent(sessionId)}/stream`, handlers);
+  return subscribe(apiUrl(`/api/sessions/${encodeURIComponent(sessionId)}/stream`), handlers);
 }
 
 /** Subscribes to the user-level server event stream (GET /api/events; reserved for scheduled-task notifications). */
 export function openUserEvents(handlers: StreamHandlers): StreamConnection {
-  return subscribe("/api/events", handlers);
+  return subscribe(apiUrl("/api/events"), handlers);
 }

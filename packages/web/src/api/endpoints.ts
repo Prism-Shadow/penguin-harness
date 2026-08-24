@@ -914,10 +914,12 @@ export const importAgent = (projectId: string, agentId: string, body: AgentImpor
 
 /**
  * The server's ssh hosts, the version it would install, and the running or last install
- * job. The Machines page polls this while a job runs — the progress lines live on the job,
+ * job. Always the LOCAL server's — the ssh config, the tunnels and the proxy live there,
+ * whichever server the rest of the app is looking at. The Machines page polls this while a
+ * job runs — the progress lines live on the job,
  * not on the event channel, because they belong to the one page that is waiting for them.
  */
-export const getMachines = () => apiFetch<MachinesResponse>("/api/machines");
+export const getMachines = () => apiFetch<MachinesResponse>("/api/machines", { local: true });
 
 /**
  * Re-probes the installed machines' servers (one ssh round trip each, server-side) and
@@ -925,13 +927,30 @@ export const getMachines = () => apiFetch<MachinesResponse>("/api/machines");
  * spawns processes is one a prefetch or a proxy may fire on its own.
  */
 export const probeMachines = () =>
-  apiFetch<MachinesResponse>("/api/machines/probe", { method: "POST", body: {} });
+  apiFetch<MachinesResponse>("/api/machines/probe", { method: "POST", body: {}, local: true });
 
 /** Starts an install (202, long-running); the returned body already carries the new job. */
 export const installOnMachine = (machineId: string) =>
   apiFetch<MachinesResponse>(`/api/machines/${encodeURIComponent(machineId)}/install`, {
     method: "POST",
     body: {},
+    local: true,
+  });
+
+/** Brings that machine's server up and holds a tunnel to it (202, long-running). */
+export const connectMachine = (machineId: string) =>
+  apiFetch<MachinesResponse>(`/api/machines/${encodeURIComponent(machineId)}/connect`, {
+    method: "POST",
+    body: {},
+    local: true,
+  });
+
+/** Drops the tunnel; the remote server keeps running. */
+export const disconnectMachine = (machineId: string) =>
+  apiFetch<MachinesResponse>(`/api/machines/${encodeURIComponent(machineId)}/disconnect`, {
+    method: "POST",
+    body: {},
+    local: true,
   });
 
 // Version & self-update ----------------------------------------------------------------

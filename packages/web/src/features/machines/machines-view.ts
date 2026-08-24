@@ -13,6 +13,7 @@
  * installed machine vanish as soon as anything else was installed or the server restarted.
  */
 import type {
+  MachineConnectJob,
   MachineInfo,
   MachineInstallJob,
   MachinesResponse,
@@ -120,4 +121,41 @@ export function installedMachines(state: MachinesResponse): MachineInfo[] {
 /** The local entry, which the server always puts first. */
 export function localMachine(state: MachinesResponse): MachineInfo | null {
   return state.machines.find((machine) => machine.local) ?? null;
+}
+
+/** What the connect control offers for one machine. */
+export type ConnectAction =
+  /** Nothing installed there yet: connect has nothing to start. */
+  | "unavailable"
+  /** A tunnel is up; this window can be pointed at it. */
+  | "connected"
+  /** A connect is running for this machine right now. */
+  | "connecting"
+  /** Installed, not connected. */
+  | "connect";
+
+export function connectAction(
+  machine: MachineInfo,
+  connect: MachineConnectJob | null,
+  starting: string | null,
+): ConnectAction {
+  if (machine.local || machine.installed === null) return "unavailable";
+  if (starting === machine.id) return "connecting";
+  if (connect?.running === true && connect.machineId === machine.id) return "connecting";
+  return machine.origin === null ? "connect" : "connected";
+}
+
+/**
+ * The machine this window's calls are currently routed to, or null for the local server.
+ *
+ * Matched on the machine's own id rather than the address, because that is what the active
+ * server is stored as — and a machine that has since been re-aliased, or dropped from the
+ * ssh config while its tunnel keeps forwarding, must still be recognisable as where we are.
+ */
+export function activeMachine(
+  state: MachinesResponse,
+  activeId: string | null,
+): MachineInfo | null {
+  if (activeId === null) return null;
+  return state.machines.find((machine) => machine.machineId === activeId) ?? null;
 }

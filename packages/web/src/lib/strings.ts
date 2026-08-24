@@ -56,6 +56,16 @@ export const zh = {
     statusStopped: "未运行",
     statusUnreachable: "连不上",
     statusUnknown: "未检查",
+    /** Bringing a machine's server up and holding a tunnel to it. */
+    connect: "连接",
+    connecting: "连接中…",
+    disconnect: "断开",
+    /** Pointing THIS window at a connected machine — a separate step from connecting. */
+    enter: "进入",
+    hereNow: "当前所在",
+    /** The banner shown app-wide while the window is pointed at another machine. */
+    onMachine: (alias: string) => `正在使用机器「${alias}」`,
+    backToLocal: "回到本机",
     /** Manual re-probe, for when you already know something changed. */
     refresh: "刷新",
     checking: "检查中…",
