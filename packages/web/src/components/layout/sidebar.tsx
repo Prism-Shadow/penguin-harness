@@ -67,8 +67,8 @@ import {
 } from "../../lib/session-grouping";
 import type { FolderCategory, SessionPartition } from "../../lib/session-grouping";
 import {
-  NAV_GROUP_KEYS,
   initialNavGroupCollapsed,
+  navKeysFor,
   storeNavGroupCollapsed,
 } from "../../lib/nav-group-collapse";
 import {
@@ -1464,10 +1464,10 @@ export function Sidebar({
           ),
         );
 
-  /** Page entries of the collapsible nav group (智能体 → 评估中心, driven by the NAV_GROUP_KEYS manifest). Always mounted — the collapse animates their height to zero and turns them inert. */
-  const navItems: Array<{ to: string; label: string; icon: string }> = NAV_GROUP_KEYS.map(
-    (key) => ({ to: `/${key}`, label: S.nav[key], icon: NAV_ICONS[key] }),
-  );
+  /** Page entries of the collapsible nav group (智能体 → 评估中心, driven by the NAV_GROUP_KEYS manifest, minus the entries this user's role cannot reach). Always mounted — the collapse animates their height to zero and turns them inert. */
+  const navItems: Array<{ to: string; label: string; icon: string }> = navKeysFor(
+    user?.isAdmin === true,
+  ).map((key) => ({ to: `/${key}`, label: S.nav[key], icon: NAV_ICONS[key] }));
 
   return (
     <div className="flex h-full w-full flex-col">

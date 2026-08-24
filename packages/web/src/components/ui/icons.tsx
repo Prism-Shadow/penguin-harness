@@ -179,6 +179,8 @@ export const NAV_ICONS = {
   /** Skill library (an open book: two pages + spine). */
   skills: "M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z",
   models: "M7 7h10v10H7zM4 10h3m10 0h3M4 14h3m10 0h3M10 4v3m4-3v3m-4 10v3m4-3v3",
+  /** Machines (two stacked server units, each with its own status lamp). */
+  machines: "M4 4h16v6H4zM4 14h16v6H4zM7 7h.01M7 17h.01",
   usage: "M4 20V10m6 10V4m6 16v-7m4 7H2",
   traces: "M4 6h16M4 12h10M4 18h13",
   /** Benchmark center (a trophy: cup + two handles + base). */

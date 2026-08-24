@@ -15,6 +15,7 @@ import {
   NAV_GROUP_COLLAPSED_KEY,
   NAV_GROUP_KEYS,
   initialNavGroupCollapsed,
+  navKeysFor,
   storeNavGroupCollapsed,
   visibleNavKeys,
 } from "../src/lib/nav-group-collapse";
@@ -37,7 +38,14 @@ describe("NAV_GROUP_KEYS", () => {
   it("covers exactly the 智能体 → 评估中心 range, in rendered order", () => {
     // Traces is deliberately absent: the Trace panel moved into the chat toolbar's panel
     // switcher (features/dock), and /traces stays reachable through its deep links only.
-    expect([...NAV_GROUP_KEYS]).toEqual(["agents", "skills", "models", "usage", "benchmark"]);
+    expect([...NAV_GROUP_KEYS]).toEqual([
+      "agents",
+      "skills",
+      "models",
+      "machines",
+      "usage",
+      "benchmark",
+    ]);
     // Pin the endpoints by label: a manifest edit that shifts the range shows up here.
     expect(zh.nav[NAV_GROUP_KEYS[0]]).toBe("智能体");
     expect(zh.nav[NAV_GROUP_KEYS[NAV_GROUP_KEYS.length - 1]!]).toBe("评估中心");
@@ -60,10 +68,24 @@ describe("NAV_GROUP_KEYS", () => {
   });
 });
 
+describe("navKeysFor", () => {
+  it("hides the admin-only entries from a member, and nothing else", () => {
+    // /api/machines is admin-gated server-side (it spawns ssh with the server account's
+    // keys), so offering a member the row would only ever produce a 403.
+    expect([...navKeysFor(false)]).toEqual(["agents", "skills", "models", "usage", "benchmark"]);
+    expect(navKeysFor(true)).toEqual(NAV_GROUP_KEYS);
+  });
+});
+
 describe("visibleNavKeys", () => {
   it("expanded shows the whole group; collapsed leaves no entry visible or reachable (the sidebar renders the mounted rows inert at zero height)", () => {
     expect(visibleNavKeys(false)).toEqual(NAV_GROUP_KEYS);
     expect(visibleNavKeys(true)).toEqual([]);
+  });
+
+  it("a member's expanded group is their own manifest, not the admin's", () => {
+    expect(visibleNavKeys(false, false)).toEqual(navKeysFor(false));
+    expect(visibleNavKeys(true, false)).toEqual([]);
   });
 
   it("the chevron-button toggle's accessible names exist in both languages (icon-only button: aria + tooltip carry them)", () => {
