@@ -106,6 +106,26 @@ export function runInstallScriptCommand(
 }
 
 /**
+ * Creates a scratch directory and prints its path — for the one path that still puts a file
+ * on the far side: a hot upgrade applies through the remote's OWN loopback API, so the
+ * applier has to run there. An install needs none of this; its script rides ssh's stdin.
+ *
+ * POSIX gets `mktemp -d`; Windows builds one under %TEMP% from a name the caller generated,
+ * because cmd.exe has no mktemp.
+ */
+export function makeScratchCommand(platform: RemotePlatform, name: string): string {
+  if (platform === "win32") {
+    return `mkdir "%TEMP%\\${name}" & echo %TEMP%\\${name}`;
+  }
+  return `d=$(mktemp -d) && mkdir -p "$d/${name}" && echo "$d/${name}"`;
+}
+
+/** Best-effort scratch cleanup; failure here never fails an upgrade that already succeeded. */
+export function cleanupCommand(platform: RemotePlatform, dir: string): string {
+  return platform === "win32" ? `rmdir /s /q ${cmdQuote(dir)}` : `rm -rf ${shQuote(dir)}`;
+}
+
+/**
  * Unpacks the replicated hmr state (harness.json + store/), streamed to ssh's stdin as one
  * tar.gz, into the remote's default data root — where a server this page installed will look
  * for it on boot (hmr/host.ts's restore). `tar` reads stdin with `-f -` on both sides;

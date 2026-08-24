@@ -208,6 +208,11 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     // Ordinary code over this App's own auth (terminal/identity.ts): the same object the
     // business routes authenticate with. A bare kernel has none — terminals stay fail-closed.
     const identity = identityFrom(deps?.authService ?? null);
+    // A push here is a push everywhere: this App booting IS what a hot update produces, so
+    // it hands the same build on to any machine still carrying a different one. Not awaited
+    // — boot must not wait on ssh — and cheap when there is nothing to do, since which
+    // machines are behind is read from the install records, not asked over the network.
+    if (deps !== null) void deps.machines.syncOutOfDate();
 
     // ONE app, ONE pointer: every route this App serves — terminal group and business
     // groups — registers into a single Hono table, and the swap publishes deps + table +

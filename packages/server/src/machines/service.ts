@@ -36,6 +36,7 @@ import { installOnRemote, resolvePushPlan } from "./install-server.js";
 import { parseInstallRecords, withInstallRecord } from "./installs.js";
 import type { InstallRecord } from "./installs.js";
 import { probeServerState } from "./server-state.js";
+import { upgradeRemote } from "./upgrade.js";
 import { readOrCreateMachineId } from "./machine-id.js";
 import { localPortBusy, openTunnel, waitForTunneledHttp } from "./tunnel.js";
 import type { Tunnel } from "./tunnel.js";
@@ -61,6 +62,7 @@ export interface MachinesEffects {
   probe: typeof probeServerState;
   startServer: typeof startRemoteServer;
   stopServer: typeof stopRemoteServer;
+  upgrade: typeof upgradeRemote;
   openTunnel: typeof openTunnel;
   portBusy: typeof localPortBusy;
   waitForHttp: typeof waitForTunneledHttp;
@@ -138,6 +140,7 @@ export class MachinesService {
       probe: probeServerState,
       startServer: startRemoteServer,
       stopServer: stopRemoteServer,
+      upgrade: upgradeRemote,
       openTunnel,
       portBusy: localPortBusy,
       waitForHttp: waitForTunneledHttp,
@@ -595,6 +598,53 @@ export class MachinesService {
         ? `Restarted on port ${port}.`
         : `Installed, but its server did not come back up: ${started.detail}`,
     );
+  }
+
+  /**
+   * Hands this server's build to every machine that is carrying a different one.
+   *
+   * Called when an App boots, which is what a hot push produces — so a push here becomes a
+   * push everywhere, without anyone asking twice. A plain restart also boots an App, and
+   * costs nothing: which machines are behind is decided from the install RECORDS against
+   * this server's image version, so a fleet already in step is a few string comparisons and
+   * no ssh at all.
+   *
+   * Best-effort and never awaited by boot. A machine that cannot be reached, or whose admin
+   * password was changed so the far side cannot log itself in, simply stays out of sync —
+   * and the Machines page already says so, with Update as the way to force it the slow way.
+   */
+  async syncOutOfDate(): Promise<void> {
+    const plan = this.#effects.resolvePlan(this.dataRoot);
+    if (plan === null) return; // Nothing to hand on: this server stands on no release.
+    const behind = this.list().filter(
+      (machine) =>
+        !machine.local && machine.installed !== null && machine.installed.version !== plan.version,
+    );
+    if (behind.length === 0) return;
+
+    const queue = [...behind];
+    const workers = Array.from({ length: Math.min(PROBE_CONCURRENCY, queue.length) }, async () => {
+      for (let machine = queue.shift(); machine !== undefined; machine = queue.shift()) {
+        const resolved = await this.#effects.resolveTarget(machine.alias);
+        if (resolved === null) continue;
+        const outcome = await this.#effects.upgrade({
+          target: { alias: machine.alias, user: resolved.settings.user },
+          dataRoot: this.dataRoot,
+          assets: this.#assets,
+        });
+        if (outcome.kind !== "upgraded") continue;
+        // It is running our build now; record that, so the next boot skips it.
+        const record = parseInstallRecords(this.#readRecords())[machine.id];
+        if (record !== undefined) {
+          this.#remember(machine.id, {
+            ...record,
+            version: plan.version,
+            at: this.#effects.now().toISOString(),
+          });
+        }
+      }
+    });
+    await Promise.all(workers);
   }
 
   /** Records an id a probe just heard, when there is one and a record to hang it on. */

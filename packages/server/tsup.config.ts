@@ -32,16 +32,21 @@ export default defineConfig({
   dts: true,
   clean: true,
   sourcemap: true,
-  // The release installers, as REAL files beside the bundles. A remote install scp's one to
-  // the far side and runs it there, resolving it next to this module — so it has to exist in
-  // dist/, which `files: ["dist"]` is what npm ships. tsup only emits its entries, and these
-  // are copied and never imported, so nothing in the module graph would pull them along.
-  // A missing source throws here, which fails the build rather than shipping a package whose
-  // Machines page dies at "prepare the installer".
+  // Scripts that run somewhere else, as REAL files beside the bundles: the release installers
+  // a remote install feeds to the far side, and the applier a hot upgrade runs there. Each is
+  // resolved next to this module at runtime, so each has to exist in dist/ — which
+  // `files: ["dist"]` is what npm ships. tsup only emits its entries, and these are copied
+  // and never imported, so nothing in the module graph would pull them along. A missing
+  // source throws here, failing the build rather than shipping a package whose Machines page
+  // dies at "prepare the installer".
   onSuccess: async () => {
     const here = path.dirname(fileURLToPath(import.meta.url));
     for (const name of ["install.sh", "install.ps1"]) {
       fs.copyFileSync(path.join(here, "..", "..", name), path.join(here, "dist", name));
     }
+    fs.copyFileSync(
+      path.join(here, "src", "machines", "remote-upgrade.cjs"),
+      path.join(here, "dist", "remote-upgrade.cjs"),
+    );
   },
 });

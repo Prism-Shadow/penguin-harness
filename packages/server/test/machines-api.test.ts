@@ -66,6 +66,7 @@ function effects(over: Partial<MachinesEffects> = {}): Partial<MachinesEffects> 
     now: () => new Date("2026-08-24T12:00:00.000Z"),
     startServer: async () => ({ ok: true }),
     stopServer: async () => true,
+    upgrade: async () => ({ kind: "upgraded", detail: "" }),
     portBusy: async () => false,
     waitForHttp: async () => ({ ok: true }),
     openTunnel: () => ({
@@ -511,6 +512,136 @@ describe("machines API", () => {
       await admin.post("/api/machines/ssh:nas/install");
       await waitFor(() => t.deps.machines.job()?.running === false);
       expect(t.deps.machines.job()?.log.join(" ")).toContain("did not come back up");
+    });
+  });
+
+  describe("handing this build on to the fleet", () => {
+    const listed = async () =>
+      ((await (await admin.get("/api/machines")).json()) as MachinesResponse).machines;
+
+    it("upgrades every machine carrying a different build", async () => {
+      const sent: string[] = [];
+      await boot({
+        upgrade: async (o) => {
+          sent.push(o.target.alias);
+          return { kind: "upgraded", detail: "" };
+        },
+      });
+      // Both installed, both on an older build than this server's 9.9.9.
+      for (const id of ["ssh:nas", "ssh:build-box"]) {
+        await admin.post(`/api/machines/${id}/install`);
+        await waitFor(() => t.deps.machines.job()?.running === false);
+      }
+      const stale = new MachinesService(
+        machinesRoot,
+        effects({
+          resolvePlan: () => ({
+            baseVersion: "10.0.0",
+            harness: null,
+            hmrDir: null,
+            version: "10.0.0",
+          }),
+          upgrade: async (o) => {
+            sent.push(o.target.alias);
+            return { kind: "upgraded", detail: "" };
+          },
+        }),
+      );
+      sent.length = 0;
+      await stale.syncOutOfDate();
+      expect(sent.sort()).toEqual(["build-box", "nas"]);
+      // Recorded, so the next boot has nothing to do.
+      expect(stale.list().filter((m) => m.installed?.version === "10.0.0")).toHaveLength(2);
+    });
+
+    it("costs no ssh when the fleet already runs this build", async () => {
+      let resolved = 0;
+      await boot();
+      await admin.post("/api/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      const current = new MachinesService(
+        machinesRoot,
+        effects({
+          resolveTarget: async (alias) => {
+            resolved++;
+            return {
+              alias,
+              settings: {
+                user: "d",
+                hostname: alias,
+                port: 22,
+                identityFiles: [],
+                proxyJump: null,
+              },
+              machine: `d@${alias}`,
+            };
+          },
+        }),
+      );
+      await current.syncOutOfDate();
+      // Decided from the records against the image version — no host is even resolved.
+      expect(resolved).toBe(0);
+    });
+
+    it("does nothing at all when this server has no build of its own to hand on", async () => {
+      await boot();
+      let sent = 0;
+      const packaged = new MachinesService(
+        machinesRoot,
+        effects({
+          resolvePlan: () => null,
+          upgrade: async () => {
+            sent++;
+            return { kind: "upgraded", detail: "" };
+          },
+        }),
+      );
+      await packaged.syncOutOfDate();
+      expect(sent).toBe(0);
+    });
+
+    it("leaves a machine it could not upgrade recorded as behind, not as done", async () => {
+      await boot();
+      await admin.post("/api/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      const refusing = new MachinesService(
+        machinesRoot,
+        effects({
+          resolvePlan: () => ({
+            baseVersion: "10.0.0",
+            harness: null,
+            hmrDir: null,
+            version: "10.0.0",
+          }),
+          upgrade: async () => ({ kind: "refused", detail: "admin password was changed" }),
+        }),
+      );
+      await refusing.syncOutOfDate();
+      // Still 9.9.9: the page keeps saying "Out of sync", which is the truth.
+      expect(refusing.list().find((m) => m.id === "ssh:nas")?.installed?.version).toBe("9.9.9");
+    });
+
+    it("skips machines nothing was installed on", async () => {
+      await boot();
+      const sent: string[] = [];
+      const service = new MachinesService(
+        machinesRoot,
+        effects({
+          resolvePlan: () => ({
+            baseVersion: "10.0.0",
+            harness: null,
+            hmrDir: null,
+            version: "10.0.0",
+          }),
+          upgrade: async (o) => {
+            sent.push(o.target.alias);
+            return { kind: "upgraded", detail: "" };
+          },
+        }),
+      );
+      await service.syncOutOfDate();
+      expect(sent).toEqual([]);
+      void listed;
     });
   });
 
