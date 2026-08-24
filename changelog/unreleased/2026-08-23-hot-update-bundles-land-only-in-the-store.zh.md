@@ -3,6 +3,7 @@
 - **Date:** 2026-08-23
 - **Type:** fix
 - **Scope:** `server`
+- **PR:** [#422](https://github.com/Prism-Shadow/penguin-harness/pull/422)
 
 [English](2026-08-23-hot-update-bundles-land-only-in-the-store.md)
 
