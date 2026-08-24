@@ -79,6 +79,10 @@ export const en: Strings = {
     install: "Install",
     installing: "Installing\u2026",
     reinstall: "Reinstall",
+    /** This server already installed there for another project: taking it costs no transfer. */
+    adopt: "Add to this project",
+    installedElsewhere: (version: string) =>
+      `${version} is already installed there, for another project \u2014 adding it here sends nothing.`,
     /** Terminal states of a finished job. */
     installed: (version: string) => `Installed ${version}.`,
     alreadyInstalled: (version: string) => `Already on ${version} \u2014 nothing to install.`,

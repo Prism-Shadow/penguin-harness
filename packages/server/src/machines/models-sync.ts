@@ -206,18 +206,24 @@ function projectIdsIn(text: string): string[] {
 }
 
 /**
- * Gives a machine the models it needs for the Projects it and this server share.
+ * Gives a machine the models it needs, for the Projects that both use it and exist there.
  *
- * Only the shared ones: a Project id is a directory name each server mints for itself, so an
- * id this side has and that side does not is a different Project, not a missing one — and
- * creating it there would be this server inventing workspaces on someone else's machine.
+ * Two filters, and they answer different questions. `projects` is whose credentials this
+ * machine is entitled to: a machine belongs to the Projects that adopted it, and a Project
+ * that does not use it has no business putting its keys on it. The intersection with the
+ * machine's OWN project list is the other: an id is a directory name each server mints for
+ * itself, so one this side has and that side does not is a different Project, not a missing
+ * one — creating it there would be this server inventing workspaces on someone else's machine.
  */
 export async function syncModelsToMachine(opts: {
   api: MachineApi;
   /** This side's table for a Project, or null when it has no config for it. */
   loadLocal: (projectId: string) => Promise<LocalModels | null>;
-  /** Restrict to one Project (a local config change); omitted syncs every shared one. */
-  only?: string;
+  /**
+   * The Projects entitled to this machine. Omitted means every shared one, which is only
+   * right for a caller that has already decided entitlement for itself.
+   */
+  projects?: string[];
 }): Promise<ModelSyncOutcome> {
   let candidates: string[];
   try {
@@ -226,7 +232,8 @@ export async function syncModelsToMachine(opts: {
       return { kind: "failed", detail: `it answered ${listed.status} when asked its projects` };
     }
     const theirs = projectIdsIn(listed.text);
-    candidates = opts.only === undefined ? theirs : theirs.filter((id) => id === opts.only);
+    const entitled = opts.projects;
+    candidates = entitled === undefined ? theirs : theirs.filter((id) => entitled.includes(id));
   } catch (err) {
     return { kind: "failed", detail: err instanceof Error ? err.message : String(err) };
   }

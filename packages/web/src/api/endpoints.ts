@@ -137,11 +137,11 @@ export const loginOnMachine = (machineId: string, body: AuthLoginRequest) =>
  * mints the session itself over ssh and only the cookie comes back. Fails when its admin
  * password was changed — the manual sign-in is the fallback for exactly that.
  */
-export const autoSignInOnMachine = (machineId: string) =>
-  apiFetch<{ signedIn: true }>(`/api/machines/${encodeURIComponent(machineId)}/signin`, {
-    method: "POST",
-    body: {},
-  });
+export const autoSignInOnMachine = (projectId: string, machineId: string) =>
+  apiFetch<{ signedIn: true }>(
+    `/api/projects/${encodeURIComponent(projectId)}/machines/${encodeURIComponent(machineId)}/signin`,
+    { method: "POST", body: {} },
+  );
 
 /** Whether this browser already holds a session on that machine. */
 export const meOnMachine = (machineId: string) =>
@@ -478,7 +478,7 @@ export const listDirs = (projectId: string, path = "", machineId?: string | null
         `/api/projects/${encodeURIComponent(projectId)}/dirs?path=${encodeURIComponent(path)}`,
       )
     : apiFetch<DirListResponse>(
-        `/api/machines/${encodeURIComponent(machineId)}/dirs?path=${encodeURIComponent(path)}`,
+        `/api/projects/${encodeURIComponent(projectId)}/machines/${encodeURIComponent(machineId)}/dirs?path=${encodeURIComponent(path)}`,
       );
 
 /**
@@ -981,36 +981,57 @@ export const importAgent = (projectId: string, agentId: string, body: AgentImpor
  * job. The Machines page polls this while a job runs — the progress lines live on the job,
  * not on the event channel, because they belong to the one page that is waiting for them.
  */
-export const getMachines = () => apiFetch<MachinesResponse>("/api/machines");
+export const getMachines = (projectId: string) =>
+  apiFetch<MachinesResponse>(`/api/projects/${encodeURIComponent(projectId)}/machines`);
 
 /**
  * Re-probes the installed machines' servers (one ssh round trip each, server-side) and
  * answers the refreshed list. A POST because it spends those round trips — a GET that
  * spawns processes is one a prefetch or a proxy may fire on its own.
  */
-export const probeMachines = () =>
-  apiFetch<MachinesResponse>("/api/machines/probe", { method: "POST", body: {} });
+export const probeMachines = (projectId: string) =>
+  apiFetch<MachinesResponse>(`/api/projects/${encodeURIComponent(projectId)}/machines/probe`, {
+    method: "POST",
+    body: {},
+  });
 
 /** Starts an install (202, long-running); the returned body already carries the new job. */
-export const installOnMachine = (machineId: string) =>
-  apiFetch<MachinesResponse>(`/api/machines/${encodeURIComponent(machineId)}/install`, {
-    method: "POST",
-    body: {},
-  });
+export const installOnMachine = (projectId: string, machineId: string) =>
+  apiFetch<MachinesResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/machines/${encodeURIComponent(machineId)}/install`,
+    { method: "POST", body: {} },
+  );
 
 /** Brings that machine's server up and holds a tunnel to it (202, long-running). */
-export const connectMachine = (machineId: string) =>
-  apiFetch<MachinesResponse>(`/api/machines/${encodeURIComponent(machineId)}/connect`, {
-    method: "POST",
-    body: {},
-  });
+export const connectMachine = (projectId: string, machineId: string) =>
+  apiFetch<MachinesResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/machines/${encodeURIComponent(machineId)}/connect`,
+    { method: "POST", body: {} },
+  );
+
+/**
+ * Takes a machine this server already installed into this Project — no ssh, no transfer.
+ * The program over there is the same program; what this Project lacked was the membership.
+ */
+export const adoptMachine = (projectId: string, machineId: string) =>
+  apiFetch<MachinesResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/machines/${encodeURIComponent(machineId)}/adopt`,
+    { method: "POST", body: {} },
+  );
+
+/** Drops a machine from this Project. The install stays — another Project may be using it. */
+export const releaseMachine = (projectId: string, machineId: string) =>
+  apiFetch<MachinesResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/machines/${encodeURIComponent(machineId)}/release`,
+    { method: "POST", body: {} },
+  );
 
 /** Drops the tunnel; the remote server keeps running. */
-export const disconnectMachine = (machineId: string) =>
-  apiFetch<MachinesResponse>(`/api/machines/${encodeURIComponent(machineId)}/disconnect`, {
-    method: "POST",
-    body: {},
-  });
+export const disconnectMachine = (projectId: string, machineId: string) =>
+  apiFetch<MachinesResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/machines/${encodeURIComponent(machineId)}/disconnect`,
+    { method: "POST", body: {} },
+  );
 
 // Version & self-update ----------------------------------------------------------------
 

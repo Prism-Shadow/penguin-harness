@@ -222,7 +222,7 @@ describe("syncModelsToMachine", () => {
     expect(machine.puts).toHaveLength(0);
   });
 
-  it("restricts to one Project when a local config change names it", async () => {
+  it("writes only to the Projects entitled to that machine", async () => {
     const machine = fakeMachine({
       ...projects,
       "/api/projects/default_project/models": { status: 200, body: remoteTable() },
@@ -231,7 +231,7 @@ describe("syncModelsToMachine", () => {
     await syncModelsToMachine({
       api: machine.api,
       loadLocal: async () => ({ models: [local()] }),
-      only: "theirs-only",
+      projects: ["theirs-only"],
     });
     expect(machine.puts.map((p) => p.path)).toEqual(["/api/projects/theirs-only/models"]);
   });

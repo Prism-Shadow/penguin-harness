@@ -248,13 +248,13 @@ export function WorkspaceSelect({
   const parentPath = dir?.parent ?? null;
   // Hidden directories (starting with .) are excluded from the list.
   const entries = (dir?.entries ?? []).filter((e) => !e.name.startsWith("."));
-  // The machines a workspace can live on. Loaded once per open, from the LOCAL server —
-  // the list of machines is its own, whichever server the rest of the window is using.
+  // The machines a workspace can live on: this PROJECT's machines, from the LOCAL server —
+  // the list is its own, whichever server the rest of the window is using.
   useEffect(() => {
     if (!open || chooseMachine !== true) return;
     let cancelled = false;
     void api
-      .getMachines()
+      .getMachines(projectId)
       .then((res) => {
         if (!cancelled) setMachines(workspaceMachines(res));
       })
@@ -262,7 +262,7 @@ export function WorkspaceSelect({
     return () => {
       cancelled = true;
     };
-  }, [open, chooseMachine]);
+  }, [open, chooseMachine, projectId]);
 
   /**
    * The row is shown whenever this surface offers machines at all — NOT only when more than
