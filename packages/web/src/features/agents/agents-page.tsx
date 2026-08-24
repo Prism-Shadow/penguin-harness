@@ -16,7 +16,7 @@
  * the new Agent (a form-variant dropdown over the shared multi-select panel, with select all /
  * select none — a plain new Agent otherwise starts with none).
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import type { SkillMetadataItem } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
@@ -102,10 +102,12 @@ export function AgentsPage() {
   /**
    * Skill library for the create dialog's picker, flattened out of its groups: the picker is a
    * flat searchable list (the same panel the composer uses), so the grouping the library page
-   * renders carries no meaning here. `null` until the first fetch resolves.
+   * renders carries no meaning here. `null` until a fetch succeeds.
    */
   const [library, setLibrary] = useState<SkillMetadataItem[] | null>(null);
   const [libraryError, setLibraryError] = useState<string | null>(null);
+  /** In-flight guard for that fetch (StrictMode runs the effect twice), released on failure so reopening retries. */
+  const libraryPending = useRef(false);
   /** Library skills to install into the new Agent, in pick order. */
   const [createSkills, setCreateSkills] = useState<string[]>([]);
   const [skillsOpen, setSkillsOpen] = useState(false);
@@ -122,25 +124,20 @@ export function AgentsPage() {
   };
 
   // The library is fetched the first time the dialog opens, not on page load: the list itself
-  // never needs it, and a failure here must not keep the dialog from creating a plain Agent.
+  // never needs it, and a failure here must not keep the dialog from creating a plain Agent —
+  // the picker then offers nothing and the field states the error in place of its hint.
   useEffect(() => {
-    if (!createOpen || library !== null) return;
-    let cancelled = false;
+    if (!createOpen || library !== null || libraryPending.current) return;
+    libraryPending.current = true;
+    setLibraryError(null);
     api
       .getSkillLibrary()
-      .then((res) => {
-        if (cancelled) return;
-        setLibrary(res.groups.flatMap((g) => g.skills));
-        setLibraryError(null);
-      })
+      .then((res) => setLibrary(res.groups.flatMap((g) => g.skills)))
       .catch((e: unknown) => {
-        if (cancelled) return;
-        setLibrary([]);
+        // Leave `library` unset and release the guard, so the next open tries again.
+        libraryPending.current = false;
         setLibraryError(apiErrorText(e));
       });
-    return () => {
-      cancelled = true;
-    };
   }, [createOpen, library]);
 
   // Cross-page create intent (the sidebar's mode-dependent "new" button navigates here

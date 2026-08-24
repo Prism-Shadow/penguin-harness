@@ -227,6 +227,8 @@ function explicitSkillVersion(skillMd: string): number | null {
 
 /** Validate the POST request body: names must be a non-empty array of strings. */
 function parseInstallNames(body: Record<string, unknown>): string[] {
+  // Install requires at least one name (unlike the optional field on Agent creation), so the
+  // array shape is checked here and the per-entry check is left to the shared validator.
   if (!Array.isArray(body.names) || body.names.length === 0) {
     throw badRequest("names must be a non-empty array.");
   }
