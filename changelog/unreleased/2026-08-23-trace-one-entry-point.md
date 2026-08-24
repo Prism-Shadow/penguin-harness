@@ -8,10 +8,11 @@
 [中文版](2026-08-23-trace-one-entry-point.zh.md)
 
 Alongside the dock's Trace panel, which shows the Trace of the conversation on screen, the
-`/traces` page was deep-linked from a Trace file row in the conversation's details card and
-from an eye button on every row of the Agent list. Both of those links were removed, leaving
-the dock's Trace panel as the way a conversation's Trace is read. The `/traces` page itself,
-its data and its API are untouched.
+`/traces` page was deep-linked from three places: a Trace file row in the conversation's
+details card, an eye button on every row of the Agent list, and the Session column of the
+Benchmark page's per-run table. All three links were removed, leaving the dock's Trace panel
+as the only way into a Trace from the app. The `/traces` page itself, its data and its API
+are untouched.
 
 ## Details
 
@@ -23,8 +24,13 @@ its data and its API are untouched.
 - `S.chat.traceFile` and `S.chat.copyTracePath` left both string dictionaries, the eye
   glyph left the Agent list's icon table, and `pathFileName` — whose only caller was the
   removed row — left `file-path.ts` along with its unit tests.
-- The `/traces` route was kept: the Benchmark page's per-run Session column still links
-  into it, and an existing `?agentId=`/`?sessionId=` URL still resolves.
+- The Benchmark page's per-run Session column shows the Session id as plain text instead of
+  a link. `CaseRow` and `EvaluationRow` lost the `agentId` prop they carried only to build
+  that link, and the file's only `Link` import went with it.
+- The `/traces` route was kept even though nothing in the app now links to it: an existing
+  `?agentId=`/`?sessionId=` URL still resolves, which matters for links already shared, and
+  the page holds the Trace import/export controls, which exist nowhere else. Comments naming
+  the removed entry points were corrected rather than left to rot.
 
 ## Docs
 

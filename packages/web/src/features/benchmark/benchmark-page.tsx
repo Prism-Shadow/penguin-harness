@@ -9,7 +9,7 @@
  * With a ?agentId= deep link, only the target Agent is expanded by default.
  */
 import { useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router";
+import { useSearchParams } from "react-router";
 import type {
   BenchmarkCaseScore,
   BenchmarkCaseSummary,
@@ -263,13 +263,11 @@ const CELL = "px-3 py-2";
 
 /** One evaluation record: main row + a sub-table of per-Case scores that expands on click. */
 function EvaluationRow({
-  agentId,
   evaluation,
   caseTitles,
   onOpenCase,
   currency,
 }: {
-  agentId: string;
   evaluation: BenchmarkEvaluation;
   caseTitles: ReadonlyMap<string, string>;
   onOpenCase: (caseId: string) => void;
@@ -344,7 +342,6 @@ function EvaluationRow({
                 {evaluation.cases.map((c) => (
                   <CaseRow
                     key={c.case}
-                    agentId={agentId}
                     caseScore={c}
                     title={caseTitles.get(c.case)}
                     onOpenCase={caseTitles.has(c.case) ? onOpenCase : undefined}
@@ -360,17 +357,16 @@ function EvaluationRow({
   );
 }
 
-/** Session deep link: jumps straight to that Session's trace observability (?sessionId= auto-selects it, instead of stopping at the Agent group). */
-function SessionLink({ agentId, sessionId }: { agentId: string; sessionId?: string }) {
+/**
+ * Session id, for correlating a Run with what the side panel shows. It used to deep-link into the
+ * Traces page; reading a Trace is now the side panel's job alone, so this is identification only.
+ */
+function SessionCell({ sessionId }: { sessionId?: string }) {
   if (!sessionId) return <span className="text-gray-400">—</span>;
   return (
-    <Link
-      to={`/traces?agentId=${encodeURIComponent(agentId)}&sessionId=${encodeURIComponent(sessionId)}`}
-      className="font-mono text-gray-600 underline decoration-gray-300 underline-offset-2 hover:text-gray-900 dark:text-gray-300 dark:decoration-gray-600 dark:hover:text-gray-100"
-      title={sessionId}
-    >
+    <span className="font-mono text-gray-600 dark:text-gray-300" title={sessionId}>
       {sessionId}
-    </Link>
+    </span>
   );
 }
 
@@ -379,13 +375,11 @@ function SessionLink({ agentId, sessionId }: { agentId: string; sessionId?: stri
  * results; the UI never recomputes averages.
  */
 function CaseRow({
-  agentId,
   caseScore: c,
   title,
   onOpenCase,
   currency,
 }: {
-  agentId: string;
   caseScore: BenchmarkCaseScore;
   title?: string;
   onOpenCase?: (caseId: string) => void;
@@ -449,10 +443,7 @@ function CaseRow({
               {run.durationMs !== undefined ? humanizeDuration(run.durationMs) : "—"}
             </td>
             <td className="px-2 py-1">
-              <SessionLink
-                agentId={agentId}
-                {...(run.sessionId ? { sessionId: run.sessionId } : {})}
-              />
+              <SessionCell {...(run.sessionId ? { sessionId: run.sessionId } : {})} />
             </td>
           </tr>
         ))}
@@ -621,7 +612,6 @@ export function BenchmarkPage() {
                         {[...evaluations].reverse().map((ev, i) => (
                           <EvaluationRow
                             key={i}
-                            agentId={selection.agentId}
                             evaluation={ev}
                             caseTitles={caseTitles}
                             onOpenCase={setOpenCaseId}
