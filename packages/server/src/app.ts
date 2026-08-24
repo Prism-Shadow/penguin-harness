@@ -149,8 +149,10 @@ import { usageRoutes } from "./http/routes/usage.js";
 import { agentSessionsRoutes, sessionsRoutes } from "./http/routes/sessions.js";
 import { sessionMessagingRoutes } from "./http/routes/messaging.js";
 import { versionRoutes } from "./http/routes/version.js";
+import { machinesRoutes } from "./http/routes/machines.js";
 import { UsageRecorder } from "./runtime/usage-recorder.js";
 import { previewRoutes } from "./http/routes/preview.js";
+import { MachinesService } from "./machines/service.js";
 
 export interface AppDeps {
   config: ServerConfig;
@@ -198,6 +200,12 @@ export interface AppDeps {
   errors: ErrorRecorder;
   /** Desktop mode (PENGUIN_DESKTOP_TOKEN): one-shot login + shutdown token holder; null outside desktop mode. */
   desktop: DesktopService | null;
+  /**
+   * Installing this build on a machine from the server's own `~/.ssh/config` (the Machines
+   * page). Business, not runtime: spawning ssh and packing an image are in-process effects,
+   * so the whole capability ships by push — see machines/service.ts.
+   */
+  machines: MachinesService;
   /** HMR host: loads/swaps/persists the platform and web bundles (park/boot kernel). */
   hmr: HmrHost;
   /**
@@ -234,6 +242,8 @@ export interface BuildDepsOverrides {
   messagingInboundImageBudgetBytes?: number;
   /** Test double: the QQ scan-to-connect transport (avoids real q.qq.com requests). */
   qqScanTransport?: QQScanTransport;
+  /** Test double: machines service whose ssh effects are faked (the real one reads ~/.ssh/config and spawns ssh). */
+  machines?: MachinesService;
   /**
    * Test double: scrypt work factor for password hashes written through this app.
    * Omitted in production, where the KDF runs at full strength.
@@ -937,6 +947,9 @@ export function buildAppDeps(
     sessionSources,
     errors,
     desktop: caps.desktop,
+    // Anchored at the data root: that is where the hmr store the pushable image comes from
+    // lives, and where verified Node runtime downloads are cached between installs.
+    machines: overrides.machines ?? new MachinesService(config.root),
     hmr,
     proxyControl: caps.proxyControl,
     log,
@@ -1033,6 +1046,7 @@ export function createApp(
   app.route("/api/version", versionRoutes(deps));
   app.route("/api/admin/users", adminUsersRoutes(deps));
   app.route("/api/admin/settings", adminSettingsRoutes(deps));
+  app.route("/api/machines", machinesRoutes(deps));
   app.route("/api/events", eventsRoutes(deps));
   // Skill library listing: readable once logged in, not nested under a Project prefix.
   app.route("/api/skills", skillLibraryRoutes());

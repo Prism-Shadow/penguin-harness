@@ -272,8 +272,11 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     //                         registry id the successor owns
     // Known exceptions, accepted with reasons: an in-flight self-update child (rare,
     // bounded by its own 10-minute cap, and a successful update restarts the process
-    // anyway) and SSE subscriber closures (they serve the old generation's stream until
-    // the client reloads on web_updated — the channel hub itself is runtime-owned).
+    // anyway); an in-flight machines install (same shape — its ssh children run to their
+    // own timeouts, the far side's installer stages-and-swaps or rolls back on its own,
+    // and the progress log is simply lost, which re-running recovers); and SSE subscriber
+    // closures (they serve the old generation's stream until the client reloads on
+    // web_updated — the channel hub itself is runtime-owned).
     // A build that adds a service with state of its own (sandbox settings, workflow
     // refs, ssh tunnels, an in-flight job) adds it to the right list here — the list is
     // the contract, not a description of today's services.
