@@ -103,6 +103,11 @@ class MachineShell {
       },
     );
     child.stdout.on("data", (chunk: Buffer) => this.#onData(String(chunk)));
+    // A write to a shell that already died raises EPIPE on this stream ASYNCHRONOUSLY, after
+    // the write returned — with no listener that is an unhandled error event, which takes the
+    // process down. The command it belonged to is answered by #drop() on the child's own exit,
+    // so there is nothing left to report here.
+    child.stdin.on("error", () => {});
     // The shell's own stderr (ssh's diagnostics) is not a command's output; merged commands
     // carry theirs on stdout via 2>&1.
     child.stderr.on("data", () => {});
