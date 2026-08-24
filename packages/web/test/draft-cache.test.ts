@@ -286,3 +286,35 @@ describe("load / save / clear (key isolation, errors silenced)", () => {
     expect(loadDraft(draftKey("u", "p"), broken)).toEqual({});
   });
 });
+
+describe("a draft's workspace machine", () => {
+  it("round-trips beside the path", () => {
+    // The pair travels together: `/srv/app` names a different directory on every machine,
+    // so a restored draft without its machine would create the Session here, against a path
+    // that only exists somewhere else.
+    const store = memStorage();
+    saveDraft("k", { workspace: "/srv/app", machineId: "kUkIyqU-1GOfXgKD" }, store);
+    expect(loadDraft("k", store)).toMatchObject({
+      workspace: "/srv/app",
+      machineId: "kUkIyqU-1GOfXgKD",
+    });
+  });
+
+  it("is absent for a workspace on this machine, not stored as a value", () => {
+    const store = memStorage();
+    saveDraft("k", { workspace: "/srv/app" }, store);
+    expect(loadDraft("k", store).machineId).toBeUndefined();
+  });
+
+  it("drops an empty machine rather than restoring a Session target of nothing", () => {
+    const store = memStorage();
+    store.setItem("k", JSON.stringify({ workspace: "/srv/app", machineId: "" }));
+    expect(loadDraft("k", store).machineId).toBeUndefined();
+  });
+
+  it("ignores a machine that is not a string", () => {
+    const store = memStorage();
+    store.setItem("k", JSON.stringify({ workspace: "/srv/app", machineId: 7 }));
+    expect(loadDraft("k", store).machineId).toBeUndefined();
+  });
+});
