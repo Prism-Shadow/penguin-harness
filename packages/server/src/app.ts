@@ -76,6 +76,7 @@ import {
   SessionLoader,
   SessionManager,
 } from "./runtime/session-manager.js";
+import type { HmrAgent } from "./runtime/hmr-agent.js";
 import { SessionSources } from "./runtime/session-sources.js";
 import { Scheduler } from "./runtime/scheduler.js";
 import { TitleGenerator, TitleNotifier } from "./runtime/title-generator.js";
@@ -555,6 +556,10 @@ export function buildAppDeps(
   // an agent open for as long as it has a session, and the lifecycle registers that
   // agent's workflows for exactly that window.
   agentLifecycle?: AgentLifecycle,
+  // The shared per-session agents table (see runtime/hmr-agent.ts): platform.ts claims
+  // it from the resource registry so sessions — queues, runs, mirrors — survive a
+  // platform swap; the manager attaches this generation to every agent at construction.
+  agents?: Map<string, HmrAgent>,
 ): AppDeps {
   const { config, db, authService, channels, hmr } = caps;
   const log = overrides.log ?? ((line: string) => console.log(line));
@@ -666,6 +671,7 @@ export function buildAppDeps(
     // conversation (see the shared publisher above for the audience).
     notifyProjectUsers,
     ...(overrides.now ? { now: overrides.now } : {}),
+    ...(agents !== undefined ? { agents } : {}),
   });
 
   const projectService = new ProjectService({

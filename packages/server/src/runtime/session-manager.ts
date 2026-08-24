@@ -1250,6 +1250,13 @@ export class SessionManager implements AgentImpl {
     }
     if (this.refusesAutoStart(agent.sessionId)) return finishIdle();
     await this.ensureSession(agent);
+    // Re-checked after the await: an interrupt landing during the reload has no
+    // controller to fire yet and parks in the flag — it must cancel this relaunch, not
+    // leak into a run that then ignores it.
+    if (agent.interruptRequested) {
+      agent.interruptRequested = false;
+      return finishIdle();
+    }
     const open = this.openRun(agent, "running", event.thinkingLevel);
     this.beginRunBookkeeping(agent, open);
     // Empty input: the suspended turn's pending messages ride in as the reloaded

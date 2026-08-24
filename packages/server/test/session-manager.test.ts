@@ -47,6 +47,7 @@ import { ChannelHub } from "../src/runtime/channel.js";
 import type { ChannelEvent } from "../src/runtime/channel.js";
 import type { ErrorRecordArgs, ErrorSink } from "../src/runtime/error-recorder.js";
 import { SessionManager } from "../src/runtime/session-manager.js";
+import type { HmrAgent } from "../src/runtime/hmr-agent.js";
 import type { RuntimeSession, SessionLoader } from "../src/runtime/session-manager.js";
 import { SessionSources } from "../src/runtime/session-sources.js";
 import type { TitleRequest } from "../src/runtime/title-generator.js";
@@ -124,8 +125,11 @@ describe("session-manager", () => {
     errors?: ErrorSink,
     /** Stubbed clock for persisted timestamps (see the last_active_at test). */
     now?: () => Date,
+    /** A shared agents table, for the hot-swap tests (two generations over one table). */
+    agents?: Map<string, HmrAgent>,
   ): SessionManager =>
     new SessionManager({
+      ...(agents ? { agents } : {}),
       sessions,
       channels,
       sources,
@@ -1444,5 +1448,191 @@ describe("session-manager", () => {
     await waitFor(() => manager.statusOf("session-1") === "idle");
     await new Promise((r) => setTimeout(r, 10));
     expect(notified.length).toBe(2);
+  });
+
+  describe("hot-swap handoff (shared agents: suspend at a turn boundary → the successor finishes)", () => {
+    interface SteppedState {
+      /** Set true to make the next stepRun end the run normally. */
+      finish: boolean;
+      began: OmniMessage[][];
+      steps: number;
+      ended: number;
+      disposed: number;
+      aborted: boolean;
+    }
+    const steppedState = (): SteppedState => ({
+      finish: false,
+      began: [],
+      steps: 0,
+      ended: 0,
+      disposed: 0,
+      aborted: false,
+    });
+
+    /**
+     * A fake with the STEPPED surface: beginRun opens, each stepRun is one ~5ms "turn"
+     * answering continue until `finish` (or the abort signal) — the exact shape the pump
+     * swaps at.
+     */
+    function steppedFakeSession(sessionId: string, state: SteppedState): RuntimeSession {
+      let signal: AbortSignal | null = null;
+      return {
+        sessionId,
+        toolPermission: () => "rw",
+        generateTitle: async () => ({ title: null, usage: null }),
+        compactability: () => "ok" as const,
+        steer: () => false,
+        skipReconnectWait: () => false,
+        dispose: () => {
+          state.disposed++;
+        },
+        endRun: () => {
+          state.ended++;
+        },
+        async *run() {
+          throw new Error("stepped fakes are driven through beginRun/stepRun");
+        },
+        async *beginRun(input: OmniMessage[], opts: { signal: AbortSignal }) {
+          state.began.push(input);
+          signal = opts.signal;
+          yield assistantText("begun");
+          return "continue" as const;
+        },
+        async *stepRun() {
+          state.steps++;
+          await new Promise((r) => setTimeout(r, 5));
+          if (signal?.aborted) {
+            state.aborted = true;
+            yield abortEvent();
+            return "done" as const;
+          }
+          if (state.finish) {
+            yield assistantText("finished");
+            return "done" as const;
+          }
+          yield assistantText(`turn-${state.steps}`);
+          return "continue" as const;
+        },
+        async *compact(): AsyncGenerator<OmniMessage> {},
+      };
+    }
+
+    it("a running Task survives the generation change: suspended at a boundary, finished by the successor, never idle in between", async () => {
+      sessions.updateApprovalMode("session-1", "allow-all");
+      const agents = new Map<string, HmrAgent>();
+      const oldState = steppedState();
+      const old = makeManager(
+        loaderOf(steppedFakeSession("session-1", oldState)),
+        undefined,
+        undefined,
+        agents,
+      );
+      const events = capture("session-1");
+      await old.startTask("session-1", [userText("long job")]);
+      await waitFor(() => oldState.steps >= 1);
+      old.quiesce();
+
+      // The successor generation over the SAME table: construction attaches it to every
+      // agent; the pump suspends the old run at its next turn boundary and finishes the
+      // remainder from the (fake) reload with an EMPTY input.
+      const newState = steppedState();
+      const next = makeManager(
+        loaderOf(steppedFakeSession("session-1", newState)),
+        undefined,
+        undefined,
+        agents,
+      );
+      await waitFor(() => oldState.ended === 1 && oldState.disposed === 1);
+      expect(oldState.aborted).toBe(false);
+      await waitFor(() => newState.began.length === 1);
+      expect(newState.began[0]).toEqual([]);
+      expect(next.statusOf("session-1")).toBe("running");
+
+      // The interrupt reaches the successor's run; the whole handoff published no
+      // intermediate idle — the conversation never appeared to stop.
+      expect(next.abortTask("session-1")).toBe(true);
+      await waitFor(() => next.statusOf("session-1") === "idle");
+      expect(newState.aborted).toBe(true);
+      const states = serverEvents(events)
+        .filter((e) => e.type === "task_state")
+        .map((e) => e.state);
+      expect(states[0]).toBe("running");
+      expect(states.filter((s) => s === "idle")).toHaveLength(1);
+      expect(states[states.length - 1]).toBe("idle");
+    });
+
+    it("follow-ups queued before the swap survive it and auto-start under the successor", async () => {
+      sessions.updateApprovalMode("session-1", "allow-all");
+      const agents = new Map<string, HmrAgent>();
+      const oldState = steppedState();
+      const old = makeManager(
+        loaderOf(steppedFakeSession("session-1", oldState)),
+        undefined,
+        undefined,
+        agents,
+      );
+      await old.startTask("session-1", [userText("long job")]);
+      const queued = await old.startTask("session-1", [userText("after that")], {
+        queueIfBusy: true,
+      });
+      expect(queued.queued).toBe(true);
+      old.quiesce();
+
+      const newState = steppedState();
+      newState.finish = true; // every successor run ends at its first step
+      const next = makeManager(
+        loaderOf(steppedFakeSession("session-1", newState)),
+        undefined,
+        undefined,
+        agents,
+      );
+      expect(next.pendingFollowUpCount("session-1")).toBe(1);
+      // The suspended remainder finishes first (empty input), then the queued follow-up
+      // runs — both under the successor.
+      await waitFor(() => newState.began.length === 2);
+      expect(newState.began[0]).toEqual([]);
+      expect(newState.began[1]!.length).toBe(1);
+      await waitFor(() => next.statusOf("session-1") === "idle");
+      expect(next.pendingFollowUpCount("session-1")).toBe(0);
+    });
+
+    it("an interrupt during the old generation's final turn cancels the run; nothing resumes", async () => {
+      sessions.updateApprovalMode("session-1", "allow-all");
+      const agents = new Map<string, HmrAgent>();
+      const oldState = steppedState();
+      const old = makeManager(
+        loaderOf(steppedFakeSession("session-1", oldState)),
+        undefined,
+        undefined,
+        agents,
+      );
+      await old.startTask("session-1", [userText("long job")]);
+      old.quiesce();
+      const newState = steppedState();
+      const next = makeManager(
+        loaderOf(steppedFakeSession("session-1", newState)),
+        undefined,
+        undefined,
+        agents,
+      );
+      // Interrupt through the successor's facade: the controller lives on the agent, so
+      // it reaches the run whichever generation currently drives it.
+      expect(next.abortTask("session-1")).toBe(true);
+      await waitFor(() => next.statusOf("session-1") === "idle");
+      await new Promise((r) => setTimeout(r, 25));
+      // The run ended by abort (old or new generation, whichever held the turn); no
+      // ghost continuation is left running or queued.
+      expect(next.statusOf("session-1")).toBe("idle");
+      expect(newState.steps === 0 || newState.aborted).toBe(true);
+    });
+
+    it("a compaction has no boundary contract and is hard-aborted by quiesce, gating the drain", async () => {
+      const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
+      await manager.startCompact("session-1");
+      await waitFor(() => manager.statusOf("session-1") === "compacting");
+      const { aborted } = manager.quiesce();
+      expect(aborted).toHaveLength(1);
+      await Promise.allSettled(aborted);
+    });
   });
 });

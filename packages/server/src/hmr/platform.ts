@@ -33,6 +33,7 @@ import { bindTerminalStream } from "../terminal/stream.js";
 import type { SandboxProviderSource, SandboxSettings } from "../sandbox/index.js";
 import { SandboxService } from "../sandbox/index.js";
 import { buildAppDeps, createApp, type AppDeps, type BuildDepsOverrides } from "../app.js";
+import type { HmrAgent } from "../runtime/hmr-agent.js";
 import { seamHttp } from "./hono-seam.js";
 import {
   PENGUIN_FAMILY,
@@ -132,7 +133,20 @@ export const PlatformIface = defineIface<PlatformApi, PlatformCtx>({
 interface ParkedInterfaces extends Interfaces {
   family: string;
   terminal: MembersOf<TerminalSession>;
+  /** The per-session event loops that survive a swap (the shared table's values — see HMR_AGENTS_RESOURCE_ID). */
+  "hmr-agents": MembersOf<HmrAgent>;
 }
+
+/**
+ * The ONE registry entry carrying the shared per-session agents table
+ * (Map<sessionId, HmrAgent> — see ../runtime/hmr-agent.ts), claimed and re-registered by
+ * every generation's create(). A single entry rather than per-session ids: adoption
+ * needs the whole set at once, and nothing about a session's runtime belongs in the
+ * parked document (its durable state is the Trace). The `hmr-agents:` prefix keeps it
+ * inside its declared group, so an incompatible successor hard-stops the table through
+ * disposeGroup like any other resource.
+ */
+const HMR_AGENTS_RESOURCE_ID = "hmr-agents:table";
 
 export const DECLARED_RESOURCES: ParkedInterfaces = {
   family: PENGUIN_FAMILY,
@@ -159,6 +173,40 @@ export const DECLARED_RESOURCES: ParkedInterfaces = {
     "onExit",
     "kill",
     "dispose",
+  ],
+  // A surviving session event loop, as its adopters use it — the full public surface of
+  // HmrAgent: identity, the cross-generation state the generation's procedures read and
+  // write, and the loop protocol (post/submit/setPending and the activity controls).
+  // Same completeness rule as `terminal` above.
+  "hmr-agents": [
+    "projectId",
+    "agentId",
+    "provider",
+    "modelId",
+    "sessionId",
+    "queue",
+    "activeEvent",
+    "session",
+    "generation",
+    "status",
+    "approvals",
+    "abort",
+    "activeKind",
+    "activeRun",
+    "running",
+    "interruptRequested",
+    "pendingInputs",
+    "pendingBootstrap",
+    "pendingSteering",
+    "lastActivityMs",
+    "post",
+    "submit",
+    "setPending",
+    "beginActivity",
+    "finishActivity",
+    "interrupt",
+    "evictable",
+    "disposeWhenSettled",
   ],
 };
 
@@ -288,20 +336,41 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     if (caps === null) {
       console.warn("[platform] bare kernel: terminals only, no business surface");
     } else {
+      // The shared per-session agents table (see ../runtime/hmr-agent.ts): the
+      // predecessor's agents — with the queues, runs and mirrors they hold — are adopted
+      // by this App's SessionManager at construction (setPending: an idle agent swaps
+      // its code pointer immediately, a busy one at its run's next turn boundary, where
+      // the old generation suspends the run and this one finishes it from the Trace).
+      // Re-registered every generation so the overwrite retires the predecessor's handle
+      // and the process-exit sweep always reaches the current table. An incompatible
+      // predecessor's table was already hard-stopped by the group reconciliation above.
+      const agents =
+        ctx.resources.claim<Map<string, HmrAgent>>(HMR_AGENTS_RESOURCE_ID) ??
+        new Map<string, HmrAgent>();
+      ctx.resources.register(HMR_AGENTS_RESOURCE_ID, agents, () => {
+        for (const a of agents.values()) {
+          a.queue.length = 0;
+          a.interrupt();
+          a.disposeWhenSettled();
+        }
+        agents.clear();
+      });
       deps = buildAppDeps(
         caps,
         caps.overrides,
         () => sandbox.confiner(),
         workflowLifecycle ?? undefined,
+        agents,
       );
       // Schedule scheduler: startup reconciliation (missed, don't backfill) + periodic
       // scan; only active while this App is.
       await deps.scheduler.start();
       // Goal mode runs only in SessionManager memory: a hard crash (SIGKILL, power loss)
       // can leave goal_state rows stuck `active` with no runner behind them — and so can
-      // the previous App, whose manager a swap hard-aborts. Reconcile them to `aborted`
-      // now — nothing is running in THIS App yet — so the chat banner never restores a
-      // phantom "running" goal. GOAL.yaml on disk stays `active` as the resume point.
+      // the previous App, whose goals a swap hard-aborts (only plain Task runs are
+      // suspended at a boundary; see quiesce). Reconcile them to `aborted` now — nothing
+      // is running in THIS App yet — so the chat banner never restores a phantom
+      // "running" goal. GOAL.yaml on disk stays `active` as the resume point.
       deps.goalsRepo.abortOrphanedActive();
     }
 
@@ -334,15 +403,21 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     //
     // DELIVERED (survives the swap; the successor adopts it at load):
     //   - pty sessions        registry `terminal:*` + parked handle ids → terminals.adopt
+    //   - session event loops registry `hmr-agents:table` — each HmrAgent carries its
+    //                         session's whole cross-generation surface (queue, status,
+    //                         approvals, interrupt, mirrors) across the swap. A running
+    //                         Task is suspended at its next turn boundary and finished
+    //                         from the Trace by the successor as the loop's next event.
     //   - runtime singletons  db / auth / channels / config / proxy / desktop —
     //                         runtime-owned, re-claimed by every App; not this App's to park
     // SUSPENDED (stopped here; the successor rebuilds it fresh at load):
     //   - scheduler           stop() now; successor start() reconciles missed fires
-    //   - agent runs          approvals → deny, drives → abort; goal rows reconciled by
-    //                         the successor's abortOrphanedActive
-    //   - session environments dispose() after the drive settles — kills background
-    //                         commands (dev servers etc.) that would otherwise run on
-    //                         orphaned and invisible to the successor's fresh Session
+    //   - goal runs / compactions  approvals → deny, activities → abort (no turn-boundary
+    //                         contract); goal rows reconciled by the successor's
+    //                         abortOrphanedActive
+    //   - loaded Session objects  old-generation code: disposed at the agent's pointer
+    //                         swap and reloaded from the Trace by the successor; their
+    //                         environments (background commands) die with them
     //   - reap timers         TerminalManager.quiesce runs them now (dead ptys only)
     // DETACHED (the object survives, this App's grip on it does not):
     //   - pty exit listeners  unsubscribed, so a dead generation never releases a
@@ -365,7 +440,23 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       const drains: Promise<unknown>[] = [];
       if (business !== null) {
         business.scheduler.stop();
-        drains.push(business.manager.shutdown(DRAIN_GRACE_MS));
+        // Suspended Task runs OUTLIVE the swap by design (their agents are shared state
+        // the successor adopts through the registry table); only hard-ABORTED work
+        // (goals, compactions) gates the successor's boot, with the same grace
+        // shutdown() gives it — the successor must not race a dying activity's Trace
+        // writes on a session it may immediately reload.
+        const q = business.manager.quiesce();
+        if (q.aborted.length > 0) {
+          const done = Promise.allSettled(q.aborted).then(() => undefined);
+          drains.push(
+            Promise.race([
+              done,
+              new Promise<void>((resolve) => {
+                setTimeout(resolve, DRAIN_GRACE_MS).unref?.();
+              }),
+            ]),
+          );
+        }
       }
       drained = Promise.allSettled(drains).then(() => undefined);
     });

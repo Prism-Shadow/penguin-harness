@@ -226,6 +226,11 @@ export class HmrAgent {
     if (this.pending === null) return;
     if (this.activeKind === "goal" || this.activeKind === "compact") return; // quiesce aborts these
     if (this.activeRun !== null) {
+      // An interrupted run is never suspended: the abort belongs to this event — one
+      // more step lets the run observe the signal and end as aborted (streaming its
+      // abort marker), and the swap takes the next boundary instead. Suspending here
+      // would resurrect a run the user just stopped.
+      if (this.abort?.signal.aborted === true) return;
       // Old generation's open run: close it at this boundary; the active event's
       // remainder continues from the Trace under the new code.
       const remainder = this.current.suspend(this);
