@@ -380,7 +380,7 @@ export const zh = {
     createSnapshot: "从快照初始化",
     createSnapshotPick: "选择快照包",
     createSnapshotHint:
-      "可选：选择导出的 Agent State 快照包（.tar.gz），新 Agent 以包内状态创建；名称与描述留空则沿用包内值",
+      "选择导出的 Agent State 快照包（.tar.gz），新 Agent 以包内状态创建；名称与描述留空则沿用包内值",
     createSnapshotSkillsOff: "快照包自带技能，与技能选择互斥",
     createSnapshotClear: "移除已选快照包",
     sessionCount: (n: number): string => `${n} 个 Session`,

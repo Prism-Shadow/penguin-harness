@@ -393,7 +393,7 @@ export const en: Strings = {
     createSnapshot: "Initialize from a snapshot",
     createSnapshotPick: "Choose a snapshot package",
     createSnapshotHint:
-      "Optional: pick an exported Agent State snapshot package (.tar.gz) — the new agent starts from the package's state; name and description left empty keep the package's values.",
+      "Pick an exported Agent State snapshot package (.tar.gz) to start the new agent from its state; name and description left empty keep the package's values.",
     createSnapshotSkillsOff:
       "The snapshot package carries its own skills, so skill seeding is unavailable.",
     createSnapshotClear: "Remove the selected package",

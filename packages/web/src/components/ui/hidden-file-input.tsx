@@ -9,16 +9,21 @@
  * initial containing block, so a control sitting past the fold added document-level
  * scrollable overflow and a second scrollbar.
  *
- * Hence the wrapper: it is `relative`, so the containing block travels **with the control**
- * instead of depending on whichever ancestor happens to be positioned. The wrapper is
- * `contents`-free on purpose — it is a real box, but an empty inline one with an absolutely
- * positioned child, so it contributes no width and no height to the label around it.
+ * Hence the wrapper: it is positioned (`absolute`), so the containing block travels **with
+ * the control** instead of depending on whichever ancestor happens to be positioned. The
+ * wrapper is `contents`-free on purpose — it must be a real box to be a containing block.
+ *
+ * `absolute` rather than `relative`: with auto offsets and a clipped 0-size child it still
+ * renders at its static position inside the label, but it is **out of flow** — an in-flow
+ * zero-width wrapper counts as a flex item in the `inline-flex gap-*` labels that host every
+ * one of these controls, and the gap slot in front of the text pushed the label text a full
+ * gap off center.
  */
 import type { InputHTMLAttributes } from "react";
 
 export function HiddenFileInput(props: Omit<InputHTMLAttributes<HTMLInputElement>, "type">) {
   return (
-    <span className="relative">
+    <span className="absolute">
       <input type="file" className="sr-only" {...props} />
     </span>
   );
