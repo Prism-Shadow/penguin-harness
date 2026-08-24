@@ -1228,6 +1228,9 @@ export const en: Strings = {
       `Context compacted; thinking level switched to "${to}".`,
     thinkingSwitchCompactFailed:
       "The compaction did not finish; the thinking level was switched anyway.",
+    /** The machine a workspace lives on; the row only shows when more than one is reachable. */
+    workspaceMachine: "Machine",
+    workspaceHere: "here",
     workspaceUseThis: "Use this dir",
     workspaceUp: "Parent dir",
     workspaceNoSubdirs: "No subdirectories",
