@@ -78,6 +78,7 @@ function effects(over: Partial<MachinesEffects> = {}): Partial<MachinesEffects> 
       detach: () => {},
     }),
     probe: async () => ({ state: { kind: "running", port: 7364, pid: 4242 }, machineId: null }),
+    runOn: async () => ({ code: 0, stdout: "", stderr: "" }),
     install: async (opts): Promise<RemoteInstallOutcome> => {
       opts.onProgress?.("Pushing…");
       return { kind: "installed", output: "done", identity: IDENTITY };
@@ -642,6 +643,84 @@ describe("machines API", () => {
       await service.syncOutOfDate();
       expect(sent).toEqual([]);
       void listed;
+    });
+  });
+
+  describe("browsing a machine's directories", () => {
+    const ID = "QS7J4YVgSovi-Z2c";
+    /** What listDirsCommand's output looks like coming back over ssh. */
+    const listing = (path: string, names: string[]) =>
+      `${path}\n---penguin-dirs---\n${names.join("\n")}\n`;
+
+    const withDirs = async (stdout: string, code = 0) => {
+      await boot({
+        probe: async () => ({ state: { kind: "running", port: 7364, pid: 1 }, machineId: ID }),
+        runOn: async () => ({ code, stdout, stderr: "" }),
+      });
+      await admin.post("/api/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      await admin.post("/api/machines/probe");
+    };
+
+    it("lists that machine's directories WITHOUT signing in to its server", async () => {
+      // The whole point: a workspace picker must not demand a second login. This goes over
+      // ssh, authenticated by the local admin session like the rest of this surface.
+      await withDirs(listing("/home/deploy", ["projects", "src"]));
+      const res = await admin.get(`/api/machines/${ID}/dirs?path=`);
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({
+        path: "/home/deploy",
+        parent: "/home",
+        entries: [
+          { name: "projects", path: "/home/deploy/projects" },
+          { name: "src", path: "/home/deploy/src" },
+        ],
+      });
+    });
+
+    it("uses the path the FAR side resolved, not one built here", async () => {
+      // Only that machine can say what ~ or a symlink means on it.
+      await withDirs(listing("/var/data/real", ["a"]));
+      const body = (await (await admin.get(`/api/machines/${ID}/dirs?path=~`)).json()) as {
+        path: string;
+      };
+      expect(body.path).toBe("/var/data/real");
+    });
+
+    it("has no parent at the root", async () => {
+      await withDirs(listing("/", ["etc", "home"]));
+      const body = (await (await admin.get(`/api/machines/${ID}/dirs`)).json()) as {
+        parent: string | null;
+      };
+      expect(body.parent).toBeNull();
+    });
+
+    it("is empty rather than broken for a directory with no subdirectories", async () => {
+      await withDirs(listing("/home/deploy/leaf", []));
+      const body = (await (await admin.get(`/api/machines/${ID}/dirs`)).json()) as {
+        entries: unknown[];
+      };
+      expect(body.entries).toEqual([]);
+    });
+
+    it("404s a directory that does not exist over there, with a reason", async () => {
+      await withDirs("", 3);
+      const res = await admin.get(`/api/machines/${ID}/dirs?path=/nope`);
+      expect(res.status).toBe(404);
+      expect(((await res.json()) as { error: { code: string } }).error.code).toBe("dir_not_found");
+    });
+
+    it("404s a machine it does not know, rather than reaching for one", async () => {
+      await boot();
+      expect((await admin.get("/api/machines/NOTAMACHINEaaaa/dirs")).status).toBe(404);
+    });
+
+    it("is admin-only, like the rest of this surface", async () => {
+      await boot();
+      const user = await provisionUser(t.app, "member2");
+      expect((await apiClient(t.app, user.cookie).get(`/api/machines/${ID}/dirs`)).status).toBe(
+        403,
+      );
     });
   });
 

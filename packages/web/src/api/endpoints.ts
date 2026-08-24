@@ -485,15 +485,18 @@ export const listSessions = (
 
 /** Server directory browsing: `path` is an absolute path; empty means start from the server's home directory. */
 /**
- * Browses directories on a server. `machineId` targets a machine other than the window's
- * active one — picking a workspace on a machine you are not currently working on browses
- * ITS filesystem, since that is where the path has to exist.
+ * Browses directories. With no machine, this server's own filesystem; with one, THAT
+ * machine's — listed by this server over ssh, so picking a workspace on another machine
+ * needs no second login to that machine's own server.
  */
 export const listDirs = (projectId: string, path = "", machineId?: string | null) =>
-  apiFetch<DirListResponse>(
-    `/api/projects/${encodeURIComponent(projectId)}/dirs?path=${encodeURIComponent(path)}`,
-    machineId === undefined ? {} : { server: machineId },
-  );
+  machineId === undefined || machineId === null
+    ? apiFetch<DirListResponse>(
+        `/api/projects/${encodeURIComponent(projectId)}/dirs?path=${encodeURIComponent(path)}`,
+      )
+    : apiFetch<DirListResponse>(
+        `/api/machines/${encodeURIComponent(machineId)}/dirs?path=${encodeURIComponent(path)}`,
+      );
 
 /**
  * Skills a directory carries under `.agents/skills` / `.claude/skills`: what picking it at Agent

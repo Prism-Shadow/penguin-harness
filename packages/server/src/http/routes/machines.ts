@@ -9,6 +9,9 @@
  * POST /api/machines/:machineId/connect — bring that machine's server up and hold a tunnel
  *                                         to it; 202, or 409 when a connect already runs.
  * POST /api/machines/:machineId/disconnect — drop the tunnel (the remote server stays up).
+ * GET  /api/machines/:machineId/dirs?path=  — browse that machine's directories over ssh,
+ *                                             so picking a workspace on it needs no second
+ *                                             login to that machine's own server.
  *
  * Admin rather than any logged-in user, on a multi-user server as much as a personal one:
  * installing spawns ssh with the SERVER ACCOUNT's keys and writes a program directory on
@@ -21,7 +24,7 @@
  * that dies with its App has nothing to replay to a reconnecting subscriber.
  */
 import { Hono } from "hono";
-import type { MachinesResponse } from "../../api/types.js";
+import type { DirListResponse, MachinesResponse } from "../../api/types.js";
 import { HttpError } from "../errors.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { AppDeps } from "../../app.js";
@@ -113,6 +116,23 @@ export function machinesRoutes(deps: AppDeps): Hono<AppEnv> {
       throw new HttpError(409, "connect_refused", "That machine cannot be connected to.");
     }
     return c.json(state(), 202);
+  });
+
+  // Addressed by the machine's OWN id, like the proxy: this answers "what is on THAT
+  // machine", and the ssh alias it happens to be reached through is not that machine's name.
+  app.get("/:machineId/dirs", async (c) => {
+    const listing = await deps.machines.listDirs(
+      c.req.param("machineId"),
+      c.req.query("path") ?? "",
+    );
+    if (listing === null) {
+      throw new HttpError(
+        404,
+        "dir_not_found",
+        "That machine could not be reached, or that directory does not exist on it.",
+      );
+    }
+    return c.json(listing satisfies DirListResponse);
   });
 
   app.post("/:machineId/disconnect", (c) => {
