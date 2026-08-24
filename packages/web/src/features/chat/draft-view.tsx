@@ -263,7 +263,11 @@ export function DraftView({
   // on invalid value" effect would let the former write B in one render while the
   // latter, still judging by the stale closure's invalid value, writes the default
   // Agent and clobbers B.
-  const routeState = location.state as { agentId?: string; workspace?: string } | null;
+  const routeState = location.state as {
+    agentId?: string;
+    workspace?: string;
+    machineId?: string;
+  } | null;
   const stateAgentId = routeState?.agentId;
   const appliedStateKey = useRef<string | null>(null);
   /** One-shot marker for the project-default Agent (seeding precedence, see below). */
@@ -310,6 +314,7 @@ export function DraftView({
   // the temporary workspace). Unlike the Agent there's no list to validate against, so this is a
   // separate effect that never has to wait for a load.
   const stateWorkspace = routeState?.workspace;
+  const stateMachineId = routeState?.machineId;
   const appliedWorkspaceKey = useRef<string | null>(null);
   useEffect(() => {
     if (
@@ -322,7 +327,10 @@ export function DraftView({
     appliedWorkspaceKey.current = location.key;
     saveAppliedRouteKey("workspace", location.key);
     setWorkspace(stateWorkspace);
-  }, [location.key, stateWorkspace]);
+    // Set together with the path, and to null when the route names none: a machine left over
+    // from a cached draft would send this Session to a machine the chosen path is not on.
+    setWorkspaceMachine(stateMachineId ?? null);
+  }, [location.key, stateWorkspace, stateMachineId]);
 
   // Project defaults for Workspace / approval mode: the same apply-once discipline as the
   // route-state effects above, deferred until the defaults resolve. A field is only seeded

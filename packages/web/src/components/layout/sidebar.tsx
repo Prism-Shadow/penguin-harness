@@ -1048,7 +1048,7 @@ export function Sidebar({
    * The workspace-mode group header's "+" additionally carries that group's Workspace path
    * ("" = a temporary workspace), pre-filling the draft's Workspace selection the same way.
    */
-  const newChat = (agentId?: string, workspace?: string) => {
+  const newChat = (agentId?: string, workspace?: string, machineId?: string) => {
     // Typed-but-unsent text in the ACTIVE new-chat draft becomes a parked draft
     // conversation first (a row in the list below, sendable anytime — draft-sessions.ts),
     // so this click always lands on an empty composer and never silently shelves content.
@@ -1056,7 +1056,10 @@ export function Sidebar({
     if (agentId) setCurrentAgentId(agentId);
     const state = {
       ...(agentId ? { agentId } : {}),
-      ...(workspace !== undefined ? { workspace } : {}),
+      // The machine travels WITH the path, always — including its absence. A path names a
+      // different directory on every machine, so handing the composer one without the other
+      // is handing it a directory it cannot find.
+      ...(workspace !== undefined ? { workspace, machineId } : {}),
     };
     navigate(`/chat/${DRAFT_SESSION_ID}`, Object.keys(state).length > 0 ? { state } : undefined);
     onNavigate?.();
@@ -1109,6 +1112,14 @@ export function Sidebar({
     const existing = orderedWorkspaceGroups.findIndex((g) => g.key === key);
     setGroupPage(groupPageOf(existing >= 0 ? existing : orderedWorkspaceGroups.length));
   };
+
+  /**
+   * The machine a registered Workspace is on, by path. Undefined for a group that came from
+   * Sessions rather than the registry, which is this machine — every Session in the list is
+   * one this server knows about.
+   */
+  const machineOfWorkspace = (path: string): string | undefined =>
+    registeredWorkspaces.find((entry) => entry.path === path)?.machineId;
 
   /** Paths with a registry entry — only their groups offer the rename/remove overflow. */
   const registeredPaths = useMemo(
@@ -2054,7 +2065,13 @@ export function Sidebar({
                         type="button"
                         title={S.chat.newSessionInWorkspace}
                         aria-label={S.chat.newSessionInWorkspace}
-                        onClick={() => newChat(workspaceNewChatAgentId, group.fullPath ?? "")}
+                        onClick={() =>
+                          newChat(
+                            workspaceNewChatAgentId,
+                            group.fullPath ?? "",
+                            machineOfWorkspace(group.fullPath ?? ""),
+                          )
+                        }
                         className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
                       >
                         <Icon d="M12 5v14M5 12h14" size={ICON_SIZE.groupHeaderAction} />
