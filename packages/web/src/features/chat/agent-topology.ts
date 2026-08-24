@@ -58,10 +58,12 @@ export interface TopologyNode {
 
 /**
  * Whether an item opens a new PANEL scope. The reducer's "starts a new Task" predicate
- * (user_text/user_image), minus one exception: a `[background_task_done]` harness notice does
- * start a chat Task (its auto-run answers it), but for the topology it belongs to the Task
- * that launched the background work — slicing there would split a background subagent's spawn
- * from its completion and reset the panel the moment the report lands.
+ * (user_text/user_image), minus one exception: an idle-launched `[background_task_done]`
+ * notice does start a chat Task (its auto-run answers it), but for the topology it belongs
+ * to the Task that launched the background work — slicing there would split a background
+ * subagent's spawn from its completion and reset the panel the moment the report lands. A
+ * STEERED notice never gets here as user_text at all: the reducer gives it its own
+ * `background_notice` kind, which starts nothing anywhere.
  */
 function isScopeStart(item: ChatItem): boolean {
   if (item.kind === "user_image") return true;
@@ -81,11 +83,13 @@ export function latestTaskStart(items: readonly ChatItem[]): number {
 }
 
 /**
- * Task starts as the STREAM MODEL counts them — every user_text/user_image, notices included,
- * so the number stays 1:1 with the reducer's own `startTask` calls. The header's cost tracker
- * keys its Task-boundary fold on exactly that (see header-stats.ts): a notice-triggered task
- * zeroes the model's per-Task usage buckets, so a count that skipped it would drop the finished
- * Task's live cost without ever folding it into the settled base.
+ * Task starts as the STREAM MODEL counts them — every user_text/user_image, idle-launched
+ * notices included, so the number stays 1:1 with the reducer's own `startTask` calls (a
+ * steered notice is a `background_notice` item, which the reducer never startTasks — so it
+ * is rightly not counted here either). The header's cost tracker keys its Task-boundary fold
+ * on exactly that (see header-stats.ts): a notice-triggered task zeroes the model's per-Task
+ * usage buckets, so a count that skipped it would drop the finished Task's live cost without
+ * ever folding it into the settled base.
  */
 export function modelTaskStartCount(items: readonly ChatItem[]): number {
   let n = 0;
@@ -208,7 +212,9 @@ const BG_SUBAGENT_LAUNCH_RE =
 function backgroundSubagentStates(slice: readonly ChatItem[]): Map<string, "running" | "done"> {
   const states = new Map<string, "running" | "done">();
   for (const item of slice) {
-    if (item.kind === "user_text") {
+    // Both notice deliveries settle a handle: the steered form is its own item kind, the
+    // idle-launched form arrives as ordinary user_text carrying the same block.
+    if (item.kind === "user_text" || item.kind === "background_notice") {
       const done = parseBackgroundTaskDoneMessage(item.text);
       if (done !== null && done.done.kind === "subagent") states.set(done.done.id, "done");
       continue;

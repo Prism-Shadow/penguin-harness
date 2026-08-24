@@ -9,10 +9,13 @@
  * makes the replacement a single atomic step: a reader sees the old bytes or the new ones.
  */
 import path from "node:path";
-import { chmod, lstat, readlink, rename, rm, writeFile } from "node:fs/promises";
+import { chmod, readlink, rename, rm, writeFile } from "node:fs/promises";
 
-/** Symlink hops `followSymlinks` resolves before giving up and writing to the last name it reached. */
-const MAX_SYMLINK_HOPS = 8;
+/**
+ * Cap on symlink hops when resolving a write target, matching the kernel's own `ELOOP`
+ * budget (Linux allows 40): a link cycle has to end as an error rather than a hang.
+ */
+const MAX_SYMLINK_HOPS = 40;
 
 export interface AtomicWriteOptions {
   /**
@@ -24,9 +27,10 @@ export interface AtomicWriteOptions {
   signal?: AbortSignal;
   /**
    * Write through a symlink standing at `target` — what a plain `writeFile` does, and what a
-   * user who linked their config into a dotfiles repository expects. Left off, the rename
-   * replaces the link with a regular file: the right behavior where the directory is
-   * model-writable and a link planted there would carry the write outside it.
+   * user who linked their config into a dotfiles repository expects (see
+   * `resolveWriteTarget`). Left off, the rename replaces the link with a regular file: the
+   * right behavior where the directory is model-writable and a link planted there would
+   * carry the write outside it.
    */
   followSymlinks?: boolean;
 }
@@ -37,7 +41,7 @@ export async function atomicWriteFile(
   content: string | Uint8Array,
   opts: AtomicWriteOptions = {},
 ): Promise<void> {
-  const dest = opts.followSymlinks === true ? await resolveSymlink(target) : target;
+  const dest = opts.followSymlinks === true ? await resolveWriteTarget(target) : target;
   const tmp = path.join(
     path.dirname(dest),
     `.${path.basename(dest)}.tmp-${process.pid}-${Math.random().toString(36).slice(2, 8)}`,
@@ -61,16 +65,38 @@ export async function atomicWriteFile(
 }
 
 /**
- * The path a symlink chain ends at, resolved one hop at a time so a link pointing at a file that
- * does not exist yet still resolves (realpath would throw). A name that is not a link, or a chain
- * longer than the hop limit, resolves to itself.
+ * The path a write aimed at `target` must actually land on: the end of its symlink chain.
+ *
+ * For the file tools (edit_file / write_file) every other step already goes through the link —
+ * `stat` reads the target's size and permission bits, `readFile` reads the target's bytes —
+ * because those calls dereference. The write is the one step that would not: it finishes with
+ * `rename`, which operates on the link itself and would replace it with a regular file, leaving
+ * the file the model set out to edit untouched while the tool reports success. Following the
+ * chain here is also what makes `mode` meaningful: the bits come from the dereferenced `stat`,
+ * so they have to be restored onto the same inode. A config file a user symlinked into a
+ * dotfiles repository wants the same treatment, which is why the state writers opt in too.
+ *
+ * Resolution is leaf-only and deliberate: `realpath` is not used, so a link whose target does
+ * not exist yet (a dangling link, which `>` also creates through) still resolves, and directory
+ * symlinks along the way are left alone — the temp file only needs to share a directory with the
+ * final name for `rename` to stay atomic. A chain leaving the Workspace is followed like any
+ * other: these tools already accept absolute paths anywhere, on the same footing as the shell
+ * tool.
+ *
+ * Anything that is not a readable symlink ends the walk and is returned as-is: `EINVAL` (an
+ * ordinary file — the common case, one syscall), `ENOENT` (nothing there yet, so the caller
+ * creates it), or a permission error the caller's own write reports properly.
  */
-async function resolveSymlink(target: string): Promise<string> {
+export async function resolveWriteTarget(target: string): Promise<string> {
   let current = target;
-  for (let hop = 0; hop < MAX_SYMLINK_HOPS; hop++) {
-    const stat = await lstat(current).catch(() => null);
-    if (stat === null || !stat.isSymbolicLink()) return current;
-    current = path.resolve(path.dirname(current), await readlink(current));
+  for (let hop = 0; hop < MAX_SYMLINK_HOPS; hop += 1) {
+    let link: string;
+    try {
+      link = await readlink(current);
+    } catch {
+      return current;
+    }
+    current = path.resolve(path.dirname(current), link);
   }
-  return current;
+  throw new Error(`Too many levels of symbolic links: "${target}"`);
 }

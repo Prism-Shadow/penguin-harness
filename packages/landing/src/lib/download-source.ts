@@ -35,17 +35,52 @@ export const SPEED_PROBE_GITHUB_MIN_BYTES_PER_SECOND = 262144;
 export const SPEED_PROBE_OSS_SWITCH_RATIO = 1.5;
 
 /**
- * The whole sequence — mirror pointer, manifest, and up to two probes — from its first request.
- * Every phase below clamps to what is left of it, so the buttons cannot stay behind a spinner
- * longer than this no matter which request is the one hanging.
+ * Two passes, because the two questions have incompatible clocks.
+ *
+ * Whether a source answers at all is a round trip, and it is the question that decides whether
+ * someone is handed a link that never starts — so it gates the buttons and gets one second.
+ *
+ * How fast a source is cannot be answered in one second at any probe size. The minimum is
+ * 256 KB/s and the large probe is 1 MiB, so the boundary case *is* a four-second transfer, on top
+ * of roughly half a second of DNS, TLS and GitHub's two redirect hops; shrink the probe and that
+ * fixed half-second swamps the reading instead. So throughput runs afterwards, gates nothing, and
+ * silently upgrades the links if the mirror turns out to be worth switching to. The worst it can
+ * cost is a download that was slower than necessary — never one that does not start.
  */
-export const PROBE_BUDGET_MS = 9000;
+/**
+ * Three clocks, because the gate and the mirror pointer must not share one. The gate hinges on
+ * GitHub — a GitHub that answers keeps the download whatever the mirror is doing — so GitHub gets
+ * its own window, and the gate as a whole is capped at roughly a second.
+ *
+ * That one second is a target, not a guarantee, and the caps are set accordingly. A cap only ever
+ * bites a source that is slow or silent: a healthy GitHub answers in a few hundred milliseconds and
+ * never notices it. So the cost of a generous cap falls entirely on the blocked case, which is
+ * already waiting, while the cost of a tight one falls on a distant-but-working GitHub that gets
+ * written off and has its download handed to the mirror we pay for. Prefer the generous side.
+ *
+ * The pointer's clock is longer than the gate's on purpose. It used to share the gate's, which
+ * meant a pointer that arrived late was discarded, and a visitor who could not reach GitHub was
+ * left on GitHub links with no mirror to switch to for the rest of the visit. It now outlives the
+ * gate: the gate takes it only if it is there in time, and a late arrival still reaches the page,
+ * where it enables the manual switch and lets the throughput pass correct the answer.
+ */
+export const GITHUB_REACHABILITY_MS = 800;
+export const GATE_BUDGET_MS = 1000;
+export const MIRROR_POINTER_MS = 2500;
+export const THROUGHPUT_BUDGET_MS = 9000;
 
 /** Cap for the two small JSON/TSV lookups, which are a round trip and a few hundred bytes. */
 const METADATA_TIMEOUT_MS = 2500;
 
 /** A source that has not sent response headers by here is treated as unreachable, not as slow. */
 const CONNECT_TIMEOUT_MS = 2500;
+
+/**
+ * The file the reachability pass asks GitHub for. Which file hardly matters — a 404 answers the
+ * question as well as a 200 does, and an opaque response cannot tell them apart anyway — so a
+ * version-less URL that needs no manifest and no tag is exactly right here.
+ */
+const GITHUB_REACHABILITY_PROBE = "probe-64k.bin";
 
 /**
  * Cap for a probe's body. The large probe is 1 MiB, which is exactly the minimum's worth of bytes
@@ -99,7 +134,7 @@ export interface ProbeDeadline {
   slice(capMs: number): number;
 }
 
-export function createDeadline(budgetMs: number = PROBE_BUDGET_MS): ProbeDeadline {
+export function createDeadline(budgetMs: number): ProbeDeadline {
   const endsAt = Date.now() + budgetMs;
   return { slice: (capMs) => Math.max(0, Math.min(capMs, endsAt - Date.now())) };
 }
@@ -255,27 +290,19 @@ export interface ProbeSources {
   ossBase: string;
 }
 
-/**
- * The two questions the decision below can ask of a source, injected so the branch structure can be
- * tested without a network: `measure` runs the large probe, `answers` runs the cheap 64 KiB one.
- */
+/** The one question the throughput pass asks of a source, injected so the branches are testable. */
 export interface SourceProbes {
   measure(base: string, probe: ReleaseProbe): Promise<Measurement>;
-  answers(base: string, probe: ReleaseProbe): Promise<boolean>;
 }
 
 /**
- * Applies the rule to one release, in the same order the installers apply it.
+ * The throughput half of the rule, in the order the installers apply it. It runs once the
+ * reachability pass has found a mirror, which is why an unreachable GitHub here needs no second
+ * question: that pass already proved the mirror replies, so it wins by default.
  *
  * GitHub is measured first. At or above the minimum it wins outright and the mirror is never
- * touched — no paid bandwidth spent on a probe that could not change the answer.
- *
- * A GitHub that never answered is a different finding from one that answered slowly, and the two
- * take different branches, exactly as they do in install.sh. Unreachable is settled on reachability
- * alone: the mirror wins if it answers, which the 64 KiB probe establishes in a fraction of the
- * time a second megabyte would. Reachable-but-unmeasured is a throughput question, so the mirror is
- * measured on the same large probe and the tie-break rule decides — collapsing the two would hand
- * the mirror downloads the rule says GitHub should keep.
+ * touched — no paid bandwidth spent on a probe that could not change the answer. Below it, the
+ * mirror is measured on the same probe and has to win by the switch ratio.
  *
  * The measurements run one after another on purpose: concurrent transfers share the link and would
  * each read as half as fast, which an absolute threshold cannot tolerate.
@@ -287,9 +314,7 @@ export async function decideDownloadSource(
 ): Promise<DownloadSource> {
   const github = await io.measure(sources.githubBase, probes.large);
   if (github.bytesPerSecond >= SPEED_PROBE_GITHUB_MIN_BYTES_PER_SECOND) return "github";
-  if (!github.reachable) {
-    return (await io.answers(sources.ossBase, probes.small)) ? "oss" : "github";
-  }
+  if (!github.reachable) return "oss";
   const oss = await io.measure(sources.ossBase, probes.large);
   return selectDownloadSource(github.bytesPerSecond, oss.bytesPerSecond);
 }
@@ -302,7 +327,6 @@ export function probeDownloadSource(
 ): Promise<DownloadSource> {
   return decideDownloadSource(sources, probes, {
     measure: (base, probe) => measureSource(probeUrl(base, probe.file), probe.size, deadline),
-    answers: (base, probe) => probeReachable(probeUrl(base, probe.file), deadline),
   });
 }
 
@@ -357,12 +381,6 @@ export interface Mirror {
   base: string;
 }
 
-/** What the probe settled on, plus the mirror it would use. Never partially applied. */
-export interface Resolution {
-  source: DownloadSource;
-  mirror: Mirror | null;
-}
-
 const RELEASE_TAG = /^v[0-9A-Za-z][0-9A-Za-z._-]*$/;
 
 /**
@@ -385,57 +403,62 @@ export function parseMirror(value: unknown): Mirror | null {
   return toMirror(manifest.tag, manifest.releaseBaseUrl);
 }
 
-/**
- * The result survives the rest of the browser session, so coming back to the page — or bouncing off
- * it to a release page and returning — spends neither another megabyte nor another spinner. It is
- * per-tab and short-lived on purpose: network conditions change, and a stale answer is only ever one
- * reload away from being re-measured. What comes back out is validated exactly like a live pointer,
- * so a tampered entry cannot aim a download anywhere the live lookup could not.
- */
-const CACHE_KEY = "penguin.downloadSource.v1";
-
-export function readCachedResolution(): Resolution | null {
-  try {
-    const raw = sessionStorage.getItem(CACHE_KEY);
-    if (!raw) return null;
-    const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed !== "object" || parsed === null) return null;
-    const { source, mirror } = parsed as { source?: unknown; mirror?: unknown };
-    if (source !== "github" && source !== "oss") return null;
-    if (mirror === null) return { source, mirror: null };
-    if (typeof mirror !== "object") return null;
-    const { tag, base } = mirror as { tag?: unknown; base?: unknown };
-    const validated = toMirror(tag, base);
-    return validated ? { source, mirror: validated } : null;
-  } catch {
-    // Private mode, blocked site data and a corrupt entry all land here; the page measures again.
-    return null;
-  }
-}
-
-export function cacheResolution(resolution: Resolution): void {
-  try {
-    sessionStorage.setItem(CACHE_KEY, JSON.stringify(resolution));
-  } catch {
-    // Storage being unavailable costs a re-measure next visit, nothing more.
-  }
+/** Resolves and validates the mirror pointer; null when it does not arrive in time or is invalid. */
+export function fetchMirror(deadline: ProbeDeadline): Promise<Mirror | null> {
+  return fetchMirrorPointer(OSS_LATEST_JSON_URL, deadline).then(parseMirror);
 }
 
 /**
- * Resolves the mirror pointer, then measures. Every failure lands on GitHub, the free source that
- * always has a valid version-less URL, so no path here can leave the page without a download.
+ * The gating pass, and the only thing the buttons wait on. It asks one question — does GitHub
+ * answer — because that is the question whose wrong answer hands someone a link that never starts,
+ * and it is answerable in a round trip.
+ *
+ * GitHub is the free source and keeps the download whenever it answers, so that path does not wait
+ * for the mirror at all; the pointer is only needed to offer the mirror, and it is passed in as a
+ * promise so it can still be in flight. Only when GitHub stays silent does the answer depend on
+ * having a mirror to hand the download to.
  */
-export async function resolveDownloadSource(): Promise<Resolution> {
-  const deadline = createDeadline();
-  const mirror = parseMirror(await fetchMirrorPointer(OSS_LATEST_JSON_URL, deadline));
-  if (!mirror) return { source: "github", mirror: null };
-  if (!probingAllowed()) return { source: "github", mirror };
+export async function gateDownloadSource(
+  mirror: Promise<Mirror | null>,
+  deadline: ProbeDeadline,
+): Promise<DownloadSource> {
+  const githubReachable = await probeReachable(
+    `${GITHUB_LATEST_DOWNLOAD}/${GITHUB_REACHABILITY_PROBE}`,
+    createDeadline(GITHUB_REACHABILITY_MS),
+  );
+  if (githubReachable) return "github";
+  // GitHub stayed silent, so the answer now needs a mirror — but only for as long as the gate has
+  // left. A pointer that misses this race is not lost; it reaches the page on its own clock.
+  const remainingMs = deadline.slice(GATE_BUDGET_MS);
+  const resolved =
+    remainingMs > 0 ? await Promise.race([mirror, delay(remainingMs).then(() => null)]) : null;
+  return resolved ? "oss" : "github";
+}
+
+/**
+ * Whether measuring throughput could still change the gate's answer — which is whenever there is a
+ * mirror to compare against. It runs even when GitHub missed its window: that window is under a
+ * second, and a distant-but-working GitHub can spend that long on DNS, TLS and two redirect hops
+ * alone. The throughput pass gives it a far more generous one and hands the download back if it was
+ * wrongly written off.
+ */
+export function worthRefining(mirror: Mirror | null): boolean {
+  return mirror !== null && probingAllowed();
+}
+
+/**
+ * The unhurried pass. It gates nothing, so it can afford the manifest lookup and a megabyte of
+ * probe; its result replaces the gate's answer when it lands.
+ */
+export async function refineDownloadSource(
+  mirror: Mirror,
+  deadline: ProbeDeadline,
+): Promise<DownloadSource> {
   const probes = await fetchProbes(mirror.base, mirror.tag, deadline);
-  if (!probes) return { source: "github", mirror };
-  const source = await probeDownloadSource(
+  if (!probes) return "github";
+  return probeDownloadSource(
     { githubBase: GITHUB_LATEST_DOWNLOAD, ossBase: mirror.base },
     probes,
     deadline,
   );
-  return { source, mirror };
 }

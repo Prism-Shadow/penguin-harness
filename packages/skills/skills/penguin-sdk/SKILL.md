@@ -3,8 +3,8 @@ name: penguin-sdk
 description: Use whenever the user wants to build an agent application — their own program with an embedded agent, such as an AI app, an agentic app or a RAG app. This is writing application code on the Penguin Harness SDK, not configuring an Agent State inside PenguinHarness. Covers self-contained projects, the createSession/run streaming loop with thinking and image messages, wiring the user's existing tools in as CLI commands, and a complete RAG recipe that ingests documents into a knowledge base and answers with citations behind a web UI.
 short_description: Build agent, AI and RAG applications on the Penguin Harness SDK.
 short_description_zh: 基于 Penguin SDK 构建智能体应用、AI 与 RAG 应用。
-version: 21
-updated: 2026-08-21T00:00:00Z
+version: 22
+updated: 2026-08-23T15:42:44Z
 ---
 
 # Penguin Harness SDK
@@ -55,7 +55,7 @@ If the package is not on your npm registry (it is developed in the PenguinHarnes
 
 Configure a model for the app's data root, in this order — stop at the first that works:
 
-1. `penguin config model add --root <data_dir> --provider <group> --model-id <id> --api-key <key> [--base-url <url>] [--client-type openai] --set-default` — prefer `--client-type openai --base-url <endpoint>` (works with any OpenAI-compatible endpoint; exact ids in the agenthub-models skill). `--provider` is required: a model is always the `(provider, model_id)` pair and the group is never inferred from the id (`custom` for an endpoint outside the built-in groups).
+1. `penguin config model add --root <data_dir> --provider <group> --model-id <id> --api-key <key> [--base-url <url>] [--client-type openai-chat] --set-default` — prefer `--client-type openai-chat --base-url <endpoint>` (works with any OpenAI Chat Completions compatible endpoint; exact ids in the agenthub-models skill). `--provider` is required: a model is always the `(provider, model_id)` pair and the group is never inferred from the id (`custom` for an endpoint outside the built-in groups).
 2. Environment variables cover the **credential only** (`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …) — model selection still comes from the project config, whose preset default is `deepseek-v4-flash`. Env-only setup therefore works out of the box only with `DEEPSEEK_API_KEY`; for another vendor either run the CLI command above or pass a configured `{ provider, modelId }` pair to `createSession`.
 
 Keep model API keys **project-local**: configure them with the penguin CLI into the app's own data root under the working directory, so the project stays self-contained and movable. When building an AI app, **always pass `--root <data_dir>` pointing at the app's data directory inside the current working directory** (the same path you give `createAgent({ root })`, e.g. `./penguin_data`) — never run `penguin config ...` without `--root`, or it writes to the global `~/.penguin/data` instead of the project. Never read, copy or fall back to model keys stored in the user's global `~/.penguin` directory — that config belongs to the person running Penguin, not to the app you are building.

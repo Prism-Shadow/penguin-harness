@@ -40,12 +40,14 @@ import {
 } from "../src/llm/index.js";
 import {
   assistantText,
+  buildBackgroundTaskDoneMessage,
   imageUrlMessage,
   inlineData,
   inlineThinking,
   thinkingMessage,
   toolCall,
   toolCallOutput,
+  userSteeringText,
   userText,
 } from "../src/omnimessage/index.js";
 import type {
@@ -152,6 +154,34 @@ describe("mergeOmniToUniMessage", () => {
       images: [dataUrl],
       tool_call_id: "call_img",
     });
+  });
+
+  it("an injected request input (tool outputs + steered notice + steering) collapses into ONE user message", () => {
+    // The engine's next-input assembly appends background notices and steering behind the
+    // turn's tool outputs — several user-side OmniMessages. On the wire they must be a
+    // single user UniMessage (content_items in input order): what AgentHub receives always
+    // alternates user / assistant, and an injection can never produce two adjacent user
+    // messages. The per-message granularity exists only at the OmniMessage/Trace layer.
+    const notice = buildBackgroundTaskDoneMessage(
+      {
+        kind: "command",
+        id: "proc-1",
+        status: "completed",
+        detail: "exit code 0",
+        delivery: "steering",
+      },
+      "Background command finished",
+    );
+    const uni = mergeOmniToUniMessage([
+      toolCallOutput({ output: "total 0", toolCallId: "call_1" }),
+      userText(notice, "harness"),
+      userText(userSteeringText("also check the tests")),
+    ]);
+    expect(uni.role).toBe("user");
+    expect(uni.content_items.map((c) => c.type)).toEqual(["tool_result", "text", "text"]);
+    const texts = uni.content_items.filter((c) => c.type === "text");
+    expect((texts[0] as { text: string }).text).toBe(notice);
+    expect((texts[1] as { text: string }).text).toContain("[user_steering]");
   });
 
   it("throws on mixed roles", () => {

@@ -221,7 +221,9 @@ describe("MCP over stdio — per-server budgets and interruption", () => {
     try {
       const final = finalPayload(await runTool(env, "mcp__fx__spam", {}));
       expect(final.stop_reason).toBe("completed");
-      expect(final.output).toBe("x".repeat(100) + "\n[output truncated: exceeded 100 chars]");
+      expect(final.output).toBe(
+        `${"x".repeat(50)}\n[output truncated: kept first 50 and last 50 of 500 chars]\n${"x".repeat(50)}`,
+      );
     } finally {
       env.dispose();
     }

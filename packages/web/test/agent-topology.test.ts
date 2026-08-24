@@ -568,4 +568,37 @@ describe("background subagents in the topology", () => {
     // per-Task usage buckets), which is what the header's cost fold keys on.
     expect(modelTaskStartCount(m.items)).toBe(2);
   });
+
+  it("a steered notice settles the child too, and counts as a task start nowhere", () => {
+    const m = createStreamModel();
+    pushMessage(m, userText("go"));
+    spawnBackground(m, "t1", "session-child-55cc66dd", "subagent-55cc66dd");
+    // The engine-injected form: delivery: steering on the block, arriving mid-run.
+    pushMessage(
+      m,
+      userText(
+        buildBackgroundTaskDoneMessage(
+          {
+            kind: "subagent",
+            id: "subagent-55cc66dd",
+            status: "completed",
+            detail: "",
+            delivery: "steering",
+          },
+          "Background subagent finished",
+        ),
+        "harness",
+      ),
+    );
+    // The reducer keeps it inside the Task as its own item kind; the terminal-state scan
+    // still reads the handle off it, so the node settles.
+    expect(m.items.some((i) => i.kind === "background_notice")).toBe(true);
+    const nodes = extractTopology(m, "root", false);
+    expect(nodes).toHaveLength(2);
+    expect(nodes[1]!.running).toBe(false);
+    // Steered delivery starts nothing: not a panel scope, and not a reducer Task either —
+    // modelTaskStartCount stays 1:1 with the reducer's startTask calls by not counting it.
+    expect(taskStartCount(m.items)).toBe(1);
+    expect(modelTaskStartCount(m.items)).toBe(1);
+  });
 });
