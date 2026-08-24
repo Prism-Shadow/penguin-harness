@@ -63,7 +63,7 @@ describe("parseServerState", () => {
 });
 
 describe("parseProbe", () => {
-  const ID = "1b4e28ba-2fa1-11d2-883f-0016d3cca427";
+  const ID = "LNrJdHAZJ91G58i0";
 
   it("reads the state and the machine's own id out of one round trip", () => {
     const out = `${lock()}\n${SERVER_ALIVE_MARK}\n${MACHINE_ID_MARK}\n${ID}\n`;
@@ -85,7 +85,7 @@ describe("parseProbe", () => {
   });
 
   it("a damaged id is no id, and does not cost the state", () => {
-    const out = `${lock()}\n${SERVER_ALIVE_MARK}\n${MACHINE_ID_MARK}\nnot-a-uuid\n`;
+    const out = `${lock()}\n${SERVER_ALIVE_MARK}\n${MACHINE_ID_MARK}\nnot-an-id\n`;
     expect(parseProbe(out)).toEqual({
       state: { kind: "running", port: 7364, pid: 4242 },
       machineId: null,

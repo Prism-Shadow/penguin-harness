@@ -416,7 +416,7 @@ describe("machines API", () => {
   });
 
   describe("machine identity", () => {
-    const ID = "1b4e28ba-2fa1-11d2-883f-0016d3cca427";
+    const ID = "LNrJdHAZJ91G58i0";
     const listed = async () =>
       ((await (await admin.get("/api/machines")).json()) as MachinesResponse).machines;
     const byId = async (id: string) => (await listed()).find((machine) => machine.id === id);
@@ -424,9 +424,7 @@ describe("machines API", () => {
     it("this machine has an id of its own, minted into its data root", async () => {
       await boot();
       const local = await byId("local");
-      expect(local?.machineId).toMatch(
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
-      );
+      expect(local?.machineId).toMatch(/^[A-Za-z0-9_-]{16}$/);
       expect(fs.readFileSync(path.join(machinesRoot, "machine-id"), "utf8").trim()).toBe(
         local?.machineId,
       );
@@ -477,7 +475,7 @@ describe("machines API", () => {
 
       // Someone points `nas` at another host. An id never changes for a machine, so a
       // different answer means a different machine behind that alias.
-      id = "2c5f39cb-3fb2-22e3-994f-1127e4ddb538";
+      id = "PO_VCwpQrw1hQLV-";
       await admin.post("/api/machines/probe");
       expect((await byId("ssh:nas"))?.machineId).toBe(id);
     });

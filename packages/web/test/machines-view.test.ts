@@ -37,7 +37,7 @@ const carrying = (alias: string): MachineInfo => ({ ...fresh(alias), installed: 
 const here = (): MachineInfo => ({
   id: "local",
   alias: "workstation",
-  machineId: "1b4e28ba-2fa1-11d2-883f-0016d3cca427",
+  machineId: "LNrJdHAZJ91G58i0",
   installed: INSTALLED,
   local: true,
   status: { state: "running", checkedAt: INSTALLED.at, port: 7364 },
