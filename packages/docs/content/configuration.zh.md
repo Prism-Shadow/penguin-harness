@@ -199,7 +199,7 @@ compaction:
 - **更新内核**：无损合并。逐字段比对：字段缺失、或仍等于某一代已记录的内置默认，跟进当前默认；被用户改过的保持不变并在结果中列出。`tools.builtin` 按工具名逐个比对——只保留改过的那一个，其余照常跟进，用户自加的条目不受影响；`name`、`description`、`version` 与 `tools.mcpServers` 永不触碰。完成后盖章 `kernel_version`。比对是**保守**的：只有哈希命中已记录代际的值才被视为旧默认，太老而无法识别的代际一律按自定义保留。
 - **还原为默认配置**：与 Skill 更新同语义，用当前默认值覆盖现有配置——自定义系统提示词、工具列表、模型/压缩参数与 MCP Server——仅保留 `name`、`description` 与 `version`。更新内核因保守保留而没跟上时，这是全量刷新的兜底。
 
-面向开发者：`kernel_version` 只在对内置默认做出实质修改时手动前进（取当日日期）。CI 的 pinned-hash 测试（`core/test/kernel-version.test.ts`）重算全部默认字段哈希并与 `kernel-history.ts` 最新条目比对，不一致即失败并提示更新 `KERNEL_VERSION`、追加新条目；同日多次变更可修订当日条目，历史条目一经冻结不再改动——它们就是「仍是旧默认」的识别依据。
+面向开发者：`kernel_version` 只在对内置默认做出实质修改时手动前进（取当日日期）。CI 的 pinned-hash 测试（`core/test/kernel-version.test.ts`）重算全部默认字段哈希并与 `kernel-history.ts` 中的 `KERNEL_HISTORY.current` 比对，不一致即失败，并逐个列出变动的叶子及其对应改动：更新 `KERNEL_VERSION`、把新哈希写入 `current`、把该叶子的旧哈希追加到 `superseded`（新增的叶子则改为登记 `addedIn`）。同日多次变更可复用当日版本号。`superseded` 中的哈希一经写入即冻结——它们就是「仍是旧默认」的识别依据。
 
 ### 系统提示词占位符
 

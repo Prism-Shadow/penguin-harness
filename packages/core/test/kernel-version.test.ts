@@ -1,9 +1,11 @@
 /**
  * Agent config kernel versions: the pinned-hash guard (the mechanical definition of "the
- * defaults changed substantively, bump the kernel version"), the seeded pre-#257 generation's
- * reconstruction proof, and the smart-merge semantics of applyKernelUpdate (untouched old
- * defaults advance, customizations and unknown generations are kept, identity fields and
- * user data are never touched, YAML comments survive, the config is re-stamped).
+ * defaults changed substantively, bump the kernel version"), the record's internal
+ * consistency, the proof that the flat record decides exactly as the retired generation-keyed
+ * table did, the seeded pre-#257 generation's reconstruction proof, and the smart-merge
+ * semantics of applyKernelUpdate (untouched old defaults advance, customizations and unknown
+ * generations are kept, identity fields and user data are never touched, YAML comments
+ * survive, the config is re-stamped).
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -13,7 +15,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import {
   DEFAULT_AGENT_ID,
   DEFAULT_PROJECT_ID,
-  KERNEL_HASH_HISTORY,
+  KERNEL_HISTORY,
   KERNEL_VERSION,
   LEGACY_SKILLS_SECTION,
   LEGACY_VAULT_SECTION,
@@ -25,14 +27,17 @@ import {
   defaultSystemConfig,
   hashKernelValue,
   isKernelOutdated,
+  isSupersededDefault,
   kernelLeafEntries,
   loadOrInitAgentState,
   resetSystemConfigToDefaults,
   systemConfigPath,
+  type KernelHistory,
   type SystemConfig,
 } from "../src/index.js";
+import { LEGACY_KERNEL_HASH_HISTORY } from "./fixtures/legacy-kernel-hash-history.js";
 
-/** The two seeded generations (see KERNEL_HASH_HISTORY's doc comment). */
+/** The two oldest recorded generations (see KERNEL_HISTORY's doc comment). */
 const PRE_TOGGLES_GENERATION = "2026-08-10";
 const TOGGLES_GENERATION = "2026-08-11";
 
@@ -72,34 +77,68 @@ function preTogglesDefaultConfig(): SystemConfig {
   };
 }
 
-describe("kernel hash history (pinned-hash guard)", () => {
-  it("KERNEL_VERSION is a date and the newest history key", () => {
+describe("kernel hash record (pinned-hash guard)", () => {
+  it("KERNEL_VERSION is a date, and the record is anchored to it", () => {
     expect(KERNEL_VERSION).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    const keys = Object.keys(KERNEL_HASH_HISTORY);
-    expect(keys.length).toBeGreaterThanOrEqual(2);
-    for (const key of keys) expect(key).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    expect([...keys].sort().at(-1)).toBe(KERNEL_VERSION);
+    // The record describes this kernel: `addedIn` calls a leaf "new" by comparing to it.
+    expect(KERNEL_HISTORY.version).toBe(KERNEL_VERSION);
+    for (const [path, version] of Object.entries(KERNEL_HISTORY.addedIn)) {
+      expect(version, path).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(version <= KERNEL_VERSION, `${path} added in the future`).toBe(true);
+    }
+  });
+
+  it("the record has no orphans and no entries that could never fire", () => {
+    const leaves = Object.keys(KERNEL_HISTORY.current);
+    expect(leaves.length).toBeGreaterThan(0);
+    for (const path of [
+      ...Object.keys(KERNEL_HISTORY.superseded),
+      ...Object.keys(KERNEL_HISTORY.addedIn),
+    ]) {
+      // A leaf that left the defaults must leave the record with it.
+      expect(leaves, `${path} is not a current leaf`).toContain(path);
+    }
+    for (const [path, hashes] of Object.entries(KERNEL_HISTORY.superseded)) {
+      expect(hashes.length, path).toBeGreaterThan(0);
+      expect(new Set(hashes).size, `${path} repeats a superseded hash`).toBe(hashes.length);
+      // kernel-update.ts short-circuits on the current default before consulting the record,
+      // so the current hash sitting in `superseded` would be dead weight.
+      expect(hashes, `${path} lists its own current default`).not.toContain(
+        KERNEL_HISTORY.current[path],
+      );
+    }
   });
 
   // THE guard: this failing means the built-in defaults changed substantively without a
   // kernel bump (or vice versa). It is the mechanical definition of "substantive change".
-  it("the current defaults hash exactly to the latest history entry — bump KERNEL_VERSION when this fails", () => {
+  it("the current defaults hash exactly to KERNEL_HISTORY.current — advance the kernel when this fails", () => {
     const recomputed = computeKernelHashes(defaultSystemConfig());
-    const pinned = KERNEL_HASH_HISTORY[KERNEL_VERSION] ?? {};
-    const paths = new Set([...Object.keys(recomputed), ...Object.keys(pinned)]);
-    const mismatches = [...paths].filter((p) => recomputed[p] !== pinned[p]).sort();
+    const pinned = KERNEL_HISTORY.current;
+    const added = Object.keys(recomputed)
+      .filter((p) => pinned[p] === undefined)
+      .sort();
+    const changed = Object.keys(recomputed)
+      .filter((p) => pinned[p] !== undefined && pinned[p] !== recomputed[p])
+      .sort();
+    const removed = Object.keys(pinned)
+      .filter((p) => recomputed[p] === undefined)
+      .sort();
     expect(
-      mismatches,
-      "The built-in default config changed substantively (the listed leaf paths no longer " +
-        "hash to the latest KERNEL_HASH_HISTORY entry). Advance the kernel: set " +
-        "KERNEL_VERSION in core/src/state/kernel-history.ts to today's date and append a new " +
-        "history entry with the recomputed hashes (computeKernelHashes(defaultSystemConfig())). " +
-        "Several changes on the same day may revise that day's entry in place instead; never " +
-        "edit an older generation's entry — those are frozen.",
-    ).toEqual([]);
+      { added, changed, removed },
+      "The built-in default config changed substantively. Advance the kernel in " +
+        "core/src/state/kernel-history.ts: set KERNEL_VERSION to today's date (several " +
+        "changes on the same day may reuse it), then, with the hashes from " +
+        "computeKernelHashes(defaultSystemConfig()) — for each `changed` leaf, append its " +
+        "OLD KERNEL_HISTORY.current hash to KERNEL_HISTORY.superseded[leaf] (never edit the " +
+        "hashes already there, they are frozen) and write the new hash into `current`; for " +
+        "each `added` leaf, put its hash in `current` and add addedIn[leaf] = KERNEL_VERSION " +
+        "(that entry is what makes an existing config receive a brand-new default tool); for " +
+        "each `removed` leaf, delete it from `current`, `superseded` and `addedIn`. Then note " +
+        "what changed in the generation list above KERNEL_HISTORY.",
+    ).toEqual({ added: [], changed: [], removed: [] });
   });
 
-  // Keeps the oldest seeded generation honest: its pinned hashes are the only record of what
+  // Keeps the oldest recorded generation honest: its pinned hashes are the only record of what
   // a pre-#257 `system_config.yaml` actually contains, and nothing else can catch a typo in
   // them. The recipe reads the *current* defaults, so it can only speak for leaves whose
   // default has not drifted since the toggles generation — chiefly `system_prompt`, the leaf
@@ -107,8 +146,8 @@ describe("kernel hash history (pinned-hash guard)", () => {
   // generation that changes some other leaf (e.g. run_subagent's thinking_level in
   // "2026-08-18") drops just that leaf and leaves the proof standing.
   it("the pre-toggles generation's pinned hashes equal the LEGACY_* reconstruction", () => {
-    const preToggles = KERNEL_HASH_HISTORY[PRE_TOGGLES_GENERATION]!;
-    const toggles = KERNEL_HASH_HISTORY[TOGGLES_GENERATION]!;
+    const preToggles = LEGACY_KERNEL_HASH_HISTORY[PRE_TOGGLES_GENERATION]!;
+    const toggles = LEGACY_KERNEL_HASH_HISTORY[TOGGLES_GENERATION]!;
     const current = computeKernelHashes(defaultSystemConfig());
     const reconstructed = computeKernelHashes(preTogglesDefaultConfig());
     const reconstructible = Object.keys(preToggles).filter((p) => current[p] === toggles[p]);
@@ -135,6 +174,94 @@ describe("kernel hash history (pinned-hash guard)", () => {
       expect(paths).not.toContain(excluded);
     }
     expect(paths.some((p) => p.startsWith("tools.mcpServers"))).toBe(false);
+  });
+});
+
+/**
+ * The flat record replaced a generation-keyed snapshot of every leaf hash. This proves the
+ * replacement is a pure change of representation: for every `(leaf, hash)` pair the retired
+ * table ever recorded, the kernel update reaches the same verdict as before. It is not a
+ * one-time check — a later kernel that changes a default without recording the superseded
+ * hash makes it fail, which is exactly the mistake the flat shape invites.
+ */
+describe("kernel record equivalence with the retired generation table", () => {
+  type Verdict = "already-current" | "advance" | "keep";
+  const generations = Object.values(LEGACY_KERNEL_HASH_HISTORY);
+  const currentHashes = computeKernelHashes(defaultSystemConfig());
+
+  /** applyKernelUpdate's verdict as the retired table produced it (historicalHashes lookup). */
+  const legacyVerdict = (path: string, storedHash: string): Verdict =>
+    storedHash === currentHashes[path]
+      ? "already-current" // the `storedHash === defaultHash` short-circuit, before any lookup
+      : generations.some((generation) => generation[path] === storedHash)
+        ? "advance"
+        : "keep";
+
+  /** The same verdict from the flat record. */
+  const recordVerdict = (path: string, storedHash: string): Verdict =>
+    storedHash === currentHashes[path]
+      ? "already-current"
+      : isSupersededDefault(path, storedHash)
+        ? "advance"
+        : "keep";
+
+  it("reaches the same verdict for every (leaf, hash) the retired table recorded", () => {
+    const pairs = generations.flatMap((generation) =>
+      Object.entries(generation).map(([path, hash]) => ({ path, hash })),
+    );
+    expect(pairs).toHaveLength(158);
+    expect(new Set(pairs.map((pair) => `${pair.path}|${pair.hash}`)).size).toBe(37);
+    const disagreements = pairs
+      .filter(({ path, hash }) => legacyVerdict(path, hash) !== recordVerdict(path, hash))
+      .map(({ path, hash }) => ({
+        path,
+        hash,
+        legacy: legacyVerdict(path, hash),
+        record: recordVerdict(path, hash),
+      }));
+    expect(disagreements).toEqual([]);
+    // The proof would be vacuous if nothing ever advanced: 8 hashes over 6 leaves do.
+    const advancing = pairs.filter(({ path, hash }) => recordVerdict(path, hash) === "advance");
+    expect(new Set(advancing.map((pair) => `${pair.path}|${pair.hash}`)).size).toBe(8);
+    expect(new Set(advancing.map((pair) => pair.path)).size).toBe(6);
+  });
+
+  it("carries exactly the superseded hashes of that era, oldest first — none dropped, none invented", () => {
+    for (const path of new Set(generations.flatMap((generation) => Object.keys(generation)))) {
+      const everRecorded: string[] = [];
+      for (const generation of generations) {
+        const hash = generation[path];
+        if (hash !== undefined && !everRecorded.includes(hash)) everRecorded.push(hash);
+      }
+      const expected = everRecorded.filter((hash) => hash !== currentHashes[path]);
+      // Later kernels append hashes this frozen fixture cannot speak for; ignore those.
+      const recorded = (KERNEL_HISTORY.superseded[path] ?? []).filter((hash) =>
+        everRecorded.includes(hash),
+      );
+      expect(recorded, path).toEqual(expected);
+    }
+  });
+
+  it("dates each leaf's arrival where the retired table first recorded it", () => {
+    const versions = Object.keys(LEGACY_KERNEL_HASH_HISTORY).sort();
+    const oldest = versions[0]!;
+    for (const path of new Set(generations.flatMap((generation) => Object.keys(generation)))) {
+      const firstSeen = versions.find((version) => LEGACY_KERNEL_HASH_HISTORY[version]![path]);
+      // Leaves already present in the oldest recorded generation predate the record.
+      expect(KERNEL_HISTORY.addedIn[path], path).toBe(firstSeen === oldest ? undefined : firstSeen);
+    }
+    // And the one decision addedIn drives lines up with the retired newInLatestGeneration.
+    const newInLatest = new Set(
+      [...new Set(generations.flatMap((generation) => Object.keys(generation)))].filter((path) =>
+        Object.entries(LEGACY_KERNEL_HASH_HISTORY).every(
+          ([version, hashes]) => version === versions.at(-1) || hashes[path] === undefined,
+        ),
+      ),
+    );
+    expect(newInLatest).toEqual(
+      new Set(["tools.builtin.kill_command", "tools.builtin.kill_subagent"]),
+    );
+    for (const path of newInLatest) expect(KERNEL_HISTORY.addedIn[path], path).toBe(KERNEL_VERSION);
   });
 });
 
@@ -226,7 +353,7 @@ describe("applyKernelUpdate", () => {
     expect(written.kernel_version).toBe(KERNEL_VERSION);
   });
 
-  it("keeps values from unknown (unseeded) generations conservatively", async () => {
+  it("keeps values from unrecorded generations conservatively", async () => {
     const config = mutableConfig(defaultSystemConfig());
     delete config.kernel_version;
     // An ancient default wording we cannot reconstruct: it matches no recorded hash.
@@ -290,19 +417,21 @@ describe("applyKernelUpdate", () => {
     );
   });
 
-  it("advances a stored tool entry that matches an older generation's hash", async () => {
+  it("advances a stored tool entry that matches a superseded default's hash", async () => {
     // The path every existing config takes when a tool's default schema changes (the first
     // such bump is run_subagent's thinking_level, "2026-08-18"): the stored entry is not the
-    // current default, but it hash-matches a recorded generation, so it is an untouched old
+    // current default, but it hash-matches a superseded one, so it is an untouched old
     // default and must be replaced — not kept as if the user had edited it. Driven through
-    // the history seam so the test cannot rot when the real generations move on.
+    // the history seam so the test cannot rot when the real record moves on.
     const defaults = defaultSystemConfig();
     const current = computeKernelHashes(defaults);
     const currentEntry = defaults.tools?.builtin?.find((t) => t.name === "run_subagent");
     const oldEntry = { ...currentEntry!, description: "the previous generation's wording" };
-    const history = {
-      "2000-01-01": { ...current, "tools.builtin.run_subagent": hashKernelValue(oldEntry) },
-      [KERNEL_VERSION]: current,
+    const history: KernelHistory = {
+      version: KERNEL_VERSION,
+      current,
+      superseded: { "tools.builtin.run_subagent": [hashKernelValue(oldEntry)] },
+      addedIn: {},
     };
     const config = mutableConfig(defaults);
     config.kernel_version = "2000-01-01";
@@ -322,6 +451,32 @@ describe("applyKernelUpdate", () => {
     expect(written.kernel_version).toBe(KERNEL_VERSION);
   });
 
+  it("appends the tools the current kernel added to a config that predates them (real record)", async () => {
+    // The other half of the same rule, driven by the shipped KERNEL_HISTORY rather than the
+    // seam: a config written before the current kernel carries a tools array without the
+    // tools that kernel introduced, and must receive them — while a tool it dropped on
+    // purpose stays dropped. KERNEL_HISTORY.addedIn is the only thing that tells them apart.
+    const defaults = defaultSystemConfig();
+    const addedNow = Object.entries(KERNEL_HISTORY.addedIn)
+      .filter(([path, version]) => version === KERNEL_VERSION && path.startsWith("tools.builtin."))
+      .map(([path]) => path.slice("tools.builtin.".length));
+    expect(addedNow.length).toBeGreaterThan(0);
+    const config = mutableConfig(defaults);
+    delete config.kernel_version;
+    const tools = config.tools as { builtin: Array<Record<string, unknown>> };
+    tools.builtin = tools.builtin.filter(
+      (t) => !addedNow.includes(t.name as string) && t.name !== "write_file",
+    );
+    await seedConfig(config);
+
+    const result = await update();
+    expect(result.advanced).toEqual(addedNow.map((name) => `tools.builtin.${name}`));
+    expect(result.kept).toEqual(["tools.builtin.write_file"]);
+    const names = ((await readConfig()).tools?.builtin ?? []).map((t) => t.name);
+    for (const name of addedNow) expect(names).toContain(name);
+    expect(names).not.toContain("write_file");
+  });
+
   it("materializes the whole default toolset when tools.builtin is missing", async () => {
     const config = mutableConfig(defaultSystemConfig());
     delete config.kernel_version;
@@ -335,15 +490,17 @@ describe("applyKernelUpdate", () => {
     expect((await readConfig()).tools?.builtin).toEqual(defaults.tools?.builtin);
   });
 
-  it("appends a tool only when it is new in the latest generation (history seam)", async () => {
+  it("appends a tool only when it is new in the current kernel (history seam)", async () => {
     const defaults = defaultSystemConfig();
     const current = computeKernelHashes(defaults);
-    // A fabricated older generation that already knew read_file but never edit_file: a
-    // present array missing read_file is then a deliberate removal (kept), while the same
-    // absence of edit_file means the config simply predates the tool (appended).
-    const history = {
-      "2000-01-01": { "tools.builtin.read_file": current["tools.builtin.read_file"]! },
-      [KERNEL_VERSION]: current,
+    // A fabricated record in which edit_file — and only edit_file — arrived with the current
+    // kernel: a present array missing read_file is then a deliberate removal (kept), while
+    // the same absence of edit_file means the config simply predates the tool (appended).
+    const history: KernelHistory = {
+      version: KERNEL_VERSION,
+      current,
+      superseded: {},
+      addedIn: { "tools.builtin.edit_file": KERNEL_VERSION },
     };
     const config = mutableConfig(defaults);
     delete config.kernel_version;
