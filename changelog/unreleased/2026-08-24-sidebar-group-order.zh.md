@@ -3,6 +3,7 @@
 - **Date:** 2026-08-24
 - **Type:** feature
 - **Scope:** `web`
+- **PR:** [#440](https://github.com/Prism-Shadow/penguin-harness/pull/440)
 
 [English](2026-08-24-sidebar-group-order.md)
 
