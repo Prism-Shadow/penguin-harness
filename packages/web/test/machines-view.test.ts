@@ -14,7 +14,11 @@ import type {
   MachineInstallJob,
   MachinesResponse,
 } from "@prismshadow/penguin-server/api";
-import { installButtonState, verdictOf } from "../src/features/machines/machines-view";
+import {
+  installButtonState,
+  installedMachines,
+  verdictOf,
+} from "../src/features/machines/machines-view";
 
 const INSTALLED = { version: "9.9.9", at: "2026-08-24T12:00:00.000Z" };
 
@@ -157,5 +161,49 @@ describe("installButtonState", () => {
     expect(
       installButtonState(carrying("nas"), response(null, { imageVersion: null }), false).disabled,
     ).toBe(true);
+  });
+});
+
+describe("installedMachines", () => {
+  const at = (iso: string) => ({ version: "9.9.9", at: iso });
+
+  it("is empty when nothing has been installed", () => {
+    expect(installedMachines(response(null))).toEqual([]);
+  });
+
+  it("keeps only the installed ones, most recent first", () => {
+    const machines: MachineInfo[] = [
+      { id: "ssh:a", alias: "a", installed: at("2026-08-20T00:00:00.000Z") },
+      { id: "ssh:b", alias: "b", installed: null },
+      { id: "ssh:c", alias: "c", installed: at("2026-08-24T00:00:00.000Z") },
+      { id: "ssh:d", alias: "d", installed: at("2026-08-22T00:00:00.000Z") },
+    ];
+    expect(installedMachines(response(null, { machines })).map((m) => m.alias)).toEqual([
+      "c",
+      "d",
+      "a",
+    ]);
+  });
+
+  it("keeps the config's order among installs sharing a timestamp, so the list does not shuffle between polls", () => {
+    const same = at("2026-08-24T00:00:00.000Z");
+    const machines: MachineInfo[] = [
+      { id: "ssh:x", alias: "x", installed: same },
+      { id: "ssh:y", alias: "y", installed: same },
+      { id: "ssh:z", alias: "z", installed: same },
+    ];
+    const order = () => installedMachines(response(null, { machines })).map((m) => m.alias);
+    expect(order()).toEqual(["x", "y", "z"]);
+    expect(order()).toEqual(order());
+  });
+
+  it("does not mutate the response's own machine order (the picker reads it too)", () => {
+    const machines: MachineInfo[] = [
+      { id: "ssh:a", alias: "a", installed: at("2026-08-20T00:00:00.000Z") },
+      { id: "ssh:c", alias: "c", installed: at("2026-08-24T00:00:00.000Z") },
+    ];
+    const state = response(null, { machines });
+    installedMachines(state);
+    expect(state.machines.map((m) => m.alias)).toEqual(["a", "c"]);
   });
 });

@@ -43,7 +43,7 @@ import { InfoPopover } from "../../components/ui/info-popover";
 import { Skeleton } from "../../components/ui/skeleton";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { ChevronDown, NAV_ICONS } from "../../components/ui/icons";
-import { installButtonState, verdictOf } from "./machines-view";
+import { installButtonState, installedMachines, verdictOf } from "./machines-view";
 import type { MachineVerdict } from "./machines-view";
 import { MAX_VISIBLE_MACHINES, highlightSegments, matchMachines } from "./machines-match";
 
@@ -118,6 +118,7 @@ export function MachinesPage() {
   }, [running]);
 
   const machines = useMemo(() => state?.machines ?? [], [state]);
+  const installed = useMemo(() => (state === null ? [] : installedMachines(state)), [state]);
   const matched = useMemo(() => matchMachines(machines, query), [machines, query]);
   const visible = matched.slice(0, MAX_VISIBLE_MACHINES);
   const hiddenCount = matched.length - visible.length;
@@ -289,6 +290,45 @@ export function MachinesPage() {
                   formatDateTime(selected.installed.at),
                 )}
               </p>
+            )}
+
+            {/* What this server has already installed, standing on the page rather than
+                only inside the picker: it is the answer to "what did I do", which a panel
+                that has to be opened one row at a time cannot give. */}
+            {installed.length > 0 && (
+              <section className="mt-6">
+                <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400">
+                  {S.machines.installedTitle(installed.length)}
+                </h2>
+                <div className="mt-2 divide-y divide-gray-200 overflow-hidden rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
+                  {installed.map((machine) => (
+                    <button
+                      key={machine.id}
+                      type="button"
+                      onClick={() => setSelectedId(machine.id)}
+                      aria-current={machine.id === selectedId ? "true" : undefined}
+                      className={`flex w-full min-w-0 items-center gap-3 px-3 py-2.5 text-left transition-colors duration-150 ${
+                        machine.id === selectedId
+                          ? "bg-gray-100 dark:bg-gray-800"
+                          : "bg-white hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800/70"
+                      }`}
+                    >
+                      <span className="shrink-0 text-gray-500 dark:text-gray-400">
+                        <GlyphIcon d={NAV_ICONS.machines} size={ICON_SIZE.rowLead} />
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                        {machine.alias}
+                      </span>
+                      <span className={`shrink-0 text-xs ${toneInk.success}`}>
+                        {machine.installed!.version}
+                      </span>
+                      <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
+                        {formatDateTime(machine.installed!.at)}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </section>
             )}
 
             {/* The job, whichever machine it belongs to — named, so a selection change
