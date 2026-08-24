@@ -1,43 +1,40 @@
 /**
- * HmrAgent — the per-session event loop and hot-swap unit.
+ * HmrAgent — the per-session event loop, and the unit a hot swap replaces code in.
  *
  * One object per session, riding the resource registry as a shared table (see
- * AGENTS_RESOURCE_ID in hmr/platform.ts) so it survives a platform swap. It owns the
- * session's cross-generation STATE — the event queue, run status, pending approvals, the
- * interrupt controller, display mirrors — and the two code pointers:
+ * HMR_AGENTS_RESOURCE_ID in hmr/platform.ts) so it survives a platform swap. It owns
+ * everything that must outlive a generation — the event queue, the open run, run status,
+ * pending approvals, the interrupt controller, display mirrors — and two code pointers:
  *
- *   current — the generation whose code processes events (its SessionManager, as the
- *             AgentImpl: load, launch, one turn per process call, publish, finish);
- *   pending — the next generation, attached by its SessionManager at adoption
- *             (`setPending`).
+ *   current — the generation whose code processes events (its SessionManager as AgentImpl)
+ *   pending — the next generation, attached by its own SessionManager (`setPending`)
  *
- * The pump is the loop: it takes the queue's head event and asks `current` to process it
- * one TURN at a time, checking for a pending generation between calls. That makes every
- * turn boundary a swap point: with no run open the pointer swaps immediately; with one
- * open, the old generation is asked to `suspend` it — the run ends gracefully at the
- * boundary (its durable state is the Trace), the head event degrades to a `continue`
- * remainder, and the NEW generation reloads the session and finishes the work. A run
- * never spans generations, so nothing generation-created crosses a swap except this
- * object and its plain state.
+ * The pump takes the head event and asks `current` to advance it ONE TURN per call, so
+ * every turn boundary is a swap point: between two calls the pointer is replaced, and the
+ * next turn of the SAME run is taken by the new code. An open run is adopted, never
+ * restarted — its Session object finishes the run it began (the engine's own code is the
+ * one thing that must stay put mid-run), while everything around each turn — publishing,
+ * recording, approvals, the whole message pipeline — is the new generation's from the
+ * first adopted turn on. The loaded Session is marked stale at the swap instead, so the
+ * NEXT run reloads through the new generation's loader.
  *
- * Follow-up tasks, a swapped-out run's remainder, and background-notice delivery are all
- * just events in the one queue — the pump replaces the manager's former auto-start
- * paths. Goals and compactions are immediate activities outside the queue (they keep
- * today's 409-when-busy semantics and are hard-aborted rather than suspended at a swap:
- * they have no boundary contract).
+ * Follow-up tasks and background-notice delivery are ordinary queue events — there are no
+ * auto-start paths besides the pump. Goals and compactions are immediate activities
+ * outside the queue: they have no turn-boundary contract, so a swap hard-aborts them.
  *
- * This class must stay SMALL and STABLE: policy lives behind `current` and is always
- * current-generation; what is coded here is state, the queue discipline, and the
- * swap rule. Its public member list is a declared resource interface (DECLARED_RESOURCES
- * in hmr/platform.ts) — an incompatible successor hard-stops the whole table rather than
- * adopting agents it cannot speak to.
+ * This class stays small and stable on purpose: policy lives behind `current`, and what
+ * is coded here is state, queue discipline and the pointer swap. Its public member list
+ * is a declared resource interface (DECLARED_RESOURCES in hmr/platform.ts) — an
+ * incompatible successor hard-stops the whole table rather than adopting agents it
+ * cannot speak to.
  */
 import type { OmniMessage, ThinkingLevelName } from "@prismshadow/penguin-core";
 import type { PendingSteeringInfo, SessionStatus } from "../api/types.js";
 import { ApprovalRegistry } from "./approvals.js";
 import type { RecallStore, RuntimeSession } from "./session-manager.js";
+import type { UsageContext } from "./usage-recorder.js";
 
-/** One queued unit of work. `task` carries a recall id so a queued follow-up stays recallable. */
+/** One queued unit of work. */
 export type AgentEvent =
   | {
       type: "task";
@@ -47,14 +44,11 @@ export type AgentEvent =
       thinkingLevel?: ThinkingLevelName;
       recall?: RecallStore;
       /**
-       * Fired once the run's start (or refusal) is externally visible — the submission
-       * awaits it so `startTask` keeps its historical contract: on return, the task has
-       * begun (status reads running), not merely been accepted.
+       * Resolved once the run is visibly started (or refused), which is what `startTask`
+       * awaits: on return the Task has begun, not merely been accepted.
        */
       started?: () => void;
     }
-  /** The remainder of a run the swap suspended at a turn boundary: reload from the Trace and finish it (keeping the run's thinking level). */
-  | { type: "continue"; thinkingLevel?: ThinkingLevelName }
   /** Deliver queued background completion notices as a task (the session's idle-arrival signal). */
   | { type: "notices" };
 
@@ -66,25 +60,30 @@ export interface PendingSteeringEntry {
 }
 
 /**
- * The code a generation attaches — implemented by its SessionManager. Only the pump
- * calls these, one at a time per agent.
+ * The run in progress. Cross-generation state, because a swap adopts it: the successor
+ * keeps stepping this Session and closes this run itself. Per-run scratch an adopting
+ * generation cannot inherit (stream observers, subagent pairing) lives in `scratch`,
+ * which its own code creates and reads.
  */
+export interface OpenRun {
+  session: RuntimeSession;
+  ac: AbortController;
+  ctx: UsageContext;
+  thinkingLevel: ThinkingLevelName | undefined;
+  /** Resolves `agent.running` when the run closes. */
+  settle: () => void;
+}
+
+/** The code a generation attaches. Only the pump calls it, one call at a time per agent. */
 export interface AgentImpl {
   /**
-   * Advance the head event by ONE TURN: open the run if this is the first call for the
-   * event (task: publish input + begin; continue: reload from Trace + begin with an
-   * empty input; notices: drain + begin), else take the next turn of the open run.
-   * "more" keeps the event at the head for another call; "done" retires it (the run is
-   * closed and the idle state published). Guards (shutdown, deletion) are early "done"s.
+   * Advance the head event by ONE TURN: open the run on the first call for this event,
+   * take the next turn otherwise, including a run adopted from another generation.
+   * "more" keeps the event for another call;
+   * "done" retires it, the run closed and idle published. Guards (shutdown, deletion)
+   * are early "done"s; it never throws.
    */
   process(agent: HmrAgent, event: AgentEvent): Promise<"more" | "done">;
-  /**
-   * Swap-out: close the open run gracefully at this turn boundary — endRun, dispose the
-   * loaded session (background processes die with its generation) and null it on the
-   * agent, keep `status` as-is; the Trace carries the continuation the successor
-   * reloads. Returns what the `continue` remainder must keep (the run's thinking level).
-   */
-  suspend(agent: HmrAgent): { thinkingLevel?: ThinkingLevelName };
 }
 
 export class HmrAgent {
@@ -96,26 +95,23 @@ export class HmrAgent {
   /** Current session id (self-heal rebuilds may replace it — the manager re-keys the table). */
   sessionId: string;
 
-  // —— Cross-generation state. Written only by generation code invoked from the pump or
-  // the facade (SessionManager), never from outside the pair. ——
-  /** Pending work, processed strictly in order by the pump. The event being processed is NOT in here — see activeEvent. */
+  // —— Cross-generation state, written only by the generation code the pump invokes. ——
+  /** Pending work, in order. The event being processed is NOT here — see activeEvent. */
   readonly queue: AgentEvent[] = [];
-  /** The event the pump is currently processing (taken off the queue), or null. */
+  /** The event the pump is processing (taken off the queue), or null. */
   activeEvent: AgentEvent | null = null;
   session: RuntimeSession | null = null;
-  /** Agent config generation `session` was loaded under (vault invalidation compares it). */
+  /** Agent config generation `session` was loaded under; STALE_SESSION after a swap (see the class doc). */
   generation = 0;
   status: SessionStatus = "idle";
   readonly approvals = new ApprovalRegistry();
   abort: AbortController | null = null;
   /** The in-flight activity kind: queue events run as "task"; goals/compactions occupy the slot directly. */
   activeKind: "task" | "goal" | "compact" | null = null;
-  /** The open run's generation-owned bundle (engine refs, per-run scratch); opaque here, never crosses a swap. */
-  activeRun: unknown = null;
+  /** The run in progress, adopted across a swap (see OpenRun). */
+  activeRun: OpenRun | null = null;
   /** The in-flight activity's settle promise (deletion/shutdown/drain await it). */
   running: Promise<void> | null = null;
-  /** An interrupt that arrived between a suspend and its continue: the next begin finishes as aborted instead of relaunching. */
-  interruptRequested = false;
   /** The running Task's input messages, held until the Trace catches up (see SessionManager.pendingInputs). */
   pendingInputs: OmniMessage[] = [];
   /** The running Task's streamed bootstrap records (see SessionManager.pendingBootstrap). */
@@ -128,6 +124,7 @@ export class HmrAgent {
   private current: AgentImpl;
   private pending: AgentImpl | null = null;
   private pumping = false;
+  private submissions: Promise<unknown> = Promise.resolve();
 
   constructor(
     impl: AgentImpl,
@@ -167,34 +164,33 @@ export class HmrAgent {
     );
     return next;
   }
-  private submissions: Promise<unknown> = Promise.resolve();
 
-  /**
-   * Attach the next generation. With nothing in flight the pointer swaps at the pump's
-   * next boundary check — immediately, via the kick below; a busy agent swaps at its
-   * next turn boundary (between process calls). Goals/compactions have no boundary:
-   * the dying generation's quiesce hard-aborts them instead.
-   */
+  /** Attach the next generation; it takes over at the pump's next turn boundary. */
   setPending(impl: AgentImpl): void {
     this.pending = impl;
     this.pump();
   }
 
-  /**
-   * The event loop. Single-flight per agent; every iteration is a swap point. The head
-   * event stays until its activity reports "done", so an event's turns are consecutive —
-   * but a swap between turns retires the old generation's open run (suspend) and
-   * degrades the head to a `continue` remainder for the new generation to finish.
-   */
+  /** The event loop. Single-flight per agent; every iteration is a swap point. */
   private pump(): void {
     if (this.pumping) return;
     this.pumping = true;
     void (async () => {
       try {
         for (;;) {
-          this.swapIfAtBoundary();
-          // An immediate activity (goal/compaction) owns the agent: the pump waits for
-          // its settle (finishActivity re-kicks).
+          // The swap, in full: the next turn — of this very run, if one is open — is
+          // taken by the new code, and the loaded Session is marked stale so the next
+          // run reloads through the new loader. A goal/compaction owns the agent and has
+          // no boundary, so it is left to the dying generation's quiesce to abort.
+          if (
+            this.pending !== null &&
+            this.activeKind !== "goal" &&
+            this.activeKind !== "compact"
+          ) {
+            this.current = this.pending;
+            this.pending = null;
+            this.generation = STALE_SESSION;
+          }
           if (this.activeKind === "goal" || this.activeKind === "compact") return;
           if (this.activeEvent === null) {
             const next = this.queue.shift();
@@ -221,41 +217,7 @@ export class HmrAgent {
     })();
   }
 
-  /** The swap rule (see the class doc). Called only between process calls — a turn boundary by construction. */
-  private swapIfAtBoundary(): void {
-    if (this.pending === null) return;
-    if (this.activeKind === "goal" || this.activeKind === "compact") return; // quiesce aborts these
-    if (this.activeRun !== null) {
-      // An interrupted run is never suspended: the abort belongs to this event — one
-      // more step lets the run observe the signal and end as aborted (streaming its
-      // abort marker), and the swap takes the next boundary instead. Suspending here
-      // would resurrect a run the user just stopped.
-      if (this.abort?.signal.aborted === true) return;
-      // Old generation's open run: close it at this boundary; the active event's
-      // remainder continues from the Trace under the new code.
-      const remainder = this.current.suspend(this);
-      this.activeRun = null;
-      this.activeEvent = {
-        type: "continue",
-        ...(remainder.thinkingLevel !== undefined
-          ? { thinkingLevel: remainder.thinkingLevel }
-          : {}),
-      };
-    }
-    this.current = this.pending;
-    this.pending = null;
-    // An idle agent's loaded session is old-generation code with the Trace as its
-    // durable state: drop it, the next event reloads through the new loader.
-    if (this.activeRun === null && this.session !== null && this.activeKind === null) {
-      this.session.dispose?.();
-      this.session = null;
-    }
-  }
-
-  /**
-   * Claim the agent for an immediate activity (goal/compaction). The caller has already
-   * verified idle; the pump pauses until finishActivity.
-   */
+  /** Claim the agent for an immediate activity (goal/compaction); the pump pauses until finishActivity. */
   beginActivity(kind: "goal" | "compact"): void {
     this.activeKind = kind;
   }
@@ -266,48 +228,31 @@ export class HmrAgent {
     this.pump();
   }
 
-  // —— Stable control surface (no generation code involved) ——
-
-  /**
-   * Interrupt the current activity: pending approvals converge to deny first, then the
-   * AbortSignal fires. In the gap between a suspend and its continue there is no
-   * controller yet — the flag makes the next begin finish as aborted instead. Returns
-   * false when nothing is in progress.
-   */
+  /** Interrupt the current activity: approvals converge to deny, then the AbortSignal fires. */
   interrupt(): boolean {
-    if (this.abort !== null) {
-      this.approvals.denyAll();
-      this.abort.abort();
-      return true;
-    }
-    if (this.activeEvent?.type === "continue") {
-      this.interruptRequested = true;
-      return true;
-    }
-    return false;
+    if (this.abort === null) return false;
+    this.approvals.denyAll();
+    this.abort.abort();
+    return true;
   }
 
   /**
-   * Whether the idle sweep may evict this agent: nothing in flight, nothing queued,
-   * nothing pinned by the live session (background processes / subagents / notices), and
-   * inactive past the timeout. Eviction is memory reclamation only — the next access
-   * recreates the agent and reloads through the loader.
+   * Whether the idle sweep may evict this agent: nothing in flight, nothing queued, and
+   * nothing pinned by the live Session — a background process (a dev server the
+   * conversation started), a working background subagent, or undelivered completion
+   * notices all live in the very object eviction would drop, and the reloaded Session
+   * starts with a fresh environment. Eviction is memory reclamation only.
    */
   evictable(now: number, idleMs: number): boolean {
     if (this.status !== "idle" || this.approvals.size !== 0 || this.running !== null) return false;
     if (this.queue.length > 0 || this.activeKind !== null) return false;
-    // A live background process (a dev server the conversation started) pins the agent:
-    // eviction would strand it — the reloaded Session starts with a fresh environment,
-    // so the process list and its stop control would go blind while the OS process kept
-    // running. Same for a working background subagent and undelivered completion
-    // notices, which live in the very Session object eviction would drop.
     if (this.session?.listBackgroundCommands?.().some((p) => p.running)) return false;
     if (this.session?.hasRunningBackgroundSubagents?.()) return false;
     if (this.session?.hasPendingBackgroundNotices?.()) return false;
     return now - this.lastActivityMs > idleMs;
   }
 
-  /** Releases the loaded session (kills its background processes), after the in-flight activity settles. */
+  /** Releases the loaded Session (killing its background processes) once the in-flight activity settles. */
   disposeWhenSettled(): void {
     const session = this.session;
     const dispose = (): void => session?.dispose?.();
@@ -315,3 +260,10 @@ export class HmrAgent {
     else dispose();
   }
 }
+
+/**
+ * `generation` value marking the loaded Session as another generation's code. It matches
+ * no real config generation, so the manager's ordinary staleness check reloads the
+ * Session at the next idle boundary — the same mechanism a vault update uses.
+ */
+export const STALE_SESSION = -1;

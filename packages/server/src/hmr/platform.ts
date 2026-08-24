@@ -194,7 +194,6 @@ export const DECLARED_RESOURCES: ParkedInterfaces = {
     "activeKind",
     "activeRun",
     "running",
-    "interruptRequested",
     "pendingInputs",
     "pendingBootstrap",
     "pendingSteering",
