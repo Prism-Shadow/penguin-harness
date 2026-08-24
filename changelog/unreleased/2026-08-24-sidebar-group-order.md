@@ -34,9 +34,16 @@ per grouping mode, and it survives a reload.
 - The group header is the drag handle and the drop indicator is drawn against the whole group, so
   "below" means after that group and its conversations. Neither costs layout width, and the header
   keeps its actions at phone width.
-- A drop commits the mode's full group list, not the ten groups the display cap shows, and it
-  prunes stored keys whose group no longer exists — but only when the Project's Agents have all
-  reported their per-Workspace counts, so a group that has merely not loaded keeps its place.
-- Stored keys that match no group are ignored, and a malformed stored value degrades to the
-  automatic sort.
+- The gesture needs a pointer that can drag, so it is offered only where one exists — HTML5
+  drag-and-drop never fires from touch. A stored order still applies on a touch device: there is no
+  mode to degrade, so a phone renders the arrangement its owner made at a desk.
+- A drop splices the dragged group in beside its target within the stored order, over the mode's
+  full group list rather than the ten groups the display cap shows. A Workspace group exists only
+  once one of its conversations has loaded, so the groups that have not loaded yet keep their
+  stored positions rather than being pushed behind the ones on screen.
+- Stored keys that match no group are ignored and are never pruned: deciding a group is gone needs
+  the mode's complete key set, which the Web App cannot establish — the per-Workspace counts are
+  filtered by the "show CLI sessions" preference, and a settled Agent list may be a failed fetch.
+  A group that returns under the same key resumes its place. A malformed stored value degrades to
+  the automatic sort.
 - Manual order applies to the chat sidebar only; the Traces page's Workspace tree is unaffected.

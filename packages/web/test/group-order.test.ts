@@ -12,15 +12,15 @@
 import { describe, expect, it } from "vitest";
 import {
   ORDERABLE_GROUP_MODES,
+  commitGroupOrder,
   groupOrderKey,
   isOrderableGroupMode,
   loadGroupOrder,
   orderGroups,
-  pruneGroupOrder,
   saveGroupOrder,
 } from "../src/lib/group-order";
 import type { GroupOrderStorage } from "../src/lib/group-order";
-import { applyManualReorder, moveInSequence } from "../src/lib/session-order";
+import { moveInSequence } from "../src/lib/session-order";
 import {
   TEMP_WORKSPACE_GROUP_KEY,
   groupSessionsByWorkspace,
@@ -59,9 +59,13 @@ describe("orderable modes (time is excluded, at the store)", () => {
     expect(loadGroupOrder("p1", "time", s)).toEqual([]);
   });
 
-  it("a stored key smuggled under a time-shaped key is still never read back for time mode", () => {
+  it("a value planted under the time-mode key is never read back", () => {
     const s = memStorage();
-    // Write through the workspace key, then ask for time: the gate is on the mode, not the value.
+    // Hand-edited storage, or an older build: the gate is on the mode, so the read never
+    // reaches the value. Guards against the gate drifting below the getItem call.
+    s.map.set("penguin.groupOrder.p1.time", JSON.stringify(["\u0000time-earlier"]));
+    expect(loadGroupOrder("p1", "time", s)).toEqual([]);
+    // And the workspace key of the same Project is unaffected either way.
     saveGroupOrder("p1", "workspace", ["/a"], s);
     expect(loadGroupOrder("p1", "workspace", s)).toEqual(["/a"]);
     expect(loadGroupOrder("p1", "time", s)).toEqual([]);
@@ -144,6 +148,17 @@ describe("group-order store (per-Project × grouping-mode localStorage)", () => 
       },
     };
     expect(() => saveGroupOrder("p1", "workspace", ["/a"], broken)).not.toThrow();
+  });
+
+  it("with NO storage injected, resolving localStorage is itself inside the try", () => {
+    // vitest runs this package in Node, where `localStorage` is not defined at all — the
+    // same shape as a browser that throws on touching it (blocked site data, partitioned
+    // iframe). Omitting the argument is the only way to reach that branch, and it is the
+    // one that runs from the sidebar's useState initializer, where an escaping throw takes
+    // the first render down. Resolve it as a default parameter instead and this fails.
+    expect(() => loadGroupOrder("p1", "workspace")).not.toThrow();
+    expect(loadGroupOrder("p1", "workspace")).toEqual([]);
+    expect(() => saveGroupOrder("p1", "workspace", ["/a"])).not.toThrow();
   });
 });
 
@@ -228,16 +243,14 @@ describe("the merged temporary-workspace group is draggable like any other", () 
   it("its forced-last position is only the DEFAULT: dragging it to the front wins", () => {
     expect(keys).toEqual(["/home/b", "/home/a", TEMP_WORKSPACE_GROUP_KEY]);
     // Drag the temp group above /home/b, exactly as the sidebar commits a drop.
-    const seq = moveInSequence(keys, TEMP_WORKSPACE_GROUP_KEY, "/home/b", false);
-    const stored = applyManualReorder([], seq);
+    const stored = commitGroupOrder([], keys, TEMP_WORKSPACE_GROUP_KEY, "/home/b", false);
     expect(
       orderGroups(groups, (g) => g.key, { ...noPins, order: stored }).map((g) => g.key),
     ).toEqual([TEMP_WORKSPACE_GROUP_KEY, "/home/b", "/home/a"]);
   });
 
   it("it can be dropped anywhere, including back into the middle", () => {
-    const seq = moveInSequence(keys, TEMP_WORKSPACE_GROUP_KEY, "/home/b", true);
-    const stored = applyManualReorder([], seq);
+    const stored = commitGroupOrder([], keys, TEMP_WORKSPACE_GROUP_KEY, "/home/b", true);
     expect(
       orderGroups(groups, (g) => g.key, { ...noPins, order: stored }).map((g) => g.key),
     ).toEqual(["/home/b", TEMP_WORKSPACE_GROUP_KEY, "/home/a"]);
@@ -250,14 +263,40 @@ describe("the merged temporary-workspace group is draggable like any other", () 
   });
 });
 
-describe("drop commit (the sequence algebra shared with the rows)", () => {
+describe("commitGroupOrder (a drop is a splice, not a rewrite)", () => {
+  it("with nothing stored, the drop records the rendered list in the order it now reads", () => {
+    expect(commitGroupOrder([], ["a", "b", "c"], "c", "a", false)).toEqual(["c", "a", "b"]);
+  });
+
+  it("a drop that moves nothing returns the INPUT array, so no write happens", () => {
+    const order: readonly string[] = ["a", "b", "c"];
+    expect(commitGroupOrder(order, ["a", "b", "c"], "a", "a", true)).toBe(order);
+    expect(commitGroupOrder(order, ["a", "b", "c"], "a", "b", false)).toBe(order);
+    expect(commitGroupOrder(order, ["a", "b", "c"], "b", "a", true)).toBe(order);
+  });
+
+  it("a group that has not loaded yet KEEPS its stored place instead of being demoted", () => {
+    // A Workspace group exists only once one of its Sessions has paged in, so /w4../w6
+    // are stored but not rendered. Dragging among the rendered three must not push them
+    // behind the ones on screen.
+    const stored = ["/w6", "/w5", "/w4", "/w3", "/w2", "/w1"];
+    const rendered = ["/w3", "/w2", "/w1"];
+    const next = commitGroupOrder(stored, rendered, "/w1", "/w3", false);
+    expect(next).toEqual(["/w6", "/w5", "/w4", "/w1", "/w3", "/w2"]);
+    // The drag did what it said on screen …
+    expect(orderGroups(rendered, id, { ...noPins, order: next })).toEqual(["/w1", "/w3", "/w2"]);
+    // … and the three that were merely unloaded come back exactly where they were.
+    expect(orderGroups(["/w6", "/w5", "/w4", ...rendered], id, { ...noPins, order: next })).toEqual(
+      ["/w6", "/w5", "/w4", "/w1", "/w3", "/w2"],
+    );
+  });
+
   it("a drop commits the FULL group list, so groups past the display cap keep their places", () => {
-    // 15 groups, only 10 rendered: committing the visible slice would drop g11..g15 out
-    // of the stored order and applyManualOrder would front them as newcomers.
+    // 15 groups, only 10 rendered: the display cap is a render concern, so the caller
+    // hands the whole sequence and every key keeps an index.
     const all = Array.from({ length: 15 }, (_, i) => `g${i + 1}`);
-    const moved = moveInSequence(all, "g3", "g1", false);
-    const stored = applyManualReorder([], moved);
-    expect(orderGroups(all, id, { ...noPins, order: stored })).toEqual([
+    const next = commitGroupOrder([], all, "g3", "g1", false);
+    expect(orderGroups(all, id, { ...noPins, order: next })).toEqual([
       "g3",
       "g1",
       "g2",
@@ -265,18 +304,60 @@ describe("drop commit (the sequence algebra shared with the rows)", () => {
     ]);
   });
 
-  it("a drop that changes nothing returns the input reference, so no write happens", () => {
-    const seq: readonly string[] = ["a", "b", "c"];
-    expect(moveInSequence(seq, "a", "a", true)).toBe(seq);
-    expect(moveInSequence(seq, "a", "b", false)).toBe(seq);
-    expect(moveInSequence(seq, "b", "a", true)).toBe(seq);
+  it("groups with no stored place are folded in where they RENDER — at the top", () => {
+    // "fresh" has never been dragged, so it renders first; the commit must record that
+    // rather than inventing a position for it.
+    const next = commitGroupOrder(["b", "a"], ["fresh", "b", "a"], "a", "b", false);
+    expect(next).toEqual(["fresh", "a", "b"]);
+    expect(orderGroups(["fresh", "b", "a"], id, { ...noPins, order: next })).toEqual([
+      "fresh",
+      "a",
+      "b",
+    ]);
   });
 
-  it("re-dragging keeps the previous arrangement of groups that were not on screen", () => {
-    let stored: readonly string[] = ["gone-a", "w2", "w1", "gone-b"];
-    stored = applyManualReorder(stored, ["w1", "w2"]);
-    expect(stored).toEqual(["w1", "w2", "gone-a", "gone-b"]);
-    expect(orderGroups(["w2", "w1"], id, { ...noPins, order: stored })).toEqual(["w1", "w2"]);
+  it("pinning and then unpinning does not fling a group down the list", () => {
+    // The two pin partitions share one array, so a commit that front-loaded the dragged
+    // partition used to bury the other one. Walk the whole gesture.
+    let order = commitGroupOrder([], ["A", "B", "C", "D"], "D", "A", false);
+    expect(order).toEqual(["D", "A", "B", "C"]);
+    const pinnedD = { pinned: new Set(["D"]), order };
+    expect(orderGroups(["A", "B", "C", "D"], id, pinnedD)).toEqual(["D", "A", "B", "C"]);
+    // Drag C to the top of the UNPINNED cluster while D is pinned.
+    order = commitGroupOrder(order, ["D", "A", "B", "C"], "C", "A", false);
+    expect(orderGroups(["A", "B", "C", "D"], id, { pinned: new Set(["D"]), order })).toEqual([
+      "D",
+      "C",
+      "A",
+      "B",
+    ]);
+    // Unpin D: it must stay where the user last put it, not fall to the end.
+    expect(orderGroups(["A", "B", "C", "D"], id, { ...noPins, order })).toEqual([
+      "D",
+      "C",
+      "A",
+      "B",
+    ]);
+  });
+
+  it("stale keys are carried along untouched — nothing prunes them", () => {
+    // A Workspace whose Sessions are all CLI Sessions, or an Agent deleted elsewhere:
+    // the client cannot prove a key is dead, so it stays and simply matches nothing.
+    const next = commitGroupOrder(["ghost", "w2", "w1"], ["w2", "w1"], "w1", "w2", false);
+    expect(next).toEqual(["ghost", "w1", "w2"]);
+    expect(orderGroups(["w2", "w1"], id, { ...noPins, order: next })).toEqual(["w1", "w2"]);
+    // And if that group ever comes back under the same key, it resumes its place.
+    expect(orderGroups(["ghost", "w2", "w1"], id, { ...noPins, order: next })).toEqual([
+      "ghost",
+      "w1",
+      "w2",
+    ]);
+  });
+
+  it("the underlying move is still the rows' own moveInSequence", () => {
+    const seq: readonly string[] = ["a", "b", "c"];
+    expect(moveInSequence(seq, "a", "a", true)).toBe(seq);
+    expect(moveInSequence(seq, "c", "a", false)).toEqual(["c", "a", "b"]);
   });
 });
 
@@ -300,33 +381,16 @@ describe("group order and row order are independent axes", () => {
     const before = groups.map((g) => g.sessions.map((x) => x.sessionId));
     const reordered = orderGroups(groups, (g) => g.key, { ...noPins, order: ["/w2", "/w1"] });
     expect(reordered.map((g) => g.key)).toEqual(["/w2", "/w1"]);
-    // Same group objects, same member sequences — orderGroups only permutes the outer list.
-    expect(reordered.map((g) => g.sessions.map((x) => x.sessionId)).sort()).toEqual(before.sort());
+    // Same group objects, same member sequences — orderGroups only permutes the outer
+    // list, so compare each group's sequence by key rather than sorting both sides (which
+    // would pass even if a member list had been reversed).
+    const byKey = (gs: typeof groups) =>
+      Object.fromEntries(gs.map((g) => [g.key, g.sessions.map((x) => x.sessionId)]));
+    expect(byKey(reordered)).toEqual(byKey(groups));
+    expect(before).toEqual(groups.map((g) => g.sessions.map((x) => x.sessionId)));
     expect(reordered.find((g) => g.key === "/w1")?.sessions.map((x) => x.sessionId)).toEqual([
       "s1a",
       "s1b",
-    ]);
-  });
-});
-
-describe("pruneGroupOrder", () => {
-  it("drops keys outside the live set and returns the SAME array when every key is live", () => {
-    const order: readonly string[] = ["/a", "/b"];
-    expect(pruneGroupOrder(order, new Set(["/a", "/b", "/c"]))).toBe(order);
-    expect(pruneGroupOrder(order, new Set(["/b"]))).toEqual(["/b"]);
-  });
-
-  it("an empty live set clears the array; an empty order is inert", () => {
-    expect(pruneGroupOrder(["/a"], new Set())).toEqual([]);
-    const empty: readonly string[] = [];
-    expect(pruneGroupOrder(empty, new Set(["/a"]))).toBe(empty);
-  });
-
-  it("pruning preserves the relative order of the keys it keeps", () => {
-    expect(pruneGroupOrder(["/c", "/gone", "/a", "/b"], new Set(["/a", "/b", "/c"]))).toEqual([
-      "/c",
-      "/a",
-      "/b",
     ]);
   });
 });

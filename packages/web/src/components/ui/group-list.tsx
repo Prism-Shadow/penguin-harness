@@ -275,12 +275,17 @@ export function GroupHeader({
   onDragStart?: (e: ReactDragEvent) => void;
   onDragEnd?: () => void;
   onDragOver?: (e: ReactDragEvent) => void;
-  onDragLeave?: () => void;
+  onDragLeave?: (e: ReactDragEvent) => void;
   onDrop?: (e: ReactDragEvent) => void;
 }) {
   return (
     <div
-      className="group/header flex items-center gap-0.5 px-1 pb-0.5"
+      // cursor-grab while the header is a handle — the SessionRow treatment one axis up.
+      // Groups have no sort toggle by design, so the cursor is the only thing on screen
+      // that says this row can be dragged at all.
+      className={`group/header flex items-center gap-0.5 px-1 pb-0.5${
+        draggable ? " cursor-grab" : ""
+      }`}
       {...(draggable
         ? { draggable: true, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop }
         : {})}

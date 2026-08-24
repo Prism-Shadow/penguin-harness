@@ -94,10 +94,10 @@ import {
 } from "../../lib/session-order";
 import type { SessionSortMode } from "../../lib/session-order";
 import {
+  commitGroupOrder,
   isOrderableGroupMode,
   loadGroupOrder,
   orderGroups,
-  pruneGroupOrder,
   saveGroupOrder,
 } from "../../lib/group-order";
 import { Dropdown } from "../ui/dropdown";
@@ -193,6 +193,15 @@ const SESSION_DRAG_MIME = "application/x-penguin-session-id";
 
 /** Private drag payload type of a group reorder (same reasoning as SESSION_DRAG_MIME: never text/plain). */
 const GROUP_DRAG_MIME = "application/x-penguin-group-key";
+
+/**
+ * Is the drag in flight one of our group reorders? `types` is readable during dragover
+ * (unlike getData), so the payload GROUP_DRAG_MIME carries is what authorizes the drop
+ * rather than React state alone: a `dragGroup` left behind by a source header that
+ * unmounted mid-drag can no longer make the sidebar swallow an unrelated drag — a file
+ * from the desktop, a Session row — paint a phantom drop line, and commit on release.
+ */
+const isGroupDrag = (e: ReactDragEvent): boolean => e.dataTransfer.types.includes(GROUP_DRAG_MIME);
 
 /** Manual drag-reordering needs a pointer that can drag (HTML5 DnD never fires from touch) — the outline rail's query. */
 const DRAG_POINTER_QUERY = "(hover: hover) and (pointer: fine)";
@@ -308,7 +317,6 @@ export function Sidebar({
     setCurrentProjectId,
     reloadProjects,
     agents,
-    agentsLoading,
     currentAgent,
     setCurrentAgentId,
   } = useProject();
@@ -497,13 +505,24 @@ export function Sidebar({
   // partition. Nothing dragged yet = an empty order = the automatic sort untouched
   // (recency for Workspace groups with the temp group last, the configured Agent order
   // for Agents), which is also what a group with no stored place falls back to.
+  // The stored array belongs to the mode it was loaded for: handing an Agent list an
+  // order of Workspace keys is a no-op only as long as the two key namespaces cannot
+  // collide, and it costs the empty-order fast path on every render of the other mode.
   const orderedAgents = useMemo(
-    () => orderGroups(agents, (a) => a.agentId, { pinned: pinnedGroups, order: groupOrder }),
-    [agents, pinnedGroups, groupOrder],
+    () =>
+      orderGroups(agents, (a) => a.agentId, {
+        pinned: pinnedGroups,
+        order: groupMode === "agent" ? groupOrder : [],
+      }),
+    [agents, pinnedGroups, groupOrder, groupMode],
   );
   const orderedWorkspaceGroups = useMemo(
-    () => orderGroups(workspaceGroups, (g) => g.key, { pinned: pinnedGroups, order: groupOrder }),
-    [workspaceGroups, pinnedGroups, groupOrder],
+    () =>
+      orderGroups(workspaceGroups, (g) => g.key, {
+        pinned: pinnedGroups,
+        order: groupMode === "workspace" ? groupOrder : [],
+      }),
+    [workspaceGroups, pinnedGroups, groupOrder, groupMode],
   );
 
   // The FULL displayed group sequences a drop commits — every group of the mode, not the
@@ -619,41 +638,25 @@ export function Sidebar({
   };
 
   /**
-   * The current mode's COMPLETE set of live group keys, or null while the picture is
-   * still partial — the prune below is skipped then rather than discarding the stored
-   * position of a group that has merely not loaded.
+   * Drop of a group drag: splice the dragged group in beside its target and persist.
    *
-   * Agent mode: the Project's Agent list is fetched whole, so once it has settled a
-   * stored key with no Agent is proof the Agent is gone. Workspace mode: the groups
-   * themselves surface as Sessions page in, but each Agent's `workspaceCounts` covers
-   * ALL of that Agent's Sessions rather than the returned page, so the union of the
-   * folded count keys with the rendered groups (which is where a registered but empty
-   * Workspace comes from) is the whole truth — once every Agent has reported.
-   */
-  const liveGroupKeys = (): ReadonlySet<string> | null => {
-    if (agentsLoading) return null;
-    if (groupMode === "agent") return new Set(agents.map((a) => a.agentId));
-    if (groupMode !== "workspace") return null;
-    if (agents.some((a) => !workspaceCountsByAgent.has(a.agentId))) return null;
-    const live = new Set(workspaceGroupCounts.keys());
-    for (const g of workspaceGroups) live.add(g.key);
-    return live;
-  };
-
-  /**
-   * Drop of a group drag: commit the reordered sequence into the stored group order,
-   * and take the chance to prune keys of groups that no longer exist — a drop is the
-   * one moment the user restates the whole arrangement, and the array is being
-   * rewritten anyway, so no separate destruction event has to be listened for.
+   * `sequence` is the mode's FULL rendered key list — every group of the mode, not the
+   * `groupCap` slice on screen — and commitGroupOrder folds it into the stored array
+   * where those groups already render, so a Workspace whose Sessions have not paged in
+   * yet keeps its stored place instead of being pushed behind the ones that have.
+   *
+   * Nothing prunes here. Deciding a stored key is DEAD needs the mode's complete live
+   * key set, and this component cannot prove one — the per-Workspace counts that look
+   * like a proof are filtered by the "show CLI sessions" preference, and a settled Agent
+   * fetch may simply have failed. Stale keys are inert (group-order.ts), so the cost of
+   * keeping them is a map entry; the cost of a wrong proof is an arrangement the user
+   * cannot get back.
    */
   const commitGroupDrop = (sequence: readonly string[], targetKey: string, after: boolean) => {
     if (dragGroup === null) return;
-    const seq = moveInSequence(sequence, dragGroup, targetKey, after);
+    const next = commitGroupOrder(groupOrder, sequence, dragGroup, targetKey, after);
     // Identity guard, as for rows: a drop that changes nothing must not persist a fresh array.
-    if (seq === sequence) return;
-    const reordered = applyManualReorder(groupOrder, seq);
-    const live = liveGroupKeys();
-    const next = live === null ? reordered : pruneGroupOrder(reordered, live);
+    if (next === groupOrder) return;
     setGroupOrder(next);
     saveGroupOrder(currentProjectId, groupMode, next);
   };
@@ -698,22 +701,35 @@ export function Sidebar({
           setGroupDropHint(null);
         },
         onDragOver: (e: ReactDragEvent) => {
-          if (!samePartition) return;
+          if (!samePartition || !isGroupDrag(e)) return;
           e.preventDefault();
+          // preventDefault alone only says "a drop may land here"; the effect still has
+          // to be one effectAllowed permits, or a modifier held during the drag resolves
+          // it to "none" and the drop event never fires (drop-zone.tsx sets it too).
+          e.dataTransfer.dropEffect = "move";
           const after = edgeOf(e);
           setGroupDropHint((prev) =>
             prev?.key === key && prev.after === after ? prev : { key, after },
           );
         },
-        onDragLeave: () => setGroupDropHint((prev) => (prev?.key === key ? null : prev)),
+        // dragleave also fires when the pointer merely crosses onto one of the header's
+        // OWN children — the collapse toggle spans most of the row, and up to three
+        // action buttons follow it — so clearing unconditionally strobes the indicator.
+        // relatedTarget is where the drag is going: still inside means nothing changed
+        // (the idiom features/chat/drop-zone.tsx already uses).
+        onDragLeave: (e: ReactDragEvent) => {
+          const to = e.relatedTarget;
+          if (to instanceof Node && e.currentTarget.contains(to)) return;
+          setGroupDropHint((prev) => (prev?.key === key ? null : prev));
+        },
         onDrop: (e: ReactDragEvent) => {
-          if (!samePartition || dragging === null) return;
+          if (!samePartition || dragging === null || !isGroupDrag(e)) return;
           e.preventDefault();
-          const after = edgeOf(e);
-          const partitionKeys = sequence.filter(
-            (k) => pinnedGroups.has(k) === pinnedGroups.has(dragging),
-          );
-          commitGroupDrop(partitionKeys, key, after);
+          // The FULL sequence, not the drag's pin partition: commitGroupOrder splices
+          // within one array, and samePartition has already refused a cross-boundary
+          // drop, so filtering here would only hide the other partition's keys from the
+          // splice and cost them their stored positions.
+          commitGroupDrop(sequence, key, edgeOf(e));
           setDragGroup(null);
           setGroupDropHint(null);
         },
