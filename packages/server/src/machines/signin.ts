@@ -56,7 +56,8 @@ export async function signInOnRemote(opts: {
     );
     fs.writeFileSync(
       path.join(localTmp, "signin-job.json"),
-      JSON.stringify({ dataRoot: "$HOME/.penguin/data", userId: opts.userId ?? "admin" }),
+      // No dataRoot: the far side resolves its own home (see remote-signin.cjs).
+      JSON.stringify({ userId: opts.userId ?? "admin" }),
     );
     const sent = await run(
       "scp",
@@ -71,13 +72,11 @@ export async function signInOnRemote(opts: {
       return { kind: "failed", detail: execFailureText(sent, "could not copy the sign-in script") };
     }
 
-    // `$HOME` is expanded by the far side's shell, so the data root resolves to that
-    // machine's home rather than being sent as a literal from here.
     const ran = await run(
       "ssh",
       sshArgs(
         opts.target,
-        `cd ${scratch} && sed -i "s|\\\\$HOME|$HOME|" signin-job.json && ` +
+        `cd ${scratch} && ` +
           `"\${XDG_DATA_HOME:-$HOME/.local/share}/penguin/lib/runtime/bin/node" remote-signin.cjs 2>&1 || ` +
           `node remote-signin.cjs 2>&1`,
       ),

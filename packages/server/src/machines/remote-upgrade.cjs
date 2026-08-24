@@ -18,11 +18,17 @@
 "use strict";
 const fs = require("node:fs");
 const http = require("node:http");
+const os = require("node:os");
 const path = require("node:path");
 
 const here = __dirname;
 const job = JSON.parse(fs.readFileSync(path.join(here, "upgrade-job.json"), "utf8"));
-const dataRoot = job.dataRoot;
+/**
+ * This machine's data root, resolved HERE. The sending side deliberately does not pass a
+ * path: it would have to write `$HOME` and have a shell expand it, and getting that quoting
+ * wrong fails silently — the literal string becomes a directory that does not exist.
+ */
+const dataRoot = job.dataRoot || path.join(os.homedir(), ".penguin", "data");
 const say = (line) => process.stdout.write(`${line}\n`);
 
 /** Marker lines, so the pushing side reads an outcome rather than parsing prose. */
