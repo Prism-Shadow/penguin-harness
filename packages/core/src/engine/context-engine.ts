@@ -721,6 +721,13 @@ export class ContextEngine {
     const startNotices = yield* this.deliverBackgroundNotices();
     if (startNotices.length > 0) nextInput = [...nextInput, ...startNotices];
 
+    // Nothing to send at all (an empty Prompt with no carry-over, no summary and no
+    // notices): end without issuing a request. This is what makes a continuation
+    // relaunch with an empty input safe when a reloaded session turns out to have
+    // nothing pending (synthetic carry-over is never written to Trace, so replay can
+    // reconstruct nothing) — the alternative is an LLM request with no new input.
+    if (nextInput.length === 0) return "done";
+
     this.runState = { approve, signal, thinkingLevel, turnCount: 0, nextInput };
     return "continue";
   }

@@ -268,6 +268,8 @@ export class Session {
   /** Title material (used by `generateTitle` as the default): the user input and model body text of the first Task that contains user text. */
   private titleUserText = "";
   private titleAssistantText = "";
+  /** Whether the CURRENT run collects title material (decided at beginRun; see there). */
+  private captureTitleMaterial = false;
   /** Material-frozen flag: becomes true once the first Task containing user text finishes; subsequent runs stop accumulating. */
   private titleMaterialFrozen = false;
   /**
@@ -376,11 +378,32 @@ export class Session {
     yield* this.runTask(newMessages, opts);
   }
 
-  /** The single-Task path (a goal round runs one of these per round). */
+  /** The single-Task path (a goal round runs one of these per round): the facade over the stepped run (see beginRun/stepRun). */
   private async *runTask(
     newMessages: OmniMessage[],
     opts?: RunOptions,
   ): AsyncGenerator<OmniMessage> {
+    try {
+      let next = yield* this.beginRun(newMessages, opts);
+      while (next === "continue") next = yield* this.stepRun();
+    } finally {
+      this.endRun();
+    }
+  }
+
+  /**
+   * Step 1 of the stepped run, the Session-level counterpart of the engine's beginRun
+   * (see ContextEngine): image folding, the aborted-bootstrap carry-in, the first-run
+   * bootstrap, and title-material capture wrap the engine step. Returns "continue" when
+   * there is a turn to take (the driver then calls stepRun until IT answers "done") or
+   * "done" when the run ended right here. Drivers that own the loop (a host swapping
+   * code at turn boundaries) pair every beginRun with endRun on every exit path —
+   * runTask's finally does it for facade users.
+   */
+  async *beginRun(
+    newMessages: OmniMessage[],
+    opts?: RunOptions,
+  ): AsyncGenerator<OmniMessage, "continue" | "done"> {
     // Folded before Trace and title material, so the path lines are what gets recorded.
     if (!this.modelHasVision) newMessages = await this.foldImages(newMessages);
     // A previously aborted bootstrap dropped these before the engine existed: they lead
@@ -412,14 +435,14 @@ export class Session {
       this.abortedBootstrapRecords = [];
       // Carry the merged list, so repeated aborts keep accumulating exactly once each.
       this.carryOverInput = newMessages;
-      return;
+      return "done";
     }
     // Self-captures title material (the title is derived from the first-turn
     // conversation text): while material isn't frozen yet, collect this call's user text and
     // the produced model text; freezes once the first Task containing user text finishes, so
     // the title reflects the start of the conversation.
-    const capture = !this.titleMaterialFrozen;
-    if (capture) {
+    this.captureTitleMaterial = !this.titleMaterialFrozen;
+    if (this.captureTitleMaterial) {
       for (const m of newMessages) {
         this.titleUserText = appendTitleText(
           this.titleUserText,
@@ -429,18 +452,45 @@ export class Session {
         );
       }
     }
-    for await (const msg of this.engine!.run(newMessages, opts)) {
-      if (capture) {
+    const next = yield* this.captureAssistantText(this.engine!.beginRun(newMessages, opts));
+    if (next === "done") this.freezeTitleMaterial();
+    return next;
+  }
+
+  /** One turn of the stepped run (the engine's stepTurn, with title-material capture). Only valid between beginRun and endRun. */
+  async *stepRun(): AsyncGenerator<OmniMessage, "continue" | "done"> {
+    const next = yield* this.captureAssistantText(this.engine!.stepTurn());
+    if (next === "done") this.freezeTitleMaterial();
+    return next;
+  }
+
+  /** Closes the stepped run (idempotent) — the counterpart of every beginRun, on every exit path (completion, abort, an abandoned driver). */
+  endRun(): void {
+    this.engine?.endRun();
+  }
+
+  /** Streams a step's messages through the title-material capture (see beginRun), preserving the step's return value. */
+  private async *captureAssistantText<R>(
+    step: AsyncGenerator<OmniMessage, R>,
+  ): AsyncGenerator<OmniMessage, R> {
+    for (;;) {
+      const n = await step.next();
+      if (n.done) return n.value;
+      if (this.captureTitleMaterial) {
         this.titleAssistantText = appendTitleText(
           this.titleAssistantText,
-          msg,
+          n.value,
           "assistant",
           TITLE_ASSISTANT_MATERIAL_LIMIT,
         );
       }
-      yield msg;
+      yield n.value;
     }
-    if (capture && this.titleUserText.trim()) this.titleMaterialFrozen = true;
+  }
+
+  /** Freezes the title material once the first Task containing user text finishes (see beginRun). */
+  private freezeTitleMaterial(): void {
+    if (this.captureTitleMaterial && this.titleUserText.trim()) this.titleMaterialFrozen = true;
   }
 
   /**
