@@ -746,17 +746,42 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       return;
     }
     let cancelled = false;
-    void api
-      .getMachines(projectId)
-      .then((res) => {
-        if (cancelled) return;
-        const ids = workspaceMachines(res)
+    void (async () => {
+      let ids: string[];
+      try {
+        const res = await api.getMachines(projectId);
+        ids = workspaceMachines(res)
           .filter((machine) => !machine.local && machine.selectable)
           .map((machine) => machine.id)
           .filter((id): id is string => id !== null);
-        setMachineIdsKey(ids.join(","));
-      })
-      .catch(() => undefined);
+      } catch {
+        return; // No machine list: the store keeps none, and the list is this server's alone.
+      }
+      // A session on each machine BEFORE naming them, because a machine is a separate server
+      // with its own accounts: without one the proxy answers 401, the list's fetch treats it
+      // as "that machine has not got this Agent", and the rows are missing with nothing said.
+      // Sequential per machine but concurrent across them, and each failure is that machine's
+      // alone — one unreachable host must not cost the others their Sessions.
+      const reachable = await Promise.all(
+        ids.map(async (id) => {
+          try {
+            await api.meOnMachine(id);
+            return id;
+          } catch {
+            // Not signed in there yet. For a machine this server installed that is something
+            // it can settle itself, over ssh, without anyone typing that machine's password.
+          }
+          try {
+            await api.autoSignInOnMachine(projectId, id);
+            return id;
+          } catch {
+            return null;
+          }
+        }),
+      );
+      if (cancelled) return;
+      setMachineIdsKey(reachable.filter((id): id is string => id !== null).join(","));
+    })();
     return () => {
       cancelled = true;
     };
