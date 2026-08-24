@@ -34,8 +34,13 @@ export interface InstallButtonState {
    * build from the one this server would send — the case worth naming, because a machine
    * that is merely behind looks identical to one that is current until you read two version
    * strings side by side.
+   *
+   * `adopt` is the one that is not an install at all: this server already installed there,
+   * for another Project, so the program is in place and only this Project's membership is
+   * missing. It takes no ssh and no transfer, and it must not be spelled "install" — that
+   * would offer a 30 MB round trip as the way to write one line of JSON.
    */
-  action: "install" | "installing" | "reinstall" | "update";
+  action: "adopt" | "install" | "installing" | "reinstall" | "update";
   /**
    * True when the button must not start anything: nothing is selected, a job is running
    * anywhere (one at a time, server-side), this page's own POST is in flight, or this
@@ -69,7 +74,10 @@ export function installButtonState(
       selectedIsRunning || starting
         ? "installing"
         : selected?.installed == null
-          ? "install"
+          ? // Installed for another Project: adopting is the whole job, and it is free.
+            selected?.elsewhere != null
+            ? "adopt"
+            : "install"
           : outOfDate(selected, state.imageVersion)
             ? "update"
             : "reinstall",

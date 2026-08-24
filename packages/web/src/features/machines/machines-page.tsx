@@ -29,6 +29,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MachineInfo, MachinesResponse } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
+import { useProject } from "../../state/project";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
@@ -92,6 +93,11 @@ function verdictLine(verdict: MachineVerdict): { text: string; tone: Tone } {
 
 export function MachinesPage() {
   useDocumentTitle(S.machines.pageTitle);
+  // Machines belong to the Project, like every other row in this nav group: switching
+  // Projects switches which machines are listed, and installing here gives the machine to
+  // THIS Project — the same one whose Model credentials it will be handed.
+  const { currentProject } = useProject();
+  const projectId = currentProject?.projectId ?? null;
   const [state, setState] = useState<MachinesResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** True while a POST has not come back yet — the server has no job to report in that window. */
@@ -107,13 +113,14 @@ export function MachinesPage() {
   };
 
   const load = useCallback(async () => {
+    if (projectId === null) return; // No Project chosen yet: there is nothing to list machines for.
     try {
-      setState(await api.getMachines());
+      setState(await api.getMachines(projectId));
       setError(null);
     } catch (err) {
       setError(apiErrorText(err));
     }
-  }, []);
+  }, [projectId]);
 
   useEffect(() => {
     void load();
@@ -175,9 +182,10 @@ export function MachinesPage() {
   const settledRounds = useRef(0);
   const lastPrint = useRef<string | null>(null);
   const probe = useCallback(async () => {
+    if (projectId === null) return;
     setProbing(true);
     try {
-      const next = await api.probeMachines();
+      const next = await api.probeMachines(projectId);
       const print = probeFingerprint(next.machines);
       // A round that changed nothing widens the interval; anything moving resets it.
       settledRounds.current = print === lastPrint.current ? settledRounds.current + 1 : 0;
@@ -215,9 +223,10 @@ export function MachinesPage() {
   }, [hasInstalled]);
 
   const connect = async (machineId: string) => {
+    if (projectId === null) return;
     setConnecting(machineId);
     try {
-      setState(await api.connectMachine(machineId));
+      setState(await api.connectMachine(projectId, machineId));
       setError(null);
     } catch (err) {
       setError(apiErrorText(err));
@@ -227,8 +236,9 @@ export function MachinesPage() {
   };
 
   const disconnect = async (machineId: string) => {
+    if (projectId === null) return;
     try {
-      setState(await api.disconnectMachine(machineId));
+      setState(await api.disconnectMachine(projectId, machineId));
       setError(null);
     } catch (err) {
       setError(apiErrorText(err));
@@ -242,7 +252,7 @@ export function MachinesPage() {
     .map((machine) => machine.machineId!)
     .join(",");
   useEffect(() => {
-    if (connectedIds === "") return;
+    if (connectedIds === "" || projectId === null) return;
     let cancelled = false;
     for (const machineId of connectedIds.split(",")) {
       void (async () => {
@@ -255,7 +265,7 @@ export function MachinesPage() {
           // something it can settle itself, without anyone typing that machine's password.
         }
         try {
-          await api.autoSignInOnMachine(machineId);
+          await api.autoSignInOnMachine(projectId, machineId);
           if (!cancelled) setSignedIn((prev) => ({ ...prev, [machineId]: "signed-in" }));
         } catch {
           // Its admin password was changed, or it could not be reached: the manual sign-in
@@ -267,7 +277,7 @@ export function MachinesPage() {
     return () => {
       cancelled = true;
     };
-  }, [connectedIds]);
+  }, [connectedIds, projectId]);
 
   const submitSignIn = async () => {
     if (signInTo?.machineId == null) return;
@@ -286,11 +296,20 @@ export function MachinesPage() {
     }
   };
 
+  /**
+   * Starts an install, or adopts when this server already installed there for another
+   * Project — one button, because from where the person stands both answer "make this
+   * machine usable here" and only one of them costs a transfer.
+   */
   const install = async () => {
-    if (selectedId === null) return;
+    if (selectedId === null || projectId === null) return;
     setStarting(true);
     try {
-      setState(await api.installOnMachine(selectedId));
+      setState(
+        button.action === "adopt"
+          ? await api.adoptMachine(projectId, selectedId)
+          : await api.installOnMachine(projectId, selectedId),
+      );
       setError(null);
     } catch (err) {
       setError(apiErrorText(err));
@@ -438,13 +457,21 @@ export function MachinesPage() {
                 >
                   {button.action === "installing"
                     ? S.machines.installing
-                    : button.action === "update"
-                      ? S.machines.update
-                      : button.action === "reinstall"
-                        ? S.machines.reinstall
-                        : S.machines.install}
+                    : button.action === "adopt"
+                      ? S.machines.adopt
+                      : button.action === "update"
+                        ? S.machines.update
+                        : button.action === "reinstall"
+                          ? S.machines.reinstall
+                          : S.machines.install}
                 </Button>
               </div>
+            )}
+
+            {selected?.elsewhere != null && (
+              <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                {S.machines.installedElsewhere(selected.elsewhere.version)}
+              </p>
             )}
 
             {selected?.installed != null && (

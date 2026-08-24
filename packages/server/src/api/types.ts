@@ -3035,6 +3035,17 @@ export interface MachineInfo {
    */
   installed: { version: string; at: string } | null;
   /**
+   * Installed by this server, but for a DIFFERENT Project — so not this Project's machine,
+   * and not a host nobody has touched either. Absent in every other case, including when it
+   * IS this Project's (where `installed` carries the same record).
+   *
+   * Reported rather than folded into `installed` because the two lead to different actions:
+   * one is a machine to use, the other is a machine to adopt, which costs a line of JSON and
+   * no ssh. Reported rather than hidden because a row that silently looked uninstalled would
+   * send someone to spend a 30 MB transfer re-doing what is already done.
+   */
+  elsewhere?: { version: string; at: string };
+  /**
    * The machine's OWN id — 16 base64url characters minted by the server that runs there,
    * stable across renames, re-aliasing and reinstalls. Null until a server has started on
    * that machine, since nothing has minted one yet.

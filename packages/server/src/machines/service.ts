@@ -22,7 +22,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { VERSION, loadProjectConfig } from "@prismshadow/penguin-core";
+import { DEFAULT_PROJECT_ID, VERSION, loadProjectConfig } from "@prismshadow/penguin-core";
 import type { ProjectConfig } from "@prismshadow/penguin-core";
 import type {
   MachineConnectFailure,
@@ -38,6 +38,7 @@ import { run } from "./exec.js";
 import type { ExecResult } from "./exec.js";
 import { installOnRemote, resolvePushPlan } from "./install-server.js";
 import { parseInstallRecords, withInstallRecord } from "./installs.js";
+import { parseMembers, withMember } from "./membership.js";
 import type { InstallRecord } from "./installs.js";
 import { probeServerState } from "./server-state.js";
 import { DIR_LIST_MARK, listDirsCommand } from "./commands.js";
@@ -201,6 +202,42 @@ export class MachinesService {
     }
   }
 
+  /** Where a Project's machine list lives — beside that Project's own config. */
+  #membersFile(projectId: string): string {
+    return path.join(this.dataRoot, projectId, "machines.json");
+  }
+
+  /**
+   * The addresses a Project uses.
+   *
+   * A file that is ABSENT is not the same as one holding an empty list. Machines were a
+   * property of the server before they were a property of a Project, so the first read for
+   * the default Project adopts what this server already had — the machines you installed
+   * keep working, in the Project your admin account already works in. An empty file means
+   * somebody emptied it, and is left exactly as they left it.
+   */
+  #members(projectId: string): string[] {
+    let raw: string | null;
+    try {
+      raw = fs.readFileSync(this.#membersFile(projectId), "utf8");
+    } catch {
+      raw = null;
+    }
+    if (raw !== null) return parseMembers(raw);
+    if (projectId !== DEFAULT_PROJECT_ID) return [];
+    return Object.keys(parseInstallRecords(this.#readRecords()));
+  }
+
+  /** Adds or removes one address from a Project's list. */
+  #setMember(projectId: string, address: string, member: boolean): void {
+    const file = this.#membersFile(projectId);
+    // Seeded first: writing straight to an absent file would drop the machines the default
+    // Project inherits, since withMember would start from nothing.
+    const current = JSON.stringify({ machines: this.#members(projectId) });
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, withMember(current, address, member));
+  }
+
   /**
    * This machine, first: always installed (it is running), always up (it is answering), and
    * never a target — a server does not push itself onto its own machine. Its version and
@@ -231,7 +268,7 @@ export class MachinesService {
    * installed there and the last status probed for it. An empty or missing config is not an
    * error — it just leaves the local entry alone in the list.
    */
-  list(): MachineInfo[] {
+  #allMachines(): MachineInfo[] {
     const records = parseInstallRecords(this.#readRecords());
     const remotes = this.#effects.listAliases().map((alias): MachineInfo => {
       const id = `ssh:${alias}`;
@@ -248,6 +285,68 @@ export class MachinesService {
       };
     });
     return [this.#localMachine(), ...remotes];
+  }
+
+  /**
+   * The same machines as this server knows, answered for one Project: `installed` means
+   * installed FOR THIS PROJECT.
+   *
+   * A host this server has installed but that this Project does not use is reported through
+   * `elsewhere` rather than as a blank row. The difference is the whole reason the split
+   * exists — one is a machine to install on, the other is a machine to adopt, and a page that
+   * showed them identically would send someone to spend 30 MB on a line of JSON.
+   */
+  list(projectId: string): MachineInfo[] {
+    const members = new Set(this.#members(projectId));
+    return this.#allMachines().map((machine) => {
+      if (machine.local) return machine;
+      const mine = members.has(machine.id);
+      return {
+        ...machine,
+        installed: mine ? machine.installed : null,
+        // Absent, not null, when there is nothing to say: every row would otherwise carry a
+        // field about a state it is not in.
+        ...(!mine && machine.installed !== null ? { elsewhere: machine.installed } : {}),
+      };
+    });
+  }
+
+  /**
+   * Takes a machine this server already installed into a Project, without reinstalling it.
+   *
+   * The program on that host is the same program: what a second Project lacks is the line
+   * saying it uses it. Sending 30 MB over ssh to write that line would be a transfer that
+   * changes nothing on the far side.
+   */
+  adopt(projectId: string, address: string): boolean {
+    const record = parseInstallRecords(this.#readRecords())[address];
+    if (record === undefined) return false; // Nothing installed there: this is an install, not an adoption.
+    this.#setMember(projectId, address, true);
+    return true;
+  }
+
+  /** Drops a machine from a Project. The program stays installed; only the membership goes. */
+  release(projectId: string, address: string): void {
+    this.#setMember(projectId, address, false);
+  }
+
+  /** Every Project on this server that uses a given machine — who its credentials belong to. */
+  projectsUsing(address: string): string[] {
+    let dirs: string[] = [];
+    try {
+      dirs = fs
+        .readdirSync(this.dataRoot, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name);
+    } catch {
+      dirs = []; // Unreadable data root: fall through to the default Project alone.
+    }
+    // The default Project is always a candidate, directory or not: every server seeds it, and
+    // it is the one that INHERITS this server's pre-Project machines (see #members). Deciding
+    // entitlement from directories alone would miss exactly the machines that were installed
+    // before machines belonged to Projects at all.
+    const candidates = dirs.includes(DEFAULT_PROJECT_ID) ? dirs : [...dirs, DEFAULT_PROJECT_ID];
+    return candidates.filter((projectId) => this.#members(projectId).includes(address));
   }
 
   /**
@@ -268,7 +367,9 @@ export class MachinesService {
     parent: string | null;
     entries: { name: string; path: string }[];
   } | null> {
-    const machine = this.list().find((entry) => entry.machineId === machineId && !entry.local);
+    const machine = this.#allMachines().find(
+      (entry) => entry.machineId === machineId && !entry.local,
+    );
     if (machine === undefined) return null;
     const resolved = await this.#effects.resolveTarget(machine.alias);
     if (resolved === null) return null;
@@ -300,8 +401,10 @@ export class MachinesService {
    * Failures are states, not errors (see server-state.ts), so this always resolves and
    * always leaves every probed machine with an answer.
    */
-  async probeInstalled(): Promise<void> {
-    const targets = this.list().filter((machine) => !machine.local && machine.installed !== null);
+  async probeInstalled(projectId: string): Promise<void> {
+    const targets = this.list(projectId).filter(
+      (machine) => !machine.local && machine.installed !== null,
+    );
     const queue = [...targets];
     const workers = Array.from({ length: Math.min(PROBE_CONCURRENCY, queue.length) }, async () => {
       for (let machine = queue.shift(); machine !== undefined; machine = queue.shift()) {
@@ -411,11 +514,12 @@ export class MachinesService {
    * start" from "started and failed" without reading the log.
    */
   async startInstall(
+    projectId: string,
     machineId: string,
   ): Promise<{ ok: true } | { ok: false; why: InstallRefusal }> {
     if (this.#job?.running === true) return { ok: false, why: "busy" };
 
-    const machine = this.list().find((entry) => entry.id === machineId);
+    const machine = this.#allMachines().find((entry) => entry.id === machineId);
     if (machine === undefined) return { ok: false, why: "unknown-machine" };
     // The local entry is a view of this very process, not a target: installing would push
     // this build over its own program directory while running from it.
@@ -469,6 +573,10 @@ export class MachinesService {
         // already sees the machine marked installed — otherwise the page would flash the
         // verdict and a still-uninstalled row in the same frame.
         this.#remember(machineId, { version, at: this.#effects.now().toISOString() });
+        // The Project that asked for the install is the Project that gets the machine. Written
+        // in the same breath as the record: a machine installed but belonging to nobody would
+        // read as "installed elsewhere" on the very page that just installed it.
+        this.#setMember(projectId, machineId, true);
         job.result = { ok: true, kind: outcome.kind, version };
       } catch (err) {
         job.result = {
@@ -519,7 +627,7 @@ export class MachinesService {
   > {
     if (this.#connect?.running === true) return { ok: false, why: "busy" };
 
-    const machine = this.list().find((entry) => entry.id === machineId);
+    const machine = this.#allMachines().find((entry) => entry.id === machineId);
     if (machine === undefined) return { ok: false, why: "unknown-machine" };
     // Connecting to where you already are is a no-op with a failure mode: the tunnel would
     // forward a port to itself. The machine's own id is what settles it — the same file read
@@ -566,7 +674,14 @@ export class MachinesService {
       // Still synced: connecting again is how someone retries after a sync that failed (or
       // after adding a model here), and re-declaring a live tunnel would be all this did.
       const known = await this.#effects.resolveTarget(alias);
-      if (known !== null) await this.#syncModels({ alias, user: known.settings.user }, live, say);
+      if (known !== null) {
+        await this.#syncModels(
+          { alias, user: known.settings.user },
+          live,
+          say,
+          this.projectsUsing(id),
+        );
+      }
       job.result = { ok: true, origin: `http://localhost:${live}` };
       return;
     }
@@ -654,7 +769,7 @@ export class MachinesService {
     say(`Connected on ${origin}.`);
     // Before declaring it ready: an Agent started over there resolves its model against THAT
     // machine's config, so a machine without our credentials is connected and unusable.
-    await this.#syncModels(target, port, say);
+    await this.#syncModels(target, port, say, this.projectsUsing(id));
     job.result = { ok: true, origin };
   }
 
@@ -670,8 +785,15 @@ export class MachinesService {
     target: { alias: string; user: string },
     port: number,
     say: (line: string) => void,
-    only?: string,
+    projects: string[],
   ): Promise<void> {
+    // Nothing here uses this machine, so nothing here has credentials to put on it. Said out
+    // loud rather than skipped in silence: on a connect, "no models synced" with no reason is
+    // exactly the state that sends someone hunting through logs.
+    if (projects.length === 0) {
+      say("No models synced — no Project on this server uses that machine.");
+      return;
+    }
     const signedIn = await this.#effects.signIn({ target });
     if (signedIn.kind !== "signed-in") {
       say(`Models not synced — ${signedIn.detail}`);
@@ -682,7 +804,7 @@ export class MachinesService {
     const outcome = await syncModelsToMachine({
       api: machineApi(port, cookie),
       loadLocal: (projectId) => this.#localModels(projectId),
-      ...(only === undefined ? {} : { only }),
+      projects,
     });
     if (outcome.kind === "failed") say(`Models not synced — ${outcome.detail}`);
     else if (outcome.projects.length > 0) say(`Models synced: ${outcome.projects.join(", ")}.`);
@@ -750,7 +872,7 @@ export class MachinesService {
    * Called when an App boots, which is what a hot push produces — so a push here becomes a
    * push everywhere, without anyone asking twice. A plain restart also boots an App, and
    * costs nothing: which machines are behind is decided from the install RECORDS against
-   * this server's image version, so a fleet already in step is a few string comparisons and
+   * this server's own version, so a fleet already in step is a few string comparisons and
    * no ssh at all.
    *
    * Best-effort and never awaited by boot. A machine that cannot be reached, or whose admin
@@ -774,7 +896,7 @@ export class MachinesService {
    * the log of a connect somebody is watching would be worse than not running at all.
    */
   async autoConnect(): Promise<void> {
-    const candidates = this.list().filter(
+    const candidates = this.#allMachines().filter(
       (machine) => !machine.local && machine.installed !== null && machine.origin === null,
     );
     const queue = [...candidates];
@@ -807,7 +929,9 @@ export class MachinesService {
    * turns that into a 404 rather than reaching for something.
    */
   async signInOn(machineId: string): Promise<SignInOutcome | null> {
-    const machine = this.list().find((entry) => entry.machineId === machineId && !entry.local);
+    const machine = this.#allMachines().find(
+      (entry) => entry.machineId === machineId && !entry.local,
+    );
     if (machine === undefined) return null;
     const resolved = await this.#effects.resolveTarget(machine.alias);
     if (resolved === null) {
@@ -833,7 +957,7 @@ export class MachinesService {
   async syncOutOfDate(): Promise<void> {
     const plan = this.#effects.resolvePlan(this.dataRoot);
     if (plan === null) return; // Nothing to hand on: this server stands on no release.
-    const behind = this.list().filter(
+    const behind = this.#allMachines().filter(
       (machine) =>
         !machine.local && machine.installed !== null && machine.installed.version !== plan.version,
     );
@@ -880,8 +1004,11 @@ export class MachinesService {
    * next connect, which is when the credential first matters to them anyway.
    */
   async syncModelsEverywhere(projectId: string): Promise<void> {
-    const connected = this.list().filter(
-      (machine) => !machine.local && this.tunnelPortFor(machine.id) !== null,
+    // This Project's machines, not every machine: the credential belongs to this Project, and
+    // a machine another Project uses has no claim on it.
+    const connected = this.list(projectId).filter(
+      (machine) =>
+        !machine.local && machine.installed !== null && this.tunnelPortFor(machine.id) !== null,
     );
     for (const machine of connected) {
       const port = this.tunnelPortFor(machine.id);
@@ -894,7 +1021,7 @@ export class MachinesService {
         { alias: machine.alias, user: resolved.settings.user },
         port,
         () => undefined,
-        projectId,
+        [projectId],
       );
     }
   }

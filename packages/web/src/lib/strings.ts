@@ -81,6 +81,10 @@ export const zh = {
     install: "安装",
     installing: "安装中…",
     reinstall: "重新安装",
+    /** This server already installed there for another project: taking it costs no transfer. */
+    adopt: "加入本项目",
+    installedElsewhere: (version: string) =>
+      `这台机器已装有 ${version}，但属于其他项目。加入本项目无需重新传输。`,
     /** Terminal states of a finished job. */
     installed: (version: string) => `已安装 ${version}。`,
     alreadyInstalled: (version: string) => `已经是 ${version}，无需安装。`,
