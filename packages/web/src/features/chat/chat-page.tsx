@@ -1483,6 +1483,7 @@ export function ChatPage() {
             ctx={ctx}
             focusRequest={subagentFocus}
             taskScope={subagentTaskScope}
+            subagents={stream.subagents}
           />
         );
       case "workspace":

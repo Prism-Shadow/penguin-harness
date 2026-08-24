@@ -83,7 +83,7 @@ There are 11 built-in tools (assembled via `packages/core/src/environment/tools/
 | `edit_file` | rw | 30000 | Exact-string replacement in an existing file, echoing a verification snippet |
 | `write_file` | rw | 30000 | Create or overwrite a whole file, creating parent directories as needed |
 | `run_subagent` | rw | 600000 | Delegate a self-contained subtask to a child Agent in the same Workspace |
-| `input_subagent` | rw | 600000 | Poll a background subagent, or send a follow-up prompt once it is idle |
+| `input_subagent` | rw | 600000 | Poll a background subagent, steer it mid-run, stop its current run, or continue it with a follow-up prompt |
 | `kill_subagent` | rw | 30000 | Abort a background subagent by `subagent_id` and remove it, returning undelivered text |
 | `read_image` | r | 60000 | Read an image and return it as image content (vision models) |
 | `describe_image` | r | 90000 | Have the configured `vision_model` read the image and answer in text (text-only models) |
@@ -175,7 +175,9 @@ On POSIX, Ctrl-C sends `SIGINT` to the session's process group, interrupting the
 
 ### Subagents
 
-`run_subagent` hands a subtask you can fully specify in one prompt to a child Agent, with the same two-phase shape: after the foreground window (default 300000ms) it moves to the background with a `subagent_id`, driven by `input_subagent` for polling or follow-up prompts; the child's pending approvals surface while the poll waits. With `run_in_background: true` the call returns the `subagent_id` immediately and every round's completion arrives as an automatic user message (see [Background completion reports](#background-completion-reports)); `kill_subagent` aborts and removes a background subagent (an idle one is removed too, freeing its slot).
+`run_subagent` hands a subtask you can fully specify in one prompt to a child Agent, with the same two-phase shape: after the foreground window (default 300000ms) it moves to the background with a `subagent_id`, driven by `input_subagent`; the child's pending approvals surface while the poll waits. `input_subagent` covers four gestures: an empty `prompt` polls; a `prompt` sent while the child **runs** is injected mid-run as a steering message (the same mechanism as a user interjecting into the main session — delivered as a `[user_steering]` message at the child's next step, recorded in the child's Trace with sender `parent_agent`); a `prompt` sent while it is idle continues the same session with a follow-up round; and `abort: true` stops the child's **current run only** — the session survives for steering and follow-ups, and combined with a `prompt` it interrupts and redirects. With `run_in_background: true` the launch returns the `subagent_id` immediately and every round's completion arrives as an automatic user message (see [Background completion reports](#background-completion-reports)); `kill_subagent` aborts and **removes** a background subagent (an idle one is removed too, freeing its slot).
+
+The Web App's subagents panel offers the user the same two controls on a selected child — a stop button (the panel counterpart of `abort`) and a message input (steering while the child runs, a follow-up round while it is idle). Both converge on the same core channel as `input_subagent`, and the panel's running marks follow the server's live child states rather than the transcript.
 
 ```ts
 // run_subagent
@@ -193,7 +195,8 @@ On POSIX, Ctrl-C sends `SIGINT` to the session's process group, interrupting the
 // input_subagent
 {
   subagent_id: string;     // required: the background Subagent id returned by run_subagent
-  prompt?: string;         // follow-up task, accepted only while the child Session is idle; empty = poll only
+  prompt?: string;         // steering interjection while the child runs; a follow-up round while it is idle; empty = poll only
+  abort?: boolean;         // stop the child's CURRENT run (session kept); with a prompt: interrupt and redirect
   yield_time_ms?: number;  // wait; defaults 300000 with a prompt, 10000 for empty polls
   description: string;     // required while call_description is on
 }

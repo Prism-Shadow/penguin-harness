@@ -297,6 +297,14 @@ export interface SubagentHandle {
     /** The parent Agent's approval callback; forwarded to the child Session to inherit the parent's approval mode. */
     approve?: ApproveFn;
   }): AsyncGenerator<OmniMessage>;
+  /**
+   * Queues a steering message for the child Session's running Task (the same mechanism as a
+   * user steering the main session: delivered as a `[user_steering]` user message at the
+   * child's next input assembly). Returns false when no run is in flight — the caller then
+   * falls back to a follow-up run. Optional so older embedders' handles keep compiling; a
+   * handle without it simply reports "not steerable".
+   */
+  steer?(messages: OmniMessage[]): boolean;
   /** Releases runtime resources held by the child Session (e.g. its managed command sessions). Idempotent. */
   dispose(): void;
 }
@@ -496,6 +504,28 @@ export interface BackgroundCommandInfo {
 }
 
 /**
+ * One live subagent child session owned by the environment: the child Session id (the origin
+ * hop the frontend already correlates by), the registry handle when the session was promoted
+ * to the background (null while it only lives inside a foreground collect window), and
+ * whether a round is currently running.
+ */
+export interface BackgroundSubagentInfo {
+  sessionId: string;
+  subagentId: string | null;
+  running: boolean;
+}
+
+/**
+ * Outcome of a host-initiated subagent message (`steerBackgroundSubagent`): `steered` = the
+ * child was mid-run and the text was queued as a steering message; `started` = the child was
+ * idle and the text began a follow-up run on the same child Session; `busy` = the child is
+ * mid-run but its handle predates steering (a foreign SubagentRunner without `steer`);
+ * `gone` = no live child with that session id (finished and released, killed, or never
+ * tracked).
+ */
+export type SubagentSteerOutcome = "steered" | "started" | "busy" | "gone";
+
+/**
  * Environment interface: executes approved tool calls within the Workspace.
  * `executeTool` yields `partial_tool_call_output` as an async generator and ends with exactly one
  * complete `tool_call_output`; nested session messages carrying an origin marker (e.g. forwarded
@@ -521,6 +551,30 @@ export interface EnvironmentInterface {
    * listBackgroundCommands.
    */
   hasRunningBackgroundSubagents?(): boolean;
+  /**
+   * All live subagent child sessions (foreground-window ones included), for a host UI's
+   * subagents panel. Optional, like listBackgroundCommands.
+   */
+  listBackgroundSubagents?(): BackgroundSubagentInfo[];
+  /**
+   * Host-initiated message to one child session, by child Session id: steering while the
+   * child runs, a follow-up run while it is idle (see SubagentSteerOutcome). The human and
+   * the model (`input_subagent`) converge on the managed session's same channel. Optional.
+   */
+  steerBackgroundSubagent?(childSessionId: string, text: string): SubagentSteerOutcome;
+  /**
+   * Host-initiated abort of one child session's CURRENT run (the child-session equivalent of
+   * the user's stop button): the session survives for follow-ups, unlike kill_subagent's
+   * terminate-and-remove. False when the child is unknown or idle. Optional.
+   */
+  abortBackgroundSubagentRun?(childSessionId: string): boolean;
+  /**
+   * Attaches the single listener for subagent run-state changes (a round starting or
+   * settling on any live child). The host re-reads `listBackgroundSubagents` on each ping —
+   * the event carries no payload, so state reads stay race-free against the listing.
+   * Optional, same single-listener pattern as setBackgroundTaskListener.
+   */
+  setSubagentStateListener?(listener: () => void): void;
   /**
    * Refreshes the listen-port probe behind `BackgroundCommandInfo.serviceUrl` for running
    * sessions whose output printed no URL (TTL-cached and time-bounded per session; see

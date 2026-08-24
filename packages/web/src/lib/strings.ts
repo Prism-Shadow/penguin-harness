@@ -1652,6 +1652,15 @@ Benchmark：
     nodeDone: "已完成",
     /** Identity-strip jump: opens the selected subagent's own Session in the chat area. */
     openAsSession: "跳转到该会话",
+    /** Identity-strip stop: aborts only the child's current run; the session stays for follow-ups. */
+    stopRun: "停止当前运行（会话保留，可继续对话）",
+    sendMessage: "发送",
+    /** Composer placeholder while the child runs: the message lands mid-run as a steering interjection. */
+    steerPlaceholder: "插话：运行中即时送达该子智能体",
+    /** Composer placeholder while the child is idle: the message continues it with a follow-up round. */
+    resumePlaceholder: "发消息让该子智能体继续一轮",
+    /** The child session is no longer live (finished and released, killed, or the runtime restarted). */
+    subagentGone: "该子会话已不在运行时中，可能已结束并被释放",
   },
 
   files: {

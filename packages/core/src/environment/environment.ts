@@ -28,13 +28,15 @@
  * Docs: /docs/tools § "Execution contract".
  */
 import path from "node:path";
-import { partialToolCallOutput, toolCallOutput } from "../omnimessage/index.js";
+import { partialToolCallOutput, toolCallOutput, userText } from "../omnimessage/index.js";
 import type { McpServerConnectResult, OmniMessage, StopReason } from "../omnimessage/index.js";
 import type {
   BackgroundCommandInfo,
+  BackgroundSubagentInfo,
   BackgroundTaskDoneEvent,
   EnvironmentConfig,
   EnvironmentInterface,
+  SubagentSteerOutcome,
   ToolConfig,
   ToolDefinition,
   ToolExecutionRequest,
@@ -267,6 +269,60 @@ export class Environment implements EnvironmentInterface {
   /** Whether a managed subagent session is mid-round (see EnvironmentInterface.hasRunningBackgroundSubagents). */
   hasRunningBackgroundSubagents(): boolean {
     return this.subagentSessions.hasRunning();
+  }
+
+  /** All live subagent child sessions, foreground-window ones included (see EnvironmentInterface.listBackgroundSubagents). */
+  listBackgroundSubagents(): BackgroundSubagentInfo[] {
+    return this.subagentSessions.listLive();
+  }
+
+  /**
+   * Host-initiated message to one child session: steering mid-run, a follow-up run when idle
+   * (see EnvironmentInterface.steerBackgroundSubagent). Converges on the same managed-session
+   * channel input_subagent uses; the message carries no sender (human origin), unlike the
+   * model path's "parent_agent".
+   */
+  steerBackgroundSubagent(childSessionId: string, text: string): SubagentSteerOutcome {
+    const session = this.subagentSessions.bySessionId(childSessionId);
+    if (!session) return "gone";
+    this.attachHostTap(session);
+    if (session.steer([userText(text)])) return "steered";
+    if (session.running) return "busy";
+    try {
+      session.startRun(text);
+    } catch {
+      return "gone";
+    }
+    return "started";
+  }
+
+  /** Host-initiated abort of one child session's current run (see EnvironmentInterface.abortBackgroundSubagentRun). */
+  abortBackgroundSubagentRun(childSessionId: string): boolean {
+    const session = this.subagentSessions.bySessionId(childSessionId);
+    if (!session) return false;
+    this.attachHostTap(session);
+    return session.abortRun();
+  }
+
+  /** Attaches the single subagent run-state listener (see EnvironmentInterface.setSubagentStateListener). */
+  setSubagentStateListener(listener: () => void): void {
+    this.subagentSessions.setStateListener(() => {
+      if (!this.bgDisposed) listener();
+    });
+  }
+
+  /**
+   * A host touching a child proves a live-forwarding consumer exists, so attach the message
+   * tap on first touch: the child's messages then reach the frontend the moment they are
+   * produced instead of waiting for the model's next poll. Model-facing text buffering and
+   * poll semantics are unchanged; background launches already attached this tap at launch.
+   */
+  private attachHostTap(session: {
+    hasMessageTap: boolean;
+    setMessageTap(tap: (msg: OmniMessage) => void): void;
+  }): void {
+    if (session.hasMessageTap) return;
+    session.setMessageTap((msg) => this.emitBackgroundForward(msg));
   }
 
   /** Kills one background command process (whole process group) and drops it from the registry; false when the id is unknown. */

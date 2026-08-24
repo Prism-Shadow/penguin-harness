@@ -83,7 +83,7 @@ Recovery 文件保存 Environment 收到的未经脱敏的工具文本。误读�
 | `edit_file` | rw | 30000 | 对既有文件做精确字符串替换，回显校验片段 |
 | `write_file` | rw | 30000 | 新建或整体覆写文件，按需创建父目录 |
 | `run_subagent` | rw | 600000 | 把自包含子任务委派给同 Workspace 的子 Agent |
-| `input_subagent` | rw | 600000 | 轮询后台 Subagent，或在其空闲时追加后续 Prompt |
+| `input_subagent` | rw | 600000 | 轮询后台 Subagent、运行中插话、停止其当前轮，或在其空闲时追加后续 Prompt |
 | `kill_subagent` | rw | 30000 | 按 `subagent_id` 中止并移除后台 Subagent，返回尚未送达的文本 |
 | `read_image` | r | 60000 | 读取图片并作为图像内容返回(vision 模型) |
 | `describe_image` | r | 90000 | 由 `vision_model` 代读图片并返回文字回答(text-only 模型) |
@@ -173,7 +173,9 @@ POSIX 上 Ctrl-C 向会话进程组发送 `SIGINT`，中断前台命令。Window
 
 ### Subagent
 
-`run_subagent` 把一段能一次说清的子任务交给子 Agent 执行，同样是两段式：前台窗口(默认 300000ms)过后转入后台并返回 `subagent_id`，由 `input_subagent` 轮询或追加 Prompt；子 Agent 的待审批项会在轮询等待期间浮出。传 `run_in_background: true` 则立即返回 `subagent_id`，每轮完成都以自动 user message 送达（见[后台完成回报](#后台完成回报)）；`kill_subagent` 中止并移除后台 Subagent（空闲的也可移除，腾出并发额度）。
+`run_subagent` 把一段能一次说清的子任务交给子 Agent 执行，同样是两段式：前台窗口(默认 300000ms)过后转入后台并返回 `subagent_id`，由 `input_subagent` 驱动；子 Agent 的待审批项会在轮询等待期间浮出。`input_subagent` 覆盖四种手势：`prompt` 为空仅轮询；子会话**运行中**发 `prompt` 即中途插话（与用户对主会话的运行中 steering 同一机制——在子会话下一步以 `[user_steering]` 消息送达，写入子 Trace、sender 记为 `parent_agent`）；空闲时发 `prompt` 即在同一会话上续跑一轮；`abort: true` 只停止子会话**当前这一轮**——会话保留、可继续插话或续跑，与 `prompt` 同给即打断并改道。传 `run_in_background: true` 则启动即返回 `subagent_id`，每轮完成都以自动 user message 送达（见[后台完成回报](#后台完成回报)）；`kill_subagent` 中止并**移除**后台 Subagent（空闲的也可移除，腾出并发额度）。
+
+Web App 的智能体面板给用户提供同样两个操作：选中子会话后，身份条上的停止按钮（`abort` 的面板对应物）与对话下方的消息输入行（运行中即插话、空闲即续跑）。两者与 `input_subagent` 收敛到 core 的同一通道；面板的运行标识以服务端实况为准，不再从对话文本推断。
 
 ```ts
 // run_subagent
@@ -191,7 +193,8 @@ POSIX 上 Ctrl-C 向会话进程组发送 `SIGINT`，中断前台命令。Window
 // input_subagent
 {
   subagent_id: string;     // 必填:run_subagent 返回的后台 Subagent id
-  prompt?: string;         // 追加任务,仅在子 Session 空闲时接受;缺省仅轮询
+  prompt?: string;         // 运行中即插话(steering);空闲时即续跑一轮;缺省仅轮询
+  abort?: boolean;         // 停止子会话当前这一轮(会话保留);与 prompt 同给即打断并改道
   yield_time_ms?: number;  // 等待时长;有追加默认 300000,空轮询默认 10000
   description: string;     // 开关开启时必填
 }

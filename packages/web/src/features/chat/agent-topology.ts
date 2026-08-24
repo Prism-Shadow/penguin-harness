@@ -143,15 +143,24 @@ export function descriptionFromRunSubagentArgs(argsJson: string): string | null 
   return runSubagentArg(argsJson, "description");
 }
 
-/** Extract the latest Task's spawn tree: root first, then children in DFS preorder (document order). */
+/**
+ * Extract the latest Task's spawn tree: root first, then children in DFS preorder (document
+ * order). `liveStates` is the server's structural child liveness (task_state.subagents,
+ * session id → running): when it knows a child, it overrides the text heuristics below —
+ * dead/unloaded runtimes and old servers simply leave the map empty and the heuristics stand.
+ */
 export function extractTopology(
   model: StreamModel,
   rootSessionId: string,
   taskRunning: boolean,
+  liveStates?: ReadonlyMap<string, boolean>,
 ): TopologyNode[] {
-  return extractFromSlice(model.items.slice(latestTaskStart(model.items)), rootSessionId, {
-    running: taskRunning,
-  });
+  return extractFromSlice(
+    model.items.slice(latestTaskStart(model.items)),
+    rootSessionId,
+    { running: taskRunning },
+    liveStates,
+  );
 }
 
 /**
@@ -168,6 +177,7 @@ export function extractTopologyForChild(
   rootSessionId: string,
   taskRunning: boolean,
   childSessionId: string,
+  liveStates?: ReadonlyMap<string, boolean>,
 ): TopologyNode[] | null {
   const items = model.items;
   const at = items.findIndex(
@@ -193,9 +203,12 @@ export function extractTopologyForChild(
       break;
     }
   }
-  return extractFromSlice(items.slice(start, end), rootSessionId, {
-    running: end === items.length && taskRunning,
-  });
+  return extractFromSlice(
+    items.slice(start, end),
+    rootSessionId,
+    { running: end === items.length && taskRunning },
+    liveStates,
+  );
 }
 
 /** Launch note of a run_in_background subagent: binds the card to its registry handle. */
@@ -239,6 +252,7 @@ function extractFromSlice(
   slice: readonly ChatItem[],
   rootSessionId: string,
   root: { running: boolean },
+  liveStates?: ReadonlyMap<string, boolean>,
 ): TopologyNode[] {
   const nodes: TopologyNode[] = [
     {
@@ -279,7 +293,10 @@ function extractFromSlice(
       sessionId,
       agentId: child.meta?.agentId ?? argsAgentId,
       description: argsDescription,
-      running,
+      // Server liveness wins over the text heuristics whenever it knows this child: an
+      // input_subagent revival or a panel-started round flips it running again the moment
+      // the child's state pings (issue #274's frozen checkmark and stopped timer).
+      running: liveStates?.get(sessionId) ?? running,
       depth: origin.length,
       origin,
       parentId,

@@ -109,6 +109,24 @@ describe("extractTopology", () => {
     expect(nodes[1]!.running).toBe(false);
   });
 
+  it("server liveness overrides the text heuristics whenever it knows the child (issue #274)", () => {
+    const m = createStreamModel();
+    pushMessage(m, userText("go"));
+    spawnChild(m, "t1", "child1");
+    // The card completed long ago — the heuristic reads done — but the runtime reports the
+    // child running again (an input_subagent revival or a panel-started round).
+    pushMessage(m, toolCallOutput({ output: "done", toolCallId: "t1" }));
+    const live = new Map([["child1", true]]);
+    expect(extractTopology(m, "root", false, live)[1]!.running).toBe(true);
+
+    // The reverse: a card that still looks running settles the moment the server says idle.
+    const idle = new Map([["child1", false]]);
+    expect(extractTopology(m, "root", true, idle)[1]!.running).toBe(false);
+
+    // A child the server does not know (dead runtime, old server) keeps the heuristic.
+    expect(extractTopology(m, "root", false, new Map())[1]!.running).toBe(false);
+  });
+
   it("prefers the child's own session_meta capture (agent_state path) over the call-argument agent id", () => {
     const m = createStreamModel();
     pushMessage(m, userText("go"));

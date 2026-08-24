@@ -21,8 +21,11 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
-import type { SessionInfo } from "@prismshadow/penguin-server/api";
+import type { SessionInfo, SubagentRuntimeInfo } from "@prismshadow/penguin-server/api";
+import { ApiError } from "../../api/client";
+import { abortSubagent, steerSubagent } from "../../api/endpoints";
 import { S } from "../../lib/strings";
+import { toneInk } from "../../lib/tone";
 import type { StreamModel } from "../../lib/omni/stream-model";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { EmptyState } from "../../components/ui/empty-state";
@@ -58,6 +61,7 @@ export function SubagentsView({
   ctx,
   focusRequest,
   taskScope,
+  subagents,
 }: {
   session: SessionInfo;
   model: StreamModel;
@@ -69,6 +73,8 @@ export function SubagentsView({
   focusRequest: Selection | null;
   /** Displayed Task scope (the chat page's subagentTaskScope): null = latest; an anchor pins the historical Task containing that child. */
   taskScope: { anchorSessionId: string } | null;
+  /** Live subagent children from the server's task_state (structural liveness): overrides the topology's text heuristics; empty for dead runtimes. */
+  subagents: SubagentRuntimeInfo[];
 }) {
   const { agents, setCurrentAgentId } = useProject();
   const { sessions } = useSessions();
@@ -82,16 +88,29 @@ export function SubagentsView({
     }
   }, [focusRequest]);
 
+  // Structural child liveness from the server (session id → running): the topology consults
+  // it before its text heuristics, so revived and panel-started rounds read correctly.
+  const liveStates = useMemo(
+    () => new Map(subagents.map((s) => [s.sessionId, s.running])),
+    [subagents],
+  );
+
   const nodes = useMemo(
     () =>
       // A pinned scope (chip click) shows THAT Task's graph — historical or latest alike; when
       // its anchor is no longer referenced in the stream, fall back to the latest Task.
       (taskScope
-        ? extractTopologyForChild(model, session.sessionId, taskRunning, taskScope.anchorSessionId)
-        : null) ?? extractTopology(model, session.sessionId, taskRunning),
+        ? extractTopologyForChild(
+            model,
+            session.sessionId,
+            taskRunning,
+            taskScope.anchorSessionId,
+            liveStates,
+          )
+        : null) ?? extractTopology(model, session.sessionId, taskRunning, liveStates),
     // version is the model's change signal (items mutate in place).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [model, version, session.sessionId, taskRunning, taskScope],
+    [model, version, session.sessionId, taskRunning, taskScope, liveStates],
   );
 
   // No explicit selection yet: auto-focus the displayed Task's first child (null when none spawned).
@@ -205,6 +224,24 @@ export function SubagentsView({
               <StatusIcon state="running" size={10} label={S.chat.subagentRunning} />
             )}
             <span className="min-w-0 flex-1" />
+            {/* Stop the child's CURRENT run only (the session survives for follow-ups) —
+                the panel counterpart of the model's input_subagent abort (#272). */}
+            {activeRunning && (
+              <button
+                type="button"
+                title={S.subagentPanel.stopRun}
+                aria-label={S.subagentPanel.stopRun}
+                data-testid="subagent-stop-run"
+                onClick={() => {
+                  void abortSubagent(session.sessionId, active.sessionId).catch(() => undefined);
+                }}
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+              >
+                <svg width="12" height="12" viewBox="0 0 14 14" aria-hidden className="block">
+                  <rect x="2" y="2" width="10" height="10" rx="2" fill="currentColor" />
+                </svg>
+              </button>
+            )}
             {/* Jump out of the panel: the child conversation as a full Session. */}
             <button
               type="button"
@@ -231,8 +268,92 @@ export function SubagentsView({
               />
             )}
           </div>
+          {/* Keyed by child too: switching nodes must not carry a half-typed message over. */}
+          <SubagentComposer
+            key={`composer-${active.sessionId}`}
+            sessionId={session.sessionId}
+            childSessionId={active.sessionId}
+            running={activeRunning}
+          />
         </>
       )}
+    </div>
+  );
+}
+
+/**
+ * Single-line message input for the selected child (#272): a message sent while the child
+ * runs is a steering interjection (the main composer's mid-run semantics, applied to the
+ * child); sent while it is idle, it continues the child with a follow-up round. Both land on
+ * the same core channel the model's input_subagent uses.
+ */
+function SubagentComposer({
+  sessionId,
+  childSessionId,
+  running,
+}: {
+  sessionId: string;
+  childSessionId: string;
+  running: boolean;
+}) {
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const send = async (): Promise<void> => {
+    const message = text.trim();
+    if (!message || busy) return;
+    setBusy(true);
+    setNotice(null);
+    try {
+      await steerSubagent(sessionId, childSessionId, message);
+      setText("");
+    } catch (err) {
+      setNotice(
+        err instanceof ApiError && err.code === "subagent_gone"
+          ? S.subagentPanel.subagentGone
+          : err instanceof Error
+            ? err.message
+            : String(err),
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="shrink-0 border-t border-gray-100 px-2 py-1.5 dark:border-gray-800/60">
+      {notice !== null && <p className={`mb-1 px-1 text-[11px] ${toneInk.danger}`}>{notice}</p>}
+      <div className="flex items-center gap-1.5">
+        <input
+          type="text"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+              e.preventDefault();
+              void send();
+            }
+          }}
+          placeholder={
+            running ? S.subagentPanel.steerPlaceholder : S.subagentPanel.resumePlaceholder
+          }
+          disabled={busy}
+          data-testid="subagent-composer-input"
+          className="min-w-0 flex-1 rounded-md border border-gray-200 bg-transparent px-2 py-1 text-xs text-gray-800 outline-none placeholder:text-gray-400 focus:border-gray-400 disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:placeholder:text-gray-600 dark:focus:border-gray-500"
+        />
+        <button
+          type="button"
+          title={S.subagentPanel.sendMessage}
+          aria-label={S.subagentPanel.sendMessage}
+          data-testid="subagent-composer-send"
+          onClick={() => void send()}
+          disabled={busy || text.trim().length === 0}
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 disabled:cursor-default disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+        >
+          <GlyphIcon d="M12 19V5M5 12l7-7 7 7" size={ICON_SIZE.rowLead} />
+        </button>
+      </div>
     </div>
   );
 }

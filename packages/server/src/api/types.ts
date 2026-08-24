@@ -1420,6 +1420,31 @@ export interface PendingFollowUpInfo {
 }
 
 /**
+ * One live subagent child of a session's runtime, carried on `task_state` events and the SSE
+ * subscribe snapshot: the child Session id (the origin hop the stream already correlates by),
+ * its background registry handle (null while it only lives inside a foreground collect
+ * window), and whether a round is currently running. Only an ACTIVE parent runtime reports
+ * children — after a server restart the in-process children are gone, and the empty list is
+ * the truth.
+ */
+export interface SubagentRuntimeInfo {
+  sessionId: string;
+  subagentId: string | null;
+  running: boolean;
+}
+
+/**
+ * Response of POST /api/sessions/:sessionId/subagents/:childSessionId/steer: how the message
+ * reached the child — queued as a mid-run steering interjection, or started as a follow-up
+ * run on the idle child. The two failure shapes are HTTP statuses instead: 404 when no live
+ * child bears the id (or the parent runtime is not loaded), 409 when the child is mid-run but
+ * cannot accept steering.
+ */
+export interface SubagentSteerResponse {
+  outcome: "steered" | "started";
+}
+
+/**
  * Response of the two recall endpoints — DELETE /api/sessions/:id/steer/:steerId and
  * DELETE /api/sessions/:id/follow-ups/:followUpId: the withdrawn message's original content,
  * for the composer to restore into the input box for editing and resending (#287). File
@@ -1493,6 +1518,12 @@ export type ServerEvent =
       pendingSteering?: PendingSteeringInfo[];
       /** Queued follow-up tasks awaiting auto-start (absent = none): per-entry content + recall handle, alongside the `queued` count. */
       pendingFollowUps?: PendingFollowUpInfo[];
+      /**
+       * Live subagent children of this session's runtime (absent = none): the panel renders
+       * child running marks from this structural liveness instead of parsing tool-output
+       * text. Refreshed on every child run start/settle.
+       */
+      subagents?: SubagentRuntimeInfo[];
     }
   /** The model-generated title after the first turn has been persisted (for in-place list updates). */
   | { type: "session_title"; sessionId: string; title: string }

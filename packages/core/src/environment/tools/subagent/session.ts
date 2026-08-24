@@ -23,6 +23,11 @@
  *   the request stays queued, and a late-arriving decision still takes effect (settled guard,
  *   first to arrive wins).
  *
+ * Mid-run control: `steer` queues a message on the child Session's own steering queue (the
+ * mechanism a user steers the main session with), and `abortRun` aborts only the current
+ * round via a per-run AbortController — the session survives both for follow-up prompts.
+ * The model (input_subagent) and the host (subagents panel) converge on these same methods.
+ *
  * Cleanup: `kill()` aborts the current run via AbortSignal, denies all pending approvals, and
  * releases child Session resources; idempotent. The child Session runs in-process, so there's no
  * need for a separate synchronous hard-kill path (its command sessions are reaped by their own
@@ -58,6 +63,12 @@ export class ManagedSubagentSession {
 
   private readonly handle: SubagentHandle;
   private readonly abortCtrl = new AbortController();
+  /**
+   * Abort scope of the CURRENT run only: `abortRun` (input_subagent's `abort`, the panel's
+   * stop button) fires this one, ending the round the way a user's stop ends a main-session
+   * Task — the session itself survives for steering and follow-up runs, unlike `kill`.
+   */
+  private runCtrl: AbortController | null = null;
 
   private messages: OmniMessage[] = [];
   private readonly textBuffer = new CappedTextBuffer(OUTPUT_BUFFER_CAP, "earlier subagent output");
@@ -123,6 +134,11 @@ export class ManagedSubagentSession {
     return this.messages.length > 0 || !this.textBuffer.isEmpty;
   }
 
+  /** Whether the session has been killed/disposed (used by the manager's live index to drop dead entries lazily). */
+  get disposed(): boolean {
+    return this.killed;
+  }
+
   /**
    * Starts a new round of the task on the child Session (async pump, doesn't block the caller).
    * Throws if already disposed or still running (converted to an explanatory output by the
@@ -133,7 +149,44 @@ export class ManagedSubagentSession {
     if (this.isRunning) throw new Error("subagent is still running");
     this.isRunning = true;
     this.exitInfo = null;
-    void this.pump(prompt);
+    this.runCtrl = new AbortController();
+    this.notifyState();
+    void this.pump(prompt, this.runCtrl);
+  }
+
+  /**
+   * Queues a steering message for the current run (the same channel a user steers the main
+   * session with — see SubagentHandle.steer). False when idle, killed, or the handle predates
+   * steering: the caller then falls back to a follow-up run or reports "not running".
+   */
+  steer(messages: OmniMessage[]): boolean {
+    if (this.killed || !this.isRunning) return false;
+    return this.handle.steer?.(messages) ?? false;
+  }
+
+  /**
+   * Aborts the CURRENT run only (see runCtrl); the session stays alive for steering and
+   * follow-up prompts. False when no run is in flight. The exit lands asynchronously through
+   * the pump (status failed with an aborted note), so callers observe settlement via
+   * waitWake/running like any other run end.
+   */
+  abortRun(): boolean {
+    if (this.killed || !this.isRunning) return false;
+    this.runCtrl?.abort();
+    return true;
+  }
+
+  // Run-state observer (host liveness): fired on every isRunning flip — startRun and the
+  // pump's settle. The event carries no payload; observers re-read `running`.
+  private stateListener: (() => void) | null = null;
+
+  /** Attaches the single run-state listener (the manager's aggregate notifier). */
+  onStateChange(cb: () => void): void {
+    this.stateListener = cb;
+  }
+
+  private notifyState(): void {
+    this.stateListener?.();
   }
 
   /** Takes the buffered child-session messages (already tagged with origin, for the parent tool to forward). */
@@ -174,6 +227,11 @@ export class ManagedSubagentSession {
   setPersistentApprovalSink(approve: ApproveFn): void {
     this.persistentApprove = approve;
     void this.pumpApprovals();
+  }
+
+  /** Whether a live forwarding tap is attached (host paths attach one on first touch; see setMessageTap). */
+  get hasMessageTap(): boolean {
+    return this.forwardTap !== null;
   }
 
   /** Attaches the live forwarding tap of a background launch (see forwardTap), flushing the buffered backlog through it in order. */
@@ -235,13 +293,14 @@ export class ManagedSubagentSession {
   // -------------------------------------------------------------------------
 
   /** Drives one round of `handle.run`: buffers messages and text, settling the terminal state when it ends. */
-  private async pump(prompt: string): Promise<void> {
+  private async pump(prompt: string, runCtrl: AbortController): Promise<void> {
     let wroteAny = false;
     let childAbort: string | null = null;
     try {
+      // Either scope ends the round: the session-lifetime kill, or this run's own abort.
       for await (const msg of this.handle.run({
         prompt,
-        signal: this.abortCtrl.signal,
+        signal: AbortSignal.any([this.abortCtrl.signal, runCtrl.signal]),
         approve: this.childApprove,
       })) {
         this.bufferMessage(msg);
@@ -287,6 +346,7 @@ export class ManagedSubagentSession {
       this.isRunning = false;
       if (this.killed) this.handle.dispose();
       this.wakeSignal.notify();
+      this.notifyState();
       this.fireSettleWatcher();
     }
   }

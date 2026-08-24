@@ -6,9 +6,14 @@
  * polls (collecting subagent messages and text deltas buffered during the background period,
  * or waiting for the run to end); when non-empty and the subagent is idle, it's fed in as a new
  * user message to continue on the same child Session (long-running subagent, multi-turn
- * conversation); when non-empty but the subagent is still running, it errors, suggesting to
- * poll first. Within the window, queued approval requests from the child session are also
- * passed through (see subagent/session.ts).
+ * conversation); when non-empty and the subagent is still RUNNING, it is queued as a steering
+ * message on the child's own steering queue — the same mechanism a user steers the main
+ * session with, delivered as a `[user_steering]` message at the child's next input assembly.
+ * The boolean `abort` argument aborts the child's CURRENT run only (the session survives for
+ * follow-ups, unlike kill_subagent); combined with a non-empty `prompt` it interrupts and
+ * redirects — the prompt starts a fresh round once the aborted one settles. Within the window,
+ * queued approval requests from the child session are also passed through (see
+ * subagent/session.ts).
  *
  * Difference from `input_command`: once a round of work finishes, the session is **not
  * removed** (kept to receive a follow-up prompt) — it's only released when the parent Session
@@ -17,7 +22,7 @@
  * independently earlier; the user interrupting one poll shouldn't kill it along the way).
  * Docs: /docs/tools § "Subagents".
  */
-import { partialToolCallOutput } from "../../omnimessage/index.js";
+import { partialToolCallOutput, userText } from "../../omnimessage/index.js";
 import type { OmniMessage } from "../../omnimessage/index.js";
 import type { EnvironmentServices, ToolDefinitionConfig } from "../../interfaces.js";
 import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
@@ -78,22 +83,42 @@ export function createInputSubagentTool(
 
       if (signal?.aborted) return { stopReason: "aborted" };
 
-      // Continue with a follow-up prompt (empty prompt just polls). New input is not accepted
-      // while running: poll first to collect progress.
+      // Abort the child's CURRENT run (per-run scope; the session survives). Waiting for the
+      // aborted round to settle keeps the follow-up prompt path below deterministic — the
+      // wait is bounded by this call's own signal (timeout/interruption).
+      if (args["abort"] === true) {
+        if (session.abortRun()) {
+          yield delta(`[aborting subagent ${subagentId}'s current run]\n`);
+          while (session.running && signal?.aborted !== true) await session.waitWake(200);
+        } else {
+          yield delta(`[subagent ${subagentId} was already idle; nothing to abort]\n`);
+        }
+        if (signal?.aborted) return { stopReason: "aborted" };
+      }
+
+      // A non-empty prompt: steering while the child runs (the child's own steering queue —
+      // the same mechanism a user steers the main session with; sender "parent_agent" like
+      // the follow-up prompts), a follow-up run while it is idle. steer() itself answers
+      // false on an idle child, so the running/idle race settles on whichever side is true
+      // at delivery.
       if (!empty) {
-        if (session.running) {
+        if (session.steer([userText(prompt, "parent_agent")])) {
+          yield delta(`[steering message queued for subagent ${subagentId}]\n`);
+        } else if (!session.running) {
+          // startRun expresses edge cases like already-disposed via throw, collapsed here into failed (the tool never throws outward).
+          try {
+            session.startRun(prompt);
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            yield delta(`[input_subagent error: ${message}]`);
+            return { stopReason: "failed" };
+          }
+        } else {
+          // Running, but the handle predates steering (an older embedder's SubagentRunner).
           yield delta(
             `[input_subagent error: subagent ${subagentId} is still running; ` +
               `poll with an empty prompt to collect progress first]`,
           );
-          return { stopReason: "failed" };
-        }
-        // startRun expresses edge cases like already-disposed via throw, collapsed here into failed (the tool never throws outward).
-        try {
-          session.startRun(prompt);
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          yield delta(`[input_subagent error: ${message}]`);
           return { stopReason: "failed" };
         }
       }

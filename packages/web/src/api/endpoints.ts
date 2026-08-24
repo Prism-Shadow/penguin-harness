@@ -87,6 +87,7 @@ import type {
   RecalledMessageResponse,
   RetryNowResponse,
   SteerRequest,
+  SubagentSteerResponse,
   TaskCreateRequest,
   TaskCreateResponse,
   TraceAnalysisResponse,
@@ -563,6 +564,20 @@ export const postSteer = (sessionId: string, body: SteerRequest) =>
     method: "POST",
     body,
   });
+
+/** Panel message to one subagent child (#272): steering while the child runs ({outcome:"steered"}), a follow-up run while it is idle ({outcome:"started"}); 404 subagent_gone when no live child bears the id, 409 subagent_busy when it cannot accept steering. */
+export const steerSubagent = (sessionId: string, childSessionId: string, text: string) =>
+  apiFetch<SubagentSteerResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/subagents/${encodeURIComponent(childSessionId)}/steer`,
+    { method: "POST", body: { text } },
+  );
+
+/** Panel stop for one subagent child (#272): aborts only its CURRENT run — the session survives for follow-ups (202 aborted; 204 when already idle/unknown). */
+export const abortSubagent = (sessionId: string, childSessionId: string) =>
+  apiFetch<void>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/subagents/${encodeURIComponent(childSessionId)}/abort`,
+    { method: "POST", body: {} },
+  );
 
 /** Recall an undelivered steering message back to the composer (#287): returns its original content; 409 not_pending once it was delivered to the model. */
 export const recallSteer = (sessionId: string, steerId: string) =>

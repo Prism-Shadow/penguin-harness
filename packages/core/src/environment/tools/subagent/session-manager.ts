@@ -9,6 +9,7 @@
  * evicted; if there's still no room, the tool rejects spawning a new one.
  * Docs: /docs/tools § "Background session caps".
  */
+import type { BackgroundSubagentInfo } from "../../../interfaces.js";
 import { BackgroundRegistry } from "../background/index.js";
 import type { ManagedSubagentSession } from "./session.js";
 
@@ -25,10 +26,62 @@ export class SubagentSessionManager {
     idPrefix: "subagent",
     maxTasks: MAX_SESSIONS,
   });
+  /**
+   * Live index by child Session id: EVERY spawned session, tracked from spawn — children
+   * still inside a foreground collect window included, so host paths (the subagents panel)
+   * can steer or abort them before any `subagent_id` exists. Dead entries drop lazily on
+   * access; `subagent_id` is still allocated only at background registration.
+   */
+  private readonly live = new Set<ManagedSubagentSession>();
+  /** Single aggregate run-state listener (the Environment's notifier); pinged on any child's run start/settle. */
+  private stateListener: (() => void) | null = null;
 
   /** Whether the manager has been disposed (the host Session has ended). */
   get isDisposed(): boolean {
     return this.registry.isDisposed;
+  }
+
+  /** Enters a freshly spawned session into the live index and wires its run-state pings into the aggregate listener. */
+  track(session: ManagedSubagentSession): void {
+    this.live.add(session);
+    session.onStateChange(() => this.stateListener?.());
+  }
+
+  /** Attaches the single aggregate run-state listener (see track). */
+  setStateListener(listener: () => void): void {
+    this.stateListener = listener;
+  }
+
+  /** Looks up a live session by its child Session id (foreground-window ones included); undefined when none. */
+  bySessionId(sessionId: string): ManagedSubagentSession | undefined {
+    let found: ManagedSubagentSession | undefined;
+    for (const session of [...this.live]) {
+      if (session.disposed) {
+        this.live.delete(session);
+        continue;
+      }
+      if (session.sessionId === sessionId) found = session;
+    }
+    return found;
+  }
+
+  /** All live child sessions for a host UI (see BackgroundSubagentInfo); registry handles resolve where the session was promoted. */
+  listLive(): BackgroundSubagentInfo[] {
+    const handles = new Map<ManagedSubagentSession, string>();
+    for (const { id, task } of this.registry.list()) handles.set(task, id);
+    const out: BackgroundSubagentInfo[] = [];
+    for (const session of [...this.live]) {
+      if (session.disposed) {
+        this.live.delete(session);
+        continue;
+      }
+      out.push({
+        sessionId: session.sessionId,
+        subagentId: handles.get(session) ?? null,
+        running: session.running,
+      });
+    }
+    return out;
   }
 
   /** Whether there's still room for a new background session (evicting a completed, idle one if needed; never evicts a running one). */
@@ -70,6 +123,9 @@ export class SubagentSessionManager {
   kill(subagentId: string): boolean {
     if (this.registry.get(subagentId) === undefined) return false;
     this.registry.remove(subagentId);
+    // An idle child removed this way never flips a run state, so ping the host directly —
+    // its live listing just shrank.
+    this.stateListener?.();
     return true;
   }
 

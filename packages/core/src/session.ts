@@ -38,6 +38,8 @@ import { runGoalLoop } from "./goal/goal-loop.js";
 import { goalFinishedOf } from "./goal/goal-stream.js";
 import type {
   BackgroundCommandInfo,
+  BackgroundSubagentInfo,
+  SubagentSteerOutcome,
   BackgroundTaskDoneEvent,
   CommandPolicyConfig,
   EnvironmentInterface,
@@ -798,6 +800,30 @@ export class Session {
   /** Whether a background subagent of this Session is mid-round (see EnvironmentInterface.hasRunningBackgroundSubagents). */
   hasRunningBackgroundSubagents(): boolean {
     return this.environment.hasRunningBackgroundSubagents?.() ?? false;
+  }
+
+  /** All live subagent child sessions of this Session's Environment, for a host UI's subagents panel (see EnvironmentInterface.listBackgroundSubagents). */
+  listBackgroundSubagents(): BackgroundSubagentInfo[] {
+    return this.environment.listBackgroundSubagents?.() ?? [];
+  }
+
+  /**
+   * Host-initiated message to one child session by its Session id: steering while it runs, a
+   * follow-up run while it is idle (see EnvironmentInterface.steerBackgroundSubagent). The
+   * human (panel) and the model (input_subagent) converge on the same managed-session channel.
+   */
+  steerBackgroundSubagent(childSessionId: string, text: string): SubagentSteerOutcome {
+    return this.environment.steerBackgroundSubagent?.(childSessionId, text) ?? "gone";
+  }
+
+  /** Host-initiated abort of one child session's current run — the session survives for follow-ups (see EnvironmentInterface.abortBackgroundSubagentRun). */
+  abortBackgroundSubagentRun(childSessionId: string): boolean {
+    return this.environment.abortBackgroundSubagentRun?.(childSessionId) ?? false;
+  }
+
+  /** Attaches the single listener for subagent run-state changes; the host re-reads `listBackgroundSubagents` on each ping (see EnvironmentInterface.setSubagentStateListener). */
+  onSubagentState(listener: () => void): void {
+    this.environment.setSubagentStateListener?.(listener);
   }
 
   /** Queues a background completion event; a running Task delivers it at the next boundary, otherwise the host is signaled (see pendingNotices). */

@@ -807,7 +807,7 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
           run_in_background: {
             type: "boolean",
             description:
-              "Start the subagent in the background: return a subagent_id immediately without waiting. When it finishes, its answer arrives as an automatic user message — no polling needed. Good for dispatching parallel subtasks; interact via input_subagent, stop via kill_subagent. Defaults to false.",
+              "Start the subagent in the background: return a subagent_id immediately without waiting. When it finishes, its answer arrives as an automatic user message — no polling needed. Good for dispatching parallel subtasks; message or steer it mid-run (and abort its current run) via input_subagent, remove it via kill_subagent. Defaults to false.",
           },
         },
         required: ["description", "prompt"],
@@ -821,7 +821,7 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
     {
       name: "input_subagent",
       description:
-        "Interact with a background subagent started by run_subagent: poll for new output, or send a follow-up prompt once it is idle to continue the same subagent session. Identify the session with its subagent_id. Pending tool approvals of the subagent are surfaced while this tool is waiting.",
+        "Interact with a background subagent started by run_subagent: poll for new output, send it a message, or interrupt its current run. A prompt sent while the subagent is RUNNING is delivered mid-run as a steering message (like a user interjecting) — use it to correct course without waiting; sent while it is idle, the prompt continues the same session as a follow-up task. Set abort=true to stop the current run (the session survives for follow-ups; combine with a prompt to interrupt and redirect). Identify the session with its subagent_id. Pending tool approvals of the subagent are surfaced while this tool is waiting.",
       parameters: {
         type: "object",
         properties: {
@@ -837,7 +837,12 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
           prompt: {
             type: "string",
             description:
-              "A follow-up task for the subagent, delivered as a new user message on the same session. Only accepted when the subagent is idle (its previous run finished). Empty (the default) sends nothing and only polls for new output and status.",
+              "A message for the subagent. While it is running, it is injected mid-run as a steering interjection the subagent absorbs at its next step (course corrections, extra context, an early stop request). While it is idle, it starts a follow-up task on the same session. Empty (the default) sends nothing and only polls for new output and status.",
+          },
+          abort: {
+            type: "boolean",
+            description:
+              "Abort the subagent's CURRENT run, like a user pressing stop: the run ends but the session stays available for steering and follow-up prompts (kill_subagent is the one that removes it). With a non-empty prompt, the aborted run settles first and the prompt then starts a fresh run — interrupt and redirect. Defaults to false; a no-op when the subagent is already idle.",
           },
           yield_time_ms: {
             type: "number",

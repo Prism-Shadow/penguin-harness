@@ -36,6 +36,7 @@ import type {
   MessagesLiveTail,
   MessagesPageInfo,
   PendingFollowUpInfo,
+  SubagentRuntimeInfo,
   PendingSteeringInfo,
   ServerEvent,
   SessionStatus,
@@ -124,6 +125,8 @@ export interface StreamControllerDeps {
   onPendingSteering?: (items: PendingSteeringInfo[]) => void;
   /** Queued follow-up tasks carried on task_state events (absent = none): each entry's content + recall handle, alongside the count. */
   onPendingFollowUps?: (items: PendingFollowUpInfo[]) => void;
+  /** Live subagent children carried on task_state events (absent = none): the panel's structural running marks — no tool-output text parsing for live sessions. */
+  onSubagents?: (items: SubagentRuntimeInfo[]) => void;
   onLoading: (loading: boolean) => void;
   /** History load failure message (null = clear). */
   onError: (message: string | null) => void;
@@ -294,6 +297,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
         deps.onQueuedFollowUps?.(ev.queued ?? 0);
         deps.onPendingSteering?.(ev.pendingSteering ?? []);
         deps.onPendingFollowUps?.(ev.pendingFollowUps ?? []);
+        deps.onSubagents?.(ev.subagents ?? []);
         if (ev.state === "idle") {
           // Task ended (or the snapshot confirms idle): finalize the current Task's stats; pending approvals have already converged server-side.
           notifyTaskIdle(model);

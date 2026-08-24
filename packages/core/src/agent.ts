@@ -751,6 +751,14 @@ export class Agent {
               yield withOrigin(msg, hop);
             }
           },
+          // Mid-run steering rides the child Session's own steering queue — the same
+          // mechanism a user steers the main session with. The queued message keeps its
+          // caller-chosen sender ("parent_agent" from input_subagent, none from a human
+          // panel), and the delivered [user_steering] message streams back out through
+          // `run` with the origin hop like every other child message.
+          steer(messages) {
+            return childSession.steer(messages);
+          },
           dispose() {
             childSession.dispose();
           },
