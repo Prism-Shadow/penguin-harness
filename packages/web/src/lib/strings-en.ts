@@ -1545,7 +1545,8 @@ Scenarios:
     contextPartAssistantMessages: "Model messages",
     contextPartToolRequests: "Tool requests",
     contextPartToolResults: "Tool results",
-    contextTopTools: "Top 5 tools (requests + results)",
+    contextTopTools: "Top 5 tools",
+    contextCompactAt: (n: string): string => `Compaction threshold ${n}`,
     contextTopToolsHint:
       "Ranked by the context each tool's calls and results occupy (definitions count under “Tool definitions”)",
     contextUnknownHint:

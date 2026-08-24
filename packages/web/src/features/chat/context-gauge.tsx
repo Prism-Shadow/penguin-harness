@@ -22,9 +22,12 @@
  * figure in the panel header, and the estimate's absolute error never reaches the display; the
  * `~` on every derived value marks what is still an approximation.
  *
- * Hovering a bar segment or its legend row links the two: the row lights up and the other
- * segments fade, which is how a 1% sliver gets identified at all — the bar itself carries no
- * labels.
+ * The bar runs the full **context window**, so its filled run is the occupancy the ring shows and
+ * a dashed mark says where compaction will fire — how much room is left before the context is
+ * summarized away is the thing that decides what to do next. The parts subdivide that filled run;
+ * their exact shares are the legend's job, since at low occupancy the run is only a few pixels
+ * wide. Hovering a segment or its legend row links the two: the row lights up and the other
+ * segments fade.
  *
  * The panel is portaled to document.body and positioned against viewport coordinates by
  * usePortalPanel, so the composer's own overflow cannot clip it, and it closes on outside click /
@@ -54,8 +57,11 @@ const PANEL_WIDTH = 300;
 const PANEL_MAX_WIDTH = "calc(100vw - 32px)";
 const PANEL_HEIGHT = 264;
 
-/** Smallest painted width (px) of a composition segment, so every colour in the legend also appears in the bar. Below ~1% of the bar the floor distorts the proportion it stands for, which is the trade for not dropping the part entirely. */
-const MIN_SEGMENT_PX = 2;
+/** Smallest painted width (px) of the filled run, so a context with a few hundred tokens in it still shows a mark rather than nothing. */
+const MIN_FILL_PX = 2;
+
+/** How far (px) the compaction mark runs past the bar top and bottom: a 9px dash inside the bar reads as a dot, an 18px one reads as dashed. */
+const MARK_OVERHANG_PX = 4;
 
 type PanelState =
   { status: "loading" } | { status: "failed" } | { status: "ready"; data: SessionContextResponse };
@@ -214,6 +220,12 @@ function ContextPanel({
   const unmeasured = unknown || data?.contextClosed === true;
   const composition = data === null ? null : contextComposition(data, now);
   const hoveredPart = composition?.parts.some((p) => p.key === hovered) ? hovered : null;
+  // Only drawn when it falls inside the bar's scale; the server already returns null for a
+  // Session whose compaction is off or whose threshold sits past the window.
+  const compactAt =
+    data !== null && data.compactionThreshold !== null && data.compactionThreshold < max
+      ? data.compactionThreshold
+      : null;
 
   return (
     <>
@@ -241,25 +253,47 @@ function ContextPanel({
         <p className="mt-2 text-gray-400 dark:text-gray-500">{S.chat.contextBreakdownEmpty}</p>
       ) : (
         <>
-          {/* Composition strip: full width is the context in use, so the parts stay readable at
-              any occupancy — how full the window is has already been said by the ring and by the
-              header. Square ends, with a 2px gap of the panel's own surface between fills so no
-              two hues ever touch. Decorative: the legend below carries every figure, which is why
-              the strip is hidden from assistive tech and offers hover rather than focus. */}
-          <div aria-hidden className="mt-2 flex h-1.5 gap-[2px]">
-            {composition.parts.map((p) =>
-              p.tokens > 0 ? (
-                <span
-                  key={p.key}
-                  title={`${PART_LABELS[p.key]()} ~${humanizeTokens(p.tokens)} · ${p.percent}%`}
-                  onMouseEnter={() => setHovered(p.key)}
-                  onMouseLeave={() => setHovered(null)}
-                  style={{ flexGrow: p.tokens, flexBasis: 0, minWidth: MIN_SEGMENT_PX }}
-                  className={`h-full transition-opacity duration-150 ${p.color} ${
-                    hoveredPart !== null && hoveredPart !== p.key ? "opacity-25" : ""
-                  }`}
-                />
-              ) : null,
+          {/* The bar's scale is the whole window: the filled run is the occupancy, the rest is
+              headroom, and the dashed mark is where compaction fires. Squared off, and with no
+              gaps between the fills — once the bar carries an absolute position scale, a surface
+              gap would push every fill after it off the coordinate the mark is drawn on. What
+              keeps neighbouring hues apart is the palette's own adjacent-pair separation.
+              Decorative: the legend below carries every figure, which is why the bar is hidden
+              from assistive tech and offers hover rather than focus. */}
+          <div
+            aria-hidden
+            className="relative mt-2 h-2 bg-gray-200 dark:bg-gray-800"
+            style={{ marginBottom: MARK_OVERHANG_PX }}
+          >
+            <div
+              className="absolute inset-y-0 left-0 flex overflow-hidden"
+              style={{ width: `${(now / max) * 100}%`, minWidth: now > 0 ? MIN_FILL_PX : 0 }}
+            >
+              {composition.parts.map((p) =>
+                p.tokens > 0 ? (
+                  <span
+                    key={p.key}
+                    title={`${PART_LABELS[p.key]()} ~${humanizeTokens(p.tokens)} · ${p.percent}%`}
+                    onMouseEnter={() => setHovered(p.key)}
+                    onMouseLeave={() => setHovered(null)}
+                    style={{ flexGrow: p.tokens, flexBasis: 0 }}
+                    className={`h-full transition-opacity duration-150 ${p.color} ${
+                      hoveredPart !== null && hoveredPart !== p.key ? "opacity-25" : ""
+                    }`}
+                  />
+                ) : null,
+              )}
+            </div>
+            {compactAt !== null && (
+              <span
+                title={S.chat.contextCompactAt(humanizeTokens(compactAt))}
+                style={{
+                  left: `${(compactAt / max) * 100}%`,
+                  top: -MARK_OVERHANG_PX,
+                  bottom: -MARK_OVERHANG_PX,
+                }}
+                className="absolute border-l border-dashed border-gray-500 dark:border-gray-400"
+              />
             )}
           </div>
 

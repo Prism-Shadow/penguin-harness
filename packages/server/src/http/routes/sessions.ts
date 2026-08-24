@@ -22,6 +22,7 @@ import type {
   RecalledMessageResponse,
   ServerEvent,
   SessionCategory,
+  SessionContextResponse,
   SessionCreateResponse,
   SessionForkResponse,
   SessionProcessesResponse,
@@ -31,6 +32,7 @@ import type {
   RetryNowResponse,
   TaskCreateResponse,
 } from "../../api/types.js";
+import { compactionThresholdFor } from "../../services/context-breakdown.js";
 import { decodeCursor } from "../../services/message-window.js";
 import type { MessagesPageRequest } from "../../services/trace-service.js";
 import { PREVIEW_TOKEN_TTL_MS, resolvePreviewTarget } from "../../services/preview-token.js";
@@ -156,6 +158,29 @@ function messagesPageQuery(c: Context): MessagesPageRequest | null {
     cursor,
     limit: rawLimit !== undefined ? pageLimit(rawLimit, "limit") : MESSAGES_PAGE_LIMIT_DEFAULT,
   };
+}
+
+/**
+ * Where compaction will fire for one Session, in tokens of occupancy: the Agent's configured
+ * threshold capped by what its model's context window leaves room for. Both halves are read from
+ * config rather than from a running engine, so an idle Session answers as well as a busy one.
+ *
+ * Fail-soft: this is one mark on a gauge, and an Agent deleted out from under a still-indexed
+ * Session (or a config that will not parse) must not take the whole composition down with it.
+ */
+async function sessionCompactionThreshold(deps: AppDeps, row: SessionRow): Promise<number | null> {
+  try {
+    const [agent, project] = await Promise.all([
+      deps.agentConfigService.getConfig(row.projectId, row.agentId),
+      deps.projectConfigService.loadConfig(row.projectId),
+    ]);
+    const entry = (project.models ?? []).find(
+      (m) => m.provider === row.provider && m.model_id === row.modelId,
+    );
+    return compactionThresholdFor(agent.config.compaction?.maxContextLength, entry?.context_window);
+  } catch {
+    return null;
+  }
 }
 
 /** Accepted `category` query values of the list endpoint (SessionCategory, spelled out for validation). */
@@ -1282,15 +1307,22 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
   });
 
   /**
-   * What the Session's current model context is made of. Read on demand (the chat page's
-   * context ring opens its detail panel with it), not streamed: it re-reads the newest Trace
-   * shard on every call, and the figures are a snapshot rather than a live counter.
+   * What the Session's current model context is made of, and where compaction will fire. Read on
+   * demand (the chat page's context ring opens its detail panel with it), not streamed: it
+   * re-reads the newest Trace shard on every call, and the figures are a snapshot rather than a
+   * live counter.
    */
   app.get("/:sessionId/context", async (c) => {
     const row = resolveSession(c);
-    return c.json(
-      await deps.traceService.contextBreakdown(row.projectId, row.agentId, row.sessionId),
+    const parts = await deps.traceService.contextBreakdown(
+      row.projectId,
+      row.agentId,
+      row.sessionId,
     );
+    return c.json({
+      ...parts,
+      compactionThreshold: await sessionCompactionThreshold(deps, row),
+    } satisfies SessionContextResponse);
   });
 
   app.get("/:sessionId/traces", async (c) => {

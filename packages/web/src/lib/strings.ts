@@ -1504,7 +1504,9 @@ Benchmark：
     contextPartAssistantMessages: "模型消息",
     contextPartToolRequests: "工具请求",
     contextPartToolResults: "工具结果",
-    contextTopTools: "工具用量 Top 5（请求 + 结果）",
+    contextTopTools: "工具用量 Top 5",
+    /** Tooltip of the dashed mark on the context bar; n = the humanized threshold. */
+    contextCompactAt: (n: string): string => `压缩阈值 ${n}`,
     contextTopToolsHint: "按每个工具的调用与结果所占上下文排序（工具定义计入「工具定义」一项）",
     contextUnknownHint: "刚压缩过，占用待下次请求回报，届时才能给出构成",
     contextBreakdownEmpty: "当前上下文还没有可统计的内容",

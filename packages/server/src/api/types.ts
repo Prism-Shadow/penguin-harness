@@ -1666,7 +1666,7 @@ export interface ContextToolShare {
 }
 
 /**
- * What the Session's current model context is made of (`GET /api/sessions/:id/context`).
+ * What the Session's current model context is made of — the part derived from its messages.
  *
  * Every token figure is an **estimate** from a character heuristic, not a tokenizer: the
  * authoritative occupancy is the last `token_usage`'s `request.total`, which says how large the
@@ -1677,7 +1677,7 @@ export interface ContextToolShare {
  * `toolRequests + toolResults` and can sum to less than those two (a result whose call was not
  * recorded in the same Trace shard has no tool to be attributed to).
  */
-export interface SessionContextResponse {
+export interface SessionContextParts {
   systemPrompt: number;
   toolDefs: number;
   userMessages: number;
@@ -1694,6 +1694,17 @@ export interface SessionContextResponse {
    * carries. The same state in which the chat page's context ring shows `—`.
    */
   contextClosed: boolean;
+}
+
+/** `GET /api/sessions/:id/context`: the message-derived composition plus where compaction will fire. */
+export interface SessionContextResponse extends SessionContextParts {
+  /**
+   * Occupancy (tokens) at which this Session's next Request triggers context compaction: the
+   * Agent's configured `compaction.max_context_length`, capped by what the model's context window
+   * leaves room for. Null when compaction is disabled, when the Agent's config could not be read,
+   * or when the derived threshold is not below the window — nothing to mark inside the gauge.
+   */
+  compactionThreshold: number | null;
 }
 
 export interface TraceEventsResponse {

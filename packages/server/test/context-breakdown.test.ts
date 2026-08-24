@@ -21,7 +21,10 @@ import {
   userText,
 } from "@prismshadow/penguin-core";
 import type { OmniMessage, SessionMetaPayload, ToolDefinition } from "@prismshadow/penguin-core";
-import { buildContextBreakdown } from "../src/services/context-breakdown.js";
+import {
+  buildContextBreakdown,
+  compactionThresholdFor,
+} from "../src/services/context-breakdown.js";
 import { makeTempRoot, makeTraceHarness, writeTraceFile } from "./helpers.js";
 
 const P = "project-c";
@@ -214,5 +217,30 @@ describe("TraceService.contextBreakdown", () => {
       topTools: [],
       contextClosed: false,
     });
+  });
+});
+
+describe("compactionThresholdFor", () => {
+  it("caps the configured threshold at what the window leaves room for", () => {
+    // 2048 tokens of headroom: the compaction request's own prompt and summary have to fit.
+    expect(compactionThresholdFor(256_000, 200_000)).toBe(197_952);
+    // Configured below the cap: taken as configured.
+    expect(compactionThresholdFor(100_000, 1_000_000)).toBe(100_000);
+  });
+
+  it("falls back to the seeded threshold when the Agent configures none", () => {
+    expect(compactionThresholdFor(undefined, 1_000_000)).toBe(256_000);
+  });
+
+  it("derives from the assumed window when the model configures none", () => {
+    expect(compactionThresholdFor(256_000, undefined)).toBe(125_952);
+  });
+
+  it("has nothing to mark when compaction is off or the threshold is not inside the window", () => {
+    expect(compactionThresholdFor(-1, 200_000)).toBeNull();
+    expect(compactionThresholdFor(0, 200_000)).toBeNull();
+    // An implausibly small window is treated as unconfigured, so the derivation reasons from the
+    // assumed default instead — a threshold far outside the gauge it would be drawn on.
+    expect(compactionThresholdFor(256_000, 2000)).toBeNull();
   });
 });

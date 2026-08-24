@@ -19,7 +19,12 @@
  * read off the provider's `token_usage`. Every figure here is therefore an estimate; what it is
  * good for is **shares**, which is what its consumers spend it on.
  */
-import { approximateMessagesTokens, approximateTokens } from "@prismshadow/penguin-core";
+import {
+  DEFAULT_MAX_CONTEXT_LENGTH,
+  approximateMessagesTokens,
+  approximateTokens,
+  effectiveMaxContextLength,
+} from "@prismshadow/penguin-core";
 import type {
   OmniMessage,
   SessionMetaPayload,
@@ -27,13 +32,13 @@ import type {
   ToolCallPayload,
   ToolListReadyPayload,
 } from "@prismshadow/penguin-core";
-import type { SessionContextResponse } from "../api/types.js";
+import type { SessionContextParts } from "../api/types.js";
 
 /** How many tools the ranking names before the tail is dropped. */
 const TOP_TOOLS = 5;
 
 /** The answer for a Session with no Trace yet: measured as empty, not unknown. */
-export function emptyContextBreakdown(): SessionContextResponse {
+export function emptyContextBreakdown(): SessionContextParts {
   return {
     systemPrompt: 0,
     toolDefs: 0,
@@ -64,7 +69,7 @@ function endsWithCompletedCompaction(messages: OmniMessage[]): boolean {
 }
 
 /** Composition of the context held by one Trace shard's messages (in write order). */
-export function buildContextBreakdown(messages: OmniMessage[]): SessionContextResponse {
+export function buildContextBreakdown(messages: OmniMessage[]): SessionContextParts {
   const out = emptyContextBreakdown();
   /** name -> its calls plus their results; the definition is the `toolDefs` part, not a tool's own share. */
   const perTool = new Map<string, number>();
@@ -146,4 +151,27 @@ export function buildContextBreakdown(messages: OmniMessage[]): SessionContextRe
     .map(([name, tokens]) => ({ name, tokens }));
   out.contextClosed = endsWithCompletedCompaction(messages);
   return out;
+}
+
+/**
+ * Where compaction will fire for a Session, in tokens of occupancy — the Agent's configured
+ * `compaction.max_context_length` (its seeded default when unset) capped by what the model's
+ * context window leaves room for, which is the same derivation the Agent applies when it builds a
+ * Session's compaction settings.
+ *
+ * Null means "nothing to mark on a gauge that runs to the window": compaction switched off
+ * (`<= 0`), or a threshold at or past the window itself — which is what an implausibly small
+ * `context_window` produces, since the derivation then reasons from the assumed default window
+ * instead of the configured one.
+ */
+export function compactionThresholdFor(
+  configured: number | undefined,
+  contextWindow: number | undefined,
+): number | null {
+  const threshold = effectiveMaxContextLength(
+    configured ?? DEFAULT_MAX_CONTEXT_LENGTH,
+    contextWindow,
+  );
+  if (threshold <= 0) return null;
+  return contextWindow !== undefined && threshold >= contextWindow ? null : threshold;
 }

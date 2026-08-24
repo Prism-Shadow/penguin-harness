@@ -36,7 +36,7 @@ import type {
   RequestSpan,
   SessionCategory,
   SessionCategoryCounts,
-  SessionContextResponse,
+  SessionContextParts,
   HistoryMessage,
   TracePosition,
   ToolCallSpan,
@@ -770,7 +770,7 @@ export class TraceService {
     projectId: string,
     agentId: string,
     sessionId: string,
-  ): Promise<SessionContextResponse> {
+  ): Promise<SessionContextParts> {
     const files = await this.locateAll(projectId, agentId, sessionId);
     const newest = files.reduce<LocatedFile | null>(
       (best, f) => (best === null || f.index > best.index ? f : best),

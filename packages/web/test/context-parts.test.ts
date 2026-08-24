@@ -20,6 +20,7 @@ function response(over: Partial<SessionContextResponse> = {}): SessionContextRes
       { name: "exec_command", tokens: 4000 },
     ],
     contextClosed: false,
+    compactionThreshold: null,
     ...over,
   };
   return {
