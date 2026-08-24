@@ -44,7 +44,6 @@ import { Skeleton } from "../../components/ui/skeleton";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { ChevronDown, NAV_ICONS } from "../../components/ui/icons";
 import {
-  activeMachine,
   connectAction,
   installButtonState,
   installedMachines,
@@ -56,7 +55,6 @@ import {
 import type { MachineVerdict } from "./machines-view";
 import { MAX_VISIBLE_MACHINES, highlightSegments, matchMachines } from "./machines-match";
 import { probeDelayMs, probeFingerprint } from "./probe-schedule";
-import { activeServerId, setActiveServer } from "../../lib/server-context";
 
 /** How often a running job is re-read. Slow enough to be free, fast enough that a step reads as progress. */
 const POLL_MS = 1500;
@@ -143,12 +141,6 @@ export function MachinesPage() {
   const machines = useMemo(() => state?.machines ?? [], [state]);
   const installed = useMemo(() => (state === null ? [] : installedMachines(state)), [state]);
   const local = useMemo(() => (state === null ? null : localMachine(state)), [state]);
-  /** Which server this window is talking to right now (null = the local one). */
-  const activeId = activeServerId();
-  const active = useMemo(
-    () => (state === null ? null : activeMachine(state, activeId)),
-    [state, activeId],
-  );
   /** The machine whose connect POST is in flight — the server has no job to report yet. */
   const [connecting, setConnecting] = useState<string | null>(null);
   /** Aliases the picker offers: everything except this machine, which is not a target. */
@@ -205,15 +197,6 @@ export function MachinesPage() {
       clearTimeout(timer);
     };
   }, [hasInstalled]);
-
-  /**
-   * Points this window at a server. A full document load, not a state update: none of one
-   * server's in-memory state — sessions, streams, caches — may survive into another's.
-   */
-  const enterServer = (machineId: string | null) => {
-    setActiveServer(machineId);
-    window.location.assign("/");
-  };
 
   const connect = async (machineId: string) => {
     setConnecting(machineId);
@@ -453,7 +436,6 @@ export function MachinesPage() {
                 <div className="mt-2 divide-y divide-gray-200 overflow-hidden rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
                   {installed.map((machine) => {
                     const action = connectAction(machine, state.connect, connecting);
-                    const isActive = active?.id === machine.id;
                     return (
                       <div
                         key={machine.id}
@@ -492,24 +474,14 @@ export function MachinesPage() {
                             {statusText(machine) ?? S.machines.statusUnknown}
                           </span>
                         </button>
-                        {/* Connecting is what makes a machine reachable; entering it is what
-                          points this window at it. Two steps on purpose: a tunnel can be up
-                          without the window following it. */}
+                        {/* Connected means its filesystem and API are reachable from here —
+                          through the workspace picker, and anything else that names a
+                          machine. There is nothing to "enter": the window never moves. */}
                         {action === "connected" ? (
                           <>
-                            {isActive ? (
-                              <span className={`shrink-0 text-xs ${toneInk.busy}`}>
-                                {S.machines.hereNow}
-                              </span>
-                            ) : (
-                              <Button
-                                size="sm"
-                                onClick={() => enterServer(machine.machineId)}
-                                disabled={machine.machineId === null}
-                              >
-                                {S.machines.enter}
-                              </Button>
-                            )}
+                            <span className={`shrink-0 text-xs ${toneInk.success}`}>
+                              {S.machines.reachable}
+                            </span>
                             <Button
                               size="sm"
                               variant="ghost"

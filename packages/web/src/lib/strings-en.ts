@@ -62,12 +62,8 @@ export const en: Strings = {
     connect: "Connect",
     connecting: "Connecting\u2026",
     disconnect: "Disconnect",
-    /** Pointing THIS window at a connected machine — a separate step from connecting. */
-    enter: "Enter",
-    hereNow: "You are here",
-    /** The banner shown app-wide while the window is pointed at another machine. */
-    onMachine: (alias: string) => `Working on ${alias}`,
-    backToLocal: "Back to this machine",
+    /** A connected machine: its filesystem and API can be reached from here. */
+    reachable: "Reachable",
     /** Manual re-probe, for when you already know something changed. */
     refresh: "Refresh",
     checking: "Checking\u2026",
