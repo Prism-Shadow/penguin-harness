@@ -109,12 +109,14 @@ The complete tool-execution contract:
 interface EnvironmentInterface {
   listTools(): Promise<ToolDefinition[]>;
   executeTool(request: ToolExecutionRequest): AsyncGenerator<OmniMessage>;
-  toolPermission(name: string): "r" | "rw" | undefined;   // for frontend approval-mode decisions
+  toolPermission(name: string, rawArguments?: string): "r" | "rw" | undefined;
+  toolApprovalTarget?(name: string, rawArguments?: string):
+    { name: string; permission?: "r" | "rw" } | undefined;
   dispose?(): void;                                        // release runtime resources; idempotent
 }
 ```
 
-`executeTool` yields `partial_tool_call_output` fragments and ends with exactly one complete `tool_call_output`; `origin`-tagged nested messages (e.g. forwarded by `run_subagent`) pass through unchanged. The built-in Environment can keep truncated text in the Session scratchpad without exposing storage lifecycle hooks through this public interface. Its model-visible recovery path is a plain absolute path; on Windows it is written with forward slashes, which Node's fs APIs and the package's (Git) Bash tool shell both accept, so the same spelling works as a `read_file` argument and inside shell commands. Rendering is explicitly not this interface's concern — streaming rendering belongs to the CLI / Web front ends.
+`executeTool` yields `partial_tool_call_output` fragments and ends with exactly one complete `tool_call_output`; `origin`-tagged nested messages (e.g. forwarded by `run_subagent`) pass through unchanged. `toolApprovalTarget` is optional for custom embedders; the built-in Environment uses it to resolve a fixed gateway's private reference into a trusted approval label without accepting the model's display name. The built-in Environment can keep truncated text in the Session scratchpad without exposing storage lifecycle hooks through this public interface. Its model-visible recovery path is a plain absolute path; on Windows it is written with forward slashes, which Node's fs APIs and the package's (Git) Bash tool shell both accept, so the same spelling works as a `read_file` argument and inside shell commands. Rendering is explicitly not this interface's concern — streaming rendering belongs to the CLI / Web front ends.
 
 ### ToolExecutionRequest and EnvironmentConfig
 

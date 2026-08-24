@@ -34,7 +34,9 @@ import type {
   EnvironmentConfig,
   EnvironmentInterface,
   ToolConfig,
+  ToolApprovalTarget,
   ToolDefinition,
+  ToolExposure,
   ToolExecutionRequest,
   ToolPermission,
 } from "../interfaces.js";
@@ -98,8 +100,10 @@ export class Environment implements EnvironmentInterface {
   private readonly truncatedToolOutputArchive: TruncatedToolOutputArchive | null;
   /** Assembled built-in tools: tool name -> BuiltinTool. Only tools supported by the registry and present in config. */
   private readonly tools: Map<string, BuiltinTool>;
-  /** MCP Server bridge (null when config lists no servers): lazily connects and exposes `mcp__<server>__<tool>` entries. */
+  /** MCP bridge plus the fixed gateway (present without MCP too when all tools are lazy). */
   private readonly mcp: McpToolProvider | null;
+  /** Requested model-facing policy; fixed for the lifetime of this Environment. */
+  private readonly toolExposure: ToolExposure;
   /** Long-running command session registry: constructed within this Environment and shared between exec_command / input_command. */
   private readonly commandSessions: CommandSessionManager;
   /** Background subagent session registry: constructed within this Environment and shared between run_subagent / input_subagent. */
@@ -108,6 +112,7 @@ export class Environment implements EnvironmentInterface {
   constructor(config: EnvironmentConfig) {
     this.workspaceDir = config.workspaceDir;
     this.toolConfig = config.toolConfig;
+    this.toolExposure = config.toolConfig.toolExposure ?? "direct";
     this.truncatedToolOutputArchive = config.sessionScratchpadDir
       ? new TruncatedToolOutputArchive({
           rootDir: path.join(config.sessionScratchpadDir, "truncated-tool-output"),
@@ -143,10 +148,24 @@ export class Environment implements EnvironmentInterface {
     // tool discovery happen on the first listTools()/executeTool() (see McpToolProvider).
     // The vault is deliberately not handed over: MCP server processes see only the SDK's
     // safe env defaults plus the entry's own env.
+    const catalogTools =
+      this.toolExposure === "lazy"
+        ? this.builtinToolDefinitions().flatMap((definition) => {
+            const tool = this.tools.get(definition.name);
+            return tool ? [{ definition, tool }] : [];
+          })
+        : undefined;
     this.mcp =
-      config.toolConfig.mcpServers.length > 0
+      config.toolConfig.mcpServers.length > 0 || this.toolExposure === "lazy"
         ? new McpToolProvider(config.toolConfig.mcpServers, {
             workspaceDir: config.workspaceDir,
+            exposure: this.toolExposure,
+            ...(config.toolConfig.toolExposureThresholdTokens !== undefined
+              ? {
+                  toolExposureThresholdTokens: config.toolConfig.toolExposureThresholdTokens,
+                }
+              : {}),
+            ...(catalogTools ? { catalogTools } : {}),
           })
         : null;
   }
@@ -246,15 +265,20 @@ export class Environment implements EnvironmentInterface {
    * (unreachable servers are skipped with a stderr warning; see environment/mcp/).
    */
   async listTools(): Promise<ToolDefinition[]> {
-    const builtin = this.toolConfig.customTools
+    const builtin = this.builtinToolDefinitions();
+    if (!this.mcp) return builtin;
+    if (this.toolExposure === "lazy") return this.mcp.listTools();
+    return [...builtin, ...(await this.mcp.listTools())];
+  }
+
+  private builtinToolDefinitions(): ToolDefinition[] {
+    return this.toolConfig.customTools
       .filter((tool) => this.tools.has(tool.name))
       .map((tool) => ({
         name: tool.name,
         description: tool.description,
         ...(tool.parameters !== undefined ? { parameters: tool.parameters } : {}),
       }));
-    if (!this.mcp) return builtin;
-    return [...builtin, ...(await this.mcp.listTools())];
   }
 
   /** Names of the validly configured MCP servers (config order; empty without MCP). Concrete-class surface for the composition layer's connect events — not part of EnvironmentInterface. */
@@ -272,12 +296,22 @@ export class Environment implements EnvironmentInterface {
     this.mcp?.cancelConnect();
   }
 
-  /** Looks up a tool's permission level (for the frontend's permission-mode decisions); returns undefined for an unknown tool. MCP tools answer from their entry's `permission` after discovery, or from their own `readOnlyHint` annotation when the entry sets none. */
-  toolPermission(name: string): ToolPermission | undefined {
-    return (
-      this.toolConfig.customTools.find((t) => t.name === name)?.permission ??
-      this.mcp?.toolPermission(name)
-    );
+  /** Looks up a tool's permission level (for the frontend's permission-mode decisions); gateway calls resolve the referenced target's permission. */
+  toolPermission(name: string, rawArguments?: string): ToolPermission | undefined {
+    if (this.toolExposure !== "lazy") {
+      const builtin = this.toolConfig.customTools.find((t) => t.name === name)?.permission;
+      if (builtin !== undefined) return builtin;
+    }
+    return this.mcp?.toolPermission(name, rawArguments);
+  }
+
+  /** Trusted approval target; gateway calls are resolved from their private ToolRef binding. */
+  toolApprovalTarget(name: string, rawArguments?: string): ToolApprovalTarget | undefined {
+    if (this.toolExposure !== "lazy") {
+      const builtin = this.tools.get(name)?.definition;
+      if (builtin) return { name: builtin.name, permission: builtin.permission ?? "rw" };
+    }
+    return this.mcp?.toolApprovalTarget(name, rawArguments);
   }
 
   /**
@@ -305,7 +339,8 @@ export class Environment implements EnvironmentInterface {
 
     // Builtin lookup first; an MCP-prefixed name resolves through the provider (which
     // connects on demand — resolution failures fall through to the unknown-tool reply).
-    const tool = this.tools.get(name) ?? (await this.mcp?.resolveTool(name));
+    const builtin = this.toolExposure === "lazy" ? undefined : this.tools.get(name);
+    let tool = builtin ?? (await this.mcp?.resolveTool(name));
     if (!tool) {
       yield* emitFailure(toolCallId, `Unknown tool: ${name}`);
       return;
@@ -323,6 +358,22 @@ export class Environment implements EnvironmentInterface {
 
     const args =
       parsed !== null && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
+
+    // Gateway calls keep one fixed model-facing surface. Resolve them to the referenced native
+    // wrapper before reading execution policy, so the target's timeout and output cap remain
+    // identical to direct exposure.
+    let executionArgs = args;
+    let executionName = name;
+    const dispatch = builtin ? undefined : await this.mcp?.resolveDispatch(name, args);
+    if (dispatch?.kind === "failed") {
+      yield* emitFailure(toolCallId, dispatch.message);
+      return;
+    }
+    if (dispatch?.kind === "resolved") {
+      tool = dispatch.tool;
+      executionArgs = dispatch.args;
+      executionName = dispatch.name;
+    }
 
     const maxOutputLength = tool.definition.maxOutputLength ?? DEFAULT_MAX_OUTPUT_LENGTH;
     const timeoutMs = tool.definition.timeoutMs ?? DEFAULT_TOOL_TIMEOUT_MS;
@@ -359,7 +410,7 @@ export class Environment implements EnvironmentInterface {
     // scratchpad. It captures the tool's complete text before Environment drops the overflow,
     // but does not alter the model/frontend stream.
     let archiveCapture: TruncatedToolOutputCapture | null = null;
-    const gen = tool.execute(args, {
+    const gen = tool.execute(executionArgs, {
       workspaceDir: this.workspaceDir,
       toolCallId,
       signal: ac.signal,
@@ -437,7 +488,7 @@ export class Environment implements EnvironmentInterface {
         } else {
           // Other message types without origin: protocol misuse, ignore and warn (keep the parent stream clean).
           process.stderr.write(
-            `[penguin] tool "${name}" yielded unexpected message type "${p.type}"; ignored.\n`,
+            `[penguin] tool "${executionName}" yielded unexpected message type "${p.type}"; ignored.\n`,
           );
         }
       }
@@ -471,7 +522,7 @@ export class Environment implements EnvironmentInterface {
       // Both truncation paths initialize this capture at the exact point they first exceed the
       // visible cap, so a truncated call with a Session scratchpad always has one to save. A
       // standalone Environment has no capture and retains truncation-only behavior.
-      archiveResult = await archiveCapture.save(name, toolCallId);
+      archiveResult = await archiveCapture.save(executionName, toolCallId);
     } else {
       archiveCapture?.cancel();
     }

@@ -61,6 +61,7 @@ import type {
   ToolListReadyPayload,
   TextPayload,
   TokenUsagePayload,
+  ToolApprovalTarget,
   ToolCallPayload,
   ToolDefinition,
 } from "@prismshadow/penguin-core";
@@ -495,9 +496,18 @@ export class StreamRenderer {
    * arrive in the meantime — guaranteeing "tool call -> approval prompt" stay adjacent,
    * for both the main Agent and subagents.
    */
-  beginUserPrompt(toolCall?: OmniMessage<ToolCallPayload>): void {
+  beginUserPrompt(
+    toolCall?: OmniMessage<ToolCallPayload>,
+    approvalTarget?: ToolApprovalTarget,
+  ): void {
     if (toolCall) this.ensureAdjacentCallLine(toolCall);
     this.finishLine();
+    if (toolCall && approvalTarget && approvalTarget.name !== toolCall.payload.name) {
+      const permission = approvalTarget.permission ? ` (${approvalTarget.permission})` : "";
+      this.out.write(
+        `${dim(`${toolCall.payload.name} → ${approvalTarget.name}${permission}`, this.c)}\n`,
+      );
+    }
     // File-tool approvals: the one-line preview shows only the (shortened) path, but the
     // user is approving a concrete rewrite — print the decoded payload
     // (old_string/new_string/content), bounded with an explicit elision note, right before

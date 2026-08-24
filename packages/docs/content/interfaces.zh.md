@@ -109,12 +109,14 @@ interface GenerativeModelConfig {
 interface EnvironmentInterface {
   listTools(): Promise<ToolDefinition[]>;
   executeTool(request: ToolExecutionRequest): AsyncGenerator<OmniMessage>;
-  toolPermission(name: string): "r" | "rw" | undefined;   // 供前端审批模式判定
+  toolPermission(name: string, rawArguments?: string): "r" | "rw" | undefined;
+  toolApprovalTarget?(name: string, rawArguments?: string):
+    { name: string; permission?: "r" | "rw" } | undefined;
   dispose?(): void;                                        // 释放运行时资源,幂等
 }
 ```
 
-`executeTool` 逐条产出 `partial_tool_call_output`，并以恰好一条完整 `tool_call_output` 收尾；带 `origin` 的嵌套消息(如 `run_subagent` 转发的子 Session 消息)原样透传。内置 Environment 可以把被截断文本保存在 Session scratchpad 中，无需在此公共接口暴露存储生命周期钩子。其模型可见 recovery 路径是普通绝对路径；Windows 上统一写成正斜杠——Node 的 fs API 与包内 (Git) Bash 工具 Shell 都接受这种写法，同一拼写既可直接作 `read_file` 参数、也可用于 Shell 命令。渲染不是本接口的职责——流式渲染由 CLI / Web 前端完成。
+`executeTool` 逐条产出 `partial_tool_call_output`，并以恰好一条完整 `tool_call_output` 收尾；带 `origin` 的嵌套消息(如 `run_subagent` 转发的子 Session 消息)原样透传。自定义 Embedder 可不实现 `toolApprovalTarget`；内置 Environment 用它把固定网关的私有引用解析为可信审批标签，不采用模型提交的展示名称。内置 Environment 可以把被截断文本保存在 Session scratchpad 中，无需在此公共接口暴露存储生命周期钩子。其模型可见 recovery 路径是普通绝对路径；Windows 上统一写成正斜杠——Node 的 fs API 与包内 (Git) Bash 工具 Shell 都接受这种写法，同一拼写既可直接作 `read_file` 参数、也可用于 Shell 命令。渲染不是本接口的职责——流式渲染由 CLI / Web 前端完成。
 
 ### ToolExecutionRequest 与 EnvironmentConfig
 

@@ -268,11 +268,19 @@ describe("approval re-delivery (origin composite key + missing-card backfill)", 
       toolCall({ name: "exec_command", arguments: '{"cmd":"rm -rf x"}', toolCallId: "t1" }),
       "c1",
     );
-    const ev: ServerEvent = { type: "approval_request", toolCall: tc, origin: ["c1"] };
+    const ev: ServerEvent = {
+      type: "approval_request",
+      toolCall: tc,
+      origin: ["c1"],
+      approvalTarget: { name: "mcp__github__create_issue", permission: "rw" },
+    };
     h.controller.handleServer(ev);
     // The pending table is keyed by origin composite key.
     expect(h.controller.pendingApprovals.has(approvalKey(["c1"], "t1"))).toBe(true);
     expect(h.controller.pendingApprovals.has(approvalKey(undefined, "t1"))).toBe(false);
+    expect(h.controller.pendingApprovals.get(approvalKey(["c1"], "t1"))?.approvalTarget).toEqual(
+      ev.approvalTarget,
+    );
     // The nested card is backfilled (child-session messages aren't in the parent Trace;
     // without this mechanism, the approval button has nowhere to render).
     const card = findToolCard(h.controller.model, ["c1"], "t1");

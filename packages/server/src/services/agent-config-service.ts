@@ -14,6 +14,7 @@ import {
   DEFAULT_MEMORY_WORKSPACE_PROMPT,
   DEFAULT_SCHEDULES_PROMPT,
   DEFAULT_SKILLS_PROMPT,
+  DEFAULT_TOOL_EXPOSURE_THRESHOLD_TOKENS,
   DEFAULT_VAULT_PROMPT,
   KERNEL_VERSION,
   LEGACY_SKILLS_SECTION,
@@ -39,6 +40,7 @@ import {
 } from "@prismshadow/penguin-core";
 import type {
   MCPServerConfig,
+  ToolExposure,
   ThinkingLevelName,
   ToolDefinitionConfig,
 } from "@prismshadow/penguin-core";
@@ -75,6 +77,7 @@ const THINKING_LEVELS: readonly ThinkingLevelName[] = [
   "max",
 ];
 const COMPACTION_MODES = ["summarize", "discard"] as const;
+const TOOL_EXPOSURES: readonly ToolExposure[] = ["direct", "auto", "lazy"];
 
 function asRecord(v: unknown): Record<string, unknown> {
   return v !== null && typeof v === "object" && !Array.isArray(v)
@@ -239,6 +242,15 @@ export class AgentConfigService {
       schedules: schedulesDto,
       toolsBuiltin: Array.isArray(tools.builtin) ? (tools.builtin as ToolDefinitionConfig[]) : [],
       mcpServers: Array.isArray(tools.mcpServers) ? (tools.mcpServers as MCPServerConfig[]) : [],
+      toolExposure:
+        tools.toolExposure === "auto" || tools.toolExposure === "lazy"
+          ? tools.toolExposure
+          : "direct",
+      toolExposureThresholdTokens:
+        Number.isSafeInteger(tools.toolExposureThresholdTokens) &&
+        (tools.toolExposureThresholdTokens as number) >= 0
+          ? (tools.toolExposureThresholdTokens as number)
+          : DEFAULT_TOOL_EXPOSURE_THRESHOLD_TOKENS,
     };
     return {
       agentsMd,
@@ -380,6 +392,11 @@ export class AgentConfigService {
     if (cfg.mcpServers !== undefined) {
       doc.setIn(["tools", "mcpServers"], validateMcpServers(cfg.mcpServers));
     }
+    setIfProvided(["tools", "toolExposure"], optionalEnum(cfg, "toolExposure", TOOL_EXPOSURES));
+    setIfProvided(
+      ["tools", "toolExposureThresholdTokens"],
+      optionalNumber(cfg, "toolExposureThresholdTokens", { integer: true, nonNegative: true }),
+    );
 
     await fs.writeFile(yamlPath, doc.toString(), "utf8");
   }

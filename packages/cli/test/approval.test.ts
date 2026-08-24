@@ -145,6 +145,26 @@ describe("makeApprove permission modes", () => {
     expect(prompted).toBe(1);
   });
 
+  it("passes call arguments to permission resolution for fixed tool gateways", async () => {
+    const seen: Array<[string, string | undefined]> = [];
+    const approve = makeApprove({
+      mode: "read-only",
+      toolPermission: (name, rawArguments) => {
+        seen.push([name, rawArguments]);
+        return "r";
+      },
+      interactivePrompt: async () => "deny",
+    });
+    const call = toolCall({
+      name: "call_tool",
+      arguments: '{"tool_ref":"tr_1","arguments":{}}',
+      toolCallId: "gateway-1",
+    });
+
+    expect(await approve(call)).toBe("allow");
+    expect(seen).toEqual([["call_tool", '{"tool_ref":"tr_1","arguments":{}}']]);
+  });
+
   it("always-ask → always delegates to the interactive prompt", async () => {
     let prompted = 0;
     const approve = makeApprove({

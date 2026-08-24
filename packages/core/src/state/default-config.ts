@@ -387,6 +387,10 @@ export interface SystemConfig {
     builtin?: ToolDefinitionConfig[];
     /** MCP Server configuration. */
     mcpServers?: MCPServerConfig[];
+    /** Tool exposure: native (`direct`), adaptive external gateway (`auto`), or all through the gateway (`lazy`). */
+    toolExposure?: "direct" | "auto" | "lazy";
+    /** Auto-mode MCP Schema threshold in estimated tokens; zero always selects the gateway. */
+    toolExposureThresholdTokens?: number;
   };
 }
 

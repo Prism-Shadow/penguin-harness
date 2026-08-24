@@ -645,6 +645,16 @@ describe("StreamRenderer", () => {
     expect(stripAnsi(text())).toBe("[tool-p8] exec_command <- $ pwd\n✓ [approved]\n");
   });
 
+  it("shows the registry-resolved gateway target before approval", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    const tc = toolCall({ name: "call_tool", arguments: "{}", toolCallId: "gw1" });
+    r.beginUserPrompt(tc, { name: "mcp__github__create_issue", permission: "rw" });
+    r.noteApprovalDecision(tc, "deny");
+    r.endUserPrompt();
+    expect(stripAnsi(text())).toContain("call_tool → mcp__github__create_issue (rw)\n");
+  });
+
   it("prints the decoded file-tool payload before the approval prompt, without duplicating the call line", () => {
     const { stream, text } = collector();
     const r = new StreamRenderer(stream, t);

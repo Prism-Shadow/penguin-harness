@@ -836,6 +836,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
         type: "approval_request" as const,
         toolCall: p.toolCall,
         ...(p.origin !== undefined ? { origin: p.origin } : {}),
+        ...(p.approvalTarget !== undefined ? { approvalTarget: p.approvalTarget } : {}),
       })),
     ];
     return sseEndpoint(c, channel, { initialEvents });

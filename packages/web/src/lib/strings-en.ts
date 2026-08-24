@@ -492,6 +492,18 @@ export const en: Strings = {
     mcpServers: "MCP Servers",
     mcpDesc:
       "Connect external MCP Servers: their tools join this agent's toolset as mcp__<name>__<tool>. Changes in this block save immediately.",
+    toolExposure: "Model tool exposure",
+    toolExposureDirect: "Direct",
+    toolExposureAuto: "Automatic",
+    toolExposureLazy: "All on demand",
+    toolExposureDirectHint: "Expose built-in tools and every discovered MCP schema directly.",
+    toolExposureAutoHint:
+      "Keep built-ins direct and move large MCP schema sets behind the fixed gateway once per session.",
+    toolExposureLazyHint:
+      "Expose only the fixed search and call gateway; built-in and MCP tools stay in its private catalog.",
+    toolExposureThreshold: "Automatic threshold (tokens)",
+    toolExposureThresholdHint:
+      "Use the gateway when the estimated MCP schema reaches this value; 0 always uses it.",
     mcpEmpty: "No MCP Servers configured yet",
     mcpAdd: "Add MCP Server",
     mcpEditTitle: "Edit MCP Server",
