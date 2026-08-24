@@ -183,6 +183,12 @@ export function DraftView({
     cached.agentId ?? currentAgent?.agentId ?? null,
   );
   const [workspace, setWorkspace] = useState(cached.workspace ?? "");
+  /**
+   * The machine that workspace is on (null = this one). Carried beside the path because a
+   * path alone does not identify a directory: `/srv/app` exists on many machines and means
+   * a different one on each.
+   */
+  const [workspaceMachine, setWorkspaceMachine] = useState<string | null>(cached.machineId ?? null);
   // A terminal opened while drafting starts in the Workspace chosen here; "" is the
   // temporary Workspace, whose directory the server only creates with the Session, so
   // that case falls back to home (setDockCwd's null).
@@ -501,13 +507,26 @@ export function DraftView({
     cancelPendingSave();
     if (!userId) return;
     const data: DraftCache = { text: textRef.current, workspace, approvalMode };
+    // Saved with the path: a draft restored without its machine would create the Session
+    // here, against a path that only exists somewhere else.
+    if (workspaceMachine !== null) data.machineId = workspaceMachine;
     if (agentId) data.agentId = agentId;
     if (modelRef) data.modelRef = modelRef;
     if (skillsRef.current.length > 0) data.skills = skillsRef.current;
     // A parked draft writes back into its own list entry; the active draft into its slot.
     if (draftId !== undefined) saveDraftSession(userId, projectId, draftId, data);
     else saveDraft(draftKey(userId, projectId), data);
-  }, [cancelPendingSave, userId, projectId, draftId, agentId, workspace, approvalMode, modelRef]);
+  }, [
+    cancelPendingSave,
+    userId,
+    projectId,
+    draftId,
+    agentId,
+    workspace,
+    workspaceMachine,
+    approvalMode,
+    modelRef,
+  ]);
 
   // The timer and unmount cleanup read persistNow via a ref to always get the **latest version**: a stale closure would write back outdated options.
   const persistRef = useRef(persistNow);
@@ -597,9 +616,12 @@ export function DraftView({
   };
 
   /** User edits routed through these two so a late-arriving project default cannot clobber them. */
-  const changeWorkspace = useCallback((path: string) => {
+  const changeWorkspace = useCallback((path: string, machineId?: string | null) => {
     touchedRef.current.workspace = true;
     setWorkspace(path);
+    // The machine travels with the path, always — including back to null when the pick moves
+    // home, or the next Session would be created on the machine the previous pick named.
+    setWorkspaceMachine(machineId ?? null);
   }, []);
   const changeApprovalMode = useCallback((mode: ApprovalMode) => {
     touchedRef.current.approval = true;
@@ -628,7 +650,8 @@ export function DraftView({
           body.provider = modelRef.provider;
         }
         if (workspace.trim()) body.workspace = workspace.trim();
-        const created = await api.createSession(projectId, agentId, body);
+        // Created ON the machine that owns the workspace: that server runs the agent in it.
+        const created = await api.createSession(projectId, agentId, body, workspaceMachine);
         createdId = created.session.sessionId;
         const res = await api.postTask(createdId, { input, ...(goal ? { goal } : {}) });
         // Re-fetch the row before listing it: the server persisted the fallback title at
@@ -759,7 +782,13 @@ export function DraftView({
         {/* Ownership selection right below the card (small pill dropdowns, styled after ChatGPT's project picker button) */}
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <AgentSelect agents={agents} selected={selectedAgent} onSelect={selectAgent} />
-          <WorkspaceSelect projectId={projectId} workspace={workspace} onChange={changeWorkspace} />
+          <WorkspaceSelect
+            projectId={projectId}
+            workspace={workspace}
+            machineId={workspaceMachine}
+            onChange={changeWorkspace}
+            chooseMachine
+          />
         </div>
 
         {/* Example tasks: canned builds showing off the one-sentence → app flow; a click fills
