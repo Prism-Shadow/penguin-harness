@@ -3,6 +3,7 @@
 - **Date:** 2026-08-23
 - **Type:** process
 - **Scope:** `server`
+- **PR:** [#427](https://github.com/Prism-Shadow/penguin-harness/pull/427)
 
 [中文版](2026-08-23-hmr-comments-match-the-code.zh.md)
 
