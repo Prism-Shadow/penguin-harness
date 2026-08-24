@@ -39,7 +39,7 @@ import { probeServerState } from "./server-state.js";
 import { readOrCreateMachineId } from "./machine-id.js";
 import { localPortBusy, openTunnel, waitForTunneledHttp } from "./tunnel.js";
 import type { Tunnel } from "./tunnel.js";
-import { startRemoteServer } from "./server-control.js";
+import { startRemoteServer, stopRemoteServer } from "./server-control.js";
 import { parseConnectState, pickTunnelPort, withConnectState } from "./connect-state.js";
 import type { ConnectState } from "./connect-state.js";
 
@@ -60,6 +60,7 @@ export interface MachinesEffects {
   install: typeof installOnRemote;
   probe: typeof probeServerState;
   startServer: typeof startRemoteServer;
+  stopServer: typeof stopRemoteServer;
   openTunnel: typeof openTunnel;
   portBusy: typeof localPortBusy;
   waitForHttp: typeof waitForTunneledHttp;
@@ -136,6 +137,7 @@ export class MachinesService {
       install: installOnRemote,
       probe: probeServerState,
       startServer: startRemoteServer,
+      stopServer: stopRemoteServer,
       openTunnel,
       portBusy: localPortBusy,
       waitForHttp: waitForTunneledHttp,
@@ -373,6 +375,12 @@ export class MachinesService {
           return;
         }
         const version = outcome.kind === "already-installed" ? outcome.version : plan.version;
+        // Installing replaced the program ON DISK; the process over there is still running
+        // the code it loaded at start. Without this the machine reports the new version and
+        // behaves like the old one, which is the worst of both — so a machine whose server
+        // was up is restarted onto what was just installed.
+        if (outcome.kind === "installed")
+          await this.#restartAfterInstall(machine.alias, resolved.settings.user, say);
         // Remember it BEFORE the job settles, so the first poll that sees `running: false`
         // already sees the machine marked installed — otherwise the page would flash the
         // verdict and a still-uninstalled row in the same frame.
@@ -556,6 +564,37 @@ export class MachinesService {
     }
     say(`Connected on ${origin}.`);
     job.result = { ok: true, origin };
+  }
+
+  /**
+   * Puts a freshly installed build into service. Only for a machine whose server was
+   * already running: one that was down is left down — starting it would be this side
+   * deciding that machine should be serving, which installing software does not imply.
+   *
+   * A restart is not free over there: whatever that server was running stops. It is what
+   * "update this machine" means, and doing it silently after an install the user asked for
+   * is more honest than leaving a version number that lies about what is executing.
+   */
+  async #restartAfterInstall(
+    alias: string,
+    user: string,
+    say: (line: string) => void,
+  ): Promise<void> {
+    const target = { alias, user };
+    const before = await this.#effects.probe(target);
+    if (before.state.kind !== "running") {
+      say("Its server was not running; the new build will be used when it next starts.");
+      return;
+    }
+    const port = before.state.port;
+    say(`Restarting its server on port ${port} onto the new build…`);
+    await this.#effects.stopServer(target, before.state.pid);
+    const started = await this.#effects.startServer(target, port);
+    say(
+      started.ok
+        ? `Restarted on port ${port}.`
+        : `Installed, but its server did not come back up: ${started.detail}`,
+    );
   }
 
   /** Records an id a probe just heard, when there is one and a record to hang it on. */

@@ -56,6 +56,10 @@ export const zh = {
     statusStopped: "未运行",
     statusUnreachable: "连不上",
     statusUnknown: "未检查",
+    /** A machine carrying a different build from the one this server would install. */
+    update: "更新",
+    behind: "版本不一致",
+    upToDate: "已是最新",
     /** Bringing a machine's server up and holding a tunnel to it. */
     connect: "连接",
     connecting: "连接中…",

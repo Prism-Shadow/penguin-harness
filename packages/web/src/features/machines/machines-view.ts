@@ -29,8 +29,13 @@ export type MachineVerdict =
 export type StatusTone = "busy" | "success" | "attention" | "danger" | "muted";
 
 export interface InstallButtonState {
-  /** What the button offers: a fresh install, one already under way, or a repeat of a finished one. */
-  action: "install" | "installing" | "reinstall";
+  /**
+   * What the button offers. `update` is a reinstall onto a machine carrying a DIFFERENT
+   * build from the one this server would send — the case worth naming, because a machine
+   * that is merely behind looks identical to one that is current until you read two version
+   * strings side by side.
+   */
+  action: "install" | "installing" | "reinstall" | "update";
   /**
    * True when the button must not start anything: nothing is selected, a job is running
    * anywhere (one at a time, server-side), this page's own POST is in flight, or this
@@ -63,9 +68,11 @@ export function installButtonState(
     action:
       selectedIsRunning || starting
         ? "installing"
-        : selected?.installed != null
-          ? "reinstall"
-          : "install",
+        : selected?.installed == null
+          ? "install"
+          : outOfDate(selected, state.imageVersion)
+            ? "update"
+            : "reinstall",
     disabled:
       selected === null ||
       // This machine is the one answering the request; it cannot be a target of itself.
@@ -158,4 +165,19 @@ export function activeMachine(
 ): MachineInfo | null {
   if (activeId === null) return null;
   return state.machines.find((machine) => machine.machineId === activeId) ?? null;
+}
+
+/**
+ * True when a machine carries a different build from the one this server would install.
+ *
+ * Any difference, not "older": versions here are content hashes of a pushed build
+ * (`0.0.0-hmr.<cli>.<web>`), which do not order. What matters is whether the two ends agree,
+ * and they either do or they do not.
+ *
+ * False while the local image is unknown — with nothing to compare against, claiming a
+ * machine is behind would be a guess dressed as a fact.
+ */
+export function outOfDate(machine: MachineInfo, imageVersion: string | null): boolean {
+  if (imageVersion === null || machine.local || machine.installed === null) return false;
+  return machine.installed.version !== imageVersion;
 }

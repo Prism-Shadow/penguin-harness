@@ -21,6 +21,7 @@ import {
   installButtonState,
   installedMachines,
   localMachine,
+  outOfDate,
   statusTone,
   verdictOf,
 } from "../src/features/machines/machines-view";
@@ -321,5 +322,41 @@ describe("activeMachine", () => {
     // The window is pointed somewhere this server no longer lists; the banner falls back to
     // the raw id rather than naming the wrong machine.
     expect(activeMachine(response(null, { machines: [here()] }), ID)).toBeNull();
+  });
+});
+
+describe("outOfDate", () => {
+  const carrying9 = carrying("nas"); // installed 9.9.9, which is the fixture imageVersion
+
+  it("is false when the machine carries what this server would install", () => {
+    expect(outOfDate(carrying9, "9.9.9")).toBe(false);
+  });
+
+  it("is true for ANY difference — hmr versions are content hashes and do not order", () => {
+    // `0.0.0-hmr.<cli>.<web>`: there is no newer/older to compare, only same or not.
+    expect(outOfDate(carrying9, "10.0.0")).toBe(true);
+    expect(outOfDate(carrying9, "0.0.0-hmr.abc.def")).toBe(true);
+  });
+
+  it("never claims a machine is behind when the local image is unknown", () => {
+    // A development checkout with nothing pushed has no image; saying "out of sync" there
+    // would be a guess dressed as a fact.
+    expect(outOfDate(carrying9, null)).toBe(false);
+  });
+
+  it("says nothing about this machine, or one with nothing installed", () => {
+    expect(outOfDate(here(), "10.0.0")).toBe(false);
+    expect(outOfDate(fresh("nas"), "10.0.0")).toBe(false);
+  });
+});
+
+describe("installButtonState, once a machine is behind", () => {
+  it("offers an update rather than a reinstall", () => {
+    const behind = { ...carrying("nas"), installed: { version: "old", at: INSTALLED.at } };
+    expect(installButtonState(behind, response(null), false).action).toBe("update");
+  });
+
+  it("still says reinstall when the two ends agree", () => {
+    expect(installButtonState(carrying("nas"), response(null), false).action).toBe("reinstall");
   });
 });

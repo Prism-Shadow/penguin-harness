@@ -49,6 +49,7 @@ import {
   installButtonState,
   installedMachines,
   localMachine,
+  outOfDate,
   statusTone,
   verdictOf,
 } from "./machines-view";
@@ -387,9 +388,11 @@ export function MachinesPage() {
                 >
                   {button.action === "installing"
                     ? S.machines.installing
-                    : button.action === "reinstall"
-                      ? S.machines.reinstall
-                      : S.machines.install}
+                    : button.action === "update"
+                      ? S.machines.update
+                      : button.action === "reinstall"
+                        ? S.machines.reinstall
+                        : S.machines.install}
                 </Button>
               </div>
             )}

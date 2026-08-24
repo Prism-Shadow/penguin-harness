@@ -54,6 +54,10 @@ export const en: Strings = {
     statusStopped: "Not running",
     statusUnreachable: "Unreachable",
     statusUnknown: "Not checked",
+    /** A machine carrying a different build from the one this server would install. */
+    update: "Update",
+    behind: "Out of sync",
+    upToDate: "Up to date",
     /** Bringing a machine's server up and holding a tunnel to it. */
     connect: "Connect",
     connecting: "Connecting\u2026",
