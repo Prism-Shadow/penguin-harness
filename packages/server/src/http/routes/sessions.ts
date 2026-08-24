@@ -1281,6 +1281,18 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     return c.body(null, 204);
   });
 
+  /**
+   * What the Session's current model context is made of. Read on demand (the chat page's
+   * context ring opens its detail panel with it), not streamed: it re-reads the newest Trace
+   * shard on every call, and the figures are a snapshot rather than a live counter.
+   */
+  app.get("/:sessionId/context", async (c) => {
+    const row = resolveSession(c);
+    return c.json(
+      await deps.traceService.contextBreakdown(row.projectId, row.agentId, row.sessionId),
+    );
+  });
+
   app.get("/:sessionId/traces", async (c) => {
     const row = resolveSession(c);
     const files = await deps.traceService.listTraceFiles(row.projectId, row.agentId, row.sessionId);

@@ -73,6 +73,7 @@ import type {
   ServerSettingsResponse,
   ServerSettingsUpdateRequest,
   SessionCategory,
+  SessionContextResponse,
   SessionCreateRequest,
   SessionCreateResponse,
   SessionForkRequest,
@@ -614,6 +615,14 @@ export const postCompact = (sessionId: string) =>
     method: "POST",
     body: {},
   });
+
+/**
+ * Composition of the Session's current model context (the chat page's context-ring detail panel).
+ * A snapshot read from the newest Trace shard on each call, not a live counter: the figures are
+ * estimates whose value is the *shares* they give the measured occupancy.
+ */
+export const getSessionContext = (sessionId: string) =>
+  apiFetch<SessionContextResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/context`);
 
 // Trace browsing & performance analysis -----------------------------------------------------------
 

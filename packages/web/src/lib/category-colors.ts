@@ -40,6 +40,31 @@ export function seriesColor(i: number): SeriesColor {
 }
 
 /**
+ * The six parts of a model context, in the order the chat page's context panel lists them:
+ * system prompt, tool definitions, user messages, model messages, tool requests, tool results.
+ * Identity again, not severity — no part of a context is worse than another — so these belong
+ * here and not in tone.ts, and they are a sequence of their own rather than a longer
+ * SERIES_COLORS: that array's length is also the cost center's fold cap.
+ *
+ * **The order is part of the palette.** The legend rows are drawn in the same order as the bar
+ * segments, so a reader only ever has to separate neighbours; this sequence is what clears the
+ * adjacent-pair gates in both modes (worst adjacent ΔE 21.1 simulated for protanopia and
+ * deuteranopia, 22.1 unsimulated; OKLab ×100). Reordering the parts means re-checking the
+ * palette, not just moving rows. Six hues cannot also clear those gates for *arbitrary* pairs —
+ * no six can — so the weakest non-neighbour pair here sits at ΔE 13 unsimulated, and the legend
+ * carries every part's own value beside its name so colour never has to be read alone. Three
+ * steps sit under 3:1 against white for the same reason.
+ */
+export const CONTEXT_PART_COLORS: readonly string[] = [
+  "bg-sky-500 dark:bg-sky-600",
+  "bg-amber-500 dark:bg-amber-600",
+  "bg-fuchsia-500 dark:bg-fuchsia-600",
+  "bg-rose-500",
+  "bg-violet-500",
+  "bg-emerald-500 dark:bg-emerald-600",
+];
+
+/**
  * The neutral a series wears when it stands for "the rest" rather than one
  * identity — the cost center's folded tail, the eval center's untagged runs.
  * Deliberately outside the sequence: it must not read as a fifth category.

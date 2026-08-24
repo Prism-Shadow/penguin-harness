@@ -1659,6 +1659,43 @@ export interface SessionTracesResponse {
   files: TraceFileInfo[];
 }
 
+/** One tool's share of the context: its calls plus their results. Its *definition* is counted in `toolDefs`, not here. */
+export interface ContextToolShare {
+  name: string;
+  tokens: number;
+}
+
+/**
+ * What the Session's current model context is made of (`GET /api/sessions/:id/context`).
+ *
+ * Every token figure is an **estimate** from a character heuristic, not a tokenizer: the
+ * authoritative occupancy is the last `token_usage`'s `request.total`, which says how large the
+ * context is but not what fills it. Consumers should present these as shares of that measured
+ * occupancy rather than as counts of their own.
+ *
+ * The six parts partition the context and sum to `total`; `topTools` is a ranking inside
+ * `toolRequests + toolResults` and can sum to less than those two (a result whose call was not
+ * recorded in the same Trace shard has no tool to be attributed to).
+ */
+export interface SessionContextResponse {
+  systemPrompt: number;
+  toolDefs: number;
+  userMessages: number;
+  assistantMessages: number;
+  toolRequests: number;
+  toolResults: number;
+  /** Sum of the six parts. */
+  total: number;
+  /** Tools ranked by the context their traffic occupies, descending; at most five. */
+  topTools: ContextToolShare[];
+  /**
+   * A completed compaction closed the context these figures describe, and the next one has not
+   * been written yet: the composition is of what was compacted away, not of what the model now
+   * carries. The same state in which the chat page's context ring shows `—`.
+   */
+  contextClosed: boolean;
+}
+
 export interface TraceEventsResponse {
   events: OmniMessage[];
   offset: number;
