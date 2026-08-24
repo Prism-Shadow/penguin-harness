@@ -8,6 +8,7 @@ import {
   abortEvent,
   approvalDecision,
   assistantText,
+  buildBackgroundTaskDoneMessage,
   compactionBegin,
   compactionEnd,
   imageUrlMessage,
@@ -50,6 +51,7 @@ import {
 import { liveSessionElapsedMs } from "../src/lib/omni/task-stats";
 import type {
   AssistantTextItem,
+  BackgroundNoticeItem,
   CompactionItem,
   McpConnectItem,
   ReconnectItem,
@@ -61,6 +63,20 @@ import type {
   UserSteeringItem,
   UserTextItem,
 } from "../src/lib/omni/stream-model";
+
+/** A completion notice as core delivers it: steered (engine drain) or unstamped (idle take). */
+function noticeText(delivery?: "steering"): string {
+  return buildBackgroundTaskDoneMessage(
+    {
+      kind: "command",
+      id: "proc-11aa22bb",
+      status: "completed",
+      detail: "exit code 0",
+      ...(delivery ? { delivery } : {}),
+    },
+    "Background command finished: `sleep 5` (process_id proc-11aa22bb) — exit code 0",
+  );
+}
 
 /** Override a message timestamp (constructor defaults to the current time). */
 function at<M extends OmniMessage>(msg: M, ts: string): M {
@@ -1645,6 +1661,134 @@ describe("compaction-internal messages (#17: history rebuild aligned with the li
   });
 
   // The server's Trace twin of this case lives in trace-service.test.ts.
+  it("a steered background notice (delivery: steering) rides inside the running Task — banner item, no new Task, one stats row", () => {
+    // A run_in_background completion delivered while the loop runs: core stamps
+    // `delivery: steering` on the block and the reducer must treat it like steering — the
+    // round keeps going, and its ledger still lands exactly once, at task end.
+    const m = createStreamModel();
+    pushMessages(m, [
+      at(userText("build it"), "2026-07-05T00:00:00.000Z"),
+      at(requestBegin(), "2026-07-05T00:00:01.000Z"),
+      at(assistantText("kicked off, waiting"), "2026-07-05T00:00:02.000Z"),
+      at(tokenUsage(counts(100), counts(100)), "2026-07-05T00:00:02.500Z"),
+      at(requestEnd("completed"), "2026-07-05T00:00:03.000Z"),
+      at(userText(noticeText("steering"), "harness"), "2026-07-05T00:00:08.000Z"),
+      at(requestBegin(), "2026-07-05T00:00:09.000Z"),
+      at(assistantText("it finished cleanly"), "2026-07-05T00:00:10.000Z"),
+      at(tokenUsage(counts(200), counts(100)), "2026-07-05T00:00:10.500Z"),
+      at(requestEnd("completed"), "2026-07-05T00:00:11.000Z"),
+    ]);
+    finalizeHistory(m);
+    // One Task: the notice is a banner item inside it, and only one stats row closes it.
+    expect(items(m).map((i) => i.kind)).toEqual([
+      "user_text",
+      "assistant_text",
+      "background_notice",
+      "assistant_text",
+      "task_stats",
+    ]);
+    // The item keeps the raw text: the renderer and the topology scan re-parse the block.
+    const notice = items(m).find((i) => i.kind === "background_notice") as BackgroundNoticeItem;
+    expect(notice.text).toContain("[background_task_done]");
+    expect(notice.text).toContain("delivery: steering");
+  });
+
+  it("an UNSTAMPED notice landing while tool outputs are pending stays in-task (pre-stamp traces)", () => {
+    // Legacy shape: a 0.2.4 core wrote no delivery stamp. A Task can never end between a
+    // turn's paired tool outputs and the continuation request, so position alone proves the
+    // notice is in-task — the reducer must not flush a mid-task stats row for it (the same
+    // rule trace analysis applies via its tool-call continuation).
+    const m = createStreamModel();
+    pushMessages(m, [
+      at(userText("build it"), "2026-07-05T00:00:00.000Z"),
+      at(requestBegin(), "2026-07-05T00:00:01.000Z"),
+      at(
+        toolCall({ name: "exec_command", arguments: "{}", toolCallId: "t1" }),
+        "2026-07-05T00:00:02.000Z",
+      ),
+      at(tokenUsage(counts(100), counts(100)), "2026-07-05T00:00:02.500Z"),
+      at(requestEnd("completed"), "2026-07-05T00:00:03.000Z"),
+      at(toolCallOutput({ output: "launched", toolCallId: "t1" }), "2026-07-05T00:00:04.000Z"),
+      at(userText(noticeText(), "harness"), "2026-07-05T00:00:08.000Z"),
+      at(requestBegin(), "2026-07-05T00:00:09.000Z"),
+      at(assistantText("it finished cleanly"), "2026-07-05T00:00:10.000Z"),
+      at(tokenUsage(counts(200), counts(100)), "2026-07-05T00:00:10.500Z"),
+      at(requestEnd("completed"), "2026-07-05T00:00:11.000Z"),
+    ]);
+    finalizeHistory(m);
+    expect(items(m).map((i) => i.kind)).toEqual([
+      "user_text",
+      "tool_call",
+      "background_notice",
+      "assistant_text",
+      "task_stats",
+    ]);
+  });
+
+  it("an unstamped completion notice (idle-launched notice task input) still starts its own Task", () => {
+    // The idle path launches a task whose input IS the notice — no delivery stamp, and the
+    // independent turn (its own stats row) is exactly the intended rendering.
+    const m = createStreamModel();
+    pushMessages(m, [
+      at(userText("build it"), "2026-07-05T00:00:00.000Z"),
+      at(assistantText("kicked off"), "2026-07-05T00:00:02.000Z"),
+      at(tokenUsage(counts(100), counts(100)), "2026-07-05T00:00:02.500Z"),
+      at(userText(noticeText(), "harness"), "2026-07-05T00:01:00.000Z"),
+      at(assistantText("it finished cleanly"), "2026-07-05T00:01:02.000Z"),
+      at(tokenUsage(counts(200), counts(100)), "2026-07-05T00:01:02.500Z"),
+    ]);
+    finalizeHistory(m);
+    expect(items(m).map((i) => i.kind)).toEqual([
+      "user_text",
+      "assistant_text",
+      "task_stats",
+      "user_text",
+      "assistant_text",
+      "task_stats",
+    ]);
+  });
+
+  it("a steered notice delivered during a wrap-up compaction reopens the continuation's own round", () => {
+    // Notices drain before steering at the same boundary, so a notice alone can be what
+    // keeps the Task going past a wrap-up compaction — same reopen rule as the steering chip.
+    const m = createStreamModel();
+    pushMessages(m, [
+      at(userText("Q"), "2026-07-05T00:00:00.000Z"),
+      at(requestBegin(), "2026-07-05T00:00:01.000Z"),
+      at(assistantText("A"), "2026-07-05T00:00:02.000Z"),
+      at(tokenUsage(out(600), out(600)), "2026-07-05T00:00:02.500Z"),
+      at(requestEnd("completed"), "2026-07-05T00:00:03.000Z"),
+      at(
+        compactionBegin({ reason: "context", mode: "summarize", context: 600, turns: 1 }),
+        "2026-07-05T00:00:04.000Z",
+      ),
+      at(
+        compactionEnd({ reason: "context", mode: "summarize", status: "completed" }),
+        "2026-07-05T00:00:20.000Z",
+      ),
+      at(userText("[context_summary]\nsummary\n[/context_summary]"), "2026-07-05T00:00:21.000Z"),
+      at(userText(noticeText("steering"), "harness"), "2026-07-05T00:00:22.000Z"),
+      at(requestBegin(), "2026-07-05T00:00:23.000Z"),
+      at(assistantText("noted"), "2026-07-05T00:00:24.000Z"),
+      at(tokenUsage(out(100), out(700)), "2026-07-05T00:00:24.500Z"),
+      at(requestEnd("completed"), "2026-07-05T00:00:25.000Z"),
+    ]);
+    finalizeHistory(m);
+    expect(items(m).map((i) => i.kind)).toEqual([
+      "user_text",
+      "assistant_text",
+      "task_stats",
+      "compaction",
+      "background_notice",
+      "assistant_text",
+      "task_stats",
+    ]);
+    const rows = items(m).filter((i) => i.kind === "task_stats") as TaskStatsItem[];
+    // The continuation's ledger measures from the notice that started it.
+    expect(rows[1]!.stats!.elapsedDeltaMs).toBe(3_000);
+    expect(rows[1]!.assistantText).toBe("noted");
+  });
+
   it("images sent with a steering message join its chip; a later standalone image still starts a Task", () => {
     // Core delivers a steering message's images as user image messages right behind its text.
     // They belong to that chip — no bubble of their own and, crucially, no new Task — while an

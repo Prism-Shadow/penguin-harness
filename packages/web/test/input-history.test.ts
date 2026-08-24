@@ -7,7 +7,10 @@ import { describe, expect, it } from "vitest";
 import type { ChatItem } from "../src/lib/omni/stream-model";
 import { buildSkillsMessage } from "../src/features/chat/skill-use";
 import { handoffMessage } from "../src/features/chat/agent-handoff";
-import { buildScheduledMessage } from "@prismshadow/penguin-core/markers";
+import {
+  buildBackgroundTaskDoneMessage,
+  buildScheduledMessage,
+} from "@prismshadow/penguin-core/markers";
 import {
   buildInputHistory,
   caretOnFirstLine,
@@ -39,6 +42,14 @@ describe("buildInputHistory", () => {
       user(goalRound1),
       user(goalRound2),
       steering("please also check the tests"),
+      // An idle-launched background completion notice arrives as user_text but is
+      // harness-written — recalling it would resend a machine report as user input.
+      user(
+        buildBackgroundTaskDoneMessage(
+          { kind: "command", id: "proc-1", status: "completed", detail: "exit code 0" },
+          "Background command finished",
+        ),
+      ),
       user(buildSkillsMessage(["my-skill"], "with a skill")),
       user("first question"),
     ];

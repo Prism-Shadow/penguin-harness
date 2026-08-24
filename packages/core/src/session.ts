@@ -179,8 +179,15 @@ const TITLE_ASSISTANT_MATERIAL_LIMIT = 1000;
  * `[background_task_done]` block carries the structured facts, the body the display text —
  * what settled, then the tail of its yet-undelivered output. `sender: "harness"` marks the
  * non-human origin in the Trace.
+ *
+ * Built at DELIVERY time, not queue time, because the message must record how it reached the
+ * conversation and a queued event does not know that yet: the engine's mid-run drain stamps
+ * `delivery: "steering"` (injected into an already-started Task — the render and stats layers
+ * keep it inside that turn), while the host's idle take leaves the field off (the notice is
+ * the new task's own starting input and keeps its independent turn). The two deliveries are
+ * positionally identical in the Trace, so only this recorded stamp can tell them apart.
  */
-function backgroundDoneNotice(event: BackgroundTaskDoneEvent): OmniMessage {
+function backgroundDoneNotice(event: BackgroundTaskDoneEvent, delivery?: "steering"): OmniMessage {
   const what = event.kind === "command" ? "Background command" : "Background subagent";
   const idField = event.kind === "command" ? "process_id" : "subagent_id";
   const verb = event.status === "completed" ? "finished" : "failed";
@@ -189,7 +196,13 @@ function backgroundDoneNotice(event: BackgroundTaskDoneEvent): OmniMessage {
   const body = event.output.trim() ? `${head}\n\n${event.output}` : head;
   return userText(
     buildBackgroundTaskDoneMessage(
-      { kind: event.kind, id: event.id, status: event.status, detail: event.detail },
+      {
+        kind: event.kind,
+        id: event.id,
+        status: event.status,
+        detail: event.detail,
+        ...(delivery ? { delivery } : {}),
+      },
       body,
     ),
     "harness",
@@ -271,14 +284,16 @@ export class Session {
   /** Material-frozen flag: becomes true once the first Task containing user text finishes; subsequent runs stop accumulating. */
   private titleMaterialFrozen = false;
   /**
-   * Background-task completion notices not yet delivered (harness user messages built from
-   * the Environment's completion events). Single source of truth for delivery: a running
-   * Task's engine drains it at every input-assembly boundary (yield + Trace write + request
-   * input); an idle Session fires `noticeListener` so the host can take the queue
-   * (`takeBackgroundNotices`) and submit it as an ordinary task — whichever consumes first,
-   * each notice is delivered exactly once. With neither, the next run's start drains it.
+   * Background-task completion events not yet delivered. Single source of truth for
+   * delivery: a running Task's engine drains it at every input-assembly boundary (yield +
+   * Trace write + request input); an idle Session fires `noticeListener` so the host can
+   * take the queue (`takeBackgroundNotices`) and submit it as an ordinary task — whichever
+   * consumes first, each notice is delivered exactly once. With neither, the next run's
+   * start drains it. The queue holds raw EVENTS: the harness user message is built by the
+   * consuming path, which is when the delivery mode is known (see backgroundDoneNotice —
+   * the engine drain stamps `delivery: steering`, the host take does not).
    */
-  private pendingNotices: OmniMessage[] = [];
+  private pendingNotices: BackgroundTaskDoneEvent[] = [];
   /** Idle-arrival signal for the host (see `onBackgroundNotice`); null until a host subscribes. */
   private noticeListener: (() => void) | null = null;
   /** Live background-subagent message subscriber (see `onBackgroundMessage`); null until a host subscribes — messages are display copies and drop without one. */
@@ -322,9 +337,11 @@ export class Session {
       ...(config.modelHasVision ? {} : { foldInputImages: this.foldImages }),
       sessionMeta: this.meta,
       // Background completion notices: the engine pulls from the Session's queue at every
-      // input-assembly boundary (see pendingNotices for the exactly-once contract).
+      // input-assembly boundary (see pendingNotices for the exactly-once contract). This is
+      // the steering delivery path — the notice joins a Task that already exists — so the
+      // built message carries the `delivery: steering` stamp.
       backgroundNotices: {
-        drain: () => this.pendingNotices.splice(0),
+        drain: () => this.pendingNotices.splice(0).map((e) => backgroundDoneNotice(e, "steering")),
         pending: () => this.pendingNotices.length,
       },
     };
@@ -783,9 +800,9 @@ export class Session {
     return this.environment.hasRunningBackgroundSubagents?.() ?? false;
   }
 
-  /** Queues a background completion event as a harness user notice; a running Task delivers it at the next boundary, otherwise the host is signaled (see pendingNotices). */
+  /** Queues a background completion event; a running Task delivers it at the next boundary, otherwise the host is signaled (see pendingNotices). */
   private handleBackgroundDone(event: BackgroundTaskDoneEvent): void {
-    this.pendingNotices.push(backgroundDoneNotice(event));
+    this.pendingNotices.push(event);
     if (!(this.engine?.isTaskRunning ?? false)) this.noticeListener?.();
   }
 
@@ -802,11 +819,13 @@ export class Session {
 
   /**
    * Takes the queued background completion notices (harness user messages) for submission as
-   * a task's input. Empties the queue — the caller owns delivery of what it took; anything
-   * queued after this call is signaled/drained separately.
+   * a task's input — the notices become that task's starting input, so they carry no
+   * `delivery` stamp and keep their independent turn in every render layer. Empties the
+   * queue — the caller owns delivery of what it took; anything queued after this call is
+   * signaled/drained separately.
    */
   takeBackgroundNotices(): OmniMessage[] {
-    return this.pendingNotices.splice(0);
+    return this.pendingNotices.splice(0).map((e) => backgroundDoneNotice(e));
   }
 
   /** Whether completion notices are still queued (hosts use it to keep a Session's runtime entry alive until they are delivered). */

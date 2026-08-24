@@ -258,6 +258,15 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
         </>
       );
     }
+    case "background_notice": {
+      // A background completion notice steered into the running Task (delivery: steering on
+      // its block): the same collapsed banner as a task-starting notice, but the dedicated
+      // item kind keeps it inside the running Task — no new turn, no outline entry, and the
+      // stats row still arrives once, at task end.
+      const done = parseBackgroundTaskDoneMessage(item.text);
+      if (done) return <BackgroundDoneBanner done={done.done} body={done.rest} />;
+      return null; // unreachable: the reducer only creates this kind from a parsed notice
+    }
     case "user_steering": {
       // Mid-run steering ([user_steering]-wrapped user text delivered between turns): a
       // compact right-aligned user-styled chip inside the running Task's flow — visually
