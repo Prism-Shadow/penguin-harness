@@ -1063,7 +1063,8 @@ export function ChatInput({
    * skills, slash skill commands, thinking level, approval mode, context ring and model badge
    * — minus what a child has no semantics for (goal mode, image/file attachments and the "+"
    * menu carrying them, paste/drop file intake; /compact and the follow-up queue are already
-   * gated by their absent callbacks).
+   * gated by their absent callbacks). The model badge is inert here: a child cannot switch
+   * model or agent, so there is no locked-model hint to click for.
    */
   variant?: "session" | "subagent";
   /**
@@ -1305,6 +1306,12 @@ export function ChatInput({
   const canMidRunSend = steerAction || queueAction;
   const midRunSendLabel = midRun === "queue" ? S.chat.followUpSend : S.chat.steerSend;
   const stopAction = isStopAction(status, midRun);
+  // Locked-model badge text (session and subagent variants): the catalog's display name when
+  // the model is known, the raw id otherwise.
+  const lockedModelLabel = (() => {
+    const m = models?.find((x) => sameModelRef(x, modelRef));
+    return m ? modelLabel(m) : (modelRef?.modelId ?? "…");
+  })();
   // Queued hint: shown after a successful steer until the message shows up in the stream
   // (steeringDeliveredCount increases past the baseline captured at queue time) or the run
   // stops being observable (task no longer running).
@@ -2717,6 +2724,19 @@ export function ChatInput({
                 onChange={onChangeModel}
                 disabled={busy}
               />
+            ) : variant === "subagent" ? (
+              /* Subagent composer: the child runs whatever model it was spawned with, and no
+                 /model command exists here — so the badge is pure display, nothing to click. */
+              <span
+                title={modelRef?.modelId ?? ""}
+                className="flex h-8 min-w-0 max-w-44 shrink items-center gap-1.5 rounded-md px-1 text-gray-400 dark:text-gray-500"
+              >
+                <ProviderLogo
+                  provider={modelRef?.provider ?? "custom"}
+                  className="h-4 w-4 shrink-0"
+                />
+                <span className="hidden min-w-0 truncate @md:block">{lockedModelLabel}</span>
+              </span>
             ) : (
               /* Read-only display in session state: both the logo and the name come from the
                  Session DTO's paired fields (no prefix parsing). A button rather than a plain
@@ -2736,12 +2756,7 @@ export function ChatInput({
                   provider={modelRef?.provider ?? "custom"}
                   className="h-4 w-4 shrink-0"
                 />
-                <span className="hidden min-w-0 truncate @md:block">
-                  {(() => {
-                    const m = models?.find((x) => sameModelRef(x, modelRef));
-                    return m ? modelLabel(m) : (modelRef?.modelId ?? "…");
-                  })()}
-                </span>
+                <span className="hidden min-w-0 truncate @md:block">{lockedModelLabel}</span>
               </button>
             )}
             {/* One action button, never two: while running an empty composer means "Stop"
