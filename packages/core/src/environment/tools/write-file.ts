@@ -9,8 +9,10 @@
  * one-line `+X/−Y lines` summary otherwise (created files carry no diff — the model just
  * supplied the content). The write is atomic (temp file + rename, preserving an
  * overwritten file's permission bits), so a crash mid-write cannot leave the target
- * half-written. Relative paths resolve against the Workspace; absolute
- * paths are allowed (tools run with the user's full permissions, same as the shell tool).
+ * half-written; a symlinked path is followed to the file it names, so the link survives
+ * and the content lands where it points. Relative paths resolve against the Workspace;
+ * absolute paths are allowed (tools run with the user's full permissions, same as the
+ * shell tool).
  * For surgical changes to an existing file, edit_file is the better tool — this one
  * replaces the whole content.
  *
@@ -23,7 +25,7 @@
  */
 import path from "node:path";
 import { mkdir, readFile, stat } from "node:fs/promises";
-import { atomicWriteFile } from "./file-utils.js";
+import { atomicWriteFile, resolveWriteTarget } from "./file-utils.js";
 import { buildLineDiffHunks, renderHunk } from "./diff.js";
 import { partialToolCallOutput } from "../../omnimessage/index.js";
 import type { OmniMessage } from "../../omnimessage/index.js";
@@ -109,7 +111,10 @@ export function createWriteFileTool(definition: ToolDefinitionConfig): BuiltinTo
       if (signal?.aborted) return { stopReason: "aborted" };
 
       try {
-        await mkdir(path.dirname(resolved), { recursive: true });
+        // The parent to create is the one holding the file that will actually be written:
+        // through a symlink that is the target's directory, not the link's (a link pointing
+        // into a directory that does not exist yet is created the way `>` would).
+        await mkdir(path.dirname(await resolveWriteTarget(resolved)), { recursive: true });
         await atomicWriteFile(resolved, content, {
           ...(fileMode !== undefined ? { mode: fileMode } : {}),
           ...(signal ? { signal } : {}),

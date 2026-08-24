@@ -847,6 +847,7 @@ export const en: Strings = {
       "No memories for this Workspace yet — the agent saves what is worth keeping as it works",
     emptyUserScope: 'No user memories yet — say "remember …" in a chat and the agent will save it',
     add: "Add",
+    addScopeLabel: (scope: string): string => `Add to ${scope}`,
     addTitle: "Add memory",
     addWhy:
       "The agent organizes and saves memories in a chat: fill in the content, open a new conversation, and the agent does the rest.",
@@ -1500,9 +1501,6 @@ Scenarios:
     /** Info-dropdown Session id row: the id itself is a click-to-copy button. */
     sessionIdLabel: "Session id",
     copySessionId: "Copy Session id",
-    /** Info-dropdown trace row: labels the Session's trace file, shown as its NAME (clicking deep-links to the Trace page; the button beside it copies the full path). */
-    traceFile: "Trace file",
-    copyTracePath: "Copy full path",
     /** Info-dropdown list of background processes the conversation started, and its per-row actions (Stop on running rows, Remove on exited ones). */
     processList: "Processes",
     processStop: "Stop",

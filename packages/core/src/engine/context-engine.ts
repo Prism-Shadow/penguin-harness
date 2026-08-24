@@ -244,8 +244,11 @@ export interface ContextEngineDeps {
    * drains at every input-assembly point — run start included — yielding each message to the
    * output stream and writing it to Trace (like steering, this text never reached the
    * consumer any other way); `pending` is the boundary peek that keeps a discard/summary
-   * from ending the run while notices still wait. Absent = no notice source (tests,
-   * standalone embedders).
+   * from ending the run while notices still wait. This drain IS the steering delivery path:
+   * the source builds each message with `delivery: steering` on its block, marking it as
+   * injected into an already-started Task rather than a task-starting input (only the host's
+   * idle take produces the unstamped form). Absent = no notice source (tests, standalone
+   * embedders).
    */
   backgroundNotices?: { drain(): OmniMessage[]; pending(): number };
 }
@@ -885,7 +888,11 @@ export class ContextEngine {
       // (harness user messages) and steering ([user_steering] user messages) ride alongside
       // this turn's tool outputs (or alone as the continuation input when the turn produced
       // no tool calls, instead of ending the Task — subject to the max-turns guard at the
-      // top of the loop). Notices first; the user's own words come last.
+      // top of the loop). Notices first; the user's own words come last. The whole batch is
+      // user-side and reaches AgentHub as ONE user message (streamGenerate merges a
+      // request's input into a single UniMessage), so injections never put two adjacent
+      // user messages on the wire — the per-message granularity exists only in the
+      // OmniMessage stream and the Trace.
       const injected = [
         ...(yield* this.deliverBackgroundNotices()),
         ...(yield* this.deliverSteering()),

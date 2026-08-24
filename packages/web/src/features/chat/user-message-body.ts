@@ -6,6 +6,7 @@
  * moment a new protocol block is added — this module is the single non-rendering copy.
  */
 import {
+  parseBackgroundTaskDoneMessage,
   parseHandoffMessage,
   parseModelSwitchMessage,
   parseScheduledMessage,
@@ -21,6 +22,12 @@ export interface UserMessageBody {
   goalRound?: number;
   /** True when the message was injected by a scheduled-task trigger rather than typed into the composer. */
   scheduled: boolean;
+  /**
+   * True when the message is a background completion notice ([background_task_done] block);
+   * `body` is then the harness-written report text after the block — a readable outline
+   * title for the notice's turn, but never something the user typed (input history skips it).
+   */
+  backgroundDone?: boolean;
 }
 
 /**
@@ -30,6 +37,12 @@ export interface UserMessageBody {
  */
 export function parseUserMessageBody(raw: string): UserMessageBody | null {
   if (parseHandoffMessage(raw) || parseModelSwitchMessage(raw)) return null;
+  // Same position as MessageItem's chain: a completion notice renders as a banner and
+  // carries no goal/scheduled/skills blocks — the report text is all there is.
+  const backgroundDone = parseBackgroundTaskDoneMessage(raw);
+  if (backgroundDone) {
+    return { body: backgroundDone.rest.trim(), scheduled: false, backgroundDone: true };
+  }
   const goal = parseGoalMessage(raw);
   const afterGoal = goal ? goal.rest : raw;
   const scheduled = parseScheduledMessage(afterGoal);

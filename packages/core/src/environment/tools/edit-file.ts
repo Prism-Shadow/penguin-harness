@@ -9,9 +9,10 @@
  * per replacement site, nearby sites merged; capped for replace_all storms), so both the
  * model and the user can verify exactly what changed without re-reading the file. The
  * write is atomic (temp file + rename, preserving the original permission bits), so a
- * crash mid-write cannot leave the file half-edited. Relative paths resolve against the
- * Workspace; absolute paths are allowed (tools run with the user's full permissions, same
- * as the shell tool).
+ * crash mid-write cannot leave the file half-edited; a symlinked path is followed to the
+ * file it names, the same way the read that produced the diff was. Relative paths resolve
+ * against the Workspace; absolute paths are allowed (tools run with the user's full
+ * permissions, same as the shell tool).
  *
  * Division of responsibility with Environment (see environment.ts): non-streaming — yields
  * one final text delta; failures are explanatory text finalized as `failed`; anything

@@ -159,7 +159,16 @@ export class HmrHost {
   readonly resources = new HotResources();
 
   private instance: Instance<PlatformApi> | null = null;
-  private implId = packagedPlatform.id;
+  /**
+   * The bundle behind the RUNNING instance, held as the loaded object rather than a
+   * pointer to re-read: it is what boot-failure recovery re-boots (see recoverPrevious).
+   * A bundle's `id` cannot stand in for this — the packaged export IS what a push
+   * delivers (hmr/entry.ts re-exports `packagedPlatform` as `hotPlatform`), so every
+   * pushed bundle carries the packaged id and comparing ids cannot tell a pushed version
+   * from the compiled-in default. Nor can the manifest: a push whose disk commit failed
+   * (`persisted: false`) is running a version harness.json does not name.
+   */
+  private current: PlatformBundle = packagedPlatform;
   /** Current version's materialized native assets dir (see assetsDir()). */
   private assets: string | null = null;
   private readonly hmrDir: string;
@@ -185,8 +194,9 @@ export class HmrHost {
     process.stderr.write(`[hmr] ${msg}\n`);
   }
 
+  /** The running version's id — derived from the running bundle, never tracked alongside it. */
   currentImplId(): string {
-    return this.implId;
+    return this.current.id;
   }
 
   /**
@@ -225,6 +235,7 @@ export class HmrHost {
           initialDoc(bundle.iface, bundle.context),
           this.resources,
         )) as Instance<PlatformApi>;
+        this.current = bundle;
       }
       return this.instance;
     } catch (err) {
@@ -297,7 +308,7 @@ export class HmrHost {
         this.resources,
       )) as Instance<PlatformApi>;
       this.instance = instance;
-      this.implId = bundle.id;
+      this.current = bundle;
       this.webMem = webMem;
     } catch (err) {
       this.warn(
@@ -330,7 +341,9 @@ export class HmrHost {
       webMem.set(rel, Buffer.from(b64, "base64"));
     }
 
-    const platformPath = await this.writeInlinePlatformBundle(target.platform);
+    const { file: platformPath, sha: platformSha } = await this.storePlatformBundle(
+      target.platform,
+    );
     const bundle = await this.importBundleFile(platformPath);
     const source = target.source ?? null;
 
@@ -385,13 +398,13 @@ export class HmrHost {
     // web or cli it's paired with. `result.doc` (the swap's parked+migrated state)
     // is never written to disk — see the module doc: code persists, state does not.
     this.instance = result.instance as Instance<PlatformApi>;
-    this.implId = bundle.id;
+    this.current = bundle;
     this.webMem = webMem;
 
     const digest = filesDigest(target.web);
     const gz = zlib.gzipSync(Buffer.from(JSON.stringify({ files: target.web })));
     const persisted = await this.persistVersion(
-      target.platform,
+      platformSha,
       target.cli,
       gz,
       digest.slice(0, 16),
@@ -410,28 +423,25 @@ export class HmrHost {
 
   /**
    * Boot-failure recovery: re-boot the version that was running before the failed
-   * upgrade, from its own parked document. The committed manifest still names that
-   * version (a failed push persists nothing), so the bundle comes from there — or it is
-   * the packaged default when nothing was ever pushed. Best-effort by design: a double
-   * fault only warns and leaves the disposed instance in place, because /api/hmr is
+   * upgrade, from its own parked document. The bundle is `this.current` — the object
+   * that was running, still loaded — rather than anything re-read from disk: the
+   * manifest names the last DURABLE version, which is a different version whenever the
+   * running one could not be persisted, and a bundle's `id` cannot distinguish pushed
+   * from packaged at all (see the field's doc). Best-effort by design: a double fault
+   * only warns and leaves the disposed instance in place, because /api/hmr is
    * runtime-owned and therefore still reachable for a follow-up push, and a process
    * restart restores the committed version regardless.
    */
   private async recoverPrevious(doc: Json): Promise<void> {
     try {
-      let bundle: PlatformBundle = packagedPlatform;
-      if (this.implId !== packagedPlatform.id) {
-        const manifest = JSON.parse(await fsp.readFile(this.manifestPath, "utf8")) as Manifest;
-        if (manifest.platform === undefined) throw new Error("harness.json has no `platform`");
-        bundle = await this.importBundleFile(path.join(this.hmrDir, manifest.platform.bundle));
-      }
+      const bundle = this.current;
       this.instance = (await boot(
         bundle.impl,
         bundle.iface,
         doc,
         this.resources,
       )) as Instance<PlatformApi>;
-      // implId unchanged: the previous version is the running version again.
+      // `current` unchanged: the previous version is the running version again.
     } catch (err) {
       this.warn(
         `boot-failure recovery failed too — the process serves a half-stopped App until ` +
@@ -461,20 +471,28 @@ export class HmrHost {
 
   /**
    * Materializes the inline platform bundle (the single-file ESM sent in the
-   * request body) to disk and returns its path — how a push reaches a runtime
-   * over HTTP alone: the bytes travel in the request, the server writes them,
-   * then loads them via importBundleFile. Only the platform artifact needs
-   * this treatment: it is the only one of the three this process ever
-   * imports and boots. The cli artifact is never imported here (see
-   * persistVersion) — it goes straight from request body to content-addressed
-   * store.
+   * request body) to disk and returns its path and sha — how a push reaches a
+   * runtime over HTTP alone: the bytes travel in the request, the server writes
+   * them, then loads them via importBundleFile. Only the platform artifact needs
+   * this treatment: it is the only one of the three this process ever imports
+   * and boots. The cli artifact is never imported here (see persistVersion) — it
+   * goes straight from request body to content-addressed store.
+   *
+   * It lands at its FINAL content-addressed path, before the boot that decides
+   * whether it will be committed, so the bytes exist on disk exactly once: an
+   * upload area separate from the store would hold a second copy of every bundle
+   * ever pushed, under no sweep (pruneStore only knows the store). The cost is
+   * that a push which fails to boot leaves an unreferenced file behind; the next
+   * successful push's prune collects it, and the committed version is force-kept
+   * regardless of how many failures sit between them.
    */
-  private async writeInlinePlatformBundle(content: string): Promise<string> {
-    const dir = path.join(this.hmrDir, "uploads");
+  private async storePlatformBundle(content: string): Promise<{ file: string; sha: string }> {
+    const sha = sha1(content).slice(0, 16);
+    const dir = path.join(this.storeDir, "platform");
     await fsp.mkdir(dir, { recursive: true });
-    const file = path.join(dir, `platform-${sha1(content).slice(0, 16)}.mjs`);
+    const file = path.join(dir, `${sha}.mjs`);
     await fsp.writeFile(file, content, "utf8");
-    return file;
+    return { file, sha };
   }
 
   // -- Web platform (the frontend package's built dist) ---------------------
@@ -495,10 +513,10 @@ export class HmrHost {
   // -- Persistence ----------------------------------------------------------
 
   /**
-   * Content-addresses the platform bundle (its CODE only — see the module doc: state
-   * is never persisted), the cli bundle (never imported — just stored, for
-   * packages/cli's own loader to pick up), and the web gzip artifact, then flips
-   * harness.json ONCE — `platform`, `cli`, and `web` all land in the SAME atomic
+   * Content-addresses the cli bundle (never imported — just stored, for packages/cli's
+   * own loader to pick up) and the web gzip artifact next to the platform bundle the
+   * boot already stored (its CODE only — see the module doc: state is never
+   * persisted), then flips harness.json ONCE — `platform`, `cli`, and `web` all land in the SAME atomic
    * rename, never three separate commits that could leave one pointer ahead of the
    * others. `platform.bundle` and `cli.bundle` are genuinely independent files
    * (distinct content, distinct sha) rather than the same physical bundle under two
@@ -560,18 +578,15 @@ export class HmrHost {
   }
 
   private async persistVersion(
-    platformContent: string,
+    platformSha: string,
     cliContent: string,
     webGz: Buffer,
     webSha: string,
     assetsDir: string | null,
   ): Promise<boolean> {
     try {
-      const platformSha = sha1(platformContent).slice(0, 16);
-      const platformDir = path.join(this.storeDir, "platform");
-      await fsp.mkdir(platformDir, { recursive: true });
-      await fsp.writeFile(path.join(platformDir, `${platformSha}.mjs`), platformContent, "utf8");
-
+      // The platform bundle is already in the store: storePlatformBundle put it at its
+      // content-addressed path so the boot could import it from there.
       const cliSha = sha1(cliContent).slice(0, 16);
       const cliDir = path.join(this.storeDir, "cli");
       await fsp.mkdir(cliDir, { recursive: true });
@@ -673,6 +688,14 @@ export class HmrHost {
       webRef,
       (sha) => fsp.rm(path.join(webDir, `${sha}.webz`), { force: true }),
     );
+
+    // Pre-store pushes staged the platform bundle in `hmr/uploads/` before importing it
+    // and then wrote a second copy into the store; nothing ever read the staged copy
+    // again and no sweep covered that directory. Removing it here is one line in the
+    // sweep that already owns disk reclamation, rather than a migration step.
+    await fsp
+      .rm(path.join(this.hmrDir, "uploads"), { recursive: true, force: true })
+      .catch(() => undefined);
 
     // Assets are directories, not single files; otherwise the same keep-newest rule.
     const assetsRoot = path.join(this.storeDir, "assets");

@@ -2,8 +2,9 @@
  * Trace panel — the current conversation's Trace files as a dock tab, reusing the traces
  * page's file view (performance timeline + event list) scoped to one Session. The file
  * pills page newest-first; the export link downloads the selected file raw. Cross-Session
- * browsing stays on the /traces page (deep-linked from the Agents page and the details
- * popover) — this panel is the "what did this conversation do" view.
+ * browsing stays on the /traces page, which no longer has a UI entry point of its own —
+ * this panel is the only way in from the app, and is the "what did this conversation do"
+ * view. The page is still reachable by URL, for shared links and its import/export controls.
  *
  * Loading is gated on `active` (the dock keeps inactive tabs mounted): the listing is
  * fetched on the first show and re-fetched on every re-show, so a Task that finished while

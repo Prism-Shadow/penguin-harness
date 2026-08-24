@@ -20,6 +20,7 @@ import {
   assistantText,
   buildBackgroundTaskDoneMessage,
   emptyTokenCounts,
+  isSteeredBackgroundNotice,
   parseBackgroundTaskDoneMessage,
   partialText,
   stripLeadingMarkerBlocks,
@@ -147,6 +148,24 @@ describe("[background_task_done] marker and the sender field", () => {
       "",
     );
     expect(parseBackgroundTaskDoneMessage(bare)!.done.detail).toBe("");
+  });
+
+  it("stamps and parses the steering delivery field; unstamped blocks read as task input", () => {
+    const steered = buildBackgroundTaskDoneMessage(
+      { kind: "command", id: "proc-1", status: "completed", detail: "", delivery: "steering" },
+      "body",
+    );
+    expect(parseBackgroundTaskDoneMessage(steered)!.done.delivery).toBe("steering");
+    expect(isSteeredBackgroundNotice(steered)).toBe(true);
+    // The unstamped form (idle delivery, and every pre-stamp Trace) has no delivery field.
+    const plain = buildBackgroundTaskDoneMessage(
+      { kind: "command", id: "proc-1", status: "completed", detail: "" },
+      "body",
+    );
+    expect(plain).not.toContain("delivery:");
+    expect(parseBackgroundTaskDoneMessage(plain)!.done.delivery).toBeUndefined();
+    expect(isSteeredBackgroundNotice(plain)).toBe(false);
+    expect(isSteeredBackgroundNotice("plain user text")).toBe(false);
   });
 
   it("only parses as a leading block, and the title stripper removes it", () => {
@@ -622,6 +641,9 @@ describe("Session background notices", () => {
     expect(p.sender).toBe("harness");
     const parsed = parseBackgroundTaskDoneMessage(p.text);
     expect(parsed!.done).toMatchObject({ kind: "command", id: "proc-11aa22bb" });
+    // The host take is the idle path: the notice is the new task's own starting input, so it
+    // carries no delivery stamp and keeps its independent turn in every render layer.
+    expect(parsed!.done.delivery).toBeUndefined();
     expect(parsed!.rest).toContain("`sleep 1`");
     expect(parsed!.rest).toContain("done!");
     // Taking empties the queue, and the pending flag (the host's eviction pin) tracks it.
@@ -650,5 +672,8 @@ describe("Session background notices", () => {
     const texts = llm.inputs[0]!.map((m) => (m.payload as { text?: string }).text ?? "");
     expect(texts[0]).toBe("hi");
     expect(texts[1]).toContain("[background_task_done]");
+    // Engine drains are the steering delivery path — the notice joined a Task the user's
+    // prompt started, so it must carry the steering stamp and never open a turn of its own.
+    expect(isSteeredBackgroundNotice(texts[1]!)).toBe(true);
   });
 });

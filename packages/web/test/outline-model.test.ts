@@ -6,7 +6,10 @@
 import { describe, expect, it } from "vitest";
 import type { ChatItem } from "../src/lib/omni/stream-model";
 import { handoffMessage } from "../src/features/chat/agent-handoff";
-import { buildScheduledMessage } from "@prismshadow/penguin-core/markers";
+import {
+  buildBackgroundTaskDoneMessage,
+  buildScheduledMessage,
+} from "@prismshadow/penguin-core/markers";
 import {
   OUTLINE_MIN_TURNS,
   OUTLINE_WINDOW_AFTER,
@@ -75,6 +78,43 @@ describe("buildOutline", () => {
     const outline = buildOutline(items);
     expect(outline).toHaveLength(1);
     expect(outline[0]).toMatchObject({ question: "real question", answer: "answer" });
+  });
+
+  it("background notices: the steered item stays inside the turn, the idle-launched turn titles its entry with the report", () => {
+    const report = "Background command finished: `sleep 5` (process_id proc-1) — exit code 0";
+    const steered: ChatItem = {
+      kind: "background_notice",
+      id: nextId++,
+      text: buildBackgroundTaskDoneMessage(
+        {
+          kind: "command",
+          id: "proc-1",
+          status: "completed",
+          detail: "exit code 0",
+          delivery: "steering",
+        },
+        report,
+      ),
+    };
+    const items: ChatItem[] = [
+      user("build it"),
+      steered,
+      assistant("it finished"),
+      stats(),
+      // The idle path: the notice arrives as ordinary user_text and opens its own entry —
+      // titled by the harness report body, not the raw marker block.
+      user(
+        buildBackgroundTaskDoneMessage(
+          { kind: "command", id: "proc-2", status: "completed", detail: "exit code 0" },
+          report,
+        ),
+      ),
+      assistant("reacted"),
+    ];
+    const outline = buildOutline(items);
+    expect(outline).toHaveLength(2);
+    expect(outline[0]).toMatchObject({ question: "build it", answer: "it finished" });
+    expect(outline[1]).toMatchObject({ question: report, answer: "reacted" });
   });
 
   it("keeps one entry per goal run (later rounds merge into round 1) and includes scheduled turns", () => {

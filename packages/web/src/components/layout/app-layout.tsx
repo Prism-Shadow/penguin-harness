@@ -79,7 +79,8 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
 
   /** Page entries (rail positions 3-7): same routes, same labels as the pinned nav.
       Traces is not among them: the Trace panel lives in the chat toolbar's panel switcher
-      now, and the /traces browsing page stays reachable through its deep links. */
+      now, and the /traces browsing page stays addressable by URL (plus the Benchmark
+      page's per-run Session links). */
   const pages: ReadonlyArray<{ to: string; label: string; icon: string }> = [
     { to: "/agents", label: S.nav.agents, icon: NAV_ICONS.agents },
     { to: "/skills", label: S.nav.skills, icon: NAV_ICONS.skills },

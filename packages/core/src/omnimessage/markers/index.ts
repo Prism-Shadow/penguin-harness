@@ -24,6 +24,15 @@
  * dual-form (square + legacy angle) matching every parser applies, because markers persist in
  * Traces and in each agent's stored compaction prompt. `tags.ts` owns the tag list.
  *
+ * **Consumption boundary**: marker text is addressed to the model and to the render /
+ * observation layers (chat folding, the trace page, turn segmentation) — those may parse it
+ * freely. Core's runtime path (engine, Session, LLM translation, resume replay) must never
+ * parse marker text to tell where a message came from: source decisions there ride on
+ * structured facts only — payload fields such as `sender`, and the explicit queue/state that
+ * delivered the message — so core BUILDS markers but never branches on them. Transforming a
+ * protocol block core itself authored (the goal-round downgrade, the compaction `[summary]`
+ * extraction) is not source discrimination and stays legitimate.
+ *
  * Everything here is pure string work: no OmniMessage envelopes, no I/O — the callers wrap
  * the result in `userText(...)` (or match against a payload's text) themselves.
  */

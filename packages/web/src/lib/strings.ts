@@ -823,6 +823,8 @@ export const zh = {
     emptyScope: "这个工作区还没有记忆——agent 会在会话中自行记下值得保留的信息",
     emptyUserScope: "还没有用户记忆——在对话里说「记住……」即可让 agent 保存",
     add: "添加",
+    /** Accessible name for the group header's add entry, which drops its visible label on a narrow row. */
+    addScopeLabel: (scope: string): string => `向${scope}添加`,
     addTitle: "添加记忆",
     addWhy: "记忆整理由 agent 在对话中完成：填写内容后打开新对话，由 agent 整理保存。",
     addContentLabel: "要记住的内容或来源",
@@ -1458,9 +1460,6 @@ Benchmark：
     /** Info-dropdown Session id row: the id itself is a click-to-copy button. */
     sessionIdLabel: "Session id",
     copySessionId: "复制 Session id",
-    /** Info-dropdown trace row: labels the Session's trace file, shown as its NAME (clicking deep-links to the Trace page; the button beside it copies the full path). */
-    traceFile: "轨迹文件",
-    copyTracePath: "复制完整路径",
     /** Info-dropdown list of background processes the conversation started, and its per-row actions (Stop on running rows, Remove on exited ones). */
     processList: "会话进程",
     processStop: "停止",

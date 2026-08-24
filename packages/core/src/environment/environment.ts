@@ -12,12 +12,14 @@
  * The **framing and finalization** of the tool stream is handled uniformly by Environment:
  * - Entering execution immediately emits `start`; the tool only needs to yield output deltas
  *   (its own start/stop are ignored);
- * - Output is truncated online **front-to-back** by maxOutputLength (head is kept, forwarding
- *   stops once exceeded); the truncation marker, the tool's self-reported end marker
- *   (`ToolResult.note`, e.g. exit code — appended outside the truncation, never lost even when
- *   long output is truncated), and timeout/interruption/error markers are all emitted as part
- *   of the stream — **the content produced by concatenating streamed chunks matches the full
- *   message exactly**;
+ * - Output is bounded online by maxOutputLength as **head and tail windows**: the budget splits
+ *   in half, the head window streams live, and text past it is withheld into a fixed-capacity
+ *   rolling tail flushed at finalization — verbatim when the total stayed within budget, or as
+ *   a truncation marker carrying kept/total counts followed by the last tail window when it did
+ *   not. The marker, the tool's self-reported end marker (`ToolResult.note`, e.g. exit code —
+ *   appended outside the budget, never lost even when long output is truncated), and
+ *   timeout/interruption/error markers are all emitted as part of the stream — **the content
+ *   produced by concatenating streamed chunks matches the full message exactly**;
  * - Nested session messages carrying an origin marker (e.g. forwarded from run_subagent) pass
  *   through unchanged, taking no part in this tool's output or finalization;
  * - Argument parsing failures, unknown tool names, tool throws, and other exceptions all
@@ -86,6 +88,46 @@ function appendNote(base: string, note: string): string {
 /** The delta needed to stream out `note` on top of existing content `base` (includes separator, same basis as appendNote). */
 function noteSuffix(base: string, note: string): string {
   return base ? `\n${note}` : note;
+}
+
+/** UTF-16 surrogate probes for budget cuts: the visible windows must not end or start mid-pair. */
+function isHighSurrogate(code: number): boolean {
+  return code >= 0xd800 && code <= 0xdbff;
+}
+
+function isLowSurrogate(code: number): boolean {
+  return code >= 0xdc00 && code <= 0xdfff;
+}
+
+/** The truncation marker placed between the kept head and tail windows; the total lets the model judge whether the recovery file is worth reading. */
+function truncationMarker(headLen: number, tailLen: number, totalLen: number): string {
+  return `[output truncated: kept first ${headLen} and last ${tailLen} of ${totalLen} chars]`;
+}
+
+/** Joins visible windows around the marker; empty sides drop out so a zero head budget does not lead with a blank line. */
+function joinVisibleParts(head: string, marker: string, tail: string): string {
+  return [head, marker, tail].filter((part) => part !== "").join("\n");
+}
+
+/**
+ * Bounds one complete string (the compatibility full-message basis) to the visible budget:
+ * head and tail windows around a counting marker, with surrogate pairs kept whole at both cuts.
+ */
+function boundVisible(
+  text: string,
+  headBudget: number,
+  tailBudget: number,
+): { visible: string; truncated: boolean } {
+  const cap = headBudget + tailBudget;
+  if (text.length <= cap) return { visible: text, truncated: false };
+  let head = text.slice(0, headBudget);
+  if (head !== "" && isHighSurrogate(head.charCodeAt(head.length - 1))) head = head.slice(0, -1);
+  let tail = text.slice(text.length - tailBudget);
+  if (tail !== "" && isLowSurrogate(tail.charCodeAt(0))) tail = tail.slice(1);
+  return {
+    visible: joinVisibleParts(head, truncationMarker(head.length, tail.length, text.length), tail),
+    truncated: true,
+  };
 }
 
 export class Environment implements EnvironmentInterface {
@@ -346,18 +388,31 @@ export class Environment implements EnvironmentInterface {
         : null;
     timer?.unref?.();
 
-    // Consume the tool stream: content deltas are forwarded after online front-truncation;
-    // nested messages pass through; manual iteration to capture the generator's return value.
-    let streamed = ""; // Content forwarded so far (<= maxOutputLength)
-    let contentLen = 0; // Total length of content produced by the tool (including truncated/discarded parts)
+    // Consume the tool stream: the head window is forwarded live, text past it is withheld into
+    // a bounded rolling tail; nested messages pass through; manual iteration to capture the
+    // generator's return value.
+    // maxOutputLength <= 0 disables the budget entirely (same semantics as timeoutMs).
+    const truncationEnabled = maxOutputLength > 0;
+    const headBudget = truncationEnabled
+      ? Math.floor(maxOutputLength / 2)
+      : Number.POSITIVE_INFINITY;
+    const tailBudget = truncationEnabled ? maxOutputLength - headBudget : 0;
+    // Tail window plus slack: one char for the head's surrogate retraction and one more so a
+    // run that ends exactly on the budget boundary never evicts — a within-budget run must
+    // flush its withheld text verbatim.
+    const withheldCapacity = tailBudget + 2;
+    let streamed = ""; // Head window forwarded so far (<= headBudget)
+    let headClosed = false; // Once true, nothing more streams live; all further text is withheld
+    let withheld = ""; // Rolling buffer of text past the head window (<= withheldCapacity)
+    let contentLen = 0; // Total length of content produced by the tool (including evicted parts)
     let toolOutput: string | null = null; // Fallback: content basis when the tool produces a full message itself
     let selfReported: StopReason | undefined; // Tool's self-reported stop reason (return value takes priority over the full message)
     let selfNote: string | null = null; // Tool's self-reported end marker (e.g. exit code), appended outside truncation
     let selfImages: string[] | undefined; // Tool's self-reported images (data URL), carried via a single streamed delta and the full message
     let thrown: unknown = null;
-    // Created lazily on the first over-limit text delta when this Environment has a Session
-    // scratchpad. It captures the tool's complete text before Environment drops the overflow,
-    // but does not alter the model/frontend stream.
+    // Created lazily on the first delta that takes the total past the budget when this
+    // Environment has a Session scratchpad. It captures the tool's complete text before the
+    // rolling tail evicts the middle, but does not alter the model/frontend stream.
     let archiveCapture: TruncatedToolOutputCapture | null = null;
     const gen = tool.execute(args, {
       workspaceDir: this.workspaceDir,
@@ -392,29 +447,60 @@ export class Environment implements EnvironmentInterface {
           // Only takes delta content; start/stop are ignored (framing is uniformly handled by Environment).
           if (p.event_type !== "delta" || !p.output) continue;
           contentLen += p.output.length;
-          const exceedsVisibleLimit = maxOutputLength > 0 && contentLen > maxOutputLength;
-          if (exceedsVisibleLimit && this.truncatedToolOutputArchive) {
+          if (
+            truncationEnabled &&
+            contentLen > maxOutputLength &&
+            this.truncatedToolOutputArchive
+          ) {
             if (!archiveCapture) {
               archiveCapture = this.truncatedToolOutputArchive.startCapture();
-              // `streamed` is the exact prefix already accepted before this delta. Appending it
-              // once, then every complete current/future delta, reconstructs the pre-truncation
-              // tool text without changing what is forwarded.
+              // `streamed` then `withheld` is exactly the tool text accepted before this delta:
+              // forwarding stops for good once the head window closes, so the two segments are
+              // contiguous. Appending them once, then every complete current/future delta,
+              // reconstructs the pre-truncation tool text without changing what is forwarded.
               archiveCapture.append(streamed);
+              archiveCapture.append(withheld);
             }
             archiveCapture.append(p.output);
           }
-          // maxOutputLength <= 0 means truncation is disabled (same semantics as timeoutMs).
-          const room =
-            maxOutputLength > 0 ? maxOutputLength - streamed.length : Number.POSITIVE_INFINITY;
-          if (room > 0) {
-            const chunk = p.output.length > room ? p.output.slice(0, room) : p.output;
-            streamed += chunk;
-            // Rebuild the delta: tool_call_id is uniformly enforced by Environment, never trusting the tool's own value.
-            yield partialToolCallOutput({
-              eventType: "delta",
-              output: chunk,
-              toolCallId,
-            });
+          let rest = p.output;
+          if (!headClosed) {
+            const room = headBudget - streamed.length;
+            if (rest.length < room) {
+              streamed += rest;
+              // Rebuild the delta: tool_call_id is uniformly enforced by Environment, never trusting the tool's own value.
+              yield partialToolCallOutput({
+                eventType: "delta",
+                output: rest,
+                toolCallId,
+              });
+              rest = "";
+            } else {
+              headClosed = true;
+              let chunk = rest.slice(0, room);
+              // The closed head must not end on a pairable high surrogate: its low half would
+              // otherwise sit across the marker or in the dropped middle. Withholding it keeps
+              // the pair whole — the finalization flush reunites the two halves whenever the
+              // boundary region survives.
+              if (chunk !== "" && isHighSurrogate(chunk.charCodeAt(chunk.length - 1))) {
+                chunk = chunk.slice(0, -1);
+              }
+              if (chunk !== "") {
+                streamed += chunk;
+                yield partialToolCallOutput({
+                  eventType: "delta",
+                  output: chunk,
+                  toolCallId,
+                });
+              }
+              rest = rest.slice(chunk.length);
+            }
+          }
+          if (rest !== "") {
+            withheld += rest;
+            if (withheld.length > withheldCapacity) {
+              withheld = withheld.slice(withheld.length - withheldCapacity);
+            }
           }
         } else if (p.type === "tool_call_output") {
           // Fallback: if the tool still produces a full message, use it as the basis for content and stop reason (not needed under the new contract).
@@ -450,15 +536,28 @@ export class Environment implements EnvironmentInterface {
     }
 
     // Uniform finalization. Content basis = the tool's self-produced full message (fallback
-    // path) or the already-forwarded delta; after front-truncating to the cap, the truncation
-    // marker and interruption/timeout/error markers are appended in turn, all made up via
-    // streamed deltas — streamed concatenation == the full message.
-    const contentBase = toolOutput ?? streamed;
-    const capped =
-      maxOutputLength > 0 && contentBase.length > maxOutputLength
-        ? contentBase.slice(0, maxOutputLength)
-        : contentBase;
-    const truncated = capped.length < contentBase.length || contentLen > streamed.length;
+    // path) or the forwarded head plus the withheld tail. A within-budget run flushes the
+    // withheld text verbatim; an over-budget run keeps the head and tail windows around a
+    // counting marker. Markers and notes are then appended in turn, all made up via streamed
+    // deltas — streamed concatenation == the full message.
+    let visible: string;
+    let truncated: boolean;
+    if (toolOutput !== null) {
+      ({ visible, truncated } = boundVisible(toolOutput, headBudget, tailBudget));
+    } else if (!truncationEnabled || contentLen <= maxOutputLength) {
+      // The rolling buffer never evicts within budget, so this is the complete tool text.
+      visible = streamed + withheld;
+      truncated = false;
+    } else {
+      let tail = withheld.slice(withheld.length - tailBudget);
+      if (tail !== "" && isLowSurrogate(tail.charCodeAt(0))) tail = tail.slice(1);
+      visible = joinVisibleParts(
+        streamed,
+        truncationMarker(streamed.length, tail.length, contentLen),
+        tail,
+      );
+      truncated = true;
+    }
     // Freeze the tool's terminal facts before auxiliary archive I/O. A user abort arriving
     // while the file is being written must not reclassify an already-finished tool.
     const aborted =
@@ -479,7 +578,6 @@ export class Environment implements EnvironmentInterface {
     let stopReason: StopReason;
     const notes: string[] = [];
     if (truncated) {
-      notes.push(`[output truncated: exceeded ${maxOutputLength} chars]`);
       if (archiveResult?.status === "saved") {
         const archivePath = modelVisiblePath(archiveResult.path);
         if (archiveResult.archiveTruncated) {
@@ -494,9 +592,9 @@ export class Environment implements EnvironmentInterface {
         notes.push(`[output archive failed: ${archiveResult.code}]`);
       }
     }
-    // The tool's self-reported end marker (e.g. exit code): appended outside the truncation —
-    // if treated as a content delta it would get cut off once long output hits the cap, and the
-    // model would misread a command that failed after printing lots of output as successful.
+    // The tool's self-reported end marker (e.g. exit code): appended outside the budget — as a
+    // content delta it could be evicted from the tail window by trailing output, and the model
+    // would misread a command that failed after printing lots of output as successful.
     if (selfNote) {
       notes.push(selfNote);
     }
@@ -515,20 +613,16 @@ export class Environment implements EnvironmentInterface {
     // The tool's reply must never be empty: an empty tool_result leaves the model unable to
     // tell "silent success" apart from "call failed", and some Providers outright reject empty
     // content blocks.
-    if (capped === "" && notes.length === 0) {
+    if (visible === "" && notes.length === 0) {
       notes.push(TOOL_EMPTY_NOTE);
     }
     const noteText = notes.join("\n");
-    const fullOutput = noteText ? appendNote(capped, noteText) : capped;
+    const fullOutput = noteText ? appendNote(visible, noteText) : visible;
 
-    // Compensating content delta: if nothing was streamed, emit the whole thing at once; on the
-    // fallback path, emit the portion of the full message beyond the already-streamed prefix
-    // (if the tool is internally inconsistent, the full message wins — no further reconciliation).
-    let compensation = "";
-    if (streamed === "") compensation = capped;
-    else if (toolOutput !== null && capped.startsWith(streamed)) {
-      compensation = capped.slice(streamed.length);
-    }
+    // Compensating content delta: everything in the visible content beyond the already-forwarded
+    // head — the withheld flush, the marker plus the tail window, or a fallback full message (if
+    // the tool is internally inconsistent, the full message wins — no further reconciliation).
+    const compensation = visible.startsWith(streamed) ? visible.slice(streamed.length) : "";
     if (compensation) {
       yield partialToolCallOutput({
         eventType: "delta",
@@ -539,7 +633,7 @@ export class Environment implements EnvironmentInterface {
     if (noteText) {
       yield partialToolCallOutput({
         eventType: "delta",
-        output: noteSuffix(capped, noteText),
+        output: noteSuffix(visible, noteText),
         toolCallId,
       });
     }

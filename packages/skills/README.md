@@ -8,10 +8,12 @@ Included skills, in the order of the `SKILL_GROUPS` manifest in `src/index.ts` (
 
 | Group | Skills |
 | --- | --- |
-| Office Productivity | `data-analysis`, `firecrawl` |
-| Software Development | `web-design`, `software-engineering` |
-| AI App Development | `penguin-sdk`, `penguin-cli`, `agenthub-models`, `vllm`, `ollama`, `llamafactory` |
+| Office Productivity | `data-analysis`, `firecrawl`, `bento-slides`, `humanizer` |
+| Software Development | `web-design`, `software-engineering`, `remote-claude-code` |
+| AI App Development | `penguin-sdk`, `penguin-cli`, `agenthub-models`, `vllm`, `ollama`, `llamafactory`, `skill-porting` |
 | Agent Tuning | `agent-initialization`, `benchmark-design`, `agent-evaluation`, `agent-optimization` |
+
+`humanizer` and `remote-claude-code` carry `preinstall: false`, so `default_agent` does not get them at initialization — they are installed from the library on demand.
 
 Agent Tuning powers the self-improvement loop: create the Target Agent, design a Benchmark, evaluate it, optimize it to version N+1 with a snapshot before every round.
 
