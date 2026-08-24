@@ -56,7 +56,6 @@ import {
   groupSessionsByWorkspace,
   matchesSessionQuery,
   partitionSessions,
-  pinnedFirst,
   sessionCategory,
   totalCategoryCounts,
   workspaceGroupKey,
@@ -94,6 +93,13 @@ import {
   storeSessionSortMode,
 } from "../../lib/session-order";
 import type { SessionSortMode } from "../../lib/session-order";
+import {
+  isOrderableGroupMode,
+  loadGroupOrder,
+  orderGroups,
+  pruneGroupOrder,
+  saveGroupOrder,
+} from "../../lib/group-order";
 import { Dropdown } from "../ui/dropdown";
 import { useRowContextMenu } from "../ui/context-menu";
 import {
@@ -184,6 +190,9 @@ const CLOSE_ICON = "M18 6L6 18M6 6l12 12";
  * into the user's message. Nothing outside these rows reads this type.
  */
 const SESSION_DRAG_MIME = "application/x-penguin-session-id";
+
+/** Private drag payload type of a group reorder (same reasoning as SESSION_DRAG_MIME: never text/plain). */
+const GROUP_DRAG_MIME = "application/x-penguin-group-key";
 
 /** Manual drag-reordering needs a pointer that can drag (HTML5 DnD never fires from touch) — the outline rail's query. */
 const DRAG_POINTER_QUERY = "(hover: hover) and (pointer: fine)";
@@ -299,6 +308,7 @@ export function Sidebar({
     setCurrentProjectId,
     reloadProjects,
     agents,
+    agentsLoading,
     currentAgent,
     setCurrentAgentId,
   } = useProject();
@@ -374,6 +384,16 @@ export function Sidebar({
   const [sessionOrder, setSessionOrder] = useState<readonly string[]>(() =>
     loadSessionOrder(currentProjectId, initialGroupMode()),
   );
+  /**
+   * Manual GROUP order (Workspace keys / Agent ids), persisted per Project and grouping
+   * mode like the row order. Independent of `sortMode`: dragging a group is itself the
+   * intent, so there is no second toggle — an empty array is the identity and the list
+   * keeps its automatic sort. Empty in time mode, whose buckets are chronological
+   * (group-order.ts).
+   */
+  const [groupOrder, setGroupOrder] = useState<readonly string[]>(() =>
+    loadGroupOrder(currentProjectId, initialGroupMode()),
+  );
   /** Manually-added Workspaces (header 新建工作区; render as empty groups until Sessions exist, with optional display aliases); persisted per Project. */
   const [registeredWorkspaces, setRegisteredWorkspaces] = useState<readonly WorkspaceEntry[]>(() =>
     loadWorkspaceRegistry(currentProjectId),
@@ -408,12 +428,16 @@ export function Sidebar({
   /** Row being dragged (manual sort only) and the current drop hint (target row + which edge). */
   const [dragSession, setDragSession] = useState<{ scope: string; id: string } | null>(null);
   const [dropHint, setDropHint] = useState<{ id: string; after: boolean } | null>(null);
+  /** Group header being dragged (its key) and the current group drop hint (target group + which edge). */
+  const [dragGroup, setDragGroup] = useState<string | null>(null);
+  const [groupDropHint, setGroupDropHint] = useState<{ key: string; after: boolean } | null>(null);
   // Project resolved on first load / switched: swap in that Project's persisted collapse/pin sets.
   useEffect(() => {
     setCollapsedGroups(loadGroupSet(collapseStoreKey));
     setPinnedGroups(loadGroupSet(pinStoreKey));
     setPinnedSessions(loadPinnedSessions(currentProjectId));
     setSessionOrder(loadSessionOrder(currentProjectId, groupMode));
+    setGroupOrder(loadGroupOrder(currentProjectId, groupMode));
     setRegisteredWorkspaces(loadWorkspaceRegistry(currentProjectId));
     setGroupCap(SIDEBAR_GROUP_PAGE_SIZE);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -446,6 +470,7 @@ export function Sidebar({
     // this mode's own manual order (the stored sequence is read within partitions, whose
     // boundaries are exactly what the mode decides — one shared array would scramble).
     setSessionOrder(loadSessionOrder(currentProjectId, mode));
+    setGroupOrder(loadGroupOrder(currentProjectId, mode));
     setGroupCap(SIDEBAR_GROUP_PAGE_SIZE);
   };
 
@@ -468,15 +493,25 @@ export function Sidebar({
     [workspaceCountsByAgent],
   );
 
-  // Pinned groups first within each mode; inside each partition the existing order is kept
-  // (recency for Workspace groups, the configured Agent order for Agents).
+  // Pinned groups first within each mode, then the manual drag order within each pin
+  // partition. Nothing dragged yet = an empty order = the automatic sort untouched
+  // (recency for Workspace groups with the temp group last, the configured Agent order
+  // for Agents), which is also what a group with no stored place falls back to.
   const orderedAgents = useMemo(
-    () => pinnedFirst(agents, (a) => a.agentId, pinnedGroups),
-    [agents, pinnedGroups],
+    () => orderGroups(agents, (a) => a.agentId, { pinned: pinnedGroups, order: groupOrder }),
+    [agents, pinnedGroups, groupOrder],
   );
   const orderedWorkspaceGroups = useMemo(
-    () => pinnedFirst(workspaceGroups, (g) => g.key, pinnedGroups),
-    [workspaceGroups, pinnedGroups],
+    () => orderGroups(workspaceGroups, (g) => g.key, { pinned: pinnedGroups, order: groupOrder }),
+    [workspaceGroups, pinnedGroups, groupOrder],
+  );
+
+  // The FULL displayed group sequences a drop commits — every group of the mode, not the
+  // `groupCap` slice on screen (see groupDragProps).
+  const agentGroupSequence = useMemo(() => orderedAgents.map((a) => a.agentId), [orderedAgents]);
+  const workspaceGroupSequence = useMemo(
+    () => orderedWorkspaceGroups.map((g) => g.key),
+    [orderedWorkspaceGroups],
   );
 
   /** Group key a Session's FOLDERS hang off under the current mode (the archived-open state); time mode keeps one shared set for the whole Project. */
@@ -581,6 +616,115 @@ export function Sidebar({
     const next = applyManualReorder(sessionOrder, seq);
     setSessionOrder(next);
     saveSessionOrder(currentProjectId, groupMode, next);
+  };
+
+  /**
+   * The current mode's COMPLETE set of live group keys, or null while the picture is
+   * still partial — the prune below is skipped then rather than discarding the stored
+   * position of a group that has merely not loaded.
+   *
+   * Agent mode: the Project's Agent list is fetched whole, so once it has settled a
+   * stored key with no Agent is proof the Agent is gone. Workspace mode: the groups
+   * themselves surface as Sessions page in, but each Agent's `workspaceCounts` covers
+   * ALL of that Agent's Sessions rather than the returned page, so the union of the
+   * folded count keys with the rendered groups (which is where a registered but empty
+   * Workspace comes from) is the whole truth — once every Agent has reported.
+   */
+  const liveGroupKeys = (): ReadonlySet<string> | null => {
+    if (agentsLoading) return null;
+    if (groupMode === "agent") return new Set(agents.map((a) => a.agentId));
+    if (groupMode !== "workspace") return null;
+    if (agents.some((a) => !workspaceCountsByAgent.has(a.agentId))) return null;
+    const live = new Set(workspaceGroupCounts.keys());
+    for (const g of workspaceGroups) live.add(g.key);
+    return live;
+  };
+
+  /**
+   * Drop of a group drag: commit the reordered sequence into the stored group order,
+   * and take the chance to prune keys of groups that no longer exist — a drop is the
+   * one moment the user restates the whole arrangement, and the array is being
+   * rewritten anyway, so no separate destruction event has to be listened for.
+   */
+  const commitGroupDrop = (sequence: readonly string[], targetKey: string, after: boolean) => {
+    if (dragGroup === null) return;
+    const seq = moveInSequence(sequence, dragGroup, targetKey, after);
+    // Identity guard, as for rows: a drop that changes nothing must not persist a fresh array.
+    if (seq === sequence) return;
+    const reordered = applyManualReorder(groupOrder, seq);
+    const live = liveGroupKeys();
+    const next = live === null ? reordered : pruneGroupOrder(reordered, live);
+    setGroupOrder(next);
+    saveGroupOrder(currentProjectId, groupMode, next);
+  };
+
+  /**
+   * Drag-reorder wiring of one group header, given the mode's FULL ordered key list
+   * (not the `groupCap` slice on screen — committing only the visible groups would drop
+   * the hidden ones out of the stored sequence and bring them back as newcomers).
+   *
+   * Offered only where the groups have an order to change (isOrderableGroupMode: time
+   * mode's buckets are a fixed chronological ladder), never on a search-filtered view,
+   * and only where a pointer that can drag exists — HTML5 drag-and-drop never fires
+   * from touch. A stored order still APPLIES on such a device: unlike the rows' global
+   * sort mode, a group order is per Project and implicit, so there is nothing to
+   * degrade — a phone renders the arrangement its owner made at a desk.
+   *
+   * A drop stays inside the dragged group's own pin partition, so dragging can reorder
+   * but never pin or unpin (the rows' rule, one axis up).
+   */
+  const groupDragProps = (key: string, sequence: readonly string[]) => {
+    if (!canDrag || searching || !isOrderableGroupMode(groupMode)) {
+      return { header: {}, dropEdge: null as "above" | "below" | null };
+    }
+    const dragging = dragGroup;
+    const samePartition =
+      dragging !== null && dragging !== key && pinnedGroups.has(dragging) === pinnedGroups.has(key);
+    /** Which half of the header the pointer is in — the edge the drop would land on. */
+    const edgeOf = (e: ReactDragEvent) => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      return e.clientY - rect.top > rect.height / 2;
+    };
+    return {
+      header: {
+        draggable: true,
+        onDragStart: (e: ReactDragEvent) => {
+          e.dataTransfer.setData(GROUP_DRAG_MIME, key);
+          e.dataTransfer.effectAllowed = "move" as const;
+          setDragGroup(key);
+        },
+        onDragEnd: () => {
+          setDragGroup(null);
+          setGroupDropHint(null);
+        },
+        onDragOver: (e: ReactDragEvent) => {
+          if (!samePartition) return;
+          e.preventDefault();
+          const after = edgeOf(e);
+          setGroupDropHint((prev) =>
+            prev?.key === key && prev.after === after ? prev : { key, after },
+          );
+        },
+        onDragLeave: () => setGroupDropHint((prev) => (prev?.key === key ? null : prev)),
+        onDrop: (e: ReactDragEvent) => {
+          if (!samePartition || dragging === null) return;
+          e.preventDefault();
+          const after = edgeOf(e);
+          const partitionKeys = sequence.filter(
+            (k) => pinnedGroups.has(k) === pinnedGroups.has(dragging),
+          );
+          commitGroupDrop(partitionKeys, key, after);
+          setDragGroup(null);
+          setGroupDropHint(null);
+        },
+      },
+      dropEdge:
+        samePartition && groupDropHint?.key === key
+          ? groupDropHint.after
+            ? ("below" as const)
+            : ("above" as const)
+          : null,
+    };
   };
 
   /** Parked drafts through the live search (matched on their first-line title). */
@@ -1605,10 +1749,12 @@ export function Sidebar({
               const parts = partitionSessions(groupRows);
               const collapsed = !searching && collapsedGroups.has(agent.agentId);
               const pinned = pinnedGroups.has(agent.agentId);
+              const drag = groupDragProps(agent.agentId, agentGroupSequence);
               return (
-                <div key={agent.agentId} className="pt-2.5">
-                  {/* Group header: collapse toggle (Agent name) + pin + new chat + Agent settings. */}
+                <GroupBlock key={agent.agentId} dropEdge={drag.dropEdge}>
+                  {/* Group header: collapse toggle (Agent name) + pin + new chat + Agent settings; also the group's drag handle. */}
                   <GroupHeader
+                    {...drag.header}
                     open={!collapsed}
                     onToggle={() => toggleGroup(agent.agentId)}
                     icon={
@@ -1655,7 +1801,7 @@ export function Sidebar({
                         countsByAgent.get(agent.agentId),
                         () => [agent.agentId],
                       )}
-                </div>
+                </GroupBlock>
               );
             })
           )
@@ -1679,6 +1825,7 @@ export function Sidebar({
               const parts = partitionSessions(groupRows);
               const collapsed = !searching && collapsedGroups.has(group.key);
               const pinned = pinnedGroups.has(group.key);
+              const drag = groupDragProps(group.key, workspaceGroupSequence);
               /** This group's exact server share (per-Workspace fold) and its per-category fetch fan-out. */
               const counts = workspaceGroupCounts.get(group.key);
               const contributingAgents = [...new Set(group.sessions.map((s) => s.agentId))];
@@ -1686,12 +1833,13 @@ export function Sidebar({
                 ...new Set([...(counts?.agents[category] ?? []), ...contributingAgents]),
               ];
               return (
-                <div key={group.key} className="pt-2.5">
+                <GroupBlock key={group.key} dropEdge={drag.dropEdge}>
                   {/* Group header: collapse toggle (folder icon + directory basename + count, full
                     path in the tooltip; the count = the group's active conversations only, exact
                     server share, loaded rows win a disagreement — the folders never feed it) +
-                    pin + new chat in this Workspace. */}
+                    pin + new chat in this Workspace; also the group's drag handle. */}
                   <GroupHeader
+                    {...drag.header}
                     open={!collapsed}
                     onToggle={() => toggleGroup(group.key)}
                     icon={
@@ -1745,7 +1893,7 @@ export function Sidebar({
                   {collapsed
                     ? null
                     : renderGroupBody(group.key, parts, true, counts?.totals, agentsFor)}
-                </div>
+                </GroupBlock>
               );
             })
         )}
@@ -2159,6 +2307,39 @@ function DraftRow({
         </div>
       </div>
     </li>
+  );
+}
+
+/**
+ * One group's block — its header and body — carrying the manual group order's drop
+ * indicator: a thin accent line in the gap the drop would land in, drawn against the
+ * WHOLE group rather than its header, so "below" reads as "after this group and its
+ * conversations" instead of "between the header and its own first row".
+ *
+ * The line is absolutely positioned and `inset-x-1` (matching the header's `px-1`), so
+ * it consumes no layout width and cannot push the header's up-to-three action buttons
+ * out of a narrow drawer.
+ */
+function GroupBlock({
+  dropEdge,
+  children,
+}: {
+  /** Which edge of this group a drop would land on while a group drag hovers it. */
+  dropEdge: "above" | "below" | null;
+  children: ReactNode;
+}) {
+  return (
+    <div className="relative pt-2.5">
+      {dropEdge !== null && (
+        <div
+          aria-hidden
+          className={`pointer-events-none absolute inset-x-1 z-10 h-0.5 rounded-full bg-[var(--accent-bg)] ${
+            dropEdge === "above" ? "top-1" : "-bottom-1"
+          }`}
+        />
+      )}
+      {children}
+    </div>
   );
 }
 

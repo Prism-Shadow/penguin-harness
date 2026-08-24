@@ -6,7 +6,7 @@
  * markup and classes here ARE the sidebar's; callers pass the state the closures used
  * to capture.
  */
-import type { ReactNode } from "react";
+import type { DragEvent as ReactDragEvent, ReactNode } from "react";
 import { S } from "../../lib/strings";
 import type { SessionSortMode } from "../../lib/session-order";
 import { Chevron } from "./chevron";
@@ -234,6 +234,12 @@ export function FolderSection({
  * chevron) stretching across, with optional action buttons trailing outside it. The
  * toggle's hover pill spans the full row height set by any h-7 actions (self-stretch —
  * see the sidebar's header comments for where this first bit).
+ *
+ * The header doubles as the drag handle when the caller makes it draggable (the
+ * sidebar's manual group order). The handle is the header rather than the whole group
+ * block so that the Session rows inside keep their own row-level drag, and it is the
+ * element itself rather than an added grip button so the row costs no extra width —
+ * this list is a drawer at phone width and already carries up to three actions.
  */
 export function GroupHeader({
   open,
@@ -244,6 +250,12 @@ export function GroupHeader({
   count,
   title,
   actions,
+  draggable = false,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDragLeave,
+  onDrop,
 }: {
   open: boolean;
   onToggle: () => void;
@@ -258,9 +270,21 @@ export function GroupHeader({
   title?: string;
   /** Trailing header actions (pin / new chat / settings / import). */
   actions?: ReactNode;
+  /** Manual group order: the header acts as the drag handle (the caller wires the handlers below). */
+  draggable?: boolean;
+  onDragStart?: (e: ReactDragEvent) => void;
+  onDragEnd?: () => void;
+  onDragOver?: (e: ReactDragEvent) => void;
+  onDragLeave?: () => void;
+  onDrop?: (e: ReactDragEvent) => void;
 }) {
   return (
-    <div className="group/header flex items-center gap-0.5 px-1 pb-0.5">
+    <div
+      className="group/header flex items-center gap-0.5 px-1 pb-0.5"
+      {...(draggable
+        ? { draggable: true, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop }
+        : {})}
+    >
       <button
         type="button"
         onClick={onToggle}
