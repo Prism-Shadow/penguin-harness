@@ -6,7 +6,10 @@
  *
  * Each assignment sets VAR **only when it is unset or empty** in the current environment —
  * the JS equivalent of `VAR="${VAR:-value}" cmd`, which cmd.exe cannot parse (package.json
- * scripts run under cmd.exe on Windows). A leading `~/` in the value expands to the user's
+ * scripts run under cmd.exe on Windows). An inherited value therefore wins, which is what makes
+ * `PENGUIN_HOME=/somewhere pnpm dev` work; a child cannot tell that apart from an exported one.
+ * Because it wins, it says so: any default the environment displaced is named on stderr before
+ * the command runs, so a shell-wide export cannot quietly redirect a dev script. A leading `~/` in the value expands to the user's
  * home directory (the `$HOME/...` defaults). Then the command runs with inherited stdio and
  * its exit code is propagated.
  *
@@ -26,6 +29,8 @@ if (sep === -1 || sep === argv.length - 1) {
 }
 
 const env = { ...process.env };
+/** Defaults this script did not get to apply, because the environment already had a value. */
+const overridden = [];
 for (const assignment of argv.slice(0, sep)) {
   const eq = assignment.indexOf("=");
   if (eq <= 0) {
@@ -37,7 +42,22 @@ for (const assignment of argv.slice(0, sep)) {
   if (value === "~" || value.startsWith("~/")) {
     value = path.join(os.homedir(), value.slice(2));
   }
-  if (!env[name]) env[name] = value; // unset or empty -> default (the ${VAR:-value} rule)
+  if (!env[name]) {
+    env[name] = value; // unset or empty -> default (the ${VAR:-value} rule)
+  } else if (env[name] !== value) {
+    // An inherited value wins, and that is deliberate: `PENGUIN_HOME=/x pnpm dev` is the supported
+    // way to aim one command somewhere else, and a child process cannot tell that apart from an
+    // exported one — both are just process.env. What is not deliberate is finding out later. An
+    // exported PENGUIN_HOME once sent `pnpm dev:server` at the release data root, where the
+    // desktop app already held the lock, and nothing said why the default had not applied.
+    overridden.push(`${name}=${env[name]}  (default: ${value})`);
+  }
+}
+
+if (overridden.length > 0) {
+  console.error("run-with-env: the environment overrides these defaults:");
+  for (const line of overridden) console.error(`  ${line}`);
+  console.error("  unset them in this shell if that is not what you meant.");
 }
 
 const [command, ...args] = argv.slice(sep + 1);

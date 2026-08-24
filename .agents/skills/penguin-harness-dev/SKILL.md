@@ -19,7 +19,7 @@ Editing `AGENTS.md`, `CLAUDE.md` or anything under `specs/` edits **the design r
 
 Both repos take changes through branch + PR against `main`, squash-merged. Do not push to `main`.
 
-One trap: a remote branch literally named `docs` occupies that ref namespace, so `docs/<topic>` **cannot be created** in the implementation repo — git rejects it as a directory/file conflict. Use `docs-<topic>` there. The design repo has no such branch and takes `docs/<topic>` normally.
+Branches are `feat/<topic>`, `fix/<topic>`, `docs/<topic>` in both repos. Some older branches here read `docs-<topic>` instead: a remote branch literally named `docs` once held that ref namespace and made the slashed form unpushable. It is gone — if a push is ever rejected as a directory/file conflict again, `git ls-remote --heads origin` names the branch responsible.
 
 Independent changes each get their own git worktree under `../penguin-harness-wt/<topic>/` so several can run in parallel.
 
