@@ -64,10 +64,18 @@ const HARDENED_ENV: NodeJS.ProcessEnv = {
  * colors on". The vault still wins, so a user who genuinely wants forced color in commands can
  * set it there.
  *
- * Deliberately **not** stripped: `PENGUIN_HOME`, `PENGUIN_WEB_DB` and the rest of the user-facing
- * `PENGUIN_*` settings. Those select the *data* an Agent-started harness works against, and the
- * self-development case may legitimately want the same data root — sharing state is a config
- * decision, whereas serving a deployment's code from a workspace checkout never is.
+ * `PENGUIN_HOME` / `PENGUIN_WEB_DB` select the *data* an Agent-started harness works against, and
+ * were once left inheriting on the grounds that the self-development case may legitimately want
+ * the same data root. They are stripped now, because inheriting them is not that decision being
+ * made — it is an accident of where this process happens to be running. Whenever an Agent spawns
+ * a command the harness is by definition up, holding `<root>/server.lock`, so an Agent-started
+ * server on the inherited root cannot start at all; it exits 3 against a lock whose owner is the
+ * very process that handed it the root. The Agent's own harness now takes its default root, which
+ * is a root nothing else is holding.
+ *
+ * Sharing a root really is a config decision, so it is made in config: the vault is applied after
+ * this environment (see the spread in `spawn`), so a `PENGUIN_HOME` set there reaches commands
+ * exactly as before. Same escape hatch as `FORCE_COLOR` above.
  */
 const STRIPPED_ENV_KEYS = new Set([
   "PORT",
@@ -84,6 +92,10 @@ const STRIPPED_ENV_KEYS = new Set([
   "PENGUIN_PORT_FILE",
   // Pinned seed password (tests/e2e): a credential, not a data-selection setting.
   "PENGUIN_SEED_ADMIN_PASSWORD",
+  // Data roots: see the note above — inherited, they aim an Agent-started harness at the running
+  // one's own data, where the lock is already held. Settable through the vault when meant.
+  "PENGUIN_HOME",
+  "PENGUIN_WEB_DB",
 ]);
 
 /**

@@ -302,6 +302,8 @@ describe("harness environment variables never reach a spawned command", () => {
     "PENGUIN_DESKTOP_TOKEN",
     "PENGUIN_PORT_FILE",
     "PENGUIN_SEED_ADMIN_PASSWORD",
+    "PENGUIN_HOME",
+    "PENGUIN_WEB_DB",
   ] as const;
   const saved: Partial<Record<(typeof KEYS)[number], string | undefined>> = {};
 
@@ -318,6 +320,10 @@ describe("harness environment variables never reach a spawned command", () => {
     process.env.PENGUIN_DESKTOP_TOKEN = "secret-desktop-token";
     process.env.PENGUIN_PORT_FILE = "/tmp/port-file";
     process.env.PENGUIN_SEED_ADMIN_PASSWORD = "penguin-0000";
+    // The data roots this very process is serving from. Inherited, they aim an Agent-started
+    // harness at the running one's data — where the lock is already held, so it cannot start.
+    process.env.PENGUIN_HOME = "/home/someone/.penguin/data";
+    process.env.PENGUIN_WEB_DB = "/home/someone/.penguin/data/web.db";
   });
   afterEach(() => {
     for (const k of KEYS) {
@@ -401,6 +407,24 @@ describe("harness environment variables never reach a spawned command", () => {
         cmd: `node -e "console.log('PORT=[' + (process.env.PORT ?? '') + ']')"`,
       });
       expect(res.output).toContain("PORT=[3000]");
+    } finally {
+      vaultEnv.dispose();
+    }
+  });
+
+  it("the vault can put PENGUIN_HOME back, which is how a shared data root is asked for", async () => {
+    // Sharing a root with the running harness is a legitimate config decision; inheriting it from
+    // whichever process happens to be serving is not. The vault is where that decision is made.
+    const vaultEnv = new Environment({
+      workspaceDir: tmp,
+      toolConfig: sessionConfig(),
+      vault: { PENGUIN_HOME: "/home/someone/.penguin/shared" },
+    });
+    try {
+      const res = await runTool(vaultEnv, "exec_command", {
+        cmd: `node -e "console.log('PENGUIN_HOME=[' + (process.env.PENGUIN_HOME ?? '') + ']')"`,
+      });
+      expect(res.output).toContain("PENGUIN_HOME=[/home/someone/.penguin/shared]");
     } finally {
       vaultEnv.dispose();
     }
