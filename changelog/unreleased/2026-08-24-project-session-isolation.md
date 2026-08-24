@@ -3,6 +3,7 @@
 - **Date:** 2026-08-24
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#435](https://github.com/Prism-Shadow/penguin-harness/pull/435)
 
 [中文版](2026-08-24-project-session-isolation.zh.md)
 
