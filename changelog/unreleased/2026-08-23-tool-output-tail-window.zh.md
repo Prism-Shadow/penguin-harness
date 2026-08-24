@@ -3,6 +3,7 @@
 - **Date:** 2026-08-23
 - **Type:** feature
 - **Scope:** `core`, `docs`
+- **PR:** [#432](https://github.com/Prism-Shadow/penguin-harness/pull/432)
 
 [English](2026-08-23-tool-output-tail-window.md)
 
