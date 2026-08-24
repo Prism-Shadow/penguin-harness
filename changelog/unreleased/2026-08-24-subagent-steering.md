@@ -3,6 +3,7 @@
 - **Date:** 2026-08-24
 - **Type:** feature
 - **Scope:** `core`, `server`, `web`, `docs`
+- **PR:** [#433](https://github.com/Prism-Shadow/penguin-harness/pull/433)
 - **Issue:** [#272](https://github.com/Prism-Shadow/penguin-harness/issues/272), [#274](https://github.com/Prism-Shadow/penguin-harness/issues/274)
 
 [中文版](2026-08-24-subagent-steering.zh.md)
