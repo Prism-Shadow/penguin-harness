@@ -32,6 +32,7 @@ import type {
   MachineServerStatus,
 } from "../api/types.js";
 import { readServerLock } from "../lock.js";
+import { SESSION_COOKIE } from "../auth/middleware.js";
 import { listHostAliases, resolveTarget } from "./targets.js";
 import { sshArgs } from "./commands.js";
 import { run } from "./exec.js";
@@ -44,6 +45,7 @@ import { probeServerState } from "./server-state.js";
 import { DIR_LIST_MARK, listDirsCommand } from "./commands.js";
 import { upgradeRemote } from "./upgrade.js";
 import { signInOnRemote } from "./signin.js";
+import { mintTokenOnRemote } from "./remote-token.js";
 import { closeShell, runOnShell } from "./ssh-session.js";
 import { machineApi, syncModelsToMachine } from "./models-sync.js";
 import type { LocalModels } from "./models-sync.js";
@@ -794,13 +796,8 @@ export class MachinesService {
       say("No models synced — no Project on this server uses that machine.");
       return;
     }
-    const signedIn = await this.#effects.signIn({ target });
-    if (signedIn.kind !== "signed-in") {
-      say(`Models not synced — ${signedIn.detail}`);
-      return;
-    }
-    // Set-Cookie lines reduced to the name=value pairs a request carries.
-    const cookie = signedIn.setCookie.map((line) => line.split(";")[0]?.trim() ?? "").join("; ");
+    const cookie = await this.#sessionOn(target, say);
+    if (cookie === null) return;
     const outcome = await syncModelsToMachine({
       api: machineApi(port, cookie),
       loadLocal: (projectId) => this.#localModels(projectId),
@@ -814,6 +811,39 @@ export class MachinesService {
     // named rather than folded into the count.
     if (outcome.created.length > 0) say(`Created there: ${outcome.created.join(", ")}.`);
     if (outcome.projects.length > 0) say(`Models synced: ${outcome.projects.join(", ")}.`);
+  }
+
+  /**
+   * A Cookie header for that machine's API, or null with the reason already said.
+   *
+   * The machine's own CLI first: it mints a short-lived token from the data root the ssh
+   * account owns, which needs no password and therefore keeps working on a machine whose
+   * admin password was set by a person. One command over the shared connection, where the
+   * fallback needs a scratch directory and two scp'd files.
+   *
+   * The seeded-password path stays for machines carrying a build older than that command.
+   */
+  async #sessionOn(
+    target: { alias: string; user: string },
+    say: (line: string) => void,
+  ): Promise<string | null> {
+    const minted = await mintTokenOnRemote(target, (t, command) => this.#effects.runOn(t, command));
+    if (minted.kind === "minted") return `${SESSION_COOKIE}=${minted.token}`;
+    if (minted.kind === "failed") {
+      say(`Models not synced — ${minted.detail}`);
+      return null;
+    }
+    const signedIn = await this.#effects.signIn({ target });
+    if (signedIn.kind !== "signed-in") {
+      // Both ways refused. The token one is the actionable half — the machine is carrying a
+      // build too old to mint one — so it is the one said out loud alongside.
+      say(
+        `Models not synced — ${signedIn.detail} (and it could not mint a token: ${minted.detail})`,
+      );
+      return null;
+    }
+    // Set-Cookie lines reduced to the name=value pairs a request carries.
+    return signedIn.setCookie.map((line) => line.split(";")[0]?.trim() ?? "").join("; ");
   }
 
   /**
@@ -983,6 +1013,7 @@ export class MachinesService {
             target: { alias: machine.alias, user: resolved.settings.user },
             dataRoot: this.dataRoot,
             assets: this.#assets,
+            runOn: (t, command) => this.#effects.runOn(t, command),
           }),
         );
         if (outcome === null || outcome.kind !== "upgraded") continue;
