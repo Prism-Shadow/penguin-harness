@@ -46,6 +46,8 @@ export const en: Strings = {
     noMatch: "No host matches that.",
     /** How many matches the visible rows leave out — a silent truncation would read as "not in my config". */
     more: (count: number) => `${count} more \u2014 keep typing to narrow it down.`,
+    /** Heading of the standing list of machines this server has installed on. */
+    installedTitle: (count: number) => `Installed machines (${count})`,
     /** What the selected machine already carries, remembered on the server across restarts. */
     installedAt: (version: string, when: string) => `${version} installed here on ${when}.`,
     install: "Install",

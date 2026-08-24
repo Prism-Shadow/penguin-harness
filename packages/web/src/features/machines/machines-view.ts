@@ -65,3 +65,29 @@ export function installButtonState(
     disabled: selected === null || runningSomewhere || starting || state.imageVersion === null,
   };
 }
+
+/**
+ * The machines this server has installed on, most recently installed first — the standing
+ * answer to "what did I already do", which the picker can only give one row at a time and
+ * only while it is open.
+ *
+ * Newest first because the list is read to check recent work, not to look a host up: the
+ * picker's search is what finds a specific alias. Ties (two installs in the same
+ * millisecond, which the tests do produce) keep the config's order rather than swapping
+ * around, so the list is stable between polls.
+ *
+ * Records whose host is no longer declared in the ssh config never reach here: the server
+ * builds the list from the config, so a renamed or deleted Host drops out of the page while
+ * its record sits harmlessly in the file. There is nothing useful to offer for a host this
+ * server can no longer resolve, let alone install to.
+ */
+export function installedMachines(state: MachinesResponse): MachineInfo[] {
+  return state.machines
+    .map((machine, index) => ({ machine, index }))
+    .filter((entry) => entry.machine.installed != null)
+    .sort((a, b) => {
+      const at = b.machine.installed!.at.localeCompare(a.machine.installed!.at);
+      return at !== 0 ? at : a.index - b.index;
+    })
+    .map((entry) => entry.machine);
+}
