@@ -165,6 +165,42 @@ penguin server reset-admin-password
 
 The built-in `admin` gets a fresh initial password of the usual `penguin-1234` form, printed in the framed notice — and re-printed on every server start until it is changed — and all of admin's sign-in sessions are cleared. Other accounts are reset by the admin on the user-management page; this command only touches `admin`. The data root is selected by `PENGUIN_HOME` as usual.
 
+## penguin auth
+
+Signs in to a running PenguinHarness server from the terminal. This is the only part of the CLI that talks to a server as a client — `config`, `run` and `chat` all work on the data root directly.
+
+Two ways in, and which is right depends on where you are standing.
+
+```bash
+penguin auth login                      # password, against the server on this data root
+penguin auth login --server https://penguin.example --user-id alice
+penguin auth status
+penguin auth logout
+penguin auth token                      # no password: minted from this data root
+```
+
+`login` takes a password and asks a running server for a session, exactly as the browser's login page does. The target defaults to the server running on this data root (read from its lock file), so signing in to your own needs no URL.
+
+Run interactively it asks for the account first, then the password — and the password prompt names the account, so one account's password is never typed at another's. Supply the password non-interactively (`--password` or `PENGUIN_PASSWORD`) and neither question is asked: that is a script, and a script cannot answer one.
+
+| Option | Description |
+| --- | --- |
+| `--server <url>` | Server to sign in to; default the one running on this data root |
+| `--user-id <id>` | Account; asked for when omitted, defaulting to `admin` on a bare Enter |
+| `--password <pw>` | Password; also read from `PENGUIN_PASSWORD`, otherwise prompted without echo |
+| `--print` | Also print the session token to stdout, for piping |
+
+Prefer `PENGUIN_PASSWORD` or the prompt over `--password`: a command line is world-readable through `ps`.
+
+`token` takes no password at all. It mints a session straight from the data root, and what authorizes it is that you can read that root — which already holds every credential the token could reach. Use it where there is no password to give: a machine whose admin password somebody set by hand, or a script that must not hold one. It is the same command the machines sync calls over ssh, which is why it is also spelled `penguin server auth-token`.
+
+| Option | Description |
+| --- | --- |
+| `--user-id <id>` | Account, default `admin` |
+| `--ttl-seconds <n>` | Lifetime, default 3600 |
+
+The session is written to `<root>/cli-session.json` at mode 0600, which is what `status` reads and `logout` revokes and deletes. `logout` tells the server first, so the session dies there rather than merely being forgotten here; if the server cannot be reached it says so, and the local file goes anyway.
+
 ## penguin update
 
 Upgrades this install in place, using the mechanism it was installed with. The install kind is detected from the real path of the running CLI, never guessed.

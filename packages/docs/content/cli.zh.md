@@ -165,6 +165,42 @@ penguin server reset-admin-password
 
 内置 `admin` 会得到一个新的初始密码（形如 `penguin-1234`），以边框提示打印——此后每次启动服务端都会重印，直到密码被修改——并清空 admin 的全部登录会话。其他账号由管理员在用户管理页重置，本命令只作用于 `admin`。数据根目录照常由 `PENGUIN_HOME` 决定。
 
+## penguin auth
+
+在终端里登录正在运行的 PenguinHarness 服务。这是 CLI 里唯一以客户端身份与服务通信的部分——`config`、`run`、`chat` 都是直接操作数据根。
+
+有两种登录方式，取决于你站在哪里。
+
+```bash
+penguin auth login                      # 用密码登录该数据根上运行的服务
+penguin auth login --server https://penguin.example --user-id alice
+penguin auth status
+penguin auth logout
+penguin auth token                      # 不需要密码：直接从数据根签发
+```
+
+`login` 需要密码，向正在运行的服务请求会话，和浏览器登录页做的事完全一样。目标默认是该数据根上正在运行的服务（从锁文件读端口），所以登录自己的服务不必写 URL。
+
+交互运行时会先问账号，再问密码，并且密码提示里写明是哪个账号的，避免把一个账号的密码输到另一个账号上。如果用非交互方式给了密码（`--password` 或 `PENGUIN_PASSWORD`），两个问题都不会问——那是脚本，脚本没法回答。
+
+| 选项 | 说明 |
+| --- | --- |
+| `--server <url>` | 要登录的服务；默认是该数据根上运行的那个 |
+| `--user-id <id>` | 账号；不给时会询问，直接回车即用 `admin` |
+| `--password <pw>` | 密码；也可用 `PENGUIN_PASSWORD`，都没给时会无回显地提示输入 |
+| `--print` | 同时把会话令牌打印到 stdout，便于管道使用 |
+
+优先用 `PENGUIN_PASSWORD` 或交互输入，而不是 `--password`：命令行参数可以被 `ps` 看到。
+
+`token` 完全不需要密码。它直接从数据根签发会话，其授权依据就是你能读这个数据根——而它本来就装着这个令牌所能触及的全部凭据。适用于没有密码可给的场合：管理员密码被人改过的机器，或不该持有密码的脚本。machines 同步通过 ssh 调用的就是这个命令，因此它也可以写作 `penguin server auth-token`。
+
+| 选项 | 说明 |
+| --- | --- |
+| `--user-id <id>` | 账号，默认 `admin` |
+| `--ttl-seconds <n>` | 有效期秒数，默认 3600 |
+
+会话写入 `<root>/cli-session.json`，权限 0600；`status` 读它，`logout` 吊销并删除它。`logout` 会先告诉服务端，让会话真正失效，而不只是本地忘记；连不上服务时会明说，本地文件照样删除。
+
 ## penguin update
 
 原地升级当前安装，并沿用它当初的安装方式。安装方式由运行中 CLI 的真实路径判定，不做猜测。

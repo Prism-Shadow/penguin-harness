@@ -33,6 +33,10 @@
     "./hmr/manifest": {
       "types": "./dist/hmr/manifest.d.ts",
       "import": "./dist/hmr/manifest.js"
+    },
+    "./auth-token": {
+      "types": "./dist/auth-token.d.ts",
+      "import": "./dist/auth-token.js"
     }
   },
   "main": "./dist/index.js",

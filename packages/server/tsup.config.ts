@@ -16,6 +16,7 @@ export default defineConfig({
     lock: "src/lock.ts",
     "initial-password": "src/initial-password.ts",
     "reset-admin-password": "src/reset-admin-password.ts",
+    "auth-token": "src/auth-token.ts",
     "hmr/manifest": "src/hmr/manifest.ts",
   },
   format: ["esm"],
