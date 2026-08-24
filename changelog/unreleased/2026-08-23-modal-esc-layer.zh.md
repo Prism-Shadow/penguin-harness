@@ -3,6 +3,7 @@
 - **Date:** 2026-08-23
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#431](https://github.com/Prism-Shadow/penguin-harness/pull/431)
 
 [English](2026-08-23-modal-esc-layer.md)
 

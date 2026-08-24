@@ -3,6 +3,7 @@
 - **Date:** 2026-08-23
 - **Type:** feature
 - **Scope:** `web`, `server`
+- **PR:** [#431](https://github.com/Prism-Shadow/penguin-harness/pull/431)
 
 [中文版](2026-08-23-agent-create-skills.zh.md)
 
