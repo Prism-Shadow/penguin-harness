@@ -3,6 +3,7 @@
 - **Date:** 2026-08-23
 - **Type:** process
 - **Scope:** `skills`
+- **PR:** [#428](https://github.com/Prism-Shadow/penguin-harness/pull/428)
 
 [中文版](2026-08-23-local-run-skill.zh.md)
 
