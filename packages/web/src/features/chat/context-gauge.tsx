@@ -1,17 +1,17 @@
 /**
  * Context usage gauge in the composer toolbar, and the composition panel behind it.
  *
- * The resting state is the ring this toolbar has always shown: a **single-colour** indicator of
- * total occupancy (no bucketing) next to `used/window`, turning amber past 80% and red past 95%.
- * When the model has no `context_window` configured, resolveContextWindow falls back to 128000
- * and the ring is drawn as usual — the ratio always has a reference point instead of degrading
- * into a lone number.
+ * The resting state is the ring alone: a **single-colour** indicator of total occupancy (no
+ * bucketing), turning amber past 80% and red past 95%. The exact `used/window` figures are not
+ * printed beside it — the panel a click away leads with them, and hovering the ring names them
+ * too. When the model has no `context_window` configured, resolveContextWindow falls back to
+ * 128000 and the ring is drawn as usual, so the ratio always has a reference point.
  *
  * `unknown` (a compaction succeeded and the next regular Request has not reported usage yet)
- * draws an empty ring with `—` for the value. **Never 0**: that would claim the context had been
- * cleared while the summary itself occupies tokens. Nothing has been measured yet, which is not
- * the same as having measured zero — and the panel says exactly that rather than describing the
- * context that was just compacted away.
+ * draws an empty ring. **Never a full-looking 0**: that would claim the context had been cleared
+ * while the summary itself occupies tokens. Nothing has been measured yet, which is not the same
+ * as having measured zero — and the panel says exactly that rather than describing the context
+ * that was just compacted away.
  *
  * Given a `sessionId` the ring becomes a button that discloses the panel, which answers what the
  * ring cannot: what the context is full of. The server splits the Session's newest Trace shard —
@@ -21,6 +21,10 @@
  * `now`, the measured occupancy the ring itself shows. The parts therefore always add up to the
  * figure in the panel header, and the estimate's absolute error never reaches the display; the
  * `~` on every derived value marks what is still an approximation.
+ *
+ * Hovering a bar segment or its legend row links the two: the row lights up and the other
+ * segments fade, which is how a 1% sliver gets identified at all — the bar itself carries no
+ * labels.
  *
  * The panel is portaled to document.body and positioned against viewport coordinates by
  * usePortalPanel, so the composer's own overflow cannot clip it, and it closes on outside click /
@@ -46,9 +50,9 @@ import type { ContextPartKey } from "./context-parts";
  * letting the panel hang off the right edge on a narrow viewport. The max-width matches the
  * hook's own 16px viewport margin on both sides. The height only decides up or down.
  */
-const PANEL_WIDTH = 360;
+const PANEL_WIDTH = 300;
 const PANEL_MAX_WIDTH = "calc(100vw - 32px)";
-const PANEL_HEIGHT = 360;
+const PANEL_HEIGHT = 264;
 
 /** Smallest painted width (px) of a composition segment, so every colour in the legend also appears in the bar. Below ~1% of the bar the floor distorts the proportion it stands for, which is the trade for not dropping the part entirely. */
 const MIN_SEGMENT_PX = 2;
@@ -85,48 +89,42 @@ export function ContextGauge({
       : pct > 0.95
         ? toneInk.danger
         : toneInk.attention;
+  // The ring draws no numbers, so its accessible name carries them: the ratio AND the figures it
+  // was computed from, which is all the subagent composer's panel-less ring can offer.
   const usageText = unknown
     ? S.chat.contextUnknown
-    : `${S.chat.contextUsage} ${Math.round(pct * 100)}%`;
+    : `${S.chat.contextUsage} ${Math.round(pct * 100)}% · ${humanizeTokens(now)}/${humanizeTokens(max)}`;
   const R = 5;
   const C = 2 * Math.PI * R;
   const gauge = (
-    <>
-      <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden className="block shrink-0">
-        <circle
-          cx="7"
-          cy="7"
-          r={R}
-          fill="none"
-          stroke="currentColor"
-          strokeOpacity="0.25"
-          strokeWidth="2"
-        />
-        <circle
-          cx="7"
-          cy="7"
-          r={R}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeDasharray={`${C * pct} ${C}`}
-          transform="rotate(-90 7 7)"
-        />
-      </svg>
-      {/* The ring alone carries the meaning on phones: the numbers hide below @md (the title
-          still shows the exact usage), keeping the right-hand control group inside a 320px
-          viewport in the running state. */}
-      <span className="hidden @md:inline">
-        {unknown ? "—" : humanizeTokens(now)}/{humanizeTokens(max)}
-      </span>
-    </>
+    <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden className="block shrink-0">
+      <circle
+        cx="7"
+        cy="7"
+        r={R}
+        fill="none"
+        stroke="currentColor"
+        strokeOpacity="0.25"
+        strokeWidth="2"
+      />
+      <circle
+        cx="7"
+        cy="7"
+        r={R}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeDasharray={`${C * pct} ${C}`}
+        transform="rotate(-90 7 7)"
+      />
+    </svg>
   );
-  const shell = `flex shrink-0 items-center gap-1 font-mono ${color}`;
+  const shell = `flex shrink-0 items-center ${color}`;
 
   if (sessionId === undefined) {
     return (
-      <span title={usageText} className={shell}>
+      <span title={usageText} aria-label={usageText} role="img" className={shell}>
         {gauge}
       </span>
     );
@@ -144,7 +142,7 @@ export function ContextGauge({
         aria-expanded={open}
         aria-controls={panelId}
         onClick={() => setOpen((v) => !v)}
-        className={`${shell} -mx-1 cursor-pointer rounded px-1 py-0.5 transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800`}
+        className={`${shell} -mx-1 cursor-pointer rounded p-1 transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800`}
       >
         {gauge}
       </button>
@@ -164,7 +162,7 @@ export function ContextGauge({
               width: PANEL_WIDTH,
               maxWidth: PANEL_MAX_WIDTH,
             }}
-            className="anim-pop z-[60] rounded-md border border-gray-200 bg-white p-3 text-xs shadow-lg dark:border-gray-700 dark:bg-gray-900"
+            className="anim-pop z-[60] rounded-md border border-gray-200 bg-white p-2.5 text-xs shadow-lg dark:border-gray-700 dark:bg-gray-900"
           >
             <ContextPanel sessionId={sessionId} now={now} max={max} pct={pct} unknown={unknown} />
           </div>,
@@ -190,6 +188,9 @@ function ContextPanel({
   // A snapshot taken when the panel opens (it only mounts while open), not a live counter: the
   // endpoint re-reads a whole Trace shard, and the panel closes on any scroll anyway.
   const [state, setState] = useState<PanelState>({ status: "loading" });
+  // Row id under the pointer — a part key, or `tool:<name>` for the ranking below. One piece of
+  // state for both lists, so a hovered tool row cannot also dim the bar it has no segment in.
+  const [hovered, setHovered] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
     setState({ status: "loading" });
@@ -212,6 +213,7 @@ function ContextPanel({
   // rather than zero, so both render `—` instead of describing a context that no longer exists.
   const unmeasured = unknown || data?.contextClosed === true;
   const composition = data === null ? null : contextComposition(data, now);
+  const hoveredPart = composition?.parts.some((p) => p.key === hovered) ? hovered : null;
 
   return (
     <>
@@ -241,21 +243,27 @@ function ContextPanel({
         <>
           {/* Composition strip: full width is the context in use, so the parts stay readable at
               any occupancy — how full the window is has already been said by the ring and by the
-              header. A 2px gap of the panel's own surface separates the fills, so no two hues
-              ever touch. */}
-          <div aria-hidden className="mt-2.5 flex h-1.5 gap-[2px]">
+              header. Square ends, with a 2px gap of the panel's own surface between fills so no
+              two hues ever touch. Decorative: the legend below carries every figure, which is why
+              the strip is hidden from assistive tech and offers hover rather than focus. */}
+          <div aria-hidden className="mt-2 flex h-1.5 gap-[2px]">
             {composition.parts.map((p) =>
               p.tokens > 0 ? (
                 <span
                   key={p.key}
+                  title={`${PART_LABELS[p.key]()} ~${humanizeTokens(p.tokens)} · ${p.percent}%`}
+                  onMouseEnter={() => setHovered(p.key)}
+                  onMouseLeave={() => setHovered(null)}
                   style={{ flexGrow: p.tokens, flexBasis: 0, minWidth: MIN_SEGMENT_PX }}
-                  className={`h-full rounded-full ${p.color}`}
+                  className={`h-full transition-opacity duration-150 ${p.color} ${
+                    hoveredPart !== null && hoveredPart !== p.key ? "opacity-25" : ""
+                  }`}
                 />
               ) : null,
             )}
           </div>
 
-          <ul className="mt-2.5 space-y-1">
+          <ul className="mt-2 space-y-0.5">
             {composition.parts.map((p) => (
               <ShareRow
                 key={p.key}
@@ -263,6 +271,8 @@ function ContextPanel({
                 swatch={p.color}
                 tokens={p.tokens}
                 percent={p.percent}
+                highlighted={hovered === p.key}
+                onHover={(on) => setHovered(on ? p.key : null)}
               />
             ))}
           </ul>
@@ -271,11 +281,11 @@ function ContextPanel({
             <>
               <p
                 title={S.chat.contextTopToolsHint}
-                className="mt-3 border-t border-gray-100 pt-2 text-gray-400 dark:border-gray-800 dark:text-gray-500"
+                className="mt-2 border-t border-gray-100 pt-1.5 text-gray-400 dark:border-gray-800 dark:text-gray-500"
               >
                 {S.chat.contextTopTools}
               </p>
-              <ul className="mt-1.5 space-y-1">
+              <ul className="mt-1 space-y-0.5">
                 {composition.tools.map((t) => (
                   <ShareRow
                     key={t.name}
@@ -283,15 +293,13 @@ function ContextPanel({
                     mono
                     tokens={t.tokens}
                     percent={t.percent}
+                    highlighted={hovered === `tool:${t.name}`}
+                    onHover={(on) => setHovered(on ? `tool:${t.name}` : null)}
                   />
                 ))}
               </ul>
             </>
           )}
-
-          <p className="mt-2.5 border-t border-gray-100 pt-2 text-[11px] leading-snug text-gray-400 dark:border-gray-800 dark:text-gray-500">
-            {S.chat.contextEstimated}
-          </p>
         </>
       )}
     </>
@@ -315,6 +323,8 @@ function ShareRow({
   tokens,
   percent,
   mono = false,
+  highlighted = false,
+  onHover,
 }: {
   label: string;
   /** Legend colour of the matching bar segment; absent for the tool ranking, which has no segment. */
@@ -323,9 +333,17 @@ function ShareRow({
   /** Already a whole percent (apportioned for the parts, rounded for the tools) — not re-rounded here. */
   percent: number;
   mono?: boolean;
+  highlighted?: boolean;
+  onHover?: (on: boolean) => void;
 }) {
   return (
-    <li className="flex items-center gap-2">
+    <li
+      onMouseEnter={() => onHover?.(true)}
+      onMouseLeave={() => onHover?.(false)}
+      className={`-mx-1 flex items-center gap-1.5 rounded px-1 py-px transition-colors duration-150 ${
+        highlighted ? "bg-gray-100 dark:bg-gray-800" : ""
+      }`}
+    >
       {swatch !== undefined && (
         <span aria-hidden className={`h-2 w-2 shrink-0 rounded-[2px] ${swatch}`} />
       )}

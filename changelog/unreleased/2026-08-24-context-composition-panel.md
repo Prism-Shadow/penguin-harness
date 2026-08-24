@@ -10,8 +10,9 @@
 The context ring in the chat composer became a button. Clicking it opens a panel that splits the
 current model context into six parts — system prompt, tool definitions, user messages, model
 messages, tool requests, tool results — as a stacked bar and a legend of tokens and percentages,
-followed by the five tools whose traffic occupies the most of it. The ring's resting appearance is
-unchanged.
+followed by the five tools whose traffic occupies the most of it. The `used/window` figures that
+used to sit beside the ring moved into that panel's header; the composer now shows the ring alone,
+and hovering it names the figures.
 
 ## Details
 
@@ -30,10 +31,12 @@ unchanged.
 - Events are skipped (none of them is sent to the model), and so are the messages between a
   `compaction_begin` and its `compaction_end`: the compaction prompt and the summary it produces
   are recorded in the shard but were never part of the context being described.
-- The tool ranking counts each tool's calls and their results. A tool's *definition* is counted in
-  the tool-definitions part instead, and a result whose call is not in the same shard still counts
-  toward tool results but has no tool to be attributed to — so the ranking can sum to less than the
-  two tool parts.
+- The tool ranking counts each tool's calls **and** their results, which its heading says on the
+  surface. A tool's *definition* is counted in the tool-definitions part instead, and a result whose
+  call is not in the same shard still counts toward tool results but has no tool to be attributed to
+  — so the ranking can sum to less than the two tool parts.
+- Hovering a bar segment or its legend row links the two: the row lights up and the other segments
+  fade. The bar carries no labels of its own, so this is how a one-percent sliver gets identified.
 - A shard ending in a completed `compaction_end` reports `contextClosed`, the same test Trace replay
   uses to decide it must replay nothing. The panel then shows `—` and says the next request will
   report the usage, matching what the ring already shows in that state, rather than describing the

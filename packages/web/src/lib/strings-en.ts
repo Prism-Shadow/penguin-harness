@@ -1545,11 +1545,9 @@ Scenarios:
     contextPartAssistantMessages: "Model messages",
     contextPartToolRequests: "Tool requests",
     contextPartToolResults: "Tool results",
-    contextTopTools: "Top 5 tools",
+    contextTopTools: "Top 5 tools (requests + results)",
     contextTopToolsHint:
       "Ranked by the context each tool's calls and results occupy (definitions count under “Tool definitions”)",
-    contextEstimated:
-      "Parts are estimated from character counts, then scaled to the measured usage",
     contextUnknownHint:
       "Just compacted — the next request reports the usage, and the composition with it",
     contextBreakdownEmpty: "Nothing in the current context to break down yet",
