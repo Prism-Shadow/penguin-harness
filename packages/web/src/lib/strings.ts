@@ -1152,6 +1152,9 @@ export const zh = {
     /** The machine a workspace lives on; the row only shows when more than one is reachable. */
     workspaceMachine: "机器",
     workspaceHere: "本机",
+    /** Why the machine list is short: installed machines with no live tunnel to browse over. */
+    workspaceMachineUnreachable: (count: number) =>
+      `另有 ${count} 台已安装的机器需要先在「机器」页面连接。`,
     workspaceUseThis: "使用此目录",
     workspaceUp: "上级目录",
     workspaceNoSubdirs: "无子目录",

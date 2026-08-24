@@ -27,7 +27,7 @@ import { toastError } from "../../components/ui/toast";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { FOLDER_ICON } from "../../components/ui/group-list";
 import { ICON_SIZE } from "../../lib/icon-scale";
-import { machineLabel, workspaceMachines } from "../../lib/workspace-machines";
+import { machineLabel, workspaceMachineOffer } from "../../lib/workspace-machines";
 import type { WorkspaceMachine } from "../../lib/workspace-machines";
 
 /** Shared style for pill trigger buttons (ChatGPT project button style: small rounded pill + icon + short name + collapse arrow). */
@@ -96,6 +96,8 @@ export function WorkspaceSelect({
    */
   const [machine, setMachine] = useState<string | null>(machineId ?? null);
   const [machines, setMachines] = useState<WorkspaceMachine[]>([]);
+  /** Installed machines that cannot be browsed yet — named in the row rather than hidden. */
+  const [unreachable, setUnreachable] = useState(0);
   const [machineOpen, setMachineOpen] = useState(false);
   /**
    * Menu docking, measured on each open: the pill follows the agent pill in a wrapping row, so
@@ -252,7 +254,10 @@ export function WorkspaceSelect({
     void api
       .getMachines()
       .then((res) => {
-        if (!cancelled) setMachines(workspaceMachines(res));
+        if (cancelled) return;
+        const offer = workspaceMachineOffer(res);
+        setMachines(offer.machines);
+        setUnreachable(offer.unreachable);
       })
       .catch(() => undefined);
     return () => {
@@ -260,8 +265,14 @@ export function WorkspaceSelect({
     };
   }, [open, chooseMachine]);
 
-  /** Offer the row only when there is a choice: one reachable machine is not a decision. */
-  const machineRow = chooseMachine === true && machines.length > 1;
+  /**
+   * The row is shown whenever this surface offers machines at all — NOT only when more than
+   * one is reachable. A control that disappears when the answer is "just this one" reads as
+   * a missing feature, and leaves someone with 45 hosts in their ssh config wondering why
+   * they cannot pick any of them. Showing it with one entry, plus a line saying how many
+   * are a connect away, answers that question where hiding it asked a new one.
+   */
+  const machineRow = chooseMachine === true && machines.length > 0;
 
   /** Folder glyph shared by both triggers. */
   const folderIcon = (extraClass: string) => (
