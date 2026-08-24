@@ -65,6 +65,7 @@ function effects(over: Partial<MachinesEffects> = {}): Partial<MachinesEffects> 
     resolvePlan: () => ({ baseVersion: "9.9.9", harness: null, hmrDir: null, version: "9.9.9" }),
     now: () => new Date("2026-08-24T12:00:00.000Z"),
     startServer: async () => ({ ok: true }),
+    stopServer: async () => true,
     portBusy: async () => false,
     waitForHttp: async () => ({ ok: true }),
     openTunnel: () => ({
@@ -424,6 +425,9 @@ describe("machines API", () => {
       });
       await admin.post("/api/machines/ssh:nas/install");
       await waitFor(() => t.deps.machines.job()?.running === false);
+      // Only the refresh's probes are the subject; the install makes its own (it restarts
+      // the machine onto what it just sent).
+      probes = 0;
 
       // The host disappears from ssh's view between the install and the refresh.
       resolvable = false;
@@ -439,6 +443,74 @@ describe("machines API", () => {
       expect(res.status).toBe(409);
       expect(((await res.json()) as { error: { code: string } }).error.code).toBe("self_install");
       expect(t.deps.machines.job()).toBeNull();
+    });
+  });
+
+  describe("putting a new build into service", () => {
+    it("restarts a machine whose server was running, so the installed build is the running one", async () => {
+      // Installing swaps the program directory; the process over there keeps the code it
+      // loaded at start. Without the restart the machine reports a version it is not running.
+      const calls: string[] = [];
+      await boot({
+        probe: async () => ({ state: { kind: "running", port: 7364, pid: 99 }, machineId: null }),
+        stopServer: async (_t, pid) => {
+          calls.push(`stop:${pid}`);
+          return true;
+        },
+        startServer: async (_t, port) => {
+          calls.push(`start:${port}`);
+          return { ok: true };
+        },
+      });
+      await admin.post("/api/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(t.deps.machines.job()?.result).toMatchObject({ ok: true, kind: "installed" });
+      expect(calls).toEqual(["stop:99", "start:7364"]);
+      expect(t.deps.machines.job()?.log.join(" ")).toContain("Restarting its server");
+    });
+
+    it("leaves a machine that was NOT running down — installing is not a decision to serve", async () => {
+      const calls: string[] = [];
+      await boot({
+        probe: async () => ({ state: { kind: "stopped" }, machineId: null }),
+        stopServer: async () => {
+          calls.push("stop");
+          return true;
+        },
+        startServer: async () => {
+          calls.push("start");
+          return { ok: true };
+        },
+      });
+      await admin.post("/api/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(calls).toEqual([]);
+      expect(t.deps.machines.job()?.log.join(" ")).toContain("was not running");
+    });
+
+    it("does not restart when nothing was sent — an unchanged version is a no-op", async () => {
+      const calls: string[] = [];
+      await boot({
+        install: async () => ({ kind: "already-installed", version: "9.9.9", identity: IDENTITY }),
+        probe: async () => ({ state: { kind: "running", port: 7364, pid: 99 }, machineId: null }),
+        stopServer: async () => {
+          calls.push("stop");
+          return true;
+        },
+      });
+      await admin.post("/api/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(calls).toEqual([]);
+    });
+
+    it("says so when the server does not come back, instead of reporting a clean install", async () => {
+      await boot({
+        probe: async () => ({ state: { kind: "running", port: 7364, pid: 99 }, machineId: null }),
+        startServer: async () => ({ ok: false, detail: "port 7364 already in use" }),
+      });
+      await admin.post("/api/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(t.deps.machines.job()?.log.join(" ")).toContain("did not come back up");
     });
   });
 
@@ -547,6 +619,9 @@ describe("machines API", () => {
         }),
       });
       await installed();
+      // The install restarts the machine onto the build it just sent; what this test is
+      // about is whether CONNECT starts a server that is already up.
+      started = 0;
       await admin.post("/api/machines/ssh:nas/connect");
       await waitFor(() => connectJob()?.running === false);
       // The remote is bound to 7401; both ends must use the same number.
