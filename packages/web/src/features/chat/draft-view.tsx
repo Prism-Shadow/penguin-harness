@@ -51,6 +51,7 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { formatMonthDay } from "../../lib/format";
 import { apiErrorText } from "../../lib/api-error";
+import { rememberSessionMachine } from "../../lib/session-machines";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
@@ -693,12 +694,22 @@ export function DraftView({
         const created = await api.createSession(projectId, agentId, body, workspaceMachine);
         createdId = created.session.sessionId;
         const res = await api.postTask(createdId, { input, ...(goal ? { goal } : {}) });
+        // postTask answers with the CURRENT id: a Session with no Trace whose process
+        // restarted in between self-heals into a new one. Everything recorded a moment ago
+        // under the id we created is then about a Session that no longer answers to it, and
+        // the routing map is the half that fails silently — a remote Session left mapped
+        // under the old id would be asked of THIS server, which does not have it. Re-recorded
+        // BEFORE the lookup below, which is itself one of those calls.
+        if (res.sessionId !== createdId) rememberSessionMachine(res.sessionId, workspaceMachine);
         // Re-fetch the row before listing it: the server persisted the fallback title at
         // Task start (inside the postTask call), and its session_title push may have gone
         // out before this row existed in the list, where it patched nothing. The fresh row
         // also carries the post-self-heal id, matching where we navigate.
         const fresh = await api.getSession(res.sessionId).catch(() => null);
-        add(fresh?.session ?? created.session);
+        // Listed under the id we are about to navigate to. Falling back to the created row
+        // verbatim would list the OLD id — a stale row, and a route naming a Session the
+        // list does not contain, which is the flash this page had to guess its way out of.
+        add(fresh?.session ?? { ...created.session, sessionId: res.sessionId });
         discardDraft();
         // The draft now has an id of its own, so its docks move with it: anything left
         // behind under the draft's scope would surface in the NEXT new conversation
