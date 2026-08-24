@@ -6,6 +6,7 @@
 import { describe, expect, it } from "vitest";
 import type { MachineInfo, MachinesResponse } from "@prismshadow/penguin-server/api";
 import {
+  initialBrowseMachine,
   isElsewhere,
   machineLabel,
   recordedMachineId,
@@ -160,5 +161,31 @@ describe("workspaceMachineOffer", () => {
 
   it("has nothing to offer before the list loads", () => {
     expect(workspaceMachineOffer(null)).toEqual({ machines: [], unreachable: 0 });
+  });
+});
+
+describe("initialBrowseMachine", () => {
+  const REMOTE = "noeSE0FFHhNXl2J5";
+
+  it("browses the machine the window is already on", () => {
+    // The bug this replaced: defaulting to null browsed THIS machine's filesystem while
+    // the rest of the window was on a remote, so the listing did not change on switching
+    // servers and nothing about it looked wrong.
+    expect(initialBrowseMachine(undefined, REMOTE)).toBe(REMOTE);
+  });
+
+  it("browses this machine when the window is on this machine", () => {
+    expect(initialBrowseMachine(undefined, null)).toBeNull();
+  });
+
+  it("keeps null as a REAL choice, not as 'unset'", () => {
+    // Editing a workspace that names the local machine, from a window on a remote: the
+    // stored answer wins over where the window happens to be.
+    expect(initialBrowseMachine(null, REMOTE)).toBeNull();
+  });
+
+  it("lets an explicit machine win over the window's", () => {
+    expect(initialBrowseMachine("OTHERaaaaaaaaaaa", REMOTE)).toBe("OTHERaaaaaaaaaaa");
+    expect(initialBrowseMachine(REMOTE, null)).toBe(REMOTE);
   });
 });
