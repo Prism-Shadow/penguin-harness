@@ -13,7 +13,7 @@
  *     [header]              JSON: { schemaVersion, entries: [{ path, size, mode }] }
  *     [bytes]               each entry's contents, in header order
  *
- * `packages/desktop/resources/remote-installer.cjs` carries the reader; keep the two in step.
+ * The embedded remote installer (installer-script.ts) carries the reader; keep the two in step.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -54,18 +54,59 @@ function walk(root: string, prefix = ""): PackEntry[] {
   return out;
 }
 
-/** Packs a directory tree into one gzip buffer. */
-export function packDirectory(root: string): Buffer {
-  const entries = walk(root);
+/** One in-memory file for packFiles. */
+export interface PackFile {
+  /** Pack-relative path, forward slashes. */
+  path: string;
+  data: Buffer;
+  /** POSIX mode bits; defaults to a plain file. */
+  mode?: number;
+}
+
+/** Packs in-memory files into one gzip buffer — for images assembled rather than read. */
+export function packFiles(files: PackFile[]): Buffer {
+  const entries: PackEntry[] = files.map((file) => ({
+    path: file.path,
+    size: file.data.byteLength,
+    mode: file.mode ?? 0o644,
+  }));
   const header = Buffer.from(
     JSON.stringify({ schemaVersion: PACK_SCHEMA_VERSION, entries } satisfies PackHeader),
     "utf8",
   );
   const length = Buffer.alloc(4);
   length.writeUInt32BE(header.byteLength);
-  const parts: Buffer[] = [length, header];
-  for (const entry of entries) parts.push(fs.readFileSync(path.join(root, entry.path)));
-  return zlib.gzipSync(Buffer.concat(parts), { level: 6 });
+  return zlib.gzipSync(Buffer.concat([length, header, ...files.map((file) => file.data)]), {
+    level: 6,
+  });
+}
+
+/**
+ * Packs a directory tree into one gzip buffer.
+ *
+ * `prefix` puts every entry under one top-level directory in the pack — packing a server's
+ * own install root (`…/penguin/{bin,lib}`) into the `penguin/…` shape the installer expects,
+ * without copying the tree first. `exclude` drops subtrees by pack-relative path (before the
+ * prefix): `lib/runtime` keeps this machine's own Node out of a universal image.
+ */
+export function packDirectory(
+  root: string,
+  opts: { prefix?: string; exclude?: string[] } = {},
+): Buffer {
+  const excluded = opts.exclude ?? [];
+  const entries = walk(root)
+    .filter((entry) => !excluded.some((ex) => entry.path === ex || entry.path.startsWith(`${ex}/`)))
+    .map((entry) =>
+      opts.prefix === undefined ? entry : { ...entry, path: `${opts.prefix}/${entry.path}` },
+    );
+  const stripPrefix = opts.prefix === undefined ? 0 : opts.prefix.length + 1;
+  return packFiles(
+    entries.map((entry) => ({
+      path: entry.path,
+      data: fs.readFileSync(path.join(root, entry.path.slice(stripPrefix))),
+      mode: entry.mode,
+    })),
+  );
 }
 
 /**

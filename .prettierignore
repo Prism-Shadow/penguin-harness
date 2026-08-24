@@ -15,6 +15,10 @@ packages/desktop/skills/
 specs/
 *.md
 
+# generated from packages/server/src/machines/remote-installer.cjs by
+# scripts/gen-installer-script.mjs — one giant string literal, formatted by nobody
+packages/server/src/machines/installer-script.ts
+
 # Playwright e2e artifacts
 test-results/
 playwright-report/

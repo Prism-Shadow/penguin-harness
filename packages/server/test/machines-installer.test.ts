@@ -1,6 +1,6 @@
 /**
- * The installer that runs ON the target (resources/remote-installer.cjs), executed for real
- * against a temporary HOME. It is plain Node with no dependencies precisely so it can run
+ * The installer that runs ON the target (embedded in the platform bundle, see
+ * installer-script.ts), executed for real against a temporary HOME. It is plain Node with no dependencies precisely so it can run
  * anywhere — including here — so these tests drive the actual script rather than a model of
  * it: fresh install, upgrade over an existing one, rollback when the staged tree does not run,
  * and the data directory surviving all of it.
@@ -13,11 +13,13 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { packDirectory } from "../src/remote/pack.js";
+import { REMOTE_INSTALLER_SCRIPT } from "../src/machines/installer-script.js";
+import { packDirectory } from "../src/machines/pack.js";
 
 const posixOnly = process.platform === "win32" ? describe.skip : describe;
 
-const INSTALLER = path.resolve(__dirname, "..", "resources", "remote-installer.cjs");
+// The installer ships as text inside the platform bundle; tests run the real text.
+let INSTALLER: string;
 const RUNTIME_DIR_NAME = "node-v24.18.0-linux-x64";
 
 posixOnly("remote-installer.cjs", () => {
@@ -82,6 +84,9 @@ posixOnly("remote-installer.cjs", () => {
     home = path.join(work, "home");
     scratch = path.join(work, "scratch");
     fs.mkdirSync(home, { recursive: true });
+    // The embedded text becomes a file the same way the push makes it one: to ride scp.
+    INSTALLER = path.join(work, "remote-installer.cjs");
+    fs.writeFileSync(INSTALLER, REMOTE_INSTALLER_SCRIPT);
   });
   afterEach(() => {
     fs.rmSync(work, { recursive: true, force: true });
@@ -217,5 +222,21 @@ posixOnly("remote-installer.cjs", () => {
     // No staging or backup husks left in the way of the next attempt.
     const siblings = fs.readdirSync(path.dirname(programDir()));
     expect(siblings.filter((name) => name.startsWith("penguin."))).toEqual([]);
+  });
+});
+
+describe("the embedded installer text", () => {
+  /**
+   * installer-script.ts is GENERATED from remote-installer.cjs (scripts/gen-installer-script.mjs):
+   * the .cjs is the source everyone reads and prettier formats, the .ts is what actually reaches a
+   * remote machine inside the platform bundle. Nothing at build time regenerates it, so this is
+   * what makes editing only the .cjs a build failure rather than a silently stale push.
+   */
+  it("is exactly the .cjs beside it", () => {
+    const source = fs.readFileSync(
+      path.resolve(__dirname, "..", "src", "machines", "remote-installer.cjs"),
+      "utf8",
+    );
+    expect(REMOTE_INSTALLER_SCRIPT).toBe(source);
   });
 });

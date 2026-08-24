@@ -37,12 +37,6 @@ import { resolveWindowIcon } from "./app-icon.js";
 import { installCliCommand, ensureCliCommand, currentCliInstallKind } from "./cli-install.js";
 import { applyLoginShellEnv } from "./login-shell-env.js";
 import { installAppMenu } from "./menu.js";
-import {
-  installOnRemote,
-  payloadSourcesReady,
-  resolvePayloadSources,
-} from "./remote/install-server.js";
-import { listHostAliases, resolveTarget } from "./remote/targets.js";
 import { startEmbeddedServer, stopEmbeddedServer } from "./server-process.js";
 import type { EmbeddedServer } from "./server-process.js";
 import { getUpdaterStatus, handleUpdaterCommand, initUpdater, onUpdaterStatus } from "./updater.js";
@@ -215,96 +209,6 @@ async function handleServerExit(dataRoot: string, code: number): Promise<void> {
   }
 }
 
-/**
- * "Install Server on Remote Host ▸ <alias>": probe that machine, ask, push this build.
- *
- * Every answer goes through a modal — there is no progress surface in the shell, and the
- * whole point is that the user is deciding to write to another machine. Failures show the
- * far side's own words: ssh's diagnostics and install.sh's output say more about a refused
- * key or a missing Node than anything this app could paraphrase.
- */
-async function installServerOnRemote(alias: string): Promise<void> {
-  const sources = resolvePayloadSources({
-    packaged: app.isPackaged,
-    resourcesPath: process.resourcesPath,
-    // Dev run: the repo root is three levels up from packages/desktop/dist.
-    repoRoot: path.resolve(app.getAppPath(), "..", ".."),
-  });
-  if (!payloadSourcesReady(sources)) {
-    await dialog.showMessageBox({
-      type: "error",
-      message: "This build carries no install image.",
-      detail: `Expected it at ${sources.payloadRoot}. In a dev run, build it first: pnpm --filter @prismshadow/penguin-desktop build:install-image`,
-    });
-    return;
-  }
-
-  const target = await resolveTarget(alias);
-  if (!target) {
-    await dialog.showMessageBox({
-      type: "error",
-      message: `ssh could not resolve "${alias}".`,
-      detail: "Check ~/.ssh/config, or that ssh is on PATH.",
-    });
-    return;
-  }
-
-  const confirm = await dialog.showMessageBox({
-    type: "question",
-    buttons: ["Install", "Cancel"],
-    defaultId: 0,
-    cancelId: 1,
-    message: `Install PenguinHarness ${app.getVersion()} on ${target.machine}?`,
-    detail: [
-      `Host: ${target.settings.hostname}:${target.settings.port}`,
-      "The program and a matching Node runtime are installed into that machine's own data",
-      "directory (~/.local/share/penguin, or %LOCALAPPDATA%\\penguin on Windows). Nothing",
-      "else there is touched, no Node installation is required, and the data directory of",
-      "an existing install is left alone.",
-    ].join("\n"),
-  });
-  if (confirm.response !== 0) return;
-
-  const outcome = await installOnRemote({
-    target: { alias, user: target.settings.user },
-    sources,
-    localVersion: app.getVersion(),
-    // Verified Node runtimes are kept per platform-arch: the same download serves every
-    // host of that shape, and re-pushing to a second machine skips the fetch.
-    runtimeCacheDir: path.join(app.getPath("userData"), "runtime-cache"),
-    fetchBuffer: async (url) => {
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`GET ${url} -> ${response.status}`);
-      return Buffer.from(await response.arrayBuffer());
-    },
-    onProgress: (line) => process.stdout.write(`[remote ${target.machine}] ${line}\n`),
-  });
-
-  if (outcome.kind === "installed") {
-    await dialog.showMessageBox({
-      type: "info",
-      message: `PenguinHarness is installed on ${target.machine}.`,
-      detail: outcome.output || undefined,
-    });
-    return;
-  }
-  if (outcome.kind === "already-installed") {
-    await dialog.showMessageBox({
-      type: "info",
-      message: `${target.machine} already runs PenguinHarness ${outcome.version}.`,
-      detail: "Nothing to install — it matches this build.",
-    });
-    return;
-  }
-  // "blocked" is gone from the outcomes: the push brings its own Node runtime, so there is
-  // nothing left to be missing on the far side that would stop it before it starts.
-  await dialog.showMessageBox({
-    type: "error",
-    message: `Installing on ${target.machine} failed while trying to ${outcome.step}.`,
-    detail: outcome.detail,
-  });
-}
-
 async function boot(): Promise<void> {
   // Explicit PENGUIN_HOME wins; otherwise a release build shares the CLI's data root and
   // a dev run takes the repo's dev root (the rule, and why, live in app-identity.ts).
@@ -378,10 +282,6 @@ if (!app.requestSingleInstanceLock()) {
       installAppMenu({
         includeCliInstall: currentCliInstallKind() !== null,
         onInstallCli: () => void installCliCommand(win),
-        // Read once, at menu build time: the menu is static, and an ssh config that
-        // changes mid-session is a restart away from being picked up.
-        remoteHosts: listHostAliases(),
-        onInstallRemote: (alias) => void installServerOnRemote(alias),
       });
       initUpdater(() => win);
       await boot();
