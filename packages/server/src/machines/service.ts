@@ -109,6 +109,18 @@ export class MachinesService {
    */
   /** Where a pushed bundle's assets were unpacked; null in a packaged server (hmr.assetsDir). */
   readonly #assets: () => string | null;
+  /**
+   * This machine's id, minted when the App boots rather than when someone first asks.
+   *
+   * At construction on purpose, and NOT at server start: a server that is up is a machine
+   * that has an identity — anything reaching it may ask before a single request has been
+   * served — but "mint it at startup" would be a RUNTIME change, and a runtime change does
+   * not exist for a deployment until it is rebuilt and redeployed. Every App boot runs
+   * this, including a hot-pushed one, so the identity arrives with the push that needs it.
+   *
+   * Idempotent: an id already on disk is adopted, never replaced.
+   */
+  readonly #machineId: string;
 
   constructor(
     private readonly dataRoot: string,
@@ -116,6 +128,7 @@ export class MachinesService {
     assets: () => string | null = () => null,
   ) {
     this.#assets = assets;
+    this.#machineId = readOrCreateMachineId(dataRoot);
     this.#effects = {
       listAliases: listHostAliases,
       resolveTarget,
@@ -157,7 +170,7 @@ export class MachinesService {
       alias: os.hostname(),
       // Our own id comes from the same file a remote's does — this server IS the server
       // that mints it here, so there is nothing to probe.
-      machineId: readOrCreateMachineId(this.dataRoot),
+      machineId: this.#machineId,
       // No tunnel to where you already are: this server IS the origin serving the page.
       origin: null,
       installed: { version: VERSION, at: lock?.startedAt ?? this.#effects.now().toISOString() },
@@ -418,10 +431,7 @@ export class MachinesService {
     // Connecting to where you already are is a no-op with a failure mode: the tunnel would
     // forward a port to itself. The machine's own id is what settles it — the same file read
     // over ssh IS our file when the alias points back here.
-    if (
-      machine.local ||
-      (machine.machineId !== null && machine.machineId === readOrCreateMachineId(this.dataRoot))
-    ) {
+    if (machine.local || (machine.machineId !== null && machine.machineId === this.#machineId)) {
       return { ok: false, why: "self" };
     }
     if (machine.installed === null) return { ok: false, why: "not-installed" };
