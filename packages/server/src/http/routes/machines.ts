@@ -38,6 +38,7 @@
  * that dies with its App has nothing to replay to a reconnecting subscriber.
  */
 import { Hono } from "hono";
+import type { Context } from "hono";
 import type { DirListResponse, MachinesResponse } from "../../api/types.js";
 import { HttpError } from "../errors.js";
 import { requireValidId } from "../validate.js";
@@ -59,10 +60,10 @@ export function machinesRoutes(deps: AppDeps): Hono<AppEnv> {
     await next();
   });
 
-  const state = (c: {
-    req: { param: (name: string) => string | undefined };
-  }): MachinesResponse => ({
-    machines: deps.machines.list(c.req.param("projectId") ?? ""),
+  // Validated here rather than trusted from the middleware: the id becomes a path segment
+  // (<data root>/<project>/machines.json), and an empty one would resolve a directory up.
+  const state = (c: Context<AppEnv>): MachinesResponse => ({
+    machines: deps.machines.list(requireValidId(c, "projectId")),
     imageVersion: deps.machines.imageVersion(),
     job: deps.machines.job(),
     connect: deps.machines.connectJob(),
