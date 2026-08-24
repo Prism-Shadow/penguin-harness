@@ -6,17 +6,18 @@
  * one always, and any other with a live tunnel. One that is merely installed has no route to
  * browse over.
  *
- * But "cannot be offered" is not the same as "must not be mentioned". A control that
- * disappears when there is nothing to choose teaches nobody anything — it just looks like
- * the feature is missing. So the unreachable ones are COUNTED and reported, and the picker
- * says how many machines are one connect away rather than silently showing a list of one.
+ * Every machine is LISTED regardless — the ones that cannot be browsed are shown disabled,
+ * each carrying its own reason. Filtering them out, or summarising them as a count at the
+ * bottom, both fail the same way: the question "why can I not pick that machine?" is asked
+ * at the row, so that is where the answer has to be. A list that silently omits its answer
+ * is indistinguishable from a broken feature.
  *
  * Identified by machine id and labelled by ssh alias, the same split as everywhere else:
  * the alias is what someone recognises, the id is what gets stored.
  */
 import type { MachineInfo, MachinesResponse } from "@prismshadow/penguin-server/api";
 
-/** One machine a workspace can live on. `id` is null for the local one. */
+/** One machine a workspace can live on, and whether it can be browsed right now. */
 export interface WorkspaceMachine {
   /** The machine's own id; null means the local server (which needs no proxy prefix). */
   id: string | null;
@@ -24,49 +25,51 @@ export interface WorkspaceMachine {
   label: string;
   /** True for the machine serving this page. */
   local: boolean;
-}
-
-/** What the picker's machine row has to say: what can be chosen, and what is missing. */
-export interface WorkspaceMachineOffer {
-  /** Machines whose filesystem can be browsed right now, local first. */
-  machines: WorkspaceMachine[];
-  /**
-   * Installed machines that cannot be browsed yet — no live tunnel, or no identity to store
-   * a workspace against. Reported as a count so the row can say why the list is short
-   * instead of leaving someone to wonder whether the feature works.
-   */
-  unreachable: number;
+  /** False when its filesystem cannot be reached; `reason` says what is missing. */
+  selectable: boolean;
+  /** Why it cannot be browsed, for the row to render. Absent when it can. */
+  reason?: "not-connected" | "no-identity";
 }
 
 /**
- * The offer, local first. A machine without an identity is not offerable even when
- * connected — a workspace stored against a machine that cannot be named could never be
- * matched back to it — but it is still counted, because from the outside "installed but
- * not usable yet" is a state worth seeing.
+ * Every machine, local first: the ones that can be browsed, and the installed ones that
+ * cannot, each with its reason.
+ *
+ * Hosts nothing was ever installed on are the one thing left out — they are not part of
+ * this feature yet, and listing 45 ssh entries as 45 failures would bury the two that
+ * matter. Being installed is what makes a machine a candidate; everything from there on
+ * says why it is or is not usable.
  */
-export function workspaceMachineOffer(state: MachinesResponse | null): WorkspaceMachineOffer {
-  if (state === null) return { machines: [], unreachable: 0 };
-  const machines: WorkspaceMachine[] = [];
-  let unreachable = 0;
+export function workspaceMachines(state: MachinesResponse | null): WorkspaceMachine[] {
+  if (state === null) return [];
+  const out: WorkspaceMachine[] = [];
   for (const machine of state.machines) {
     if (machine.local) {
-      machines.push({ id: null, label: machine.alias, local: true });
+      out.push({ id: null, label: machine.alias, local: true, selectable: true });
       continue;
     }
-    if (machine.origin !== null && machine.machineId !== null) {
-      machines.push({ id: machine.machineId, label: machine.alias, local: false });
+    if (machine.installed === null) continue;
+    if (machine.machineId === null) {
+      // Installed, but nothing has minted an identity there yet — a workspace stored
+      // against it could never be matched back, so it cannot be chosen.
+      out.push({
+        id: null,
+        label: machine.alias,
+        local: false,
+        selectable: false,
+        reason: "no-identity",
+      });
       continue;
     }
-    // Hosts nothing was ever installed on are not "unreachable", they are simply not part
-    // of this feature yet; counting them would turn a 45-line ssh config into alarm.
-    if (machine.installed !== null) unreachable++;
+    out.push({
+      id: machine.machineId,
+      label: machine.alias,
+      local: false,
+      selectable: machine.origin !== null,
+      ...(machine.origin === null ? { reason: "not-connected" as const } : {}),
+    });
   }
-  return { machines, unreachable };
-}
-
-/** The offerable machines alone (the common case for callers that only render the list). */
-export function workspaceMachines(state: MachinesResponse | null): WorkspaceMachine[] {
-  return workspaceMachineOffer(state).machines;
+  return out;
 }
 
 /**

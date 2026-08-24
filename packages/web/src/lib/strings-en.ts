@@ -1192,9 +1192,11 @@ export const en: Strings = {
     /** The machine a workspace lives on; the row only shows when more than one is reachable. */
     workspaceMachine: "Machine",
     workspaceHere: "here",
-    /** Why the machine list is short: installed machines with no live tunnel to browse over. */
-    workspaceMachineUnreachable: (count: number) =>
-      `${count} more installed ${count === 1 ? "machine needs" : "machines need"} connecting on the Machines page.`,
+    /** Why a listed machine cannot be picked — shown ON its row, where the question is asked. */
+    workspaceMachineWhy: {
+      "not-connected": "not connected",
+      "no-identity": "not identified",
+    },
     workspaceUseThis: "Use this dir",
     workspaceUp: "Parent dir",
     workspaceNoSubdirs: "No subdirectories",

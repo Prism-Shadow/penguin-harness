@@ -9,7 +9,6 @@ import {
   isElsewhere,
   machineLabel,
   recordedMachineId,
-  workspaceMachineOffer,
   workspaceMachines,
 } from "../src/lib/workspace-machines";
 
@@ -30,6 +29,7 @@ const state = (machines: MachineInfo[]): MachinesResponse => ({
   connect: null,
 });
 
+const INSTALL = { version: "9.9.9", at: "2026-08-24T12:00:00.000Z" };
 const here = machine({
   alias: "workstation",
   id: "local",
@@ -40,36 +40,65 @@ const connected = machine({
   alias: "far-box",
   machineId: "noeSE0FFHhNXl2J5",
   origin: "http://localhost:7364",
+  installed: INSTALL,
 });
 
 describe("workspaceMachines", () => {
+  const installedNotConnected = machine({
+    alias: "cold",
+    installed: INSTALL,
+    machineId: "COLDaaaaaaaaaaaa",
+  });
+  const connectedNameless = machine({
+    alias: "ghost",
+    origin: "http://localhost:7365",
+    installed: INSTALL,
+  });
+  const neverInstalled = machine({ alias: "just-an-ssh-host" });
+
   it("is empty before the list has loaded", () => {
     expect(workspaceMachines(null)).toEqual([]);
   });
 
   it("always offers this machine, as the null id the registry stores for it", () => {
     expect(workspaceMachines(state([here]))).toEqual([
-      { id: null, label: "workstation", local: true },
+      { id: null, label: "workstation", local: true, selectable: true },
     ]);
   });
 
   it("offers a connected machine by its own id, labelled by its alias", () => {
-    expect(workspaceMachines(state([here, connected]))).toEqual([
-      { id: null, label: "workstation", local: true },
-      { id: "noeSE0FFHhNXl2J5", label: "far-box", local: false },
-    ]);
+    expect(workspaceMachines(state([here, connected]))[1]).toEqual({
+      id: "noeSE0FFHhNXl2J5",
+      label: "far-box",
+      local: false,
+      selectable: true,
+    });
   });
 
-  it("leaves out a machine with no live tunnel — there is no route to browse over", () => {
-    const installed = machine({ alias: "cold", machineId: "COLDaaaaaaaaaaaa" });
-    expect(workspaceMachines(state([here, installed])).map((m) => m.label)).toEqual([
-      "workstation",
-    ]);
+  it("LISTS an installed machine with no tunnel, disabled, saying why", () => {
+    // The question "why can I not pick that machine?" is asked at the row, so the answer
+    // has to be there. Omitting it is indistinguishable from a broken feature.
+    const [, cold] = workspaceMachines(state([here, installedNotConnected]));
+    expect(cold).toMatchObject({ label: "cold", selectable: false, reason: "not-connected" });
   });
 
-  it("leaves out a connected machine with no identity: it could never be matched back", () => {
-    const nameless = machine({ alias: "ghost", origin: "http://localhost:7365" });
-    expect(workspaceMachines(state([here, nameless])).map((m) => m.label)).toEqual(["workstation"]);
+  it("lists a connected machine that has no identity yet, with its own reason", () => {
+    const [, ghost] = workspaceMachines(state([here, connectedNameless]));
+    expect(ghost).toMatchObject({ label: "ghost", selectable: false, reason: "no-identity" });
+  });
+
+  it("gives a usable machine no reason at all, so a reason always means a problem", () => {
+    for (const entry of workspaceMachines(state([here, connected]))) {
+      expect(entry.selectable).toBe(true);
+      expect(entry.reason).toBeUndefined();
+    }
+  });
+
+  it("still leaves out plain ssh hosts — 45 config entries are not 45 failures", () => {
+    // Nothing was ever installed on these; listing them as problems would bury the ones
+    // that matter.
+    const listed = workspaceMachines(state([here, neverInstalled, machine({ alias: "another" })]));
+    expect(listed.map((m) => m.label)).toEqual(["workstation"]);
   });
 });
 
@@ -102,61 +131,20 @@ describe("isElsewhere", () => {
 
 describe("recordedMachineId", () => {
   it("records nothing for this machine, so 'here' stays the absent case", () => {
-    expect(recordedMachineId({ id: null, label: "workstation", local: true })).toBeUndefined();
+    expect(
+      recordedMachineId({ id: null, label: "workstation", local: true, selectable: true }),
+    ).toBeUndefined();
     expect(recordedMachineId(undefined)).toBeUndefined();
   });
 
   it("records the id for another machine", () => {
-    expect(recordedMachineId({ id: "noeSE0FFHhNXl2J5", label: "far-box", local: false })).toBe(
-      "noeSE0FFHhNXl2J5",
-    );
-  });
-});
-
-describe("workspaceMachineOffer", () => {
-  const installedNotConnected = machine({ alias: "cold", installed: { version: "1", at: "x" } });
-  const connectedNameless = machine({
-    alias: "ghost",
-    origin: "http://localhost:7365",
-    installed: { version: "1", at: "x" },
-  });
-  const neverInstalled = machine({ alias: "just-an-ssh-host" });
-
-  it("counts an installed machine that has no tunnel, instead of dropping it silently", () => {
-    // The row has to be able to say WHY the list is short; a vanished control reads as a
-    // missing feature.
-    const offer = workspaceMachineOffer(state([here, installedNotConnected]));
-    expect(offer.machines.map((m) => m.label)).toEqual(["workstation"]);
-    expect(offer.unreachable).toBe(1);
-  });
-
-  it("counts a connected machine that has no identity yet", () => {
-    const offer = workspaceMachineOffer(state([here, connectedNameless]));
-    expect(offer.machines).toHaveLength(1);
-    expect(offer.unreachable).toBe(1);
-  });
-
-  it("does NOT count plain ssh hosts — a 45-line config is not 45 problems", () => {
-    // Nothing was ever installed on these; they are not part of this feature yet, and
-    // counting them would turn an ordinary ssh config into an alarm.
-    const offer = workspaceMachineOffer(
-      state([here, neverInstalled, machine({ alias: "another" })]),
-    );
-    expect(offer.machines).toHaveLength(1);
-    expect(offer.unreachable).toBe(0);
-  });
-
-  it("counts nothing when every installed machine is usable", () => {
-    expect(workspaceMachineOffer(state([here, connected])).unreachable).toBe(0);
-  });
-
-  it("still offers this machine alone, which is what the row now shows rather than hiding", () => {
-    const offer = workspaceMachineOffer(state([here]));
-    expect(offer.machines).toHaveLength(1);
-    expect(offer.machines.length > 0).toBe(true);
-  });
-
-  it("has nothing to offer before the list loads", () => {
-    expect(workspaceMachineOffer(null)).toEqual({ machines: [], unreachable: 0 });
+    expect(
+      recordedMachineId({
+        id: "noeSE0FFHhNXl2J5",
+        label: "far-box",
+        local: false,
+        selectable: true,
+      }),
+    ).toBe("noeSE0FFHhNXl2J5");
   });
 });
