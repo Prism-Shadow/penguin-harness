@@ -13,11 +13,10 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   composeDescribe,
-  findCheckoutRoot,
-  readCheckout,
   resetBuildInfoCache,
   resolveBuildInfo,
 } from "../src/internal/build-info.js";
+import { findCheckoutRoot, readCheckout } from "../src/internal/git-facts.js";
 
 let tmp: string;
 

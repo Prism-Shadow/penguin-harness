@@ -18,11 +18,11 @@
  * `penguin version --json` and GET /api/version all render without adding facts of their
  * own, so those three can never disagree about what is running.
  */
-import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { BuildInfo } from "../interfaces.js";
+import type { CheckoutFacts } from "./git-facts.js";
+import { findCheckoutRoot, readCheckout } from "./git-facts.js";
 
 /** The stamped constants this module reads, passed in by the barrel that declares them. */
 export interface BuildStamp {
@@ -30,9 +30,6 @@ export interface BuildStamp {
   buildDate: string | null;
   commit: string | null;
 }
-
-/** A hung git (a network-backed filesystem, a stale lock) must not hang `penguin -v`. */
-const GIT_TIMEOUT_MS = 2000;
 
 /** Where this build's own files are — the only honest place to start looking for its checkout. */
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
@@ -65,91 +62,6 @@ declare const __PENGUIN_BUILD_GIT__: string | undefined;
  * true but does not name a version, so it gets composed into one instead.
  */
 const TAG_DESCRIPTION = /^v\d/;
-
-/**
- * Locates the checkout this build is sitting in: walks up from this module's own directory
- * for one holding both `.git` and `pnpm-workspace.yaml`. Reached only when no build-time
- * stamp was inlined — an un-bundled `tsx` / `vitest` / `pnpm dev` run.
- *
- * Both halves of that test are load-bearing. Starting from the module rather than the
- * working directory is what makes `penguin version` report the harness's revision when it
- * is run inside somebody else's repository. Requiring the workspace marker beside `.git` is
- * what stops an install that merely sits under an unrelated repository — a home directory
- * that is itself a dotfiles repo, which is common — from reporting a stranger's commits as
- * this build's; finding nothing is the better answer there.
- *
- * `.git` is tested for existence rather than for being a directory: in a linked worktree it
- * is a file pointing at the real git directory, and this project's own work happens in
- * worktrees.
- *
- * `startDir` is a parameter only so tests can aim it at a fixture; production passes
- * {@link moduleDir}.
- */
-export function findCheckoutRoot(startDir: string): string | null {
-  let dir = startDir;
-  for (;;) {
-    if (existsSync(path.join(dir, ".git")) && existsSync(path.join(dir, "pnpm-workspace.yaml"))) {
-      return dir;
-    }
-    const parent = path.dirname(dir);
-    if (parent === dir) return null;
-    dir = parent;
-  }
-}
-
-/**
- * One git invocation against `root`, or null for any failure at all — git missing from
- * PATH, a repository too broken to answer, the timeout. Version reporting is never worth an
- * exception, and a null here degrades to the plain `v<version>` form.
- */
-function git(root: string, args: string[]): string | null {
-  try {
-    const out = execFileSync("git", args, {
-      cwd: root,
-      encoding: "utf8",
-      timeout: GIT_TIMEOUT_MS,
-      // git's own diagnostics would otherwise land on the CLI's stderr.
-      stdio: ["ignore", "pipe", "ignore"],
-      windowsHide: true,
-    });
-    return out.trim() || null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * The git half of a source build's identity, before composition. `described` is git's raw
- * answer, which may name no version at all — distinct from BuildInfo's `describe`, which
- * always does.
- */
-interface CheckoutFacts {
-  described: string | null;
-  commit: string | null;
-  branch: string | null;
-  dirty: boolean | null;
-}
-
-/** Reads a checkout's facts; every field independently degrades to null. */
-export function readCheckout(root: string): CheckoutFacts {
-  // `--always` keeps this useful in a shallow clone or a tagless fork, where a description
-  // relative to a tag cannot be produced; `--dirty` is the uncommitted-changes marker.
-  const described = git(root, ["describe", "--tags", "--dirty", "--always"]);
-  // One invocation for both: rev-parse resolves its arguments in order, and --abbrev-ref
-  // applies to the ones after it, so this prints the full sha then the branch name.
-  const [commit = null, branch = null] =
-    git(root, ["rev-parse", "HEAD", "--abbrev-ref", "HEAD"])
-      ?.split("\n")
-      .map((line) => line.trim()) ?? [];
-
-  return {
-    described,
-    commit,
-    // Detached HEAD is git's own literal "HEAD" here, which names no branch.
-    branch: branch === "HEAD" ? null : branch,
-    dirty: described === null ? null : described.endsWith("-dirty"),
-  };
-}
 
 /**
  * The inlined stamp, or null when this artifact carries none. Every field is re-checked
