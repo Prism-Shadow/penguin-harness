@@ -19,6 +19,7 @@
  */
 import zlib from "node:zlib";
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import type { AppDeps } from "../app.js";
 import { authMiddleware } from "../auth/middleware.js";
 import type { AppEnv } from "../auth/middleware.js";
@@ -26,6 +27,24 @@ import { HttpError } from "../http/errors.js";
 
 /** Bind addresses considered safe by default; anything else needs HTTPS. */
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
+
+/**
+ * The upgrade channel's own size cap, on the compressed body and on what it inflates to
+ * alike — deliberately not the `/api/*` cap, which is derived from the admin-settable
+ * attachment budget (see app.ts): a push carries a web dist and the platform's native
+ * assets, and how large one chat message's attachments may be says nothing about that.
+ *
+ * 256MB is where the transport stops working rather than a taste judgement, the same wall
+ * services/attachment-limits.ts describes: the inflated payload is turned into ONE string
+ * for JSON.parse, and V8 caps a string near 512MB. Peak memory for a request at the cap is
+ * the compressed body, the inflated buffer, and that string — on the order of a gigabyte,
+ * which is the documented tolerance. A real push is single-digit megabytes; this is the
+ * bound, not the expectation.
+ *
+ * The inflate bound is what makes the body bound meaningful: without it a few hundred
+ * kilobytes of gzip decides how many gigabytes this process allocates.
+ */
+const UPGRADE_MAX_BYTES = 256 * 1024 * 1024;
 
 export function hmrRoutes(deps: AppDeps): Hono<AppEnv> {
   const routes = new Hono<AppEnv>();
@@ -35,6 +54,22 @@ export function hmrRoutes(deps: AppDeps): Hono<AppEnv> {
   // other half) rather than relying on the generic middleware being mounted
   // later.
   const cookieAuth = authMiddleware(deps.authService);
+
+  // Before the gate below, so an oversized body is cut off the stream rather than buffered
+  // while its credentials are checked.
+  routes.use(
+    "*",
+    bodyLimit({
+      maxSize: UPGRADE_MAX_BYTES,
+      onError: () => {
+        throw new HttpError(
+          413,
+          "payload_too_large",
+          `Hot update payload exceeds the ${Math.floor(UPGRADE_MAX_BYTES / (1024 * 1024))}MB limit.`,
+        );
+      },
+    }),
+  );
 
   routes.use("*", async (c, next) => {
     // Dangerous-network off: hot APIs load and run code, so on a non-loopback
@@ -122,7 +157,9 @@ export function hmrRoutes(deps: AppDeps): Hono<AppEnv> {
     };
     try {
       const gz = Buffer.from(await c.req.arrayBuffer());
-      payload = JSON.parse(zlib.gunzipSync(gz).toString("utf8"));
+      payload = JSON.parse(
+        zlib.gunzipSync(gz, { maxOutputLength: UPGRADE_MAX_BYTES }).toString("utf8"),
+      );
     } catch (err) {
       throw new HttpError(
         400,
