@@ -23,6 +23,8 @@ import { randomBytes } from "node:crypto";
 import { cleanupCommand, makeScratchCommand, scpArgs, sshArgs } from "./commands.js";
 import type { RemoteTarget } from "./commands.js";
 import { fileURLToPath } from "node:url";
+import type { ExecResult } from "./exec.js";
+import { mintTokenOnRemote } from "./remote-token.js";
 import { run } from "./exec.js";
 
 /** Markers the far-side script prints, so an outcome is read rather than guessed from prose. */
@@ -82,10 +84,26 @@ export async function upgradeRemote(opts: {
   onProgress?: (line: string) => void;
   /** The hmr capability's assetsDir accessor: where a pushed bundle's assets were unpacked. */
   assets?: () => string | null;
+  /**
+   * Runs one command on the machine, used to ask its CLI for a session token. Without it the
+   * far side falls back to reading that machine's seeded admin password — which is gone on
+   * any machine whose password a person has set, and those are exactly the machines that then
+   * silently stop receiving hot updates.
+   */
+  runOn?: (target: RemoteTarget, command: string) => Promise<ExecResult>;
 }): Promise<UpgradeOutcome> {
   const say = opts.onProgress ?? (() => {});
   const payload = readPushedBuild(opts.dataRoot);
   if (payload === null) return { kind: "no-build" };
+
+  // Asked BEFORE anything is copied: it is one command over a connection that already exists,
+  // and a machine that cannot authenticate should not first be sent 8 MB.
+  const minted =
+    opts.runOn === undefined
+      ? null
+      : await mintTokenOnRemote(opts.target, opts.runOn).then((outcome) =>
+          outcome.kind === "minted" ? outcome.token : null,
+        );
 
   const scratchName = `penguin-upgrade-${randomBytes(6).toString("hex")}`;
   const made = await run("ssh", sshArgs(opts.target, makeScratchCommand("linux", scratchName)), {
@@ -114,7 +132,9 @@ export async function upgradeRemote(opts: {
     fs.writeFileSync(
       path.join(localTmp, "upgrade-job.json"),
       // No dataRoot: the far side resolves its own home (see remote-upgrade.cjs).
-      JSON.stringify({ payloadName }),
+      // The token, when the machine could mint one: the far side then authenticates with it
+      // instead of reading a seeded password that may no longer exist.
+      JSON.stringify({ payloadName, ...(minted === null ? {} : { token: minted }) }),
     );
 
     say(`Sending this build (${(payload.byteLength / 1048576).toFixed(1)} MB)…`);

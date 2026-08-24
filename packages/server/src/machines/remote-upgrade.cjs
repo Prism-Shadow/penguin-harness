@@ -89,30 +89,38 @@ async function main() {
   }
   if (typeof lock.port !== "number") fail("this machine's server lock names no port");
 
-  // The seeded admin password, which the server keeps in plaintext ONLY until it is
-  // changed. Its absence is the expected state on a machine whose admin password was set
-  // by a person — and the honest answer there is "I cannot log in", not a guess.
-  let password;
-  try {
-    password = fs.readFileSync(path.join(dataRoot, "initial-admin-password"), "utf8").trim();
-  } catch {
-    fail(
-      "this machine's admin password has been changed, so the seeded one is gone and this " +
-        "side cannot authenticate; update it from its own window, or reinstall",
-    );
-    return;
-  }
-  if (password === "") fail("this machine's seeded admin password is empty");
+  // A token the pushing side already obtained from this machine's own CLI, which needs no
+  // password at all. Preferred whenever it is there: the seeded password below is gone on any
+  // machine whose admin password a person has set, and those machines would otherwise be
+  // unable to receive a hot update ever again.
+  let cookie = job.token ? `penguin_session=${job.token}` : "";
 
-  const login = await call(
-    lock.port,
-    { method: "POST", path: "/api/auth/login", headers: { "content-type": "application/json" } },
-    Buffer.from(JSON.stringify({ userId: job.userId || "admin", password })),
-  );
-  if (login.status !== 200) fail(`could not sign in to this machine's server: ${login.status}`);
-  const setCookie = login.headers["set-cookie"] || [];
-  const cookie = setCookie.map((c) => String(c).split(";")[0]).join("; ");
-  if (cookie === "") fail("this machine's server issued no session cookie");
+  if (cookie === "") {
+    // The seeded admin password, which the server keeps in plaintext ONLY until it is
+    // changed. Its absence is the expected state on a machine whose admin password was set
+    // by a person — and the honest answer there is "I cannot log in", not a guess.
+    let password;
+    try {
+      password = fs.readFileSync(path.join(dataRoot, "initial-admin-password"), "utf8").trim();
+    } catch {
+      fail(
+        "this machine's admin password has been changed and no session token was supplied, " +
+          "so this side cannot authenticate; reinstall to give it a CLI that can mint one",
+      );
+      return;
+    }
+    if (password === "") fail("this machine's seeded admin password is empty");
+
+    const login = await call(
+      lock.port,
+      { method: "POST", path: "/api/auth/login", headers: { "content-type": "application/json" } },
+      Buffer.from(JSON.stringify({ userId: job.userId || "admin", password })),
+    );
+    if (login.status !== 200) fail(`could not sign in to this machine's server: ${login.status}`);
+    const setCookie = login.headers["set-cookie"] || [];
+    cookie = setCookie.map((c) => String(c).split(";")[0]).join("; ");
+    if (cookie === "") fail("this machine's server issued no session cookie");
+  }
 
   const payload = fs.readFileSync(path.join(here, job.payloadName));
   const res = await call(
