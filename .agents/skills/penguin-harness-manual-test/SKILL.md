@@ -1,9 +1,9 @@
 ---
-name: penguin-harness-run
-description: Use when launching or driving PenguinHarness locally — starting the Web App, the desktop shell, the landing page or the docs site to see a change working, take a screenshot, or reproduce a report. Covers the four dev entry points and their fixed ports, which data root each one picks, why an inherited PENGUIN_HOME silently wins over the dev default, the loopback name that serves the API, the shell proxy that makes a healthy server look broken, and the one-server-per-data-root lock.
+name: penguin-harness-manual-test
+description: Use when standing PenguinHarness up to try a change by hand — the Web App, the desktop shell, the landing page or the docs site, whether the person at the keyboard is going to click through it, a screenshot is needed, or a report has to be reproduced. Covers launching the app through the four dev entry points and their fixed ports, which data root each one picks, why an inherited PENGUIN_HOME silently wins over the dev default, the loopback name that serves the API, the shell proxy that makes a healthy server look broken, and the one-server-per-data-root lock.
 ---
 
-# Running PenguinHarness locally
+# Standing PenguinHarness up to test by hand
 
 Node must be >= 24. The `dev:*` commands each run `scripts/dev-prebuild.mjs` first, which keeps
 `pnpm install` current (stamped by lockfile hash) and prebuilds the workspace deps (skills, core)

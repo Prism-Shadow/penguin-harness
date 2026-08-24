@@ -1,13 +1,13 @@
-# 一个用于在本地启动并驱动应用的 skill
+# 一个用于把应用跑起来、供人工验证的 skill
 
 - **Date:** 2026-08-23
 - **Type:** process
 - **Scope:** `skills`, `docs`
 - **PR:** [#428](https://github.com/Prism-Shadow/penguin-harness/pull/428)
 
-[English](2026-08-23-local-run-skill.md)
+[English](2026-08-23-manual-test-skill.md)
 
-`.agents/skills/penguin-harness-run/SKILL.md` 是一个新增的仓库开发 skill，讲述如何在开发机上把应用跑起来：四个开发入口
+`.agents/skills/penguin-harness-manual-test/SKILL.md` 是一个新增的仓库开发 skill，讲述如何在开发机上把应用跑起来、以便动手验证一处改动：四个开发入口
 （`pnpm dev`、`pnpm desktop`、`pnpm dev:landing`、`pnpm dev:docs`）及其固定端口，以及那些会让正常环境显得像是坏掉了的
 环境陷阱。另有两份相邻文档被一并校正，以与之保持一致。
 
