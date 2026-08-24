@@ -84,3 +84,20 @@ describe("machineForPath", () => {
     expect(machineForPath("/api/projects/p/agents/a/sessions")).toBeNull();
   });
 });
+
+describe("a Session that self-heals into a new id", () => {
+  it("must be re-recorded, or every later call goes to the wrong server", () => {
+    // postTask answers with the CURRENT id. The mapping written at creation is under the id
+    // we asked for, so after a self-heal the new id resolves to "this server" — and a remote
+    // Session asked of this server is a 404 nobody can explain from the symptom.
+    forgetSessionMachines();
+    rememberSessionMachine("created-id", "QS7J4YVgSovi-Z2c");
+    expect(machineForPath("/api/sessions/healed-id/messages")).toBeNull();
+
+    rememberSessionMachine("healed-id", "QS7J4YVgSovi-Z2c");
+    expect(machineForPath("/api/sessions/healed-id/messages")).toBe("QS7J4YVgSovi-Z2c");
+    // The old id keeps its mapping; nothing depends on it any more, and clearing it would be
+    // a second thing to get right for no gain.
+    expect(machineForPath("/api/sessions/created-id")).toBe("QS7J4YVgSovi-Z2c");
+  });
+});
