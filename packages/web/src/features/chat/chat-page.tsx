@@ -1488,6 +1488,7 @@ export function ChatPage() {
             approvalMode={selected.approvalMode}
             onChangeApprovalMode={onChangeApprovalMode}
             modeSaving={modeSaving}
+            parentThinkingLevel={sessionThinkingLevel(turnThinkingLevel, agentThinkingLevel)}
           />
         );
       case "workspace":

@@ -55,6 +55,14 @@ the child session, reachable by the model and the human alike.
 - The panel stays put: it shows the most recent Task that actually spawned subagents, so a
   plain follow-up message no longer wipes the graph — a new Task takes the panel over the
   moment it spawns its own child.
+- The thinking picker shows what the child actually runs at while untouched: the user's own
+  pick for this child, else the spawning call's explicit `thinking_level`, else the parent
+  session's effective level (what the child inherited); only an explicit pick rides the send.
+- A panel-started round sends **no background completion report** to the main conversation:
+  reports cover model-initiated rounds only (the `run_in_background` launch and
+  `input_subagent` follow-ups) — the user talking to a child is not dispatched work, and the
+  main agent no longer receives "background task finished" notices for it. The round's
+  answer text stays in the model-facing buffer for the model's next poll.
 
 ## Child approvals reach the user
 

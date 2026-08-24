@@ -32,6 +32,8 @@ export interface TopologyNode {
   agentId: string | null;
   /** The spawning call's model-written `description` — what this child was asked to do; null for the root, a standalone item, or when the model omitted it. */
   description: string | null;
+  /** The spawning call's explicit `thinking_level` argument; null = inherited from the parent session (and for the root/standalone items). The panel composer's display fallback. */
+  spawnThinkingLevel: string | null;
   /** Still running — the spawning card's output hasn't completed (root: the Task's own running state; a standalone item has no card, so it reads as done). */
   running: boolean;
   /** 0 = the main session; +1 per spawn hop. */
@@ -299,6 +301,7 @@ function extractFromSlice(
       agentId: null,
       // The root was not spawned by anyone, so there is no spawning call to describe.
       description: null,
+      spawnThinkingLevel: null,
       running: root.running,
       depth: 0,
       origin: [],
@@ -315,6 +318,7 @@ function extractFromSlice(
     parentOrigin: string[],
     argsAgentId: string | null,
     argsDescription: string | null,
+    argsThinkingLevel: string | null,
   ): void => {
     if (seen.has(sessionId)) return;
     seen.add(sessionId);
@@ -332,6 +336,7 @@ function extractFromSlice(
       sessionId,
       agentId: child.meta?.agentId ?? argsAgentId,
       description: argsDescription,
+      spawnThinkingLevel: argsThinkingLevel,
       // Server liveness wins over the text heuristics whenever it knows this child: an
       // input_subagent revival or a panel-started round flips it running again the moment
       // the child's state pings (issue #274's frozen checkmark and stopped timer).
@@ -361,10 +366,11 @@ function extractFromSlice(
           parentOrigin,
           agentIdFromRunSubagentArgs(item.argumentsText),
           descriptionFromRunSubagentArgs(item.argumentsText),
+          runSubagentArg(item.argumentsText, "thinking_level"),
         );
       } else if (item.kind === "subagent") {
-        // A standalone child has no spawning card in this stream, so neither argument is available.
-        addChild(item.sessionId, item.model, false, parentId, parentOrigin, null, null);
+        // A standalone child has no spawning card in this stream, so no argument is available.
+        addChild(item.sessionId, item.model, false, parentId, parentOrigin, null, null, null);
       }
     }
   };

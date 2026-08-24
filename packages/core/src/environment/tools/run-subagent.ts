@@ -224,11 +224,14 @@ export function createSubagentTool(
 }
 
 /**
- * Arms the completion report of a background-launched subagent: at the end of every round
- * (input_subagent follow-ups included) the report — id, terminal status, tail of the
- * yet-undelivered answer text — goes to `services.backgroundDone`, which the Session turns
- * into a harness user message. `kill_subagent` disarms it first, and a killed/disposed
- * session never fires (see ManagedSubagentSession.onSettled).
+ * Arms the completion report of a background-launched subagent: at the end of every
+ * MODEL-initiated round (the launch itself and input_subagent follow-ups) the report — id,
+ * terminal status, tail of the yet-undelivered answer text — goes to
+ * `services.backgroundDone`, which the Session turns into a harness user message. Rounds the
+ * HOST starts (the panel's message on an idle child) stay silent: they are the user's own
+ * conversation with the child, not dispatched work awaiting a result (see
+ * ManagedSubagentSession.startRun's suppressDoneReport). `kill_subagent` disarms it first,
+ * and a killed/disposed session never fires (see ManagedSubagentSession.onSettled).
  */
 export function armSubagentDoneReport(
   session: ManagedSubagentSession,

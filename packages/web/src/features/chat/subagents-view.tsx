@@ -75,6 +75,7 @@ export function SubagentsView({
   approvalMode,
   onChangeApprovalMode,
   modeSaving,
+  parentThinkingLevel,
 }: {
   session: SessionInfo;
   model: StreamModel;
@@ -94,6 +95,8 @@ export function SubagentsView({
   approvalMode: ApprovalMode;
   onChangeApprovalMode: (mode: ApprovalMode) => void;
   modeSaving: boolean;
+  /** The parent session's effective thinking level ("" = unknown): the child composer's display fallback — a child inherits it at spawn unless the spawning call pinned its own. */
+  parentThinkingLevel: string;
 }) {
   const { agents, setCurrentAgentId } = useProject();
   const { sessions } = useSessions();
@@ -282,6 +285,7 @@ export function SubagentsView({
             approvalMode={approvalMode}
             onChangeApprovalMode={onChangeApprovalMode}
             modeSaving={modeSaving}
+            fallbackThinkingLevel={activeNode?.spawnThinkingLevel ?? parentThinkingLevel}
           />
         </>
       )}
@@ -322,6 +326,7 @@ function SubagentComposer({
   approvalMode,
   onChangeApprovalMode,
   modeSaving,
+  fallbackThinkingLevel,
 }: {
   sessionId: string;
   childSessionId: string;
@@ -333,6 +338,8 @@ function SubagentComposer({
   approvalMode: ApprovalMode;
   onChangeApprovalMode: (mode: ApprovalMode) => void;
   modeSaving: boolean;
+  /** Display fallback for the thinking picker while the user hasn't picked: the spawn call's explicit level, else the parent session's effective level (what the child inherited). */
+  fallbackThinkingLevel: string;
 }) {
   const { currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
@@ -377,7 +384,7 @@ function SubagentComposer({
   };
 
   return (
-    <div className="shrink-0 border-t border-gray-100 dark:border-gray-800/60">
+    <div className="shrink-0 border-t border-gray-100 px-2 pb-2 pt-2 dark:border-gray-800/60">
       <ChatInput
         variant="subagent"
         status={running ? "running" : "idle"}
@@ -414,7 +421,10 @@ function SubagentComposer({
         }}
         modelRef={modelRef}
         models={models}
-        turnThinkingLevel={turnLevel}
+        // Display: the user's pick for this child, else what the child actually runs at
+        // (spawn-pinned level, else the parent's effective level it inherited). Only an
+        // explicit pick rides the send (see messageSubagent's thinkingLevel).
+        turnThinkingLevel={turnLevel || fallbackThinkingLevel}
         onChangeTurnThinkingLevel={setTurnLevel}
         {...(contextWindow !== undefined ? { contextWindow } : {})}
         contextNow={contextNow}

@@ -141,17 +141,24 @@ export class ManagedSubagentSession {
 
   /**
    * Starts a new round of the task on the child Session (async pump, doesn't block the caller).
-   * `thinkingLevel` pins this round only (a host follow-up's per-turn picker). Throws if
-   * already disposed or still running (converted to an explanatory output by the caller).
+   * `opts.thinkingLevel` pins this round only (a host follow-up's per-turn picker);
+   * `opts.suppressDoneReport` keeps the settle watcher quiet for this round — a HOST-initiated
+   * round is the user's own conversation with the child, not work the model dispatched, so the
+   * parent must not receive a completion notice for it. Throws if already disposed or still
+   * running (converted to an explanatory output by the caller).
    */
-  startRun(prompt: string, thinkingLevel?: ThinkingLevelName): void {
+  startRun(
+    prompt: string,
+    opts?: { thinkingLevel?: ThinkingLevelName; suppressDoneReport?: boolean },
+  ): void {
     if (this.killed) throw new Error("subagent session disposed");
     if (this.isRunning) throw new Error("subagent is still running");
     this.isRunning = true;
     this.exitInfo = null;
+    this.reportCurrentRun = opts?.suppressDoneReport !== true;
     this.runCtrl = new AbortController();
     this.notifyState();
-    void this.pump(prompt, this.runCtrl, thinkingLevel);
+    void this.pump(prompt, this.runCtrl, opts?.thinkingLevel);
   }
 
   /**
@@ -261,9 +268,12 @@ export class ManagedSubagentSession {
     for (const msg of backlog) tap(msg);
   }
 
+  /** Whether the round in flight (or the last one) should fire the settle watcher: false for host-initiated rounds (see startRun). */
+  private reportCurrentRun = true;
+
   private fireSettleWatcher(): void {
     const cb = this.settleWatcher;
-    if (cb && !this.killed) cb();
+    if (cb && !this.killed && this.reportCurrentRun) cb();
   }
 
   /** Waits for "woken up" or `ms` to expire, whichever comes first. */

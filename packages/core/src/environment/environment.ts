@@ -301,7 +301,12 @@ export class Environment implements EnvironmentInterface {
     if (session.steer([userText(text)])) return "steered";
     if (session.running) return "busy";
     try {
-      session.startRun(text, opts?.thinkingLevel);
+      // A host round is the user's own conversation with the child, not work the model
+      // dispatched: it must not fire a background completion notice at the parent.
+      session.startRun(text, {
+        ...(opts?.thinkingLevel !== undefined ? { thinkingLevel: opts.thinkingLevel } : {}),
+        suppressDoneReport: true,
+      });
     } catch {
       return "gone";
     }
@@ -338,7 +343,11 @@ export class Environment implements EnvironmentInterface {
     this.subagentSessions.register(session);
     this.attachHostTap(session);
     try {
-      session.startRun(text, opts?.thinkingLevel);
+      // Host-initiated like the started path: no completion notice at the parent.
+      session.startRun(text, {
+        ...(opts?.thinkingLevel !== undefined ? { thinkingLevel: opts.thinkingLevel } : {}),
+        suppressDoneReport: true,
+      });
     } catch {
       return "gone";
     }

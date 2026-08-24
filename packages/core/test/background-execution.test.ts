@@ -407,6 +407,51 @@ describe("run_subagent run_in_background", () => {
     expect(events[1]!.output).toContain("answer to: second round");
   });
 
+  it("a HOST-started round stays silent: no completion report for the user's own message", async () => {
+    const manager = new SubagentSessionManager();
+    cleanups.push(() => manager.dispose());
+    const gates = new Map<string, () => void>();
+    const runner = runnerOf(async function* ({ prompt }) {
+      await new Promise<void>((r) => gates.set(prompt, r));
+      yield withHop(partialText("delta", `answer to: ${prompt}`));
+    });
+    const events: BackgroundTaskDoneEvent[] = [];
+    const services = {
+      subagentRunner: runner,
+      subagentSessions: manager,
+      backgroundDone: (e: BackgroundTaskDoneEvent) => events.push(e),
+    };
+    const tool = createSubagentTool(SUB_DEF, services);
+    const res = await drive(tool, { prompt: "dispatched work", run_in_background: true });
+    const id = extractSubagentId(res.note);
+    await waitFor(() => gates.has("dispatched work"));
+    gates.get("dispatched work")!();
+    await waitFor(() => events.length === 1);
+
+    // The user messages the idle child from the panel: their conversation, not dispatched
+    // work — the parent must not be notified when it settles.
+    const session = manager.get(id)!;
+    session.startRun("user says hi", { suppressDoneReport: true });
+    await waitFor(() => gates.has("user says hi"));
+    gates.get("user says hi")!();
+    await waitFor(() => !session.running);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(events).toHaveLength(1);
+
+    // The next MODEL-initiated round reports again (the watcher stayed armed).
+    const input = createInputSubagentTool(SUB_INPUT_DEF, services);
+    const follow = await drive(input, {
+      subagent_id: id,
+      prompt: "model round",
+      yield_time_ms: 250,
+    });
+    expect(follow.stopReason).toBe("completed");
+    await waitFor(() => gates.has("model round"));
+    gates.get("model round")!();
+    await waitFor(() => events.length === 2);
+    expect(events[1]!.output).toContain("answer to: model round");
+  });
+
   it("kill_subagent aborts a running background subagent without a completion report", async () => {
     const manager = new SubagentSessionManager();
     cleanups.push(() => manager.dispose());
