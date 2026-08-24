@@ -8,7 +8,13 @@ import { Hono } from "hono";
 import type { AgentCreateResponse, AgentsResponse, AgentSummary } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { settleWithin } from "../settle.js";
-import { optionalString, readJson, requireString, requireValidId } from "../validate.js";
+import {
+  optionalString,
+  optionalStringArray,
+  readJson,
+  requireString,
+  requireValidId,
+} from "../validate.js";
 import type { AppDeps } from "../../app.js";
 
 /** Window size in days for the card's activity sparkline (last 30 days, including today). */
@@ -50,7 +56,10 @@ export function agentsRoutes(deps: AppDeps): Hono<AppEnv> {
       maxLen: 2000,
       label: "description",
     });
-    const item = await deps.agentService.createAgent(projectId, agentId, name, description);
+    // Library Skills to seed the new Agent with (the create dialog's picker); unknown names are
+    // rejected before the Agent directory exists.
+    const skills = optionalStringArray(body, "skills");
+    const item = await deps.agentService.createAgent(projectId, agentId, name, description, skills);
     const agent: AgentSummary = {
       ...item,
       activeSessionCount: 0,

@@ -137,6 +137,27 @@ export function optionalString(
   return requireString(obj, key, rule);
 }
 
+/**
+ * Optional array-of-strings body field: absent (or null) yields undefined, anything that is not
+ * an array of non-empty strings is a 400. The per-item message carries the index, so a caller
+ * sending one bad entry in a long list is told which one.
+ */
+export function optionalStringArray(
+  obj: Record<string, unknown>,
+  key: string,
+  label = key,
+): string[] | undefined {
+  const v = obj[key];
+  if (v === undefined || v === null) return undefined;
+  if (!Array.isArray(v)) throw badRequest(`${label} must be an array of strings.`);
+  return v.map((item, i) => {
+    if (typeof item !== "string" || item.length === 0) {
+      throw badRequest(`${label}[${i}] must be a non-empty string.`);
+    }
+    return item;
+  });
+}
+
 export function requireEnum<T extends string>(
   obj: Record<string, unknown>,
   key: string,

@@ -774,6 +774,12 @@ export interface AgentCreateRequest {
   /** Display name; defaults to agentId. */
   name?: string;
   description?: string;
+  /**
+   * Library Skill names installed into the new Agent, seeding it at creation. Every name must
+   * exist in the library (404 `unknown_skill` otherwise, before anything is created); omitted or
+   * empty leaves the Agent with no Skills, which is what a plain Agent gets by default.
+   */
+  skills?: string[];
 }
 
 export interface AgentCreateResponse {

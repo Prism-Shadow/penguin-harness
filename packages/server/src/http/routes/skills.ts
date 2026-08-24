@@ -24,12 +24,11 @@ import {
   skillsDir,
 } from "@prismshadow/penguin-core";
 import {
-  librarySkill,
   loadSkillGroups,
   parseSkillFrontmatter,
   SKILL_NAME_PATTERN,
 } from "@prismshadow/penguin-skills";
-import type { LibrarySkill, SkillMetadata } from "@prismshadow/penguin-skills";
+import type { SkillMetadata } from "@prismshadow/penguin-skills";
 import type {
   AgentSkillsResponse,
   SkillLibraryResponse,
@@ -38,7 +37,14 @@ import type {
 import type { AppEnv } from "../../auth/middleware.js";
 import type { AppDeps } from "../../app.js";
 import { HttpError } from "../errors.js";
-import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
+import {
+  badRequest,
+  optionalStringArray,
+  readJson,
+  requireString,
+  requireValidId,
+} from "../validate.js";
+import { resolveLibrarySkills } from "../../services/skill-library.js";
 
 /** Decoded zip cap: aligned with the Agent snapshot import (stays within the 20MB body limit after base64). */
 const MAX_ARCHIVE_BYTES = 14 * 1024 * 1024;
@@ -224,12 +230,7 @@ function parseInstallNames(body: Record<string, unknown>): string[] {
   if (!Array.isArray(body.names) || body.names.length === 0) {
     throw badRequest("names must be a non-empty array.");
   }
-  return body.names.map((v, i) => {
-    if (typeof v !== "string" || v.length === 0) {
-      throw badRequest(`names[${i}] must be a non-empty string.`);
-    }
-    return v;
-  });
+  return optionalStringArray(body, "names") ?? [];
 }
 
 /** GET /api/skills: Skill library groups & metadata (any logged-in user; no Project check). */
@@ -281,11 +282,7 @@ export function agentSkillsRoutes(deps: AppDeps): Hono<AppEnv> {
     await deps.agentConfigService.requireExists(projectId, agentId);
     const names = parseInstallNames(await readJson(c));
     // Verify all names up front before writing anything: if any name isn't in the library, reject the whole request rather than leaving a half-installed state.
-    const skills: LibrarySkill[] = names.map((name) => {
-      const skill = librarySkill(name);
-      if (!skill) throw new HttpError(404, "unknown_skill", `Skill is not in the library: ${name}`);
-      return skill;
-    });
+    const skills = resolveLibrarySkills(names);
     for (const skill of skills) {
       await installSkill(deps.config.root, projectId, agentId, skill);
     }
