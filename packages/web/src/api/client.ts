@@ -42,12 +42,16 @@ export interface ApiFetchOptions {
   /** Query parameters (undefined values are skipped). */
   query?: Record<string, string | number | undefined>;
   /**
-   * Address the LOCAL server even when an active server is set — for the surfaces that are
-   * the local server's own by nature. The machines list, the install and the connect
-   * orchestration live where the ssh config and the tunnels are, whichever server the rest
-   * of the app is currently looking at.
+   * Which server answers this call, overriding the window's active one:
+   *
+   * - omitted — follow the active server (the normal case; see lib/server-context.ts);
+   * - `null`  — the LOCAL server, for surfaces that are its own by nature. The machines
+   *   list, the install and the connect orchestration live where the ssh config and the
+   *   tunnels are, whichever server the rest of the app is looking at;
+   * - a machine id — THAT machine, without moving the window. Browsing another machine's
+   *   directories to pick a workspace on it is the case this exists for.
    */
-  local?: boolean;
+  server?: string | null;
 }
 
 /** Response metadata a caller may need alongside the parsed body. */
@@ -74,8 +78,9 @@ export async function apiFetchWithMeta<T>(
   options: ApiFetchOptions = {},
 ): Promise<{ data: T } & ApiFetchMeta> {
   // The one routing rule: an active server re-roots every /api call onto its proxy prefix
-  // (see lib/server-context.ts); `local: true` opts a call out.
-  let url = options.local === true ? path : apiUrl(path);
+  // (see lib/server-context.ts). `server` overrides which one — including `null` for the
+  // local server, which is why the check is for the KEY rather than for a truthy value.
+  let url = "server" in options ? apiUrl(path, options.server ?? null) : apiUrl(path);
   if (options.query) {
     const params = new URLSearchParams();
     for (const [key, value] of Object.entries(options.query)) {

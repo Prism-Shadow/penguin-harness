@@ -432,9 +432,15 @@ export const listSessions = (
 };
 
 /** Server directory browsing: `path` is an absolute path; empty means start from the server's home directory. */
-export const listDirs = (projectId: string, path = "") =>
+/**
+ * Browses directories on a server. `machineId` targets a machine other than the window's
+ * active one — picking a workspace on a machine you are not currently working on browses
+ * ITS filesystem, since that is where the path has to exist.
+ */
+export const listDirs = (projectId: string, path = "", machineId?: string | null) =>
   apiFetch<DirListResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/dirs?path=${encodeURIComponent(path)}`,
+    machineId === undefined ? {} : { server: machineId },
   );
 
 /**
@@ -919,7 +925,7 @@ export const importAgent = (projectId: string, agentId: string, body: AgentImpor
  * job runs — the progress lines live on the job,
  * not on the event channel, because they belong to the one page that is waiting for them.
  */
-export const getMachines = () => apiFetch<MachinesResponse>("/api/machines", { local: true });
+export const getMachines = () => apiFetch<MachinesResponse>("/api/machines", { server: null });
 
 /**
  * Re-probes the installed machines' servers (one ssh round trip each, server-side) and
@@ -927,14 +933,14 @@ export const getMachines = () => apiFetch<MachinesResponse>("/api/machines", { l
  * spawns processes is one a prefetch or a proxy may fire on its own.
  */
 export const probeMachines = () =>
-  apiFetch<MachinesResponse>("/api/machines/probe", { method: "POST", body: {}, local: true });
+  apiFetch<MachinesResponse>("/api/machines/probe", { method: "POST", body: {}, server: null });
 
 /** Starts an install (202, long-running); the returned body already carries the new job. */
 export const installOnMachine = (machineId: string) =>
   apiFetch<MachinesResponse>(`/api/machines/${encodeURIComponent(machineId)}/install`, {
     method: "POST",
     body: {},
-    local: true,
+    server: null,
   });
 
 /** Brings that machine's server up and holds a tunnel to it (202, long-running). */
@@ -942,7 +948,7 @@ export const connectMachine = (machineId: string) =>
   apiFetch<MachinesResponse>(`/api/machines/${encodeURIComponent(machineId)}/connect`, {
     method: "POST",
     body: {},
-    local: true,
+    server: null,
   });
 
 /** Drops the tunnel; the remote server keeps running. */
@@ -950,7 +956,7 @@ export const disconnectMachine = (machineId: string) =>
   apiFetch<MachinesResponse>(`/api/machines/${encodeURIComponent(machineId)}/disconnect`, {
     method: "POST",
     body: {},
-    local: true,
+    server: null,
   });
 
 // Version & self-update ----------------------------------------------------------------
