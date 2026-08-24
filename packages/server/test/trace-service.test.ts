@@ -974,6 +974,33 @@ describe("trace-service", () => {
     expect(a.tasks[1]!.startTs).toBe(T("21.000"));
   });
 
+  it("Task grouping: an UNSTAMPED notice in a tool-continuation gap merges too (pre-stamp traces)", async () => {
+    // Legacy shape (0.2.4 core, no delivery stamp): the notice sits between a tool-calling
+    // request and its continuation, where a Task cannot end — position alone proves it is
+    // in-task, and the round must not split at it (the reducer and the window scanner apply
+    // the identical fallback).
+    const T = (sec: string) => `2026-07-05T10:07:${sec}Z`;
+    const plain = buildBackgroundTaskDoneMessage(
+      { kind: "command", id: "proc-4", status: "completed", detail: "exit code 0" },
+      "Background command finished",
+    );
+    await writeTraceFile(root, P, A, "2026-07-05", S, 16, [
+      sessionMeta(metaPayload()),
+      at(T("00.000"), userText("build it")),
+      at(T("01.000"), requestBegin()),
+      at(T("02.000"), toolCall({ name: "exec_command", arguments: "{}", toolCallId: "t1" })),
+      at(T("02.500"), requestEnd("completed")),
+      at(T("03.000"), toolCallOutput({ output: "launched", toolCallId: "t1" })),
+      at(T("08.000"), userText(plain, "harness")),
+      at(T("08.500"), requestBegin()),
+      at(T("09.000"), assistantText("finished cleanly")),
+      at(T("09.500"), requestEnd("completed")),
+    ]);
+    const a = await service.analyze(P, A, S, 16);
+    expect(a.requests.map((r) => r.taskIndex)).toEqual([0, 0]);
+    expect(a.tasks.map((t) => t.taskIndex)).toEqual([0]);
+  });
+
   it("Task grouping: a notice drained at run start rides behind the fresh Prompt without merging turns", async () => {
     // A notice queued while the session sat idle can be consumed by a user run's start
     // instead of the idle launcher: core writes it right after the Prompt, steering-stamped.

@@ -52,7 +52,7 @@
 import {
   isEventMessage,
   isPartialPayload,
-  isSteeredBackgroundNotice,
+  parseBackgroundTaskDoneMessage,
   parseUserSteeringText,
 } from "@prismshadow/penguin-core/omnimessage";
 import type {
@@ -1167,12 +1167,23 @@ function handleComplete(
           model.openSteering = item;
           return;
         }
-        // A background notice steered into the running Task (delivery: steering on its
-        // block): same exclusion as steering — rendered inside the Task as the completion
-        // banner, never a Task starter, so no stats row is flushed at the injection point.
-        // The unstamped form falls through to the user_text branch below: an idle-launched
-        // notice task keeps its independent turn (and its stats row placement).
-        if (isSteeredBackgroundNotice(p.text)) {
+        // A background completion notice ([background_task_done] block) injected into the
+        // running Task: same exclusion as steering — rendered inside the Task as the
+        // completion banner, never a Task starter, so no stats row is flushed at the
+        // injection point. Two ways to recognize the injection:
+        //   - the delivery stamp (`delivery: steering`), written by the engine's drain;
+        //   - POSITION, for notices written by a pre-stamp core (0.2.4 traces): a Task can
+        //     never end between a turn's paired tool outputs and the continuation request,
+        //     so a notice arriving while this turn's tool outputs are still owed to the
+        //     model (turnToolOutputs) is provably in-task even without the stamp. This is
+        //     the same rule trace analysis has always applied (a tool-calling request
+        //     forces a continuation), so the two pages agree on legacy data.
+        // An unstamped notice after a NO-tool final turn still falls through to the
+        // user_text branch below: there an idle-launched notice task is genuinely possible
+        // and position cannot tell the two apart — only the stamp can, and new cores write
+        // it.
+        const notice = parseBackgroundTaskDoneMessage(p.text);
+        if (notice !== null && (notice.done.delivery === "steering" || model.turnToolOutputs)) {
           // A wrap-up compaction may have settled the round early; an injected notice is
           // exactly what keeps the Task going past it, so it opens the continuation's own
           // round rather than joining a closed one (same rule as the steering chip above).

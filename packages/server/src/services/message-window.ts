@@ -38,7 +38,7 @@
  */
 import { parseUserSteeringText } from "@prismshadow/penguin-core";
 import {
-  isSteeredBackgroundNotice,
+  parseBackgroundTaskDoneMessage,
   parseGoalMessage,
   parseHandoffMessage,
   parseModelSwitchMessage,
@@ -46,7 +46,7 @@ import {
 import type { OmniMessage } from "@prismshadow/penguin-core";
 
 /** Bump when any counting/boundary rule changes: cached page_stats records with an older version are recomputed. */
-export const CACHE_VERSION = 2;
+export const CACHE_VERSION = 3;
 
 /** Cumulative totals at a point in the trace (all values are "before this point"). */
 export interface WindowPriorStats {
@@ -75,6 +75,14 @@ interface TaskCarry {
   sawReply: boolean;
   /** Compaction usage held pending (committed to the Task by a later non-compaction request_end — mirrors task-stats.ts pendingCompaction*). */
   pendingCompactionUsage: boolean;
+  /**
+   * A tool output of the current turn has arrived and is still owed to the model (mirrors
+   * StreamModel.turnToolOutputs: set by a complete tool_call_output, cleared when the next
+   * request opens or a Task starts). A Task can never end in that window, so a background
+   * completion notice landing there is in-task by position — the recognizer for notices
+   * written by a pre-stamp core (see the user-text branch).
+   */
+  turnToolOutputs: boolean;
 }
 
 /** Full scanner state, serializable into a shard's cached prefix record. */
@@ -106,6 +114,7 @@ export function initialScanState(): ScanState {
       sawUsage: false,
       sawReply: false,
       pendingCompactionUsage: false,
+      turnToolOutputs: false,
     },
     compactionActive: false,
     steeringOpen: false,
@@ -162,6 +171,7 @@ function startTask(state: ScanState, ms: number | null): void {
   t.sawUsage = false;
   t.sawReply = false;
   t.pendingCompactionUsage = false;
+  t.turnToolOutputs = false;
 }
 
 /** A non-user item entered the stream: the user-item run breaks (buildOutline's lastWasUser = false). */
@@ -254,11 +264,20 @@ export async function scanMessages(
           state.steeringOpen = true;
           continue;
         }
-        // A steered background notice (delivery: steering on its block) rides inside the
-        // running Task like steering — a banner item, no Task start, no cut, no entry — but
-        // opens no trailing-image window (notices carry none). The unstamped form falls
-        // through to onTaskStart: an idle-launched notice task keeps its independent turn.
-        if (isSteeredBackgroundNotice(text)) {
+        // A background completion notice injected into the running Task rides inside it
+        // like steering — a banner item, no Task start, no cut, no entry — but opens no
+        // trailing-image window (notices carry none). Recognized by the delivery stamp,
+        // or by POSITION for notices written by a pre-stamp core: a Task never ends while
+        // this turn's tool outputs are still owed to the model (turnToolOutputs), so a
+        // notice landing there is in-task even without the stamp — the same rule trace
+        // analysis applies, and the same fallback the Web reducer applies (the two must
+        // stay in step). An unstamped notice after a no-tool turn falls through to
+        // onTaskStart: an idle-launched notice task keeps its independent turn.
+        const notice = parseBackgroundTaskDoneMessage(text);
+        if (
+          notice !== null &&
+          (notice.done.delivery === "steering" || state.task.turnToolOutputs)
+        ) {
           touchTask(state, ms);
           breakRuns(state);
           continue;
@@ -294,7 +313,14 @@ export async function scanMessages(
         breakRuns(state);
         continue;
       }
-      // tool_call_output updates an existing card (no new item); inline_* render nothing.
+      if (p.type === "tool_call_output") {
+        // Updates an existing card (no new item); the turn now owes the model its results
+        // — the window a positionally-recognized notice keys on (see turnToolOutputs).
+        touchTask(state, ms);
+        state.task.turnToolOutputs = true;
+        continue;
+      }
+      // inline_* render nothing.
       touchTask(state, ms);
       continue;
     }
@@ -360,7 +386,14 @@ export async function scanMessages(
         }
         continue;
       }
-      // approval_decision / request_begin / unexpanded pointers: no items, no run change.
+      if (t === "request_begin") {
+        // No item, no run change — but a new request means the previous turn's tool
+        // outputs have been sent with it (mirrors stream-model's request_begin reset;
+        // compaction requests don't consume the pending turn state).
+        if (!state.compactionActive) state.task.turnToolOutputs = false;
+        continue;
+      }
+      // approval_decision / unexpanded pointers: no items, no run change.
       continue;
     }
     // session_meta: no item (steering window already closed above).

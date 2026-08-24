@@ -366,6 +366,36 @@ describe("messages windowed reads", () => {
     expect(older.prior.turns).toBe(1);
   });
 
+  it("an UNSTAMPED notice in a tool-continuation gap neither cuts nor counts (pre-stamp traces)", async () => {
+    // Legacy shape: no delivery stamp, but the notice sits between a turn's tool output and
+    // the continuation request — in-task by position, mirroring the reducer and trace
+    // analysis. The window must keep the whole turn together.
+    const plain = buildBackgroundTaskDoneMessage(
+      { kind: "command", id: "proc-9", status: "completed", detail: "exit code 0" },
+      "Background command finished",
+    );
+    await writeTraceFile(root, P, A, "2026-07-20", S, 1, [
+      sessionMeta(metaPayload()),
+      ...turn(0, 1, 1000),
+      at("2026-07-20T10:01:00.000Z", userText("q2")),
+      at("2026-07-20T10:01:01.000Z", requestBegin()),
+      at("2026-07-20T10:01:02.000Z", toolCall({ name: "exec", arguments: "{}", toolCallId: "t1" })),
+      at("2026-07-20T10:01:03.000Z", requestEnd("completed")),
+      at("2026-07-20T10:01:04.000Z", toolCallOutput({ output: "launched", toolCallId: "t1" })),
+      at("2026-07-20T10:01:05.000Z", userText(plain, "harness")),
+      at("2026-07-20T10:01:06.000Z", requestBegin()),
+      at("2026-07-20T10:01:07.000Z", assistantText("done")),
+      at("2026-07-20T10:01:08.000Z", requestEnd("completed")),
+      at("2026-07-20T10:01:08.500Z", tokenUsage(counts(2000), counts(200))),
+    ]);
+    const tail = await service.readMessagesPage(P, A, S, { kind: "tail", limit: 1 });
+    // The newest unit is the WHOLE second turn — the cut lands at q2, not at the notice —
+    // and only q1 precedes it in the outline numbering.
+    expect(userTexts(tail.messages)[0]).toBe("q2");
+    expect(userTexts(tail.messages).some((t) => t.includes("proc-9"))).toBe(true);
+    expect(tail.prior.turns).toBe(1);
+  });
+
   it("a text+images send is one unit and one outline turn; banner and goal-round prompts cut but never count", async () => {
     await writeTraceFile(root, P, A, "2026-07-20", S, 1, [
       sessionMeta(metaPayload()),

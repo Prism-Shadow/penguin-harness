@@ -21,6 +21,7 @@ import {
   matchAttachedFileLine,
   matchAttachedImageLine,
   modelVisiblePath,
+  parseBackgroundTaskDoneMessage,
   parseTraceLines,
   parseUserSteeringText,
   readTraceTolerant,
@@ -924,15 +925,25 @@ export class TraceService {
         p.role === "user" &&
         typeof p.text === "string";
       const isSteeringText = isMainUserText && parseUserSteeringText(p.text as string) !== null;
-      // A background completion notice steered into the running Task (`delivery: steering`
-      // on its block) gets the same treatment as steering. An unstamped notice is an
-      // idle-launched notice task's own input and keeps its independent turn.
-      const isSteeredNotice = isMainUserText && isSteeredBackgroundNotice(p.text as string);
+      // A background completion notice injected into the running Task gets the same
+      // treatment as steering. Recognized by the delivery stamp (`delivery: steering` on
+      // its block), or by POSITION for notices written by a pre-stamp core: a Task never
+      // ends while the just-ended request's tool calls still await their continuation
+      // (sawToolCallThisRequest — the same fact that forces the continuation below), so a
+      // notice landing in that gap is in-task even without the stamp. The Web reducer and
+      // the message-window scanner apply the identical fallback — the four turn
+      // implementations must agree on legacy data too. An unstamped notice after a
+      // no-tool turn keeps its independent turn: there an idle launch is genuinely
+      // possible and only the stamp (written by new cores) can tell the two apart.
+      const noticeParsed = isMainUserText ? parseBackgroundTaskDoneMessage(p.text as string) : null;
+      const isInjectedNotice =
+        noticeParsed !== null &&
+        (noticeParsed.done.delivery === "steering" || sawToolCallThisRequest);
       // The continuation force only applies to a gap delivery (between two requests of the
       // running Task). A notice drained at run start rides behind a fresh user Prompt —
       // pendingFrom is then already open for the new turn, whose own `continuation = false`
       // must win, or the new turn would merge into the previous one.
-      if ((isSteeringText || isSteeredNotice) && pendingFrom === null) continuation = true;
+      if ((isSteeringText || isInjectedNotice) && pendingFrom === null) continuation = true;
       // Images sent with a steering message ride immediately behind its text, exactly as a
       // Prompt's images ride behind theirs — and they inherit its exclusion: still the same
       // Task, so `steeringImages` keeps the window open across the whole run of them and
@@ -948,7 +959,7 @@ export class TraceService {
         !hasOrigin &&
         !compactionActive &&
         !isSteeringText &&
-        !isSteeredNotice &&
+        !isInjectedNotice &&
         !steeringImages &&
         msg.type === "model_msg" &&
         ((p.type === "text" && p.role === "user") || p.type === "image_url");

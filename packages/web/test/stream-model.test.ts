@@ -1693,6 +1693,38 @@ describe("compaction-internal messages (#17: history rebuild aligned with the li
     expect(notice.text).toContain("delivery: steering");
   });
 
+  it("an UNSTAMPED notice landing while tool outputs are pending stays in-task (pre-stamp traces)", () => {
+    // Legacy shape: a 0.2.4 core wrote no delivery stamp. A Task can never end between a
+    // turn's paired tool outputs and the continuation request, so position alone proves the
+    // notice is in-task — the reducer must not flush a mid-task stats row for it (the same
+    // rule trace analysis applies via its tool-call continuation).
+    const m = createStreamModel();
+    pushMessages(m, [
+      at(userText("build it"), "2026-07-05T00:00:00.000Z"),
+      at(requestBegin(), "2026-07-05T00:00:01.000Z"),
+      at(
+        toolCall({ name: "exec_command", arguments: "{}", toolCallId: "t1" }),
+        "2026-07-05T00:00:02.000Z",
+      ),
+      at(tokenUsage(counts(100), counts(100)), "2026-07-05T00:00:02.500Z"),
+      at(requestEnd("completed"), "2026-07-05T00:00:03.000Z"),
+      at(toolCallOutput({ output: "launched", toolCallId: "t1" }), "2026-07-05T00:00:04.000Z"),
+      at(userText(noticeText(), "harness"), "2026-07-05T00:00:08.000Z"),
+      at(requestBegin(), "2026-07-05T00:00:09.000Z"),
+      at(assistantText("it finished cleanly"), "2026-07-05T00:00:10.000Z"),
+      at(tokenUsage(counts(200), counts(100)), "2026-07-05T00:00:10.500Z"),
+      at(requestEnd("completed"), "2026-07-05T00:00:11.000Z"),
+    ]);
+    finalizeHistory(m);
+    expect(items(m).map((i) => i.kind)).toEqual([
+      "user_text",
+      "tool_call",
+      "background_notice",
+      "assistant_text",
+      "task_stats",
+    ]);
+  });
+
   it("an unstamped completion notice (idle-launched notice task input) still starts its own Task", () => {
     // The idle path launches a task whose input IS the notice — no delivery stamp, and the
     // independent turn (its own stats row) is exactly the intended rendering.
