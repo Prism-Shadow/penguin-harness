@@ -2492,3 +2492,42 @@ export interface UpdateRunResponse {
   /** True when the install changed (or was already current): restart the service to run the new version. */
   needsRestart: boolean;
 }
+
+/** One `Host` entry of the server's `~/.ssh/config`, as the Machines page lists it. */
+export interface MachineInfo {
+  /** `ssh:<alias>` — the id the install route is asked for. */
+  id: string;
+  /**
+   * The alias exactly as written in the config. The list is the config text and nothing
+   * else — no `ssh -G`, no processes, no network — so a config declaring hundreds of hosts
+   * costs one file read; an alias is resolved only when it is actually installed to.
+   */
+  alias: string;
+}
+
+/**
+ * The running or last install, polled by GET /api/machines while one runs. `log` carries the
+ * far side's own words where there are any: ssh's diagnostics and the remote installer's
+ * output say more about a refused key or an unusable Node than a paraphrase would.
+ */
+export interface MachineInstallJob {
+  machineId: string;
+  alias: string;
+  running: boolean;
+  log: string[];
+  result:
+    | null
+    | { ok: true; kind: "installed" | "already-installed"; version: string | null }
+    | { ok: false; step: string; message: string };
+}
+
+/** GET /api/machines, and the 202 body of POST /api/machines/:machineId/install. */
+export interface MachinesResponse {
+  machines: MachineInfo[];
+  /**
+   * The version this server would push, or null when it has no install image at all — a
+   * development checkout that has never been hot-pushed to is the one shape without one.
+   */
+  imageVersion: string | null;
+  job: MachineInstallJob | null;
+}
