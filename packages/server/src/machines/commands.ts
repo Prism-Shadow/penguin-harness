@@ -228,3 +228,28 @@ export function tunnelArgs(target: RemoteTarget, port: number): string[] {
     target.alias,
   ];
 }
+
+/** Marker separating the resolved path from the entries in a directory listing. */
+export const DIR_LIST_MARK = "---penguin-dirs---";
+
+/**
+ * Lists the subdirectories of `dir` on the far side, plus the path it actually resolved to.
+ *
+ * An empty `dir` means that machine's home, which is the picker's starting point. The path
+ * is resolved over THERE (`cd` + `pwd -P`) because only that machine can say what `~` or a
+ * symlink means on it — resolving here would be this machine answering a question about
+ * another one's filesystem.
+ *
+ * Hidden directories are dropped, matching what the local browser shows, and everything is
+ * quoted for the remote shell by the caller's quoting rules.
+ */
+export function listDirsCommand(dir: string): string {
+  const target = dir === "" ? '"$HOME"' : shQuote(dir);
+  return [
+    `cd ${target} 2>/dev/null || exit 3`,
+    `pwd -P`,
+    `echo ${DIR_LIST_MARK}`,
+    // -1 one per line, trailing slash marks directories, then keep only those.
+    `ls -1p 2>/dev/null | grep '/$' | sed 's:/$::' | grep -v '^\\.' || true`,
+  ].join("; ");
+}

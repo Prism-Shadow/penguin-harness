@@ -40,3 +40,14 @@ describe("apiUrl", () => {
     expect(apiUrl("/api/me")).toBe("/api/me");
   });
 });
+
+describe("a 401 from another machine", () => {
+  it("is that machine's answer, not this server's", () => {
+    // The rule lives in client.ts (`options.server ?? null` decides), and this is the case
+    // it exists for: clicking a remote host in a picker used to bounce the window to the
+    // login page of a server it was still perfectly signed in to. Pinned here as the
+    // statement of intent, since the transport itself is not unit-reachable.
+    expect(apiUrl("/api/me", "noeSE0FFHhNXl2J5")).toBe("/server/noeSE0FFHhNXl2J5/api/me");
+    expect(apiUrl("/api/me")).toBe("/api/me");
+  });
+});

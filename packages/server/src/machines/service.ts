@@ -32,10 +32,13 @@ import type {
 } from "../api/types.js";
 import { readServerLock } from "../lock.js";
 import { listHostAliases, resolveTarget } from "./targets.js";
+import { sshArgs } from "./commands.js";
+import { run } from "./exec.js";
 import { installOnRemote, resolvePushPlan } from "./install-server.js";
 import { parseInstallRecords, withInstallRecord } from "./installs.js";
 import type { InstallRecord } from "./installs.js";
 import { probeServerState } from "./server-state.js";
+import { DIR_LIST_MARK, listDirsCommand } from "./commands.js";
 import { upgradeRemote } from "./upgrade.js";
 import { readOrCreateMachineId } from "./machine-id.js";
 import { localPortBusy, openTunnel, waitForTunneledHttp } from "./tunnel.js";
@@ -60,6 +63,11 @@ export interface MachinesEffects {
   resolvePlan: typeof resolvePushPlan;
   install: typeof installOnRemote;
   probe: typeof probeServerState;
+  /** One command on a machine — the seam the directory browser and any future reader share. */
+  runOn: (
+    target: { alias: string; user: string },
+    command: string,
+  ) => Promise<{ code: number; stdout: string; stderr: string }>;
   startServer: typeof startRemoteServer;
   stopServer: typeof stopRemoteServer;
   upgrade: typeof upgradeRemote;
@@ -138,6 +146,7 @@ export class MachinesService {
       resolvePlan: resolvePushPlan,
       install: installOnRemote,
       probe: probeServerState,
+      runOn: (target, command) => run("ssh", sshArgs(target, command), { timeoutMs: 30_000 }),
       startServer: startRemoteServer,
       stopServer: stopRemoteServer,
       upgrade: upgradeRemote,
@@ -210,6 +219,48 @@ export class MachinesService {
       };
     });
     return [this.#localMachine(), ...remotes];
+  }
+
+  /**
+   * The subdirectories of `dir` on a machine, over ssh.
+   *
+   * Over SSH rather than through the tunnel and that machine's API, because picking a
+   * workspace must not require signing in to another server. ssh is already the trust
+   * relationship — this server installed the program there — and the browsing is the local
+   * admin's, authenticated by the local session like the rest of this surface. Asking the
+   * remote's HTTP API instead would 401 until the person logged in over there, which is a
+   * second login for a directory listing.
+   */
+  async listDirs(
+    machineId: string,
+    dir: string,
+  ): Promise<{
+    path: string;
+    parent: string | null;
+    entries: { name: string; path: string }[];
+  } | null> {
+    const machine = this.list().find((entry) => entry.machineId === machineId && !entry.local);
+    if (machine === undefined) return null;
+    const resolved = await this.#effects.resolveTarget(machine.alias);
+    if (resolved === null) return null;
+    const result = await this.#effects.runOn(
+      { alias: machine.alias, user: resolved.settings.user },
+      listDirsCommand(dir),
+    );
+    if (result.code !== 0) return null;
+    const [head, rest] = result.stdout.split(DIR_LIST_MARK);
+    const path = (head ?? "").trim().split("\n").pop()?.trim() ?? "";
+    if (path === "") return null;
+    const names = (rest ?? "")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line !== "");
+    const join = (name: string) => (path.endsWith("/") ? `${path}${name}` : `${path}/${name}`);
+    return {
+      path,
+      parent: path === "/" ? null : path.slice(0, path.lastIndexOf("/")) || "/",
+      entries: names.sort((a, b) => a.localeCompare(b)).map((name) => ({ name, path: join(name) })),
+    };
   }
 
   /**

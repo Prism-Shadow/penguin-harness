@@ -110,7 +110,12 @@ export async function apiFetchWithMeta<T>(
     } catch {
       // Non-JSON error body: fall back to the default message.
     }
-    if (response.status === 401 && !isAuthEndpoint(path)) onUnauthorized?.();
+    // A 401 from ANOTHER machine is that machine's answer, not this server's: it means we
+    // are not signed in over there, which says nothing about the session here. Treating it
+    // as a local logout is how clicking a remote host in a picker bounced the window to the
+    // login page of a server it was still perfectly signed in to.
+    const fromThisServer = (options.server ?? null) === null;
+    if (response.status === 401 && fromThisServer && !isAuthEndpoint(path)) onUnauthorized?.();
     throw new ApiError(response.status, code, message);
   }
 
