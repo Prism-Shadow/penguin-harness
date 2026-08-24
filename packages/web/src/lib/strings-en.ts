@@ -40,6 +40,12 @@ export const en: Strings = {
     noImage:
       "This server has no install image to push. A packaged or tarball install carries one; a source checkout gets one from its first hot push.",
     empty: "No hosts in ~/.ssh/config.",
+    /** The picker: an ssh config can declare hundreds of hosts, so the panel is a fuzzy search over aliases. */
+    pick: "Choose a machine\u2026",
+    search: "Search hosts\u2026",
+    noMatch: "No host matches that.",
+    /** How many matches the visible rows leave out — a silent truncation would read as "not in my config". */
+    more: (count: number) => `${count} more \u2014 keep typing to narrow it down.`,
     install: "Install",
     installing: "Installing\u2026",
     reinstall: "Reinstall",

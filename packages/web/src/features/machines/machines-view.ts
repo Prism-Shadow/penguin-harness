@@ -1,33 +1,30 @@
 /**
- * What one row of the Machines page shows, decided as data rather than in JSX.
+ * What the Machines page's install control offers, decided as data rather than in JSX.
  *
- * The server keeps ONE install job at a time, so at most one row owns it and every other
- * row's button is disabled while it runs. That coupling — a job on the response, a decision
- * per row — is the whole logic of the page, and it is the part worth pinning in tests; the
- * component only maps the result onto strings and tones.
+ * The server keeps ONE install job at a time, so the button is governed by two things that
+ * are not the same: which machine is SELECTED in the picker, and which machine the job (if
+ * any) belongs to. They come apart the moment someone picks a second host while the first
+ * is still installing — the button must refuse, but the running job's log still belongs on
+ * screen, under the alias it is actually installing to. That is why the job panel renders
+ * from `state.job` directly and only the button consults the selection.
  */
 import type { MachineInstallJob, MachinesResponse } from "@prismshadow/penguin-server/api";
 
-/** The finished job's verdict, in the shape the row renders. */
+/** The finished job's verdict, in the shape the page renders. */
 export type MachineVerdict =
   | { kind: "installed"; version: string | null }
   | { kind: "already-installed"; version: string | null }
   | { kind: "failed"; step: string; message: string };
 
-export interface MachineRowState {
+export interface InstallButtonState {
   /** What the button offers: a fresh install, one already under way, or a repeat of a finished one. */
   action: "install" | "installing" | "reinstall";
   /**
-   * True when this button must not start anything: a job is running anywhere (one at a
-   * time), this row's own POST is in flight, or this server has no image to send at all.
+   * True when the button must not start anything: nothing is selected, a job is running
+   * anywhere (one at a time, server-side), this page's own POST is in flight, or this
+   * server has no image to send at all.
    */
   disabled: boolean;
-  /** True while THIS row's install is the running one — the row also says so in words. */
-  running: boolean;
-  /** The verdict, only on the row the finished job belongs to. */
-  verdict: MachineVerdict | null;
-  /** The job's progress lines, only on the row the job belongs to. */
-  log: readonly string[];
 }
 
 /** The verdict of a job that has finished, or null while it is still running. */
@@ -38,26 +35,24 @@ export function verdictOf(job: MachineInstallJob): MachineVerdict | null {
 }
 
 /**
- * `starting` is the row whose POST has not come back yet. It exists because the server has
+ * `starting` is true while a POST has not come back yet. It exists because the server has
  * no job to report during that window, and a button that stays on "Install" through a click
  * reads as a click that did nothing.
  */
-export function machineRowState(
-  machineId: string,
+export function installButtonState(
+  selectedId: string | null,
   state: MachinesResponse,
-  starting: string | null,
-): MachineRowState {
+  starting: boolean,
+): InstallButtonState {
   const job = state.job;
-  const owns = job !== null && job.machineId === machineId;
   const runningSomewhere = job?.running === true;
-  const running = owns && runningSomewhere;
-  const verdict = owns && !runningSomewhere ? verdictOf(job) : null;
+  const selectedIsRunning = runningSomewhere && job.machineId === selectedId;
+  // "Reinstall" only for the machine whose finished job is the one on screen — every other
+  // selection is an ordinary first install as far as this page knows.
+  const settledHere =
+    job !== null && !runningSomewhere && job.machineId === selectedId && job.result !== null;
   return {
-    action:
-      running || starting === machineId ? "installing" : verdict === null ? "install" : "reinstall",
-    disabled: runningSomewhere || starting !== null || state.imageVersion === null,
-    running,
-    verdict,
-    log: owns ? job.log : [],
+    action: selectedIsRunning || starting ? "installing" : settledHere ? "reinstall" : "install",
+    disabled: selectedId === null || runningSomewhere || starting || state.imageVersion === null,
   };
 }
