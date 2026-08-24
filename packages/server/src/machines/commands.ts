@@ -149,3 +149,62 @@ export function readServerStateCommand(): string {
     `if [ -f "$mid" ]; then echo; echo ${MACHINE_ID_MARK}; cat "$mid"; fi`,
   ].join("; ");
 }
+
+// --- starting, stopping and tunnelling to that server (POSIX only) --------------------------
+//
+// These run against a machine the install already ran on, so the layout is known: the
+// launcher at `${XDG_DATA_HOME:-$HOME/.local/share}/penguin/bin/penguin` (absolute — sshd's
+// non-login shell has no ~/.local/bin on PATH) and the data root at `~/.penguin/data`. POSIX
+// only because starting a detached background process from a cmd.exe ssh session is a
+// different mechanism entirely; connect refuses a Windows remote rather than pretending.
+
+/**
+ * Starts the installed server detached on the given port, logging to the data root. `nohup`
+ * plus full stream redirection is the portable form (`setsid` does not exist on macOS); the
+ * ssh session then has nothing to wait for and exits at once. The port is a validated
+ * integer on this side, so nothing here needs quoting beyond the paths.
+ */
+export function startServerCommand(port: number): string {
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`bad port ${port}`);
+  return [
+    `bin="\${XDG_DATA_HOME:-$HOME/.local/share}/penguin/bin/penguin"`,
+    `mkdir -p "$HOME/.penguin/data"`,
+    `PORT=${port} HOST=127.0.0.1 nohup "$bin" server </dev/null >>"$HOME/.penguin/data/server.log" 2>&1 &`,
+  ].join("; ");
+}
+
+/** Asks the server to go away politely (TERM); liveness is re-checked by the state probe. */
+export function stopServerCommand(pid: number): string {
+  if (!Number.isInteger(pid) || pid < 1) throw new Error(`bad pid ${pid}`);
+  return `kill ${pid} 2>/dev/null || true`;
+}
+
+/** The last lines of the remote server's log — the far side's own words when a start fails. */
+export function serverLogTailCommand(lines = 20): string {
+  if (!Number.isInteger(lines) || lines < 1 || lines > 1000) throw new Error(`bad lines ${lines}`);
+  return `tail -n ${lines} "$HOME/.penguin/data/server.log" 2>/dev/null || true`;
+}
+
+/**
+ * `ssh -N -L <port>:127.0.0.1:<port> <alias>` — the tunnel that makes the remote server a
+ * loopback origin here. Local and remote port are the SAME number by design: preview URLs
+ * are built from the server's own bound port (preview-token.ts), so the two must stay equal.
+ * ExitOnForwardFailure turns "local port taken" into an exit instead of a silent no-op
+ * tunnel, and the keepalives surface a dead link within a minute.
+ */
+export function tunnelArgs(target: RemoteTarget, port: number): string[] {
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`bad port ${port}`);
+  return [
+    ...connectionOptions(target),
+    "-N",
+    "-o",
+    "ExitOnForwardFailure=yes",
+    "-o",
+    "ServerAliveInterval=15",
+    "-o",
+    "ServerAliveCountMax=4",
+    "-L",
+    `${port}:127.0.0.1:${port}`,
+    target.alias,
+  ];
+}
