@@ -26,6 +26,14 @@ import { DEFAULT_SERVER_PORT } from "@prismshadow/penguin-core";
 export interface ConnectState {
   /** Local (= remote) port this machine's tunnel forwards. */
   port: number;
+  /**
+   * The id of the machine on the far end, learned when the connect was made.
+   *
+   * Recorded HERE, with the connection, rather than looked up through the ssh config: a
+   * live tunnel does not care what the config says now. Renaming the host — or deleting its
+   * entry outright — must not make a connection that is still forwarding unaddressable.
+   */
+  machineId?: string;
   /** ssh child holding the tunnel, when one was started and not seen exiting. */
   tunnelPid?: number;
   /** ISO timestamp of the last successful connect. */
@@ -44,6 +52,7 @@ export function parseConnectState(raw: string | null): Record<string, ConnectSta
       const o = value as Record<string, unknown>;
       if (!isPort(o.port)) continue;
       const entry: ConnectState = { port: o.port };
+      if (typeof o.machineId === "string" && o.machineId !== "") entry.machineId = o.machineId;
       if (typeof o.tunnelPid === "number" && Number.isInteger(o.tunnelPid) && o.tunnelPid > 0) {
         entry.tunnelPid = o.tunnelPid;
       }

@@ -2,6 +2,10 @@
  * The same-origin proxy's pure half: which paths it claims, and the cookie renaming that
  * lets several servers' sessions coexist under ONE browser origin.
  *
+ * Everything here is addressed by the MACHINE'S own id rather than the ssh alias it was
+ * reached through — an alias lives in one config file, so keying on it would change a
+ * machine's URLs and cookie names the moment someone renamed a host.
+ *
  * The cookie rules are the security-relevant part. A browser sends every cookie for the
  * origin, so without renaming, a request forwarded to machine A would carry this server's
  * own session cookie and machine B's — handing a remote a credential for a different
@@ -17,29 +21,38 @@ import {
   rewriteSetCookie,
 } from "../src/machines/proxy.js";
 
-const A = "ssh:nas";
-const B = "ssh:build-box";
+/** Two machines, by the ids they minted. */
+const A = "QS7J4YVgSovi-Z2c";
+const B = "LNrJdHAZJ91G58i0";
 
 describe("parseProxyPath", () => {
-  it("claims /server/<id>/api/… and names both halves", () => {
-    expect(parseProxyPath(`${SERVER_PROXY_PREFIX}ssh%3Anas/api/me`)).toEqual({
-      id: "ssh:nas",
+  it("claims /server/<machineId>/api/… and names both halves", () => {
+    expect(parseProxyPath(`${SERVER_PROXY_PREFIX}${A}/api/me`)).toEqual({
+      machineId: A,
       remotePath: "/api/me",
     });
+  });
+
+  it("needs no percent-encoding — a machine id is base64url by construction", () => {
+    // The reason to address by id rather than alias: `ssh:far` had to be written
+    // `ssh%3Afar`, and an encode/decode mismatch is a whole class of bug this removes.
+    const path = `${SERVER_PROXY_PREFIX}${A}/api/me`;
+    expect(path).not.toContain("%");
+    expect(parseProxyPath(path)?.machineId).toBe(A);
   });
 
   it("forwards ONLY /api — a remote's pages are never proxied", () => {
     // The frontend is deliberately local; serving a remote's HTML here would put two
     // different builds' assets under one origin.
-    expect(parseProxyPath(`${SERVER_PROXY_PREFIX}ssh%3Anas/`)).toBeNull();
-    expect(parseProxyPath(`${SERVER_PROXY_PREFIX}ssh%3Anas/index.html`)).toBeNull();
-    expect(parseProxyPath(`${SERVER_PROXY_PREFIX}ssh%3Anas/preview/x`)).toBeNull();
+    expect(parseProxyPath(`${SERVER_PROXY_PREFIX}${A}/`)).toBeNull();
+    expect(parseProxyPath(`${SERVER_PROXY_PREFIX}${A}/index.html`)).toBeNull();
+    expect(parseProxyPath(`${SERVER_PROXY_PREFIX}${A}/preview/x`)).toBeNull();
   });
 
   it("declines anything that is not the proxy prefix", () => {
     expect(parseProxyPath("/api/me")).toBeNull();
     expect(parseProxyPath("/server/")).toBeNull();
-    expect(parseProxyPath("/server/ssh%3Anas")).toBeNull();
+    expect(parseProxyPath(`/server/${A}`)).toBeNull();
   });
 });
 
@@ -96,12 +109,25 @@ describe("rewriteSetCookie", () => {
 
 describe("rewriteLocation", () => {
   it("re-roots an absolute redirect under this machine's prefix", () => {
-    expect(rewriteLocation("/api/login", A)).toBe(
-      `${SERVER_PROXY_PREFIX}${encodeURIComponent(A)}/api/login`,
-    );
+    expect(rewriteLocation("/api/login", A)).toBe(`${SERVER_PROXY_PREFIX}${A}/api/login`);
   });
 
   it("leaves an absolute URL alone — it is not ours to re-root", () => {
     expect(rewriteLocation("https://example.com/x", A)).toBe("https://example.com/x");
+  });
+});
+
+describe("keying on the machine rather than the alias", () => {
+  it("a cookie survives the host being re-aliased in ssh config", () => {
+    // Same machine, reached through a renamed alias: the marker is unchanged, so the
+    // browser's stored session is still forwarded instead of silently being dropped.
+    const stored = rewriteSetCookie("penguin_session=abc; Path=/", A).split(";")[0]!;
+    expect(rewriteRequestCookies(stored, A)).toBe("penguin_session=abc");
+  });
+
+  it("two aliases for one machine share one session, not two logins", () => {
+    // Both resolve to the same machine id, so both find the same cookie.
+    const viaFirstAlias = rewriteSetCookie("penguin_session=abc", A).split(";")[0]!;
+    expect(rewriteRequestCookies(viaFirstAlias, A)).toBe("penguin_session=abc");
   });
 });

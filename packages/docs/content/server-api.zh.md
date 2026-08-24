@@ -128,6 +128,8 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 `status` 为 `{state, checkedAt, port?, detail?}`，`state` 取 `running` / `stopped` / `unreachable` 之一；该机器尚未被探测时为 `null`。没有单独的 ssh 状态：ssh 是传输方式，因此连不上的机器就是 `unreachable`，并在 `detail` 中保留 OpenSSH 自己的原话。`GET` 从不发起探测——它只报告最近一次的答案——因为一次探测是每台机器一次 ssh 往返，而列表本身只是配置文件的文本。真正花费这些往返的是 `POST /api/machines/probe`，且只针对安装过的机器。
 
+已连接机器的 API 可通过本源上的 `/server/<machineId>/api/…` 访问，经由其隧道转发。以机器自身的 id 而非它被访问时所用的 ssh 别名寻址：别名只存在于某一份配置文件中，若以它为键，一旦有人重命名主机，该机器的 URL 与 cookie 名就会随之改变；而 id 是 base64url，放在路径中无需任何百分号编码。该路由位于本服务端认证中间件之外——远端用它自己的 cookie 认证每一个被转发的请求，这些 cookie 按机器改名（`penguin_s_<hex(machineId)>_…`），因此多个服务端的会话可以共存于同一个源而互不串扰。只有 `/api` 会被转发——前端始终是本地的。
+
 安装是任务而非请求：它要探测对端，可能下载并校验一份 Node 运行时，再经 scp 复制镜像——最坏情况以分钟计。`POST` 启动后立即返回，客户端轮询 `GET` 读取 `job.log`，其中是对端自己的原话（ssh 的诊断、远端安装器的输出）。运行期间 `job.result` 为 `null`，结束后为 `{ok: true, kind: "installed" | "already-installed", version}` 或 `{ok: false, step, message}`。同一时刻只允许一个任务；任务存于内存，热推与重启都不保留，重跑即是恢复手段——每一步都是幂等的。
 
 在任何 ssh 运行之前就能判定的拒绝各有错误码：`409` `install_running`、`404` `unknown_machine`、`409` `no_install_image`、`502` `unresolvable_host`。

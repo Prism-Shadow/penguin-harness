@@ -29,6 +29,7 @@ import { loadExtensions } from "./extension/loader.js";
 import { attachTerminalWebSocket } from "./terminal/ws.js";
 import { loopbackHostRoles } from "./services/preview-token.js";
 import { acquireServerLock, liveServerLock, releaseServerLock } from "./lock.js";
+import { readOrCreateMachineId } from "./machines/machine-id.js";
 import { shellPortOf, wireShellUpdatePort } from "./services/desktop-update-port.js";
 
 /**
@@ -281,6 +282,11 @@ class PenguinServer {
       port,
       startedAt: new Date().toISOString(),
     });
+    // Mint this machine's id here, beside the lock, rather than lazily on first use: a
+    // server that is UP is a machine that has an identity, and anything reaching it — a
+    // controller probing over ssh, the proxy addressing it — may ask before a single
+    // request has been served. Idempotent; an existing id is adopted, never replaced.
+    readOrCreateMachineId(this.config.root);
     if (this.config.portFile !== null) writePortFile(this.config.portFile, port);
     if (this.config.host === "127.0.0.1" || this.config.host === "localhost") {
       this.openIpv6Loopback(port);
