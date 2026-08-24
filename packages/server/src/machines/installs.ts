@@ -23,6 +23,12 @@ export interface InstallRecord {
   version: string;
   /** ISO timestamp, so the picker can say "installed" with a date rather than just a flag. */
   at: string;
+  /**
+   * That machine's own id, once a probe has learned it. Kept here so an identity survives a
+   * restart without another ssh round trip; absent for a machine whose server has never
+   * started, which is exactly when nothing has minted one.
+   */
+  machineId?: string;
 }
 
 /**
@@ -41,7 +47,13 @@ export function parseInstallRecords(raw: string | null): Record<string, InstallR
       const entry = value as Record<string, unknown>;
       if (typeof entry.version !== "string" || entry.version === "") continue;
       if (typeof entry.at !== "string" || entry.at === "") continue;
-      out[machineId] = { version: entry.version, at: entry.at };
+      out[machineId] = {
+        version: entry.version,
+        at: entry.at,
+        ...(typeof entry.machineId === "string" && entry.machineId !== ""
+          ? { machineId: entry.machineId }
+          : {}),
+      };
     }
     return out;
   } catch {

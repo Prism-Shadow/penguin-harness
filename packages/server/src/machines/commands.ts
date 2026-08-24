@@ -124,6 +124,9 @@ export function unpackStoreCommand(platform: RemotePlatform): string {
 /** Marker line the state probe prints when the lock's pid is alive over there. */
 export const SERVER_ALIVE_MARK = "---penguin-server-alive---";
 
+/** Marker the state probe prints before that machine's own id, when it has minted one. */
+export const MACHINE_ID_MARK = "---penguin-machine-id---";
+
 /**
  * Reads the remote server's state in one round trip: the lock file's text, then the alive
  * marker when the pid recorded there answers `kill -0`. The pid is pulled out with sed
@@ -139,5 +142,10 @@ export function readServerStateCommand(): string {
   return [
     `lock="$HOME/.penguin/data/server.lock"`,
     `if [ -f "$lock" ]; then cat "$lock"; pid=$(sed -n 's/.*"pid":\\([0-9][0-9]*\\).*/\\1/p' "$lock"); if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then echo; echo ${SERVER_ALIVE_MARK}; fi; fi`,
+    // The machine's own id rides the SAME round trip: it is one more file in the same
+    // directory, and a probe that already crossed the network should not be followed by a
+    // second one to ask who answered it.
+    `mid="$HOME/.penguin/data/machine-id"`,
+    `if [ -f "$mid" ]; then echo; echo ${MACHINE_ID_MARK}; cat "$mid"; fi`,
   ].join("; ");
 }
