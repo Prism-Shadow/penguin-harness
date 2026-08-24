@@ -528,17 +528,22 @@ export class ContextEngine {
    * Prompt (only the newly added input, not the full history — history is maintained by the
    * stateful GenerativeModel); `opts.signal` is the abort signal, `opts.approve` is the
    * per-tool approval callback.
+   *
+   * This is the FACADE over the run's real shape — a stepped event loop: `beginRun` once,
+   * then `stepTurn` until it answers "done" (see those methods). Embedders that drive the
+   * loop themselves (an external driver that must regain control between turns — e.g. a
+   * host that hot-swaps code at turn boundaries) call the steps directly and own the
+   * `endRun` responsibility this facade's finally carries.
    * Docs: /docs/agent-loop § "The loop at a glance".
    */
   async *run(newMessages: OmniMessage[], opts?: RunOptions): AsyncGenerator<OmniMessage> {
-    // Steering window: only while this generator is being driven. The finally also covers
-    // abort/failure exits — anything still queued is discarded (see steeringQueue).
-    this.taskRunning = true;
     try {
-      yield* this.runToCompletion(newMessages, opts);
+      let next = yield* this.beginRun(newMessages, opts);
+      while (next === "continue") next = yield* this.stepTurn();
     } finally {
-      this.taskRunning = false;
-      this.steeringQueue = [];
+      // Covers abort/failure exits AND an abandoned generator (the consumer stopped
+      // iterating): the steering window closes and anything still queued is discarded.
+      this.endRun();
     }
   }
 
@@ -633,11 +638,37 @@ export class ContextEngine {
     return [userText(userSteeringText(texts.join("\n\n"))), ...rest];
   }
 
-  /** The actual Task loop behind `run` (split out so run's finally can close the steering window on every exit path). */
-  private async *runToCompletion(
+  /**
+   * The run's continuation state between turn steps — everything the old internal loop
+   * held on the JS stack, reified so the loop can live with the DRIVER instead of inside
+   * the engine (see beginRun/stepTurn). One run at a time, like the engine itself.
+   */
+  private runState: {
+    approve: ApproveFn;
+    signal: AbortSignal | undefined;
+    thinkingLevel: ThinkingLevelName | undefined;
+    /** Turns taken so far (the max-turns guard reads it at each step's entry). */
+    turnCount: number;
+    /** The next turn's input: the Prompt on the first step, then the previous turn's tool outputs + injections. */
+    nextInput: OmniMessage[];
+  } | null = null;
+
+  /**
+   * Step 1 of the stepped run (run() is the facade over these steps): opens the steering
+   * window, merges the carry-over/summary into this run's first input and persists it,
+   * and prepares the turn state. Returns "continue" when there is a turn to take — the
+   * driver then calls stepTurn until IT answers "done" — or "done" when the run ended
+   * right here (aborted before the first request). Between steps the run's whole
+   * continuation is data in `runState`, which is what lets an external driver regain
+   * control at every turn boundary. Every beginRun must be paired with endRun on every
+   * exit path (run()'s finally does this for facade users).
+   */
+  async *beginRun(
     newMessages: OmniMessage[],
     opts?: RunOptions,
-  ): AsyncGenerator<OmniMessage> {
+  ): AsyncGenerator<OmniMessage, "continue" | "done"> {
+    // Steering window: open for the whole stepped run (closed by endRun).
+    this.taskRunning = true;
     const signal = opts?.signal;
     // Default approval policy: deny (conservative). CLI/Web will inject a real callback (interactive or permission-mode based).
     const approve: ApproveFn = opts?.approve ?? (async () => "deny");
@@ -680,10 +711,9 @@ export class ContextEngine {
       // rewritten on the next send.
       this.pendingCarryOver = input;
       yield* this.emitAbort("aborted by user");
-      return;
+      return "done";
     }
 
-    let turnCount = 0;
     // Each turn's LLM input: the first turn is the Prompt, later turns are the previous turn's
     // tool outputs. Background notices that arrived while the session sat idle (and were not
     // taken by the host as their own task input) ride the first request, behind the Prompt.
@@ -691,216 +721,242 @@ export class ContextEngine {
     const startNotices = yield* this.deliverBackgroundNotices();
     if (startNotices.length > 0) nextInput = [...nextInput, ...startNotices];
 
-    for (;;) {
-      // max_turns guard: emit a length notice and stop once exceeded. A non-positive cap
-      // (-1 per the config contract "must be > 0 or -1") disables the guard entirely —
-      // same convention as maxSessionTurns in shouldCompact (issue #55: -1 used to trip
-      // `0 >= -1` and stop before the first turn).
-      if (this.maxTurns > 0 && turnCount >= this.maxTurns) {
-        // This turn's pending input (usually the previous turn's tool outputs) was never
-        // submitted to the LLM: hold it as carry-over, to be resent merged with new input on
-        // the next `run` (same as interruption-cleanup case A) — the previous turn's assistant
-        // tool_call has already been committed by AgentHub, so discarding its paired output and
-        // sending a fresh message would be rejected by the provider as an unanswered tool_use
-        // (400, see issue #33).
-        this.pendingCarryOver = nextInput;
-        yield* this.emitMaxTurns();
-        return;
-      }
-      turnCount += 1;
+    this.runState = { approve, signal, thinkingLevel, turnCount: 0, nextInput };
+    return "continue";
+  }
 
-      // This turn's input. The safety invariant behind resending it: **no retryable attempt
-      // is ever committed to AgentHub's history**. AgentHub appends a turn to `_history` only
-      // after its stream has been consumed to the end and validated, so every abnormal exit —
-      // `timeout`, `malformed` and `failed` alike, whether the stream was cut, the payload
-      // failed to parse, or the request was rejected outright — leaves history untouched.
-      // Nothing can therefore be duplicated or left as an unanswered tool_use by a reconnect;
-      // that is what makes it safe to resend this turn's input unchanged, appending a
-      // `[turn_retried]` block carrying what the failed attempt already produced — the model
-      // continues from there instead of re-running tools; the tag is distinct from the
-      // user-interruption `[turn_aborted]`. (The one attempt that IS committed — a fully
-      // delivered response whose finish_reason arrived — is forced to `completed` in
-      // GenerativeModel precisely so it never reaches this loop.)
-      const failedTurns: TurnResult[] = [];
-      let attemptInput = nextInput;
-      let reconnects = 0;
-      let turn: TurnResult;
+  /**
+   * Closes the stepped run (idempotent): drops the continuation state, shuts the
+   * steering window and discards undelivered steering — the counterpart of every
+   * beginRun, on every exit path (completion, abort, an abandoned driver).
+   */
+  endRun(): void {
+    this.runState = null;
+    this.taskRunning = false;
+    this.steeringQueue = [];
+  }
 
-      for (;;) {
-        // Both LLM and Environment handle errors internally and guarantee a complete, closed
-        // output with no thrown exceptions; the engine doesn't handle exceptions —
-        // it decides retry/resend purely from `outcome`. The retry count so far is threaded
-        // in so the turn's request_end can announce the planned backoff (retry_in_ms) —
-        // the counter lives in this loop while the event is built inside the turn.
-        turn = yield* this.runTurn(attemptInput, approve, signal, thinkingLevel, reconnects);
+  /**
+   * One turn of the stepped run: the max-turns guard, the LLM request with its reconnect
+   * ladder, tool execution, the compaction checkpoint, and next-input assembly. Returns
+   * "continue" when another turn is pending (its input is already in `runState`) and
+   * "done" when the Task ended — final reply delivered, aborted, or stopped by a guard.
+   * Only valid between beginRun and endRun.
+   */
+  async *stepTurn(): AsyncGenerator<OmniMessage, "continue" | "done"> {
+    const rs = this.runState;
+    if (rs === null) throw new Error("stepTurn outside a run (call beginRun first)");
+    const { approve, signal, thinkingLevel } = rs;
 
-        // User interruption (the LLM stream was aborted, outcome=aborted, or `signal` fired
-        // during tool execution): stop and hand control back to the user.
-        if (signal?.aborted || turn.outcome.status === "aborted") {
-          this.pendingCarryOver = this.buildCarryOver(attemptInput, turn);
-          yield* this.emitAbort("aborted by user");
-          return;
-        }
-        // `auth` is the one status that stops the run: a rejected credential cannot be retried
-        // into working, and hosts read it off the turn's request_end to gate input. Everything
-        // else — `failed` included — goes to the reconnect loop below.
-        if (turn.outcome.status === "auth") {
-          this.pendingCarryOver = this.buildCarryOver(attemptInput, turn);
-          yield* this.emitAbort(`llm request error: ${turn.outcome.errorMessage ?? "unknown"}`);
-          return;
-        }
-        // A permanent `failed` is the other non-retried terminal: a deterministic
-        // client-side rejection thrown before any network I/O (fast_mode on a model
-        // without a fast tier — see LLMOutcome.permanent), where the identical request can
-        // never succeed and the fix is a config change. The general retry-everything
-        // rationale below doesn't apply: this isn't a gateway phrasing a transient fault
-        // its own way, it's AgentHub's own typed error, so the ladder would only delay the
-        // actionable message.
-        if (turn.outcome.status === "failed" && turn.outcome.permanent) {
-          this.pendingCarryOver = this.buildCarryOver(attemptInput, turn);
-          yield* this.emitAbort(`llm request error: ${turn.outcome.errorMessage ?? "unknown"}`);
-          return;
-        }
-        // Completed normally.
-        if (turn.outcome.status === "completed") break;
-
-        // failed / timeout / malformed remain: reconnect automatically within the same run.
-        //
-        // `failed` retries too, even though the classifier judged it non-transient. That
-        // judgement is a hint, not a verdict: it is an allowlist of known network codes,
-        // statuses and message vocabulary, so every gateway that phrases a transient failure
-        // its own way falls through it — `Upstream HTTP/2 stream failed
-        // (upstream_http2_stream_error)` is plainly a transport fault and matched nothing.
-        // Retrying a genuinely permanent error costs the ladder and then ends the same way;
-        // aborting a transient one destroys the turn. So the *classification* stays honest
-        // (`failed` is still recorded as a real failure, not relabelled a timeout) while the
-        // *policy* retries it. Only `auth` is terminal, above.
-        //
-        // When retries are exhausted or the backoff is interrupted, the retry input is held
-        // as-is as carry-over (the original input is already written to Trace, so it isn't
-        // rewritten). The frontend surfaces the retry process and count via
-        // request_end(failed|timeout|malformed) followed by the next request_begin.
-        failedTurns.push(turn);
-        attemptInput = this.withRetriedTurns(nextInput, failedTurns);
-        if (reconnects >= this.maxReconnects) {
-          this.pendingCarryOver = attemptInput;
-          // This reason is user-visible (the Web App's error panel, the CLI's abort line) and
-          // is what observability persists as the error message, so it has to read as a
-          // sentence: what gave out, then how many attempts it took, then — for the one class
-          // that carries provider words worth showing — the detail, last.
-          const reason =
-            turn.outcome.status === "malformed"
-              ? `malformed response failed after ${this.maxReconnects} retries`
-              : turn.outcome.status === "failed"
-                ? `llm request failed after ${this.maxReconnects} retries: ${turn.outcome.errorMessage ?? "unknown"}`
-                : `reconnect failed after ${this.maxReconnects} retries`;
-          yield* this.emitAbort(reason);
-          return;
-        }
-        reconnects += 1;
-        if (!(await this.backoff(reconnects, signal))) {
-          this.pendingCarryOver = attemptInput;
-          yield* this.emitAbort("aborted during reconnect backoff");
-          return;
-        }
-      }
-
-      // Compaction checkpoint: after every LLM Request produces token_usage. This also
-      // applies mid-Task — when runTurn returns, all of this turn's
-      // tool results are ready and paired with their tool_call.
-      const midTask = turn.toolOutputs.length > 0;
-      const compactionReason = this.compactionTrigger();
-      if (compactionReason) {
-        const mode = this.deps.compaction!.mode;
-        if (mode === "discard") {
-          // Once discarded, the current Task can't continue: defer until the Task really
-          // ends (mid-Task, or steering/notices still queued that must continue the loop).
-          // The queues are only peeked here — delivery happens at the input assembly below.
-          if (!midTask && this.steeringQueue.length === 0 && this.pendingNoticeCount() === 0) {
-            yield* this.discardContext(compactionReason);
-            return;
-          }
-        } else {
-          const result = yield* this.summarizeContext(
-            compactionReason,
-            midTask ? turn.toolOutputs : [],
-            signal,
-          );
-          if (result.status === "completed") {
-            // Boundary check against the **live** queues: steering or a background notice
-            // may have arrived during the multi-second compaction request and must not be
-            // swallowed (no await sits between this check and the return, so the window
-            // cannot reopen).
-            if (!midTask && this.steeringQueue.length === 0 && this.pendingNoticeCount() === 0) {
-              // Task boundary: the summary is merged with the next user Prompt as the new
-              // context's first input.
-              this.pendingSummary = result.summary!;
-              return;
-            }
-            // Mid-Task: the summary itself becomes the new LLM object's first input (this
-            // turn's tool results were already folded into the compaction request and absorbed
-            // into the summary); continuation relies on the model's own next-step plan written
-            // into the summary, with no hardcoded continuation instruction appended. Queued
-            // steering (including anything that arrived during the compaction request) is
-            // delivered right after the summary as standalone [user_steering] user turns.
-            await this.write(result.summary!);
-            const injected = [
-              ...(yield* this.deliverBackgroundNotices()),
-              ...(yield* this.deliverSteering()),
-            ];
-            nextInput = [result.summary!, ...injected];
-            continue;
-          }
-          // failed or aborted: keep the original context and Trace index — the compaction is
-          // made up later, at the next trigger or a manual /compact (no fallback to
-          // discard). Mid-Task the run ends through the interruption flow: this turn's
-          // pending state is held as carry-over under the same two-case binary as everywhere
-          // (issue #85) — a committed attempt consumed the turn's outputs into history, so
-          // only the repair stash summarizeContext left in pendingCarryOver still needs
-          // resending; otherwise the outputs are untouched and are appended behind the stash
-          // as case-A carry-over. The next run resends that carry-over merged with the
-          // user's message, exactly like any interrupted turn, and the still-standing
-          // threshold re-triggers the compaction there. The abort also discards the steering
-          // queue (run's finally — control goes back to the user).
-          if (midTask) {
-            if (!result.committed) {
-              this.pendingCarryOver = [
-                ...this.pendingCarryOver,
-                ...this.buildCarryOver(attemptInput, turn),
-              ];
-            }
-            yield* this.emitAbort(
-              result.status === "aborted" ? "aborted during compaction" : "compaction failed",
-            );
-            return;
-          }
-          // Task boundary: the final reply has already streamed out. A user abort hands
-          // control straight back; a failure falls through — queued steering may still
-          // continue the loop, and the assembly below otherwise ends the run.
-          if (result.status === "aborted") return;
-        }
-      }
-
-      // Next-input assembly — the injection delivery point: queued background notices
-      // (harness user messages) and steering ([user_steering] user messages) ride alongside
-      // this turn's tool outputs (or alone as the continuation input when the turn produced
-      // no tool calls, instead of ending the Task — subject to the max-turns guard at the
-      // top of the loop). Notices first; the user's own words come last.
-      const injected = [
-        ...(yield* this.deliverBackgroundNotices()),
-        ...(yield* this.deliverSteering()),
-      ];
-      // No tool_call this turn and nothing injected -> the Task ends (the final reply has
-      // already been streamed out). A compaction stash, if any, rides the next run.
-      if (!midTask && injected.length === 0) return;
-      // Anything a failed boundary compaction stashed (synthesized repair outputs from
-      // rejected attempts) rides the very next request, ahead of the turn outputs so
-      // tool_results stay contiguous and first.
-      const stashed = this.pendingCarryOver;
-      this.pendingCarryOver = [];
-      nextInput = [...stashed, ...turn.toolOutputs, ...injected];
-      if (nextInput.length === 0) return;
+    // max_turns guard: emit a length notice and stop once exceeded. A non-positive cap
+    // (-1 per the config contract "must be > 0 or -1") disables the guard entirely —
+    // same convention as maxSessionTurns in shouldCompact (issue #55: -1 used to trip
+    // `0 >= -1` and stop before the first turn).
+    if (this.maxTurns > 0 && rs.turnCount >= this.maxTurns) {
+      // This turn's pending input (usually the previous turn's tool outputs) was never
+      // submitted to the LLM: hold it as carry-over, to be resent merged with new input on
+      // the next `run` (same as interruption-cleanup case A) — the previous turn's assistant
+      // tool_call has already been committed by AgentHub, so discarding its paired output and
+      // sending a fresh message would be rejected by the provider as an unanswered tool_use
+      // (400, see issue #33).
+      this.pendingCarryOver = rs.nextInput;
+      yield* this.emitMaxTurns();
+      return "done";
     }
+    rs.turnCount += 1;
+
+    // This turn's input. The safety invariant behind resending it: **no retryable attempt
+    // is ever committed to AgentHub's history**. AgentHub appends a turn to `_history` only
+    // after its stream has been consumed to the end and validated, so every abnormal exit —
+    // `timeout`, `malformed` and `failed` alike, whether the stream was cut, the payload
+    // failed to parse, or the request was rejected outright — leaves history untouched.
+    // Nothing can therefore be duplicated or left as an unanswered tool_use by a reconnect;
+    // that is what makes it safe to resend this turn's input unchanged, appending a
+    // `[turn_retried]` block carrying what the failed attempt already produced — the model
+    // continues from there instead of re-running tools; the tag is distinct from the
+    // user-interruption `[turn_aborted]`. (The one attempt that IS committed — a fully
+    // delivered response whose finish_reason arrived — is forced to `completed` in
+    // GenerativeModel precisely so it never reaches this loop.)
+    const failedTurns: TurnResult[] = [];
+    let attemptInput = rs.nextInput;
+    let reconnects = 0;
+    let turn: TurnResult;
+
+    for (;;) {
+      // Both LLM and Environment handle errors internally and guarantee a complete, closed
+      // output with no thrown exceptions; the engine doesn't handle exceptions —
+      // it decides retry/resend purely from `outcome`. The retry count so far is threaded
+      // in so the turn's request_end can announce the planned backoff (retry_in_ms) —
+      // the counter lives in this loop while the event is built inside the turn.
+      turn = yield* this.runTurn(attemptInput, approve, signal, thinkingLevel, reconnects);
+
+      // User interruption (the LLM stream was aborted, outcome=aborted, or `signal` fired
+      // during tool execution): stop and hand control back to the user.
+      if (signal?.aborted || turn.outcome.status === "aborted") {
+        this.pendingCarryOver = this.buildCarryOver(attemptInput, turn);
+        yield* this.emitAbort("aborted by user");
+        return "done";
+      }
+      // `auth` is the one status that stops the run: a rejected credential cannot be retried
+      // into working, and hosts read it off the turn's request_end to gate input. Everything
+      // else — `failed` included — goes to the reconnect loop below.
+      if (turn.outcome.status === "auth") {
+        this.pendingCarryOver = this.buildCarryOver(attemptInput, turn);
+        yield* this.emitAbort(`llm request error: ${turn.outcome.errorMessage ?? "unknown"}`);
+        return "done";
+      }
+      // A permanent `failed` is the other non-retried terminal: a deterministic
+      // client-side rejection thrown before any network I/O (fast_mode on a model
+      // without a fast tier — see LLMOutcome.permanent), where the identical request can
+      // never succeed and the fix is a config change. The general retry-everything
+      // rationale below doesn't apply: this isn't a gateway phrasing a transient fault
+      // its own way, it's AgentHub's own typed error, so the ladder would only delay the
+      // actionable message.
+      if (turn.outcome.status === "failed" && turn.outcome.permanent) {
+        this.pendingCarryOver = this.buildCarryOver(attemptInput, turn);
+        yield* this.emitAbort(`llm request error: ${turn.outcome.errorMessage ?? "unknown"}`);
+        return "done";
+      }
+      // Completed normally.
+      if (turn.outcome.status === "completed") break;
+
+      // failed / timeout / malformed remain: reconnect automatically within the same run.
+      //
+      // `failed` retries too, even though the classifier judged it non-transient. That
+      // judgement is a hint, not a verdict: it is an allowlist of known network codes,
+      // statuses and message vocabulary, so every gateway that phrases a transient failure
+      // its own way falls through it — `Upstream HTTP/2 stream failed
+      // (upstream_http2_stream_error)` is plainly a transport fault and matched nothing.
+      // Retrying a genuinely permanent error costs the ladder and then ends the same way;
+      // aborting a transient one destroys the turn. So the *classification* stays honest
+      // (`failed` is still recorded as a real failure, not relabelled a timeout) while the
+      // *policy* retries it. Only `auth` is terminal, above.
+      //
+      // When retries are exhausted or the backoff is interrupted, the retry input is held
+      // as-is as carry-over (the original input is already written to Trace, so it isn't
+      // rewritten). The frontend surfaces the retry process and count via
+      // request_end(failed|timeout|malformed) followed by the next request_begin.
+      failedTurns.push(turn);
+      attemptInput = this.withRetriedTurns(rs.nextInput, failedTurns);
+      if (reconnects >= this.maxReconnects) {
+        this.pendingCarryOver = attemptInput;
+        // This reason is user-visible (the Web App's error panel, the CLI's abort line) and
+        // is what observability persists as the error message, so it has to read as a
+        // sentence: what gave out, then how many attempts it took, then — for the one class
+        // that carries provider words worth showing — the detail, last.
+        const reason =
+          turn.outcome.status === "malformed"
+            ? `malformed response failed after ${this.maxReconnects} retries`
+            : turn.outcome.status === "failed"
+              ? `llm request failed after ${this.maxReconnects} retries: ${turn.outcome.errorMessage ?? "unknown"}`
+              : `reconnect failed after ${this.maxReconnects} retries`;
+        yield* this.emitAbort(reason);
+        return "done";
+      }
+      reconnects += 1;
+      if (!(await this.backoff(reconnects, signal))) {
+        this.pendingCarryOver = attemptInput;
+        yield* this.emitAbort("aborted during reconnect backoff");
+        return "done";
+      }
+    }
+
+    // Compaction checkpoint: after every LLM Request produces token_usage. This also
+    // applies mid-Task — when runTurn returns, all of this turn's
+    // tool results are ready and paired with their tool_call.
+    const midTask = turn.toolOutputs.length > 0;
+    const compactionReason = this.compactionTrigger();
+    if (compactionReason) {
+      const mode = this.deps.compaction!.mode;
+      if (mode === "discard") {
+        // Once discarded, the current Task can't continue: defer until the Task really
+        // ends (mid-Task, or steering/notices still queued that must continue the loop).
+        // The queues are only peeked here — delivery happens at the input assembly below.
+        if (!midTask && this.steeringQueue.length === 0 && this.pendingNoticeCount() === 0) {
+          yield* this.discardContext(compactionReason);
+          return "done";
+        }
+      } else {
+        const result = yield* this.summarizeContext(
+          compactionReason,
+          midTask ? turn.toolOutputs : [],
+          signal,
+        );
+        if (result.status === "completed") {
+          // Boundary check against the **live** queues: steering or a background notice
+          // may have arrived during the multi-second compaction request and must not be
+          // swallowed (no await sits between this check and the return, so the window
+          // cannot reopen).
+          if (!midTask && this.steeringQueue.length === 0 && this.pendingNoticeCount() === 0) {
+            // Task boundary: the summary is merged with the next user Prompt as the new
+            // context's first input.
+            this.pendingSummary = result.summary!;
+            return "done";
+          }
+          // Mid-Task: the summary itself becomes the new LLM object's first input (this
+          // turn's tool results were already folded into the compaction request and absorbed
+          // into the summary); continuation relies on the model's own next-step plan written
+          // into the summary, with no hardcoded continuation instruction appended. Queued
+          // steering (including anything that arrived during the compaction request) is
+          // delivered right after the summary as standalone [user_steering] user turns.
+          await this.write(result.summary!);
+          const injected = [
+            ...(yield* this.deliverBackgroundNotices()),
+            ...(yield* this.deliverSteering()),
+          ];
+          rs.nextInput = [result.summary!, ...injected];
+          return "continue";
+        }
+        // failed or aborted: keep the original context and Trace index — the compaction is
+        // made up later, at the next trigger or a manual /compact (no fallback to
+        // discard). Mid-Task the run ends through the interruption flow: this turn's
+        // pending state is held as carry-over under the same two-case binary as everywhere
+        // (issue #85) — a committed attempt consumed the turn's outputs into history, so
+        // only the repair stash summarizeContext left in pendingCarryOver still needs
+        // resending; otherwise the outputs are untouched and are appended behind the stash
+        // as case-A carry-over. The next run resends that carry-over merged with the
+        // user's message, exactly like any interrupted turn, and the still-standing
+        // threshold re-triggers the compaction there. The abort also discards the steering
+        // queue (run's finally — control goes back to the user).
+        if (midTask) {
+          if (!result.committed) {
+            this.pendingCarryOver = [
+              ...this.pendingCarryOver,
+              ...this.buildCarryOver(attemptInput, turn),
+            ];
+          }
+          yield* this.emitAbort(
+            result.status === "aborted" ? "aborted during compaction" : "compaction failed",
+          );
+          return "done";
+        }
+        // Task boundary: the final reply has already streamed out. A user abort hands
+        // control straight back; a failure falls through — queued steering may still
+        // continue the loop, and the assembly below otherwise ends the run.
+        if (result.status === "aborted") return "done";
+      }
+    }
+
+    // Next-input assembly — the injection delivery point: queued background notices
+    // (harness user messages) and steering ([user_steering] user messages) ride alongside
+    // this turn's tool outputs (or alone as the continuation input when the turn produced
+    // no tool calls, instead of ending the Task — subject to the max-turns guard at the
+    // top of the loop). Notices first; the user's own words come last.
+    const injected = [
+      ...(yield* this.deliverBackgroundNotices()),
+      ...(yield* this.deliverSteering()),
+    ];
+    // No tool_call this turn and nothing injected -> the Task ends (the final reply has
+    // already been streamed out). A compaction stash, if any, rides the next run.
+    if (!midTask && injected.length === 0) return "done";
+    // Anything a failed boundary compaction stashed (synthesized repair outputs from
+    // rejected attempts) rides the very next request, ahead of the turn outputs so
+    // tool_results stay contiguous and first.
+    const stashed = this.pendingCarryOver;
+    this.pendingCarryOver = [];
+    rs.nextInput = [...stashed, ...turn.toolOutputs, ...injected];
+    if (rs.nextInput.length === 0) return "done";
+    return "continue";
   }
 
   /**
