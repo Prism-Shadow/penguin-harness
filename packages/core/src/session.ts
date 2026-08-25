@@ -194,7 +194,8 @@ const TITLE_ASSISTANT_MATERIAL_LIMIT = 1000;
 function backgroundDoneNotice(event: BackgroundTaskDoneEvent, delivery?: "steering"): OmniMessage {
   const what = event.kind === "command" ? "Background command" : "Background subagent";
   const idField = event.kind === "command" ? "process_id" : "subagent_id";
-  const verb = event.status === "completed" ? "finished" : "failed";
+  const verb =
+    event.status === "completed" ? "finished" : event.status === "stopped" ? "stopped" : "failed";
   const detail = event.detail ? ` — ${event.detail}` : "";
   const head = `${what} ${verb}: \`${event.label}\` (${idField} ${event.id})${detail}`;
   const body = event.output.trim() ? `${head}\n\n${event.output}` : head;

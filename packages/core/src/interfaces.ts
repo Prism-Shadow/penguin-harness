@@ -425,8 +425,13 @@ export interface BackgroundTaskDoneEvent {
   id: string;
   /** What was launched: the command string, or the subagent prompt's first line (display only, truncated by the producer). */
   label: string;
-  /** Terminal status of the run. */
-  status: "completed" | "failed";
+  /**
+   * Terminal status of the run. `stopped` is a command somebody ended on purpose (a stop
+   * signal from outside, a capacity eviction) — settled, but not a failure to react to;
+   * `failed` stays for outcomes nobody asked for (a spawn error, a non-zero exit, a fault
+   * signal).
+   */
+  status: "completed" | "failed" | "stopped";
   /** One-line terminal detail (exit code / signal / subagent note); empty when there is none. */
   detail: string;
   /** Tail of the yet-undelivered output at settle time (capped by the producer); empty when nothing was pending. */

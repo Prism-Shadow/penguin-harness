@@ -222,6 +222,8 @@ Web App 的智能体面板用**与主对话相同的 composer**（子会话变�
 
 送达时机：Task 进行中时，回报搭乘下一个 turn 边界——即使最终回复已在流式输出，Task 也会为回应它再延续一个 turn。Session 空闲时，托管 Server 自动以该回报发起新 Task（SDK 嵌入方可订阅 `Session.onBackgroundNotice` / `takeBackgroundNotices`，否则回报并入下一次 run 的输入）。经 `input_command` 的 `kill` 终止的命令不发回报——该调用自身的结果已说明结局；被显式 `abort` 结束的子会话轮同样不发（打断者当场读到结局）。回报只覆盖**模型自己发起的轮**——`run_in_background` 的启动轮与 `input_subagent` 的续跑轮；用户从智能体面板发起的轮是用户与子会话自己的对话，不发回报（该轮答案文本留在模型面缓冲，下次轮询照常取得）。
 
+停止照样回报，只是不算失败。被人主动结束的命令回报 `status: stopped`——用户在 Web App 进程列表按下的「停止」、从外部递来的停止信号（`SIGTERM`/`SIGINT`/`SIGHUP`：同进程组终端里的 Ctrl-C、`pkill`、停掉 dev server 的管理进程），以及 Harness 自己强制的停止（容量淘汰、空闲回收）——其标记块直白地告知模型：无人要求就不要重启它。对话确实需要知道自己启动的 dev server 已经不在了；但若措辞为 `failed`，它读起来就像崩溃，而面对崩溃的 dev server，模型合理的反应正是把它重新拉起来，把别人刚做的停止撤销。`failed` 留给无人要求的结局：spawn 错误、非零退出、硬杀与故障信号（OOM 杀进程、段错误）。
+
 后台 Subagent 的生命周期与发起它的调用解耦：中止范围只属于它自己（逐轮 `abort` 只结束一轮；会话只随父 Session 终结，容量释放的也可复活），其消息经发起 Session 实时流向前端（与前台窗口转发同一条 origin 通道），工具审批经发起调用自身的审批回调作为常驻 sink 解决——`allow-all` 下即发即忘可全程无人值守，失败也以 `status: failed` 的回报收尾，而不是子会话永久卡住。
 
 ### 后台会话上限
