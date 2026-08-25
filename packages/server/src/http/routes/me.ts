@@ -65,10 +65,9 @@ export function meRoutes(deps: AppDeps): Hono<AppEnv> {
     const setupSession = c.var.sessionVia === "setup";
     if ((desktopSession || setupSession) && body.oldPassword === undefined) {
       await deps.authService.setInitialPassword(c.var.user.userId, newPassword);
-      // Claiming deletes every first-login session, including the one making this request, so
-      // without a replacement the browser's very next call 401s and the person who just chose
-      // a password lands back on the login page. Sign them in with the password they just set
-      // — an ordinary login, credential and all, not a session handed out on trust.
+      // Claiming deletes every first-login session, this request's included, so without a
+      // replacement the next call 401s and a brand-new user lands back on the login page.
+      // Signed in with the password just set: an ordinary login, not a session given on trust.
       if (setupSession) {
         const { token } = await deps.authService.login(c.var.user.userId, newPassword);
         setCookie(

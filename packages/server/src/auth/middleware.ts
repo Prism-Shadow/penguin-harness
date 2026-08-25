@@ -28,12 +28,10 @@ export function cookieOptions(
   ttlMs: number,
   trustProxy: boolean,
 ) {
-  // `x-forwarded-proto` is caller-supplied, and this repo does not trust it unless the
-  // deployment says a reverse proxy sets it (config.trustProxy — the same opt-in the
-  // hot-update network gate requires, hmr/routes.ts). Trusting it here is not merely
-  // inconsistent: on a plain-HTTP deployment anyone who can reach the port could send the
-  // header on a login and get a Secure cookie back, which the browser then refuses to send
-  // over that same plain connection — a sign-in that silently never takes.
+  // `x-forwarded-proto` is caller-supplied and untrusted unless the deployment opts in
+  // (config.trustProxy — the same gate hmr/routes.ts uses, and for the same reason). Trusting
+  // it on a plain-HTTP bind would let anyone reaching the port get a Secure cookie back, which
+  // the browser then refuses to send over that connection: a sign-in that never takes.
   const proto = trustProxy
     ? (c.req.header("x-forwarded-proto") ?? new URL(c.req.url).protocol.replace(":", ""))
     : new URL(c.req.url).protocol.replace(":", "");

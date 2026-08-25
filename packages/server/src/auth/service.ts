@@ -339,7 +339,6 @@ export class AuthService {
       via,
       now: this.now(),
       ttlMs: this.deps.sessionTtlMs,
-      maxTtlMs: this.deps.sessionTtlMs,
     }).token;
   }
 }

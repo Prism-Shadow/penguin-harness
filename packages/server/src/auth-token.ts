@@ -21,9 +21,8 @@ import { UsersRepo } from "./db/repos/users.js";
 export const CLI_TOKEN_TTL_MS = 60 * 60_000;
 
 /**
- * The ceiling on a caller-supplied `--ttl-seconds`, matching the server's default session TTL
- * (config.ts). A minted token must not be able to outlive an ordinary browser session: it is
- * stored in a file, and one that never expires is a permanent credential by accident.
+ * Ceiling on a caller-supplied `--ttl-seconds`, matching the default session TTL (config.ts):
+ * a token that lives in a file must not outlive an ordinary browser session.
  */
 export const CLI_TOKEN_MAX_TTL_MS = 30 * 24 * 60 * 60_000;
 
@@ -33,34 +32,39 @@ export type MintTokenResult =
   | { outcome: "no_server" }
   | { outcome: "failed"; detail: string };
 
+/**
+ * Turns a failure into something the person at the terminal can act on. Both cases are
+ * ordinary situations, not crashes: a database owned by another OS account, and one written
+ * by an older release (minting deliberately does not migrate — see openExistingDatabase).
+ */
+function explain(err: unknown, dbPath: string): string {
+  const message = err instanceof Error ? err.message : String(err);
+  if (message.includes("no column named via")) {
+    return `${dbPath} predates this release — start the server once (\`penguin web\`) to upgrade it`;
+  }
+  if (message.includes("unable to open database")) {
+    return (
+      `cannot open ${dbPath} — minting needs the data root's own OS account; ` +
+      "otherwise sign in with `penguin auth login --server <url>`"
+    );
+  }
+  return message;
+}
+
 /** Issues an API session token for the data root at `root`. */
 export function mintApiToken(
   root: string,
   opts: { userId?: string; ttlMs?: number; dbPath?: string; now?: Date } = {},
 ): MintTokenResult {
   const userId = opts.userId ?? "admin";
-  const ttlMs = opts.ttlMs ?? CLI_TOKEN_TTL_MS;
   const dbPath = opts.dbPath ?? path.join(root, "web.db");
-
   // Existence check first: openExistingDatabase would otherwise create an empty file, and a
   // root with no web.db has no account to mint for.
   if (!fs.existsSync(dbPath)) return { outcome: "no_server" };
 
-  // A database this OS account cannot open is the multi-user case, not a crash: minting is
-  // for the data root's owner, and anyone else has a password to log in with instead.
-  let db: ReturnType<typeof openExistingDatabase>;
+  let db: ReturnType<typeof openExistingDatabase> | null = null;
   try {
     db = openExistingDatabase(dbPath);
-  } catch (err) {
-    return {
-      outcome: "failed",
-      detail:
-        `cannot open ${dbPath} (${err instanceof Error ? err.message : String(err)}) — ` +
-        "minting needs the data root's own OS account; otherwise sign in with " +
-        "`penguin auth login --server <url>`",
-    };
-  }
-  try {
     if (new UsersRepo(db).findById(userId) === null) {
       return { outcome: "failed", detail: `no such account: ${userId}` };
     }
@@ -70,22 +74,13 @@ export function mintApiToken(
       userId,
       via: "cli",
       now: opts.now ?? new Date(),
-      ttlMs,
+      ttlMs: opts.ttlMs ?? CLI_TOKEN_TTL_MS,
       maxTtlMs: CLI_TOKEN_MAX_TTL_MS,
     });
     return { outcome: "minted", token, userId, expiresAt };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return {
-      outcome: "failed",
-      // A database written by an older release lacks the `via` column until the server that
-      // owns it starts once and migrates; minting deliberately does not migrate (see
-      // openExistingDatabase), so say what to do instead of failing opaquely.
-      detail: message.includes("no column named via")
-        ? `${dbPath} predates this release — start the server once (\`penguin web\`) to upgrade it`
-        : message,
-    };
+    return { outcome: "failed", detail: explain(err, dbPath) };
   } finally {
-    db.close();
+    db?.close();
   }
 }
