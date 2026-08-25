@@ -27,7 +27,7 @@ export function agentsRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.get("/", async (c) => {
-    // Defensive id validation (FD-4): don't rely on the implicit invariant that requireProjectAccess always runs before path construction.
+    // Defensive id validation: don't rely on the implicit invariant that requireProjectAccess always runs before path construction.
     const projectId = requireValidId(c, "projectId");
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
     const items = await deps.agentService.listAgents(projectId);

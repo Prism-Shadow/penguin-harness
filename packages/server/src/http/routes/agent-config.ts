@@ -29,7 +29,7 @@ export function agentConfigRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.get("/", async (c) => {
-    // Id validation happens before any path construction (FD-4: prevents agentId path traversal for cross-Project privilege escalation).
+    // Id validation happens before any path construction: prevents agentId path traversal for cross-Project privilege escalation.
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
