@@ -46,7 +46,7 @@ export function DesktopUpdateRow({
   const reason =
     row.labelKind === "unsupported"
       ? row.unsupportedReason === "linux-not-appimage"
-        ? S.update.clientUnsupportedPackage
+        ? S.update.clientUnsupportedNonAppImage
         : S.update.clientUnsupportedDev
       : null;
 

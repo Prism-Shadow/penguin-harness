@@ -208,8 +208,8 @@ export const zh = {
     clientInstallConfirmAction: "立即重启",
     /** Tooltip on the disabled row in a dev (unpackaged) run. */
     clientUnsupportedDev: "开发运行不支持自更新",
-    /** Tooltip on the disabled row for installs owned by the system package manager (e.g. .deb). */
-    clientUnsupportedPackage: "此安装由系统包管理器管理，请通过包管理器更新",
+    /** Tooltip on the disabled row for a Linux install that is not an AppImage (a .deb, or an unpacked tree). */
+    clientUnsupportedNonAppImage: "Linux 上只有 AppImage 版本支持自更新——包安装请通过包管理器更新",
   },
 
   /** Desktop task-completion notifications (window unfocused; desktop-shell sessions only). */

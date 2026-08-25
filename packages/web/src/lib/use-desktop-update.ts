@@ -53,7 +53,7 @@ function settleWatch(): void {
     case "unsupported":
       toastInfo(
         settle.reason === "linux-not-appimage"
-          ? S.update.clientUnsupportedPackage
+          ? S.update.clientUnsupportedNonAppImage
           : S.update.clientUnsupportedDev,
       );
       break;

@@ -208,9 +208,9 @@ export const en: Strings = {
     clientInstallConfirmAction: "Restart now",
     /** Tooltip on the disabled row in a dev (unpackaged) run. */
     clientUnsupportedDev: "A dev run does not update itself",
-    /** Tooltip on the disabled row for installs owned by the system package manager (e.g. .deb). */
-    clientUnsupportedPackage:
-      "This install is managed by the system package manager — update it there",
+    /** Tooltip on the disabled row for a Linux install that is not an AppImage (a .deb, or an unpacked tree). */
+    clientUnsupportedNonAppImage:
+      "Only the AppImage build updates itself on Linux — update a package install through your package manager",
   },
 
   /** Desktop task-completion notifications (window unfocused; desktop-shell sessions only). */

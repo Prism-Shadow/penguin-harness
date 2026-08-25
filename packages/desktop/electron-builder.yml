@@ -47,8 +47,9 @@ files:
     to: web-dist
 # The app's own metadata, which the workspace package.json cannot carry: deb and AppImage
 # derive package and executable names from `name`, where "@prismshadow/…" is invalid, and
-# fpm refuses to build without a homepage. The name also decides the app data directory, so
-# it stays what installed apps already use.
+# fpm refuses to build without a homepage. It does NOT decide the app data directory: the
+# shell calls app.setName() before anything reads userData, so that keeps the name
+# src/app-identity.ts chooses per form.
 extraMetadata:
   name: penguin-harness-desktop
   homepage: https://github.com/Prism-Shadow/penguin-harness
