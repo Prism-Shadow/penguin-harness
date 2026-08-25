@@ -6,9 +6,8 @@
  * is a one-time link carrying this boot's first-login token (auth/service.ts), printed inside
  * a hard-to-miss frame on every start until a password is actually set.
  *
- * That replaces keeping the plaintext on disk. The old scheme had to, in order to re-print a
- * password somebody may have missed scrolling past; a link regenerated at every boot needs no
- * such storage, and an operator who missed it simply restarts.
+ * Nothing has to be stored for that to be repeatable: the link is regenerated at every boot,
+ * so an operator who scrolled past one just restarts.
  *
  * Published as `@prismshadow/penguin-server/initial-password` (side-effect-free, like ./lock)
  * so the CLI can print the same notice when it attaches to a live instance.

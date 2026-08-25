@@ -17,7 +17,7 @@ The CLI and the server automatically load a `.env` file from the working directo
 | `PENGUIN_WEB_DB` | Server SQLite database path | `<root>/web.db` |
 | `PENGUIN_WEB_DIST` | Front-end static assets directory | the npm server package falls back to its bundled web-dist |
 | `PENGUIN_PREVIEW_ORIGIN` | Origin that serves Workspace HTML previews, e.g. `https://preview.example.com` | unset — the loopback counterpart is derived per request |
-| `PENGUIN_SEED_ADMIN_PASSWORD` | Fixed initial password for the seeded built-in admin (automated tests / e2e) | unset — a random `penguin-<4 digits>` password is generated and printed once at seed time |
+| `PENGUIN_SEED_ADMIN_PASSWORD` | Fixed initial password for the seeded built-in admin (automated tests / e2e) | unset — the seed generates a random password, hashed and discarded unseen; the account is claimed through the first-login link |
 | `PENGUIN_LANG` | CLI language (`en` / `zh`), set via `penguin config lang` | `en` |
 | `PENGUIN_UPDATE_CHECK` | `off` disables the web app's new-release check (the server's only outbound internet call) | enabled |
 | `PENGUIN_NO_LOGIN_SHELL_ENV` | Any non-empty value stops the desktop app from importing the login shell's environment on macOS/Linux GUI launches (see [Desktop quickstart](/quickstart-desktop)) | unset — the import runs, filling only variables the launch left unset |

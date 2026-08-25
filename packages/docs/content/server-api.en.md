@@ -34,14 +34,14 @@ packages/server/src
 ## Authentication
 
 - Cookie session: `penguin_session` (HttpOnly, SameSite=Lax), valid for 30 days with sliding renewal;
-- Passwords are stored as scrypt hashes; the server keeps only the sha256 of the session token, never the plaintext;
-- No open registration: the built-in admin `admin` is seeded at startup with a random initial password (of the form `penguin-1234`) — kept in `<root>/initial-admin-password` and re-printed to the server console on every start until it is changed; `PENGUIN_SEED_ADMIN_PASSWORD` pins it for automation — and all other accounts are created by an admin;
+- Passwords are stored as scrypt hashes. A session token is signed rather than stored: the server verifies it against a key held only in process memory, so no session secret exists at rest and a restart ends every session;
+- No open registration: the built-in admin `admin` is seeded at startup with a random password that is hashed and discarded unseen. Until a password is actually set, every start prints a one-time first-login link to claim the account (`PENGUIN_SEED_ADMIN_PASSWORD` pins a known password instead, for automation). All other accounts are created by an admin;
 - Same-origin only — no CORS middleware is enabled.
 
 ```bash
-# Use the initial password printed at first start (or your changed one).
+# Use the password you set when claiming the account from the first-login link.
 curl -c cookies.txt -H "Content-Type: application/json" \
-  -d '{"userId":"admin","password":"penguin-1234"}' \
+  -d '{"userId":"admin","password":"<your password>"}' \
   http://127.0.0.1:7364/api/auth/login
 ```
 
@@ -52,7 +52,9 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 | Method | Path | Description |
 | --- | --- | --- |
 | POST | /api/auth/login | Log in: `{userId, password}` → `{user}` |
+| POST | /api/auth/owner | Mint a session with `<root>/owner-token`: `{ownerToken, userId?, ttlSeconds?}` → `{token, expiresAt}` |
 | POST | /api/auth/logout | Log out, returns 204 |
+| GET | /api/auth/claim?token=… | Redeem a one-time sign-in link (first-login or desktop): sets the cookie, redirects to `/` |
 | GET | /api/me | Current user info |
 | PUT | /api/me/password | Change password: `{oldPassword, newPassword}` |
 | GET | /api/me/prefs | Read UI preferences |

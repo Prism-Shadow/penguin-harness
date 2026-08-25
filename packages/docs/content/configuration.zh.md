@@ -17,7 +17,7 @@ CLI 与服务端启动时会自动加载工作目录下的 `.env` 文件。
 | `PENGUIN_WEB_DB` | 服务端 SQLite 数据库路径 | `<root>/web.db` |
 | `PENGUIN_WEB_DIST` | 前端静态资源目录 | npm 安装的服务端包回退到内置 web-dist |
 | `PENGUIN_PREVIEW_ORIGIN` | 提供 Workspace HTML 预览的独立源，如 `https://preview.example.com` | 未设置，按请求推导回环对应名 |
-| `PENGUIN_SEED_ADMIN_PASSWORD` | 固定内置管理员的种子初始密码（自动化测试 / e2e 使用） | 未设置，种子时随机生成 `penguin-<四位数字>` 并打印一次 |
+| `PENGUIN_SEED_ADMIN_PASSWORD` | 固定内置管理员的种子初始密码（自动化测试 / e2e 使用） | 未设置，种子时随机生成一个密码，哈希后即丢弃、无人见过；账号通过首次登录链接认领 |
 | `PENGUIN_LANG` | CLI 语言（`en` / `zh`），用 `penguin config lang` 设置 | `en` |
 | `PENGUIN_UPDATE_CHECK` | 设为 `off` 关闭 Web 应用的新版本检查（服务端唯一的对外网络请求） | 开启 |
 | `PENGUIN_NO_LOGIN_SHELL_ENV` | 任意非空值可禁止桌面版在 macOS/Linux 图形界面启动时导入登录 shell 环境变量（见[桌面版速上手](/quickstart-desktop)） | 未设置，导入开启，且只补启动环境中缺失的变量 |

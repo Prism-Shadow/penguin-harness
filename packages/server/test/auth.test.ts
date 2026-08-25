@@ -171,11 +171,13 @@ describe("auth", () => {
     expect(got.prefs.theme).toBe("dark");
   });
 
-  it("seedAdmin without an injected password generates penguin-<4 digits> and returns it", async () => {
+  it("seedAdmin without an injected password generates one nobody has to read", async () => {
     // Bypass the fixed test password: null matches the production default (random generation).
     const fresh = await createTestApp({ config: { seedAdminPassword: null } });
     try {
-      expect(fresh.adminPassword).toMatch(/^penguin-\d{4}$/);
+      // 24 base64url characters — 144 bits. It is hashed and discarded, so its only job is
+      // to be unguessable at the login endpoint from the moment the account exists.
+      expect(fresh.adminPassword).toMatch(/^[A-Za-z0-9_-]{24}$/);
       // The returned password is the one that actually logs in.
       await loginUser(fresh.app, "admin", fresh.adminPassword);
       // Users exist now: re-seeding reports that nothing was seeded.
@@ -260,10 +262,16 @@ describe("auth", () => {
     }
   });
 
-  it("generateInitialAdminPassword matches penguin-<4 digits>", () => {
-    for (let i = 0; i < 32; i++) {
-      expect(generateInitialAdminPassword()).toMatch(/^penguin-\d{4}$/);
+  it("generateInitialAdminPassword is 24 base64url characters, and never repeats", () => {
+    const seen = new Set<string>();
+    for (let i = 0; i < 64; i++) {
+      const password = generateInitialAdminPassword();
+      expect(password).toMatch(/^[A-Za-z0-9_-]{24}$/);
+      seen.add(password);
     }
+    // Drawn from randomBytes, not from a small printable space that a login endpoint could
+    // be walked through.
+    expect(seen.size).toBe(64);
   });
 
   it("PUT prefs shallow-merges without clobbering other writers' fields", async () => {

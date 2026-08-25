@@ -3,16 +3,17 @@
  * login / logout / password change / session validation.
  *
  * - No open registration: on startup, if there are no users at all, the built-in
- *   admin `admin` is seeded with a random `penguin-<4 digits>` initial password
- *   (printed once by the startup entrypoint; PENGUIN_SEED_ADMIN_PASSWORD injects
- *   a fixed one for tests/e2e), and it adopts `default_project`; all other users
- *   are created by an admin via the user backend (admin-service).
+ *   admin `admin` is seeded with a random password that is hashed and discarded
+ *   unseen (PENGUIN_SEED_ADMIN_PASSWORD injects a fixed one for tests/e2e), and it
+ *   adopts `default_project`. The account is claimed through the first-login link;
+ *   all other users are created by an admin via the user backend (admin-service).
  * - An initial password (whether seeded or set by an admin) is flagged with
  *   password_is_initial, which the frontend uses to prompt for a password change soon.
- * - Sessions: a 32-byte random token, with only its sha256 hash stored in the DB;
- *   valid for 30 days, renewed to the full term whenever one is used a day or more after issue.
+ * - Sessions: a token the server SIGNED, carrying its own claims (token-codec.ts). Nothing is
+ *   stored for one; valid for 30 days, renewed to the full term whenever one is used a day or
+ *   more after issue. Cutting one short before its expiry is a revocation (auth_revocations).
  */
-import { randomBytes, randomInt } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import type { UserInfo } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import type { UserRow, UsersRepo } from "../db/repos/users.js";
@@ -27,18 +28,23 @@ export const MIN_PASSWORD_LENGTH = 8;
 export const ADMIN_USER_ID = "admin";
 
 /**
- * Login throttling (per userId): the seeded initial password is `penguin-<4 digits>` —
- * 10,000 combinations — so unthrottled guessing would enumerate it in minutes. After
- * LOGIN_FREE_ATTEMPTS consecutive failures, the next attempt is admitted only after an
- * exponentially growing delay from the last failure (1s, 2s, … capped at 60s; attempts
- * inside the window are 429 `too_many_attempts` and do not extend it). Beyond ~40
- * failures that is one guess per minute, so the 10k space stops being enumerable, while
- * a legitimate user who mistyped a few times never waits more than the cap. A successful
- * login clears the counter. Counters are process memory (a restart clears them —
- * restarting is slower than waiting out the cap) and are kept for nonexistent userIds
- * too, so throttling is not an account-existence oracle. Known limit: a concurrent burst
- * can slip in before its first failure is recorded; the steady-state backoff still
- * dominates the search space.
+ * Login throttling, per userId. What it protects is the password a PERSON chose: seeded ones
+ * are 144 bits and unguessable by construction, but a human password only has to survive the
+ * rate an attacker can try it at.
+ *
+ * After LOGIN_FREE_ATTEMPTS consecutive failures the next attempt is admitted only after an
+ * exponentially growing delay from the last failure (1s, 2s, … capped at 60s; attempts inside
+ * the window are 429 `too_many_attempts` and do not extend it). Beyond ~40 failures that is one
+ * guess per minute, while a legitimate user who mistyped a few times never waits more than the
+ * cap. A successful login clears the counter.
+ *
+ * Counters are process memory — a restart clears them, which is slower than waiting out the cap
+ * — and are kept for nonexistent userIds too, so throttling is not an account-existence oracle.
+ *
+ * Two limits, deliberately: a concurrent burst can slip in before its first failure is
+ * recorded, and counting is per ACCOUNT rather than per caller, so spreading guesses across
+ * many accounts is not slowed. Both leave the steady-state cost of attacking any ONE account
+ * at one guess per minute, which is the property this exists for.
  */
 const LOGIN_FREE_ATTEMPTS = 5;
 const LOGIN_BACKOFF_START_MS = 1000;
@@ -46,13 +52,19 @@ const LOGIN_BACKOFF_CAP_MS = 60_000;
 /** Failure entries idle longer than this are swept (bounds the map; far above the cap). */
 const LOGIN_FAILURE_IDLE_MS = 15 * 60_000;
 
+/** Characters of base64url in a seeded password — 18 random bytes, 144 bits. */
+const SEED_PASSWORD_CHARS = 24;
+
 /**
- * The seeded/reset admin password: `penguin-<4 digits>`, generated and never shown — the
- * account is claimed through the first-login link instead (initial-password.ts). Short and
- * printable only because nothing depends on reading it back.
+ * The password a seeded or reset admin account carries until somebody claims it.
+ *
+ * Nobody ever reads it: it is hashed at once and discarded, and the account is claimed
+ * through the first-login link (initial-password.ts). Nothing therefore has to type it, which
+ * is what lets it be long — and long is what matters, because the account is reachable at the
+ * login endpoint from the moment it exists. At 144 bits it is not a search space.
  */
 export function generateInitialAdminPassword(): string {
-  return "penguin-" + String(randomInt(0, 10000)).padStart(4, "0");
+  return randomBytes(SEED_PASSWORD_CHARS).toString("base64url").slice(0, SEED_PASSWORD_CHARS);
 }
 
 /**

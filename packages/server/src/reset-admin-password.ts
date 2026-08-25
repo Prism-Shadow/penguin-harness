@@ -42,9 +42,9 @@ export type ResetAdminPasswordResult =
   | { outcome: "reset" };
 
 /**
- * Resets the built-in admin to a fresh initial password. `dbPath` defaults to the
- * root's `web.db`; callers honoring PENGUIN_WEB_DB pass the resolved path (the
- * plaintext reminder file always lives in `root`, matching the server's own layout).
+ * Returns the built-in admin to the unclaimed state. `dbPath` defaults to the root's
+ * `web.db`; callers honoring PENGUIN_WEB_DB pass the resolved path, while `root` stays the
+ * root itself — the sweep below is addressed to the root's own layout, not to the database.
  */
 export async function resetAdminPassword(
   root: string,

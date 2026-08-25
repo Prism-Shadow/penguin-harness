@@ -34,14 +34,14 @@ packages/server/src
 ## 认证
 
 - Cookie 会话：`penguin_session`（HttpOnly、SameSite=Lax），有效期 30 天，滑动续期；
-- 密码以 scrypt 哈希存储；服务端只保存会话 Token 的 sha256，不落明文；
-- 不开放注册：启动时种子化内置管理员 `admin`，初始密码随机生成（形如 `penguin-1234`），在改掉之前保存在 `<root>/initial-admin-password` 中并于每次启动时打印到服务端控制台——自动化可用 `PENGUIN_SEED_ADMIN_PASSWORD` 固定——其余账号由管理员创建；
+- 密码以 scrypt 哈希存储；会话 Token 由服务端签发而非存储：校验所用的密钥只存在于进程内存中，因此静态存储里没有任何会话机密，重启即让全部会话失效；
+- 不开放注册：启动时种子化内置管理员 `admin`，其初始密码随机生成、哈希后即丢弃，无人见过。在真正设置密码之前，每次启动都会打印一条一次性的首次登录链接用于认领账号（自动化场景可用 `PENGUIN_SEED_ADMIN_PASSWORD` 固定一个已知密码）。其余账号由管理员创建；
 - 仅限同源访问，未启用 CORS 中间件。
 
 ```bash
-# 密码用首次启动时打印的初始密码（或改过之后的密码）。
+# 密码用认领账号（首次登录链接）时设置的那个。
 curl -c cookies.txt -H "Content-Type: application/json" \
-  -d '{"userId":"admin","password":"penguin-1234"}' \
+  -d '{"userId":"admin","password":"<你的密码>"}' \
   http://127.0.0.1:7364/api/auth/login
 ```
 
@@ -52,7 +52,9 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | POST | /api/auth/login | 登录：`{userId, password}` → `{user}` |
+| POST | /api/auth/owner | 用 `<root>/owner-token` 换取会话：`{ownerToken, userId?, ttlSeconds?}` → `{token, expiresAt}` |
 | POST | /api/auth/logout | 退出登录，返回 204 |
+| GET | /api/auth/claim?token=… | 兑换一次性登录链接（首次登录或桌面端）：种下 Cookie 并跳转到 `/` |
 | GET | /api/me | 当前用户信息 |
 | PUT | /api/me/password | 修改密码：`{oldPassword, newPassword}` |
 | GET | /api/me/prefs | 读取 UI 偏好 |

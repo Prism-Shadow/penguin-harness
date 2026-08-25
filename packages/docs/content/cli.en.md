@@ -163,7 +163,7 @@ Offline rescue when the Web admin password is forgotten. Run it with the server 
 penguin server reset-admin-password
 ```
 
-The built-in `admin` gets a fresh initial password of the usual `penguin-1234` form, printed in the framed notice — and re-printed on every server start until it is changed — and all of admin's sign-in sessions are cleared. Other accounts are reset by the admin on the user-management page; this command only touches `admin`. The data root is selected by `PENGUIN_HOME` as usual.
+The built-in `admin` is returned to the unclaimed state — a random password nobody ever sees, and every one of admin's sessions revoked. Start the server again and open the first-login link it prints to set a new password; nothing is written down in the meantime. Other accounts are reset by the admin on the user-management page; this command only touches `admin`. The data root is selected by `PENGUIN_HOME` as usual.
 
 ## penguin version
 

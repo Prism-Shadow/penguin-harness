@@ -54,11 +54,13 @@ outstanding session. Hot updates keep the process, and CLI and machine tokens re
 a browser session across a real restart costs one re-typed password.
 
 Local ownership is anchored by `<root>/owner-token`: a fresh random value written at every start,
-mode 0600, redeemed at `POST /api/auth/owner`. With the server stopped, `penguin auth token`
-writes a session record directly instead.
+mode 0600, redeemed at `POST /api/auth/owner`. A stopped server cannot mint at all: the key
+that would sign the token is not anywhere to be found, so the answer is to start it.
 
-A fresh server's seed password is generated, hashed and discarded unseen; every start prints a
-one-time sign-in link until a password is set. The link carries an ordinary `setup` session —
+A fresh server's seed password is 24 base64url characters — 144 bits — generated, hashed and
+discarded unseen, so the account is unguessable at the login endpoint from the moment it exists
+even though nobody can read it. Every start prints a one-time sign-in link until a password is
+set. The link carries an ordinary `setup` session —
 one that may set a password without an old one, and opens no desktop-only route — and is
 redeemed at `GET /api/auth/claim`, which also serves the desktop shell's one-shot token.
 `penguin server reset-admin-password` returns the admin account to that unclaimed state and

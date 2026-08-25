@@ -163,7 +163,7 @@ penguin web
 penguin server reset-admin-password
 ```
 
-内置 `admin` 会得到一个新的初始密码（形如 `penguin-1234`），以边框提示打印——此后每次启动服务端都会重印，直到密码被修改——并清空 admin 的全部登录会话。其他账号由管理员在用户管理页重置，本命令只作用于 `admin`。数据根目录照常由 `PENGUIN_HOME` 决定。
+内置 `admin` 会被恢复成未认领状态——密码随机生成且无人见过，admin 的全部会话一并吊销。重新启动服务，打开它打印的首次登录链接即可设置新密码；整个过程无需记下任何东西。其他账号由管理员在用户管理页重置，本命令只作用于 `admin`。数据根目录照常由 `PENGUIN_HOME` 决定。
 
 ## penguin version
 

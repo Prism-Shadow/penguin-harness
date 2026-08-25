@@ -9,7 +9,6 @@
  * detected to exist.
  * Docs: /docs/configuration § "Environment variables".
  */
-import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -41,11 +40,9 @@ export interface ServerConfig {
   previewOrigin: string | null;
   /**
    * Fixed initial password for the seeded built-in admin (PENGUIN_SEED_ADMIN_PASSWORD),
-   * used by automated tests and e2e; null (the norm) makes the seed generate a random
-   * `penguin-<4 digits>` password, printed once to the server console. In desktop mode
-   * an unpinned value resolves to a FULLY random password instead (never printed):
-   * sign-in there goes through the shell's one-shot token, so nobody needs to read the
-   * seed.
+   * used by automated tests and e2e. Null is the norm: the seed then generates a random
+   * password that is hashed and discarded unseen, and the account is claimed through the
+   * first-login link instead.
    */
   seedAdminPassword: string | null;
   /** Login session validity period (30 days). */
@@ -138,13 +135,8 @@ export function resolveServerConfig(env: NodeJS.ProcessEnv = process.env): Serve
     dbPath: env.PENGUIN_WEB_DB ?? path.join(root, "web.db"),
     webDist: env.PENGUIN_WEB_DIST ?? defaultWebDist(),
     previewOrigin: normalizePreviewOrigin(env.PENGUIN_PREVIEW_ORIGIN),
-    // An empty/whitespace value is treated as unset (→ random seed password). Desktop
-    // mode without a pinned value seeds a FULLY random password rather than the
-    // printable penguin-<4 digits>: desktop sign-in goes through the shell's token, so
-    // the seed never needs to be read — and index.ts deliberately does not print it.
-    seedAdminPassword:
-      env.PENGUIN_SEED_ADMIN_PASSWORD?.trim() ||
-      (desktopToken !== null ? randomBytes(24).toString("base64url") : null),
+    // An empty/whitespace value is treated as unset, which leaves the seed to generate one.
+    seedAdminPassword: env.PENGUIN_SEED_ADMIN_PASSWORD?.trim() || null,
     authSessionTtlMs: 30 * DAY_MS,
     authSessionRenewMs: 29 * DAY_MS,
     desktopToken,
