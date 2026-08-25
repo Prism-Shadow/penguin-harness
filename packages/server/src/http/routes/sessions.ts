@@ -1201,24 +1201,36 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       rel,
     );
     const disposition = download ? "attachment" : "inline";
-    // Same-origin XSS defense: html/svg inline previews are always returned as plain
-    // text (Workspace files may be Agent-generated and untrusted); downloads
-    // (attachment) keep the real content type, and sandboxed previews keep it under the
-    // CSP above. Paired with nosniff to prevent MIME sniffing from undoing this.
+    // Same-origin XSS defense: an inline HTML preview is always returned as plain text
+    // (Workspace files may be Agent-generated and untrusted); downloads (attachment) keep
+    // the real content type, and sandboxed previews keep it under the CSP above. Paired
+    // with nosniff to prevent MIME sniffing from undoing this.
+    // An SVG is a document AND an image. Downgrading it to text/plain made every <img> in a
+    // Markdown preview (and every .svg preview) a broken image, so it keeps its real type —
+    // an image never runs the SVG's scripts. What the type does re-open is a DIRECT
+    // navigation to this URL, where the browser would render it as a same-origin document:
+    // the sandbox CSP closes that (no allow-scripts, no allow-same-origin — opaque origin,
+    // no script execution), and CSP sandbox is ignored for a subresource, so the <img> path
+    // is unaffected.
+    const inertSvg = !download && !preview && scriptable === "svg";
     const effectiveType =
-      !download && scriptable && !preview ? "text/plain; charset=utf-8" : contentType;
+      !download && scriptable === "html" && !preview ? "text/plain; charset=utf-8" : contentType;
     return new Response(new Uint8Array(data), {
       status: 200,
       headers: {
         "Content-Type": effectiveType,
         "Content-Disposition": `${disposition}; filename*=UTF-8''${encodeURIComponent(fileName)}`,
         "X-Content-Type-Options": "nosniff",
+        // A Workspace file is whatever the Agent last wrote to that path. Letting a browser
+        // cache it by URL is how a re-read after a settled turn paints the previous version.
+        "Cache-Control": "no-store",
         ...(preview && scriptable
           ? {
               "Content-Security-Policy":
                 "sandbox allow-scripts allow-popups allow-modals allow-forms",
             }
           : {}),
+        ...(inertSvg ? { "Content-Security-Policy": "sandbox" } : {}),
       },
     });
   });

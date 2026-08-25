@@ -46,8 +46,14 @@ export interface WorkspaceFileContent {
   data: Buffer;
   fileName: string;
   contentType: string;
-  /** Types whose same-origin inline rendering would execute scripts (html/svg): inline preview must fall back to plain text. */
-  scriptable: boolean;
+  /**
+   * Which kind of scriptable document this is, or false. Both kinds would execute scripts if
+   * a browser rendered them as a same-origin document, but they need different inline
+   * handling: `"html"` falls back to plain text, while `"svg"` keeps its real type so an
+   * `<img>` can render it (an image never runs the SVG's scripts) and is served with a
+   * sandbox CSP so a direct navigation to it stays inert. See the file-content routes.
+   */
+  scriptable: "html" | "svg" | false;
   /** True when a bounded preview returned only the beginning of the file. */
   truncated?: boolean;
 }
@@ -276,7 +282,7 @@ export class WorkspaceFilesService {
       data,
       fileName: path.basename(file),
       contentType: CONTENT_TYPES[ext] ?? "application/octet-stream",
-      scriptable: ext === ".html" || ext === ".htm" || ext === ".svg",
+      scriptable: ext === ".html" || ext === ".htm" ? "html" : ext === ".svg" ? "svg" : false,
       ...(truncated ? { truncated: true } : {}),
     };
   }
