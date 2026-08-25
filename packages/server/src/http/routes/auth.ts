@@ -3,26 +3,12 @@
  * No self-registration: users are created by an admin in the user backend (/api/admin/users).
  * Login issues a cookie session; logout revokes it by jti and clears the cookie.
  *
- * `owner` and `claim` both hand out a session without a password, and differ on three axes.
- *
- * WHO ASKS decides the shape. `owner` answers a program: a token in the body, which a program
- * can read. `claim` answers a browser window that has no session yet, and the only way to give
- * one of those a session is for the server to set an HttpOnly cookie itself — hence a GET that
- * redirects, rather than a call with a return value.
- *
- * WHAT IS PROVEN decides whether `userId` exists. `owner` proves the ability to read the data
- * root, which is machine ownership and covers every account alike — every credential the
- * server can reach lives in that root already — so it takes a userId. The claim proofs each
- * cover exactly one thing: that THIS admin account has never been claimed, or that this window
- * belongs to the shell owning the process. Neither spans an account list, so neither offers a
- * choice. Admin-only is not "the only account there is": a setup session can create other
- * users, and reset-admin-password revives the link on a populated server.
- *
- * WHAT IS GRANTED runs the other way. The owner token is the stronger proof and yields the
- * weaker session — `cli`, which verification reads as an ordinary password session. The claim
- * proofs are narrower and yield the allowance to set a password with no old one, that being
- * the situation they exist for. So the credential that lands in a console scrollback is the
- * one that dies the moment a password exists.
+ * `owner` and `claim` both hand out a session without a password, and are not
+ * interchangeable: `owner` answers a PROGRAM (token in the body, any userId, proven by reading
+ * the data root) while `claim` answers a BROWSER with no session yet (a Set-Cookie + redirect,
+ * admin only, since only the server can set an HttpOnly cookie). The stronger proof — owner =
+ * machine ownership, covering every account — yields the weaker `cli` session; the narrower
+ * claim proofs yield the password-without-the-old-one allowance. See each handler for why.
  */
 import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";

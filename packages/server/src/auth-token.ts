@@ -4,16 +4,17 @@
  * WHAT AUTHORIZES IT is the ability to read the data root, which already holds every credential
  * the token could reach. What it is exchanged THROUGH is this boot's `<root>/owner-token`,
  * redeemed at `POST /api/auth/owner` over loopback: the server signs with its in-memory key, so
- * no secret at rest is involved at either end.
+ * no secret at rest is involved at either end. A stopped server cannot mint — the signing key
+ * lives in its process — so the answer there is to start it, not to write something to disk.
  *
- * A stopped server cannot mint. The signing key lives in the process, and a session it did not
- * sign is not a session — so the answer there is to start it, not to write something to disk
- * that would outlive the reasons for trusting it.
- *
- * The claims record `v: "cli"`. Nothing grants privilege from it: verification maps anything
- * that is not "desktop" or "setup" to an ordinary password session.
+ * Also home to `call()`, the one HTTP client this project hand-rolls: the API answers only under
+ * its canonical app host, and a request arriving as `Host: 127.0.0.1:<port>` is treated as the
+ * preview surface and refused. `fetch` ignores an explicit host header, node:http honors it —
+ * so the connection goes to the address while the header says the canonical name. Shared with
+ * the CLI (login/logout) instead of existing twice.
  */
 import http from "node:http";
+import https from "node:https";
 import { liveServerLock } from "./lock.js";
 import { readOwnerToken } from "./auth/owner-token.js";
 
@@ -29,7 +30,7 @@ export type MintTokenResult =
 /** Issues an API session token for the data root at `root`. */
 export async function mintApiToken(
   root: string,
-  opts: { userId?: string; ttlMs?: number; now?: () => Date } = {},
+  opts: { userId?: string; ttlMs?: number } = {},
 ): Promise<MintTokenResult> {
   const userId = opts.userId ?? "admin";
   const ttlMs = opts.ttlMs ?? CLI_TOKEN_TTL_MS;
@@ -48,68 +49,96 @@ export async function mintApiToken(
       detail: `a server is running but ${root}/owner-token is unreadable`,
     };
   }
-  return redeemOverLoopback(lock.port, ownerToken, userId, ttlMs);
+
+  let answer: HttpAnswer;
+  try {
+    answer = await call(
+      `http://localhost:${lock.port}`,
+      { method: "POST", path: "/api/auth/owner" },
+      { ownerToken, userId, ttlSeconds: Math.max(1, Math.round(ttlMs / 1000)) },
+    );
+  } catch (err) {
+    return { outcome: "failed", detail: err instanceof Error ? err.message : String(err) };
+  }
+  if (answer.status !== 200) {
+    return {
+      outcome: "failed",
+      detail: `the server answered ${answer.status}: ${answer.text.slice(0, 200)}`,
+    };
+  }
+  try {
+    const parsed = JSON.parse(answer.text) as { token?: unknown; expiresAt?: unknown };
+    if (typeof parsed.token !== "string" || typeof parsed.expiresAt !== "string") {
+      return { outcome: "failed", detail: "the server's answer had no token in it" };
+    }
+    return { outcome: "minted", token: parsed.token, userId, expiresAt: parsed.expiresAt };
+  } catch {
+    return { outcome: "failed", detail: "the server's answer was not JSON" };
+  }
 }
 
-/** One redemption call to the local server. node:http with the canonical Host, as everywhere. */
-function redeemOverLoopback(
-  port: number,
-  ownerToken: string,
-  userId: string,
-  ttlMs: number,
-): Promise<MintTokenResult> {
-  return new Promise((resolve) => {
-    const body = Buffer.from(
-      JSON.stringify({ ownerToken, userId, ttlSeconds: Math.max(1, Math.round(ttlMs / 1000)) }),
-    );
-    const req = http.request(
+export interface HttpAnswer {
+  status: number;
+  headers: Record<string, string | string[] | undefined>;
+  text: string;
+}
+
+/**
+ * One request with the Host header set to the target's canonical app host (see module doc).
+ * Both schemes: a login target may be a TLS deployment as easily as a loopback port. Loopback
+ * connects by address (`localhost` may resolve to ::1 where the server bound 127.0.0.1 only)
+ * while the header keeps the name — the spelling the API accepts.
+ */
+export function call(
+  url: string,
+  options: { method: string; path: string; cookie?: string },
+  body?: unknown,
+): Promise<HttpAnswer> {
+  return new Promise((resolve, reject) => {
+    let target: URL;
+    try {
+      target = new URL(url);
+    } catch {
+      reject(new Error(`not a URL: ${url}`));
+      return;
+    }
+    const secure = target.protocol === "https:";
+    const payload = body === undefined ? null : Buffer.from(JSON.stringify(body));
+    const port = target.port !== "" ? Number(target.port) : secure ? 443 : 80;
+    const host = target.hostname === "localhost" ? "127.0.0.1" : target.hostname;
+    const req = (secure ? https : http).request(
       {
-        host: "127.0.0.1",
+        host,
         port,
-        path: "/api/auth/owner",
-        method: "POST",
+        path: options.path,
+        method: options.method,
         headers: {
-          host: `localhost:${port}`,
-          "content-type": "application/json",
-          "content-length": String(body.byteLength),
+          host: target.host,
+          ...(options.cookie !== undefined ? { cookie: options.cookie } : {}),
+          ...(payload === null
+            ? {}
+            : { "content-type": "application/json", "content-length": String(payload.length) }),
         },
-        timeout: 10_000,
+        timeout: 30_000,
       },
       (res) => {
         const chunks: Buffer[] = [];
         res.on("data", (chunk: Buffer) => chunks.push(chunk));
-        res.on("end", () => {
-          const text = Buffer.concat(chunks).toString("utf8");
-          if (res.statusCode !== 200) {
-            resolve({
-              outcome: "failed",
-              detail: `the server answered ${res.statusCode ?? 0}: ${text.slice(0, 200)}`,
-            });
-            return;
-          }
-          try {
-            const parsed = JSON.parse(text) as { token?: unknown; expiresAt?: unknown };
-            if (typeof parsed.token !== "string" || typeof parsed.expiresAt !== "string") {
-              resolve({ outcome: "failed", detail: "the server's answer had no token in it" });
-              return;
-            }
-            resolve({
-              outcome: "minted",
-              token: parsed.token,
-              userId,
-              expiresAt: parsed.expiresAt,
-            });
-          } catch {
-            resolve({ outcome: "failed", detail: "the server's answer was not JSON" });
-          }
-        });
+        res.on("end", () =>
+          resolve({
+            status: res.statusCode ?? 0,
+            headers: res.headers,
+            text: Buffer.concat(chunks).toString("utf8"),
+          }),
+        );
       },
     );
     req.on("timeout", () => {
       req.destroy();
-      resolve({ outcome: "failed", detail: "the local server did not answer in time" });
+      reject(new Error("the server did not answer in time"));
     });
-    req.on("error", (err) => resolve({ outcome: "failed", detail: err.message }));
-    req.end(body);
+    req.on("error", reject);
+    if (payload === null) req.end();
+    else req.end(payload);
   });
 }

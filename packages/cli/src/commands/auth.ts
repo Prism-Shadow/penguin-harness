@@ -6,26 +6,17 @@
  *   penguin auth logout [--root <dir>]
  *   penguin auth token  [--user-id <id>] [--ttl-seconds <n>] [--root <dir>]
  *
- * TWO WAYS IN, and which one is right depends on where you are standing.
+ * `login` takes a password and asks a RUNNING server over HTTP, as the browser's login page
+ * does — use it against any server you have the password for, remote included, since the
+ * target is a URL. `token` takes no password: it mints a session from the data root on THIS
+ * machine, authorized by the ability to read that root (which already holds every credential
+ * the token could reach), for where there is no password to give — a hand-set admin password,
+ * a script that must not carry one, or a controller reaching a managed machine over ssh
+ * (`--mark`).
  *
- * `login` is the one that takes a password: it asks a RUNNING server, over HTTP, exactly as
- * the browser's login page does, and the session it gets back is an ordinary one. Use it
- * against a server you have the password for — including a remote deployment, since the
- * target is a URL.
- *
- * `token` takes no password at all. It mints a session straight from the data root on THIS
- * machine, and what authorizes it is the fact that you can read that root — which already
- * contains every credential the token could reach. Use it where there is no password to give:
- * a machine whose admin password somebody set by hand, or a script that must not hold one.
- * It is also what a controller runs over ssh to reach a machine it manages, which is what
- * `--mark` exists for.
- *
- * The session is written to `<root>/cli-session.json` at mode 0600. Nothing else in this CLI
- * reads it yet — `config`, `run` and `chat` all work on the data root directly and never open
- * a socket — so today it is for `status`, `logout`, and for handing to something else with
- * `--print`. It is stored rather than only printed so that a shell's history is not where a
- * credential ends up.
- * Docs: /docs/cli § "penguin auth".
+ * The session is written to `<root>/cli-session.json` (0600) so a shell's history is not where
+ * a credential ends up; `status`/`logout`/`--print` read it, while `config`/`run`/`chat` work
+ * on the data root directly. Docs: /docs/cli § "penguin auth".
  */
 import { mintApiToken } from "@prismshadow/penguin-server/auth-token";
 import { liveServerLock } from "@prismshadow/penguin-server/lock";

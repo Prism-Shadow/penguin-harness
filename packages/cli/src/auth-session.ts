@@ -5,20 +5,12 @@
  * open files, never a socket. This is the one place that talks to a running server as a
  * client, so the two things that make that awkward live here rather than in the command.
  *
- * THE HOST HEADER. The API answers only under its canonical app host; a request arriving as
- * `Host: 127.0.0.1:<port>` is treated as the preview surface and refused with "The API is not
- * served on the preview host". So the connection goes to the address and the header says
- * `localhost:<port>` — which `fetch` cannot express, since it ignores an explicit host header.
- * node:http, therefore, exactly as the machines proxy does for the same reason.
- *
  * THE SESSION FILE. `<root>/cli-session.json`, mode 0600, holding the token a login issued.
  * It is a credential with an expiry, so it is written like one: 0600 on create AND on
  * overwrite (the mode option only applies when the file is new), and never printed unless
  * asked for.
  */
 import fs from "node:fs";
-import http from "node:http";
-import https from "node:https";
 import path from "node:path";
 import { writeSecretFile } from "@prismshadow/penguin-server/secret-file";
 
@@ -79,75 +71,10 @@ export function localServerUrl(root: string): string | null {
   }
 }
 
-export interface HttpAnswer {
-  status: number;
-  headers: Record<string, string | string[] | undefined>;
-  text: string;
-}
-
-/**
- * One request to a server, with the Host header set to its canonical app host.
- *
- * Both schemes, because a login target may be a remote deployment behind TLS as easily as a
- * loopback port. The header is taken from the URL's own host, so a named deployment gets its
- * name and a loopback port gets `localhost:<port>` — the spelling the API accepts.
- */
-export function call(
-  url: string,
-  options: { method: string; path: string; cookie?: string },
-  body?: unknown,
-): Promise<HttpAnswer> {
-  return new Promise((resolve, reject) => {
-    let target: URL;
-    try {
-      target = new URL(url);
-    } catch {
-      reject(new Error(`not a URL: ${url}`));
-      return;
-    }
-    const secure = target.protocol === "https:";
-    const payload = body === undefined ? null : Buffer.from(JSON.stringify(body));
-    const port = target.port !== "" ? Number(target.port) : secure ? 443 : 80;
-    // Loopback by address, named by name: `localhost` may resolve to ::1 where the server
-    // bound 127.0.0.1 only, which fails as a connection refused rather than as anything a
-    // person could act on.
-    const host = target.hostname === "localhost" ? "127.0.0.1" : target.hostname;
-    const req = (secure ? https : http).request(
-      {
-        host,
-        port,
-        path: options.path,
-        method: options.method,
-        headers: {
-          host: target.host,
-          ...(options.cookie !== undefined ? { cookie: options.cookie } : {}),
-          ...(payload === null
-            ? {}
-            : { "content-type": "application/json", "content-length": String(payload.length) }),
-        },
-        timeout: 30_000,
-      },
-      (res) => {
-        const chunks: Buffer[] = [];
-        res.on("data", (chunk: Buffer) => chunks.push(chunk));
-        res.on("end", () =>
-          resolve({
-            status: res.statusCode ?? 0,
-            headers: res.headers,
-            text: Buffer.concat(chunks).toString("utf8"),
-          }),
-        );
-      },
-    );
-    req.on("timeout", () => {
-      req.destroy();
-      reject(new Error("the server did not answer in time"));
-    });
-    req.on("error", reject);
-    if (payload === null) req.end();
-    else req.end(payload);
-  });
-}
+// The one hand-rolled HTTP client (canonical Host header) lives beside the server's own
+// loopback redemption; re-exported so command code keeps a single import site.
+export { call } from "@prismshadow/penguin-server/auth-token";
+export type { HttpAnswer } from "@prismshadow/penguin-server/auth-token";
 
 /** The session token out of a login's Set-Cookie lines. */
 export function tokenFromSetCookie(lines: string[] | undefined, name: string): string | null {
