@@ -27,6 +27,18 @@ outright: reading a Trace happens in a conversation's Trace panel, which is the 
   to have selected. A Trace can therefore also be imported into a Project other than the open one —
   the conversation list refreshes only when the destination IS the open one, since that is the only
   list on screen.
+- **An imported Trace now becomes a listed conversation.** The import registered the Trace file and
+  nothing else, so the imported Session existed only on disk: the conversation list is served from
+  the sessions table, and the row appeared only with "show CLI sessions" on — the filter for
+  Sessions this server never created, which an explicitly imported file is not. The import now
+  indexes the Session too (`client: web`), carrying the model reference, Workspace and title from
+  the file's own `session_meta`, so it shows up in the sidebar as soon as the list refreshes.
+- **A duplicate session id is rejected across the whole install**, not just the receiving Agent. A
+  session id is the identity everywhere — the sessions table keys on it, the frontend dedupes rows
+  by it, `/chat/:sessionId` routes by it — so importing the same Trace under a second Agent used to
+  "succeed" into a Session nothing could own: no row could sit beside the existing one, and the list
+  folded the two into one conversation, leaving that group's count one above the rows it could ever
+  show. It is now a 409 `trace_session_exists`, as it always was within one Agent.
 - Exporting is unchanged and stays with the file it downloads: the Trace panel's export link on the
   selected file.
 - The panel itself is untouched — same file view, performance timeline and event list, scoped to the
@@ -36,6 +48,14 @@ outright: reading a Trace happens in a conversation's Trace panel, which is the 
 - `Select` now forwards `aria-label` to its trigger, the way a native select honours one — the
   settings row's Agent picker carries its name there, since the row's own label names the action
   rather than the control.
+
+## Existing data
+
+Traces imported **before** this change carry no Session row, so they stay as they were: visible only
+with "show CLI sessions" on. No migration is offered because none is possible — a Trace with no
+Session row is indistinguishable from a CLI-created one, and adopting every such Session would
+promote genuine CLI Sessions along with them. To pull an old import into the list, delete its Trace
+file and import it again.
 
 ## Known gap
 
