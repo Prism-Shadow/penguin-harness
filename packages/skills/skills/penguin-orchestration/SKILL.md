@@ -41,8 +41,8 @@ penguin run -m <msg> [--project-id <id>] [--agent-id <id>] [--workspace <path>]
             [--model-id <id> --provider <p>] [--approve <mode>] [--thinking <level>]
             [--session <session_id>] [--background] [--goal [budget]] [--json]
 penguin ls [--project-id <id>] [--agent-id <id>] [-a|--all] [--json]
-penguin input <session_id> -m <text> [--no-wait] [--json]
-penguin logs <session_id> [--tail <n>] [-f|--follow] [--json]
+penguin input <session_id> -m <text> [--project-id <id>] [--no-wait] [--json]
+penguin logs <session_id> [--project-id <id>] [--tail <n>] [-f|--follow] [--json]
 penguin agent ls [--project-id <id>] [--json]
 penguin agent create --agent-id <id> [--name <s>] [--description <s>] [--skills <a,b>]
                      [--project-id <id>] [--json]
@@ -54,8 +54,8 @@ penguin schedule ls [--project-id <id>] [--agent-id <id>] [--json]
 
 - `run` starts a task and waits, rendering the conversation, unless `--background` — then it prints the new session id and exits while the server keeps running the task. `--session <session_id>` runs the task in an existing session instead of creating one. The model reference is the `--provider` + `--model-id` pair (both or neither; neither means the project default). `--thinking <level>` overrides the agent's thinking level for this run; `--workspace` sets the session's working directory (omit for a temporary workspace); `--goal [budget]` runs in goal mode — the session loops until the agent declares the goal complete, with an optional spend budget.
 - `input` steers a **running** session mid-turn (the agent absorbs it as a course correction within the current task) or starts a new turn on an idle one. By default it waits for the reply; `--no-wait` returns right after delivery.
-- `ls` lists sessions newest first; `-a`/`--all` lifts the default cap and lists the full history. `logs` renders a session's transcript: `--tail <n>` for the last entries, `-f` to follow live.
-- Session ids embed their creation timestamp — `session-YYYY-MM-DD-HH-mm-ss-<8hex>` — and every `<session_id>` argument accepts the unique 8-hex tail alone.
+- `ls` spans every agent of the project, newest first (by last active); archived sessions are left out unless `-a`/`--all` includes them. `logs` renders a session's transcript: `--tail <n>` for the last entries, `-f` to follow live.
+- Session ids embed their creation timestamp — `session-YYYY-MM-DD-HH-mm-ss-<8hex>`. Every `<session_id>` argument takes any unique substring of an id; the 8-hex tail is the recommended short form, and an ambiguous fragment errors listing the candidates. On `input` and `logs`, `--project-id` scopes that fragment search (unnecessary with a full id).
 
 ## Recipes
 
@@ -63,7 +63,7 @@ penguin schedule ls [--project-id <id>] [--agent-id <id>] [--json]
 
 ```bash
 Y="$(date -d yesterday +%F 2>/dev/null || date -v-1d +%F)"   # YYYY-MM-DD
-penguin ls -a --json
+penguin ls -a --json    # every agent's sessions, archived included
 ```
 
 - Pick the candidates from the listing: a session id starting `session-$Y-` was created yesterday; also keep earlier sessions whose last-active timestamp in the JSON falls on `$Y` — conversations that continued into yesterday.
@@ -98,7 +98,7 @@ penguin run --agent-id research_bot -m "Introduce yourself and list your skills.
 penguin schedule ls --agent-id research_bot
 ```
 
-Read the fields: `enabled` (a disabled entry never fires), `startAt` (first firing), `period` (recurrence; absent means one-shot), the target — an existing session id versus a new session per firing — and `lastFiredAt`.
+Read the fields: the AGENT column (without `--agent-id` the listing spans agents), `enabled` (a disabled entry never fires), `startAt` (first firing), `period` (recurrence; absent means one-shot), the target — an existing session id versus a new session per firing — and `lastFiredAt`.
 
 To **create** a schedule, write a TOML file with your file tools — that is the sanctioned path: schedule files are meant to be edited directly, and your own agent's current ones are already listed in your system prompt's schedule roster. The path is `<app_data_dir>/agents/<agent_id>/agent_state/schedule/<name>.toml` (App Data Dir is in your Environment section):
 
@@ -141,7 +141,7 @@ Prefer (a) when you stay around for the result — the completion report comes t
 ## Cautions
 
 - **One active task per session.** `penguin input` at a busy session steers the running task rather than starting a second one; a new task sent at a busy session waits its turn. For parallel work, start parallel sessions.
-- **Unattended sessions must not need a human.** Create them with `--approve allow-all` (trusted work) or `--approve read-only`; a session left on `always-ask` hangs waiting for approval in the web UI.
+- **Unattended sessions must not need a human.** `penguin run` defaults to `--approve allow-all`; choose `--approve read-only` when the spawned agent should not write. Only an explicitly set `always-ask` carries the hang risk — that session waits for approval in the web UI.
 - **No runaway loops.** An agent that messages itself — directly, through a chain of agents, or through a schedule aimed back at its own session — keeps spending until someone stops it. Make every automated conversation terminate.
 - **Spawned work bills the project.** Everything you start lands in the same project's usage (`penguin cost` shows it); a fan-out of sessions multiplies spend.
 - **Configuration stays CLI-managed.** Never read or hand-edit `.project_config.toml` or `agent_state/.vault.toml` — models and secrets go through `penguin config` (see the penguin-cli skill).
