@@ -3,6 +3,7 @@
 - **Date:** 2026-08-25
 - **Type:** process
 - **Scope:** `cli`, `server`, `web`
+- **PR:** [#466](https://github.com/Prism-Shadow/penguin-harness/pull/466)
 - **Breaking:** yes — 旧 CLI 二进制直连 core、可离线运行；重建后的命令依赖服务端（本机自动拉起），按用户的「显示 CLI 会话」偏好随之移除
 
 [English](2026-08-25-backward-compatibility.md)

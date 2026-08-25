@@ -3,6 +3,7 @@
 - **Date:** 2026-08-25
 - **Type:** feature
 - **Scope:** `cli`, `server`, `core`, `web`, `docs`
+- **PR:** [#466](https://github.com/Prism-Shadow/penguin-harness/pull/466)
 
 [English](2026-08-25-cli-on-server.md)
 
