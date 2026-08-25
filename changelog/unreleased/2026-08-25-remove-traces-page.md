@@ -3,7 +3,7 @@
 - **Date:** 2026-08-25
 - **Type:** change
 - **Scope:** `web`, `docs`
-- **PR:** [#PR](https://github.com/Prism-Shadow/penguin-harness/pull/PR)
+- **PR:** [#462](https://github.com/Prism-Shadow/penguin-harness/pull/462)
 
 [中文版](2026-08-25-remove-traces-page.zh.md)
 
