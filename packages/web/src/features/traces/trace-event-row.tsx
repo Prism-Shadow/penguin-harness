@@ -13,7 +13,7 @@
  */
 import { Fragment, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { REMARK_PLUGINS } from "../../lib/remark-autolink-boundary";
 import { S } from "../../lib/strings";
 import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
 import { formatTime, humanizeTokens } from "../../lib/format";
@@ -213,7 +213,7 @@ function SessionMetaBody({ p }: { p: Record<string, unknown> }) {
         <details>
           <summary className={summaryClass}>{S.traces.systemPrompt}</summary>
           <div className="md-body mt-1.5 max-h-96 overflow-auto rounded bg-gray-100 px-2.5 py-2 text-sm leading-relaxed text-gray-700 dark:bg-gray-800/70 dark:text-gray-300">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{prompt}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={REMARK_PLUGINS}>{prompt}</ReactMarkdown>
           </div>
         </details>
       )}
@@ -316,7 +316,7 @@ function EventBody({ msg }: { msg: OmniMessage }) {
       if (!md.trim()) return <p className="text-xs text-gray-400">—</p>;
       return (
         <div className="md-body text-sm leading-relaxed text-gray-700 dark:text-gray-300">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{md}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={REMARK_PLUGINS}>{md}</ReactMarkdown>
         </div>
       );
     }

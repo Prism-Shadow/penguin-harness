@@ -33,6 +33,7 @@ import type {
   CommandPolicyRuleDto,
   DefaultModelResponse,
   DefaultModelUpdateRequest,
+  DirectorySkillsResponse,
   DirListResponse,
   EndpointModelListRequest,
   EndpointModelListResponse,
@@ -72,6 +73,7 @@ import type {
   ServerSettingsResponse,
   ServerSettingsUpdateRequest,
   SessionCategory,
+  SessionContextResponse,
   SessionCreateRequest,
   SessionCreateResponse,
   SessionForkRequest,
@@ -87,6 +89,7 @@ import type {
   RecalledMessageResponse,
   RetryNowResponse,
   SteerRequest,
+  SubagentMessageResponse,
   TaskCreateRequest,
   TaskCreateResponse,
   TraceAnalysisResponse,
@@ -454,6 +457,15 @@ export const listDirs = (projectId: string, path = "") =>
     `/api/projects/${encodeURIComponent(projectId)}/dirs?path=${encodeURIComponent(path)}`,
   );
 
+/**
+ * Skills a directory carries under `.agents/skills` / `.claude/skills`: what picking it at Agent
+ * creation would offer to install. `path` must be absolute.
+ */
+export const listDirectorySkills = (projectId: string, path: string) =>
+  apiFetch<DirectorySkillsResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/dir-skills?path=${encodeURIComponent(path)}`,
+  );
+
 export const createSession = (projectId: string, agentId: string, body: SessionCreateRequest) =>
   apiFetch<SessionCreateResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/sessions`,
@@ -564,6 +576,25 @@ export const postSteer = (sessionId: string, body: SteerRequest) =>
     body,
   });
 
+/** Panel message to one subagent child (#272) — a user input on the child, whatever its state: steered mid-run, started on an idle child, resumed when the released session was revived; the optional thinkingLevel pins only a round this message starts. 404 subagent_gone when nothing can be revived, 409 subagent_busy when the child cannot take it right now. */
+export const messageSubagent = (
+  sessionId: string,
+  childSessionId: string,
+  text: string,
+  thinkingLevel?: string,
+) =>
+  apiFetch<SubagentMessageResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/subagents/${encodeURIComponent(childSessionId)}/message`,
+    { method: "POST", body: { text, ...(thinkingLevel ? { thinkingLevel } : {}) } },
+  );
+
+/** Panel stop for one subagent child (#272): aborts only its CURRENT run — the session survives for follow-ups (202 aborted; 204 when already idle/unknown). */
+export const abortSubagent = (sessionId: string, childSessionId: string) =>
+  apiFetch<void>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/subagents/${encodeURIComponent(childSessionId)}/abort`,
+    { method: "POST", body: {} },
+  );
+
 /** Recall an undelivered steering message back to the composer (#287): returns its original content; 409 not_pending once it was delivered to the model. */
 export const recallSteer = (sessionId: string, steerId: string) =>
   apiFetch<RecalledMessageResponse>(
@@ -584,6 +615,14 @@ export const postCompact = (sessionId: string) =>
     method: "POST",
     body: {},
   });
+
+/**
+ * Composition of the Session's current model context (the chat page's context-ring detail panel).
+ * A snapshot read from the newest Trace shard on each call, not a live counter: the figures are
+ * estimates whose value is the *shares* they give the measured occupancy.
+ */
+export const getSessionContext = (sessionId: string) =>
+  apiFetch<SessionContextResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/context`);
 
 // Trace browsing & performance analysis -----------------------------------------------------------
 

@@ -20,6 +20,7 @@ import {
   LEGACY_VAULT_SECTION,
   agentsMdPath,
   applyKernelUpdate,
+  atomicWriteFile,
   isKernelOutdated,
   agentStateDir,
   agentStateVersion,
@@ -265,7 +266,9 @@ export class AgentConfigService {
       await this.applyConfigUpdate(projectId, agentId, req.config);
     }
     if (req.agentsMd !== undefined) {
-      await fs.writeFile(agentsMdPath(this.root, projectId, agentId), req.agentsMd, "utf8");
+      await atomicWriteFile(agentsMdPath(this.root, projectId, agentId), req.agentsMd, {
+        followSymlinks: true,
+      });
     }
   }
 
@@ -284,8 +287,9 @@ export class AgentConfigService {
 
   /**
    * Smart-merges the config up to the current defaults generation (core's applyKernelUpdate):
-   * leaves still carrying a recorded generation's default follow the new defaults, user
-   * customizations are kept and reported; the config is stamped with the new kernel version.
+   * a settings tab still carrying a recorded generation's default follows the new defaults,
+   * a tab the user changed is kept whole and reported; the config is stamped with the new
+   * kernel version.
    * The destructive full-refresh alternative stays resetConfig.
    */
   async kernelUpdate(projectId: string, agentId: string): Promise<AgentKernelUpdateResponse> {
@@ -381,7 +385,7 @@ export class AgentConfigService {
       doc.setIn(["tools", "mcpServers"], validateMcpServers(cfg.mcpServers));
     }
 
-    await fs.writeFile(yamlPath, doc.toString(), "utf8");
+    await atomicWriteFile(yamlPath, doc.toString(), { followSymlinks: true });
   }
 
   /**

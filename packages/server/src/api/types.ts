@@ -776,6 +776,28 @@ export interface AgentCreateRequest {
   /** Display name; defaults to agentId. */
   name?: string;
   description?: string;
+  /**
+   * Library Skill names installed into the new Agent, seeding it at creation. Every name must
+   * exist in the library (404 `unknown_skill` otherwise, before anything is created); omitted or
+   * empty leaves the Agent with no Skills, which is what a plain Agent gets by default.
+   */
+  skills?: string[];
+  /**
+   * Skills imported from a directory on disk instead of the library. `skillsDirectory` is the
+   * absolute path the user picked and `directorySkills` are the names to install from it, read
+   * back from `.agents/skills` / `.claude/skills` at creation time. Both are required together,
+   * and every name must still be there (404 `unknown_skill` otherwise, before anything is
+   * created) — the client sends names, never Skill content.
+   */
+  skillsDirectory?: string;
+  directorySkills?: string[];
+  /**
+   * Base64 of an exported Agent State snapshot package (`.tar.gz`): the new Agent is
+   * initialized from the package instead of the default template. Mutually exclusive with
+   * skill seeding (`skills` / `skillsDirectory`) — the package carries its own skills.
+   * Explicit `name` / `description` override the package's values; absent ones keep them.
+   */
+  dataBase64?: string;
 }
 
 export interface AgentCreateResponse {
@@ -878,13 +900,13 @@ export interface AgentConfigResponse {
 
 /**
  * POST …/config/kernel-update result: the smart merge's outcome (core's applyKernelUpdate).
- * Paths are dotted config leaves (`system_prompt`, `memory.prompt`, `tools.builtin.<name>`…)
- * in defaults-traversal order; the client maps them to display names.
+ * The entries are Agent settings **tabs** (`prompt`, `runtime`, `tools`, `skills`, `memory`,
+ * `vault`, `schedules`) in the settings page's tab order; the client maps them to tab labels.
  */
 export interface AgentKernelUpdateResponse {
-  /** Leaves advanced to the new default (previously missing, or an untouched old default). */
+  /** Tabs advanced to the current defaults (previously absent, or an untouched old default). */
   advanced: string[];
-  /** Leaves kept because the stored value matches no recorded defaults generation (user customizations, kept conservatively). */
+  /** Tabs kept whole because they match no recorded default (customized, kept conservatively). */
   kept: string[];
   /** The kernel stamp written (the current defaults generation). */
   kernelVersion: string;
@@ -1142,6 +1164,19 @@ export interface DirListResponse {
   parent: string | null;
   /** Subdirectory list (sorted by name, files excluded). */
   entries: DirEntryInfo[];
+}
+
+/** One Skill found in a picked directory: metadata plus which of the two layouts it came from. */
+export interface DirectorySkillItem extends SkillMetadataItem {
+  /** `.agents/skills` or `.claude/skills` — shown so the origin of an offered Skill is visible. */
+  source: string;
+}
+
+export interface DirectorySkillsResponse {
+  /** Absolute path that was scanned (realpath). */
+  path: string;
+  /** Installable Skills found under the directory's Skill layouts; empty when it carries none. */
+  skills: DirectorySkillItem[];
 }
 
 export interface SessionCreateRequest {
@@ -1422,6 +1457,32 @@ export interface PendingFollowUpInfo {
 }
 
 /**
+ * One live subagent child of a session's runtime, carried on `task_state` events and the SSE
+ * subscribe snapshot: the child Session id (the origin hop the stream already correlates by),
+ * its background registry handle (null while it only lives inside a foreground collect
+ * window), and whether a round is currently running. Only an ACTIVE parent runtime reports
+ * children — after a server restart the in-process children are gone, and the empty list is
+ * the truth.
+ */
+export interface SubagentRuntimeInfo {
+  sessionId: string;
+  subagentId: string | null;
+  running: boolean;
+}
+
+/**
+ * Response of POST /api/sessions/:sessionId/subagents/:childSessionId/message — a user input
+ * on the child, whatever its state: `steered` = queued as a mid-run interjection, `started` =
+ * began a follow-up run on the idle child, `resumed` = the released child session was revived
+ * (resume-session semantics) and the message began its next round. The failure shapes are
+ * HTTP statuses instead: 404 when the child's session record does not exist or cannot be
+ * revived, 409 when the child cannot take the message right now.
+ */
+export interface SubagentMessageResponse {
+  outcome: "steered" | "started" | "resumed";
+}
+
+/**
  * Response of the two recall endpoints — DELETE /api/sessions/:id/steer/:steerId and
  * DELETE /api/sessions/:id/follow-ups/:followUpId: the withdrawn message's original content,
  * for the composer to restore into the input box for editing and resending (#287). File
@@ -1495,6 +1556,12 @@ export type ServerEvent =
       pendingSteering?: PendingSteeringInfo[];
       /** Queued follow-up tasks awaiting auto-start (absent = none): per-entry content + recall handle, alongside the `queued` count. */
       pendingFollowUps?: PendingFollowUpInfo[];
+      /**
+       * Live subagent children of this session's runtime (absent = none): the panel renders
+       * child running marks from this structural liveness instead of parsing tool-output
+       * text. Refreshed on every child run start/settle.
+       */
+      subagents?: SubagentRuntimeInfo[];
     }
   /** The model-generated title after the first turn has been persisted (for in-place list updates). */
   | { type: "session_title"; sessionId: string; title: string }
@@ -1592,6 +1659,54 @@ export interface TraceFileInfo {
 
 export interface SessionTracesResponse {
   files: TraceFileInfo[];
+}
+
+/** One tool's share of the context: its calls plus their results. Its *definition* is counted in `toolDefs`, not here. */
+export interface ContextToolShare {
+  name: string;
+  tokens: number;
+}
+
+/**
+ * What the Session's current model context is made of — the part derived from its messages.
+ *
+ * Every token figure is an **estimate** from a character heuristic, not a tokenizer: the
+ * authoritative occupancy is the last `token_usage`'s `request.total`, which says how large the
+ * context is but not what fills it. Consumers should present these as shares of that measured
+ * occupancy rather than as counts of their own.
+ *
+ * The six parts partition the context and sum to `total`; `topTools` is a ranking inside
+ * `toolRequests + toolResults` and can sum to less than those two (a result whose call was not
+ * recorded in the same Trace shard has no tool to be attributed to).
+ */
+export interface SessionContextParts {
+  systemPrompt: number;
+  toolDefs: number;
+  userMessages: number;
+  assistantMessages: number;
+  toolRequests: number;
+  toolResults: number;
+  /** Sum of the six parts. */
+  total: number;
+  /** Tools ranked by the context their traffic occupies, descending; at most five. */
+  topTools: ContextToolShare[];
+  /**
+   * A completed compaction closed the context these figures describe, and the next one has not
+   * been written yet: the composition is of what was compacted away, not of what the model now
+   * carries. The same state in which the chat page's context ring shows `—`.
+   */
+  contextClosed: boolean;
+}
+
+/** `GET /api/sessions/:id/context`: the message-derived composition plus where compaction will fire. */
+export interface SessionContextResponse extends SessionContextParts {
+  /**
+   * Occupancy (tokens) at which this Session's next Request triggers context compaction: the
+   * Agent's configured `compaction.max_context_length`, capped by what the model's context window
+   * leaves room for. Null when compaction is disabled, when the Agent's config could not be read,
+   * or when the derived threshold is not below the window — nothing to mark inside the gauge.
+   */
+  compactionThreshold: number | null;
 }
 
 export interface TraceEventsResponse {
@@ -2230,7 +2345,7 @@ export interface SkillMetadataItem {
   icon?: string;
   /** Version number (natural number, frontmatter version; falls back to 1 if invalid). */
   version: number;
-  /** Update date (YYYY-MM-DD, frontmatter updated; defaults to an empty string). */
+  /** Update timestamp (frontmatter updated, ISO 8601 UTC by convention; defaults to an empty string). */
   updated: string;
 }
 

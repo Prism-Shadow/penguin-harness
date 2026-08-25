@@ -208,9 +208,9 @@ export const en: Strings = {
     clientInstallConfirmAction: "Restart now",
     /** Tooltip on the disabled row in a dev (unpackaged) run. */
     clientUnsupportedDev: "A dev run does not update itself",
-    /** Tooltip on the disabled row for installs owned by the system package manager (e.g. .deb). */
-    clientUnsupportedPackage:
-      "This install is managed by the system package manager — update it there",
+    /** Tooltip on the disabled row for a Linux install that is not an AppImage (a .deb, or an unpacked tree). */
+    clientUnsupportedNonAppImage:
+      "Only the AppImage build updates itself on Linux — update a package install through your package manager",
   },
 
   /** Desktop task-completion notifications (window unfocused; desktop-shell sessions only). */
@@ -376,6 +376,27 @@ export const en: Strings = {
       "2–64 chars: starts with a lowercase letter; lowercase letters, digits and underscores only. Cannot be changed later.",
     nameHint: "Leave empty to use the agent id as the name",
     description: "Description",
+    createSkills: "Skills",
+    createSkillsPlaceholder: "No skills selected",
+    createSkillsPicked: (n: number): string => `${n} skill${n === 1 ? "" : "s"} selected`,
+    createSkillsHint:
+      "Installed into the agent at creation; add or remove them later in its Skills tab.",
+    createSkillsEmpty: "The skill library has nothing to install.",
+    createDirSkills: "Import Skills from a project directory",
+    createDirSkillsPick: "No directory selected",
+    createDirSkillsHint:
+      "Pick a project directory to read the Skills under its .agents/skills and .claude/skills",
+    createDirSkillsEmpty: "This directory carries no installable Skills",
+    createDirSkillsFound: (n: number): string =>
+      `${n} skill${n === 1 ? "" : "s"} found in this directory`,
+    createDirSkillsClear: "Clear the selected directory",
+    createSnapshot: "Initialize from a snapshot",
+    createSnapshotPick: "Choose a snapshot package",
+    createSnapshotHint:
+      "Pick an exported Agent State snapshot package (.tar.gz) to start the new agent from its state; name and description left empty keep the package's values.",
+    createSnapshotSkillsOff:
+      "The snapshot package carries its own skills, so skill seeding is unavailable.",
+    createSnapshotClear: "Remove the selected package",
     sessionCount: (n: number): string => `${n} session${n === 1 ? "" : "s"}`,
     toolCount: (n: number): string => `${n} tool${n === 1 ? "" : "s"}`,
     vaultKeyCount: (n: number): string => `${n} vault key${n === 1 ? "" : "s"}`,
@@ -581,34 +602,13 @@ export const en: Strings = {
     kernelLatest: "latest",
     kernelUpdateAction: "Update kernel",
     kernelUpdateConfirmBody:
-      "Fields you have not customized will be updated to the current built-in defaults; customized fields stay unchanged and are listed in the result. Name, description, the State version and MCP servers are unaffected. Continue?",
+      "Settings tabs you have not customized will be updated to the current built-in defaults; a tab you have edited stays unchanged in full and is listed in the result. Name, description, the State version and MCP servers are unaffected. Continue?",
     kernelUpdateDone: (version: string, advanced: number): string =>
       advanced > 0
-        ? `Kernel updated to ${version}; ${advanced} field(s) now follow the new defaults`
-        : `Kernel updated to ${version}; every field was already current or kept as customized`,
-    kernelUpdateKeptIntro: "Kept because customized:",
+        ? `Kernel updated to ${version}; ${advanced} tab(s) now follow the new defaults`
+        : `Kernel updated to ${version}; every tab was already current or kept as customized`,
+    kernelUpdateKeptIntro: "Kept whole because customized:",
     kernelListSeparator: ", ",
-    kernelFieldTool: (name: string): string => `tool ${name}`,
-    kernelFields: {
-      system_prompt: "system prompt template",
-      max_turns: "max turns per task",
-      "model.max_tokens": "model max output tokens",
-      "model.thinking_level": "thinking level",
-      "model.timeoutMs": "request timeout",
-      "compaction.max_context_length": "compaction context threshold",
-      "compaction.max_session_turns": "compaction session-turn threshold",
-      "compaction.mode": "compaction mode",
-      "compaction.prompt": "compaction prompt",
-      "memory.enabled": "memory switch",
-      "memory.prompt": "memory prompt",
-      "memory.workspace_prompt": "workspace memory prompt",
-      "vault.enabled": "Vault section switch",
-      "vault.prompt": "Vault prompt",
-      "skills.enabled": "Skills section switch",
-      "skills.prompt": "Skills prompt",
-      "schedules.enabled": "Schedules section switch",
-      "schedules.prompt": "Schedules prompt",
-    } as Record<string, string>,
   },
 
   models: {
@@ -833,6 +833,7 @@ export const en: Strings = {
       "No memories for this Workspace yet — the agent saves what is worth keeping as it works",
     emptyUserScope: 'No user memories yet — say "remember …" in a chat and the agent will save it',
     add: "Add",
+    addScopeLabel: (scope: string): string => `Add to ${scope}`,
     addTitle: "Add memory",
     addWhy:
       "The agent organizes and saves memories in a chat: fill in the content, open a new conversation, and the agent does the rest.",
@@ -1006,6 +1007,9 @@ export const en: Strings = {
     quickInvokeText: (name: string): string => `use the ${name} skill`,
     /** Title on a disabled quick-start button: quick start opens a draft on the currently selected agent, so a skill it hasn't installed (e.g. a preinstall:false skill like remote-claude-code) can't be quick-started until it's installed on that agent. */
     quickInvokeNeedsInstall: "Install this skill on the current agent first to quick-start",
+    selectAll: "Select all",
+    selectNone: "Select none",
+    selectedCount: (n: number): string => `${n} selected`,
     manageInstall: "Manage installs",
     manageInstallTitle: (name: string): string => `Manage installs: ${name}`,
     install: "Install",
@@ -1483,9 +1487,6 @@ Scenarios:
     /** Info-dropdown Session id row: the id itself is a click-to-copy button. */
     sessionIdLabel: "Session id",
     copySessionId: "Copy Session id",
-    /** Info-dropdown trace row: labels the Session's trace file, shown as its NAME (clicking deep-links to the Trace page; the button beside it copies the full path). */
-    traceFile: "Trace file",
-    copyTracePath: "Copy full path",
     /** Info-dropdown list of background processes the conversation started, and its per-row actions (Stop on running rows, Remove on exited ones). */
     processList: "Processes",
     processStop: "Stop",
@@ -1537,6 +1538,21 @@ Scenarios:
     moreGroups: (n: number) => `More groups (${n})`,
     contextUsage: "Context usage",
     contextUnknown: "Context usage: unknown until the next request reports it",
+    contextComposition: "Context composition",
+    contextPartSystemPrompt: "System prompt",
+    contextPartToolDefs: "Tool definitions",
+    contextPartUserMessages: "User messages",
+    contextPartAssistantMessages: "Model messages",
+    contextPartToolRequests: "Tool requests",
+    contextPartToolResults: "Tool results",
+    contextTopTools: "Top 5 tools",
+    contextCompactAt: (n: string): string => `Compaction threshold ${n}`,
+    contextTopToolsHint:
+      "Ranked by the context each tool's calls and results occupy (definitions count under “Tool definitions”)",
+    contextUnknownHint:
+      "Just compacted — the next request reports the usage, and the composition with it",
+    contextBreakdownEmpty: "Nothing in the current context to break down yet",
+    contextBreakdownFailed: "Could not read the context composition",
     slashHint: "Type / for commands",
     switchAgent: "Hand off to another agent — opens a new session on send",
     switchAgentTitle: "Choose agent",
@@ -1692,6 +1708,7 @@ Scenarios:
     nodeRunning: "running",
     nodeDone: "done",
     openAsSession: "Jump to this session",
+    subagentGone: "This subagent session no longer exists and could not be revived",
   },
 
   files: {

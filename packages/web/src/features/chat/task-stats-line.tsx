@@ -21,7 +21,7 @@
  * composition** — how much of the input hit cache is a debugging-level detail that belongs to the
  * Trace page's turn card (which shows cache hits and hit rate); the current **context usage** is
  * likewise not repeated here — it's expressed by the ring below the input box (see ContextGauge
- * in chat-input).
+ * in context-gauge), which also discloses what that context is made of.
  * This line sits right below this turn's AI reply and simultaneously **serves as that reply's
  * footer**: it provides the reply timestamp and copy button at the end, so the assistant message
  * itself doesn't render a separate one (otherwise two copy buttons would pop up in the same spot).

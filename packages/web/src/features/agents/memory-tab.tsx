@@ -608,15 +608,25 @@ export function MemoryTab({
                 {/* Group header (the models page's group convention): the collapse button fills
                     the row, the group's own actions sit between it and the chevron — a real
                     <button> cannot nest another, so the actions are siblings, with the hover
-                    highlight on the whole header so it reads as a single unit. */}
-                <div className="flex items-center gap-2 bg-gray-50 pr-2 transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-800/60">
+                    highlight on the whole header so it reads as a single unit.
+                    The row is a size container, not a viewport breakpoint: the settings panel
+                    narrows independently of the window. Below @md the three action labels drop
+                    and only their icons remain — 28rem is where the English labels plus the count
+                    stop fitting beside the title, and rem tracks the user's font tier
+                    (state/theme.tsx), so the threshold scales with the labels it measures. No
+                    action is hidden at any width; each keeps its icon, an aria-label and a
+                    title. */}
+                <div className="@container flex items-center gap-2 bg-gray-50 pr-2 transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-800/60">
                   <button
                     type="button"
                     aria-expanded={open}
                     onClick={() => toggleCollapsed(scope.scopeKey)}
                     className="flex min-w-0 flex-1 items-center gap-2.5 px-3.5 py-2.5 text-left"
                   >
-                    <span className="shrink-0 text-sm font-semibold text-gray-800 dark:text-gray-200">
+                    {/* Scope title can truncate (min-w-0): the actions to its right must not
+                        shrink, so a shrink-0 title is pushed out of the button box instead — and
+                        a button does not clip, so it would paint on top of the first action. */}
+                    <span className="min-w-0 truncate text-sm font-semibold text-gray-800 dark:text-gray-200">
                       {scopeTitle(scope)}
                     </span>
                     {scope.kind === "workspace" && scope.workspacePath !== undefined && (
@@ -625,13 +635,15 @@ export function MemoryTab({
                       </span>
                     )}
                     <span className="min-w-0 flex-1" />
-                    <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
+                    <span className="shrink-0 whitespace-nowrap text-xs text-gray-400 dark:text-gray-500">
                       {S.memory.itemCount(files.length)}
                     </span>
                   </button>
                   {/* Whole-group transfer, icon + label (the labels are what say which way a
-                      transfer goes): export for any member, import for the owner. The tooltip
-                      carries what the label cannot — that the whole group travels. */}
+                      transfer goes, wherever the row is wide enough to keep them): export for any
+                      member, import for the owner. The tooltip carries what the label cannot —
+                      that the whole group travels — and on a narrow row, where the label is gone,
+                      it carries the direction too, alongside the aria-label. */}
                   <span className="shrink-0">
                     <Button
                       size="sm"
@@ -641,7 +653,7 @@ export function MemoryTab({
                       onClick={() => void exportScope(scope)}
                     >
                       <DownloadIcon size={13} />
-                      {S.memory.exportScope}
+                      <span className="hidden @md:inline">{S.memory.exportScope}</span>
                     </Button>
                   </span>
                   {isOwner && (
@@ -655,13 +667,19 @@ export function MemoryTab({
                         onChange={(e) => void pickImport(scope, e)}
                       />
                       <UploadIcon size={13} />
-                      {S.memory.importScope}
+                      <span className="hidden @md:inline">{S.memory.importScope}</span>
                     </label>
                   )}
                   <span className="shrink-0">
-                    <Button size="sm" variant="ghost" onClick={() => openAdd(scope)}>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      title={S.memory.add}
+                      aria-label={S.memory.addScopeLabel(scopeTitle(scope))}
+                      onClick={() => openAdd(scope)}
+                    >
                       <GlyphIcon d={PLUS_ICON} size={13} />
-                      {S.memory.add}
+                      <span className="hidden @md:inline">{S.memory.add}</span>
                     </Button>
                   </span>
                   {/* Collapse arrow sits at the far right of the header (after the add entry); it too can be clicked to collapse. */}

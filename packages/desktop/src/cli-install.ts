@@ -22,7 +22,12 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { app, dialog } from "electron";
 import type { BrowserWindow } from "electron";
-import { appImageWrapperScript, cliInstallKind, mergeWindowsUserPath } from "./launcher.js";
+import {
+  adminSymlinkAppleScript,
+  appImageWrapperScript,
+  cliInstallKind,
+  mergeWindowsUserPath,
+} from "./launcher.js";
 import type { CliInstallKind } from "./launcher.js";
 
 const execFileAsync = promisify(execFile);
@@ -56,9 +61,10 @@ function showResult(win: BrowserWindow | null, ok: boolean, detail: string): voi
 /** macOS: /usr/local/bin/penguin symlink, escalating once via osascript on EACCES/EPERM. */
 async function installDarwin(win: BrowserWindow | null): Promise<void> {
   const target = path.join(binDir(), "penguin");
-  const link = "/usr/local/bin/penguin";
+  const linkDir = "/usr/local/bin";
+  const link = path.join(linkDir, "penguin");
   try {
-    fs.mkdirSync("/usr/local/bin", { recursive: true });
+    fs.mkdirSync(linkDir, { recursive: true });
     fs.rmSync(link, { force: true });
     fs.symlinkSync(target, link);
   } catch (err) {
@@ -67,14 +73,11 @@ async function installDarwin(win: BrowserWindow | null): Promise<void> {
       showResult(win, false, String(err));
       return;
     }
-    // Privileged retry; paths contain no single quotes (the bundle path is fixed and
-    // /Applications-style paths at most contain spaces).
-    const shellCmd = `mkdir -p /usr/local/bin && ln -sf '${target}' '${link}'`;
+    // Privileged retry — the common path on a Mac without Homebrew, where /usr/local/bin
+    // does not exist and creating it needs root. The command's quoting is the generator's
+    // job (launcher.ts): the bundle path comes off disk and may hold an apostrophe.
     try {
-      await execFileAsync("osascript", [
-        "-e",
-        `do shell script "${shellCmd.replace(/"/g, '\\"')}" with administrator privileges`,
-      ]);
+      await execFileAsync("osascript", ["-e", adminSymlinkAppleScript(target, link)]);
     } catch (escalated) {
       showResult(
         win,
@@ -150,8 +153,13 @@ function installAppImage(win: BrowserWindow | null): void {
   }
   try {
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(wrapper, script, { mode: 0o755 });
-    fs.chmodSync(wrapper, 0o755); // writeFileSync mode is ignored when the file existed.
+    // Written to a temp file and renamed over the wrapper: a failed write leaves the previous
+    // command in place instead of a truncated script on PATH. chmod before the rename, since
+    // writeFileSync's mode is masked by the umask.
+    const tmp = `${wrapper}.tmp`;
+    fs.writeFileSync(tmp, script, { mode: 0o755, flush: true });
+    fs.chmodSync(tmp, 0o755);
+    fs.renameSync(tmp, wrapper);
   } catch (err) {
     showResult(win, false, String(err));
     return;

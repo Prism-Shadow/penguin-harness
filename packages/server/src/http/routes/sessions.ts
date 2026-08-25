@@ -22,14 +22,17 @@ import type {
   RecalledMessageResponse,
   ServerEvent,
   SessionCategory,
+  SessionContextResponse,
   SessionCreateResponse,
   SessionForkResponse,
   SessionProcessesResponse,
   SessionResponse,
   SessionsResponse,
+  SubagentMessageResponse,
   RetryNowResponse,
   TaskCreateResponse,
 } from "../../api/types.js";
+import { compactionThresholdFor } from "../../services/context-breakdown.js";
 import { decodeCursor } from "../../services/message-window.js";
 import type { MessagesPageRequest } from "../../services/trace-service.js";
 import { PREVIEW_TOKEN_TTL_MS, resolvePreviewTarget } from "../../services/preview-token.js";
@@ -155,6 +158,29 @@ function messagesPageQuery(c: Context): MessagesPageRequest | null {
     cursor,
     limit: rawLimit !== undefined ? pageLimit(rawLimit, "limit") : MESSAGES_PAGE_LIMIT_DEFAULT,
   };
+}
+
+/**
+ * Where compaction will fire for one Session, in tokens of occupancy: the Agent's configured
+ * threshold capped by what its model's context window leaves room for. Both halves are read from
+ * config rather than from a running engine, so an idle Session answers as well as a busy one.
+ *
+ * Fail-soft: this is one mark on a gauge, and an Agent deleted out from under a still-indexed
+ * Session (or a config that will not parse) must not take the whole composition down with it.
+ */
+async function sessionCompactionThreshold(deps: AppDeps, row: SessionRow): Promise<number | null> {
+  try {
+    const [agent, project] = await Promise.all([
+      deps.agentConfigService.getConfig(row.projectId, row.agentId),
+      deps.projectConfigService.loadConfig(row.projectId),
+    ]);
+    const entry = (project.models ?? []).find(
+      (m) => m.provider === row.provider && m.model_id === row.modelId,
+    );
+    return compactionThresholdFor(agent.config.compaction?.maxContextLength, entry?.context_window);
+  } catch {
+    return null;
+  }
 }
 
 /** Accepted `category` query values of the list endpoint (SessionCategory, spelled out for validation). */
@@ -406,7 +432,7 @@ export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
   // `cli=1` widens the list to CLI-created Sessions (Trace-directory discovery + adoption);
   // the default serves web rows straight from the DB (see SessionService.listSessions).
   app.get("/", async (c) => {
-    // Id validity is checked before any path is constructed (FD-4: guards against agentId path traversal across Projects).
+    // Id validity is checked before any path is constructed: guards against agentId path traversal across Projects.
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
@@ -815,22 +841,25 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
   app.get("/:sessionId/stream", (c) => {
     const row = resolveSession(c);
     const channel = deps.channels.get(row.sessionId);
-    // FD-1: the first event of every new subscription (including reconnects and resync
+    // The first event of every new subscription (including reconnects and resync
     // rebuilds) is always a snapshot of the current running state — the frontend treats
     // this as authoritative, eliminating input-area lockup or premature Task closure
     // caused by a stale running/idle in the list; followed by replaying all still-pending
     // approval requests.
     const pendingSteering = deps.manager.pendingSteeringOf(row.sessionId);
     const pendingFollowUps = deps.manager.pendingFollowUpsOf(row.sessionId);
+    const subagents = deps.manager.subagentsOf(row.sessionId);
     const initialEvents: ServerEvent[] = [
       {
         type: "task_state",
         state: deps.manager.statusOf(row.sessionId),
         queued: deps.manager.pendingFollowUpCount(row.sessionId),
-        // Undelivered steering and queued follow-ups ride the snapshot too, so the composer's
-        // queued hints (and what they say) survive a reload.
+        // Undelivered steering, queued follow-ups and live subagent children ride the
+        // snapshot too, so the composer's queued hints and the panel's running marks
+        // survive a reload.
         ...(pendingSteering.length > 0 ? { pendingSteering } : {}),
         ...(pendingFollowUps.length > 0 ? { pendingFollowUps } : {}),
+        ...(subagents.length > 0 ? { subagents } : {}),
       },
       ...deps.manager.pendingApprovals(row.sessionId).map((p) => ({
         type: "approval_request" as const,
@@ -966,6 +995,52 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     const row = resolveSession(c);
     const recall = deps.manager.recallSteering(row.sessionId, pathParam(c, "steerId"));
     return c.json((await recalledResponse(recall)) satisfies RecalledMessageResponse);
+  });
+
+  // Panel message to one subagent child of this session (#272): a user input on the child,
+  // whatever its state — steering while it runs, a follow-up run while it is idle, a revival
+  // (resume-session semantics) when it was released — the same core channel input_subagent
+  // uses. The optional thinkingLevel pins only a round this message starts. The parent
+  // runtime loads on demand (the same get-or-resume path a task uses). 404 subagent_gone
+  // when the child's record does not exist or cannot be revived; 409 subagent_busy when the
+  // child cannot take the message right now.
+  app.post("/:sessionId/subagents/:childSessionId/message", async (c) => {
+    const row = resolveSession(c);
+    const body = await readJson(c);
+    const text = typeof body.text === "string" ? body.text.trim() : "";
+    if (!text) throw badRequest("text must carry the message.");
+    const thinkingLevel = optionalEnum(body, "thinkingLevel", THINKING_LEVELS);
+    const outcome = await deps.manager.sendToSubagent(
+      row.sessionId,
+      pathParam(c, "childSessionId"),
+      text,
+      thinkingLevel,
+    );
+    if (outcome === "gone") {
+      throw new HttpError(
+        404,
+        "subagent_gone",
+        "This subagent session no longer exists and could not be revived.",
+      );
+    }
+    if (outcome === "busy") {
+      throw new HttpError(
+        409,
+        "subagent_busy",
+        "This subagent cannot take a message right now; try again in a moment.",
+      );
+    }
+    return c.json({ outcome } satisfies SubagentMessageResponse);
+  });
+
+  // Panel stop for one subagent child (#272): aborts the child's CURRENT run only — the
+  // session survives for steering and follow-ups — a subagent session is never destroyed.
+  // 202 aborted; 204 when the child is already idle or unknown (both
+  // are "nothing left to stop", and the panel treats them alike).
+  app.post("/:sessionId/subagents/:childSessionId/abort", (c) => {
+    const row = resolveSession(c);
+    const aborted = deps.manager.abortSubagentRun(row.sessionId, pathParam(c, "childSessionId"));
+    return c.body(null, aborted ? 202 : 204);
   });
 
   // Recall a queued follow-up task back to the composer (#287): removes it from the queue
@@ -1229,6 +1304,25 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     }
     await deps.workspaceFiles.write(row.workspace, rel, data);
     return c.body(null, 204);
+  });
+
+  /**
+   * What the Session's current model context is made of, and where compaction will fire. Read on
+   * demand (the chat page's context ring opens its detail panel with it), not streamed: it
+   * re-reads the newest Trace shard on every call, and the figures are a snapshot rather than a
+   * live counter.
+   */
+  app.get("/:sessionId/context", async (c) => {
+    const row = resolveSession(c);
+    const parts = await deps.traceService.contextBreakdown(
+      row.projectId,
+      row.agentId,
+      row.sessionId,
+    );
+    return c.json({
+      ...parts,
+      compactionThreshold: await sessionCompactionThreshold(deps, row),
+    } satisfies SessionContextResponse);
   });
 
   app.get("/:sessionId/traces", async (c) => {

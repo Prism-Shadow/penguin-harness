@@ -64,10 +64,18 @@ const HARDENED_ENV: NodeJS.ProcessEnv = {
  * colors on". The vault still wins, so a user who genuinely wants forced color in commands can
  * set it there.
  *
- * Deliberately **not** stripped: `PENGUIN_HOME`, `PENGUIN_WEB_DB` and the rest of the user-facing
- * `PENGUIN_*` settings. Those select the *data* an Agent-started harness works against, and the
- * self-development case may legitimately want the same data root — sharing state is a config
- * decision, whereas serving a deployment's code from a workspace checkout never is.
+ * Every `PENGUIN_*` variable is removed as well — see {@link HARNESS_ENV_PREFIX}. That covers
+ * `PENGUIN_HOME` and `PENGUIN_WEB_DB`, which select the *data* an Agent-started harness works
+ * against. They were once left inheriting on the grounds that the self-development case may
+ * legitimately want the same data root, but inheriting them is not that decision being made — it
+ * is an accident of where this process happens to be running. Whenever an Agent spawns a command
+ * the harness is by definition up, holding `<root>/server.lock`, so an Agent-started server on the
+ * inherited root cannot start at all; it exits 3 against a lock whose owner is the very process
+ * that handed it the root.
+ *
+ * Any of it really wanted is asked for rather than inherited: the vault is applied after this
+ * environment (see the spread in `spawn`), so a `PENGUIN_HOME` set there reaches commands exactly
+ * as before. Same escape hatch as `FORCE_COLOR` above.
  */
 const STRIPPED_ENV_KEYS = new Set([
   "PORT",
@@ -85,6 +93,24 @@ const STRIPPED_ENV_KEYS = new Set([
   // Pinned seed password (tests/e2e): a credential, not a data-selection setting.
   "PENGUIN_SEED_ADMIN_PASSWORD",
 ]);
+
+/**
+ * Every variable named `PENGUIN_*` is this installation's own configuration — where its data
+ * lives, which shell it resolved, which release feed it checks, which language its UI speaks —
+ * and none of it describes the command an Agent is running. Stripping by prefix rather than by
+ * name is the point: the harness reads two dozen of them today and gains more with each feature,
+ * and a list has to be remembered at exactly the moment nobody is thinking about it. Twenty-five
+ * existed when this was written and a by-name list had caught seven.
+ *
+ * Outbound proxy settings are the deliberate exception to "the harness's environment stays out of
+ * the child", and they are not `PENGUIN_*` — they are HTTP_PROXY and friends, governed by
+ * {@link PROXY_ENV_KEYS} and the host's policy just below. `PENGUIN_TRUST_PROXY` only looks like
+ * one: it decides whether the server trusts an inbound `x-forwarded-proto`, and means nothing to
+ * a child.
+ *
+ * The vault still wins, so any single variable that is genuinely wanted can be set there.
+ */
+const HARNESS_ENV_PREFIX = "PENGUIN_";
 
 /**
  * Proxy variables removed IN ADDITION when the host supplies a proxy policy (`proxyEnv`,
@@ -114,7 +140,7 @@ function hostEnvForChild(policy: ProxyEnvPolicy | null): NodeJS.ProcessEnv {
   // child as PORT. On POSIX the two are distinct names and only the exact one exists.
   for (const [key, value] of Object.entries(process.env)) {
     const name = key.toUpperCase();
-    if (STRIPPED_ENV_KEYS.has(name)) continue;
+    if (STRIPPED_ENV_KEYS.has(name) || name.startsWith(HARNESS_ENV_PREFIX)) continue;
     if (policy !== null && PROXY_ENV_KEYS.has(name)) continue;
     if (policy?.mode === "inject" && name === "NO_PROXY") continue;
     env[key] = value;

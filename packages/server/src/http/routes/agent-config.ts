@@ -29,7 +29,7 @@ export function agentConfigRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.get("/", async (c) => {
-    // Id validation happens before any path construction (FD-4: prevents agentId path traversal for cross-Project privilege escalation).
+    // Id validation happens before any path construction: prevents agentId path traversal for cross-Project privilege escalation.
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
@@ -129,7 +129,7 @@ export function agentConfigRoutes(deps: AppDeps): Hono<AppEnv> {
 
   // Smart-merge the config up to the current defaults generation (see
   // AgentConfigService.kernelUpdate): non-destructive sibling of /reset, same member-level
-  // authorization as /reset and PUT. Responds with the merge report (advanced / kept paths +
+  // authorization as /reset and PUT. Responds with the merge report (advanced / kept tabs +
   // the new stamp); the client re-GETs the config for the fresh values.
   app.post("/kernel-update", async (c) => {
     const projectId = requireValidId(c, "projectId");

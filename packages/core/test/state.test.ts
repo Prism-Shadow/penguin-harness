@@ -253,10 +253,8 @@ describe("buildToolConfig", () => {
       "write_file",
       "exec_command",
       "input_command",
-      "kill_command",
       "run_subagent",
       "input_subagent",
-      "kill_subagent",
       "read_image",
       "describe_image",
     ]);
@@ -383,10 +381,8 @@ describe("buildToolConfig", () => {
       "write_file",
       "exec_command",
       "input_command",
-      "kill_command",
       "run_subagent",
       "input_subagent",
-      "kill_subagent",
       "read_image",
       "describe_image",
     ]);

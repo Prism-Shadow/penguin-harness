@@ -12,8 +12,8 @@
  * Segments use the site-wide TOKEN_COLORS (works in both light/dark); the base
  * ring uses a currentColor gray.
  * The context usage under the chat page's input box is a **single-color,
- * single-value** ring (total only), custom-drawn in chat-input — it doesn't use
- * this component.
+ * single-value** ring (total only), custom-drawn in context-gauge — it doesn't
+ * use this component.
  */
 import { TOKEN_COLORS } from "../../lib/token-colors";
 import { humanizeTokens } from "../../lib/format";

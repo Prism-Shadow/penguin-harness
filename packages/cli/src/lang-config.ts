@@ -9,8 +9,9 @@
  * terminals will read the variable from the startup file, so it persists.
  */
 import { spawn } from "node:child_process";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { atomicWriteFile } from "@prismshadow/penguin-core";
 import type { Language } from "./i18n.js";
 
 const BEGIN = "# >>> PenguinHarness PENGUIN_LANG >>>";
@@ -86,7 +87,9 @@ export async function applyLanguageToRc(
   } catch {
     /* File doesn't exist yet; treat as empty content */
   }
-  await writeFile(rc.rcPath, upsertBlock(content, rc.body(lang)), "utf8");
+  // The rc file is the user's, and often a symlink into a dotfiles repository: write through
+  // the link, and replace it atomically so a failed write cannot truncate their shell startup.
+  await atomicWriteFile(rc.rcPath, upsertBlock(content, rc.body(lang)), { followSymlinks: true });
   return { rcPath: rc.rcPath, kind: rc.kind };
 }
 

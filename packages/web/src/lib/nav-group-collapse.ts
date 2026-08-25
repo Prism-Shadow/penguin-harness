@@ -19,7 +19,7 @@
  * its nav rows from this manifest, so the covered range is pinned here (and in the
  * unit tests) rather than duplicated. Traces is deliberately absent: the Trace panel
  * lives in the chat toolbar's panel switcher, and the /traces browsing page stays
- * reachable through its deep links (Agents page, session details).
+ * addressable by URL (the Benchmark page's per-run Session links still point at it).
  */
 export const NAV_GROUP_KEYS = ["agents", "skills", "models", "usage", "benchmark"] as const;
 export type NavGroupKey = (typeof NAV_GROUP_KEYS)[number];

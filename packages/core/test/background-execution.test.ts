@@ -1,7 +1,7 @@
 /**
  * Behavior tests for background execution: `run_in_background` on exec_command /
  * run_subagent, the completion-report pipeline (Environment listener → Session notice
- * queue → engine boundary delivery), the kill_command / kill_subagent tools, and the
+ * queue → engine boundary delivery), input_command's kill termination, and the
  * `sender` marking on user texts.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -11,7 +11,6 @@ import path from "node:path";
 import { Environment } from "../src/environment/index.js";
 import { createSubagentTool } from "../src/environment/tools/run-subagent.js";
 import { createInputSubagentTool } from "../src/environment/tools/input-subagent.js";
-import { createKillSubagentTool } from "../src/environment/tools/kill-subagent.js";
 import { SubagentSessionManager } from "../src/environment/tools/subagent/index.js";
 import { DEFAULT_EMPTY_POLL_YIELD_MS } from "../src/environment/tools/command/index.js";
 import { ContextEngine } from "../src/engine/context-engine.js";
@@ -233,7 +232,7 @@ describe("exec_command run_in_background", () => {
     expect(events[0]!.output).toContain("early");
   });
 
-  it("kill_command terminates a running background command without a completion report", async () => {
+  it("input_command kill terminates a running background command without a completion report", async () => {
     const { env } = await makeEnv();
     const events: BackgroundTaskDoneEvent[] = [];
     env.setBackgroundTaskListener((e) => events.push(e));
@@ -248,7 +247,7 @@ describe("exec_command run_in_background", () => {
     // the scanner immediately before appending it to that buffer, so a detected serviceUrl
     // proves the line is already buffered.
     await waitFor(() => env.listBackgroundCommands().some((p) => p.serviceUrl !== undefined));
-    const killed = await runTool(env, "kill_command", { process_id: id });
+    const killed = await runTool(env, "input_command", { process_id: id, kill: true });
     expect(killed.stopReason).toBe("completed");
     expect(killed.output).toContain("pre");
     expect(killed.output).toContain(`process ${id} killed`);
@@ -256,15 +255,20 @@ describe("exec_command run_in_background", () => {
     await new Promise((r) => setTimeout(r, 400));
     expect(events).toHaveLength(0);
     // And the session is gone from the registry.
-    const again = await runTool(env, "kill_command", { process_id: id });
+    const again = await runTool(env, "input_command", { process_id: id, kill: true });
     expect(again.stopReason).toBe("failed");
   });
 
-  it("kill_command fails on an unknown process_id", async () => {
+  it("input_command kill fails on an unknown process_id; the legacy kill_command name is an unknown tool", async () => {
     const { env } = await makeEnv();
-    const res = await runTool(env, "kill_command", { process_id: "proc-deadbeef" });
+    const res = await runTool(env, "input_command", { process_id: "proc-deadbeef", kill: true });
     expect(res.stopReason).toBe("failed");
     expect(res.output).toContain("unknown process_id");
+    // A stale stored config may still carry the removed tool; the registry no longer
+    // assembles it, so a model call collapses to the standard unknown-tool failure.
+    const legacy = await runTool(env, "kill_command", { process_id: "proc-deadbeef" });
+    expect(legacy.stopReason).toBe("failed");
+    expect(legacy.output).toContain("Unknown tool: kill_command");
   });
 
   it("dispose suppresses pending completion reports", async () => {
@@ -292,7 +296,6 @@ describe("input_command defaults", () => {
 
 const SUB_DEF = toolDef("run_subagent");
 const SUB_INPUT_DEF = toolDef("input_subagent");
-const SUB_KILL_DEF = toolDef("kill_subagent");
 const CTX: ToolExecutionContext = { workspaceDir: "/tmp/ws", toolCallId: "call_1" };
 const HOP = "session-child-12ab34cd";
 
@@ -359,6 +362,7 @@ describe("run_subagent run_in_background", () => {
     const runner = runnerOf(async function* ({ prompt }) {
       await new Promise<void>((r) => gates.set(prompt, r));
       yield withHop(partialText("delta", `answer to: ${prompt}`));
+      yield withHop(assistantText(`answer to: ${prompt}`));
     });
     const events: BackgroundTaskDoneEvent[] = [];
     const services = {
@@ -407,7 +411,53 @@ describe("run_subagent run_in_background", () => {
     expect(events[1]!.output).toContain("answer to: second round");
   });
 
-  it("kill_subagent aborts a running background subagent without a completion report", async () => {
+  it("a HOST-started round stays silent: no completion report for the user's own message", async () => {
+    const manager = new SubagentSessionManager();
+    cleanups.push(() => manager.dispose());
+    const gates = new Map<string, () => void>();
+    const runner = runnerOf(async function* ({ prompt }) {
+      await new Promise<void>((r) => gates.set(prompt, r));
+      yield withHop(partialText("delta", `answer to: ${prompt}`));
+      yield withHop(assistantText(`answer to: ${prompt}`));
+    });
+    const events: BackgroundTaskDoneEvent[] = [];
+    const services = {
+      subagentRunner: runner,
+      subagentSessions: manager,
+      backgroundDone: (e: BackgroundTaskDoneEvent) => events.push(e),
+    };
+    const tool = createSubagentTool(SUB_DEF, services);
+    const res = await drive(tool, { prompt: "dispatched work", run_in_background: true });
+    const id = extractSubagentId(res.note);
+    await waitFor(() => gates.has("dispatched work"));
+    gates.get("dispatched work")!();
+    await waitFor(() => events.length === 1);
+
+    // The user messages the idle child from the panel: their conversation, not dispatched
+    // work — the parent must not be notified when it settles.
+    const session = manager.get(id)!;
+    session.startRun("user says hi", { suppressDoneReport: true });
+    await waitFor(() => gates.has("user says hi"));
+    gates.get("user says hi")!();
+    await waitFor(() => !session.running);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(events).toHaveLength(1);
+
+    // The next MODEL-initiated round reports again (the watcher stayed armed).
+    const input = createInputSubagentTool(SUB_INPUT_DEF, services);
+    const follow = await drive(input, {
+      subagent_id: id,
+      prompt: "model round",
+      yield_time_ms: 250,
+    });
+    expect(follow.stopReason).toBe("completed");
+    await waitFor(() => gates.has("model round"));
+    gates.get("model round")!();
+    await waitFor(() => events.length === 2);
+    expect(events[1]!.output).toContain("answer to: model round");
+  });
+
+  it("input_subagent abort ends a running background round without a completion report", async () => {
     const manager = new SubagentSessionManager();
     cleanups.push(() => manager.dispose());
     const runner = runnerOf(async function* ({ signal }) {
@@ -424,13 +474,15 @@ describe("run_subagent run_in_background", () => {
       backgroundDone: (e: BackgroundTaskDoneEvent) => events.push(e),
     };
     const tool = createSubagentTool(SUB_DEF, services);
-    const res = await drive(tool, { prompt: "will be killed", run_in_background: true });
+    const res = await drive(tool, { prompt: "will be aborted", run_in_background: true });
     const id = extractSubagentId(res.note);
-    const kill = createKillSubagentTool(SUB_KILL_DEF, services);
-    const killed = await drive(kill, { subagent_id: id });
-    expect(killed.stopReason).toBe("completed");
-    expect(killed.note).toContain("aborted and removed");
-    expect(manager.get(id)).toBeUndefined();
+    const input = createInputSubagentTool(SUB_INPUT_DEF, services);
+    const stopped = await drive(input, { subagent_id: id, abort: true, yield_time_ms: 3000 });
+    expect(stopped.output).toContain(`aborting subagent ${id}'s current run`);
+    expect(stopped.note).toContain(`subagent idle with subagent_id ${id}`);
+    // The session survives — a subagent has no kill notion, only its rounds end.
+    expect(manager.get(id)).toBeDefined();
+    // The abort-caused settle must not masquerade as a task completion.
     await new Promise((r) => setTimeout(r, 100));
     expect(events).toHaveLength(0);
   });
@@ -492,11 +544,11 @@ describe("run_subagent run_in_background", () => {
     expect(events[0]!.status).toBe("completed");
   });
 
-  it("kill_subagent fails on an unknown subagent_id", async () => {
+  it("input_subagent fails on an id this conversation never allocated (nothing to resume)", async () => {
     const manager = new SubagentSessionManager();
     cleanups.push(() => manager.dispose());
-    const kill = createKillSubagentTool(SUB_KILL_DEF, { subagentSessions: manager });
-    const res = await drive(kill, { subagent_id: "subagent-deadbeef" });
+    const input = createInputSubagentTool(SUB_INPUT_DEF, { subagentSessions: manager });
+    const res = await drive(input, { subagent_id: "subagent-deadbeef" });
     expect(res.stopReason).toBe("failed");
     expect(res.output).toContain("unknown subagent_id");
   });

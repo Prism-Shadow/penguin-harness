@@ -37,7 +37,11 @@ import { imagesToScratchpadPaths } from "./internal/session-support.js";
 import { runGoalLoop } from "./goal/goal-loop.js";
 import { goalFinishedOf } from "./goal/goal-stream.js";
 import type {
+  ApproveFn,
   BackgroundCommandInfo,
+  BackgroundSubagentInfo,
+  SubagentMessageOptions,
+  SubagentMessageOutcome,
   BackgroundTaskDoneEvent,
   CommandPolicyConfig,
   EnvironmentInterface,
@@ -798,6 +802,42 @@ export class Session {
   /** Whether a background subagent of this Session is mid-round (see EnvironmentInterface.hasRunningBackgroundSubagents). */
   hasRunningBackgroundSubagents(): boolean {
     return this.environment.hasRunningBackgroundSubagents?.() ?? false;
+  }
+
+  /** All live subagent child sessions of this Session's Environment, for a host UI's subagents panel (see EnvironmentInterface.listBackgroundSubagents). */
+  listBackgroundSubagents(): BackgroundSubagentInfo[] {
+    return this.environment.listBackgroundSubagents?.() ?? [];
+  }
+
+  /**
+   * Host-initiated message to one child session by its Session id — the user's input on the
+   * child, whatever its state: steering while it runs, a follow-up run while it is idle, a
+   * revival when it is no longer live (see EnvironmentInterface.sendToBackgroundSubagent).
+   * The human (panel) and the model (input_subagent) converge on the same channel.
+   */
+  async sendToBackgroundSubagent(
+    childSessionId: string,
+    text: string,
+    opts?: SubagentMessageOptions,
+  ): Promise<SubagentMessageOutcome> {
+    return (
+      (await this.environment.sendToBackgroundSubagent?.(childSessionId, text, opts)) ?? "gone"
+    );
+  }
+
+  /** Host-initiated abort of one child session's current run — the session survives for follow-ups (see EnvironmentInterface.abortBackgroundSubagentRun). */
+  abortBackgroundSubagentRun(childSessionId: string): boolean {
+    return this.environment.abortBackgroundSubagentRun?.(childSessionId) ?? false;
+  }
+
+  /** Attaches the host's session-lifetime fallback approval sink for child sessions (see EnvironmentInterface.setSubagentApprovalFallback). */
+  setSubagentApprovalFallback(approve: ApproveFn): void {
+    this.environment.setSubagentApprovalFallback?.(approve);
+  }
+
+  /** Attaches the single listener for subagent run-state changes; the host re-reads `listBackgroundSubagents` on each ping (see EnvironmentInterface.setSubagentStateListener). */
+  onSubagentState(listener: () => void): void {
+    this.environment.setSubagentStateListener?.(listener);
   }
 
   /** Queues a background completion event; a running Task delivers it at the next boundary, otherwise the host is signaled (see pendingNotices). */

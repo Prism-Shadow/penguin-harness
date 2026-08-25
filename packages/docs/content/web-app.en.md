@@ -62,7 +62,6 @@ Pinning is offered only in the active list — the archived, subagent and schedu
 The toolbar's right edge shows the Session's cumulative stats (tokens, cost, elapsed time); clicking them opens the details card — model, Session id (with a copy button beside it), Workspace, creation time and per-line statistics. Below those:
 
 - **Processes** — background processes the conversation started (`exec_command`s promoted past their yield window), one row each with the command, start time and pid — plus, on running rows, a link to the service the process serves when one was detected (the last local URL its output printed, else a listen-port probe of its process group). Running rows carry a **Stop** button (kills the whole process group and drops the row); exited rows keep their "exited" label and carry a **Remove** button that deletes the entry from the list. Removal is immediate and final: the entry leaves the runtime registry together with the output captured from that process, so afterwards the model can no longer be asked to read it — keep the row until you are done with its output.
-- **Trace file** — the Session's current Trace file, shown as its file name on a single line: clicking the name opens the Trace Browser focused on this session, and the button beside it copies the full path.
 
 Copy buttons across the app confirm at the button itself: the copy icon flips to a check mark for a moment (no "Copied" text label).
 
@@ -85,7 +84,7 @@ The files panel browses the Workspace tree, previews files (Markdown / HTML rend
 
 ## Agent Management (/agents)
 
-The list page creates and deletes Agents; clicking through opens the `/agents/:agentId` settings page, organized into tabs:
+The list page creates and deletes Agents — the create dialog can initialize the new agent from an exported Agent State snapshot package (name and description left empty keep the package's values, and skill picking is unavailable then, since the package carries its own skills) — and clicking through opens the `/agents/:agentId` settings page, organized into tabs:
 
 | Tab | Contents |
 | --- | --- |

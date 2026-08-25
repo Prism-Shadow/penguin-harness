@@ -296,7 +296,17 @@ export interface SubagentHandle {
     signal?: AbortSignal;
     /** The parent Agent's approval callback; forwarded to the child Session to inherit the parent's approval mode. */
     approve?: ApproveFn;
+    /** Per-turn thinking level for THIS round only (a host follow-up's picker); omitted keeps the child Session's own level. */
+    thinkingLevel?: ThinkingLevelName;
   }): AsyncGenerator<OmniMessage>;
+  /**
+   * Queues a steering message for the child Session's running Task (the same mechanism as a
+   * user steering the main session: delivered as a `[user_steering]` user message at the
+   * child's next input assembly). Returns false when no run is in flight — the caller then
+   * falls back to a follow-up run. Optional so older embedders' handles keep compiling; a
+   * handle without it simply reports "not steerable".
+   */
+  steer?(messages: OmniMessage[]): boolean;
   /** Releases runtime resources held by the child Session (e.g. its managed command sessions). Idempotent. */
   dispose(): void;
 }
@@ -349,6 +359,15 @@ export interface SubagentRunner {
      */
     thinkingLevel?: ThinkingLevelName;
   }): Promise<SubagentHandle>;
+  /**
+   * Revives a released child Session by id (`resumeSession` semantics: its own history,
+   * model and Workspace) and hands back a handle for re-management — the revival path shared
+   * by the host (see SubagentMessageOptions.resume) and by input_subagent on a released
+   * `subagent_id`. `agentId` names the owning Agent; omitted = the parent Agent's own (a
+   * self-spawn's child). A missing or unrecoverable session is expressed by throwing.
+   * Optional — a runner without it simply leaves revival unavailable.
+   */
+  resume?(input: { agentId?: string; sessionId: string }): Promise<SubagentHandle>;
 }
 
 /**
@@ -601,6 +620,43 @@ export interface VersionReport extends BuildInfo {
 }
 
 /**
+ * One live subagent child session owned by the environment: the child Session id (the origin
+ * hop the frontend already correlates by), the registry handle when the session was promoted
+ * to the background (null while it only lives inside a foreground collect window), and
+ * whether a round is currently running.
+ */
+export interface BackgroundSubagentInfo {
+  sessionId: string;
+  subagentId: string | null;
+  running: boolean;
+}
+
+/**
+ * Outcome of a host-initiated subagent message (`sendToBackgroundSubagent`): `steered` = the
+ * child was mid-run and the text was queued as a steering message; `started` = the child was
+ * idle and the text began a follow-up run on the same child Session; `resumed` = no live
+ * child bore the id, so the session was revived through `SubagentRunner.resume` and the text
+ * began its next round; `busy` = the child cannot take the message right now (mid-run on a
+ * handle that predates steering, or no room to re-manage a resumed session); `gone` = no
+ * live child and no way to resume (resume not requested/available, or the session's record
+ * is unrecoverable).
+ */
+export type SubagentMessageOutcome = "steered" | "started" | "resumed" | "busy" | "gone";
+
+/** Options of a host-initiated subagent message (see EnvironmentInterface.sendToBackgroundSubagent). */
+export interface SubagentMessageOptions {
+  /** Per-turn thinking level for a follow-up/resumed round; steering an already-running round cannot change that round's level. */
+  thinkingLevel?: ThinkingLevelName;
+  /**
+   * Enables the resume fallback when no live child bears the session id: the child Session
+   * is revived (its own history, model and Workspace — `resumeSession` semantics) and
+   * re-managed, and the text starts its next round. `agentId` names the Agent that owns the
+   * child session (the host reads it from its session registry).
+   */
+  resume?: { agentId: string };
+}
+
+/**
  * Environment interface: executes approved tool calls within the Workspace.
  * `executeTool` yields `partial_tool_call_output` as an async generator and ends with exactly one
  * complete `tool_call_output`; nested session messages carrying an origin marker (e.g. forwarded
@@ -626,6 +682,44 @@ export interface EnvironmentInterface {
    * listBackgroundCommands.
    */
   hasRunningBackgroundSubagents?(): boolean;
+  /**
+   * All live subagent child sessions (foreground-window ones included), for a host UI's
+   * subagents panel. Optional, like listBackgroundCommands.
+   */
+  listBackgroundSubagents?(): BackgroundSubagentInfo[];
+  /**
+   * Host-initiated message to one child session, by child Session id: steering while the
+   * child runs, a follow-up run while it is idle, a revival (`opts.resume`) when the session
+   * is no longer live (see SubagentMessageOutcome/SubagentMessageOptions). The human and the
+   * model (`input_subagent`) converge on the managed session's same channel. Optional.
+   */
+  sendToBackgroundSubagent?(
+    childSessionId: string,
+    text: string,
+    opts?: SubagentMessageOptions,
+  ): Promise<SubagentMessageOutcome>;
+  /**
+   * Host-initiated abort of one child session's CURRENT run (the child-session equivalent of
+   * the user's stop button): the session survives for follow-ups — a subagent session is
+   * never destroyed. False when the child is unknown or idle. Optional.
+   */
+  abortBackgroundSubagentRun?(childSessionId: string): boolean;
+  /**
+   * Attaches the single listener for subagent run-state changes (a round starting or
+   * settling on any live child). The host re-reads `listBackgroundSubagents` on each ping —
+   * the event carries no payload, so state reads stay race-free against the listing.
+   * Optional, same single-listener pattern as setBackgroundTaskListener.
+   */
+  setSubagentStateListener?(listener: () => void): void;
+  /**
+   * Attaches the host's session-lifetime fallback approval sink for child sessions: a child
+   * approval with no window sink (an active run_subagent/input_subagent call) and no
+   * background-launch standing sink is consulted through this instead of waiting for the
+   * model's next poll — the host escalates it to the user, the parent session idle included.
+   * Window sinks and standing sinks keep precedence while present. Optional: hosts that
+   * never attach one (e.g. the CLI) keep the poll-window-only approval semantics.
+   */
+  setSubagentApprovalFallback?(approve: ApproveFn): void;
   /**
    * Refreshes the listen-port probe behind `BackgroundCommandInfo.serviceUrl` for running
    * sessions whose output printed no URL (TTL-cached and time-bounded per session; see

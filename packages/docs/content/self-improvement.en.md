@@ -66,7 +66,7 @@ The built-in `default_agent` ships with an example Benchmark (`packages/core/src
 
 ## Snapshots and versions
 
-Before each optimization round, the Agent State is packed into `snapshots/v<version>.tar.gz` (excluding the Vault — secrets never enter a snapshot). The `version` in `system_config.yaml` increments on successful optimization. The Web UI supports exporting and importing snapshots; importing a version not higher than the current one requires explicit confirmation.
+Before each optimization round, the Agent State is packed into `snapshots/v<version>.tar.gz` (excluding the Vault — secrets never enter a snapshot). The `version` in `system_config.yaml` increments on successful optimization. The Web UI supports exporting and importing snapshots; importing a version not higher than the current one requires explicit confirmation. A new Agent can also be created straight from an exported package in the Agents page's create dialog: it starts with the package's state and version, no confirmation needed.
 
 ## Auditable end to end
 

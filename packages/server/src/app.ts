@@ -122,6 +122,7 @@ import { agentSkillsRoutes, skillLibraryRoutes } from "./http/routes/skills.js";
 import { agentTransferRoutes } from "./http/routes/agent-transfer.js";
 import { agentsRoutes } from "./http/routes/agents.js";
 import { dirsRoutes } from "./http/routes/dirs.js";
+import { directorySkillsRoutes } from "./http/routes/directory-skills.js";
 import { agentConfigRoutes } from "./http/routes/agent-config.js";
 import { agentTracesRoutes } from "./http/routes/agent-traces.js";
 import { usageRoutes } from "./http/routes/usage.js";
@@ -549,7 +550,8 @@ export function buildAppDeps(
 
   const projectConfigService = new ProjectConfigService(config.root);
   const agentConfigService = new AgentConfigService(config.root);
-  const agentService = new AgentService(config.root, agentsRepo, agentConfigService);
+  const snapshots = new SnapshotService(config.root);
+  const agentService = new AgentService(config.root, agentsRepo, agentConfigService, snapshots);
   const memoryService = new MemoryService(config.root, agentConfigService);
   // Session-origin registry: session_meta is the single source of truth (no DB column);
   // shared by the manager (subagent registration), the loader (self-heal rebuild),
@@ -571,7 +573,6 @@ export function buildAppDeps(
   // smaller scale: a push invalidates open previews, and a preview is one reload away.)
   const previewTokens = createPreviewTokenSigner();
   const benchmarks = new BenchmarkService(config.root, workspaceFiles);
-  const snapshots = new SnapshotService(config.root);
   const usageService = new UsageService(
     usageRepo,
     errorsRepo,
@@ -796,6 +797,7 @@ export function createApp(
   app.route("/api/projects/:projectId/command-policy", commandPolicyRoutes(deps));
   app.route("/api/projects/:projectId/agents", agentsRoutes(deps));
   app.route("/api/projects/:projectId/dirs", dirsRoutes(deps));
+  app.route("/api/projects/:projectId/dir-skills", directorySkillsRoutes(deps));
   app.route("/api/projects/:projectId/agents/:agentId/config", agentConfigRoutes(deps));
   app.route("/api/projects/:projectId/agents/:agentId/vault", vaultRoutes(deps));
   app.route("/api/projects/:projectId/agents/:agentId/memory", memoryRoutes(deps));

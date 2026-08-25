@@ -25,7 +25,7 @@
  */
 import path from "node:path";
 import { mkdir, readFile, stat } from "node:fs/promises";
-import { atomicWriteFile, resolveWriteTarget } from "./file-utils.js";
+import { atomicWriteFile, resolveWriteTarget } from "../../internal/atomic-write.js";
 import { buildLineDiffHunks, renderHunk } from "./diff.js";
 import { partialToolCallOutput } from "../../omnimessage/index.js";
 import type { OmniMessage } from "../../omnimessage/index.js";
@@ -118,6 +118,7 @@ export function createWriteFileTool(definition: ToolDefinitionConfig): BuiltinTo
         await atomicWriteFile(resolved, content, {
           ...(fileMode !== undefined ? { mode: fileMode } : {}),
           ...(signal ? { signal } : {}),
+          followSymlinks: true,
         });
       } catch (err) {
         if (signal?.aborted) return { stopReason: "aborted" };
