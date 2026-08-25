@@ -152,6 +152,7 @@ describe("loadSkillGroups / groupSkills", () => {
     expect(groups[2]!.skills.map((s) => s.name)).toEqual([
       "penguin-sdk",
       "penguin-cli",
+      "penguin-orchestration",
       "agenthub-models",
       "vllm",
       "ollama",
@@ -221,6 +222,7 @@ describe("loadSkillGroups / groupSkills", () => {
         skills: [
           "penguin-sdk",
           "penguin-cli",
+          "penguin-orchestration",
           "agenthub-models",
           "vllm",
           "ollama",
