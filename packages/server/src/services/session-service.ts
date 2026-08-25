@@ -59,6 +59,12 @@ export interface SessionServiceDeps {
    * runs the Session's first Task, so it needs the command-subprocess proxy policy too.
    */
   proxyEnv?: () => ProxyEnvPolicy | null;
+  /**
+   * Whether a Session has a Feishu binding (SessionInfo.feishuBound, the sidebar row's
+   * indicator). A lookup lambda rather than the repo, so the service stays decoupled from
+   * the bindings table; absent (older assemblies/tests) means the field is never set.
+   */
+  feishuBound?: (sessionId: string) => boolean;
 }
 
 export class SessionService {
@@ -90,6 +96,7 @@ export class SessionService {
       pendingFollowUpCount: this.deps.manager.pendingFollowUpCount(row.sessionId),
       hasTrace,
       archived: (row.archivedAt ?? null) !== null,
+      ...(this.deps.feishuBound?.(row.sessionId) === true ? { feishuBound: true } : {}),
     };
   }
 

@@ -212,6 +212,57 @@ export function parseScheduledMessage(
 }
 
 // ---------------------------------------------------------------------------
+// [feishu_message] — inbound Feishu (Lark) message relayed by the server bridge
+// ---------------------------------------------------------------------------
+
+/** Origin info for a Feishu-relayed message. */
+export interface FeishuOrigin {
+  /** Feishu chat kind: `p2p` (a direct chat with the bot) or `group`. */
+  chatType: string;
+  /** Sender display name, when the inbound event carried one. */
+  senderName?: string;
+}
+
+/**
+ * Inbound input = a `[feishu_message]` origin block (chat kind, sender when known) + the
+ * sender's own text: tells the model the message arrived through the Feishu bridge and that
+ * its reply is relayed back to the same chat as plain text (so it should answer in plain
+ * text). The frontend collapses the origin block into a one-line Feishu hint (the Trace
+ * shows it verbatim).
+ */
+export function buildFeishuMessage(origin: FeishuOrigin, text: string): string {
+  const block = markerBlock(
+    MARKER_TAGS.feishuMessage,
+    [
+      "This message was relayed from a Feishu (Lark) chat by the server's Feishu bridge; the sender's message follows. Your reply will be relayed back to the same Feishu chat as plain text, so answer in plain text without Markdown formatting.",
+      `chat_type: ${origin.chatType}`,
+      ...(origin.senderName !== undefined ? [`sender: ${origin.senderName}`] : []),
+    ].join("\n"),
+  );
+  return `${block}\n\n${text}`;
+}
+
+const FEISHU_PATTERNS = dualFormPatterns(MARKER_TAGS.feishuMessage, "\\n([\\s\\S]*?)\\n");
+
+/**
+ * Inverse of `buildFeishuMessage`: returns origin info and the remaining text when the
+ * message **starts with** a `[feishu_message]` block, otherwise null. Prefix-block semantics
+ * like `[scheduled_task]`: the sender's text after the block is returned for normal
+ * rendering (the Trace page shows the raw block).
+ */
+export function parseFeishuMessage(text: string): { origin: FeishuOrigin; rest: string } | null {
+  const m = matchDualForm(FEISHU_PATTERNS, text);
+  if (!m || m.index !== 0) return null;
+  const origin: FeishuOrigin = { chatType: "" };
+  for (const [key, value] of fieldLines(m[1]!, ["chat_type", "sender"])) {
+    if (key === "chat_type") origin.chatType = value;
+    else origin.senderName = value;
+  }
+  if (!origin.chatType) return null;
+  return { origin, rest: text.slice(m[0].length).replace(/^\n+/, "") };
+}
+
+// ---------------------------------------------------------------------------
 // [model_switch_from] — the /model command's handoff-style conversation switch
 // ---------------------------------------------------------------------------
 
@@ -395,8 +446,9 @@ export function isSteeredBackgroundNotice(text: string): boolean {
  * and must be left alone. Deliberately implemented by running the parsers rather than
  * re-testing their patterns, so the predicate cannot drift from what they accept.
  *
- * `[use_skills]` and `[scheduled_task]` are **not** included: they are prefix blocks followed by
- * the message's own body and are parsed at index 0 only, so appending after that body is safe.
+ * `[use_skills]`, `[scheduled_task]` and `[feishu_message]` are **not** included: they are prefix
+ * blocks followed by the message's own body and are parsed at index 0 only, so appending after
+ * that body is safe.
  */
 export function isWholeOriginBlock(text: string): boolean {
   return parseHandoffMessage(text) !== null || parseModelSwitchMessage(text) !== null;

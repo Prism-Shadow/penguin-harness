@@ -1739,6 +1739,49 @@ Scenarios:
     } as Record<string, string>,
   },
 
+  /** Session ↔ Feishu (Lark) bot binding: the row action, the binding dialog, and the chat banner. */
+  feishu: {
+    /** Session-row context-menu action (the trailing ellipsis marks that a dialog follows). */
+    bindAction: "Bind to Feishu…",
+    dialogTitle: "Bind to Feishu",
+    dialogIntro:
+      "Once bound, messages sent to the Feishu bot flow into this conversation, and the AI's replies are sent back to Feishu as plain text. You need a self-built Feishu app with the bot capability and the message-receive event subscribed in long-connection mode.",
+    appId: "App ID",
+    appSecret: "App Secret",
+    /** Shown while a saved secret exists: submitting an empty field keeps it. */
+    appSecretKeepHint: "Leave empty to keep the saved App Secret",
+    baseDomain: "API domain",
+    baseDomainHint: "https://open.feishu.cn for Feishu, https://open.larksuite.com for Lark",
+    /** The enabled Switch's row label (off = keep the binding but stay disconnected). */
+    enabled: "Enable connection",
+    test: "Test connection",
+    testing: "Testing…",
+    testOk: (ms: number): string => `Connected (${ms}ms)`,
+    testFail: (reason: string): string => `Connection failed: ${reason}`,
+    sendTestMessage: "Send test message",
+    sendingTestMessage: "Sending…",
+    testMessageSent: "Test message sent",
+    /** Why "send test message" is disabled before the bot has ever been messaged. */
+    testMessageNoChat: "Message the bot once in Feishu first, so it knows which chat to send to",
+    statusLabel: "Connection status",
+    status: {
+      disconnected: "Not connected",
+      connecting: "Connecting",
+      connected: "Connected",
+      error: "Connection error",
+    },
+    unbind: "Unbind",
+    unbindConfirmTitle: "Unbind from Feishu?",
+    unbindConfirmBody:
+      "Disconnects from the Feishu bot and deletes the binding configuration (App Secret included).",
+    /** Bound-row indicator's tooltip / sr text (the tiny paper-plane glyph on the session row). */
+    boundIndicator: "Bound to Feishu",
+    /** One-line origin banner over a [feishu_message] user turn (the raw block shows on the Trace page). */
+    banner: (senderName?: string): string =>
+      senderName ? `From Feishu · ${senderName}` : "Message from Feishu",
+    invalidDomain: "The domain must be an http(s) URL",
+  },
+
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */
   subagentPanel: {
     topologyLabel: "Call graph",
@@ -1959,6 +2002,12 @@ Scenarios:
       trace_not_found: "This Trace file no longer exists.",
       trace_session_exists:
         "This agent already has a Session with that id; a duplicate Trace cannot be imported.",
+      feishu_app_in_use:
+        "This Feishu app is already bound to another Session — unbind it there or use a different app.",
+      feishu_secret_required: "App Secret is required.",
+      feishu_not_bound: "This Session has no Feishu binding yet.",
+      feishu_no_chat: "No Feishu message received yet — message the bot once in Feishu first.",
+      feishu_send_failed: "Sending the Feishu message failed.",
     },
   },
 };

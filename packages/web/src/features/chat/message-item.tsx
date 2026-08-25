@@ -25,11 +25,13 @@ import { McpConnectBanner } from "./mcp-connect-banner";
 import { GoalRoundBanner } from "./goal-banner";
 import { HandoffBanner, ModelSwitchBanner } from "./handoff-banner";
 import { ScheduledBanner } from "./scheduled-banner";
+import { FeishuBanner } from "./feishu-banner";
 import { SkillsBanner } from "./skills-banner";
 import { AttachedFilesBanner } from "./attached-files-banner";
 import { BackgroundDoneBanner } from "./background-done-banner";
 import {
   parseBackgroundTaskDoneMessage,
+  parseFeishuMessage,
   parseHandoffMessage,
   parseModelSwitchMessage,
   parseScheduledMessage,
@@ -194,18 +196,21 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
       const afterGoal = goalRound ? goalRound.rest : item.text;
       // Source block for a scheduled-task trigger: collapsed into a single-line notice, with the task's prompt body rendered as usual (verbatim on the Trace page).
       const scheduled = parseScheduledMessage(afterGoal);
-      // Source block for a skill invocation: parsing continues on scheduled's remaining body
-      // (goal -> scheduled -> skills, blocks stripped in a chain); a match collapses into a
-      // "using skill" banner, with the body rendered as usual.
       const afterScheduled = scheduled ? scheduled.rest : afterGoal;
-      const skills = parseSkillsMessage(afterScheduled);
+      // Source block for a Feishu-relayed message: same collapse, with the sender's text rendered as usual.
+      const feishu = parseFeishuMessage(afterScheduled);
+      const afterFeishu = feishu ? feishu.rest : afterScheduled;
+      // Source block for a skill invocation: parsing continues on the remaining body
+      // (goal -> scheduled -> feishu -> skills, blocks stripped in a chain); a match
+      // collapses into a "using skill" banner, with the body rendered as usual.
+      const skills = parseSkillsMessage(afterFeishu);
       // Attachment row restoration (last in the chain — these lines trail the body rather than
       // prefixing it): for models that don't support images, input images are written to disk
       // as a path row; this pulls that out at render time and shows the actual image. Mirrors
       // the vision-model path (user_text + user_image as separate messages) in shape: one
       // bubble for the text, one bubble per image, styled the same as user_image. Uploaded
       // files come out of the same pass and collapse into one banner naming them.
-      const { text, images, files } = splitAttachments(skills ? skills.rest : afterScheduled);
+      const { text, images, files } = splitAttachments(skills ? skills.rest : afterFeishu);
       // Every goal round reads like a normal user message: the body in a user bubble with
       // the round notice beneath (the system IS re-sending the user's request each round) —
       // the objective's images included, since they ride it as path lines.
@@ -220,6 +225,7 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
       return (
         <>
           {scheduled && <ScheduledBanner origin={scheduled.origin} />}
+          {feishu && <FeishuBanner origin={feishu.origin} />}
           {skills && <SkillsBanner names={skills.skills} />}
           {text && (
             <div className="anim-msg group my-4 flex flex-col items-end">

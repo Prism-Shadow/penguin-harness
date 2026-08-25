@@ -255,6 +255,20 @@ Workspace files may be Agent-generated, so `GET /files/content` treats them as u
 
 The filename always rides along as `filename*=UTF-8''` with percent-encoding. `preview=1` is where the preview redirect falls back when no separate preview origin is available: the document keeps its real type and does render and run, but the sandbox deliberately omits `allow-same-origin`, so it lands in an opaque origin and can reach neither this origin's cookies nor the API. That isolation is also why `localStorage`, `document.cookie` and third-party embeds do not work there.
 
+### Feishu (Lark) Binding
+
+A Session can be bound to a Feishu bot: inbound messages to the bot start Tasks on the Session (queued as follow-ups while it is busy), and completed replies are relayed back to the chat. Paths omit the `/api/sessions/:sessionId` prefix like the table above.
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | /feishu | The binding (App Secret masked) + long-connection runtime status + `lastChatKnown` |
+| PUT | /feishu | Bind or update: `{appId, appSecret?, baseDomain?, enabled?}`. An omitted/blank `appSecret` keeps the stored one; `baseDomain` defaults to `https://open.feishu.cn`; saving with `enabled: true` (re)connects, `false` disconnects. 409 `feishu_app_in_use` when the app is bound to another Session |
+| DELETE | /feishu | Unbind: disconnects and deletes the stored binding (App Secret included) |
+| POST | /feishu/test | Credential probe with the request's draft values, each falling back to the stored binding → `{ok, latencyMs?, error?}` (a rejected credential is `ok: false`, not an HTTP error) |
+| POST | /feishu/test-message | Send a short fixed text to the last known chat; 409 `feishu_no_chat` until the bot has been messaged once in Feishu |
+
+One binding per Session and one per Feishu app. Reads and the two tests are open to any Project member; PUT and DELETE are owner-only (vault semantics — they carry the secret). The secret is masked in every response and never round-trips. Deleting the Session removes its binding, and inbound processing accepts text messages only (other types get a bilingual "text only" reply).
+
 ### Preview on a separate origin
 
 Both the Files panel's rendered HTML view (an iframe) and "open in a new tab" go through `GET /files/preview-redirect?path=`, which authenticates the caller, then mints a short-lived HMAC token and 302s to a **different origin**:

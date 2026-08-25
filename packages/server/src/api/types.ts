@@ -1126,6 +1126,8 @@ export interface SessionInfo {
    * history itself when it needs it.
    */
   tracePath?: string;
+  /** Present (true) when the Session has a Feishu binding (the sidebar row's indicator). */
+  feishuBound?: boolean;
 }
 
 /**
@@ -1534,6 +1536,74 @@ export interface SessionProcessInfo {
 
 export interface SessionProcessesResponse {
   processes: SessionProcessInfo[];
+}
+
+// ---------------------------------------------------------------------------
+// Feishu (Lark) binding (/api/sessions/:sessionId/feishu)
+// ---------------------------------------------------------------------------
+
+/** The stored binding, secret masked (plaintext never leaves the server). */
+export interface FeishuBindingInfo {
+  sessionId: string;
+  appId: string;
+  /** Masked app secret (site-wide mask rule: `***`, or `first4…last4` for long values). */
+  appSecretMasked: string;
+  baseDomain: string;
+  enabled: boolean;
+  /**
+   * Whether an inbound Feishu chat is known (the bot has been messaged at least once).
+   * Replies and test messages target that chat; until it exists nothing can be sent.
+   */
+  lastChatKnown: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Long-connection runtime state of one binding (kept in memory, not persisted). */
+export type FeishuRuntimeState = "disconnected" | "connecting" | "connected" | "error";
+
+export interface FeishuRuntimeStatus {
+  state: FeishuRuntimeState;
+  /** Failure detail; present only in the `error` state. */
+  lastError?: string;
+  /** When the state last changed (ISO 8601); absent for a binding that never connected. */
+  changedAt?: string;
+}
+
+/** GET / PUT …/feishu response: the binding (null = not bound) plus its runtime status. */
+export interface FeishuBindingResponse {
+  binding: FeishuBindingInfo | null;
+  status: FeishuRuntimeStatus;
+}
+
+/** PUT …/feishu */
+export interface FeishuBindingPutRequest {
+  appId: string;
+  /** Omitted or blank keeps the stored secret (the masked value never round-trips). */
+  appSecret?: string;
+  /** Defaults to https://open.feishu.cn when omitted or blank. */
+  baseDomain?: string;
+  /** Defaults to true; true (re)connects on save, false disconnects. */
+  enabled?: boolean;
+}
+
+/** POST …/feishu/test — draft values; each omitted field falls back to the stored binding. */
+export interface FeishuTestRequest {
+  appId?: string;
+  appSecret?: string;
+  baseDomain?: string;
+}
+
+/** Credential-test outcome (an unreachable/rejected credential is `ok:false`, not an HTTP error). */
+export interface FeishuTestResponse {
+  ok: boolean;
+  latencyMs?: number;
+  error?: string;
+}
+
+/** POST …/feishu/test-message — sent to the last known chat (409 `feishu_no_chat` before one exists). */
+export interface FeishuTestMessageResponse {
+  ok: true;
 }
 
 // ---------------------------------------------------------------------------

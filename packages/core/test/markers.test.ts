@@ -13,6 +13,7 @@ import {
   MARKER_TAGS,
   TITLE_NOISE_TAGS,
   buildContextSummaryText,
+  buildFeishuMessage,
   buildHandoffMessage,
   buildModelSwitchMessage,
   buildScheduledMessage,
@@ -23,6 +24,7 @@ import {
   extractSummary,
   markerBlock,
   matchDualForm,
+  parseFeishuMessage,
   parseHandoffMessage,
   parseModelSwitchMessage,
   parseScheduledMessage,
@@ -68,6 +70,7 @@ describe("marker block primitives", () => {
       MARKER_TAGS.useSkills,
       MARKER_TAGS.handoffFrom,
       MARKER_TAGS.scheduledTask,
+      MARKER_TAGS.feishuMessage,
       MARKER_TAGS.modelSwitchFrom,
       MARKER_TAGS.goal,
       MARKER_TAGS.backgroundTaskDone,
@@ -263,6 +266,26 @@ describe("origin blocks ([use_skills] / [handoff_from] / [scheduled_task] / [mod
         "<scheduled_task>\nschedule: daily\nfired_at: 2026-01-01T00:00:00Z\n</scheduled_task>\n\nbody",
       ),
     ).toEqual({ origin: { name: "daily", firedAt: "2026-01-01T00:00:00Z" }, rest: "body" });
+  });
+
+  it("[feishu_message]: block + sender text, parsed back with the body as rest", () => {
+    const text = buildFeishuMessage({ chatType: "group", senderName: "Xiao Ming" }, "hello\nthere");
+    expect(text.startsWith("[feishu_message]\n")).toBe(true);
+    expect(parseFeishuMessage(text)).toEqual({
+      origin: { chatType: "group", senderName: "Xiao Ming" },
+      rest: "hello\nthere",
+    });
+    // Sender is optional: absent from the block, absent from the parse.
+    const p2p = buildFeishuMessage({ chatType: "p2p" }, "hi");
+    expect(p2p).not.toContain("sender:");
+    expect(parseFeishuMessage(p2p)).toEqual({ origin: { chatType: "p2p" }, rest: "hi" });
+    // A block without a chat_type isn't an origin block; mid-text blocks don't parse.
+    expect(parseFeishuMessage("[feishu_message]\nsender: A\n[/feishu_message]\n\np")).toBeNull();
+    expect(parseFeishuMessage(`preamble\n${text}`)).toBeNull();
+    // Legacy form.
+    expect(
+      parseFeishuMessage("<feishu_message>\nchat_type: p2p\n</feishu_message>\n\nbody"),
+    ).toEqual({ origin: { chatType: "p2p" }, rest: "body" });
   });
 
   it("[model_switch_from]: round-trips the origin, including a parenthesized session title", () => {

@@ -25,6 +25,8 @@ export const MARKER_TAGS = {
   handoffFrom: "handoff_from",
   /** Scheduled-task trigger origin block (server scheduler). */
   scheduledTask: "scheduled_task",
+  /** Inbound Feishu (Lark) message origin block (server Feishu bridge). */
+  feishuMessage: "feishu_message",
   /** Background-task completion report injected as a harness user message (exec_command / run_subagent with run_in_background). */
   backgroundTaskDone: "background_task_done",
   /** `/model` switch origin block, first message of the continued conversation (Web). */
@@ -52,6 +54,7 @@ export const TITLE_NOISE_TAGS: readonly string[] = [
   MARKER_TAGS.useSkills,
   MARKER_TAGS.handoffFrom,
   MARKER_TAGS.scheduledTask,
+  MARKER_TAGS.feishuMessage,
   MARKER_TAGS.modelSwitchFrom,
   MARKER_TAGS.goal,
   MARKER_TAGS.backgroundTaskDone,

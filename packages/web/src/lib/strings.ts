@@ -1695,6 +1695,48 @@ Benchmark：
     } as Record<string, string>,
   },
 
+  /** Session ↔ Feishu (Lark) bot binding: the row action, the binding dialog, and the chat banner. */
+  feishu: {
+    /** Session-row context-menu action (the trailing ellipsis marks that a dialog follows). */
+    bindAction: "绑定到飞书…",
+    dialogTitle: "绑定到飞书",
+    dialogIntro:
+      "绑定后，发给飞书机器人的消息会进入本对话，AI 的回复会以纯文本发回飞书。需要一个开通了机器人能力、订阅了接收消息事件（长连接方式）的飞书自建应用。",
+    appId: "App ID",
+    appSecret: "App Secret",
+    /** Shown while a saved secret exists: submitting an empty field keeps it. */
+    appSecretKeepHint: "留空保持已保存的 App Secret 不变",
+    baseDomain: "API 域名",
+    baseDomainHint: "飞书为 https://open.feishu.cn，Lark 为 https://open.larksuite.com",
+    /** The enabled Switch's row label (off = keep the binding but stay disconnected). */
+    enabled: "启用连接",
+    test: "测试连接",
+    testing: "测试中…",
+    testOk: (ms: number): string => `连接成功（${ms}ms）`,
+    testFail: (reason: string): string => `连接失败：${reason}`,
+    sendTestMessage: "发送测试消息",
+    sendingTestMessage: "发送中…",
+    testMessageSent: "测试消息已发送",
+    /** Why "send test message" is disabled before the bot has ever been messaged. */
+    testMessageNoChat: "先在飞书中给机器人发一条消息，机器人才知道要发到哪个会话",
+    statusLabel: "连接状态",
+    status: {
+      disconnected: "未连接",
+      connecting: "连接中",
+      connected: "已连接",
+      error: "连接错误",
+    },
+    unbind: "解除绑定",
+    unbindConfirmTitle: "解除飞书绑定？",
+    unbindConfirmBody: "将断开与飞书机器人的连接，并删除绑定配置（含 App Secret）。",
+    /** Bound-row indicator's tooltip / sr text (the tiny paper-plane glyph on the session row). */
+    boundIndicator: "已绑定飞书",
+    /** One-line origin banner over a [feishu_message] user turn (the raw block shows on the Trace page). */
+    banner: (senderName?: string): string =>
+      senderName ? `来自飞书 · ${senderName}` : "来自飞书的消息",
+    invalidDomain: "域名需为 http(s):// 地址",
+  },
+
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */
   subagentPanel: {
     topologyLabel: "调用关系",
@@ -1915,6 +1957,11 @@ Benchmark：
       invalid_trace: "该文件不是有效的 Trace 文件。",
       trace_not_found: "该 Trace 文件已不存在。",
       trace_session_exists: "该 Agent 已存在同名 Session，无法导入重复的 Trace。",
+      feishu_app_in_use: "该飞书应用已绑定到其他 Session，请先解除或换一个应用。",
+      feishu_secret_required: "需要填写 App Secret。",
+      feishu_not_bound: "该 Session 尚未绑定飞书。",
+      feishu_no_chat: "尚未收到飞书消息：先在飞书中给机器人发一条消息。",
+      feishu_send_failed: "飞书消息发送失败。",
     },
   },
 };
