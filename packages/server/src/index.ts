@@ -243,6 +243,15 @@ class PenguinServer {
     if (this.config.host === "127.0.0.1" || this.config.host === "localhost") {
       this.openIpv6Loopback(port);
     }
+    // Last, so the link is what a console is left showing rather than something scrolled
+    // past — and here rather than in seedAdmin() because the URL needs the port the OS
+    // actually handed out, which PORT=0 only settles at this point.
+    if (this.pendingFirstLoginNotice) {
+      const token = encodeURIComponent(this.deps.authService.firstLoginToken);
+      console.log(
+        renderFirstLoginNotice(`http://${this.appHost()}:${port}/api/auth/claim?token=${token}`),
+      );
+    }
   }
 
   /**

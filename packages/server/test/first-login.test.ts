@@ -82,6 +82,19 @@ describe("the first-login link", () => {
     expect(await stale.text()).toBe(wrongBody);
   });
 
+  /**
+   * A minted token that is never delivered is a feature nobody can reach, and every test
+   * above reads the token off the service — so none of them would notice. The entrypoint
+   * runs main() on import and exports nothing, which leaves reading it the way to check
+   * that what it mints actually reaches a console.
+   */
+  it("is printed by the entrypoint, not merely minted", () => {
+    const entrypoint = fs.readFileSync(new URL("../src/index.ts", import.meta.url), "utf8");
+    expect(entrypoint).toMatch(/renderFirstLoginNotice\(/);
+    expect(entrypoint).toMatch(/firstLoginToken/);
+    expect(entrypoint).toMatch(/\/api\/auth\/claim\?token=/);
+  });
+
   it("sweeps a plaintext an older build left in the data root", async () => {
     const root = await makeTempRoot();
     fs.writeFileSync(initialAdminPasswordPath(root), "penguin-1234\n", { mode: 0o600 });
