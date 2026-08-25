@@ -19,6 +19,7 @@ import type { AuthSessionsRepo } from "../db/repos/auth-sessions.js";
 import type { UserRow, UsersRepo } from "../db/repos/users.js";
 import type { AuthRevocationsRepo } from "../db/repos/auth-revocations.js";
 import { looksSigned, newClaims, signToken, verifyToken } from "./token-codec.js";
+import { ownerTokenMatches } from "./owner-token.js";
 import { SCRYPT_COST, hashPassword, verifyPassword } from "./password.js";
 
 export const MIN_PASSWORD_LENGTH = 8;
@@ -81,8 +82,18 @@ export interface AuthServiceDeps {
   authSessions: AuthSessionsRepo;
   /** Revoked-before-expiry token ids; the in-memory copy is what the hot path consults. */
   authRevocations: AuthRevocationsRepo;
-  /** Signing key for session tokens (auth/token-secret.ts) — sessions are signed statements, not rows. */
+  /**
+   * Signing key for session tokens. IN MEMORY ONLY, generated at process start: a key that
+   * exists nowhere at rest cannot be taken from a backup, and rotation is simply a restart.
+   * The price is that signed sessions die with the process — hot pushes swap the App and
+   * keep this alive; only a real restart pays it, and mostly in re-typed passwords.
+   */
   tokenSecret: Buffer;
+  /**
+   * This boot's owner token (auth/owner-token.ts), for the redemption endpoint. Null in
+   * constructions that have no data root to anchor it to (some tests).
+   */
+  ownerToken: string | null;
   /** Provisions the initial Project at signup (injected by project-service, to avoid a circular dependency). */
   provisionInitialProject: (user: UserRow, isAdmin: boolean) => Promise<void>;
   /** Fixed initial password for the seeded admin (config.seedAdminPassword); null generates a random one at seed time. */
@@ -338,5 +349,30 @@ export class AuthService {
   private issueSession(userId: string, via: SessionVia): string {
     const claims = newClaims(userId, via, this.now().getTime(), this.deps.sessionTtlMs);
     return signToken(claims, this.deps.tokenSecret);
+  }
+
+  /**
+   * Redeems this boot's owner token for a signed session — the ONE bootstrap primitive.
+   *
+   * Whoever presents the token read `<root>/owner-token`, and reading the data root is what
+   * ownership has always meant here: the CLI redeems it for `penguin auth token`, a machine
+   * redeems it when this server's controller asks over ssh, and nothing needs a password or
+   * a key at rest to exist. The TTL is capped at the ordinary session TTL — the owner can
+   * mint again forever, so a longer-lived token would add risk and no capability.
+   */
+  redeemOwnerToken(
+    given: string,
+    userId: string,
+    ttlMs: number,
+  ): { token: string; expiresAt: string } | "bad_token" | "no_user" {
+    const expected = this.deps.ownerToken;
+    if (expected === null || !ownerTokenMatches(given, expected)) return "bad_token";
+    if (this.deps.users.findById(userId) === null) return "no_user";
+    const bounded = Math.max(1_000, Math.min(ttlMs, this.deps.sessionTtlMs));
+    const claims = newClaims(userId, "cli", this.now().getTime(), bounded);
+    return {
+      token: signToken(claims, this.deps.tokenSecret),
+      expiresAt: new Date(claims.exp).toISOString(),
+    };
   }
 }

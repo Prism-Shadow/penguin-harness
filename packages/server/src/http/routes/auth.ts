@@ -9,7 +9,7 @@ import type { AuthResponse } from "../../api/types.js";
 import { HttpError } from "../errors.js";
 import { SESSION_COOKIE, cookieOptions } from "../../auth/middleware.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import { readJson, requireString } from "../validate.js";
+import { optionalString, readJson, requireString } from "../validate.js";
 import type { AppDeps } from "../../app.js";
 
 export function authRoutes(deps: AppDeps): Hono<AppEnv> {
@@ -22,6 +22,35 @@ export function authRoutes(deps: AppDeps): Hono<AppEnv> {
     const { user, token } = await deps.authService.login(userId, password);
     setCookie(c, SESSION_COOKIE, token, cookieOptions(c));
     return c.json({ user } satisfies AuthResponse);
+  });
+
+  /**
+   * Redeems this boot's owner token (auth/owner-token.ts) for a signed session — the local
+   * bootstrap primitive behind `penguin auth token` and the machines controller.
+   *
+   * The TOKEN is the security boundary, not the caller's address: it lives in a 0600 file
+   * inside the data root, so presenting it proves the ability to read that root — which is
+   * what ownership of this server has always meant. An address check would only restate
+   * that weaker (a reverse proxy or a tunnel legitimately moves the bytes), so there is
+   * none; a caller without the file has nothing to present, from anywhere.
+   */
+  app.post("/owner", async (c) => {
+    const body = await readJson(c);
+    const ownerToken = requireString(body, "ownerToken", { label: "ownerToken", maxLen: 128 });
+    const userId = optionalString(body, "userId", { label: "userId", maxLen: 64 }) ?? "admin";
+    const ttl =
+      body !== null && typeof body === "object"
+        ? (body as Record<string, unknown>).ttlSeconds
+        : undefined;
+    const ttlMs =
+      typeof ttl === "number" && Number.isFinite(ttl) && ttl > 0 ? ttl * 1000 : 60 * 60_000;
+    const outcome = deps.authService.redeemOwnerToken(ownerToken, userId, ttlMs);
+    // One error shape for both refusals: distinguishing "wrong token" from "no such user"
+    // would let a caller WITHOUT the token enumerate accounts.
+    if (outcome === "bad_token" || outcome === "no_user") {
+      throw new HttpError(401, "unauthorized", "The owner token was not accepted.");
+    }
+    return c.json(outcome);
   });
 
   app.post("/logout", (c) => {

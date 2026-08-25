@@ -203,7 +203,7 @@ export function registerAuthCommand(program: Command, t: Messages): void {
     .option("--user-id <id>", t.authToken.userId, DEFAULT_USER)
     .option("--ttl-seconds <n>", t.authToken.ttlSeconds, (raw: string) => Number.parseInt(raw, 10))
     .option("--root <dir>", t.common.root)
-    .action((opts: { userId: string; ttlSeconds?: number; root?: string }) => {
+    .action(async (opts: { userId: string; ttlSeconds?: number; root?: string }) => {
       const ttl = opts.ttlSeconds;
       if (ttl !== undefined && (!Number.isFinite(ttl) || ttl <= 0)) {
         process.stderr.write(t.authToken.badTtl + "\n");
@@ -213,10 +213,15 @@ export function registerAuthCommand(program: Command, t: Messages): void {
       const root = resolveRootOption(opts.root);
       // Stateless: the token is signed against the root's key, so there is no database to
       // need — a root whose server has never run mints for the admin its first boot seeds.
-      const result = mintApiToken(root, {
+      const result = await mintApiToken(root, {
         userId: opts.userId,
         ...(ttl === undefined ? {} : { ttlMs: ttl * 1000 }),
       });
+      if (result.outcome === "failed") {
+        process.stderr.write(t.authToken.failed(result.detail) + "\n");
+        process.exitCode = 1;
+        return;
+      }
       if (result.outcome === "no_user") {
         process.stderr.write(t.authToken.noUser(result.userId) + "\n");
         process.exitCode = 1;

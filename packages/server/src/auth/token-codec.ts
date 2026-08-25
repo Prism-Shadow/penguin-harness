@@ -14,13 +14,13 @@
  * tell a signed token from a legacy database token (those are 43 chars of base64url with no
  * dots) and from any future format.
  *
- * WHAT SIGNING COSTS, stated because it is the trade the row model did not make: the key at
- * `<root>/auth-token-secret` can mint sessions for as long as it exists — reading a BACKUP
- * of the data root becomes the ability to forge tokens against the live server, where a
- * leaked auth_sessions row was just hashes. Issuance is also invisible (no row), so the
- * audit trail is only of revocations. Chosen with eyes open: whoever reads the data root
- * already owns every credential in it, and rotation (delete the secret file, restart) kills
- * every outstanding token at once.
+ * THE KEY NEVER RESTS. It is generated in memory at process start and written nowhere, so
+ * there is nothing a backup can leak and nothing to rotate — a restart IS the rotation, and
+ * every outstanding signed token dies with it. That cost lands almost entirely on nobody:
+ * hot pushes swap the App and keep the process (and key) alive; CLI and machine tokens live
+ * an hour and are re-minted on demand; only a browser session across a REAL restart pays,
+ * as one re-typed password. Issuance is invisible (no row), so the audit trail is only of
+ * revocations — the one property of the row model this scheme genuinely gives up.
  */
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 

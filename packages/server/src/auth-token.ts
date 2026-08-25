@@ -1,78 +1,150 @@
 /**
  * Minting a short-lived API session from the machine's own disk, for whoever is already on it.
  *
- * A machine is a separate server with its own accounts, so a controller reaching its API needs
- * a session there. Obtaining one used to mean reading that machine's SEEDED admin password off
- * its disk and logging in over loopback (machines/signin.ts) — which works only until somebody
- * changes that password, and then never again. That is not a rare state; it is what a person
- * setting up a machine properly does.
+ * WHAT AUTHORIZES THIS has never changed: the ability to read the data root, which already
+ * holds every credential the server can reach. What changed is what that ability is exchanged
+ * THROUGH, so that nothing long-lived rests on disk:
  *
- * WHAT AUTHORIZES THIS. Not a password: the ssh account's access to the data root. Whoever can
- * run this can already read `web.db`, every Session's trace, and every Project's inlined
- * credentials — a token adds nothing they did not have. It only makes that access usable
- * through the API instead of by hand.
+ * - Server running (the overwhelming case — a controller minting on a machine has just probed
+ *   its server): read this boot's `<root>/owner-token` and redeem it at `POST /api/auth/owner`
+ *   over loopback. The server signs with its in-memory key; no secret at rest is involved at
+ *   either end.
+ * - Server stopped: there is no signing key anywhere — it lived in the process — so fall back
+ *   to the one session shape that needs no key: a legacy database row, which the verification
+ *   path still honors. Cold path, one INSERT, and the row dies at its TTL.
  *
- * STATELESS. Sessions are signed statements (auth/token-codec.ts), so minting is reading the
- * root's signing key and computing a signature — no database open, no row, nothing racing the
- * live server. That is also what lets this work on a root whose server is down, or has never
- * run: the key is created on first use, and the server adopts the same file at its next boot.
- *
- * The claims record `v: "cli"`. Nothing grants privilege from it — verification maps anything
- * that is not "desktop" to an ordinary password session, so a token minted here can never
- * reach the desktop-only routes.
+ * The claims record `v: "cli"` either way. Nothing grants privilege from it — verification
+ * maps anything that is not "desktop" to an ordinary password session, so a minted token can
+ * never reach the desktop-only routes.
  */
-import fs from "node:fs";
+import http from "node:http";
 import path from "node:path";
-import { readOrCreateAuthSecret } from "./auth/token-secret.js";
-import { newClaims, signToken } from "./auth/token-codec.js";
+import { createHash, randomBytes } from "node:crypto";
+import { readServerLock } from "./lock.js";
+import { readOwnerToken } from "./auth/owner-token.js";
+import { openDatabase } from "./db/database.js";
+import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
+import { UsersRepo } from "./db/repos/users.js";
 
 /** An hour, matching what a controller needs: long enough to finish, short enough to forget. */
 export const CLI_TOKEN_TTL_MS = 60 * 60_000;
 
 export type MintTokenResult =
   | { outcome: "minted"; token: string; userId: string; expiresAt: string }
-  | { outcome: "no_user"; userId: string };
+  | { outcome: "no_user"; userId: string }
+  | { outcome: "failed"; detail: string };
 
-/**
- * Issues a signed API token against the data root at `root`.
- *
- * The user check is a COURTESY, not the enforcement — verification looks the account up on
- * every request, so a token for a user that never appears simply never authenticates. It runs
- * only when a database is already there to ask: on a fresh root (no web.db yet) the token is
- * minted anyway, for the admin the first boot will seed.
- */
-export function mintApiToken(
+/** Issues an API session token for the data root at `root`. */
+export async function mintApiToken(
   root: string,
   opts: { userId?: string; ttlMs?: number; now?: () => Date } = {},
-): MintTokenResult {
+): Promise<MintTokenResult> {
   const userId = opts.userId ?? "admin";
-  const dbPath = process.env.PENGUIN_WEB_DB ?? path.join(root, "web.db");
-  if (fs.existsSync(dbPath) && !userExists(dbPath, userId)) {
-    return { outcome: "no_user", userId };
+  const ttlMs = opts.ttlMs ?? CLI_TOKEN_TTL_MS;
+
+  const lock = readServerLock(root);
+  const ownerToken = lock === null ? null : readOwnerToken(root);
+  if (lock !== null && ownerToken !== null) {
+    const redeemed = await redeemOverLoopback(lock.port, ownerToken, userId, ttlMs);
+    if (redeemed.outcome !== "failed") return redeemed;
+    // A lock whose server is gone (a crash left the file behind): fall through to the row,
+    // exactly as if there were no lock. The detail is not worth surfacing — the row works.
   }
-  const now = opts.now?.() ?? new Date();
-  const claims = newClaims(userId, "cli", now.getTime(), opts.ttlMs ?? CLI_TOKEN_TTL_MS);
-  return {
-    outcome: "minted",
-    token: signToken(claims, readOrCreateAuthSecret(root)),
-    userId,
-    expiresAt: new Date(claims.exp).toISOString(),
-  };
+
+  return mintRow(root, userId, ttlMs, opts.now?.() ?? new Date());
 }
 
-/** One read-only question to an existing database; an unopenable one answers "unknown", not "no". */
-function userExists(dbPath: string, userId: string): boolean {
+/**
+ * The stopped-server path: a session row, the shape verification has always honored.
+ *
+ * The foreign key on auth_sessions keeps this honest about accounts: a root whose database
+ * has never seeded a user cannot hold a session row for one, so the answer there is `no_user`
+ * — start the server once, or mint against it running.
+ */
+function mintRow(root: string, userId: string, ttlMs: number, now: Date): MintTokenResult {
+  const dbPath = process.env.PENGUIN_WEB_DB ?? path.join(root, "web.db");
+  let db;
   try {
-    // Deferred import shape: node:sqlite is experimental and this module must stay importable
-    // where only minting (no validation) is needed.
-    const sqlite = process.getBuiltinModule("node:sqlite");
-    const db = new sqlite.DatabaseSync(dbPath, { readOnly: true });
-    try {
-      return db.prepare("SELECT 1 FROM users WHERE user_id = ?").get(userId) !== undefined;
-    } finally {
-      db.close();
-    }
-  } catch {
-    return true; // Unreadable database: mint, and let verification be the judge.
+    db = openDatabase(dbPath);
+  } catch (err) {
+    return { outcome: "failed", detail: err instanceof Error ? err.message : String(err) };
   }
+  try {
+    if (new UsersRepo(db).findById(userId) === null) return { outcome: "no_user", userId };
+    const token = randomBytes(32).toString("base64url");
+    const expiresAt = new Date(now.getTime() + ttlMs).toISOString();
+    new AuthSessionsRepo(db).insert({
+      tokenHash: createHash("sha256").update(token).digest("hex"),
+      userId,
+      createdAt: now.toISOString(),
+      expiresAt,
+      via: "cli",
+    });
+    return { outcome: "minted", token, userId, expiresAt };
+  } finally {
+    db.close();
+  }
+}
+
+/** One redemption call to the local server. node:http with the canonical Host, as everywhere. */
+function redeemOverLoopback(
+  port: number,
+  ownerToken: string,
+  userId: string,
+  ttlMs: number,
+): Promise<MintTokenResult> {
+  return new Promise((resolve) => {
+    const body = Buffer.from(
+      JSON.stringify({ ownerToken, userId, ttlSeconds: Math.max(1, Math.round(ttlMs / 1000)) }),
+    );
+    const req = http.request(
+      {
+        host: "127.0.0.1",
+        port,
+        path: "/api/auth/owner",
+        method: "POST",
+        headers: {
+          host: `localhost:${port}`,
+          "content-type": "application/json",
+          "content-length": String(body.byteLength),
+        },
+        timeout: 10_000,
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk: Buffer) => chunks.push(chunk));
+        res.on("end", () => {
+          const text = Buffer.concat(chunks).toString("utf8");
+          if (res.statusCode !== 200) {
+            resolve({
+              outcome: "failed",
+              detail: `the server answered ${res.statusCode ?? 0}: ${text.slice(0, 200)}`,
+            });
+            return;
+          }
+          try {
+            const parsed = JSON.parse(text) as { token?: unknown; expiresAt?: unknown };
+            if (typeof parsed.token !== "string" || typeof parsed.expiresAt !== "string") {
+              resolve({ outcome: "failed", detail: "the server's answer had no token in it" });
+              return;
+            }
+            resolve({
+              outcome: "minted",
+              token: parsed.token,
+              userId,
+              expiresAt: parsed.expiresAt,
+            });
+          } catch {
+            resolve({ outcome: "failed", detail: "the server's answer was not JSON" });
+          }
+        });
+      },
+    );
+    req.on("timeout", () => {
+      req.destroy();
+      resolve({ outcome: "failed", detail: "the local server did not answer in time" });
+    });
+    req.on("error", (err) => resolve({ outcome: "failed", detail: err.message }));
+    req.end(body);
+  });
 }

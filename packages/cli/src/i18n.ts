@@ -125,6 +125,7 @@ export interface Messages {
     userId: string;
     ttlSeconds: string;
     badTtl: string;
+    failed(detail: string): string;
     noUser(userId: string): string;
   };
   resetPassword: {
@@ -474,6 +475,7 @@ const en: Messages = {
     userId: "Account to mint for (default: admin)",
     ttlSeconds: "Lifetime in seconds (default: 3600)",
     badTtl: "--ttl-seconds must be a positive integer.",
+    failed: (detail) => `Could not mint a token: ${detail}`,
     noUser: (userId) => `No such account: ${userId}.`,
   },
   resetPassword: {
@@ -789,6 +791,7 @@ const zh: Messages = {
     userId: "签发给哪个账号（默认 admin）",
     ttlSeconds: "有效期秒数（默认 3600）",
     badTtl: "--ttl-seconds 必须是正整数。",
+    failed: (detail) => `签发失败：${detail}`,
     noUser: (userId) => `没有这个账号：${userId}。`,
   },
   resetPassword: {

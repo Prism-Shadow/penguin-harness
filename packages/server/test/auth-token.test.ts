@@ -1,46 +1,42 @@
 /**
  * Minting an API session from the data root itself (auth-token.ts).
  *
- * The point is what it does NOT need: a password, or even a database. Whoever can run it can
- * already read this data root by hand — every credential in it — so a token adds no reach, it
- * only makes that access usable through the API. Minting is a signature against the root's
- * key (auth/token-secret.ts): the ONLY coordination with the server is that both read the
- * same file, which is what these tests actually pin — a token minted by one process
- * authenticating against another that never saw it minted.
+ * Two paths, split by whether a server is running, and each is exercised the way it is
+ * actually reached. RUNNING: read this boot's owner-token file and redeem it over loopback —
+ * pinned against a real listening server, because the loopback hop (lock file, Host header,
+ * JSON shapes) is precisely what an in-process test cannot see. STOPPED: a legacy session
+ * row, the one shape that needs no signing key — the key lives in the process, and there is
+ * no process.
  *
- * Also pinned: the token must never carry more privilege than a password session (one that
- * read back as "desktop" would reach routes reserved for the shell's own window), and a
- * fresh root that has never run a server must still mint — the machine-install flow needs a
- * token before first boot, for the admin that boot will seed.
+ * Also pinned: the token never carries more privilege than a password session (one that read
+ * back as "desktop" would reach routes reserved for the shell's own window), and the
+ * stopped-server path is honest about accounts — the auth_sessions foreign key means a
+ * never-seeded root cannot fake a session for a user that does not exist.
  */
 import fs from "node:fs";
 import path from "node:path";
+import { serve } from "@hono/node-server";
+import type { AddressInfo } from "node:net";
 import { describe, expect, it } from "vitest";
 import { mintApiToken } from "../src/auth-token.js";
 import { SESSION_COOKIE } from "../src/auth/middleware.js";
-import { readOrCreateAuthSecret } from "../src/auth/token-secret.js";
 import { apiClient, createTestApp, makeTempRoot } from "./helpers.js";
 
-/** An app whose root the minter shares — the deployment shape, offline mint included. */
-const withSharedRoot = async () => {
-  const root = await makeTempRoot();
-  return {
-    root,
-    app: await createTestApp({ config: { root, dbPath: path.join(root, "web.db") } }),
-  };
-};
+const appOn = async (root: string) =>
+  createTestApp({ config: { root, dbPath: path.join(root, "web.db") } });
 
-describe("a minted token against a running server", () => {
+describe("minting with the server stopped (the row path)", () => {
   it("authenticates as the admin, and only as a password session", async () => {
-    const { root, app: t } = await withSharedRoot();
+    const root = await makeTempRoot();
+    const t = await appOn(root);
     try {
-      const minted = mintApiToken(root);
+      // No server.lock in this root, so the mint takes the row path — which the running
+      // app's verification honors, because it is the legacy shape it already reads.
+      const minted = await mintApiToken(root);
       expect(minted.outcome).toBe("minted");
       if (minted.outcome !== "minted") return;
 
-      // The real middleware, the real cookie name — and no database was touched to mint.
-      const client = apiClient(t.app, `${SESSION_COOKIE}=${minted.token}`);
-      const me = await client.get("/api/me");
+      const me = await apiClient(t.app, `${SESSION_COOKIE}=${minted.token}`).get("/api/me");
       expect(me.status).toBe(200);
       const body = (await me.json()) as { user: { userId: string }; sessionVia: string };
       expect(body.user.userId).toBe("admin");
@@ -52,18 +48,19 @@ describe("a minted token against a running server", () => {
     }
   });
 
-  it("expires, and refuses an account the database says is not there", async () => {
-    const { root, app: t } = await withSharedRoot();
+  it("expires, and refuses an account the database does not hold", async () => {
+    const root = await makeTempRoot();
+    const t = await appOn(root);
     try {
-      const past = mintApiToken(root, { ttlMs: -1000 });
+      const past = await mintApiToken(root, { ttlMs: -1000 });
       expect(past.outcome).toBe("minted");
       if (past.outcome === "minted") {
-        const client = apiClient(t.app, `${SESSION_COOKIE}=${past.token}`);
-        expect((await client.get("/api/me")).status).toBe(401);
+        expect(
+          (await apiClient(t.app, `${SESSION_COOKIE}=${past.token}`).get("/api/me")).status,
+        ).toBe(401);
       }
-      // The user check is a courtesy that runs when there is a database to ask; enforcement
-      // is verification, which looks the account up on every request either way.
-      expect(mintApiToken(root, { userId: "nobody" })).toEqual({
+      // The foreign key keeps this honest: no user row, no session row.
+      expect(await mintApiToken(root, { userId: "nobody" })).toEqual({
         outcome: "no_user",
         userId: "nobody",
       });
@@ -71,31 +68,53 @@ describe("a minted token against a running server", () => {
       await t.cleanup();
     }
   });
+});
 
-  it("mints on a root that has never run a server, for the admin its first boot seeds", async () => {
+describe("minting against the running server (the owner path)", () => {
+  it("redeems the owner token over loopback for a signed session", async () => {
     const root = await makeTempRoot();
-    const minted = mintApiToken(root);
-    expect(minted.outcome).toBe("minted");
-    // The key it created is the credential of the scheme: private to the owner, and the
-    // very file a later first boot adopts — which is the whole handshake.
-    const mode = fs.statSync(path.join(root, "auth-token-secret")).mode & 0o777;
-    expect(mode).toBe(0o600);
-
-    if (minted.outcome !== "minted") return;
-    const t = await createTestApp({ config: { root, dbPath: path.join(root, "web.db") } });
+    const t = await appOn(root);
+    const { server, port } = await new Promise<{
+      server: ReturnType<typeof serve>;
+      port: number;
+    }>((resolve) => {
+      const started = serve({ fetch: t.app.fetch, port: 0, hostname: "127.0.0.1" }, (info) =>
+        resolve({ server: started, port: (info as AddressInfo).port }),
+      );
+    });
     try {
-      const res = await apiClient(t.app, `${SESSION_COOKIE}=${minted.token}`).get("/api/me");
-      expect(res.status).toBe(200);
+      // The lock is how the mint finds the server; in production the serve path writes it.
+      fs.writeFileSync(
+        path.join(root, "server.lock"),
+        JSON.stringify({ pid: process.pid, port, startedAt: new Date().toISOString() }),
+      );
+      const minted = await mintApiToken(root, { ttlMs: 60_000 });
+      expect(minted.outcome).toBe("minted");
+      if (minted.outcome !== "minted") return;
+      // A SIGNED token, not a row: nothing was inserted to mint it.
+      expect(minted.token.startsWith("v1.")).toBe(true);
+      const rows = t.deps.db.prepare("SELECT COUNT(*) AS n FROM auth_sessions").get() as {
+        n: number;
+      };
+      expect(rows.n).toBe(0);
+      expect(
+        (await apiClient(t.app, `${SESSION_COOKIE}=${minted.token}`).get("/api/me")).status,
+      ).toBe(200);
     } finally {
+      server.close();
       await t.cleanup();
     }
   });
 
-  it("re-asserts the key file's mode on reuse", async () => {
+  it("keeps the owner token file private", async () => {
     const root = await makeTempRoot();
-    readOrCreateAuthSecret(root);
-    fs.chmodSync(path.join(root, "auth-token-secret"), 0o644); // As a careless editor might.
-    readOrCreateAuthSecret(root);
-    expect(fs.statSync(path.join(root, "auth-token-secret")).mode & 0o777).toBe(0o600);
+    const t = await appOn(root);
+    try {
+      // The file is the anchor of "reading the root is ownership" — 0600, and a fresh value
+      // every process start, so a leaked copy is overwhelmingly one the server no longer honors.
+      expect(fs.statSync(path.join(root, "owner-token")).mode & 0o777).toBe(0o600);
+    } finally {
+      await t.cleanup();
+    }
   });
 });

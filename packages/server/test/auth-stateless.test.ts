@@ -15,7 +15,7 @@ import { describe, expect, it } from "vitest";
 import { AuthSessionsRepo } from "../src/db/repos/auth-sessions.js";
 import { SESSION_COOKIE } from "../src/auth/middleware.js";
 import { newClaims, signToken, verifyToken } from "../src/auth/token-codec.js";
-import { readOrCreateAuthSecret } from "../src/auth/token-secret.js";
+import { readOwnerToken } from "../src/auth/owner-token.js";
 import { apiClient, createTestApp, loginAdmin, makeTempRoot } from "./helpers.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -60,10 +60,15 @@ describe("stateless sessions through the app", () => {
     }
   });
 
-  it("logout is a revocation that survives a restart", async () => {
+  it("logout is a revocation that outlives the process, given the same key", async () => {
+    // In production each process has its OWN key, so a restart voids every signed token by
+    // signature alone (pinned below). The denylist's job is the other half: while a key is
+    // LIVE, a logged-out token must stay dead — including across an App swap, which keeps
+    // the process and therefore the key. Same key + same database is exactly that shape.
+    const tokenSecret = Buffer.alloc(32, 9);
     const root = await makeTempRoot();
     const config = { root, dbPath: `${root}/web.db` };
-    const t = await createTestApp({ config });
+    const t = await createTestApp({ config, tokenSecret });
     let token: string;
     try {
       const { cookie } = await loginAdmin(t.app);
@@ -76,9 +81,9 @@ describe("stateless sessions through the app", () => {
     } finally {
       await t.cleanup();
     }
-    // A second process on the same root: the signature is still genuine and unexpired, so
-    // ONLY the persisted denylist stands between this token and a quiet resurrection.
-    const reborn = await createTestApp({ config });
+    // Same key, fresh process: the signature is still genuine and unexpired, so ONLY the
+    // persisted denylist stands between this token and a quiet resurrection.
+    const reborn = await createTestApp({ config, tokenSecret });
     try {
       const res = await apiClient(reborn.app, `${SESSION_COOKIE}=${token}`).get("/api/me");
       expect(res.status).toBe(401);
@@ -130,10 +135,70 @@ describe("stateless sessions through the app", () => {
     }
   });
 
-  it("slides a long session by replacement cookie, and never stretches a short one", async () => {
+  it("a restart voids every signed session, because the key dies with the process", async () => {
+    const root = await makeTempRoot();
+    const config = { root, dbPath: `${root}/web.db` };
+    const t = await createTestApp({ config });
+    let cookie: string;
+    try {
+      cookie = (await loginAdmin(t.app)).cookie;
+      expect((await apiClient(t.app, cookie).get("/api/me")).status).toBe(200);
+    } finally {
+      await t.cleanup();
+    }
+    // No tokenSecret pinned: each construction generates its own, as each real process does.
+    // This is the rotation story — restart the server and every outstanding token is noise.
+    const reborn = await createTestApp({ config });
+    try {
+      expect((await apiClient(reborn.app, cookie).get("/api/me")).status).toBe(401);
+    } finally {
+      await reborn.cleanup();
+    }
+  });
+
+  it("redeems the owner token for a session, and refuses everything else", async () => {
     const t = await createTestApp();
     try {
-      const secret = readOrCreateAuthSecret(t.root);
+      // The client half: the file the server wrote at boot IS the credential — reading it
+      // is the proof of ownership the endpoint exchanges for a session.
+      const ownerToken = readOwnerToken(t.root);
+      expect(ownerToken).not.toBeNull();
+      const redeemed = await t.app.request("/api/auth/owner", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ownerToken, ttlSeconds: 60 }),
+      });
+      expect(redeemed.status).toBe(200);
+      const { token, expiresAt } = (await redeemed.json()) as { token: string; expiresAt: string };
+      expect((await apiClient(t.app, `${SESSION_COOKIE}=${token}`).get("/api/me")).status).toBe(
+        200,
+      );
+      expect(Date.parse(expiresAt)).toBeGreaterThan(Date.now());
+
+      // A wrong value and an unknown account answer IDENTICALLY: distinguishing them would
+      // let a caller without the token enumerate accounts.
+      const wrong = await t.app.request("/api/auth/owner", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ownerToken: "not-the-token" }),
+      });
+      const noUser = await t.app.request("/api/auth/owner", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ownerToken, userId: "nobody" }),
+      });
+      expect(wrong.status).toBe(401);
+      expect(noUser.status).toBe(401);
+      expect(await wrong.text()).toBe(await noUser.text());
+    } finally {
+      await t.cleanup();
+    }
+  });
+
+  it("slides a long session by replacement cookie, and never stretches a short one", async () => {
+    const secret = Buffer.alloc(32, 7);
+    const t = await createTestApp({ tokenSecret: secret });
+    try {
       // Inside the renewal window (test config: 7d TTL, renew under 6d): span just over the
       // window, remaining just under it.
       const now = Date.now();

@@ -30,7 +30,7 @@ export function registerAuthTokenCommand(server: Command, t: Messages): void {
     .description(t.authToken.desc)
     .option("--user-id <id>", t.authToken.userId, "admin")
     .option("--ttl-seconds <n>", t.authToken.ttlSeconds, (raw: string) => Number.parseInt(raw, 10))
-    .action((opts: { userId: string; ttlSeconds?: number }) => {
+    .action(async (opts: { userId: string; ttlSeconds?: number }) => {
       const ttl = opts.ttlSeconds;
       if (ttl !== undefined && (!Number.isFinite(ttl) || ttl <= 0)) {
         process.stderr.write(t.authToken.badTtl + "\n");
@@ -41,10 +41,15 @@ export function registerAuthTokenCommand(server: Command, t: Messages): void {
       // Stateless: signed against the root's key (auth/token-codec.ts) — no database open,
       // nothing racing the live server, and a never-booted root mints for the admin its
       // first boot will seed.
-      const result = mintApiToken(root, {
+      const result = await mintApiToken(root, {
         userId: opts.userId,
         ...(ttl === undefined ? {} : { ttlMs: ttl * 1000 }),
       });
+      if (result.outcome === "failed") {
+        process.stderr.write(t.authToken.failed(result.detail) + "\n");
+        process.exitCode = 1;
+        return;
+      }
       if (result.outcome === "no_user") {
         process.stderr.write(t.authToken.noUser(result.userId) + "\n");
         process.exitCode = 1;
