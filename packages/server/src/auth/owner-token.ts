@@ -27,6 +27,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { randomBytes, timingSafeEqual } from "node:crypto";
+import { writeSecretFile } from "../secret-file.js";
 
 const FILE = "owner-token";
 
@@ -34,33 +35,13 @@ export function ownerTokenPath(root: string): string {
   return path.join(root, FILE);
 }
 
-/**
- * Writes this boot's owner token and returns its value. Called once at process start.
- *
- * The write must not follow a symlink: the axiom is that READING the root is ownership, but
- * the root directory's own mode is whatever the umask gave it, so someone who can only WRITE
- * it could park a symlink at this path and have the server deliver the next boot's token
- * into a file they can read. Unlink first, then create exclusively — with O_NOFOLLOW where
- * the platform has it — so a link planted in the race window fails the create (EEXIST /
- * ELOOP) and the boot dies loudly instead of publishing the credential.
- */
+/** Writes this boot's owner token and returns its value. Called once at process start. */
 export function issueOwnerToken(root: string): string {
   const value = randomBytes(32).toString("base64url");
   fs.mkdirSync(root, { recursive: true });
-  fs.rmSync(ownerTokenPath(root), { force: true });
-  const flags =
-    fs.constants.O_WRONLY |
-    fs.constants.O_CREAT |
-    fs.constants.O_EXCL |
-    (fs.constants.O_NOFOLLOW ?? 0);
-  const fd = fs.openSync(ownerTokenPath(root), flags, 0o600);
-  try {
-    // On the fd, not the path: the path could be re-pointed between create and chmod.
-    fs.fchmodSync(fd, 0o600);
-    fs.writeSync(fd, value + "\n");
-  } finally {
-    fs.closeSync(fd);
-  }
+  // Symlink-safe (writeSecretFile): the root's own mode is the umask's, so a write-only
+  // attacker must not be able to redirect this token into a file they can read.
+  writeSecretFile(ownerTokenPath(root), value + "\n");
   return value;
 }
 

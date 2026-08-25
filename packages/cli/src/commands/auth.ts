@@ -79,6 +79,12 @@ function serverSaid(text: string): string {
   return line.length <= 500 ? line : `${line.slice(0, 500)}… (truncated)`;
 }
 
+/** Writes an error line and marks the run failed; `return fail(msg)` ends the action. */
+function fail(message: string): void {
+  process.stderr.write(message + "\n");
+  process.exitCode = 1;
+}
+
 export function registerAuthCommand(program: Command, t: Messages): void {
   const auth = program.command("auth").description(t.auth.desc);
 
@@ -110,11 +116,7 @@ export function registerAuthCommand(program: Command, t: Messages): void {
           const lock = await liveServerLock(root);
           server = lock === null ? null : `http://localhost:${lock.port}`;
         }
-        if (server === null) {
-          process.stderr.write(t.auth.noServer(root) + "\n");
-          process.exitCode = 1;
-          return;
-        }
+        if (server === null) return fail(t.auth.noServer(root));
         // A password given non-interactively means a script, and a script must not be stopped
         // to answer a question it has no way to answer. Only when we are going to ask for the
         // password anyway is the account asked for too — otherwise it defaults, as it always did.
@@ -129,11 +131,7 @@ export function registerAuthCommand(program: Command, t: Messages): void {
         // already accepted that (a CI runner, a private box) should not be forced into a TTY.
         // The prompt names the account, so nobody types one account's password at another's.
         const password = given ?? (await promptPassword(t.auth.prompt(userId)));
-        if (password === "") {
-          process.stderr.write(t.auth.emptyPassword + "\n");
-          process.exitCode = 1;
-          return;
-        }
+        if (password === "") return fail(t.auth.emptyPassword);
 
         let answer;
         try {
@@ -143,27 +141,17 @@ export function registerAuthCommand(program: Command, t: Messages): void {
             { userId, password },
           );
         } catch (err) {
-          process.stderr.write(
-            t.auth.unreachable(server, err instanceof Error ? err.message : String(err)) + "\n",
-          );
-          process.exitCode = 1;
-          return;
+          return fail(t.auth.unreachable(server, err instanceof Error ? err.message : String(err)));
         }
         if (answer.status !== 200) {
-          process.stderr.write(t.auth.refused(answer.status, serverSaid(answer.text)) + "\n");
-          process.exitCode = 1;
-          return;
+          return fail(t.auth.refused(answer.status, serverSaid(answer.text)));
         }
         const setCookie = answer.headers["set-cookie"];
         const token = tokenFromSetCookie(
           Array.isArray(setCookie) ? setCookie : setCookie === undefined ? [] : [setCookie],
           SESSION_COOKIE,
         );
-        if (token === null) {
-          process.stderr.write(t.auth.noCookie + "\n");
-          process.exitCode = 1;
-          return;
-        }
+        if (token === null) return fail(t.auth.noCookie);
         writeSession(root, { server, userId, token });
         process.stderr.write(t.auth.loggedIn(userId, server, sessionFile(root)) + "\n");
         // The token itself goes to STDOUT and only when asked, so it can be piped without the
@@ -234,9 +222,7 @@ export function registerAuthCommand(program: Command, t: Messages): void {
     .action(async (opts: { userId: string; ttlSeconds?: number; mark: boolean; root?: string }) => {
       const ttl = opts.ttlSeconds;
       if (ttl !== undefined && (!Number.isFinite(ttl) || ttl <= 0)) {
-        process.stderr.write(t.authToken.badTtl + "\n");
-        process.exitCode = 1;
-        return;
+        return fail(t.authToken.badTtl);
       }
       const root = resolveRootOption(opts.root);
       // Stateless: the token is signed against the root's key, so there is no database to
@@ -246,14 +232,10 @@ export function registerAuthCommand(program: Command, t: Messages): void {
         ...(ttl === undefined ? {} : { ttlMs: ttl * 1000 }),
       });
       if (result.outcome === "no_server") {
-        process.stderr.write(t.authToken.noServer(root) + "\n");
-        process.exitCode = 1;
-        return;
+        return fail(t.authToken.noServer(root));
       }
       if (result.outcome === "failed") {
-        process.stderr.write(t.authToken.failed(result.detail) + "\n");
-        process.exitCode = 1;
-        return;
+        return fail(t.authToken.failed(result.detail));
       }
       const server = localServerUrl(root);
       if (server !== null) {

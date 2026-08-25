@@ -20,6 +20,7 @@ import fs from "node:fs";
 import http from "node:http";
 import https from "node:https";
 import path from "node:path";
+import { writeSecretFile } from "@prismshadow/penguin-server/secret-file";
 
 /** Where a login is remembered, beside the data root it belongs to. */
 export function sessionFile(root: string): string {
@@ -54,23 +55,8 @@ export function readSession(root: string): StoredSession | null {
 export function writeSession(root: string, session: StoredSession): void {
   const file = sessionFile(root);
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  // This holds a bearer token, so the write must not follow a symlink parked at the path:
-  // someone who can write the root but not read the session file could otherwise redirect
-  // it to a file they can read and capture the token on the next login. Unlink, then create
-  // exclusively (O_NOFOLLOW where present), and set the mode on the fd rather than the path.
-  fs.rmSync(file, { force: true });
-  const flags =
-    fs.constants.O_WRONLY |
-    fs.constants.O_CREAT |
-    fs.constants.O_EXCL |
-    (fs.constants.O_NOFOLLOW ?? 0);
-  const fd = fs.openSync(file, flags, 0o600);
-  try {
-    fs.fchmodSync(fd, 0o600);
-    fs.writeSync(fd, JSON.stringify(session, null, 2) + "\n");
-  } finally {
-    fs.closeSync(fd);
-  }
+  // Holds a bearer token; writeSecretFile makes the write refuse a symlink parked at the path.
+  writeSecretFile(file, JSON.stringify(session, null, 2) + "\n");
 }
 
 export function clearSession(root: string): boolean {
