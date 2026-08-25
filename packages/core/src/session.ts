@@ -817,11 +817,11 @@ export class Session {
    */
   async sendToBackgroundSubagent(
     childSessionId: string,
-    text: string,
+    messages: OmniMessage[],
     opts?: SubagentMessageOptions,
   ): Promise<SubagentMessageOutcome> {
     return (
-      (await this.environment.sendToBackgroundSubagent?.(childSessionId, text, opts)) ?? "gone"
+      (await this.environment.sendToBackgroundSubagent?.(childSessionId, messages, opts)) ?? "gone"
     );
   }
 

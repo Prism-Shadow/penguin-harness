@@ -133,7 +133,7 @@ export function createInputSubagentTool(
         } else if (!session.running) {
           // startRun expresses edge cases like already-disposed via throw, collapsed here into failed (the tool never throws outward).
           try {
-            session.startRun(prompt);
+            session.startRun([userText(prompt, "parent_agent")]);
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
             yield delta(`[input_subagent error: ${message}]`);

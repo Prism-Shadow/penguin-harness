@@ -301,6 +301,13 @@ const HOP = "session-child-12ab34cd";
 
 type RunInput = { prompt: string; signal?: AbortSignal; approve?: ApproveFn };
 
+/**
+ * Test fakes still talk in prompt strings; the contract now takes the OmniMessage list a
+ * Session's `run` takes, so the adapters below unwrap it once (see SubagentHandle.run).
+ */
+const promptOf = (messages: OmniMessage[]): string =>
+  messages.map((m) => (m.payload as { text?: string }).text ?? "").join("");
+
 function runnerOf(run: (input: RunInput) => AsyncGenerator<OmniMessage>): SubagentRunner {
   return {
     async spawn() {
@@ -317,7 +324,7 @@ function runnerOf(run: (input: RunInput) => AsyncGenerator<OmniMessage>): Subage
             payload: { session_id: HOP },
           } as unknown as OmniMessage);
         },
-        run,
+        run: ({ messages, ...rest }) => run({ prompt: promptOf(messages), ...rest }),
         dispose() {},
       };
       return handle;
@@ -436,7 +443,7 @@ describe("run_subagent run_in_background", () => {
     // The user messages the idle child from the panel: their conversation, not dispatched
     // work — the parent must not be notified when it settles.
     const session = manager.get(id)!;
-    session.startRun("user says hi", { suppressDoneReport: true });
+    session.startRun([userText("user says hi")], { suppressDoneReport: true });
     await waitFor(() => gates.has("user says hi"));
     gates.get("user says hi")!();
     await waitFor(() => !session.running);

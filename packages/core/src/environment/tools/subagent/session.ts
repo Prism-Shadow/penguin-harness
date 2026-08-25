@@ -149,14 +149,16 @@ export class ManagedSubagentSession {
 
   /**
    * Starts a new round of the task on the child Session (async pump, doesn't block the caller).
-   * `opts.thinkingLevel` pins this round only (a host follow-up's per-turn picker);
+   * `messages` is the round's input in the same OmniMessage shape `steer` takes — the caller
+   * owns their `sender`, so a model dispatch and a human's panel message stay distinguishable
+   * in the child's Trace. `opts.thinkingLevel` pins this round only (a host follow-up's per-turn picker);
    * `opts.suppressDoneReport` keeps the settle watcher quiet for this round — a HOST-initiated
    * round is the user's own conversation with the child, not work the model dispatched, so the
    * parent must not receive a completion notice for it. Throws if already disposed or still
    * running (converted to an explanatory output by the caller).
    */
   startRun(
-    prompt: string,
+    messages: OmniMessage[],
     opts?: { thinkingLevel?: ThinkingLevelName; suppressDoneReport?: boolean },
   ): void {
     if (this.killed) throw new Error("subagent session disposed");
@@ -166,7 +168,7 @@ export class ManagedSubagentSession {
     this.reportCurrentRun = opts?.suppressDoneReport !== true;
     this.runCtrl = new AbortController();
     this.notifyState();
-    void this.pump(prompt, this.runCtrl, opts?.thinkingLevel);
+    void this.pump(messages, this.runCtrl, opts?.thinkingLevel);
   }
 
   /**
@@ -343,7 +345,7 @@ export class ManagedSubagentSession {
 
   /** Drives one round of `handle.run`: buffers messages and text, settling the terminal state when it ends. */
   private async pump(
-    prompt: string,
+    messages: OmniMessage[],
     runCtrl: AbortController,
     thinkingLevel?: ThinkingLevelName,
   ): Promise<void> {
@@ -352,7 +354,7 @@ export class ManagedSubagentSession {
     try {
       // Either scope ends the round: the session-lifetime kill, or this run's own abort.
       for await (const msg of this.handle.run({
-        prompt,
+        messages,
         signal: AbortSignal.any([this.abortCtrl.signal, runCtrl.signal]),
         approve: this.childApprove,
         ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),

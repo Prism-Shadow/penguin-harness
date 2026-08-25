@@ -23,6 +23,7 @@ import {
   loadProjectConfig,
   saveProjectConfig,
   setVaultEntry,
+  userText,
 } from "../src/index.js";
 import { metaMaxTokens } from "../src/agent.js";
 import { mapThinkingLevel } from "../src/llm/index.js";
@@ -386,7 +387,7 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
     const handle = await runner.spawn(input);
     let llm: { thinkingLevel?: string } | undefined;
     try {
-      const gen = handle.run({ prompt: "noop" });
+      const gen = handle.run({ messages: [userText("noop")] });
       const first = await gen.next();
       expect(first.done).toBe(false);
       const msg = first.value!;
@@ -595,7 +596,7 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
       // own input, but this caller is the PARENT — the frontend renders the child conversation
       // purely from these forwarded messages. (Regression: the panel showed no user messages
       // live, while a reload — child-Trace expansion — did show them.)
-      const gen = handle.run({ prompt: "count the TODO items" });
+      const gen = handle.run({ messages: [userText("count the TODO items")] });
       const first = (await gen.next()).value as { type: string };
       expect(first.type).toBe("session_meta");
       // The input yield precedes childSession.run: pulling it never issues an LLM request.

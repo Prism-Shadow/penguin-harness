@@ -169,7 +169,7 @@ export interface RuntimeSession {
   /** Host message to one child session — steering mid-run, a follow-up run when idle, a revival when released (core `Session.sendToBackgroundSubagent`). Optional. */
   sendToBackgroundSubagent?(
     childSessionId: string,
-    text: string,
+    messages: OmniMessage[],
     opts?: SubagentMessageOptions,
   ): Promise<SubagentMessageOutcome>;
   /** Subscribes the host's session-lifetime fallback approval sink for child sessions (core `Session.setSubagentApprovalFallback`). Optional. */
@@ -547,7 +547,7 @@ export class SessionManager {
   async sendToSubagent(
     sessionId: string,
     childSessionId: string,
-    text: string,
+    messages: OmniMessage[],
     thinkingLevel?: ThinkingLevelName,
   ): Promise<SubagentMessageOutcome> {
     const entry = await this.ensureEntry(sessionId);
@@ -558,7 +558,7 @@ export class SessionManager {
         ? { agentId: childRow.agentId }
         : undefined;
     return (
-      (await entry.session.sendToBackgroundSubagent?.(childSessionId, text, {
+      (await entry.session.sendToBackgroundSubagent?.(childSessionId, messages, {
         ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
         ...(resume ? { resume } : {}),
       })) ?? "gone"

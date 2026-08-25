@@ -109,8 +109,13 @@ export interface SubagentHandle {
    * carry origin as well.
    */
   run(input: {
-    /** The task Prompt handed to the child Agent. */
-    prompt: string;
+    /**
+     * The round's input, in the shape `Session.run` takes a Prompt in — the same OmniMessage
+     * list `steer` carries, so both ways into a child session speak one vocabulary. The
+     * caller owns the messages' `sender`: the model's dispatch is `parent_agent`, a human's
+     * message from a host panel carries none.
+     */
+    messages: OmniMessage[];
     signal?: AbortSignal;
     /** The parent Agent's approval callback; forwarded to the child Session to inherit the parent's approval mode. */
     approve?: ApproveFn;
@@ -404,11 +409,12 @@ export interface EnvironmentInterface {
    * Host-initiated message to one child session, by child Session id: steering while the
    * child runs, a follow-up run while it is idle, a revival (`opts.resume`) when the session
    * is no longer live (see SubagentMessageOutcome/SubagentMessageOptions). The human and the
-   * model (`input_subagent`) converge on the managed session's same channel. Optional.
+   * model (`input_subagent`) converge on the managed session's same channel, and both hand
+   * it the same thing — an OmniMessage list, whichever state the child is in. Optional.
    */
   sendToBackgroundSubagent?(
     childSessionId: string,
-    text: string,
+    messages: OmniMessage[],
     opts?: SubagentMessageOptions,
   ): Promise<SubagentMessageOutcome>;
   /**
