@@ -37,6 +37,16 @@ export function workspaceGroupKey(workspace: string): string {
   return isTempWorkspace(workspace) ? TEMP_WORKSPACE_GROUP_KEY : workspace.trim();
 }
 
+/**
+ * Query value that names a Workspace group to the server's list endpoint — the group's
+ * path, or the sentinel the server merges every auto-created temporary Workspace under
+ * (its `TEMP_WORKSPACE_GROUP`; stored Workspaces are realpath results and therefore
+ * absolute, so the bare word cannot collide with one).
+ */
+export function workspaceGroupQuery(groupKey: string): string {
+  return groupKey === TEMP_WORKSPACE_GROUP_KEY ? "temp" : groupKey;
+}
+
 /** Short display label: the last path segment (the filesystem root yields "/"). */
 export function workspaceLabel(workspace: string): string {
   const parts = workspace

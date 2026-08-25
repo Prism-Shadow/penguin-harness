@@ -446,6 +446,13 @@ export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     if (rawCategory !== undefined && !SESSION_CATEGORIES.includes(rawCategory as SessionCategory)) {
       throw badRequest(`category must be one of ${SESSION_CATEGORIES.join(" / ")}.`);
     }
+    // Optional Workspace-group filter (applied with the category, before paging): a
+    // sidebar grouped by Workspace pages each group down its own stream, so one group's
+    // "load more" cannot consume the page a sibling was about to read.
+    const rawWorkspaceGroup = c.req.query("workspaceGroup");
+    if (rawWorkspaceGroup !== undefined && rawWorkspaceGroup.trim() === "") {
+      throw badRequest("workspaceGroup must not be empty.");
+    }
     const rawCounts = c.req.query("counts");
     if (rawCounts !== undefined && rawCounts !== "1") throw badRequest("counts only accepts 1.");
     const rawCli = c.req.query("cli");
@@ -456,6 +463,7 @@ export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       {
         ...(paging ? { paging } : {}),
         ...(rawCategory !== undefined ? { category: rawCategory as SessionCategory } : {}),
+        ...(rawWorkspaceGroup !== undefined ? { workspaceGroup: rawWorkspaceGroup } : {}),
         ...(rawCounts !== undefined ? { withCounts: true } : {}),
         ...(rawCli !== undefined ? { includeCli: true } : {}),
       },

@@ -798,11 +798,25 @@ export function Sidebar({
   /** In-flight key of one group's category "More" (folderKey shares the same composite for folder categories). */
   const loadKey = (groupKey: string, category: SessionCategory) => `${category}\0${groupKey}`;
 
+  /**
+   * The server stream a group's fetches walk: its own, under Workspace grouping, or the
+   * Agent's whole one otherwise. Only Workspace groups need their own — an Agent group IS
+   * the whole stream, and a time bucket is cut from rows that are already loaded, so it
+   * fetches nothing of its own at all.
+   *
+   * This is what makes the groups independent. Sharing one per-Agent cursor meant a group's
+   * "load more" consumed the page its siblings were about to read: their rows appeared,
+   * their reveal counts moved, and the group that asked could grow by less than a page — or
+   * by nothing at all.
+   */
+  const fetchScope = (groupKey: string): string | undefined =>
+    groupMode === "workspace" ? groupKey : undefined;
+
   /** loadMoreFor with an in-flight marker for the triggering "More" row (disable + loading text). */
   const trackedLoadMore = (groupKey: string, category: SessionCategory, agentIds: string[]) => {
     const key = loadKey(groupKey, category);
     setPendingLoads((prev) => new Set(prev).add(key));
-    void loadMoreFor(agentIds, category).finally(() => {
+    void loadMoreFor(agentIds, category, fetchScope(groupKey)).finally(() => {
       setPendingLoads((prev) => {
         const next = new Set(prev);
         next.delete(key);
@@ -830,8 +844,9 @@ export function Sidebar({
       return next;
     });
     if (opening) {
-      const unloaded = agentIds.filter((id) => !isLoadedFor(id, category));
-      if (unloaded.length > 0) void loadMoreFor(unloaded, category);
+      const scope = fetchScope(groupKey);
+      const unloaded = agentIds.filter((id) => !isLoadedFor(id, category, scope));
+      if (unloaded.length > 0) void loadMoreFor(unloaded, category, scope);
     }
   };
 
@@ -862,9 +877,46 @@ export function Sidebar({
     const key = folderKey(groupKey, category);
     setOpenFolders((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
     // Same on-demand load a click-expand does, for this Session's own Agent (siblings of
-    // other contributing Agents stay behind the folder's "More").
-    if (!isLoadedFor(s.agentId, category)) void loadMoreFor([s.agentId], category);
+    // other contributing Agents stay behind the folder's "More"), down the same stream the
+    // folder itself pages.
+    const scope = groupMode === "workspace" ? groupKey : undefined;
+    if (!isLoadedFor(s.agentId, category, scope)) void loadMoreFor([s.agentId], category, scope);
   }, [activeSessionId, sessions, groupMode, isLoadedFor, loadMoreFor]);
+
+  /**
+   * Workspace mode: give every rendered group its own first page. The initial load reads
+   * the Agent's whole stream, which is one stream cut by Workspace — it fills the groups
+   * unevenly, so a group can come up with two rows while the neighbour it shares an Agent
+   * with got eight. Any group left short of a full first page (or of its own total, if that
+   * is smaller) asks for one down its own stream, once: the scoped pair is loaded from then
+   * on and this is inert.
+   *
+   * Only the groups on screen ask — the pager bounds that to one page of groups — and a
+   * search is left alone, since it renders loaded matches only and fetching cannot find more.
+   */
+  useEffect(() => {
+    if (groupMode !== "workspace" || searching) return;
+    for (const group of groupPageSlice(orderedWorkspaceGroups, shownGroupPage)) {
+      const counts = workspaceGroupCounts.get(group.key);
+      const total = counts?.totals.active ?? 0;
+      // Counts not in yet (0): nothing is known to be missing, so nothing is asked for.
+      const loaded = group.sessions.filter((s) => sessionCategory(s) === "active").length;
+      if (loaded >= Math.min(SIDEBAR_PAGE_SIZE, total)) continue;
+      const agents = [
+        ...new Set([...(counts?.agents.active ?? []), ...group.sessions.map((s) => s.agentId)]),
+      ];
+      const unloaded = agents.filter((id) => !isLoadedFor(id, "active", group.key));
+      if (unloaded.length > 0) void loadMoreFor(unloaded, "active", group.key);
+    }
+  }, [
+    groupMode,
+    searching,
+    orderedWorkspaceGroups,
+    shownGroupPage,
+    workspaceGroupCounts,
+    isLoadedFor,
+    loadMoreFor,
+  ]);
 
   /**
    * Manual server-update check, from the menu's update row: forces a lookup past the
@@ -1239,7 +1291,9 @@ export function Sidebar({
     // More while the group's share isn't fully loaded AND somewhere is left to fetch from
     // (counts drifting above reality would otherwise leave a dead button until reload).
     const more =
-      !searching && rows.length < total && agentIds.some((id) => hasMoreFor(id, category));
+      !searching &&
+      rows.length < total &&
+      agentIds.some((id) => hasMoreFor(id, category, fetchScope(groupKey)));
     return (
       <FolderSection
         key={category}
@@ -1329,7 +1383,8 @@ export function Sidebar({
     // that reveals nothing behind it.
     const activeAgents = agentsFor("active");
     const fullyLoaded =
-      activeAgents.length > 0 && !activeAgents.some((id) => hasMoreFor(id, "active"));
+      activeAgents.length > 0 &&
+      !activeAgents.some((id) => hasMoreFor(id, "active", fetchScope(groupKey)));
     const hiddenActive = searching
       ? 0
       : hiddenRowCount({
