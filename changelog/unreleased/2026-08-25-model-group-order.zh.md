@@ -3,6 +3,7 @@
 - **Date:** 2026-08-25
 - **Type:** feature
 - **Scope:** `web`
+- **PR:** [#467](https://github.com/Prism-Shadow/penguin-harness/pull/467)
 
 [English](2026-08-25-model-group-order.md)
 
