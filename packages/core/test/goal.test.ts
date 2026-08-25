@@ -9,6 +9,7 @@ import {
   abortEvent,
   assistantText,
   buildSkillsMessage,
+  compactionEnd,
   downgradeGoalInput,
   emptyTokenCounts,
   goalFilePath,
@@ -17,9 +18,11 @@ import {
   isGoalRoundInput,
   modelVisiblePath,
   parseGoalMessage,
+  requestEnd,
   sessionScratchpadDir,
   stripConversationMarkers,
   tokenUsage,
+  toolCallOutput,
   userText,
   withOrigin,
 } from "../src/index.js";
@@ -376,6 +379,67 @@ describe("runGoalLoop", () => {
     const { outcome } = await drain(runGoalLoop(session, { text: "o", goalFilePath: file }));
     expect(outcome).toEqual({ outcome: "aborted", rounds: 1, tokensUsed: 80 });
     expect(await readGoalStatus(file)).toBe("active");
+  });
+
+  it("stops without re-firing on a terminal request_end (an LLM failure emits no abort event)", async () => {
+    // A fatal end (and equally a retryable one with no retry planned) cuts the round;
+    // re-firing would loop the same failure forever.
+    const session = fakeSession([
+      {
+        messages: [tokenUsage(usage(80), usage(80)), requestEnd("fatal", { errorMessage: "401" })],
+      },
+    ]);
+    const { outcome } = await drain(runGoalLoop(session, { text: "o", goalFilePath: file }));
+    expect(outcome).toEqual({ outcome: "aborted", rounds: 1, tokensUsed: 80 });
+    expect(await readGoalStatus(file)).toBe("active");
+  });
+
+  it("a retryable request_end that announces its retry does NOT stop the loop", async () => {
+    // Mid-ladder failures carry retry_in_ms; only the give-up (no retry planned) is terminal.
+    const session = fakeSession([
+      {
+        messages: [
+          requestEnd("retryable", { attempt: 1, retryInMs: 2000 }),
+          tokenUsage(usage(90), usage(90)),
+        ],
+        then: () => setStatus("complete"),
+      },
+    ]);
+    const { outcome } = await drain(runGoalLoop(session, { text: "o", goalFilePath: file }));
+    expect(outcome).toEqual({ outcome: "complete", rounds: 1, tokensUsed: 90 });
+  });
+
+  it("stops without re-firing when a mid-task compaction is given up (no abort event)", async () => {
+    // Tool outputs owed the model a follow-up turn; the compaction failure ended the run
+    // before that turn — the round is cut, not finished.
+    const session = fakeSession([
+      {
+        messages: [
+          tokenUsage(usage(70), usage(70)),
+          toolCallOutput({ output: "ok", toolCallId: "t1" }),
+          compactionEnd({ reason: "context", mode: "summarize", status: "retryable" }),
+        ],
+      },
+    ]);
+    const { outcome } = await drain(runGoalLoop(session, { text: "o", goalFilePath: file }));
+    expect(outcome).toEqual({ outcome: "aborted", rounds: 1, tokensUsed: 70 });
+    expect(await readGoalStatus(file)).toBe("active");
+  });
+
+  it("a Task-boundary compaction failure is advisory: the loop keeps going", async () => {
+    // No tool outputs pending a follow-up turn when the compaction failed — the model
+    // finished its round; the standing trigger retries the compaction next opportunity.
+    const session = fakeSession([
+      {
+        messages: [
+          tokenUsage(usage(60), usage(60)),
+          compactionEnd({ reason: "context", mode: "summarize", status: "retryable" }),
+        ],
+        then: () => setStatus("complete"),
+      },
+    ]);
+    const { outcome } = await drain(runGoalLoop(session, { text: "o", goalFilePath: file }));
+    expect(outcome).toEqual({ outcome: "complete", rounds: 1, tokensUsed: 60 });
   });
 
   it("counts uncached input + output, including subagent (origin-marked) usage", async () => {

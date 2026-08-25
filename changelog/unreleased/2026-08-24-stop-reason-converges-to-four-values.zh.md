@@ -16,7 +16,7 @@
 ## 细节
 
 - `LLMOutcome.permanent` 删除：`fatal` 本身就是分类，不是分类上的旗标。引擎的 fatal 分支取代了原先的 `auth` 分支与 permanent-failed 分支。
-- 独立的 `auth` 状态删除，随之退役的还有 Web 输入区的鉴权置灰门控（由 `credentials_updated` 解锁的时间门控）：fatal 的原因经中断横幅呈现，改好 key 后直接再次发送即可。`credentials_updated` 保留为提示性广播；其宣告的服务端运行时缓存失效逻辑不变。
+- 独立的 `auth` 状态删除，随之退役的还有 Web 输入区的鉴权置灰门控（由 `credentials_updated` 解锁的时间门控）：fatal 的原因经失败横幅呈现，改好 key 后直接再次发送即可。`credentials_updated` 保留为提示性广播；其宣告的服务端运行时缓存失效逻辑不变。
 - 工具输出一般不出现 `retryable`：工具错误或超时对该次调用是确定性的——harness 不重试工具——失败收敛为 `fatal`，作为内容回灌给模型自行调整。独立类型 `ToolStopReason` 删除。
 - `compaction_end.status` 区分 `retryable`（重试耗尽后本次放弃、保留原上下文，常设触发条件在下次机会自动补上）与 `fatal`（尝试死于不可重试失败，需先修复模型配置）。Web 与 CLI 的压缩提示对两者措辞相应区分。独立类型 `CompactionStatus` 删除。
 - `mcp_connect_end`（整体与逐 Server）并入同一词表：连接失败为 `fatal`——运行内无人重试。独立类型 `McpConnectStatus` 删除。

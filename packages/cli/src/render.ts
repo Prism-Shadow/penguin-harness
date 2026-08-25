@@ -464,6 +464,8 @@ export class StreamRenderer {
   private taskLastReqEndMs: number | null = null;
   /** Retryable terminal state of the previous request (legacy Traces carry the finer pre-convergence spellings): the next request_begin is a retry, at which point a notice is printed. */
   private pendingRetry: "retryable" | "failed" | "timeout" | "malformed" | null = null;
+  /** A terminal-failure line was already printed for the current request (dedups the duplicate abort an interim-build Trace also wrote). */
+  private printedTerminalFailure = false;
   /** The pending failure's attempt ordinal (request_end.attempt — the core's authoritative count, printed on the retry line). */
   private pendingRetryAttempt: number | undefined;
 
@@ -785,13 +787,24 @@ export class StreamRenderer {
         this.out.write(`${dim(this.t.approvalDecision(p.decision), this.c)}\n`);
         this.lastLineKey = null;
       } else if (payload.type === "abort") {
-        // Run ended (user interrupt / retries exhausted): clear any pending retry state so the next run doesn't mistakenly print a retry line.
+        // Run ended: clear any pending retry state so the next run doesn't mistakenly print a retry line.
         this.pendingRetry = null;
         this.pendingRetryAttempt = undefined;
-        this.finishLine();
-        this.out.write(`${formatAbort(payload as AbortPayload, this.t, this.c)}\n`);
-        this.lastLineKey = null;
+        // Interim-build Traces wrote both the terminal request_end and an abort for the
+        // same LLM failure; the terminal line already printed, so drop the duplicate.
+        const cause = parseAbortReason((payload as AbortPayload).reason);
+        if (
+          this.printedTerminalFailure &&
+          (cause.kind === "llm_fatal" || cause.kind === "llm_retries_exhausted")
+        ) {
+          this.printedTerminalFailure = false;
+        } else {
+          this.finishLine();
+          this.out.write(`${formatAbort(payload as AbortPayload, this.t, this.c)}\n`);
+          this.lastLineKey = null;
+        }
       } else if (payload.type === "request_begin") {
+        this.printedTerminalFailure = false;
         // The previous request ended in a retryable status -> this request is a retry
         // carrying [turn_retried]: printed when the retry **actually starts** (when
         // retries are exhausted, there's no retry after the last failure, only an abort
@@ -822,15 +835,37 @@ export class StreamRenderer {
             this.hasUsage = true;
           }
         }
-        // Every status the engine reconnects on gets the retry notice; the legacy spellings
-        // (failed/timeout/malformed) keep pre-convergence Traces printing the same way.
         const endStatus = p.status as string;
-        if (
+        if (endStatus === "fatal") {
+          // A fatal end stops the run; no abort event follows — this request_end is the
+          // terminal record, printed here.
+          this.pendingRetry = null;
+          this.pendingRetryAttempt = undefined;
+          this.finishLine();
+          this.out.write(`${dim(this.t.llmFatalLabel(p.error_message), this.c)}\n`);
+          this.lastLineKey = null;
+          this.printedTerminalFailure = true;
+        } else if (endStatus === "retryable" && p.retry_in_ms === undefined) {
+          // A live-protocol retryable with no planned wait is the ladder giving up — the
+          // run ends on it. The legacy spellings never take this branch: their era stamped
+          // no retry_in_ms mid-ladder, and their exhaustion printed from the abort event.
+          this.pendingRetry = null;
+          this.pendingRetryAttempt = undefined;
+          this.finishLine();
+          this.out.write(
+            `${dim(this.t.reconnectGaveUpLabel(p.attempt ?? 1, p.error_message), this.c)}\n`,
+          );
+          this.lastLineKey = null;
+          this.printedTerminalFailure = true;
+        } else if (
           endStatus === "retryable" ||
           endStatus === "failed" ||
           endStatus === "timeout" ||
           endStatus === "malformed"
         ) {
+          // Every status the engine reconnects on gets the retry notice (printed when the
+          // retry actually starts); the legacy spellings keep pre-convergence Traces
+          // printing the same way.
           this.pendingRetry = endStatus;
           this.pendingRetryAttempt = p.attempt;
         } else {

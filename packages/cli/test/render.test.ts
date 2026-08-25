@@ -311,25 +311,40 @@ describe("StreamRenderer", () => {
     const { stream, text } = collector();
     const r = new StreamRenderer(stream, t);
     r.handle(requestBegin());
-    r.handle(requestEnd("retryable", { attempt: 1 }));
+    r.handle(requestEnd("retryable", { attempt: 1, retryInMs: 2000 }));
     expect(stripAnsi(text())).toBe(""); // the failure itself prints nothing; only the retry's start does
     r.handle(requestBegin()); // retry #1 begins
     expect(stripAnsi(text())).toContain("retry #1");
-    r.handle(requestEnd("retryable", { attempt: 2 }));
+    r.handle(requestEnd("retryable", { attempt: 2, retryInMs: 4000 }));
     r.handle(requestBegin()); // retry #2 begins
     expect(stripAnsi(text())).toContain("retry #2");
-    // Retry #2 fails again and retries are exhausted: no next request_begin, only abort — no retry #3 appears.
-    r.handle(requestEnd("retryable", { attempt: 3 }));
-    r.handle(abortEvent("llm request failed after 2 retries"));
+    // Retry #2 fails again and retries are exhausted: the terminal request_end (no
+    // retry planned) prints the give-up line itself — no abort event follows.
+    r.handle(requestEnd("retryable", { attempt: 3, errorMessage: "socket hang up" }));
+    expect(stripAnsi(text())).toContain("giving up after attempt 3: socket hang up");
     expect(stripAnsi(text())).not.toContain("retry #3");
     // The first request of the next run is not a retry, so it prints nothing; the next run's
     // failures are stamped from 1 again.
     r.handle(requestBegin());
-    r.handle(requestEnd("retryable", { attempt: 1 }));
+    r.handle(requestEnd("retryable", { attempt: 1, retryInMs: 2000 }));
     r.handle(requestBegin());
     const lines = stripAnsi(text());
     expect(lines.match(/retry #1/g)).toHaveLength(2);
     expect(lines).not.toContain("retry #3");
+  });
+
+  it("a fatal request_end prints the error line; an interim-build abort duplicate is dropped", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    r.handle(requestBegin());
+    r.handle(requestEnd("fatal", { errorMessage: "401 invalid x-api-key" }));
+    expect(stripAnsi(text())).toBe("[error] llm request error: 401 invalid x-api-key\n");
+    // Interim-build Traces also wrote an abort for the same failure — not printed twice.
+    r.handle(abortEvent("llm request error: 401 invalid x-api-key"));
+    expect(stripAnsi(text())).toBe("[error] llm request error: 401 invalid x-api-key\n");
+    // A user abort afterwards still prints (the dedup consumed its one-shot flag).
+    r.handle(abortEvent("aborted by user"));
+    expect(stripAnsi(text())).toContain("[abort]: aborted by user");
   });
 
   it("prints the retry line for legacy-trace spellings too, straight from the stamped ordinal", () => {

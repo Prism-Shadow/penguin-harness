@@ -1474,6 +1474,7 @@ Scenarios:
       state: "waiting" | "retried" | "gaveUp",
       attempt: number,
       secondsLeft?: number,
+      errorMessage?: string,
     ) => {
       const cause =
         status === "timeout"
@@ -1485,7 +1486,7 @@ Scenarios:
               : "The request failed";
       const action =
         state === "gaveUp"
-          ? "no further retries"
+          ? `giving up after attempt ${attempt}${errorMessage ? `: ${errorMessage}` : ""}`
           : state === "retried"
             ? `retry #${attempt} sent`
             : secondsLeft !== undefined
@@ -1493,6 +1494,9 @@ Scenarios:
               : `starting retry #${attempt}…`;
       return `[Retry] ${cause}; ${action}`;
     },
+    /** Run-ending LLM failure banner (request_end status fatal); the provider's error text rides verbatim. */
+    llmError: (errorMessage?: string) =>
+      `[Error]: llm request error${errorMessage ? `: ${errorMessage}` : ""}`,
     /** "Retry now" on the reconnect countdown (skips the remaining backoff wait). */
     reconnectRetryNow: "Retry now",
     /** "Give up" on the reconnect countdown (the ordinary session abort). */

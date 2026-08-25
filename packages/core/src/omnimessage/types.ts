@@ -292,9 +292,12 @@ export interface ApprovalDecisionPayload {
 export interface AbortPayload {
   type: "abort";
   /**
-   * Human-readable English prose of record. The engine writes a fixed set of spellings
-   * (decoded by `parseAbortReason` for localized rendering); the structured error detail
-   * behind an LLM failure also rides on `request_end.error_message`.
+   * Human-readable English prose of record. Abort marks a **user interruption** — the
+   * engine writes a fixed set of spellings, decoded by `parseAbortReason` for localized
+   * rendering. An LLM or compaction failure produces no abort: its terminal record is the
+   * request_end (status + `error_message`, no `retry_in_ms`) / compaction_end already on
+   * the stream. Traces written before that split carry failure spellings here; the
+   * decoder still reads them.
    */
   reason?: string | null;
 }
@@ -348,8 +351,9 @@ export interface RetryDetail {
    * within the same run (status `retryable` with attempts remaining under the
    * applicable cap). Computed by the same formula as the actual backoff sleep
    * (`reconnectDelayMs`), so the announced wait and the real one cannot drift; the Web App
-   * renders it as a live countdown to the next attempt. Absent on final failures (an abort
-   * follows instead) and on completed requests.
+   * renders it as a live countdown to the next attempt. Absent on completed requests and on
+   * final failures — a non-completed request_end without `retry_in_ms` is the run's
+   * terminal record (no abort event follows: abort marks a user interruption).
    */
   retry_in_ms?: number;
 }

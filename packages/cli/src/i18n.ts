@@ -197,6 +197,10 @@ export interface Messages {
   }): string;
   /** Abort line: the cause decoded from the event's `reason` prose (`parseAbortReason`); provider error detail is untranslatable and stays verbatim, and unrecognized prose renders as-is. */
   abortLabel(cause?: AbortCause): string;
+  /** Run-ending LLM failure (request_end status fatal — no abort event follows); the provider's error text rides verbatim. */
+  llmFatalLabel(errorMessage?: string): string;
+  /** The retry ladder gave up (request_end `retryable` with no planned retry); `attempt` is the final attempt's ordinal, `errorMessage` the last failure's detail. */
+  reconnectGaveUpLabel(attempt: number, errorMessage?: string): string;
   /**
    * request_end ended with a status the engine reconnects on (`failed` / `timeout` /
    * `malformed` — only `auth` is terminal): the engine retries carrying already-produced
@@ -538,6 +542,10 @@ const en: Messages = {
                     : (cause.reason ?? "");
     return `[abort]${text ? `: ${text}` : ""}`;
   },
+  llmFatalLabel: (errorMessage) =>
+    `[error] llm request error${errorMessage ? `: ${errorMessage}` : ""}`,
+  reconnectGaveUpLabel: (attempt, errorMessage) =>
+    `[retry] giving up after attempt ${attempt}${errorMessage ? `: ${errorMessage}` : ""}`,
   reconnectLabel: (status, attempt) =>
     `[retry] ${
       status === "timeout"
@@ -847,6 +855,9 @@ const zh: Messages = {
                     : (cause.reason ?? "");
     return `[已中断]${text ? `：${text}` : ""}`;
   },
+  llmFatalLabel: (errorMessage) => `[错误] 模型请求错误${errorMessage ? `：${errorMessage}` : ""}`,
+  reconnectGaveUpLabel: (attempt, errorMessage) =>
+    `[重试] 第 ${attempt} 次尝试后放弃${errorMessage ? `：${errorMessage}` : ""}`,
   reconnectLabel: (status, attempt) =>
     `[重试] ${
       status === "timeout"

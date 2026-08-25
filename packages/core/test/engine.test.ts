@@ -1788,7 +1788,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect(all.map((m) => (m.payload as { type?: string }).type)).not.toContain("abort");
   });
 
-  it("emits abort and carries the original input over when reconnect retries are exhausted", async () => {
+  it("ends the run without an abort event and carries the original input over when reconnect retries are exhausted", async () => {
     let calls = 0;
     const inputs: OmniMessage[][] = [];
     const llm: LLMInterface = {
@@ -1812,9 +1812,18 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
 
     const all = await collectRun(engine, [userText("go")], allowAll);
     expect(calls).toBe(2); // Initial attempt + maxReconnects(1) retries.
-    const abort = all.find((m) => (m.payload as { type?: string }).type === "abort");
-    expect(abort).toBeDefined();
-    expect((abort!.payload as { reason?: string }).reason).toContain("llm request failed");
+    // No abort event — abort marks a user interruption; the last failure's request_end
+    // (retryable, no retry_in_ms since no retry is planned) is the terminal record.
+    expect(all.some((m) => (m.payload as { type?: string }).type === "abort")).toBe(false);
+    const ends = all.filter((m) => (m.payload as { type?: string }).type === "request_end");
+    const last = ends[ends.length - 1]!.payload as {
+      status?: string;
+      attempt?: number;
+      retry_in_ms?: number;
+    };
+    expect(last.status).toBe("retryable");
+    expect(last.attempt).toBe(2);
+    expect(last.retry_in_ms).toBeUndefined();
 
     // carry-over = original input + [turn_retried] (accumulating partial products from both
     // failed attempts): the next run resends it merged with the new input, without producing
@@ -1829,7 +1838,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect(nextRunTexts.join("\n")).not.toContain("[turn_aborted]");
   });
 
-  it("a retryable outcome with a message converges to a graceful abort carrying it (run does not throw)", async () => {
+  it("a retryable outcome with a message converges to a terminal request_end carrying it (run does not throw)", async () => {
     let calls = 0;
     const inputs: OmniMessage[][] = [];
     const llm: LLMInterface = {
@@ -1857,23 +1866,29 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
       reconnectBackoffMs: 0,
     });
 
-    // Must not throw; should gracefully converge to an abort once the ladder is spent.
+    // Must not throw; should gracefully converge to a terminal request_end once the
+    // ladder is spent — no abort event (abort marks a user interruption).
     const all = await collectRun(engine, [userText("go")], allowAll);
     expect(calls).toBe(3); // initial attempt + maxReconnects(2).
-    const abort = all.find((m) => (m.payload as { type?: string }).type === "abort");
-    expect(abort).toBeDefined();
-    // Asserted whole, not by fragments: this string is shown verbatim in the error panel and
-    // the CLI and is persisted as the error message, so its grammar is part of the contract.
-    const reason = (abort!.payload as { reason?: string }).reason ?? "";
-    expect(reason).toBe(
-      "llm request failed after 2 retries: Upstream HTTP/2 stream failed (upstream_http2_stream_error)",
-    );
-    // Render layers decode the cause from this prose (the payload carries nothing else).
-    expect(parseAbortReason(reason)).toEqual({
-      kind: "llm_retries_exhausted",
-      attempts: 2,
-      detail: "Upstream HTTP/2 stream failed (upstream_http2_stream_error)",
+    expect(all.some((m) => (m.payload as { type?: string }).type === "abort")).toBe(false);
+    const ends = all.filter((m) => (m.payload as { type?: string }).type === "request_end");
+    expect(ends).toHaveLength(3);
+    // The last failure is the terminal record: no retry planned, the detail and the
+    // authoritative attempt ordinal ride on it for frontends and observability.
+    const last = ends[2]!.payload as {
+      status?: string;
+      attempt?: number;
+      retry_in_ms?: number;
+      error_message?: string;
+    };
+    expect(last).toMatchObject({
+      status: "retryable",
+      attempt: 3,
+      error_message: "Upstream HTTP/2 stream failed (upstream_http2_stream_error)",
     });
+    expect(last.retry_in_ms).toBeUndefined();
+    // The mid-ladder failures DID announce their planned retry.
+    expect((ends[0]!.payload as { retry_in_ms?: number }).retry_in_ms).not.toBeUndefined();
 
     // The spent turn's input is stashed as carry-over; the next run (attempt index 3, after
     // this run's three) resends it merged with the new input.
@@ -1951,16 +1966,10 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect((end!.payload as { error_message?: string }).error_message).toBe(
       "401 invalid x-api-key",
     );
-    // No planned retry is announced for a terminal failure.
+    // No planned retry is announced for a terminal failure, and no abort event follows —
+    // abort marks a user interruption; this request_end is the run's terminal record.
     expect((end!.payload as { retry_in_ms?: number }).retry_in_ms).toBeUndefined();
-    const abort = all.find((m) => (m.payload as { type?: string }).type === "abort");
-    expect(abort).toBeDefined();
-    expect((abort!.payload as { reason?: string }).reason).toContain("llm request error");
-    // The payload carries only the prose; render layers decode the cause from it.
-    expect(parseAbortReason((abort!.payload as { reason?: string }).reason)).toEqual({
-      kind: "llm_fatal",
-      detail: "401 invalid x-api-key",
-    });
+    expect(all.some((m) => (m.payload as { type?: string }).type === "abort")).toBe(false);
   });
 
   it("a fast-mode rejection (fatal) stops the run without burning the ladder", async () => {
@@ -1992,13 +2001,13 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     const end = all.find((m) => (m.payload as { type?: string }).type === "request_end");
     expect((end!.payload as { status?: string }).status).toBe("fatal");
     // No planned retry is announced: the frontend must not render a countdown for a
-    // retry that never comes.
+    // retry that never comes. No abort event either — the request_end is the terminal
+    // record, its error_message carrying the actionable guidance.
     expect((end!.payload as { retry_in_ms?: number }).retry_in_ms).toBeUndefined();
-    const abort = all.find((m) => (m.payload as { type?: string }).type === "abort");
-    expect(abort).toBeDefined();
-    const reason = (abort!.payload as { reason?: string }).reason ?? "";
-    expect(reason).toContain("llm request error");
-    expect(reason).toContain("turn it off in the model settings");
+    expect((end!.payload as { error_message?: string }).error_message).toContain(
+      "turn it off in the model settings",
+    );
+    expect(all.some((m) => (m.payload as { type?: string }).type === "abort")).toBe(false);
   });
 
   it("a retryable outcome takes the ladder", async () => {
@@ -2062,7 +2071,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect(all.map((m) => (m.payload as { type?: string }).type)).not.toContain("abort");
   });
 
-  it("default reconnect cap is 5: the exhaustion abort message says so", async () => {
+  it("default reconnect cap is 5: the terminal request_end carries the final attempt ordinal", async () => {
     let calls = 0;
     const llm: LLMInterface = {
       // eslint-disable-next-line require-yield
@@ -2081,10 +2090,13 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
 
     const all = await collectRun(engine, [userText("go")], allowAll);
     expect(calls).toBe(6); // Initial attempt + 5 retries.
-    const abort = all.find((m) => (m.payload as { type?: string }).type === "abort");
-    expect((abort!.payload as { reason?: string }).reason).toBe(
-      "llm request failed after 5 retries",
-    );
+    expect(all.some((m) => (m.payload as { type?: string }).type === "abort")).toBe(false);
+    const ends = all.filter((m) => (m.payload as { type?: string }).type === "request_end");
+    expect(ends).toHaveLength(6);
+    const last = ends[5]!.payload as { status?: string; attempt?: number; retry_in_ms?: number };
+    expect(last.status).toBe("retryable");
+    expect(last.attempt).toBe(6);
+    expect(last.retry_in_ms).toBeUndefined();
   });
 
   it("skipReconnectWait wakes the backoff early ('retry now'): attempt numbering unchanged; no-op without a wait", async () => {

@@ -204,8 +204,11 @@ function toolFailureText(output: string): string {
 }
 
 export class StreamErrorWatcher {
-  /** LLM failures awaiting a real reason: origin → failure state + the request_end's own detail (see file header; each session has at most one in-flight Request). */
-  private readonly pending = new Map<string, { status: LlmFailure; message?: string }>();
+  /** LLM failures awaiting resolution: origin → failure state + the request_end's own detail, attempt ordinal, and whether a retry was planned (see file header; each session has at most one in-flight Request). */
+  private readonly pending = new Map<
+    string,
+    { status: LlmFailure; message?: string; attempt?: number; willRetry?: boolean }
+  >();
   /** Names of in-flight tool calls: `origin \0 tool_call_id` → tool name (dequeued once output arrives). */
   private readonly toolNames = new Map<string, string>();
   /** Subagent identity: origin → that subagent's `{agentId, sessionId}` (see the file header's attribution section). */
@@ -282,6 +285,8 @@ export class StreamErrorWatcher {
       status?: StopReason;
       reason?: string | null;
       error_message?: string;
+      attempt?: number;
+      retry_in_ms?: number;
     };
     const key = originKey(msg);
     if (p.type === "compaction_end") {
@@ -293,8 +298,12 @@ export class StreamErrorWatcher {
       if (isLlmFailure(p.status)) {
         this.pending.set(key, {
           status: p.status,
+          ...(typeof p.attempt === "number" ? { attempt: p.attempt } : {}),
+          // retry_in_ms present = the engine planned another attempt: a failure resolved
+          // non-retried despite it was cut short (an interrupt), not exhausted.
+          ...(p.retry_in_ms !== undefined ? { willRetry: true } : {}),
           // The event's own error detail (request_end.error_message): the message of record
-          // when no abort follows (the retry path).
+          // (an LLM failure produces no abort event; legacy streams still resolve through one).
           ...(typeof p.error_message === "string" && p.error_message.trim()
             ? { message: p.error_message }
             : {}),
@@ -309,8 +318,9 @@ export class StreamErrorWatcher {
       this.flush(key, null, true);
       return;
     }
-    // Interrupted/failed exit: reason is core's only failure-reason text. No attempt follows
-    // an abort, so a `failed` resolved here is one the retries did not recover.
+    // Abort marks a user interruption (only legacy streams carried failure reasons here).
+    // No attempt follows an abort, so a failure resolved here is one the retries did not
+    // recover — the interruption cut the ladder short.
     if (p.type === "abort") {
       this.flush(key, typeof p.reason === "string" ? p.reason : null);
     }
@@ -334,10 +344,13 @@ export class StreamErrorWatcher {
     this.pending.delete(key);
     const spec = retried && entry.status === "retryable" ? LLM_RETRIED : LLM_FAILURES[entry.status];
     const trimmed = reason?.trim();
-    // Message priority: the abort reason (core's failure prose) → the staged request_end's
-    // own detail (the retry path: no abort ever arrives) → the generic status text. A
-    // user-interrupt message isn't a failure reason (see file header).
-    const message = trimmed && !isUserAbortReason(trimmed) ? trimmed : (entry.message ?? spec.text);
+    // Message priority: a legacy abort reason (old cores' failure prose) → a sentence
+    // composed from the staged request_end's own detail and attempt — the terminal
+    // request_end is the record now, so the prose the abort used to carry is rebuilt here
+    // — → the generic status text. A user-interrupt message isn't a failure reason (see
+    // file header).
+    const message =
+      trimmed && !isUserAbortReason(trimmed) ? trimmed : this.composeMessage(entry, retried, spec);
     this.errors.record({
       source: "llm",
       err: message,
@@ -345,6 +358,22 @@ export class StreamErrorWatcher {
       code: spec.code,
       kind: spec.kind,
     });
+  }
+
+  /** The record prose for a failure resolved without an abort reason (see flush). */
+  private composeMessage(
+    entry: { status: LlmFailure; message?: string; attempt?: number; willRetry?: boolean },
+    retried: boolean,
+    spec: FailureSpec,
+  ): string {
+    if (entry.message === undefined) return spec.text;
+    // A retried blip — or one whose planned retry was cut short by an interrupt — keeps
+    // the raw detail; the terminal records read as sentences, the same shape the abort
+    // reason used to carry.
+    if (retried || entry.willRetry) return entry.message;
+    if (entry.status === "fatal") return `llm request error: ${entry.message}`;
+    const retries = Math.max(0, (entry.attempt ?? 1) - 1);
+    return `llm request failed after ${retries} ${retries === 1 ? "retry" : "retries"}: ${entry.message}`;
   }
 
   /**

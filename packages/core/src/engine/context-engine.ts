@@ -752,9 +752,11 @@ export class ContextEngine {
         // `fatal` stops the run: a definitive provider rejection, a dead credential, or a
         // deterministic client-side rejection — the identical request can never succeed, so
         // the ladder would only delay the actionable message the outcome already carries.
+        // No abort event: abort marks a user interruption, and the already-written
+        // request_end (status `fatal`, `error_message`, no `retry_in_ms`) is the terminal
+        // record frontends and observability read.
         if (turn.outcome.status === "fatal") {
           this.pendingCarryOver = this.buildCarryOver(attemptInput, turn);
-          yield* this.emitAbort(`llm request error: ${turn.outcome.errorMessage ?? "unknown"}`);
           return;
         }
         // Completed normally.
@@ -772,15 +774,12 @@ export class ContextEngine {
         // request_end(retryable) followed by the next request_begin.
         failedTurns.push(turn);
         attemptInput = this.withRetriedTurns(nextInput, failedTurns);
+        // Exhausted: give up without an abort event — abort marks a user interruption,
+        // and the last failure's request_end (status `retryable` with no `retry_in_ms`,
+        // since no retry is planned) is the terminal record frontends and observability
+        // read; `attempt` and `error_message` ride on it.
         if (reconnects >= this.maxReconnects) {
           this.pendingCarryOver = attemptInput;
-          // This reason is user-visible (the Web App's error panel, the CLI's abort line) and
-          // is what observability persists as the error message, so it has to read as a
-          // sentence: what gave out, then how many attempts it took, then the concrete
-          // detail, last — when the final failure carried one.
-          const detail = turn.outcome.errorMessage;
-          const reason = `llm request failed after ${this.maxReconnects} retries${detail ? `: ${detail}` : ""}`;
-          yield* this.emitAbort(reason);
           return;
         }
         reconnects += 1;
@@ -855,9 +854,11 @@ export class ContextEngine {
                 ...this.buildCarryOver(attemptInput, turn),
               ];
             }
-            yield* this.emitAbort(
-              result.status === "aborted" ? "aborted during compaction" : "compaction failed",
-            );
+            // Only the user interruption is an abort; a failed compaction's terminal
+            // record is the compaction_end (status + error_message) already written.
+            if (result.status === "aborted") {
+              yield* this.emitAbort("aborted during compaction");
+            }
             return;
           }
           // Task boundary: the final reply has already streamed out. A user abort hands

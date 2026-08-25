@@ -353,7 +353,9 @@ describe("context compaction", () => {
         (e) => `${e.type}:${(e as Partial<CompactionEndPayload>).status ?? ""}`,
       ),
     ).toEqual(["compaction_begin:", "compaction_end:fatal"]);
-    expect(payloadTypes(out)).toContain("abort");
+    // No abort event — abort marks a user interruption; the compaction_end is the
+    // failure's terminal record and the run just ends on it.
+    expect(payloadTypes(out)).not.toContain("abort");
     expect(created).toBe(0);
 
     // The next run resends the held tool output with the new message, and the compaction is
@@ -997,10 +999,9 @@ describe("context compaction", () => {
       type: "compaction_end",
       status: "retryable",
     });
-    // The abandonment ends the run through the interruption flow: an abort follows the
-    // failed compaction_end, and no further request is issued in this run.
-    const abort = out1.find((m) => (m.payload as { type?: string }).type === "abort");
-    expect(abort?.payload).toMatchObject({ reason: "compaction failed" });
+    // The abandonment ends the run with the compaction_end as its terminal record (no
+    // abort event — abort marks a user interruption); no further request is issued.
+    expect(payloadTypes(out1)).not.toContain("abort");
     expect(llm1.calls).toHaveLength(6);
     // Attempt 1 folds the turn's tool output in; attempt 2 carries the repair + note + Prompt
     // but NOT the absorbed output; attempts 3-5 are note + Prompt.
@@ -1056,7 +1057,7 @@ describe("context compaction", () => {
 
     const out = await collect(engine.run([userText("go")], { approve: allowAll }));
     expect(compactionEvents(out)[1]).toMatchObject({ type: "compaction_end", status: "retryable" });
-    expect(payloadTypes(out)).toContain("abort");
+    expect(payloadTypes(out)).not.toContain("abort");
     expect(llm1.calls).toHaveLength(6);
     // Attempt 1 folds the outputs; attempts 2-5 are note + Prompt (absorbed by the first commit).
     expect(payloadTypes(llm1.calls[1]!)).toEqual(["tool_call_output", "text"]);
@@ -1103,7 +1104,7 @@ describe("context compaction", () => {
 
     const out = await collect(engine.run([userText("go")], { approve: allowAll }));
     expect(compactionEvents(out)[1]).toMatchObject({ type: "compaction_end", status: "retryable" });
-    expect(payloadTypes(out)).toContain("abort");
+    expect(payloadTypes(out)).not.toContain("abort");
     expect(llm1.calls).toHaveLength(3);
 
     await collect(engine.run([userText("carry on")], { approve: allowAll }));

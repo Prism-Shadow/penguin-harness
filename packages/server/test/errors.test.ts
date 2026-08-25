@@ -427,6 +427,40 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     });
   });
 
+  it("a fatal with no abort (the live protocol): close persists it with the same prose", () => {
+    // Failures no longer emit an abort event; the pending record resolves at close, and
+    // the message is composed from the request_end's own detail.
+    const got = feed([
+      requestBegin(),
+      requestEnd("fatal", { errorMessage: "401 invalid x-api-key (invalid_api_key)" }),
+    ]);
+    expect(got).toHaveLength(1);
+    expect(got[0]).toMatchObject({
+      source: "llm",
+      kind: "unexpected",
+      code: "llm_fatal",
+      message: "llm request error: 401 invalid x-api-key (invalid_api_key)",
+    });
+  });
+
+  it("an exhausted ladder with no abort: the terminal request_end's attempt shapes the record", () => {
+    const got = feed([
+      requestBegin(),
+      requestEnd("retryable", { errorMessage: "socket hang up", attempt: 1, retryInMs: 2000 }),
+      requestBegin(),
+      // The final failure plans no retry (no retry_in_ms) — the run ends on it.
+      requestEnd("retryable", { errorMessage: "socket hang up", attempt: 2 }),
+    ]);
+    expect(got).toHaveLength(2);
+    expect(got[0]).toMatchObject({ code: "llm_retried", kind: "expected" });
+    expect(got[1]).toMatchObject({
+      source: "llm",
+      kind: "unexpected",
+      code: "llm_failed",
+      message: "llm request failed after 1 retry: socket hang up",
+    });
+  });
+
   it("a retryable the ladder carried → expected under its own code, not an operator incident", () => {
     // The same status covers "a gateway hiccup the user never saw" and "the run died on
     // it". A following request_begin proves another attempt happened — that one is
@@ -504,7 +538,8 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     // request_end detail IS the failure's reason — prefer it over the generic status text.
     const got = feed([
       requestBegin(),
-      requestEnd("retryable", { errorMessage: "429 rate limited (slow down)" }),
+      // A backoff interrupt cuts a PLANNED retry short — the failure announced one.
+      requestEnd("retryable", { errorMessage: "429 rate limited (slow down)", retryInMs: 4000 }),
       abortEvent("aborted during reconnect backoff"),
     ]);
     expect(got).toHaveLength(1);

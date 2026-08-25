@@ -129,7 +129,7 @@ function ReconnectLine({ item, ctx }: { item: ReconnectItem; ctx: StreamRenderCo
     <p
       className={`anim-msg my-1 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-xs ${toneInk.attention}`}
     >
-      <span>{S.chat.reconnect(item.status, state, item.attempt, seconds)}</span>
+      <span>{S.chat.reconnect(item.status, state, item.attempt, seconds, item.errorMessage)}</span>
       {showControls && (
         <span className="flex shrink-0 items-center gap-1.5">
           {ctx.onRetryNow && (
@@ -381,6 +381,12 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
       return (
         <p className="anim-msg my-1 font-mono text-xs text-gray-500 dark:text-gray-400">
           {S.chat.aborted(parseAbortReason(item.reason))}
+        </p>
+      );
+    case "llm_error":
+      return (
+        <p className="anim-msg my-1 font-mono text-xs text-gray-500 dark:text-gray-400">
+          {S.chat.llmError(item.errorMessage)}
         </p>
       );
     case "reconnect":

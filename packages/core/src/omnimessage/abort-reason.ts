@@ -1,11 +1,12 @@
 /**
  * Decoder for the abort event's `reason` prose.
  *
- * The wire stays lean: an abort event carries only the English `reason` of record
- * (observability and the server's error records read it verbatim), and the structured
- * error detail behind an LLM failure also rides on `request_end.error_message`. The
- * engine writes `reason` from a fixed set of spellings, so render layers that want a
- * localized banner decode the cause here instead of growing the payload.
+ * The wire stays lean: an abort event carries only the English `reason` of record, and
+ * the engine writes it from a fixed set of spellings, so render layers that want a
+ * localized banner decode the cause here instead of growing the payload. Live streams
+ * only ever produce the user-interruption spellings (abort marks a human interrupt; an
+ * LLM or compaction failure's terminal record is its request_end / compaction_end) —
+ * the failure spellings below are decoded for Traces written before that split.
  *
  * Unrecognized prose (a Trace from a build with different spellings) decodes as
  * `unknown` and must be rendered verbatim.
@@ -14,15 +15,15 @@
 /** Decoded cause of an abort event, for localized rendering. */
 export type AbortCause =
   | { kind: "user_abort" }
-  /** The request died on a failure no retry can fix; `detail` is the provider's own text (same text as `request_end.error_message`). */
+  /** Legacy Traces only: the request died on a failure no retry can fix; `detail` is the provider's own text. */
   | { kind: "llm_fatal"; detail: string }
-  /** The reconnect ladder ran out; `detail` (when the final failure carried one) is the last error. */
+  /** Legacy Traces only: the reconnect ladder ran out; `detail` (when the final failure carried one) is the last error. */
   | { kind: "llm_retries_exhausted"; attempts: number; detail?: string }
   /** The user interrupted the wait between reconnect attempts. */
   | { kind: "backoff_interrupted" }
   /** The user interrupted a running compaction. */
   | { kind: "compaction_aborted" }
-  /** A mid-task compaction was given up; the run stops so the user regains control. */
+  /** Legacy Traces only: a mid-task compaction was given up. */
   | { kind: "compaction_failed" }
   /** Prose this decoder does not recognize — render `reason` as-is. */
   | { kind: "unknown"; reason: string | null };

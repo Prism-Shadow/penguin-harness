@@ -369,15 +369,17 @@ describe("approvals and events", () => {
     expect((items(m)[0] as ToolCallItem).decision).toBe("allow");
   });
 
-  it("a fatal request_end renders no item of its own; the abort that follows carries the reason", () => {
+  it("a fatal request_end renders the error banner; an interim-build abort duplicate is dropped", () => {
     const m = createStreamModel();
     pushMessage(m, requestEnd("fatal", { errorMessage: "401 invalid x-api-key" }));
-    pushMessage(m, abortEvent("llm request error: 401 invalid x-api-key"));
     expect(items(m)).toHaveLength(1);
     expect(items(m)[0]).toMatchObject({
-      kind: "abort",
-      reason: "llm request error: 401 invalid x-api-key",
+      kind: "llm_error",
+      errorMessage: "401 invalid x-api-key",
     });
+    // Interim-build Traces also wrote an abort for the same failure — deduped.
+    pushMessage(m, abortEvent("llm request error: 401 invalid x-api-key"));
+    expect(items(m)).toHaveLength(1);
   });
 
   it("abort events produce an abort marker item carrying the reason prose", () => {
@@ -661,8 +663,9 @@ describe("approvals and events", () => {
   it("a retryable request_end produces a retry notice item (with the stamped attempt); request_begin marks it as resent", () => {
     const m = createStreamModel();
     pushMessage(m, requestBegin());
-    // The core stamps the authoritative ordinal on every retryable request_end.
-    pushMessage(m, requestEnd("retryable", { attempt: 1 }));
+    // The core stamps the authoritative ordinal — and the planned backoff — on every
+    // mid-ladder retryable request_end.
+    pushMessage(m, requestEnd("retryable", { attempt: 1, retryInMs: 2000 }));
     const retry = items(m)[0] as ReconnectItem;
     expect(retry).toMatchObject({
       kind: "reconnect",
@@ -674,7 +677,7 @@ describe("approvals and events", () => {
     pushMessage(m, requestBegin());
     expect(retry.retrying).toBe(true);
     // Retry fails again: a second notice, carrying the next ordinal.
-    pushMessage(m, requestEnd("retryable", { attempt: 2 }));
+    pushMessage(m, requestEnd("retryable", { attempt: 2, retryInMs: 4000 }));
     const retry2 = items(m)[1] as ReconnectItem;
     expect(retry2).toMatchObject({ kind: "reconnect", status: "retryable", attempt: 2 });
     // Retry succeeds: no new entry; the next round's failure carries attempt 1 again.
@@ -688,6 +691,26 @@ describe("approvals and events", () => {
     pushMessage(m, requestBegin());
     pushMessage(m, requestEnd("retryable"));
     expect((items(m)[3] as ReconnectItem).attempt).toBe(1);
+  });
+
+  it("a terminal retryable (no retry planned) settles as gave-up at creation, detail attached", () => {
+    // The ladder ran out: the run ends on this request_end — no abort event follows.
+    const m = createStreamModel();
+    pushMessage(m, requestBegin());
+    pushMessage(m, requestEnd("retryable", { attempt: 6, errorMessage: "socket hang up" }));
+    const item = items(m)[0] as ReconnectItem;
+    expect(item).toMatchObject({
+      kind: "reconnect",
+      status: "retryable",
+      attempt: 6,
+      gaveUp: true,
+      errorMessage: "socket hang up",
+    });
+    // The legacy spellings never self-settle (their era stamped no retry_in_ms mid-ladder).
+    pushMessage(m, requestBegin());
+    pushMessage(m, requestEnd("timeout" as never, { attempt: 1 }));
+    const legacy = items(m)[1] as ReconnectItem;
+    expect(legacy.gaveUp).toBeUndefined();
   });
 
   it("the retry notice carries its countdown inputs and give-up target", () => {

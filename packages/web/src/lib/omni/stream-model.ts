@@ -52,6 +52,7 @@
 import {
   isEventMessage,
   isPartialPayload,
+  parseAbortReason,
   parseBackgroundTaskDoneMessage,
   parseUserSteeringText,
 } from "@prismshadow/penguin-core/omnimessage";
@@ -230,6 +231,17 @@ export interface AbortItem {
   reason?: string;
 }
 
+/**
+ * A run-ending LLM failure, from a `request_end` with status `fatal` (an LLM failure
+ * produces no abort event — the request_end is its terminal record).
+ */
+export interface LlmErrorItem {
+  kind: "llm_error";
+  id: number;
+  /** The provider's own error text (request_end.error_message), shown verbatim. */
+  errorMessage?: string;
+}
+
 /** `retryable` is the live protocol; failed/timeout/malformed are legacy Trace spellings kept for replay. */
 export type ReconnectStatus = "retryable" | "failed" | "timeout" | "malformed";
 
@@ -249,8 +261,10 @@ export interface ReconnectItem {
   attempt: number;
   /** The retry request has been sent (set true by the next request_begin). */
   retrying: boolean;
-  /** Retries exhausted (set true when an abort event arrives; the subsequent interruption marker item gives the reason). */
+  /** Retries exhausted: set at creation when the request_end announced no retry (`retryable` with no retry_in_ms — the run ends there), or by an abort event in legacy Traces. */
   gaveUp?: boolean;
+  /** The final failure's detail (request_end.error_message), rendered in the gave-up state. */
+  errorMessage?: string;
   /**
    * The engine's planned wait before the next attempt (request_end.retry_in_ms; absent
    * when the event carried none — old Traces, or a final failure). Waits can reach the
@@ -370,6 +384,7 @@ export type ChatItem =
   | ToolCallItem
   | SubagentItem
   | AbortItem
+  | LlmErrorItem
   | ReconnectItem
   | CompactionItem
   | McpConnectItem
@@ -1505,6 +1520,12 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       // exhausted/abandoned, so mark it gaveUp (this interruption marker item gives the reason).
       const waiting = findLastWaitingReconnect(model);
       if (waiting) waiting.gaveUp = true;
+      // Interim-build Traces wrote both the fatal request_end and an abort for the same
+      // failure; the llm_error item already says it, so drop the duplicate banner.
+      const cause = parseAbortReason(p.reason);
+      if (cause.kind === "llm_fatal" && model.items[model.items.length - 1]?.kind === "llm_error") {
+        return;
+      }
       const item: AbortItem = { kind: "abort", id: nextId(model) };
       if (p.reason != null) item.reason = p.reason;
       model.items.push(item);
@@ -1658,6 +1679,16 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       // round, so the pending compaction usage never reaches this step and is discarded at finalization (not counted into this round).
       if (tsMs !== undefined) model.taskLastReqEndMs = tsMs;
       commitPendingCompaction(model.stats);
+      // A fatal end stops the run — no abort event follows; this request_end is the
+      // terminal record, rendered as an error banner.
+      if (p.status === "fatal") {
+        const item: LlmErrorItem = { kind: "llm_error", id: nextId(model) };
+        if (typeof p.error_message === "string" && p.error_message) {
+          item.errorMessage = p.error_message;
+        }
+        model.items.push(item);
+        return;
+      }
       // Every status the engine reconnects on gets an item — leaving one out would stall
       // the session for the whole ladder with nothing on screen and no give-up control.
       if (isReconnectStatus(p.status)) {
@@ -1670,11 +1701,20 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
           attempt: p.attempt ?? 1,
           retrying: false,
         };
+        if (typeof p.error_message === "string" && p.error_message) {
+          item.errorMessage = p.error_message;
+        }
         // The engine announced its planned backoff: keep it with the CLIENT arrival time
         // as the countdown anchor (skew-free — see ReconnectItem.arrivedAtMs).
         if (typeof p.retry_in_ms === "number" && p.retry_in_ms > 0) {
           item.plannedDelayMs = p.retry_in_ms;
           item.arrivedAtMs = nowMs ?? Date.now();
+        } else if (p.status === "retryable") {
+          // A live-protocol retryable without a planned wait is the ladder giving up —
+          // the run ends on it (an abort follows only in legacy Traces). The legacy
+          // spellings never self-settle here: their era stamped no retry_in_ms mid-ladder,
+          // and their exhaustion is marked by the abort event instead.
+          item.gaveUp = true;
         }
         model.items.push(item);
       }

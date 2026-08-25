@@ -1432,6 +1432,7 @@ Benchmark：
       state: "waiting" | "retried" | "gaveUp",
       attempt: number,
       secondsLeft?: number,
+      errorMessage?: string,
     ) => {
       const cause =
         status === "timeout"
@@ -1443,7 +1444,7 @@ Benchmark：
               : "请求失败";
       const action =
         state === "gaveUp"
-          ? "已停止重试"
+          ? `第 ${attempt} 次尝试后放弃${errorMessage ? `：${errorMessage}` : ""}`
           : state === "retried"
             ? `已发起第 ${attempt} 次重试`
             : secondsLeft !== undefined
@@ -1451,6 +1452,9 @@ Benchmark：
               : `正在发起第 ${attempt} 次重试…`;
       return `[重试] ${cause}，${action}`;
     },
+    /** Run-ending LLM failure banner (request_end status fatal); the provider's error text rides verbatim. */
+    llmError: (errorMessage?: string) =>
+      `[错误]：模型请求错误${errorMessage ? `：${errorMessage}` : ""}`,
     /** "Retry now" on the reconnect countdown (skips the remaining backoff wait). */
     reconnectRetryNow: "立即重试",
     /** "Give up" on the reconnect countdown (the ordinary session abort). */

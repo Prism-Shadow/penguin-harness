@@ -14,10 +14,13 @@
  *   normalize to `blocked` — see goal-file.ts),
  * - the loop's own token accounting against the budget (internal counters; the budget
  *   line in each round's block is composed from them, never read from anywhere),
- * - a round the engine cut off rather than finished — a main-session abort (LLM failure,
- *   user interrupt) or a final assistant notice with `stop_reason: "fatal"` (the engine's
- *   max_turns cutoff emits exactly that, and no abort event): the model never got to write
- *   the file, so re-firing would loop the same cutoff forever, and
+ * - a round the engine cut off rather than finished — a main-session abort (user
+ *   interrupt), a terminal request_end (`fatal`, or `retryable` with no retry planned —
+ *   LLM failures emit no abort event), a mid-task compaction failure (compaction_end
+ *   `retryable`/`fatal` while tool outputs still owed the model a follow-up turn), or a
+ *   final assistant notice with `stop_reason: "fatal"` (the engine's max_turns cutoff):
+ *   the model never got to write the file, so re-firing would loop the same cutoff
+ *   forever, and
  * - a hard round cap (`maxRounds`, default 100) as a runaway backstop independent of the
  *   budget — without it an unbudgeted goal whose model simply never writes the file would
  *   loop without bound; an explicit -1 disables the cap.
@@ -72,6 +75,18 @@ function isMainAbort(msg: OmniMessage): boolean {
 }
 
 /**
+ * A main-session request_end that ends the run: `fatal`, or `retryable` with no
+ * `retry_in_ms` (no retry planned — the ladder ran out). Failures produce no abort
+ * event, so this is the goal loop's only sight of an LLM-failure cutoff.
+ */
+function isMainTerminalRequestFailure(msg: OmniMessage): boolean {
+  if (!isEventMessage(msg) || (msg.origin?.length ?? 0) > 0) return false;
+  const p = msg.payload as { type?: string; status?: string; retry_in_ms?: number };
+  if (p.type !== "request_end") return false;
+  return p.status === "fatal" || (p.status === "retryable" && p.retry_in_ms === undefined);
+}
+
+/**
  * The main session's assistant text, or null. Used to track how a round ended: the engine's
  * max_turns cutoff finishes the stream with an assistant notice carrying
  * `stop_reason: "fatal"` (and no abort event) — the only failure mode that neither
@@ -100,6 +115,9 @@ export async function* runGoalLoop(
   let rounds = 0;
   let aborted = false;
   let roundFailed = false;
+  // Mid-task detector for the compaction cutoff: main tool outputs have arrived and the
+  // follow-up request has not — a compaction failure landing in that window cut the round.
+  let awaitingFollowUpTurn = false;
 
   /** Runs one round: yields the injected input, then the Task's stream, accounting as it goes. */
   async function* round(kind: "regular" | "wrap-up"): AsyncGenerator<OmniMessage> {
@@ -118,9 +136,25 @@ export async function* runGoalLoop(
       }),
     );
     yield input;
+    awaitingFollowUpTurn = false;
     for await (const msg of session.run([input])) {
       used += goalTokenDelta(msg);
-      if (isMainAbort(msg)) aborted = true;
+      if (isMainAbort(msg) || isMainTerminalRequestFailure(msg)) aborted = true;
+      if ((msg.origin?.length ?? 0) === 0) {
+        const p = msg.payload as { type?: string; status?: string };
+        if (isModelMessage(msg) && p.type === "tool_call_output") awaitingFollowUpTurn = true;
+        else if (isEventMessage(msg) && p.type === "request_begin") awaitingFollowUpTurn = false;
+        // A compaction given up mid-task ends the run with the round unfinished (no abort
+        // event follows a failure); at a Task boundary the same event is advisory.
+        else if (
+          isEventMessage(msg) &&
+          p.type === "compaction_end" &&
+          (p.status === "retryable" || p.status === "fatal" || p.status === "failed") &&
+          awaitingFollowUpTurn
+        ) {
+          aborted = true;
+        }
+      }
       // The LAST assistant text decides: a mid-round failed notice followed by normal text
       // means the round recovered; the max_turns cutoff is always the final message.
       const stop = mainAssistantStopReason(msg);
