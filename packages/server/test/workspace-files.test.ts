@@ -185,6 +185,42 @@ describe("files/stat route (batch existence check)", () => {
     expect(txt.headers.get("content-security-policy")).toBeNull();
   });
 
+  it("files/content on svg: inline keeps image/svg+xml under a sandbox CSP, so an <img> renders it and a direct visit stays inert", async () => {
+    await fs.writeFile(
+      path.join(workspace, "chart.svg"),
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><script>1</script></svg>',
+    );
+    const url = `/api/sessions/${sessionId}/files/content?path=chart.svg`;
+
+    // The real type is what makes it renderable at all: downgraded to text/plain, every
+    // <img> pointing at it — a Markdown preview's included — was a broken image.
+    const inline = await owner.get(url);
+    expect(inline.status).toBe(200);
+    expect(inline.headers.get("content-type")).toContain("image/svg+xml");
+    // What the type re-opens is a direct visit rendering it as a same-origin document:
+    // the sandbox denies both scripting and the origin, and is ignored for a subresource.
+    const csp = inline.headers.get("content-security-policy") ?? "";
+    expect(csp).toContain("sandbox");
+    expect(csp).not.toContain("allow-scripts");
+    expect(csp).not.toContain("allow-same-origin");
+    expect(inline.headers.get("x-content-type-options")).toBe("nosniff");
+
+    // A download is an attachment either way — nothing renders it, so no CSP is needed.
+    const download = await owner.get(`${url}&download=1`);
+    expect(download.headers.get("content-type")).toContain("image/svg+xml");
+    expect(download.headers.get("content-security-policy")).toBeNull();
+
+    // HTML keeps its own handling: still plain text inline.
+    await fs.writeFile(path.join(workspace, "p.html"), "<b>x</b>");
+    const html = await owner.get(`/api/sessions/${sessionId}/files/content?path=p.html`);
+    expect(html.headers.get("content-type")).toContain("text/plain");
+  });
+
+  it("files/content is never cached: the path holds whatever the Agent last wrote", async () => {
+    const res = await owner.get(`/api/sessions/${sessionId}/files/content?path=a.txt`);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+  });
+
   it("existing files return in order, deduplicated; missing / directory / out-of-bounds all count as nonexistent, always 200", async () => {
     const res = await owner.post(`/api/sessions/${sessionId}/files/stat`, {
       paths: ["sub/b.md", "a.txt", "sub/b.md", "nope.txt", "sub", "../escape.txt", "/etc/passwd"],

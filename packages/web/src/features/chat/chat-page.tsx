@@ -665,6 +665,8 @@ export function ChatPage() {
     id: selectedSessionId,
     state: "idle",
   });
+  /** Settled-turn counter handed to the Files panel; every bump means "re-read". */
+  const [filesReloadSignal, setFilesReloadSignal] = useState(0);
   useEffect(() => {
     const prev = prevTaskRef.current;
     const sameSession = prev.id === selectedSessionId;
@@ -676,6 +678,11 @@ export function ChatPage() {
     if (prev.state !== "idle" && stream.taskState === "idle") {
       void reloadSessions();
       void reloadAgents();
+      // The turn that just ended is when the Agent's file writes landed: the Files panel's
+      // listing and whatever it has open are stale from this moment on (see the browser's
+      // reloadSignal). Same edge, same guard — a phantom "idle" from a detaching stream
+      // never reaches here.
+      setFilesReloadSignal((n) => n + 1);
     }
   }, [stream.taskState, selectedSessionId, reloadSessions, reloadAgents]);
 
@@ -1485,7 +1492,12 @@ export function ChatPage() {
         );
       case "workspace":
         return (
-          <WorkspaceBrowser session={selected} openRequest={fileOpenRequest} active={active} />
+          <WorkspaceBrowser
+            session={selected}
+            openRequest={fileOpenRequest}
+            active={active}
+            reloadSignal={filesReloadSignal}
+          />
         );
       case "memory":
         return (
