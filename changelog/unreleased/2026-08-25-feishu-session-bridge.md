@@ -3,6 +3,7 @@
 - **Date:** 2026-08-25
 - **Type:** feature
 - **Scope:** `core`, `server`, `web`, `docs`
+- **PR:** [#464](https://github.com/Prism-Shadow/penguin-harness/pull/464)
 
 [中文版](2026-08-25-feishu-session-bridge.zh.md)
 
