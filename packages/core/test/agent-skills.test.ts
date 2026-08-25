@@ -115,6 +115,13 @@ describe("installSkill / removeSkill", () => {
     }
   });
 
+  it("stages the install and leaves no staging directory behind", async () => {
+    const skill = librarySkill("penguin-sdk")!;
+    await install(skill.name, skill.content);
+    const entries = await fs.readdir(skillsDir(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID));
+    expect(entries).toEqual(["penguin-sdk"]);
+  });
+
   it("removeSkill deletes the whole skill directory and is idempotent", async () => {
     const skill = librarySkill("penguin-sdk")!;
     await install(skill.name, skill.content);
@@ -196,6 +203,14 @@ describe("listInstalledSkills", () => {
     const dir = skillsDir(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
     await fs.mkdir(path.join(dir, "empty-dir"), { recursive: true });
     await fs.writeFile(path.join(dir, "stray.md"), "stray", "utf8");
+    // A staging directory an interrupted install left behind is complete enough to look like a
+    // Skill; the dot prefix (never a valid Skill name) is what keeps it out.
+    await fs.mkdir(path.join(dir, ".half-installed.incoming"), { recursive: true });
+    await fs.writeFile(
+      path.join(dir, ".half-installed.incoming", "SKILL.md"),
+      "---\nname: half-installed\n---\nBody\n",
+      "utf8",
+    );
     expect(await list()).toEqual([{ name: "broken", description: "", version: 1, updated: "" }]);
   });
 });

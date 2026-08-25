@@ -23,6 +23,7 @@
  */
 import fs from "node:fs/promises";
 import { parseDocument, parse as parseYaml } from "yaml";
+import { atomicWriteFile } from "../internal/atomic-write.js";
 import { defaultSystemConfig } from "./default-config.js";
 import {
   KERNEL_SUPERSEDED_TAB_HASHES,
@@ -126,6 +127,6 @@ export async function applyKernelUpdate(
   }
 
   doc.setIn(["kernel_version"], KERNEL_VERSION);
-  await fs.writeFile(configPath, doc.toString(), "utf8");
+  await atomicWriteFile(configPath, doc.toString(), { followSymlinks: true });
   return { advanced, kept, kernelVersion: KERNEL_VERSION };
 }

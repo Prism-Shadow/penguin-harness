@@ -485,13 +485,18 @@ export class HmrHost {
    * that a push which fails to boot leaves an unreferenced file behind; the next
    * successful push's prune collects it, and the committed version is force-kept
    * regardless of how many failures sit between them.
+   *
+   * The write goes through writeStoreFile, which matters more here than for the other
+   * two artifacts: this path is taken before the commit, so an idempotent re-push aims
+   * at the exact file the current manifest points at — and the running version boots
+   * from it.
    */
   private async storePlatformBundle(content: string): Promise<{ file: string; sha: string }> {
     const sha = sha1(content).slice(0, 16);
     const dir = path.join(this.storeDir, "platform");
     await fsp.mkdir(dir, { recursive: true });
     const file = path.join(dir, `${sha}.mjs`);
-    await fsp.writeFile(file, content, "utf8");
+    await writeStoreFile(file, Buffer.from(content, "utf8"));
     return { file, sha };
   }
 
@@ -586,15 +591,16 @@ export class HmrHost {
   ): Promise<boolean> {
     try {
       // The platform bundle is already in the store: storePlatformBundle put it at its
-      // content-addressed path so the boot could import it from there.
+      // content-addressed path so the boot could import it from there, through the same
+      // writeStoreFile the other two artifacts go through.
       const cliSha = sha1(cliContent).slice(0, 16);
       const cliDir = path.join(this.storeDir, "cli");
       await fsp.mkdir(cliDir, { recursive: true });
-      await fsp.writeFile(path.join(cliDir, `${cliSha}.mjs`), cliContent, "utf8");
+      await writeStoreFile(path.join(cliDir, `${cliSha}.mjs`), Buffer.from(cliContent, "utf8"));
 
       const webDir = path.join(this.storeDir, "web");
       await fsp.mkdir(webDir, { recursive: true });
-      await fsp.writeFile(path.join(webDir, `${webSha}.webz`), webGz);
+      await writeStoreFile(path.join(webDir, `${webSha}.webz`), webGz);
 
       await this.commitManifest(() => ({
         platform: { bundle: `store/platform/${platformSha}.mjs` },
@@ -729,6 +735,27 @@ function filesDigest(files: Record<string, string>): string {
   const hash = crypto.createHash("sha1");
   for (const rel of Object.keys(files).sort()) hash.update(rel).update("\0").update(files[rel]!);
   return hash.digest("hex");
+}
+
+/**
+ * Writes one content-addressed artifact. A file that already holds these exact bytes is left
+ * untouched — the store is keyed by content hash, so re-pushing a version (an idempotent push, a
+ * rollback to something installed before) otherwise rewrites the very file the committed manifest
+ * points at, and a crash during that rewrite truncates a bundle the runtime still needs to boot.
+ * Anything else is written to a temp file and renamed into place, so an interrupted write leaves
+ * the store's previous state rather than a half-written artifact under a hash that promises
+ * complete content.
+ */
+async function writeStoreFile(file: string, content: Buffer): Promise<void> {
+  if (await sameFileContent(file, content)) return;
+  const tmp = `${file}.${process.pid}.tmp`;
+  try {
+    await fsp.writeFile(tmp, content, { flush: true });
+    await fsp.rename(tmp, file);
+  } catch (err) {
+    await fsp.rm(tmp, { force: true }).catch(() => undefined);
+    throw err;
+  }
 }
 
 /** No absolute paths, no `..` segments — the map is looked up by exact key, but a malformed key must never be stored. */
