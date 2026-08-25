@@ -68,7 +68,7 @@ import type {
   LLMOutcome,
   ThinkingLevelName,
   ToolDefinition,
-} from "../interfaces.js";
+} from "../interfaces/index.js";
 import { ToolCallIdAllocator, stripToolCallIdSuffix } from "./tool-call-ids.js";
 import {
   approximateMessagesTokens,

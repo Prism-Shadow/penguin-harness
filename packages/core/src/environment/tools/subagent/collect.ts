@@ -11,7 +11,7 @@
  */
 import { partialToolCallOutput } from "../../../omnimessage/index.js";
 import type { OmniMessage } from "../../../omnimessage/index.js";
-import type { ApproveFn } from "../../../interfaces.js";
+import type { ApproveFn } from "../../../interfaces/index.js";
 import type { ManagedSubagentSession } from "./session.js";
 
 export async function* collectWindow(

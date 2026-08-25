@@ -79,7 +79,7 @@ import type {
   LLMInterface,
   LLMOutcome,
   ThinkingLevelName,
-} from "../interfaces.js";
+} from "../interfaces/index.js";
 
 /** Trace sink: `write` a complete/event/meta message; `rotate` starts a new file (compaction splits files). */
 export interface TraceSink {

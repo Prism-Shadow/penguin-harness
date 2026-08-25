@@ -21,7 +21,7 @@ import type {
   TokenCounts,
   TokenUsagePayload,
 } from "../omnimessage/index.js";
-import type { LLMInterface } from "../interfaces.js";
+import type { LLMInterface } from "../interfaces/index.js";
 
 /** Cap on conversation text spliced into the title request (user/model each truncated separately, to control cost). */
 const EXCERPT_MAX_CHARS = 2000;

@@ -1564,14 +1564,14 @@ Benchmark：
     modelLockedHint: "输入 /model 切换模型",
     scheduledFrom: (name: string) => `由定时任务「${name}」触发`,
     /** One-line notice of a `[background_task_done]` harness message (run_in_background completion): the collapsed row's whole label. */
-    backgroundDone: (kind: "command" | "subagent", ok: boolean): string =>
-      kind === "command"
-        ? ok
-          ? "后台命令完成"
-          : "后台命令失败"
-        : ok
-          ? "后台任务完成"
-          : "后台任务失败",
+    backgroundDone: (
+      kind: "command" | "subagent",
+      status: "completed" | "failed" | "stopped",
+    ): string => {
+      const what = kind === "command" ? "后台命令" : "后台任务";
+      if (status === "stopped") return `${what}已停止`;
+      return status === "completed" ? `${what}完成` : `${what}失败`;
+    },
     emptyGreeting: "开始一段新对话",
     /** Unified step-row titles (same header idiom as workRunning/workDone). */
     mcpConnectTitle: "MCP 连接",

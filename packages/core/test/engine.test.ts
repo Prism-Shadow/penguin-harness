@@ -28,7 +28,11 @@ import {
   withOrigin,
 } from "../src/omnimessage/index.js";
 import { BUILTIN_TOOL_FACTORIES } from "../src/environment/tools/registry.js";
-import type { GenerativeModelParameters, LLMInterface, LLMOutcome } from "../src/interfaces.js";
+import type {
+  GenerativeModelParameters,
+  LLMInterface,
+  LLMOutcome,
+} from "../src/interfaces/index.js";
 import type { OmniMessage, TextPayload, ToolCallPayload } from "../src/omnimessage/index.js";
 import { Environment } from "../src/environment/index.js";
 import { Writer, readTrace } from "../src/trace/index.js";
@@ -36,7 +40,7 @@ import { ContextEngine, reconnectDelayMs } from "../src/engine/context-engine.js
 import { goalRoundMessage } from "../src/goal/goal-prompts.js";
 import { parseUserSteeringText } from "../src/omnimessage/markers/index.js";
 import { imagesToScratchpadPaths } from "../src/internal/session-support.js";
-import type { ApproveFn, EnvironmentInterface, ToolPermission } from "../src/interfaces.js";
+import type { ApproveFn, EnvironmentInterface, ToolPermission } from "../src/interfaces/index.js";
 
 /** A real 1x1 PNG data URL: the non-vision fold actually decodes and writes it to disk. */
 const PNG_DATA_URL =

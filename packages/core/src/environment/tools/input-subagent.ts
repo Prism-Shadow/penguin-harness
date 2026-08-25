@@ -24,7 +24,7 @@
  */
 import { partialToolCallOutput, userText } from "../../omnimessage/index.js";
 import type { OmniMessage } from "../../omnimessage/index.js";
-import type { EnvironmentServices, ToolDefinitionConfig } from "../../interfaces.js";
+import type { EnvironmentServices, ToolDefinitionConfig } from "../../interfaces/index.js";
 import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
 import {
   DEFAULT_SUBAGENT_POLL_YIELD_MS,
@@ -133,7 +133,7 @@ export function createInputSubagentTool(
         } else if (!session.running) {
           // startRun expresses edge cases like already-disposed via throw, collapsed here into failed (the tool never throws outward).
           try {
-            session.startRun(prompt);
+            session.startRun([userText(prompt, "parent_agent")]);
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
             yield delta(`[input_subagent error: ${message}]`);

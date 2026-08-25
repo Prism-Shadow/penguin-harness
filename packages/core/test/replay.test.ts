@@ -36,7 +36,7 @@ import { parseTraceLines, readTraceTolerant, resumeTrace } from "../src/trace/re
 import { ContextEngine } from "../src/engine/context-engine.js";
 import { Environment } from "../src/environment/index.js";
 import { Writer, readTrace } from "../src/trace/index.js";
-import type { ApproveFn, LLMInterface } from "../src/interfaces.js";
+import type { ApproveFn, LLMInterface } from "../src/interfaces/index.js";
 
 const usage = (total: number): TokenCounts => ({
   cache_read: 0,

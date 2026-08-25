@@ -17,7 +17,7 @@ import {
   UnsupportedParameterError,
 } from "@prismshadow/agenthub";
 import type { UniConfig, UniEvent, UniMessage, UsageMetadata } from "@prismshadow/agenthub";
-import type { LLMOutcome, ThinkingLevelName } from "../src/interfaces.js";
+import type { LLMOutcome, ThinkingLevelName } from "../src/interfaces/index.js";
 
 import {
   EventTranslator,

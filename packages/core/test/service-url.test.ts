@@ -20,7 +20,7 @@ import {
   parseWindowsProbe,
   probeGroupListenPorts,
 } from "../src/environment/tools/command/index.js";
-import type { ToolConfig } from "../src/interfaces.js";
+import type { ToolConfig } from "../src/interfaces/index.js";
 
 const ESC = String.fromCharCode(0x1b);
 

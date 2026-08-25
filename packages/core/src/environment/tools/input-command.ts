@@ -23,11 +23,12 @@
  */
 import { partialToolCallOutput } from "../../omnimessage/index.js";
 import type { OmniMessage } from "../../omnimessage/index.js";
-import type { EnvironmentServices, ToolDefinitionConfig } from "../../interfaces.js";
+import type { EnvironmentServices, ToolDefinitionConfig } from "../../interfaces/index.js";
 import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
 import {
   DEFAULT_EMPTY_POLL_YIELD_MS,
   DEFAULT_WRITE_YIELD_MS,
+  isStopSignal,
   resultForExit,
 } from "./command/index.js";
 import { clampYield } from "./background/index.js";
@@ -86,10 +87,12 @@ export function createInputCommandTool(
             note: `[process ${processId} killed (SIGTERM to the process group, SIGKILL after a grace period)]`,
           };
         }
+        // Same vocabulary the completion report uses: a stop signal ended it on purpose,
+        // anything else broke it.
         const status = session.error
           ? `spawn error: ${session.error.message}`
           : exit?.signal != null
-            ? `terminated by signal ${exit.signal}`
+            ? `${isStopSignal(exit.signal) ? "stopped by" : "terminated by signal"} ${exit.signal}`
             : `exit code ${exit?.code ?? "unknown"}`;
         return {
           stopReason: "completed",

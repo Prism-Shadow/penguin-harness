@@ -21,9 +21,9 @@
 import path from "node:path";
 import { partialToolCallOutput } from "../../omnimessage/index.js";
 import type { OmniMessage } from "../../omnimessage/index.js";
-import type { EnvironmentServices, ToolDefinitionConfig } from "../../interfaces.js";
+import type { EnvironmentServices, ToolDefinitionConfig } from "../../interfaces/index.js";
 import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
-import { DEFAULT_EXEC_YIELD_MS, resultForExit } from "./command/index.js";
+import { DEFAULT_EXEC_YIELD_MS, isStopSignal, resultForExit } from "./command/index.js";
 import type { ManagedSession } from "./command/index.js";
 import { clampYield, reportLabel, tailForReport } from "./background/index.js";
 
@@ -145,6 +145,15 @@ export function createExecCommandTool(
  * goes to `services.backgroundDone` — the Session turns it into a harness user message.
  * input_command's kill disarms it first (a deliberate kill reports its outcome synchronously), and a
  * disposed Environment drops the event (see Environment.emitBackgroundDone).
+ *
+ * A stop still reports — the conversation has to learn the dev server it started is down —
+ * but as `stopped`, not `failed`: the user's stop button, a stop signal from outside (a
+ * Ctrl-C in the terminal sharing the process group, a `pkill`, a supervisor), the harness's
+ * own forced stops (a capacity eviction, an idle reap). Worded "failed — terminated by signal
+ * SIGTERM" they read like a crash, and the model's reasonable response to a crashed dev
+ * server is to start it again, undoing the stop somebody just asked for. Outcomes nobody
+ * asked for stay `failed`: a spawn error, a non-zero exit, a hard kill or a fault signal (an
+ * OOM kill, a segfault).
  */
 export function armCommandDoneReport(
   session: ManagedSession,
@@ -155,18 +164,20 @@ export function armCommandDoneReport(
   if (!notify) return;
   session.onceExited(() => {
     const exit = session.exit;
+    const stopped = session.error === null && (session.stopRequested || isStopSignal(exit?.signal));
     const failed =
-      session.error !== null || exit?.signal != null || (exit !== null && exit.code !== 0);
+      !stopped &&
+      (session.error !== null || exit?.signal != null || (exit !== null && exit.code !== 0));
     const detail = session.error
       ? `spawn error: ${session.error.message}`
       : exit?.signal != null
-        ? `terminated by signal ${exit.signal}`
+        ? `${stopped ? "stopped by" : "terminated by signal"} ${exit.signal}`
         : `exit code ${exit?.code ?? "unknown"}`;
     notify({
       kind: "command",
       id: processId,
       label: reportLabel(session.cmd),
-      status: failed ? "failed" : "completed",
+      status: stopped ? "stopped" : failed ? "failed" : "completed",
       detail,
       output: tailForReport(session.drainPending()),
     });

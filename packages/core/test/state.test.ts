@@ -60,7 +60,7 @@ import {
   type ProjectConfig,
   type SystemConfig,
 } from "../src/state/index.js";
-import { SUBAGENT_THINKING_LEVELS } from "../src/interfaces.js";
+import { SUBAGENT_THINKING_LEVELS } from "../src/interfaces/index.js";
 import { DEFAULT_COMMAND_POLICY_RULES } from "../src/state/command-policy-defaults.js";
 import { sessionEnvironment } from "../src/internal/session-support.js";
 

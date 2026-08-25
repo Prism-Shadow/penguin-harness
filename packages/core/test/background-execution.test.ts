@@ -9,6 +9,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Environment } from "../src/environment/index.js";
+import { armCommandDoneReport } from "../src/environment/tools/exec-command.js";
+import { ManagedSession } from "../src/environment/tools/command/index.js";
 import { createSubagentTool } from "../src/environment/tools/run-subagent.js";
 import { createInputSubagentTool } from "../src/environment/tools/input-subagent.js";
 import { SubagentSessionManager } from "../src/environment/tools/subagent/index.js";
@@ -45,7 +47,7 @@ import type {
   SubagentRunner,
   ToolConfig,
   ToolDefinitionConfig,
-} from "../src/interfaces.js";
+} from "../src/interfaces/index.js";
 import type { ToolExecutionContext } from "../src/environment/tools/types.js";
 
 // ---------------------------------------------------------------------------
@@ -176,6 +178,26 @@ describe("[background_task_done] marker and the sender field", () => {
     expect(stripLeadingMarkerBlocks(block)).toBe("body");
   });
 
+  it("a stopped status reads as a deliberate stop, with the do-not-restart instruction", () => {
+    const stopped = buildBackgroundTaskDoneMessage(
+      { kind: "command", id: "proc-12ab34cd", status: "stopped", detail: "stopped by SIGTERM" },
+      "`pnpm dev` — stopped by SIGTERM",
+    );
+    expect(parseBackgroundTaskDoneMessage(stopped)!.done).toMatchObject({
+      status: "stopped",
+      detail: "stopped by SIGTERM",
+    });
+    expect(stopped).toContain("Do not restart it unless you are asked to.");
+    // Everything else keeps the plain "has finished" lead — a real failure still asks to be
+    // reacted to.
+    const failed = buildBackgroundTaskDoneMessage(
+      { kind: "command", id: "proc-12ab34cd", status: "failed", detail: "exit code 2" },
+      "",
+    );
+    expect(failed).toContain("has finished.");
+    expect(failed).not.toContain("Do not restart");
+  });
+
   it("userText marks non-human senders and leaves human input unmarked", () => {
     expect((userText("hi").payload as TextPayload).sender).toBeUndefined();
     expect((userText("hi", "user").payload as TextPayload).sender).toBeUndefined();
@@ -271,6 +293,51 @@ describe("exec_command run_in_background", () => {
     expect(legacy.output).toContain("Unknown tool: kill_command");
   });
 
+  it.skipIf(process.platform === "win32")(
+    "a stop signal from outside reports stopped, not a signal failure",
+    async () => {
+      const { env } = await makeEnv();
+      const events: BackgroundTaskDoneEvent[] = [];
+      env.setBackgroundTaskListener((e) => events.push(e));
+      await runTool(env, "exec_command", { cmd: "sleep 30", run_in_background: true });
+      const pid = env.listBackgroundCommands()[0]!.pid!;
+      // Nobody told the harness: a Ctrl-C in a terminal sharing the group, a pkill, a
+      // supervisor stopping a dev server. Only the signal itself says it was deliberate —
+      // and read as a crash, the model's next move is to start the thing back up.
+      process.kill(pid, "SIGTERM");
+      await waitFor(() => events.length === 1);
+      expect(events[0]).toMatchObject({ status: "stopped", detail: "stopped by SIGTERM" });
+    },
+  );
+
+  it("the host's stop button still reports — as stopped, not as a signal failure", async () => {
+    const { env } = await makeEnv();
+    const events: BackgroundTaskDoneEvent[] = [];
+    env.setBackgroundTaskListener((e) => events.push(e));
+    const res = await runTool(env, "exec_command", { cmd: "sleep 30", run_in_background: true });
+    const id = extractProcessId(res.output);
+    // The user's stop from the Web App's process list: the conversation still hears about it
+    // — the dev server it started is down — it just must not hear "failed".
+    expect(env.killBackgroundCommand(id)).toBe(true);
+    await waitFor(() => events.length === 1);
+    expect(events[0]).toMatchObject({ id, status: "stopped" });
+    expect(env.killBackgroundCommand(id)).toBe(false);
+  });
+
+  it("a harness-forced stop (capacity eviction, idle reap) reports stopped", async () => {
+    // Those two paths kill through the registry rather than CommandSessionManager.kill, so
+    // their report stays armed — and must not blame the process for a stop the harness
+    // itself asked for, whatever the platform turns that kill into.
+    const { dir } = await makeEnv();
+    const events: BackgroundTaskDoneEvent[] = [];
+    const session = new ManagedSession({ cmd: "sleep 30", cwd: dir, env: process.env });
+    cleanups.push(() => session.killHard());
+    armCommandDoneReport(session, "proc-evicted", { backgroundDone: (e) => events.push(e) });
+    session.kill();
+    await waitFor(() => events.length === 1);
+    expect(events[0]).toMatchObject({ id: "proc-evicted", status: "stopped" });
+  });
+
   it("dispose suppresses pending completion reports", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "penguin-bg-"));
     cleanups.push(() => rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }));
@@ -301,6 +368,13 @@ const HOP = "session-child-12ab34cd";
 
 type RunInput = { prompt: string; signal?: AbortSignal; approve?: ApproveFn };
 
+/**
+ * Test fakes still talk in prompt strings; the contract now takes the OmniMessage list a
+ * Session's `run` takes, so the adapters below unwrap it once (see SubagentHandle.run).
+ */
+const promptOf = (messages: OmniMessage[]): string =>
+  messages.map((m) => (m.payload as { text?: string }).text ?? "").join("");
+
 function runnerOf(run: (input: RunInput) => AsyncGenerator<OmniMessage>): SubagentRunner {
   return {
     async spawn() {
@@ -317,7 +391,7 @@ function runnerOf(run: (input: RunInput) => AsyncGenerator<OmniMessage>): Subage
             payload: { session_id: HOP },
           } as unknown as OmniMessage);
         },
-        run,
+        run: ({ messages, ...rest }) => run({ prompt: promptOf(messages), ...rest }),
         dispose() {},
       };
       return handle;
@@ -436,7 +510,7 @@ describe("run_subagent run_in_background", () => {
     // The user messages the idle child from the panel: their conversation, not dispatched
     // work — the parent must not be notified when it settles.
     const session = manager.get(id)!;
-    session.startRun("user says hi", { suppressDoneReport: true });
+    session.startRun([userText("user says hi")], { suppressDoneReport: true });
     await waitFor(() => gates.has("user says hi"));
     gates.get("user says hi")!();
     await waitFor(() => !session.running);
@@ -705,6 +779,24 @@ describe("Session background notices", () => {
     session.takeBackgroundNotices();
     expect(session.takeBackgroundNotices()).toHaveLength(0);
     expect(session.hasPendingBackgroundNotices()).toBe(false);
+  });
+
+  it("a stopped command's notice says stopped, not failed", async () => {
+    const { environment, fire } = listenerEnvironment();
+    const session = new Session({
+      meta: META,
+      ...IMAGES,
+      bootstrap: async () => ({ tools: [], llm: new ReplyLLM(), mcp: [] }),
+      mcpServers: [],
+      environment,
+    });
+    fire({ ...DONE_EVENT, status: "stopped", detail: "stopped by SIGTERM" });
+    const text = (session.takeBackgroundNotices()[0]!.payload as TextPayload).text;
+    // The line the model reads first — "Background command failed … terminated by signal
+    // SIGTERM" was the whole problem.
+    expect(text).toContain("Background command stopped: `sleep 1` (process_id proc-11aa22bb)");
+    expect(text).toContain("stopped by SIGTERM");
+    expect(text).not.toContain("failed");
   });
 
   it("delivers a queued notice on the next run without a host signal for running tasks", async () => {

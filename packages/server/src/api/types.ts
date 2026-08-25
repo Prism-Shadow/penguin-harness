@@ -19,12 +19,12 @@ import type {
   ToolCallPayload,
 } from "@prismshadow/penguin-core/omnimessage";
 import type {
-  HarnessInfo,
   MCPServerConfig,
   ThinkingLevelName,
   ToolDefinitionConfig,
-  VersionReport,
 } from "@prismshadow/penguin-core/interfaces";
+// Build/harness identity is not an interface contract — it ships from the barrel (core's version-info.ts).
+import type { HarnessInfo, VersionReport } from "@prismshadow/penguin-core";
 
 // ---------------------------------------------------------------------------
 // General

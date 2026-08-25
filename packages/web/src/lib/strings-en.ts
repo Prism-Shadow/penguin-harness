@@ -1604,14 +1604,11 @@ Scenarios:
     modelLockedHint: "Type /model to switch models",
     scheduledFrom: (name: string) => `Triggered by scheduled task "${name}"`,
     /** One-line notice of a `[background_task_done]` harness message (run_in_background completion): the collapsed row's whole label. */
-    backgroundDone: (kind: "command" | "subagent", ok: boolean) =>
-      kind === "command"
-        ? ok
-          ? "Background command finished"
-          : "Background command failed"
-        : ok
-          ? "Background task finished"
-          : "Background task failed",
+    backgroundDone: (kind: "command" | "subagent", status: "completed" | "failed" | "stopped") => {
+      const what = kind === "command" ? "Background command" : "Background task";
+      if (status === "stopped") return `${what} stopped`;
+      return status === "completed" ? `${what} finished` : `${what} failed`;
+    },
     emptyGreeting: "Start a new conversation",
     /** Unified step-row titles (same header idiom as workRunning/workDone). */
     mcpConnectTitle: "MCP connect",

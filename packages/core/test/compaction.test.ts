@@ -53,7 +53,7 @@ import type {
   GenerativeModelParameters,
   LLMInterface,
   LLMOutcome,
-} from "../src/interfaces.js";
+} from "../src/interfaces/index.js";
 import { ContextEngine, SUMMARY_RETRY_GUIDANCE } from "../src/engine/context-engine.js";
 import { Session } from "../src/session.js";
 import type { CompactionSettings } from "../src/engine/context-engine.js";

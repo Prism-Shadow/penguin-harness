@@ -1013,7 +1013,10 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     const outcome = await deps.manager.sendToSubagent(
       row.sessionId,
       pathParam(c, "childSessionId"),
-      text,
+      // The HTTP boundary is where a host's payload becomes OmniMessage — no sender, because
+      // a human typed this (the model's own dispatch through input_subagent stamps
+      // "parent_agent" on its side).
+      [userText(text)],
       thinkingLevel,
     );
     if (outcome === "gone") {

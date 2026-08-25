@@ -27,14 +27,14 @@
  * a nonexistent agent are expressed by the runner as a throw, and collapsed to failed.
  * Docs: /docs/tools § "Subagents".
  */
-import { partialToolCallOutput } from "../../omnimessage/index.js";
+import { partialToolCallOutput, userText } from "../../omnimessage/index.js";
 import type { OmniMessage } from "../../omnimessage/index.js";
-import { SUBAGENT_THINKING_LEVELS } from "../../interfaces.js";
+import { SUBAGENT_THINKING_LEVELS } from "../../interfaces/index.js";
 import type {
   EnvironmentServices,
   ThinkingLevelName,
   ToolDefinitionConfig,
-} from "../../interfaces.js";
+} from "../../interfaces/index.js";
 import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
 import {
   DEFAULT_SUBAGENT_YIELD_MS,
@@ -178,7 +178,7 @@ export function createSubagentTool(
         // not at the first input_subagent access.
         const meta = session.takeMeta();
         if (meta) yield meta;
-        session.startRun(prompt);
+        session.startRun([userText(prompt, "parent_agent")]);
         return {
           stopReason: "completed",
           note:
@@ -193,7 +193,7 @@ export function createSubagentTool(
       let registered = false;
       signal?.addEventListener("abort", onAbort, { once: true });
       try {
-        session.startRun(prompt);
+        session.startRun([userText(prompt, "parent_agent")]);
         yield* collectWindow(session, {
           yieldMs,
           toolCallId,

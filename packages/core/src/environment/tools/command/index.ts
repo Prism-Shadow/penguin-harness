@@ -2,7 +2,7 @@
  * Barrel for the long-running command session module.
  */
 export { CommandSessionManager } from "./session-manager.js";
-export { ManagedSession, resultForExit } from "./session.js";
+export { ManagedSession, isStopSignal, resultForExit } from "./session.js";
 export type { ProcessExit, SpawnOptions } from "./session.js";
 export { resolveShell, sessionShell } from "./shell.js";
 export type { ShellInvocation, ResolveShellOptions } from "./shell.js";

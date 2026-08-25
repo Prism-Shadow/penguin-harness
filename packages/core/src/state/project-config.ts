@@ -27,7 +27,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
-import type { CommandPolicyConfig, CommandPolicyRule, ThinkingLevelName } from "../interfaces.js";
+import type {
+  CommandPolicyConfig,
+  CommandPolicyRule,
+  ThinkingLevelName,
+} from "../interfaces/index.js";
 import { atomicWriteFile } from "../internal/atomic-write.js";
 import { DEFAULT_COMMAND_POLICY_RULES } from "./command-policy-defaults.js";
 import { canonicalClientType, presetModelEntries } from "./model-catalog.js";

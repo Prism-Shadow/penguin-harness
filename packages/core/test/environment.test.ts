@@ -12,7 +12,7 @@ import {
 } from "../src/omnimessage/index.js";
 import type { OmniMessage } from "../src/omnimessage/index.js";
 import { BUILTIN_TOOL_FACTORIES } from "../src/environment/tools/registry.js";
-import type { ToolConfig, ToolDefinitionConfig } from "../src/interfaces.js";
+import type { ToolConfig, ToolDefinitionConfig } from "../src/interfaces/index.js";
 
 /** Tool config for exec_command (permission/maxOutputLength adjustable). */
 function execTool(overrides: Partial<ToolDefinitionConfig> = {}): ToolDefinitionConfig {

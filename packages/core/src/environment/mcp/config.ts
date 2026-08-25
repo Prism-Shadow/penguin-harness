@@ -23,7 +23,7 @@
  * names), so one typo in a hand-edited YAML cannot take the whole Agent down.
  * Docs: /docs/tools § "MCP servers".
  */
-import type { MCPServerConfig, ToolPermission } from "../../interfaces.js";
+import type { MCPServerConfig, ToolPermission } from "../../interfaces/index.js";
 
 /** Default per-server budget for connecting + initial handshake (ms). */
 export const DEFAULT_MCP_CONNECT_TIMEOUT_MS = 10_000;

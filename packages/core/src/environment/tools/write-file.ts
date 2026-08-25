@@ -29,7 +29,7 @@ import { atomicWriteFile, resolveWriteTarget } from "../../internal/atomic-write
 import { buildLineDiffHunks, renderHunk } from "./diff.js";
 import { partialToolCallOutput } from "../../omnimessage/index.js";
 import type { OmniMessage } from "../../omnimessage/index.js";
-import type { ToolDefinitionConfig } from "../../interfaces.js";
+import type { ToolDefinitionConfig } from "../../interfaces/index.js";
 import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
 
 /** Tool name constant (used only within this tool module, never exposed to Environment). */

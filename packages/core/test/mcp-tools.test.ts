@@ -14,7 +14,7 @@ import { McpToolProvider, renderCallToolResult } from "../src/environment/mcp/pr
 import { Session } from "../src/session.js";
 import { assistantText, toolCall, userText } from "../src/omnimessage/index.js";
 import type { OmniMessage, SessionMetaPayload } from "../src/omnimessage/index.js";
-import type { LLMInterface, LLMOutcome, MCPServerConfig } from "../src/interfaces.js";
+import type { LLMInterface, LLMOutcome, MCPServerConfig } from "../src/interfaces/index.js";
 
 const FIXTURE = fileURLToPath(new URL("./fixtures/mcp-stdio-server.mjs", import.meta.url));
 

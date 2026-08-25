@@ -18,7 +18,11 @@
  */
 import { imageUrlMessage, partialToolCallOutput, userText } from "../../omnimessage/index.js";
 import type { OmniMessage } from "../../omnimessage/index.js";
-import type { LLMOutcome, ToolDefinitionConfig, VisionDescriberService } from "../../interfaces.js";
+import type {
+  LLMOutcome,
+  ToolDefinitionConfig,
+  VisionDescriberService,
+} from "../../interfaces/index.js";
 import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
 import { formatSize, loadImage } from "./read-image.js";
 

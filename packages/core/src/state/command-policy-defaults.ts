@@ -12,7 +12,7 @@
  * Descriptions are stored data (project-editable after seeding), so they are plain
  * English like the rest of the config file.
  */
-import type { CommandPolicyConfig, CommandPolicyRule } from "../interfaces.js";
+import type { CommandPolicyConfig, CommandPolicyRule } from "../interfaces/index.js";
 
 /**
  * THE single "absent = factory set" fallback: every consumer of the rule list —
