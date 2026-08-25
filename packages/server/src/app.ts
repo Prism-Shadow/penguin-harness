@@ -466,6 +466,27 @@ function etagOfBuffer(content: Buffer): string {
   return etag;
 }
 
+/**
+ * Whether `If-None-Match` claims this exact representation, per RFC 9110's rules rather than
+ * by string equality — both of which a real deployment hits:
+ *
+ * - It is a LIST. A client holding several validators sends `"a", "b"`.
+ * - Comparison is WEAK, so `W/"x"` and `"x"` are the same tag. A proxy that re-encodes a
+ *   response (nginx's gzip module is the common one) downgrades a strong ETag to weak on the
+ *   way out, and the client sends back what it was given.
+ *
+ * Getting this wrong costs only 304s — the bytes are still correct — which is exactly why it
+ * would never be noticed, and why it is worth a few lines rather than a string compare.
+ */
+function ifNoneMatchHits(header: string | undefined, etag: string): boolean {
+  if (header === undefined) return false;
+  const bare = (tag: string) => tag.trim().replace(/^W\//, "");
+  // `*` means "any current representation": for a resource that exists, that is a match.
+  if (header.trim() === "*") return true;
+  const want = bare(etag);
+  return header.split(",").some((tag) => bare(tag) === want);
+}
+
 /** The static response for one resolved file: 304 on an ETag match, the bytes otherwise. */
 function staticResponse(
   c: Context<AppEnv>,
@@ -477,7 +498,7 @@ function staticResponse(
     "Cache-Control": cacheControlFor(servedPath),
     ETag: etag,
   };
-  if (c.req.header("if-none-match") === etag) {
+  if (ifNoneMatchHits(c.req.header("if-none-match"), etag)) {
     return new Response(null, { status: 304, headers });
   }
   headers["Content-Type"] =
@@ -535,8 +556,17 @@ function registerStaticRoutes(app: Hono<AppEnv>, resolveSource: () => Promise<We
     let content: Buffer;
     let mtimeMs = 0;
     try {
-      content = await fsp.readFile(file);
-      mtimeMs = (await fsp.stat(file)).mtimeMs;
+      // ONE handle for both, not stat-then-read: a handle names an inode, so the validator
+      // is guaranteed to describe the bytes being sent. Read and stat as separate lookups
+      // can straddle a file replacement and tag old bytes with a new mtime — after which
+      // the client revalidates, matches, and keeps the stale copy indefinitely.
+      const handle = await fsp.open(file, "r");
+      try {
+        mtimeMs = (await handle.stat()).mtimeMs;
+        content = await handle.readFile();
+      } finally {
+        await handle.close();
+      }
     } catch {
       return c.json(errorBody("not_found", "Resource does not exist."), 404);
     }
