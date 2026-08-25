@@ -42,9 +42,9 @@ interface AuthContextValue {
    */
   desktopMode: boolean;
   /**
-   * How THIS session was established. A browser signed into a desktop-mode server holds
-   * a "password" session; only "desktop" sessions (the shell's window) may change the
-   * password without the old one.
+   * How THIS session was established — a browser signed into a desktop-mode server holds a
+   * "password" session. "desktop" and "setup" may change the password without the old one
+   * (see omitsOldPassword in lib/account-menu).
    */
   sessionVia: MeResponse["sessionVia"];
   /**

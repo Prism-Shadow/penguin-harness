@@ -11,11 +11,6 @@ export interface UserRow {
   /** Still using the initial password (seeded / set by an admin); cleared to 0 once the user changes it. */
   passwordIsInitial: boolean;
   createdAt: string;
-  /**
-   * Signed tokens issued BEFORE this instant are refused (ISO; null = no mark). This is how
-   * "clear this user's sessions" works when a session is a signature instead of a row: an
-   * admin password reset stamps it, and every older token dies at its next request.
-   */
 }
 
 function mapRow(r: Record<string, unknown>): UserRow {

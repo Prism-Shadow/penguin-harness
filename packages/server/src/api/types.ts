@@ -130,7 +130,7 @@ export interface UploadLimits {
 }
 
 export interface PasswordChangeRequest {
-  /** Omitted only by desktop-established sessions (desktop mode); required otherwise. */
+  /** Omitted only by a "desktop" or "setup" session (see {@link MeResponse.sessionVia}); required otherwise. */
   oldPassword?: string;
   /** At least 8 characters. */
   newPassword: string;
