@@ -92,6 +92,23 @@ export interface CreateAgentOptions {
    * user's own shell environment).
    */
   proxyEnv?: () => ProxyEnvPolicy | null;
+  /**
+   * Harness-control variables for the command subprocesses of every Session this Agent
+   * creates or resumes. The hosting server passes a policy getter here; core evaluates it
+   * with each Session's own coordinates (subagent Sessions get their own agent/session
+   * ids — a child Agent inherits the getter like `proxyEnv`, and its Sessions call it with
+   * their own context). The returned entries override vault entries of the same name (see
+   * {@link EnvironmentConfig.controlEnv}). Absent = nothing is injected (SDK/CLI
+   * standalone use).
+   */
+  controlEnv?: (ctx: ControlEnvContext) => Record<string, string>;
+}
+
+/** The Session coordinates a {@link CreateAgentOptions.controlEnv} policy is evaluated with. */
+export interface ControlEnvContext {
+  projectId: string;
+  agentId: string;
+  sessionId: string;
 }
 
 export interface CreateSessionOptions {
@@ -156,7 +173,7 @@ export function metaMaxTokens(budget: number, modelCap: number | undefined): num
 export async function createAgent(opts: CreateAgentOptions = {}): Promise<Agent> {
   const state = await loadOrInitAgentState(opts);
   const projectConfig = await loadProjectConfig(state.root, state.projectId);
-  return new Agent(state, projectConfig, opts.proxyEnv);
+  return new Agent(state, projectConfig, opts.proxyEnv, opts.controlEnv);
 }
 
 export class Agent {
@@ -165,6 +182,8 @@ export class Agent {
     readonly projectConfig: ProjectConfig,
     /** See {@link CreateAgentOptions.proxyEnv}; forwarded into every Session's Environment. */
     private readonly proxyEnv?: () => ProxyEnvPolicy | null,
+    /** See {@link CreateAgentOptions.controlEnv}; evaluated per Session with that Session's coordinates. */
+    private readonly controlEnv?: (ctx: ControlEnvContext) => Record<string, string>,
   ) {}
 
   /**
@@ -670,10 +689,13 @@ export class Agent {
                 root,
                 projectId,
                 agentId,
-                // A child Agent loads its own vault/config, but the proxy-env policy
-                // getter is host policy, not Agent state: the subagent's commands run in
-                // the same serving process, so they follow the same settings as the parent's.
+                // A child Agent loads its own vault/config, but the proxy-env and
+                // control-env policy getters are host policy, not Agent state: the
+                // subagent's commands run in the same serving process, so they follow the
+                // same settings as the parent's — controlEnv is then evaluated with the
+                // child Session's own coordinates.
                 ...(parentAgent.proxyEnv ? { proxyEnv: parentAgent.proxyEnv } : {}),
+                ...(parentAgent.controlEnv ? { controlEnv: parentAgent.controlEnv } : {}),
               })
             : parentAgent;
         // The child Session follows the PARENT Session, never the Project default: with the
@@ -717,6 +739,7 @@ export class Agent {
                 projectId,
                 agentId,
                 ...(parentAgent.proxyEnv ? { proxyEnv: parentAgent.proxyEnv } : {}),
+                ...(parentAgent.controlEnv ? { controlEnv: parentAgent.controlEnv } : {}),
               });
         const childSession = await childAgent.resumeSession({ sessionId });
         return subagentHandleFor(childSession);
@@ -880,6 +903,19 @@ export class Agent {
       services: { subagentRunner, ...(visionDescriber ? { visionDescriber } : {}) },
       ...(Object.keys(vault).length > 0 ? { vault } : {}),
       ...(this.proxyEnv ? { proxyEnv: this.proxyEnv } : {}),
+      // The control-env policy is bound to THIS Session's coordinates here (sessionId is
+      // final by now); the getter shape keeps it re-evaluated at every command spawn, so
+      // the host can rotate what it injects (e.g. its API token) without a rebuild.
+      ...(this.controlEnv
+        ? {
+            controlEnv: () =>
+              this.controlEnv!({
+                projectId: this.state.projectId,
+                agentId: this.state.agentId,
+                sessionId,
+              }),
+          }
+        : {}),
     });
 
     // Configured output cap: the entry's per-model annotation wins over the Agent's

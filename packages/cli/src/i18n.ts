@@ -38,6 +38,10 @@ export interface Messages {
     approve: string;
     /** run/chat's --thinking: the session's thinking level (selectable tiers only, mirrors the web picker). */
     thinking: string;
+    /** Machine-readable output (raw JSON instead of the rendered/tabular form). */
+    json: string;
+    /** --server: explicit server URL (overrides PENGUIN_API_URL, the local lock and auto-start). */
+    server: string;
   };
   config: {
     desc: string;
@@ -81,6 +85,12 @@ export interface Messages {
     message: string;
     /** run's --goal: goal mode, with an optional token budget value (`--goal 500k`). */
     goal: string;
+    /** run's --session: reuse an existing Session (full id or unique fragment). */
+    session: string;
+    /** run's --background: POST the task and exit immediately, printing the session id. */
+    background: string;
+    /** --session combined with --workspace / the model pair: neither can change after creation. */
+    sessionNoOverride(): string;
   };
   chat: {
     desc: string;
@@ -88,6 +98,125 @@ export interface Messages {
     /** chat's --verbose: start with full tool output (collapsing off). */
     verbose: string;
   };
+  /** `penguin ls`: session listing. */
+  ls: {
+    desc: string;
+    /** -a/--all: include archived sessions. */
+    all: string;
+    empty(projectId: string): string;
+    colId(): string;
+    colAgent(): string;
+    colTitle(): string;
+    colState(): string;
+    colLast(): string;
+    colWorkspace(): string;
+    stateIdle(): string;
+    stateRunning(): string;
+  };
+  /** `penguin input`: send a message into an existing session (steer when running, task when idle). */
+  input: {
+    desc: string;
+    message: string;
+    /** --no-wait: return right after the 202 instead of rendering to completion. */
+    noWait: string;
+  };
+  /** `penguin logs`: render a session's history, optionally following the live stream. */
+  logs: {
+    desc: string;
+    tail: string;
+    follow: string;
+    tailInvalid(value: string): string;
+  };
+  /** `penguin agent`: agent listing and creation. */
+  agent: {
+    desc: string;
+    lsDesc: string;
+    createDesc: string;
+    createId: string;
+    createName: string;
+    createDescription: string;
+    /** --skills: comma-separated library skill names to seed the new agent with. */
+    createSkills: string;
+    created(agentId: string, projectId: string): string;
+    colId(): string;
+    colName(): string;
+    colSessions(): string;
+    colDescription(): string;
+  };
+  /** `penguin project`: project listing. */
+  project: {
+    desc: string;
+    lsDesc: string;
+    colId(): string;
+    colName(): string;
+    colRole(): string;
+  };
+  /** `penguin cost`: token/cost aggregates. */
+  cost: {
+    desc: string;
+    days: string;
+    from: string;
+    to: string;
+    by: string;
+    rangeIncomplete(): string;
+    daysInvalid(value: string): string;
+    byInvalid(value: string): string;
+    today(): string;
+    last7d(): string;
+    total(): string;
+    empty(): string;
+    /** Cost cell when no model in the bucket has pricing configured. */
+    noPricing(): string;
+    colTokens(): string;
+    colRequests(): string;
+    colCost(): string;
+    colGroup(dimension: string): string;
+  };
+  /** `penguin schedule`: scheduled-task listing. */
+  schedule: {
+    desc: string;
+    lsDesc: string;
+    enabled(): string;
+    disabled(): string;
+    /** Period column for a one-off task (no period configured). */
+    oneShot(): string;
+    /** Target column when the schedule creates a new session each firing. */
+    newSession(): string;
+    empty(projectId: string): string;
+    colName(): string;
+    colEnabled(): string;
+    colStartAt(): string;
+    colPeriod(): string;
+    colTarget(): string;
+    colLastFired(): string;
+    colStatus(): string;
+  };
+  /** Server-connection layer: resolution, auto-start, tokens, streams. */
+  client: {
+    invalidServerUrl(value: string): string;
+    /** --server names a non-loopback URL and no PENGUIN_API_TOKEN is set (the local token file must not travel). */
+    remoteNeedsToken(url: string): string;
+    /** No server reachable and auto-start was disabled by the caller. */
+    noServer(): string;
+    /** Auto-start impossible: the CLI entry is not plain-node runnable (tsx dev run). */
+    autoStartUnavailable(): string;
+    autoStartFailed(logPath: string): string;
+    /** Printed to stderr when a server was auto-started for this invocation. */
+    autoStarted(url: string, logPath: string): string;
+    /** 401 with no token found anywhere (env or file). */
+    noToken(url: string, tokenPath: string): string;
+    /** 401 despite presenting a token. */
+    authFailed(url: string): string;
+    httpError(status: number, code: string, message: string): string;
+    sessionNotFound(ref: string, projectId: string): string;
+    sessionAmbiguous(ref: string, candidates: string[]): string;
+    /** The SSE stream dropped and reconnecting gave up. */
+    streamLost(detail: string): string;
+    /** resync_required: the reconnect fell off the server's replay buffer (a display gap, not data loss). */
+    streamResynced(): string;
+  };
+  /** `/thinking` display when the Session pins no level: the Agent's configured default applies. */
+  chatThinkingConfigured(): string;
   serve: {
     serverDesc: string;
     webDesc: string;
@@ -363,6 +492,9 @@ const en: Messages = {
       "Approval mode: allow-all (auto-approve, default), deny-all (auto-reject), read-only (auto-approve read-only tools, prompt for the rest), always-ask (prompt per tool)",
     thinking:
       "Thinking level for this session: low, medium, high, xhigh, or max (defaults to the Agent's configured level)",
+    json: "Print raw JSON instead of the rendered output",
+    server:
+      "Server URL to connect to (defaults to PENGUIN_API_URL, then the local running server, then auto-start)",
   },
   config: {
     desc: "Manage Project configuration",
@@ -409,6 +541,10 @@ const en: Messages = {
     desc: "Run a single Task",
     message: "Prompt for this Task",
     goal: "Goal mode: loop until the goal completes; optional token budget (e.g. 500k, 2m)",
+    session: "Reuse an existing Session (full id or a unique fragment, e.g. the 8-hex tail)",
+    background: "Post the task and exit immediately, printing the session id",
+    sessionNoOverride: () =>
+      "--session reuses an existing Session: --workspace, --model-id and --provider cannot be combined with it (neither can change after creation).",
   },
   chat: {
     desc: "Open the interactive REPL",
@@ -417,6 +553,111 @@ const en: Messages = {
     verbose:
       "Show full tool output (by default long tool outputs are collapsed to their first and last lines; /verbose toggles it mid-chat)",
   },
+  ls: {
+    desc: "List the project's sessions (all agents unless --agent-id is given)",
+    all: "Include archived sessions",
+    empty: (projectId) => `No sessions in project ${projectId} yet.`,
+    colId: () => "ID",
+    colAgent: () => "AGENT",
+    colTitle: () => "TITLE",
+    colState: () => "STATE",
+    colLast: () => "LAST",
+    colWorkspace: () => "WORKSPACE",
+    stateIdle: () => "idle",
+    stateRunning: () => "running",
+  },
+  input: {
+    desc: "Send a message into an existing session (steering while it runs, a new task when idle)",
+    message: "Message text",
+    noWait: "Return right after the server accepts the message instead of rendering the turn",
+  },
+  logs: {
+    desc: "Render a session's history",
+    tail: "Show only the last <n> entries",
+    follow: "Keep following the live stream after the history",
+    tailInvalid: (value) => `Invalid --tail value "${value}": expected a positive integer.`,
+  },
+  agent: {
+    desc: "Manage the project's agents",
+    lsDesc: "List the project's agents",
+    createDesc: "Create an agent",
+    createId: "Agent id (directory name; letters, digits, underscores)",
+    createName: "Display name (defaults to the id)",
+    createDescription: "Description",
+    createSkills: "Library skills to preinstall, comma-separated (e.g. web-search,pdf)",
+    created: (agentId, projectId) => `Agent ${agentId} created in project ${projectId}.`,
+    colId: () => "ID",
+    colName: () => "NAME",
+    colSessions: () => "SESSIONS",
+    colDescription: () => "DESCRIPTION",
+  },
+  project: {
+    desc: "Manage projects",
+    lsDesc: "List the projects this account can reach",
+    colId: () => "ID",
+    colName: () => "NAME",
+    colRole: () => "ROLE",
+  },
+  cost: {
+    desc: "Show token usage and cost (summary card by default; --by prints a grouped table)",
+    days: "Trailing window in days (sets --from/--to)",
+    from: "Range start (yyyy-mm-dd); requires --to",
+    to: "Range end (yyyy-mm-dd); requires --from",
+    by: "Group the table by: date, agent, model or session",
+    rangeIncomplete: () => "--from and --to must be given together.",
+    daysInvalid: (value) => `Invalid --days value "${value}": expected a positive integer.`,
+    byInvalid: (value) => `Invalid --by value "${value}": expected date, agent, model or session.`,
+    today: () => "today",
+    last7d: () => "last 7 days",
+    total: () => "total",
+    empty: () => "No usage recorded for this range.",
+    noPricing: () => "-",
+    colTokens: () => "TOKENS",
+    colRequests: () => "REQUESTS",
+    colCost: () => "COST",
+    colGroup: (dimension) => dimension.toUpperCase(),
+  },
+  schedule: {
+    desc: "Manage scheduled tasks",
+    lsDesc: "List the project's scheduled tasks (all agents unless --agent-id is given)",
+    enabled: () => "on",
+    disabled: () => "off",
+    oneShot: () => "once",
+    newSession: () => "new session",
+    empty: (projectId) => `No scheduled tasks in project ${projectId}.`,
+    colName: () => "NAME",
+    colEnabled: () => "ENABLED",
+    colStartAt: () => "START",
+    colPeriod: () => "PERIOD",
+    colTarget: () => "TARGET",
+    colLastFired: () => "LAST FIRED",
+    colStatus: () => "STATUS",
+  },
+  client: {
+    invalidServerUrl: (value) => `Invalid server URL "${value}": expected http(s)://host[:port].`,
+    remoteNeedsToken: (url) =>
+      `${url} is not this machine: set PENGUIN_API_TOKEN to authenticate against a remote server (the local api-token file never leaves its own data root).`,
+    noServer: () => "No running server found for this data root.",
+    autoStartUnavailable: () =>
+      "No running server found, and this CLI entry cannot auto-start one (development run). Start it yourself with `penguin server`.",
+    autoStartFailed: (logPath) =>
+      `The auto-started server did not come up. Its output is in ${logPath}.`,
+    autoStarted: (url, logPath) => `Started a local server at ${url} (log: ${logPath}).`,
+    noToken: (url, tokenPath) =>
+      `${url} rejected the request (401) and no API token is available: set PENGUIN_API_TOKEN, or make sure the server's token file is readable at ${tokenPath}.`,
+    authFailed: (url) =>
+      `${url} rejected the API token (401). If the server restarted, its token rotated — check PENGUIN_API_TOKEN, or let the CLI read the current api-token file.`,
+    httpError: (status, code, message) =>
+      `Server error ${status} (${code})${message ? `: ${message}` : ""}`,
+    sessionNotFound: (ref, projectId) =>
+      `No session matching "${ref}" in project ${projectId} (try \`penguin ls\`).`,
+    sessionAmbiguous: (ref, candidates) =>
+      `"${ref}" matches ${candidates.length} sessions:\n  ${candidates.join("\n  ")}\nUse a longer fragment or the full id.`,
+    streamLost: (detail) => `Lost the server stream and reconnecting failed: ${detail}`,
+    streamResynced: () =>
+      "[stream] reconnected past the server's replay buffer; some output may be missing here (penguin logs shows the full history)",
+  },
+  chatThinkingConfigured: () => "agent default",
   serve: {
     serverDesc:
       "Start the Web service (HTTP API and the built-in frontend, same process); subcommand reset-admin-password resets a forgotten admin password",
@@ -684,6 +925,8 @@ const zh: Messages = {
     approve:
       "审批模式：allow-all（全部放行，缺省）、deny-all（全部拒绝）、read-only（自动放行只读工具，其余仍逐个询问）、always-ask（逐个询问）",
     thinking: "本会话的思考等级：low、medium、high、xhigh 或 max（缺省用 Agent 配置的等级）",
+    json: "输出原始 JSON，不做渲染",
+    server: "要连接的服务器地址（缺省依次取 PENGUIN_API_URL、本机运行中的服务器、自动拉起）",
   },
   config: {
     desc: "管理 Project 配置",
@@ -726,6 +969,10 @@ const zh: Messages = {
     desc: "单次运行一个 Task",
     message: "本次 Task 的 Prompt",
     goal: "目标模式：循环运行直至目标完成；可选 token 预算（如 500k、2m）",
+    session: "复用既有 Session（完整 id 或唯一片段，如末尾 8 位十六进制）",
+    background: "提交任务后立即退出，打印 session id",
+    sessionNoOverride: () =>
+      "--session 复用既有 Session：不能与 --workspace、--model-id、--provider 同时使用（二者创建后不可更换）。",
   },
   chat: {
     desc: "打开交互式 REPL",
@@ -733,6 +980,110 @@ const zh: Messages = {
       "恢复既有 Session 继续对话（缺省恢复当前 Agent 最近一次）；Workspace 与模型沿用原 Session",
     verbose: "显示完整工具输出（缺省折叠过长的工具输出、只保留首尾数行；/verbose 可随时切换）",
   },
+  ls: {
+    desc: "列出 Project 的会话（未指定 --agent-id 时覆盖全部 Agent）",
+    all: "包含已归档会话",
+    empty: (projectId) => `Project ${projectId} 还没有会话。`,
+    colId: () => "ID",
+    colAgent: () => "AGENT",
+    colTitle: () => "标题",
+    colState: () => "状态",
+    colLast: () => "最近活动",
+    colWorkspace: () => "WORKSPACE",
+    stateIdle: () => "空闲",
+    stateRunning: () => "运行中",
+  },
+  input: {
+    desc: "向既有会话发送消息（运行中即插话，空闲时发起新 Task）",
+    message: "消息文本",
+    noWait: "服务端受理后立即返回，不渲染本轮输出",
+  },
+  logs: {
+    desc: "渲染会话的历史消息",
+    tail: "只显示最后 <n> 条",
+    follow: "渲染历史后继续跟随实时输出流",
+    tailInvalid: (value) => `--tail 值「${value}」无效：应为正整数。`,
+  },
+  agent: {
+    desc: "管理 Project 的 Agent",
+    lsDesc: "列出 Project 的 Agent",
+    createDesc: "创建 Agent",
+    createId: "Agent id（即目录名；字母、数字、下划线）",
+    createName: "显示名（缺省同 id）",
+    createDescription: "描述",
+    createSkills: "预装的技能库 Skill，逗号分隔（如 web-search,pdf）",
+    created: (agentId, projectId) => `已在 Project ${projectId} 创建 Agent ${agentId}。`,
+    colId: () => "ID",
+    colName: () => "名称",
+    colSessions: () => "会话数",
+    colDescription: () => "描述",
+  },
+  project: {
+    desc: "管理 Project",
+    lsDesc: "列出当前账号可用的 Project",
+    colId: () => "ID",
+    colName: () => "名称",
+    colRole: () => "角色",
+  },
+  cost: {
+    desc: "查看 Token 用量与成本（缺省打印汇总卡片；--by 打印分组表格）",
+    days: "最近 n 天（自动换算为 --from/--to）",
+    from: "起始日期（yyyy-mm-dd）；须与 --to 成对",
+    to: "结束日期（yyyy-mm-dd）；须与 --from 成对",
+    by: "分组维度：date、agent、model 或 session",
+    rangeIncomplete: () => "--from 与 --to 必须成对给出。",
+    daysInvalid: (value) => `--days 值「${value}」无效：应为正整数。`,
+    byInvalid: (value) => `--by 值「${value}」无效：应为 date、agent、model 或 session。`,
+    today: () => "今日",
+    last7d: () => "近 7 天",
+    total: () => "累计",
+    empty: () => "该范围内没有用量记录。",
+    noPricing: () => "-",
+    colTokens: () => "TOKEN",
+    colRequests: () => "请求数",
+    colCost: () => "成本",
+    colGroup: (dimension) => dimension.toUpperCase(),
+  },
+  schedule: {
+    desc: "管理定时任务",
+    lsDesc: "列出 Project 的定时任务（未指定 --agent-id 时覆盖全部 Agent）",
+    enabled: () => "开",
+    disabled: () => "关",
+    oneShot: () => "一次性",
+    newSession: () => "新建会话",
+    empty: (projectId) => `Project ${projectId} 没有定时任务。`,
+    colName: () => "名称",
+    colEnabled: () => "启用",
+    colStartAt: () => "开始时刻",
+    colPeriod: () => "周期",
+    colTarget: () => "目标",
+    colLastFired: () => "最近触发",
+    colStatus: () => "状态",
+  },
+  client: {
+    invalidServerUrl: (value) => `服务器地址「${value}」无效：应为 http(s)://host[:port]。`,
+    remoteNeedsToken: (url) =>
+      `${url} 不是本机：连接远端服务器须设置 PENGUIN_API_TOKEN（本机的 api-token 文件不会发往其它主机）。`,
+    noServer: () => "该数据根目录没有正在运行的服务器。",
+    autoStartUnavailable: () =>
+      "没有正在运行的服务器，且当前 CLI 入口无法自动拉起（开发态运行）。请自行执行 `penguin server`。",
+    autoStartFailed: (logPath) => `自动启动的服务器未能就绪，输出见 ${logPath}。`,
+    autoStarted: (url, logPath) => `已在本机启动服务器 ${url}（日志：${logPath}）。`,
+    noToken: (url, tokenPath) =>
+      `${url} 拒绝了请求（401），且没有可用的 API token：请设置 PENGUIN_API_TOKEN，或确认服务器的 token 文件可读（${tokenPath}）。`,
+    authFailed: (url) =>
+      `${url} 拒绝了 API token（401）。服务器重启会轮换 token——检查 PENGUIN_API_TOKEN，或让 CLI 读取最新的 api-token 文件。`,
+    httpError: (status, code, message) =>
+      `服务器错误 ${status}（${code}）${message ? `：${message}` : ""}`,
+    sessionNotFound: (ref, projectId) =>
+      `Project ${projectId} 中没有匹配「${ref}」的会话（可用 \`penguin ls\` 查看）。`,
+    sessionAmbiguous: (ref, candidates) =>
+      `「${ref}」匹配到 ${candidates.length} 个会话：\n  ${candidates.join("\n  ")}\n请使用更长的片段或完整 id。`,
+    streamLost: (detail) => `与服务器的输出流断开且重连失败：${detail}`,
+    streamResynced: () =>
+      "[stream] 重连时已超出服务端回放缓冲，此处可能缺少部分输出（penguin logs 可查看完整历史）",
+  },
+  chatThinkingConfigured: () => "Agent 配置值",
   serve: {
     serverDesc:
       "启动 Web 服务（HTTP API 与内置前端，同一进程）；子命令 reset-admin-password 重置忘记的管理员密码",

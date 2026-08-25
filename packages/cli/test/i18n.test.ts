@@ -69,6 +69,35 @@ describe("getMessages", () => {
     expect(getMessages("zh").chatHints()).toContain("/verbose");
   });
 
+  it("server-backed command families exist in both languages (spot checks)", () => {
+    for (const lang of ["en", "zh"] as const) {
+      const m = getMessages(lang);
+      // Every listing command names its subject in its description.
+      expect(m.ls.desc.length).toBeGreaterThan(0);
+      expect(m.input.desc.length).toBeGreaterThan(0);
+      expect(m.logs.desc.length).toBeGreaterThan(0);
+      expect(m.agent.lsDesc.length).toBeGreaterThan(0);
+      expect(m.project.lsDesc.length).toBeGreaterThan(0);
+      expect(m.cost.desc.length).toBeGreaterThan(0);
+      expect(m.schedule.lsDesc.length).toBeGreaterThan(0);
+      // Interpolating messages carry their arguments in both languages.
+      expect(m.ls.empty("proj-x")).toContain("proj-x");
+      expect(m.agent.created("helper", "proj-x")).toContain("helper");
+      expect(m.client.autoStarted("http://localhost:1", "/log")).toContain("http://localhost:1");
+      expect(m.client.remoteNeedsToken("https://r")).toContain("PENGUIN_API_TOKEN");
+      expect(m.client.noToken("http://l", "/root/api-token")).toContain("/root/api-token");
+      expect(m.client.httpError(500, "boom", "detail")).toContain("500");
+      expect(m.client.sessionAmbiguous("ab", ["s1", "s2"])).toContain("s1");
+      expect(m.client.sessionNotFound("zz", "proj-x")).toContain("zz");
+      expect(m.logs.tailInvalid("x")).toContain("x");
+      expect(m.cost.byInvalid("bogus")).toContain("bogus");
+      expect(m.run.sessionNoOverride()).toContain("--session");
+    }
+    // The dictionaries are genuinely two languages, not one copied twice.
+    expect(getMessages("zh").ls.desc).not.toBe(getMessages("en").ls.desc);
+    expect(getMessages("zh").client.noServer()).not.toBe(getMessages("en").client.noServer());
+  });
+
   it("header shows the version and Agent / Workspace / Model on their own lines", () => {
     for (const lang of ["en", "zh"] as const) {
       const lines = getMessages(lang).header("run", "1.2.3", "ag", "/ws", "mod").split("\n");

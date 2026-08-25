@@ -27,11 +27,13 @@ export interface SessionRow {
   /** Archive timestamp, ISO; NULL = not archived (omitting on insert defaults to NULL). */
   archivedAt?: string | null;
   /**
-   * Creating client: "web" (created via the Web App/server) or "cli" (adopted from a Trace
-   * the CLI left behind); NULL = legacy row from before the column existed, treated as web.
-   * The schedule/subagent SOURCE is deliberately NOT a row field — core session_meta in the
-   * Trace stays the single source of truth for it (runtime/session-sources.ts); `client` is
-   * a separate, DB-only axis that meta never records.
+   * Creating client: "web" (created via the Web App), "cli" (created through the API by
+   * the CLI, or adopted from a Trace a legacy CLI-direct run left behind); NULL = legacy
+   * row from before the column existed, treated as web. Informational provenance only —
+   * no list filters on it. The schedule/subagent SOURCE is deliberately NOT a row field —
+   * core session_meta in the Trace stays the single source of truth for it
+   * (runtime/session-sources.ts); `client` is a separate, DB-only axis that meta never
+   * records.
    */
   client?: "web" | "cli" | null;
   /** Cache: a Trace record exists (set at task start / adoption / subagent registration; backfilled by list hydration). */
@@ -178,14 +180,13 @@ export class SessionsRepo {
 
   /**
    * An Agent's rows, newest first (the list order the sidebar shows; served by
-   * idx_sessions_agent_created). `webOnly` keeps only web-created rows — NULL counts as
-   * web (legacy rows predate the column and the user chose to grandfather them as visible).
+   * idx_sessions_agent_created). Never filtered by `client` — every row is listed
+   * whichever client created it.
    */
-  listByAgent(projectId: string, agentId: string, opts: { webOnly?: boolean } = {}): SessionRow[] {
-    const filter = opts.webOnly ? " AND (client IS NULL OR client = 'web')" : "";
+  listByAgent(projectId: string, agentId: string): SessionRow[] {
     const rows = this.db
       .prepare(
-        `SELECT * FROM sessions WHERE project_id = ? AND agent_id = ?${filter}
+        `SELECT * FROM sessions WHERE project_id = ? AND agent_id = ?
          ORDER BY created_at DESC, session_id DESC`,
       )
       .all(projectId, agentId);

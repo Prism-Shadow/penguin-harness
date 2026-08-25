@@ -95,11 +95,7 @@ export const zh = {
     generalTitle: "通用",
     appearanceTitle: "外观",
     accountTitle: "账户",
-    /** Sidebar Session list: also show CLI-created Sessions (default off — the list then never scans the Trace directories). */
-    showCliSessions: "显示 CLI 会话",
-    showCliSessionsInfo:
-      "关闭时会话列表只列出在 Web 端创建的会话，直接由数据库返回；开启后会额外扫描轨迹目录，把 CLI 创建的会话一并列出。仅影响当前账号。",
-    /** Trace import (below the CLI-sessions filter): the two pickers' accessible names, the pick-a-file action, and its outcomes. */
+    /** Trace import: the two pickers' accessible names, the pick-a-file action, and its outcomes. */
     importTrace: "导入 Trace",
     importTraceInfo:
       "上传从其他部署导出的 .jsonl 轨迹文件，它会成为所选 Agent 的一个会话。目的地的两个部分都在这里选择：导入接口按 Agent 划分——轨迹文件自带的 session_meta 无法指认本机的 Agent，其中的 agent_state 路径属于导出它的那台机器——而 Project 需要明确指定，因为本对话框不显示当前是哪一个，也因此可以导入到当前打开之外的 Project。导出在对话的 Trace 面板中进行。",

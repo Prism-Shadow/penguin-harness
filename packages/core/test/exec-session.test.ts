@@ -584,3 +584,70 @@ describe("proxyEnv policy governs the proxy variables commands inherit", () => {
     expect(res.output).toContain("H=[http://proxy.corp.example:8080]");
   });
 });
+
+describe("controlEnv injects the host's harness-control variables into commands", () => {
+  // The hosting server threads a controlEnv getter through Environment ->
+  // CommandSessionManager so commands the Agent runs can drive the harness back through
+  // the CLI/API (PENGUIN_API_URL / PENGUIN_API_TOKEN / the Session coordinates).
+
+  it("injected PENGUIN_* variables reach the child even though inherited ones are stripped", async () => {
+    // The host process's own PENGUIN_API_URL must NOT leak through inheritance; the same
+    // name from controlEnv must arrive — injection happens after the prefix strip.
+    process.env.PENGUIN_API_URL = "http://inherited.example:1";
+    const controlled = new Environment({
+      workspaceDir: tmp,
+      toolConfig: sessionConfig(),
+      controlEnv: () => ({
+        PENGUIN_API_URL: "http://localhost:7364",
+        PENGUIN_SESSION_ID: "session-x",
+      }),
+    });
+    try {
+      const res = await runTool(controlled, "exec_command", {
+        cmd: `node -e "console.log('U=[' + (process.env.PENGUIN_API_URL ?? '') + '] S=[' + (process.env.PENGUIN_SESSION_ID ?? '') + ']')"`,
+      });
+      expect(res.output).toContain("U=[http://localhost:7364] S=[session-x]");
+    } finally {
+      controlled.dispose();
+      delete process.env.PENGUIN_API_URL;
+    }
+  });
+
+  it("controlEnv overrides a vault entry of the same name (sanctioned host wiring wins)", async () => {
+    const controlled = new Environment({
+      workspaceDir: tmp,
+      toolConfig: sessionConfig(),
+      vault: { PENGUIN_API_TOKEN: "vault-token", KEEP_ME: "vault-kept" },
+      controlEnv: () => ({ PENGUIN_API_TOKEN: "boot-token" }),
+    });
+    try {
+      const res = await runTool(controlled, "exec_command", {
+        cmd: `node -e "console.log('T=[' + (process.env.PENGUIN_API_TOKEN ?? '') + '] K=[' + (process.env.KEEP_ME ?? '') + ']')"`,
+      });
+      expect(res.output).toContain("T=[boot-token] K=[vault-kept]");
+    } finally {
+      controlled.dispose();
+    }
+  });
+
+  it("the getter is re-read at every spawn, so a rotated token reaches running Sessions", async () => {
+    let token = "first";
+    const controlled = new Environment({
+      workspaceDir: tmp,
+      toolConfig: sessionConfig(),
+      controlEnv: () => ({ PENGUIN_API_TOKEN: token }),
+    });
+    try {
+      const read = `node -e "console.log('T=[' + (process.env.PENGUIN_API_TOKEN ?? '') + ']')"`;
+      expect((await runTool(controlled, "exec_command", { cmd: read })).output).toContain(
+        "T=[first]",
+      );
+      token = "second";
+      expect((await runTool(controlled, "exec_command", { cmd: read })).output).toContain(
+        "T=[second]",
+      );
+    } finally {
+      controlled.dispose();
+    }
+  });
+});

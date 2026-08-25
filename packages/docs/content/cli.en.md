@@ -5,29 +5,52 @@ description: Complete reference for the penguin command, its subcommands, and op
 
 The CLI ships as the npm package `@prismshadow/penguin-cli`; the command is `penguin`. Running bare `penguin` prints help; `-v, --version` prints the running build's one-line identity, and `penguin version --json` prints the whole of it. A `.env` file in the working directory is loaded automatically on startup.
 
+The CLI is a thin client of the server: every session-facing command (`run`, `chat`, `ls`, `input`, `logs`, `agent`, `project`, `cost`, `schedule`) sends HTTP requests to a PenguinHarness server and renders the replies — tasks execute on the server, sessions live in its index, and the Web App sees everything the CLI creates (and vice versa). Only `config` still edits the Project's files directly, and `server` / `web` start the service itself.
+
+## Server connection
+
+A CLI talking to the local machine's server needs no login. The connection resolves in this order, first hit wins:
+
+1. `--server <url>` — an explicit target.
+2. `PENGUIN_API_URL` — the same, from the environment. Server-driven sessions inject it (together with `PENGUIN_API_TOKEN`, `PENGUIN_PROJECT_ID`, `PENGUIN_AGENT_ID`, `PENGUIN_SESSION_ID`) into every tool subprocess, so an agent's own `penguin` calls reach the server that runs them.
+3. A live `server.lock` at the data root (`PENGUIN_HOME`, else `~/.penguin/data`): attach to the running local server.
+4. Auto-start: spawn a detached local server on an ephemeral port (its output goes to `<root>/logs/server-auto-<date>.log`), wait for it, attach. If two CLIs race, the loser's spawn exits and both attach to the winner.
+
+Authentication is the local API token: the server writes a fresh one to `<root>/api-token` (owner-only, rotated every boot), and the CLI sends it as `Authorization: Bearer`. `PENGUIN_API_TOKEN` overrides the file; the file is only read for loopback targets — connecting to a remote `--server` requires `PENGUIN_API_TOKEN` explicitly. Holding the file is admin authority by design: local filesystem access to the data root already is (the same rule `penguin server reset-admin-password` stands on).
+
 ## Global conventions
 
 - Model references: a model's identity is always the `(provider, model_id)` pair. `--model-id` takes the upstream model id and `--provider` the group it belongs to; the provider is never inferred, guessed, or defaulted. On `run` / `chat` the pair as a whole is optional — pass both to pick a model, or neither to use the Project's default model — but passing one without the other is an error.
-- Data root: `--root <dir>` overrides the data root directory. Priority: `--root` > the `PENGUIN_HOME` env var > `~/.penguin/data`.
+- Project and agent defaults: `--project-id` falls back to `PENGUIN_PROJECT_ID`, then `default_project`; `--agent-id` falls back to `PENGUIN_AGENT_ID`, then `default_agent`. Inside a server-driven session those env vars name the session's own coordinates.
+- Session references: wherever a command takes a session id (`input`, `logs`, `run --session`, `chat --resume`), the full id or any unique fragment works — the 8-hex tail `penguin ls` prints is the intended shorthand. An ambiguous fragment errors listing the candidates.
+- `--json` prints raw JSON instead of the rendered/tabular output; `--server <url>` targets a specific server (see above).
+- Data root (`config` only): `--root <dir>` overrides the data root directory. Priority: `--root` > the `PENGUIN_HOME` env var > `~/.penguin/data`.
 
 ## penguin run
 
-Send a single message, execute one Task, then exit. If the Task aborted, the exit code is non-zero, so scripts / CI can check it.
+Create a session on the server (or reuse one), send a single message, stream and render the task until it ends, print the stats line, then exit. Exit code 0 on completed; a goal run exits 0 only when the goal outcome is `complete`.
 
 ```bash
 penguin run -m "Summarize the code structure of this directory"
+penguin run -m "keep going" --session 402a2e24        # reuse a session by fragment
+penguin run -m "long job" --background                # returns the session id immediately
 ```
 
 | Option | Description |
 | --- | --- |
 | `-m, --message <message>` | Required; the message to send |
+| `--project-id <id>` | Project to use (default: `PENGUIN_PROJECT_ID`, else `default_project`) |
+| `--agent-id <id>` | Agent to use (default: `PENGUIN_AGENT_ID`, else `default_agent`) |
+| `--workspace <path>` | Workspace directory; a relative path resolves against the CLI's cwd, and the default is the cwd itself. It must exist on the server's machine — in the default local flow that is this machine |
 | `--model-id <id>` | Upstream id of the model to use; requires `--provider`. Omit both to use the Project's default model |
 | `--provider <group>` | Provider group of the model; required whenever `--model-id` is given |
-| `--project-id <id>` | Project to use |
-| `--agent-id <id>` | Agent to use |
-| `--workspace <path>` | Workspace directory; defaults to the current directory and must exist |
-| `--approve <mode>` | Approval mode, see below |
-| `--thinking <level>` | Thinking level for the Session: `low` / `medium` / `high` / `xhigh` / `max`. Omitted, the configured chain applies (the Agent's `model.thinking_level`, else the Project's `default_chat.thinking_level`, else `medium`). Pinned at Session creation, so spawned subagent sessions follow it |
+| `--approve <mode>` | Approval mode, see below (default `allow-all`). With `--session` it PATCHes the session's sticky mode |
+| `--thinking <level>` | Thinking level for this task: `low` / `medium` / `high` / `xhigh` / `max`; rides the task request. Omitted, the session's pinned level (else the Agent config) applies |
+| `--session <sessionId>` | Reuse an existing session (full id or unique fragment) instead of creating one; excludes `--workspace` and the model pair |
+| `--background` | POST the task and exit immediately, printing the session id (`{"sessionId"}` under `--json`); the task keeps running on the server — follow it with `penguin logs -f` |
+| `--goal [budget]` | Goal mode: the message is the objective and the server loops until a terminal state; the optional value is a token budget (e.g. `500k`) |
+| `--json` | Print a final `{sessionId, status, text}` object instead of the rendered stream (`text` joins the main session's assistant text messages) |
+| `--server <url>` | Target server (see Server connection) |
 
 ## penguin chat
 
@@ -35,8 +58,9 @@ Interactive REPL; each input line starts a Task. Takes the same options as `run`
 
 | Option | Description |
 | --- | --- |
-| `--resume [sessionId]` | Resume a Session; without an id, resumes the Agent's latest Session |
+| `--resume [sessionId]` | Resume a Session (full id or unique fragment); without an id, resumes the Agent's latest Session |
 | `--verbose` | Show full tool output; by default long tool outputs are collapsed (see below) |
+| `--server <url>` | Target server (see Server connection) |
 
 With `--resume`, the Workspace and model are locked by the original Session and cannot be overridden via `--workspace` / `--model-id` / `--provider`. The thinking level is a per-turn parameter, so `--thinking` is still accepted: it becomes the initial `/thinking` override instead of a creation-time default. On exit, a copy-pastable `penguin chat --resume <sessionId>` command is printed.
 
@@ -62,6 +86,98 @@ Ctrl-C is state-dependent:
 | Task running | Abort the current Task and return to input |
 | Input buffer non-empty | Clear the current input |
 | Idle with empty buffer | Show an exit confirmation (y/N) |
+
+## penguin ls
+
+List the project's sessions — all agents, or one with `--agent-id`. Columns: short id (the 8-hex tail other commands accept as a fragment), agent, title, running/idle, last active, workspace tail. Archived sessions appear only with `-a`.
+
+```bash
+penguin ls
+penguin ls --agent-id default_agent -a
+penguin ls --json
+```
+
+| Option | Description |
+| --- | --- |
+| `--project-id <id>` / `--agent-id <id>` | Scope (see Global conventions for the defaults; without `--agent-id` every agent of the project is listed) |
+| `-a, --all` | Include archived sessions |
+| `--json` / `--server <url>` | As everywhere |
+
+## penguin input
+
+Send a message into an existing session. A running session receives it as steering (delivered between turns); an idle one gets a new task. By default the command waits and renders until the turn completes; `--no-wait` returns right after the server accepts it.
+
+```bash
+penguin input 402a2e24 -m "also check the tests"
+penguin input 402a2e24 -m "queue this" --no-wait
+```
+
+| Option | Description |
+| --- | --- |
+| `-m, --message <text>` | Required; the message text |
+| `--no-wait` | Return after the 202 instead of rendering the turn |
+| `--project-id <id>` | Fragment-search scope (a full session id needs none) |
+| `--json` / `--server <url>` | As everywhere; `--json` with waiting prints `{sessionId, status, text}`, with `--no-wait` just `{sessionId}` |
+
+## penguin logs
+
+Render a session's history through the same renderer the REPL uses.
+
+```bash
+penguin logs 402a2e24 --tail 20
+penguin logs 402a2e24 -f
+```
+
+| Option | Description |
+| --- | --- |
+| `--tail <n>` | Show only the last n entries |
+| `-f, --follow` | Keep following the live stream after the history (read-only; Ctrl-C detaches without touching the session) |
+| `--project-id <id>` | Fragment-search scope |
+| `--json` / `--server <url>` | As everywhere; `--json` prints the raw message array (and, with `-f`, one JSON message per line as they arrive) |
+
+## penguin agent
+
+```bash
+penguin agent ls
+penguin agent create --agent-id helper --name "Helper" --skills web-search,pdf
+```
+
+`agent ls` lists the project's agents (id, name, session count, description). `agent create` creates one:
+
+| Option | Description |
+| --- | --- |
+| `--agent-id <id>` | Required; the agent id (directory name) |
+| `--name <s>` / `--description <s>` | Display name and description |
+| `--skills <a,b>` | Comma-separated library skill names to preinstall; unknown names are rejected before anything is created |
+| `--project-id <id>` / `--json` / `--server <url>` | As everywhere |
+
+## penguin project
+
+`penguin project ls` lists the projects this account can reach (own and shared), with id, display name and role. `--json` / `--server` as everywhere.
+
+## penguin cost
+
+Token usage and cost from the server's usage aggregates. The default prints the summary card — today / last 7 days / total (computed regardless of any range) — and `--by` prints a grouped table instead.
+
+```bash
+penguin cost
+penguin cost --days 7 --by model
+penguin cost --from 2026-08-01 --to 2026-08-25 --by agent
+```
+
+| Option | Description |
+| --- | --- |
+| `--days <n>` | Trailing window of n days (sets from/to) |
+| `--from <d>` / `--to <d>` | Explicit range (`yyyy-mm-dd`, always as a pair) |
+| `--by <dim>` | Group by `date`, `agent`, `model` or `session` |
+| `--project-id <id>` / `--agent-id <id>` | Scope; `--agent-id` filters (no default agent here — costs are a project view unless narrowed) |
+| `--json` / `--server <url>` | As everywhere |
+
+A `+` after a cost marks a partial sum (some model in the bucket has no pricing configured); `-` means no priced usage at all.
+
+## penguin schedule
+
+`penguin schedule ls` lists the project's scheduled tasks — all agents, or one with `--agent-id`. Columns: agent, name, enabled, start time, period (`once` for one-shot tasks), target (a bound session's short id or `new session`), last fired, and a status marker for every non-active state (`expired` / `done` / `missed` / `invalid`; unparsable schedule files are listed too, marked invalid). `--json` / `--server` as everywhere.
 
 ## Approval modes (--approve)
 
