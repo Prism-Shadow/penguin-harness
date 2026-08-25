@@ -300,6 +300,10 @@ export class AuthService {
       throw new HttpError(400, "invalid_password", "Password must be at least 8 characters.");
     }
     this.deps.users.updatePassword(userId, await hashPassword(newPassword, this.hashCost), false);
+    // Any password set on the admin ends a live first-login link, whichever door set it.
+    // This branch is reachable when the seed was pinned (PENGUIN_SEED_ADMIN_PASSWORD), the
+    // one case where the initial password IS knowable.
+    if (userId === ADMIN_USER_ID && this.firstLogin !== null) this.logout(this.firstLogin);
   }
 
   /**

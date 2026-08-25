@@ -9,17 +9,18 @@ import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useAuth } from "../../state/auth";
+import { omitsOldPassword } from "../../lib/account-menu";
 import { Button } from "../ui/button";
 import { PasswordInput } from "../ui/password-input";
 import { Modal } from "../ui/modal";
 
 export function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { refresh, sessionVia } = useAuth();
-  // Desktop-established sessions set the password without the old one: the desktop seed
-  // password is random and never shown, so there is nothing to type. Keyed on the
-  // session's origin, not desktopMode — a browser signed into the same server holds a
-  // password session and must still prove the current password.
-  const desktopSession = sessionVia === "desktop";
+  // Desktop and first-login sessions set the password without the old one — for them the
+  // current password is random and was never shown (see omitsOldPassword). Keyed on the
+  // session's origin, not desktopMode: a browser signed into the same server with a password
+  // must still prove it.
+  const noOldPassword = omitsOldPassword(sessionVia);
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -37,7 +38,7 @@ export function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose
 
   const submit = async () => {
     const next: { old?: string; new?: string; confirm?: string } = {};
-    if (!desktopSession && !oldPassword) next.old = S.common.requiredField;
+    if (!noOldPassword && !oldPassword) next.old = S.common.requiredField;
     if (!newPassword) next.new = S.common.requiredField;
     if (!confirmPassword) next.confirm = S.common.requiredField;
     if (!next.confirm && newPassword !== confirmPassword) next.confirm = S.account.passwordMismatch;
@@ -48,7 +49,7 @@ export function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose
     setBusy(true);
     setErrors({});
     try {
-      await api.changePassword(desktopSession ? { newPassword } : { oldPassword, newPassword });
+      await api.changePassword(noOldPassword ? { newPassword } : { oldPassword, newPassword });
       await refresh();
       onClose();
     } catch (e) {
@@ -81,7 +82,7 @@ export function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose
       }
     >
       <div className="space-y-3">
-        {!desktopSession && (
+        {!noOldPassword && (
           <PasswordInput
             label={S.account.oldPassword}
             required
@@ -110,7 +111,7 @@ export function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose
           error={errors.new}
           autoComplete="new-password"
           hint={S.auth.passwordHint}
-          autoFocus={desktopSession}
+          autoFocus={noOldPassword}
         />
         <PasswordInput
           label={S.account.confirmPassword}

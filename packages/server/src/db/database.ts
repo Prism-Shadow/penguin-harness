@@ -37,6 +37,9 @@ export function openDatabase(dbPath: string): DatabaseSync {
   // this database: the old index is a strict prefix of it, so every query it served is
   // served identically. Dropping is safe — an index is derived, never data.
   db.exec("DROP INDEX IF EXISTS idx_usage_session");
+  // Sessions became signed tokens (auth/token-codec.ts): nothing creates or reads this
+  // table any more, and rows in it are dead session hashes a backup should not carry.
+  db.exec("DROP TABLE IF EXISTS auth_sessions");
   upgradeLastActiveAt(db);
   return db;
 }

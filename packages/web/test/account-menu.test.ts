@@ -16,7 +16,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { offersChangePassword } from "../src/lib/account-menu";
+import { offersChangePassword, omitsOldPassword } from "../src/lib/account-menu";
 
 describe("offersChangePassword", () => {
   it("hides it in the desktop shell's own window — no login form, seed password never shown", () => {
@@ -37,6 +37,18 @@ describe("offersChangePassword", () => {
     // The shared data root makes this reachable, and there the server requires the old
     // password like any other session — so the control is live and must stay visible.
     expect(offersChangePassword({ desktopMode: false, sessionVia: "desktop" })).toBe(true);
+  });
+});
+
+describe("omitsOldPassword", () => {
+  it("omits the current-password field for desktop and first-login sessions only", () => {
+    // For both, the account's current password was hashed and discarded unseen — demanding
+    // it would dead-end the flow: a first-login claimer would face a field nobody on earth
+    // can fill. A password session must still prove the current password, mirroring
+    // routes/me.ts.
+    expect(omitsOldPassword("desktop")).toBe(true);
+    expect(omitsOldPassword("setup")).toBe(true);
+    expect(omitsOldPassword("password")).toBe(false);
   });
 
   it("is hidden in exactly one of the four states", () => {

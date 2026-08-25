@@ -37,3 +37,15 @@ export interface AccountMenuSession {
 export function offersChangePassword(session: AccountMenuSession): boolean {
   return !(session.desktopMode && session.sessionVia === "desktop");
 }
+
+/**
+ * Whether the change-password form omits the current-password field.
+ *
+ * Two kinds of session set a password without the old one, mirroring the server's gate in
+ * `routes/me.ts`: the desktop shell's own window, and a session claimed through a first-login
+ * link. In both, the account's current password is a random value that was hashed and
+ * discarded unseen — demanding it would dead-end the one flow the session exists for.
+ */
+export function omitsOldPassword(sessionVia: MeResponse["sessionVia"]): boolean {
+  return sessionVia === "desktop" || sessionVia === "setup";
+}

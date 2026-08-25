@@ -75,7 +75,6 @@ describe("resetAdminPassword", () => {
       expect(admin?.passwordIsInitial).toBe(true);
       // The old password no longer works, and the new one is a value nobody holds.
       expect(await verifyPassword("old-password-1", admin!.passwordHash)).toBe(false);
-      expect(await verifyPassword("old-password-1", admin!.passwordHash)).toBe(false);
       // The admin's sessions are revoked by the not-before mark; bystanders are untouched.
       expect(admin!.sessionsNotBefore).not.toBeNull();
       expect(new UsersRepo(db).findById("alice")!.sessionsNotBefore).toBeNull();

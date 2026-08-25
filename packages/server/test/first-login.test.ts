@@ -101,6 +101,28 @@ describe("the first-login link", () => {
   });
 
   /**
+   * The one reachable way to set a password WITHOUT going through setInitialPassword's
+   * revocation: a pinned seed (PENGUIN_SEED_ADMIN_PASSWORD) makes the current password
+   * knowable, so the ordinary change-password door opens. The link must die there too —
+   * the invariant is "any password set on the admin ends the link", not "the door we
+   * expected ends it".
+   */
+  it("dies when the admin sets a password through the ordinary door (pinned seed)", async () => {
+    const pinned = await createTestApp();
+    try {
+      const pinnedLink = pinned.deps.authService.mintFirstLogin()!;
+      const { cookie } = await loginAdmin(pinned.app);
+      await apiClient(pinned.app, cookie).put("/api/me/password", {
+        oldPassword: pinned.adminPassword,
+        newPassword: "chosen-password-1",
+      });
+      expect(pinned.deps.authService.redeemFirstLogin(pinnedLink)).toBeNull();
+    } finally {
+      await pinned.cleanup();
+    }
+  });
+
+  /**
    * A claimed server that restarts must not end up holding a usable setup session. Revocation
    * cannot be what prevents that — a restart's token is new, and nothing revoked a token that
    * did not exist yet — so the server declines to mint one at all.

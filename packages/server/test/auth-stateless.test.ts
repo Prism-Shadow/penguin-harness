@@ -7,8 +7,7 @@
  * restart (the denylist row is the only session state left, so losing it means a "signed
  * out" token that quietly works again); an admin password reset must still kill the user's
  * outstanding sessions (there are no rows to delete — the not-before mark is the mechanism);
- * sessions issued before the switch must keep working from their rows, or the upgrade logs
- * every deployment out; and sliding renewal must still slide, now as a replacement cookie.
+ * and sliding renewal must still slide, now as a replacement cookie.
  */
 import { describe, expect, it } from "vitest";
 import { SESSION_COOKIE } from "../src/auth/middleware.js";

@@ -35,9 +35,15 @@ export async function mintApiToken(
   const ttlMs = opts.ttlMs ?? CLI_TOKEN_TTL_MS;
 
   const lock = readServerLock(root);
-  const ownerToken = lock === null ? null : readOwnerToken(root);
-  if (lock === null || ownerToken === null) {
-    return { outcome: "no_server" };
+  if (lock === null) return { outcome: "no_server" };
+  const ownerToken = readOwnerToken(root);
+  // A live lock with no readable token is a different fact than "nothing is listening",
+  // and telling the caller to start the server would be wrong advice — it is running.
+  if (ownerToken === null) {
+    return {
+      outcome: "failed",
+      detail: `a server is running but ${root}/owner-token is unreadable`,
+    };
   }
   return redeemOverLoopback(lock.port, ownerToken, userId, ttlMs);
 }
