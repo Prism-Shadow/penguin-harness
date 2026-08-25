@@ -3,7 +3,7 @@ title: CLI Reference
 description: Complete reference for the penguin command, its subcommands, and options.
 ---
 
-The CLI ships as the npm package `@prismshadow/penguin-cli`; the command is `penguin`. Running bare `penguin` prints help; `-v, --version` prints the version. A `.env` file in the working directory is loaded automatically on startup.
+The CLI ships as the npm package `@prismshadow/penguin-cli`; the command is `penguin`. Running bare `penguin` prints help; `-v, --version` prints the running build's one-line identity, and `penguin version --json` prints the whole of it. A `.env` file in the working directory is loaded automatically on startup.
 
 ## Global conventions
 
@@ -164,6 +164,45 @@ penguin server reset-admin-password
 ```
 
 The built-in `admin` gets a fresh initial password of the usual `penguin-1234` form, printed in the framed notice — and re-printed on every server start until it is changed — and all of admin's sign-in sessions are cleared. Other accounts are reset by the admin on the user-management page; this command only touches `admin`. The data root is selected by `PENGUIN_HOME` as usual.
+
+## penguin version
+
+Reports which build is running. The version number alone cannot answer that — every build made from a checkout between two releases also calls itself `0.2.3` — so a release and a source build identify themselves differently.
+
+```bash
+penguin version          # v0.2.3            (a release)
+penguin version          # v0.2.3-14-g9e8f7d6-dirty   (built from a checkout)
+penguin version --json   # the full build info
+```
+
+| Option | Description |
+| --- | --- |
+| `--json` | Print the full version report instead of the one line: `{version, describe, channel, buildDate, commit, branch, dirty, runtime, harness}` |
+| `--root <dir>` | Data root whose HMR store to report as `harness`. Priority: `--root` > `PENGUIN_HOME` > `~/.penguin/data` |
+
+The bare form prints one line, which for a source build is `git describe --tags --dirty` output — `v0.2.3-14-g9e8f7d6-dirty` reads as fourteen commits past `v0.2.3`, at `9e8f7d6`, with uncommitted changes. `-v, --version` prints that same line.
+
+`describe` names the nearest reachable git tag, which is not always `v` + `version`: release preparation bumps `version` in its own commit and creates the tag afterwards, so a build from that window reports `v0.2.3-14-g9e8f7d6` while `version` already reads `0.2.4`. Read `version` for the release number and `describe` for the position in history.
+
+The JSON is the same record `GET /api/version` returns, so a bug report can be gathered from either side of the HTTP boundary. In it, `channel` is `release` or `source`; `buildDate` and `commit` are stamped into the build by the release workflow and are null for a source build; `branch` and `dirty` describe a source build's git position and are null for a release, where the question does not apply — the workflow stamps its constants into the tree before building.
+
+### harness: what was hot-pushed here
+
+`harness` describes the data root's HMR store — the harness code a hot update committed, which a restart resumes. It is null when nothing was ever pushed to that root.
+
+```json
+"harness": {
+  "source": { "repo": "…/penguin-harness", "revision": "v0.2.3-7-gabc1234-dirty" },
+  "pushedAt": "2026-08-20T10:15:00.000Z",
+  "bundles": { "platform": "store/platform/…", "cli": "store/cli/…", "web": "store/web/…" }
+}
+```
+
+This is the one thing the version line cannot report. A pushed bundle lands outside any checkout, so it identifies itself by the version it was compiled from and nothing more; `source.revision` — recorded by the pusher, spelled the same way as `describe` — is the only thing that names the revision behind it. `bundles` holds the committed artifacts' content-addressed pointers, which identify the pushed code itself regardless of what the pusher claimed about it.
+
+It describes the store, not the process: `penguin` runs the packaged CLI while `penguin-hmr` runs the store's, so a non-null `harness` does not by itself mean the command printing it is the pushed code. `source` is null for a version pushed by a client that recorded no provenance, including anything pushed before it was recorded at all.
+
+An installed penguin never shells out to git: it reads constants stamped into the build. A release gets them from the release workflow; every other build gets its git position inlined by the bundler that produced it, so an artifact still identifies itself after it has left the checkout it came from — a hot-pushed bundle under `<root>/hmr/store/` reports the revision it was built at, on a machine with no checkout and no git installed. Asking git at run time is only the fallback, for an un-bundled `tsx` run; even then it asks about its own checkout, so `penguin version` inside an unrelated repository reports the harness's revision and not that repository's.
 
 ## penguin update
 

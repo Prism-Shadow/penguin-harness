@@ -7,12 +7,13 @@
  * the HMR store instead (see scripts/deploy.mjs).
  */
 import { Command, CommanderError } from "commander";
-import { VERSION } from "@prismshadow/penguin-core";
+import { buildInfo } from "@prismshadow/penguin-core";
 import { registerConfigCommand } from "./commands/config.js";
 import { registerRunCommand } from "./commands/run.js";
 import { registerChatCommand } from "./commands/chat.js";
 import { registerServeCommands } from "./commands/serve.js";
 import { registerUpdateCommand } from "./commands/update.js";
+import { registerVersionCommand } from "./commands/version.js";
 import { defaultMessages } from "./i18n.js";
 
 /**
@@ -26,7 +27,10 @@ export async function cli(argv: string[]): Promise<number> {
   program
     .name("penguin")
     .description(t.cliDescription)
-    .version(VERSION, "-v, --version", t.versionDesc)
+    // The same string `penguin version` prints, so the flag and the subcommand can never
+    // disagree. Commander stores it eagerly, which costs a source build its two git calls on
+    // every startup; a release build reads stamped constants and spawns nothing.
+    .version(buildInfo().describe, "-v, --version", t.versionDesc)
     .exitOverride();
 
   registerConfigCommand(program, t);
@@ -34,6 +38,7 @@ export async function cli(argv: string[]): Promise<number> {
   registerChatCommand(program, t);
   registerServeCommands(program, t);
   registerUpdateCommand(program, t);
+  registerVersionCommand(program, t);
 
   // Show help only when no subcommand is given (empty input); do not error.
   program.action(() => {

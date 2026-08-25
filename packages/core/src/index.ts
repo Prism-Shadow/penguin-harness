@@ -15,6 +15,9 @@
  * ```
  */
 
+import type { BuildInfo } from "./interfaces.js";
+import { resolveBuildInfo } from "./internal/build-info.js";
+
 // Protocol and interface contracts (foundation)
 export * from "./omnimessage/index.js";
 export * from "./interfaces.js";
@@ -67,5 +70,17 @@ export type { CreateAgentOptions, CreateSessionOptions, ResumeSessionOptions } f
 export const VERSION = "0.2.4";
 /** Release build date (UTC yyyy-mm-dd), stamped by the release workflow next to VERSION; null in a dev/source build. */
 export const BUILD_DATE: string | null = null;
+/** Full commit sha the release was built from, stamped by the release workflow next to VERSION; null in a dev/source build. */
+export const BUILD_COMMIT: string | null = null;
+
+/**
+ * Identity of the running build — the sole producer behind `penguin version [--json]` and
+ * GET /api/version. The three stamped constants above are the only inputs the release
+ * workflow rewrites, so they are declared here and passed in rather than imported by
+ * build-info.ts, which would make this barrel and that module a cycle.
+ */
+export function buildInfo(): BuildInfo {
+  return resolveBuildInfo({ version: VERSION, buildDate: BUILD_DATE, commit: BUILD_COMMIT });
+}
 // Version-string helpers (shared by the CLI's `penguin update` and the server's update check).
 export { compareVersions, normalizeVersion } from "./internal/version.js";

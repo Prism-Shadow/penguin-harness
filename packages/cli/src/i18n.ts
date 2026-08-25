@@ -109,6 +109,11 @@ export interface Messages {
     /** Hint printed below the notice. */
     next(): string;
   };
+  /** `penguin version`: help text only — the command's output is data, never prose. */
+  version: {
+    description: string;
+    json: string;
+  };
   /** `penguin update`: help text and every line the command can print. */
   update: {
     desc: string;
@@ -427,6 +432,10 @@ const en: Messages = {
       `Admin password reset for data root ${root}. All admin sign-in sessions were cleared.`,
     next: () => "Start the service (`penguin web`) and sign in with the password above.",
   },
+  version: {
+    description: "Show which build is running",
+    json: "Print the full build info as JSON (the body of GET /api/version)",
+  },
   update: {
     desc: "Upgrade this PenguinHarness install in place",
     check: "Only report the current and latest versions; change nothing",
@@ -706,6 +715,10 @@ const zh: Messages = {
       "Web 数据库中尚无管理员账号，无可重置。请先执行 `penguin web` 启动一次服务完成种子创建。",
     done: (root) => `已重置数据根目录 ${root} 的管理员密码，并清空其全部登录会话。`,
     next: () => "启动服务（`penguin web`）后用上方密码登录。",
+  },
+  version: {
+    description: "显示当前运行的是哪个构建",
+    json: "以 JSON 输出完整构建信息（即 GET /api/version 的响应体）",
   },
   update: {
     desc: "原地升级当前的 PenguinHarness 安装",

@@ -409,6 +409,7 @@ export class HmrHost {
       gz,
       digest.slice(0, 16),
       assetsDir,
+      source,
     );
 
     return {
@@ -588,6 +589,7 @@ export class HmrHost {
     webGz: Buffer,
     webSha: string,
     assetsDir: string | null,
+    source: GitSource | null,
   ): Promise<boolean> {
     try {
       // The platform bundle is already in the store: storePlatformBundle put it at its
@@ -609,6 +611,11 @@ export class HmrHost {
         ...(assetsDir === null
           ? {}
           : { assets: { dir: path.relative(this.hmrDir, assetsDir).split(path.sep).join("/") } }),
+        // Provenance travels with the version it describes, so `penguin version` on this
+        // machine can name the revision a pushed harness came from — the bundles are
+        // content-addressed and say nothing about their origin on their own.
+        ...(source === null ? {} : { source }),
+        pushedAt: new Date().toISOString(),
       }));
       return true;
     } catch (err) {

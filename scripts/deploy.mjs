@@ -27,6 +27,7 @@ import path from "node:path";
 import zlib from "node:zlib";
 import { fileURLToPath } from "node:url";
 import { unsafePlaintextTarget } from "./deploy-target-safety.mjs";
+import { buildGitDefine, checkoutFacts, originUrl } from "./build-git-stamp.mjs";
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -37,6 +38,23 @@ const PLATFORM_BUNDLE = path.join(os.tmpdir(), `penguin-deploy-platform-${proces
 const CLI_BUNDLE = path.join(os.tmpdir(), `penguin-deploy-cli-${process.pid}.mjs`);
 
 const log = (msg) => console.log(`[deploy] ${msg}`);
+
+/**
+ * Provenance for this push, recorded with the version so `penguin version --json` on the
+ * target can name where its harness came from — harness.json's copy, alongside the same
+ * revision inlined into the bundles themselves.
+ *
+ * `revision` is spelled exactly as core's BuildInfo.describe, `-dirty` included: a deploy
+ * from an uncommitted tree is normal here and the record has to admit it, since the sha
+ * alone would name code that never existed. Null when this is not a checkout of this
+ * repository, in which case the push carries no `source` rather than a fabricated one.
+ */
+function pushSource() {
+  const facts = checkoutFacts();
+  const repo = originUrl();
+  if (facts?.described == null || repo === null) return null;
+  return { repo, revision: facts.described };
+}
 
 function usage(problem) {
   console.error(
@@ -138,6 +156,12 @@ async function compileEntry(entry, outfile) {
     alias: {
       "@prismshadow/penguin-core/kernel": require.resolve("@prismshadow/penguin-core/kernel"),
     },
+    // The pushed bundle lands under `<root>/hmr/store/`, outside any checkout, so its own
+    // revision has to be inlined here or it can never be recovered: `penguin version` from
+    // a hot-loaded CLI would otherwise report the bare version it was compiled from. This is
+    // the same value the push records as `source`, reaching the target by a second route —
+    // in the artifact itself rather than in harness.json.
+    define: buildGitDefine(),
   });
 }
 
@@ -219,6 +243,7 @@ async function main() {
 
   const files = await readWebManifest();
   const assets = await readNativeAssets();
+  const source = pushSource();
   const gz = zlib.gzipSync(
     Buffer.from(
       JSON.stringify({
@@ -226,9 +251,11 @@ async function main() {
         cli: await fsp.readFile(CLI_BUNDLE, "utf8"),
         web: { files },
         assets,
+        ...(source === null ? {} : { source }),
       }),
     ),
   );
+  if (source !== null) log(`provenance: ${source.revision}`);
   log(
     `pushing ${Object.keys(files).length} web files + ${Object.keys(assets.files).length} native assets + 2 bundles (${(gz.length / 1048576).toFixed(1)} MB) to ${baseUrl}…`,
   );

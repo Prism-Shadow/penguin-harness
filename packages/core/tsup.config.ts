@@ -1,4 +1,7 @@
 import { defineConfig } from "tsup";
+// Inlines this checkout's git identity into the artifact — see the helper's module doc:
+// core's dist is what the server imports at run time, and a shipped bundle has no path back to the checkout it came from.
+import { buildGitDefine } from "../../scripts/build-git-stamp.mjs";
 
 export default defineConfig({
   // model-catalog gets its own entry point: pure data, no Node dependency, so web can bundle it directly via subpath import.
@@ -18,4 +21,5 @@ export default defineConfig({
   dts: true,
   clean: true,
   sourcemap: true,
+  define: buildGitDefine(),
 });
