@@ -186,11 +186,6 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     // and must not adopt them. It does not dispose them either: that happens at the
     // commit below, so a failed boot leaves them for the recovered predecessor.
     terminals.adopt(doomedGroups.includes("terminal") ? [] : (context.terminals ?? []));
-    // Ordinary code over the claimed capability (see terminal/identity.ts): the resolver
-    // wraps caps.authService, the same object the business routes authenticate with. A
-    // bare kernel has no auth — terminals stay fail-closed there.
-    const identity = identityFrom(caps?.authService ?? null);
-
     // The business deps, built per App over the runtime's published capabilities — see
     // app.ts's buildAppDeps and ./capabilities.ts. Null only for a declared bare kernel;
     // every other capability-less host was refused above.
@@ -210,21 +205,20 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       deps.goalsRepo.abortOrphanedActive();
     }
 
+    // Ordinary code over this App's own auth (terminal/identity.ts): the same object the
+    // business routes authenticate with. A bare kernel has none — terminals stay fail-closed.
+    const identity = identityFrom(deps?.authService ?? null);
+
     // ONE app, ONE pointer: every route this App serves — terminal group and business
     // groups — registers into a single Hono table, and the swap publishes deps + table +
     // wrap-up as a single registry write, so no reader can observe a half-swapped pair.
     const app = createApp(deps, terminals, identity);
     const business = deps;
-    // The runtime's two mid-request needs of the CURRENT App are hooks installed over the
-    // claimed capabilities — ordinary capability use, overwrite-only across swaps (a dead
-    // generation's hook is replaced, never removed, so nothing ever un-installs a
-    // successor's): "is this session busy" for channel sweep, and "what does a fresh user
-    // get" for login provisioning.
+    // The runtime's one mid-request need of the CURRENT App is a hook installed over a
+    // claimed capability — overwrite-only across swaps, so a dead generation's hook is
+    // replaced and never removed: "is this session busy" for the channel sweep.
     if (caps !== null && business !== null) {
       caps.channels.setActivityProbe((key) => business.manager.statusOf(key) !== "idle");
-      caps.authService.setProvisioner((user, isAdmin) =>
-        business.projectService.provisionInitialProject(user, isAdmin),
-      );
     }
     // PARK — the App's complete resource inventory, split by fate. Everything stateful
     // this App creates is on one of these three lists; a new resource must pick its list

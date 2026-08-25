@@ -1,0 +1,22 @@
+/**
+ * The auth values that belong to the PROCESS, not to the App built on top of it.
+ *
+ * Auth policy — who may set a password, how long a session lasts, how logins are throttled —
+ * is business behaviour and lives in the platform, so it ships by push. But a couple of values
+ * must outlive a push while still dying at a restart: the first-login link a boot printed is
+ * compared verbatim at redemption, so a swap that forgot it would strand whoever is holding
+ * the link the console shows.
+ *
+ * That is the state layer of the four-layer model (hmr/README.md): a runtime resource the
+ * platform claims, riding across swaps and never across restarts. The holder is deliberately
+ * a plain mutable bag rather than a service — it carries no behaviour to go stale, so a
+ * platform newer than its runtime can still use one an older runtime published.
+ */
+export interface AuthRuntimeState {
+  /** The first-login link this boot printed, or null before one was minted. */
+  firstLoginToken: string | null;
+}
+
+export function newAuthRuntimeState(): AuthRuntimeState {
+  return { firstLoginToken: null };
+}

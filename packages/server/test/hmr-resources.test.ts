@@ -21,7 +21,6 @@ import type { TerminalSession } from "../src/terminal/session.js";
 import { DECLARED_RESOURCES as PARKED, packagedPlatform } from "../src/hmr/platform.js";
 import {
   RESOURCE_IFACES_RESOURCE_ID,
-  RUNTIME_AUTH_RESOURCE_ID,
   PENGUIN_FAMILY,
   RUNTIME_INTERFACES,
   RUNTIME_INTERFACES_RESOURCE_ID,
@@ -316,7 +315,6 @@ describe("runtime capability handshake", () => {
     };
     r.register(RUNTIME_CONFIG_RESOURCE_ID, carrying("config"));
     r.register(RUNTIME_DB_RESOURCE_ID, carrying("db"));
-    r.register(RUNTIME_AUTH_RESOURCE_ID, carrying("auth"));
     r.register(RUNTIME_CHANNELS_RESOURCE_ID, carrying("channels"));
     r.register(RUNTIME_PROXY_RESOURCE_ID, () => {});
     r.register(RUNTIME_HMR_RESOURCE_ID, carrying("hmr"));
@@ -342,7 +340,7 @@ describe("runtime capability handshake", () => {
   it("refuses when one interface is missing a member the claimer names", () => {
     const r = new HotResources();
     stubCaps(r);
-    r.register(RUNTIME_INTERFACES_RESOURCE_ID, { ...RUNTIME_INTERFACES, auth: ["login"] });
+    r.register(RUNTIME_INTERFACES_RESOURCE_ID, { ...RUNTIME_INTERFACES, channels: ["nope"] });
     expect(claimRuntimeCapabilities(r)).toMatchObject({ kind: "refused" });
   });
 
@@ -357,12 +355,25 @@ describe("runtime capability handshake", () => {
     // What a member set buys over a number: the declaration is verified, not trusted.
     const r = new HotResources();
     stubCaps(r);
-    r.register(RUNTIME_AUTH_RESOURCE_ID, { login: () => undefined }); // missing the rest
+    r.register(RUNTIME_CHANNELS_RESOURCE_ID, { get: () => undefined }); // missing the rest
     r.register(RUNTIME_INTERFACES_RESOURCE_ID, RUNTIME_INTERFACES);
     expect(claimRuntimeCapabilities(r)).toMatchObject({
       kind: "refused",
-      reason: expect.stringContaining("auth lacks") as unknown,
+      reason: expect.stringContaining("channels lacks") as unknown,
     });
+  });
+
+  it("claims a runtime that predates the auth-state resource, on a fresh holder", () => {
+    // The point of the whole change: authentication is business behaviour built per App, so
+    // a platform newer than its runtime must still boot on it. Only the process-scoped
+    // values are claimed, and optionally.
+    const r = new HotResources();
+    stubCaps(r);
+    r.register(RUNTIME_INTERFACES_RESOURCE_ID, RUNTIME_INTERFACES);
+    const claim = claimRuntimeCapabilities(r);
+    expect(claim).toMatchObject({ kind: "claimed" });
+    if (claim.kind !== "claimed") return;
+    expect(claim.caps.authState).toEqual({ firstLoginToken: null });
   });
 
   it("declines a different family outright — the names are not comparable", () => {

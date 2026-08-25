@@ -11,6 +11,7 @@ import type { UserInfo } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import type { UserRow, UsersRepo } from "../db/repos/users.js";
 import { sessionTokenHash } from "../db/repos/auth-sessions.js";
+import type { AuthRuntimeState } from "./runtime-state.js";
 import type { AuthSessionsRepo } from "../db/repos/auth-sessions.js";
 import { SCRYPT_COST, hashPassword, verifyPassword } from "./password.js";
 
@@ -68,6 +69,11 @@ export function toUserInfo(row: UserRow): UserInfo {
 export interface AuthServiceDeps {
   users: UsersRepo;
   authSessions: AuthSessionsRepo;
+  /**
+   * Process-scoped auth values (runtime-state.ts). Held by the RUNTIME so the link a boot
+   * printed survives a platform push; everything else about auth is rebuilt with the App.
+   */
+  state: AuthRuntimeState;
   /** Provisions the initial Project at signup (injected by project-service, to avoid a circular dependency). */
   provisionInitialProject: (user: UserRow, isAdmin: boolean) => Promise<void>;
   /** Fixed initial password for the seeded admin (config.seedAdminPassword); null generates a random one at seed time. */
@@ -80,24 +86,14 @@ export interface AuthServiceDeps {
 }
 
 export class AuthService {
-  /** Business policy, reinstalled by each App swap; the constructor value is the fallback. */
-  private provisioner: (user: UserRow, isAdmin: boolean) => Promise<void>;
-
   private readonly now: () => Date;
   private readonly hashCost: number;
-  /**
-   * The raw first-login token this boot printed (its row is a `setup` session); null until
-   * mintFirstLogin(). Kept so setting a password can delete exactly that session's row.
-   */
-  private firstLogin: string | null = null;
-
   /** Session lifetime, for the cookie that must expire WITH the session, not before it. */
   get sessionTtlMs(): number {
     return this.deps.sessionTtlMs;
   }
 
   constructor(private readonly deps: AuthServiceDeps) {
-    this.provisioner = deps.provisionInitialProject;
     this.now = deps.now ?? (() => new Date());
     this.hashCost = deps.passwordHashCost ?? SCRYPT_COST;
     this.deps.authSessions.deleteExpired(this.now().toISOString());
@@ -110,11 +106,14 @@ export class AuthService {
    */
   mintFirstLogin(): string | null {
     if (!this.adminPasswordIsInitial()) return null;
-    if (this.firstLogin !== null && this.authenticateWithMeta(this.firstLogin) === null) {
-      this.firstLogin = null;
+    if (
+      this.deps.state.firstLoginToken !== null &&
+      this.authenticateWithMeta(this.deps.state.firstLoginToken) === null
+    ) {
+      this.deps.state.firstLoginToken = null;
     }
-    this.firstLogin ??= this.issueSession(ADMIN_USER_ID, "setup");
-    return this.firstLogin;
+    this.deps.state.firstLoginToken ??= this.issueSession(ADMIN_USER_ID, "setup");
+    return this.deps.state.firstLoginToken;
   }
 
   /**
@@ -151,16 +150,11 @@ export class AuthService {
     };
     this.deps.users.insert(user);
     try {
-      await this.provisioner(user, true);
+      await this.deps.provisionInitialProject(user, true);
     } catch (err) {
       this.deps.users.delete(user.userId);
       throw err;
     }
-  }
-
-  /** Installs the current App's provisioning policy (see the `provisioner` field). */
-  setProvisioner(provision: (user: UserRow, isAdmin: boolean) => Promise<void>): void {
-    this.provisioner = provision;
   }
 
   /**
@@ -169,7 +163,7 @@ export class AuthService {
    * because a prefetching browser would burn it before its reader clicked.
    */
   redeemFirstLogin(given: string): string | null {
-    const expected = this.firstLogin;
+    const expected = this.deps.state.firstLoginToken;
     if (expected === null || given === "" || !constantTimeEqual(given, expected)) return null;
     return this.authenticateWithMeta(expected) === null ? null : expected;
   }
@@ -261,7 +255,7 @@ export class AuthService {
     // account takeover waiting to happen.
     if (userId === ADMIN_USER_ID) {
       this.deps.authSessions.deleteByUserAndVia(userId, "setup");
-      this.firstLogin = null;
+      this.deps.state.firstLoginToken = null;
     }
   }
 

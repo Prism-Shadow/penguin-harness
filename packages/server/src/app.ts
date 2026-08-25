@@ -29,7 +29,7 @@ import { applyProxySettings, mergedNoProxy } from "./net/proxy.js";
 import {
   RUNTIME_INTERFACES,
   RUNTIME_INTERFACES_RESOURCE_ID,
-  RUNTIME_AUTH_RESOURCE_ID,
+  RUNTIME_AUTH_STATE_RESOURCE_ID,
   RUNTIME_CHANNELS_RESOURCE_ID,
   RUNTIME_CONFIG_RESOURCE_ID,
   RUNTIME_DB_RESOURCE_ID,
@@ -55,6 +55,7 @@ import { terminalRoutes } from "./terminal/routes.js";
 import type { TerminalManager } from "./terminal/manager.js";
 import type { AppEnv } from "./auth/middleware.js";
 import { AuthService } from "./auth/service.js";
+import { newAuthRuntimeState } from "./auth/runtime-state.js";
 import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
 import { handleError, HttpError, errorBody } from "./http/errors.js";
 import { attributedProjectId } from "./http/attribution.js";
@@ -220,24 +221,9 @@ export async function bootAppDeps(
   // by each generation. Until the first App boots, nothing is active.
   const channels = new ChannelHub();
 
-  const authService = new AuthService({
-    users: usersRepo,
-    authSessions: new AuthSessionsRepo(db),
-    // Auth is runtime mechanism, but WHAT a fresh user is provisioned with is business
-    // policy: the App installs the real provisioner via setProvisioner at every create
-    // (see hmr/platform.ts). This constructor fallback only answers before the first
-    // boot, which the startup order below makes unreachable in practice.
-    provisionInitialProject: () => {
-      throw new Error("no business platform is running to provision the initial Project");
-    },
-    seedAdminPassword: config.seedAdminPassword,
-    sessionTtlMs: config.authSessionTtlMs,
-    sessionRenewMs: config.authSessionRenewMs,
-    ...(overrides.passwordHashCost !== undefined
-      ? { passwordHashCost: overrides.passwordHashCost }
-      : {}),
-    ...(overrides.now ? { now: overrides.now } : {}),
-  });
+  // Authentication itself is business behaviour and is built per App (buildAppDeps), so a
+  // change to it ships by push. Only the values that must survive a push live out here.
+  const authState = newAuthRuntimeState();
 
   // The capability set buildAppDeps claims (see hmr/capabilities.ts) — every
   // entry must be in place before ensure() below performs the first boot. The interface
@@ -245,7 +231,7 @@ export async function bootAppDeps(
   hmr.resources.register(RUNTIME_INTERFACES_RESOURCE_ID, RUNTIME_INTERFACES);
   hmr.resources.register(RUNTIME_CONFIG_RESOURCE_ID, config);
   hmr.resources.register(RUNTIME_DB_RESOURCE_ID, db);
-  hmr.resources.register(RUNTIME_AUTH_RESOURCE_ID, authService);
+  hmr.resources.register(RUNTIME_AUTH_STATE_RESOURCE_ID, authState);
   hmr.resources.register(RUNTIME_CHANNELS_RESOURCE_ID, channels);
   hmr.resources.register(RUNTIME_PROXY_RESOURCE_ID, applyProxySettings);
   hmr.resources.register(RUNTIME_HMR_RESOURCE_ID, hmr);
@@ -509,12 +495,30 @@ export function buildAppDeps(
   caps: RuntimeCapabilities,
   overrides: BuildDepsOverrides = {},
 ): AppDeps {
-  const { config, db, authService, channels, hmr } = caps;
+  const { config, db, authState, channels, hmr } = caps;
   const log = overrides.log ?? ((line: string) => console.log(line));
 
   const usersRepo = new UsersRepo(db);
   const projectsRepo = new ProjectsRepo(db);
   const membersRepo = new MembersRepo(db);
+  // Auth is built HERE, with the App, so every rule it carries ships by push. The runtime
+  // publishes only `authState` — the values a push must not forget (auth/runtime-state.ts).
+  // `provisionInitialProject` closes over the projectService created below: seeding runs long
+  // after this returns, so the cycle costs a closure rather than an install-it-later hook.
+  const authService = new AuthService({
+    users: usersRepo,
+    authSessions: new AuthSessionsRepo(db),
+    state: authState,
+    provisionInitialProject: (user, isAdmin) =>
+      projectService.provisionInitialProject(user, isAdmin),
+    seedAdminPassword: config.seedAdminPassword,
+    sessionTtlMs: config.authSessionTtlMs,
+    sessionRenewMs: config.authSessionRenewMs,
+    ...(overrides.passwordHashCost !== undefined
+      ? { passwordHashCost: overrides.passwordHashCost }
+      : {}),
+    ...(overrides.now ? { now: overrides.now } : {}),
+  });
   const agentsRepo = new AgentsRepo(db);
   const sessionsRepo = new SessionsRepo(db);
   const usageRepo = new UsageRepo(db);
