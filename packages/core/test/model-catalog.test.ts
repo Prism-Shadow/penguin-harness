@@ -9,6 +9,7 @@ import {
   canonicalClientType,
   modelHomepageUrl,
   catalogEntryFor,
+  attributionHeaders,
   presetModelEntries,
   providerInfo,
   fastModeProtocol,
@@ -24,21 +25,22 @@ describe("model-catalog", () => {
     expect(new Set(pairs).size).toBe(pairs.length);
     const ids = MODEL_CATALOG.map((m) => m.modelId);
     expect(MODEL_CATALOG[0]!.provider).toBe("deepseek");
-    // Group order: DeepSeek first, followed by the gateway and first-party groups, with
-    // MiniMax immediately before custom.
+    // Group order is hand-curated, interleaving gateways and first-party vendors: DeepSeek
+    // first (the default model's provider) and custom always last.
     expect(MODEL_PROVIDERS.map((p) => p.id)).toEqual([
       "deepseek",
       "openrouter",
       "fireworks",
-      "siliconflow",
-      "qwen-token-plan",
-      "qwen-pay-as-you-go",
       "google",
-      "anthropic",
       "openai",
+      "anthropic",
+      "siliconflow",
+      "tokendance",
       "zhipu",
       "moonshot",
       "minimax",
+      "qwen-pay-as-you-go",
+      "qwen-token-plan",
       "custom",
     ]);
     expect(providerInfo("siliconflow")!.label).toBe("SiliconFlow");
@@ -272,6 +274,27 @@ describe("model-catalog", () => {
       ["qwen3.8-max", true],
       ["qwen3.7-plus", true],
     ]);
+    const td = MODEL_CATALOG.filter((m) => m.provider === "tokendance");
+    // Dictionary order by upstream id; vision flags and context windows from TokenDance's
+    // public catalog API.
+    expect(td.map((m) => [m.modelId, m.contextWindow, m.supportsVision])).toEqual([
+      ["deepseek-v4-flash-0731", 1048576, false],
+      ["deepseek-v4-flash-vision-exp", 1000000, true],
+      ["deepseek-v4-pro-0813", 1000000, false],
+      ["glm-5.3", 1000000, false],
+      ["kimi-k3", 1048576, true],
+      ["qwen3.8-max", 1000000, true],
+    ]);
+    for (const m of td) {
+      expect(m.clientType).toBe("openai-chat");
+      expect(m.baseUrl).toBe("https://tokendance.space/gateway/v1");
+    }
+    // The gateway's own CNY rates, stored at what it currently bills: qwen3.8-max sits on a
+    // 20%-off promotion (list 1.5 / 12 / 36 CNY), the rest are at list price.
+    const tdQwen = td.find((m) => m.modelId === "qwen3.8-max")!.pricing!;
+    expect([tdQwen.cache_read, tdQwen.cache_write, tdQwen.output]).toEqual([
+      0.171429, 1.371429, 4.114286,
+    ]);
     const qpayg = MODEL_CATALOG.filter((m) => m.provider === "qwen-pay-as-you-go");
     expect(qpayg.map((m) => [m.modelId, m.supportsVision])).toEqual([
       ["deepseek-v4-flash-0731", false],
@@ -312,6 +335,7 @@ describe("model-catalog", () => {
       "openrouter",
       "fireworks",
       "siliconflow",
+      "tokendance",
       "qwen-token-plan",
       "qwen-pay-as-you-go",
       "custom",
@@ -329,10 +353,12 @@ describe("model-catalog", () => {
       "https://dashscope.aliyuncs.com/compatible-mode/v1",
     );
     expect(providerInfo("fireworks")!.gatewayBaseUrl).toBe("https://api.fireworks.ai/inference/v1");
+    expect(providerInfo("tokendance")!.gatewayBaseUrl).toBe("https://tokendance.space/gateway/v1");
     const GATEWAYS = [
       "openrouter",
       "fireworks",
       "siliconflow",
+      "tokendance",
       "qwen-token-plan",
       "qwen-pay-as-you-go",
     ];
@@ -341,7 +367,7 @@ describe("model-catalog", () => {
         expect(p.gatewayBaseUrl, p.id).toBeUndefined();
       }
     }
-    const gateway = [...or, ...fw, ...sf, ...qtp, ...qpayg];
+    const gateway = [...or, ...fw, ...sf, ...td, ...qtp, ...qpayg];
     // Pricing (USD, per the 2026-08-03 models-API re-read): MiMo v2.5 and Hy3 publish a real
     // cache-hit price and no per-token write premium, so cache_write carries the input price.
     const mimo = MODEL_CATALOG.find((m) => m.modelId === "xiaomi/mimo-v2.5")!.pricing!;
@@ -726,6 +752,9 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing ru
     expect(modelHomepageUrl("qwen-token-plan", "qwen3.8-max")).toBe(
       "https://www.qianwenai.com/models/qwen3.8-max",
     );
+    expect(modelHomepageUrl("tokendance", "glm-5.3")).toBe(
+      "https://tokendance.space/models/glm-5.3",
+    );
     // Direct vendors link to the vendor's model docs page.
     expect(modelHomepageUrl("deepseek", "deepseek-v4-pro")).toBe(
       "https://api-docs.deepseek.com/quick_start/pricing",
@@ -847,5 +876,51 @@ describe("fastModeProtocol (which models may be offered AgentHub's fast_mode, an
     expect(verdictOf("openai", "gpt-5.5")).toBe("openai");
     expect(verdictOf("openai", "gpt-5.4-pro")).toBe("openai");
     expect(verdictOf("minimax", "MiniMax-M3")).toBe("openai");
+  });
+});
+
+describe("attributionHeaders (how the harness names itself to the gateways that read it)", () => {
+  it("OpenRouter gets its three attribution headers, on the preset base URL and on any custom one", () => {
+    const expected = {
+      "HTTP-Referer": "https://penguin.ooo/",
+      "X-OpenRouter-Title": "PenguinHarness",
+      "X-OpenRouter-Categories": "cli-agent,personal-agent",
+    };
+    expect(attributionHeaders(providerInfo("openrouter")!.gatewayBaseUrl)).toEqual(expected);
+    // The host decides, not the catalog: an entry filed under custom that points at the same
+    // gateway is the same app calling it.
+    expect(attributionHeaders("https://openrouter.ai/api/v1/")).toEqual(expected);
+    // OpenRouter accepts at most two categories per request and drops anything unrecognised.
+    expect(expected["X-OpenRouter-Categories"].split(",")).toHaveLength(2);
+  });
+
+  it("TokenDance gets the single X-App-URL header", () => {
+    expect(attributionHeaders(providerInfo("tokendance")!.gatewayBaseUrl)).toEqual({
+      "X-App-URL": "https://penguin.ooo/",
+    });
+  });
+
+  it("every other endpoint gets no extra headers, and a blank or unparseable base URL is inert", () => {
+    expect(attributionHeaders("https://api.deepseek.com")).toBeUndefined();
+    expect(attributionHeaders("https://api.siliconflow.cn/v1")).toBeUndefined();
+    expect(attributionHeaders(undefined)).toBeUndefined();
+    expect(attributionHeaders("   ")).toBeUndefined();
+    expect(attributionHeaders("not a url")).toBeUndefined();
+    // Suffix-anchored host matching: a lookalike domain is not the gateway.
+    expect(attributionHeaders("https://notopenrouter.ai/api/v1")).toBeUndefined();
+    expect(attributionHeaders("https://tokendance.space.example.com/v1")).toBeUndefined();
+  });
+
+  it("catalog invariant: every gateway row whose host runs an attribution scheme carries it", () => {
+    for (const m of MODEL_CATALOG) {
+      const headers = attributionHeaders(m.baseUrl);
+      if (m.provider === "openrouter") {
+        expect(headers?.["HTTP-Referer"], m.modelId).toBe("https://penguin.ooo/");
+      } else if (m.provider === "tokendance") {
+        expect(headers?.["X-App-URL"], m.modelId).toBe("https://penguin.ooo/");
+      } else {
+        expect(headers, `${m.provider}/${m.modelId}`).toBeUndefined();
+      }
+    }
   });
 });

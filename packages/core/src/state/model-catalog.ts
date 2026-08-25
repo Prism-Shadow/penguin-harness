@@ -4,7 +4,7 @@
  * Data verified as of 2026-07-10 (Qwen Token Plan entries: 2026-07-20; MiniMax: 2026-08-03;
  * DeepSeek, Gemini 3.7, GLM-5.3 and the whole OpenAI line-up (direct + OpenRouter):
  * 2026-08-18; the direct Anthropic group: 2026-08-20; the DeepSeek V4 Flash Vision Exp rows:
- * 2026-08-21 — per each provider's docs).
+ * 2026-08-21; the TokenDance group: 2026-08-25 — per each provider's docs).
  * Docs: packages/docs/content/models.{zh,en}.md (site path /docs/models) documents the
  * provider groups and credential resolution described here.
  *
@@ -24,9 +24,10 @@
  * (delisted 2026-08-06; the Z.AI direct glm-5.1 remains), the OpenRouter
  * inclusionai/ling-3.0-flash:free listing (delisted from OpenRouter, removed 2026-08-18),
  * non-chat models (embedding / image generation / TTS), and Bedrock. Direct-vendor ids are
- * auto-routed by AgentHub and leave client_type unset; the five gateway groups (OpenRouter,
- * Fireworks AI, SiliconFlow, Qwen Token Plan, Qwen Pay-As-You-Go) can't be auto-routed, so
- * every gateway row **always pins an explicit client_type** and inlines its preset base URL.
+ * auto-routed by AgentHub and leave client_type unset; the six gateway groups (OpenRouter,
+ * Fireworks AI, SiliconFlow, TokenDance, Qwen Pay-As-You-Go, Qwen Token Plan) can't be
+ * auto-routed, so every gateway row **always pins an explicit client_type** and inlines its
+ * preset base URL.
  * That pin is load-bearing, not decoration: AgentHub's AutoLLMClient matches raw substrings
  * against `client_type || model_id` and never looks at base_url, so an unpinned gateway id
  * would be routed by its own spelling — `openai/gpt-5.6-sol` would reach the first-party
@@ -39,6 +40,10 @@
  *   OpenAI Responses server (see the OpenRouter block comment for why only those rows).
  * The MiniMax M3 preset pins AgentHub's first-party `minimax-m3` protocol and direct API
  * endpoint.
+ *
+ * App attribution (`attributionHeaders`, bottom of this file) rides alongside the protocol
+ * pins: it names PenguinHarness to the gateways that read such a header, keyed on the
+ * endpoint host rather than on the provider group.
  *
  * This file imports no Node built-ins (type-only imports only), so it can be bundled directly
  * for the browser.
@@ -89,14 +94,21 @@ const QWEN_TOKEN_PLAN_BASE_URL =
   "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1";
 const QWEN_PAYG_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 const FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1";
+const TOKENDANCE_BASE_URL = "https://tokendance.space/gateway/v1";
 const MINIMAX_BASE_URL = "https://api.minimax.io/v1";
 
 /**
- * Provider list (web model page groups in this order): DeepSeek first (the default model's
- * provider), followed by the five gateways (OpenRouter, Fireworks AI, SiliconFlow, Qwen Token
- * Plan, Qwen Pay-As-You-Go), then the first-party providers Google Gemini, Anthropic, OpenAI,
- * Z.AI (GLM), Moonshot (Kimi), and MiniMax; custom groups custom OpenAI-protocol models and
- * comes last.
+ * Provider list (web model page groups in this order). The sequence is a hand-curated
+ * display order: DeepSeek leads as the default model's provider and custom (custom
+ * OpenAI-protocol models) is always last; in between, gateways and first-party vendors are
+ * interleaved by expected use rather than sorted by kind.
+ *
+ * The six gateway groups — OpenRouter, Fireworks AI, SiliconFlow, TokenDance, Qwen
+ * Pay-As-You-Go and Qwen Token Plan — reach their models through one of AgentHub's generic
+ * OpenAI-protocol clients (`openai-chat`, or `openai-responses` for the OpenRouter
+ * `openai/*` rows). Those clients read **OPENAI_API_KEY / OPENAI_BASE_URL** when the
+ * credential is blank, not the gateway's own variable names, so every gateway group records
+ * the OPENAI_* pair and the env fallback hint the frontend shows is accurate either way.
  */
 export const MODEL_PROVIDERS: ModelProviderInfo[] = [
   {
@@ -107,12 +119,6 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     apiKeyUrl: "https://platform.deepseek.com/api_keys",
     modelsUrl: "https://api-docs.deepseek.com/quick_start/pricing",
   },
-  // Gateways (their model ids can't be auto-routed by AgentHub, so they always pin an
-  // explicit client_type + a preset base URL): they go through one of AgentHub's generic
-  // OpenAI-protocol clients - openai-chat (Chat Completions) for most rows, openai-responses
-  // for the OpenRouter openai/* rows - and *both* read **OPENAI_API_KEY / OPENAI_BASE_URL**
-  // when the credential is blank (not the provider's own var names), so the env fallback hint
-  // is the same either way and must reflect that accurately.
   {
     id: "openrouter",
     label: "OpenRouter",
@@ -132,40 +138,20 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     gatewayBaseUrl: FIREWORKS_BASE_URL,
   },
   {
-    id: "siliconflow",
-    label: "SiliconFlow",
-    envKey: "OPENAI_API_KEY",
-    envBaseUrlKey: "OPENAI_BASE_URL",
-    apiKeyUrl: "https://cloud.siliconflow.cn/me/account/ak",
-    modelsUrl: "https://cloud.siliconflow.cn/models",
-    gatewayBaseUrl: SILICONFLOW_BASE_URL,
-  },
-  {
-    id: "qwen-token-plan",
-    label: "Qwen Token Plan",
-    envKey: "OPENAI_API_KEY",
-    envBaseUrlKey: "OPENAI_BASE_URL",
-    apiKeyUrl: "https://platform.qianwenai.com/pricing/token-plan",
-    modelsUrl:
-      "https://platform.qianwenai.com/docs/token-plan/personal/token-plan-personal-overview",
-    gatewayBaseUrl: QWEN_TOKEN_PLAN_BASE_URL,
-  },
-  {
-    id: "qwen-pay-as-you-go",
-    label: "Qwen Pay-As-You-Go",
-    envKey: "OPENAI_API_KEY",
-    envBaseUrlKey: "OPENAI_BASE_URL",
-    apiKeyUrl: "https://platform.qianwenai.com/docs/api-reference/preparation/api-key",
-    modelsUrl: "https://www.qianwenai.com/models",
-    gatewayBaseUrl: QWEN_PAYG_BASE_URL,
-  },
-  {
     id: "google",
     label: "Google Gemini",
     envKey: "GEMINI_API_KEY",
     envBaseUrlKey: "GEMINI_BASE_URL",
     apiKeyUrl: "https://aistudio.google.com/api-keys",
     modelsUrl: "https://ai.google.dev/gemini-api/docs/models",
+  },
+  {
+    id: "openai",
+    label: "OpenAI",
+    envKey: "OPENAI_API_KEY",
+    envBaseUrlKey: "OPENAI_BASE_URL",
+    apiKeyUrl: "https://platform.openai.com/api-keys",
+    modelsUrl: "https://platform.openai.com/docs/models",
   },
   {
     id: "anthropic",
@@ -176,12 +162,22 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     modelsUrl: "https://docs.claude.com/en/docs/about-claude/models/overview",
   },
   {
-    id: "openai",
-    label: "OpenAI",
+    id: "siliconflow",
+    label: "SiliconFlow",
     envKey: "OPENAI_API_KEY",
     envBaseUrlKey: "OPENAI_BASE_URL",
-    apiKeyUrl: "https://platform.openai.com/api-keys",
-    modelsUrl: "https://platform.openai.com/docs/models",
+    apiKeyUrl: "https://cloud.siliconflow.cn/me/account/ak",
+    modelsUrl: "https://cloud.siliconflow.cn/models",
+    gatewayBaseUrl: SILICONFLOW_BASE_URL,
+  },
+  {
+    id: "tokendance",
+    label: "TokenDance",
+    envKey: "OPENAI_API_KEY",
+    envBaseUrlKey: "OPENAI_BASE_URL",
+    apiKeyUrl: "https://tokendance.space/keys",
+    modelsUrl: "https://tokendance.space/models",
+    gatewayBaseUrl: TOKENDANCE_BASE_URL,
   },
   {
     id: "zhipu",
@@ -208,6 +204,25 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     // against the same endpoint, so the group is not tied to either billing mode.
     apiKeyUrl: "https://platform.minimax.io/user-center/basic-information/interface-key",
     modelsUrl: "https://platform.minimax.io/docs/guides/models-intro",
+  },
+  {
+    id: "qwen-pay-as-you-go",
+    label: "Qwen Pay-As-You-Go",
+    envKey: "OPENAI_API_KEY",
+    envBaseUrlKey: "OPENAI_BASE_URL",
+    apiKeyUrl: "https://platform.qianwenai.com/docs/api-reference/preparation/api-key",
+    modelsUrl: "https://www.qianwenai.com/models",
+    gatewayBaseUrl: QWEN_PAYG_BASE_URL,
+  },
+  {
+    id: "qwen-token-plan",
+    label: "Qwen Token Plan",
+    envKey: "OPENAI_API_KEY",
+    envBaseUrlKey: "OPENAI_BASE_URL",
+    apiKeyUrl: "https://platform.qianwenai.com/pricing/token-plan",
+    modelsUrl:
+      "https://platform.qianwenai.com/docs/token-plan/personal/token-plan-personal-overview",
+    gatewayBaseUrl: QWEN_TOKEN_PLAN_BASE_URL,
   },
   { id: "custom", label: "Custom", envKey: "OPENAI_API_KEY", envBaseUrlKey: "OPENAI_BASE_URL" },
 ];
@@ -887,6 +902,77 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     clientType: "openai-chat",
     baseUrl: SILICONFLOW_BASE_URL,
   },
+  // -- TokenDance (gateway: OpenAI-compatible protocol, preset base URL). Context windows and
+  // vision flags from the public catalog API (GET https://tokendance.space/gateway/v1/models,
+  // no credential required); prices are the gateway's own CNY rates from each model's detail
+  // page, read 2026-08-25 (the detail pages need a signed-in session, so they cannot be
+  // re-read anonymously). TokenDance publishes an input price and a cache-hit price with no
+  // separate cache-write fee, so cache_write carries the input price.
+  //
+  // Discounts: like the other gateway groups, these rows store what TokenDance actually
+  // BILLS, so a running promotion is stored at its discounted rate — qwen3.8-max sits on a
+  // limited-time 20% off (list 1.5 / 12 / 36 CNY), and a lapse there silently raises the real
+  // cost 25% above what the catalog says. --
+  {
+    modelId: "deepseek-v4-flash-0731",
+    displayName: "DeepSeek V4 Flash 0731",
+    provider: "tokendance",
+    contextWindow: 1048576,
+    pricing: cny(0.05, 1.5, 4.5),
+    supportsVision: false,
+    clientType: "openai-chat",
+    baseUrl: TOKENDANCE_BASE_URL,
+  },
+  {
+    modelId: "deepseek-v4-flash-vision-exp",
+    displayName: "DeepSeek V4 Flash Vision Exp",
+    provider: "tokendance",
+    contextWindow: 1000000,
+    pricing: cny(0.05, 1.5, 4.5),
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: TOKENDANCE_BASE_URL,
+  },
+  {
+    modelId: "deepseek-v4-pro-0813",
+    displayName: "DeepSeek V4 Pro 0813",
+    provider: "tokendance",
+    contextWindow: 1000000,
+    pricing: cny(0.15, 4.5, 13.5),
+    supportsVision: false,
+    clientType: "openai-chat",
+    baseUrl: TOKENDANCE_BASE_URL,
+  },
+  {
+    modelId: "glm-5.3",
+    displayName: "GLM-5.3",
+    provider: "tokendance",
+    contextWindow: 1000000,
+    pricing: cny(2, 8, 28),
+    supportsVision: false,
+    clientType: "openai-chat",
+    baseUrl: TOKENDANCE_BASE_URL,
+  },
+  {
+    modelId: "kimi-k3",
+    displayName: "Kimi K3",
+    provider: "tokendance",
+    contextWindow: 1048576,
+    pricing: cny(2, 20, 100),
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: TOKENDANCE_BASE_URL,
+  },
+  {
+    modelId: "qwen3.8-max",
+    displayName: "Qwen 3.8 Max",
+    provider: "tokendance",
+    contextWindow: 1000000,
+    pricing: cny(1.2, 9.6, 28.8),
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: TOKENDANCE_BASE_URL,
+  },
   // -- Qwen Token Plan (subscription gateway; vision flags per the plan's supported-model
   // table). Pricing and context windows from each model's page at
   // www.qianwenai.com/models/<id> (official CNY list prices; limited-time promotions such as
@@ -1467,6 +1553,7 @@ export function modelHomepageUrl(provider: string, modelId: string): string | un
       ? `https://app.fireworks.ai/models/${m[1]}/${m[2]}`
       : providerInfo(provider)?.modelsUrl;
   }
+  if (provider === "tokendance") return `https://tokendance.space/models/${modelId}`;
   if (provider === "qwen-pay-as-you-go") {
     return `https://www.qianwenai.com/models/${encodeURIComponent(modelId)}`;
   }
@@ -1483,4 +1570,66 @@ export function modelHomepageUrl(provider: string, modelId: string): string | un
   }
   if (provider === "custom") return undefined;
   return providerInfo(provider)?.modelsUrl;
+}
+
+/**
+ * App attribution: how the harness identifies itself to gateways that rank or report the apps
+ * calling them. Both values describe PenguinHarness itself, never a model or an account.
+ */
+const APP_URL = "https://penguin.ooo/";
+const APP_TITLE = "PenguinHarness";
+/**
+ * OpenRouter marketplace categories, comma-separated. OpenRouter accepts at most **two per
+ * request** from a fixed slug list and silently drops anything else, so this string is
+ * exactly two recognised slugs.
+ */
+const OPENROUTER_CATEGORIES = "cli-agent,personal-agent";
+
+/** Lowercase host of a base URL; undefined when it is blank or unparseable. */
+function endpointHost(baseUrl: string | undefined): string | undefined {
+  if (!baseUrl?.trim()) return undefined;
+  try {
+    return new URL(baseUrl).hostname.toLowerCase();
+  } catch {
+    return undefined;
+  }
+}
+
+/** Host equality extended to subdomains; suffix-anchored, so `notopenrouter.ai` never matches. */
+function hostMatches(host: string, domain: string): boolean {
+  return host === domain || host.endsWith(`.${domain}`);
+}
+
+/**
+ * Attribution headers for a request's base URL, or undefined when that endpoint runs no
+ * attribution scheme (every direct vendor, and every gateway that does not read one).
+ *
+ * Keyed on the endpoint host rather than on the catalog's provider group, because the group
+ * is a display bucket while the headers are a property of the server being called: a `custom`
+ * entry pointed at OpenRouter is still PenguinHarness talking to OpenRouter and is attributed
+ * identically. The flip side is that an entry carrying no `base_url` of its own gets no
+ * headers even when `OPENAI_BASE_URL` sends it to a gateway — that variable is read inside
+ * AgentHub and never reaches this side.
+ *
+ * - OpenRouter (https://openrouter.ai/docs/app-attribution): `HTTP-Referer` is the identity
+ *   that creates the app page and drives the rankings, `X-OpenRouter-Title` is its display
+ *   name, `X-OpenRouter-Categories` files it under marketplace categories.
+ * - TokenDance (https://tokendance.space/docs/app-attribution): `X-App-URL` alone, and it
+ *   takes priority over any App URL recorded on the API key — the same key may be in use by
+ *   other tools, so the per-request value is the accurate one.
+ */
+export function attributionHeaders(
+  baseUrl: string | undefined,
+): Record<string, string> | undefined {
+  const host = endpointHost(baseUrl);
+  if (!host) return undefined;
+  if (hostMatches(host, "openrouter.ai")) {
+    return {
+      "HTTP-Referer": APP_URL,
+      "X-OpenRouter-Title": APP_TITLE,
+      "X-OpenRouter-Categories": OPENROUTER_CATEGORIES,
+    };
+  }
+  if (hostMatches(host, "tokendance.space")) return { "X-App-URL": APP_URL };
+  return undefined;
 }

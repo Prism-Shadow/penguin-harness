@@ -3,8 +3,8 @@
  * light and dark themes).
  *
  * Anthropic / OpenAI / Google Gemini / DeepSeek / Moonshot AI / OpenRouter /
- * SiliconFlow / Qwen Token Plan / Qwen Pay-As-You-Go / Fireworks AI / MiniMax use
- * each vendor's brand mark (for recognition purposes, not under trademark license;
+ * SiliconFlow / TokenDance / Qwen Token Plan / Qwen Pay-As-You-Go / Fireworks AI /
+ * MiniMax use each vendor's brand mark (for recognition purposes, not under trademark license;
  * Qwen's official gradient wordmark is flattened to currentColor monochrome).
  * Z.AI uses a simplified geometric approximation of its branded glyph (not an
  * exact reproduction of the trademark); custom models use a generic cube. All
@@ -88,6 +88,32 @@ const GLYPHS: Record<string, Glyph> = {
     viewBox: "0 0 53.021 25.354",
     path: (
       <path d="M50.7172 0H27.6622C26.3877 0 25.3586 1.03397 25.3586 2.30358V9.21911C25.3586 10.4935 24.3294 11.5227 23.055 11.5227H2.30357C1.02914 11.5227 0 12.5567 0 13.8263V23.0502C0 24.3246 1.03395 25.3538 2.30357 25.3538H25.3586C26.633 25.3538 27.6622 24.3198 27.6622 23.0502V16.1347C27.6622 14.8602 28.6913 13.8311 29.9657 13.8311H50.7172C51.9916 13.8311 53.0207 12.7971 53.0207 11.5275V2.30358C53.0207 1.02916 51.9868 0 50.7172 0Z" />
+    ),
+  },
+  tokendance: {
+    // The official TokenDance mark, taken from the brand SVG with its black rounded-square
+    // backdrop dropped: the ribbon is a plain fill, while the two motion ticks keep the round
+    // caps they are drawn with and override the wrapper's fill-only presentation. The
+    // viewBox is cropped to the mark's ink so it fills an icon box like the square glyphs do.
+    viewBox: "50.79 100 378.72 280.5",
+    path: (
+      <>
+        <path d="M159 162H52.789C51.4198 162 50.4555 160.655 50.8947 159.358L66.8591 112.225C69.3344 104.918 76.192 100 83.9077 100H321.388C324.459 100 327.524 100.21 330.551 100.726C336.545 101.747 347.179 103.791 354.5 106.5C395.04 121.504 418.5 160 426 191C433.5 222 432 274.5 390.5 327C349 379.5 284 380.5 282 380.5H175.767C174.399 380.5 173.451 379.159 173.886 377.863L192.567 322.275C193.123 320.623 194.677 319.52 196.42 319.545C207.729 319.703 230.558 319.865 251 319.5C279 319 286 318.5 310 305.5C334 292.5 360.5 252.5 352 209.5C345.2 175.1 315.5 163.5 301.5 162H228.992C221.236 162 214.351 166.969 211.908 174.331L147.592 368.169C145.149 375.531 138.264 380.5 130.508 380.5H73.7532C72.3943 380.5 71.4179 379.214 71.8379 377.922C89.6259 323.19 124.669 214.961 129 200C133.4 184.8 150.833 168.333 159 162Z" />
+        <path
+          d="M233 264L248 216"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={25}
+          strokeLinecap="round"
+        />
+        <path
+          d="M280 264L295 216"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={25}
+          strokeLinecap="round"
+        />
+      </>
     ),
   },
   "qwen-token-plan": QWEN_GLYPH,
