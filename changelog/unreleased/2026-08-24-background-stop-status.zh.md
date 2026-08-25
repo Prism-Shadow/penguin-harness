@@ -3,7 +3,7 @@
 - **Date:** 2026-08-24
 - **Type:** fix
 - **Scope:** `core`, `web`, `docs`
-- **PR:** [#PRNUM](https://github.com/Prism-Shadow/penguin-harness/pull/PRNUM)
+- **PR:** [#457](https://github.com/Prism-Shadow/penguin-harness/pull/457)
 
 [English](2026-08-24-background-stop-status.md)
 
