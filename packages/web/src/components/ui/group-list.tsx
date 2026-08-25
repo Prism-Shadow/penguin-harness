@@ -191,6 +191,69 @@ export function MoreRow({
   );
 }
 
+/** Chevrons of the group pager's step buttons (lucide chevron-left / chevron-right). */
+const PAGER_PREV_ICON = "M15 18 9 12l6-6";
+const PAGER_NEXT_ICON = "m9 18 6-6-6-6";
+
+/**
+ * Page stepper of a grouped list whose groups are paginated (the sidebar renders at most
+ * SIDEBAR_GROUP_PAGE_SIZE groups per page): two flat chevron buttons around the "2/5"
+ * position readout, no wider than the rows it sits under — this list is a drawer at phone
+ * width. `page` is 0-based; the readout and the accessible names count from 1.
+ *
+ * Rendered only by callers that already know there is more than one page; the buttons
+ * still disable at the ends so the control never offers a step that goes nowhere.
+ */
+export function GroupPager({
+  page,
+  pageCount,
+  onChange,
+}: {
+  page: number;
+  pageCount: number;
+  onChange: (page: number) => void;
+}) {
+  const step = (delta: number) => {
+    const next = page + delta;
+    if (next >= 0 && next < pageCount) onChange(next);
+  };
+  const buttonClass =
+    "flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:bg-gray-200/50 hover:text-gray-700 disabled:pointer-events-none disabled:opacity-40 dark:text-gray-500 dark:hover:bg-gray-800/50 dark:hover:text-gray-300";
+  return (
+    <div className="mt-1 flex items-center justify-center gap-1.5 px-1.5 py-0.5">
+      <button
+        type="button"
+        title={S.chat.prevGroupPage}
+        aria-label={S.chat.prevGroupPage}
+        disabled={page <= 0}
+        onClick={() => step(-1)}
+        className={buttonClass}
+      >
+        <Icon d={PAGER_PREV_ICON} size={12} />
+      </button>
+      {/* The position doubles as the control's status: announced on change so a step is
+          audible without counting the rows that swapped underneath it. */}
+      <span
+        aria-live="polite"
+        aria-label={S.chat.groupPagePosition(page + 1, pageCount)}
+        className="min-w-[2.5rem] text-center text-[11px] font-medium tabular-nums text-gray-400 dark:text-gray-500"
+      >
+        {page + 1}/{pageCount}
+      </span>
+      <button
+        type="button"
+        title={S.chat.nextGroupPage}
+        aria-label={S.chat.nextGroupPage}
+        disabled={page >= pageCount - 1}
+        onClick={() => step(1)}
+        className={buttonClass}
+      >
+        <Icon d={PAGER_NEXT_ICON} size={12} />
+      </button>
+    </div>
+  );
+}
+
 /**
  * Collapsed-by-default lazy folder (subagent / scheduled / archived): the toggle row
  * shows the label (typically with the group's exact server share), the body renders only
@@ -201,6 +264,7 @@ export function FolderSection({
   open,
   onToggle,
   more = false,
+  moreLabel,
   pending = false,
   onMore,
   children,
@@ -210,6 +274,12 @@ export function FolderSection({
   onToggle: () => void;
   /** Show the folder's own "More" row (its share isn't fully loaded and somewhere is left to fetch from). */
   more?: boolean;
+  /**
+   * Wording of that row, when the caller can count what is still hidden in THIS folder
+   * ("Show 7 more chats"). Defaults to the bare shared "More" — the honest label where
+   * the caller has no per-folder remainder to name.
+   */
+  moreLabel?: string;
   /** The folder's "More" fetch in flight. */
   pending?: boolean;
   onMore?: () => void;
@@ -223,7 +293,12 @@ export function FolderSection({
       </button>
       {open && children}
       {open && more && (
-        <MoreRow label={S.chat.loadMore} pending={pending} onClick={() => onMore?.()} />
+        <MoreRow
+          label={moreLabel ?? S.chat.loadMore}
+          {...(moreLabel !== undefined ? { ariaLabel: moreLabel } : {})}
+          pending={pending}
+          onClick={() => onMore?.()}
+        />
       )}
     </div>
   );

@@ -30,6 +30,7 @@ import type { SessionManager } from "../runtime/session-manager.js";
 import { asSessionSource } from "../runtime/session-sources.js";
 import type { SessionSources } from "../runtime/session-sources.js";
 import { TraceIndexService, traceFilePath } from "./trace-index.js";
+import { matchesWorkspaceGroup } from "./workspace-group.js";
 import type { ProjectConfigService } from "./project-config-service.js";
 
 const SESSION_ID_TS_RE = /^session-(\d{4})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-[0-9a-f]{8}$/;
@@ -149,6 +150,12 @@ export class SessionService {
    * every row and returns per-category totals over the whole list — plus the same
    * totals broken down by Workspace path — so the sidebar can label the collapsed
    * folders (and a workspace group can know its own share) without loading them.
+   *
+   * `workspaceGroup` filters the same way, to one Workspace group (see workspace-group.ts),
+   * so a sidebar grouped by Workspace pages each group down its OWN stream instead of
+   * sharing one per-Agent cursor — without it, one group's "load more" consumes the page
+   * its siblings were about to read, and their rows move on screen untouched. The two
+   * filters compose; the returned counts stay whole-Agent either way.
    */
   async listSessions(
     projectId: string,
@@ -156,6 +163,7 @@ export class SessionService {
     opts: {
       paging?: { offset: number; limit: number };
       category?: SessionCategory;
+      workspaceGroup?: string;
       withCounts?: boolean;
       includeCli?: boolean;
     } = {},
@@ -164,7 +172,7 @@ export class SessionService {
     counts?: SessionCategoryCounts;
     workspaceCounts?: Record<string, SessionCategoryCounts>;
   }> {
-    const { paging, category, withCounts, includeCli } = opts;
+    const { paging, category, workspaceGroup, withCounts, includeCli } = opts;
     const rows = new Map(
       this.deps.sessions
         .listByAgent(projectId, agentId, { webOnly: !includeCli })
@@ -205,7 +213,7 @@ export class SessionService {
       Promise.all(page.map((row) => this.toInfo(row, rowHasTrace(row))));
 
     // No classification asked for: slice straight away (the pre-category behavior).
-    if (category === undefined && !withCounts) {
+    if (category === undefined && workspaceGroup === undefined && !withCounts) {
       return {
         sessions: await toPage(
           paging ? sorted.slice(paging.offset, paging.offset + paging.limit) : sorted,
@@ -230,7 +238,10 @@ export class SessionService {
         });
         ws[cat] += 1;
       }
-      if ((category === undefined || cat === category) && matched.length < want) matched.push(row);
+      const wanted =
+        (category === undefined || cat === category) &&
+        (workspaceGroup === undefined || matchesWorkspaceGroup(row.workspace, workspaceGroup));
+      if (wanted && matched.length < want) matched.push(row);
     }
     const sessions = await toPage(paging ? matched.slice(paging.offset, want) : matched);
     return withCounts ? { sessions, counts, workspaceCounts } : { sessions };

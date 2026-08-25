@@ -426,7 +426,8 @@ export const getAgentTraces = (
 /**
  * Optional paging (absent = full unfiltered list): the store requests `limit+1` per page to
  * detect "has more". `category` filters server-side (paging applies within the category);
- * `withCounts` asks for per-category totals over the whole list alongside the page.
+ * `workspaceGroup` narrows the same way to one Workspace group, so a group can page its own
+ * stream; `withCounts` asks for per-category totals over the whole list alongside the page.
  */
 export const listSessions = (
   projectId: string,
@@ -435,6 +436,8 @@ export const listSessions = (
     offset: number;
     limit: number;
     category?: SessionCategory;
+    /** One Workspace group's rows only: its path, or the merged temporary group's sentinel (session-grouping.ts). */
+    workspaceGroup?: string;
     withCounts?: boolean;
     /** Also list CLI-created Sessions (Trace discovery + adoption); default = web rows straight from the DB. */
     cli?: boolean;
@@ -443,6 +446,7 @@ export const listSessions = (
   const qs = opts
     ? `?limit=${opts.limit}&offset=${opts.offset}` +
       (opts.category ? `&category=${opts.category}` : "") +
+      (opts.workspaceGroup ? `&workspaceGroup=${encodeURIComponent(opts.workspaceGroup)}` : "") +
       (opts.withCounts ? "&counts=1" : "") +
       (opts.cli ? "&cli=1" : "")
     : "";

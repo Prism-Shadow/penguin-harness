@@ -382,6 +382,94 @@ describe("session-index", () => {
     expect((await api.get(`${base()}?counts=yes`)).status).toBe(400);
   });
 
+  it("workspaceGroup pages one Workspace group's own stream, temporary workspaces as one group", async () => {
+    // Rows are inserted straight into the index: the group filter reads the stored path, and
+    // going through create() would only add realpath validation this has nothing to say about.
+    const agentDir = `${t.root}/${projectId}/agents/default_agent`;
+    const seed = async (sessionId: string, workspace: string, createdAt: string) =>
+      t.deps.sessionsRepo.insert({
+        sessionId,
+        projectId,
+        agentId: "default_agent",
+        provider: "custom",
+        modelId: "m-x",
+        workspace,
+        approvalMode: "allow-all",
+        title: null,
+        createdAt,
+        lastActiveAt: createdAt,
+      });
+    // Interleaved by creation time, so no single page of the Agent's whole stream can be
+    // one group's page: alpha, beta and two single-use temporary workspaces.
+    const alpha = "/tmp/ws-alpha";
+    const beta = "/tmp/ws-beta";
+    await seed("session-2026-07-03-09-00-00-aaaa0001", alpha, "2026-07-03T09:00:00.000Z");
+    await seed("session-2026-07-03-09-01-00-bbbb0001", beta, "2026-07-03T09:01:00.000Z");
+    await seed("session-2026-07-03-09-02-00-aaaa0002", alpha, "2026-07-03T09:02:00.000Z");
+    await seed("session-2026-07-03-09-03-00-bbbb0002", beta, "2026-07-03T09:03:00.000Z");
+    await seed(
+      "session-2026-07-03-09-04-00-cccc0001",
+      `${agentDir}/workspaces/tmp-0123abcd`,
+      "2026-07-03T09:04:00.000Z",
+    );
+    await seed(
+      "session-2026-07-03-09-05-00-cccc0002",
+      `${agentDir}/workspaces/tmp-89abcdef`,
+      "2026-07-03T09:05:00.000Z",
+    );
+
+    const list = async (qs: string) => {
+      const res = await api.get(`${base()}${qs}`);
+      expect(res.status, qs).toBe(200);
+      return (await res.json()) as SessionsResponse;
+    };
+    const ids = (body: SessionsResponse) => body.sessions.map((s) => s.sessionId);
+
+    // A group's stream holds its rows and nobody else's.
+    expect(ids(await list(`?category=active&workspaceGroup=${encodeURIComponent(alpha)}`))).toEqual(
+      ["session-2026-07-03-09-02-00-aaaa0002", "session-2026-07-03-09-00-00-aaaa0001"],
+    );
+    expect(ids(await list(`?category=active&workspaceGroup=${encodeURIComponent(beta)}`))).toEqual([
+      "session-2026-07-03-09-03-00-bbbb0002",
+      "session-2026-07-03-09-01-00-bbbb0001",
+    ]);
+
+    // Every auto-created temporary Workspace is ONE group (they are single-use, so a group
+    // per path would be one-session noise).
+    expect(ids(await list("?category=active&workspaceGroup=temp"))).toEqual([
+      "session-2026-07-03-09-05-00-cccc0002",
+      "session-2026-07-03-09-04-00-cccc0001",
+    ]);
+
+    // Paging runs within the group: offset/limit walk that group's stream, not the Agent's.
+    const first = await list(
+      `?category=active&workspaceGroup=${encodeURIComponent(alpha)}&limit=1&offset=0`,
+    );
+    const second = await list(
+      `?category=active&workspaceGroup=${encodeURIComponent(alpha)}&limit=1&offset=1`,
+    );
+    expect(ids(first)).toEqual(["session-2026-07-03-09-02-00-aaaa0002"]);
+    expect(ids(second)).toEqual(["session-2026-07-03-09-00-00-aaaa0001"]);
+    expect(
+      (await list(`?category=active&workspaceGroup=${encodeURIComponent(alpha)}&limit=1&offset=2`))
+        .sessions,
+    ).toEqual([]);
+
+    // A group nobody lives in is empty, not unfiltered.
+    expect((await list("?category=active&workspaceGroup=/tmp/ws-nobody")).sessions).toEqual([]);
+
+    // The counts stay whole-Agent under a group filter: the sidebar reads a group's share
+    // from the per-Workspace breakdown, and the folder labels need the Agent's totals.
+    const counted = await list(
+      `?category=active&counts=1&workspaceGroup=${encodeURIComponent(alpha)}`,
+    );
+    expect(ids(counted)).toHaveLength(2);
+    expect(counted.counts?.active).toBe(6);
+
+    // An empty group name is rejected, never silently unfiltered.
+    expect((await api.get(`${base()}?workspaceGroup=`)).status).toBe(400);
+  });
+
   it("half a model reference is 400: the missing half is never inferred", async () => {
     await configureModels();
     // Only modelId: even though it names the one configured model, the provider is never

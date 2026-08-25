@@ -1514,8 +1514,12 @@ Benchmark：
     /** Visible label on the Memory panel's header link (not a tooltip-only glyph): says what the click does and where it lands. */
     openAgentMemory: "在 Agent 设置中管理",
     memoryShowMore: (n: number) => `显示其余 ${n} 条`,
-    /** Reveal the next page of sidebar groups (#139); n = groups still hidden. */
+    /** Reveal the next page of the Trace page's group tree; n = groups still hidden. */
     moreGroups: (n: number) => `更多分组（${n}）`,
+    /** Sidebar group pagination (#139): the pager's step buttons and the "2/5" readout's accessible name. */
+    prevGroupPage: "上一页分组",
+    nextGroupPage: "下一页分组",
+    groupPagePosition: (page: number, total: number) => `第 ${page} 页，共 ${total} 页`,
     contextUsage: "上下文占用",
     contextUnknown: "上下文占用：压缩后待下次请求回报",
     /** Context ring -> composition panel: the trigger's accessible name, the six part labels, the tool ranking, and the panel's empty / failed states. */
@@ -1629,6 +1633,8 @@ Benchmark：
     pinnedSession: "已置顶",
     /** Sidebar group "reveal/load next page" row (display cap + server paging). */
     loadMore: "更多",
+    /** Per-group reveal row: n = conversations THIS group still hides (one click reveals/loads one page more). */
+    expandRestSessions: (n: number) => `展开其余 ${n} 个对话`,
     /** Time mode's whole-list paging row: its buckets span every Agent, so one row below them fetches the next page rather than each bucket claiming to. */
     loadMoreSessions: "加载更多会话",
     /** Collapsed sidebar folders inside a group (lazy-loaded); the count is the group's exact server share. */
