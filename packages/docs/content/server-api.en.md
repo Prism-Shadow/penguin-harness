@@ -42,7 +42,7 @@ packages/server/src
 # Use the password you set when claiming the account from the first-login link.
 curl -c cookies.txt -H "Content-Type: application/json" \
   -d '{"userId":"admin","password":"<your password>"}' \
-  http://127.0.0.1:7364/api/auth/login
+  http://localhost:7364/api/auth/login
 ```
 
 ## Route Reference

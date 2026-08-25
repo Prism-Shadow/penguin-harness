@@ -28,6 +28,7 @@
  * Docs: /docs/cli § "penguin auth".
  */
 import { mintApiToken } from "@prismshadow/penguin-server/auth-token";
+import { liveServerLock } from "@prismshadow/penguin-server/lock";
 import type { Command } from "commander";
 import {
   call,
@@ -99,8 +100,16 @@ export function registerAuthCommand(program: Command, t: Messages): void {
       }) => {
         const root = resolveRootOption(opts.root);
         // Defaults to the server running on this data root: the overwhelmingly common case is
-        // signing in to your own, and reading its port from its lock beats retyping it.
-        const server = opts.server ?? localServerUrl(root);
+        // signing in to your own, and reading its port from its lock beats retyping it. But a
+        // password is about to be sent there, so the DEFAULT target is taken from a verified
+        // live lock (PID alive + port accepting) — a stale lock left by a crashed server can
+        // point at a port some other local process now holds, and the password must not go to
+        // it. An explicit --server is the caller's own responsibility and is trusted as given.
+        let server: string | null = opts.server ?? null;
+        if (server === null) {
+          const lock = await liveServerLock(root);
+          server = lock === null ? null : `http://localhost:${lock.port}`;
+        }
         if (server === null) {
           process.stderr.write(t.auth.noServer(root) + "\n");
           process.exitCode = 1;

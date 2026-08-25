@@ -14,7 +14,7 @@
  * that is not "desktop" or "setup" to an ordinary password session.
  */
 import http from "node:http";
-import { readServerLock } from "./lock.js";
+import { liveServerLock } from "./lock.js";
 import { readOwnerToken } from "./auth/owner-token.js";
 
 /** An hour, matching what a controller needs: long enough to finish, short enough to forget. */
@@ -34,7 +34,10 @@ export async function mintApiToken(
   const userId = opts.userId ?? "admin";
   const ttlMs = opts.ttlMs ?? CLI_TOKEN_TTL_MS;
 
-  const lock = readServerLock(root);
+  // liveServerLock, not a raw read: a stale lock left by a crashed server points at a port
+  // some other local process may now hold, and minting would redeem THIS boot's owner token
+  // against it. The PID+port liveness check refuses a lock whose server is gone.
+  const lock = await liveServerLock(root);
   if (lock === null) return { outcome: "no_server" };
   const ownerToken = readOwnerToken(root);
   // A live lock with no readable token is a different fact than "nothing is listening",

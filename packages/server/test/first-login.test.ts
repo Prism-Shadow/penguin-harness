@@ -123,6 +123,40 @@ describe("the first-login link", () => {
   });
 
   /**
+   * Setting the password must kill the setup session by its jti, not by the printed token —
+   * once the original has aged past its own expiry, a renewed copy of the same jti is still
+   * live, and revoking only the (now-expired) original would spare it. Reviewer reproduced
+   * the copy staying admin at sessionVia:"setup" after the password was set.
+   */
+  it("kills a renewed setup cookie even after the printed original has expired", async () => {
+    let nowMs = Date.now();
+    const clocked = await createTestApp({
+      config: { seedAdminPassword: null },
+      now: () => new Date(nowMs),
+    });
+    try {
+      const original = clocked.deps.authService.mintFirstLogin()!;
+      // Day 2: renew into a replacement copy (same jti, exp ~day 32).
+      nowMs += 2 * 24 * 60 * 60 * 1000;
+      const r = await apiClient(clocked.app, `${SESSION_COOKIE}=${original}`).get("/api/me");
+      const renewed = (r.headers.get("set-cookie") ?? "").split(";")[0]!;
+      // Day 31: the printed original (exp day 30) is dead; the renewed copy is not.
+      nowMs += 29 * 24 * 60 * 60 * 1000;
+      expect(
+        (await apiClient(clocked.app, `${SESSION_COOKIE}=${original}`).get("/api/me")).status,
+      ).toBe(401);
+      const set = await apiClient(clocked.app, renewed).put("/api/me/password", {
+        newPassword: "claimed-password-1",
+      });
+      expect(set.status).toBe(204);
+      // The copy that set the password is now revoked too — no surviving setup session.
+      expect((await apiClient(clocked.app, renewed).get("/api/me")).status).toBe(401);
+    } finally {
+      await clocked.cleanup();
+    }
+  });
+
+  /**
    * The renewal window is a day short of the TTL, so a setup session starts renewing the day
    * after it is claimed — the replacement cookie is the COMMON case, not an edge. It carries
    * the same jti, so the revocation that fires when a password is set kills it too; a fresh

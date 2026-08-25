@@ -57,6 +57,19 @@ describe("the session file", () => {
     expect(readSession(root)?.token).toBe("t2");
   });
 
+  it("refuses to write the token through a symlink parked at its path", () => {
+    const outside = path.join(root, "attacker-readable");
+    fs.writeFileSync(outside, "");
+    fs.symlinkSync(outside, path.join(root, "cli-session.json"));
+    // A local attacker who can write the root but not read the session file could otherwise
+    // redirect the token into a file they can read. The write unlinks and creates exclusively,
+    // so the parked link is gone and the outside file never receives the token.
+    writeSession(root, { server: "http://localhost:1", userId: "admin", token: "secret-token" });
+    expect(fs.readFileSync(outside, "utf8")).toBe("");
+    expect(fs.lstatSync(path.join(root, "cli-session.json")).isSymbolicLink()).toBe(false);
+    expect(readSession(root)?.token).toBe("secret-token");
+  });
+
   it("reads nothing from a missing, damaged or shapeless file", () => {
     expect(readSession(root)).toBeNull();
     fs.writeFileSync(path.join(root, "cli-session.json"), "{ not json");

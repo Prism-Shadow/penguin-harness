@@ -349,7 +349,21 @@ export class AuthService {
     // Revoked only AFTER the update succeeds: the link exists to let somebody in while no
     // password does, and a rejected attempt (too short, hash failure) must leave it alive —
     // burning it on a typo would strand the claimer until a restart.
-    if (this.firstLogin !== null) this.logout(this.firstLogin);
+    //
+    // By jti, not by presenting the token: the printed original may already have expired
+    // while a RENEWED copy of the same jti is still live (the setup session renews a day into
+    // its life), and logout(original) would early-out on the expired original and spare the
+    // copy. Whoever set the password did so with a live copy, so the jti has a live member.
+    this.revokeFirstLogin();
+  }
+
+  /** Ends every copy of this boot's first-login session, live or expired-original. */
+  private revokeFirstLogin(): void {
+    if (this.firstLogin === null) return;
+    const claims = verifyToken(this.firstLogin, this.deps.tokenSecret);
+    // A setup session is renewable, so a copy can live to now+TTL regardless of the original's
+    // own expiry; that bound covers every member of the jti.
+    if (claims !== null) this.revokeJti(claims.jti, this.now().getTime() + this.deps.sessionTtlMs);
   }
 
   /**
@@ -366,9 +380,13 @@ export class AuthService {
     // The revocation must outlive every copy, and now+TTL bounds them all; a token that
     // cannot renew has no siblings, so its own expiry is exact.
     const renewable = claims.exp - claims.iat >= this.deps.sessionRenewMs;
-    const holdUntil = renewable ? nowMs + this.deps.sessionTtlMs : claims.exp;
-    this.revokedJtis.set(claims.jti, holdUntil);
-    this.deps.authRevocations.insert(claims.jti, new Date(holdUntil).toISOString());
+    this.revokeJti(claims.jti, renewable ? nowMs + this.deps.sessionTtlMs : claims.exp);
+  }
+
+  /** Marks a jti revoked until `holdUntilMs`, in the mirror and the table. */
+  private revokeJti(jti: string, holdUntilMs: number): void {
+    this.revokedJtis.set(jti, holdUntilMs);
+    this.deps.authRevocations.insert(jti, new Date(holdUntilMs).toISOString());
   }
 
   /**
@@ -441,6 +459,8 @@ export class AuthService {
     const expected = this.deps.ownerToken;
     if (expected === null || !ownerTokenMatches(given, expected)) return null;
     if (this.deps.users.findById(userId) === null) return null;
+    // The other frequent path (beside login) that should shrink the revocation mirror.
+    this.sweepRevocations();
     const bounded = Math.max(1_000, Math.min(ttlMs, this.deps.sessionTtlMs));
     const claims = newClaims(userId, "cli", this.now().getTime(), bounded);
     return {

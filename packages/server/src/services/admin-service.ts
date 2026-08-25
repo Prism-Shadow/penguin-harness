@@ -12,7 +12,7 @@
  */
 import type { UserInfo } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
-import { MIN_PASSWORD_LENGTH, toUserInfo } from "../auth/service.js";
+import { ADMIN_USER_ID, MIN_PASSWORD_LENGTH, toUserInfo } from "../auth/service.js";
 import { SCRYPT_COST, hashPassword } from "../auth/password.js";
 import type { ProjectsRepo } from "../db/repos/projects.js";
 import type { UserRow, UsersRepo } from "../db/repos/users.js";
@@ -77,7 +77,13 @@ export class AdminService {
     return toUserInfo(user);
   }
 
-  /** Reset another user's password: flags it as initial and clears all their sessions (prompts a password change on next login). */
+  /**
+   * Reset a user's password and clear all their sessions (prompts a password change on next
+   * login). Only an admin reaches this route, so `userId === admin` is the admin resetting
+   * ITSELF: it chose a KNOWN password, which is a claimed state — not the unclaimed one the
+   * first-login link exists for — so the initial flag stays off and no link is re-opened.
+   * Every other user gets the flag, to be prompted to change the password their admin picked.
+   */
   async resetPassword(userId: string, password: string): Promise<void> {
     if (!this.deps.users.findById(userId)) {
       throw new HttpError(404, "user_not_found", `User does not exist: ${userId}.`);
@@ -85,10 +91,16 @@ export class AdminService {
     if (password.length < MIN_PASSWORD_LENGTH) {
       throw new HttpError(400, "invalid_password", "Password must be at least 8 characters.");
     }
-    this.deps.users.updatePassword(userId, await hashPassword(password, this.hashCost), true);
-    // A session is a signature, so there is nothing to delete: the not-before mark is what
-    // makes every token issued to this account before now stop verifying.
-    this.deps.users.setSessionsNotBefore(userId, new Date().toISOString());
+    const isSelfAdminReset = userId === ADMIN_USER_ID;
+    this.deps.users.updatePassword(
+      userId,
+      await hashPassword(password, this.hashCost),
+      !isSelfAdminReset,
+    );
+    // A session is a signature, so there is nothing to delete: the not-before mark, on the
+    // injected clock, is what makes every token issued to this account before now stop
+    // verifying.
+    this.deps.users.setSessionsNotBefore(userId, this.now().toISOString());
   }
 
   /** Delete user: the built-in admin cannot be deleted; owned Projects (including data directories) are deleted along with it. */

@@ -42,7 +42,7 @@ packages/server/src
 # 密码用认领账号（首次登录链接）时设置的那个。
 curl -c cookies.txt -H "Content-Type: application/json" \
   -d '{"userId":"admin","password":"<你的密码>"}' \
-  http://127.0.0.1:7364/api/auth/login
+  http://localhost:7364/api/auth/login
 ```
 
 ## 路由参考

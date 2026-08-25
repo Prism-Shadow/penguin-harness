@@ -99,6 +99,20 @@ describe("admin users backend", () => {
     expect(again.user.passwordIsInitial).toBe(true);
   });
 
+  it("the admin resetting ITSELF chooses a known password: claimed, no first-login link", async () => {
+    // Only an admin reaches this route, so resetting `admin` is a self-reset with a KNOWN
+    // password — a claimed state, not the unclaimed one the setup link exists for. Leaving
+    // the initial flag on would re-open the link on the next restart (reviewer's repro).
+    expect(
+      (await admin.post("/api/admin/users/admin/password", { password: "chosen-admin-1" })).status,
+    ).toBe(204);
+    expect(t.deps.authService.adminPasswordIsInitial()).toBe(false);
+    // mintFirstLogin gates on the initial flag, so no link is offered.
+    expect(t.deps.authService.mintFirstLogin()).toBeNull();
+    const back = await loginUser(t.app, "admin", "chosen-admin-1");
+    expect(back.user.passwordIsInitial).toBe(false);
+  });
+
   it("user deletion: owned Projects (with directories) and memberships removed", async () => {
     const gone = await provisionUser(t.app, "gone");
     const goneApi = apiClient(t.app, gone.cookie);
