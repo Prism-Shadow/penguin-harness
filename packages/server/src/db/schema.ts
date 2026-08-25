@@ -87,7 +87,7 @@ CREATE TABLE IF NOT EXISTS error_records (     -- server-side error capture (the
   project_id TEXT,                     -- nullable: sign-in/registration and process-level errors have no Project context
   agent_id   TEXT,
   session_id TEXT,
-  source     TEXT NOT NULL,            -- http | session | usage | title | subagent | process | llm | environment | compaction | schedule | feishu
+  source     TEXT NOT NULL,            -- http | session | usage | title | subagent | process | llm | environment | compaction | schedule | messaging
   kind       TEXT NOT NULL,            -- expected (HttpError, business 4xx) | unexpected (500/runtime)
   code       TEXT NOT NULL,            -- HttpError.code / internal / session_run_failed / ...
   status     INTEGER,                  -- HTTP status code; NULL for non-HTTP sources
@@ -122,18 +122,17 @@ CREATE TABLE IF NOT EXISTS goal_state (        -- goal-mode runtime state (GOAL.
   updated_at  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_goal_session ON goal_state(session_id);
-CREATE TABLE IF NOT EXISTS feishu_bindings (  -- Session ↔ Feishu (Lark) bot binding (runtime/feishu-bridge.ts holds the long connections)
-  session_id       TEXT PRIMARY KEY,           -- one binding per Session
-  app_id           TEXT NOT NULL,              -- one binding per Feishu app too (idx_feishu_app: two Sessions on one app would race its single event stream)
-  app_secret       TEXT NOT NULL,              -- plaintext at rest (same trade-off as the proxy address in server_settings); masked at every API surface
-  base_domain      TEXT NOT NULL,              -- Feishu open-platform domain, e.g. https://open.feishu.cn
-  enabled          INTEGER NOT NULL DEFAULT 1, -- 0 = bound but disconnected (kept for re-enable)
+CREATE TABLE IF NOT EXISTS messaging_bindings ( -- Session ↔ messaging-channel bot binding (runtime/messaging/ holds the long connections)
+  session_id       TEXT PRIMARY KEY,           -- one messaging binding per Session, whatever the channel
+  channel          TEXT NOT NULL,              -- messaging channel discriminator ('feishu' is the only channel today)
+  account_id       TEXT NOT NULL,              -- channel-scoped bot/app identity (feishu: app_id); one binding per account per channel (idx_messaging_account: one account has one event stream, two Sessions would race it)
+  config_json      TEXT NOT NULL,              -- channel-specific credentials/config JSON (feishu: appId/appSecret/baseDomain); secrets plaintext at rest (same trade-off as the proxy address in server_settings), masked at every API surface
   last_chat_id     TEXT,                       -- most recent inbound chat (NULL until the bot is messaged once; replies and test messages target it)
-  last_chat_is_p2p INTEGER NOT NULL DEFAULT 1, -- 1 = direct chat (reply by chat_id), 0 = group chat (prefer reply-to-message)
+  last_chat_is_direct INTEGER NOT NULL DEFAULT 1, -- 1 = direct chat (reply by chat id), 0 = group chat (prefer reply-to-message)
   created_at       TEXT NOT NULL,
   updated_at       TEXT NOT NULL
 );
-CREATE UNIQUE INDEX IF NOT EXISTS idx_feishu_app ON feishu_bindings(app_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_messaging_account ON messaging_bindings(channel, account_id);
 CREATE TABLE IF NOT EXISTS ui_prefs (
   user_id    TEXT PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
   prefs_json TEXT NOT NULL                    -- {theme?, lastProjectId?, ...} free-form JSON

@@ -1,63 +1,66 @@
 /**
- * Feishu (Lark) bridge: a Web server runtime component holding one long-connection event
- * stream per enabled Session binding (started by the platform next to the Scheduler,
- * stopped when the App is disposed — a hot swap hard-stops it like the scheduler).
+ * Messaging bridge: a Web server runtime component connecting Sessions to external chat
+ * platforms through channel connectors (Feishu is the only channel today — see
+ * feishu-connector.ts). Started by the platform next to the Scheduler, stopped when the
+ * App is disposed — a hot swap hard-stops it like the scheduler. Per stored binding it
+ * holds one inbound event connection: a binding that exists is active — unbinding is how
+ * a connection is stopped.
  *
- * Inbound (Feishu → Session): every `im.message.receive_v1` on a bound app first records
- * the chat as the binding's reply target; a `text` message then starts a Task on the bound
- * Session as a `[feishu_message]`-prefixed server input (`queueIfBusy`: a busy Session
- * queues it as a follow-up, never 409), and any other message type gets a polite bilingual
- * "text only" reply.
+ * Inbound (channel → Session): every inbound message first records its chat as the
+ * binding's reply target; a text message then starts a Task on the bound Session as an
+ * ordinary user input — exactly as if typed into the web composer, no marker block and no
+ * special sender (the model deliberately does not learn where the message came from) —
+ * with `queueIfBusy`: a busy Session queues it as a follow-up, never 409. Any non-text
+ * message gets a polite bilingual "text only" reply.
  *
- * Outbound (Session → Feishu): the bridge subscribes to the Session's in-process channel
+ * Outbound (Session → channel): the bridge subscribes to the Session's in-process channel
  * and accumulates the main conversation's completed assistant text; when the run flips
  * idle, the concatenated reply is sent to the last known chat (reply-to-message in group
- * chats, create-by-chat_id in p2p), chunked under Feishu's text-size limits. EVERY
+ * chats, plain send in direct chats), chunked under the channel's text-size limits. EVERY
  * completed task mirrors once a chat is known — web-initiated turns included; before the
  * first inbound message no chat is known and nothing is sent. Compaction output (the
  * summary the model streams between compaction events) is not a reply and is skipped, and
  * a connection joining mid-run skips that run's partial tail rather than mirroring half a
  * reply. An `approval_request` additionally sends a one-line notice that a tool call is
  * waiting in the web UI.
- *
- * The Lark SDK enters only through the injected `FeishuSdk` factory (see feishu-sdk.ts),
- * so unit tests substitute a fake and never open real network.
  */
-import { buildFeishuMessage, userText } from "@prismshadow/penguin-core";
+import { userText } from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
-import type { FeishuRuntimeStatus } from "../api/types.js";
-import type { FeishuBindingRow, FeishuBindingsRepo } from "../db/repos/feishu-bindings.js";
-import type { ChannelEvent, ChannelHub } from "./channel.js";
-import type { ErrorSink } from "./error-recorder.js";
+import type { MessagingRuntimeStatus } from "../../api/types.js";
 import type {
-  FeishuApiClient,
-  FeishuCredentials,
-  FeishuInboundEvent,
-  FeishuSdk,
-} from "./feishu-sdk.js";
+  MessagingBindingRow,
+  MessagingBindingsRepo,
+} from "../../db/repos/messaging-bindings.js";
+import type { ChannelEvent, ChannelHub } from "../channel.js";
+import type { ErrorSink } from "../error-recorder.js";
+import type {
+  MessagingChannelConnector,
+  MessagingClient,
+  MessagingInboundMessage,
+} from "./connector.js";
 
 /**
  * Max characters per outbound text message. Feishu caps a text message's `content` around
  * 150KB, but a chat bubble that long is unreadable anyway; 4000 chars stays far under the
  * cap in any UTF-8 width while keeping replies in a handful of bubbles.
  */
-export const FEISHU_TEXT_CHUNK_CHARS = 4000;
+export const MESSAGING_TEXT_CHUNK_CHARS = 4000;
 
-// The three fixed outbound notices are user-facing Feishu chat content, deliberately
-// bilingual like the rest of the product's user-facing copy (the server has no locale for
-// a Feishu chat, so both languages ride each notice).
-export const FEISHU_TEXT_ONLY_NOTICE =
+// The three fixed outbound notices are user-facing chat content, deliberately bilingual
+// like the rest of the product's user-facing copy (the server has no locale for an
+// external chat, so both languages ride each notice).
+export const MESSAGING_TEXT_ONLY_NOTICE =
   "Only text messages are supported for now. 目前仅支持文本消息。";
-export const FEISHU_APPROVAL_NOTICE =
+export const MESSAGING_APPROVAL_NOTICE =
   "A tool call is waiting for your approval in the PenguinHarness web UI. 有工具调用正在等待你在网页端审批。";
-export const FEISHU_TEST_MESSAGE =
-  "PenguinHarness test message: this Session's Feishu binding works. 测试消息：该会话的飞书绑定工作正常。";
+export const MESSAGING_TEST_MESSAGE =
+  "PenguinHarness test message: this Session's messaging binding works. 测试消息：该会话的消息绑定工作正常。";
 
 /**
- * Splits an outbound reply into Feishu-sized chunks, preferring newline boundaries so a
+ * Splits an outbound reply into channel-sized chunks, preferring newline boundaries so a
  * split lands between paragraphs rather than mid-sentence when it can.
  */
-export function chunkFeishuText(text: string, max = FEISHU_TEXT_CHUNK_CHARS): string[] {
+export function chunkMessagingText(text: string, max = MESSAGING_TEXT_CHUNK_CHARS): string[] {
   const out: string[] = [];
   let rest = text;
   while (rest.length > max) {
@@ -74,7 +77,7 @@ export function chunkFeishuText(text: string, max = FEISHU_TEXT_CHUNK_CHARS): st
 }
 
 /** Minimal dependency on SessionManager (eases test doubles; mirrors ScheduleTaskRunner). */
-export interface FeishuTaskRunner {
+export interface MessagingTaskRunner {
   statusOf(sessionId: string): string;
   startTask(
     sessionId: string,
@@ -84,16 +87,17 @@ export interface FeishuTaskRunner {
 }
 
 /** Minimal dependency on the sessions index (existence checks for reconcile/cascade). */
-export interface FeishuSessionIndex {
+export interface MessagingSessionIndex {
   findById(sessionId: string): object | null;
 }
 
-export interface FeishuBridgeDeps {
-  repo: FeishuBindingsRepo;
-  sessions: FeishuSessionIndex;
+export interface MessagingBridgeDeps {
+  repo: MessagingBindingsRepo;
+  sessions: MessagingSessionIndex;
   channels: ChannelHub;
-  runner: FeishuTaskRunner;
-  sdk: FeishuSdk;
+  runner: MessagingTaskRunner;
+  /** One connector per channel; a stored binding whose channel has no connector is skipped with an error record. */
+  connectors: readonly MessagingChannelConnector[];
   errors: ErrorSink;
   log?: (line: string) => void;
   now?: () => number;
@@ -102,13 +106,14 @@ export interface FeishuBridgeDeps {
 /** One connected (or connecting/errored) binding's in-memory state. */
 interface BridgeEntry {
   sessionId: string;
-  creds: FeishuCredentials;
-  status: FeishuRuntimeStatus;
+  connector: MessagingChannelConnector;
+  config: Record<string, unknown>;
+  status: MessagingRuntimeStatus;
   connection: { close(): void } | null;
   unsubscribe: (() => void) | null;
-  /** Cached OpenAPI client for outbound sends (created lazily from `creds`). */
-  client: FeishuApiClient | null;
-  /** Inbound group message to thread replies onto (memory only; p2p chats clear it). */
+  /** Cached outbound client (created lazily from `config`). */
+  client: MessagingClient | null;
+  /** Inbound group message to thread replies onto (memory only; direct chats clear it). */
   lastInboundMessageId: string | null;
   /** Last observed run state on the Session channel. */
   active: string;
@@ -120,18 +125,20 @@ interface BridgeEntry {
   buffer: string[];
 }
 
-export class FeishuBridge {
+export class MessagingBridge {
   private readonly entries = new Map<string, BridgeEntry>();
+  private readonly connectors: ReadonlyMap<string, MessagingChannelConnector>;
   private readonly now: () => number;
   private readonly log: (line: string) => void;
 
-  constructor(private readonly deps: FeishuBridgeDeps) {
+  constructor(private readonly deps: MessagingBridgeDeps) {
+    this.connectors = new Map(deps.connectors.map((c) => [c.channel, c]));
     this.now = deps.now ?? (() => Date.now());
     this.log = deps.log ?? (() => {});
   }
 
   /**
-   * Server startup: connect every enabled binding. A binding whose Session no longer
+   * Server startup: connect every stored binding. A binding whose Session no longer
    * exists (deleted while this server was down, or by a bulk Agent/Project delete that
    * bypassed the per-session cascade) is reconciled away instead of connected.
    */
@@ -141,7 +148,7 @@ export class FeishuBridge {
         this.deps.repo.delete(row.sessionId);
         continue;
       }
-      if (row.enabled) await this.connect(row);
+      await this.connect(row);
     }
   }
 
@@ -150,10 +157,10 @@ export class FeishuBridge {
     for (const sessionId of [...this.entries.keys()]) this.disconnect(sessionId);
   }
 
-  /** After a binding write: bring the connection in line with the stored row. */
+  /** After a binding write: bring the connection in line with the stored row (save = connect). */
   async sync(sessionId: string): Promise<void> {
     const row = this.deps.repo.find(sessionId);
-    if (row === null || !row.enabled) {
+    if (row === null) {
       this.disconnect(sessionId);
       return;
     }
@@ -168,17 +175,18 @@ export class FeishuBridge {
   }
 
   /** Runtime status for the API (a binding never connected reads as disconnected). */
-  statusOf(sessionId: string): FeishuRuntimeStatus {
+  statusOf(sessionId: string): MessagingRuntimeStatus {
     return this.entries.get(sessionId)?.status ?? { state: "disconnected" };
   }
 
-  /** Credential probe for POST …/feishu/test: ok/error with latency, never a throw. */
+  /** Credential probe for the test endpoints: ok/error with latency, never a throw. */
   async testCredentials(
-    creds: FeishuCredentials,
+    channel: string,
+    config: Record<string, unknown>,
   ): Promise<{ ok: boolean; latencyMs?: number; error?: string }> {
     const startedAt = this.now();
     try {
-      const client = await this.deps.sdk.createClient(creds);
+      const client = await this.connectorFor(channel).createClient(config);
       await client.checkCredentials();
       return { ok: true, latencyMs: this.now() - startedAt };
     } catch (err) {
@@ -187,31 +195,40 @@ export class FeishuBridge {
   }
 
   /**
-   * POST …/feishu/test-message: a short fixed text to the binding's last known chat.
-   * The route has already established that the binding and its chat exist; a race that
+   * Test-message endpoints: a short fixed text to the binding's last known chat. The
+   * route has already established that the binding and its chat exist; a race that
    * removed either since surfaces as the send failing.
    */
-  async sendTestMessage(row: FeishuBindingRow): Promise<void> {
-    if (row.lastChatId === null) throw new Error("no Feishu chat is known yet");
+  async sendTestMessage(row: MessagingBindingRow): Promise<void> {
+    if (row.lastChatId === null) throw new Error("no chat is known yet");
     const client = await this.clientFor(row.sessionId, row);
-    await client.sendText(row.lastChatId, FEISHU_TEST_MESSAGE);
+    await client.sendText(row.lastChatId, MESSAGING_TEST_MESSAGE);
   }
 
   // -------------------------------------------------------------------------
 
-  private async connect(row: FeishuBindingRow): Promise<void> {
+  private connectorFor(channel: string): MessagingChannelConnector {
+    const connector = this.connectors.get(channel);
+    if (!connector) throw new Error(`no messaging connector for channel "${channel}"`);
+    return connector;
+  }
+
+  private async connect(row: MessagingBindingRow): Promise<void> {
     this.disconnect(row.sessionId);
-    const creds: FeishuCredentials = {
-      appId: row.appId,
-      appSecret: row.appSecret,
-      baseDomain: row.baseDomain,
-    };
+    let connector: MessagingChannelConnector;
+    try {
+      connector = this.connectorFor(row.channel);
+    } catch (err) {
+      this.recordError(row.sessionId, err, "messaging_channel_unknown");
+      return;
+    }
     // Mirror arming: a connection made while the Session is mid-run must not mirror that
     // run's partial tail — it arms at the next idle flip instead.
     const runState = this.deps.runner.statusOf(row.sessionId);
     const entry: BridgeEntry = {
       sessionId: row.sessionId,
-      creds,
+      connector,
+      config: row.config,
       status: { state: "connecting", changedAt: new Date(this.now()).toISOString() },
       connection: null,
       unsubscribe: null,
@@ -227,17 +244,17 @@ export class FeishuBridge {
       .get(row.sessionId)
       .subscribe((evt) => this.observe(entry, evt));
     try {
-      const connection = await this.deps.sdk.connect(creds, {
-        onMessage: (evt) => this.onInbound(entry, evt),
+      const connection = await connector.connect(row.config, {
+        onMessage: (msg) => this.onInbound(entry, msg),
         onReady: () => this.setStatus(entry, { state: "connected" }),
         onError: (err) => {
           const detail = err instanceof Error ? err.message : String(err);
           this.setStatus(entry, { state: "error", lastError: detail });
-          this.recordError(entry.sessionId, err, "feishu_connect_failed");
+          this.recordError(entry.sessionId, err, "messaging_connect_failed");
         },
       });
       if (this.entries.get(row.sessionId) !== entry) {
-        // A concurrent sync/unbind replaced this attempt while the SDK was loading.
+        // A concurrent sync/unbind replaced this attempt while the channel was loading.
         connection.close();
         return;
       }
@@ -245,7 +262,7 @@ export class FeishuBridge {
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
       this.setStatus(entry, { state: "error", lastError: detail });
-      this.recordError(row.sessionId, err, "feishu_connect_failed");
+      this.recordError(row.sessionId, err, "messaging_connect_failed");
     }
   }
 
@@ -257,74 +274,64 @@ export class FeishuBridge {
     try {
       entry.connection?.close();
     } catch (err) {
-      this.log(`[feishu] close failed: ${err instanceof Error ? err.message : String(err)}`);
+      this.log(`[messaging] close failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
   /** Status write, guarded against a stale entry (replaced by a newer connect). */
-  private setStatus(entry: BridgeEntry, patch: Omit<FeishuRuntimeStatus, "changedAt">): void {
+  private setStatus(entry: BridgeEntry, patch: Omit<MessagingRuntimeStatus, "changedAt">): void {
     if (this.entries.get(entry.sessionId) !== entry) return;
     entry.status = { ...patch, changedAt: new Date(this.now()).toISOString() };
   }
 
   private recordError(sessionId: string, err: unknown, code: string): void {
-    this.deps.errors.record({ source: "feishu", err, code, ctx: { sessionId } });
+    this.deps.errors.record({ source: "messaging", err, code, ctx: { sessionId } });
   }
 
-  private async clientFor(sessionId: string, row: FeishuBindingRow): Promise<FeishuApiClient> {
+  private async clientFor(sessionId: string, row: MessagingBindingRow): Promise<MessagingClient> {
     const entry = this.entries.get(sessionId);
     if (entry?.client) return entry.client;
-    const client = await this.deps.sdk.createClient({
-      appId: row.appId,
-      appSecret: row.appSecret,
-      baseDomain: row.baseDomain,
-    });
+    const client = await this.connectorFor(row.channel).createClient(row.config);
     if (entry) entry.client = client;
     return client;
   }
 
   // —— Inbound ——————————————————————————————————————————————————————————————
 
-  private async onInbound(entry: BridgeEntry, evt: FeishuInboundEvent): Promise<void> {
+  private async onInbound(entry: BridgeEntry, msg: MessagingInboundMessage): Promise<void> {
     if (this.entries.get(entry.sessionId) !== entry) return; // stale connection
     try {
-      const isP2p = evt.chatType === "p2p";
+      const isDirect = msg.chatKind === "direct";
       // The chat becomes the reply target BEFORE any processing: even a rejected message
       // type teaches the bridge where the user is.
-      this.deps.repo.recordChat(entry.sessionId, evt.chatId, isP2p);
-      entry.lastInboundMessageId = isP2p ? null : evt.messageId;
-      const text = evt.messageType === "text" ? textOfContent(evt.content) : null;
-      if (text === null || text.trim() === "") {
-        await this.replyInbound(entry, evt, FEISHU_TEXT_ONLY_NOTICE);
+      this.deps.repo.recordChat(entry.sessionId, msg.chatId, isDirect);
+      entry.lastInboundMessageId = isDirect ? null : msg.messageId;
+      if (msg.text === null || msg.text.trim() === "") {
+        await this.replyInbound(entry, msg, MESSAGING_TEXT_ONLY_NOTICE);
         return;
       }
-      const origin = {
-        chatType: evt.chatType,
-        ...(evt.senderName !== undefined ? { senderName: evt.senderName } : {}),
-      };
-      // sender "server": in the Trace this user turn was injected by the server's bridge,
-      // not typed into the composer (the scheduler's convention).
-      await this.deps.runner.startTask(
-        entry.sessionId,
-        [userText(buildFeishuMessage(origin, text), "server")],
-        { queueIfBusy: true },
-      );
+      // An ordinary user input, exactly as if typed into the web composer: no marker
+      // block, no special sender — the model deliberately does not learn the message
+      // arrived through a messaging channel.
+      await this.deps.runner.startTask(entry.sessionId, [userText(msg.text)], {
+        queueIfBusy: true,
+      });
     } catch (err) {
-      this.recordError(entry.sessionId, err, "feishu_inbound_failed");
+      this.recordError(entry.sessionId, err, "messaging_inbound_failed");
     }
   }
 
-  /** Reply to the inbound message itself: threaded reply in groups, plain send in p2p. */
+  /** Reply to the inbound message itself: threaded reply in groups, plain send in direct chats. */
   private async replyInbound(
     entry: BridgeEntry,
-    evt: FeishuInboundEvent,
+    msg: MessagingInboundMessage,
     text: string,
   ): Promise<void> {
     const row = this.deps.repo.find(entry.sessionId);
     if (!row) return;
     const client = await this.clientFor(entry.sessionId, row);
-    if (evt.chatType === "p2p") await client.sendText(evt.chatId, text);
-    else await client.replyText(evt.messageId, text);
+    if (msg.chatKind === "direct") await client.sendText(msg.chatId, text);
+    else await client.replyText(msg.messageId, text);
   }
 
   // —— Outbound ——————————————————————————————————————————————————————————————
@@ -343,7 +350,7 @@ export class FeishuBridge {
       if (event.type === "task_state" && typeof event.state === "string") {
         this.onTaskState(entry, event.state);
       } else if (event.type === "approval_request") {
-        void this.deliverNotice(entry, FEISHU_APPROVAL_NOTICE);
+        void this.deliverNotice(entry, MESSAGING_APPROVAL_NOTICE);
       }
       return;
     }
@@ -384,15 +391,15 @@ export class FeishuBridge {
       const row = this.deps.repo.find(entry.sessionId);
       if (!row || row.lastChatId === null) return; // no chat known yet: nothing mirrors
       const client = await this.clientFor(entry.sessionId, row);
-      for (const chunk of chunkFeishuText(text)) {
-        if (!row.lastChatIsP2p && entry.lastInboundMessageId !== null) {
+      for (const chunk of chunkMessagingText(text)) {
+        if (!row.lastChatIsDirect && entry.lastInboundMessageId !== null) {
           await client.replyText(entry.lastInboundMessageId, chunk);
         } else {
           await client.sendText(row.lastChatId, chunk);
         }
       }
     } catch (err) {
-      this.recordError(entry.sessionId, err, "feishu_send_failed");
+      this.recordError(entry.sessionId, err, "messaging_send_failed");
     }
   }
 
@@ -404,17 +411,7 @@ export class FeishuBridge {
       const client = await this.clientFor(entry.sessionId, row);
       await client.sendText(row.lastChatId, text);
     } catch (err) {
-      this.recordError(entry.sessionId, err, "feishu_send_failed");
+      this.recordError(entry.sessionId, err, "messaging_send_failed");
     }
-  }
-}
-
-/** The `text` field of a Feishu text message's content JSON (null when unparseable). */
-function textOfContent(content: string): string | null {
-  try {
-    const parsed = JSON.parse(content) as { text?: unknown };
-    return typeof parsed.text === "string" ? parsed.text : null;
-  } catch {
-    return null;
   }
 }

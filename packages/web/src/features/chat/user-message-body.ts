@@ -1,13 +1,12 @@
 /**
  * Shared "what did the user actually write" extraction for a user_text item, mirroring
- * MessageItem's parse chain (handoff / model-switch → goal → scheduled → feishu → skills →
+ * MessageItem's parse chain (handoff / model-switch → goal → scheduled → skills →
  * attachment lines) without any rendering. Input history and the conversation outline both
  * need this reduction, and each re-implementing the chain would drift from the renderer the
  * moment a new protocol block is added — this module is the single non-rendering copy.
  */
 import {
   parseBackgroundTaskDoneMessage,
-  parseFeishuMessage,
   parseHandoffMessage,
   parseModelSwitchMessage,
   parseScheduledMessage,
@@ -23,8 +22,6 @@ export interface UserMessageBody {
   goalRound?: number;
   /** True when the message was injected by a scheduled-task trigger rather than typed into the composer. */
   scheduled: boolean;
-  /** True when the message was relayed from a Feishu chat by the server's bridge; `body` is then what the sender typed in Feishu. */
-  feishu?: boolean;
   /**
    * True when the message is a background completion notice ([background_task_done] block);
    * `body` is then the harness-written report text after the block — a readable outline
@@ -50,14 +47,11 @@ export function parseUserMessageBody(raw: string): UserMessageBody | null {
   const afterGoal = goal ? goal.rest : raw;
   const scheduled = parseScheduledMessage(afterGoal);
   const afterScheduled = scheduled ? scheduled.rest : afterGoal;
-  const feishu = parseFeishuMessage(afterScheduled);
-  const afterFeishu = feishu ? feishu.rest : afterScheduled;
-  const skills = parseSkillsMessage(afterFeishu);
-  const { text } = splitAttachments(skills ? skills.rest : afterFeishu);
+  const skills = parseSkillsMessage(afterScheduled);
+  const { text } = splitAttachments(skills ? skills.rest : afterScheduled);
   return {
     body: text.trim(),
     ...(goal ? { goalRound: goal.round } : {}),
     scheduled: scheduled !== null,
-    ...(feishu !== null ? { feishu: true } : {}),
   };
 }

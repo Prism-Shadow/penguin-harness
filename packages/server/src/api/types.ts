@@ -1126,8 +1126,8 @@ export interface SessionInfo {
    * history itself when it needs it.
    */
   tracePath?: string;
-  /** Present (true) when the Session has a Feishu binding (the sidebar row's indicator). */
-  feishuBound?: boolean;
+  /** Present (true) when the Session has a messaging binding (the sidebar row's indicator). */
+  messagingBound?: boolean;
 }
 
 /**
@@ -1539,17 +1539,51 @@ export interface SessionProcessesResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Feishu (Lark) binding (/api/sessions/:sessionId/feishu)
+// Messaging bindings (/api/sessions/:sessionId/messaging/*, /api/projects/:p/messaging)
 // ---------------------------------------------------------------------------
 
-/** The stored binding, secret masked (plaintext never leaves the server). */
+/** Messaging channels a Session can bind to (`feishu` is the only channel today). */
+export type MessagingChannel = "feishu";
+
+/** Event-connection runtime state of one binding (kept in memory, not persisted). */
+export type MessagingRuntimeState = "disconnected" | "connecting" | "connected" | "error";
+
+export interface MessagingRuntimeStatus {
+  state: MessagingRuntimeState;
+  /** Failure detail; present only in the `error` state. */
+  lastError?: string;
+  /** When the state last changed (ISO 8601); absent for a binding that never connected. */
+  changedAt?: string;
+}
+
+/**
+ * One binding row of GET /api/projects/:projectId/messaging (the Messaging page's list).
+ * Deliberately secret-free: config details live behind the session-level channel routes.
+ */
+export interface MessagingBindingSummary {
+  sessionId: string;
+  /** The Session's current title; absent while none was generated or set. */
+  sessionTitle?: string;
+  agentId: string;
+  channel: MessagingChannel;
+  /** Channel-scoped bot/app identity (feishu: the app_id); never secret. */
+  accountId: string;
+  /** Whether an inbound chat is known (the bot has been messaged at least once). */
+  lastChatKnown: boolean;
+  status: MessagingRuntimeStatus;
+}
+
+export interface ProjectMessagingResponse {
+  bindings: MessagingBindingSummary[];
+}
+
+/** The stored Feishu binding, secret masked (plaintext never leaves the server). */
 export interface FeishuBindingInfo {
   sessionId: string;
   appId: string;
   /** Masked app secret (site-wide mask rule: `***`, or `first4…last4` for long values). */
   appSecretMasked: string;
   baseDomain: string;
-  enabled: boolean;
   /**
    * Whether an inbound Feishu chat is known (the bot has been messaged at least once).
    * Replies and test messages target that chat; until it exists nothing can be sent.
@@ -1559,35 +1593,22 @@ export interface FeishuBindingInfo {
   updatedAt: string;
 }
 
-/** Long-connection runtime state of one binding (kept in memory, not persisted). */
-export type FeishuRuntimeState = "disconnected" | "connecting" | "connected" | "error";
-
-export interface FeishuRuntimeStatus {
-  state: FeishuRuntimeState;
-  /** Failure detail; present only in the `error` state. */
-  lastError?: string;
-  /** When the state last changed (ISO 8601); absent for a binding that never connected. */
-  changedAt?: string;
-}
-
-/** GET / PUT …/feishu response: the binding (null = not bound) plus its runtime status. */
+/** GET / PUT …/messaging/feishu response: the binding (null = not bound) plus its runtime status. */
 export interface FeishuBindingResponse {
   binding: FeishuBindingInfo | null;
-  status: FeishuRuntimeStatus;
+  status: MessagingRuntimeStatus;
 }
 
-/** PUT …/feishu */
+/** PUT …/messaging/feishu — saving (re)connects: a stored binding is always active. */
 export interface FeishuBindingPutRequest {
   appId: string;
   /** Omitted or blank keeps the stored secret (the masked value never round-trips). */
   appSecret?: string;
   /** Defaults to https://open.feishu.cn when omitted or blank. */
   baseDomain?: string;
-  /** Defaults to true; true (re)connects on save, false disconnects. */
-  enabled?: boolean;
 }
 
-/** POST …/feishu/test — draft values; each omitted field falls back to the stored binding. */
+/** POST …/messaging/feishu/test — draft values; each omitted field falls back to the stored binding. */
 export interface FeishuTestRequest {
   appId?: string;
   appSecret?: string;
@@ -1601,7 +1622,7 @@ export interface FeishuTestResponse {
   error?: string;
 }
 
-/** POST …/feishu/test-message — sent to the last known chat (409 `feishu_no_chat` before one exists). */
+/** POST …/messaging/feishu/test-message — sent to the last known chat (409 `feishu_no_chat` before one exists). */
 export interface FeishuTestMessageResponse {
   ok: true;
 }

@@ -67,7 +67,7 @@ export type ErrorSource =
   | "subagent"
   | "process"
   | "schedule"
-  | "feishu";
+  | "messaging";
 
 /** Error classification: see file header — the criterion is "does a human need to step in". */
 export type ErrorKind = "expected" | "unexpected";

@@ -43,7 +43,7 @@ import type { ProxyControl } from "./hmr/capabilities.js";
 import { openDatabase } from "./db/database.js";
 import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
 import { ErrorsRepo } from "./db/repos/errors.js";
-import { FeishuBindingsRepo } from "./db/repos/feishu-bindings.js";
+import { MessagingBindingsRepo } from "./db/repos/messaging-bindings.js";
 import { GoalsRepo } from "./db/repos/goals.js";
 import { SchedulesRepo } from "./db/repos/schedules.js";
 import { ServerSettingsRepo } from "./db/repos/server-settings.js";
@@ -70,9 +70,10 @@ import {
 } from "./runtime/session-manager.js";
 import { SessionSources } from "./runtime/session-sources.js";
 import { Scheduler } from "./runtime/scheduler.js";
-import { FeishuBridge } from "./runtime/feishu-bridge.js";
-import { createLarkSdk } from "./runtime/feishu-sdk.js";
-import type { FeishuSdk } from "./runtime/feishu-sdk.js";
+import { MessagingBridge } from "./runtime/messaging/bridge.js";
+import { FeishuConnector } from "./runtime/messaging/feishu-connector.js";
+import { createLarkSdk } from "./runtime/messaging/feishu-sdk.js";
+import type { FeishuSdk } from "./runtime/messaging/feishu-sdk.js";
 import { TitleGenerator, TitleNotifier } from "./runtime/title-generator.js";
 import { AdminService } from "./services/admin-service.js";
 import { DesktopService } from "./services/desktop-service.js";
@@ -131,7 +132,7 @@ import { agentConfigRoutes } from "./http/routes/agent-config.js";
 import { agentTracesRoutes } from "./http/routes/agent-traces.js";
 import { usageRoutes } from "./http/routes/usage.js";
 import { agentSessionsRoutes, sessionsRoutes } from "./http/routes/sessions.js";
-import { feishuRoutes } from "./http/routes/feishu.js";
+import { projectMessagingRoutes, sessionMessagingRoutes } from "./http/routes/messaging.js";
 import { versionRoutes } from "./http/routes/version.js";
 import { UsageRecorder } from "./runtime/usage-recorder.js";
 import { previewRoutes } from "./http/routes/preview.js";
@@ -165,10 +166,10 @@ export interface AppDeps {
   schedulesRepo: SchedulesRepo;
   goalsRepo: GoalsRepo;
   errorsRepo: ErrorsRepo;
-  /** Session ↔ Feishu bot bindings (stored; runtime connections live on `feishu`). */
-  feishuRepo: FeishuBindingsRepo;
-  /** Feishu long-connection bridge (started by the platform next to the scheduler). */
-  feishu: FeishuBridge;
+  /** Session ↔ messaging-channel bot bindings (stored; runtime connections live on `messaging`). */
+  messagingRepo: MessagingBindingsRepo;
+  /** Messaging bridge — channel connectors + event connections (started by the platform next to the scheduler). */
+  messaging: MessagingBridge;
   scheduler: Scheduler;
   channels: ChannelHub;
   manager: SessionManager;
@@ -198,7 +199,7 @@ export interface BuildDepsOverrides {
   titles?: TitleNotifier;
   /** Test double: update-check service with a stubbed fetch/clock (avoids real network calls). */
   updateCheck?: UpdateCheckService;
-  /** Test double: the Feishu bridge's SDK factory (avoids real Lark network / long connections). */
+  /** Test double: the Feishu connector's SDK factory (avoids real Lark network / long connections). */
   feishuSdk?: FeishuSdk;
   /**
    * Test double: scrypt work factor for password hashes written through this app.
@@ -673,15 +674,16 @@ export function buildAppDeps(
       : {}),
     ...(overrides.now ? { now: overrides.now } : {}),
   });
-  const feishuRepo = new FeishuBindingsRepo(db);
-  // Feishu bridge: assembled here, started by platform.ts's create() (tests drive it via
-  // sync()/fake SDK, no real network), stopped by the same create()'s dispose effect.
-  const feishu = new FeishuBridge({
-    repo: feishuRepo,
+  const messagingRepo = new MessagingBindingsRepo(db);
+  // Messaging bridge: assembled here, started by platform.ts's create() (tests drive it
+  // via sync()/fake SDK, no real network), stopped by the same create()'s dispose effect.
+  // Feishu is the only channel connector today; further channels register here.
+  const messaging = new MessagingBridge({
+    repo: messagingRepo,
     sessions: sessionsRepo,
     channels,
     runner: manager,
-    sdk: overrides.feishuSdk ?? createLarkSdk(),
+    connectors: [new FeishuConnector(overrides.feishuSdk ?? createLarkSdk())],
     errors,
     log,
     ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}),
@@ -694,8 +696,8 @@ export function buildAppDeps(
     sources: sessionSources,
     traceIndex,
     proxyEnv,
-    // List rows carry a Feishu indicator; a point query per row keeps the repo out of the service.
-    feishuBound: (sessionId) => feishuRepo.find(sessionId) !== null,
+    // List rows carry a messaging indicator; a point query per row keeps the repo out of the service.
+    messagingBound: (sessionId) => messagingRepo.find(sessionId) !== null,
   });
   // Schedule scheduler: assembled here, started by platform.ts's create() (tests drive it
   // via tickOnce, no real timer), stopped by the same create()'s dispose effect.
@@ -739,8 +741,8 @@ export function buildAppDeps(
     schedulesRepo,
     goalsRepo,
     errorsRepo,
-    feishuRepo,
-    feishu,
+    messagingRepo,
+    messaging,
     scheduler,
     channels,
     manager,
@@ -837,7 +839,8 @@ export function createApp(
   app.route("/api/projects/:projectId/agents/:agentId/sessions", agentSessionsRoutes(deps));
   app.route("/api/projects/:projectId/usage", usageRoutes(deps));
   app.route("/api/sessions", sessionsRoutes(deps));
-  app.route("/api/sessions", feishuRoutes(deps));
+  app.route("/api/sessions", sessionMessagingRoutes(deps));
+  app.route("/api/projects/:projectId/messaging", projectMessagingRoutes(deps));
 
   // Workspace HTML preview on the separate preview origin: deliberately outside /api and
   // outside the auth middleware — that origin never receives the session cookie, so the

@@ -2318,14 +2318,14 @@ export function Sidebar({
           place from the dialog's own save/unbind outcome. */}
       {feishuSession && (
         <FeishuBindingModal
-          session={feishuSession}
+          sessionId={feishuSession.sessionId}
           onClose={() => setFeishuSession(null)}
           onChanged={(sessionId, bound) => {
             const current = sessions.find((x) => x.sessionId === sessionId);
             if (!current) return;
             const updated = { ...current };
-            if (bound) updated.feishuBound = true;
-            else delete updated.feishuBound;
+            if (bound) updated.messagingBound = true;
+            else delete updated.messagingBound;
             replace(updated);
           }}
         />
@@ -2706,8 +2706,8 @@ function SessionRow({
               <span className="sr-only">{S.chat.pinnedSession}</span>
             </span>
           )}
-          {/* Feishu-bound indicator: same dim treatment as the pin (the binding dialog lives in the row menu). */}
-          {s.feishuBound === true && (
+          {/* Messaging-bound indicator: same dim treatment as the pin (the binding dialog lives in the row menu). */}
+          {s.messagingBound === true && (
             <span
               title={S.feishu.boundIndicator}
               className="shrink-0 text-gray-400 dark:text-gray-500"
@@ -2738,7 +2738,12 @@ function SessionRow({
           {/* No hover pill on these (a fill as wide as the date read ugly); feedback is
               the glyph color deepening — red for delete. */}
           <div className="peer absolute right-0 top-1/2 flex -translate-y-1/2 items-center">
-            <SessionRowHoverActions actions={HOVER_ROW_ACTIONS} state={rowState} onRun={run} />
+            <SessionRowHoverActions
+              actions={HOVER_ROW_ACTIONS}
+              state={rowState}
+              onRun={run}
+              onMore={ctx.openAt}
+            />
           </div>
           {lastActive !== "" && (
             <span

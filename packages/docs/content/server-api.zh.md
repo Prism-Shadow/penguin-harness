@@ -254,19 +254,21 @@ Workspace 文件可能由 Agent 生成，`GET /files/content` 一律按不可信
 
 文件名始终以 `filename*=UTF-8''` 形式携带（百分号编码）。`preview=1` 是预览跳转在没有独立预览源时的回退目标：文档保留真实类型，可以正常渲染并执行脚本，但沙箱刻意不含 `allow-same-origin`，因此它落在一个不透明源里，既拿不到本源的 Cookie，也调不动 API。这份隔离也正是那里 `localStorage`、`document.cookie` 与第三方 embed 全都不可用的原因。
 
-### 飞书绑定
+### 消息绑定（飞书）
 
-Session 可以绑定一个飞书机器人：发给机器人的消息会在该 Session 上发起 Task（忙碌时排入 follow-up 队列），完成的回复再转发回对应会话。路径同上表，省略 `/api/sessions/:sessionId` 前缀。
+Session 可以绑定一个消息软件机器人——目前唯一渠道是飞书，后续渠道各自挂在 `/messaging/<channel>` 之下。发给机器人的消息以普通用户输入在该 Session 上发起 Task——与在网页输入框里输入完全一致（无标记块；忙碌时排入 follow-up 队列）——完成的回复再转发回对应会话。存在的绑定即处于活动状态：保存即连接，停止连接的方式是解绑。Session 级路径同上表，省略 `/api/sessions/:sessionId` 前缀。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | /feishu | 绑定信息（App Secret 掩码）+ 长连接运行状态 + `lastChatKnown` |
-| PUT | /feishu | 绑定或更新：`{appId, appSecret?, baseDomain?, enabled?}`。`appSecret` 省略或留空则保持已存值；`baseDomain` 默认 `https://open.feishu.cn`；`enabled: true` 保存即（重）连接，`false` 断开。应用已绑定到其他 Session 时返回 409 `feishu_app_in_use` |
-| DELETE | /feishu | 解绑：断开连接并删除存储的绑定（含 App Secret） |
-| POST | /feishu/test | 用请求携带的草稿值做凭据探测，缺省字段回落到已存绑定 → `{ok, latencyMs?, error?}`（凭据被拒是 `ok: false`，不是 HTTP 错误） |
-| POST | /feishu/test-message | 向最近一次收到消息的会话发送一条固定测试文本；在飞书里给机器人发过消息之前返回 409 `feishu_no_chat` |
+| GET | /messaging/feishu | 绑定信息（App Secret 掩码）+ 事件连接运行状态 + `lastChatKnown` |
+| PUT | /messaging/feishu | 绑定或更新：`{appId, appSecret?, baseDomain?}`。`appSecret` 省略或留空则保持已存值；`baseDomain` 默认 `https://open.feishu.cn`；保存即（重）连接。应用已绑定到其他 Session 时返回 409 `feishu_app_in_use` |
+| DELETE | /messaging/feishu | 解绑：断开连接并删除存储的绑定（含 App Secret） |
+| POST | /messaging/feishu/test | 用请求携带的草稿值做凭据探测，缺省字段回落到已存绑定 → `{ok, latencyMs?, error?}`（凭据被拒是 `ok: false`，不是 HTTP 错误） |
+| POST | /messaging/feishu/test-message | 向最近一次收到消息的会话发送一条固定测试文本；在飞书里给机器人发过消息之前返回 409 `feishu_no_chat` |
 
-一个 Session 一个绑定，一个飞书应用也只允许一个绑定。读取与两个测试接口对任意 Project 成员开放；PUT 与 DELETE 仅限所有者（与 Vault 同口径——它们携带密钥）。Secret 在所有响应中掩码显示、永不回传。删除 Session 会连带删除其绑定；入站仅处理文本消息（其他类型收到双语的“仅支持文本”回复）。
+Project 级（供「消息软件」页使用）：`GET /api/projects/:projectId/messaging` 列出 Session 属于该 Project 的全部绑定——Session id 与标题、Agent、渠道、账号 id 与运行状态，刻意不含任何密钥。
+
+一个 Session 一个消息绑定（不分渠道），同一渠道下一个机器人账号也只允许一个绑定。读取（含 Project 级列表）与两个测试接口对任意 Project 成员开放；PUT 与 DELETE 仅限所有者（与 Vault 同口径——它们携带密钥）。Secret 在所有响应中掩码显示、永不回传。删除 Session 会连带删除其绑定；入站仅处理文本消息（其他类型收到双语的“仅支持文本”回复）。
 
 ### 独立源预览
 

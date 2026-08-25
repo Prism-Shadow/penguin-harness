@@ -19,19 +19,17 @@ const STORED: FeishuBindingInfo = {
   appId: "cli_abc",
   appSecretMasked: "abcd…wxyz",
   baseDomain: "https://open.larksuite.com",
-  enabled: false,
   lastChatKnown: true,
   createdAt: "2026-08-25T00:00:00.000Z",
   updatedAt: "2026-08-25T00:00:00.000Z",
 };
 
 describe("emptyFeishuForm / bindingToForm", () => {
-  it("starts new forms enabled on the default domain, and never loads a secret back", () => {
+  it("starts new forms on the default domain, and never loads a secret back", () => {
     expect(emptyFeishuForm()).toEqual({
       appId: "",
       appSecret: "",
       baseDomain: FEISHU_DEFAULT_DOMAIN,
-      enabled: true,
     });
     // The masked value must not land in the editable field — an unedited save would
     // otherwise overwrite the real secret with its mask.
@@ -39,18 +37,16 @@ describe("emptyFeishuForm / bindingToForm", () => {
       appId: "cli_abc",
       appSecret: "",
       baseDomain: "https://open.larksuite.com",
-      enabled: false,
     });
   });
 });
 
 describe("formToPut", () => {
   it("omits a blank secret so the server keeps the stored one", () => {
-    const form = { ...bindingToForm(STORED), enabled: true };
-    const res = formToPut(form, true);
+    const res = formToPut(bindingToForm(STORED), true);
     expect(res).toEqual({
       ok: true,
-      body: { appId: "cli_abc", baseDomain: "https://open.larksuite.com", enabled: true },
+      body: { appId: "cli_abc", baseDomain: "https://open.larksuite.com" },
     });
   });
 
@@ -68,18 +64,12 @@ describe("formToPut", () => {
   });
 
   it("defaults a blank domain and rejects a non-http(s) one", () => {
-    const blankDomain = formToPut(
-      { appId: "cli_x", appSecret: "s", baseDomain: "   ", enabled: true },
-      false,
-    );
+    const blankDomain = formToPut({ appId: "cli_x", appSecret: "s", baseDomain: "   " }, false);
     expect(blankDomain.ok && blankDomain.body.baseDomain).toBe(FEISHU_DEFAULT_DOMAIN);
-    const bad = formToPut(
-      { appId: "cli_x", appSecret: "s", baseDomain: "open.feishu.cn", enabled: true },
-      false,
-    );
+    const bad = formToPut({ appId: "cli_x", appSecret: "s", baseDomain: "open.feishu.cn" }, false);
     expect(bad).toEqual({ ok: false, errors: { baseDomain: "url_invalid" } });
     const ftp = formToPut(
-      { appId: "cli_x", appSecret: "s", baseDomain: "ftp://open.feishu.cn", enabled: true },
+      { appId: "cli_x", appSecret: "s", baseDomain: "ftp://open.feishu.cn" },
       false,
     );
     expect(ftp.ok).toBe(false);
@@ -88,14 +78,9 @@ describe("formToPut", () => {
 
 describe("formToTest", () => {
   it("carries only the filled-in fields, so blanks fall back to the stored binding server-side", () => {
-    expect(formToTest({ appId: "", appSecret: "", baseDomain: "", enabled: true })).toEqual({});
+    expect(formToTest({ appId: "", appSecret: "", baseDomain: "" })).toEqual({});
     expect(
-      formToTest({
-        appId: " cli_x ",
-        appSecret: "s",
-        baseDomain: FEISHU_DEFAULT_DOMAIN,
-        enabled: false,
-      }),
+      formToTest({ appId: " cli_x ", appSecret: "s", baseDomain: FEISHU_DEFAULT_DOMAIN }),
     ).toEqual({ appId: "cli_x", appSecret: "s", baseDomain: FEISHU_DEFAULT_DOMAIN });
   });
 });

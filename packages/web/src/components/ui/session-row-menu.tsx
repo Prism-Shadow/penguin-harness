@@ -4,16 +4,21 @@
  * The row carries a **pared-back hover affordance** and a **full context menu**, and this
  * module owns which actions belong to each so the two cannot drift:
  *
- * - Hovering a row reveals archive and delete as direct icon buttons — the shape the row
- *   had in every released version up to v0.2.2, restored here after the 0.3 line had
- *   folded them into an ellipsis dropdown.
- * - Right-clicking a row (or holding it on touch, or Shift+F10 on the keyboard) opens the
- *   whole set — pin, rename, archive, delete — as a labelled menu.
+ * - Hovering a row reveals archive as a direct icon button plus an ellipsis "more"
+ *   button that opens the context menu anchored at itself. The menu grew configuration
+ *   actions (messaging binding) that right-click alone left undiscoverable, so the
+ *   pointer entry is the ellipsis; delete moved inside the menu with them (still
+ *   danger-styled there), keeping the hover surface to one safe direct action.
+ * - Right-clicking a row (or holding it on touch, Shift+F10 on the keyboard, or clicking
+ *   the ellipsis) opens the whole set — pin, rename, messaging, archive, delete — as a
+ *   labelled menu.
  *
  * Rename therefore keeps a home: `design/specs/06-PROTOTYPE.md` requires that every
  * Session支持重命名、归档与删除, and paring the hover affordance down would otherwise have
  * dropped rename off the row entirely.
  */
+import type { MouseEvent as ReactMouseEvent } from "react";
+import type { AnchorRect } from "../../lib/context-menu";
 import { S } from "../../lib/strings";
 import { Icon } from "./group-list";
 
@@ -29,8 +34,10 @@ export const UNARCHIVE_ICON =
   "M3 8h18M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M4 8l1.5-3h13L20 8M12 17v-5m-2.5 2L12 11l2.5 3";
 export const TRASH_ICON =
   "M4 6h16M9 6V4.5A1.5 1.5 0 0 1 10.5 3h3A1.5 1.5 0 0 1 15 4.5V6M6 6v13a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V6M10 10.5v6M14 10.5v6";
-/** Paper plane (lucide send): the Feishu-binding action and the bound row's indicator. */
+/** Paper plane (lucide send): the messaging-binding action and the bound row's indicator. */
 export const FEISHU_ICON = "M22 2 11 13M22 2l-7 20-4-9-9-4z";
+/** Three-dot ellipsis (round line caps render the zero-length strokes as dots): the hover "more" button. */
+export const ELLIPSIS_ICON = "M5 12h.01M12 12h.01M19 12h.01";
 
 /** Compact overflow-menu row (session row menu + workspace group menu): small text, leading thin-line glyph. */
 export const overflowMenuRowClass =
@@ -57,10 +64,11 @@ export interface SessionRowState {
 }
 
 /**
- * The hover affordance's actions, restored to the released shape: archive and delete,
- * nothing else. Everything else on the row is one right-click away.
+ * The hover affordance's direct actions: archive alone. Everything else — delete
+ * included — lives in the context menu, whose discoverable pointer entry is the
+ * ellipsis button `SessionRowHoverActions` renders after these (see the module header).
  */
-export const HOVER_ROW_ACTIONS: readonly SessionRowAction[] = ["archive", "delete"];
+export const HOVER_ROW_ACTIONS: readonly SessionRowAction[] = ["archive"];
 
 /**
  * The context menu's actions. Pin only reorders rows in the active list, so folder rows
@@ -146,15 +154,21 @@ export function SessionRowMenuRows({
   );
 }
 
+/** The hover buttons' shared reveal classes (see SessionRowHoverActions on why pointer events are gated with opacity). */
+const hoverButtonClass =
+  "pointer-events-none flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 opacity-0 transition-all duration-150 focus:pointer-events-auto focus:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100";
+
 /**
- * Hover affordance: icon-only buttons that fade in over the row, the pre-0.3 treatment.
- * Deliberately hover/focus-gated and therefore desktop-only — Tailwind scopes `hover:`
- * behind `@media (hover: hover)`, so these never appear on a touch screen, where the same
- * actions are reached by holding the row instead.
+ * Hover affordance: icon-only buttons that fade in over the row — the direct actions
+ * (archive), then an ellipsis that opens the row's context menu anchored at itself, so
+ * every menu action is one visible click away rather than right-click-only. Deliberately
+ * hover/focus-gated and therefore desktop-only — Tailwind scopes `hover:` behind
+ * `@media (hover: hover)`, so these never appear on a touch screen, where the same menu
+ * is reached by holding the row instead.
  *
  * Which is why they are **pointer-events-gated on exactly the same conditions as their
  * opacity**, not just faded out: an invisible button still takes taps, so a bare
- * `opacity-0` would leave a phantom delete target sitting over the right end of every row
+ * `opacity-0` would leave a phantom tap target sitting over the right end of every row
  * for the one class of user who can never see it. Keyboard focus is unaffected by
  * `pointer-events`, so Tab still reaches them and revealing them re-arms the click.
  */
@@ -162,11 +176,18 @@ export function SessionRowHoverActions({
   actions,
   state,
   onRun,
+  onMore,
 }: {
   actions: readonly SessionRowAction[];
   state: SessionRowState;
   onRun: (action: SessionRowAction) => void;
+  /** Opens the row's context menu anchored at the ellipsis button's own box. */
+  onMore: (anchor: AnchorRect) => void;
 }) {
+  const openMore = (e: ReactMouseEvent<HTMLButtonElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    onMore({ top: r.top, bottom: r.bottom, left: r.left, right: r.right });
+  };
   return (
     <>
       {actions.map((action) => {
@@ -178,7 +199,7 @@ export function SessionRowHoverActions({
             title={item.label}
             aria-label={item.label}
             onClick={() => onRun(action)}
-            className={`pointer-events-none flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 opacity-0 transition-all duration-150 focus:pointer-events-auto focus:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100 ${
+            className={`${hoverButtonClass} ${
               item.danger
                 ? "hover:text-red-600 dark:hover:text-red-400"
                 : "hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200"
@@ -188,6 +209,16 @@ export function SessionRowHoverActions({
           </button>
         );
       })}
+      <button
+        type="button"
+        title={S.chat.moreActions}
+        aria-label={S.chat.moreActions}
+        aria-haspopup="menu"
+        onClick={openMore}
+        className={`${hoverButtonClass} hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200`}
+      >
+        <Icon d={ELLIPSIS_ICON} size={14} />
+      </button>
     </>
   );
 }

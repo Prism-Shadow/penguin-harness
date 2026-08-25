@@ -1,16 +1,19 @@
 /**
- * Feishu binding dialog (session-row "Bind to Feishu…"): APP_ID / APP_SECRET / API-domain
- * form with an enabled switch, a credential test on the draft values, a "send test
- * message" probe of the outbound leg, and an unbind behind a confirmation. Modeled on the
- * MCP-server dialog (immediate persistence, test-as-toast); on top of that it keeps a live
- * status line — the GET is re-polled while the dialog is open, so connect/error flips show
- * up without closing it — which is also why a successful save keeps the dialog open.
+ * Feishu binding dialog (session-row "Bind to Feishu…" and the Messaging page's edit):
+ * APP_ID / APP_SECRET / API-domain form with a credential test on the draft values, a
+ * "send test message" probe of the outbound leg, and an unbind behind a confirmation.
+ * Modeled on the MCP-server dialog (test-as-toast, `toneInk` status line); on top of that
+ * it keeps a live status line — the GET is re-polled while the dialog is open, so
+ * connect/error flips show up without closing it — which is also why a successful save
+ * keeps the dialog open. Saving IS connecting (a stored binding is always active), so the
+ * primary button reads "Save & connect" and unbind is the only way to stop.
  *
- * The secret never round-trips: the field always starts empty, and submitting it empty
- * keeps the stored secret (the server's PUT contract).
+ * The secret never round-trips: the field always starts empty, a stored secret shows only
+ * as the site-wide masked placeholder (models-page configured-key idiom — type to
+ * replace, blank keeps stored), and an empty submit keeps it (the server's PUT contract).
  */
 import { useEffect, useState } from "react";
-import type { FeishuRuntimeStatus, SessionInfo } from "@prismshadow/penguin-server/api";
+import type { MessagingRuntimeStatus } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -18,7 +21,6 @@ import { toneInk, type Tone } from "../../lib/tone";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { PasswordInput } from "../../components/ui/password-input";
-import { Switch } from "../../components/ui/switch";
 import { Modal } from "../../components/ui/modal";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { toastError, toastSuccess } from "../../components/ui/toast";
@@ -34,7 +36,10 @@ import {
 /** How often the open dialog refreshes the runtime status (connects settle within a poll or two). */
 const STATUS_POLL_MS = 3000;
 
-const STATUS_TONE: Record<FeishuRuntimeStatus["state"], Tone> = {
+/** Feishu's own echo-bot walkthrough: creating a self-built app and its long connection. */
+const FEISHU_TUTORIAL_URL = "https://open.feishu.cn/document/develop-an-echo-bot/introduction";
+
+const STATUS_TONE: Record<MessagingRuntimeStatus["state"], Tone> = {
   disconnected: "muted",
   connecting: "busy",
   connected: "success",
@@ -47,20 +52,21 @@ function errorText(code: FeishuFormErrors[keyof FeishuFormErrors]): string | und
 }
 
 export function FeishuBindingModal({
-  session,
+  sessionId,
   onClose,
   onChanged,
 }: {
-  session: SessionInfo;
+  sessionId: string;
   onClose: () => void;
-  /** Fired after a save/unbind changed whether the Session is bound (the sidebar refreshes its row indicator). */
+  /** Fired after a save/unbind changed whether the Session is bound (callers refresh their row/list). */
   onChanged?: (sessionId: string, bound: boolean) => void;
 }) {
-  const sessionId = session.sessionId;
   // null until the stored binding has been loaded (the form must start from it, not race it).
   const [form, setForm] = useState<FeishuFormState | null>(null);
   const [hasStored, setHasStored] = useState(false);
-  const [status, setStatus] = useState<FeishuRuntimeStatus>({ state: "disconnected" });
+  /** The stored secret's site-wide mask (display-only, never round-trips); null while unbound. */
+  const [secretMasked, setSecretMasked] = useState<string | null>(null);
+  const [status, setStatus] = useState<MessagingRuntimeStatus>({ state: "disconnected" });
   const [lastChatKnown, setLastChatKnown] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<FeishuFormErrors>({});
   const [busy, setBusy] = useState(false);
@@ -69,7 +75,7 @@ export function FeishuBindingModal({
   const [unbinding, setUnbinding] = useState(false);
 
   // Initial load fills the form; the poll afterwards refreshes ONLY the runtime facts
-  // (status / chat-known / bound), never the fields being edited.
+  // (status / chat-known / bound / mask), never the fields being edited.
   useEffect(() => {
     let cancelled = false;
     const refresh = async (initial: boolean) => {
@@ -78,6 +84,7 @@ export function FeishuBindingModal({
         if (cancelled) return;
         setStatus(res.status);
         setHasStored(res.binding !== null);
+        setSecretMasked(res.binding?.appSecretMasked ?? null);
         setLastChatKnown(res.binding?.lastChatKnown ?? false);
         if (initial) setForm(res.binding ? bindingToForm(res.binding) : emptyFeishuForm());
       } catch (e) {
@@ -131,7 +138,7 @@ export function FeishuBindingModal({
     }
   };
 
-  /** Save = persist + (re)connect when enabled; the dialog stays open to show the status flip. */
+  /** Save = persist + (re)connect; the dialog stays open to show the status flip. */
   const save = async () => {
     if (!form) return;
     const built = formToPut(form, hasStored);
@@ -144,6 +151,7 @@ export function FeishuBindingModal({
       const res = await api.putFeishuBinding(sessionId, built.body);
       setStatus(res.status);
       setHasStored(true);
+      setSecretMasked(res.binding?.appSecretMasked ?? null);
       setLastChatKnown(res.binding?.lastChatKnown ?? false);
       // The secret is stored now: clear the field back to the keep-stored state.
       if (res.binding) setForm(bindingToForm(res.binding));
@@ -188,14 +196,24 @@ export function FeishuBindingModal({
             )}
             <Button onClick={onClose}>{S.common.close}</Button>
             <Button variant="primary" disabled={busy || form === null} onClick={() => void save()}>
-              {busy ? S.common.saving : S.common.save}
+              {busy ? S.common.saving : S.feishu.saveConnect}
             </Button>
           </>
         }
       >
         {form && (
           <div className="space-y-3">
-            <p className="text-xs text-gray-500 dark:text-gray-400">{S.feishu.dialogIntro}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {S.feishu.dialogIntro}{" "}
+              <a
+                href={FEISHU_TUTORIAL_URL}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="whitespace-nowrap text-brand-600 underline-offset-2 hover:underline dark:text-brand-300"
+              >
+                {S.feishu.tutorial} ↗
+              </a>
+            </p>
             {/* Runtime status line: refreshed by the poll while the dialog is open. */}
             <p className="flex items-center gap-2 text-xs">
               <span className="text-gray-500 dark:text-gray-400">{S.feishu.statusLabel}</span>
@@ -247,10 +265,14 @@ export function FeishuBindingModal({
               placeholder="cli_xxxxxxxxxxxxxxxx"
               autoComplete="off"
             />
+            {/* Stored secret: the site-wide mask shows as the placeholder (models-page
+                configured-key idiom) — type to replace it, leave blank to keep it. */}
             <PasswordInput
               size="sm"
               label={S.feishu.appSecret}
-              {...(hasStored ? { hint: S.feishu.appSecretKeepHint } : { required: true })}
+              {...(hasStored
+                ? { hint: S.feishu.appSecretKeepHint, placeholder: secretMasked ?? undefined }
+                : { required: true })}
               error={errorText(fieldErrors.appSecret)}
               value={form.appSecret}
               onChange={(e) => patchForm({ appSecret: e.target.value })}
@@ -267,10 +289,6 @@ export function FeishuBindingModal({
               placeholder="https://open.feishu.cn"
               autoComplete="off"
             />
-            <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-              <Switch checked={form.enabled} onChange={(v) => patchForm({ enabled: v })} />
-              {S.feishu.enabled}
-            </label>
           </div>
         )}
       </Modal>

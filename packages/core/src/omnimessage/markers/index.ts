@@ -9,9 +9,8 @@
  *     the `[context_summary]` injection and the `[summary]` the compaction prompt asks for —
  *     produced by the ReAct loop and Trace replay;
  *   - **origin blocks** (`origin-blocks.ts`): `[use_skills]`, `[handoff_from]`,
- *     `[scheduled_task]`, `[feishu_message]`, `[model_switch_from]` — prefixed to a user
- *     message by the hosts (Web composer, server scheduler, server Feishu bridge) and
- *     collapsed into a banner when rendered;
+ *     `[scheduled_task]`, `[model_switch_from]` — prefixed to a user message by the hosts
+ *     (Web composer, server scheduler) and collapsed into a banner when rendered;
  *   - **steering** (`steering.ts`): `[user_steering]`, a mid-run user message;
  *   - **goal** (`goal-block.ts`): `[goal]`, the goal-mode round protocol block prefixed to
  *     each round's input by the Session's goal loop (line-anchored close — see the module).

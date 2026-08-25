@@ -255,19 +255,21 @@ Workspace files may be Agent-generated, so `GET /files/content` treats them as u
 
 The filename always rides along as `filename*=UTF-8''` with percent-encoding. `preview=1` is where the preview redirect falls back when no separate preview origin is available: the document keeps its real type and does render and run, but the sandbox deliberately omits `allow-same-origin`, so it lands in an opaque origin and can reach neither this origin's cookies nor the API. That isolation is also why `localStorage`, `document.cookie` and third-party embeds do not work there.
 
-### Feishu (Lark) Binding
+### Messaging Bindings (Feishu)
 
-A Session can be bound to a Feishu bot: inbound messages to the bot start Tasks on the Session (queued as follow-ups while it is busy), and completed replies are relayed back to the chat. Paths omit the `/api/sessions/:sessionId` prefix like the table above.
+A Session can be bound to a messaging bot — Feishu is the only channel today, and further channels slot in under `/messaging/<channel>`. Inbound messages to the bot start Tasks on the Session as ordinary user input, exactly as if typed into the web composer (no marker, queued as follow-ups while the Session is busy), and completed replies are relayed back to the chat. A stored binding is always active: saving connects, unbinding is how a connection stops. Session-level paths omit the `/api/sessions/:sessionId` prefix like the table above.
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | /feishu | The binding (App Secret masked) + long-connection runtime status + `lastChatKnown` |
-| PUT | /feishu | Bind or update: `{appId, appSecret?, baseDomain?, enabled?}`. An omitted/blank `appSecret` keeps the stored one; `baseDomain` defaults to `https://open.feishu.cn`; saving with `enabled: true` (re)connects, `false` disconnects. 409 `feishu_app_in_use` when the app is bound to another Session |
-| DELETE | /feishu | Unbind: disconnects and deletes the stored binding (App Secret included) |
-| POST | /feishu/test | Credential probe with the request's draft values, each falling back to the stored binding → `{ok, latencyMs?, error?}` (a rejected credential is `ok: false`, not an HTTP error) |
-| POST | /feishu/test-message | Send a short fixed text to the last known chat; 409 `feishu_no_chat` until the bot has been messaged once in Feishu |
+| GET | /messaging/feishu | The binding (App Secret masked) + event-connection runtime status + `lastChatKnown` |
+| PUT | /messaging/feishu | Bind or update: `{appId, appSecret?, baseDomain?}`. An omitted/blank `appSecret` keeps the stored one; `baseDomain` defaults to `https://open.feishu.cn`; saving (re)connects. 409 `feishu_app_in_use` when the app is bound to another Session |
+| DELETE | /messaging/feishu | Unbind: disconnects and deletes the stored binding (App Secret included) |
+| POST | /messaging/feishu/test | Credential probe with the request's draft values, each falling back to the stored binding → `{ok, latencyMs?, error?}` (a rejected credential is `ok: false`, not an HTTP error) |
+| POST | /messaging/feishu/test-message | Send a short fixed text to the last known chat; 409 `feishu_no_chat` until the bot has been messaged once in Feishu |
 
-One binding per Session and one per Feishu app. Reads and the two tests are open to any Project member; PUT and DELETE are owner-only (vault semantics — they carry the secret). The secret is masked in every response and never round-trips. Deleting the Session removes its binding, and inbound processing accepts text messages only (other types get a bilingual "text only" reply).
+Project level, for the Messaging page: `GET /api/projects/:projectId/messaging` lists every binding whose Session belongs to the Project — session id/title, agent, channel, account id and runtime status, deliberately secret-free.
+
+One messaging binding per Session (whatever the channel) and one per bot account per channel. Reads (the project listing included) and the two tests are open to any Project member; PUT and DELETE are owner-only (vault semantics — they carry the secret). The secret is masked in every response and never round-trips. Deleting the Session removes its binding, and inbound processing accepts text messages only (other types get a bilingual "text only" reply).
 
 ### Preview on a separate origin
 

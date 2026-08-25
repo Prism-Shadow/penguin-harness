@@ -202,9 +202,9 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       // Schedule scheduler: startup reconciliation (missed, don't backfill) + periodic
       // scan; only active while this App is.
       await deps.scheduler.start();
-      // Feishu bridge: connect every enabled Session binding (long-connection event
+      // Messaging bridge: connect every enabled Session binding (channel event
       // streams); only active while this App is, like the scheduler.
-      await deps.feishu.start();
+      await deps.messaging.start();
       // Goal mode runs only in SessionManager memory: a hard crash (SIGKILL, power loss)
       // can leave goal_state rows stuck `active` with no runner behind them — and so can
       // the previous App, whose manager a swap hard-aborts. Reconcile them to `aborted`
@@ -239,7 +239,7 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     //                         runtime-owned, re-claimed by every App; not this App's to park
     // SUSPENDED (stopped here; the successor rebuilds it fresh at load):
     //   - scheduler           stop() now; successor start() reconciles missed fires
-    //   - feishu bridge       stop() closes the long connections; successor start()
+    //   - messaging bridge    stop() closes the channel connections; successor start()
     //                         reconnects every enabled binding from the DB
     //   - agent runs          approvals → deny, drives → abort; goal rows reconciled by
     //                         the successor's abortOrphanedActive
@@ -268,7 +268,7 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       const drains: Promise<unknown>[] = [];
       if (business !== null) {
         business.scheduler.stop();
-        business.feishu.stop();
+        business.messaging.stop();
         drains.push(business.manager.shutdown(DRAIN_GRACE_MS));
       }
       drained = Promise.allSettled(drains).then(() => undefined);

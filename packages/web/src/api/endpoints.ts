@@ -41,6 +41,7 @@ import type {
   FeishuTestMessageResponse,
   FeishuTestRequest,
   FeishuTestResponse,
+  ProjectMessagingResponse,
   FilesStatRequest,
   FilesStatResponse,
   GoalResponse,
@@ -474,32 +475,40 @@ export const patchSession = (sessionId: string, body: SessionPatchRequest) =>
 export const deleteSession = (sessionId: string) =>
   apiFetch<void>(`/api/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
 
-// Feishu binding --------------------------------------------------------------
+// Messaging bindings ----------------------------------------------------------
+
+/** Every messaging binding whose Session belongs to the Project (the Messaging page's list). */
+export const listProjectMessaging = (projectId: string) =>
+  apiFetch<ProjectMessagingResponse>(`/api/projects/${encodeURIComponent(projectId)}/messaging`);
 
 export const getFeishuBinding = (sessionId: string) =>
-  apiFetch<FeishuBindingResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/feishu`);
+  apiFetch<FeishuBindingResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/messaging/feishu`,
+  );
 
-/** Saving with enabled:true (re)connects the long connection; enabled:false disconnects. */
+/** Save = connect: a stored binding is always active (unbinding is how it stops). */
 export const putFeishuBinding = (sessionId: string, body: FeishuBindingPutRequest) =>
-  apiFetch<FeishuBindingResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/feishu`, {
-    method: "PUT",
-    body,
-  });
+  apiFetch<FeishuBindingResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/messaging/feishu`,
+    { method: "PUT", body },
+  );
 
 export const deleteFeishuBinding = (sessionId: string) =>
-  apiFetch<void>(`/api/sessions/${encodeURIComponent(sessionId)}/feishu`, { method: "DELETE" });
+  apiFetch<void>(`/api/sessions/${encodeURIComponent(sessionId)}/messaging/feishu`, {
+    method: "DELETE",
+  });
 
 /** Credential probe with the form's draft values; omitted fields fall back to the stored binding. */
 export const testFeishuBinding = (sessionId: string, body: FeishuTestRequest) =>
-  apiFetch<FeishuTestResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/feishu/test`, {
-    method: "POST",
-    body,
-  });
+  apiFetch<FeishuTestResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/messaging/feishu/test`,
+    { method: "POST", body },
+  );
 
 /** Short fixed text to the binding's last known chat (409 feishu_no_chat before one exists). */
 export const sendFeishuTestMessage = (sessionId: string) =>
   apiFetch<FeishuTestMessageResponse>(
-    `/api/sessions/${encodeURIComponent(sessionId)}/feishu/test-message`,
+    `/api/sessions/${encodeURIComponent(sessionId)}/messaging/feishu/test-message`,
     { method: "POST", body: {} },
   );
 

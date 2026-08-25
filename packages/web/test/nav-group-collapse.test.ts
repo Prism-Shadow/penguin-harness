@@ -37,7 +37,14 @@ describe("NAV_GROUP_KEYS", () => {
   it("covers exactly the 智能体 → 评估中心 range, in rendered order", () => {
     // Traces is deliberately absent: the Trace panel moved into the chat toolbar's panel
     // switcher (features/dock), and /traces stays reachable through its deep links only.
-    expect([...NAV_GROUP_KEYS]).toEqual(["agents", "skills", "models", "usage", "benchmark"]);
+    expect([...NAV_GROUP_KEYS]).toEqual([
+      "agents",
+      "skills",
+      "models",
+      "usage",
+      "messaging",
+      "benchmark",
+    ]);
     // Pin the endpoints by label: a manifest edit that shifts the range shows up here.
     expect(zh.nav[NAV_GROUP_KEYS[0]]).toBe("智能体");
     expect(zh.nav[NAV_GROUP_KEYS[NAV_GROUP_KEYS.length - 1]!]).toBe("评估中心");

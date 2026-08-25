@@ -2,12 +2,13 @@
  * session-row-menu.tsx unit tests: which actions each of a Session row's two surfaces
  * offers, and how each one labels itself.
  *
- * The split is the point of the change and the thing most likely to be undone by
- * accident, so it is pinned by value rather than by shape: **hover gives archive and
- * delete and nothing else** — the affordance every release up to v0.2.2 shipped — while
- * the right-click menu carries the full set. Rename in particular must stay in the
- * context menu: `design/specs/06-PROTOTYPE.md` requires every Session to support
- * 重命名、归档与删除, and the pared-back hover pair alone would not satisfy that.
+ * The split is the point and the thing most likely to be undone by accident, so it is
+ * pinned by value rather than by shape: **hover gives archive plus the ellipsis "more"
+ * button and nothing else** — the ellipsis opens the context menu anchored at itself, so
+ * every menu action (delete and the messaging binding included) is one visible click
+ * away — while the right-click menu carries the full set. Rename in particular must stay
+ * in the context menu: `design/specs/06-PROTOTYPE.md` requires every Session to support
+ * 重命名、归档与删除, and the pared-back hover affordance alone would not satisfy that.
  *
  * vitest runs node-only here (`environment: "node"`, no jsdom), so these assert against
  * the exported manifests and label helpers rather than a rendered DOM
@@ -38,13 +39,14 @@ afterEach(() => setActiveStrings(zh));
 const RESTING = { archived: false, pinned: false };
 
 describe("HOVER_ROW_ACTIONS", () => {
-  it("is the released archive + delete pair, in that order, and nothing more", () => {
-    expect([...HOVER_ROW_ACTIONS]).toEqual(["archive", "delete"]);
+  it("is archive alone — the ellipsis beside it is the menu's pointer entry, not an action", () => {
+    expect([...HOVER_ROW_ACTIONS]).toEqual(["archive"]);
   });
 
-  it("does not carry rename or pin — those moved to the context menu", () => {
-    expect(HOVER_ROW_ACTIONS as readonly string[]).not.toContain("rename");
-    expect(HOVER_ROW_ACTIONS as readonly string[]).not.toContain("pin");
+  it("does not carry rename, pin, delete or the messaging binding — those live in the menu", () => {
+    for (const action of ["rename", "pin", "delete", "feishu"]) {
+      expect(HOVER_ROW_ACTIONS as readonly string[]).not.toContain(action);
+    }
   });
 });
 
@@ -57,7 +59,7 @@ describe("contextMenuActions", () => {
     expect([...contextMenuActions(false)]).toEqual(["rename", "feishu", "archive", "delete"]);
   });
 
-  it("is a superset of the hover pair, so nothing is reachable by hover alone", () => {
+  it("is a superset of the hover actions, so nothing is reachable by hover alone", () => {
     for (const canPin of [true, false]) {
       for (const action of HOVER_ROW_ACTIONS) {
         expect(contextMenuActions(canPin)).toContain(action);
@@ -92,6 +94,14 @@ describe("the hover buttons' CSS contract", () => {
     // `focus`, not `focus-visible`: the time span it swaps with hides on plain
     // focus-within, and the two conditions have to agree or the slot goes blank.
     expect(source).not.toContain("focus-visible:opacity-100");
+  });
+
+  it("renders the ellipsis as a labelled menu trigger anchored at its own box", () => {
+    // The menu's discoverable pointer entry: a real button that reports it opens a menu
+    // and anchors the panel at its own rect (not the pointer position).
+    expect(source).toContain('aria-haspopup="menu"');
+    expect(source).toContain("ELLIPSIS_ICON");
+    expect(source).toContain("getBoundingClientRect");
   });
 });
 

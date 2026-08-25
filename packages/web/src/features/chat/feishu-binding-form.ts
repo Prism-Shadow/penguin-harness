@@ -22,7 +22,6 @@ export interface FeishuFormState {
   /** Always starts empty; a non-empty value replaces the stored secret on save. */
   appSecret: string;
   baseDomain: string;
-  enabled: boolean;
 }
 
 export type FeishuFormField = "appId" | "appSecret" | "baseDomain";
@@ -35,17 +34,12 @@ export type FeishuFormResult =
   { ok: true; body: FeishuBindingPutRequest } | { ok: false; errors: FeishuFormErrors };
 
 export function emptyFeishuForm(): FeishuFormState {
-  return { appId: "", appSecret: "", baseDomain: FEISHU_DEFAULT_DOMAIN, enabled: true };
+  return { appId: "", appSecret: "", baseDomain: FEISHU_DEFAULT_DOMAIN };
 }
 
 /** Loads the stored binding into form state; the secret field stays empty (masked values never round-trip). */
 export function bindingToForm(info: FeishuBindingInfo): FeishuFormState {
-  return {
-    appId: info.appId,
-    appSecret: "",
-    baseDomain: info.baseDomain,
-    enabled: info.enabled,
-  };
+  return { appId: info.appId, appSecret: "", baseDomain: info.baseDomain };
 }
 
 /** A syntactically valid http(s) URL (the server normalizes to the origin). */
@@ -79,7 +73,6 @@ export function formToPut(form: FeishuFormState, hasStoredSecret: boolean): Feis
       appId,
       ...(appSecret !== "" ? { appSecret } : {}),
       baseDomain,
-      enabled: form.enabled,
     },
   };
 }

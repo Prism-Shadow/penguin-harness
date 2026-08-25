@@ -1,15 +1,16 @@
 /**
- * The Feishu (Lark) SDK seam: the narrow slice of `@larksuiteoapi/node-sdk` the bridge
- * uses, behind an injectable factory so unit tests substitute a fake and never open real
- * network. The real implementation loads the SDK lazily (dynamic import on first use):
- * the SDK is CJS and heavyweight, and a server with no bindings never pays for it.
+ * The Feishu (Lark) SDK seam: the narrow slice of `@larksuiteoapi/node-sdk` the Feishu
+ * connector uses, behind an injectable factory so unit tests substitute a fake and never
+ * open real network. The real implementation loads the SDK lazily (dynamic import on
+ * first use): the SDK is CJS and heavyweight, and a server with no Feishu bindings never
+ * pays for it.
  *
  * The SDK's own types are deliberately not imported — its bundled .d.ts is ~300k lines,
  * which would tax every typecheck for the handful of calls made here; the local interfaces
  * below are the contract, and the adapter casts the loaded module once.
  */
 
-/** One credential set (the binding's stored values, or a test request's draft). */
+/** One credential set (a binding's stored values, or a test request's draft). */
 export interface FeishuCredentials {
   appId: string;
   appSecret: string;
@@ -17,7 +18,7 @@ export interface FeishuCredentials {
   baseDomain: string;
 }
 
-/** One inbound `im.message.receive_v1` event, reduced to what the bridge consumes. */
+/** One inbound `im.message.receive_v1` event, reduced to what the connector consumes. */
 export interface FeishuInboundEvent {
   chatId: string;
   /** `p2p` for a direct chat with the bot, `group` for a group chat. */
@@ -54,7 +55,7 @@ export interface FeishuConnection {
   close(): void;
 }
 
-/** Factory the bridge is built over: the production Lark adapter, or a test fake. */
+/** Factory the Feishu connector is built over: the production Lark adapter, or a test fake. */
 export interface FeishuSdk {
   createClient(creds: FeishuCredentials): Promise<FeishuApiClient>;
   /**

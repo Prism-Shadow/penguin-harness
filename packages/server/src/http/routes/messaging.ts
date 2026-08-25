@@ -1,10 +1,15 @@
 /**
- * Feishu (Lark) binding routes: /api/sessions/:sessionId/feishu[...].
+ * Messaging-binding routes, two entry groups:
+ *   - Session-level, per channel: /api/sessions/:sessionId/messaging/feishu[...] — the
+ *     binding dialog's surface (Feishu is the only channel today; a future channel adds
+ *     its own subtree with its own config shape);
+ *   - Project-level: GET /api/projects/:projectId/messaging — every binding whose Session
+ *     belongs to the Project, for the Messaging page's list (secret-free rows).
  *
  * Authorization mirrors the vault's split, through the sessions routes' resolveSession
- * pattern (404 never leaks a Session's existence): any Project member can read the binding
- * (secret masked) and run the two tests; the secret-mutating writes — PUT and DELETE — are
- * Project-owner-only.
+ * pattern (404 never leaks a Session's existence): any Project member can read bindings
+ * and run the two tests; the secret-mutating writes — PUT and DELETE — are Project-owner-
+ * only.
  *
  * Round-trip rule for the secret: GET only ever returns the masked value, and a PUT whose
  * `appSecret` is omitted or blank keeps the stored one (the same never-round-trip-masked-
@@ -17,25 +22,45 @@ import type {
   FeishuBindingResponse,
   FeishuTestMessageResponse,
   FeishuTestResponse,
+  MessagingBindingSummary,
+  ProjectMessagingResponse,
 } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { FeishuBindingRow } from "../../db/repos/feishu-bindings.js";
+import type { MessagingBindingRow } from "../../db/repos/messaging-bindings.js";
 import type { SessionRow } from "../../db/repos/sessions.js";
+import { FEISHU_DEFAULT_DOMAIN, feishuConfigOf } from "../../runtime/messaging/feishu-connector.js";
 import { maskApiKey } from "../../services/project-config-service.js";
 import { HttpError } from "../errors.js";
-import { badRequest, optionalString, readJson, requireString } from "../validate.js";
+import {
+  badRequest,
+  optionalString,
+  readJson,
+  requireString,
+  requireValidId,
+} from "../validate.js";
 import type { AppDeps } from "../../app.js";
 
-/** Default Feishu open-platform domain (Lark tenants override it in the form). */
-export const FEISHU_DEFAULT_DOMAIN = "https://open.feishu.cn";
+/** The stored feishu config, tolerated loosely (a malformed document reads as blanks). */
+function feishuFieldsOf(row: MessagingBindingRow): {
+  appId: string;
+  appSecret: string;
+  baseDomain: string;
+} {
+  const { appId, appSecret, baseDomain } = row.config;
+  return {
+    appId: typeof appId === "string" ? appId : row.accountId,
+    appSecret: typeof appSecret === "string" ? appSecret : "",
+    baseDomain: typeof baseDomain === "string" ? baseDomain : FEISHU_DEFAULT_DOMAIN,
+  };
+}
 
-function toBindingInfo(row: FeishuBindingRow): FeishuBindingInfo {
+function toBindingInfo(row: MessagingBindingRow): FeishuBindingInfo {
+  const fields = feishuFieldsOf(row);
   return {
     sessionId: row.sessionId,
-    appId: row.appId,
-    appSecretMasked: maskApiKey(row.appSecret),
-    baseDomain: row.baseDomain,
-    enabled: row.enabled,
+    appId: fields.appId,
+    appSecretMasked: maskApiKey(fields.appSecret),
+    baseDomain: fields.baseDomain,
     lastChatKnown: row.lastChatId !== null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -59,7 +84,8 @@ function parseBaseDomain(raw: string | undefined): string {
   return url.origin;
 }
 
-export function feishuRoutes(deps: AppDeps): Hono<AppEnv> {
+/** Session-level entry: /api/sessions/:sessionId/messaging/feishu[...]. */
+export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   /** Same lookup-and-authz shape as the sessions routes: 404 without leaking existence. */
@@ -86,19 +112,19 @@ export function feishuRoutes(deps: AppDeps): Hono<AppEnv> {
   };
 
   const bindingResponse = (sessionId: string): FeishuBindingResponse => {
-    const row = deps.feishuRepo.find(sessionId);
+    const row = deps.messagingRepo.find(sessionId);
     return {
       binding: row ? toBindingInfo(row) : null,
-      status: deps.feishu.statusOf(sessionId),
+      status: deps.messaging.statusOf(sessionId),
     };
   };
 
-  app.get("/:sessionId/feishu", (c) => {
+  app.get("/:sessionId/messaging/feishu", (c) => {
     const row = resolveSession(c);
     return c.json(bindingResponse(row.sessionId));
   });
 
-  app.put("/:sessionId/feishu", async (c) => {
+  app.put("/:sessionId/messaging/feishu", async (c) => {
     const row = resolveSession(c);
     deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
     const body = await readJson(c);
@@ -106,24 +132,19 @@ export function feishuRoutes(deps: AppDeps): Hono<AppEnv> {
     if (appId === "") throw badRequest("appId must not be blank.");
     const secretInput = optionalString(body, "appSecret", { maxLen: 500 })?.trim();
     const baseDomain = parseBaseDomain(optionalString(body, "baseDomain", { maxLen: 500 }));
-    const enabledRaw = (body as Record<string, unknown>).enabled;
-    if (enabledRaw !== undefined && typeof enabledRaw !== "boolean") {
-      throw badRequest("enabled must be a boolean.");
-    }
-    const enabled = enabledRaw ?? true;
-    const existing = deps.feishuRepo.find(row.sessionId);
+    const existing = deps.messagingRepo.find(row.sessionId);
     // Omitted/blank keeps the stored secret; a first-time bind must carry one.
-    const appSecret =
-      secretInput !== undefined && secretInput !== "" ? secretInput : existing?.appSecret;
+    const storedSecret =
+      existing !== null ? feishuFieldsOf(existing).appSecret || undefined : undefined;
+    const appSecret = secretInput !== undefined && secretInput !== "" ? secretInput : storedSecret;
     if (appSecret === undefined) {
       throw new HttpError(400, "feishu_secret_required", "appSecret is required to bind.");
     }
-    const result = deps.feishuRepo.upsert({
+    const result = deps.messagingRepo.upsert({
       sessionId: row.sessionId,
-      appId,
-      appSecret,
-      baseDomain,
-      enabled,
+      channel: "feishu",
+      accountId: appId,
+      config: { appId, appSecret, baseDomain },
     });
     if (!result.ok) {
       throw new HttpError(
@@ -132,30 +153,31 @@ export function feishuRoutes(deps: AppDeps): Hono<AppEnv> {
         "This Feishu app is already bound to another Session.",
       );
     }
-    // Bring the long connection in line with the saved row (connect / reconnect / disconnect).
-    await deps.feishu.sync(row.sessionId);
+    // Save = connect: bring the event connection in line with the saved row.
+    await deps.messaging.sync(row.sessionId);
     return c.json(bindingResponse(row.sessionId));
   });
 
-  app.delete("/:sessionId/feishu", (c) => {
+  app.delete("/:sessionId/messaging/feishu", (c) => {
     const row = resolveSession(c);
     deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
-    deps.feishu.unbind(row.sessionId);
+    deps.messaging.unbind(row.sessionId);
     return c.body(null, 204);
   });
 
   // Credential test with the request's draft values, each falling back to the stored
   // binding: the form can probe before saving without ever round-tripping the secret.
-  app.post("/:sessionId/feishu/test", async (c) => {
+  app.post("/:sessionId/messaging/feishu/test", async (c) => {
     const row = resolveSession(c);
     const body = await readJson(c);
-    const stored = deps.feishuRepo.find(row.sessionId);
-    const appId = optionalString(body, "appId", { maxLen: 200 })?.trim() || stored?.appId;
+    const stored = deps.messagingRepo.find(row.sessionId);
+    const storedFields = stored !== null ? feishuFieldsOf(stored) : null;
+    const appId = optionalString(body, "appId", { maxLen: 200 })?.trim() || storedFields?.appId;
     const appSecret =
-      optionalString(body, "appSecret", { maxLen: 500 })?.trim() || stored?.appSecret;
+      optionalString(body, "appSecret", { maxLen: 500 })?.trim() || storedFields?.appSecret;
     const rawDomain = optionalString(body, "baseDomain", { maxLen: 500 })?.trim();
     const baseDomain = parseBaseDomain(
-      rawDomain !== undefined && rawDomain !== "" ? rawDomain : stored?.baseDomain,
+      rawDomain !== undefined && rawDomain !== "" ? rawDomain : storedFields?.baseDomain,
     );
     if (appId === undefined || appId === "") {
       throw badRequest("appId is required (no stored binding to fall back to).");
@@ -163,7 +185,7 @@ export function feishuRoutes(deps: AppDeps): Hono<AppEnv> {
     if (appSecret === undefined || appSecret === "") {
       throw new HttpError(400, "feishu_secret_required", "appSecret is required to test.");
     }
-    const result = await deps.feishu.testCredentials({ appId, appSecret, baseDomain });
+    const result = await deps.messaging.testCredentials("feishu", { appId, appSecret, baseDomain });
     return c.json({
       ok: result.ok,
       ...(result.latencyMs !== undefined ? { latencyMs: result.latencyMs } : {}),
@@ -174,9 +196,9 @@ export function feishuRoutes(deps: AppDeps): Hono<AppEnv> {
   // Short fixed text into the binding's last known chat: proves the outbound leg
   // end to end. Before any inbound message no chat is known — the UI explains that the
   // user must message the bot once in Feishu first.
-  app.post("/:sessionId/feishu/test-message", async (c) => {
+  app.post("/:sessionId/messaging/feishu/test-message", async (c) => {
     const row = resolveSession(c);
-    const binding = deps.feishuRepo.find(row.sessionId);
+    const binding = deps.messagingRepo.find(row.sessionId);
     if (!binding) {
       throw new HttpError(404, "feishu_not_bound", "This Session has no Feishu binding.");
     }
@@ -188,7 +210,7 @@ export function feishuRoutes(deps: AppDeps): Hono<AppEnv> {
       );
     }
     try {
-      await deps.feishu.sendTestMessage(binding);
+      await deps.messaging.sendTestMessage(binding);
     } catch (err) {
       throw new HttpError(
         502,
@@ -197,6 +219,36 @@ export function feishuRoutes(deps: AppDeps): Hono<AppEnv> {
       );
     }
     return c.json({ ok: true } satisfies FeishuTestMessageResponse);
+  });
+
+  return app;
+}
+
+/** Project-level entry: GET /api/projects/:projectId/messaging (the Messaging page's list). */
+export function projectMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
+  const app = new Hono<AppEnv>();
+
+  app.get("/", (c) => {
+    const projectId = requireValidId(c, "projectId");
+    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    const bindings: MessagingBindingSummary[] = [];
+    // Bindings are few (one per bound Session): filtering the full list through the
+    // sessions index beats adding a project column the session row already knows.
+    for (const row of deps.messagingRepo.listAll()) {
+      const session = deps.sessionsRepo.findById(row.sessionId);
+      if (!session || session.projectId !== projectId) continue;
+      if (row.channel !== "feishu") continue; // unknown channels have no DTO shape yet
+      bindings.push({
+        sessionId: row.sessionId,
+        ...(session.title !== null ? { sessionTitle: session.title } : {}),
+        agentId: session.agentId,
+        channel: row.channel,
+        accountId: row.accountId,
+        lastChatKnown: row.lastChatId !== null,
+        status: deps.messaging.statusOf(row.sessionId),
+      });
+    }
+    return c.json({ bindings } satisfies ProjectMessagingResponse);
   });
 
   return app;
