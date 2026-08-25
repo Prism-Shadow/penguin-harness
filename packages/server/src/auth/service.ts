@@ -104,8 +104,17 @@ export interface AuthServiceDeps {
    */
   tokenSecret: Buffer;
   /**
-   * This boot's owner token (auth/owner-token.ts), for the redemption endpoint. Null in
-   * constructions that have no data root to anchor it to (some tests).
+   * This boot's owner token (auth/owner-token.ts), for the redemption endpoint.
+   *
+   * Held here rather than read back from `<root>/owner-token` when a redemption arrives: the
+   * file is how the value is PUBLISHED, not what makes it true. A check against the file would
+   * accept whatever it currently holds, which makes being able to WRITE the root enough to
+   * mint an admin session — where the axiom is that being able to READ it is ownership. Those
+   * are not the same set of people: the file is 0600, but the root's own mode is whatever the
+   * umask gave it, so a group-writable root lets someone who cannot read the token replace it.
+   *
+   * Null where there is no data root to anchor it to (some tests). Redemption then refuses
+   * every token rather than falling back to something weaker.
    */
   ownerToken: string | null;
   /** Provisions the initial Project at signup (injected by project-service, to avoid a circular dependency). */
