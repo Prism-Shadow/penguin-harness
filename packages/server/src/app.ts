@@ -55,10 +55,9 @@ import type { Identity } from "./terminal/identity.js";
 import { terminalRoutes } from "./terminal/routes.js";
 import type { TerminalManager } from "./terminal/manager.js";
 import type { AppEnv } from "./auth/middleware.js";
-import { ADMIN_USER_ID, AuthService } from "./auth/service.js";
+import { AuthService } from "./auth/service.js";
 import { AuthRevocationsRepo } from "./db/repos/auth-revocations.js";
 import { issueOwnerToken } from "./auth/owner-token.js";
-import { clearInitialAdminPassword } from "./initial-password.js";
 import { handleError, HttpError, errorBody } from "./http/errors.js";
 import { attributedProjectId } from "./http/attribution.js";
 import { authRoutes } from "./http/routes/auth.js";
@@ -225,13 +224,6 @@ export async function bootAppDeps(
   // by each generation. Until the first App boots, nothing is active.
   const channels = new ChannelHub();
 
-  // Any password update for the built-in admin makes the persisted initial-password
-  // plaintext stale (either the password is no longer initial, or a reset replaced it
-  // with an admin-chosen value that is never persisted): drop the file so later startups
-  // stop re-printing a credential that no longer signs in.
-  const onPasswordChanged = (userId: string): void => {
-    if (userId === ADMIN_USER_ID) clearInitialAdminPassword(config.root);
-  };
   const authService = new AuthService({
     users: usersRepo,
     authRevocations: new AuthRevocationsRepo(db),
@@ -247,7 +239,6 @@ export async function bootAppDeps(
       throw new Error("no business platform is running to provision the initial Project");
     },
     seedAdminPassword: config.seedAdminPassword,
-    onPasswordChanged,
     sessionTtlMs: config.authSessionTtlMs,
     sessionRenewMs: config.authSessionRenewMs,
     ...(overrides.passwordHashCost !== undefined
@@ -650,19 +641,10 @@ export function buildAppDeps(
     manager,
     traceIndex,
   });
-  // Any password update for the built-in admin makes the persisted initial-password
-  // plaintext stale (either the password is no longer initial, or a reset replaced it
-  // with an admin-chosen value that is never persisted): drop the file so later startups
-  // stop re-printing a credential that no longer signs in. (The runtime's AuthService
-  // carries the same rule for the self-service path; this one covers admin resets.)
-  const onPasswordChanged = (userId: string): void => {
-    if (userId === ADMIN_USER_ID) clearInitialAdminPassword(config.root);
-  };
   const adminService = new AdminService({
     users: usersRepo,
     projects: projectsRepo,
     projectService,
-    onPasswordChanged,
     ...(overrides.passwordHashCost !== undefined
       ? { passwordHashCost: overrides.passwordHashCost }
       : {}),

@@ -45,9 +45,7 @@ export function authRoutes(deps: AppDeps): Hono<AppEnv> {
     const ttlMs =
       typeof ttl === "number" && Number.isFinite(ttl) && ttl > 0 ? ttl * 1000 : 60 * 60_000;
     const outcome = deps.authService.redeemOwnerToken(ownerToken, userId, ttlMs);
-    // One error shape for both refusals: distinguishing "wrong token" from "no such user"
-    // would let a caller WITHOUT the token enumerate accounts.
-    if (outcome === "bad_token" || outcome === "no_user") {
+    if (outcome === null) {
       throw new HttpError(401, "unauthorized", "The owner token was not accepted.");
     }
     return c.json(outcome);

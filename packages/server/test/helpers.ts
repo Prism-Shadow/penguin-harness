@@ -80,13 +80,17 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
   const { beforeSeed, config, ...overrides } = options;
   const root = await makeTempRoot();
   if (beforeSeed) await beforeSeed(root);
-  const deps = await bootAppDeps(
-    { ...testConfig(root), ...config },
-    { log: () => {}, passwordHashCost: TEST_PASSWORD_HASH_COST, ...overrides },
-  );
-  // Consistent with the startup entrypoint: seed the built-in admin (owning default_project),
-  // keeping the password it returns (only null if a beforeSeed hook ever pre-created users).
-  const adminPassword = (await deps.authService.seedAdmin()) ?? TEST_ADMIN_PASSWORD;
+  const finalConfig = { ...testConfig(root), ...config };
+  const deps = await bootAppDeps(finalConfig, {
+    log: () => {},
+    passwordHashCost: TEST_PASSWORD_HASH_COST,
+    ...overrides,
+  });
+  // Consistent with the startup entrypoint: seed the built-in admin (owning default_project).
+  await deps.authService.seedAdmin();
+  // The seed hashes and discards; tests know the password only because the config injects it.
+  // With a null override there is nothing to know, and such tests never password-login.
+  const adminPassword = finalConfig.seedAdminPassword ?? TEST_ADMIN_PASSWORD;
   const app = createRuntimeApp(deps);
   return {
     app,

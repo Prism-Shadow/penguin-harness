@@ -67,9 +67,11 @@ describe("auth", () => {
     await expect(
       fs.access(path.join(t.root, "default_project", "agents", "default_agent", "agent_state")),
     ).resolves.toBeUndefined();
-    // Seeding is idempotent: re-seeding returns null and does not create a duplicate account.
-    expect(await t.deps.authService.seedAdmin()).toBeNull();
+    // Seeding is idempotent: re-seeding neither duplicates the account nor rerolls its
+    // password — the original still signs in.
+    await t.deps.authService.seedAdmin();
     expect(t.deps.db.prepare("SELECT COUNT(*) AS n FROM users").get()?.n).toBe(1);
+    await loginAdmin(t.app);
   });
 
   it("admin-created: default Project is <userId>-default_project, name defaults", async () => {
@@ -169,32 +171,6 @@ describe("auth", () => {
       prefs: { theme: string };
     };
     expect(got.prefs.theme).toBe("dark");
-  });
-
-  it("seedAdmin without an injected password generates one nobody has to read", async () => {
-    // Bypass the fixed test password: null matches the production default (random generation).
-    const fresh = await createTestApp({ config: { seedAdminPassword: null } });
-    try {
-      // 24 base64url characters — 144 bits. It is hashed and discarded, so its only job is
-      // to be unguessable at the login endpoint from the moment the account exists.
-      expect(fresh.adminPassword).toMatch(/^[A-Za-z0-9_-]{24}$/);
-      // The returned password is the one that actually logs in.
-      await loginUser(fresh.app, "admin", fresh.adminPassword);
-      // Users exist now: re-seeding reports that nothing was seeded.
-      expect(await fresh.deps.authService.seedAdmin()).toBeNull();
-    } finally {
-      await fresh.cleanup();
-    }
-  });
-
-  it("seedAdmin honors the injected seedAdminPassword", async () => {
-    const fresh = await createTestApp({ config: { seedAdminPassword: "penguin-7777" } });
-    try {
-      expect(fresh.adminPassword).toBe("penguin-7777");
-      await loginUser(fresh.app, "admin", "penguin-7777");
-    } finally {
-      await fresh.cleanup();
-    }
   });
 
   it("seedAdmin rejects an override below the password policy before creating the account", async () => {

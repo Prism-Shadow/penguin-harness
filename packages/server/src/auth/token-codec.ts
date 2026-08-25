@@ -8,9 +8,8 @@
  *
  * Format: `v1.<payload b64url>.<mac b64url>`, payload = JSON of {@link TokenClaims}. HMAC
  * rather than JWT on purpose — one algorithm, no header to negotiate, no dependency, and no
- * `alg:none` class of parser to get wrong. The version prefix is what lets the auth layer
- * tell a signed token from a legacy database token (those are 43 chars of base64url with no
- * dots) and from any future format.
+ * `alg:none` class of parser to get wrong. The version prefix is room for a future format;
+ * verifyToken refuses anything not carrying it.
  *
  * THE KEY NEVER RESTS. It is generated in memory at process start and written nowhere, so
  * there is nothing a backup can leak and nothing to rotate — a restart IS the rotation, and
@@ -26,7 +25,7 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 export interface TokenClaims {
   /** userId */
   u: string;
-  /** How the session was established: "password" | "desktop" | "cli". Verification maps unknown values to "password". */
+  /** How the session was established: "password" | "desktop" | "setup" | "cli". Verification maps anything else to "password". */
   v: string;
   /** Issued at, epoch ms — compared against the user's not-before mark to revoke per user. */
   iat: number;
@@ -37,11 +36,6 @@ export interface TokenClaims {
 }
 
 const PREFIX = "v1";
-
-/** Whether a cookie value is even claiming to be a signed token (vs a legacy row token). */
-export function looksSigned(token: string): boolean {
-  return token.startsWith(`${PREFIX}.`);
-}
 
 export function signToken(claims: TokenClaims, secret: Buffer): string {
   const payload = Buffer.from(JSON.stringify(claims)).toString("base64url");

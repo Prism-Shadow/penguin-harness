@@ -24,13 +24,6 @@ export interface AdminServiceDeps {
   projects: ProjectsRepo;
   projectService: ProjectService;
   /**
-   * Fired after a password reset. The server wires it to drop the stored
-   * initial-password plaintext once it goes stale (a reset re-arms the initial FLAG,
-   * but with an admin-chosen value the stored seed no longer matches — see
-   * initial-password.ts); test constructions may omit it.
-   */
-  onPasswordChanged?: (userId: string) => void;
-  /**
    * Test double: scrypt work factor for hashes this service writes. Omitted in
    * production, where {@link SCRYPT_COST} applies.
    */
@@ -96,7 +89,6 @@ export class AdminService {
     // A session is a signature, so there is nothing to delete: the not-before mark is what
     // makes every token issued to this account before now stop verifying.
     this.deps.users.setSessionsNotBefore(userId, new Date().toISOString());
-    this.deps.onPasswordChanged?.(userId);
   }
 
   /** Delete user: the built-in admin cannot be deleted; owned Projects (including data directories) are deleted along with it. */

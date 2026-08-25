@@ -1,6 +1,5 @@
 /**
- * Auth middleware: cookie -> auth_session ->
- * user injected into c.var.
+ * Auth middleware: cookie -> signed-token verification -> user injected into c.var.
  *
  * Accessing a protected API while logged out -> 401 `{error:{code:"unauthorized"}}`.
  * CSRF (MVP): SameSite=Lax cookie + write requests only accept
@@ -42,7 +41,7 @@ export function cookieOptions(
 export type AppEnv = {
   Variables: {
     user: UserRow;
-    /** How the current session was established ("password" | "desktop"); legacy rows read as "password". */
+    /** How the current session was established — see {@link SessionVia}. */
     sessionVia: SessionVia;
   };
 };

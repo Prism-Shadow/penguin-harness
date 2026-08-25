@@ -18,7 +18,7 @@ import type { UserInfo } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import type { UserRow, UsersRepo } from "../db/repos/users.js";
 import type { AuthRevocationsRepo } from "../db/repos/auth-revocations.js";
-import { looksSigned, newClaims, signToken, verifyToken } from "./token-codec.js";
+import { newClaims, signToken, verifyToken } from "./token-codec.js";
 import { ownerTokenMatches } from "./owner-token.js";
 import { SCRYPT_COST, hashPassword, verifyPassword } from "./password.js";
 
@@ -28,23 +28,14 @@ export const MIN_PASSWORD_LENGTH = 8;
 export const ADMIN_USER_ID = "admin";
 
 /**
- * Login throttling, per userId. What it protects is the password a PERSON chose: seeded ones
- * are 144 bits and unguessable by construction, but a human password only has to survive the
- * rate an attacker can try it at.
- *
- * After LOGIN_FREE_ATTEMPTS consecutive failures the next attempt is admitted only after an
- * exponentially growing delay from the last failure (1s, 2s, … capped at 60s; attempts inside
- * the window are 429 `too_many_attempts` and do not extend it). Beyond ~40 failures that is one
- * guess per minute, while a legitimate user who mistyped a few times never waits more than the
- * cap. A successful login clears the counter.
- *
- * Counters are process memory — a restart clears them, which is slower than waiting out the cap
- * — and are kept for nonexistent userIds too, so throttling is not an account-existence oracle.
- *
- * Two limits, deliberately: a concurrent burst can slip in before its first failure is
- * recorded, and counting is per ACCOUNT rather than per caller, so spreading guesses across
- * many accounts is not slowed. Both leave the steady-state cost of attacking any ONE account
- * at one guess per minute, which is the property this exists for.
+ * Login throttling, per userId — what a human-chosen password has to survive (seeded ones are
+ * 144 bits). After LOGIN_FREE_ATTEMPTS consecutive failures, the next attempt waits an
+ * exponentially growing delay (1s doubling to the 60s cap; attempts inside the window are 429
+ * and do not extend it), so attacking any one account settles at a guess per minute while a
+ * mistyping user never waits over the cap. Success clears the counter. Counters live in
+ * process memory (a restart is slower than the cap) and are kept for nonexistent userIds too,
+ * so throttling is not an account-existence oracle. Deliberately NOT covered: a concurrent
+ * burst before the first failure lands, and callers spreading guesses across many accounts.
  */
 const LOGIN_FREE_ATTEMPTS = 5;
 const LOGIN_BACKOFF_START_MS = 1000;
@@ -56,12 +47,10 @@ const LOGIN_FAILURE_IDLE_MS = 15 * 60_000;
 const SEED_PASSWORD_CHARS = 24;
 
 /**
- * The password a seeded or reset admin account carries until somebody claims it.
- *
- * Nobody ever reads it: it is hashed at once and discarded, and the account is claimed
- * through the first-login link (initial-password.ts). Nothing therefore has to type it, which
- * is what lets it be long — and long is what matters, because the account is reachable at the
- * login endpoint from the moment it exists. At 144 bits it is not a search space.
+ * The password a seeded or reset admin account carries until somebody claims it via the
+ * first-login link. Nobody ever reads or types it — it is hashed at once and discarded —
+ * which is what lets it be long enough (144 bits) that the login endpoint, where the account
+ * is reachable from the moment it exists, has no search space to offer.
  */
 export function generateInitialAdminPassword(): string {
   return randomBytes(SEED_PASSWORD_CHARS).toString("base64url").slice(0, SEED_PASSWORD_CHARS);
@@ -96,12 +85,7 @@ export interface AuthServiceDeps {
   users: UsersRepo;
   /** Revoked-before-expiry token ids; the in-memory copy is what the hot path consults. */
   authRevocations: AuthRevocationsRepo;
-  /**
-   * Signing key for session tokens. IN MEMORY ONLY, generated at process start: a key that
-   * exists nowhere at rest cannot be taken from a backup, and rotation is simply a restart.
-   * The price is that signed sessions die with the process — hot pushes swap the App and
-   * keep this alive; only a real restart pays it, and mostly in re-typed passwords.
-   */
+  /** Signing key for session tokens — in memory only, fresh per process (token-codec.ts). */
   tokenSecret: Buffer;
   /**
    * This boot's owner token (auth/owner-token.ts), for the redemption endpoint.
@@ -121,12 +105,6 @@ export interface AuthServiceDeps {
   provisionInitialProject: (user: UserRow, isAdmin: boolean) => Promise<void>;
   /** Fixed initial password for the seeded admin (config.seedAdminPassword); null generates a random one at seed time. */
   seedAdminPassword: string | null;
-  /**
-   * Fired after any successful password update (self change / desktop set). The server
-   * wires it to drop the stored initial-password plaintext once it goes stale (see
-   * initial-password.ts); standalone/test constructions may omit it.
-   */
-  onPasswordChanged?: (userId: string) => void;
   sessionTtlMs: number;
   sessionRenewMs: number;
   /**
@@ -156,14 +134,9 @@ export class AuthService {
    */
   private readonly revokedJtis: Set<string>;
   /**
-   * The session in the link a fresh server prints — an ordinary `setup` session, never written
-   * down. A session rather than a separate secret so it dies the ordinary way: setting a
-   * password revokes it, through the same denylist every logout uses, which also ends the
-   * claimer's own visit since this value IS the cookie they were handed.
-   *
-   * Null until mintFirstLogin() produces one, which is what keeps a claimed server safe: there
-   * is no live setup session to refuse, so refusing costs no question. Revocation could not
-   * have supplied that — it acts on a token that exists, and a restart's token is new.
+   * The setup session a first-login link carries; null until mintFirstLogin(). An ordinary
+   * session rather than a separate secret, so setting a password kills it through the same
+   * denylist every logout uses — including the claimer's own copy, which IS this value.
    */
   private firstLogin: string | null = null;
 
@@ -188,12 +161,10 @@ export class AuthService {
   }
 
   /**
-   * The session a first-login link carries, minted on demand — the caller prints it, nothing
-   * stores it. Null once the server has been claimed, so the only setup session that ever
-   * exists is one that was printed.
-   *
-   * Not mintable from the constructor: seedAdmin() runs after it, so the admin row does not
-   * exist yet and "is this server claimed" has no answer at that point.
+   * Mints the first-login session on demand — the caller prints it, nothing stores it. Null
+   * once the server is claimed, so the only setup session that ever exists is a printed one;
+   * a claimed server's restart therefore has nothing to revoke. Not mintable from the
+   * constructor: seedAdmin() runs after it, so "is this server claimed" has no answer there.
    */
   mintFirstLogin(): string | null {
     if (!this.adminPasswordIsInitial()) return null;
@@ -202,20 +173,18 @@ export class AuthService {
   }
 
   /**
-   * Startup seeding (idempotent): creates the built-in admin and adopts
-   * default_project when the users table is empty; if the initial Project fails,
-   * the user row is rolled back and the server retries on next startup.
-   * Returns the initial password when it actually seeded — the caller prints it,
-   * the only place a generated password is ever shown — and null when users
-   * already exist.
+   * Startup seeding (idempotent): creates the built-in admin and adopts default_project when
+   * the users table is empty; if the initial Project fails, the user row is rolled back and
+   * the server retries on next startup. The password is hashed and discarded — the account
+   * is claimed through the first-login link.
    */
-  async seedAdmin(): Promise<string | null> {
-    if (this.deps.users.count() > 0) return null;
+  async seedAdmin(): Promise<void> {
+    if (this.deps.users.count() > 0) return;
     const password = this.deps.seedAdminPassword ?? generateInitialAdminPassword();
     // The override (PENGUIN_SEED_ADMIN_PASSWORD) must meet the same policy as every
     // other initial/reset password; rejecting it here, before any insert, keeps a
     // configuration typo from creating a trivially weak privileged account. Generated
-    // passwords are always 12 characters and never trip this.
+    // passwords are 24 characters and never trip this.
     if (password.length < MIN_PASSWORD_LENGTH) {
       throw new Error(
         `PENGUIN_SEED_ADMIN_PASSWORD must be at least ${MIN_PASSWORD_LENGTH} characters.`,
@@ -236,7 +205,6 @@ export class AuthService {
       this.deps.users.delete(user.userId);
       throw err;
     }
-    return password;
   }
 
   /** Installs the current App's provisioning policy (see the `provisioner` field). */
@@ -263,7 +231,7 @@ export class AuthService {
     return this.authenticateWithMeta(expected) === null ? null : expected;
   }
 
-  /** Whether the built-in admin still runs on its initial password (drives the startup reminder notice). */
+  /** Whether the built-in admin still runs on its initial password (gates the first-login link). */
   adminPasswordIsInitial(): boolean {
     return this.deps.users.findById(ADMIN_USER_ID)?.passwordIsInitial === true;
   }
@@ -332,7 +300,6 @@ export class AuthService {
       throw new HttpError(400, "invalid_password", "Password must be at least 8 characters.");
     }
     this.deps.users.updatePassword(userId, await hashPassword(newPassword, this.hashCost), false);
-    this.deps.onPasswordChanged?.(userId);
   }
 
   /**
@@ -349,7 +316,6 @@ export class AuthService {
       throw new HttpError(400, "invalid_password", "Password must be at least 8 characters.");
     }
     this.deps.users.updatePassword(userId, await hashPassword(newPassword, this.hashCost), false);
-    this.deps.onPasswordChanged?.(userId);
   }
 
   /**
@@ -358,58 +324,50 @@ export class AuthService {
    * nothing — its signature already refuses it everywhere.
    */
   logout(token: string): void {
-    const claims = looksSigned(token) ? verifyToken(token, this.deps.tokenSecret) : null;
-    // An unverifiable or already-expired token revokes nothing: its signature refuses it
-    // everywhere already, and a row for it would outlive the thing it describes.
+    const claims = verifyToken(token, this.deps.tokenSecret);
     if (claims === null || claims.exp <= this.now().getTime()) return;
     this.revokedJtis.add(claims.jti);
     this.deps.authRevocations.insert(claims.jti, new Date(claims.exp).toISOString());
   }
 
   /**
-   * Validates the cookie token. Signed tokens verify on CPU alone plus one users read — the
-   * hot path this scheme exists for; the row lookup remains only for sessions issued before
-   * the switch, which age out within one TTL and are never issued again.
+   * Validates the cookie token: signature and expiry on CPU, revocation against the in-memory
+   * set, plus one users read (existence and the per-user not-before mark).
    *
    * Sliding renewal changes shape: a signature cannot be extended, so nearing expiry the
-   * answer carries a REPLACEMENT token for the middleware to set — same claims, fresh
-   * window. Only sessions whose own span is at least the renewal window slide; a short
-   * minted token (an hour) must expire at its hour, not stretch to a week by being used.
+   * answer carries a REPLACEMENT token for the middleware to set — same claims, fresh window.
+   * Only sessions whose own span is at least the renewal window slide; a short minted token
+   * (an hour) must expire at its hour, not stretch to a month by being used.
    */
   authenticateWithMeta(
     token: string,
   ): { user: UserRow; via: SessionVia; renewedToken?: string } | null {
     const now = this.now();
-    if (looksSigned(token)) {
-      const claims = verifyToken(token, this.deps.tokenSecret);
-      if (claims === null) return null;
-      if (claims.exp <= now.getTime()) return null;
-      if (this.revokedJtis.has(claims.jti)) return null;
-      const user = this.deps.users.findById(claims.u);
-      if (!user) return null;
-      // Per-user revocation: an admin password reset stamps the mark, and every token
-      // issued before it dies here — the signed-world replacement for deleteByUser.
-      if (user.sessionsNotBefore !== null && claims.iat < Date.parse(user.sessionsNotBefore)) {
-        return null;
-      }
-      const via: SessionVia =
-        claims.v === "desktop" ? "desktop" : claims.v === "setup" ? "setup" : "password";
-      const renewable = claims.exp - claims.iat >= this.deps.sessionRenewMs;
-      if (renewable && claims.exp - now.getTime() < this.deps.sessionRenewMs) {
-        return {
-          user,
-          via,
-          renewedToken: signToken(
-            newClaims(claims.u, claims.v, now.getTime(), this.deps.sessionTtlMs),
-            this.deps.tokenSecret,
-          ),
-        };
-      }
-      return { user, via };
+    const claims = verifyToken(token, this.deps.tokenSecret);
+    if (claims === null) return null;
+    if (claims.exp <= now.getTime()) return null;
+    if (this.revokedJtis.has(claims.jti)) return null;
+    const user = this.deps.users.findById(claims.u);
+    if (!user) return null;
+    // Per-user revocation: an admin password reset stamps the mark, and every token issued
+    // before it dies here.
+    if (user.sessionsNotBefore !== null && claims.iat < Date.parse(user.sessionsNotBefore)) {
+      return null;
     }
-    // Anything that is not a signed token is not a session: the only per-session state that
-    // survives a request is a revocation.
-    return null;
+    const via: SessionVia =
+      claims.v === "desktop" ? "desktop" : claims.v === "setup" ? "setup" : "password";
+    const renewable = claims.exp - claims.iat >= this.deps.sessionRenewMs;
+    if (renewable && claims.exp - now.getTime() < this.deps.sessionRenewMs) {
+      return {
+        user,
+        via,
+        renewedToken: signToken(
+          newClaims(claims.u, claims.v, now.getTime(), this.deps.sessionTtlMs),
+          this.deps.tokenSecret,
+        ),
+      };
+    }
+    return { user, via };
   }
 
   private issueSession(userId: string, via: SessionVia): string {
@@ -425,15 +383,18 @@ export class AuthService {
    * redeems it when this server's controller asks over ssh, and nothing needs a password or
    * a key at rest to exist. The TTL is capped at the ordinary session TTL — the owner can
    * mint again forever, so a longer-lived token would add risk and no capability.
+   *
+   * One null for both refusals (wrong token / no such user): distinguishing them would let a
+   * caller WITHOUT the token enumerate accounts.
    */
   redeemOwnerToken(
     given: string,
     userId: string,
     ttlMs: number,
-  ): { token: string; expiresAt: string } | "bad_token" | "no_user" {
+  ): { token: string; expiresAt: string } | null {
     const expected = this.deps.ownerToken;
-    if (expected === null || !ownerTokenMatches(given, expected)) return "bad_token";
-    if (this.deps.users.findById(userId) === null) return "no_user";
+    if (expected === null || !ownerTokenMatches(given, expected)) return null;
+    if (this.deps.users.findById(userId) === null) return null;
     const bounded = Math.max(1_000, Math.min(ttlMs, this.deps.sessionTtlMs));
     const claims = newClaims(userId, "cli", this.now().getTime(), bounded);
     return {
