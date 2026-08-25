@@ -3,6 +3,7 @@
 - **Date:** 2026-08-25
 - **Type:** feature
 - **Scope:** `core`, `model-catalog`, `web`, `docs`
+- **PR:** [#465](https://github.com/Prism-Shadow/penguin-harness/pull/465)
 
 [中文版](2026-08-25-tokendance-and-app-attribution.zh.md)
 
