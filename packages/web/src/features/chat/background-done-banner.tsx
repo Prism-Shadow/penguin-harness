@@ -17,14 +17,15 @@ import {
 } from "./disclosure-row";
 
 export function BackgroundDoneBanner({ done, body }: { done: BackgroundTaskDone; body: string }) {
-  const ok = done.status === "completed";
+  const state =
+    done.status === "completed" ? "done" : done.status === "stopped" ? "stopped" : "failed";
   return (
     <div className={DISCLOSURE_CARD_CLASS}>
       <DisclosureRow
         variant="header"
         sticky
-        icon={<StatusIcon state={ok ? "done" : "failed"} label={done.status} />}
-        label={S.chat.backgroundDone(done.kind, ok)}
+        icon={<StatusIcon state={state} label={done.status} />}
+        label={S.chat.backgroundDone(done.kind, done.status)}
       >
         <pre className={DISCLOSURE_OUTPUT_PRE_CLASS}>{body ? `${done.id}\n${body}` : done.id}</pre>
       </DisclosureRow>

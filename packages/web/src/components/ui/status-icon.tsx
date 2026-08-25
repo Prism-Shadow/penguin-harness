@@ -5,7 +5,7 @@
  */
 import { toneInk } from "../../lib/tone";
 
-export type RunState = "running" | "waiting" | "done" | "failed";
+export type RunState = "running" | "waiting" | "done" | "failed" | "stopped";
 
 const GLYPH: Record<Exclude<RunState, "running">, string> = {
   // Hourglass (waiting for approval)
@@ -14,6 +14,8 @@ const GLYPH: Record<Exclude<RunState, "running">, string> = {
   done: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zm-3.5-9.2 2.4 2.5 4.6-4.8",
   // X (failed / interrupted)
   failed: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9 9l6 6m0-6-6 6",
+  // Square (ended on purpose — neither a success to tick nor a fault to flag)
+  stopped: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM8.5 8.5h7v7h-7z",
 };
 
 /** Shared status tones (lib/tone.ts): a settled row recedes, an unfinished one asks for a look. */
@@ -22,6 +24,8 @@ const TONE: Record<RunState, string> = {
   waiting: toneInk.attention,
   done: toneInk.muted,
   failed: toneInk.danger,
+  // A stop is settled and expected: it recedes like "done" rather than flagging danger.
+  stopped: toneInk.muted,
 };
 
 export function StatusIcon({
