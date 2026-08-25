@@ -3,7 +3,7 @@
 - **Date:** 2026-08-24
 - **Type:** refactor
 - **Scope:** `core`, `server`, `docs`
-- **PR:** [#PRNUM](https://github.com/Prism-Shadow/penguin-harness/pull/PRNUM)
+- **PR:** [#459](https://github.com/Prism-Shadow/penguin-harness/pull/459)
 - **Breaking:** yes — `SubagentHandle.run` and `sendToBackgroundSubagent` take an OmniMessage list instead of a string, and the build/version types left the `/interfaces` subpath
 
 [中文版](2026-08-24-interfaces-split.zh.md)
