@@ -1,15 +1,8 @@
 /**
- * Minting a short-lived API session from the machine's own disk, for whoever is already on it.
- *
- * WHAT AUTHORIZES IT is the ability to read AND write the data root: a session is a row in
- * `web.db`, so this opens the database and inserts one — no running server, no loopback hop.
- * Reading the root already reaches every credential the token could, so the write adds no
- * authority it did not have. `via: "cli"` reads as an ordinary password session.
- *
- * That scoping is the point on a MULTI-USER deployment: the data root belongs to the OS
- * account running the server, so only that account (the machine's operator) can mint — for
- * any PenguinHarness account, which changing the database directly already allowed. Everyone
- * else signs in with their password: `penguin auth login --server <url>`.
+ * Mints an API session by inserting a row into the root's `web.db` — no running server needed.
+ * Authorized by being able to read and write that root, which already holds every credential
+ * the token could reach. On a multi-user box that means the OS account running the server;
+ * everyone else signs in with `penguin auth login --server <url>`.
  */
 import path from "node:path";
 import fs from "node:fs";
@@ -17,7 +10,7 @@ import { openExistingDatabase } from "./db/database.js";
 import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
 import { UsersRepo } from "./db/repos/users.js";
 
-/** An hour, matching what a controller needs: long enough to finish, short enough to forget. */
+/** An hour: long enough for a controller to finish, short enough to forget. */
 export const CLI_TOKEN_TTL_MS = 60 * 60_000;
 
 /**

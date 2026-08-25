@@ -1,16 +1,6 @@
 /**
- * The first-run sign-in notice.
- *
- * A fresh server seeds its admin with a random password that is generated, hashed, and
- * discarded — nobody ever sees it, and it is written nowhere. What the operator gets instead
- * is a one-time link carrying this boot's first-login token (auth/service.ts), printed inside
- * a hard-to-miss frame on every start until a password is actually set.
- *
- * Nothing has to be stored for that to be repeatable: the link is regenerated at every boot,
- * so an operator who scrolled past one just restarts.
- *
- * Published as `@prismshadow/penguin-server/initial-password` (side-effect-free, like ./lock)
- * so the CLI can print the same notice when it attaches to a live instance.
+ * The framed first-run notice carrying the first-login link (minted in auth/service.ts).
+ * Exported as `@prismshadow/penguin-server/initial-password` so the CLI can print the same one.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -20,16 +10,11 @@ export function initialAdminPasswordPath(root: string): string {
 }
 
 /**
- * Removes the plaintext a previous build stored here (idempotent, best-effort).
+ * Removes the plaintext an older build stored here (idempotent, best-effort); nothing writes
+ * it any more, and losing it costs a root nothing.
  *
- * Nothing writes this file any more; the sweep runs at every start so a root carried over
- * from an older build stops holding a password in the clear. Losing it costs that root
- * nothing: the account's password is unchanged, and a server still on its initial password
- * prints the first-login link instead.
- *
- * TODO(compat): this whole module goes away — the sweep, the path helper, and the export —
- * once no supported upgrade path can still carry an `initial-admin-password` file, i.e. once
- * the oldest release able to upgrade in place is one that never wrote it.
+ * TODO(compat): this sweep and the path helper go once no supported upgrade path can still
+ * carry an `initial-admin-password` file.
  */
 export function clearInitialAdminPassword(root: string): void {
   try {
@@ -43,11 +28,8 @@ export function clearInitialAdminPassword(root: string): void {
 const NOTICE_PADDING = 3;
 
 /**
- * The framed notice, ready for console.log. Plain ASCII (`+`/`-`/`|`) rather than
- * box-drawing characters: the server may run under terminals and log collectors with
- * non-UTF-8 code pages (legacy Windows consoles above all), and a misrendered frame would
- * bury exactly the line it exists to highlight. Width follows the longest line, so a long
- * origin widens the frame instead of breaking it.
+ * Plain ASCII rather than box-drawing characters: a non-UTF-8 console (legacy Windows above
+ * all) would mangle the frame around exactly the line it exists to highlight.
  */
 export function renderFirstLoginNotice(url: string): string {
   const lines = [

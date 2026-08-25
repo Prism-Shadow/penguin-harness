@@ -1,10 +1,6 @@
 /**
- * Auth middleware: cookie -> signed-token verification -> user injected into c.var.
- *
- * Accessing a protected API while logged out -> 401 `{error:{code:"unauthorized"}}`.
- * CSRF (MVP): SameSite=Lax cookie + write requests only accept
- * `Content-Type: application/json` (an HTML form can't forge that Content-Type),
- * see the README security notes.
+ * Auth middleware: session cookie -> auth_sessions row -> user on c.var; 401 when absent.
+ * CSRF: SameSite=Lax plus a Content-Type an HTML form cannot forge (see jsonOnlyWrites).
  */
 import type { MiddlewareHandler } from "hono";
 import { getCookie, setCookie } from "hono/cookie";

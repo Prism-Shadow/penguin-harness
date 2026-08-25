@@ -1,14 +1,10 @@
 /**
  * Auth service: admin seeding / login / logout / password change / session validation.
  *
- * - No open registration: an empty users table seeds the built-in `admin` with a random
- *   password that is hashed and discarded unseen (PENGUIN_SEED_ADMIN_PASSWORD pins one for
- *   tests/e2e); the account is claimed through the first-login link, and every other user
- *   is created by an admin (admin-service). An initial password — seeded or admin-set — is
- *   flagged password_is_initial, which the frontend turns into a change-it-soon prompt.
- * - Sessions are rows in auth_sessions: the cookie carries a 32-byte random token, the row
- *   stores only its sha256. A session outlives a restart (it is on disk); 30 days, renewed
- *   in place when used with under 29 days left. Logout deletes the row.
+ * No open registration: an empty users table seeds `admin` with a random password hashed and
+ * discarded unseen, claimed through the first-login link; every other user is created by an
+ * admin. Sessions are rows in auth_sessions (cookie holds the token, the row its sha256), so
+ * they outlive a restart and renew in place.
  */
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import type { UserInfo } from "../api/types.js";
@@ -24,14 +20,11 @@ export const MIN_PASSWORD_LENGTH = 8;
 export const ADMIN_USER_ID = "admin";
 
 /**
- * Login throttling, per userId — what a human-chosen password has to survive (seeded ones are
- * 144 bits). After LOGIN_FREE_ATTEMPTS consecutive failures, the next attempt waits an
- * exponentially growing delay (1s doubling to the 60s cap; attempts inside the window are 429
- * and do not extend it), so attacking any one account settles at a guess per minute while a
- * mistyping user never waits over the cap. Success clears the counter. Counters live in
- * process memory (a restart is slower than the cap) and are kept for nonexistent userIds too,
- * so throttling is not an account-existence oracle. Deliberately NOT covered: a concurrent
- * burst before the first failure lands, and callers spreading guesses across many accounts.
+ * Login throttling, per userId. After LOGIN_FREE_ATTEMPTS failures each attempt waits an
+ * exponentially growing delay (1s doubling to a 60s cap), settling at a guess per minute.
+ * Kept for nonexistent userIds too, so it is not an account-existence oracle. Deliberately NOT
+ * covered: a concurrent burst before the first failure lands, and guesses spread across many
+ * accounts.
  */
 const LOGIN_FREE_ATTEMPTS = 5;
 const LOGIN_BACKOFF_START_MS = 1000;
@@ -43,10 +36,8 @@ const LOGIN_FAILURE_IDLE_MS = 15 * 60_000;
 const SEED_PASSWORD_CHARS = 24;
 
 /**
- * The password a seeded or reset admin carries until claimed via the first-login link.
- * Nobody reads or types it — hashed at once and discarded — which is what lets it be long
- * enough that the login endpoint, reachable from the moment the account exists, has no
- * search space to offer.
+ * Never read or typed — hashed at once and discarded — which is what lets it be long enough
+ * that the login endpoint, reachable the moment the account exists, has no search space.
  */
 export function generateInitialAdminPassword(): string {
   return randomBytes(SEED_PASSWORD_CHARS).toString("base64url").slice(0, SEED_PASSWORD_CHARS);
@@ -60,12 +51,8 @@ function constantTimeEqual(a: string, b: string): boolean {
 }
 
 /**
- * How a session was established: the login form, the desktop shell's one-shot token, or the
- * first-login link. Two allowances key off it: "desktop" and "setup" may set a password
- * without the old one (their account's current password is random and was never shown), and
- * desktop-only routes open to "desktop" alone — "setup" proves someone read this boot's
- * link, not that they own the machine. Anything else ("cli" on minted tokens) reads as
- * "password", the least-privileged kind.
+ * "desktop" and "setup" may set a password without the old one (theirs is random and was never
+ * shown); desktop-only routes open to "desktop" alone. Anything else reads as "password".
  */
 export type SessionVia = "password" | "desktop" | "setup";
 
@@ -93,11 +80,7 @@ export interface AuthServiceDeps {
 }
 
 export class AuthService {
-  /**
-   * Provisioning is business policy answered by the CURRENT App: each swap installs its
-   * answer over the claimed auth capability, overwriting its predecessor's. Starts as the
-   * constructor-supplied fallback so standalone/test constructions work unchanged.
-   */
+  /** Business policy, reinstalled by each App swap; the constructor value is the fallback. */
   private provisioner: (user: UserRow, isAdmin: boolean) => Promise<void>;
 
   private readonly now: () => Date;
@@ -121,11 +104,9 @@ export class AuthService {
   }
 
   /**
-   * Mints the first-login session on demand — the caller prints its token, nothing else
-   * stores it. Null once the server is claimed, so the only setup session that ever exists is
-   * a printed one. Not mintable from the constructor: seedAdmin() runs after it, so "is this
-   * server claimed" has no answer there. A cached link whose row has expired or been deleted
-   * is re-minted, not handed out dead.
+   * Null once the server is claimed, so the only setup session that exists is a printed one.
+   * On demand rather than in the constructor: seedAdmin() runs after it, so "claimed?" has no
+   * answer there. A cached link whose row is gone is re-minted, not handed out dead.
    */
   mintFirstLogin(): string | null {
     if (!this.adminPasswordIsInitial()) return null;
@@ -137,10 +118,9 @@ export class AuthService {
   }
 
   /**
-   * Whether `password` is the admin's current password. Sole consumer: the startup notice's
-   * pinned-seed gate (index.ts) — a pin normally means the operator knows the password, but
-   * an offline reset makes the pin stale while it is still configured, and the gate must see
-   * through that or the rescue flow (the link) stays suppressed.
+   * For the startup notice's pinned-seed gate (index.ts): a pin usually means the operator
+   * knows the password, but an offline reset makes it stale, and the gate must see through
+   * that or the rescue link stays suppressed.
    */
   async adminPasswordIs(password: string): Promise<boolean> {
     const row = this.deps.users.findById(ADMIN_USER_ID);
@@ -264,20 +244,14 @@ export class AuthService {
     await this.setPassword(userId, newPassword);
   }
 
-  /**
-   * Sets a password with no old-password check — for the two session kinds whose account's
-   * current password is random and was never shown ("desktop"/"setup"; the me route gates
-   * which sessions may call this).
-   */
+  /** No old-password check; the me route gates which sessions may call this. */
   async setInitialPassword(userId: string, newPassword: string): Promise<void> {
     await this.setPassword(userId, newPassword);
   }
 
   /**
-   * The shared tail of every password set: policy check, hash, store, and — for the admin —
-   * the deletion of any live first-login session. Validation comes FIRST, so a rejected
-   * attempt (too short) leaves the link alive: burning it on a typo would strand the claimer
-   * until a restart.
+   * Validation comes FIRST, so a rejected password leaves the first-login link alive: burning
+   * it on a typo would strand the claimer until a restart.
    */
   private async setPassword(userId: string, newPassword: string): Promise<void> {
     if (newPassword.length < MIN_PASSWORD_LENGTH) {
@@ -300,12 +274,9 @@ export class AuthService {
   }
 
   /**
-   * Validates the cookie token: one indexed read of auth_sessions, plus the user row. An
-   * expired row is deleted and refused. Sliding renewal tops the expiry up IN PLACE (the
-   * cookie value never changes, so there is no second identity to revoke); only a session
-   * whose own span is at least the renewal window slides, so a short minted token (an hour)
-   * expires at its hour rather than stretching to a month by being used. `renewed` tells the
-   * middleware to refresh the cookie's own max-age to match.
+   * Sliding renewal tops the expiry up IN PLACE, so the cookie value never changes and there
+   * is no second identity to revoke. Only a session whose own span reaches the renewal window
+   * slides — a one-hour minted token must expire at its hour, not stretch by being used.
    */
   authenticateWithMeta(token: string): { user: UserRow; via: SessionVia; renewed: boolean } | null {
     const tokenHash = sessionTokenHash(token);

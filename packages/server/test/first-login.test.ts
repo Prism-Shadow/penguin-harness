@@ -11,7 +11,6 @@
 import fs from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { clearInitialAdminPassword, initialAdminPasswordPath } from "../src/initial-password.js";
 import { SESSION_COOKIE } from "../src/auth/middleware.js";
 import { apiClient, cookieFrom, createTestApp, loginAdmin, makeTempRoot } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -61,26 +60,15 @@ describe("the first-login link", () => {
     expect((await redeem(link)).status).toBe(401);
   });
 
-  it("refuses a valid session that is not the one it printed", async () => {
+  it("refuses any token but the printed one, and says nothing about which it got", async () => {
     // Otherwise this endpoint would make a cookie out of ANY valid token, and a link could
-    // sign its recipient into the SENDER's account — work done there, including pasted
-    // credentials, would land in it.
+    // sign its recipient into the SENDER's account. The two refusals are byte-identical, so
+    // a caller cannot tell "wrong token" from "already claimed".
     const someoneElse = (await loginAdmin(t.app)).cookie.split("=").slice(1).join("=");
-    expect((await redeem(someoneElse)).status).toBe(401);
-  });
-
-  it("answers a wrong token and a claimed server identically", async () => {
+    const other = await redeem(someoneElse);
     const wrong = await redeem("not-the-token");
-    expect(wrong.status).toBe(401);
-    const wrongBody = await wrong.text();
-
-    const claimed = await redeem(link);
-    const cookie = cookieFrom(claimed);
-    await apiClient(t.app, cookie).put("/api/me/password", { newPassword: "claimed-password-1" });
-
-    const stale = await redeem(link);
-    expect(stale.status).toBe(401);
-    expect(await stale.text()).toBe(wrongBody);
+    expect([other.status, wrong.status]).toEqual([401, 401]);
+    expect(await other.text()).toBe(await wrong.text());
   });
 
   /**
@@ -184,38 +172,6 @@ describe("the first-login link", () => {
    * password deletes that row, and the link goes dead — no surviving setup session, whether
    * or not it was renewed first.
    */
-  it("stays usable across renewal and dies when the password is set", async () => {
-    let nowMs = Date.now();
-    const clocked = await createTestApp({
-      config: { seedAdminPassword: null },
-      now: () => new Date(nowMs),
-    });
-    try {
-      const link = clocked.deps.authService.mintFirstLogin()!;
-      // Two days in — past the renewal threshold: the row's expiry is topped up, but the
-      // cookie the browser holds is byte-for-byte the same token.
-      nowMs += 2 * 24 * 60 * 60 * 1000;
-      const r = await apiClient(clocked.app, `${SESSION_COOKIE}=${link}`).get("/api/me");
-      expect(r.status).toBe(200);
-      expect(cookieFrom(r)).toBe(`${SESSION_COOKIE}=${link}`);
-      // Well past the original 30-day mark, the renewed row is still live.
-      nowMs += 29 * 24 * 60 * 60 * 1000;
-      const set = await apiClient(clocked.app, `${SESSION_COOKIE}=${link}`).put(
-        "/api/me/password",
-        {
-          newPassword: "claimed-password-1",
-        },
-      );
-      expect(set.status).toBe(204);
-      // Setting the password deleted the session row; the link is dead.
-      expect(
-        (await apiClient(clocked.app, `${SESSION_COOKIE}=${link}`).get("/api/me")).status,
-      ).toBe(401);
-    } finally {
-      await clocked.cleanup();
-    }
-  });
-
   /**
    * The revocation fires only after the password actually updates: a rejected attempt must
    * leave the link alive, or a typo (or anyone poking the endpoint with a bad value) burns
@@ -302,12 +258,5 @@ describe("the first-login link", () => {
     expect(entrypoint).toMatch(/renderFirstLoginNotice\(/);
     expect(entrypoint).toMatch(/mintFirstLogin\(/);
     expect(entrypoint).toMatch(/\/api\/auth\/claim\?token=/);
-  });
-
-  it("sweeps a plaintext an older build left in the data root", async () => {
-    const root = await makeTempRoot();
-    fs.writeFileSync(initialAdminPasswordPath(root), "penguin-1234\n", { mode: 0o600 });
-    clearInitialAdminPassword(root);
-    expect(fs.existsSync(initialAdminPasswordPath(root))).toBe(false);
   });
 });

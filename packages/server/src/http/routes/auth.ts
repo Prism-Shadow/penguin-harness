@@ -3,10 +3,8 @@
  * No self-registration: users are created by an admin in the user backend (/api/admin/users).
  * Login issues a cookie session; logout deletes its row and clears the cookie.
  *
- * `claim` is the one password-free entry: it answers a BROWSER with no session yet — the only
- * way to give one of those a session is for the server to set an HttpOnly cookie — and proves
- * either that someone read this boot's console (first-login) or that they are the desktop
- * shell's own window. See the handler for why it is admin-only and not single-use.
+ * `claim` is the one password-free entry, and answers a browser with no session yet: only the
+ * server can set an HttpOnly cookie, hence a GET that redirects rather than a call.
  */
 import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
@@ -42,19 +40,10 @@ export function authRoutes(deps: AppDeps): Hono<AppEnv> {
   });
 
   /**
-   * Claims a session from a sign-in link — the only way to sign a window in when it has none,
-   * since the session cookie is HttpOnly and nothing but the server can set one.
-   *
-   * Two proofs arrive here, asserting different facts and expiring differently. The desktop
-   * shell's token says this window belongs to the shell that owns the server process, and is
-   * spent on first use. The first-login link says someone read the console of a server that
-   * has never had a password, and keeps working until one exists: a link that a mail client
-   * or a browser may prefetch cannot afford to be one-shot, and the window it stays open is
-   * exactly the window in which the account protects nothing yet. Redeeming it twice returns
-   * the same session, not two.
-   *
-   * Both answer failure with the same 401, so a caller learns nothing about which of the two
-   * it got wrong — nor whether the server offers that kind at all.
+   * Two proofs, expiring differently: the desktop shell's token is spent on first use, while
+   * the first-login link keeps working until a password exists — a link a mail client may
+   * prefetch cannot afford to be one-shot, and until then the account protects nothing.
+   * Both fail with the same 401, so a caller learns nothing about which it got wrong.
    */
   app.get("/claim", (c) => {
     const token = c.req.query("token") ?? "";
