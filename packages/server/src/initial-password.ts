@@ -1,7 +1,4 @@
-/**
- * The framed first-run notice carrying the first-login link (minted in auth/service.ts).
- * Exported as `@prismshadow/penguin-server/initial-password` so the CLI can print the same one.
- */
+/** The framed first-run notice carrying the first-login link (minted in auth/service.ts). */
 import fs from "node:fs";
 import path from "node:path";
 
@@ -10,11 +7,9 @@ export function initialAdminPasswordPath(root: string): string {
 }
 
 /**
- * Removes the plaintext an older build stored here (idempotent, best-effort); nothing writes
- * it any more, and losing it costs a root nothing.
+ * Removes the plaintext an older build stored here; nothing writes it any more.
  *
- * TODO(compat): this sweep and the path helper go once no supported upgrade path can still
- * carry an `initial-admin-password` file.
+ * TODO(compat): goes once no supported upgrade path can carry an `initial-admin-password`.
  */
 export function clearInitialAdminPassword(root: string): void {
   try {
@@ -24,7 +19,6 @@ export function clearInitialAdminPassword(root: string): void {
   }
 }
 
-/** Interior padding (spaces) between the frame bars and the text on each side. */
 const NOTICE_PADDING = 3;
 
 /**

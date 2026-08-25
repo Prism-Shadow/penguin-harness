@@ -164,12 +164,9 @@ export class AuthService {
   }
 
   /**
-   * Redeems this boot's first-login token for a setup session. Compared against the printed
-   * value rather than merely verified: an endpoint that made a cookie out of ANY valid token
-   * would let one person hand another a link that signs them into the sender's account. Not
-   * single-use on purpose — a prefetching browser would burn a one-shot token and strand the
-   * person holding it, and the window it stays open is exactly the window in which the
-   * account protects nothing yet.
+   * Compared against the printed value, not merely verified: a cookie made out of ANY valid
+   * token would let one person hand another a link into the sender's account. Not single-use,
+   * because a prefetching browser would burn it before its reader clicked.
    */
   redeemFirstLogin(given: string): string | null {
     const expected = this.firstLogin;

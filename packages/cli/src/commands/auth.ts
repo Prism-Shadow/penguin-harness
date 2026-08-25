@@ -6,17 +6,13 @@
  *   penguin auth logout [--root <dir>]
  *   penguin auth token  [--user-id <id>] [--ttl-seconds <n>] [--root <dir>]
  *
- * `login` takes a password and asks a RUNNING server over HTTP, as the browser's login page
- * does — use it against any server you have the password for, remote included, since the
- * target is a URL. `token` takes no password: it mints a session from the data root on THIS
- * machine, authorized by the ability to read that root (which already holds every credential
- * the token could reach), for where there is no password to give — a hand-set admin password,
- * a script that must not carry one, or a controller reaching a managed machine over ssh
- * (`--mark`).
+ * `login` takes a password and asks a RUNNING server, so it works against a remote URL too.
+ * `token` takes none: it mints from the data root on THIS machine, authorized by being able
+ * to read it — for a hand-set admin password, a script that must not carry one, or a
+ * controller reaching a managed machine over ssh (`--mark`).
  *
- * The session is written to `<root>/cli-session.json` (0600) so a shell's history is not where
- * a credential ends up; `status`/`logout`/`--print` read it, while `config`/`run`/`chat` work
- * on the data root directly. Docs: /docs/cli § "penguin auth".
+ * The session lands in `<root>/cli-session.json` (0600) rather than a shell's history.
+ * Docs: /docs/cli § "penguin auth".
  */
 import { mintApiToken } from "@prismshadow/penguin-server/auth-token";
 import { liveServerLock } from "@prismshadow/penguin-server/lock";
@@ -48,13 +44,9 @@ const DEFAULT_USER = "admin";
 export const TOKEN_MARK = "---penguin-auth-token---";
 
 /**
- * What the server said about a refusal, as one line.
- *
- * The API's own error body is the normal case and is quoted in full — a truncated reason is
- * worse than no reason, since there is no way to tell which you got. Anything else is not the
- * API answering (a proxy's HTML page, a gateway's plain text), so it is collapsed to a single
- * line and bounded, with the cut MARKED: a wall of markup helps nobody, and silently keeping
- * the first N characters would present a fragment as the whole message.
+ * What the server said about a refusal, as one line. The API's own error body is quoted in
+ * full; anything else (a proxy's HTML page) is collapsed and bounded with the cut MARKED, so a
+ * fragment is never presented as the whole message.
  */
 function serverSaid(text: string): string {
   try {
@@ -95,31 +87,26 @@ export function registerAuthCommand(program: Command, t: Messages): void {
         root?: string;
       }) => {
         const root = resolveRootOption(opts.root);
-        // Defaults to the server running on this data root: the overwhelmingly common case is
-        // signing in to your own, and reading its port from its lock beats retyping it. But a
-        // password is about to be sent there, so the DEFAULT target is taken from a verified
-        // live lock (PID alive + port accepting) — a stale lock left by a crashed server can
-        // point at a port some other local process now holds, and the password must not go to
-        // it. An explicit --server is the caller's own responsibility and is trusted as given.
+        // A password is about to be sent here, so the default target comes from a VERIFIED
+        // live lock (PID + port): a stale one from a crashed server may name a port another
+        // process now holds. An explicit --server is the caller's own responsibility.
         let server: string | null = opts.server ?? null;
         if (server === null) {
           const lock = await liveServerLock(root);
           server = lock === null ? null : `http://localhost:${lock.port}`;
         }
         if (server === null) return fail(t.auth.noServer(root));
-        // A password given non-interactively means a script, and a script must not be stopped
-        // to answer a question it has no way to answer. Only when we are going to ask for the
-        // password anyway is the account asked for too — otherwise it defaults, as it always did.
+        // A script cannot answer a prompt, so a non-interactive password suppresses both
+        // questions; the account is only asked for when the password will be too.
         const given = opts.password ?? process.env.PENGUIN_PASSWORD;
         const userId =
           opts.userId ??
           (given === undefined && process.stdin.isTTY === true
             ? await promptLine(t.auth.accountPrompt(DEFAULT_USER), DEFAULT_USER)
             : DEFAULT_USER);
-        // Env before prompt so this scripts, but never as an ARGUMENT by default: argv is
-        // world-readable through ps, and --password is offered only because a caller who has
-        // already accepted that (a CI runner, a private box) should not be forced into a TTY.
-        // The prompt names the account, so nobody types one account's password at another's.
+        // Env before prompt, but never argv by default: a command line is world-readable
+        // through ps. The prompt names the account, so one account's password is not typed
+        // at another's.
         const password = given ?? (await promptPassword(t.auth.prompt(userId)));
         if (password === "") return fail(t.auth.emptyPassword);
 
@@ -144,8 +131,7 @@ export function registerAuthCommand(program: Command, t: Messages): void {
         if (token === null) return fail(t.auth.noCookie);
         writeSession(root, { server, userId, token });
         process.stderr.write(t.auth.loggedIn(userId, server, sessionFile(root)) + "\n");
-        // The token itself goes to STDOUT and only when asked, so it can be piped without the
-        // surrounding prose, and cannot end up in a log by accident.
+        // STDOUT and only on request, so it pipes cleanly and never lands in a log by accident.
         if (opts.print) process.stdout.write(token + "\n");
       },
     );
@@ -181,9 +167,8 @@ export function registerAuthCommand(program: Command, t: Messages): void {
         process.stdout.write(t.auth.notLoggedIn(sessionFile(root)) + "\n");
         return;
       }
-      // Told to the server first, so the session is revoked THERE and not merely forgotten
-      // here — a token deleted only locally stays valid for whoever else has a copy. A server
-      // that cannot be reached does not block the local clear: the file goes either way.
+      // Server first: a token deleted only locally stays valid for whoever else holds a copy.
+      // An unreachable server does not block the local clear.
       let revoked = false;
       try {
         const answer = await call(session.server, {
@@ -217,10 +202,9 @@ export function registerAuthCommand(program: Command, t: Messages): void {
         return fail(t.authToken.badTtl);
       }
       const root = resolveRootOption(opts.root);
-      // No server needed: the token is a session row this writes straight into web.db, which
-      // reading the data root already authorizes (auth-token.ts). Safe while the server runs.
-      // PENGUIN_WEB_DB is honored exactly as the server and `reset-admin-password` honor it —
-      // minting into the wrong file would print a token the live server refuses.
+      // A session row written straight into web.db (auth-token.ts); no server needed, and safe
+      // while one runs. PENGUIN_WEB_DB honored as everywhere else, or the token would be
+      // minted into a file the live server never reads.
       const result = mintApiToken(root, {
         userId: opts.userId,
         ...(process.env.PENGUIN_WEB_DB ? { dbPath: process.env.PENGUIN_WEB_DB } : {}),
@@ -232,9 +216,8 @@ export function registerAuthCommand(program: Command, t: Messages): void {
       if (result.outcome === "failed") {
         return fail(t.authToken.failed(result.detail));
       }
-      // The session file records where to send a later `logout`, so the URL comes from a
-      // LIVE lock: a stale one from a crashed server names a port another process may now
-      // hold, and logging out would hand it the token (same rule as `login` above).
+      // The session file says where a later `logout` goes, so the URL comes from a live lock
+      // — a stale one would hand the token to whatever now holds that port.
       const lock = await liveServerLock(root);
       const server = lock === null ? null : `http://localhost:${lock.port}`;
       if (server !== null) {
@@ -245,10 +228,8 @@ export function registerAuthCommand(program: Command, t: Messages): void {
           expiresAt: result.expiresAt,
         });
       }
-      // Bare by default, so `TOKEN=$(penguin auth token)` is the obvious thing. `--mark`
-      // prefixes a fixed line for a caller reading this out of a shell it does not control:
-      // a login profile that prints a banner would otherwise put its own text on the same
-      // stream, and a reader taking "the last line" would take the banner.
+      // Bare so `TOKEN=$(penguin auth token)` works. `--mark` prefixes a fixed line for a
+      // caller parsing this out of a shell whose banner would otherwise be the last line.
       if (opts.mark) process.stdout.write(TOKEN_MARK + "\n");
       process.stdout.write(result.token + "\n");
     });

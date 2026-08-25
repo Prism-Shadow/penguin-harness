@@ -12,12 +12,9 @@ import type { AuthService, SessionVia } from "./service.js";
 export const SESSION_COOKIE = "penguin_session";
 
 /**
- * Session cookie attributes, shared by every path that sets one.
- *
- * `maxAge` is passed in rather than written here, and every caller takes it from the one
- * service that issues the sessions: the token carries the authoritative expiry, and a cookie
- * that expired FIRST would log someone out while their session was still valid — which is what
- * two independently written numbers eventually do.
+ * Session cookie attributes, shared by every path that sets one. `maxAge` comes from the
+ * service that issues the sessions, never written here: the ROW carries the authoritative
+ * expiry, and a cookie that expired first would log someone out mid-session.
  */
 export function cookieOptions(
   c: { req: { url: string; header(name: string): string | undefined } },

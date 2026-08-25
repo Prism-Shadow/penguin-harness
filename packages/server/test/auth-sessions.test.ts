@@ -124,7 +124,7 @@ describe("auth sessions", () => {
     }
   });
 
-  it("slides a long session in place (same cookie), and never stretches a short one", async () => {
+  it("slides a long session in place, so the cookie value never changes", async () => {
     let nowMs = Date.now();
     const t = await createTestApp({ now: () => new Date(nowMs) });
     try {

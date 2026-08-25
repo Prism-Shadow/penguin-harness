@@ -1,25 +1,10 @@
 /**
- * Offline admin-password reset — the rescue path when the Web admin password is
- * forgotten (`penguin server reset-admin-password`).
- *
- * The admin can reset every OTHER user from the user-management page, but nobody can reset
- * the admin itself once its password is lost. This module closes that gap from the machine
- * that owns the data root: it returns the account to the UNCLAIMED state — a random password
- * nobody has ever seen, flagged password_is_initial, with every one of the admin's sessions
- * revoked. The next server start then prints a first-login link, exactly as a fresh install
- * does, and claiming it sets a real password.
- *
- * No plaintext is produced or stored, so there is nothing for the caller to write down and
- * nothing left on disk afterwards. The rescue is "start the server and open the link".
- *
- * web.db is single-process / single-writer (see db/database.ts and lock.ts), so the
- * reset refuses while a live server owns the root: the caller tells the user to stop it
- * first. Requiring local filesystem access is the authorization model — whoever can run
- * this already owns the SQLite database sitting next to the file it writes.
- *
- * Published as `@prismshadow/penguin-server/reset-admin-password` (side-effect-free,
- * like ./lock) so the CLI can run the reset without importing the package entry, which
- * starts listening.
+ * Offline rescue for a forgotten admin password — nobody can reset the admin from the web UI,
+ * so this does it from the machine that owns the data root (local filesystem access IS the
+ * authorization). The account goes back to unclaimed and the next start prints a first-login
+ * link, so no plaintext is produced for anyone to write down. Refuses while a server is live,
+ * web.db being single-writer. Exported as `@prismshadow/penguin-server/reset-admin-password`
+ * so the CLI need not import the package entry, which starts listening.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -42,11 +27,7 @@ export type ResetAdminPasswordResult =
   /** Returned to the unclaimed state: start the server and open the first-login link it prints. */
   | { outcome: "reset" };
 
-/**
- * Returns the built-in admin to the unclaimed state. `dbPath` defaults to the root's
- * `web.db`; callers honoring PENGUIN_WEB_DB pass the resolved path, while `root` stays the
- * root itself — the sweep below is addressed to the root's own layout, not to the database.
- */
+/** `dbPath` may be elsewhere (PENGUIN_WEB_DB); `root` stays the root, which the sweep needs. */
 export async function resetAdminPassword(
   root: string,
   dbPath: string = path.join(root, "web.db"),
@@ -60,15 +41,10 @@ export async function resetAdminPassword(
   try {
     const users = new UsersRepo(db);
     if (users.findById(ADMIN_USER_ID) === null) return { outcome: "no_admin" };
-    // Random and discarded: the account is being returned to "never claimed", and the
-    // first-login link is what claims it. A value nobody holds cannot be typed, phished,
-    // or left in a terminal buffer.
+    // Discarded unread: a value nobody holds cannot be typed, phished, or left in a buffer.
     const password = generateInitialAdminPassword();
     users.updatePassword(ADMIN_USER_ID, await hashPassword(password), true);
-    // Every admin session is deleted, so the ones held before the reset stop working; the
-    // next start prints a first-login link, exactly as a fresh install does.
     new AuthSessionsRepo(db).deleteByUser(ADMIN_USER_ID);
-    // Nothing writes it any more; sweep a plaintext an older build may have left behind.
     clearInitialAdminPassword(root);
     return { outcome: "reset" };
   } finally {
