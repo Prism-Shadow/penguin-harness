@@ -13,6 +13,7 @@ import { useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
 import { useSessions } from "../../state/sessions";
 import { PrefRow } from "./setting-row";
+import { TraceImportRow } from "./trace-import-row";
 
 export function GeneralSection() {
   const { lang, setLang } = useLocale();
@@ -42,6 +43,8 @@ export function GeneralSection() {
       <PrefRow label={S.settings.showCliSessions} info={S.settings.showCliSessionsInfo}>
         <Switch checked={showCliSessions} onChange={setShowCliSessions} />
       </PrefRow>
+      {/* Beside the filter above: both rows decide what the conversation list holds. */}
+      <TraceImportRow />
     </div>
   );
 }

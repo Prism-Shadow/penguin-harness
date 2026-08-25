@@ -217,14 +217,17 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   await msgCopy.click();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("Help me set up @theme");
 
-  // --- traces --- (scope to <main>; the global sidebar also lists the session title)
-  await page.goto(`${BASE}/traces`);
+  // --- traces --- the dock's Trace panel is the only way to read a Trace. It opens on
+  // THIS conversation's newest file, so there is no tree to drill down. The bottom dock,
+  // to leave the right one closed for the files block below; scope to <main> (which holds
+  // the docks) since the global sidebar also lists the session title.
+  await page.getByTestId("dock-toggle-bottom").click();
+  const bottomDock = page.locator("[data-testid='dock'][data-position='bottom']");
+  await bottomDock.getByTestId("dock-pick-trace").click();
   const main = page.locator("main");
-  // Auto-generated title should appear in the traces tree (agents default-expanded).
-  const titleNode = main.getByText("Configure Tailwind theme").first();
-  await expect(titleNode).toBeVisible();
-  await titleNode.click();
-  await expect(main.getByText("轨迹观测").first()).toBeVisible();
+  await expect(main.locator('[data-tab-id="trace"][data-active="true"]')).toBeVisible();
+  // The file pills name the Session's own Trace files, newest first.
+  await expect(main.getByText("Trace 文件").first()).toBeVisible();
   // Legend shows the 5 fixed categories (tool-exec renamed).
   await expect(main.getByText("工具调用执行").first()).toBeVisible();
   await expect(main.getByText("模型回复").first()).toBeVisible();
@@ -261,6 +264,8 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   await expect(seg).toBeVisible();
   await seg.hover();
   await expect(main.locator("button.bg-amber-50").first()).toBeVisible();
+  // Put the dock away: the files block below opens the right dock from a closed state.
+  await page.getByTestId("dock-toggle-bottom").click();
 
   // --- files: HTML preview (isolated separate-origin iframe, scripts + storage) + path hidden ---
   // run.sh binds 127.0.0.1 and the spec browses on localhost, so previewIsolated=true and the

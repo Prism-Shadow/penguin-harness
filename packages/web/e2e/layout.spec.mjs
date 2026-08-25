@@ -828,7 +828,7 @@ test("layout: no page grows the document (absolute descendants stay in their scr
   // A short viewport puts the second Agent's node below the fold with a handful of Sessions
   // instead of dozens — the same geometry a full-height window reaches with a longer list.
   await page.setViewportSize({ width: 1440, height: 420 });
-  const paths = ["/traces", "/chat", "/agents", "/agents/default_agent", "/skills", "/models"];
+  const paths = ["/chat", "/agents", "/agents/default_agent", "/skills", "/models"];
   const grewBy = (p) =>
     p.evaluate(() => {
       const de = document.documentElement;

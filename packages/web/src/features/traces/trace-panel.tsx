@@ -1,10 +1,11 @@
 /**
- * Trace panel — the current conversation's Trace files as a dock tab, reusing the traces
- * page's file view (performance timeline + event list) scoped to one Session. The file
- * pills page newest-first; the export link downloads the selected file raw. Cross-Session
- * browsing stays on the /traces page, which no longer has a UI entry point of its own —
- * this panel is the only way in from the app, and is the "what did this conversation do"
- * view. The page is still reachable by URL, for shared links and its import/export controls.
+ * Trace panel — the current conversation's Trace files as a dock tab, wrapping the shared
+ * file view (performance timeline + event list) around one Session. The file pills page
+ * newest-first; the export link downloads the selected file raw. This is the ONLY way to
+ * read a Trace: the standalone cross-Session browsing page is gone, so a Trace is read
+ * where it was produced, as the "what did this conversation do" view. Importing a Trace
+ * from another install is the one thing that outlived the page — it moved to System
+ * settings, beside the CLI-sessions filter.
  *
  * Loading is gated on `active` (the dock keeps inactive tabs mounted): the listing is
  * fetched on the first show and re-fetched on every re-show, so a Task that finished while

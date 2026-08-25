@@ -1,10 +1,10 @@
 /**
- * Shared building blocks of the grouped Session lists (the chat sidebar and the Trace
- * page's directory tree render the same structure — group header, collapsed lazy
- * folders, "More" rows, the Workspace/Agent grouping toggle). Extracted verbatim from
- * sidebar.tsx's inner closures so the two surfaces cannot drift apart visually: the
- * markup and classes here ARE the sidebar's; callers pass the state the closures used
- * to capture.
+ * Building blocks of the chat sidebar's grouped Session list — group header, collapsed
+ * lazy folders, the reveal/collapse rows, the group pager. Extracted from sidebar.tsx's
+ * inner closures, which is why the markup and classes here ARE the sidebar's and callers
+ * pass the state those closures used to capture. The Trace page's directory tree used to
+ * render the same structure from here; that page is gone, so this is now one surface's
+ * vocabulary kept in one file rather than a contract between two.
  */
 import type { DragEvent as ReactDragEvent, ReactNode } from "react";
 import { S } from "../../lib/strings";
@@ -46,19 +46,6 @@ export const REORDER_ICON = "m21 16-4 4-4-4M17 20V4M3 8l4-4 4 4M7 4v16";
 
 /** Grouping mode of a Session list (persisted; Workspace is the default). */
 export type GroupMode = "workspace" | "agent" | "time";
-
-/**
- * The grouping modes a Trace-file tree can offer. Its rows are trace files keyed by
- * Session id and carry no activity timestamp, so there is nothing to cut time buckets
- * on; a stored "time" preference reads there as the Workspace grouping it falls back to
- * (treeGroupMode), and its two-icon toggle offers exactly these two.
- */
-export type TreeGroupMode = "workspace" | "agent";
-
-/** The nearest mode a Trace-file tree supports (see TreeGroupMode). */
-export function treeGroupMode(mode: GroupMode): TreeGroupMode {
-  return mode === "agent" ? "agent" : "workspace";
-}
 
 /**
  * Leading glyph per grouping mode — the one place these are chosen, read by both the
@@ -110,42 +97,6 @@ export function newEntityForGroupMode(mode: GroupMode): "agent" | "workspace" | 
 
 export function storeGroupMode(mode: GroupMode): void {
   localStorage.setItem(GROUP_MODE_KEY, mode);
-}
-
-/** The two-icon Workspace/Agent grouping toggle (the Trace tree's mode switch — see TreeGroupMode). */
-export function GroupModeToggle({
-  value,
-  onChange,
-}: {
-  value: TreeGroupMode;
-  onChange: (mode: TreeGroupMode) => void;
-}) {
-  return (
-    <div className="flex items-center gap-0.5">
-      {(
-        [
-          { value: "workspace", icon: GROUP_MODE_ICONS.workspace, label: S.chat.groupByWorkspace },
-          { value: "agent", icon: GROUP_MODE_ICONS.agent, label: S.chat.groupByAgent },
-        ] as const
-      ).map((opt) => (
-        <button
-          key={opt.value}
-          type="button"
-          title={opt.label}
-          aria-label={opt.label}
-          aria-pressed={value === opt.value}
-          onClick={() => onChange(opt.value)}
-          className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors duration-150 ${
-            value === opt.value
-              ? "bg-gray-200/70 text-gray-700 dark:bg-gray-800 dark:text-gray-200"
-              : "text-gray-400 hover:bg-gray-200/50 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800/70 dark:hover:text-gray-300"
-          }`}
-        >
-          <Icon d={opt.icon} size={14} />
-        </button>
-      ))}
-    </div>
-  );
 }
 
 /** Row class of folder toggles and "More" rows (the sidebar's folderClass). */
