@@ -3,6 +3,7 @@
 - **Date:** 2026-08-25
 - **Type:** feature
 - **Scope:** `skills`, `docs`
+- **PR:** [#463](https://github.com/Prism-Shadow/penguin-harness/pull/463)
 
 [中文版](2026-08-25-penguin-orchestration-skill.zh.md)
 
