@@ -24,16 +24,25 @@ export const SESSION_COOKIE = "penguin_session";
  * two independently written numbers eventually do.
  */
 export function cookieOptions(
-  c: { req: { header(name: string): string | undefined } },
+  c: { req: { url: string; header(name: string): string | undefined } },
   ttlMs: number,
+  trustProxy: boolean,
 ) {
+  // `x-forwarded-proto` is caller-supplied, and this repo does not trust it unless the
+  // deployment says a reverse proxy sets it (config.trustProxy — the same opt-in the
+  // hot-update network gate requires, hmr/routes.ts). Trusting it here is not merely
+  // inconsistent: on a plain-HTTP deployment anyone who can reach the port could send the
+  // header on a login and get a Secure cookie back, which the browser then refuses to send
+  // over that same plain connection — a sign-in that silently never takes.
+  const proto = trustProxy
+    ? (c.req.header("x-forwarded-proto") ?? new URL(c.req.url).protocol.replace(":", ""))
+    : new URL(c.req.url).protocol.replace(":", "");
   return {
     httpOnly: true,
     sameSite: "Lax" as const,
     path: "/",
     maxAge: Math.floor(ttlMs / 1000),
-    // Add Secure when the reverse proxy declares https.
-    ...(c.req.header("x-forwarded-proto") === "https" ? { secure: true } : {}),
+    ...(proto === "https" ? { secure: true } : {}),
   };
 }
 
@@ -51,7 +60,7 @@ export function currentUser(c: { var: { user: UserRow } }): UserRow {
   return c.var.user;
 }
 
-export function authMiddleware(auth: AuthService): MiddlewareHandler<AppEnv> {
+export function authMiddleware(auth: AuthService, trustProxy: boolean): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
     const token = getCookie(c, SESSION_COOKIE);
     const authed = token ? auth.authenticateWithMeta(token) : null;
@@ -61,7 +70,7 @@ export function authMiddleware(auth: AuthService): MiddlewareHandler<AppEnv> {
     // Sliding renewal: the session's expiry was topped up in place, so refresh the cookie's
     // own max-age to match. The token value is unchanged — same session, longer life.
     if (authed.renewed && token) {
-      setCookie(c, SESSION_COOKIE, token, cookieOptions(c, auth.sessionTtlMs));
+      setCookie(c, SESSION_COOKIE, token, cookieOptions(c, auth.sessionTtlMs, trustProxy));
     }
     c.set("user", authed.user);
     c.set("sessionVia", authed.via);

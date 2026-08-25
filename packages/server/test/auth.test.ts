@@ -152,6 +152,33 @@ describe("auth", () => {
     await loginUser(t.app, "dave", "new-password-1");
   });
 
+  it("ignores x-forwarded-proto for the Secure flag unless the proxy is trusted", async () => {
+    // Caller-supplied, and untrusted by default (the stance hmr/routes.ts states). Trusting
+    // it would let anyone who can reach a plain-HTTP port make the server hand out a Secure
+    // cookie the browser then refuses to send back over that same connection.
+    const login = await t.app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-proto": "https" },
+      body: JSON.stringify({ userId: "admin", password: TEST_ADMIN_PASSWORD }),
+    });
+    expect(login.status).toBe(200);
+    expect(login.headers.get("set-cookie")).not.toContain("Secure");
+
+    // With the deployment opting in, the same header is honored.
+    const trusting = await createTestApp({ config: { trustProxy: true } });
+    try {
+      const res = await trusting.app.request("/api/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-forwarded-proto": "https" },
+        body: JSON.stringify({ userId: "admin", password: TEST_ADMIN_PASSWORD }),
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers.get("set-cookie")).toContain("Secure");
+    } finally {
+      await trusting.cleanup();
+    }
+  });
+
   it("write requests reject non-JSON Content-Type (CSRF defense)", async () => {
     const res = await t.app.request("/api/auth/login", {
       method: "POST",

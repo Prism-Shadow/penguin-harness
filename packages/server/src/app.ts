@@ -374,8 +374,8 @@ export function createRuntimeApp(deps: AppDeps): Hono<AppEnv> {
     // check/install back. Cookie-authed, unlike the Bearer-token shutdown above, so it
     // carries the auth middleware on its own subtree — the routes then gate on
     // `sessionVia === "desktop"`, i.e. the shell's own window.
-    app.use("/api/desktop/update", authMiddleware(deps.authService));
-    app.use("/api/desktop/update/*", authMiddleware(deps.authService));
+    app.use("/api/desktop/update", authMiddleware(deps.authService, deps.config.trustProxy));
+    app.use("/api/desktop/update/*", authMiddleware(deps.authService, deps.config.trustProxy));
     app.route("/api/desktop/update", desktopUpdateRoutes(deps));
   }
   // Hot platform APIs authenticate themselves (local-agent Bearer token OR
@@ -763,7 +763,7 @@ export function createApp(
   });
 
   // Protected routes: cookie -> auth_session -> user, over the runtime's auth service.
-  app.use("/api/*", authMiddleware(deps.authService));
+  app.use("/api/*", authMiddleware(deps.authService, deps.config.trustProxy));
   app.route("/api/me", meRoutes(deps));
   app.route("/api/version", versionRoutes(deps));
   app.route("/api/admin/users", adminUsersRoutes(deps));

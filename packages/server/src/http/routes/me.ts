@@ -6,8 +6,10 @@
  * carrying user-authored text is validated and capped on the way in (draftShortcuts).
  */
 import { Hono } from "hono";
+import { setCookie } from "hono/cookie";
 import type { MeResponse, PrefsResponse, UiPrefs } from "../../api/types.js";
 import { toUserInfo } from "../../auth/service.js";
+import { SESSION_COOKIE, cookieOptions } from "../../auth/middleware.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { readJson, requireString } from "../validate.js";
 import type { AppDeps } from "../../app.js";
@@ -63,6 +65,19 @@ export function meRoutes(deps: AppDeps): Hono<AppEnv> {
     const setupSession = c.var.sessionVia === "setup";
     if ((desktopSession || setupSession) && body.oldPassword === undefined) {
       await deps.authService.setInitialPassword(c.var.user.userId, newPassword);
+      // Claiming deletes every first-login session, including the one making this request, so
+      // without a replacement the browser's very next call 401s and the person who just chose
+      // a password lands back on the login page. Sign them in with the password they just set
+      // — an ordinary login, credential and all, not a session handed out on trust.
+      if (setupSession) {
+        const { token } = await deps.authService.login(c.var.user.userId, newPassword);
+        setCookie(
+          c,
+          SESSION_COOKIE,
+          token,
+          cookieOptions(c, deps.authService.sessionTtlMs, deps.config.trustProxy),
+        );
+      }
     } else {
       const oldPassword = requireString(body, "oldPassword", { label: "oldPassword" });
       await deps.authService.changePassword(c.var.user.userId, oldPassword, newPassword);

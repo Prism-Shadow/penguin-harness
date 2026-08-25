@@ -270,6 +270,10 @@ class PenguinServer {
    * only 302s back here for App routes (see the canonical-host guard in app.ts).
    */
   private appHost(): string {
+    // A wildcard bind is not an address anyone can open — `http://0.0.0.0:<port>` fails in a
+    // browser. Whoever reads this console is on the machine, where `localhost` reaches it;
+    // someone connecting from elsewhere substitutes the host they use to reach this box.
+    if (this.config.host === "0.0.0.0" || this.config.host === "::") return "localhost";
     return loopbackHostRoles(this.config.host)?.app ?? this.config.host;
   }
 

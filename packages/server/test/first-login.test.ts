@@ -123,6 +123,31 @@ describe("the first-login link", () => {
   });
 
   /**
+   * Claiming deletes the very session making the request, so the response has to carry a
+   * replacement or the browser's next call 401s and a brand-new user lands back on a login
+   * screen seconds after choosing their password. The replacement is an ordinary login with
+   * the password just set — the old cookie is still dead.
+   */
+  it("hands the claimer a working session back, while the link's own cookie dies", async () => {
+    const res = await redeem(link);
+    const claimCookie = cookieFrom(res);
+    const set = await apiClient(t.app, claimCookie).put("/api/me/password", {
+      newPassword: "claimed-password-1",
+    });
+    expect(set.status).toBe(204);
+    const replacement = cookieFrom(set);
+    expect(replacement).toMatch(new RegExp(`^${SESSION_COOKIE}=.+`));
+    expect(replacement).not.toBe(claimCookie);
+    // The replacement works…
+    const me = await apiClient(t.app, replacement).get("/api/me");
+    expect(me.status).toBe(200);
+    // …as an ordinary password session, not a setup one that could re-set the password.
+    expect(((await me.json()) as { sessionVia: string }).sessionVia).toBe("password");
+    // …and the claimed link is dead.
+    expect((await apiClient(t.app, claimCookie).get("/api/me")).status).toBe(401);
+  });
+
+  /**
    * Setting a password must end EVERY first-login session for the account, not just the link
    * the current process printed. An earlier boot's link stays live in a terminal scrollback,
    * and a `setup` session may change the password without knowing the old one — so one left

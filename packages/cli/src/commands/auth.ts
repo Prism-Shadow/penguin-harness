@@ -206,12 +206,14 @@ export function registerAuthCommand(program: Command, t: Messages): void {
     .command("token")
     .description(t.authToken.desc)
     .option("--user-id <id>", t.authToken.userId, DEFAULT_USER)
-    .option("--ttl-seconds <n>", t.authToken.ttlSeconds, (raw: string) => Number.parseInt(raw, 10))
+    // Number, not parseInt: parseInt("3600abc") is 3600, and a lifetime silently taken from
+    // a typo is worse than a rejected flag.
+    .option("--ttl-seconds <n>", t.authToken.ttlSeconds, (raw: string) => Number(raw))
     .option("--mark", t.authToken.mark, false)
     .option("--root <dir>", t.common.root)
     .action(async (opts: { userId: string; ttlSeconds?: number; mark: boolean; root?: string }) => {
       const ttl = opts.ttlSeconds;
-      if (ttl !== undefined && (!Number.isFinite(ttl) || ttl <= 0)) {
+      if (ttl !== undefined && (!Number.isSafeInteger(ttl) || ttl <= 0)) {
         return fail(t.authToken.badTtl);
       }
       const root = resolveRootOption(opts.root);

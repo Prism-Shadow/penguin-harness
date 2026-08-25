@@ -25,7 +25,12 @@ export function authRoutes(deps: AppDeps): Hono<AppEnv> {
     const userId = requireString(body, "userId", { label: "userId" });
     const password = requireString(body, "password", { label: "password" });
     const { user, token } = await deps.authService.login(userId, password);
-    setCookie(c, SESSION_COOKIE, token, cookieOptions(c, deps.authService.sessionTtlMs));
+    setCookie(
+      c,
+      SESSION_COOKIE,
+      token,
+      cookieOptions(c, deps.authService.sessionTtlMs, deps.config.trustProxy),
+    );
     return c.json({ user } satisfies AuthResponse);
   });
 
@@ -62,7 +67,12 @@ export function authRoutes(deps: AppDeps): Hono<AppEnv> {
     if (session === null) {
       throw new HttpError(401, "unauthorized", "Invalid or already-used sign-in link.");
     }
-    setCookie(c, SESSION_COOKIE, session, cookieOptions(c, deps.authService.sessionTtlMs));
+    setCookie(
+      c,
+      SESSION_COOKIE,
+      session,
+      cookieOptions(c, deps.authService.sessionTtlMs, deps.config.trustProxy),
+    );
     return c.redirect("/", 302);
   });
 
