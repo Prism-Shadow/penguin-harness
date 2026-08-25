@@ -179,9 +179,9 @@ describe("persisted registry (per-Project localStorage)", () => {
 });
 
 describe("mergeRegisteredWorkspaces", () => {
-  it("empty registered groups sort AFTER the session-backed ones, so real conversations keep the capped window", () => {
-    // Fronting them pushed every group holding chats behind 更多分组 (10-group cap) as
-    // soon as a few Workspaces were registered.
+  it("empty registered groups sort AFTER the session-backed ones, so real conversations keep the first page", () => {
+    // Fronting them pushed every group holding chats onto a later page of the sidebar's
+    // 10-group pagination as soon as a few Workspaces were registered.
     const groups = [group("/srv/app", { sessions: [{ id: "s1" }] }), group("/srv/beta")];
     const merged = mergeRegisteredWorkspaces(groups, [
       { path: "/new/ws", alias: "Fancy" },

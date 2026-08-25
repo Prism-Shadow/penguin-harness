@@ -1534,8 +1534,12 @@ Scenarios:
     /** Visible label on the Memory panel's header link (not a tooltip-only glyph): says what the click does and where it lands. */
     openAgentMemory: "Manage in agent settings",
     memoryShowMore: (n: number) => `Show ${n} more`,
-    /** Reveal the next page of sidebar groups (#139); n = groups still hidden. */
+    /** Reveal the next page of the Trace page's group tree; n = groups still hidden. */
     moreGroups: (n: number) => `More groups (${n})`,
+    /** Sidebar group pagination (#139): the pager's step buttons and the "2/5" readout's accessible name. */
+    prevGroupPage: "Previous groups",
+    nextGroupPage: "Next groups",
+    groupPagePosition: (page: number, total: number) => `Page ${page} of ${total}`,
     contextUsage: "Context usage",
     contextUnknown: "Context usage: unknown until the next request reports it",
     contextComposition: "Context composition",
@@ -1646,6 +1650,8 @@ Scenarios:
     pinnedSession: "Pinned",
     /** Sidebar group "reveal/load next page" row (display cap + server paging). */
     loadMore: "More",
+    /** Per-group reveal row: n = conversations THIS group still hides (one click reveals/loads one page more). */
+    expandRestSessions: (n: number) => `Show ${n} more ${n === 1 ? "chat" : "chats"}`,
     /** Time mode's whole-list paging row: its buckets span every Agent, so one row below them fetches the next page rather than each bucket claiming to. */
     loadMoreSessions: "Load more chats",
     /** Collapsed sidebar folders inside a group (lazy-loaded); the count is the group's exact server share. */
