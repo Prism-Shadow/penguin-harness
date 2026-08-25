@@ -11,7 +11,7 @@ export default defineConfig({
     // Message markers: their own entry so hosts (web/server/cli) can import the marker
     // producers and parsers without pulling the rest of the SDK surface.
     "src/omnimessage/markers/index.ts",
-    "src/interfaces.ts",
+    "src/interfaces/index.ts",
     "src/state/model-catalog.ts",
     // Hot-update kernel: zero-dependency subpath so web can bundle it directly.
     "src/kernel/index.ts",

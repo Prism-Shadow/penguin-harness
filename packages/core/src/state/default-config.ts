@@ -17,8 +17,12 @@
  * such as \`<app_data_dir>\`, \`<agent_id>\`, \`<session_id>\` — these are **not substituted**;
  * the model fills in the actual values from the Environment section itself.
  */
-import { SUBAGENT_THINKING_LEVELS } from "../interfaces.js";
-import type { MCPServerConfig, ThinkingLevelName, ToolDefinitionConfig } from "../interfaces.js";
+import { SUBAGENT_THINKING_LEVELS } from "../interfaces/index.js";
+import type {
+  MCPServerConfig,
+  ThinkingLevelName,
+  ToolDefinitionConfig,
+} from "../interfaces/index.js";
 import type { CompactionMode } from "../omnimessage/types.js";
 import { KERNEL_VERSION } from "./kernel-history.js";
 

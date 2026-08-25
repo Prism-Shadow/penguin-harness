@@ -29,12 +29,12 @@
  */
 import { partialToolCallOutput } from "../../omnimessage/index.js";
 import type { OmniMessage } from "../../omnimessage/index.js";
-import { SUBAGENT_THINKING_LEVELS } from "../../interfaces.js";
+import { SUBAGENT_THINKING_LEVELS } from "../../interfaces/index.js";
 import type {
   EnvironmentServices,
   ThinkingLevelName,
   ToolDefinitionConfig,
-} from "../../interfaces.js";
+} from "../../interfaces/index.js";
 import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
 import {
   DEFAULT_SUBAGENT_YIELD_MS,

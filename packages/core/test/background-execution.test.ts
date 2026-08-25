@@ -45,7 +45,7 @@ import type {
   SubagentRunner,
   ToolConfig,
   ToolDefinitionConfig,
-} from "../src/interfaces.js";
+} from "../src/interfaces/index.js";
 import type { ToolExecutionContext } from "../src/environment/tools/types.js";
 
 // ---------------------------------------------------------------------------

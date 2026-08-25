@@ -24,7 +24,7 @@
  */
 import { partialToolCallOutput, userText } from "../../omnimessage/index.js";
 import type { OmniMessage } from "../../omnimessage/index.js";
-import type { EnvironmentServices, ToolDefinitionConfig } from "../../interfaces.js";
+import type { EnvironmentServices, ToolDefinitionConfig } from "../../interfaces/index.js";
 import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
 import {
   DEFAULT_SUBAGENT_POLL_YIELD_MS,

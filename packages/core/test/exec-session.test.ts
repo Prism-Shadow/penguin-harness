@@ -8,7 +8,7 @@ import path from "node:path";
 import { Environment, ManagedSession } from "../src/environment/index.js";
 import { toolCall } from "../src/omnimessage/index.js";
 import type { OmniMessage } from "../src/omnimessage/index.js";
-import type { ProxyEnvPolicy, ToolConfig, ToolDefinitionConfig } from "../src/interfaces.js";
+import type { ProxyEnvPolicy, ToolConfig, ToolDefinitionConfig } from "../src/interfaces/index.js";
 
 function execTool(overrides: Partial<ToolDefinitionConfig> = {}): ToolDefinitionConfig {
   return {

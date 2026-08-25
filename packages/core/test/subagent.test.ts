@@ -25,7 +25,7 @@ import type {
   SubagentHandle,
   SubagentRunner,
   ToolDefinitionConfig,
-} from "../src/interfaces.js";
+} from "../src/interfaces/index.js";
 import type { ToolExecutionContext, ToolResult } from "../src/environment/tools/types.js";
 
 const DEF: ToolDefinitionConfig = {

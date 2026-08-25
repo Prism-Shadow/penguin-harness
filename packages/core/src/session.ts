@@ -47,7 +47,7 @@ import type {
   EnvironmentInterface,
   LLMInterface,
   ToolPermission,
-} from "./interfaces.js";
+} from "./interfaces/index.js";
 import { withCommandPolicy } from "./internal/command-policy.js";
 import { generateTitleWithLLM } from "./internal/session-title.js";
 import type { SessionTitleResult } from "./internal/session-title.js";

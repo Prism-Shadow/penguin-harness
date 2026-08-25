@@ -35,7 +35,7 @@
  */
 import type { OmniMessage } from "../../../omnimessage/index.js";
 import type { ApprovalDecision, ToolCallPayload } from "../../../omnimessage/index.js";
-import type { ApproveFn, SubagentHandle, ThinkingLevelName } from "../../../interfaces.js";
+import type { ApproveFn, SubagentHandle, ThinkingLevelName } from "../../../interfaces/index.js";
 import type { ToolResult } from "../types.js";
 import { CappedTextBuffer, WakeSignal } from "../background/index.js";
 

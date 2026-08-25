@@ -12,7 +12,7 @@
  * without pulling in a server: the module graph here is core plus a `node:fs` read.
  */
 import { buildInfo } from "@prismshadow/penguin-core";
-import type { VersionReport } from "@prismshadow/penguin-core/interfaces";
+import type { VersionReport } from "@prismshadow/penguin-core";
 import { readHarnessInfo } from "./hmr/manifest.js";
 
 /**

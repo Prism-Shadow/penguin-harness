@@ -9,7 +9,7 @@
  * evicted; if there's still no room, the tool rejects spawning a new one.
  * Docs: /docs/tools § "Background session caps".
  */
-import type { ApproveFn, BackgroundSubagentInfo } from "../../../interfaces.js";
+import type { ApproveFn, BackgroundSubagentInfo } from "../../../interfaces/index.js";
 import { BackgroundRegistry } from "../background/index.js";
 import type { ManagedSubagentSession } from "./session.js";
 

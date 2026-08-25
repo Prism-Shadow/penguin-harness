@@ -27,7 +27,11 @@ import {
 import { metaMaxTokens } from "../src/agent.js";
 import { mapThinkingLevel } from "../src/llm/index.js";
 import { stubProviderKeys } from "./provider-keys.js";
-import type { EnvironmentConfig, EnvironmentServices, SubagentRunner } from "../src/interfaces.js";
+import type {
+  EnvironmentConfig,
+  EnvironmentServices,
+  SubagentRunner,
+} from "../src/interfaces/index.js";
 
 // Captures the services buildRuntime hands to each Environment, so tests can drive the REAL
 // subagent runner (the spawn closure in agent.ts). Spawning only constructs the child Session,

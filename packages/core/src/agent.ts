@@ -67,7 +67,7 @@ import type {
   ThinkingLevelName,
   ToolDefinition,
   VisionDescriberService,
-} from "./interfaces.js";
+} from "./interfaces/index.js";
 import type { ModelEntry } from "./state/index.js";
 
 /**

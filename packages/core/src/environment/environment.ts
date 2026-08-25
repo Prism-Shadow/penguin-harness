@@ -44,7 +44,7 @@ import type {
   ToolDefinition,
   ToolExecutionRequest,
   ToolPermission,
-} from "../interfaces.js";
+} from "../interfaces/index.js";
 import type { BuiltinTool, ToolResult } from "./tools/types.js";
 import { BUILTIN_TOOL_FACTORIES } from "./tools/registry.js";
 import { McpToolProvider } from "./mcp/provider.js";
