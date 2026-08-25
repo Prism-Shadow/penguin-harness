@@ -22,6 +22,7 @@ import { collectWindow } from "../src/environment/tools/subagent/collect.js";
 import type { MessageOrigin, OmniMessage } from "../src/omnimessage/index.js";
 import type {
   ApproveFn,
+  RunCutoff,
   EnvironmentServices,
   SubagentHandle,
   SubagentRunner,
@@ -232,7 +233,7 @@ describe("run_subagent tool (foreground)", () => {
       const { services } = makeServices(runner);
       const tool = createSubagentTool(DEF, services);
       const { out, result } = await collectWithReturn(tool.execute(args, CTX));
-      expect(result?.stopReason).toBe("failed");
+      expect(result?.stopReason).toBe("fatal");
       expect(ownDeltas(out)).toContain("must be given together");
       expect(spawned).toHaveLength(0);
     }
@@ -273,7 +274,7 @@ describe("run_subagent tool (foreground)", () => {
       const { out, result } = await collectWithReturn(
         tool.execute({ prompt: "x", thinking_level }, CTX),
       );
-      expect(result?.stopReason).toBe("failed");
+      expect(result?.stopReason).toBe("fatal");
       expect(ownDeltas(out)).toContain("invalid `thinking_level`");
       expect(ownDeltas(out)).toContain("low / medium / high / xhigh / max");
       expect(spawned).toHaveLength(0);
@@ -320,7 +321,7 @@ describe("run_subagent tool (foreground)", () => {
     const { services } = makeServices();
     const tool = createSubagentTool(DEF, services);
     const { out, result } = await collectWithReturn(tool.execute({ prompt: "x" }, CTX));
-    expect(result?.stopReason).toBe("failed");
+    expect(result?.stopReason).toBe("fatal");
     expect(ownDeltas(out)).toContain("no subagent runner");
   });
 
@@ -334,7 +335,7 @@ describe("run_subagent tool (foreground)", () => {
     const { services } = makeServices(runner);
     const tool = createSubagentTool(DEF, services);
     const { out, result } = await collectWithReturn(tool.execute({}, CTX));
-    expect(result?.stopReason).toBe("failed");
+    expect(result?.stopReason).toBe("fatal");
     expect(ownDeltas(out)).toContain("prompt");
   });
 
@@ -355,13 +356,14 @@ describe("run_subagent tool (foreground)", () => {
   it("reports a failed delegation when the child session aborts", async () => {
     const runner = runnerOf(async function* () {
       yield withOrigin(partialText("delta", "partial"), HOP);
-      yield withOrigin(abortEvent("llm error"), HOP);
+      yield withOrigin(abortEvent(), HOP);
+      return { kind: "abort" as const, errorCode: "user_abort" as const };
     });
     const { services } = makeServices(runner);
     const tool = createSubagentTool(DEF, services);
     const { result } = await collectWithReturn(tool.execute({ prompt: "x" }, CTX));
-    expect(result?.stopReason).toBe("failed");
-    expect(result?.note).toContain("subagent aborted: llm error");
+    expect(result?.stopReason).toBe("fatal");
+    expect(result?.note).toContain("subagent aborted: user_abort");
   });
 
   it("surfaces child approval requests through the parent approve callback", async () => {
@@ -507,7 +509,7 @@ describe("run_subagent backgrounding + input_subagent", () => {
     const { out, result } = await collectWithReturn(
       writeTool.execute({ subagent_id: id, prompt: "more", yield_time_ms: 250 }, CTX),
     );
-    expect(result?.stopReason).toBe("failed");
+    expect(result?.stopReason).toBe("fatal");
     expect(ownDeltas(out)).toContain("still running");
     child.release();
   });
@@ -518,7 +520,7 @@ describe("run_subagent backgrounding + input_subagent", () => {
     const { out, result } = await collectWithReturn(
       writeTool.execute({ subagent_id: "subagent-deadbeef" }, CTX),
     );
-    expect(result?.stopReason).toBe("failed");
+    expect(result?.stopReason).toBe("fatal");
     expect(ownDeltas(out)).toContain("unknown subagent_id subagent-deadbeef");
   });
 
@@ -576,7 +578,7 @@ describe("run_subagent backgrounding + input_subagent", () => {
     }
     const tool = createSubagentTool(DEF, services);
     const { out, result } = await collectWithReturn(tool.execute({ prompt: "x" }, CTX));
-    expect(result?.stopReason).toBe("failed");
+    expect(result?.stopReason).toBe("fatal");
     expect(ownDeltas(out)).toContain("too many background subagents");
   });
 
@@ -675,7 +677,7 @@ describe("subagent steering and per-run abort", () => {
       async spawn() {
         const handle: SubagentHandle = {
           sessionId: HOP,
-          async *run({ messages, signal }): AsyncGenerator<OmniMessage> {
+          async *run({ messages, signal }): AsyncGenerator<OmniMessage, RunCutoff | null> {
             const prompt = promptOf(messages);
             inputs.push(messages);
             prompts.push(prompt);
@@ -683,15 +685,16 @@ describe("subagent steering and per-run abort", () => {
               yield withOrigin(partialText("delta", `start:${prompt} `), HOP);
               await Promise.race([gate, aborted(signal)]);
               if (signal?.aborted) {
-                yield withOrigin(abortEvent("run aborted"), HOP);
-                return;
+                yield withOrigin(abortEvent(), HOP);
+                return { kind: "abort", errorCode: "user_abort" };
               }
               yield withOrigin(partialText("delta", `end:${prompt}`), HOP);
               yield withOrigin(assistantText(`end:${prompt}`), HOP);
-              return;
+              return null;
             }
             yield withOrigin(partialText("delta", `ran:${prompt}`), HOP);
             yield withOrigin(assistantText(`ran:${prompt}`), HOP);
+            return null;
           },
           steer(messages) {
             steers.push(messages);
@@ -745,7 +748,7 @@ describe("subagent steering and per-run abort", () => {
     );
     expect(ownDeltas(out)).toContain(`aborting subagent ${id}'s current run`);
     // The aborted round settles as failed with the child's abort reason; the session is kept.
-    expect(result?.stopReason).toBe("failed");
+    expect(result?.stopReason).toBe("fatal");
     expect(result?.note).toContain("subagent aborted");
     expect(result?.note).toContain(`subagent idle with subagent_id ${id}`);
     expect(manager.get(id)).toBeDefined();

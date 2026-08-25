@@ -505,7 +505,7 @@ export class Agent {
     // must not block the resume itself.
     if (resumed.danglingCompaction) {
       try {
-        await trace.write(compactionEnd({ ...resumed.danglingCompaction, status: "failed" }));
+        await trace.write(compactionEnd({ ...resumed.danglingCompaction, status: "retryable" }));
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         process.stderr.write(`[trace] interrupted-compaction closure failed: ${detail}\n`);
@@ -770,12 +770,17 @@ export class Agent {
           // dispatch, none for a human's message from a host panel — so the child's Trace
           // records who actually spoke.
           for (const input of messages) yield withOrigin(input, hop);
-          for await (const msg of childSession.run(messages, {
+          // Manual iteration so the child run's return value — whether the round was cut
+          // off — propagates to the handle's own return for the parent's round report.
+          const it = childSession.run(messages, {
             ...(signal ? { signal } : {}),
             ...(childApprove ? { approve: childApprove } : {}),
             ...(turnThinkingLevel !== undefined ? { thinkingLevel: turnThinkingLevel } : {}),
-          })) {
-            yield withOrigin(msg, hop);
+          });
+          for (;;) {
+            const res = await it.next();
+            if (res.done) return res.value;
+            yield withOrigin(res.value, hop);
           }
         },
         // Mid-run steering rides the child Session's own steering queue — the same

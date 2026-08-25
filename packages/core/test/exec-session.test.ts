@@ -193,7 +193,7 @@ describe("exec_command — long-running command sessions", () => {
     const elapsed = Date.now() - startedAt;
     expect(elapsed).toBeLessThan(3000); // Did not wait for the full sleep 30
     expect(res.output).not.toContain("still running");
-    expect(res.stopReason).toBe("failed"); // Interrupted by signal -> non-zero exit
+    expect(res.stopReason).toBe("fatal"); // Interrupted by signal -> non-zero exit
   });
 
   it("input_command rejects chars mixing U+0003 with other content", async () => {
@@ -209,7 +209,7 @@ describe("exec_command — long-running command sessions", () => {
       yield_time_ms: 2000,
     });
     expect(res.output).toContain('send "\\u0003" alone');
-    expect(res.stopReason).toBe("failed");
+    expect(res.stopReason).toBe("fatal");
 
     // The session was not mistakenly killed: still running.
     const poll = await runTool(env, "input_command", { process_id: pid, yield_time_ms: 300 });
@@ -219,7 +219,7 @@ describe("exec_command — long-running command sessions", () => {
   it("input_command reports an unknown process_id without throwing", async () => {
     const res = await runTool(env, "input_command", { process_id: "proc-deadbeef" });
     expect(res.output).toContain("unknown process_id proc-deadbeef");
-    expect(res.stopReason).toBe("failed");
+    expect(res.stopReason).toBe("fatal");
   });
 
   it("input_command ignores writes to a closed stdin pipe without crashing", async () => {
@@ -264,7 +264,7 @@ describe("exec_command — long-running command sessions", () => {
     });
     expect(res.output).toContain("command session manager disposed");
     expect(res.output).not.toContain("should-not-run");
-    expect(res.stopReason).toBe("failed");
+    expect(res.stopReason).toBe("fatal");
   });
 
   it("delivers output arriving while the consumer is suspended without waiting out the window", async () => {

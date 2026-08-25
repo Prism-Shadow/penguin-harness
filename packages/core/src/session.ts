@@ -38,6 +38,7 @@ import { runGoalLoop } from "./goal/goal-loop.js";
 import { goalFinishedOf } from "./goal/goal-stream.js";
 import type {
   ApproveFn,
+  RunCutoff,
   BackgroundCommandInfo,
   BackgroundSubagentInfo,
   SubagentMessageOptions,
@@ -379,7 +380,10 @@ export class Session {
    * the final message is exactly one `goal_finished` event carrying the outcome.
    * Docs: /docs/goal-mode.
    */
-  async *run(newMessages: OmniMessage[], opts?: SessionRunOptions): AsyncGenerator<OmniMessage> {
+  async *run(
+    newMessages: OmniMessage[],
+    opts?: SessionRunOptions,
+  ): AsyncGenerator<OmniMessage, RunCutoff | null> {
     // The sandbox command policy is applied here, at the Human boundary itself: the
     // injected callback is wrapped so a vetoed command is refused before the host is ever
     // asked, which is what makes the policy outrank every approval mode — no host, and no
@@ -391,18 +395,20 @@ export class Session {
     }
     if (opts?.goal) {
       // Rounds run with the caller's per-call options minus `goal` (each round is a plain Task).
+      // Per-round cutoffs are consumed by the goal loop itself; goal mode always closes
+      // with its own goal_finished terminal event.
       const { goal, ...roundOpts } = opts;
       yield* this.runGoal(newMessages, goal, roundOpts);
-      return;
+      return null;
     }
-    yield* this.runTask(newMessages, opts);
+    return yield* this.runTask(newMessages, opts);
   }
 
   /** The single-Task path (a goal round runs one of these per round). */
   private async *runTask(
     newMessages: OmniMessage[],
     opts?: RunOptions,
-  ): AsyncGenerator<OmniMessage> {
+  ): AsyncGenerator<OmniMessage, RunCutoff | null> {
     // Folded before Trace and title material, so the path lines are what gets recorded.
     if (!this.modelHasVision) newMessages = await this.foldImages(newMessages);
     // A previously aborted bootstrap dropped these before the engine existed: they lead
@@ -434,7 +440,7 @@ export class Session {
       this.abortedBootstrapRecords = [];
       // Carry the merged list, so repeated aborts keep accumulating exactly once each.
       this.carryOverInput = newMessages;
-      return;
+      return { kind: "abort", errorCode: "user_abort" };
     }
     // Self-captures title material (the title is derived from the first-turn
     // conversation text): while material isn't frozen yet, collect this call's user text and
@@ -451,7 +457,17 @@ export class Session {
         );
       }
     }
-    for await (const msg of this.engine!.run(newMessages, opts)) {
+    // Manual iteration (not for-await) so the engine's return value — how the run ended —
+    // propagates to this generator's own return.
+    const it = this.engine!.run(newMessages, opts);
+    let cutoff: RunCutoff | null = null;
+    for (;;) {
+      const res = await it.next();
+      if (res.done) {
+        cutoff = res.value;
+        break;
+      }
+      const msg = res.value;
       if (capture) {
         this.titleAssistantText = appendTitleText(
           this.titleAssistantText,
@@ -463,6 +479,7 @@ export class Session {
       yield msg;
     }
     if (capture && this.titleUserText.trim()) this.titleMaterialFrozen = true;
+    return cutoff;
   }
 
   /**
@@ -514,16 +531,23 @@ export class Session {
         yield end;
         this.abortedBootstrapRecords.push(end);
       }
-      const aborted = abortEvent("user");
+      const aborted = abortEvent("user_abort");
       yield aborted;
       this.abortedBootstrapRecords.push(aborted);
       return false;
     }
     const { tools, llm, mcp } = outcome.value;
     if (this.mcpServers.length > 0) {
+      const failed = mcp.filter((r) => r.status !== "completed").map((r) => r.server);
       const end = mcpConnectEnd({
-        status: mcp.some((r) => r.status !== "completed") ? "failed" : "completed",
+        status: failed.length > 0 ? "fatal" : "completed",
         results: mcp,
+        ...(failed.length > 0
+          ? {
+              errorCode: "connect_failed" as const,
+              errorMessage: `unavailable: ${failed.join(", ")}`,
+            }
+          : {}),
       });
       yield end;
       records.push(end);

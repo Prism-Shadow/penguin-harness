@@ -14,7 +14,7 @@ export {
   usageToTokenCounts,
   isMalformedJsonParseError,
   isIncompleteStreamError,
-  isRetryableError,
+  isFatalProviderRejection,
   isAuthenticationError,
   isFastModeUnsupportedError,
   FAST_MODE_UNSUPPORTED_GUIDANCE,

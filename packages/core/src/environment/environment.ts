@@ -726,10 +726,12 @@ export class Environment implements EnvironmentInterface {
       stopReason = "aborted";
       notes.push(TOOL_ABORTED_NOTE);
     } else if (timedOut) {
-      stopReason = "failed";
+      // A tool timeout or error is definitive for this call — nothing in the harness
+      // retries a tool, so the result is fed back to the model as fatal.
+      stopReason = "fatal";
       notes.push(`[tool timeout: exceeded ${timeoutMs}ms]`);
     } else if (thrown != null) {
-      stopReason = "failed";
+      stopReason = "fatal";
       notes.push(`[tool error] ${thrown instanceof Error ? thrown.message : String(thrown)}`);
     } else {
       stopReason = selfReported ?? "completed";
@@ -783,6 +785,6 @@ export class Environment implements EnvironmentInterface {
 /** Upfront failure (unknown tool/argument parse failure): delta(explanation) -> stop -> full failed output (start already emitted by the caller). */
 function* emitFailure(toolCallId: string, message: string): Generator<OmniMessage> {
   yield partialToolCallOutput({ eventType: "delta", output: message, toolCallId });
-  yield partialToolCallOutput({ eventType: "stop", toolCallId, stopReason: "failed" });
-  yield toolCallOutput({ output: message, toolCallId, stopReason: "failed" });
+  yield partialToolCallOutput({ eventType: "stop", toolCallId, stopReason: "fatal" });
+  yield toolCallOutput({ output: message, toolCallId, stopReason: "fatal" });
 }

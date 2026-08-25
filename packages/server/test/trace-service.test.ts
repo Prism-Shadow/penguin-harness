@@ -25,7 +25,16 @@ import {
   userText,
   withOrigin,
 } from "@prismshadow/penguin-core";
-import type { OmniMessage, SessionMetaPayload, TokenCounts } from "@prismshadow/penguin-core";
+import type {
+  OmniMessage,
+  SessionMetaPayload,
+  TokenCounts,
+  StopReason,
+} from "@prismshadow/penguin-core";
+
+// Traces written before the stop-reason convergence carry the retired spellings; analysis
+// must keep reading them, so these fixtures write them through a cast.
+const legacyEnd = (status: string) => requestEnd(status as StopReason);
 import type { TraceService } from "../src/services/trace-service.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import { SessionSources } from "../src/runtime/session-sources.js";
@@ -146,7 +155,7 @@ describe("trace-service", () => {
       sessionMeta(metaPayload()),
       at("2026-07-05T10:00:00.000Z", userText("hi")),
       at("2026-07-05T10:00:01.000Z", requestBegin()),
-      at("2026-07-05T10:00:03.000Z", requestEnd("timeout")), // reconnect +1
+      at("2026-07-05T10:00:03.000Z", requestEnd("retryable")), // reconnect +1
       at("2026-07-05T10:00:03.500Z", requestBegin()),
       at(
         "2026-07-05T10:00:04.000Z",
@@ -169,7 +178,7 @@ describe("trace-service", () => {
     const analysis = await service.analyze(P, A, S, 1);
 
     expect(analysis.requests).toHaveLength(3);
-    expect(analysis.requests[0]!.status).toBe("timeout");
+    expect(analysis.requests[0]!.status).toBe("retryable");
     expect(analysis.requests[0]!.durationMs).toBe(2000);
     expect(analysis.requests[1]!.status).toBe("completed");
     expect(analysis.requests[1]!.durationMs).toBe(1500);
@@ -377,7 +386,7 @@ describe("trace-service", () => {
         compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 1 }),
       ),
       at("2026-07-05T10:00:04.000Z", requestBegin()), // the compaction request
-      at("2026-07-05T10:00:05.000Z", requestEnd("timeout")), // retries exhausted, ends in timeout
+      at("2026-07-05T10:00:05.000Z", requestEnd("retryable")), // retries exhausted
       at(
         "2026-07-05T10:00:06.000Z",
         compactionEnd({ reason: "context", mode: "summarize", status: "aborted" }),
@@ -423,7 +432,7 @@ describe("trace-service", () => {
       // Second turn: the Prompt precedes the Request; this turn's request fails outright, with no model output or tool call at all.
       at("2026-07-05T10:01:00.000Z", userText("question two")),
       at("2026-07-05T10:01:01.000Z", requestBegin()),
-      at("2026-07-05T10:01:04.000Z", requestEnd("failed")),
+      at("2026-07-05T10:01:04.000Z", requestEnd("retryable")),
     ]);
     const a = await service.analyze(P, A, S, 1);
 
@@ -446,16 +455,15 @@ describe("trace-service", () => {
     expect(a.elapsedMs).toBe(4_100);
   });
 
-  it("a failed request the engine retries stays inside the same turn (it is a reconnect, not a turn end)", async () => {
-    // The engine reconnects on `failed` as well as timeout/malformed, so the resent Request
-    // belongs to the same user turn. If segmentation still keyed on timeout/malformed only,
-    // one gateway blip would split a single turn's Tokens, duration and TPS across two Tasks
-    // and inflate the Task count — the same smearing the timeout rule exists to prevent.
+  it("a legacy-trace `failed` request the engine retried stays inside the same turn (reconnect, not a turn end)", async () => {
+    // Traces from the pre-convergence era spell a retried request `failed`; segmentation
+    // must keep reading it as a reconnect, or one gateway blip would split a single turn's
+    // Tokens, duration and TPS across two Tasks and inflate the Task count.
     await writeTraceFile(root, P, A, "2026-07-05", S, 1, [
       at("2026-07-05T10:00:00.000Z", sessionMeta(metaPayload())),
       at("2026-07-05T10:00:00.000Z", userText("question one")),
       at("2026-07-05T10:00:01.000Z", requestBegin()),
-      at("2026-07-05T10:00:02.000Z", requestEnd("failed")), // a gateway error → the engine reconnects
+      at("2026-07-05T10:00:02.000Z", legacyEnd("failed")), // a gateway error → that era's engine reconnected
       at("2026-07-05T10:00:03.000Z", requestBegin()),
       at("2026-07-05T10:00:05.000Z", requestEnd("completed")),
       at("2026-07-05T10:00:05.100Z", tokenUsage(counts(1000), buckets(0, 900, 100))),
@@ -467,10 +475,10 @@ describe("trace-service", () => {
     expect(a.tasks[0]!.tokens.output).toBe(100);
   });
 
-  it("a failed compaction request is NOT a reconnect: compaction fails fast on it", async () => {
-    // Segmentation has to track the engine loop by loop: the turn loop retries `failed`, the
-    // compaction loop deliberately does not (it keeps the old context and tries again on the
-    // next trigger). Counting this as a reconnect would invent an attempt that never happened.
+  it("a legacy-trace `failed` compaction request is NOT a reconnect: that era failed fast on it", async () => {
+    // Legacy segmentation nuance: the pre-convergence turn loop retried `failed`, its
+    // compaction loop deliberately did not. Counting the give-up as a reconnect would
+    // invent an attempt that never happened in that Trace.
     await writeTraceFile(root, P, A, "2026-07-05", S, 1, [
       at("2026-07-05T10:00:00.000Z", sessionMeta(metaPayload())),
       at("2026-07-05T10:00:00.000Z", userText("question one")),
@@ -482,18 +490,19 @@ describe("trace-service", () => {
         compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 1 }),
       ),
       at("2026-07-05T10:00:04.000Z", requestBegin()),
-      at("2026-07-05T10:00:05.000Z", requestEnd("failed")), // compaction gives up here
+      at("2026-07-05T10:00:05.000Z", legacyEnd("failed")), // compaction gives up here
       at(
         "2026-07-05T10:00:06.000Z",
-        compactionEnd({ reason: "context", mode: "summarize", status: "failed" }),
+        // Legacy Trace spelling for an abandoned compaction (see legacyEnd).
+        compactionEnd({ reason: "context", mode: "summarize", status: "failed" as StopReason }),
       ),
     ]);
     const a = await service.analyze(P, A, S, 1);
     expect(a.reconnectCount).toBe(0);
   });
 
-  it("after the previous turn ends in timeout (retries exhausted), a new user message starts a new turn", async () => {
-    // "timeout → continuation" holds only for **automatic retries within the
+  it("after the previous turn's retries are exhausted, a new user message starts a new turn", async () => {
+    // "retryable → continuation" holds only for **automatic retries within the
     // same run**. Once retries are exhausted and the engine gives up, a message
     // the user sends afterward starts a new turn — if continuation were still
     // stuck at true, this turn would get folded into the failed one, mixing
@@ -503,7 +512,7 @@ describe("trace-service", () => {
       at("2026-07-05T10:00:00.000Z", sessionMeta(metaPayload())),
       at("2026-07-05T10:00:00.000Z", userText("question one")),
       at("2026-07-05T10:00:01.000Z", requestBegin()),
-      at("2026-07-05T10:00:02.000Z", requestEnd("timeout")), // retries exhausted → gives up
+      at("2026-07-05T10:00:02.000Z", requestEnd("retryable")), // retries exhausted → gives up
       at("2026-07-05T10:00:03.000Z", abortEvent()),
       // A new user send
       at("2026-07-05T10:01:00.000Z", userText("question two")),
@@ -1117,8 +1126,8 @@ describe("trace-service", () => {
       ),
       at(T("04.500"), requestBegin()),
       at(T("05.000"), assistantText("bad summary")),
-      at(T("05.500"), requestEnd("failed")),
-      at(T("06.000"), compactionEnd({ reason: "context", mode: "summarize", status: "failed" })),
+      at(T("05.500"), requestEnd("retryable")),
+      at(T("06.000"), compactionEnd({ reason: "context", mode: "summarize", status: "retryable" })),
       at(T("07.000"), requestBegin()),
       at(T("08.000"), assistantText("answer")),
       at(T("08.500"), requestEnd("completed")),
@@ -1140,10 +1149,10 @@ describe("trace-service", () => {
           name: "exec_command",
           arguments: "{}",
           toolCallId: "t1",
-          stopReason: "timeout",
+          stopReason: "retryable",
         }),
       ),
-      at(T("02.500"), requestEnd("timeout")),
+      at(T("02.500"), requestEnd("retryable")),
       at(T("03.000"), requestBegin()),
       at(T("04.000"), toolCall({ name: "read_file", arguments: "{}", toolCallId: "t2" })),
       at(T("04.500"), toolCallOutput({ output: "ok", toolCallId: "t2" })),
@@ -1153,6 +1162,6 @@ describe("trace-service", () => {
     // A phantom call gets no lane: only t2 goes into toolSpans.
     expect(a.toolSpans.map((sp) => sp.toolCallId)).toEqual(["t2"]);
     // But the duration list still records t1 (flagged with the interrupted status).
-    expect(a.toolCalls.find((c) => c.toolCallId === "t1")?.stopReason).toBe("timeout");
+    expect(a.toolCalls.find((c) => c.toolCallId === "t1")?.stopReason).toBe("retryable");
   });
 });

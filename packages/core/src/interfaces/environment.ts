@@ -14,7 +14,7 @@
  * Docs: packages/docs/content/interfaces.{zh,en}.md (site path /docs/interfaces).
  */
 import type { OmniMessage, ToolCallPayload, ToolDefinition } from "../omnimessage/types.js";
-import type { ApproveFn, ThinkingLevelName } from "./shared.js";
+import type { ApproveFn, RunCutoff, ThinkingLevelName } from "./shared.js";
 import type { LLMInterface } from "./llm.js";
 // Concrete classes, used only for EnvironmentServices type annotations (type-only import; no runtime dependency, no circular reference).
 import type { CommandSessionManager } from "../environment/tools/command/session-manager.js";
@@ -106,7 +106,9 @@ export interface SubagentHandle {
    * Runs one turn of a task on the child Session. Emitted child-session messages **all already
    * carry the origin marker** (the child Session id); the first message of the first run is the
    * child Session's `session_meta`, and tool_calls received by the forwarded approval callback
-   * carry origin as well.
+   * carry origin as well. The generator's return value says whether the round was cut off
+   * early (`RunCutoff`) or ran to completion (`null`) — the parent reports a cut-off round
+   * as failed instead of handing the model a half answer as a result.
    */
   run(input: {
     /**
@@ -121,7 +123,7 @@ export interface SubagentHandle {
     approve?: ApproveFn;
     /** Per-turn thinking level for THIS round only (a host follow-up's picker); omitted keeps the child Session's own level. */
     thinkingLevel?: ThinkingLevelName;
-  }): AsyncGenerator<OmniMessage>;
+  }): AsyncGenerator<OmniMessage, RunCutoff | null>;
   /**
    * Queues a steering message for the child Session's running Task (the same mechanism as a
    * user steering the main session: delivered as a `[user_steering]` user message at the

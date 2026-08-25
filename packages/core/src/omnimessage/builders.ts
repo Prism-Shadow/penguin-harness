@@ -5,6 +5,7 @@
  * Docs: /docs/omni-message § "Builders and guards".
  */
 import type {
+  ErrorCode,
   AbortPayload,
   ApprovalDecision,
   ApprovalDecisionPayload,
@@ -34,7 +35,6 @@ import type {
   Role,
   SessionMetaMessage,
   SessionMetaPayload,
-  McpConnectStatus,
   StopReason,
   StreamEventType,
   SubagentPayload,
@@ -274,8 +274,10 @@ export function approvalDecision(
   return event({ type: "approval_decision", decision, tool_call_id: toolCallId });
 }
 
-export function abortEvent(reason: string | null = null): OmniMessage<AbortPayload> {
-  return event({ type: "abort", reason });
+export function abortEvent(
+  errorCode: "user_abort" | "backoff_interrupted" | "compaction_interrupted" = "user_abort",
+): OmniMessage<AbortPayload> {
+  return event({ type: "abort", error_code: errorCode });
 }
 
 /** request begin event: marks the start of one LLM Request. */
@@ -292,11 +294,17 @@ export function requestBegin(): OmniMessage<RequestBeginPayload> {
  */
 export function requestEnd(
   status: StopReason,
-  retry: { errorMessage?: string; attempt?: number; retryInMs?: number } = {},
+  retry: {
+    errorCode?: ErrorCode;
+    errorMessage?: string;
+    attempt?: number;
+    retryInMs?: number;
+  } = {},
 ): OmniMessage<RequestEndPayload> {
   return event({
     type: "request_end",
     status,
+    ...(retry.errorCode !== undefined ? { error_code: retry.errorCode } : {}),
     ...(retry.errorMessage !== undefined ? { error_message: retry.errorMessage } : {}),
     ...(retry.attempt !== undefined ? { attempt: retry.attempt } : {}),
     ...(retry.retryInMs !== undefined ? { retry_in_ms: retry.retryInMs } : {}),
@@ -325,6 +333,7 @@ export function compactionEnd(args: {
   mode: CompactionMode;
   status: StopReason;
   attempt?: number;
+  errorCode?: ErrorCode;
   errorMessage?: string;
 }): OmniMessage<CompactionEndPayload> {
   return event({
@@ -333,6 +342,7 @@ export function compactionEnd(args: {
     mode: args.mode,
     status: args.status,
     ...(args.attempt !== undefined ? { attempt: args.attempt } : {}),
+    ...(args.errorCode !== undefined ? { error_code: args.errorCode } : {}),
     ...(args.errorMessage !== undefined ? { error_message: args.errorMessage } : {}),
   });
 }
@@ -372,12 +382,20 @@ export function mcpConnectBegin(servers: string[]): OmniMessage<McpConnectBeginP
   return event({ type: "mcp_connect_begin", servers });
 }
 
-/** mcp_connect end event: overall status (compaction_end-style) + per-server outcomes; total wall time = end timestamp − begin timestamp. */
+/** mcp_connect end event: overall status (shared StopReason vocabulary) + per-server outcomes; total wall time = end timestamp − begin timestamp. */
 export function mcpConnectEnd(args: {
-  status: McpConnectStatus;
+  status: StopReason;
   results: McpServerConnectResult[];
+  errorCode?: ErrorCode;
+  errorMessage?: string;
 }): OmniMessage<McpConnectEndPayload> {
-  return event({ type: "mcp_connect_end", status: args.status, results: args.results });
+  return event({
+    type: "mcp_connect_end",
+    status: args.status,
+    results: args.results,
+    ...(args.errorCode !== undefined ? { error_code: args.errorCode } : {}),
+    ...(args.errorMessage !== undefined ? { error_message: args.errorMessage } : {}),
+  });
 }
 
 /** Adds two sets of Token counts together, used to maintain cumulative Session usage. */

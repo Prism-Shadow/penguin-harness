@@ -14,6 +14,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { OmniMessage } from "../src/omnimessage/index.js";
 import {
   addModel,
   createAgent,
@@ -390,19 +391,19 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
       const gen = handle.run({ messages: [userText("noop")] });
       const first = await gen.next();
       expect(first.done).toBe(false);
-      const msg = first.value!;
+      const msg = first.value as OmniMessage;
       expect(msg.type).toBe("session_meta");
       // Child messages are stamped with the child Session id as the origin hop.
       expect(msg.origin?.[0]).toBe(handle.sessionId);
       for (;;) {
         const next = await gen.next();
         expect(next.done).toBe(false);
-        if ((next.value!.payload as { type?: string }).type === "tool_list_ready") {
+        if (((next.value as OmniMessage).payload as { type?: string }).type === "tool_list_ready") {
           llm = capturedLLMConfigs.list.at(-1)!;
           break;
         }
       }
-      await gen.return(undefined);
+      await gen.return(null);
       return {
         ...(msg.payload as {
           provider: string;
@@ -614,7 +615,7 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
         role: "user",
         text: "count the TODO items",
       });
-      await gen.return(undefined);
+      await gen.return(null);
     } finally {
       handle.dispose();
       parent.dispose();

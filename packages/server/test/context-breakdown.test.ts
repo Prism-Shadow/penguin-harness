@@ -153,7 +153,7 @@ describe("buildContextBreakdown", () => {
         { cache_read: 0, cache_write: 0, output: 0, total: 0 },
       ),
       requestEnd("completed"),
-      compactionEnd({ reason: "context", mode: "summarize", status: "failed" }),
+      compactionEnd({ reason: "context", mode: "summarize", status: "retryable" }),
     ];
     const plain = buildContextBreakdown(base);
     const compacted = buildContextBreakdown(withCompaction);

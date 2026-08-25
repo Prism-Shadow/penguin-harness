@@ -13,18 +13,15 @@
  *   3. Interruption/error handling: `finishInterrupted` first closes any open
  *      streaming segments and backfills the complete message, then the output ends — never
  *      leaking a malformed structure. This interface **never retries internally** — it only
- *      labels, and `context_engine` owns the retry policy: every LLM error retries on the
- *      engine's ladder EXCEPT `auth`. The label picks the taxonomy, not the policy:
- *      transport-shaped errors (network/transport drops, timeouts, 429/5xx, see
- *      `isRetryableError`) end with `timeout`; AgentHub JSON parse errors end with
- *      `malformed`; everything else — provider 4xx rejections included — ends with
- *      `failed`, and the engine reconnects on all three the same. One `failed` shape is
- *      additionally marked `permanent`: AgentHub's fast-mode UnsupportedParameterError
- *      (see `isFastModeUnsupportedError`), a deterministic client-side rejection the
- *      engine aborts on instead of retrying. User interruption ends
- *      with `aborted`; credentials failures end with their own terminal status `auth` (see
- *      `isAuthenticationError`) — the one status the engine refuses to retry, and the one
- *      hosts key on to gate input.
+ *      classifies, and `context_engine` owns the retry policy: `retryable` rides the
+ *      engine's reconnect ladder, `fatal` stops the run. The split is an allowlist of
+ *      certainty: only failures a retry provably cannot fix are `fatal` — a provider 4xx
+ *      rejection (408/429 excluded, see `isFatalProviderRejection`), a credentials failure
+ *      (`isAuthenticationError`), AgentHub's fast-mode UnsupportedParameterError
+ *      (`isFastModeUnsupportedError`), and input that fails to assemble into a request at
+ *      all. Everything else — network/transport drops, timeouts, 429/5xx, AgentHub parse
+ *      errors and truncated streams, and every unclassifiable error — ends `retryable`,
+ *      with the concrete failure on `errorMessage`. User interruption ends with `aborted`.
  *
  * `context_engine` only consumes OmniMessage; all Uni* protocol details are encapsulated here.
  * Docs: /docs/interfaces § "The built-in implementation: GenerativeModel".
@@ -520,7 +517,7 @@ export class EventTranslator {
    * as `start → delta → stop → complete message`. Closes any unclosed thinking/text segments and
    * backfills their complete messages, then backfills partial(stop) + complete tool_call for
    * tool_calls that only have deltas and were never emitted eagerly. All backfilled messages are
-   * uniformly tagged with the interruption `stopReason` (`aborted` / `timeout` / `failed`), to
+   * uniformly tagged with the interruption `stopReason` (`aborted` / `retryable` / `fatal`), to
    * distinguish them from normal completion (`completed`).
    *
    * Differs from `finish`: doesn't read `finish_reason`, and doesn't produce `token_usage` (an
@@ -666,8 +663,11 @@ export class EventTranslator {
   }
 
   /**
-   * Converts an AgentHub finish_reason into an OmniMessage stop_reason (the six-value protocol).
-   * "stop", "tool_call", and null are treated as completed; length or unknown reasons map to failed.
+   * Converts an AgentHub finish_reason into an OmniMessage stop_reason. "stop",
+   * "tool_call", and null are treated as completed; length or unknown reasons map to
+   * `fatal` — the request itself committed, so nothing retries, but the segment ended
+   * abnormally in a way only a human can fix (raise the output cap), which is what the
+   * abnormal terminal label tells the render layers.
    */
   private omniStopReason(): StopReason {
     if (
@@ -677,7 +677,7 @@ export class EventTranslator {
     ) {
       return "completed";
     }
-    return "failed";
+    return "fatal";
   }
 }
 
@@ -755,7 +755,7 @@ export function describeError(error: unknown): string {
  *   (a completed response carrying thinking only, which cannot be replayed).
  *
  * In every case the turn was **not committed** to AgentHub history: this is not an
- * auth/parameter failure but an incomplete LLM Request, and should end with `malformed` and
+ * auth/parameter failure but an incomplete LLM Request, and should end `retryable` and
  * be handed to the engine to reconnect and retry. Judged by exception type with a `name`
  * fallback (covers cross-realm or deserialization-reconstructed errors), probing down the
  * `cause` chain for wrapped errors.
@@ -789,7 +789,7 @@ export function isMalformedJsonParseError(error: unknown): boolean {
  * thrown), AgentHub's `_validateLastEvent` reports the missing or incomplete final event as a
  * plain `Error` ("Streaming response yielded no events" / "Last event must carry
  * usage_metadata|finish_reason"). This is not an auth/parameter failure but an incomplete LLM
- * Request, and should end with `malformed` and be handed to the engine to reconnect and retry.
+ * Request, and should end `retryable` and be handed to the engine to reconnect and retry.
  * AgentHub doesn't provide an error type for this, so we match by message prefix
  * (verified against @prismshadow/agenthub 0.4.x), probing down the `cause` chain.
  */
@@ -808,28 +808,6 @@ export function isIncompleteStreamError(error: unknown): boolean {
   }
   return false;
 }
-
-/**
- * Retryable network/transport error codes: the classic Node socket codes plus undici's
- * transport failures (`UND_ERR_*`). Node's `fetch` surfaces a dropped connection as
- * `TypeError: terminated` whose `cause` carries the real code (e.g. "other side closed"
- * with `code: "UND_ERR_SOCKET"`) — a transport disconnect, not a provider verdict, so it
- * reconnects like any network drop.
- */
-const RETRYABLE_NETWORK_CODES: ReadonlySet<string> = new Set([
-  "ECONNRESET",
-  "ECONNREFUSED",
-  "ETIMEDOUT",
-  "EPIPE",
-  "EAI_AGAIN",
-  "ENOTFOUND",
-  "ECONNABORTED",
-  // undici (Node fetch) transport failures
-  "UND_ERR_SOCKET",
-  "UND_ERR_CONNECT_TIMEOUT",
-  "UND_ERR_HEADERS_TIMEOUT",
-  "UND_ERR_BODY_TIMEOUT",
-]);
 
 /** Credentials/authentication error codes and types (OpenAI-compatible bodies / SDK errors). */
 const AUTH_CODES: ReadonlySet<string> = new Set([
@@ -901,7 +879,7 @@ export function isAuthenticationError(error: unknown): boolean {
  * parameter by throwing **before any network I/O**, so with the same frozen config the
  * failure is deterministic — retrying the identical request can never succeed. Deliberately
  * scoped to `parameter === "fast_mode"`: other UnsupportedParameterError sources keep the
- * default `failed` classification (and the engine's ladder) unchanged. Judged by exception
+ * default `retryable` classification (and the engine's ladder) unchanged. Judged by exception
  * type with a `name` fallback (covers cross-realm or deserialization-reconstructed errors,
  * same approach as isMalformedJsonParseError), probing down the `cause` chain.
  */
@@ -923,78 +901,23 @@ export const FAST_MODE_UNSUPPORTED_GUIDANCE =
   "Fast mode is enabled for this model; turn it off in the model settings to use this model.";
 
 /**
- * Determines whether an error is transport-shaped — the `timeout` vs `failed` LABEL for
- * an errored request, not the retry gate: the engine retries every LLM error except
- * `auth`, whatever this returns. What the label buys is honest taxonomy for
- * observability and hosts — `timeout` reads as "connectivity/provider hiccup", `failed`
- * as "the provider rejected the request" — while both ride the same reconnect ladder.
- *
- * `timeout`-shaped: network/transport errors (including undici's `UND_ERR_*` on the
- * `cause` chain), timeouts, connection reset, HTTP 429 / 5xx.
- * `failed`-shaped: everything else, HTTP 4xx provider rejections included (a quota or
- * subscription rejection lands here too — it retries all the same and its real message
- * rides on the outcome).
- * Authentication errors are checked FIRST and are never transport-shaped (see
- * `isAuthenticationError`); JSON parse errors are classified separately as `malformed`
- * by `isMalformedJsonParseError`.
- *
- * Since AgentHub doesn't guarantee the shape of error objects, this uses a lenient check:
- * first the status code, then error codes / message keywords. When undeterminable, label
- * it `failed` — still retried, just reported for what it is.
+ * Determines whether an error is a definitive provider rejection of the request itself —
+ * the `fatal` detector for errored requests. Only an explicit HTTP client-error status
+ * counts: 4xx minus 408 (request timeout) and 429 (rate limit), which are transient by
+ * definition. Deliberately an allowlist of certainty, probed down the `cause` chain
+ * (SDKs wrap the real response error): everything this misses stays `retryable`, because
+ * retrying a genuinely fatal error costs one ladder and ends with the same message, while
+ * refusing to retry a transient one destroys the turn. Authentication is checked
+ * separately (`isAuthenticationError`) and first — a 401 is fatal through that path with
+ * its more specific message handling.
  */
-export function isRetryableError(error: unknown): boolean {
-  if (error == null) return false;
-
-  // 0. Authentication is definitive and terminal: retrying a dead credential can never
-  //    succeed, and no vocabulary heuristic below may reclassify it — a definitive
-  //    credential signal always wins.
-  if (isAuthenticationError(error)) return false;
-
-  const err = error as {
-    status?: number;
-    statusCode?: number;
-    name?: string;
-    message?: string;
-  };
-
-  // 1. HTTP status code takes priority.
-  const status = err.status ?? err.statusCode;
-  if (typeof status === "number") {
-    if (status === 429 || status === 408) return true; // Rate limited / request timeout (transient)
-    if (status >= 500 && status <= 599) return true; // Server error
-    if (status >= 400 && status <= 499) return false; // Provider rejection: labeled failed (still retried by the engine)
-  }
-
-  // 2. Network/transport error codes, probing the `cause` chain (Node fetch wraps the real
-  //    transport failure as `TypeError: terminated` with the code on `cause`, see describeError).
-  if (
-    anyInCauseChain(error, (level) => {
-      const code = (level as { code?: unknown }).code;
-      return typeof code === "string" && RETRYABLE_NETWORK_CODES.has(code);
-    })
-  ) {
-    return true;
-  }
-
-  // 3. Error name / message keywords (timeout, network, rate limit, undici disconnects).
-  if (err.name === "AbortError") return false; // User interruption, not retryable
-  const text = `${err.name ?? ""} ${err.message ?? ""}`.toLowerCase();
-  if (
-    /timeout|timed out|network|socket hang up|econnreset|connection reset|other side closed|fetch failed|too many requests|rate limit|temporarily unavailable|503|502|504/.test(
-      text,
-    )
-  ) {
-    return true;
-  }
-  // `terminated` alone is ambiguous — providers use the word in verdict copy too ("Request
-  // terminated by content filter"), which must NOT retry — so it only counts alongside
-  // transport vocabulary. The real socket case is already caught by the cause-chain
-  // `UND_ERR_*` codes in step 2; this is a last-resort fallback for cause-less wrappers.
-  if (/terminated/.test(text) && /socket|connection|closed/.test(text)) {
-    return true;
-  }
-
-  return false;
+export function isFatalProviderRejection(error: unknown): boolean {
+  return anyInCauseChain(error, (level) => {
+    const err = level as { status?: unknown; statusCode?: unknown };
+    const status = typeof err.status === "number" ? err.status : err.statusCode;
+    if (typeof status !== "number") return false;
+    return status >= 400 && status <= 499 && status !== 408 && status !== 429;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1153,25 +1076,23 @@ export class GenerativeModel implements LLMInterface {
    * and the terminal state is then returned as `LLMOutcome`:
    *   - **Normal completion**: `finish()` closes out and produces `token_usage` (usage is only
    *     produced in this case) → `completed`;
-   *   - **Idle timeout / network drop** (transport-shaped errors like network/429/5xx):
-   *     `finishInterrupted("timeout")` closes out, produces no usage → `timeout` (carrying
-   *     the error detail as `message` when a concrete error was caught), reconnected by
-   *     `context_engine` within the same run;
-   *   - **AgentHub JSON parse error**: `finishInterrupted("malformed")` closes out, produces no
-   *     usage → `malformed`, likewise reconnected by `context_engine` within the same run;
    *   - **User interruption**: `finishInterrupted("aborted")` closes out, produces no usage →
    *     `aborted`;
-   *   - **Credentials failure**: `finishInterrupted("auth")` closes out, produces no usage →
-   *     `auth` (carrying `message`) — the one status the engine stops the run on, and the one
-   *     hosts key on to gate input until the model's API key is updated;
-   *   - **Every other error** (parameters etc., and input that never assembled into a
-   *     request): `finishInterrupted("failed")` closes out, produces no usage → `failed`
-   *     (carrying `message`), which `context_engine` reconnects on as well — the
-   *     classification stays honest, the retry decision is the engine's. Exception: a
-   *     fast-mode rejection (`isFastModeUnsupportedError`, thrown deterministically before
-   *     any network I/O when this config enables `fast_mode` on a model without a fast
-   *     tier) is a `failed` marked `permanent: true`, which the engine aborts on with the
-   *     actionable message instead of retrying.
+   *   - **Fatal failure** — a definitive provider 4xx rejection (`isFatalProviderRejection`),
+   *     a credentials failure (`isAuthenticationError`), a fast-mode rejection
+   *     (`isFastModeUnsupportedError`, thrown deterministically before any network I/O when
+   *     this config enables `fast_mode` on a model without a fast tier), or input that never
+   *     assembled into a request: `finishInterrupted("fatal")` closes out, produces no usage
+   *     → `fatal` (carrying `errorMessage`), which the engine stops the run on instead of
+   *     retrying — the identical request can never succeed, so the ladder would only delay
+   *     the actionable message;
+   *   - **Every other failure** — idle timeout, network/transport drops, 408/429/5xx,
+   *     AgentHub parse errors and truncated streams, and anything unclassifiable:
+   *     `finishInterrupted("retryable")` closes out, produces no usage → `retryable`
+   *     (carrying `errorMessage` when a concrete error was caught), reconnected by
+   *     `context_engine` within the same run. Unclassifiable errors stay retryable on
+   *     purpose: the fatal detector is an allowlist, and a gateway phrasing a transient
+   *     fault its own way must keep its retries.
    *
    * Timeout detection: the idle timer resets on every event received; once idle exceeds
    * `requestTimeoutMs`, the underlying stream is aborted and handled as needing reconnection
@@ -1186,13 +1107,14 @@ export class GenerativeModel implements LLMInterface {
     if (userSignal?.aborted) return { status: "aborted" };
 
     // Input merging is placed inside a guarded block: build failures such as empty input /
-    // mixed roles / argument JSON also collapse to a failed outcome, never throwing to
-    // context_engine.
+    // mixed roles / argument JSON collapse to a fatal outcome — the same input can never
+    // assemble on a retry, so burning the reconnect ladder would only delay the message —
+    // and never throw to context_engine.
     let uniMessage: UniMessage;
     try {
       uniMessage = mergeOmniToUniMessage(params.newMessages);
     } catch (err) {
-      return { status: "failed", errorMessage: describeError(err) };
+      return { status: "fatal", errorCode: "invalid_input", errorMessage: describeError(err) };
     }
 
     const translator = new EventTranslator(this.toolCallIds);
@@ -1239,8 +1161,8 @@ export class GenerativeModel implements LLMInterface {
       ac.signal.addEventListener("abort", () => resolve(STOPPED), { once: true });
     });
 
-    // Terminal-state classification: timeout (timed out/network drop) / malformed (response
-    // parse error) / aborted (user) / failed (other). null means it ended normally.
+    // Terminal-state classification: retryable (transport/parse failures) / fatal (definitive
+    // rejections) / aborted (user). null means it ended normally.
     let outcome: LLMOutcome | null = null;
     try {
       const it = this.openStream(
@@ -1278,7 +1200,9 @@ export class GenerativeModel implements LLMInterface {
           // close (best effort — a stream that ignored the signal may ignore this too, so the
           // rejection is swallowed and the promise is not awaited) and classify by trigger.
           void Promise.resolve(it.return?.(undefined)).catch(() => undefined);
-          outcome = userSignal?.aborted ? { status: "aborted" } : { status: "timeout" };
+          outcome = userSignal?.aborted
+            ? { status: "aborted" }
+            : { status: "retryable", errorCode: "timeout" };
           break;
         }
         if (res.done) break;
@@ -1294,43 +1218,48 @@ export class GenerativeModel implements LLMInterface {
       if (userSignal?.aborted) {
         outcome = { status: "aborted" };
       } else if (timedOut) {
-        outcome = { status: "timeout" }; // Idle timeout -> needs reconnection
+        outcome = { status: "retryable", errorCode: "timeout" }; // Idle timeout -> needs reconnection
       } else if (isMalformedJsonParseError(error) || isIncompleteStreamError(error)) {
         // A response JSON parse error, or a cleanly truncated stream (AgentHub's final-event
-        // validation failed): both are an incomplete LLM Request, handed to the engine as
-        // malformed to reconnect and retry — must not be classified as failed.
+        // validation failed): both are an incomplete LLM Request — the turn was never
+        // committed, so the engine reconnects and retries. Checked before the fatal
+        // detectors: these carry no HTTP status, but the explicit branch keeps the message
+        // and the intent readable.
         outcome = {
-          status: "malformed",
+          status: "retryable",
+          errorCode: "malformed",
           errorMessage: describeError(error),
         };
       } else if (isAuthenticationError(error)) {
-        // Credentials failure: its own terminal status so hosts can tell "update this
-        // model's API key, then this Session can continue" (only the model reference is
-        // fixed at Session creation; the credential is read from the current Project
-        // config on load) apart from a one-off failure. Checked before the retryable
-        // branch as a belt — isRetryableError itself already refuses auth signals.
-        outcome = { status: "auth", errorMessage: describeError(error) };
+        // Credentials failure: fatal — no retry can turn a rejected credential into a
+        // working one. The errorMessage tells the user to update this model's API key
+        // (only the model reference is fixed at Session creation; the credential is read
+        // from the current Project config on load), after which the Session continues.
+        outcome = { status: "fatal", errorCode: "auth", errorMessage: describeError(error) };
       } else if (this.uniConfig.fast_mode === true && isFastModeUnsupportedError(error)) {
         // Fast mode rejected by a model without a fast tier: AgentHub throws its
         // UnsupportedParameterError before any network I/O, so with this object's frozen
-        // config the failure is deterministic — marked permanent so the engine surfaces
-        // the message immediately instead of burning the reconnect ladder on a request
-        // that can never succeed. The guard on our own config keeps the special case
-        // honest: without fast_mode on the wire this error cannot be ours to explain.
+        // config the failure is deterministic — fatal, so the engine surfaces the message
+        // immediately instead of burning the reconnect ladder on a request that can never
+        // succeed. The guard on our own config keeps the special case honest: without
+        // fast_mode on the wire this error cannot be ours to explain.
         outcome = {
-          status: "failed",
-          permanent: true,
+          status: "fatal",
+          errorCode: "unsupported",
           errorMessage: `${describeError(error)} ${FAST_MODE_UNSUPPORTED_GUIDANCE}`,
         };
-      } else if (isRetryableError(error)) {
-        // Transport-shaped failure (network drop, 429/5xx) -> labeled timeout. The detail
-        // rides on the outcome so observability (request_end -> the Cost center's errors
-        // panel) shows the real reason behind a retried request, not just "timeout".
-        outcome = { status: "timeout", errorMessage: describeError(error) };
+      } else if (isFatalProviderRejection(error)) {
+        // A definitive provider 4xx rejection (408/429 excluded): the identical request
+        // fails identically on every retry, so stop now with the provider's own message.
+        outcome = { status: "fatal", errorCode: "rejected", errorMessage: describeError(error) };
       } else if ((error as { name?: string })?.name === "AbortError") {
         outcome = { status: "aborted" }; // Fallback: an unexpected abort (neither timeout nor user)
       } else {
-        outcome = { status: "failed", errorMessage: describeError(error) };
+        // Everything else — network/transport drops, 429/5xx, and anything unclassifiable —
+        // retries on the engine's ladder. The detail rides on the outcome so observability
+        // (request_end -> the Cost center's errors panel) shows the real reason behind a
+        // retried request.
+        outcome = { status: "retryable", errorCode: "network", errorMessage: describeError(error) };
       }
     } finally {
       clearTimer();
@@ -1349,12 +1278,12 @@ export class GenerativeModel implements LLMInterface {
     // tool_use (400), and the engine has no fix-up path left that touches LLM history.
     if (!outcome && !translator.sawFinishReason()) {
       if (userSignal?.aborted) outcome = { status: "aborted" };
-      else if (timedOut) outcome = { status: "timeout" };
+      else if (timedOut) outcome = { status: "retryable", errorCode: "timeout" };
     }
 
     if (outcome) {
       // Interrupted/errored: close any opened streaming segments and backfill the complete message, producing no token_usage.
-      const reason: StopReason = outcome.status === "completed" ? "failed" : outcome.status;
+      const reason: StopReason = outcome.status === "completed" ? "retryable" : outcome.status;
       for (const msg of translator.finishInterrupted(reason)) yield msg;
       return outcome;
     }

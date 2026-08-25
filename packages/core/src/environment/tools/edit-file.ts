@@ -75,29 +75,29 @@ export function createEditFileTool(definition: ToolDefinitionConfig): BuiltinToo
       const filePath = args["file_path"];
       if (typeof filePath !== "string" || filePath.length === 0) {
         yield delta(`Missing required argument "file_path" for ${definition.name}.`);
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
       const oldString = args["old_string"];
       if (typeof oldString !== "string") {
         yield delta(`Missing required argument "old_string" for ${definition.name}.`);
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
       if (oldString.length === 0) {
         yield delta(
           "old_string must not be empty — edit_file replaces existing text. To create a file or rewrite it wholesale, use write_file.",
         );
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
       const newString = args["new_string"];
       if (typeof newString !== "string") {
         yield delta(`Missing required argument "new_string" for ${definition.name}.`);
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
       if (oldString === newString) {
         yield delta(
           "old_string and new_string are identical — nothing to change. Make new_string the desired replacement text.",
         );
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
       const replaceAll = args["replace_all"] === true;
 
@@ -108,7 +108,7 @@ export function createEditFileTool(definition: ToolDefinitionConfig): BuiltinToo
         const st = await stat(resolved);
         if (st.isDirectory()) {
           yield delta(`Cannot edit "${filePath}": it is a directory.`);
-          return { stopReason: "failed" };
+          return { stopReason: "fatal" };
         }
         fileMode = st.mode & 0o777;
         content = await readFile(resolved, { encoding: "utf8", ...(signal ? { signal } : {}) });
@@ -126,7 +126,7 @@ export function createEditFileTool(definition: ToolDefinitionConfig): BuiltinToo
           const message = err instanceof Error ? err.message : String(err);
           yield delta(`Failed to read "${filePath}": ${message}`);
         }
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
       if (signal?.aborted) return { stopReason: "aborted" };
 
@@ -140,13 +140,13 @@ export function createEditFileTool(definition: ToolDefinitionConfig): BuiltinToo
         yield delta(
           `old_string not found in "${filePath}". Make sure it matches the file content exactly, including whitespace and indentation.${crlfHint}`,
         );
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
       if (occurrences > 1 && !replaceAll) {
         yield delta(
           `old_string occurs ${occurrences} times in "${filePath}". Add surrounding context to make it unique, or set replace_all to true to replace every occurrence.`,
         );
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
 
       const replaceStart = content.indexOf(oldString);
@@ -165,7 +165,7 @@ export function createEditFileTool(definition: ToolDefinitionConfig): BuiltinToo
         if (signal?.aborted) return { stopReason: "aborted" };
         const message = err instanceof Error ? err.message : String(err);
         yield delta(`Failed to write "${filePath}": ${message}`);
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
 
       const replaced = replaceAll ? occurrences : 1;

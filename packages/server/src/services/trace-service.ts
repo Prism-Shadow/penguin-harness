@@ -1066,13 +1066,14 @@ export class TraceService {
           // continue the turn, otherwise a single blip would split that turn's
           // Tokens/duration/TPS across two Tasks and inflate the Task count.
           //
-          // This list must track the engine's, and the engine's differs by loop:
-          // the turn loop retries `failed` too, while compaction deliberately fails
-          // fast and stops on it (core's TURN_RETRY_STATUSES vs
-          // COMPACTION_RETRY_STATUSES). Hence the compactionActive guard — a failed
-          // compaction request really is the end of that request, and counting it
-          // as a reconnect would invent an attempt that never happened.
+          // This list must track the engine's: `retryable` is the one reconnecting
+          // status today (both loops share RETRY_STATUSES). The legacy spellings keep
+          // pre-convergence Traces analyzable — in that era timeout/malformed always
+          // reconnected, while `failed` reconnected in the turn loop but ended a
+          // compaction attempt (the then fail-fast compaction policy), hence the
+          // compactionActive guard on it.
           const retryable =
+            status === "retryable" ||
             status === "timeout" ||
             status === "malformed" ||
             (status === "failed" && !compactionActive);

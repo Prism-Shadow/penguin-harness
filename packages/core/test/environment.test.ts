@@ -814,7 +814,7 @@ describe("Environment.executeTool — relaxed tool contract", () => {
           output: "result",
           toolCallId: ctx.toolCallId,
         });
-        return { stopReason: "failed" as const };
+        return { stopReason: "fatal" as const };
       },
     });
     try {
@@ -839,7 +839,7 @@ describe("Environment.executeTool — relaxed tool contract", () => {
       };
       expect(complete.type).toBe("tool_call_output");
       expect(complete.output).toBe("partial result");
-      expect(complete.stop_reason).toBe("failed"); // Finish reason reported via the return value
+      expect(complete.stop_reason).toBe("fatal"); // Finish reason reported via the return value
       expect((out[out.length - 2]!.payload as { event_type?: string }).event_type).toBe("stop");
     } finally {
       delete BUILTIN_TOOL_FACTORIES[NAME];
@@ -913,7 +913,7 @@ describe("Environment.executeTool — relaxed tool contract", () => {
           output: "broken",
           toolCallId: ctx.toolCallId,
         });
-        return { stopReason: "failed" as const, images: ["data:image/png;base64,AAAA"] };
+        return { stopReason: "fatal" as const, images: ["data:image/png;base64,AAAA"] };
       },
     });
     try {
@@ -932,7 +932,7 @@ describe("Environment.executeTool — relaxed tool contract", () => {
       const complete = out[out.length - 1]!.payload as { stop_reason?: string; images?: string[] };
       // Only a normal completion carries images: a failed finish drops them (neither the
       // stream nor the complete message carries them), keeping the finish handling simple.
-      expect(complete.stop_reason).toBe("failed");
+      expect(complete.stop_reason).toBe("fatal");
       expect(complete.images).toBeUndefined();
       for (const m of out) {
         const p = m.payload as { type?: string };
@@ -1030,7 +1030,7 @@ describe("Environment.executeTool — timeoutMs (PRN-013)", () => {
       stop_reason?: string;
     };
     expect(last.type).toBe("tool_call_output");
-    expect(last.stop_reason).toBe("failed");
+    expect(last.stop_reason).toBe("fatal");
     // Kept-prior-output is asserted only where the shell can win the race: a Git-Bash login
     // shell on Windows needs several hundred ms to start, so nothing is printed before a
     // sub-250ms timeout there — the timeout mechanics above are still fully exercised.
@@ -1117,7 +1117,7 @@ describe("Environment.executeTool — robustness", () => {
     expect(payload.type).toBe("tool_call_output");
     expect(payload.output).toContain("Unknown tool: not_a_real_tool"); // Complete content matches
     expect(payload.tool_call_id).toBe("call_unknown");
-    expect(payload.stop_reason).toBe("failed");
+    expect(payload.stop_reason).toBe("fatal");
   });
 
   /** Runs one tool call and returns the payload of the last complete tool_call_output. */
@@ -1144,14 +1144,14 @@ describe("Environment.executeTool — robustness", () => {
       const payload = await runTool(args, `call_badjson_${i}`);
       expect(payload.type).toBe("tool_call_output");
       expect(payload.output, args).toContain("not valid JSON");
-      expect(payload.stop_reason).toBe("failed");
+      expect(payload.stop_reason).toBe("fatal");
     }
   });
 
   it("tells the model the arguments were empty", async () => {
     const payload = await runTool("", "call_emptyargs");
     expect(payload.output).toContain("arguments field is empty");
-    expect(payload.stop_reason).toBe("failed");
+    expect(payload.stop_reason).toBe("fatal");
   });
 
   it("never returns an empty tool output", async () => {
@@ -1207,7 +1207,7 @@ describe("Environment.executeTool — robustness", () => {
       stop_reason?: string;
     };
     expect(payload.output).toContain("[exit code: 3]");
-    expect(payload.stop_reason).toBe("failed");
+    expect(payload.stop_reason).toBe("fatal");
     // The exit-code marker is also produced via streaming (renderable by the frontend); the
     // streamed deltas concatenated == the complete content (short output here, no truncation).
     const streamed = messages
@@ -1319,9 +1319,9 @@ describe("Environment structure invariant on tool throw (PRN-012)", () => {
       const noteDelta = out[2]!.payload as { output?: string };
       expect(noteDelta.output).toContain("kaboom"); // The error marker is produced via a streamed delta
       const stop = out[3]!.payload as { stop_reason?: string };
-      expect(stop.stop_reason).toBe("failed");
+      expect(stop.stop_reason).toBe("fatal");
       const complete = out[4]!.payload as { stop_reason?: string; output?: string };
-      expect(complete.stop_reason).toBe("failed");
+      expect(complete.stop_reason).toBe("fatal");
       expect(complete.output).toContain("kaboom");
       expect(complete.output).toContain("working"); // Keeps the partial content already streamed.
       // Concatenating the streamed deltas == the complete content (relevant for frontend rendering).

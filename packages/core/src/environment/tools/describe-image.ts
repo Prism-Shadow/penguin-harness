@@ -52,7 +52,7 @@ export function createDescribeImageTool(
       const source = args["source"];
       if (typeof source !== "string" || source.length === 0) {
         yield delta('Missing required argument "source" for describe_image.');
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
       if (describer.modelId === null || describer.createLLM === undefined) {
         yield delta(
@@ -60,14 +60,14 @@ export function createDescribeImageTool(
             "images; ask the user to pick a vision model in the model settings (vision_model) " +
             "to enable image reading.",
         );
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
 
       const res = await loadImage(source, ctx.workspaceDir, signal);
       if (!res.ok) {
         if (res.reason === "aborted") return { stopReason: "aborted" };
         yield delta(res.message);
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
 
       const prompt =
@@ -113,7 +113,7 @@ export function createDescribeImageTool(
         yield delta(
           `${streamedAny ? "\n" : ""}Vision model (${describer.modelId}) request ${outcome?.status ?? "failed"}${detail}`,
         );
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
       if (!streamedAny) yield delta("[vision model returned no text]");
     },

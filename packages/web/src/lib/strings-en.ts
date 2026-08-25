@@ -1439,34 +1439,52 @@ Scenarios:
     thinking: "Thinking",
     subagent: "Subagent",
     subagentRunning: "Running",
-    aborted: (reason?: string) => `[Aborted]${reason ? `: ${reason}` : ""}`,
-    /** Auth-dead notice (request_end status "auth"): action-only copy — updating the key on the Models page auto-unlocks this Session. */
-    modelAuthDead:
-      "Model API authentication failed: update this model's API key on the Models page, or start a new Session.",
-    modelAuthDeadOpenModels: "Open Models page",
-    modelAuthDeadRetry: "Retry",
-    modelAuthDeadCta: "New Session",
-    modelAuthDeadPlaceholder: "Model authentication failed — update the API key first",
+    /**
+     * Abort banner (user interruptions only). The cause localizes from `errorCode`;
+     * `errorMessage` (raw, untranslatable) rides verbatim. A legacy Trace without a code
+     * renders its English `reason` prose as-is.
+     */
+    aborted: (item?: { errorCode?: string; errorMessage?: string; reason?: string }) => {
+      const cause =
+        item?.errorCode === "user_abort"
+          ? "aborted by user"
+          : item?.errorCode === "backoff_interrupted"
+            ? "aborted during reconnect backoff"
+            : item?.errorCode === "compaction_interrupted"
+              ? "aborted during compaction"
+              : (item?.errorCode ?? item?.reason ?? "");
+      const text = cause ? `${cause}${item?.errorMessage ? `: ${item.errorMessage}` : ""}` : "";
+      return `[Aborted]${text ? `: ${text}` : ""}`;
+    },
     /**
      * Reconnect hint line; `secondsLeft` (waiting state only) switches to the live-countdown
-     * wording. `failed` is in the union because the engine retries it like the other two —
-     * its cause names the provider rather than the transport, since that is where it came from.
+     * wording. `retryable` is the live status; the finer spellings only appear when
+     * replaying Traces written before the stop-reason convergence.
      */
     reconnect: (
-      status: "failed" | "timeout" | "malformed",
+      status: "retryable" | "failed" | "timeout" | "malformed",
       state: "waiting" | "retried" | "gaveUp",
       attempt: number,
       secondsLeft?: number,
+      errorMessage?: string,
+      errorCode?: string,
     ) => {
+      // The live protocol carries the classified cause on error_code; the legacy status
+      // spellings (failed/timeout/malformed) say the same thing for pre-convergence Traces.
+      const kind = errorCode ?? status;
       const cause =
-        status === "timeout"
+        kind === "timeout"
           ? "Connection timed out"
-          : status === "malformed"
+          : kind === "malformed"
             ? "Response incomplete or unparseable"
-            : "The model provider returned an error";
+            : kind === "network"
+              ? "Network or service temporarily unavailable"
+              : kind === "failed"
+                ? "The model provider returned an error"
+                : "The request failed";
       const action =
         state === "gaveUp"
-          ? "no further retries"
+          ? `giving up after attempt ${attempt}${errorMessage ? `: ${errorMessage}` : ""}`
           : state === "retried"
             ? `retry #${attempt} sent`
             : secondsLeft !== undefined
@@ -1474,6 +1492,9 @@ Scenarios:
               : `starting retry #${attempt}…`;
       return `[Retry] ${cause}; ${action}`;
     },
+    /** Run-ending LLM failure banner (request_end status fatal); the provider's error text rides verbatim. */
+    llmError: (errorMessage?: string) =>
+      `[Error]: llm request error${errorMessage ? `: ${errorMessage}` : ""}`,
     /** "Retry now" on the reconnect countdown (skips the remaining backoff wait). */
     reconnectRetryNow: "Retry now",
     /** "Give up" on the reconnect countdown (the ordinary session abort). */
@@ -1610,9 +1631,16 @@ Scenarios:
     compactionTitle: (mode: string): string => (mode === "discard" ? "Clear" : "Compaction"),
     compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "aborted, keeping current context";
-      return errorMessage !== undefined
-        ? `failed (${errorMessage}), keeping current context`
-        : "failed, keeping current context";
+      const detail = errorMessage !== undefined ? ` (${errorMessage})` : "";
+      // retryable = abandoned this time, the standing trigger retries it; fatal = a config
+      // or credential change has to come first. Legacy Traces spell both "failed".
+      if (status === "retryable") {
+        return `failed${detail}, keeping current context; retries at the next trigger`;
+      }
+      if (status === "fatal") {
+        return `failed${detail}, keeping current context; fix the model configuration to retry`;
+      }
+      return `failed${detail}, keeping current context`;
     },
     unknownTool: "(unknown tool)",
     workRunning: "Running",

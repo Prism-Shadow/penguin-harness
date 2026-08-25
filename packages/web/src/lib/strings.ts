@@ -1397,33 +1397,52 @@ Benchmark：
     thinking: "思考",
     subagent: "子会话",
     subagentRunning: "运行中",
-    aborted: (reason?: string) => `[已中断]${reason ? `：${reason}` : ""}`,
-    /** Auth-dead notice (request_end status "auth"): action-only copy — updating the key on the Models page auto-unlocks this Session. */
-    modelAuthDead: "模型 API 认证失败：请在模型配置页更新该模型的 API key，或新建会话。",
-    modelAuthDeadOpenModels: "打开模型配置",
-    modelAuthDeadRetry: "重试",
-    modelAuthDeadCta: "新建会话",
-    modelAuthDeadPlaceholder: "模型认证失败，请先更新 API key",
+    /**
+     * Abort banner (user interruptions only). The cause localizes from `errorCode`;
+     * `errorMessage` (raw, untranslatable) rides verbatim. A legacy Trace without a code
+     * renders its English `reason` prose as-is.
+     */
+    aborted: (item?: { errorCode?: string; errorMessage?: string; reason?: string }) => {
+      const cause =
+        item?.errorCode === "user_abort"
+          ? "用户中断"
+          : item?.errorCode === "backoff_interrupted"
+            ? "重试等待中被中断"
+            : item?.errorCode === "compaction_interrupted"
+              ? "压缩过程中被中断"
+              : (item?.errorCode ?? item?.reason ?? "");
+      const text = cause ? `${cause}${item?.errorMessage ? `：${item.errorMessage}` : ""}` : "";
+      return `[已中断]${text ? `：${text}` : ""}`;
+    },
     /**
      * Reconnect hint line; `secondsLeft` (waiting state only) switches to the live-countdown
-     * wording. `failed` is in the union because the engine retries it like the other two —
-     * its cause names the provider rather than the transport, since that is where it came from.
+     * wording. `retryable` is the live status; the finer spellings only appear when
+     * replaying Traces written before the stop-reason convergence.
      */
     reconnect: (
-      status: "failed" | "timeout" | "malformed",
+      status: "retryable" | "failed" | "timeout" | "malformed",
       state: "waiting" | "retried" | "gaveUp",
       attempt: number,
       secondsLeft?: number,
+      errorMessage?: string,
+      errorCode?: string,
     ) => {
+      // The live protocol carries the classified cause on error_code; the legacy status
+      // spellings (failed/timeout/malformed) say the same thing for pre-convergence Traces.
+      const kind = errorCode ?? status;
       const cause =
-        status === "timeout"
+        kind === "timeout"
           ? "连接超时或网络中断"
-          : status === "malformed"
+          : kind === "malformed"
             ? "响应不完整或无法解析"
-            : "模型服务返回错误";
+            : kind === "network"
+              ? "网络或服务暂时不可用"
+              : kind === "failed"
+                ? "模型服务返回错误"
+                : "请求失败";
       const action =
         state === "gaveUp"
-          ? "已停止重试"
+          ? `第 ${attempt} 次尝试后放弃${errorMessage ? `：${errorMessage}` : ""}`
           : state === "retried"
             ? `已发起第 ${attempt} 次重试`
             : secondsLeft !== undefined
@@ -1431,6 +1450,9 @@ Benchmark：
               : `正在发起第 ${attempt} 次重试…`;
       return `[重试] ${cause}，${action}`;
     },
+    /** Run-ending LLM failure banner (request_end status fatal); the provider's error text rides verbatim. */
+    llmError: (errorMessage?: string) =>
+      `[错误]：模型请求错误${errorMessage ? `：${errorMessage}` : ""}`,
     /** "Retry now" on the reconnect countdown (skips the remaining backoff wait). */
     reconnectRetryNow: "立即重试",
     /** "Give up" on the reconnect countdown (the ordinary session abort). */
@@ -1571,9 +1593,11 @@ Benchmark：
     compactionTitle: (mode: string): string => (mode === "discard" ? "清空" : "压缩"),
     compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "已中断，保留当前上下文";
-      return errorMessage !== undefined
-        ? `失败（${errorMessage}），保留当前上下文`
-        : "失败，保留当前上下文";
+      const detail = errorMessage !== undefined ? `（${errorMessage}）` : "";
+      // retryable = 本次放弃、下次触发自动重试；fatal = 需先修复模型配置或凭据。旧 Trace 两者都拼作 "failed"。
+      if (status === "retryable") return `失败${detail}，保留当前上下文，下次触发时重试`;
+      if (status === "fatal") return `失败${detail}，保留当前上下文，需修复模型配置后重试`;
+      return `失败${detail}，保留当前上下文`;
     },
     unknownTool: "（未知工具）",
     workRunning: "运行中",

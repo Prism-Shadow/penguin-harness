@@ -57,20 +57,20 @@ export function createInputCommandTool(
 
       if (!manager) {
         yield delta("[input_command unavailable: no command session manager configured]");
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
 
       const processId = args["process_id"];
       if (typeof processId !== "string" || processId.length === 0) {
         yield delta('Missing required argument "process_id" for input_command.');
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
       const session = manager.get(processId);
       if (!session) {
         yield delta(
           `[input_command error: unknown process_id ${processId} (the session may have exited and been cleared)]`,
         );
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
 
       // Termination path (kill: true): disarm the report, drain, kill the group, drop the row.
@@ -120,7 +120,7 @@ export function createInputCommandTool(
           yield delta(
             '[input_command error: chars mixes U+0003 (Ctrl-C) with other content; send "\\u0003" alone to interrupt]',
           );
-          return { stopReason: "failed" };
+          return { stopReason: "fatal" };
         } else session.write(chars);
       }
 
@@ -136,7 +136,7 @@ export function createInputCommandTool(
       // Already exited: clean up the registry and report the exit status.
       manager.remove(processId);
       if (session.error) {
-        return { stopReason: "failed", note: `[spawn error: ${session.error.message}]` };
+        return { stopReason: "fatal", note: `[spawn error: ${session.error.message}]` };
       }
       return resultForExit(session.exit);
     },

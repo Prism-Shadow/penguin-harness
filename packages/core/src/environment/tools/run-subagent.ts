@@ -76,16 +76,16 @@ export function createSubagentTool(
       // than throwing (consistent with other tools).
       if (!runner) {
         yield* fail("[run_subagent unavailable: no subagent runner configured]");
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
       if (!manager || manager.isDisposed) {
         yield* fail("[run_subagent unavailable: no subagent session manager available]");
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
       const prompt = typeof args.prompt === "string" ? args.prompt : "";
       if (prompt.trim().length === 0) {
         yield* fail("[run_subagent error: missing required string argument `prompt`]");
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
       const agentId = typeof args.agent_id === "string" ? args.agent_id : undefined;
       const modelId = typeof args.model_id === "string" ? args.model_id : undefined;
@@ -96,7 +96,7 @@ export function createSubagentTool(
         yield* fail(
           "[run_subagent error: `model_id` and `provider` must be given together (a model reference is the pair), or both omitted to inherit the parent session's model]",
         );
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
       // Thinking-level override: an explicit value must be one of the selectable tiers — a typo
       // must fail loudly rather than silently running the child at an inherited level the caller
@@ -110,7 +110,7 @@ export function createSubagentTool(
           `[run_subagent error: invalid \`thinking_level\` ${JSON.stringify(rawThinkingLevel)}; ` +
             `use one of ${SUBAGENT_THINKING_LEVELS.join(" / ")}, or omit it to inherit the parent session's level]`,
         );
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
       const thinkingLevel = rawThinkingLevel as ThinkingLevelName | undefined;
       const background = args.run_in_background === true;
@@ -128,7 +128,7 @@ export function createSubagentTool(
         yield* fail(
           "[run_subagent error: too many background subagents; poll or finish existing ones first]",
         );
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
 
       // Spawn the child Session (precheck errors such as exceeding the depth limit or a
@@ -152,7 +152,7 @@ export function createSubagentTool(
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         yield* fail(`[run_subagent error: ${message}]`);
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
 
       // run_in_background: no collect window — register immediately, arm the completion
