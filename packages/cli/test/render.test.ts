@@ -89,19 +89,10 @@ describe("pure formatters", () => {
     expect(stripAnsi(text())).toBe("partial [aborted]\n[abort]: aborted by user\n");
   });
 
-  it("an abort with a machine-readable code renders the localized cause plus the raw detail", () => {
+  it("an abort whose reason is a recognized engine spelling renders the localized cause plus the raw detail", () => {
     const { stream, text } = collector();
-    renderHistory(
-      [
-        abortEvent("llm request error: 401 Missing Authentication header", {
-          code: "llm_fatal",
-          detail: "401 Missing Authentication header",
-        }),
-      ],
-      stream,
-      t,
-    );
-    // The English dictionary localizes the cause from the code; the provider detail rides verbatim.
+    renderHistory([abortEvent("llm request error: 401 Missing Authentication header")], stream, t);
+    // The dictionary localizes the cause decoded from the reason prose; the provider detail rides verbatim.
     expect(stripAnsi(text())).toBe(
       "[abort]: llm request error: 401 Missing Authentication header\n",
     );

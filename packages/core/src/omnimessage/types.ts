@@ -289,29 +289,14 @@ export interface ApprovalDecisionPayload {
   tool_call_id: string;
 }
 
-/**
- * Machine-readable abort cause: render layers localize the banner from it, appending
- * `detail` verbatim. Absent in Traces written before the field existed — those render
- * `reason` as-is.
- */
-export type AbortCode =
-  | "user_abort"
-  | "llm_fatal"
-  | "llm_retries_exhausted"
-  | "backoff_interrupted"
-  | "compaction_aborted"
-  | "compaction_failed";
-
 export interface AbortPayload {
   type: "abort";
-  /** Human-readable English prose of record (observability, error records, legacy renderers). */
+  /**
+   * Human-readable English prose of record. The engine writes a fixed set of spellings
+   * (decoded by `parseAbortReason` for localized rendering); the structured error detail
+   * behind an LLM failure also rides on `request_end.error_message`.
+   */
   reason?: string | null;
-  /** Machine-readable cause; render layers localize by it instead of parsing `reason`. */
-  code?: AbortCode;
-  /** Concrete error detail (LLMOutcome.errorMessage), appended verbatim after the localized cause. */
-  detail?: string;
-  /** Retry count behind an `llm_retries_exhausted` abort. */
-  attempts?: number;
 }
 
 export interface TokenUsagePayload {

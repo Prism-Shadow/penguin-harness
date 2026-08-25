@@ -5,6 +5,7 @@
  * "agent" is a common noun: lowercase mid-sentence, capitalized only at the start
  * of a label/sentence or in a proper name (Agent State, AgentHub).
  */
+import type { AbortCause } from "@prismshadow/penguin-core/omnimessage";
 import type { Strings } from "./strings";
 
 export const en: Strings = {
@@ -1440,31 +1441,27 @@ Scenarios:
     subagent: "Subagent",
     subagentRunning: "Running",
     /**
-     * Abort banner. A machine-readable `code` localizes the cause (with `detail` appended
-     * verbatim and `attempts` filling the retry count); a legacy Trace without one renders
-     * its English `reason` prose as-is.
+     * Abort banner. The cause is decoded from the event's English `reason` prose
+     * (`parseAbortReason`); provider error detail is untranslatable and appended verbatim.
+     * Unrecognized prose renders as-is.
      */
-    aborted: (item?: {
-      reason?: string | null;
-      code?: string;
-      detail?: string;
-      attempts?: number;
-    }) => {
-      const cause =
-        item?.code === "user_abort"
-          ? "aborted by user"
-          : item?.code === "llm_fatal"
-            ? "llm request error"
-            : item?.code === "llm_retries_exhausted"
-              ? `llm request failed after ${item.attempts ?? "several"} retries`
-              : item?.code === "backoff_interrupted"
-                ? "aborted during reconnect backoff"
-                : item?.code === "compaction_aborted"
-                  ? "aborted during compaction"
-                  : item?.code === "compaction_failed"
-                    ? "compaction failed"
-                    : (item?.reason ?? undefined);
-      const text = cause ? `${cause}${item?.detail ? `: ${item.detail}` : ""}` : "";
+    aborted: (cause?: AbortCause) => {
+      const text =
+        cause === undefined
+          ? ""
+          : cause.kind === "user_abort"
+            ? "aborted by user"
+            : cause.kind === "llm_fatal"
+              ? `llm request error: ${cause.detail}`
+              : cause.kind === "llm_retries_exhausted"
+                ? `llm request failed after ${cause.attempts} retries${cause.detail ? `: ${cause.detail}` : ""}`
+                : cause.kind === "backoff_interrupted"
+                  ? "aborted during reconnect backoff"
+                  : cause.kind === "compaction_aborted"
+                    ? "aborted during compaction"
+                    : cause.kind === "compaction_failed"
+                      ? "compaction failed"
+                      : (cause.reason ?? "");
       return `[Aborted]${text ? `: ${text}` : ""}`;
     },
     /**

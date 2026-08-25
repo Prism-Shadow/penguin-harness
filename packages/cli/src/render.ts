@@ -42,7 +42,12 @@
  * all only when the output stream supports color (see `supportsColor`): piped output, e.g. a
  * nested `penguin run` driven through `exec_command`, must stay plain (#102).
  */
-import { isEventMessage, isModelMessage, parseUserSteeringText } from "@prismshadow/penguin-core";
+import {
+  isEventMessage,
+  isModelMessage,
+  parseAbortReason,
+  parseUserSteeringText,
+} from "@prismshadow/penguin-core";
 import type {
   AbortPayload,
   ApprovalDecision,
@@ -186,7 +191,7 @@ function humanizeDuration(ms: number): string {
 }
 
 export function formatAbort(p: AbortPayload, t: Messages, c: Palette = STDOUT_PALETTE): string {
-  return dim(t.abortLabel(p), c);
+  return dim(t.abortLabel(parseAbortReason(p.reason)), c);
 }
 
 /** Options shared by history and streaming rendering. */

@@ -226,14 +226,8 @@ export interface SubagentItem {
 export interface AbortItem {
   kind: "abort";
   id: number;
-  /** English prose of record; rendered verbatim when no machine-readable code arrived (legacy Traces). */
+  /** English prose of record; the banner decodes it with `parseAbortReason` for localized wording. */
   reason?: string;
-  /** Machine-readable cause (core AbortCode): the banner localizes from it, appending `detail`. */
-  code?: string;
-  /** Concrete error detail, appended verbatim after the localized cause. */
-  detail?: string;
-  /** Retry count behind an llm_retries_exhausted abort. */
-  attempts?: number;
 }
 
 /** `retryable` is the live protocol; failed/timeout/malformed are legacy Trace spellings kept for replay. */
@@ -1513,9 +1507,6 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       if (waiting) waiting.gaveUp = true;
       const item: AbortItem = { kind: "abort", id: nextId(model) };
       if (p.reason != null) item.reason = p.reason;
-      if (typeof p.code === "string") item.code = p.code;
-      if (typeof p.detail === "string") item.detail = p.detail;
-      if (typeof p.attempts === "number") item.attempts = p.attempts;
       model.items.push(item);
       return;
     }

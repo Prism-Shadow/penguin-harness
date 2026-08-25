@@ -9,6 +9,7 @@
  * "agent" is a common noun: lowercase mid-sentence, capitalized only at the start of a
  * label/sentence or in a proper name (Agent State, AgentHub). zh keeps "Agent" as-is.
  */
+import type { AbortCause } from "@prismshadow/penguin-core/omnimessage";
 export const zh = {
   appName: "PenguinHarness",
 
@@ -1398,31 +1399,27 @@ Benchmark：
     subagent: "子会话",
     subagentRunning: "运行中",
     /**
-     * Abort banner. A machine-readable `code` localizes the cause (with `detail` appended
-     * verbatim and `attempts` filling the retry count); a legacy Trace without one renders
-     * its English `reason` prose as-is.
+     * Abort banner. The cause is decoded from the event's English `reason` prose
+     * (`parseAbortReason`); provider error detail is untranslatable and appended verbatim.
+     * Unrecognized prose renders as-is.
      */
-    aborted: (item?: {
-      reason?: string | null;
-      code?: string;
-      detail?: string;
-      attempts?: number;
-    }) => {
-      const cause =
-        item?.code === "user_abort"
-          ? "用户中断"
-          : item?.code === "llm_fatal"
-            ? "模型请求错误"
-            : item?.code === "llm_retries_exhausted"
-              ? `模型请求重试 ${item.attempts ?? "多"} 次后失败`
-              : item?.code === "backoff_interrupted"
-                ? "重试等待中被中断"
-                : item?.code === "compaction_aborted"
-                  ? "压缩过程中被中断"
-                  : item?.code === "compaction_failed"
-                    ? "压缩失败"
-                    : (item?.reason ?? undefined);
-      const text = cause ? `${cause}${item?.detail ? `：${item.detail}` : ""}` : "";
+    aborted: (cause?: AbortCause) => {
+      const text =
+        cause === undefined
+          ? ""
+          : cause.kind === "user_abort"
+            ? "用户中断"
+            : cause.kind === "llm_fatal"
+              ? `模型请求错误：${cause.detail}`
+              : cause.kind === "llm_retries_exhausted"
+                ? `模型请求重试 ${cause.attempts} 次后失败${cause.detail ? `：${cause.detail}` : ""}`
+                : cause.kind === "backoff_interrupted"
+                  ? "重试等待中被中断"
+                  : cause.kind === "compaction_aborted"
+                    ? "压缩过程中被中断"
+                    : cause.kind === "compaction_failed"
+                      ? "压缩失败"
+                      : (cause.reason ?? "");
       return `[已中断]${text ? `：${text}` : ""}`;
     },
     /**

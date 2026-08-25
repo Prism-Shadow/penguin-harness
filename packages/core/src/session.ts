@@ -513,7 +513,7 @@ export class Session {
         yield end;
         this.abortedBootstrapRecords.push(end);
       }
-      const aborted = abortEvent("user", { code: "user_abort" });
+      const aborted = abortEvent("user");
       yield aborted;
       this.abortedBootstrapRecords.push(aborted);
       return false;

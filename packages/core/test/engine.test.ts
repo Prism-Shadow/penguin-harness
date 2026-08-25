@@ -16,6 +16,7 @@ import {
   emptyTokenCounts,
   imageUrlMessage,
   isCompleteModelMessage,
+  parseAbortReason,
   partialText,
   partialToolCallOutput,
   sessionMeta,
@@ -1863,8 +1864,9 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect(reason).toBe(
       "llm request failed after 2 retries: Upstream HTTP/2 stream failed (upstream_http2_stream_error)",
     );
-    expect(abort!.payload).toMatchObject({
-      code: "llm_retries_exhausted",
+    // Render layers decode the cause from this prose (the payload carries nothing else).
+    expect(parseAbortReason(reason)).toEqual({
+      kind: "llm_retries_exhausted",
       attempts: 2,
       detail: "Upstream HTTP/2 stream failed (upstream_http2_stream_error)",
     });
@@ -1950,9 +1952,11 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     const abort = all.find((m) => (m.payload as { type?: string }).type === "abort");
     expect(abort).toBeDefined();
     expect((abort!.payload as { reason?: string }).reason).toContain("llm request error");
-    // The machine-readable cause rides the event so render layers can localize the banner
-    // without parsing the English prose; the raw detail comes along verbatim.
-    expect(abort!.payload).toMatchObject({ code: "llm_fatal", detail: "401 invalid x-api-key" });
+    // The payload carries only the prose; render layers decode the cause from it.
+    expect(parseAbortReason((abort!.payload as { reason?: string }).reason)).toEqual({
+      kind: "llm_fatal",
+      detail: "401 invalid x-api-key",
+    });
   });
 
   it("a fast-mode rejection (fatal) stops the run without burning the ladder", async () => {
