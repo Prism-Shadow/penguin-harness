@@ -15,12 +15,14 @@ import { HttpError } from "../http/errors.js";
 import { ADMIN_USER_ID, MIN_PASSWORD_LENGTH, toUserInfo } from "../auth/service.js";
 import { SCRYPT_COST, hashPassword } from "../auth/password.js";
 import type { ProjectsRepo } from "../db/repos/projects.js";
+import type { AuthSessionsRepo } from "../db/repos/auth-sessions.js";
 import type { UserRow, UsersRepo } from "../db/repos/users.js";
 import { SEMANTIC_ID_RULE, USERNAME_PATTERN } from "./ids.js";
 import type { ProjectService } from "./project-service.js";
 
 export interface AdminServiceDeps {
   users: UsersRepo;
+  authSessions: AuthSessionsRepo;
   projects: ProjectsRepo;
   projectService: ProjectService;
   /**
@@ -97,10 +99,8 @@ export class AdminService {
       await hashPassword(password, this.hashCost),
       !isSelfAdminReset,
     );
-    // A session is a signature, so there is nothing to delete: the not-before mark, on the
-    // injected clock, is what makes every token issued to this account before now stop
-    // verifying.
-    this.deps.users.setSessionsNotBefore(userId, this.now().toISOString());
+    // Force re-login: delete every session row for this user.
+    this.deps.authSessions.deleteByUser(userId);
   }
 
   /** Delete user: the built-in admin cannot be deleted; owned Projects (including data directories) are deleted along with it. */

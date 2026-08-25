@@ -12,6 +12,7 @@ import { hashPassword, verifyPassword } from "../src/auth/password.js";
 import { ADMIN_USER_ID } from "../src/auth/service.js";
 import { openDatabase } from "../src/db/database.js";
 import { UsersRepo } from "../src/db/repos/users.js";
+import { AuthSessionsRepo } from "../src/db/repos/auth-sessions.js";
 import { initialAdminPasswordPath } from "../src/initial-password.js";
 import { acquireServerLock } from "../src/lock.js";
 import { resetAdminPassword } from "../src/reset-admin-password.js";
@@ -53,6 +54,22 @@ describe("resetAdminPassword", () => {
       createdAt,
       sessionsNotBefore: null,
     });
+    const sessions = new AuthSessionsRepo(db);
+    const later = "2027-01-01T00:00:00.000Z";
+    sessions.insert({
+      tokenHash: "admin-session",
+      userId: ADMIN_USER_ID,
+      createdAt,
+      expiresAt: later,
+      via: "password",
+    });
+    sessions.insert({
+      tokenHash: "alice-session",
+      userId: "alice",
+      createdAt,
+      expiresAt: later,
+      via: "password",
+    });
     db.close();
     return dbPath;
   }
@@ -75,9 +92,10 @@ describe("resetAdminPassword", () => {
       expect(admin?.passwordIsInitial).toBe(true);
       // The old password no longer works, and the new one is a value nobody holds.
       expect(await verifyPassword("old-password-1", admin!.passwordHash)).toBe(false);
-      // The admin's sessions are revoked by the not-before mark; bystanders are untouched.
-      expect(admin!.sessionsNotBefore).not.toBeNull();
-      expect(new UsersRepo(db).findById("alice")!.sessionsNotBefore).toBeNull();
+      // The admin's session rows are deleted; a bystander's are untouched.
+      const sessions = new AuthSessionsRepo(db);
+      expect(sessions.findByTokenHash("admin-session")).toBeNull();
+      expect(sessions.findByTokenHash("alice-session")).not.toBeNull();
       const alice = new UsersRepo(db).findById("alice");
       expect(await verifyPassword("alice-password-1", alice!.passwordHash)).toBe(true);
     } finally {

@@ -6,16 +6,15 @@
  *   tests/e2e); the account is claimed through the first-login link, and every other user
  *   is created by an admin (admin-service). An initial password — seeded or admin-set — is
  *   flagged password_is_initial, which the frontend turns into a change-it-soon prompt.
- * - Sessions are signed tokens (token-codec.ts): nothing is stored for one; 30 days, renewed
- *   to the full term when used a day or more after issue. Ending one early is a revocation.
+ * - Sessions are rows in auth_sessions: the cookie carries a 32-byte random token, the row
+ *   stores only its sha256. A session outlives a restart (it is on disk); 30 days, renewed
+ *   in place when used with under 29 days left. Logout deletes the row.
  */
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { UserInfo } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import type { UserRow, UsersRepo } from "../db/repos/users.js";
-import type { AuthRevocationsRepo } from "../db/repos/auth-revocations.js";
-import { newClaims, signToken, verifyToken } from "./token-codec.js";
-import { ownerTokenMatches } from "./owner-token.js";
+import type { AuthSessionsRepo } from "../db/repos/auth-sessions.js";
 import { SCRYPT_COST, hashPassword, verifyPassword } from "./password.js";
 
 export const MIN_PASSWORD_LENGTH = 8;
@@ -52,6 +51,17 @@ export function generateInitialAdminPassword(): string {
   return randomBytes(SEED_PASSWORD_CHARS).toString("base64url").slice(0, SEED_PASSWORD_CHARS);
 }
 
+function sha256Hex(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+/** Constant-time string equality, so redeemFirstLogin cannot be timed into the printed token. */
+function constantTimeEqual(a: string, b: string): boolean {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  return ab.byteLength === bb.byteLength && timingSafeEqual(ab, bb);
+}
+
 /**
  * How a session was established: the login form, the desktop shell's one-shot token, or the
  * first-login link. Two allowances key off it: "desktop" and "setup" may set a password
@@ -73,18 +83,7 @@ export function toUserInfo(row: UserRow): UserInfo {
 
 export interface AuthServiceDeps {
   users: UsersRepo;
-  /** Revoked-before-expiry token ids; the in-memory mirror is what the hot path consults. */
-  authRevocations: AuthRevocationsRepo;
-  /** Signing key for session tokens — in memory only, fresh per process (token-codec.ts). */
-  tokenSecret: Buffer;
-  /**
-   * This boot's owner token (auth/owner-token.ts), held in memory rather than read back from
-   * the file at redemption time: the file is how the value is PUBLISHED, not what makes it
-   * true. Checking the file would accept whatever it currently holds — letting anyone who can
-   * WRITE the root (whose mode is the umask's) mint an admin session, where the axiom is that
-   * READING it is ownership. Null with no data root (some tests): redemption refuses all.
-   */
-  ownerToken: string | null;
+  authSessions: AuthSessionsRepo;
   /** Provisions the initial Project at signup (injected by project-service, to avoid a circular dependency). */
   provisionInitialProject: (user: UserRow, isAdmin: boolean) => Promise<void>;
   /** Fixed initial password for the seeded admin (config.seedAdminPassword); null generates a random one at seed time. */
@@ -107,19 +106,12 @@ export class AuthService {
   private readonly now: () => Date;
   private readonly hashCost: number;
   /**
-   * jti -> expiry (epoch ms), mirroring auth_revocations so the per-request path never reads
-   * the database. Only ever holds tokens revoked before their own expiry, so it stays tiny;
-   * pruned wherever the table itself is swept.
-   */
-  private readonly revokedJtis: Map<string, number>;
-  /**
-   * The setup session a first-login link carries; null until mintFirstLogin(). An ordinary
-   * session rather than a separate secret, so setting a password kills it through the same
-   * denylist every logout uses — including the claimer's own copy, which IS this value.
+   * The raw first-login token this boot printed (its row is a `setup` session); null until
+   * mintFirstLogin(). Kept so setting a password can delete exactly that session's row.
    */
   private firstLogin: string | null = null;
 
-  /** Session lifetime, for the cookie that must expire WITH the token, not before it. */
+  /** Session lifetime, for the cookie that must expire WITH the session, not before it. */
   get sessionTtlMs(): number {
     return this.deps.sessionTtlMs;
   }
@@ -128,29 +120,15 @@ export class AuthService {
     this.provisioner = deps.provisionInitialProject;
     this.now = deps.now ?? (() => new Date());
     this.hashCost = deps.passwordHashCost ?? SCRYPT_COST;
-    // Rows whose token has expired are dead weight — the signature check refuses those
-    // tokens on its own — so they are dropped before the mirror is seeded.
-    this.deps.authRevocations.deleteExpired(this.now().toISOString());
-    this.revokedJtis = new Map(
-      this.deps.authRevocations.list().map((r) => [r.jti, Date.parse(r.expiresAt)]),
-    );
-  }
-
-  /** Sweeps expired revocations from the table AND the in-memory mirror, in one place. */
-  private sweepRevocations(): void {
-    const nowMs = this.now().getTime();
-    this.deps.authRevocations.deleteExpired(new Date(nowMs).toISOString());
-    for (const [jti, expMs] of this.revokedJtis) {
-      if (expMs <= nowMs) this.revokedJtis.delete(jti);
-    }
+    this.deps.authSessions.deleteExpired(this.now().toISOString());
   }
 
   /**
-   * Mints the first-login session on demand — the caller prints it, nothing stores it. Null
-   * once the server is claimed, so the only setup session that ever exists is a printed one
-   * and a claimed server's restart has nothing to revoke. Not mintable from the constructor:
-   * seedAdmin() runs after it, so "is this server claimed" has no answer there. A cached
-   * link that aged past the session TTL unclaimed is re-rolled, not handed out dead.
+   * Mints the first-login session on demand — the caller prints its token, nothing else
+   * stores it. Null once the server is claimed, so the only setup session that ever exists is
+   * a printed one. Not mintable from the constructor: seedAdmin() runs after it, so "is this
+   * server claimed" has no answer there. A cached link whose row has expired or been deleted
+   * is re-minted, not handed out dead.
    */
   mintFirstLogin(): string | null {
     if (!this.adminPasswordIsInitial()) return null;
@@ -219,7 +197,7 @@ export class AuthService {
    */
   redeemFirstLogin(given: string): string | null {
     const expected = this.firstLogin;
-    if (expected === null || given === "" || !ownerTokenMatches(given, expected)) return null;
+    if (expected === null || given === "" || !constantTimeEqual(given, expected)) return null;
     return this.authenticateWithMeta(expected) === null ? null : expected;
   }
 
@@ -264,7 +242,7 @@ export class AuthService {
       throw new HttpError(401, "invalid_credentials", "Incorrect username or password.");
     }
     this.loginFailures.delete(userId);
-    this.sweepRevocations();
+    this.deps.authSessions.deleteExpired(this.now().toISOString());
     return { user: toUserInfo(row), token: this.issueSession(row.userId, "password") };
   }
 
@@ -301,115 +279,69 @@ export class AuthService {
 
   /**
    * The shared tail of every password set: policy check, hash, store, and — for the admin —
-   * the end of any live first-login link, whichever door set the password. Validation comes
-   * FIRST, so a rejected attempt (too short) leaves the link alive: burning it on a typo
-   * would strand the claimer until a restart.
+   * the deletion of any live first-login session. Validation comes FIRST, so a rejected
+   * attempt (too short) leaves the link alive: burning it on a typo would strand the claimer
+   * until a restart.
    */
   private async setPassword(userId: string, newPassword: string): Promise<void> {
     if (newPassword.length < MIN_PASSWORD_LENGTH) {
       throw new HttpError(400, "invalid_password", "Password must be at least 8 characters.");
     }
     this.deps.users.updatePassword(userId, await hashPassword(newPassword, this.hashCost), false);
-    if (userId === ADMIN_USER_ID) this.revokeFirstLogin();
+    if (userId === ADMIN_USER_ID && this.firstLogin !== null) {
+      this.deps.authSessions.delete(sha256Hex(this.firstLogin));
+    }
   }
 
-  /**
-   * Ends every copy of this boot's first-login session — by jti, not by presenting the token:
-   * the printed original may have expired while a RENEWED copy of the same jti is live (the
-   * setup session renews a day into its life), and a logout of the expired original would
-   * early-out and spare the copy. now+TTL bounds every renewable sibling.
-   */
-  private revokeFirstLogin(): void {
-    if (this.firstLogin === null) return;
-    const claims = verifyToken(this.firstLogin, this.deps.tokenSecret);
-    if (claims !== null) this.revokeJti(claims.jti, this.now().getTime() + this.deps.sessionTtlMs);
-  }
-
-  /**
-   * Revocation is the ONLY per-session write in the signed scheme: the row records the
-   * exception (a logout before expiry), never the session. An unverifiable or expired token
-   * revokes nothing — its signature already refuses it everywhere.
-   */
+  /** Ends a session: the row is the session, so logout deletes it. Unknown token is a no-op. */
   logout(token: string): void {
-    const claims = verifyToken(token, this.deps.tokenSecret);
-    const nowMs = this.now().getTime();
-    if (claims === null || claims.exp <= nowMs) return;
-    // Renewal keeps the jti and slides the expiry, so the presented copy may not be the
-    // longest-lived sibling; now+TTL bounds them all. A non-renewable token has no siblings.
-    const renewable = claims.exp - claims.iat >= this.deps.sessionRenewMs;
-    this.revokeJti(claims.jti, renewable ? nowMs + this.deps.sessionTtlMs : claims.exp);
-  }
-
-  /** Marks a jti revoked until `holdUntilMs`, in the mirror and the table. */
-  private revokeJti(jti: string, holdUntilMs: number): void {
-    this.revokedJtis.set(jti, holdUntilMs);
-    this.deps.authRevocations.insert(jti, new Date(holdUntilMs).toISOString());
+    this.deps.authSessions.delete(sha256Hex(token));
   }
 
   /**
-   * Validates the cookie token: signature and expiry on CPU, revocation against the mirror,
-   * one users read (existence + the per-user not-before mark). Nearing expiry, a renewable
-   * session rides out with a REPLACEMENT token that keeps jti and iat and moves ONLY the
-   * expiry — the same session with a longer life, as the row model's in-place update was. A
-   * fresh jti would be a second identity that no revocation path sees. Short minted tokens
-   * (an hour) never renew: their hour must not stretch by mere use.
+   * Validates the cookie token: one indexed read of auth_sessions, plus the user row. An
+   * expired row is deleted and refused. Sliding renewal tops the expiry up IN PLACE (the
+   * cookie value never changes, so there is no second identity to revoke); only a session
+   * whose own span is at least the renewal window slides, so a short minted token (an hour)
+   * expires at its hour rather than stretching to a month by being used. `renewed` tells the
+   * middleware to refresh the cookie's own max-age to match.
    */
-  authenticateWithMeta(
-    token: string,
-  ): { user: UserRow; via: SessionVia; renewedToken?: string } | null {
+  authenticateWithMeta(token: string): { user: UserRow; via: SessionVia; renewed: boolean } | null {
+    const tokenHash = sha256Hex(token);
+    const session = this.deps.authSessions.findByTokenHash(tokenHash);
+    if (!session) return null;
     const now = this.now();
-    const claims = verifyToken(token, this.deps.tokenSecret);
-    if (claims === null) return null;
-    if (claims.exp <= now.getTime()) return null;
-    if (this.revokedJtis.has(claims.jti)) return null;
-    const user = this.deps.users.findById(claims.u);
-    if (!user) return null;
-    if (user.sessionsNotBefore !== null && claims.iat < Date.parse(user.sessionsNotBefore)) {
+    const expiresAt = Date.parse(session.expiresAt);
+    if (expiresAt <= now.getTime()) {
+      this.deps.authSessions.delete(tokenHash);
       return null;
     }
-    const via: SessionVia =
-      claims.v === "desktop" ? "desktop" : claims.v === "setup" ? "setup" : "password";
-    const renewable = claims.exp - claims.iat >= this.deps.sessionRenewMs;
-    if (renewable && claims.exp - now.getTime() < this.deps.sessionRenewMs) {
-      return {
-        user,
-        via,
-        renewedToken: signToken(
-          { ...claims, exp: now.getTime() + this.deps.sessionTtlMs },
-          this.deps.tokenSecret,
-        ),
-      };
+    const user = this.deps.users.findById(session.userId);
+    if (!user) return null;
+    const renewable = expiresAt - Date.parse(session.createdAt) >= this.deps.sessionRenewMs;
+    let renewed = false;
+    if (renewable && expiresAt - now.getTime() < this.deps.sessionRenewMs) {
+      this.deps.authSessions.touch(
+        tokenHash,
+        new Date(now.getTime() + this.deps.sessionTtlMs).toISOString(),
+      );
+      renewed = true;
     }
-    return { user, via };
+    const via: SessionVia =
+      session.via === "desktop" ? "desktop" : session.via === "setup" ? "setup" : "password";
+    return { user, via, renewed };
   }
 
   private issueSession(userId: string, via: SessionVia): string {
-    const claims = newClaims(userId, via, this.now().getTime(), this.deps.sessionTtlMs);
-    return signToken(claims, this.deps.tokenSecret);
-  }
-
-  /**
-   * Redeems this boot's owner token for a signed session — the one bootstrap primitive.
-   * Whoever presents it read `<root>/owner-token`, and reading the data root is what
-   * ownership means here. TTL capped at the session TTL: the owner can mint again forever,
-   * so longer would add risk and no capability. One null for both refusals (wrong token /
-   * no such user), or a caller without the token could enumerate accounts.
-   */
-  redeemOwnerToken(
-    given: string,
-    userId: string,
-    ttlMs: number,
-  ): { token: string; expiresAt: string } | null {
-    const expected = this.deps.ownerToken;
-    if (expected === null || !ownerTokenMatches(given, expected)) return null;
-    if (this.deps.users.findById(userId) === null) return null;
-    // The other frequent path (beside login) that should shrink the revocation mirror.
-    this.sweepRevocations();
-    const bounded = Math.max(1_000, Math.min(ttlMs, this.deps.sessionTtlMs));
-    const claims = newClaims(userId, "cli", this.now().getTime(), bounded);
-    return {
-      token: signToken(claims, this.deps.tokenSecret),
-      expiresAt: new Date(claims.exp).toISOString(),
-    };
+    const token = randomBytes(32).toString("base64url");
+    const now = this.now();
+    this.deps.authSessions.insert({
+      tokenHash: sha256Hex(token),
+      userId,
+      createdAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + this.deps.sessionTtlMs).toISOString(),
+      via,
+    });
+    return token;
   }
 }

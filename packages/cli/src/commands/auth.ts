@@ -216,9 +216,9 @@ export function registerAuthCommand(program: Command, t: Messages): void {
         return fail(t.authToken.badTtl);
       }
       const root = resolveRootOption(opts.root);
-      // Stateless: the token is signed against the root's key, so there is no database to
-      // need — a root whose server has never run mints for the admin its first boot seeds.
-      const result = await mintApiToken(root, {
+      // No server needed: the token is a session row this writes straight into web.db, which
+      // reading the data root already authorizes (auth-token.ts). Safe while the server runs.
+      const result = mintApiToken(root, {
         userId: opts.userId,
         ...(ttl === undefined ? {} : { ttlMs: ttl * 1000 }),
       });

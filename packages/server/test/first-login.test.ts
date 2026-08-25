@@ -123,70 +123,38 @@ describe("the first-login link", () => {
   });
 
   /**
-   * Setting the password must kill the setup session by its jti, not by the printed token —
-   * once the original has aged past its own expiry, a renewed copy of the same jti is still
-   * live, and revoking only the (now-expired) original would spare it. Reviewer reproduced
-   * the copy staying admin at sessionVia:"setup" after the password was set.
+   * The setup session renews in place (the row's expiry is topped up, the cookie value is
+   * unchanged), so it survives well past the printed link's original 30-day mark. Setting a
+   * password deletes that row, and the link goes dead — no surviving setup session, whether
+   * or not it was renewed first.
    */
-  it("kills a renewed setup cookie even after the printed original has expired", async () => {
+  it("stays usable across renewal and dies when the password is set", async () => {
     let nowMs = Date.now();
     const clocked = await createTestApp({
       config: { seedAdminPassword: null },
       now: () => new Date(nowMs),
     });
     try {
-      const original = clocked.deps.authService.mintFirstLogin()!;
-      // Day 2: renew into a replacement copy (same jti, exp ~day 32).
+      const link = clocked.deps.authService.mintFirstLogin()!;
+      // Two days in — past the renewal threshold: the row's expiry is topped up, but the
+      // cookie the browser holds is byte-for-byte the same token.
       nowMs += 2 * 24 * 60 * 60 * 1000;
-      const r = await apiClient(clocked.app, `${SESSION_COOKIE}=${original}`).get("/api/me");
-      const renewed = cookieFrom(r);
-      // Day 31: the printed original (exp day 30) is dead; the renewed copy is not.
+      const r = await apiClient(clocked.app, `${SESSION_COOKIE}=${link}`).get("/api/me");
+      expect(r.status).toBe(200);
+      expect(cookieFrom(r)).toBe(`${SESSION_COOKIE}=${link}`);
+      // Well past the original 30-day mark, the renewed row is still live.
       nowMs += 29 * 24 * 60 * 60 * 1000;
-      expect(
-        (await apiClient(clocked.app, `${SESSION_COOKIE}=${original}`).get("/api/me")).status,
-      ).toBe(401);
-      const set = await apiClient(clocked.app, renewed).put("/api/me/password", {
-        newPassword: "claimed-password-1",
-      });
+      const set = await apiClient(clocked.app, `${SESSION_COOKIE}=${link}`).put(
+        "/api/me/password",
+        {
+          newPassword: "claimed-password-1",
+        },
+      );
       expect(set.status).toBe(204);
-      // The copy that set the password is now revoked too — no surviving setup session.
-      expect((await apiClient(clocked.app, renewed).get("/api/me")).status).toBe(401);
-    } finally {
-      await clocked.cleanup();
-    }
-  });
-
-  /**
-   * The renewal window is a day short of the TTL, so a setup session starts renewing the day
-   * after it is claimed — the replacement cookie is the COMMON case, not an edge. It carries
-   * the same jti, so the revocation that fires when a password is set kills it too; a fresh
-   * jti here once meant a renewed claimer kept a password-setting session after the password
-   * existed.
-   */
-  it("a renewed setup cookie dies with the original when the password is set", async () => {
-    let nowMs = Date.now();
-    const clocked = await createTestApp({
-      config: { seedAdminPassword: null },
-      now: () => new Date(nowMs),
-    });
-    try {
-      const first = clocked.deps.authService.mintFirstLogin()!;
-      // Two days in: authentication hands back a replacement setup cookie.
-      nowMs += 2 * 24 * 60 * 60 * 1000;
-      const renewed = await apiClient(clocked.app, `${SESSION_COOKIE}=${first}`).get("/api/me");
-      expect(renewed.status).toBe(200);
-      const replacement = cookieFrom(renewed);
-      expect(replacement).toContain(`${SESSION_COOKIE}=v1.`);
-      // The replacement can still set the password without an old one…
-      const set = await apiClient(clocked.app, replacement).put("/api/me/password", {
-        newPassword: "claimed-password-1",
-      });
-      expect(set.status).toBe(204);
-      // …and that act ends every copy: the original AND the replacement itself.
+      // Setting the password deleted the session row; the link is dead.
       expect(
-        (await apiClient(clocked.app, `${SESSION_COOKIE}=${first}`).get("/api/me")).status,
+        (await apiClient(clocked.app, `${SESSION_COOKIE}=${link}`).get("/api/me")).status,
       ).toBe(401);
-      expect((await apiClient(clocked.app, replacement).get("/api/me")).status).toBe(401);
     } finally {
       await clocked.cleanup();
     }

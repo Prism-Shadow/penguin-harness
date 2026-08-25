@@ -22,6 +22,9 @@ export function openDatabase(dbPath: string): DatabaseSync {
   }
   const db = new sqlite.DatabaseSync(dbPath);
   db.exec("PRAGMA journal_mode = WAL;");
+  // A second connection (the CLI minting a token while the server runs) waits for the write
+  // lock rather than failing SQLITE_BUSY at once.
+  db.exec("PRAGMA busy_timeout = 5000;");
   db.exec("PRAGMA foreign_keys = ON;");
   db.exec(SCHEMA_SQL);
   // Columns added to the schema after a web.db was formed: CREATE TABLE IF NOT EXISTS never
@@ -37,9 +40,6 @@ export function openDatabase(dbPath: string): DatabaseSync {
   // this database: the old index is a strict prefix of it, so every query it served is
   // served identically. Dropping is safe — an index is derived, never data.
   db.exec("DROP INDEX IF EXISTS idx_usage_session");
-  // Sessions became signed tokens (auth/token-codec.ts): nothing creates or reads this
-  // table any more, and rows in it are dead session hashes a backup should not carry.
-  db.exec("DROP TABLE IF EXISTS auth_sessions");
   upgradeLastActiveAt(db);
   return db;
 }

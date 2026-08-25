@@ -58,10 +58,10 @@ export function authMiddleware(auth: AuthService): MiddlewareHandler<AppEnv> {
     if (!authed) {
       throw new HttpError(401, "unauthorized", "Not signed in or the sign-in has expired.");
     }
-    // Sliding renewal, signed-token shape: a signature cannot be extended in place, so a
-    // session nearing expiry rides out with a replacement cookie instead of a row update.
-    if (authed.renewedToken !== undefined) {
-      setCookie(c, SESSION_COOKIE, authed.renewedToken, cookieOptions(c, auth.sessionTtlMs));
+    // Sliding renewal: the session's expiry was topped up in place, so refresh the cookie's
+    // own max-age to match. The token value is unchanged — same session, longer life.
+    if (authed.renewed && token) {
+      setCookie(c, SESSION_COOKIE, token, cookieOptions(c, auth.sessionTtlMs));
     }
     c.set("user", authed.user);
     c.set("sessionVia", authed.via);

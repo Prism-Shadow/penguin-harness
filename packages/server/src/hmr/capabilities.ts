@@ -120,7 +120,6 @@ export const RUNTIME_INTERFACES: RuntimeInterfaces = {
     "changePassword",
     "loginDesktop",
     "setInitialPassword",
-    "redeemOwnerToken",
     "mintFirstLogin",
     "redeemFirstLogin",
     "setProvisioner",

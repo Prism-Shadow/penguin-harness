@@ -16,7 +16,6 @@
  * than with this build. Swap semantics for anything they hold that is not parked is a
  * HARD STOP: approvals deny, runs abort, the scheduler dies with its App.
  */
-import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
@@ -56,8 +55,7 @@ import { terminalRoutes } from "./terminal/routes.js";
 import type { TerminalManager } from "./terminal/manager.js";
 import type { AppEnv } from "./auth/middleware.js";
 import { AuthService } from "./auth/service.js";
-import { AuthRevocationsRepo } from "./db/repos/auth-revocations.js";
-import { issueOwnerToken } from "./auth/owner-token.js";
+import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
 import { handleError, HttpError, errorBody } from "./http/errors.js";
 import { attributedProjectId } from "./http/attribution.js";
 import { authRoutes } from "./http/routes/auth.js";
@@ -185,7 +183,6 @@ export interface AppDeps {
 
 export interface BuildDepsOverrides {
   /** Test double: pins the in-memory signing key, so a test can craft tokens of its own. */
-  tokenSecret?: Buffer;
   /** Test double: session-manager's underlying loader (avoids the real LLM/SDK path). */
   loader?: SessionLoader;
   /** Test double: Session title generator (avoids real LLM requests). */
@@ -226,11 +223,7 @@ export async function bootAppDeps(
 
   const authService = new AuthService({
     users: usersRepo,
-    authRevocations: new AuthRevocationsRepo(db),
-    // In-memory signing key + this boot's owner token: nothing auth-shaped rests on disk
-    // beyond the short-lived owner token, which a restart replaces (auth/owner-token.ts).
-    tokenSecret: overrides.tokenSecret ?? randomBytes(32),
-    ownerToken: issueOwnerToken(config.root),
+    authSessions: new AuthSessionsRepo(db),
     // Auth is runtime mechanism, but WHAT a fresh user is provisioned with is business
     // policy: the App installs the real provisioner via setProvisioner at every create
     // (see hmr/platform.ts). This constructor fallback only answers before the first
@@ -643,6 +636,7 @@ export function buildAppDeps(
   });
   const adminService = new AdminService({
     users: usersRepo,
+    authSessions: new AuthSessionsRepo(db),
     projects: projectsRepo,
     projectService,
     ...(overrides.passwordHashCost !== undefined

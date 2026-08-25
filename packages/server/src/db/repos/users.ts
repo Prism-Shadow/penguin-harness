@@ -70,13 +70,6 @@ export class UsersRepo {
       .run(passwordHash, isInitial ? 1 : 0, userId);
   }
 
-  /** Stamps the user's not-before mark: signed tokens issued before `nowIso` stop verifying. */
-  setSessionsNotBefore(userId: string, nowIso: string): void {
-    this.db
-      .prepare("UPDATE users SET sessions_not_before = ? WHERE user_id = ?")
-      .run(nowIso, userId);
-  }
-
   /** Used by admin user deletion and account-creation compensation paths (owned Projects must be cleaned up first). */
   delete(userId: string): void {
     this.db.prepare("DELETE FROM users WHERE user_id = ?").run(userId);

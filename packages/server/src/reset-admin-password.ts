@@ -27,6 +27,7 @@ import { hashPassword } from "./auth/password.js";
 import { ADMIN_USER_ID, generateInitialAdminPassword } from "./auth/service.js";
 import { openDatabase } from "./db/database.js";
 import { UsersRepo } from "./db/repos/users.js";
+import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
 import { clearInitialAdminPassword } from "./initial-password.js";
 import { liveServerLock } from "./lock.js";
 import type { ServerLock } from "./lock.js";
@@ -64,9 +65,9 @@ export async function resetAdminPassword(
     // or left in a terminal buffer.
     const password = generateInitialAdminPassword();
     users.updatePassword(ADMIN_USER_ID, await hashPassword(password), true);
-    // Works offline because the server reads the mark per request: every token issued to the
-    // admin before this instant stops verifying the moment it comes back up.
-    users.setSessionsNotBefore(ADMIN_USER_ID, new Date().toISOString());
+    // Every admin session is deleted, so the ones held before the reset stop working; the
+    // next start prints a first-login link, exactly as a fresh install does.
+    new AuthSessionsRepo(db).deleteByUser(ADMIN_USER_ID);
     // Nothing writes it any more; sweep a plaintext an older build may have left behind.
     clearInitialAdminPassword(root);
     return { outcome: "reset" };
