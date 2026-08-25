@@ -73,6 +73,7 @@ export class AdminService {
       isAdmin: false,
       passwordIsInitial: true,
       createdAt: this.now().toISOString(),
+      sessionsNotBefore: null,
     };
     this.deps.users.insert(user);
     try {
@@ -94,7 +95,10 @@ export class AdminService {
       throw new HttpError(400, "invalid_password", "Password must be at least 8 characters.");
     }
     this.deps.users.updatePassword(userId, await hashPassword(password, this.hashCost), true);
+    // Both worlds: legacy row sessions are deleted; signed tokens die against the not-before
+    // mark, since there are no rows to delete for them (auth/token-codec.ts).
     this.deps.authSessions.deleteByUser(userId);
+    this.deps.users.setSessionsNotBefore(userId, new Date().toISOString());
     this.deps.onPasswordChanged?.(userId);
   }
 

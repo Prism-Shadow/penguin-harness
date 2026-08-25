@@ -8,13 +8,25 @@
  * see the README security notes.
  */
 import type { MiddlewareHandler } from "hono";
-import { getCookie } from "hono/cookie";
+import { getCookie, setCookie } from "hono/cookie";
 import { HttpError } from "../http/errors.js";
 import type { UserRow } from "../db/repos/users.js";
 import type { AuthService, SessionVia } from "./service.js";
 
 /** Session cookie name. */
 export const SESSION_COOKIE = "penguin_session";
+
+/** Session cookie attributes: HttpOnly, SameSite=Lax, 7 days. Shared by login and renewal. */
+export function cookieOptions(c: { req: { header(name: string): string | undefined } }) {
+  return {
+    httpOnly: true,
+    sameSite: "Lax" as const,
+    path: "/",
+    maxAge: 7 * 24 * 60 * 60,
+    // Add Secure when the reverse proxy declares https.
+    ...(c.req.header("x-forwarded-proto") === "https" ? { secure: true } : {}),
+  };
+}
 
 /** Hono env: variables injected by the auth middleware. */
 export type AppEnv = {
@@ -36,6 +48,11 @@ export function authMiddleware(auth: AuthService): MiddlewareHandler<AppEnv> {
     const authed = token ? auth.authenticateWithMeta(token) : null;
     if (!authed) {
       throw new HttpError(401, "unauthorized", "Not signed in or the sign-in has expired.");
+    }
+    // Sliding renewal, signed-token shape: a signature cannot be extended in place, so a
+    // session nearing expiry rides out with a replacement cookie instead of a row update.
+    if (authed.renewedToken !== undefined) {
+      setCookie(c, SESSION_COOKIE, authed.renewedToken, cookieOptions(c));
     }
     c.set("user", authed.user);
     c.set("sessionVia", authed.via);

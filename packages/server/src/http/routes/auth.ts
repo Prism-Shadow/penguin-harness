@@ -7,22 +7,10 @@ import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import type { AuthResponse } from "../../api/types.js";
 import { HttpError } from "../errors.js";
-import { SESSION_COOKIE } from "../../auth/middleware.js";
+import { SESSION_COOKIE, cookieOptions } from "../../auth/middleware.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { readJson, requireString } from "../validate.js";
 import type { AppDeps } from "../../app.js";
-
-/** Session cookie attributes: HttpOnly, SameSite=Lax, 7 days. */
-function cookieOptions(c: { req: { header(name: string): string | undefined } }) {
-  return {
-    httpOnly: true,
-    sameSite: "Lax" as const,
-    path: "/",
-    maxAge: 7 * 24 * 60 * 60,
-    // Add Secure when the reverse proxy declares https.
-    ...(c.req.header("x-forwarded-proto") === "https" ? { secure: true } : {}),
-  };
-}
 
 export function authRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();

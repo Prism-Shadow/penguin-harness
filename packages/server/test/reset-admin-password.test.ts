@@ -46,6 +46,7 @@ describe("resetAdminPassword", () => {
       isAdmin: true,
       passwordIsInitial: false,
       createdAt,
+      sessionsNotBefore: null,
     });
     users.insert({
       userId: "alice",
@@ -53,6 +54,7 @@ describe("resetAdminPassword", () => {
       isAdmin: false,
       passwordIsInitial: false,
       createdAt,
+      sessionsNotBefore: null,
     });
     sessions.insert({
       tokenHash: "admin-token",

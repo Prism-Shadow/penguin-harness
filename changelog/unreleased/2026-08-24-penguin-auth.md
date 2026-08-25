@@ -31,12 +31,30 @@ answer one.
 `token` takes no password at all. It mints a session straight from the data root, and what
 authorizes it is being able to read that root — which already holds every credential the token
 could reach. It is for where there is no password to give: a machine whose admin password
-somebody set by hand, or a script that must not carry one. A token expires within the hour and is
-one row to revoke, which a password read off disk is not.
+somebody set by hand, or a script that must not carry one.
 
-The row records `via: "cli"`. Nothing grants privilege from it — anything that is not `desktop`
-reads as an ordinary password session, so a token minted this way can never reach the
-desktop-only routes — but the table tells the truth about where a session came from.
+## Sessions are signed statements now
+
+Auth runs on every request, so it is the hottest path in the server. A session used to be a
+database row — one read per request, one write per issue and renewal. It is now a signed token
+(`v1.<claims>.<hmac>`, keyed by `<root>/auth-token-secret`): issuance and verification are pure
+CPU, and the database records only the exceptions — a logout before expiry lands in a small
+revocation list that lives in memory after boot and is swept of expired rows at boot and on each
+login. Minting from the CLI touches no database at all, so it also works on a root whose server
+is down or has never run.
+
+What the row model guaranteed still holds, by other means: logout is a real revocation that
+survives restarts (the denylist row); an admin password reset still kills a user's outstanding
+sessions (a per-user not-before mark, since there are no rows to delete); sessions issued before
+the switch keep working from their rows until they expire; and long sessions still slide, now as
+a replacement cookie instead of a row update. Claims record `v: "cli"`, and nothing grants
+privilege from it — anything that is not `desktop` reads as an ordinary password session, so a
+minted token can never reach the desktop-only routes.
+
+The trade, stated plainly: the signing key can mint sessions for as long as it exists, so a
+leaked backup of the data root becomes the ability to forge tokens — where a leaked session row
+was just hashes — and issuance itself leaves no audit trail. Rotation is deleting the key file
+and restarting, which kills every outstanding token at once.
 
 ## Notes
 

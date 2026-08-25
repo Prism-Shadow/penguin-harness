@@ -27,7 +27,6 @@
  * credential ends up.
  * Docs: /docs/cli § "penguin auth".
  */
-import path from "node:path";
 import { mintApiToken } from "@prismshadow/penguin-server/auth-token";
 import type { Command } from "commander";
 import {
@@ -212,16 +211,12 @@ export function registerAuthCommand(program: Command, t: Messages): void {
         return;
       }
       const root = resolveRootOption(opts.root);
-      const dbPath = process.env.PENGUIN_WEB_DB ?? path.join(root, "web.db");
-      const result = mintApiToken(dbPath, {
+      // Stateless: the token is signed against the root's key, so there is no database to
+      // need — a root whose server has never run mints for the admin its first boot seeds.
+      const result = mintApiToken(root, {
         userId: opts.userId,
         ...(ttl === undefined ? {} : { ttlMs: ttl * 1000 }),
       });
-      if (result.outcome === "no_database") {
-        process.stderr.write(t.authToken.noDatabase(result.dbPath) + "\n");
-        process.exitCode = 1;
-        return;
-      }
       if (result.outcome === "no_user") {
         process.stderr.write(t.authToken.noUser(result.userId) + "\n");
         process.exitCode = 1;

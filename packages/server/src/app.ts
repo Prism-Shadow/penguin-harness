@@ -56,6 +56,8 @@ import { terminalRoutes } from "./terminal/routes.js";
 import type { TerminalManager } from "./terminal/manager.js";
 import type { AppEnv } from "./auth/middleware.js";
 import { ADMIN_USER_ID, AuthService } from "./auth/service.js";
+import { AuthRevocationsRepo } from "./db/repos/auth-revocations.js";
+import { readOrCreateAuthSecret } from "./auth/token-secret.js";
 import { clearInitialAdminPassword } from "./initial-password.js";
 import { handleError, HttpError, errorBody } from "./http/errors.js";
 import { attributedProjectId } from "./http/attribution.js";
@@ -232,6 +234,10 @@ export async function bootAppDeps(
   const authService = new AuthService({
     users: usersRepo,
     authSessions: authSessionsRepo,
+    authRevocations: new AuthRevocationsRepo(db),
+    // Sessions are signed statements verified against this key; the CLI reads the same file
+    // to mint offline (auth/token-secret.ts is the whole coordination).
+    tokenSecret: readOrCreateAuthSecret(config.root),
     // Auth is runtime mechanism, but WHAT a fresh user is provisioned with is business
     // policy: the App installs the real provisioner via setProvisioner at every create
     // (see hmr/platform.ts). This constructor fallback only answers before the first

@@ -12,70 +12,67 @@
  * credentials — a token adds nothing they did not have. It only makes that access usable
  * through the API instead of by hand.
  *
- * That is why it is strictly better than the password path it replaces. A password read off
- * disk is long-lived, unrevocable and the same secret everywhere it is used; a token here
- * expires in an hour and can be deleted from one table. And the credential that must NOT move
- * — the admin password — stays where it is, which was the point of the original design.
+ * STATELESS. Sessions are signed statements (auth/token-codec.ts), so minting is reading the
+ * root's signing key and computing a signature — no database open, no row, nothing racing the
+ * live server. That is also what lets this work on a root whose server is down, or has never
+ * run: the key is created on first use, and the server adopts the same file at its next boot.
  *
- * The row records `via: "cli"`. Nothing grants privilege from it — the middleware reads
- * anything that is not "desktop" as an ordinary password session, so a token minted here can
- * never reach the desktop-only routes — but the table tells the truth about where it came
- * from, which is what an audit of "who has a session" needs to be able to say.
+ * The claims record `v: "cli"`. Nothing grants privilege from it — verification maps anything
+ * that is not "desktop" to an ordinary password session, so a token minted here can never
+ * reach the desktop-only routes.
  */
-import { createHash, randomBytes } from "node:crypto";
-import { openDatabase } from "./db/database.js";
-import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
-import { UsersRepo } from "./db/repos/users.js";
+import fs from "node:fs";
+import path from "node:path";
+import { readOrCreateAuthSecret } from "./auth/token-secret.js";
+import { newClaims, signToken } from "./auth/token-codec.js";
 
 /** An hour, matching what a controller needs: long enough to finish, short enough to forget. */
 export const CLI_TOKEN_TTL_MS = 60 * 60_000;
 
 export type MintTokenResult =
   | { outcome: "minted"; token: string; userId: string; expiresAt: string }
-  | { outcome: "no_database"; dbPath: string }
   | { outcome: "no_user"; userId: string };
 
-const sha256Hex = (value: string): string => createHash("sha256").update(value).digest("hex");
-
 /**
- * Issues an API session token against the database at `dbPath`.
+ * Issues a signed API token against the data root at `root`.
  *
- * Deliberately does NOT refuse while a server is running, unlike the offline password reset:
- * a token is only useful precisely because a server is up to accept it. The write is a single
- * INSERT into a WAL database, which is what makes writing beside a live server safe here and
- * not there — and the server reads sessions from the table on every request, so the token
- * works the moment this returns, with nothing to restart or invalidate.
+ * The user check is a COURTESY, not the enforcement — verification looks the account up on
+ * every request, so a token for a user that never appears simply never authenticates. It runs
+ * only when a database is already there to ask: on a fresh root (no web.db yet) the token is
+ * minted anyway, for the admin the first boot will seed.
  */
 export function mintApiToken(
-  dbPath: string,
+  root: string,
   opts: { userId?: string; ttlMs?: number; now?: () => Date } = {},
 ): MintTokenResult {
-  const now = opts.now?.() ?? new Date();
-  let db;
-  try {
-    db = openDatabase(dbPath);
-  } catch {
-    return { outcome: "no_database", dbPath };
+  const userId = opts.userId ?? "admin";
+  const dbPath = process.env.PENGUIN_WEB_DB ?? path.join(root, "web.db");
+  if (fs.existsSync(dbPath) && !userExists(dbPath, userId)) {
+    return { outcome: "no_user", userId };
   }
-  try {
-    const users = new UsersRepo(db);
-    // Defaults to the built-in admin: this is the account a controller acts as, and on a
-    // machine whose data root the caller can already read it is not an escalation to name it.
-    const wanted = opts.userId ?? "admin";
-    const user = users.findById(wanted);
-    if (user === null) return { outcome: "no_user", userId: wanted };
+  const now = opts.now?.() ?? new Date();
+  const claims = newClaims(userId, "cli", now.getTime(), opts.ttlMs ?? CLI_TOKEN_TTL_MS);
+  return {
+    outcome: "minted",
+    token: signToken(claims, readOrCreateAuthSecret(root)),
+    userId,
+    expiresAt: new Date(claims.exp).toISOString(),
+  };
+}
 
-    const token = randomBytes(32).toString("base64url");
-    const expiresAt = new Date(now.getTime() + (opts.ttlMs ?? CLI_TOKEN_TTL_MS)).toISOString();
-    new AuthSessionsRepo(db).insert({
-      tokenHash: sha256Hex(token),
-      userId: user.userId,
-      createdAt: now.toISOString(),
-      expiresAt,
-      via: "cli",
-    });
-    return { outcome: "minted", token, userId: user.userId, expiresAt };
-  } finally {
-    db.close();
+/** One read-only question to an existing database; an unopenable one answers "unknown", not "no". */
+function userExists(dbPath: string, userId: string): boolean {
+  try {
+    // Deferred import shape: node:sqlite is experimental and this module must stay importable
+    // where only minting (no validation) is needed.
+    const sqlite = process.getBuiltinModule("node:sqlite");
+    const db = new sqlite.DatabaseSync(dbPath, { readOnly: true });
+    try {
+      return db.prepare("SELECT 1 FROM users WHERE user_id = ?").get(userId) !== undefined;
+    } finally {
+      db.close();
+    }
+  } catch {
+    return true; // Unreadable database: mint, and let verification be the judge.
   }
 }

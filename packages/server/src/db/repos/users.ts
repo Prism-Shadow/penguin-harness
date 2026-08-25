@@ -11,6 +11,12 @@ export interface UserRow {
   /** Still using the initial password (seeded / set by an admin); cleared to 0 once the user changes it. */
   passwordIsInitial: boolean;
   createdAt: string;
+  /**
+   * Signed tokens issued BEFORE this instant are refused (ISO; null = no mark). This is how
+   * "clear this user's sessions" works when a session is a signature instead of a row: an
+   * admin password reset stamps it, and every older token dies at its next request.
+   */
+  sessionsNotBefore: string | null;
 }
 
 function mapRow(r: Record<string, unknown>): UserRow {
@@ -20,6 +26,7 @@ function mapRow(r: Record<string, unknown>): UserRow {
     isAdmin: (r.is_admin as number) === 1,
     passwordIsInitial: (r.password_is_initial as number) === 1,
     createdAt: r.created_at as string,
+    sessionsNotBefore: (r.sessions_not_before as string | null) ?? null,
   };
 }
 
@@ -61,6 +68,13 @@ export class UsersRepo {
     this.db
       .prepare("UPDATE users SET password_hash = ?, password_is_initial = ? WHERE user_id = ?")
       .run(passwordHash, isInitial ? 1 : 0, userId);
+  }
+
+  /** Stamps the user's not-before mark: signed tokens issued before `nowIso` stop verifying. */
+  setSessionsNotBefore(userId: string, nowIso: string): void {
+    this.db
+      .prepare("UPDATE users SET sessions_not_before = ? WHERE user_id = ?")
+      .run(nowIso, userId);
   }
 
   /** Used by admin user deletion and account-creation compensation paths (owned Projects must be cleaned up first). */

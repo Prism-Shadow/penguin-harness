@@ -125,7 +125,6 @@ export interface Messages {
     userId: string;
     ttlSeconds: string;
     badTtl: string;
-    noDatabase(dbPath: string): string;
     noUser(userId: string): string;
   };
   resetPassword: {
@@ -475,8 +474,6 @@ const en: Messages = {
     userId: "Account to mint for (default: admin)",
     ttlSeconds: "Lifetime in seconds (default: 3600)",
     badTtl: "--ttl-seconds must be a positive integer.",
-    noDatabase: (dbPath) =>
-      `No database at ${dbPath} \u2014 this data root has never run a server.`,
     noUser: (userId) => `No such account: ${userId}.`,
   },
   resetPassword: {
@@ -792,7 +789,6 @@ const zh: Messages = {
     userId: "签发给哪个账号（默认 admin）",
     ttlSeconds: "有效期秒数（默认 3600）",
     badTtl: "--ttl-seconds 必须是正整数。",
-    noDatabase: (dbPath) => `${dbPath} 没有数据库——该数据根从未启动过服务。`,
     noUser: (userId) => `没有这个账号：${userId}。`,
   },
   resetPassword: {

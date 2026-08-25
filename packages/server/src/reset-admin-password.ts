@@ -61,6 +61,9 @@ export async function resetAdminPassword(
     const password = generateInitialAdminPassword();
     users.updatePassword(ADMIN_USER_ID, await hashPassword(password), true);
     new AuthSessionsRepo(db).deleteByUser(ADMIN_USER_ID);
+    // Signed tokens have no rows to delete; the not-before mark is what kills them, and it
+    // works offline exactly like the row delete — the server reads it per request.
+    users.setSessionsNotBefore(ADMIN_USER_ID, new Date().toISOString());
     storeInitialAdminPassword(root, password);
     return { outcome: "reset", password };
   } finally {

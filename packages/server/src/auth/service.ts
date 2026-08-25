@@ -17,6 +17,8 @@ import type { UserInfo } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import type { AuthSessionsRepo } from "../db/repos/auth-sessions.js";
 import type { UserRow, UsersRepo } from "../db/repos/users.js";
+import type { AuthRevocationsRepo } from "../db/repos/auth-revocations.js";
+import { looksSigned, newClaims, signToken, verifyToken } from "./token-codec.js";
 import { SCRYPT_COST, hashPassword, verifyPassword } from "./password.js";
 
 export const MIN_PASSWORD_LENGTH = 8;
@@ -77,6 +79,10 @@ export function toUserInfo(row: UserRow): UserInfo {
 export interface AuthServiceDeps {
   users: UsersRepo;
   authSessions: AuthSessionsRepo;
+  /** Revoked-before-expiry token ids; the in-memory copy is what the hot path consults. */
+  authRevocations: AuthRevocationsRepo;
+  /** Signing key for session tokens (auth/token-secret.ts) — sessions are signed statements, not rows. */
+  tokenSecret: Buffer;
   /** Provisions the initial Project at signup (injected by project-service, to avoid a circular dependency). */
   provisionInitialProject: (user: UserRow, isAdmin: boolean) => Promise<void>;
   /** Fixed initial password for the seeded admin (config.seedAdminPassword); null generates a random one at seed time. */
@@ -109,11 +115,21 @@ export class AuthService {
 
   private readonly now: () => Date;
   private readonly hashCost: number;
+  /**
+   * Revoked token ids, mirrored from auth_revocations at construction and kept in step by
+   * logout. This is what keeps the per-request path off the database: the set only ever
+   * holds tokens revoked before their own expiry, so it stays tiny by construction.
+   */
+  private readonly revokedJtis: Set<string>;
 
   constructor(private readonly deps: AuthServiceDeps) {
     this.provisioner = deps.provisionInitialProject;
     this.now = deps.now ?? (() => new Date());
     this.hashCost = deps.passwordHashCost ?? SCRYPT_COST;
+    // Boot-time sweep: rows whose token has expired anyway are dead weight — the signature
+    // check refuses those tokens on its own — so they are dropped before the set is seeded.
+    this.deps.authRevocations.deleteExpired(this.now().toISOString());
+    this.revokedJtis = new Set(this.deps.authRevocations.listJtis());
   }
 
   /**
@@ -142,6 +158,7 @@ export class AuthService {
       isAdmin: true,
       passwordIsInitial: true,
       createdAt: this.now().toISOString(),
+      sessionsNotBefore: null,
     };
     this.deps.users.insert(user);
     try {
@@ -199,6 +216,7 @@ export class AuthService {
       throw new HttpError(401, "invalid_credentials", "Incorrect username or password.");
     }
     this.loginFailures.delete(userId);
+    this.deps.authRevocations.deleteExpired(this.now().toISOString());
     this.deps.authSessions.deleteExpired(this.now().toISOString());
     return { user: toUserInfo(row), token: this.issueSession(row.userId, "password") };
   }
@@ -245,26 +263,72 @@ export class AuthService {
     this.deps.onPasswordChanged?.(userId);
   }
 
+  /**
+   * Revocation is the ONLY per-session write in the signed scheme: the row records the
+   * exception (a logout before expiry), never the session. An unverifiable token revokes
+   * nothing — its signature already refuses it everywhere.
+   */
   logout(token: string): void {
+    if (looksSigned(token)) {
+      const claims = verifyToken(token, this.deps.tokenSecret);
+      if (claims === null || claims.exp <= this.now().getTime()) return;
+      this.revokedJtis.add(claims.jti);
+      this.deps.authRevocations.insert(claims.jti, new Date(claims.exp).toISOString());
+      return;
+    }
     this.deps.authSessions.delete(sha256Hex(token));
   }
 
-  /** Validates the cookie token: returns null if expired/unknown; sliding renewal once less than 6 days remain. */
-  authenticateWithMeta(token: string): { user: UserRow; via: SessionVia } | null {
+  /**
+   * Validates the cookie token. Signed tokens verify on CPU alone plus one users read — the
+   * hot path this scheme exists for; the row lookup remains only for sessions issued before
+   * the switch, which age out within one TTL and are never issued again.
+   *
+   * Sliding renewal changes shape: a signature cannot be extended, so nearing expiry the
+   * answer carries a REPLACEMENT token for the middleware to set — same claims, fresh
+   * window. Only sessions whose own span is at least the renewal window slide; a short
+   * minted token (an hour) must expire at its hour, not stretch to a week by being used.
+   */
+  authenticateWithMeta(
+    token: string,
+  ): { user: UserRow; via: SessionVia; renewedToken?: string } | null {
+    const now = this.now();
+    if (looksSigned(token)) {
+      const claims = verifyToken(token, this.deps.tokenSecret);
+      if (claims === null) return null;
+      if (claims.exp <= now.getTime()) return null;
+      if (this.revokedJtis.has(claims.jti)) return null;
+      const user = this.deps.users.findById(claims.u);
+      if (!user) return null;
+      // Per-user revocation: an admin password reset stamps the mark, and every token
+      // issued before it dies here — the signed-world replacement for deleteByUser.
+      if (user.sessionsNotBefore !== null && claims.iat < Date.parse(user.sessionsNotBefore)) {
+        return null;
+      }
+      const via: SessionVia = claims.v === "desktop" ? "desktop" : "password";
+      const renewable = claims.exp - claims.iat >= this.deps.sessionRenewMs;
+      if (renewable && claims.exp - now.getTime() < this.deps.sessionRenewMs) {
+        return {
+          user,
+          via,
+          renewedToken: signToken(
+            newClaims(claims.u, claims.v, now.getTime(), this.deps.sessionTtlMs),
+            this.deps.tokenSecret,
+          ),
+        };
+      }
+      return { user, via };
+    }
+
+    // A session from before tokens were signed: honored from its row until it expires, so
+    // the upgrade logs nobody out. No new rows are ever written — this path only shrinks.
     const tokenHash = sha256Hex(token);
     const session = this.deps.authSessions.findByTokenHash(tokenHash);
     if (!session) return null;
-    const now = this.now();
     const expiresAt = Date.parse(session.expiresAt);
     if (!(expiresAt > now.getTime())) {
       this.deps.authSessions.delete(tokenHash);
       return null;
-    }
-    if (expiresAt - now.getTime() < this.deps.sessionRenewMs) {
-      this.deps.authSessions.touch(
-        tokenHash,
-        new Date(now.getTime() + this.deps.sessionTtlMs).toISOString(),
-      );
     }
     const user = this.deps.users.findById(session.userId);
     if (!user) return null;
@@ -272,15 +336,7 @@ export class AuthService {
   }
 
   private issueSession(userId: string, via: SessionVia): string {
-    const token = randomBytes(32).toString("base64url");
-    const now = this.now();
-    this.deps.authSessions.insert({
-      tokenHash: sha256Hex(token),
-      userId,
-      createdAt: now.toISOString(),
-      expiresAt: new Date(now.getTime() + this.deps.sessionTtlMs).toISOString(),
-      via,
-    });
-    return token;
+    const claims = newClaims(userId, via, this.now().getTime(), this.deps.sessionTtlMs);
+    return signToken(claims, this.deps.tokenSecret);
   }
 }

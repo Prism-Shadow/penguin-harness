@@ -15,7 +15,6 @@
  * and not a shell banner that happened to land on the same stream.
  * Docs: /docs/cli § "penguin server".
  */
-import path from "node:path";
 import { resolveRoot } from "@prismshadow/penguin-core";
 import { mintApiToken } from "@prismshadow/penguin-server/auth-token";
 import type { Command } from "commander";
@@ -39,16 +38,13 @@ export function registerAuthTokenCommand(server: Command, t: Messages): void {
         return;
       }
       const root = resolveRoot();
-      const dbPath = process.env.PENGUIN_WEB_DB ?? path.join(root, "web.db");
-      const result = mintApiToken(dbPath, {
+      // Stateless: signed against the root's key (auth/token-codec.ts) — no database open,
+      // nothing racing the live server, and a never-booted root mints for the admin its
+      // first boot will seed.
+      const result = mintApiToken(root, {
         userId: opts.userId,
         ...(ttl === undefined ? {} : { ttlMs: ttl * 1000 }),
       });
-      if (result.outcome === "no_database") {
-        process.stderr.write(t.authToken.noDatabase(result.dbPath) + "\n");
-        process.exitCode = 1;
-        return;
-      }
       if (result.outcome === "no_user") {
         process.stderr.write(t.authToken.noUser(result.userId) + "\n");
         process.exitCode = 1;

@@ -20,6 +20,14 @@ CREATE TABLE IF NOT EXISTS users (
   password_is_initial INTEGER NOT NULL DEFAULT 0,  -- 1=initial password (seeded/admin-set); cleared once the user changes it
   created_at          TEXT NOT NULL
 );
+-- Revoked signed tokens (see auth/token-codec.ts): a session is a signed statement, so the
+-- database records only the exceptions — logout before expiry. Loaded into memory at boot;
+-- rows whose token has expired anyway are swept at boot and on each login.
+CREATE TABLE IF NOT EXISTS auth_revocations (
+  jti        TEXT PRIMARY KEY,               -- the token's id claim; never the token itself
+  expires_at TEXT NOT NULL                   -- the token's own expiry: after this the row is dead weight
+);
+
 CREATE TABLE IF NOT EXISTS auth_sessions (
   token_hash TEXT PRIMARY KEY,               -- sha256(token) hex; the cookie stores only the raw token
   user_id    TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
