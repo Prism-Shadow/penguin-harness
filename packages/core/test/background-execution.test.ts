@@ -17,7 +17,7 @@ import { SubagentSessionManager } from "../src/environment/tools/subagent/index.
 import { DEFAULT_EMPTY_POLL_YIELD_MS } from "../src/environment/tools/command/index.js";
 import { ContextEngine } from "../src/engine/context-engine.js";
 import {
-  abortEvent,
+  requestEnd,
   assistantText,
   buildBackgroundTaskDoneMessage,
   emptyTokenCounts,
@@ -565,8 +565,9 @@ describe("run_subagent run_in_background", () => {
     const manager = new SubagentSessionManager();
     cleanups.push(() => manager.dispose());
     const runner = runnerOf(async function* () {
-      // A child-session failure surfaces as an origin-tagged abort event, never a throw.
-      yield withHop(abortEvent("llm request failed after 5 retries"));
+      // A child-session failure surfaces as its origin-tagged terminal record (a
+      // request_end with no retry planned), never a throw.
+      yield withHop(requestEnd("retryable", { attempt: 6, errorMessage: "socket hang up" }));
     });
     const events: BackgroundTaskDoneEvent[] = [];
     const tapped: OmniMessage[] = [];
@@ -581,9 +582,9 @@ describe("run_subagent run_in_background", () => {
     extractSubagentId(res.note);
     await waitFor(() => events.length === 1);
     expect(events[0]).toMatchObject({ kind: "subagent", status: "failed" });
-    expect(events[0]!.detail).toContain("aborted");
-    // The failure event reached the live tap too (origin-tagged), not a poll buffer.
-    expect(tapped.some((m) => (m.payload as { type?: string }).type === "abort")).toBe(true);
+    expect(events[0]!.detail).toContain("socket hang up");
+    // The failure record reached the live tap too (origin-tagged), not a poll buffer.
+    expect(tapped.some((m) => (m.payload as { type?: string }).type === "request_end")).toBe(true);
   });
 
   it("a background child's approvals resolve through the launching call's standing sink", async () => {

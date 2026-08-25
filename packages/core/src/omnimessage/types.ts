@@ -289,15 +289,44 @@ export interface ApprovalDecisionPayload {
   tool_call_id: string;
 }
 
-export interface AbortPayload {
+/**
+ * The one error vocabulary of the omnimessage layer. Every payload that reports a
+ * failure carries the same pair: `error_code` — machine-readable and stable, what
+ * render layers localize from — and `error_message` — the raw human text (provider
+ * output, exception prose), shown verbatim because it is not translatable.
+ */
+export type ErrorCode =
+  // Abort causes (a user interruption, the only thing an abort event marks).
+  | "user_abort"
+  | "backoff_interrupted"
+  | "compaction_interrupted"
+  // LLM request failures (request_end / compaction_end; the status carries the retry
+  // decision, the code carries the classified cause).
+  | "timeout" // idle timeout / connection went silent
+  | "network" // transport drops, provider 429/5xx, and anything unclassifiable
+  | "malformed" // response failed parsing/validation, or the stream was truncated
+  | "auth" // the provider rejected the credentials
+  | "rejected" // a definitive provider 4xx rejection (params, quota; 408/429 excluded)
+  | "unsupported" // a deterministic client-side rejection (fast mode without a fast tier)
+  | "invalid_input" // the input failed to assemble into a request
+  // MCP connect failures.
+  | "connect_failed";
+
+/** The shared error-reporting block (see ErrorCode). */
+export interface ErrorInfo {
+  /** Machine-readable cause; render layers localize from it. */
+  error_code?: ErrorCode;
+  /** Raw human text of the failure, shown verbatim. */
+  error_message?: string;
+}
+
+export interface AbortPayload extends ErrorInfo {
   type: "abort";
   /**
-   * Human-readable English prose of record. Abort marks a **user interruption** — the
-   * engine writes a fixed set of spellings, decoded by `parseAbortReason` for localized
-   * rendering. An LLM or compaction failure produces no abort: its terminal record is the
-   * request_end (status + `error_message`, no `retry_in_ms`) / compaction_end already on
-   * the stream. Traces written before that split carry failure spellings here; the
-   * decoder still reads them.
+   * Legacy field: Traces written before the unified error pair carry the cause as English
+   * prose here (including retired failure spellings from when non-user causes emitted
+   * aborts). The engine no longer writes it; renderers show it verbatim when no
+   * `error_code` is present.
    */
   reason?: string | null;
 }
@@ -328,17 +357,13 @@ export interface RequestBeginPayload {
  * `origin`) rather than accreting as scattered ad-hoc parameters. Every field is optional
  * and additive: old Traces replay unchanged.
  */
-export interface RetryDetail {
-  /**
-   * Error detail, one name across the stack (`LLMOutcome.errorMessage` internally): present
-   * only on non-completed statuses — the real reason behind a retried/failed Request (e.g.
-   * `403 … (insufficient_user_quota)`), for observability — the server's error records /
-   * Cost center read it here because a retried request never produces an abort event. Not
-   * plain `message`: in this protocol "message" means an OmniMessage / model output, and
-   * this field is neither. (Traces written before the rename carry it as `message`; nothing
-   * reads that field semantically after the fact, so no dual-read is kept.)
-   */
-  error_message?: string;
+export interface RetryDetail extends ErrorInfo {
+  // error_code / error_message (ErrorInfo): present only on non-completed statuses — the
+  // classified cause and the real reason behind a retried/failed Request (e.g. `403 …
+  // (insufficient_user_quota)`); the server's error records / Cost center read them here
+  // because a failed request never produces an abort event. Not plain `message`: in this
+  // protocol "message" means an OmniMessage. (Traces written before the rename carry the
+  // text as `message`; nothing reads that field semantically after the fact.)
   /**
    * 1-based ordinal of this Request within its retry run — the authoritative retry count
    * the CLI/Web display verbatim. Stamped on every non-completed request_end and on a
@@ -464,8 +489,9 @@ export interface McpServerConnectResult {
   duration_ms: number;
   /** Number of tools discovered (present on completed). */
   tools?: number;
-  /** Failure detail (present on fatal). */
-  error?: string;
+  /** Failure cause and detail (present on fatal); legacy Traces carry the detail as `error`. */
+  error_code?: ErrorCode;
+  error_message?: string;
 }
 
 /**
@@ -489,7 +515,7 @@ export interface McpConnectBeginPayload {
   servers: string[];
 }
 
-export interface McpConnectEndPayload {
+export interface McpConnectEndPayload extends ErrorInfo {
   type: "mcp_connect_end";
   /** Overall terminal status: completed (every server connected) / fatal (some server failed) / aborted (user interrupted). Legacy Traces spell the failure `failed`. */
   status: StopReason;

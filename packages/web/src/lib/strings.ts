@@ -9,7 +9,6 @@
  * "agent" is a common noun: lowercase mid-sentence, capitalized only at the start of a
  * label/sentence or in a proper name (Agent State, AgentHub). zh keeps "Agent" as-is.
  */
-import type { AbortCause } from "@prismshadow/penguin-core/omnimessage";
 export const zh = {
   appName: "PenguinHarness",
 
@@ -1399,27 +1398,20 @@ Benchmark：
     subagent: "子会话",
     subagentRunning: "运行中",
     /**
-     * Abort banner. The cause is decoded from the event's English `reason` prose
-     * (`parseAbortReason`); provider error detail is untranslatable and appended verbatim.
-     * Unrecognized prose renders as-is.
+     * Abort banner (user interruptions only). The cause localizes from `errorCode`;
+     * `errorMessage` (raw, untranslatable) rides verbatim. A legacy Trace without a code
+     * renders its English `reason` prose as-is.
      */
-    aborted: (cause?: AbortCause) => {
-      const text =
-        cause === undefined
-          ? ""
-          : cause.kind === "user_abort"
-            ? "用户中断"
-            : cause.kind === "llm_fatal"
-              ? `模型请求错误：${cause.detail}`
-              : cause.kind === "llm_retries_exhausted"
-                ? `模型请求重试 ${cause.attempts} 次后失败${cause.detail ? `：${cause.detail}` : ""}`
-                : cause.kind === "backoff_interrupted"
-                  ? "重试等待中被中断"
-                  : cause.kind === "compaction_aborted"
-                    ? "压缩过程中被中断"
-                    : cause.kind === "compaction_failed"
-                      ? "压缩失败"
-                      : (cause.reason ?? "");
+    aborted: (item?: { errorCode?: string; errorMessage?: string; reason?: string }) => {
+      const cause =
+        item?.errorCode === "user_abort"
+          ? "用户中断"
+          : item?.errorCode === "backoff_interrupted"
+            ? "重试等待中被中断"
+            : item?.errorCode === "compaction_interrupted"
+              ? "压缩过程中被中断"
+              : (item?.errorCode ?? item?.reason ?? "");
+      const text = cause ? `${cause}${item?.errorMessage ? `：${item.errorMessage}` : ""}` : "";
       return `[已中断]${text ? `：${text}` : ""}`;
     },
     /**
@@ -1433,15 +1425,21 @@ Benchmark：
       attempt: number,
       secondsLeft?: number,
       errorMessage?: string,
+      errorCode?: string,
     ) => {
+      // The live protocol carries the classified cause on error_code; the legacy status
+      // spellings (failed/timeout/malformed) say the same thing for pre-convergence Traces.
+      const kind = errorCode ?? status;
       const cause =
-        status === "timeout"
+        kind === "timeout"
           ? "连接超时或网络中断"
-          : status === "malformed"
+          : kind === "malformed"
             ? "响应不完整或无法解析"
-            : status === "failed"
-              ? "模型服务返回错误"
-              : "请求失败";
+            : kind === "network"
+              ? "网络或服务暂时不可用"
+              : kind === "failed"
+                ? "模型服务返回错误"
+                : "请求失败";
       const action =
         state === "gaveUp"
           ? `第 ${attempt} 次尝试后放弃${errorMessage ? `：${errorMessage}` : ""}`

@@ -42,12 +42,7 @@
  * all only when the output stream supports color (see `supportsColor`): piped output, e.g. a
  * nested `penguin run` driven through `exec_command`, must stay plain (#102).
  */
-import {
-  isEventMessage,
-  isModelMessage,
-  parseAbortReason,
-  parseUserSteeringText,
-} from "@prismshadow/penguin-core";
+import { isEventMessage, isModelMessage, parseUserSteeringText } from "@prismshadow/penguin-core";
 import type {
   AbortPayload,
   ApprovalDecision,
@@ -191,7 +186,14 @@ function humanizeDuration(ms: number): string {
 }
 
 export function formatAbort(p: AbortPayload, t: Messages, c: Palette = STDOUT_PALETTE): string {
-  return dim(t.abortLabel(parseAbortReason(p.reason)), c);
+  return dim(
+    t.abortLabel({
+      ...(p.error_code !== undefined ? { errorCode: p.error_code } : {}),
+      ...(p.error_message !== undefined ? { errorMessage: p.error_message } : {}),
+      ...(p.reason != null ? { reason: p.reason } : {}),
+    }),
+    c,
+  );
 }
 
 /** Options shared by history and streaming rendering. */
@@ -464,8 +466,8 @@ export class StreamRenderer {
   private taskLastReqEndMs: number | null = null;
   /** Retryable terminal state of the previous request (legacy Traces carry the finer pre-convergence spellings): the next request_begin is a retry, at which point a notice is printed. */
   private pendingRetry: "retryable" | "failed" | "timeout" | "malformed" | null = null;
-  /** A terminal-failure line was already printed for the current request (dedups the duplicate abort an interim-build Trace also wrote). */
-  private printedTerminalFailure = false;
+  /** The pending failure's classified cause (request_end.error_code), for the retry line's wording. */
+  private pendingRetryCode: string | undefined;
   /** The pending failure's attempt ordinal (request_end.attempt — the core's authoritative count, printed on the retry line). */
   private pendingRetryAttempt: number | undefined;
 
@@ -787,24 +789,15 @@ export class StreamRenderer {
         this.out.write(`${dim(this.t.approvalDecision(p.decision), this.c)}\n`);
         this.lastLineKey = null;
       } else if (payload.type === "abort") {
-        // Run ended: clear any pending retry state so the next run doesn't mistakenly print a retry line.
+        // Run ended (a user interruption — failures end on their own terminal records):
+        // clear any pending retry state so the next run doesn't mistakenly print a retry line.
         this.pendingRetry = null;
         this.pendingRetryAttempt = undefined;
-        // Interim-build Traces wrote both the terminal request_end and an abort for the
-        // same LLM failure; the terminal line already printed, so drop the duplicate.
-        const cause = parseAbortReason((payload as AbortPayload).reason);
-        if (
-          this.printedTerminalFailure &&
-          (cause.kind === "llm_fatal" || cause.kind === "llm_retries_exhausted")
-        ) {
-          this.printedTerminalFailure = false;
-        } else {
-          this.finishLine();
-          this.out.write(`${formatAbort(payload as AbortPayload, this.t, this.c)}\n`);
-          this.lastLineKey = null;
-        }
+        this.pendingRetryCode = undefined;
+        this.finishLine();
+        this.out.write(`${formatAbort(payload as AbortPayload, this.t, this.c)}\n`);
+        this.lastLineKey = null;
       } else if (payload.type === "request_begin") {
-        this.printedTerminalFailure = false;
         // The previous request ended in a retryable status -> this request is a retry
         // carrying [turn_retried]: printed when the retry **actually starts** (when
         // retries are exhausted, there's no retry after the last failure, only an abort
@@ -815,9 +808,12 @@ export class StreamRenderer {
           const attempt = this.pendingRetryAttempt ?? 1;
           this.pendingRetryAttempt = undefined;
           this.finishLine();
-          this.out.write(`${dim(this.t.reconnectLabel(this.pendingRetry, attempt), this.c)}\n`);
+          this.out.write(
+            `${dim(this.t.reconnectLabel(this.pendingRetry, attempt, this.pendingRetryCode), this.c)}\n`,
+          );
           this.lastLineKey = null;
           this.pendingRetry = null;
+          this.pendingRetryCode = undefined;
         }
       } else if (payload.type === "request_end") {
         const p = payload as RequestEndPayload;
@@ -841,22 +837,22 @@ export class StreamRenderer {
           // terminal record, printed here.
           this.pendingRetry = null;
           this.pendingRetryAttempt = undefined;
+          this.pendingRetryCode = undefined;
           this.finishLine();
           this.out.write(`${dim(this.t.llmFatalLabel(p.error_message), this.c)}\n`);
           this.lastLineKey = null;
-          this.printedTerminalFailure = true;
         } else if (endStatus === "retryable" && p.retry_in_ms === undefined) {
           // A live-protocol retryable with no planned wait is the ladder giving up — the
           // run ends on it. The legacy spellings never take this branch: their era stamped
           // no retry_in_ms mid-ladder, and their exhaustion printed from the abort event.
           this.pendingRetry = null;
           this.pendingRetryAttempt = undefined;
+          this.pendingRetryCode = undefined;
           this.finishLine();
           this.out.write(
             `${dim(this.t.reconnectGaveUpLabel(p.attempt ?? 1, p.error_message), this.c)}\n`,
           );
           this.lastLineKey = null;
-          this.printedTerminalFailure = true;
         } else if (
           endStatus === "retryable" ||
           endStatus === "failed" ||
@@ -868,9 +864,11 @@ export class StreamRenderer {
           // printing the same way.
           this.pendingRetry = endStatus;
           this.pendingRetryAttempt = p.attempt;
+          this.pendingRetryCode = p.error_code;
         } else {
           this.pendingRetry = null;
           this.pendingRetryAttempt = undefined;
+          this.pendingRetryCode = undefined;
         }
       } else if (payload.type === "compaction_begin") {
         // Paired compaction events: begin signals compaction is in progress.
@@ -921,7 +919,11 @@ export class StreamRenderer {
         // status) otherwise never reaches the terminal — only the server-side stderr warning.
         const failures = p.results
           .filter((r) => r.status === "fatal" || (r.status as string) === "failed")
-          .map((r) => ({ server: r.server, error: r.error ?? "unknown error" }));
+          .map((r) => ({
+            server: r.server,
+            // Live results carry the unified pair; legacy Traces spell the detail `error`.
+            error: r.error_message ?? (r as { error?: string }).error ?? "unknown error",
+          }));
         this.out.write(
           `${dim(this.t.mcpConnectStop(durationMs, failures, p.status === "aborted"), this.c)}\n`,
         );

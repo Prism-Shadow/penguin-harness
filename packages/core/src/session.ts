@@ -514,16 +514,23 @@ export class Session {
         yield end;
         this.abortedBootstrapRecords.push(end);
       }
-      const aborted = abortEvent("user");
+      const aborted = abortEvent("user_abort");
       yield aborted;
       this.abortedBootstrapRecords.push(aborted);
       return false;
     }
     const { tools, llm, mcp } = outcome.value;
     if (this.mcpServers.length > 0) {
+      const failed = mcp.filter((r) => r.status !== "completed").map((r) => r.server);
       const end = mcpConnectEnd({
-        status: mcp.some((r) => r.status !== "completed") ? "fatal" : "completed",
+        status: failed.length > 0 ? "fatal" : "completed",
         results: mcp,
+        ...(failed.length > 0
+          ? {
+              errorCode: "connect_failed" as const,
+              errorMessage: `unavailable: ${failed.join(", ")}`,
+            }
+          : {}),
       });
       yield end;
       records.push(end);

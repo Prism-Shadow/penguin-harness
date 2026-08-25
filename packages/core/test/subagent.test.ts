@@ -355,13 +355,13 @@ describe("run_subagent tool (foreground)", () => {
   it("reports a failed delegation when the child session aborts", async () => {
     const runner = runnerOf(async function* () {
       yield withOrigin(partialText("delta", "partial"), HOP);
-      yield withOrigin(abortEvent("llm error"), HOP);
+      yield withOrigin(abortEvent(), HOP);
     });
     const { services } = makeServices(runner);
     const tool = createSubagentTool(DEF, services);
     const { result } = await collectWithReturn(tool.execute({ prompt: "x" }, CTX));
     expect(result?.stopReason).toBe("fatal");
-    expect(result?.note).toContain("subagent aborted: llm error");
+    expect(result?.note).toContain("subagent aborted: user_abort");
   });
 
   it("surfaces child approval requests through the parent approve callback", async () => {
@@ -683,7 +683,7 @@ describe("subagent steering and per-run abort", () => {
               yield withOrigin(partialText("delta", `start:${prompt} `), HOP);
               await Promise.race([gate, aborted(signal)]);
               if (signal?.aborted) {
-                yield withOrigin(abortEvent("run aborted"), HOP);
+                yield withOrigin(abortEvent(), HOP);
                 return;
               }
               yield withOrigin(partialText("delta", `end:${prompt}`), HOP);

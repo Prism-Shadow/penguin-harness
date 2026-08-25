@@ -339,6 +339,14 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
   const rows = () =>
     db.prepare("SELECT * FROM error_records ORDER BY id").all() as Array<Record<string, unknown>>;
 
+  /** A legacy stream's abort: prose reason only (cores from before the unified error pair). */
+  function legacyAbort(reason: string): OmniMessage {
+    const msg = abortEvent();
+    delete (msg.payload as { error_code?: string }).error_code;
+    (msg.payload as { reason?: string }).reason = reason;
+    return msg;
+  }
+
   /** Feeds a sequence of messages and finalizes (close: persists any still-pending failure), returning the persisted rows. */
   function feed(msgs: OmniMessage[]): Array<Record<string, unknown>> {
     const w = watcher();
@@ -374,7 +382,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     const got = feed([
       requestBegin(),
       requestEnd("retryable"),
-      abortEvent("llm request failed after 5 retries: 400 unknown parameter"),
+      legacyAbort("llm request failed after 5 retries: 400 unknown parameter"),
     ]);
     expect(got).toHaveLength(1);
     expect(got[0]).toMatchObject({
@@ -395,7 +403,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
       requestEnd("retryable"), // First attempt fails → the engine retries (revealed by the next request_begin: no reason text yet)
       requestBegin(),
       requestEnd("retryable"),
-      abortEvent("llm request failed after 2 retries"),
+      legacyAbort("llm request failed after 2 retries"),
     ]);
     expect(got).toHaveLength(2);
     expect(got[0]).toMatchObject({ source: "llm", kind: "expected", code: "llm_retried" });
@@ -416,7 +424,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     const got = feed([
       requestBegin(),
       requestEnd("fatal", { errorMessage: "401 invalid x-api-key (invalid_api_key)" }),
-      abortEvent("llm request error: 401 invalid x-api-key (invalid_api_key)"),
+      legacyAbort("llm request error: 401 invalid x-api-key (invalid_api_key)"),
     ]);
     expect(got).toHaveLength(1);
     expect(got[0]).toMatchObject({
@@ -492,7 +500,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
       requestEnd("retryable", { errorMessage: "Upstream HTTP/2 stream failed" }),
       requestBegin(), // The retry: resolves the failure above as recovered.
       requestEnd("fatal", { errorMessage: "401 invalid x-api-key" }),
-      abortEvent("llm request error: 401 invalid x-api-key"),
+      legacyAbort("llm request error: 401 invalid x-api-key"),
     ]);
     expect(got.map((r) => [r.code, r.kind])).toEqual([
       ["llm_retried", "expected"],
@@ -526,7 +534,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     const got = feed([
       requestBegin(),
       requestEnd("fatal", { errorMessage: "401 invalid x-api-key (invalid_api_key)" }),
-      abortEvent("llm request error: 401 invalid x-api-key (invalid_api_key)"),
+      legacyAbort("llm request error: 401 invalid x-api-key (invalid_api_key)"),
     ]);
     expect(got).toHaveLength(1);
     // The abort's prose (with core's "llm request error" framing) wins over the raw detail.
@@ -540,7 +548,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
       requestBegin(),
       // A backoff interrupt cuts a PLANNED retry short — the failure announced one.
       requestEnd("retryable", { errorMessage: "429 rate limited (slow down)", retryInMs: 4000 }),
-      abortEvent("aborted during reconnect backoff"),
+      abortEvent("backoff_interrupted"),
     ]);
     expect(got).toHaveLength(1);
     expect(got[0]!.message).toBe("429 rate limited (slow down)");
@@ -553,17 +561,13 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
         requestEnd("completed"),
         requestBegin(),
         requestEnd("aborted"),
-        abortEvent("aborted by user"),
+        abortEvent(),
       ]),
     ).toHaveLength(0);
   });
 
   it("interrupt during retry backoff: the failure still recorded, interrupt text distrusted", () => {
-    const got = feed([
-      requestBegin(),
-      requestEnd("retryable"),
-      abortEvent("aborted during reconnect backoff"),
-    ]);
+    const got = feed([requestBegin(), requestEnd("retryable"), abortEvent("backoff_interrupted")]);
     expect(got).toHaveLength(1);
     // No retry followed (the interrupt ended the run): the conservative branch records it
     // as the unrecovered class.
@@ -592,9 +596,9 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
       requestBegin(), // parent session initiates
       withOrigin(requestBegin(), "session-child"),
       withOrigin(requestEnd("fatal"), "session-child"),
-      withOrigin(abortEvent("llm request error: 401 invalid api key"), "session-child"),
+      withOrigin(legacyAbort("llm request error: 401 invalid api key"), "session-child"),
       requestEnd("retryable"), // the parent session's failure only wraps up now
-      abortEvent("llm request error: 500 upstream"),
+      legacyAbort("llm request error: 500 upstream"),
     ]);
     expect(got).toHaveLength(2);
     expect(got[0]).toMatchObject({
@@ -809,7 +813,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
       childMeta("session-child", "/data/agents/agent-child/agent_state"),
       withOrigin(requestBegin(), "session-child"),
       withOrigin(requestEnd("retryable"), "session-child"),
-      withOrigin(abortEvent("llm request error: 401 invalid api key"), "session-child"),
+      withOrigin(legacyAbort("llm request error: 401 invalid api key"), "session-child"),
     ]);
     expect(got).toHaveLength(1);
     expect(got[0]).toMatchObject({
@@ -848,7 +852,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
       childMeta("session-child", "/data/agents/agent-child/agent_state"),
       withOrigin(requestBegin(), "session-child"),
       withOrigin(requestEnd("fatal"), "session-child"),
-      withOrigin(abortEvent("llm request error: 401 dead key"), "session-child"),
+      withOrigin(legacyAbort("llm request error: 401 dead key"), "session-child"),
       withOrigin(call("write_file", "tc-9"), "session-child"),
       withOrigin(
         toolCallOutput({ output: "child tool boom", toolCallId: "tc-9", stopReason: "fatal" }),
@@ -857,7 +861,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
       call("read_file", "tc-9"), // parent session happens to share the same id
       toolCallOutput({ output: "parent tool boom", toolCallId: "tc-9", stopReason: "fatal" }),
       requestEnd("retryable"), // the parent session's LLM failure only wraps up now
-      abortEvent("llm request error: 500 upstream"),
+      legacyAbort("llm request error: 500 upstream"),
     ]);
     // The sub-session's LLM / tool failures attribute to it, the parent's to the parent — the four entries never mix (each has a distinct code, so short-window dedup doesn't suppress any of them).
     expect(got.map((r) => [r.code, r.agent_id, r.session_id])).toEqual([
@@ -871,7 +875,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
   it("failure before session_meta arrives: falls back to the parent ctx, no crash", () => {
     const got = feed([
       withOrigin(requestEnd("retryable"), "session-child"), // the sub-session's meta hasn't arrived yet
-      withOrigin(abortEvent("llm request error: 500"), "session-child"),
+      withOrigin(legacyAbort("llm request error: 500"), "session-child"),
     ]);
     expect(got).toHaveLength(1);
     expect(got[0]).toMatchObject({ code: "llm_failed", agent_id: "a1", session_id: "s1" });
@@ -881,7 +885,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     const got = feed([
       childMeta("session-child", ""), // path.basename(path.dirname("")) === "." → caught by the defensive check
       withOrigin(requestEnd("retryable"), "session-child"),
-      withOrigin(abortEvent("llm request error: 500"), "session-child"),
+      withOrigin(legacyAbort("llm request error: 500"), "session-child"),
     ]);
     expect(got).toHaveLength(1);
     expect(got[0]).toMatchObject({ code: "llm_failed", agent_id: "a1", session_id: "s1" });

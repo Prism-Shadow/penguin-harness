@@ -85,14 +85,17 @@ describe("pure formatters", () => {
 
   it("renderHistory includes abort events from resumed sessions", () => {
     const { stream, text } = collector();
-    renderHistory([assistantText("partial", "aborted"), abortEvent("aborted by user")], stream, t);
+    renderHistory([assistantText("partial", "aborted"), abortEvent()], stream, t);
     expect(stripAnsi(text())).toBe("partial [aborted]\n[abort]: aborted by user\n");
   });
 
-  it("an abort whose reason is a recognized engine spelling renders the localized cause plus the raw detail", () => {
+  it("a legacy abort without an error_code renders its reason prose verbatim", () => {
     const { stream, text } = collector();
-    renderHistory([abortEvent("llm request error: 401 Missing Authentication header")], stream, t);
-    // The dictionary localizes the cause decoded from the reason prose; the provider detail rides verbatim.
+    const legacy = abortEvent();
+    delete (legacy.payload as { error_code?: string }).error_code;
+    (legacy.payload as { reason?: string }).reason =
+      "llm request error: 401 Missing Authentication header";
+    renderHistory([legacy], stream, t);
     expect(stripAnsi(text())).toBe(
       "[abort]: llm request error: 401 Missing Authentication header\n",
     );
@@ -337,13 +340,10 @@ describe("StreamRenderer", () => {
     const { stream, text } = collector();
     const r = new StreamRenderer(stream, t);
     r.handle(requestBegin());
-    r.handle(requestEnd("fatal", { errorMessage: "401 invalid x-api-key" }));
+    r.handle(requestEnd("fatal", { errorCode: "auth", errorMessage: "401 invalid x-api-key" }));
     expect(stripAnsi(text())).toBe("[error] llm request error: 401 invalid x-api-key\n");
-    // Interim-build Traces also wrote an abort for the same failure — not printed twice.
-    r.handle(abortEvent("llm request error: 401 invalid x-api-key"));
-    expect(stripAnsi(text())).toBe("[error] llm request error: 401 invalid x-api-key\n");
-    // A user abort afterwards still prints (the dedup consumed its one-shot flag).
-    r.handle(abortEvent("aborted by user"));
+    // A user abort afterwards still prints.
+    r.handle(abortEvent());
     expect(stripAnsi(text())).toContain("[abort]: aborted by user");
   });
 

@@ -60,6 +60,7 @@ import {
   userSteeringText,
 } from "../omnimessage/markers/index.js";
 import type {
+  ErrorCode,
   ApprovalDecision,
   CompactionMode,
   CompactionReason,
@@ -687,7 +688,7 @@ export class ContextEngine {
       // multimodal input isn't lost. The message is already written to Trace, so it won't be
       // rewritten on the next send.
       this.pendingCarryOver = input;
-      yield* this.emitAbort("aborted by user");
+      yield* this.emitAbort("user_abort");
       return;
     }
 
@@ -746,7 +747,7 @@ export class ContextEngine {
         // during tool execution): stop and hand control back to the user.
         if (signal?.aborted || turn.outcome.status === "aborted") {
           this.pendingCarryOver = this.buildCarryOver(attemptInput, turn);
-          yield* this.emitAbort("aborted by user");
+          yield* this.emitAbort("user_abort");
           return;
         }
         // `fatal` stops the run: a definitive provider rejection, a dead credential, or a
@@ -785,7 +786,7 @@ export class ContextEngine {
         reconnects += 1;
         if (!(await this.backoff(reconnects, signal))) {
           this.pendingCarryOver = attemptInput;
-          yield* this.emitAbort("aborted during reconnect backoff");
+          yield* this.emitAbort("backoff_interrupted");
           return;
         }
       }
@@ -857,7 +858,7 @@ export class ContextEngine {
             // Only the user interruption is an abort; a failed compaction's terminal
             // record is the compaction_end (status + error_message) already written.
             if (result.status === "aborted") {
-              yield* this.emitAbort("aborted during compaction");
+              yield* this.emitAbort("compaction_interrupted");
             }
             return;
           }
@@ -1111,6 +1112,7 @@ export class ContextEngine {
               RETRY_STATUSES,
             );
             const stopEvt = requestEnd(outcome.status, {
+              ...(outcome.errorCode !== undefined ? { errorCode: outcome.errorCode } : {}),
               ...(outcome.errorMessage !== undefined ? { errorMessage: outcome.errorMessage } : {}),
               // The authoritative attempt ordinal (1-based, within this retry run); a clean
               // first-try completion stays unstamped so the common case adds no noise.
@@ -1437,6 +1439,7 @@ export class ContextEngine {
     // error record carries): the final attempt ordinal, and the last failure's detail.
     let attempts = 0;
     let lastError: string | undefined;
+    let lastErrorCode: ErrorCode | undefined;
     for (;;) {
       if (signal?.aborted) {
         this.stashRepairs(pendingRepairs);
@@ -1492,6 +1495,8 @@ export class ContextEngine {
         // that committed turn is plain assistant text/thinking, and re-sending the compaction
         // Prompt on top of it is structurally sound.
         unusable = true;
+        // An unusable summary is a malformed response for this request's purpose.
+        lastErrorCode = "malformed";
         lastError =
           attempt.toolCalls.length > 0
             ? "the response called tools instead of writing a summary"
@@ -1516,12 +1521,14 @@ export class ContextEngine {
         this.stashRepairs(pendingRepairs);
         yield* this.emitCompactionEnd(reason, "summarize", "fatal", {
           attempt: attempts,
+          ...(attempt.errorCode !== undefined ? { errorCode: attempt.errorCode } : {}),
           ...(attempt.errorMessage !== undefined ? { errorMessage: attempt.errorMessage } : {}),
         });
         return { status: "fatal", committed };
       } else {
-        // Retryable failure: keep its detail as the last error of record.
+        // Retryable failure: keep its cause and detail as the last error of record.
         lastError = attempt.errorMessage;
+        lastErrorCode = attempt.errorCode;
       }
       // One failure path for everything else — unusable summaries and retryable failures
       // (never committed by AgentHub) — treated like an
@@ -1536,6 +1543,7 @@ export class ContextEngine {
         this.stashRepairs(pendingRepairs);
         yield* this.emitCompactionEnd(reason, "summarize", "retryable", {
           attempt: attempts,
+          ...(lastErrorCode !== undefined ? { errorCode: lastErrorCode } : {}),
           ...(lastError !== undefined ? { errorMessage: lastError } : {}),
         });
         return { status: "retryable", committed };
@@ -1609,7 +1617,8 @@ export class ContextEngine {
       text: string;
       toolCalls: OmniMessage<ToolCallPayload>[];
       usage: OmniMessage | null;
-      /** Error detail (LLMOutcome.errorMessage) on non-completed statuses — becomes compaction_end.error_message when this failure ends the compaction. */
+      /** Classified cause and error detail (LLMOutcome) on non-completed statuses — become compaction_end.error_code / error_message when this failure ends the compaction. */
+      errorCode?: ErrorCode;
       errorMessage?: string;
     }
   > {
@@ -1663,6 +1672,7 @@ export class ContextEngine {
           text,
           toolCalls,
           usage,
+          ...(res.value.errorCode !== undefined ? { errorCode: res.value.errorCode } : {}),
           ...(res.value.errorMessage !== undefined ? { errorMessage: res.value.errorMessage } : {}),
         };
       }
@@ -1740,16 +1750,18 @@ export class ContextEngine {
     reason: CompactionReason,
     mode: CompactionMode,
     status: StopReason,
-    detail?: { attempt?: number; errorMessage?: string },
+    detail?: { attempt?: number; errorCode?: ErrorCode; errorMessage?: string },
   ): AsyncGenerator<OmniMessage> {
     const msg = compactionEnd({ reason, mode, status, ...detail });
     yield msg;
     await this.write(msg);
   }
 
-  /** Interruption: emits an abort event. Cleanup/resending is managed centrally by `run` via carry-over; the LLM history is never touched again. */
-  private async *emitAbort(reason: string): AsyncGenerator<OmniMessage> {
-    const msg = abortEvent(reason);
+  /** User interruption: emits an abort event carrying the machine-readable cause. Cleanup/resending is managed centrally by `run` via carry-over; the LLM history is never touched again. */
+  private async *emitAbort(
+    errorCode: "user_abort" | "backoff_interrupted" | "compaction_interrupted",
+  ): AsyncGenerator<OmniMessage> {
+    const msg = abortEvent(errorCode);
     yield msg;
     await this.write(msg);
   }

@@ -602,8 +602,13 @@ describe("Session first-run bootstrap events", () => {
         status: "completed",
         tools: 6,
       });
-      expect(results[1]).toMatchObject({ server: "broken", transport: "stdio", status: "fatal" });
-      expect(results[1]!.error).toBeTruthy();
+      expect(results[1]).toMatchObject({
+        server: "broken",
+        transport: "stdio",
+        status: "fatal",
+        error_code: "connect_failed",
+      });
+      expect(results[1]!.error_message).toBeTruthy();
       expect(results[1]!.duration_ms).toBeGreaterThanOrEqual(0);
     } finally {
       await provider.close();

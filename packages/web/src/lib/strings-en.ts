@@ -5,7 +5,6 @@
  * "agent" is a common noun: lowercase mid-sentence, capitalized only at the start
  * of a label/sentence or in a proper name (Agent State, AgentHub).
  */
-import type { AbortCause } from "@prismshadow/penguin-core/omnimessage";
 import type { Strings } from "./strings";
 
 export const en: Strings = {
@@ -1441,27 +1440,20 @@ Scenarios:
     subagent: "Subagent",
     subagentRunning: "Running",
     /**
-     * Abort banner. The cause is decoded from the event's English `reason` prose
-     * (`parseAbortReason`); provider error detail is untranslatable and appended verbatim.
-     * Unrecognized prose renders as-is.
+     * Abort banner (user interruptions only). The cause localizes from `errorCode`;
+     * `errorMessage` (raw, untranslatable) rides verbatim. A legacy Trace without a code
+     * renders its English `reason` prose as-is.
      */
-    aborted: (cause?: AbortCause) => {
-      const text =
-        cause === undefined
-          ? ""
-          : cause.kind === "user_abort"
-            ? "aborted by user"
-            : cause.kind === "llm_fatal"
-              ? `llm request error: ${cause.detail}`
-              : cause.kind === "llm_retries_exhausted"
-                ? `llm request failed after ${cause.attempts} retries${cause.detail ? `: ${cause.detail}` : ""}`
-                : cause.kind === "backoff_interrupted"
-                  ? "aborted during reconnect backoff"
-                  : cause.kind === "compaction_aborted"
-                    ? "aborted during compaction"
-                    : cause.kind === "compaction_failed"
-                      ? "compaction failed"
-                      : (cause.reason ?? "");
+    aborted: (item?: { errorCode?: string; errorMessage?: string; reason?: string }) => {
+      const cause =
+        item?.errorCode === "user_abort"
+          ? "aborted by user"
+          : item?.errorCode === "backoff_interrupted"
+            ? "aborted during reconnect backoff"
+            : item?.errorCode === "compaction_interrupted"
+              ? "aborted during compaction"
+              : (item?.errorCode ?? item?.reason ?? "");
+      const text = cause ? `${cause}${item?.errorMessage ? `: ${item.errorMessage}` : ""}` : "";
       return `[Aborted]${text ? `: ${text}` : ""}`;
     },
     /**
@@ -1475,15 +1467,21 @@ Scenarios:
       attempt: number,
       secondsLeft?: number,
       errorMessage?: string,
+      errorCode?: string,
     ) => {
+      // The live protocol carries the classified cause on error_code; the legacy status
+      // spellings (failed/timeout/malformed) say the same thing for pre-convergence Traces.
+      const kind = errorCode ?? status;
       const cause =
-        status === "timeout"
+        kind === "timeout"
           ? "Connection timed out"
-          : status === "malformed"
+          : kind === "malformed"
             ? "Response incomplete or unparseable"
-            : status === "failed"
-              ? "The model provider returned an error"
-              : "The request failed";
+            : kind === "network"
+              ? "Network or service temporarily unavailable"
+              : kind === "failed"
+                ? "The model provider returned an error"
+                : "The request failed";
       const action =
         state === "gaveUp"
           ? `giving up after attempt ${attempt}${errorMessage ? `: ${errorMessage}` : ""}`

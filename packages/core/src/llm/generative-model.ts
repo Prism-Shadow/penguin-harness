@@ -1114,7 +1114,7 @@ export class GenerativeModel implements LLMInterface {
     try {
       uniMessage = mergeOmniToUniMessage(params.newMessages);
     } catch (err) {
-      return { status: "fatal", errorMessage: describeError(err) };
+      return { status: "fatal", errorCode: "invalid_input", errorMessage: describeError(err) };
     }
 
     const translator = new EventTranslator(this.toolCallIds);
@@ -1200,7 +1200,9 @@ export class GenerativeModel implements LLMInterface {
           // close (best effort — a stream that ignored the signal may ignore this too, so the
           // rejection is swallowed and the promise is not awaited) and classify by trigger.
           void Promise.resolve(it.return?.(undefined)).catch(() => undefined);
-          outcome = userSignal?.aborted ? { status: "aborted" } : { status: "retryable" };
+          outcome = userSignal?.aborted
+            ? { status: "aborted" }
+            : { status: "retryable", errorCode: "timeout" };
           break;
         }
         if (res.done) break;
@@ -1216,7 +1218,7 @@ export class GenerativeModel implements LLMInterface {
       if (userSignal?.aborted) {
         outcome = { status: "aborted" };
       } else if (timedOut) {
-        outcome = { status: "retryable" }; // Idle timeout -> needs reconnection
+        outcome = { status: "retryable", errorCode: "timeout" }; // Idle timeout -> needs reconnection
       } else if (isMalformedJsonParseError(error) || isIncompleteStreamError(error)) {
         // A response JSON parse error, or a cleanly truncated stream (AgentHub's final-event
         // validation failed): both are an incomplete LLM Request — the turn was never
@@ -1225,6 +1227,7 @@ export class GenerativeModel implements LLMInterface {
         // and the intent readable.
         outcome = {
           status: "retryable",
+          errorCode: "malformed",
           errorMessage: describeError(error),
         };
       } else if (isAuthenticationError(error)) {
@@ -1232,7 +1235,7 @@ export class GenerativeModel implements LLMInterface {
         // working one. The errorMessage tells the user to update this model's API key
         // (only the model reference is fixed at Session creation; the credential is read
         // from the current Project config on load), after which the Session continues.
-        outcome = { status: "fatal", errorMessage: describeError(error) };
+        outcome = { status: "fatal", errorCode: "auth", errorMessage: describeError(error) };
       } else if (this.uniConfig.fast_mode === true && isFastModeUnsupportedError(error)) {
         // Fast mode rejected by a model without a fast tier: AgentHub throws its
         // UnsupportedParameterError before any network I/O, so with this object's frozen
@@ -1242,12 +1245,13 @@ export class GenerativeModel implements LLMInterface {
         // fast_mode on the wire this error cannot be ours to explain.
         outcome = {
           status: "fatal",
+          errorCode: "unsupported",
           errorMessage: `${describeError(error)} ${FAST_MODE_UNSUPPORTED_GUIDANCE}`,
         };
       } else if (isFatalProviderRejection(error)) {
         // A definitive provider 4xx rejection (408/429 excluded): the identical request
         // fails identically on every retry, so stop now with the provider's own message.
-        outcome = { status: "fatal", errorMessage: describeError(error) };
+        outcome = { status: "fatal", errorCode: "rejected", errorMessage: describeError(error) };
       } else if ((error as { name?: string })?.name === "AbortError") {
         outcome = { status: "aborted" }; // Fallback: an unexpected abort (neither timeout nor user)
       } else {
@@ -1255,7 +1259,7 @@ export class GenerativeModel implements LLMInterface {
         // retries on the engine's ladder. The detail rides on the outcome so observability
         // (request_end -> the Cost center's errors panel) shows the real reason behind a
         // retried request.
-        outcome = { status: "retryable", errorMessage: describeError(error) };
+        outcome = { status: "retryable", errorCode: "network", errorMessage: describeError(error) };
       }
     } finally {
       clearTimer();
@@ -1274,7 +1278,7 @@ export class GenerativeModel implements LLMInterface {
     // tool_use (400), and the engine has no fix-up path left that touches LLM history.
     if (!outcome && !translator.sawFinishReason()) {
       if (userSignal?.aborted) outcome = { status: "aborted" };
-      else if (timedOut) outcome = { status: "retryable" };
+      else if (timedOut) outcome = { status: "retryable", errorCode: "timeout" };
     }
 
     if (outcome) {

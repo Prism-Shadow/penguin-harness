@@ -11,7 +11,6 @@ import { formatMessageTime } from "../../lib/format";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { splitAttachments } from "../../lib/attachments";
 import type { ChatItem, ReconnectItem } from "../../lib/omni/stream-model";
-import { parseAbortReason } from "@prismshadow/penguin-core/omnimessage";
 import { Md } from "./md";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { CopyButton } from "../../components/ui/copy-button";
@@ -129,7 +128,16 @@ function ReconnectLine({ item, ctx }: { item: ReconnectItem; ctx: StreamRenderCo
     <p
       className={`anim-msg my-1 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-xs ${toneInk.attention}`}
     >
-      <span>{S.chat.reconnect(item.status, state, item.attempt, seconds, item.errorMessage)}</span>
+      <span>
+        {S.chat.reconnect(
+          item.status,
+          state,
+          item.attempt,
+          seconds,
+          item.errorMessage,
+          item.errorCode,
+        )}
+      </span>
       {showControls && (
         <span className="flex shrink-0 items-center gap-1.5">
           {ctx.onRetryNow && (
@@ -380,7 +388,7 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
     case "abort":
       return (
         <p className="anim-msg my-1 font-mono text-xs text-gray-500 dark:text-gray-400">
-          {S.chat.aborted(parseAbortReason(item.reason))}
+          {S.chat.aborted(item)}
         </p>
       );
     case "llm_error":

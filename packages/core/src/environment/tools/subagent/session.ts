@@ -33,6 +33,7 @@
  * need for a separate synchronous hard-kill path (its command sessions are reaped by their own
  * exit fallback); `killHard` is equivalent to `kill`.
  */
+import { RunCutoffObserver } from "../../../omnimessage/index.js";
 import type { OmniMessage } from "../../../omnimessage/index.js";
 import type { ApprovalDecision, ToolCallPayload } from "../../../omnimessage/index.js";
 import type { ApproveFn, SubagentHandle, ThinkingLevelName } from "../../../interfaces/index.js";
@@ -350,7 +351,10 @@ export class ManagedSubagentSession {
     thinkingLevel?: ThinkingLevelName,
   ): Promise<void> {
     let wroteAny = false;
-    let childAbort: string | null = null;
+    // Cut-off detection on the direct child layer: a user abort still emits an abort
+    // event, but an LLM or compaction failure's terminal record is its request_end /
+    // compaction_end — a round ending on any of these is reported failed, not completed.
+    const cutoff = new RunCutoffObserver();
     try {
       // Either scope ends the round: the session-lifetime kill, or this run's own abort.
       for await (const msg of this.handle.run({
@@ -365,15 +369,11 @@ export class ManagedSubagentSession {
             type?: string;
             event_type?: string;
             text?: string;
-            reason?: string;
           };
-          // A direct child layer's abort event: the child session was interrupted/failed (LLM
-          // request error, user interruption, etc). A child session failure doesn't throw, it
-          // only emits an event, based on which this round is reported as failed rather than
-          // marked completed.
-          if (p.type === "abort") {
-            childAbort = p.reason ?? "aborted";
-          } else if (
+          // A child session failure doesn't throw, it only emits its terminal record; the
+          // observer turns that (or an abort event) into this round's failed report.
+          cutoff.observe(p);
+          if (
             p.type === "partial_text" &&
             p.event_type === "delta" &&
             typeof p.text === "string" &&
@@ -396,8 +396,16 @@ export class ManagedSubagentSession {
         }
         this.wakeSignal.notify();
       }
-      if (childAbort !== null) {
-        this.exitInfo = { status: "failed", note: `[subagent aborted: ${childAbort}]` };
+      const cut = cutoff.cutoff;
+      if (cut !== null) {
+        // The note reaches the parent model: the cause code plus the raw detail (or the
+        // legacy prose of an old Trace's abort).
+        const detail = cut.errorMessage ?? cut.reason;
+        const cause = cut.errorCode ?? (cut.kind === "abort" ? "aborted" : cut.kind);
+        this.exitInfo = {
+          status: "failed",
+          note: `[subagent ${cut.kind === "abort" ? "aborted" : "failed"}: ${cause}${detail ? ` — ${detail}` : ""}]`,
+        };
       } else if (!wroteAny) {
         this.exitInfo = {
           status: "completed",

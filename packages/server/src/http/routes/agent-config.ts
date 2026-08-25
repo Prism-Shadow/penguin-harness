@@ -112,7 +112,9 @@ export function agentConfigRoutes(deps: AppDeps): Hono<AppEnv> {
       if (outcome === undefined || outcome.status !== "completed") {
         return c.json({
           ok: false,
-          error: outcome?.error ?? (warnings.length > 0 ? warnings.join("; ") : "connect failed"),
+          error:
+            outcome?.error_message ??
+            (warnings.length > 0 ? warnings.join("; ") : "connect failed"),
           latencyMs,
         } satisfies McpServerTestResponse);
       }

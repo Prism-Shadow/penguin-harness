@@ -6,8 +6,6 @@
  * command/option help descriptions and runtime output, one implementation per language.
  */
 
-import type { AbortCause } from "@prismshadow/penguin-core";
-
 /** UI language. */
 export type Language = "en" | "zh";
 
@@ -195,18 +193,22 @@ export interface Messages {
     elapsed: string;
     elapsedDelta: string;
   }): string;
-  /** Abort line: the cause decoded from the event's `reason` prose (`parseAbortReason`); provider error detail is untranslatable and stays verbatim, and unrecognized prose renders as-is. */
-  abortLabel(cause?: AbortCause): string;
+  /** Abort line (user interruptions only): the cause localizes from `errorCode`; `errorMessage` (raw, untranslatable) rides verbatim; a legacy Trace without a code renders its English `reason` prose as-is. */
+  abortLabel(abort?: { errorCode?: string; errorMessage?: string; reason?: string }): string;
   /** Run-ending LLM failure (request_end status fatal — no abort event follows); the provider's error text rides verbatim. */
   llmFatalLabel(errorMessage?: string): string;
   /** The retry ladder gave up (request_end `retryable` with no planned retry); `attempt` is the final attempt's ordinal, `errorMessage` the last failure's detail. */
   reconnectGaveUpLabel(attempt: number, errorMessage?: string): string;
   /**
-   * request_end ended with a status the engine reconnects on (`failed` / `timeout` /
-   * `malformed` — only `auth` is terminal): the engine retries carrying already-produced
-   * content; attempt is the retry count.
+   * request_end ended with a status the engine reconnects on: the engine retries carrying
+   * already-produced content; attempt is the retry count. The cause wording localizes from
+   * `errorCode` (legacy Traces: the retired status spellings say the same thing).
    */
-  reconnectLabel(status: "retryable" | "failed" | "timeout" | "malformed", attempt: number): string;
+  reconnectLabel(
+    status: "retryable" | "failed" | "timeout" | "malformed",
+    attempt: number,
+    errorCode?: string,
+  ): string;
   /** compaction start event: indicates compaction in progress (mode is summarize/discard, reason is context/turns/manual). */
   compactionStart(mode: string, reason: string): string;
   /**
@@ -523,39 +525,35 @@ const en: Messages = {
   approvePrompt: () => "? Approve this tool call? [Y/n] ",
   taskStats: (s) =>
     `[stats] context ${s.context} (${s.contextDelta}) · tokens ${s.tokens} (${s.tokensDelta}) · ${s.elapsed} (${s.elapsedDelta})`,
-  abortLabel: (cause) => {
-    const text =
-      cause === undefined
-        ? ""
-        : cause.kind === "user_abort"
-          ? "aborted by user"
-          : cause.kind === "llm_fatal"
-            ? `llm request error: ${cause.detail}`
-            : cause.kind === "llm_retries_exhausted"
-              ? `llm request failed after ${cause.attempts} retries${cause.detail ? `: ${cause.detail}` : ""}`
-              : cause.kind === "backoff_interrupted"
-                ? "aborted during reconnect backoff"
-                : cause.kind === "compaction_aborted"
-                  ? "aborted during compaction"
-                  : cause.kind === "compaction_failed"
-                    ? "compaction failed"
-                    : (cause.reason ?? "");
+  abortLabel: (abort) => {
+    const cause =
+      abort?.errorCode === "user_abort"
+        ? "aborted by user"
+        : abort?.errorCode === "backoff_interrupted"
+          ? "aborted during reconnect backoff"
+          : abort?.errorCode === "compaction_interrupted"
+            ? "aborted during compaction"
+            : (abort?.errorCode ?? abort?.reason ?? "");
+    const text = cause ? `${cause}${abort?.errorMessage ? `: ${abort.errorMessage}` : ""}` : "";
     return `[abort]${text ? `: ${text}` : ""}`;
   },
   llmFatalLabel: (errorMessage) =>
     `[error] llm request error${errorMessage ? `: ${errorMessage}` : ""}`,
   reconnectGaveUpLabel: (attempt, errorMessage) =>
     `[retry] giving up after attempt ${attempt}${errorMessage ? `: ${errorMessage}` : ""}`,
-  reconnectLabel: (status, attempt) =>
-    `[retry] ${
-      status === "timeout"
+  reconnectLabel: (status, attempt, errorCode) =>
+    // The live protocol carries the classified cause on error_code; the legacy status
+    // spellings say the same thing for pre-convergence Traces.
+    `[retry] ${((kind) =>
+      kind === "timeout"
         ? "connection timed out"
-        : status === "malformed"
+        : kind === "malformed"
           ? "response incomplete or unparseable"
-          : status === "failed"
-            ? "the model provider returned an error"
-            : "the request failed"
-    }; sending retry #${attempt}…`,
+          : kind === "network"
+            ? "network or service temporarily unavailable"
+            : kind === "failed"
+              ? "the model provider returned an error"
+              : "the request failed")(errorCode ?? status)}; sending retry #${attempt}…`,
   compactionStart: (mode, reason) =>
     mode === "discard"
       ? `[compaction] discarding context (${reason})…`
@@ -836,38 +834,32 @@ const zh: Messages = {
   approvePrompt: () => "? 批准此工具调用？[Y/n] ",
   taskStats: (s) =>
     `[统计信息] 上下文 ${s.context} (${s.contextDelta}) · tokens ${s.tokens} (${s.tokensDelta}) · 用时 ${s.elapsed} (${s.elapsedDelta})`,
-  abortLabel: (cause) => {
-    const text =
-      cause === undefined
-        ? ""
-        : cause.kind === "user_abort"
-          ? "用户中断"
-          : cause.kind === "llm_fatal"
-            ? `模型请求错误：${cause.detail}`
-            : cause.kind === "llm_retries_exhausted"
-              ? `模型请求重试 ${cause.attempts} 次后失败${cause.detail ? `：${cause.detail}` : ""}`
-              : cause.kind === "backoff_interrupted"
-                ? "重试等待中被中断"
-                : cause.kind === "compaction_aborted"
-                  ? "压缩过程中被中断"
-                  : cause.kind === "compaction_failed"
-                    ? "压缩失败"
-                    : (cause.reason ?? "");
+  abortLabel: (abort) => {
+    const cause =
+      abort?.errorCode === "user_abort"
+        ? "用户中断"
+        : abort?.errorCode === "backoff_interrupted"
+          ? "重试等待中被中断"
+          : abort?.errorCode === "compaction_interrupted"
+            ? "压缩过程中被中断"
+            : (abort?.errorCode ?? abort?.reason ?? "");
+    const text = cause ? `${cause}${abort?.errorMessage ? `：${abort.errorMessage}` : ""}` : "";
     return `[已中断]${text ? `：${text}` : ""}`;
   },
   llmFatalLabel: (errorMessage) => `[错误] 模型请求错误${errorMessage ? `：${errorMessage}` : ""}`,
   reconnectGaveUpLabel: (attempt, errorMessage) =>
     `[重试] 第 ${attempt} 次尝试后放弃${errorMessage ? `：${errorMessage}` : ""}`,
-  reconnectLabel: (status, attempt) =>
-    `[重试] ${
-      status === "timeout"
+  reconnectLabel: (status, attempt, errorCode) =>
+    `[重试] ${((kind) =>
+      kind === "timeout"
         ? "连接超时或网络中断"
-        : status === "malformed"
+        : kind === "malformed"
           ? "响应不完整或无法解析"
-          : status === "failed"
-            ? "模型服务返回错误"
-            : "请求失败"
-    }，正在发起第 ${attempt} 次重试……`,
+          : kind === "network"
+            ? "网络或服务暂时不可用"
+            : kind === "failed"
+              ? "模型服务返回错误"
+              : "请求失败")(errorCode ?? status)}，正在发起第 ${attempt} 次重试……`,
   compactionStart: (mode, reason) =>
     mode === "discard"
       ? `[压缩] 正在丢弃旧上下文（${reason}）……`

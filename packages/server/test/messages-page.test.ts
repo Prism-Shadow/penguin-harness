@@ -259,7 +259,7 @@ describe("messages windowed reads", () => {
         "2026-07-20T10:01:02.000Z",
         compactionEnd({ reason: "context", mode: "summarize", status: "aborted" }),
       ),
-      at("2026-07-20T10:01:03.000Z", abortEvent("aborted during compaction")),
+      at("2026-07-20T10:01:03.000Z", abortEvent("compaction_interrupted")),
       ...turn(2, 2, 2000),
     ]);
 

@@ -167,7 +167,7 @@ describe("agent.resumeSession", () => {
       requestBegin(),
       assistantText("partial answer", "aborted"),
       requestEnd("aborted"),
-      abortEvent("aborted by user"),
+      abortEvent(),
     ]);
 
     const session = await agent.resumeSession({ sessionId: SID });
@@ -441,7 +441,7 @@ describe("agent.resumeSession", () => {
       userText("q1"),
       requestBegin(),
       assistantText("half-writ"),
-      abortEvent("user"),
+      abortEvent(),
     ]);
 
     const session = await agent.resumeSession({ sessionId: SID });

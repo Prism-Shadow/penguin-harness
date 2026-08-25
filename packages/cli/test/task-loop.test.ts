@@ -33,7 +33,7 @@ function silentRenderer(): StreamRenderer {
 
 describe("runTask abort reporting", () => {
   it("reports aborted=true when the task ends with a main-session abort event", async () => {
-    const result = await runTask(fakeSession([abortEvent("llm request error: 401")]), [], {
+    const result = await runTask(fakeSession([abortEvent()]), [], {
       renderer: silentRenderer(),
       t,
     });
@@ -42,7 +42,7 @@ describe("runTask abort reporting", () => {
 
   it("reports aborted=false on normal completion; child-session aborts do not count", async () => {
     const result = await runTask(
-      fakeSession([withOrigin(abortEvent("child aborted"), "sess_child"), assistantText("done")]),
+      fakeSession([withOrigin(abortEvent(), "sess_child"), assistantText("done")]),
       [],
       { renderer: silentRenderer(), t },
     );

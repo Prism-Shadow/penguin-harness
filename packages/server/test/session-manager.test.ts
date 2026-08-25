@@ -553,8 +553,13 @@ describe("session-manager", () => {
           toolCallId: "tc-1",
           stopReason: "fatal",
         });
-        yield requestEnd("retryable");
-        yield abortEvent("llm request error: 500 upstream");
+        // The ladder's terminal failure: no retry planned (no retry_in_ms), the run ends
+        // on this record — no abort event follows.
+        yield requestEnd("retryable", {
+          attempt: 6,
+          errorCode: "network",
+          errorMessage: "500 upstream",
+        });
       },
       async *compact(): AsyncGenerator<OmniMessage> {},
     };
@@ -564,11 +569,11 @@ describe("session-manager", () => {
 
     expect(captured.map((a) => [a.source, a.code, a.kind])).toEqual([
       ["environment", "tool_fatal:write_file", "expected"], // error fed back to the model; the Agent adjusts on its own
-      ["llm", "llm_failed", "unexpected"], // the abort follows it: the retries did not recover it, so a human is needed
+      ["llm", "llm_failed", "unexpected"], // nothing followed it: the retries did not recover it, so a human is needed
     ]);
     expect(captured[0]!.ctx).toEqual({ projectId: "p1", agentId: "a1", sessionId: "session-1" });
     expect(String(captured[0]!.err)).toContain("[tool error] exit code 2");
-    expect(String(captured[1]!.err)).toBe("llm request error: 500 upstream"); // the abort's real reason
+    expect(String(captured[1]!.err)).toBe("llm request failed after 5 retries: 500 upstream");
   });
 
   it("mutual exclusion: startTask again while running → 409 task_in_progress; compact → 409", async () => {

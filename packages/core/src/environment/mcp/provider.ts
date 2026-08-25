@@ -291,7 +291,9 @@ export class McpToolProvider {
                 transport: server.transport.kind,
                 status: aborted ? "aborted" : "fatal",
                 duration_ms: durationMs(),
-                ...(aborted ? {} : { error: describeError(err) }),
+                ...(aborted
+                  ? {}
+                  : { error_code: "connect_failed" as const, error_message: describeError(err) }),
               },
             };
           }

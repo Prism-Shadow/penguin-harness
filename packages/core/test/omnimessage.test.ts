@@ -3,7 +3,6 @@ import {
   PartialAggregator,
   aggregateAll,
   abortEvent,
-  parseAbortReason,
   addTokenCounts,
   approvalDecision,
   assistantText,
@@ -39,53 +38,14 @@ describe("builders", () => {
       decision: "allow",
       tool_call_id: "call_1",
     });
-    expect(abortEvent("stop").payload).toMatchObject({
+    expect(abortEvent().payload).toMatchObject({
       type: "abort",
-      reason: "stop",
+      error_code: "user_abort",
     });
-  });
-
-  it("parseAbortReason decodes each engine spelling, legacy exhausted spellings, and leaves the rest verbatim", () => {
-    expect(parseAbortReason("aborted by user")).toEqual({ kind: "user_abort" });
-    expect(parseAbortReason("user")).toEqual({ kind: "user_abort" });
-    expect(parseAbortReason("llm request error: 401 invalid x-api-key")).toEqual({
-      kind: "llm_fatal",
-      detail: "401 invalid x-api-key",
+    expect(abortEvent("backoff_interrupted").payload).toMatchObject({
+      type: "abort",
+      error_code: "backoff_interrupted",
     });
-    expect(parseAbortReason("llm request failed after 5 retries: socket hang up")).toEqual({
-      kind: "llm_retries_exhausted",
-      attempts: 5,
-      detail: "socket hang up",
-    });
-    expect(parseAbortReason("llm request failed after 5 retries")).toEqual({
-      kind: "llm_retries_exhausted",
-      attempts: 5,
-    });
-    // Spellings from before the stop-reason convergence still decode.
-    expect(parseAbortReason("malformed response failed after 5 retries")).toEqual({
-      kind: "llm_retries_exhausted",
-      attempts: 5,
-    });
-    expect(parseAbortReason("reconnect failed after 3 retries")).toEqual({
-      kind: "llm_retries_exhausted",
-      attempts: 3,
-    });
-    expect(parseAbortReason("aborted during reconnect backoff")).toEqual({
-      kind: "backoff_interrupted",
-    });
-    expect(parseAbortReason("aborted during compaction")).toEqual({ kind: "compaction_aborted" });
-    expect(parseAbortReason("compaction failed")).toEqual({ kind: "compaction_failed" });
-    // Multi-line provider detail stays intact.
-    expect(parseAbortReason("llm request error: 400 bad request\n{body}")).toEqual({
-      kind: "llm_fatal",
-      detail: "400 bad request\n{body}",
-    });
-    expect(parseAbortReason("something else entirely")).toEqual({
-      kind: "unknown",
-      reason: "something else entirely",
-    });
-    expect(parseAbortReason(null)).toEqual({ kind: "unknown", reason: null });
-    expect(parseAbortReason(undefined)).toEqual({ kind: "unknown", reason: null });
   });
 
   it("toolCallOutput carries optional images and round-trips through JSON", () => {

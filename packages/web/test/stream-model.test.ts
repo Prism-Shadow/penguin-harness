@@ -371,26 +371,34 @@ describe("approvals and events", () => {
 
   it("a fatal request_end renders the error banner; an interim-build abort duplicate is dropped", () => {
     const m = createStreamModel();
-    pushMessage(m, requestEnd("fatal", { errorMessage: "401 invalid x-api-key" }));
+    pushMessage(
+      m,
+      requestEnd("fatal", { errorCode: "auth", errorMessage: "401 invalid x-api-key" }),
+    );
     expect(items(m)).toHaveLength(1);
     expect(items(m)[0]).toMatchObject({
       kind: "llm_error",
+      errorCode: "auth",
       errorMessage: "401 invalid x-api-key",
     });
-    // Interim-build Traces also wrote an abort for the same failure — deduped.
-    pushMessage(m, abortEvent("llm request error: 401 invalid x-api-key"));
-    expect(items(m)).toHaveLength(1);
   });
 
-  it("abort events produce an abort marker item carrying the reason prose", () => {
+  it("abort events produce an abort marker item carrying the unified error pair", () => {
     const m = createStreamModel();
-    pushMessage(m, abortEvent("user abort"));
-    expect(items(m)[0]).toMatchObject({ kind: "abort", reason: "user abort" });
-    pushMessage(m, abortEvent("llm request error: 401 nope"));
-    expect(items(m)[1]).toMatchObject({
+    pushMessage(m, abortEvent());
+    expect(items(m)[0]).toMatchObject({ kind: "abort", errorCode: "user_abort" });
+    pushMessage(m, abortEvent("backoff_interrupted"));
+    expect(items(m)[1]).toMatchObject({ kind: "abort", errorCode: "backoff_interrupted" });
+    // A legacy Trace's abort carries only the English prose — kept verbatim on the item.
+    const legacy = abortEvent();
+    delete (legacy.payload as { error_code?: string }).error_code;
+    (legacy.payload as { reason?: string }).reason = "llm request error: 401 nope";
+    pushMessage(m, legacy);
+    expect(items(m)[2]).toMatchObject({
       kind: "abort",
       reason: "llm request error: 401 nope",
     });
+    expect((items(m)[2] as { errorCode?: string }).errorCode).toBeUndefined();
   });
 
   it("compaction begin/end produce a banner item; tokens accounting for the completion row", () => {
@@ -589,7 +597,8 @@ describe("approvals and events", () => {
               transport: "stdio",
               status: "fatal",
               duration_ms: 60,
-              error: "spawn nope ENOENT",
+              error_code: "connect_failed",
+              error_message: "spawn nope ENOENT",
             },
           ],
         }),
@@ -612,13 +621,15 @@ describe("approvals and events", () => {
     pushMessage(m, mcpConnectBegin(["old"]));
     const legacy = mcpConnectEnd({
       status: "fatal",
-      results: [
-        { server: "old", transport: "stdio", status: "fatal", duration_ms: 10, error: "gone" },
-      ],
+      results: [{ server: "old", transport: "stdio", status: "fatal", duration_ms: 10 }],
     });
-    // Traces written before the one-vocabulary convergence spell the failure "failed".
+    // Traces written before the one-vocabulary convergence spell the failure "failed"
+    // and carry the detail as `error`.
     (legacy.payload as { status: string }).status = "failed";
-    (legacy.payload as { results: { status: string }[] }).results[0]!.status = "failed";
+    const legacyResult = (legacy.payload as { results: { status: string; error?: string }[] })
+      .results[0]!;
+    legacyResult.status = "failed";
+    legacyResult.error = "gone";
     pushMessage(m, legacy);
     const row = items(m)[0] as McpConnectItem;
     expect(row.running).toBe(false);
@@ -781,12 +792,19 @@ describe("approvals and events", () => {
   it("retries exhausted: an arriving abort marks the waiting retry notice gaveUp and resets the consecutive-failure count", () => {
     const m = createStreamModel();
     pushMessage(m, requestBegin());
-    pushMessage(m, requestEnd("retryable"));
-    pushMessage(m, abortEvent("llm request failed after 5 retries"));
+    // Legacy flow: a pre-convergence Trace (spelling "timeout", no retry_in_ms) whose
+    // exhaustion was marked by the abort event.
+    const legacyEnd = requestEnd("retryable");
+    (legacyEnd.payload as { status: string }).status = "timeout";
+    pushMessage(m, legacyEnd);
+    const legacyAbort = abortEvent();
+    delete (legacyAbort.payload as { error_code?: string }).error_code;
+    (legacyAbort.payload as { reason?: string }).reason = "llm request failed after 5 retries";
+    pushMessage(m, legacyAbort);
     const retry = items(m)[0] as ReconnectItem;
     expect(retry).toMatchObject({
       kind: "reconnect",
-      status: "retryable",
+      status: "timeout",
       retrying: false,
       gaveUp: true,
     });
@@ -794,7 +812,7 @@ describe("approvals and events", () => {
     // A new failure in the next run starts back at 1; a gaveUp notice isn't revived by request_begin.
     pushMessage(m, requestBegin());
     expect(retry.retrying).toBe(false);
-    pushMessage(m, requestEnd("retryable"));
+    pushMessage(m, requestEnd("retryable", { retryInMs: 2000 }));
     expect((items(m)[2] as ReconnectItem).attempt).toBe(1);
   });
 
@@ -850,7 +868,7 @@ describe("approvals and events", () => {
       userText("go"),
       requestBegin(),
       requestEnd("retryable", { errorMessage: "quota", retryInMs: 30_000 }),
-      abortEvent("aborted during reconnect backoff"), // the user gave up mid-wait
+      abortEvent("backoff_interrupted"), // the user gave up mid-wait
     ]);
     finalizeHistory(aborted);
     const gaveUp = items(aborted).find((i) => i.kind === "reconnect") as ReconnectItem;
@@ -1455,7 +1473,7 @@ describe("compaction attribution by position: in-round counts toward the round, 
       at(requestBegin(), "2026-07-05T00:00:01.000Z"),
       at(tokenUsage(out(100), out(100)), "2026-07-05T00:00:02.000Z"),
       at(requestEnd("aborted"), "2026-07-05T00:00:03.000Z"),
-      at(abortEvent("user"), "2026-07-05T00:00:03.000Z"),
+      at(abortEvent(), "2026-07-05T00:00:03.000Z"),
       // The user doesn't send the next message until 60 seconds later
       at(userText("ask again"), "2026-07-05T00:01:03.000Z"),
       at(requestBegin(), "2026-07-05T00:01:04.000Z"),
@@ -2075,7 +2093,7 @@ describe("thinking/tool durations (collapsed-row display data)", () => {
     const m = createStreamModel();
     pushMessage(m, at(userText("Q"), T0));
     pushMessage(m, at(toolCall({ name: "exec_command", arguments: "{}", toolCallId: "ta" }), T1));
-    pushMessage(m, at(abortEvent("user"), T2));
+    pushMessage(m, at(abortEvent(), T2));
     const card = items(m).find((i) => i.kind === "tool_call") as ToolCallItem;
     expect(card.outputComplete).toBe(true);
     expect(card.outputStreaming).toBe(false);

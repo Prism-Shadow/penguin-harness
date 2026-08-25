@@ -52,7 +52,6 @@
 import {
   isEventMessage,
   isPartialPayload,
-  parseAbortReason,
   parseBackgroundTaskDoneMessage,
   parseUserSteeringText,
 } from "@prismshadow/penguin-core/omnimessage";
@@ -227,7 +226,11 @@ export interface SubagentItem {
 export interface AbortItem {
   kind: "abort";
   id: number;
-  /** English prose of record; the banner decodes it with `parseAbortReason` for localized wording. */
+  /** Machine-readable cause (the omnimessage ErrorCode vocabulary); the banner localizes from it. */
+  errorCode?: string;
+  /** Raw failure detail, shown verbatim (absent on live user interrupts). */
+  errorMessage?: string;
+  /** Legacy Traces only: the cause as English prose, rendered verbatim when no errorCode is present. */
   reason?: string;
 }
 
@@ -238,6 +241,8 @@ export interface AbortItem {
 export interface LlmErrorItem {
   kind: "llm_error";
   id: number;
+  /** Machine-readable cause (request_end.error_code). */
+  errorCode?: string;
   /** The provider's own error text (request_end.error_message), shown verbatim. */
   errorMessage?: string;
 }
@@ -263,6 +268,8 @@ export interface ReconnectItem {
   retrying: boolean;
   /** Retries exhausted: set at creation when the request_end announced no retry (`retryable` with no retry_in_ms — the run ends there), or by an abort event in legacy Traces. */
   gaveUp?: boolean;
+  /** Machine-readable cause (request_end.error_code); the cause wording localizes from it. */
+  errorCode?: string;
   /** The final failure's detail (request_end.error_message), rendered in the gave-up state. */
   errorMessage?: string;
   /**
@@ -1520,13 +1527,9 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       // exhausted/abandoned, so mark it gaveUp (this interruption marker item gives the reason).
       const waiting = findLastWaitingReconnect(model);
       if (waiting) waiting.gaveUp = true;
-      // Interim-build Traces wrote both the fatal request_end and an abort for the same
-      // failure; the llm_error item already says it, so drop the duplicate banner.
-      const cause = parseAbortReason(p.reason);
-      if (cause.kind === "llm_fatal" && model.items[model.items.length - 1]?.kind === "llm_error") {
-        return;
-      }
       const item: AbortItem = { kind: "abort", id: nextId(model) };
+      if (typeof p.error_code === "string") item.errorCode = p.error_code;
+      if (typeof p.error_message === "string") item.errorMessage = p.error_message;
       if (p.reason != null) item.reason = p.reason;
       model.items.push(item);
       return;
@@ -1558,13 +1561,17 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       item.toolCount = p.results.reduce((sum, r) => sum + (r.tools ?? 0), 0);
       // Per-server outcomes back the row's server groups (error details live there, not
       // on the header line).
-      item.results = p.results.map((r) => ({
-        server: r.server,
-        status: r.status,
-        durationMs: r.duration_ms,
-        ...(r.tools !== undefined ? { tools: r.tools } : {}),
-        ...(r.error !== undefined ? { error: r.error.slice(0, 500) } : {}),
-      }));
+      item.results = p.results.map((r) => {
+        // Live results carry the unified pair; legacy Traces spell the detail `error`.
+        const detail = r.error_message ?? (r as { error?: string }).error;
+        return {
+          server: r.server,
+          status: r.status,
+          durationMs: r.duration_ms,
+          ...(r.tools !== undefined ? { tools: r.tools } : {}),
+          ...(detail !== undefined ? { error: detail.slice(0, 500) } : {}),
+        };
+      });
       const failedResults = p.results.filter(
         (r) => r.status === "fatal" || (r.status as string) === "failed",
       );
@@ -1683,6 +1690,7 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       // terminal record, rendered as an error banner.
       if (p.status === "fatal") {
         const item: LlmErrorItem = { kind: "llm_error", id: nextId(model) };
+        if (typeof p.error_code === "string") item.errorCode = p.error_code;
         if (typeof p.error_message === "string" && p.error_message) {
           item.errorMessage = p.error_message;
         }
@@ -1701,6 +1709,7 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
           attempt: p.attempt ?? 1,
           retrying: false,
         };
+        if (typeof p.error_code === "string") item.errorCode = p.error_code;
         if (typeof p.error_message === "string" && p.error_message) {
           item.errorMessage = p.error_message;
         }

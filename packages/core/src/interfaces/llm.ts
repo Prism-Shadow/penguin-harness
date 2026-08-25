@@ -8,7 +8,7 @@
  *
  * Docs: packages/docs/content/interfaces.{zh,en}.md (site path /docs/interfaces).
  */
-import type { OmniMessage, StopReason, ToolDefinition } from "../omnimessage/types.js";
+import type { ErrorCode, OmniMessage, StopReason, ToolDefinition } from "../omnimessage/types.js";
 import type { ThinkingLevelName } from "./shared.js";
 // Concrete class, used only as a type annotation (type-only import; no runtime dependency, no circular reference).
 import type { ToolCallIdAllocator } from "../llm/tool-call-ids.js";
@@ -99,6 +99,13 @@ export interface GenerativeModelParameters {
  */
 export interface LLMOutcome {
   status: StopReason;
+  /**
+   * Classified cause (the omnimessage ErrorCode vocabulary): present on every
+   * non-completed failure outcome. Carried onto the `request_end` event as `error_code`,
+   * next to `error_message` — the status answers "retry?", the code says what kind of
+   * error it was, machine-readably.
+   */
+  errorCode?: ErrorCode;
   /**
    * Error detail (`describeError` text): present on `fatal`, and on `retryable` when a
    * concrete transport/provider error was caught (a plain idle timeout has none). Carried

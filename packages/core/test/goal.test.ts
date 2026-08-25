@@ -373,9 +373,7 @@ describe("runGoalLoop", () => {
   });
 
   it("stops without re-firing when the main session aborts, leaving the goal active", async () => {
-    const session = fakeSession([
-      { messages: [tokenUsage(usage(80), usage(80)), abortEvent("interrupted")] },
-    ]);
+    const session = fakeSession([{ messages: [tokenUsage(usage(80), usage(80)), abortEvent()] }]);
     const { outcome } = await drain(runGoalLoop(session, { text: "o", goalFilePath: file }));
     expect(outcome).toEqual({ outcome: "aborted", rounds: 1, tokensUsed: 80 });
     expect(await readGoalStatus(file)).toBe("active");
@@ -444,7 +442,7 @@ describe("runGoalLoop", () => {
 
   it("counts uncached input + output, including subagent (origin-marked) usage", async () => {
     const childUsage = withOrigin(tokenUsage(usage(500, 200), usage(500, 200)), "child-session");
-    const childAbort = withOrigin(abortEvent("child failed"), "child-session");
+    const childAbort = withOrigin(abortEvent(), "child-session");
     const session = fakeSession([
       {
         // Main request: total 1000 with 400 cached → 600; child: total 500 with 200 cached → 300.
