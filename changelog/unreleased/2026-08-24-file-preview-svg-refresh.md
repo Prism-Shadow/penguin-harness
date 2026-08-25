@@ -3,7 +3,7 @@
 - **Date:** 2026-08-24
 - **Type:** fix
 - **Scope:** `web`, `server`
-- **PR:** [#PRNUM](https://github.com/Prism-Shadow/penguin-harness/pull/PRNUM)
+- **PR:** [#460](https://github.com/Prism-Shadow/penguin-harness/pull/460)
 
 [中文版](2026-08-24-file-preview-svg-refresh.zh.md)
 
