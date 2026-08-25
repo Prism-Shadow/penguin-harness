@@ -16,7 +16,7 @@ frontmatter 字段：
 | `short_description` / `short_description_zh` | UI 短标签(卡片等紧凑位置用)，不注入 Prompt |
 | `preinstall` | 可选；`false` 表示不进入 default_agent 的预装集合，仅可从技能库手动安装 |
 | `version` | 自然数版本号，默认 1 |
-| `updated` | 更新日期 |
+| `updated` | 更新时间戳，ISO 8601 UTC(`2026-07-17T09:00:00Z`) |
 
 ```md
 ---
@@ -25,7 +25,7 @@ description: One-line English description injected into the system prompt.
 short_description: Short UI label.
 short_description_zh: 简短的中文标签。
 version: 1
-updated: 2026-07-17
+updated: 2026-07-17T09:00:00Z
 ---
 
 # My Skill
@@ -33,7 +33,7 @@ updated: 2026-07-17
 具体的步骤、边界与验收标准……
 ```
 
-解析是容错的：只识别首个 `---` 块内的 `key: value` 标量行；`version` 不是自然数时回退为 1,`updated` 缺省为空；`preinstall` 仅识别字面量 `false`。
+解析是容错的：只识别首个 `---` 块内的 `key: value` 标量行；`version` 不是自然数时回退为 1,`updated` 缺省为空；`preinstall` 仅识别字面量 `false`。`updated` 按原样存储、从不解析——UI 将其渲染为相对日期——但内置技能库通篇写 ISO 8601 UTC，为它编写的 Skill 也应如此。
 
 ## 渐进式加载
 

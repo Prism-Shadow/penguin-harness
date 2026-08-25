@@ -2343,7 +2343,7 @@ export interface SkillMetadataItem {
   icon?: string;
   /** Version number (natural number, frontmatter version; falls back to 1 if invalid). */
   version: number;
-  /** Update date (YYYY-MM-DD, frontmatter updated; defaults to an empty string). */
+  /** Update timestamp (frontmatter updated, ISO 8601 UTC by convention; defaults to an empty string). */
   updated: string;
 }
 

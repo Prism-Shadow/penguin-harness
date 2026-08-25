@@ -28,7 +28,7 @@ export interface SkillMetadata {
   preinstall?: boolean;
   /** Version number (natural number); falls back to 1 on parse failure. */
   version: number;
-  /** Update date (YYYY-MM-DD); defaults to "". */
+  /** Update timestamp, ISO 8601 UTC by convention (stored as written, never parsed); defaults to "". */
   updated: string;
 }
 
