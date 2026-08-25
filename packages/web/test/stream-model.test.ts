@@ -42,7 +42,6 @@ import {
   finalizeHistory,
   findToolCard,
   isDuplicate,
-  isModelAuthDead,
   notifyTaskIdle,
   pushMessage,
   pushMessages,
@@ -370,87 +369,15 @@ describe("approvals and events", () => {
     expect((items(m)[0] as ToolCallItem).decision).toBe("allow");
   });
 
-  it("a main-session request_end(auth) records the failure timestamp; other aborts/events do not", () => {
+  it("a fatal request_end renders no item of its own; the abort that follows carries the reason", () => {
     const m = createStreamModel();
-    pushMessage(m, abortEvent("aborted by user"));
-    expect(m.lastAuthFailureMs).toBeNull();
-    const end = requestEnd("auth", { errorMessage: "401 invalid x-api-key" });
-    pushMessage(m, end);
-    // The recorded time is the event's envelope timestamp (so a reload can compare it
-    // against the Project's credentials-updated time).
-    expect(m.lastAuthFailureMs).toBe(Date.parse(end.timestamp));
-    // The abort that follows still renders its line (the notice is additional).
+    pushMessage(m, requestEnd("fatal", { errorMessage: "401 invalid x-api-key" }));
     pushMessage(m, abortEvent("llm request error: 401 invalid x-api-key"));
-    expect(items(m)[1]).toMatchObject({
+    expect(items(m)).toHaveLength(1);
+    expect(items(m)[0]).toMatchObject({
       kind: "abort",
       reason: "llm request error: 401 invalid x-api-key",
     });
-    // Unrelated later messages don't clear it: only a COMPLETED request does (below) —
-    // request_begin alone proves nothing about the credential.
-    pushMessage(m, userText("hello?"));
-    pushMessage(m, requestBegin());
-    expect(m.lastAuthFailureMs).not.toBeNull();
-  });
-
-  it("a later completed request clears the auth-dead state; a new auth failure re-arms it", () => {
-    const m = createStreamModel();
-    pushMessage(m, requestEnd("auth", { errorMessage: "401" }));
-    expect(m.lastAuthFailureMs).not.toBeNull();
-    // The key was fixed and a request succeeded: the state must not outlive the success.
-    pushMessage(m, userText("again"));
-    pushMessage(m, requestBegin());
-    pushMessage(m, requestEnd("completed"));
-    expect(m.lastAuthFailureMs).toBeNull();
-    // A fresh auth failure re-arms (e.g. the replacement key is wrong too).
-    pushMessage(m, requestEnd("auth", { errorMessage: "401" }));
-    expect(m.lastAuthFailureMs).not.toBeNull();
-  });
-
-  it("history replay: order decides — auth failure then completed request stays alive; the reverse stays dead", () => {
-    // Replay of a Trace where the auth failure was followed by a successful request (the
-    // user fixed the key and continued): reload must NOT resurrect the dead composer.
-    const recovered = createStreamModel();
-    pushMessages(recovered, [
-      userText("go"),
-      requestBegin(),
-      requestEnd("auth", { errorMessage: "401 invalid x-api-key" }),
-      abortEvent("llm request error: 401 invalid x-api-key"),
-      userText("after fix"),
-      requestBegin(),
-      requestEnd("completed"),
-    ]);
-    finalizeHistory(recovered);
-    expect(recovered.lastAuthFailureMs).toBeNull();
-
-    // Replay where the auth failure is the LAST word: the dead state is rebuilt.
-    const dead = createStreamModel();
-    pushMessages(dead, [
-      userText("go"),
-      requestBegin(),
-      requestEnd("completed"),
-      userText("later"),
-      requestBegin(),
-      requestEnd("auth", { errorMessage: "401 invalid x-api-key" }),
-      abortEvent("llm request error: 401 invalid x-api-key"),
-    ]);
-    finalizeHistory(dead);
-    expect(dead.lastAuthFailureMs).not.toBeNull();
-  });
-
-  it("isModelAuthDead gates on the credentials-updated timestamp", () => {
-    expect(isModelAuthDead(null, null)).toBe(false); // no auth failure on record
-    expect(isModelAuthDead(1000, null)).toBe(true); // no update info -> nothing proves a fix
-    expect(isModelAuthDead(1000, 2000)).toBe(false); // key updated after the failure -> alive
-    expect(isModelAuthDead(3000, 2000)).toBe(true); // a fresh failure after the update re-arms
-  });
-
-  it("a subagent-origin auth failure does NOT kill the parent session's input", () => {
-    const m = createStreamModel();
-    pushMessage(m, withOrigin(requestEnd("auth", { errorMessage: "401" }), "child1"));
-    // The failure belongs to the child session: its nested model carries the state, the
-    // parent composer stays usable (the subagent simply surfaces as failed).
-    expect(m.lastAuthFailureMs).toBeNull();
-    expect(m.subagents.get("child1")!.lastAuthFailureMs).not.toBeNull();
   });
 
   it("abort events produce an abort marker item", () => {
@@ -708,15 +635,15 @@ describe("approvals and events", () => {
     expect(items(m)).toHaveLength(0);
   });
 
-  it("request_end final state timeout/malformed produces a retry notice item (with the stamped attempt); request_begin marks it as resent", () => {
+  it("a retryable request_end produces a retry notice item (with the stamped attempt); request_begin marks it as resent", () => {
     const m = createStreamModel();
     pushMessage(m, requestBegin());
     // The core stamps the authoritative ordinal on every retryable request_end.
-    pushMessage(m, requestEnd("malformed", { attempt: 1 }));
+    pushMessage(m, requestEnd("retryable", { attempt: 1 }));
     const retry = items(m)[0] as ReconnectItem;
     expect(retry).toMatchObject({
       kind: "reconnect",
-      status: "malformed",
+      status: "retryable",
       attempt: 1,
       retrying: false,
     });
@@ -724,31 +651,31 @@ describe("approvals and events", () => {
     pushMessage(m, requestBegin());
     expect(retry.retrying).toBe(true);
     // Retry fails again: a second notice, carrying the next ordinal.
-    pushMessage(m, requestEnd("timeout", { attempt: 2 }));
+    pushMessage(m, requestEnd("retryable", { attempt: 2 }));
     const retry2 = items(m)[1] as ReconnectItem;
-    expect(retry2).toMatchObject({ kind: "reconnect", status: "timeout", attempt: 2 });
+    expect(retry2).toMatchObject({ kind: "reconnect", status: "retryable", attempt: 2 });
     // Retry succeeds: no new entry; the next round's failure carries attempt 1 again.
     pushMessage(m, requestBegin());
     pushMessage(m, requestEnd("completed"));
     expect(items(m)).toHaveLength(2);
     pushMessage(m, requestBegin());
-    pushMessage(m, requestEnd("timeout", { attempt: 1 }));
+    pushMessage(m, requestEnd("retryable", { attempt: 1 }));
     expect((items(m)[2] as ReconnectItem).attempt).toBe(1);
     // A Trace written before the field existed lacks it: rendered as attempt 1.
     pushMessage(m, requestBegin());
-    pushMessage(m, requestEnd("timeout"));
+    pushMessage(m, requestEnd("retryable"));
     expect((items(m)[3] as ReconnectItem).attempt).toBe(1);
   });
 
-  it("request_end(failed) renders a retry notice too, with its countdown inputs and give-up target", () => {
-    // The engine reconnects on `failed` exactly like timeout/malformed. Without an item there
-    // is no countdown and findLastWaitingReconnect returns null, so "Retry now" / "Give up"
-    // never render either — the session just stalls for up to 7.75s with nothing on screen.
+  it("the retry notice carries its countdown inputs and give-up target", () => {
+    // Without an item there is no countdown and findLastWaitingReconnect returns null, so
+    // "Retry now" / "Give up" never render either — the session would just stall with
+    // nothing on screen.
     const m = createStreamModel();
     pushMessage(m, requestBegin());
     pushMessage(
       m,
-      requestEnd("failed", {
+      requestEnd("retryable", {
         errorMessage: "Upstream HTTP/2 stream failed (upstream_http2_stream_error)",
         retryInMs: 4000,
       }),
@@ -757,61 +684,63 @@ describe("approvals and events", () => {
     const retry = items(m)[0] as ReconnectItem;
     expect(retry).toMatchObject({
       kind: "reconnect",
-      status: "failed",
+      status: "retryable",
       attempt: 1,
       retrying: false,
       plannedDelayMs: 4000, // the countdown
       arrivedAtMs: 111_000, // its client-clock anchor
     });
     // Waiting, so it is the item the retry-now / give-up controls attach to; the retry then
-    // flips it out of the waiting state exactly like the other two statuses.
+    // flips it out of the waiting state.
     pushMessage(m, requestBegin());
     expect(retry.retrying).toBe(true);
   });
 
-  it("a mixed ladder keeps counting: the stamped ordinal carries across failure kinds", () => {
-    // The engine numbers timeout → failed → timeout as one run (all three draw on the same
-    // budget), and each notice shows the event's own ordinal.
+  it("a legacy-trace mixed ladder keeps counting: the finer pre-convergence spellings still render", () => {
+    // Traces written before the stop-reason convergence spell retryable ends as
+    // timeout/failed/malformed; replay renders the same ladder with each event's ordinal.
+    const legacyEnd = (status: string, retry?: { attempt?: number; errorMessage?: string }) =>
+      requestEnd(status as Parameters<typeof requestEnd>[0], retry);
     const m = createStreamModel();
     pushMessage(m, requestBegin());
-    pushMessage(m, requestEnd("timeout", { attempt: 1 }));
+    pushMessage(m, legacyEnd("timeout", { attempt: 1 }));
     pushMessage(m, requestBegin());
-    pushMessage(m, requestEnd("failed", { errorMessage: "502 bad gateway", attempt: 2 }));
+    pushMessage(m, legacyEnd("failed", { errorMessage: "502 bad gateway", attempt: 2 }));
     pushMessage(m, requestBegin());
-    pushMessage(m, requestEnd("timeout", { attempt: 3 }));
+    pushMessage(m, legacyEnd("malformed", { attempt: 3 }));
     expect((items(m) as ReconnectItem[]).map((i) => [i.status, i.attempt])).toEqual([
       ["timeout", 1],
       ["failed", 2],
-      ["timeout", 3],
+      ["malformed", 3],
     ]);
     // After a normal finish the next run's first failure is stamped #1 again.
     pushMessage(m, requestBegin());
     pushMessage(m, requestEnd("completed"));
     pushMessage(m, requestBegin());
-    pushMessage(m, requestEnd("failed", { attempt: 1 }));
+    pushMessage(m, legacyEnd("failed", { attempt: 1 }));
     expect((items(m)[3] as ReconnectItem).attempt).toBe(1);
   });
 
-  it("request_end(auth) stays out of the ladder: terminal, so no retry notice", () => {
-    // The one status the engine does not retry — an item would promise a countdown and a
-    // "Retry now" that will never happen, on top of the composer already being gated.
+  it("request_end(fatal) stays out of the ladder: terminal, so no retry notice", () => {
+    // The status the engine does not retry — an item would promise a countdown and a
+    // "Retry now" that will never happen.
     const m = createStreamModel();
     pushMessage(m, requestBegin());
-    pushMessage(m, requestEnd("timeout", { attempt: 1 }));
+    pushMessage(m, requestEnd("retryable", { attempt: 1 }));
     pushMessage(m, requestBegin());
-    pushMessage(m, requestEnd("auth", { errorMessage: "401 invalid x-api-key", attempt: 2 }));
+    pushMessage(m, requestEnd("fatal", { errorMessage: "401 invalid x-api-key", attempt: 2 }));
     expect((items(m) as ReconnectItem[]).filter((i) => i.kind === "reconnect")).toHaveLength(1);
   });
 
   it("retries exhausted: an arriving abort marks the waiting retry notice gaveUp and resets the consecutive-failure count", () => {
     const m = createStreamModel();
     pushMessage(m, requestBegin());
-    pushMessage(m, requestEnd("timeout"));
-    pushMessage(m, abortEvent("reconnect failed after 5 retries"));
+    pushMessage(m, requestEnd("retryable"));
+    pushMessage(m, abortEvent("llm request failed after 5 retries"));
     const retry = items(m)[0] as ReconnectItem;
     expect(retry).toMatchObject({
       kind: "reconnect",
-      status: "timeout",
+      status: "retryable",
       retrying: false,
       gaveUp: true,
     });
@@ -819,7 +748,7 @@ describe("approvals and events", () => {
     // A new failure in the next run starts back at 1; a gaveUp notice isn't revived by request_begin.
     pushMessage(m, requestBegin());
     expect(retry.retrying).toBe(false);
-    pushMessage(m, requestEnd("malformed"));
+    pushMessage(m, requestEnd("retryable"));
     expect((items(m)[2] as ReconnectItem).attempt).toBe(1);
   });
 
@@ -831,8 +760,8 @@ describe("approvals and events", () => {
     // bend the ticker.
     pushMessage(
       m,
-      requestEnd("timeout", {
-        errorMessage: "403 quota (insufficient_user_quota)",
+      requestEnd("retryable", {
+        errorMessage: "429 rate limited (slow down)",
         retryInMs: 4000,
       }),
       111_000,
@@ -840,7 +769,7 @@ describe("approvals and events", () => {
     const item = items(m)[0] as ReconnectItem;
     expect(item).toMatchObject({
       kind: "reconnect",
-      status: "timeout",
+      status: "retryable",
       attempt: 1,
       retrying: false,
       plannedDelayMs: 4000,
@@ -849,7 +778,7 @@ describe("approvals and events", () => {
     // An event without the field (old Traces / final failures) leaves the fields unset —
     // the view keeps the plain waiting text.
     pushMessage(m, requestBegin());
-    pushMessage(m, requestEnd("timeout"));
+    pushMessage(m, requestEnd("retryable"));
     const plain = items(m)[1] as ReconnectItem;
     expect(plain.plannedDelayMs).toBeUndefined();
     expect(plain.arrivedAtMs).toBeUndefined();
@@ -862,7 +791,7 @@ describe("approvals and events", () => {
     pushMessages(retried, [
       userText("go"),
       requestBegin(),
-      requestEnd("timeout", { errorMessage: "quota", retryInMs: 30_000 }),
+      requestEnd("retryable", { errorMessage: "quota", retryInMs: 30_000 }),
       requestBegin(), // the engine's retry — replayed immediately after
       requestEnd("completed"),
     ]);
@@ -874,7 +803,7 @@ describe("approvals and events", () => {
     pushMessages(aborted, [
       userText("go"),
       requestBegin(),
-      requestEnd("timeout", { errorMessage: "quota", retryInMs: 30_000 }),
+      requestEnd("retryable", { errorMessage: "quota", retryInMs: 30_000 }),
       abortEvent("aborted during reconnect backoff"), // the user gave up mid-wait
     ]);
     finalizeHistory(aborted);
@@ -886,7 +815,7 @@ describe("approvals and events", () => {
     const m = createStreamModel();
     pushMessage(m, userText("go"));
     pushMessage(m, requestBegin());
-    pushMessage(m, requestEnd("timeout")); // dangling at the tail: no abort, no retry begin
+    pushMessage(m, requestEnd("retryable")); // dangling at the tail: no abort, no retry begin
     const dangling = items(m).find((i) => i.kind === "reconnect") as ReconnectItem;
     expect(dangling.retrying).toBe(false);
     // New Task: the dangling item is marked gaveUp (the new request isn't its retry), count resets.
@@ -894,12 +823,12 @@ describe("approvals and events", () => {
     pushMessage(m, requestBegin());
     expect(dangling.gaveUp).toBe(true);
     expect(dangling.retrying).toBe(false);
-    pushMessage(m, requestEnd("timeout"));
+    pushMessage(m, requestEnd("retryable"));
     const fresh = items(m).filter((i) => i.kind === "reconnect")[1] as ReconnectItem;
     expect(fresh.attempt).toBe(1);
   });
 
-  it("a tool_call closed non-completed (malformed closure) settles the card on arrival instead of showing as running", () => {
+  it("a tool_call closed non-completed (interrupt closure) settles the card on arrival instead of showing as running", () => {
     const m = createStreamModel();
     pushMessage(
       m,
@@ -907,22 +836,23 @@ describe("approvals and events", () => {
         name: "exec_command",
         arguments: '{"cmd": "ec',
         toolCallId: "tc-broken",
-        stopReason: "malformed",
+        stopReason: "retryable",
       }),
     );
     const card = findToolCard(m, undefined, "tc-broken")!;
     expect(card.callComplete).toBe(true);
     // This call was never dispatched for execution and will never have output: close it
-    // immediately with the close reason, so execution timing doesn't spin idle.
+    // immediately (LLM closure vocabulary settles as the tool vocabulary's "failed"), so
+    // execution timing doesn't spin idle.
     expect(card.outputComplete).toBe(true);
-    expect(card.outputStopReason).toBe("malformed");
+    expect(card.outputStopReason).toBe("failed");
   });
 
   it("request events inside a compaction span produce no retry notice (history rebuild exposes only the event pair for compaction)", () => {
     const m = createStreamModel();
     pushMessage(m, compactionBegin({ reason: "context", mode: "summarize", context: 1, turns: 1 }));
     pushMessage(m, requestBegin());
-    pushMessage(m, requestEnd("timeout"));
+    pushMessage(m, requestEnd("retryable"));
     pushMessage(m, compactionEnd({ reason: "context", mode: "summarize", status: "completed" }));
     expect(items(m).filter((i) => i.kind === "reconnect")).toHaveLength(0);
   });

@@ -28,8 +28,6 @@ export interface MidRunComposerState {
   sending: boolean;
   /** The goal chip is engaged: the body is an objective, which no mid-run channel carries. */
   goalOn: boolean;
-  /** The model API rejected this Session's credentials — nothing can be sent at all. */
-  modelAuthDead: boolean;
   /** The host wired a steer channel (`onSteer`); the draft page does not. */
   canSteerChannel: boolean;
   /** The host wired a follow-up queue (`onQueueFollowUp`); the draft page does not. */
@@ -66,9 +64,9 @@ export interface MidRunComposerState {
  */
 export function midRunAction(s: MidRunComposerState): MidRunAction {
   if (s.sending) return "disabled";
-  // A goal draft and a dead key close both channels; a blocked `/model` fork closes the queue
+  // A goal draft closes both channels; a blocked `/model` fork closes the queue
   // (see stagedSendRoute) and cannot reach steering anyway, since a staged chip rules it out.
-  const open = !s.goalOn && !s.modelAuthDead;
+  const open = !s.goalOn;
   const canSteer =
     open &&
     s.canSteerChannel &&

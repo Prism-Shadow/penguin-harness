@@ -7,7 +7,7 @@
  * retrieval) only requires implementing this interface and registering it with the registry, with
  * no changes needed to Environment.
  */
-import type { OmniMessage, StopReason } from "../../omnimessage/index.js";
+import type { OmniMessage, ToolStopReason } from "../../omnimessage/index.js";
 import type { ApproveFn, ToolDefinitionConfig } from "../../interfaces.js";
 
 /**
@@ -30,7 +30,7 @@ export interface ToolExecutionContext {
  * Docs: /docs/tools § "Execution contract".
  */
 export interface ToolResult {
-  stopReason?: StopReason;
+  stopReason?: ToolStopReason;
   /**
    * Terminal marker (e.g. `[exit code: 1]`): appended by Environment during its unified
    * close-out, **outside** the maxOutputLength truncation, and streamed to the frontend as an

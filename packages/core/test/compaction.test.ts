@@ -84,7 +84,7 @@ class ScriptedLLM implements LLMInterface {
     this.calls.push(params.newMessages);
     const next = this.responses.shift();
     if (!next) {
-      return { status: "failed", errorMessage: `${this.label}: no scripted response` };
+      return { status: "retryable", errorMessage: `${this.label}: no scripted response` };
     }
     for (const msg of next.messages) yield msg;
     return next.outcome ?? { status: "completed" };
@@ -318,8 +318,8 @@ describe("context compaction", () => {
         {
           messages: [toolCall({ name: "t", arguments: "{}", toolCallId: "c1" }), usage(150, 150)],
         },
-        // Compaction request fails on the one status no ladder can fix (a rejected credential).
-        { messages: [], outcome: { status: "auth", errorMessage: "auth error" } },
+        // Compaction request fails on the status no ladder can fix (a rejected credential).
+        { messages: [], outcome: { status: "fatal", errorMessage: "auth error" } },
         // Original context is kept. The mid-task failure ends the run by the interruption
         // flow, so the next run resends this round's tool output with the user's message and
         // the task finishes on the old instance (context usage keeps growing).
@@ -419,8 +419,8 @@ describe("context compaction", () => {
     const llm1 = new ScriptedLLM(
       [
         { messages: [assistantText("answer"), usage(150, 150)] },
-        { messages: [], outcome: { status: "timeout" } },
-        { messages: [], outcome: { status: "timeout" } },
+        { messages: [], outcome: { status: "retryable" } },
+        { messages: [], outcome: { status: "retryable" } },
       ],
       "llm1",
     );
@@ -452,7 +452,7 @@ describe("context compaction", () => {
     // this script would have failed before reaching the 5th, succeeding attempt.
     const failing = (n: number): ScriptedResponse => ({
       messages: [],
-      outcome: { status: "failed", errorMessage: `blip ${n}` },
+      outcome: { status: "retryable", errorMessage: `blip ${n}` },
     });
     const llm1 = new ScriptedLLM(
       [
@@ -484,15 +484,15 @@ describe("context compaction", () => {
     expect(llm1.calls).toHaveLength(6);
   });
 
-  it("a failed compaction request takes the ladder and can recover on a later attempt", async () => {
-    // The compaction loop retries the same statuses the turn loop does: `failed` is where a
-    // transient fault lands whenever the classifier doesn't recognize the gateway's wording,
-    // and giving up here keeps the full context, so the next request re-triggers compaction
-    // against the same wall with less headroom.
+  it("a retryable compaction request takes the ladder and can recover on a later attempt", async () => {
+    // The compaction loop retries the same status the turn loop does: `retryable` is where
+    // a transient fault lands whenever the fatal detector doesn't recognize the gateway's
+    // wording, and giving up here keeps the full context, so the next request re-triggers
+    // compaction against the same wall with less headroom.
     const llm1 = new ScriptedLLM(
       [
         { messages: [assistantText("answer"), usage(150, 150)] },
-        { messages: [], outcome: { status: "failed", errorMessage: "502 upstream" } },
+        { messages: [], outcome: { status: "retryable", errorMessage: "502 upstream" } },
         { messages: [assistantText("[summary]recovered[/summary]")] },
       ],
       "llm1",
@@ -526,9 +526,9 @@ describe("context compaction", () => {
     const llm1 = new ScriptedLLM(
       [
         { messages: [assistantText("answer"), usage(150, 150)] },
-        { messages: [], outcome: { status: "timeout" } },
-        { messages: [], outcome: { status: "timeout" } },
-        { messages: [], outcome: { status: "timeout" } },
+        { messages: [], outcome: { status: "retryable" } },
+        { messages: [], outcome: { status: "retryable" } },
+        { messages: [], outcome: { status: "retryable" } },
         // Never reached: the compaction cap stops at 3 compaction attempts in total.
         { messages: [assistantText("[summary]late[/summary]")] },
       ],
@@ -909,7 +909,7 @@ describe("context compaction", () => {
         { messages: [assistantText("answer"), usage(150, 150)] },
         {
           messages: [
-            toolCall({ name: "t", arguments: "", toolCallId: "cz", stopReason: "timeout" }),
+            toolCall({ name: "t", arguments: "", toolCallId: "cz", stopReason: "retryable" }),
             assistantText("[summary]still fine[/summary]"),
           ],
         },
@@ -1082,8 +1082,8 @@ describe("context compaction", () => {
         {
           messages: [toolCall({ name: "t", arguments: "{}", toolCallId: "ct" }), usage(150, 150)],
         },
-        { messages: [], outcome: { status: "timeout" } },
-        { messages: [], outcome: { status: "timeout" } },
+        { messages: [], outcome: { status: "retryable" } },
+        { messages: [], outcome: { status: "retryable" } },
         // Next run: the carried outputs lead, then the new prompt (under the threshold).
         { messages: [assistantText("done on old context"), usage(60, 400)] },
       ],
@@ -1432,8 +1432,8 @@ describe("context compaction", () => {
       [
         { messages: [assistantText("hi"), usage(10, 10)] },
         // Manual compaction attempts: transport failures only — nothing committed.
-        { messages: [], outcome: { status: "timeout" } },
-        { messages: [], outcome: { status: "timeout" } },
+        { messages: [], outcome: { status: "retryable" } },
+        { messages: [], outcome: { status: "retryable" } },
         // Run 3: the restored carry-over leads the input, exactly as before the compact().
         { messages: [assistantText("resumed"), usage(20, 40)] },
       ],

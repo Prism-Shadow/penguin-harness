@@ -265,10 +265,10 @@ describe("runGoalLoop", () => {
   });
 
   it("treats a round the engine cut off (failed final assistant text) as terminal", async () => {
-    // The max_turns cutoff: a final assistant notice with stop_reason "failed", no abort
+    // The max_turns cutoff: a final assistant notice with stop_reason "fatal", no abort
     // event, and the model never reached the goal file — re-firing would loop forever.
     const session = fakeSession([
-      { messages: [assistantText("[reached max turns (100); stopping]", "failed")] },
+      { messages: [assistantText("[reached max turns (100); stopping]", "fatal")] },
     ]);
     const { outcome } = await drain(runGoalLoop(session, { text: "o", goalFilePath: file }));
     expect(outcome).toEqual({ outcome: "aborted", rounds: 1, tokensUsed: 0 });
@@ -279,7 +279,7 @@ describe("runGoalLoop", () => {
   it("a mid-round failed notice followed by normal text does not end the goal", async () => {
     const session = fakeSession([
       {
-        messages: [assistantText("tool hiccup", "failed"), assistantText("recovered, done")],
+        messages: [assistantText("tool hiccup", "fatal"), assistantText("recovered, done")],
         then: () => setStatus("complete"),
       },
     ]);

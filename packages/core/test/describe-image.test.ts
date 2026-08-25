@@ -177,13 +177,13 @@ describe("describe_image (the text-only-model variant of read_image)", () => {
 
   it("vision model request failure: failed with the status and message", async () => {
     await writeFile(path.join(tmp, "a.png"), PNG_1X1);
-    const { llm } = fakeLLM("", { status: "failed", errorMessage: "401 unauthorized" });
+    const { llm } = fakeLLM("", { status: "fatal", errorMessage: "401 unauthorized" });
     const { result, text } = await run({ source: "a.png" }, tmp, {
       modelId: "vis-1",
       createLLM: () => llm,
     });
     expect(result?.stopReason).toBe("failed");
-    expect(text).toContain("failed");
+    expect(text).toContain("fatal");
     expect(text).toContain("401 unauthorized");
   });
 

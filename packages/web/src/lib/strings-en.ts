@@ -1440,20 +1440,13 @@ Scenarios:
     subagent: "Subagent",
     subagentRunning: "Running",
     aborted: (reason?: string) => `[Aborted]${reason ? `: ${reason}` : ""}`,
-    /** Auth-dead notice (request_end status "auth"): action-only copy — updating the key on the Models page auto-unlocks this Session. */
-    modelAuthDead:
-      "Model API authentication failed: update this model's API key on the Models page, or start a new Session.",
-    modelAuthDeadOpenModels: "Open Models page",
-    modelAuthDeadRetry: "Retry",
-    modelAuthDeadCta: "New Session",
-    modelAuthDeadPlaceholder: "Model authentication failed — update the API key first",
     /**
      * Reconnect hint line; `secondsLeft` (waiting state only) switches to the live-countdown
-     * wording. `failed` is in the union because the engine retries it like the other two —
-     * its cause names the provider rather than the transport, since that is where it came from.
+     * wording. `retryable` is the live status; the finer spellings only appear when
+     * replaying Traces written before the stop-reason convergence.
      */
     reconnect: (
-      status: "failed" | "timeout" | "malformed",
+      status: "retryable" | "failed" | "timeout" | "malformed",
       state: "waiting" | "retried" | "gaveUp",
       attempt: number,
       secondsLeft?: number,
@@ -1463,7 +1456,9 @@ Scenarios:
           ? "Connection timed out"
           : status === "malformed"
             ? "Response incomplete or unparseable"
-            : "The model provider returned an error";
+            : status === "failed"
+              ? "The model provider returned an error"
+              : "The request failed";
       const action =
         state === "gaveUp"
           ? "no further retries"

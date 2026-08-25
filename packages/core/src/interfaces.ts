@@ -178,7 +178,7 @@ export interface GenerativeModelConfig {
    * request opts into the provider's faster serving tier at premium pricing (AgentHub
    * UniConfig `fast_mode`). Off by default. Models without a fast tier reject the parameter
    * before any network I/O (AgentHub `UnsupportedParameterError`); `streamGenerate` reports
-   * that as a permanent `failed` outcome so the engine surfaces it instead of retrying.
+   * that as a `fatal` outcome so the engine surfaces it instead of retrying.
    */
   fastMode?: boolean;
   /** Construction-time default thinking level; a per-request `GenerativeModelParameters.thinkingLevel` overrides it for that request. */
@@ -207,45 +207,34 @@ export interface GenerativeModelParameters {
 
 /**
  * The terminal state of an LLM request, returned as the **return value** of the `streamGenerate`
- * async generator (not a yielded message). The status values share the same six-value protocol
+ * async generator (not a yielded message). The status values share the same four-value protocol
  * as OmniMessage `stop_reason`:
  *   - `completed`: finished normally (already produced `token_usage`);
- *   - `timeout`: LLM timed out or lost connection, needs reconnect — retried by `context_engine`
- *     within the same run;
- *   - `malformed`: AgentHub response failed JSON parsing, needs reconnect — also retried by
- *     `context_engine`;
  *   - `aborted`: user-initiated interruption — stop and hand back to the user;
- *   - `failed`: an error the retry classifier did not judge transient (params, etc.) — still
- *     retried by `context_engine` within the same run (`errorMessage` provides the display text).
- *     The classification stays honest — this is reported as `failed`, not relabelled a
- *     timeout — while the *policy* retries it, because that classifier is an allowlist and a
- *     gateway phrasing a transient fault its own way lands here;
- *   - `auth`: the provider rejected the credentials (see `isAuthenticationError`) — the one
- *     status that stops the run outright, since no retry can turn a rejected credential into
- *     a working one; hosts also key on it to disable input until the model's API key is
- *     updated (only the model reference is fixed at Session creation; credentials come from
- *     the current Project config, so a key update lets the Session continue).
+ *   - `retryable`: a failure worth retrying — transport drops, idle timeouts, 408/429/5xx,
+ *     malformed or truncated responses, and anything unclassifiable. `context_engine`
+ *     reconnects on its backoff ladder; `errorMessage` names the concrete failure.
+ *     Unclassifiable errors land here on purpose: the fatal detector is an allowlist, and a
+ *     gateway phrasing a transient fault its own way must keep its retries;
+ *   - `fatal`: a failure no retry can fix — a provider 4xx rejection (invalid request or
+ *     quota; 408/429 stay retryable), a credentials failure (see `isAuthenticationError`),
+ *     or a deterministic client-side rejection thrown before any network I/O (fast mode on
+ *     a model without a fast tier). The engine stops the run and surfaces `errorMessage`;
+ *     the fix is a config or credential change, then a new request (only the model
+ *     reference is fixed at Session creation — credentials come from the current Project
+ *     config, so a key update lets the Session continue).
  * Docs: /docs/interfaces § "LLMOutcome semantics".
  */
 export interface LLMOutcome {
   status: StopReason;
   /**
-   * Error detail (`describeError` text): present on `failed` / `auth`, and on `timeout` /
-   * `malformed` when a concrete transport/provider error was caught (a plain idle timeout
-   * has none). Carried onto the `request_end` event as `error_message` — one name across
-   * the internal outcome and the wire — so observability (the Cost center's errors panel)
-   * can show the real reason behind a retried request.
+   * Error detail (`describeError` text): present on `fatal`, and on `retryable` when a
+   * concrete transport/provider error was caught (a plain idle timeout has none). Carried
+   * onto the `request_end` event as `error_message` — one name across the internal outcome
+   * and the wire — so observability (the Cost center's errors panel) can show the real
+   * reason behind a retried request.
    */
   errorMessage?: string;
-  /**
-   * Marks a `failed` outcome as deterministic: a client-side rejection thrown before any
-   * network I/O (currently AgentHub's `UnsupportedParameterError` for `fast_mode` on a model
-   * without a fast tier), which the identical request can never retry into working. The
-   * engine skips the reconnect ladder for it and aborts the run with `errorMessage` — the
-   * same terminal handling as `auth`, but the fix is a config change (turn off fast mode for
-   * the model), not a credential update, so it stays a `failed` and hosts don't gate input.
-   */
-  permanent?: boolean;
 }
 
 /**

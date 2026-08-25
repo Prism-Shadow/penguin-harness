@@ -97,7 +97,7 @@ describe("resumeTrace", () => {
       meta(),
       userText("A"),
       requestBegin(),
-      requestEnd("timeout"), // failed with zero output
+      requestEnd("retryable"), // failed with zero output
       requestBegin(),
       assistantText("ok"),
       requestEnd("completed"),
@@ -308,7 +308,7 @@ describe("resumeTrace", () => {
       compactionBegin({ reason: "context", mode: "summarize", context: 10, turns: 1 }),
       userText("please summarize"),
       requestBegin(),
-      requestEnd("failed"),
+      requestEnd("retryable"),
       compactionEnd({ reason: "context", mode: "summarize", status: "failed" }),
       userText("continue"),
       requestBegin(),
@@ -598,7 +598,7 @@ describe("resumeTrace regressions (PR #39 review)", () => {
       requestBegin(),
       toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc1" }),
       toolCallOutput({ output: "ran-during-timeout", toolCallId: "tc1" }),
-      requestEnd("timeout"), // this round is dropped: tc1 never entered AgentHub history
+      requestEnd("retryable"), // this round is dropped: tc1 never entered AgentHub history
       requestBegin(),
       assistantText("recovered"),
       requestEnd("completed"),

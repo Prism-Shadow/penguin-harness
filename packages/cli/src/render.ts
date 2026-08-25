@@ -457,8 +457,8 @@ export class StreamRenderer {
    */
   private taskFirstTsMs: number | null = null;
   private taskLastReqEndMs: number | null = null;
-  /** Retryable terminal state (failed/timeout/malformed) of the previous request: the next request_begin is a retry, at which point a notice is printed. */
-  private pendingRetry: "failed" | "timeout" | "malformed" | null = null;
+  /** Retryable terminal state of the previous request (legacy Traces carry the finer pre-convergence spellings): the next request_begin is a retry, at which point a notice is printed. */
+  private pendingRetry: "retryable" | "failed" | "timeout" | "malformed" | null = null;
   /** The pending failure's attempt ordinal (request_end.attempt — the core's authoritative count, printed on the retry line). */
   private pendingRetryAttempt: number | undefined;
 
@@ -817,11 +817,16 @@ export class StreamRenderer {
             this.hasUsage = true;
           }
         }
-        // Every status the engine reconnects on, `failed` included — only `auth` is terminal.
-        // Leaving `failed` out would print nothing for a retry that is really happening, and
-        // reset the counter mid-ladder so a mixed run renumbers back to retry #1.
-        if (p.status === "failed" || p.status === "timeout" || p.status === "malformed") {
-          this.pendingRetry = p.status;
+        // Every status the engine reconnects on gets the retry notice; the legacy spellings
+        // (failed/timeout/malformed) keep pre-convergence Traces printing the same way.
+        const endStatus = p.status as string;
+        if (
+          endStatus === "retryable" ||
+          endStatus === "failed" ||
+          endStatus === "timeout" ||
+          endStatus === "malformed"
+        ) {
+          this.pendingRetry = endStatus;
           this.pendingRetryAttempt = p.attempt;
         } else {
           this.pendingRetry = null;

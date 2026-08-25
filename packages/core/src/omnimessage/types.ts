@@ -27,19 +27,34 @@ export type Role = "user" | "assistant";
  * allowed:
  *   - `completed`: finished normally, including completed text, thinking, tool requests, or
  *     tool output;
- *   - `failed`: a non-retryable error or tool execution failure;
+ *   - `completed`: the request (or the segment it closed) ended normally;
  *   - `aborted`: user-initiated interruption or cancellation;
- *   - `timeout`: LLM request timed out;
- *   - `malformed`: the LLM response was malformed (e.g. AgentHub JSON parsing exception).
- *     Only LLM timeout / malformed trigger a context_engine reconnect;
- *   - `auth`: the LLM rejected the credentials (see `isAuthenticationError`) — a
- *     `failed`-shaped stop that no in-run retry can fix; hosts disable input until the
- *     model's API key is updated (only the model reference is fixed at Session creation —
- *     credentials come from the current Project config), after which the Session
- *     continues.
+ *   - `retryable`: a failure worth retrying — transport drops, timeouts, 408/429/5xx,
+ *     malformed or truncated responses, and anything unclassifiable. The engine reconnects
+ *     on its backoff ladder; the specific error rides on `error_message`
+ *     (`LLMOutcome.errorMessage` / `request_end.error_message`), never on the reason value;
+ *   - `fatal`: a failure no retry can fix — a provider 4xx rejection (invalid request,
+ *     quota, and the credential failures of `isAuthenticationError`) or a deterministic
+ *     client-side rejection (fast mode on a model without a fast tier). The engine stops
+ *     the run and surfaces the error; the fix is a config/credential change, then a new
+ *     request.
+ *
+ * Legacy Traces may still carry the retired values `failed` / `timeout` / `malformed` /
+ * `auth` on their records; replay logic only ever compares against `completed`, and render
+ * layers keep read-only labels for the old spellings.
  * Docs: /docs/omni-message § "stop_reason".
  */
-export type StopReason = "completed" | "failed" | "aborted" | "timeout" | "malformed" | "auth";
+export type StopReason = "completed" | "aborted" | "retryable" | "fatal";
+
+/**
+ * Terminal state of one tool execution, written on `tool_call_output` /
+ * `partial_tool_call_output` by Environment. Deliberately NOT the LLM `StopReason`
+ * vocabulary: a tool failure is fed back to the model as content — nothing in the harness
+ * retries it and nothing treats it as fatal — so the tool result keeps naming what
+ * happened (`failed` / `timeout`), while `retryable` / `fatal` stay reserved for the LLM
+ * request loop.
+ */
+export type ToolStopReason = "completed" | "failed" | "aborted" | "timeout";
 
 /** The event phase of a streaming fragment. `stop` marks the end of a fragment and usually carries no incremental content. */
 export type StreamEventType = "start" | "delta" | "stop";
@@ -221,7 +236,7 @@ export interface ToolCallOutputPayload {
    */
   images?: string[];
   tool_call_id: string;
-  stop_reason?: StopReason;
+  stop_reason?: ToolStopReason;
 }
 
 // ---------------------------------------------------------------------------
@@ -264,7 +279,7 @@ export interface PartialToolCallOutputPayload {
   /** Images carried by the tool output (optional): images aren't incremental, carried as a whole by a single delta (consistent with the complete message). */
   images?: string[];
   tool_call_id: string;
-  stop_reason?: StopReason;
+  stop_reason?: ToolStopReason;
 }
 
 // ---------------------------------------------------------------------------
@@ -329,7 +344,7 @@ export interface RetryDetail {
   attempt?: number;
   /**
    * Planned in-run retry wait (ms) — present ONLY when the engine will retry this failure
-   * within the same run (status `timeout`/`malformed` with attempts remaining under the
+   * within the same run (status `retryable` with attempts remaining under the
    * applicable cap). Computed by the same formula as the actual backoff sleep
    * (`reconnectDelayMs`), so the announced wait and the real one cannot drift; the Web App
    * renders it as a live countdown to the next attempt. Absent on final failures (an abort
@@ -340,7 +355,7 @@ export interface RetryDetail {
 
 export interface RequestEndPayload extends RetryDetail {
   type: "request_end";
-  /** Terminal state of this Request (reuses the six StopReason values, sharing its source with this turn's complete message's stop_reason / LLMOutcome; `auth` is the credentials-failure signal hosts key on). */
+  /** Terminal state of this Request (the four StopReason values, sharing its source with this turn's complete message's stop_reason / LLMOutcome; `fatal` carries the no-retry failures — credentials included — with the detail on `error_message`). */
   status: StopReason;
 }
 
@@ -355,11 +370,11 @@ export type CompactionMode = "summarize" | "discard";
  * the stream carries only each attempt's `token_usage` and the summary being written as
  * ordinary `partial_text` fragments (or the complete text when nothing streamed) — the
  * compaction request's other raw messages stay Trace-only. Both `reason` and
- * `mode` are carried on both events, for stateless frontend rendering; `status` reuses the
- * six-value `StopReason` protocol (compaction converges to a terminal state, taking
- * `completed` / `failed` / `aborted` in practice — `timeout` / `malformed` are handled internally
- * by the compaction request's existing retry mechanism, collapsing to `failed` once retries are
- * exhausted).
+ * `mode` are carried on both events, for stateless frontend rendering; `status` has its own
+ * three-value vocabulary (a compaction converges to a terminal state — `failed` here means
+ * "abandoned this time, made up at the next trigger", which is neither the LLM loop's
+ * `retryable` nor its `fatal`; the request-level failures collapse into it once the
+ * compaction's own retries are exhausted).
  */
 export interface CompactionBeginPayload {
   type: "compaction_begin";
@@ -370,6 +385,9 @@ export interface CompactionBeginPayload {
   /** Session cumulative turn count. */
   turns: number;
 }
+
+/** Terminal state of one compaction: succeeded / abandoned (made up at the next trigger) / user-interrupted. */
+export type CompactionStatus = "completed" | "failed" | "aborted";
 
 /**
  * Inherits the shared RetryDetail block: `attempt` is the final attempt's 1-based ordinal
@@ -383,7 +401,7 @@ export interface CompactionEndPayload extends RetryDetail {
   reason: CompactionReason;
   mode: CompactionMode;
   /** Compaction result; non-`completed` means compaction was abandoned and the original context was kept. */
-  status: StopReason;
+  status: CompactionStatus;
 }
 
 /** How a goal ended: the goal file's terminal status, or `aborted` when a round was cut off. */

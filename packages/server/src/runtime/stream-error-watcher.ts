@@ -10,28 +10,21 @@
  * (its state wraps up accordingly, see close).
  *
  * LLM (source = `llm`): reads the status of `request_end` —
- * - `auth` → unexpected (`llm_auth`): the credential was rejected, the engine never retries
- *   it, and only a human holding the key can fix it. Its own code rather than the failed
- *   bucket, because dedup is `(source, code, Project)` over a short window: sharing a code
- *   with a class that now fires on every recovered blip would let a real credential failure
- *   be swallowed as a duplicate of something already handled.
- * - `failed` → depends on whether the retry ladder carried it. The engine reconnects on
- *   `failed` too, so the same status covers both "a gateway hiccup nobody needed to know
- *   about" and "the run died on it":
+ * - `fatal` → unexpected (`llm_fatal`): a definitive rejection (provider 4xx, credentials,
+ *   fast mode on a model without a fast tier) the engine never retries; the run stopped on
+ *   it and only a human changing config or credentials can fix it.
+ * - `retryable` → depends on whether the retry ladder carried it:
  *     - another attempt followed (a `request_begin` resolved the pending record) → expected
- *       (`llm_failed_retried`), same footing as timeout/malformed: recorded for the record,
- *       not raised at an operator;
+ *       (`llm_retried`): recorded for the record, not raised at an operator;
  *     - nothing followed but the end of the run (an `abort`, or close) → unexpected
  *       (`llm_failed`): the retries did not recover it, the user lost the turn, needs a human.
- * - `timeout` / `malformed` → expected (the engine already reconnects and retries, part
- *   of normal operation);
  * - `aborted` / `completed` are not recorded (the former is a user-initiated interrupt,
  *   not an error).
  *
  * The message uses the real reason: `request_end` carries the error detail on
  * non-completed statuses (`error_message`, from LLMOutcome), and the `abort` event's reason is
- * core's failure-reason prose (e.g. `llm request error: 401 …` / `malformed response
- * failed after N retries`). A `request_end` failure is first held pending (status + its
+ * core's failure-reason prose (e.g. `llm request error: 401 …` / `llm request failed
+ * after N retries: …`). A `request_end` failure is first held pending (status + its
  * own detail), not persisted immediately, and is resolved at the next request boundary:
  * - Immediately followed by `abort` → use its reason as the message (the real reason);
  * - Immediately followed by `request_begin` (the engine is retrying — no abort will ever
@@ -71,7 +64,13 @@
  */
 import { isEventMessage, isModelMessage, isSessionMeta } from "@prismshadow/penguin-core";
 import path from "node:path";
-import type { OmniMessage, SessionMetaMessage, StopReason } from "@prismshadow/penguin-core";
+import type {
+  CompactionStatus,
+  OmniMessage,
+  SessionMetaMessage,
+  StopReason,
+  ToolStopReason,
+} from "@prismshadow/penguin-core";
 import { MESSAGE_MAX } from "./error-recorder.js";
 import type { ErrorContext, ErrorKind, ErrorSink } from "./error-recorder.js";
 
@@ -89,7 +88,7 @@ export const TOOL_NAMES_MAX = 1000;
 export const ORIGIN_CTX_MAX = 200;
 
 /** Recorded LLM failure states (`aborted` / `completed` are not errors and aren't included here). */
-type LlmFailure = "failed" | "timeout" | "malformed" | "auth";
+type LlmFailure = "retryable" | "fatal";
 
 /** Error code, classification, and fallback message (the last used when no abort reason is available). */
 interface FailureSpec {
@@ -101,41 +100,32 @@ interface FailureSpec {
 /** LLM failure state → its spec, for a failure the retry ladder did NOT carry (see the file header). */
 const LLM_FAILURES: Record<LlmFailure, FailureSpec> = {
   // Reached here only when no further attempt followed: the ladder ran out (or the run ended
-  // on it), so the user lost the turn and someone should look. A `failed` that was retried
-  // takes LLM_FAILED_RETRIED instead.
-  failed: {
+  // on it), so the user lost the turn and someone should look. A `retryable` that was retried
+  // takes LLM_RETRIED instead.
+  retryable: {
     code: "llm_failed",
     kind: "unexpected",
     text: "LLM request failed and the retries did not recover it.",
   },
   // Its own code, not the failed bucket: dedup is `(source, code, Project)` over a short
-  // window, and `llm_failed_retried` can now fire on any recovered blip — sharing a bucket
-  // would let a genuine credential failure be dropped as a duplicate of one.
-  auth: {
-    code: "llm_auth",
+  // window, and `llm_retried` can fire on any recovered blip — sharing a bucket would let
+  // a genuine run-ending failure be dropped as a duplicate of one. The engine never
+  // retries a fatal, so this pending record always resolves through its abort.
+  fatal: {
+    code: "llm_fatal",
     kind: "unexpected",
-    text: "LLM request rejected: the provider did not accept the credentials.",
-  },
-  timeout: {
-    code: "llm_timeout",
-    kind: "expected",
-    text: "LLM request timed out (the engine reconnects and retries).",
-  },
-  malformed: {
-    code: "llm_malformed",
-    kind: "expected",
-    text: "LLM response could not be parsed (the engine reconnects and retries).",
+    text: "LLM request failed with a non-retryable error.",
   },
 };
 
 /**
- * A `failed` the engine went on to retry: expected, exactly like timeout/malformed — the
- * engine's defined handling path absorbed it and the user never lost anything, so it belongs
- * in the record but not in an operator's queue. Its own code so the exhausted case keeps
- * `llm_failed` to itself and neither can dedup the other away.
+ * A `retryable` the engine went on to retry: expected — the engine's defined handling path
+ * absorbed it and the user never lost anything, so it belongs in the record but not in an
+ * operator's queue. Its own code so the exhausted case keeps `llm_failed` to itself and
+ * neither can dedup the other away.
  */
-const LLM_FAILED_RETRIED: FailureSpec = {
-  code: "llm_failed_retried",
+const LLM_RETRIED: FailureSpec = {
+  code: "llm_retried",
   kind: "expected",
   text: "LLM request failed (the engine reconnects and retries).",
 };
@@ -144,7 +134,7 @@ const LLM_FAILED_RETRIED: FailureSpec = {
 type ToolFailure = "failed" | "timeout";
 
 function isLlmFailure(s: unknown): s is LlmFailure {
-  return s === "failed" || s === "timeout" || s === "malformed" || s === "auth";
+  return s === "retryable" || s === "fatal";
 }
 
 function isToolFailure(s: unknown): s is ToolFailure {
@@ -347,8 +337,7 @@ export class StreamErrorWatcher {
     const entry = this.pending.get(key);
     if (entry === undefined) return;
     this.pending.delete(key);
-    const spec =
-      retried && entry.status === "failed" ? LLM_FAILED_RETRIED : LLM_FAILURES[entry.status];
+    const spec = retried && entry.status === "retryable" ? LLM_RETRIED : LLM_FAILURES[entry.status];
     const trimmed = reason?.trim();
     // Message priority: the abort reason (core's failure prose) → the staged request_end's
     // own detail (the retry path: no abort ever arrives) → the generic status text. A
@@ -380,7 +369,7 @@ export class StreamErrorWatcher {
     const p = msg.payload as {
       mode?: string;
       reason?: string;
-      status?: StopReason;
+      status?: CompactionStatus;
       attempt?: number;
       error_message?: string;
     };
@@ -408,7 +397,7 @@ export class StreamErrorWatcher {
       name?: string;
       output?: string;
       tool_call_id?: string;
-      stop_reason?: StopReason;
+      stop_reason?: ToolStopReason;
     };
     if (typeof p.tool_call_id !== "string") return;
     const origin = originKey(msg); // The session that made this call (both attribution and the tool-name cache are bucketed by it)

@@ -15,7 +15,7 @@
  * - the loop's own token accounting against the budget (internal counters; the budget
  *   line in each round's block is composed from them, never read from anywhere),
  * - a round the engine cut off rather than finished — a main-session abort (LLM failure,
- *   user interrupt) or a final assistant notice with `stop_reason: "failed"` (the engine's
+ *   user interrupt) or a final assistant notice with `stop_reason: "fatal"` (the engine's
  *   max_turns cutoff emits exactly that, and no abort event): the model never got to write
  *   the file, so re-firing would loop the same cutoff forever, and
  * - a hard round cap (`maxRounds`, default 100) as a runaway backstop independent of the
@@ -74,8 +74,9 @@ function isMainAbort(msg: OmniMessage): boolean {
 /**
  * The main session's assistant text, or null. Used to track how a round ended: the engine's
  * max_turns cutoff finishes the stream with an assistant notice carrying
- * `stop_reason: "failed"` (and no abort event) — the only failure mode that neither
- * `isMainAbort` nor the goal file can see.
+ * `stop_reason: "fatal"` (and no abort event) — the only failure mode that neither
+ * `isMainAbort` nor the goal file can see. Traces written before the stop-reason
+ * convergence spell the same notice "failed", so both spellings count.
  */
 function mainAssistantStopReason(msg: OmniMessage): string | null {
   if (msg.origin && msg.origin.length > 0) return null;
@@ -123,7 +124,7 @@ export async function* runGoalLoop(
       // The LAST assistant text decides: a mid-round failed notice followed by normal text
       // means the round recovered; the max_turns cutoff is always the final message.
       const stop = mainAssistantStopReason(msg);
-      if (stop !== null) roundFailed = stop === "failed";
+      if (stop !== null) roundFailed = stop === "fatal" || stop === "failed";
       yield msg;
     }
   }

@@ -553,7 +553,7 @@ describe("session-manager", () => {
           toolCallId: "tc-1",
           stopReason: "failed",
         });
-        yield requestEnd("failed");
+        yield requestEnd("retryable");
         yield abortEvent("llm request error: 500 upstream");
       },
       async *compact(): AsyncGenerator<OmniMessage> {},

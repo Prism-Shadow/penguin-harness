@@ -29,7 +29,7 @@
  */
 import path from "node:path";
 import { partialToolCallOutput, toolCallOutput, userText } from "../omnimessage/index.js";
-import type { McpServerConnectResult, OmniMessage, StopReason } from "../omnimessage/index.js";
+import type { McpServerConnectResult, OmniMessage, ToolStopReason } from "../omnimessage/index.js";
 import type {
   ApproveFn,
   BackgroundCommandInfo,
@@ -528,7 +528,7 @@ export class Environment implements EnvironmentInterface {
     let withheld = ""; // Rolling buffer of text past the head window (<= withheldCapacity)
     let contentLen = 0; // Total length of content produced by the tool (including evicted parts)
     let toolOutput: string | null = null; // Fallback: content basis when the tool produces a full message itself
-    let selfReported: StopReason | undefined; // Tool's self-reported stop reason (return value takes priority over the full message)
+    let selfReported: ToolStopReason | undefined; // Tool's self-reported stop reason (return value takes priority over the full message)
     let selfNote: string | null = null; // Tool's self-reported end marker (e.g. exit code), appended outside truncation
     let selfImages: string[] | undefined; // Tool's self-reported images (data URL), carried via a single streamed delta and the full message
     let thrown: unknown = null;
@@ -640,7 +640,7 @@ export class Environment implements EnvironmentInterface {
             archiveCapture.replace(toolOutput);
           }
           if (selfReported === undefined && p.stop_reason) {
-            selfReported = p.stop_reason as StopReason;
+            selfReported = p.stop_reason as ToolStopReason;
           }
         } else {
           // Other message types without origin: protocol misuse, ignore and warn (keep the parent stream clean).
@@ -697,7 +697,7 @@ export class Environment implements EnvironmentInterface {
       archiveCapture?.cancel();
     }
 
-    let stopReason: StopReason;
+    let stopReason: ToolStopReason;
     const notes: string[] = [];
     if (truncated) {
       if (archiveResult?.status === "saved") {

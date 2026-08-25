@@ -1040,16 +1040,17 @@ export function isProbeContent(msg: OmniMessage): boolean {
  * Probe verdict from the terminal LLM outcome. `completed` always passes. A `malformed`
  * ending after genuine streamed content also passes: the typical case is a reasoning-heavy
  * model that spends the probe's tiny max_tokens entirely on thinking (finish_reason=length ->
- * AgentHub's EmptyResponseError) — the endpoint, credential, and model id all demonstrably
- * work, which is what a connectivity test measures. Everything else (auth/parameter failures,
- * timeouts, malformed with nothing received) fails with the outcome's message.
+ * AgentHub's EmptyResponseError, a `retryable` outcome that still streamed content) — the
+ * endpoint, credential, and model id all demonstrably work, which is what a connectivity
+ * test measures. Everything else (fatal rejections, and retryable failures with nothing
+ * received) fails with the outcome's message.
  */
 export function probeVerdict(
   outcome: LLMOutcome,
   sawContent: boolean,
 ): { ok: true } | { ok: false; message: string } {
   if (outcome.status === "completed") return { ok: true };
-  if (outcome.status === "malformed" && sawContent) return { ok: true };
+  if (outcome.status === "retryable" && sawContent) return { ok: true };
   const detail =
     "errorMessage" in outcome && outcome.errorMessage ? outcome.errorMessage : outcome.status;
   return { ok: false, message: String(detail).slice(0, 300) };

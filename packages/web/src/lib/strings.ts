@@ -1398,19 +1398,13 @@ Benchmark：
     subagent: "子会话",
     subagentRunning: "运行中",
     aborted: (reason?: string) => `[已中断]${reason ? `：${reason}` : ""}`,
-    /** Auth-dead notice (request_end status "auth"): action-only copy — updating the key on the Models page auto-unlocks this Session. */
-    modelAuthDead: "模型 API 认证失败：请在模型配置页更新该模型的 API key，或新建会话。",
-    modelAuthDeadOpenModels: "打开模型配置",
-    modelAuthDeadRetry: "重试",
-    modelAuthDeadCta: "新建会话",
-    modelAuthDeadPlaceholder: "模型认证失败，请先更新 API key",
     /**
      * Reconnect hint line; `secondsLeft` (waiting state only) switches to the live-countdown
-     * wording. `failed` is in the union because the engine retries it like the other two —
-     * its cause names the provider rather than the transport, since that is where it came from.
+     * wording. `retryable` is the live status; the finer spellings only appear when
+     * replaying Traces written before the stop-reason convergence.
      */
     reconnect: (
-      status: "failed" | "timeout" | "malformed",
+      status: "retryable" | "failed" | "timeout" | "malformed",
       state: "waiting" | "retried" | "gaveUp",
       attempt: number,
       secondsLeft?: number,
@@ -1420,7 +1414,9 @@ Benchmark：
           ? "连接超时或网络中断"
           : status === "malformed"
             ? "响应不完整或无法解析"
-            : "模型服务返回错误";
+            : status === "failed"
+              ? "模型服务返回错误"
+              : "请求失败";
       const action =
         state === "gaveUp"
           ? "已停止重试"

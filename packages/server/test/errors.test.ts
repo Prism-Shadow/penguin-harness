@@ -373,7 +373,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     // lost the turn and it belongs in front of an operator.
     const got = feed([
       requestBegin(),
-      requestEnd("failed"),
+      requestEnd("retryable"),
       abortEvent("llm request failed after 5 retries: 400 unknown parameter"),
     ]);
     expect(got).toHaveLength(1);
@@ -389,50 +389,51 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     });
   });
 
-  it("LLM timeout / malformed → expected (engine retries); message from the abort reason", () => {
+  it("a retried retryable → expected; an exhausted one → unexpected; messages from abort/fallback", () => {
     const got = feed([
       requestBegin(),
-      requestEnd("timeout"), // First attempt times out → the engine retries (revealed by the next request_begin: no reason text yet)
+      requestEnd("retryable"), // First attempt fails → the engine retries (revealed by the next request_begin: no reason text yet)
       requestBegin(),
-      requestEnd("malformed"),
-      abortEvent("malformed response failed after 2 retries"),
+      requestEnd("retryable"),
+      abortEvent("llm request failed after 2 retries"),
     ]);
     expect(got).toHaveLength(2);
-    expect(got[0]).toMatchObject({ source: "llm", kind: "expected", code: "llm_timeout" });
-    expect(got[0]!.message).toContain("timed out"); // No abort arrived: falls back to the status text
+    expect(got[0]).toMatchObject({ source: "llm", kind: "expected", code: "llm_retried" });
+    // No abort arrived for the carried failure: falls back to the generic status text.
+    expect(got[0]!.message).toContain("reconnects and retries");
     expect(got[1]).toMatchObject({
       source: "llm",
-      kind: "expected",
-      code: "llm_malformed",
-      message: "malformed response failed after 2 retries",
+      kind: "unexpected",
+      code: "llm_failed",
+      message: "llm request failed after 2 retries",
     });
   });
 
-  it("request_end(auth) gets its own llm_auth code, out of the failed dedup bucket", () => {
-    // Credentials rejection needs a code of its own now that `failed` fires on every blip
-    // the ladder absorbs: dedup is (source, code, Project) over a short window, so sharing
-    // a bucket would let a real credential failure be dropped as a duplicate.
+  it("request_end(fatal) gets its own llm_fatal code, out of the retried dedup bucket", () => {
+    // A run-ending rejection needs a code of its own: dedup is (source, code, Project)
+    // over a short window, and `llm_retried` fires on every blip the ladder absorbs —
+    // sharing a bucket would let a real credential failure be dropped as a duplicate.
     const got = feed([
       requestBegin(),
-      requestEnd("auth", { errorMessage: "401 invalid x-api-key (invalid_api_key)" }),
+      requestEnd("fatal", { errorMessage: "401 invalid x-api-key (invalid_api_key)" }),
       abortEvent("llm request error: 401 invalid x-api-key (invalid_api_key)"),
     ]);
     expect(got).toHaveLength(1);
     expect(got[0]).toMatchObject({
       source: "llm",
       kind: "unexpected",
-      code: "llm_auth",
+      code: "llm_fatal",
       message: "llm request error: 401 invalid x-api-key (invalid_api_key)",
     });
   });
 
-  it("a failed the ladder carried → expected under its own code, not an operator incident", () => {
-    // The inversion this guards against: the engine retries `failed`, so the same status now
-    // covers "a gateway hiccup the user never saw" and "the run died on it". A following
-    // request_begin proves another attempt happened — that one is expected, like a timeout.
+  it("a retryable the ladder carried → expected under its own code, not an operator incident", () => {
+    // The same status covers "a gateway hiccup the user never saw" and "the run died on
+    // it". A following request_begin proves another attempt happened — that one is
+    // expected.
     const got = feed([
       requestBegin(),
-      requestEnd("failed", {
+      requestEnd("retryable", {
         errorMessage: "Upstream HTTP/2 stream failed (upstream_http2_stream_error)",
       }),
       requestBegin(),
@@ -442,39 +443,38 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     expect(got[0]).toMatchObject({
       source: "llm",
       kind: "expected",
-      code: "llm_failed_retried",
+      code: "llm_retried",
       // No abort ever arrives on the retry path: the staged request_end's own detail is the
       // message of record.
       message: "Upstream HTTP/2 stream failed (upstream_http2_stream_error)",
     });
   });
 
-  it("a recovered failed does not dedup away a credential failure that lands right after", () => {
-    // The two share a 2s dedup window and used to share the `llm_failed` code, so the auth
-    // record was dropped outright — the one failure that always needs a human, silenced by
-    // the one that never does.
+  it("a recovered retryable does not dedup away a fatal that lands right after", () => {
+    // The two share a 2s dedup window; separate codes keep the one failure that always
+    // needs a human from being silenced by the one that never does.
     const got = feed([
       requestBegin(),
-      requestEnd("failed", { errorMessage: "Upstream HTTP/2 stream failed" }),
+      requestEnd("retryable", { errorMessage: "Upstream HTTP/2 stream failed" }),
       requestBegin(), // The retry: resolves the failure above as recovered.
-      requestEnd("auth", { errorMessage: "401 invalid x-api-key" }),
+      requestEnd("fatal", { errorMessage: "401 invalid x-api-key" }),
       abortEvent("llm request error: 401 invalid x-api-key"),
     ]);
     expect(got.map((r) => [r.code, r.kind])).toEqual([
-      ["llm_failed_retried", "expected"],
-      ["llm_auth", "unexpected"],
+      ["llm_retried", "expected"],
+      ["llm_fatal", "unexpected"],
     ]);
   });
 
-  it("a retried failure keeps its real detail: request_end(timeout).message lands in the record", () => {
+  it("a retried failure keeps its real detail: request_end(retryable).message lands in the record", () => {
     // The retry path: the engine reconnects (request_begin) and eventually succeeds, so no
     // abort ever arrives for the staged failure — the request_end's own failure detail
-    // (LLMOutcome.message, e.g. a quota code) is the message of record, not the generic
-    // "timed out" status text. This is what the Cost center shows for a retried quota 403.
+    // (LLMOutcome.errorMessage, e.g. a rate-limit code) is the message of record, not the
+    // generic status text. This is what the Cost center shows for a retried 429.
     const got = feed([
       requestBegin(),
-      requestEnd("timeout", {
-        errorMessage: "403 no active subscription (insufficient_user_quota)",
+      requestEnd("retryable", {
+        errorMessage: "429 rate limited (slow down)",
       }),
       requestBegin(),
       requestEnd("completed"),
@@ -483,15 +483,15 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     expect(got[0]).toMatchObject({
       source: "llm",
       kind: "expected",
-      code: "llm_timeout",
-      message: "403 no active subscription (insufficient_user_quota)",
+      code: "llm_retried",
+      message: "429 rate limited (slow down)",
     });
   });
 
-  it("an abort reason still outranks the staged request_end detail (failed exit path)", () => {
+  it("an abort reason still outranks the staged request_end detail (fatal exit path)", () => {
     const got = feed([
       requestBegin(),
-      requestEnd("failed", { errorMessage: "401 invalid x-api-key (invalid_api_key)" }),
+      requestEnd("fatal", { errorMessage: "401 invalid x-api-key (invalid_api_key)" }),
       abortEvent("llm request error: 401 invalid x-api-key (invalid_api_key)"),
     ]);
     expect(got).toHaveLength(1);
@@ -504,11 +504,11 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     // request_end detail IS the failure's reason — prefer it over the generic status text.
     const got = feed([
       requestBegin(),
-      requestEnd("timeout", { errorMessage: "403 quota exceeded (insufficient_user_quota)" }),
+      requestEnd("retryable", { errorMessage: "429 rate limited (slow down)" }),
       abortEvent("aborted during reconnect backoff"),
     ]);
     expect(got).toHaveLength(1);
-    expect(got[0]!.message).toBe("403 quota exceeded (insufficient_user_quota)");
+    expect(got[0]!.message).toBe("429 rate limited (slow down)");
   });
 
   it("aborted (user clicked Stop) is not an error: not recorded; neither is completed", () => {
@@ -523,22 +523,24 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     ).toHaveLength(0);
   });
 
-  it("interrupt during retry backoff: timeout still recorded, interrupt text distrusted", () => {
+  it("interrupt during retry backoff: the failure still recorded, interrupt text distrusted", () => {
     const got = feed([
       requestBegin(),
-      requestEnd("timeout"),
+      requestEnd("retryable"),
       abortEvent("aborted during reconnect backoff"),
     ]);
     expect(got).toHaveLength(1);
-    expect(got[0]).toMatchObject({ code: "llm_timeout", kind: "expected" });
-    expect(got[0]!.message).toContain("timed out");
+    // No retry followed (the interrupt ended the run): the conservative branch records it
+    // as the unrecovered class.
+    expect(got[0]).toMatchObject({ code: "llm_failed", kind: "unexpected" });
+    expect(got[0]!.message).toContain("did not recover");
     expect(got[0]!.message).not.toContain("aborted");
   });
 
   it("failure pends for its reason; unresolved at run end → close persists (status text)", () => {
     const w = watcher();
     w.observe(requestBegin());
-    w.observe(requestEnd("failed"));
+    w.observe(requestEnd("retryable"));
     expect(rows()).toHaveLength(0); // Pending: waiting for the abort that immediately follows to supply the real reason
     w.close();
     const got = rows();
@@ -549,18 +551,20 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
   });
 
   it("parent/child LLM failures pend separately by origin; abort reasons never cross over", () => {
+    // The child fails fatal and the parent retryable-unrecovered: distinct codes, so the
+    // short-window dedup (source, code, Project) suppresses neither.
     const got = feed([
       requestBegin(), // parent session initiates
       withOrigin(requestBegin(), "session-child"),
-      withOrigin(requestEnd("timeout"), "session-child"),
-      withOrigin(abortEvent("reconnect failed after 2 retries"), "session-child"),
-      requestEnd("failed"), // the parent session's failure only wraps up now
+      withOrigin(requestEnd("fatal"), "session-child"),
+      withOrigin(abortEvent("llm request error: 401 invalid api key"), "session-child"),
+      requestEnd("retryable"), // the parent session's failure only wraps up now
       abortEvent("llm request error: 500 upstream"),
     ]);
     expect(got).toHaveLength(2);
     expect(got[0]).toMatchObject({
-      code: "llm_timeout",
-      message: "reconnect failed after 2 retries",
+      code: "llm_fatal",
+      message: "llm request error: 401 invalid api key",
     });
     expect(got[1]).toMatchObject({
       code: "llm_failed",
@@ -769,7 +773,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     const got = feed([
       childMeta("session-child", "/data/agents/agent-child/agent_state"),
       withOrigin(requestBegin(), "session-child"),
-      withOrigin(requestEnd("failed"), "session-child"),
+      withOrigin(requestEnd("retryable"), "session-child"),
       withOrigin(abortEvent("llm request error: 401 invalid api key"), "session-child"),
     ]);
     expect(got).toHaveLength(1);
@@ -808,8 +812,8 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
       requestBegin(), // parent session initiates
       childMeta("session-child", "/data/agents/agent-child/agent_state"),
       withOrigin(requestBegin(), "session-child"),
-      withOrigin(requestEnd("timeout"), "session-child"),
-      withOrigin(abortEvent("reconnect failed after 2 retries"), "session-child"),
+      withOrigin(requestEnd("fatal"), "session-child"),
+      withOrigin(abortEvent("llm request error: 401 dead key"), "session-child"),
       withOrigin(call("write_file", "tc-9"), "session-child"),
       withOrigin(
         toolCallOutput({ output: "child tool boom", toolCallId: "tc-9", stopReason: "failed" }),
@@ -817,12 +821,12 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
       ),
       call("read_file", "tc-9"), // parent session happens to share the same id
       toolCallOutput({ output: "parent tool boom", toolCallId: "tc-9", stopReason: "failed" }),
-      requestEnd("failed"), // the parent session's LLM failure only wraps up now
+      requestEnd("retryable"), // the parent session's LLM failure only wraps up now
       abortEvent("llm request error: 500 upstream"),
     ]);
     // The sub-session's LLM / tool failures attribute to it, the parent's to the parent — the four entries never mix (each has a distinct code, so short-window dedup doesn't suppress any of them).
     expect(got.map((r) => [r.code, r.agent_id, r.session_id])).toEqual([
-      ["llm_timeout", "agent-child", "session-child"],
+      ["llm_fatal", "agent-child", "session-child"],
       ["tool_failed:write_file", "agent-child", "session-child"],
       ["tool_failed:read_file", "a1", "s1"],
       ["llm_failed", "a1", "s1"],
@@ -831,7 +835,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
 
   it("failure before session_meta arrives: falls back to the parent ctx, no crash", () => {
     const got = feed([
-      withOrigin(requestEnd("failed"), "session-child"), // the sub-session's meta hasn't arrived yet
+      withOrigin(requestEnd("retryable"), "session-child"), // the sub-session's meta hasn't arrived yet
       withOrigin(abortEvent("llm request error: 500"), "session-child"),
     ]);
     expect(got).toHaveLength(1);
@@ -841,7 +845,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
   it("malformed agent_state path (empty): not registered, falls back to the parent ctx", () => {
     const got = feed([
       childMeta("session-child", ""), // path.basename(path.dirname("")) === "." → caught by the defensive check
-      withOrigin(requestEnd("failed"), "session-child"),
+      withOrigin(requestEnd("retryable"), "session-child"),
       withOrigin(abortEvent("llm request error: 500"), "session-child"),
     ]);
     expect(got).toHaveLength(1);

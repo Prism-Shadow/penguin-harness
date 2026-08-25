@@ -17,7 +17,7 @@ import {
   isImageRejection,
 } from "../src/services/vision-detect.js";
 
-const failed = (errorMessage: string): LLMOutcome => ({ status: "failed", errorMessage });
+const failed = (errorMessage: string): LLMOutcome => ({ status: "fatal", errorMessage });
 
 describe("VISION_PROBE_IMAGE", () => {
   it("is a tiny inline PNG data URL, so the probe sends the least it can", () => {

@@ -200,7 +200,7 @@ export interface Messages {
    * `malformed` — only `auth` is terminal): the engine retries carrying already-produced
    * content; attempt is the retry count.
    */
-  reconnectLabel(status: "failed" | "timeout" | "malformed", attempt: number): string;
+  reconnectLabel(status: "retryable" | "failed" | "timeout" | "malformed", attempt: number): string;
   /** compaction start event: indicates compaction in progress (mode is summarize/discard, reason is context/turns/manual). */
   compactionStart(mode: string, reason: string): string;
   /**
@@ -524,7 +524,9 @@ const en: Messages = {
         ? "connection timed out"
         : status === "malformed"
           ? "response incomplete or unparseable"
-          : "the model provider returned an error"
+          : status === "failed"
+            ? "the model provider returned an error"
+            : "the request failed"
     }; sending retry #${attempt}…`,
   compactionStart: (mode, reason) =>
     mode === "discard"
@@ -804,7 +806,9 @@ const zh: Messages = {
         ? "连接超时或网络中断"
         : status === "malformed"
           ? "响应不完整或无法解析"
-          : "模型服务返回错误"
+          : status === "failed"
+            ? "模型服务返回错误"
+            : "请求失败"
     }，正在发起第 ${attempt} 次重试……`,
   compactionStart: (mode, reason) =>
     mode === "discard"

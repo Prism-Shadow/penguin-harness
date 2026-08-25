@@ -12,6 +12,7 @@ import type {
   CompactionEndPayload,
   CompactionMode,
   CompactionReason,
+  CompactionStatus,
   EventMessage,
   Fidelity,
   GoalFinishedPayload,
@@ -37,6 +38,7 @@ import type {
   McpConnectStatus,
   StopReason,
   StreamEventType,
+  ToolStopReason,
   SubagentPayload,
   TextPayload,
   TextSender,
@@ -184,7 +186,7 @@ export function toolCall(args: {
 export function toolCallOutput(args: {
   output: string;
   toolCallId: string;
-  stopReason?: StopReason;
+  stopReason?: ToolStopReason;
   /** Images carried by the tool output (array of data URLs); images aren't incremental — a single delta carries the whole set in the streaming path, and the complete message carries them too. */
   images?: string[];
 }): OmniMessage<ToolCallOutputPayload> {
@@ -250,7 +252,7 @@ export function partialToolCallOutput(args: {
   eventType: StreamEventType;
   output?: string;
   toolCallId: string;
-  stopReason?: StopReason;
+  stopReason?: ToolStopReason;
   /** Images carried by the tool output (array of data URLs); images aren't incremental — a single delta carries the whole set. */
   images?: string[];
 }): OmniMessage<PartialToolCallOutputPayload> {
@@ -323,7 +325,7 @@ export function compactionBegin(args: {
 export function compactionEnd(args: {
   reason: CompactionReason;
   mode: CompactionMode;
-  status: StopReason;
+  status: CompactionStatus;
   attempt?: number;
   errorMessage?: string;
 }): OmniMessage<CompactionEndPayload> {
