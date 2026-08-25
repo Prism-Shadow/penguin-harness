@@ -61,12 +61,20 @@ function sha256Hex(value: string): string {
 }
 
 /**
- * How a session was established: "password" via the login form, "desktop" via the
- * desktop shell's one-shot token. Persisted per session so desktop-specific allowances
- * (password change without the old password) apply only to sessions the shell itself
- * opened. Legacy rows (NULL) read as "password".
+ * How a session was established: "password" via the login form, "desktop" via the desktop
+ * shell's one-shot token, "setup" via the first-login link printed for a server whose admin
+ * password has never been set.
+ *
+ * Carried per session because two allowances key off it. Setting a password WITHOUT the old
+ * one is open to "desktop" and "setup" — in both, the account's current password is a random
+ * value nobody has ever seen, so there is nothing to type into an old-password field. The
+ * desktop-only ROUTES remain open to "desktop" alone: "setup" proves someone read this boot's
+ * link, not that they own the machine the shell runs on.
+ *
+ * Anything else — legacy rows (NULL), and the "cli" claim on minted tokens — reads as
+ * "password", the least-privileged kind.
  */
-export type SessionVia = "password" | "desktop";
+export type SessionVia = "password" | "desktop" | "setup";
 
 export function toUserInfo(row: UserRow): UserInfo {
   return {
@@ -94,6 +102,12 @@ export interface AuthServiceDeps {
    * constructions that have no data root to anchor it to (some tests).
    */
   ownerToken: string | null;
+  /**
+   * This boot's first-login token — the value in the link a fresh server prints. Held only
+   * here, never written down: a link from a previous run is already dead, and one from this
+   * run dies the moment a password is set.
+   */
+  firstLoginToken: string;
   /** Provisions the initial Project at signup (injected by project-service, to avoid a circular dependency). */
   provisionInitialProject: (user: UserRow, isAdmin: boolean) => Promise<void>;
   /** Fixed initial password for the seeded admin (config.seedAdminPassword); null generates a random one at seed time. */
@@ -186,6 +200,21 @@ export class AuthService {
     this.provisioner = provision;
   }
 
+  /**
+   * Redeems this boot's first-login token for a setup session.
+   *
+   * Valid only while the admin password has never been set: the link exists to claim an
+   * unclaimed server, and the moment a password is set there is nothing left to claim. Not
+   * single-use on purpose — a browser prefetching the link would burn a one-shot token and
+   * strand the person holding it, and the window it stays open is precisely the window in
+   * which the account protects nothing yet.
+   */
+  redeemFirstLogin(token: string): { token: string } | null {
+    if (token === "" || !ownerTokenMatches(token, this.deps.firstLoginToken)) return null;
+    if (!this.adminPasswordIsInitial()) return null;
+    return { token: this.issueSession(ADMIN_USER_ID, "setup") };
+  }
+
   /** Whether the built-in admin still runs on its initial password (drives the startup reminder notice). */
   adminPasswordIsInitial(): boolean {
     return this.deps.users.findById(ADMIN_USER_ID)?.passwordIsInitial === true;
@@ -261,12 +290,12 @@ export class AuthService {
   }
 
   /**
-   * Desktop-session password set: no old-password check. Only reachable for sessions
-   * established via desktop-login (the me route gates on sessionVia) — the seed password
-   * of a desktop-created root is random and never shown, so its holder has nothing to
-   * type into an old-password field; the shell's token already proved machine ownership.
+   * Sets a password with no old-password check — for the two sessions where there is no old
+   * password to know: the desktop shell's window, and a first-login link. In both, the
+   * account's current password is a random value generated at seed and never shown to
+   * anyone. The me route is what gates which sessions may call this.
    */
-  async setPasswordDesktop(userId: string, newPassword: string): Promise<void> {
+  async setInitialPassword(userId: string, newPassword: string): Promise<void> {
     if (newPassword.length < MIN_PASSWORD_LENGTH) {
       throw new HttpError(400, "invalid_password", "Password must be at least 8 characters.");
     }
@@ -316,7 +345,8 @@ export class AuthService {
       if (user.sessionsNotBefore !== null && claims.iat < Date.parse(user.sessionsNotBefore)) {
         return null;
       }
-      const via: SessionVia = claims.v === "desktop" ? "desktop" : "password";
+      const via: SessionVia =
+        claims.v === "desktop" ? "desktop" : claims.v === "setup" ? "setup" : "password";
       const renewable = claims.exp - claims.iat >= this.deps.sessionRenewMs;
       if (renewable && claims.exp - now.getTime() < this.deps.sessionRenewMs) {
         return {

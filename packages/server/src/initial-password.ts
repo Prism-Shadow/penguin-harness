@@ -1,23 +1,17 @@
 /**
- * Initial-admin-password persistence (`<root>/initial-admin-password`) and the startup
- * reminder notice.
+ * The first-run sign-in notice.
  *
- * The seeded admin password used to be printed exactly once, at first seed; if that line
- * scrolled away unread, the credential was unrecoverable. The plaintext is now kept in
- * the data root FOR AS LONG AS the admin password remains the initial one, so every
- * server start — and `penguin web` attaching to an already-running instance — can
- * re-print it inside a hard-to-miss ASCII frame together with the change-it reminder.
+ * A fresh server seeds its admin with a random password that is generated, hashed, and
+ * discarded — nobody ever sees it, and it is written nowhere. What the operator gets instead
+ * is a one-time link carrying this boot's first-login token (auth/service.ts), printed inside
+ * a hard-to-miss frame on every start until a password is actually set.
  *
- * The file is removed the moment the admin's password is updated by any path (self
- * change, desktop set, or an admin reset picking a new value — the reset re-arms the
- * initial FLAG, but the file's content would be stale, and an admin-chosen password is
- * never persisted). Only the auto-generated / PENGUIN_SEED_ADMIN_PASSWORD seed value is
- * ever stored, with owner-only permissions; the SQLite db next to it already holds
- * strictly more sensitive data. Legacy roots seeded before this file existed simply have
- * no file: the reminder then stays silent (the plaintext is genuinely unrecoverable).
+ * That replaces keeping the plaintext on disk. The old scheme had to, in order to re-print a
+ * password somebody may have missed scrolling past; a link regenerated at every boot needs no
+ * such storage, and an operator who missed it simply restarts.
  *
- * Published as `@prismshadow/penguin-server/initial-password` (side-effect-free, like
- * ./lock) so the CLI can print the same notice when it attaches to a live instance.
+ * Published as `@prismshadow/penguin-server/initial-password` (side-effect-free, like ./lock)
+ * so the CLI can print the same notice when it attaches to a live instance.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -26,26 +20,18 @@ export function initialAdminPasswordPath(root: string): string {
   return path.join(root, "initial-admin-password");
 }
 
-/** Persists the seeded plaintext (owner-only file). Best-effort: the seed itself must not fail on an exotic filesystem — the reminder just degrades to first-start-only. */
-export function storeInitialAdminPassword(root: string, password: string): void {
-  try {
-    fs.writeFileSync(initialAdminPasswordPath(root), `${password}\n`, { mode: 0o600 });
-  } catch {
-    // e.g. a read-only root: the password was still printed once by the seed path.
-  }
-}
-
-/** The stored plaintext, or null when absent/unreadable/empty. */
-export function readInitialAdminPassword(root: string): string | null {
-  try {
-    const value = fs.readFileSync(initialAdminPasswordPath(root), "utf8").trim();
-    return value === "" ? null : value;
-  } catch {
-    return null;
-  }
-}
-
-/** Removes the stored plaintext (idempotent, best-effort). */
+/**
+ * Removes the plaintext a previous build stored here (idempotent, best-effort).
+ *
+ * Nothing writes this file any more; the sweep runs at every start so a root carried over
+ * from an older build stops holding a password in the clear. Losing it costs that root
+ * nothing: the account's password is unchanged, and a server still on its initial password
+ * prints the first-login link instead.
+ *
+ * TODO(compat): this whole module goes away — the sweep, the path helper, and the export —
+ * once no supported upgrade path can still carry an `initial-admin-password` file, i.e. once
+ * the oldest release able to upgrade in place is one that never wrote it.
+ */
 export function clearInitialAdminPassword(root: string): void {
   try {
     fs.rmSync(initialAdminPasswordPath(root), { force: true });
@@ -58,18 +44,19 @@ export function clearInitialAdminPassword(root: string): void {
 const NOTICE_PADDING = 3;
 
 /**
- * The framed reminder block, ready for console.log. Plain ASCII (`+`/`-`/`|`) rather
- * than box-drawing characters: the server may run under terminals and log collectors
- * with non-UTF-8 code pages (legacy Windows consoles above all), and a misrendered frame
- * would bury exactly the line it exists to highlight. Width follows the longest line, so
- * a long pinned password widens the frame instead of breaking it.
+ * The framed notice, ready for console.log. Plain ASCII (`+`/`-`/`|`) rather than
+ * box-drawing characters: the server may run under terminals and log collectors with
+ * non-UTF-8 code pages (legacy Windows consoles above all), and a misrendered frame would
+ * bury exactly the line it exists to highlight. Width follows the longest line, so a long
+ * origin widens the frame instead of breaking it.
  */
-export function renderInitialPasswordNotice(userId: string, password: string): string {
+export function renderFirstLoginNotice(url: string): string {
   const lines = [
-    `Web sign-in:  ${userId} / ${password}`,
+    "This server has no admin password yet. Open this link to claim it:",
     "",
-    "This is the initial password and it has not been changed yet.",
-    "Please sign in and change it soon (user menu -> Change password).",
+    `  ${url}`,
+    "",
+    "The link works until a password is set, and changes on every restart.",
   ];
   const width = Math.max(...lines.map((line) => line.length));
   const bar = `+${"-".repeat(width + NOTICE_PADDING * 2)}+`;

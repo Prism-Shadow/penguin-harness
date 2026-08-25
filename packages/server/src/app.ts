@@ -188,6 +188,8 @@ export interface AppDeps {
 export interface BuildDepsOverrides {
   /** Test double: pins the in-memory signing key, so a test can craft tokens of its own. */
   tokenSecret?: Buffer;
+  /** Test double: pins this boot's first-login token, whose real value is random per start. */
+  firstLoginToken?: string;
   /** Test double: session-manager's underlying loader (avoids the real LLM/SDK path). */
   loader?: SessionLoader;
   /** Test double: Session title generator (avoids real LLM requests). */
@@ -242,6 +244,9 @@ export async function bootAppDeps(
     // beyond the short-lived owner token, which a restart replaces (auth/owner-token.ts).
     tokenSecret: overrides.tokenSecret ?? randomBytes(32),
     ownerToken: issueOwnerToken(config.root),
+    // Never written down: a link from a previous run is already dead, and this one dies the
+    // moment a password is set (auth/service.ts redeemFirstLogin).
+    firstLoginToken: overrides.firstLoginToken ?? randomBytes(24).toString("base64url"),
     // Auth is runtime mechanism, but WHAT a fresh user is provisioned with is business
     // policy: the App installs the real provisioner via setProvisioner at every create
     // (see hmr/platform.ts). This constructor fallback only answers before the first

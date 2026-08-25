@@ -490,8 +490,9 @@ const en: Messages = {
       "The Web database has no admin account yet — nothing to reset. " +
       "Start the service once (`penguin web`) to seed it.",
     done: (root) =>
-      `Admin password reset for data root ${root}. All admin sign-in sessions were cleared.`,
-    next: () => "Start the service (`penguin web`) and sign in with the password above.",
+      `The admin account on data root ${root} was returned to its unclaimed state, and all of its sign-in sessions were revoked.`,
+    next: () =>
+      "Start the service (`penguin web`): it will print a one-time sign-in link to claim the account.",
   },
   update: {
     desc: "Upgrade this PenguinHarness install in place",
@@ -803,8 +804,8 @@ const zh: Messages = {
       `${dbPath} 处没有 Web 数据库，无可重置。请先执行 \`penguin web\` 启动一次服务以创建管理员账号。`,
     noAdmin: () =>
       "Web 数据库中尚无管理员账号，无可重置。请先执行 `penguin web` 启动一次服务完成种子创建。",
-    done: (root) => `已重置数据根目录 ${root} 的管理员密码，并清空其全部登录会话。`,
-    next: () => "启动服务（`penguin web`）后用上方密码登录。",
+    done: (root) => `数据根目录 ${root} 的管理员账号已退回未认领状态，其全部登录会话已吊销。`,
+    next: () => "启动服务（`penguin web`），它会打印一条一次性登录链接用于认领该账号。",
   },
   update: {
     desc: "原地升级当前的 PenguinHarness 安装",

@@ -13,7 +13,7 @@ import { ADMIN_USER_ID } from "../src/auth/service.js";
 import { openDatabase } from "../src/db/database.js";
 import { AuthSessionsRepo } from "../src/db/repos/auth-sessions.js";
 import { UsersRepo } from "../src/db/repos/users.js";
-import { readInitialAdminPassword } from "../src/initial-password.js";
+import { initialAdminPasswordPath } from "../src/initial-password.js";
 import { acquireServerLock } from "../src/lock.js";
 import { resetAdminPassword } from "../src/reset-admin-password.js";
 import { makeTempRoot } from "./helpers.js";
@@ -74,22 +74,24 @@ describe("resetAdminPassword", () => {
     return dbPath;
   }
 
-  it("re-arms the initial-password machinery: fresh password, flag, cleared sessions, stored plaintext", async () => {
+  it("returns the admin to the unclaimed state, producing no plaintext at all", async () => {
     const root = await tempRoot();
     const dbPath = await seedDatabase(root);
+    // A plaintext an older build left behind must not survive the rescue.
+    fs.writeFileSync(initialAdminPasswordPath(root), "penguin-0000\n");
 
     const result = await resetAdminPassword(root);
-    expect(result.outcome).toBe("reset");
-    const password = (result as { outcome: "reset"; password: string }).password;
-    expect(password).toMatch(/^penguin-\d{4}$/);
-    // The plaintext lands in the data root, so every server start re-prints the notice.
-    expect(readInitialAdminPassword(root)).toBe(password);
+    expect(result).toEqual({ outcome: "reset" });
+    // Nothing to write down and nothing left on disk: the next server start prints a
+    // first-login link, and claiming it is what sets a real password.
+    expect(fs.existsSync(initialAdminPasswordPath(root))).toBe(false);
 
     const db = openDatabase(dbPath);
     try {
       const admin = new UsersRepo(db).findById(ADMIN_USER_ID);
       expect(admin?.passwordIsInitial).toBe(true);
-      expect(await verifyPassword(password, admin!.passwordHash)).toBe(true);
+      // The old password no longer works, and the new one is a value nobody holds.
+      expect(await verifyPassword("old-password-1", admin!.passwordHash)).toBe(false);
       expect(await verifyPassword("old-password-1", admin!.passwordHash)).toBe(false);
       // Admin sessions cleared (as an admin-initiated reset would); bystanders keep theirs.
       const sessions = new AuthSessionsRepo(db);
@@ -120,7 +122,7 @@ describe("resetAdminPassword", () => {
       } finally {
         db.close();
       }
-      expect(readInitialAdminPassword(root)).toBeNull();
+      expect(fs.existsSync(initialAdminPasswordPath(root))).toBe(false);
     } finally {
       await new Promise<void>((resolve) => srv.close(() => resolve()));
     }

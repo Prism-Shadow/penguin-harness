@@ -53,6 +53,26 @@ export function authRoutes(deps: AppDeps): Hono<AppEnv> {
     return c.json(outcome);
   });
 
+  /**
+   * First-login link: claims a server whose admin password has never been set.
+   *
+   * The value is this boot's, held only in memory — a link from a previous run is already
+   * dead — and it stops working the moment a password is set, because at that point there is
+   * nothing left to claim. A wrong value and an already-claimed server answer identically,
+   * so a stale link reveals nothing about which of the two it is.
+   *
+   * Lands on the app with a session marked `via: "setup"`, which may set a password without
+   * knowing the old one (there is no old one to know) and opens no desktop-only route.
+   */
+  app.get("/first-login", (c) => {
+    const redeemed = deps.authService.redeemFirstLogin(c.req.query("token") ?? "");
+    if (redeemed === null) {
+      throw new HttpError(401, "unauthorized", "Invalid or already-claimed sign-in link.");
+    }
+    setCookie(c, SESSION_COOKIE, redeemed.token, cookieOptions(c));
+    return c.redirect("/", 302);
+  });
+
   app.post("/logout", (c) => {
     const token = getCookie(c, SESSION_COOKIE);
     if (token) deps.authService.logout(token);

@@ -13,7 +13,6 @@
  */
 import path from "node:path";
 import { resolveRoot } from "@prismshadow/penguin-core";
-import { renderInitialPasswordNotice } from "@prismshadow/penguin-server/initial-password";
 import { resetAdminPassword } from "@prismshadow/penguin-server/reset-admin-password";
 import type { Command } from "commander";
 import type { Messages } from "../i18n.js";
@@ -44,7 +43,6 @@ export function registerResetPasswordCommand(server: Command, t: Messages): void
           return;
         case "reset":
           process.stdout.write(t.resetPassword.done(root) + "\n");
-          process.stdout.write(renderInitialPasswordNotice("admin", result.password) + "\n");
           process.stdout.write(t.resetPassword.next() + "\n");
       }
     });
