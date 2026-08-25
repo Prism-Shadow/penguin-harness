@@ -6,6 +6,11 @@
  * loopback hop. Reading the root already reaches every credential the token could, so the
  * write adds no authority it did not have. `via: "cli"` reads as an ordinary password session.
  *
+ * That scoping is the point on a MULTI-USER deployment: the data root belongs to the OS
+ * account running the server, so only that account (the machine's operator) can mint — for
+ * any PenguinHarness account, which changing the database directly already allowed. Everyone
+ * else signs in with their password: `penguin auth login --server <url>`.
+ *
  * Safe to run while the server is up: web.db is WAL with a busy timeout (db/database.ts), so
  * the insert waits for the write lock rather than failing, and the server sees the row on its
  * next request (sessions are not cached — the row IS the session).
@@ -39,7 +44,20 @@ export function mintApiToken(
   // seed nothing): a root with no web.db has no admin to mint for.
   if (!fs.existsSync(dbPath)) return { outcome: "no_server" };
 
-  const db = openDatabase(dbPath);
+  // A database this OS account cannot open is the multi-user case, not a crash: minting is
+  // for the data root's owner, and anyone else has a password to log in with instead.
+  let db: ReturnType<typeof openDatabase>;
+  try {
+    db = openDatabase(dbPath);
+  } catch (err) {
+    return {
+      outcome: "failed",
+      detail:
+        `cannot open ${dbPath} (${err instanceof Error ? err.message : String(err)}) — ` +
+        "minting needs the data root's own OS account; otherwise sign in with " +
+        "`penguin auth login --server <url>`",
+    };
+  }
   try {
     if (new UsersRepo(db).findById(userId) === null) {
       return { outcome: "failed", detail: `no such account: ${userId}` };

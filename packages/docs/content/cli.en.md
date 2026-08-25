@@ -230,7 +230,7 @@ Run interactively it asks for the account first, then the password — and the p
 
 Prefer `PENGUIN_PASSWORD` or the prompt over `--password`: a command line is world-readable through `ps`.
 
-`token` takes no password at all. It mints a session straight from the data root, and what authorizes it is that you can read that root — which already holds every credential the token could reach. Use it where there is no password to give: a machine whose admin password somebody set by hand, or a script that must not hold one. It is also what a controller runs over ssh to reach a machine it manages.
+`token` takes no password at all. It writes a session row straight into the data root's `web.db`, and what authorizes it is that you can read and write that root — which already holds every credential the token could reach. That makes it the **data root owner's** tool: on a multi-user deployment the root belongs to the OS account running the server, and everyone else signs in with `auth login` instead. Use it where there is no password to give: a machine whose admin password somebody set by hand, a script that must not hold one, or a controller reaching a managed machine over ssh.
 
 | Option | Description |
 | --- | --- |

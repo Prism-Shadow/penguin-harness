@@ -39,6 +39,32 @@ describe("minting an API session", () => {
     }
   });
 
+  /**
+   * The multi-user case: web.db exists but belongs to another OS account (the one running the
+   * server), and this caller cannot open it. That must come back as a failed outcome pointing
+   * at `auth login` — not an unhandled throw. chmod-based, so meaningless as root or on
+   * Windows.
+   */
+  it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+    "fails cleanly on a database this OS account cannot open",
+    async () => {
+      const root = await makeTempRoot();
+      const dbPath = path.join(root, "web.db");
+      const t = await createTestApp({ config: { root, dbPath } });
+      await t.cleanup();
+      const fs = await import("node:fs");
+      fs.chmodSync(dbPath, 0o000);
+      try {
+        const r = mintApiToken(root, { dbPath });
+        expect(r.outcome).toBe("failed");
+        if (r.outcome !== "failed") return;
+        expect(r.detail).toContain("penguin auth login");
+      } finally {
+        fs.chmodSync(dbPath, 0o600);
+      }
+    },
+  );
+
   it("refuses an account that does not exist", async () => {
     const root = await makeTempRoot();
     const dbPath = path.join(root, "web.db");

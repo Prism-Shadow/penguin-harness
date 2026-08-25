@@ -491,7 +491,7 @@ const en: Messages = {
     mark: "Print a fixed marker line before the token, for callers parsing it out of a shell",
     badTtl: "--ttl-seconds must be a positive integer.",
     noServer: (root) =>
-      `No server is running on ${root}. Start it (\`penguin web\`) — a token is signed by the running server.`,
+      `${root} has no web.db — no server has ever run on this data root, so there is no account to mint for.`,
     failed: (detail) => `Could not mint a token: ${detail}`,
   },
   resetPassword: {
@@ -842,8 +842,7 @@ const zh: Messages = {
     ttlSeconds: "有效期秒数（默认 3600）",
     mark: "在令牌前打印固定标记行，供需要从 shell 输出里解析它的调用方使用",
     badTtl: "--ttl-seconds 必须是正整数。",
-    noServer: (root) =>
-      `${root} 上没有正在运行的服务。请先启动（\`penguin web\`）——令牌由运行中的服务签发。`,
+    noServer: (root) => `${root} 上没有 web.db——该数据根上从未运行过服务，因此没有可签发的账号。`,
     failed: (detail) => `签发失败：${detail}`,
   },
   resetPassword: {
