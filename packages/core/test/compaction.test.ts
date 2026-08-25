@@ -140,6 +140,18 @@ async function collect(gen: AsyncGenerator<OmniMessage>): Promise<OmniMessage[]>
   return all;
 }
 
+/** Like collect, but also captures the run generator's return value (RunCutoff | null). */
+async function collectWithReturn<R>(
+  gen: AsyncGenerator<OmniMessage, R>,
+): Promise<{ all: OmniMessage[]; cutoff: R }> {
+  const all: OmniMessage[] = [];
+  for (;;) {
+    const res = await gen.next();
+    if (res.done) return { all, cutoff: res.value };
+    all.push(res.value);
+  }
+}
+
 type CompactionEventPayload = CompactionBeginPayload | CompactionEndPayload;
 
 const compactionEvents = (msgs: OmniMessage[]): CompactionEventPayload[] =>
@@ -346,8 +358,12 @@ describe("context compaction", () => {
     });
     const oldPath = trace.currentPath();
 
-    const out = await collect(engine.run([userText("go")], { approve: allowAll }));
-    // The mid-task failure ends this run: stop=failed, original context kept, no LLM swap.
+    const { all: out, cutoff } = await collectWithReturn(
+      engine.run([userText("go")], { approve: allowAll }),
+    );
+    // The mid-task failure ends this run: stop=failed, original context kept, no LLM swap —
+    // and the run generator returns the cutoff (the compaction_end's error pair mirrored).
+    expect(cutoff).toMatchObject({ kind: "compaction_failure" });
     expect(
       compactionEvents(out).map(
         (e) => `${e.type}:${(e as Partial<CompactionEndPayload>).status ?? ""}`,

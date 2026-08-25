@@ -28,6 +28,7 @@ import {
 } from "../src/omnimessage/index.js";
 import { BUILTIN_TOOL_FACTORIES } from "../src/environment/tools/registry.js";
 import type {
+  RunCutoff,
   GenerativeModelParameters,
   LLMInterface,
   LLMOutcome,
@@ -118,6 +119,22 @@ const allowAll: ApproveFn = async () => "allow";
 const denyAll: ApproveFn = async () => "deny";
 
 /** Collects all output from a run. */
+/** Like collectRun, but also captures the run generator's return value (the RunCutoff | null contract). */
+async function collectRunWithReturn(
+  engine: ContextEngine,
+  prompt: OmniMessage[],
+  approve: ApproveFn,
+  signal?: AbortSignal,
+): Promise<{ all: OmniMessage[]; cutoff: RunCutoff | null }> {
+  const all: OmniMessage[] = [];
+  const it = engine.run(prompt, { approve, ...(signal ? { signal } : {}) });
+  for (;;) {
+    const res = await it.next();
+    if (res.done) return { all, cutoff: res.value };
+    all.push(res.value);
+  }
+}
+
 async function collectRun(
   engine: ContextEngine,
   prompt: OmniMessage[],
@@ -1867,8 +1884,12 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
 
     // Must not throw; should gracefully converge to a terminal request_end once the
     // ladder is spent — no abort event (abort marks a user interruption).
-    const all = await collectRun(engine, [userText("go")], allowAll);
+    const { all, cutoff } = await collectRunWithReturn(engine, [userText("go")], allowAll);
     expect(calls).toBe(3); // initial attempt + maxReconnects(2).
+    expect(cutoff).toEqual({
+      kind: "llm_failure",
+      errorMessage: "Upstream HTTP/2 stream failed (upstream_http2_stream_error)",
+    });
     expect(all.some((m) => (m.payload as { type?: string }).type === "abort")).toBe(false);
     const ends = all.filter((m) => (m.payload as { type?: string }).type === "request_end");
     expect(ends).toHaveLength(3);
@@ -1957,8 +1978,11 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     });
     const engine = new ContextEngine({ llm, environment, reconnectBackoffMs: 1 });
 
-    const all = await collectRun(engine, [userText("go")], allowAll);
+    const { all, cutoff } = await collectRunWithReturn(engine, [userText("go")], allowAll);
     expect(calls).toBe(1); // A rejected credential cannot be retried into working.
+    // The run generator's return value states the cutoff directly (consumers like the
+    // goal loop and the subagent round report read it instead of the stream).
+    expect(cutoff).toEqual({ kind: "llm_failure", errorMessage: "401 invalid x-api-key" });
     // The request's own terminal status is the host signal (streams to the web).
     const end = all.find((m) => (m.payload as { type?: string }).type === "request_end");
     expect((end!.payload as { status?: string }).status).toBe("fatal");

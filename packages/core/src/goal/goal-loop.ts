@@ -15,8 +15,8 @@
  * - the loop's own token accounting against the budget (internal counters; the budget
  *   line in each round's block is composed from them, never read from anywhere),
  * - a round the engine cut off rather than finished — a user abort, a terminal LLM
- *   failure, or a mid-task compaction failure (`RunCutoffObserver` on the main session's
- *   layer; failures emit no abort event), or a final assistant notice with
+ *   failure, or a mid-task compaction failure, read from the run generator's own return
+ *   value (`RunCutoff`; failures emit no abort event) — or a final assistant notice with
  *   `stop_reason: "fatal"` (the engine's max_turns cutoff): the model never got to write
  *   the file, so re-firing would loop the same cutoff forever, and
  * - a hard round cap (`maxRounds`, default 100) as a runaway backstop independent of the
@@ -31,7 +31,8 @@
  * the stream — including origin-marked ones from subagent sessions, which are part of the
  * goal's cost — contributes `request.total - request.cache_read`.
  */
-import { goalFinished, isModelMessage, RunCutoffObserver, userText } from "../omnimessage/index.js";
+import { goalFinished, isModelMessage, userText } from "../omnimessage/index.js";
+import type { RunCutoff } from "../interfaces/shared.js";
 import type { GoalOutcomeStatus, OmniMessage } from "../omnimessage/index.js";
 import { stripLeadingMarkerBlocks } from "../omnimessage/markers/index.js";
 import { readGoalStatus, writeGoalFile, UNLIMITED_BUDGET } from "./goal-file.js";
@@ -40,7 +41,8 @@ import { goalTokenDelta } from "./goal-stream.js";
 
 /** The slice of Session the loop drives: one Task per round (structural, so tests can substitute a fake). */
 export interface GoalRoundRunner {
-  run(newMessages: OmniMessage[]): AsyncGenerator<OmniMessage>;
+  /** One round = one Task run; the return value says whether the round was cut off early (`Session.run`'s contract). Fakes returning nothing count as "ran to completion". */
+  run(newMessages: OmniMessage[]): AsyncGenerator<OmniMessage, RunCutoff | null | void>;
 }
 
 export interface GoalLoopOptions {
@@ -114,20 +116,24 @@ export async function* runGoalLoop(
       }),
     );
     yield input;
-    // Cut-off detection for the main session's own layer (a subagent's abort or failure
-    // doesn't end the goal): a user abort, a terminal LLM failure, or a mid-task
-    // compaction failure all mean this round never finished.
-    const cutoff = new RunCutoffObserver();
-    for await (const msg of session.run([input])) {
+    // Manual iteration (not for-await) to read the run's return value: whether the round
+    // was cut off early — a user abort, a terminal LLM failure, or a mid-task compaction
+    // failure. The engine states it directly; a cut-off round must not re-fire.
+    const it = session.run([input]);
+    for (;;) {
+      const res = await it.next();
+      if (res.done) {
+        if (res.value) aborted = true;
+        break;
+      }
+      const msg = res.value;
       used += goalTokenDelta(msg);
-      if ((msg.origin?.length ?? 0) === 0) cutoff.observe(msg.payload);
       // The LAST assistant text decides: a mid-round failed notice followed by normal text
       // means the round recovered; the max_turns cutoff is always the final message.
       const stop = mainAssistantStopReason(msg);
       if (stop !== null) roundFailed = stop === "fatal" || stop === "failed";
       yield msg;
     }
-    if (cutoff.cutoff !== null) aborted = true;
   }
 
   const finish = (outcome: GoalOutcomeStatus) => goalFinished(outcome, rounds, used);

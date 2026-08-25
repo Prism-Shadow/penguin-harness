@@ -9,13 +9,36 @@
  *
  * Docs: packages/docs/content/interfaces.{zh,en}.md (site path /docs/interfaces).
  */
-import type { ApprovalDecision, OmniMessage, ToolCallPayload } from "../omnimessage/types.js";
+import type {
+  ApprovalDecision,
+  ErrorCode,
+  OmniMessage,
+  ToolCallPayload,
+} from "../omnimessage/types.js";
 
 // ToolDefinition is defined in omnimessage/types.ts (the tool_list_ready event carries the full tool schema); re-exported here to keep the original import path.
 export type { ToolDefinition } from "../omnimessage/types.js";
 
 /** Thinking level of one request. Shared: the LLM takes it per request and as a construction default, and a spawned child Session inherits or overrides it. */
 export type ThinkingLevelName = "none" | "low" | "medium" | "high" | "xhigh" | "max";
+
+/**
+ * How a run was cut off early, returned as the **return value** of the run generators
+ * (`ContextEngine.run` / `Session.run` / `SubagentHandle.run`): `null` means the run ran
+ * to completion. The engine knows which exit it took, so consumers that must not treat a
+ * cut-off run as finished (the goal loop deciding whether to re-fire a round, a subagent
+ * round reporting completion) read this instead of re-deriving it from the stream —
+ * failures emit no abort event, only their terminal request_end / compaction_end records.
+ * `abort` is a user interruption; `llm_failure` a terminal LLM request failure;
+ * `compaction_failure` a compaction given up mid-task (at a Task boundary the same
+ * failure is advisory and the run returns null). The error pair mirrors the terminal
+ * record's `error_code` / `error_message`.
+ */
+export interface RunCutoff {
+  kind: "abort" | "llm_failure" | "compaction_failure";
+  errorCode?: ErrorCode;
+  errorMessage?: string;
+}
 
 /**
  * Per-tool approval callback: the Human boundary gives allow/deny for each complete `tool_call`.

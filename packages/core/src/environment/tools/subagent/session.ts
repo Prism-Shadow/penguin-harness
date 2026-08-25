@@ -33,10 +33,14 @@
  * need for a separate synchronous hard-kill path (its command sessions are reaped by their own
  * exit fallback); `killHard` is equivalent to `kill`.
  */
-import { RunCutoffObserver } from "../../../omnimessage/index.js";
 import type { OmniMessage } from "../../../omnimessage/index.js";
 import type { ApprovalDecision, ToolCallPayload } from "../../../omnimessage/index.js";
-import type { ApproveFn, SubagentHandle, ThinkingLevelName } from "../../../interfaces/index.js";
+import type {
+  ApproveFn,
+  RunCutoff,
+  SubagentHandle,
+  ThinkingLevelName,
+} from "../../../interfaces/index.js";
 import type { ToolResult } from "../types.js";
 import { CappedTextBuffer, WakeSignal } from "../background/index.js";
 
@@ -351,18 +355,28 @@ export class ManagedSubagentSession {
     thinkingLevel?: ThinkingLevelName,
   ): Promise<void> {
     let wroteAny = false;
-    // Cut-off detection on the direct child layer: a user abort still emits an abort
-    // event, but an LLM or compaction failure's terminal record is its request_end /
-    // compaction_end — a round ending on any of these is reported failed, not completed.
-    const cutoff = new RunCutoffObserver();
+    // Whether the round was cut off early (a user abort, a terminal LLM failure, a
+    // mid-task compaction failure): read from the run generator's return value — the
+    // child engine states it directly; a cut-off round is reported failed, not completed.
+    let cut: RunCutoff | null = null;
     try {
       // Either scope ends the round: the session-lifetime kill, or this run's own abort.
-      for await (const msg of this.handle.run({
+      // Manual iteration (not for-await) so the handle's return value — whether the round
+      // was cut off — is read; a child session failure doesn't throw.
+      const it = this.handle.run({
         messages,
         signal: AbortSignal.any([this.abortCtrl.signal, runCtrl.signal]),
         approve: this.childApprove,
         ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
-      })) {
+      });
+      for (;;) {
+        const res = await it.next();
+        if (res.done) {
+          // Older embedders' handles may return nothing: that counts as ran-to-completion.
+          cut = res.value ?? null;
+          break;
+        }
+        const msg = res.value;
         this.bufferMessage(msg);
         if ((msg.origin?.length ?? 0) === 1) {
           const p = msg.payload as {
@@ -370,9 +384,6 @@ export class ManagedSubagentSession {
             event_type?: string;
             text?: string;
           };
-          // A child session failure doesn't throw, it only emits its terminal record; the
-          // observer turns that (or an abort event) into this round's failed report.
-          cutoff.observe(p);
           if (
             p.type === "partial_text" &&
             p.event_type === "delta" &&
@@ -396,11 +407,9 @@ export class ManagedSubagentSession {
         }
         this.wakeSignal.notify();
       }
-      const cut = cutoff.cutoff;
       if (cut !== null) {
-        // The note reaches the parent model: the cause code plus the raw detail (or the
-        // legacy prose of an old Trace's abort).
-        const detail = cut.errorMessage ?? cut.reason;
+        // The note reaches the parent model: the cause code plus the raw detail.
+        const detail = cut.errorMessage;
         const cause = cut.errorCode ?? (cut.kind === "abort" ? "aborted" : cut.kind);
         this.exitInfo = {
           status: "failed",

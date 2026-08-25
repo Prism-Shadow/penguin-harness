@@ -565,9 +565,14 @@ describe("run_subagent run_in_background", () => {
     const manager = new SubagentSessionManager();
     cleanups.push(() => manager.dispose());
     const runner = runnerOf(async function* () {
-      // A child-session failure surfaces as its origin-tagged terminal record (a
-      // request_end with no retry planned), never a throw.
+      // A child-session failure surfaces as its origin-tagged terminal record plus the
+      // run's return value (Session.run's contract), never a throw.
       yield withHop(requestEnd("retryable", { attempt: 6, errorMessage: "socket hang up" }));
+      return {
+        kind: "llm_failure" as const,
+        errorCode: "network" as const,
+        errorMessage: "socket hang up",
+      };
     });
     const events: BackgroundTaskDoneEvent[] = [];
     const tapped: OmniMessage[] = [];

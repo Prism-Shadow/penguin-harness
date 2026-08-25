@@ -27,6 +27,7 @@ import {
   withOrigin,
 } from "../src/index.js";
 import type {
+  RunCutoff,
   EnvironmentInterface,
   GoalOutcome,
   LLMInterface,
@@ -78,7 +79,7 @@ function roundArgs(objective: string, over: Partial<GoalPromptArgs> = {}): GoalP
  * optional side effect (standing in for the model editing GOAL.yaml with shell tools).
  */
 function fakeSession(
-  rounds: Array<{ messages?: OmniMessage[]; then?: () => Promise<void> }>,
+  rounds: Array<{ messages?: OmniMessage[]; then?: () => Promise<void>; cutoff?: RunCutoff }>,
 ): GoalRoundRunner & { prompts: string[] } {
   let i = 0;
   const prompts: string[] = [];
@@ -91,6 +92,8 @@ function fakeSession(
       prompts.push(p.text ?? "");
       for (const msg of round.messages ?? []) yield msg;
       await round.then?.();
+      // Session.run's contract: the return value says whether the round was cut off.
+      return round.cutoff ?? null;
     },
   };
 }
@@ -373,18 +376,25 @@ describe("runGoalLoop", () => {
   });
 
   it("stops without re-firing when the main session aborts, leaving the goal active", async () => {
-    const session = fakeSession([{ messages: [tokenUsage(usage(80), usage(80)), abortEvent()] }]);
+    const session = fakeSession([
+      {
+        messages: [tokenUsage(usage(80), usage(80)), abortEvent()],
+        cutoff: { kind: "abort", errorCode: "user_abort" },
+      },
+    ]);
     const { outcome } = await drain(runGoalLoop(session, { text: "o", goalFilePath: file }));
     expect(outcome).toEqual({ outcome: "aborted", rounds: 1, tokensUsed: 80 });
     expect(await readGoalStatus(file)).toBe("active");
   });
 
-  it("stops without re-firing on a terminal request_end (an LLM failure emits no abort event)", async () => {
+  it("stops without re-firing when the run returns an LLM-failure cutoff (no abort event)", async () => {
     // A fatal end (and equally a retryable one with no retry planned) cuts the round;
-    // re-firing would loop the same failure forever.
+    // re-firing would loop the same failure forever. The run generator's return value
+    // carries the fact — the loop never re-derives it from the stream.
     const session = fakeSession([
       {
         messages: [tokenUsage(usage(80), usage(80)), requestEnd("fatal", { errorMessage: "401" })],
+        cutoff: { kind: "llm_failure", errorCode: "auth", errorMessage: "401" },
       },
     ]);
     const { outcome } = await drain(runGoalLoop(session, { text: "o", goalFilePath: file }));
@@ -417,6 +427,7 @@ describe("runGoalLoop", () => {
           toolCallOutput({ output: "ok", toolCallId: "t1" }),
           compactionEnd({ reason: "context", mode: "summarize", status: "retryable" }),
         ],
+        cutoff: { kind: "compaction_failure" },
       },
     ]);
     const { outcome } = await drain(runGoalLoop(session, { text: "o", goalFilePath: file }));

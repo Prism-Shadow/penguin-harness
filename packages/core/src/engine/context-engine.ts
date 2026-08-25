@@ -75,6 +75,7 @@ import type {
   ToolCallPayload,
 } from "../omnimessage/index.js";
 import type {
+  RunCutoff,
   ApproveFn,
   EnvironmentInterface,
   LLMInterface,
@@ -107,6 +108,9 @@ export interface CompactionSettings {
 interface CompactionResult {
   status: StopReason;
   summary?: OmniMessage;
+  /** The failure's classified cause and detail (mirrors the compaction_end's error pair) — present on `retryable` / `fatal` ends. */
+  errorCode?: ErrorCode;
+  errorMessage?: string;
   /**
    * Whether at least one summarize attempt was **committed** by AgentHub (only a `completed`
    * attempt commits — a `retryable` attempt ends an incomplete stream and fatal/aborted
@@ -533,12 +537,17 @@ export class ContextEngine {
    * per-tool approval callback.
    * Docs: /docs/agent-loop § "The loop at a glance".
    */
-  async *run(newMessages: OmniMessage[], opts?: RunOptions): AsyncGenerator<OmniMessage> {
+  async *run(
+    newMessages: OmniMessage[],
+    opts?: RunOptions,
+  ): AsyncGenerator<OmniMessage, RunCutoff | null> {
     // Steering window: only while this generator is being driven. The finally also covers
     // abort/failure exits — anything still queued is discarded (see steeringQueue).
     this.taskRunning = true;
     try {
-      yield* this.runToCompletion(newMessages, opts);
+      // The return value says how the run ended (yield* propagates it): null = ran to
+      // completion; a RunCutoff = ended early, with the terminal record's error pair.
+      return yield* this.runToCompletion(newMessages, opts);
     } finally {
       this.taskRunning = false;
       this.steeringQueue = [];
@@ -646,7 +655,7 @@ export class ContextEngine {
   private async *runToCompletion(
     newMessages: OmniMessage[],
     opts?: RunOptions,
-  ): AsyncGenerator<OmniMessage> {
+  ): AsyncGenerator<OmniMessage, RunCutoff | null> {
     const signal = opts?.signal;
     // Default approval policy: deny (conservative). CLI/Web will inject a real callback (interactive or permission-mode based).
     const approve: ApproveFn = opts?.approve ?? (async () => "deny");
@@ -689,7 +698,7 @@ export class ContextEngine {
       // rewritten on the next send.
       this.pendingCarryOver = input;
       yield* this.emitAbort("user_abort");
-      return;
+      return { kind: "abort", errorCode: "user_abort" };
     }
 
     let turnCount = 0;
@@ -714,7 +723,7 @@ export class ContextEngine {
         // (400, see issue #33).
         this.pendingCarryOver = nextInput;
         yield* this.emitMaxTurns();
-        return;
+        return null;
       }
       turnCount += 1;
 
@@ -748,7 +757,7 @@ export class ContextEngine {
         if (signal?.aborted || turn.outcome.status === "aborted") {
           this.pendingCarryOver = this.buildCarryOver(attemptInput, turn);
           yield* this.emitAbort("user_abort");
-          return;
+          return { kind: "abort", errorCode: "user_abort" };
         }
         // `fatal` stops the run: a definitive provider rejection, a dead credential, or a
         // deterministic client-side rejection — the identical request can never succeed, so
@@ -758,7 +767,13 @@ export class ContextEngine {
         // record frontends and observability read.
         if (turn.outcome.status === "fatal") {
           this.pendingCarryOver = this.buildCarryOver(attemptInput, turn);
-          return;
+          return {
+            kind: "llm_failure",
+            ...(turn.outcome.errorCode !== undefined ? { errorCode: turn.outcome.errorCode } : {}),
+            ...(turn.outcome.errorMessage !== undefined
+              ? { errorMessage: turn.outcome.errorMessage }
+              : {}),
+          };
         }
         // Completed normally.
         if (turn.outcome.status === "completed") break;
@@ -781,13 +796,19 @@ export class ContextEngine {
         // read; `attempt` and `error_message` ride on it.
         if (reconnects >= this.maxReconnects) {
           this.pendingCarryOver = attemptInput;
-          return;
+          return {
+            kind: "llm_failure",
+            ...(turn.outcome.errorCode !== undefined ? { errorCode: turn.outcome.errorCode } : {}),
+            ...(turn.outcome.errorMessage !== undefined
+              ? { errorMessage: turn.outcome.errorMessage }
+              : {}),
+          };
         }
         reconnects += 1;
         if (!(await this.backoff(reconnects, signal))) {
           this.pendingCarryOver = attemptInput;
           yield* this.emitAbort("backoff_interrupted");
-          return;
+          return { kind: "abort", errorCode: "backoff_interrupted" };
         }
       }
 
@@ -804,7 +825,7 @@ export class ContextEngine {
           // The queues are only peeked here — delivery happens at the input assembly below.
           if (!midTask && this.steeringQueue.length === 0 && this.pendingNoticeCount() === 0) {
             yield* this.discardContext(compactionReason);
-            return;
+            return null;
           }
         } else {
           const result = yield* this.summarizeContext(
@@ -821,7 +842,7 @@ export class ContextEngine {
               // Task boundary: the summary is merged with the next user Prompt as the new
               // context's first input.
               this.pendingSummary = result.summary!;
-              return;
+              return null;
             }
             // Mid-Task: the summary itself becomes the new LLM object's first input (this
             // turn's tool results were already folded into the compaction request and absorbed
@@ -859,13 +880,18 @@ export class ContextEngine {
             // record is the compaction_end (status + error_message) already written.
             if (result.status === "aborted") {
               yield* this.emitAbort("compaction_interrupted");
+              return { kind: "abort", errorCode: "compaction_interrupted" };
             }
-            return;
+            return {
+              kind: "compaction_failure",
+              ...(result.errorCode !== undefined ? { errorCode: result.errorCode } : {}),
+              ...(result.errorMessage !== undefined ? { errorMessage: result.errorMessage } : {}),
+            };
           }
           // Task boundary: the final reply has already streamed out. A user abort hands
           // control straight back; a failure falls through — queued steering may still
           // continue the loop, and the assembly below otherwise ends the run.
-          if (result.status === "aborted") return;
+          if (result.status === "aborted") return null;
         }
       }
 
@@ -884,14 +910,14 @@ export class ContextEngine {
       ];
       // No tool_call this turn and nothing injected -> the Task ends (the final reply has
       // already been streamed out). A compaction stash, if any, rides the next run.
-      if (!midTask && injected.length === 0) return;
+      if (!midTask && injected.length === 0) return null;
       // Anything a failed boundary compaction stashed (synthesized repair outputs from
       // rejected attempts) rides the very next request, ahead of the turn outputs so
       // tool_results stay contiguous and first.
       const stashed = this.pendingCarryOver;
       this.pendingCarryOver = [];
       nextInput = [...stashed, ...turn.toolOutputs, ...injected];
-      if (nextInput.length === 0) return;
+      if (nextInput.length === 0) return null;
     }
   }
 
@@ -1524,7 +1550,12 @@ export class ContextEngine {
           ...(attempt.errorCode !== undefined ? { errorCode: attempt.errorCode } : {}),
           ...(attempt.errorMessage !== undefined ? { errorMessage: attempt.errorMessage } : {}),
         });
-        return { status: "fatal", committed };
+        return {
+          status: "fatal",
+          committed,
+          ...(attempt.errorCode !== undefined ? { errorCode: attempt.errorCode } : {}),
+          ...(attempt.errorMessage !== undefined ? { errorMessage: attempt.errorMessage } : {}),
+        };
       } else {
         // Retryable failure: keep its cause and detail as the last error of record.
         lastError = attempt.errorMessage;
@@ -1546,7 +1577,12 @@ export class ContextEngine {
           ...(lastErrorCode !== undefined ? { errorCode: lastErrorCode } : {}),
           ...(lastError !== undefined ? { errorMessage: lastError } : {}),
         });
-        return { status: "retryable", committed };
+        return {
+          status: "retryable",
+          committed,
+          ...(lastErrorCode !== undefined ? { errorCode: lastErrorCode } : {}),
+          ...(lastError !== undefined ? { errorMessage: lastError } : {}),
+        };
       }
       reconnects += 1;
       const ok = await this.backoff(reconnects, signal);

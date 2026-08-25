@@ -22,6 +22,7 @@ import { collectWindow } from "../src/environment/tools/subagent/collect.js";
 import type { MessageOrigin, OmniMessage } from "../src/omnimessage/index.js";
 import type {
   ApproveFn,
+  RunCutoff,
   EnvironmentServices,
   SubagentHandle,
   SubagentRunner,
@@ -356,6 +357,7 @@ describe("run_subagent tool (foreground)", () => {
     const runner = runnerOf(async function* () {
       yield withOrigin(partialText("delta", "partial"), HOP);
       yield withOrigin(abortEvent(), HOP);
+      return { kind: "abort" as const, errorCode: "user_abort" as const };
     });
     const { services } = makeServices(runner);
     const tool = createSubagentTool(DEF, services);
@@ -675,7 +677,7 @@ describe("subagent steering and per-run abort", () => {
       async spawn() {
         const handle: SubagentHandle = {
           sessionId: HOP,
-          async *run({ messages, signal }): AsyncGenerator<OmniMessage> {
+          async *run({ messages, signal }): AsyncGenerator<OmniMessage, RunCutoff | null> {
             const prompt = promptOf(messages);
             inputs.push(messages);
             prompts.push(prompt);
@@ -684,14 +686,15 @@ describe("subagent steering and per-run abort", () => {
               await Promise.race([gate, aborted(signal)]);
               if (signal?.aborted) {
                 yield withOrigin(abortEvent(), HOP);
-                return;
+                return { kind: "abort", errorCode: "user_abort" };
               }
               yield withOrigin(partialText("delta", `end:${prompt}`), HOP);
               yield withOrigin(assistantText(`end:${prompt}`), HOP);
-              return;
+              return null;
             }
             yield withOrigin(partialText("delta", `ran:${prompt}`), HOP);
             yield withOrigin(assistantText(`ran:${prompt}`), HOP);
+            return null;
           },
           steer(messages) {
             steers.push(messages);
