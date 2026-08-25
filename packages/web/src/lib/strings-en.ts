@@ -91,14 +91,15 @@ export const en: Strings = {
     showCliSessions: "Show CLI sessions",
     showCliSessionsInfo:
       "Off, the conversation list holds only Sessions created in the Web App and is served straight from the database. On, the Trace directories are scanned too and CLI-created Sessions are listed alongside them. Applies to this account only.",
-    /** Trace import (below the CLI-sessions filter): the Agent picker's accessible name, the pick-a-file action, and its outcomes. */
+    /** Trace import (below the CLI-sessions filter): the two pickers' accessible names, the pick-a-file action, and its outcomes. */
     importTrace: "Import Trace",
     importTraceInfo:
-      "Upload a .jsonl Trace exported from another install and it becomes a conversation of the chosen Agent. The endpoint is per-Agent — a Trace file's own session_meta cannot name a local Agent, since its agent_state path belongs to the machine that exported it — so the receiving Agent is picked here. Exporting happens in a conversation's Trace panel.",
+      "Upload a .jsonl Trace exported from another install and it becomes a conversation of the chosen Agent. Both halves of the destination are picked here: the endpoint is per-Agent — a Trace file's own session_meta cannot name a local Agent, since its agent_state path belongs to the machine that exported it — and the Project is asked for because this dialog does not show which one is open, which also means a Trace can go to a Project other than the open one. Exporting happens in a conversation's Trace panel.",
+    importTraceProject: "Import into project",
     importTraceAgent: "Import into agent",
     importTracePick: "Choose file",
     importTraceRunning: "Importing…",
-    importTraceDone: "Trace imported; the conversation is in the list.",
+    importTraceDone: (target: string) => `Trace imported into ${target}`,
     importTraceTooLarge: "The file exceeds the 14MB limit.",
     /** Admin-only sub-page (server-global); its explanation is disclosed at the pane heading. */
     proxyTitle: "Proxy options",

@@ -99,14 +99,15 @@ export const zh = {
     showCliSessions: "显示 CLI 会话",
     showCliSessionsInfo:
       "关闭时会话列表只列出在 Web 端创建的会话，直接由数据库返回；开启后会额外扫描轨迹目录，把 CLI 创建的会话一并列出。仅影响当前账号。",
-    /** Trace import (below the CLI-sessions filter): the Agent picker's accessible name, the pick-a-file action, and its outcomes. */
+    /** Trace import (below the CLI-sessions filter): the two pickers' accessible names, the pick-a-file action, and its outcomes. */
     importTrace: "导入 Trace",
     importTraceInfo:
-      "上传从其他部署导出的 .jsonl 轨迹文件，它会成为所选 Agent 的一个会话。导入接口按 Agent 划分——轨迹文件自带的 session_meta 无法指认本机的 Agent，其中的 agent_state 路径属于导出它的那台机器——因此需要在这里选择接收它的 Agent。导出在对话的 Trace 面板中进行。",
+      "上传从其他部署导出的 .jsonl 轨迹文件，它会成为所选 Agent 的一个会话。目的地的两个部分都在这里选择：导入接口按 Agent 划分——轨迹文件自带的 session_meta 无法指认本机的 Agent，其中的 agent_state 路径属于导出它的那台机器——而 Project 需要明确指定，因为本对话框不显示当前是哪一个，也因此可以导入到当前打开之外的 Project。导出在对话的 Trace 面板中进行。",
+    importTraceProject: "导入到 Project",
     importTraceAgent: "导入到 Agent",
     importTracePick: "选择文件",
     importTraceRunning: "导入中…",
-    importTraceDone: "轨迹已导入，会话已出现在列表中。",
+    importTraceDone: (target: string) => `轨迹已导入到 ${target}`,
     importTraceTooLarge: "文件超过 14MB 上限。",
     /** Admin-only sub-page (server-global); its explanation is disclosed at the pane heading. */
     proxyTitle: "代理选项",
