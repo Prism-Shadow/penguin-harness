@@ -17,8 +17,8 @@
  * machine, and what authorizes it is the fact that you can read that root — which already
  * contains every credential the token could reach. Use it where there is no password to give:
  * a machine whose admin password somebody set by hand, or a script that must not hold one.
- * This is the same command the machines sync calls over ssh (machines/remote-token.ts), which
- * is why it is also spelled `penguin server auth-token`.
+ * It is also what a controller runs over ssh to reach a machine it manages, which is what
+ * `--mark` exists for.
  *
  * The session is written to `<root>/cli-session.json` at mode 0600. Nothing else in this CLI
  * reads it yet — `config`, `run` and `chat` all work on the data root directly and never open
@@ -48,6 +48,13 @@ const SESSION_COOKIE = "penguin_session";
 
 /** The built-in account every server has; on a personal or desktop server it is the only one. */
 const DEFAULT_USER = "admin";
+
+/**
+ * The line `--mark` prints before the token. A caller reading the token out of a remote shell
+ * anchors on this rather than on position, so nothing the shell prints on its own can be
+ * mistaken for a credential.
+ */
+export const TOKEN_MARK = "---penguin-auth-token---";
 
 /** The error message inside an API error body, when it has one. */
 function serverSaid(text: string): string {
@@ -202,8 +209,9 @@ export function registerAuthCommand(program: Command, t: Messages): void {
     .description(t.authToken.desc)
     .option("--user-id <id>", t.authToken.userId, DEFAULT_USER)
     .option("--ttl-seconds <n>", t.authToken.ttlSeconds, (raw: string) => Number.parseInt(raw, 10))
+    .option("--mark", t.authToken.mark, false)
     .option("--root <dir>", t.common.root)
-    .action(async (opts: { userId: string; ttlSeconds?: number; root?: string }) => {
+    .action(async (opts: { userId: string; ttlSeconds?: number; mark: boolean; root?: string }) => {
       const ttl = opts.ttlSeconds;
       if (ttl !== undefined && (!Number.isFinite(ttl) || ttl <= 0)) {
         process.stderr.write(t.authToken.badTtl + "\n");
@@ -236,6 +244,11 @@ export function registerAuthCommand(program: Command, t: Messages): void {
           expiresAt: result.expiresAt,
         });
       }
+      // Bare by default, so `TOKEN=$(penguin auth token)` is the obvious thing. `--mark`
+      // prefixes a fixed line for a caller reading this out of a shell it does not control:
+      // a login profile that prints a banner would otherwise put its own text on the same
+      // stream, and a reader taking "the last line" would take the banner.
+      if (opts.mark) process.stdout.write(TOKEN_MARK + "\n");
       process.stdout.write(result.token + "\n");
     });
 }

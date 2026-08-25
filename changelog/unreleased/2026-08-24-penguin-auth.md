@@ -31,7 +31,9 @@ answer one.
 `token` takes no password at all. It mints a session straight from the data root, and what
 authorizes it is being able to read that root — which already holds every credential the token
 could reach. It is for where there is no password to give: a machine whose admin password
-somebody set by hand, or a script that must not carry one.
+somebody set by hand, or a script that must not carry one. It prints the token bare, so
+`TOKEN=$(penguin auth token)` is the obvious thing; `--mark` prefixes a fixed marker line for a
+caller parsing it out of a shell whose login profile may print a banner.
 
 ## Sessions are signed statements now
 

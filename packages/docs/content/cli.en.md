@@ -192,12 +192,13 @@ Run interactively it asks for the account first, then the password — and the p
 
 Prefer `PENGUIN_PASSWORD` or the prompt over `--password`: a command line is world-readable through `ps`.
 
-`token` takes no password at all. It mints a session straight from the data root, and what authorizes it is that you can read that root — which already holds every credential the token could reach. Use it where there is no password to give: a machine whose admin password somebody set by hand, or a script that must not hold one. It is the same command the machines sync calls over ssh, which is why it is also spelled `penguin server auth-token`.
+`token` takes no password at all. It mints a session straight from the data root, and what authorizes it is that you can read that root — which already holds every credential the token could reach. Use it where there is no password to give: a machine whose admin password somebody set by hand, or a script that must not hold one. It is also what a controller runs over ssh to reach a machine it manages.
 
 | Option | Description |
 | --- | --- |
 | `--user-id <id>` | Account, default `admin` |
 | `--ttl-seconds <n>` | Lifetime, default 3600 |
+| `--mark` | Print a fixed marker line before the token — for a caller parsing it out of a shell whose login profile may print a banner |
 
 The session is written to `<root>/cli-session.json` at mode 0600, which is what `status` reads and `logout` revokes and deletes. `logout` tells the server first, so the session dies there rather than merely being forgotten here; if the server cannot be reached it says so, and the local file goes anyway.
 

@@ -124,6 +124,7 @@ export interface Messages {
     desc: string;
     userId: string;
     ttlSeconds: string;
+    mark: string;
     badTtl: string;
     failed(detail: string): string;
     noUser(userId: string): string;
@@ -474,6 +475,7 @@ const en: Messages = {
     desc: "Mint a short-lived API session token for this data root (for a controller reaching this machine over ssh)",
     userId: "Account to mint for (default: admin)",
     ttlSeconds: "Lifetime in seconds (default: 3600)",
+    mark: "Print a fixed marker line before the token, for callers parsing it out of a shell",
     badTtl: "--ttl-seconds must be a positive integer.",
     failed: (detail) => `Could not mint a token: ${detail}`,
     noUser: (userId) => `No such account: ${userId}.`,
@@ -791,6 +793,7 @@ const zh: Messages = {
     desc: "为该数据根签发短期 API 会话令牌（供通过 ssh 连接本机的控制端使用）",
     userId: "签发给哪个账号（默认 admin）",
     ttlSeconds: "有效期秒数（默认 3600）",
+    mark: "在令牌前打印固定标记行，供需要从 shell 输出里解析它的调用方使用",
     badTtl: "--ttl-seconds 必须是正整数。",
     failed: (detail) => `签发失败：${detail}`,
     noUser: (userId) => `没有这个账号：${userId}。`,
