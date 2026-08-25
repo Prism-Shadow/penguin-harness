@@ -1,23 +1,17 @@
 /**
- * The session token itself: a statement the server signed, not a record it stored.
+ * The session token: a statement the server signed, not a record it stored — so auth, which
+ * runs on every request, verifies on CPU and touches the database only for the user row and
+ * revocation (both held in memory after boot).
  *
- * Auth runs on EVERY request, which makes it the hottest path in the server. A token that
- * carries its own claims and proves them with a signature keeps that path on CPU — the
- * database is consulted only for what cannot live inside the token: the user row, and
- * revocation (auth_revocations, held in memory after boot).
+ * Format `v1.<payload b64url>.<mac b64url>`, payload = JSON of {@link TokenClaims}. HMAC not
+ * JWT on purpose: one algorithm, no header to negotiate, no `alg:none` parser to get wrong;
+ * the version prefix is room for a future format, and verifyToken refuses anything without it.
  *
- * Format: `v1.<payload b64url>.<mac b64url>`, payload = JSON of {@link TokenClaims}. HMAC
- * rather than JWT on purpose — one algorithm, no header to negotiate, no dependency, and no
- * `alg:none` class of parser to get wrong. The version prefix is room for a future format;
- * verifyToken refuses anything not carrying it.
- *
- * THE KEY NEVER RESTS. It is generated in memory at process start and written nowhere, so
- * there is nothing a backup can leak and nothing to rotate — a restart IS the rotation, and
- * every outstanding signed token dies with it. That cost lands almost entirely on nobody:
- * hot pushes swap the App and keep the process (and key) alive; CLI and machine tokens live
- * an hour and are re-minted on demand; only a browser session across a REAL restart pays,
- * as one re-typed password. Issuance is invisible (no row), so the audit trail is only of
- * revocations — the one property of the row model this scheme genuinely gives up.
+ * The signing key is generated in memory at process start and written nowhere — nothing a
+ * backup can leak, and a restart IS the rotation (every outstanding token dies with it, paid
+ * as one re-typed browser password; hot pushes keep the process, minted tokens re-mint). The
+ * one property the row model had that this gives up: issuance leaves no audit trail, only
+ * revocations do.
  */
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 

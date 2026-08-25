@@ -13,7 +13,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { clearInitialAdminPassword, initialAdminPasswordPath } from "../src/initial-password.js";
 import { SESSION_COOKIE } from "../src/auth/middleware.js";
-import { apiClient, createTestApp, loginAdmin, makeTempRoot } from "./helpers.js";
+import { apiClient, cookieFrom, createTestApp, loginAdmin, makeTempRoot } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
 describe("the first-login link", () => {
@@ -38,7 +38,7 @@ describe("the first-login link", () => {
     const res = await redeem(link);
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe("/");
-    const cookie = (res.headers.get("set-cookie") ?? "").split(";")[0]!;
+    const cookie = cookieFrom(res);
 
     const me = (await (await apiClient(t.app, cookie).get("/api/me")).json()) as {
       user: { userId: string };
@@ -75,7 +75,7 @@ describe("the first-login link", () => {
     const wrongBody = await wrong.text();
 
     const claimed = await redeem(link);
-    const cookie = (claimed.headers.get("set-cookie") ?? "").split(";")[0]!;
+    const cookie = cookieFrom(claimed);
     await apiClient(t.app, cookie).put("/api/me/password", { newPassword: "claimed-password-1" });
 
     const stale = await redeem(link);
@@ -93,7 +93,7 @@ describe("the first-login link", () => {
     const a = await redeem(link);
     const b = await redeem(link);
     expect([a.status, b.status]).toEqual([302, 302]);
-    const cookieOf = (r: Response) => (r.headers.get("set-cookie") ?? "").split(";")[0];
+    const cookieOf = (r: Response) => cookieFrom(r);
     expect(cookieOf(a)).toBe(cookieOf(b));
     expect(cookieOf(a)).not.toBe("");
     // Still the same link afterwards: redemption spends nothing.
@@ -139,7 +139,7 @@ describe("the first-login link", () => {
       // Day 2: renew into a replacement copy (same jti, exp ~day 32).
       nowMs += 2 * 24 * 60 * 60 * 1000;
       const r = await apiClient(clocked.app, `${SESSION_COOKIE}=${original}`).get("/api/me");
-      const renewed = (r.headers.get("set-cookie") ?? "").split(";")[0]!;
+      const renewed = cookieFrom(r);
       // Day 31: the printed original (exp day 30) is dead; the renewed copy is not.
       nowMs += 29 * 24 * 60 * 60 * 1000;
       expect(
@@ -175,7 +175,7 @@ describe("the first-login link", () => {
       nowMs += 2 * 24 * 60 * 60 * 1000;
       const renewed = await apiClient(clocked.app, `${SESSION_COOKIE}=${first}`).get("/api/me");
       expect(renewed.status).toBe(200);
-      const replacement = (renewed.headers.get("set-cookie") ?? "").split(";")[0]!;
+      const replacement = cookieFrom(renewed);
       expect(replacement).toContain(`${SESSION_COOKIE}=v1.`);
       // The replacement can still set the password without an old one…
       const set = await apiClient(clocked.app, replacement).put("/api/me/password", {
@@ -199,7 +199,7 @@ describe("the first-login link", () => {
    */
   it("keeps the link alive when the chosen password is rejected", async () => {
     const res = await redeem(link);
-    const cookie = (res.headers.get("set-cookie") ?? "").split(";")[0]!;
+    const cookie = cookieFrom(res);
     const short = await apiClient(t.app, cookie).put("/api/me/password", {
       newPassword: "short",
     });
@@ -246,7 +246,7 @@ describe("the first-login link", () => {
       `/api/auth/claim?token=${encodeURIComponent(first.deps.authService.mintFirstLogin()!)}`,
       { redirect: "manual" },
     );
-    const cookie = (claim.headers.get("set-cookie") ?? "").split(";")[0]!;
+    const cookie = cookieFrom(claim);
     await apiClient(first.app, cookie).put("/api/me/password", {
       newPassword: "claimed-password-1",
     });

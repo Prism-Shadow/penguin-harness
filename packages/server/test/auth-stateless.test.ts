@@ -13,7 +13,7 @@ import { describe, expect, it } from "vitest";
 import { SESSION_COOKIE } from "../src/auth/middleware.js";
 import { newClaims, signToken, verifyToken } from "../src/auth/token-codec.js";
 import { readOwnerToken } from "../src/auth/owner-token.js";
-import { apiClient, createTestApp, loginAdmin, makeTempRoot } from "./helpers.js";
+import { apiClient, cookieFrom, createTestApp, loginAdmin, makeTempRoot } from "./helpers.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** The session TTL test apps are built with (helpers.ts) — fixtures derive from it, not from literals. */
@@ -105,7 +105,7 @@ describe("token codec", () => {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ userId: "alice", password: "alice-pass-1" }),
       });
-      const aliceCookie = (login.headers.get("set-cookie") ?? "").split(";")[0]!;
+      const aliceCookie = cookieFrom(login);
       expect((await apiClient(t.app, aliceCookie).get("/api/me")).status).toBe(200);
 
       // There is no row to delete for a signed session; the not-before mark is what makes

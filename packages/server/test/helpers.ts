@@ -156,6 +156,11 @@ export function loginAdmin(app: Hono<AppEnv>): Promise<{ cookie: string; user: U
   return loginUser(app, ADMIN_USER_ID, TEST_ADMIN_PASSWORD);
 }
 
+/** The `name=value` cookie pair from a response's Set-Cookie (the shape apiClient wants). */
+export function cookieFrom(res: Response): string {
+  return (res.headers.get("set-cookie") ?? "").split(";")[0]!;
+}
+
 /** Admin creates the account and logs in as that user (the only way to create test users while registration is closed). */
 export async function provisionUser(
   app: Hono<AppEnv>,
