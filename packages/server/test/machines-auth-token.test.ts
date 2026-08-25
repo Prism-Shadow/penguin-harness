@@ -29,6 +29,11 @@ describe("parseToken", () => {
 
   it("asks for a bounded lifetime, and refuses a nonsensical one", () => {
     expect(authTokenCommand(60)).toContain("--ttl-seconds 60");
+    // The command the CLI actually has, and `--mark` — without it the token comes back bare
+    // and parseToken has nothing to anchor on.
+    expect(authTokenCommand(60)).toContain("auth token");
+    expect(authTokenCommand(60)).toContain("--mark");
+    expect(authTokenCommand(60)).not.toContain("server auth-token");
     expect(() => authTokenCommand(0)).toThrow();
   });
 });
