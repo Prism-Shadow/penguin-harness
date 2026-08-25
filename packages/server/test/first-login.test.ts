@@ -23,7 +23,7 @@ describe("the first-login link", () => {
 
   beforeEach(async () => {
     t = await createTestApp();
-    link = t.deps.authService.firstLoginToken;
+    link = t.deps.authService.mintFirstLogin()!;
   });
   afterEach(async () => {
     await t.cleanup();
@@ -84,18 +84,17 @@ describe("the first-login link", () => {
   });
 
   /**
-   * The link is minted at every boot, including boots of a server claimed long ago — so the
-   * refusal has to come from the endpoint, not from the caller that decides whether to print.
-   * Revocation cannot supply it: a restart's setup session is live by construction, nothing
-   * having revoked a token that did not exist yet.
+   * A claimed server that restarts must not end up holding a usable setup session. Revocation
+   * cannot be what prevents that — a restart's token is new, and nothing revoked a token that
+   * did not exist yet — so the server declines to mint one at all.
    */
-  it("refuses a restart's fresh link once the server has been claimed", async () => {
+  it("mints nothing once the server has been claimed, so a restart has no link", async () => {
     const root = await makeTempRoot();
     const dbPath = path.join(root, "web.db");
 
     const first = await createTestApp({ config: { dbPath, seedAdminPassword: null } });
     const claim = await first.app.request(
-      `/api/auth/claim?token=${encodeURIComponent(first.deps.authService.firstLoginToken)}`,
+      `/api/auth/claim?token=${encodeURIComponent(first.deps.authService.mintFirstLogin()!)}`,
       { redirect: "manual" },
     );
     const cookie = (claim.headers.get("set-cookie") ?? "").split(";")[0]!;
@@ -108,9 +107,9 @@ describe("the first-login link", () => {
     const second = await createTestApp({ config: { dbPath, seedAdminPassword: null } });
     try {
       expect(second.deps.authService.adminPasswordIsInitial()).toBe(false);
-      const reborn = second.deps.authService.firstLoginToken;
-      expect(second.deps.authService.redeemFirstLogin(reborn)).toBeNull();
-      const res = await second.app.request(`/api/auth/claim?token=${encodeURIComponent(reborn)}`, {
+      expect(second.deps.authService.mintFirstLogin()).toBeNull();
+      // Nothing to match, so the endpoint refuses whatever is presented.
+      const res = await second.app.request("/api/auth/claim?token=anything", {
         redirect: "manual",
       });
       expect(res.status).toBe(401);
@@ -121,14 +120,14 @@ describe("the first-login link", () => {
 
   /**
    * A minted token that is never delivered is a feature nobody can reach, and every test
-   * above reads the token off the service — so none of them would notice. The entrypoint
-   * runs main() on import and exports nothing, which leaves reading it the way to check
-   * that what it mints actually reaches a console.
+   * above mints its own — so none of them would notice. The entrypoint runs main() on import
+   * and exports nothing, which leaves reading it the way to check that what it mints actually
+   * reaches a console.
    */
   it("is printed by the entrypoint, not merely minted", () => {
     const entrypoint = fs.readFileSync(new URL("../src/index.ts", import.meta.url), "utf8");
     expect(entrypoint).toMatch(/renderFirstLoginNotice\(/);
-    expect(entrypoint).toMatch(/firstLoginToken/);
+    expect(entrypoint).toMatch(/mintFirstLogin\(/);
     expect(entrypoint).toMatch(/\/api\/auth\/claim\?token=/);
   });
 

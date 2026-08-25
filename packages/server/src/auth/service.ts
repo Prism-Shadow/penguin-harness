@@ -156,16 +156,16 @@ export class AuthService {
    */
   private readonly revokedJtis: Set<string>;
   /**
-   * The session in the link a fresh server prints — an ordinary `setup` session, minted here
-   * and never written down. A session rather than a separate secret so it dies the ordinary
-   * way: setting a password revokes it, through the same denylist every logout uses, which
-   * also ends the claimer's own visit since this value IS the cookie they were handed. A link
-   * from an earlier run is dead already: the signing key does not outlive its process.
+   * The session in the link a fresh server prints — an ordinary `setup` session, never written
+   * down. A session rather than a separate secret so it dies the ordinary way: setting a
+   * password revokes it, through the same denylist every logout uses, which also ends the
+   * claimer's own visit since this value IS the cookie they were handed.
    *
-   * Minted on every boot, including boots of a server that was claimed long ago — what makes
-   * those harmless is redeemFirstLogin refusing them, not the fact that nobody printed them.
+   * Null until mintFirstLogin() produces one, which is what keeps a claimed server safe: there
+   * is no live setup session to refuse, so refusing costs no question. Revocation could not
+   * have supplied that — it acts on a token that exists, and a restart's token is new.
    */
-  private readonly firstLogin: string;
+  private firstLogin: string | null = null;
 
   /**
    * How long a session this service issues is good for. Exposed because the cookie that
@@ -185,14 +185,19 @@ export class AuthService {
     // check refuses those tokens on its own — so they are dropped before the set is seeded.
     this.deps.authRevocations.deleteExpired(this.now().toISOString());
     this.revokedJtis = new Set(this.deps.authRevocations.listJtis());
-    // Minted eagerly, printed only when the server turns out to be unclaimed (index.ts). It
-    // signs cleanly even before the admin row exists — verification is what looks the account
-    // up, so a token for an unseeded root simply never authenticates.
-    this.firstLogin = this.issueSession(ADMIN_USER_ID, "setup");
   }
 
-  /** The session the first-login link carries; the caller prints it, nothing stores it. */
-  get firstLoginToken(): string {
+  /**
+   * The session a first-login link carries, minted on demand — the caller prints it, nothing
+   * stores it. Null once the server has been claimed, so the only setup session that ever
+   * exists is one that was printed.
+   *
+   * Not mintable from the constructor: seedAdmin() runs after it, so the admin row does not
+   * exist yet and "is this server claimed" has no answer at that point.
+   */
+  mintFirstLogin(): string | null {
+    if (!this.adminPasswordIsInitial()) return null;
+    this.firstLogin ??= this.issueSession(ADMIN_USER_ID, "setup");
     return this.firstLogin;
   }
 
@@ -253,14 +258,9 @@ export class AuthService {
     // cookie out of ANY valid token would let one person hand another a link that signs them
     // into the sender's account — work done there, including pasted credentials, would land
     // in it. Only the link this server printed is accepted.
-    if (given === "" || !ownerTokenMatches(given, this.firstLogin)) return null;
-    // Unclaimed is the actual condition, and it is asked directly. Revocation alone would not
-    // answer it: a claimed server that RESTARTS mints a fresh setup session, which is live by
-    // construction because nothing has revoked a token that did not exist yet. That the value
-    // goes unprinted then is a decision in index.ts, and an entry point defended only by its
-    // caller's discretion is defended by nothing it can see.
-    if (!this.adminPasswordIsInitial()) return null;
-    return this.authenticateWithMeta(this.firstLogin) === null ? null : this.firstLogin;
+    const expected = this.firstLogin;
+    if (expected === null || given === "" || !ownerTokenMatches(given, expected)) return null;
+    return this.authenticateWithMeta(expected) === null ? null : expected;
   }
 
   /** Whether the built-in admin still runs on its initial password (drives the startup reminder notice). */
@@ -344,7 +344,7 @@ export class AuthService {
   async setInitialPassword(userId: string, newPassword: string): Promise<void> {
     // The link exists to let somebody in when no password does; once one is set it has no
     // reason to work, and a console scrollback must stop being a way in.
-    this.logout(this.firstLogin);
+    if (this.firstLogin !== null) this.logout(this.firstLogin);
     if (newPassword.length < MIN_PASSWORD_LENGTH) {
       throw new HttpError(400, "invalid_password", "Password must be at least 8 characters.");
     }

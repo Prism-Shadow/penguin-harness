@@ -247,10 +247,15 @@ class PenguinServer {
     // past — and here rather than in seedAdmin() because the URL needs the port the OS
     // actually handed out, which PORT=0 only settles at this point.
     if (this.pendingFirstLoginNotice) {
-      const token = encodeURIComponent(this.deps.authService.firstLoginToken);
-      console.log(
-        renderFirstLoginNotice(`http://${this.appHost()}:${port}/api/auth/claim?token=${token}`),
-      );
+      // Minting here rather than at seed time is what keeps "exists" and "was printed" the
+      // same thing for a setup session: the modes that decline to print never ask for one.
+      const link = this.deps.authService.mintFirstLogin();
+      if (link !== null) {
+        const token = encodeURIComponent(link);
+        console.log(
+          renderFirstLoginNotice(`http://${this.appHost()}:${port}/api/auth/claim?token=${token}`),
+        );
+      }
     }
   }
 
