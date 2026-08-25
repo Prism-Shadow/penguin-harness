@@ -48,7 +48,7 @@ PenguinHarness 是一个 pnpm monorepo，核心是 `@prismshadow/penguin-core` �
 | --- | --- | --- |
 | OmniMessage 协议、消息解析与分片聚合 | SDK | `core/src/omnimessage/`，见 [OmniMessage 协议](/omni-message) |
 | ReAct 循环、补发、重连、压缩 | SDK | `core/src/engine/context-engine.ts`，见 [Agent 运行循环](/agent-loop) |
-| 审批机制(每个 tool_call 一次决策) | SDK | `ApproveFn`(`core/src/interfaces.ts`)；具体模式由 CLI/Server 注入 |
+| 审批机制(每个 tool_call 一次决策) | SDK | `ApproveFn`(`core/src/interfaces/shared.ts`)；具体模式由 CLI/Server 注入 |
 | 工具执行与统一收尾 | SDK | `core/src/environment/`，见[工具与审批](/tools) |
 | 模型接入(Provider 协议适配) | SDK → AgentHub | `core/src/llm/` + `@prismshadow/agenthub`，见[模型与 Provider](/models) |
 | Trace 写入与 Session 恢复逻辑 | SDK | `core/src/trace/`(记录本体在文件层) |
@@ -132,4 +132,4 @@ Server 额外维护一个 SQLite 索引库(用户、授权、用量统计)，但
 - **错误收敛为消息**:LLM 与 Environment 从不向引擎抛异常；结果携带六值 `stop_reason`(`completed | failed | aborted | timeout | malformed | auth`)，除 `auth` 外的所有 LLM 侧状态都会触发引擎内重连（`failed / timeout / malformed`，至多 5 次、指数退避设上限）。`auth` 是唯一的终态类别：凭据被拒绝，重试不可能让它变对。重试 `failed` 是策略选择——该状态本身仍如实上报为 `failed`。
 - **薄模型层**:core 只定义 `LLMInterface`,Provider 适配全部下沉到 AgentHub(`@prismshadow/agenthub`)，因此支持任意 OpenAI 兼容端点，见[模型与 Provider](/models)。
 
-源码入口：`packages/core/src/engine/context-engine.ts`、`packages/core/src/interfaces.ts`。
+源码入口：`packages/core/src/engine/context-engine.ts`、`packages/core/src/interfaces/`。

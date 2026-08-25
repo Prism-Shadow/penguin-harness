@@ -3,7 +3,7 @@ title: Core Interfaces
 description: A top-down tour of the contracts — full LLMInterface and EnvironmentInterface signatures, inner types field by field, and every swappable seam.
 ---
 
-The context_engine depends on three interfaces: Human, LLM and Environment. All protocol conversion happens inside the implementations — the engine sees only [OmniMessage](/omni-message). This page goes top-down: the two big interface signatures and the Human boundary first, then each interface's inner types layer by layer. All types are exported by `@prismshadow/penguin-core`; source: `packages/core/src/interfaces.ts`.
+The context_engine depends on three interfaces: Human, LLM and Environment. All protocol conversion happens inside the implementations — the engine sees only [OmniMessage](/omni-message). This page goes top-down: the two big interface signatures and the Human boundary first, then each interface's inner types layer by layer. All types are exported by `@prismshadow/penguin-core`; source: `packages/core/src/interfaces/` — `llm.ts` (what the model side needs), `environment.ts` (what the Environment side needs), `shared.ts` (the vocabulary both genuinely need), and `index.ts`, the barrel behind the `@prismshadow/penguin-core/interfaces` subpath.
 
 ## Overview
 
@@ -27,6 +27,22 @@ The context_engine depends on three interfaces: Human, LLM and Environment. All 
 | Environment | `EnvironmentInterface.executeTool` et al. | `Environment` + the builtin tool registry |
 
 Two iron rules run through every interface: **never throw into the engine** (errors converge into messages/returns carrying a `stop_reason`), and **the streaming discipline** (`start → delta → stop`, complete message immediately after).
+
+### Message plane and control plane
+
+The **content** crossing all three boundaries is OmniMessage and nothing else — `session.run`'s input and streamed output, `streamGenerate`'s input array and yielded stream, `executeTool`'s approved call and its output stream, a subagent round's input and its forwarded messages, and every Trace write.
+
+What travels *alongside* it is the **control plane**, deliberately not message-shaped, because none of it is conversation content:
+
+| Control-plane item | Where | Why it is not a message |
+| --- | --- | --- |
+| `signal: AbortSignal` | `RunOptions`, `GenerativeModelParameters`, `ToolExecutionRequest` | An interruption that had to wait its turn in a message queue would not be an interruption. |
+| `thinkingLevel` | `RunOptions` → `GenerativeModelParameters` | A per-request parameter, like a timeout — it says how to run the request, not what to say. |
+| `approve` and its `ApprovalDecision` | `RunOptions`, `ToolExecutionRequest` | The callback takes an OmniMessage tool call; the answer is a three-value enum the engine turns into an `approval_decision` message the moment it has it. |
+| `LLMOutcome` | `streamGenerate`'s generator return value | The request's terminal state, which the engine's retry and reconnect policy branches on. A generator's return value is statically guaranteed to exist; "the last message yielded must be a `request_end`" would only ever be a runtime convention. The engine writes that `request_end` from it. |
+
+Everything else that is not OmniMessage is Environment's management plane, described below.
+
 
 ## LLMInterface
 
@@ -113,6 +129,11 @@ interface EnvironmentInterface {
   dispose?(): void;                                        // release runtime resources; idempotent
 }
 ```
+
+This interface carries two planes, and only the first one belongs to the agent loop:
+
+- the **message plane** — `executeTool`, the one method `context_engine` ever calls here: an OmniMessage tool call in, a stream of OmniMessage out;
+- the **management plane** — `listTools` and `toolPermission`, plus the optional background-command and subagent members (the listings, `killBackgroundCommand`, `sendToBackgroundSubagent`, `abortBackgroundSubagentRun`, the listener attachments and `dispose`). None of these pass through the engine: they serve Session assembly and a host's own UI — the Web App's process and subagents panels, an approval mode's permission lookup — and are ordinary method calls returning ordinary data. That is why they are not message-shaped, and why widening them would not make the engine's boundary any purer.
 
 `executeTool` yields `partial_tool_call_output` fragments and ends with exactly one complete `tool_call_output`; `origin`-tagged nested messages (e.g. forwarded by `run_subagent`) pass through unchanged. The built-in Environment can keep truncated text in the Session scratchpad without exposing storage lifecycle hooks through this public interface. Its model-visible recovery path is a plain absolute path; on Windows it is written with forward slashes, which Node's fs APIs and the package's (Git) Bash tool shell both accept, so the same spelling works as a `read_file` argument and inside shell commands. Rendering is explicitly not this interface's concern — streaming rendering belongs to the CLI / Web front ends.
 
@@ -245,7 +266,7 @@ interface SubagentRunner {
 interface SubagentHandle {
   sessionId: string;      // the child Session id: the origin hop; subagent_id derives from its tail
   run(input: {
-    prompt: string;
+    messages: OmniMessage[];  // the round's input, the shape Session.run takes a Prompt in
     signal?: AbortSignal;
     approve?: ApproveFn;  // the parent's approval callback — forwarding is inheritance
   }): AsyncGenerator<OmniMessage>;
@@ -254,6 +275,8 @@ interface SubagentHandle {
 ```
 
 Spawning and running are separate, so the same child Session can accept a follow-up Prompt after a turn ends (a long-running Subagent, driven via `input_subagent`). Child Sessions run in the same Workspace with their own Trace; nesting depth is currently capped at 1.
+
+A round's input is an OmniMessage list — the same shape `steer` takes, and the same shape `EnvironmentInterface.sendToBackgroundSubagent` takes from a host — so both ways into a child session speak one vocabulary. The caller owns each message's `sender`: the model's own dispatch (`run_subagent`, `input_subagent`) stamps `parent_agent`, while a human's message from a host panel carries none, and the child's Trace records who actually spoke.
 
 ## VisionDescriberService
 
