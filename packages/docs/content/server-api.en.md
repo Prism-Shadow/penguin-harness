@@ -35,7 +35,7 @@ packages/server/src
 
 - Cookie session: `penguin_session` (HttpOnly, SameSite=Lax), valid for 30 days with sliding renewal;
 - Passwords are stored as scrypt hashes. A session token is signed rather than stored: the server verifies it against a key held only in process memory, so no session secret exists at rest and a restart ends every session;
-- No open registration: the built-in admin `admin` is seeded at startup with a random password that is hashed and discarded unseen. Until a password is actually set, every start prints a one-time first-login link to claim the account (`PENGUIN_SEED_ADMIN_PASSWORD` pins a known password instead, for automation). All other accounts are created by an admin;
+- No open registration: the built-in admin `admin` is seeded at startup with a random password that is hashed and discarded unseen. Until a password is actually set, every start prints a first-login link that claims the account (`PENGUIN_SEED_ADMIN_PASSWORD` pins a known password instead, for automation). All other accounts are created by an admin;
 - Same-origin only — no CORS middleware is enabled.
 
 ```bash
@@ -54,7 +54,7 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 | POST | /api/auth/login | Log in: `{userId, password}` → `{user}` |
 | POST | /api/auth/owner | Mint a session with `<root>/owner-token`: `{ownerToken, userId?, ttlSeconds?}` → `{token, expiresAt}` |
 | POST | /api/auth/logout | Log out, returns 204 |
-| GET | /api/auth/claim?token=… | Redeem a one-time sign-in link (first-login or desktop): sets the cookie, redirects to `/` |
+| GET | /api/auth/claim?token=… | Redeem a sign-in link (first-login, or the desktop shell's one-shot token): sets the cookie, redirects to `/` |
 | GET | /api/me | Current user info |
 | PUT | /api/me/password | Change password: `{oldPassword, newPassword}` |
 | GET | /api/me/prefs | Read UI preferences |

@@ -61,14 +61,19 @@ export function authRoutes(deps: AppDeps): Hono<AppEnv> {
   });
 
   /**
-   * Claims a session from a one-time link — the only way to sign a window in when it has
-   * none, since the session cookie is HttpOnly and nothing but the server can set one.
+   * Claims a session from a sign-in link — the only way to sign a window in when it has none,
+   * since the session cookie is HttpOnly and nothing but the server can set one.
    *
-   * Two proofs arrive here, each asserting a different fact. The desktop shell's one-shot
-   * token says this window belongs to the shell that owns the server process; the first-login
-   * link says someone read the console of a server that has never had a password. Both are
-   * consumed the same way and answer failure with the same 401, so a caller learns nothing
-   * about which of the two it got wrong — nor whether the server offers that kind at all.
+   * Two proofs arrive here, asserting different facts and expiring differently. The desktop
+   * shell's token says this window belongs to the shell that owns the server process, and is
+   * spent on first use. The first-login link says someone read the console of a server that
+   * has never had a password, and keeps working until one exists: a link that a mail client
+   * or a browser may prefetch cannot afford to be one-shot, and the window it stays open is
+   * exactly the window in which the account protects nothing yet. Redeeming it twice returns
+   * the same session, not two.
+   *
+   * Both answer failure with the same 401, so a caller learns nothing about which of the two
+   * it got wrong — nor whether the server offers that kind at all.
    */
   app.get("/claim", (c) => {
     const token = c.req.query("token") ?? "";

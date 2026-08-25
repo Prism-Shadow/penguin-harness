@@ -59,10 +59,12 @@ that would sign the token is not anywhere to be found, so the answer is to start
 
 A fresh server's seed password is 24 base64url characters — 144 bits — generated, hashed and
 discarded unseen, so the account is unguessable at the login endpoint from the moment it exists
-even though nobody can read it. Every start prints a one-time sign-in link until a password is
-set. The link carries an ordinary `setup` session —
-one that may set a password without an old one, and opens no desktop-only route — and is
-redeemed at `GET /api/auth/claim`, which also serves the desktop shell's one-shot token.
+even though nobody can read it. Every start prints a sign-in link until a password is set.
+The link carries an ordinary `setup` session — one that may set a password without an old one,
+and opens no desktop-only route — and is redeemed at `GET /api/auth/claim`, which also serves
+the desktop shell's one-shot token. It is deliberately not itself one-shot: a link a mail
+client or a browser may prefetch would otherwise be spent before its reader opened it, and it
+stops working the moment a password exists. A claimed server mints no such session at all.
 `penguin server reset-admin-password` returns the admin account to that unclaimed state and
 produces no plaintext.
 

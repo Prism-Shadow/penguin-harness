@@ -84,6 +84,23 @@ describe("the first-login link", () => {
   });
 
   /**
+   * Not single-use, deliberately: a mail client or a browser that prefetches the link would
+   * spend a one-shot token before its reader ever clicked, and the window it stays open is
+   * exactly the window in which the account protects nothing yet. Opening it twice yields the
+   * same session rather than two, since the link IS the session.
+   */
+  it("can be opened more than once, and both pages land in one session", async () => {
+    const a = await redeem(link);
+    const b = await redeem(link);
+    expect([a.status, b.status]).toEqual([302, 302]);
+    const cookieOf = (r: Response) => (r.headers.get("set-cookie") ?? "").split(";")[0];
+    expect(cookieOf(a)).toBe(cookieOf(b));
+    expect(cookieOf(a)).not.toBe("");
+    // Still the same link afterwards: redemption spends nothing.
+    expect(t.deps.authService.mintFirstLogin()).toBe(link);
+  });
+
+  /**
    * A claimed server that restarts must not end up holding a usable setup session. Revocation
    * cannot be what prevents that — a restart's token is new, and nothing revoked a token that
    * did not exist yet — so the server declines to mint one at all.
