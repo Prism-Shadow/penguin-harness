@@ -68,6 +68,21 @@ describe("local API token", () => {
   });
 
   it("Bearer works on writes (the JSON-only CSRF guard still applies) and on SSE endpoints", async () => {
+    // Pin a model whose client constructs without a credential (the anthropic protocol);
+    // the seeded preset default may need an env key this machine does not have. The PUT
+    // itself is a Bearer-authenticated write too.
+    const models = await bearer(
+      token,
+      {
+        method: "PUT",
+        body: JSON.stringify({
+          defaultModel: { provider: "anthropic", modelId: "claude-sonnet-4-6" },
+          models: [{ provider: "anthropic", modelId: "claude-sonnet-4-6", contextWindow: 128000 }],
+        }),
+      },
+      "/api/projects/default_project/models",
+    );
+    expect(models.status).toBe(200);
     // Write path: create a Session in default_project as the admin, Bearer-only.
     const create = await bearer(
       token,
