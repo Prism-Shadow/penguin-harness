@@ -158,8 +158,12 @@ export class AuthService {
   /**
    * The session in the link a fresh server prints — an ordinary `setup` session, minted here
    * and never written down. A session rather than a separate secret so it dies the ordinary
-   * way: setting a password revokes it, through the same denylist every logout uses. A link
-   * from an earlier run is dead already, since the signing key does not outlive its process.
+   * way: setting a password revokes it, through the same denylist every logout uses, which
+   * also ends the claimer's own visit since this value IS the cookie they were handed. A link
+   * from an earlier run is dead already: the signing key does not outlive its process.
+   *
+   * Minted on every boot, including boots of a server that was claimed long ago — what makes
+   * those harmless is redeemFirstLogin refusing them, not the fact that nobody printed them.
    */
   private readonly firstLogin: string;
 
@@ -250,7 +254,12 @@ export class AuthService {
     // into the sender's account — work done there, including pasted credentials, would land
     // in it. Only the link this server printed is accepted.
     if (given === "" || !ownerTokenMatches(given, this.firstLogin)) return null;
-    // Live means unclaimed: setting a password revokes it, so verification answers both.
+    // Unclaimed is the actual condition, and it is asked directly. Revocation alone would not
+    // answer it: a claimed server that RESTARTS mints a fresh setup session, which is live by
+    // construction because nothing has revoked a token that did not exist yet. That the value
+    // goes unprinted then is a decision in index.ts, and an entry point defended only by its
+    // caller's discretion is defended by nothing it can see.
+    if (!this.adminPasswordIsInitial()) return null;
     return this.authenticateWithMeta(this.firstLogin) === null ? null : this.firstLogin;
   }
 

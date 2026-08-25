@@ -9,6 +9,7 @@
  * working the moment a password exists, since a console scrollback must not stay a way in.
  */
 import fs from "node:fs";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { clearInitialAdminPassword, initialAdminPasswordPath } from "../src/initial-password.js";
 import { SESSION_COOKIE } from "../src/auth/middleware.js";
@@ -80,6 +81,42 @@ describe("the first-login link", () => {
     const stale = await redeem(link);
     expect(stale.status).toBe(401);
     expect(await stale.text()).toBe(wrongBody);
+  });
+
+  /**
+   * The link is minted at every boot, including boots of a server claimed long ago — so the
+   * refusal has to come from the endpoint, not from the caller that decides whether to print.
+   * Revocation cannot supply it: a restart's setup session is live by construction, nothing
+   * having revoked a token that did not exist yet.
+   */
+  it("refuses a restart's fresh link once the server has been claimed", async () => {
+    const root = await makeTempRoot();
+    const dbPath = path.join(root, "web.db");
+
+    const first = await createTestApp({ config: { dbPath, seedAdminPassword: null } });
+    const claim = await first.app.request(
+      `/api/auth/claim?token=${encodeURIComponent(first.deps.authService.firstLoginToken)}`,
+      { redirect: "manual" },
+    );
+    const cookie = (claim.headers.get("set-cookie") ?? "").split(";")[0]!;
+    await apiClient(first.app, cookie).put("/api/me/password", {
+      newPassword: "claimed-password-1",
+    });
+    await first.cleanup();
+
+    // Same database, new process: a new signing key, and a new setup session with it.
+    const second = await createTestApp({ config: { dbPath, seedAdminPassword: null } });
+    try {
+      expect(second.deps.authService.adminPasswordIsInitial()).toBe(false);
+      const reborn = second.deps.authService.firstLoginToken;
+      expect(second.deps.authService.redeemFirstLogin(reborn)).toBeNull();
+      const res = await second.app.request(`/api/auth/claim?token=${encodeURIComponent(reborn)}`, {
+        redirect: "manual",
+      });
+      expect(res.status).toBe(401);
+    } finally {
+      await second.cleanup();
+    }
   });
 
   /**
