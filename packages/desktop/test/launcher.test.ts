@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  adminSymlinkAppleScript,
   appImageBootstrapJs,
   appImageWrapperScript,
+  appleScriptString,
   CLI_ENTRY_RELPATH,
   cliInstallKind,
   LINUX_EXECUTABLE,
   MAC_EXECUTABLE,
   mergeWindowsUserPath,
   posixLauncherScript,
+  shellQuote,
   WIN_EXECUTABLE,
   windowsLauncherScript,
 } from "../src/launcher.js";
@@ -107,6 +110,59 @@ describe("appImageBootstrapJs", () => {
   it("is valid JavaScript", () => {
     // eslint-disable-next-line @typescript-eslint/no-implied-eval
     expect(() => new Function(js)).not.toThrow();
+  });
+});
+
+describe("shellQuote", () => {
+  it("wraps a plain value in single quotes", () => {
+    expect(shellQuote("/Applications/PenguinHarness.app")).toBe(
+      "'/Applications/PenguinHarness.app'",
+    );
+  });
+
+  it("splices embedded single quotes so the word never closes early", () => {
+    expect(shellQuote("/Users/anne/Anne's Apps")).toBe(`'/Users/anne/Anne'\\''s Apps'`);
+  });
+
+  it("leaves shell metacharacters inert inside the quotes", () => {
+    expect(shellQuote('a b;$(id)`x`&|>"')).toBe(`'a b;$(id)\`x\`&|>"'`);
+  });
+});
+
+describe("appleScriptString", () => {
+  it("escapes backslashes and double quotes", () => {
+    expect(appleScriptString(`say "hi" \\ bye`)).toBe(`"say \\"hi\\" \\\\ bye"`);
+  });
+});
+
+describe("adminSymlinkAppleScript", () => {
+  const target = "/Applications/PenguinHarness.app/Contents/Resources/app/bin/penguin";
+  const link = "/usr/local/bin/penguin";
+
+  /** The shell command osascript would run: the AppleScript literal, unescaped. */
+  function shellCommandOf(script: string): string {
+    const m = /^do shell script "(.*)" with administrator privileges$/s.exec(script);
+    expect(m).not.toBeNull();
+    return m![1]!.replace(/\\(.)/g, "$1");
+  }
+
+  it("creates the link directory and links the bundled launcher", () => {
+    expect(adminSymlinkAppleScript(target, link)).toBe(
+      `do shell script "mkdir -p '/usr/local/bin' && ln -sf '${target}' '${link}'"` +
+        " with administrator privileges",
+    );
+  });
+
+  it("keeps an apostrophe in the bundle path inside its shell word", () => {
+    // What a user gets by keeping the app in a folder named with an apostrophe — and what
+    // an attacker gets to write if the two escapers are not applied, since this command
+    // runs with administrator privileges.
+    const evil = "/Users/anne/Anne's Apps'; touch /tmp/pwned; '/PenguinHarness.app/bin/penguin";
+    const command = shellCommandOf(adminSymlinkAppleScript(evil, link));
+    expect(command).toBe(`mkdir -p '/usr/local/bin' && ln -sf ${shellQuote(evil)} '${link}'`);
+    // The injected segment survives only as literal text inside the quoted word.
+    expect(command).not.toContain("&& touch");
+    expect(command).not.toContain("; touch /tmp/pwned; '/PenguinHarness");
   });
 });
 
