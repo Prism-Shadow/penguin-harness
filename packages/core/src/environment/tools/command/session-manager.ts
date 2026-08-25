@@ -218,9 +218,22 @@ export class CommandSessionManager {
     return this.registry.list().map(({ id, task }) => ({ processId: id, session: task }));
   }
 
-  /** Kills a background process by id (SIGTERM→SIGKILL on the whole group) and drops it from the registry; false when the id is unknown. */
+  /**
+   * Kills a background process by id (SIGTERM→SIGKILL on the whole group) and drops it from
+   * the registry; false when the id is unknown.
+   *
+   * Every stop that comes through here was asked for by someone who reads the outcome
+   * directly — the model via `input_command`'s `kill` (the call's own result says so) or the
+   * user via the Web App's stop button (they watched the row go) — so the pending completion
+   * report is disarmed first. Left armed, the kill's own SIGTERM would come back as a
+   * "Background command failed — terminated by signal SIGTERM" notice, which wakes an idle
+   * Session to react to a crash that never happened and invites it to restart what was just
+   * stopped. Same rule the subagent side already applies to an explicitly aborted round.
+   */
   kill(processId: string): boolean {
-    if (this.registry.get(processId) === undefined) return false;
+    const session = this.registry.get(processId);
+    if (session === undefined) return false;
+    session.clearExitWatchers();
     this.registry.remove(processId);
     return true;
   }

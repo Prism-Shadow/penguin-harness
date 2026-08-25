@@ -292,8 +292,12 @@ export interface BackgroundTaskDone {
   kind: "command" | "subagent";
   /** The registry handle the model already holds: `process_id` or `subagent_id`. */
   id: string;
-  /** Terminal status of the run. */
-  status: "completed" | "failed";
+  /**
+   * Terminal status of the run. `stopped` is a command somebody ended on purpose (a stop
+   * signal from outside, a capacity eviction): settled, but nothing to react to — see the
+   * block's leading sentence, which tells the model so in as many words.
+   */
+  status: "completed" | "failed" | "stopped";
   /** One-line terminal detail (exit code / signal / subagent note); empty when there is none. */
   detail: string;
   /**
@@ -320,7 +324,9 @@ export function buildBackgroundTaskDoneMessage(done: BackgroundTaskDone, body: s
   const block = markerBlock(
     MARKER_TAGS.backgroundTaskDone,
     [
-      "Automatic notification from the harness, not the user: a background task you started has finished.",
+      done.status === "stopped"
+        ? "Automatic notification from the harness, not the user: a background task you started was stopped on purpose — someone ended it, it did not crash. Do not restart it unless you are asked to."
+        : "Automatic notification from the harness, not the user: a background task you started has finished.",
       `kind: ${done.kind}`,
       `id: ${done.id}`,
       `status: ${done.status}`,
@@ -350,7 +356,11 @@ export function parseBackgroundTaskDoneMessage(
   for (const [key, value] of fieldLines(m[1]!, ["kind", "id", "status", "detail", "delivery"])) {
     if (key === "kind" && (value === "command" || value === "subagent")) done.kind = value;
     else if (key === "id") done.id = value;
-    else if (key === "status" && (value === "completed" || value === "failed")) done.status = value;
+    else if (
+      key === "status" &&
+      (value === "completed" || value === "failed" || value === "stopped")
+    )
+      done.status = value;
     else if (key === "detail") done.detail = value;
     else if (key === "delivery" && value === "steering") done.delivery = value;
   }

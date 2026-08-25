@@ -23,7 +23,7 @@ import { partialToolCallOutput } from "../../omnimessage/index.js";
 import type { OmniMessage } from "../../omnimessage/index.js";
 import type { EnvironmentServices, ToolDefinitionConfig } from "../../interfaces.js";
 import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
-import { DEFAULT_EXEC_YIELD_MS, resultForExit } from "./command/index.js";
+import { DEFAULT_EXEC_YIELD_MS, isStopSignal, resultForExit } from "./command/index.js";
 import type { ManagedSession } from "./command/index.js";
 import { clampYield, reportLabel, tailForReport } from "./background/index.js";
 
@@ -143,8 +143,18 @@ export function createExecCommandTool(
  * Arms the completion report of a background-launched command: when the foreground process
  * reaches a terminal state, the report (id, exit facts, tail of the yet-undelivered output)
  * goes to `services.backgroundDone` — the Session turns it into a harness user message.
- * input_command's kill disarms it first (a deliberate kill reports its outcome synchronously), and a
- * disposed Environment drops the event (see Environment.emitBackgroundDone).
+ * A stop asked for through the registry disarms it first (CommandSessionManager.kill — the
+ * requester already has the outcome), and a disposed Environment drops the event (see
+ * Environment.emitBackgroundDone).
+ *
+ * A stop is reported as `stopped`, not `failed`. The stops that still reach here are the
+ * harness's own forced ones (a capacity eviction, an idle reap) and the ones that arrive from
+ * outside as a signal (a Ctrl-C in the terminal sharing the process group, a `pkill`, a
+ * supervisor stopping a dev server) — reported as "failed — terminated by signal SIGTERM"
+ * they read like a crash, and the model's reasonable response to a crashed dev server is to
+ * start it again, undoing the stop somebody just asked for. Outcomes nobody asked for stay
+ * `failed`: a spawn error, a non-zero exit, a hard kill or a fault signal (an OOM kill, a
+ * segfault).
  */
 export function armCommandDoneReport(
   session: ManagedSession,
@@ -155,18 +165,20 @@ export function armCommandDoneReport(
   if (!notify) return;
   session.onceExited(() => {
     const exit = session.exit;
+    const stopped = session.error === null && (session.stopRequested || isStopSignal(exit?.signal));
     const failed =
-      session.error !== null || exit?.signal != null || (exit !== null && exit.code !== 0);
+      !stopped &&
+      (session.error !== null || exit?.signal != null || (exit !== null && exit.code !== 0));
     const detail = session.error
       ? `spawn error: ${session.error.message}`
       : exit?.signal != null
-        ? `terminated by signal ${exit.signal}`
+        ? `${stopped ? "stopped by" : "terminated by signal"} ${exit.signal}`
         : `exit code ${exit?.code ?? "unknown"}`;
     notify({
       kind: "command",
       id: processId,
       label: reportLabel(session.cmd),
-      status: failed ? "failed" : "completed",
+      status: stopped ? "stopped" : failed ? "failed" : "completed",
       detail,
       output: tailForReport(session.drainPending()),
     });
