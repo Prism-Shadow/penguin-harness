@@ -1,21 +1,62 @@
 /**
  * auth_sessions table repo (server-side sessions backing the HttpOnly cookie).
  *
- * Stores only the sha256(token) hex hash; the raw token appears only in the cookie.
+ * Stores only the sha256(token) hex hash; the raw token appears only in the cookie. `issue()`
+ * is the ONE place a session token is minted, so the token shape, the hash and the TTL ceiling
+ * cannot drift between the server's own logins and the CLI's `penguin auth token`.
  */
+import { createHash, randomBytes } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
+
+/** How a session was established, as stored. NULL on rows formed before the column existed. */
+export type SessionViaValue = "password" | "desktop" | "setup" | "cli";
 
 export interface AuthSessionRow {
   tokenHash: string;
   userId: string;
   createdAt: string;
   expiresAt: string;
-  /** How the session was established ("password" | "desktop"); null on rows formed before the column existed (treated as "password"). */
-  via: string | null;
+  via: SessionViaValue | null;
+}
+
+/** sha256 hex of a raw session token — the only form the database ever holds. */
+export function sessionTokenHash(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
 }
 
 export class AuthSessionsRepo {
   constructor(private readonly db: DatabaseSync) {}
+
+  /**
+   * Mints a session: a fresh random token, its row, and the raw token back for the caller to
+   * put in a cookie or print. `ttlMs` is clamped to `maxTtlMs` — a caller-supplied lifetime
+   * (`penguin auth token --ttl-seconds`) must not exceed what an ordinary session gets, or a
+   * leaked token file would outlive every other credential and keep sliding forever.
+   *
+   * Expired rows are swept here as well as on login, so a cron that only ever mints does not
+   * accumulate them.
+   */
+  issue(opts: {
+    userId: string;
+    via: SessionViaValue;
+    now: Date;
+    ttlMs: number;
+    maxTtlMs: number;
+  }): { token: string; expiresAt: string } {
+    const ttlMs = Math.max(1_000, Math.min(opts.ttlMs, opts.maxTtlMs));
+    const token = randomBytes(32).toString("base64url");
+    const createdAt = opts.now.toISOString();
+    const expiresAt = new Date(opts.now.getTime() + ttlMs).toISOString();
+    this.deleteExpired(createdAt);
+    this.insert({
+      tokenHash: sessionTokenHash(token),
+      userId: opts.userId,
+      createdAt,
+      expiresAt,
+      via: opts.via,
+    });
+    return { token, expiresAt };
+  }
 
   insert(row: AuthSessionRow): void {
     this.db
@@ -33,7 +74,7 @@ export class AuthSessionsRepo {
       userId: r.user_id as string,
       createdAt: r.created_at as string,
       expiresAt: r.expires_at as string,
-      via: (r.via as string | null) ?? null,
+      via: (r.via as SessionViaValue | null) ?? null,
     };
   }
 
@@ -56,5 +97,14 @@ export class AuthSessionsRepo {
   /** Clear all sessions for a user (forces re-login after an admin resets the password). */
   deleteByUser(userId: string): void {
     this.db.prepare("DELETE FROM auth_sessions WHERE user_id = ?").run(userId);
+  }
+
+  /**
+   * Clear a user's sessions of one kind. Used to end EVERY first-login session when a password
+   * is set: an earlier boot's link may still be live in someone's scrollback, and a `setup`
+   * session may change the password without knowing the old one.
+   */
+  deleteByUserAndVia(userId: string, via: SessionViaValue): void {
+    this.db.prepare("DELETE FROM auth_sessions WHERE user_id = ? AND via = ?").run(userId, via);
   }
 }

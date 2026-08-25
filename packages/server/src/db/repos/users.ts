@@ -16,7 +16,6 @@ export interface UserRow {
    * "clear this user's sessions" works when a session is a signature instead of a row: an
    * admin password reset stamps it, and every older token dies at its next request.
    */
-  sessionsNotBefore: string | null;
 }
 
 function mapRow(r: Record<string, unknown>): UserRow {
@@ -26,7 +25,6 @@ function mapRow(r: Record<string, unknown>): UserRow {
     isAdmin: (r.is_admin as number) === 1,
     passwordIsInitial: (r.password_is_initial as number) === 1,
     createdAt: r.created_at as string,
-    sessionsNotBefore: (r.sessions_not_before as string | null) ?? null,
   };
 }
 

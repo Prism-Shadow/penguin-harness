@@ -182,7 +182,6 @@ export interface AppDeps {
 }
 
 export interface BuildDepsOverrides {
-  /** Test double: pins the in-memory signing key, so a test can craft tokens of its own. */
   /** Test double: session-manager's underlying loader (avoids the real LLM/SDK path). */
   loader?: SessionLoader;
   /** Test double: Session title generator (avoids real LLM requests). */

@@ -10,10 +10,11 @@
  *   stores only its sha256. A session outlives a restart (it is on disk); 30 days, renewed
  *   in place when used with under 29 days left. Logout deletes the row.
  */
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import type { UserInfo } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import type { UserRow, UsersRepo } from "../db/repos/users.js";
+import { sessionTokenHash } from "../db/repos/auth-sessions.js";
 import type { AuthSessionsRepo } from "../db/repos/auth-sessions.js";
 import { SCRYPT_COST, hashPassword, verifyPassword } from "./password.js";
 
@@ -49,10 +50,6 @@ const SEED_PASSWORD_CHARS = 24;
  */
 export function generateInitialAdminPassword(): string {
   return randomBytes(SEED_PASSWORD_CHARS).toString("base64url").slice(0, SEED_PASSWORD_CHARS);
-}
-
-function sha256Hex(value: string): string {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 /** Constant-time string equality, so redeemFirstLogin cannot be timed into the printed token. */
@@ -171,7 +168,6 @@ export class AuthService {
       isAdmin: true,
       passwordIsInitial: true,
       createdAt: this.now().toISOString(),
-      sessionsNotBefore: null,
     };
     this.deps.users.insert(user);
     try {
@@ -288,14 +284,19 @@ export class AuthService {
       throw new HttpError(400, "invalid_password", "Password must be at least 8 characters.");
     }
     this.deps.users.updatePassword(userId, await hashPassword(newPassword, this.hashCost), false);
-    if (userId === ADMIN_USER_ID && this.firstLogin !== null) {
-      this.deps.authSessions.delete(sha256Hex(this.firstLogin));
+    // EVERY first-login session for this account, not just the link this process printed: an
+    // earlier boot's link can still be live in a terminal scrollback, and a `setup` session is
+    // allowed to change the password without knowing the old one — so one left behind is an
+    // account takeover waiting to happen.
+    if (userId === ADMIN_USER_ID) {
+      this.deps.authSessions.deleteByUserAndVia(userId, "setup");
+      this.firstLogin = null;
     }
   }
 
   /** Ends a session: the row is the session, so logout deletes it. Unknown token is a no-op. */
   logout(token: string): void {
-    this.deps.authSessions.delete(sha256Hex(token));
+    this.deps.authSessions.delete(sessionTokenHash(token));
   }
 
   /**
@@ -307,7 +308,7 @@ export class AuthService {
    * middleware to refresh the cookie's own max-age to match.
    */
   authenticateWithMeta(token: string): { user: UserRow; via: SessionVia; renewed: boolean } | null {
-    const tokenHash = sha256Hex(token);
+    const tokenHash = sessionTokenHash(token);
     const session = this.deps.authSessions.findByTokenHash(tokenHash);
     if (!session) return null;
     const now = this.now();
@@ -333,15 +334,12 @@ export class AuthService {
   }
 
   private issueSession(userId: string, via: SessionVia): string {
-    const token = randomBytes(32).toString("base64url");
-    const now = this.now();
-    this.deps.authSessions.insert({
-      tokenHash: sha256Hex(token),
+    return this.deps.authSessions.issue({
       userId,
-      createdAt: now.toISOString(),
-      expiresAt: new Date(now.getTime() + this.deps.sessionTtlMs).toISOString(),
       via,
-    });
-    return token;
+      now: this.now(),
+      ttlMs: this.deps.sessionTtlMs,
+      maxTtlMs: this.deps.sessionTtlMs,
+    }).token;
   }
 }

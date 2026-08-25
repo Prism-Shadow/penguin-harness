@@ -69,7 +69,6 @@ describe("scheduler", () => {
       isAdmin: false,
       passwordIsInitial: false,
       createdAt: "2026-07-16T00:00:00Z",
-      sessionsNotBefore: null,
     });
     const projects = new ProjectsRepo(db);
     projects.insert({ projectId: P, ownerUserId: "owner_a", createdAt: "2026-07-16T00:00:00Z" });

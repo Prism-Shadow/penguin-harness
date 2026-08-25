@@ -8,7 +8,7 @@
  */
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { mintApiToken } from "../src/auth-token.js";
+import { CLI_TOKEN_MAX_TTL_MS, mintApiToken } from "../src/auth-token.js";
 import { SESSION_COOKIE } from "../src/auth/middleware.js";
 import { apiClient, createTestApp, makeTempRoot } from "./helpers.js";
 
@@ -64,6 +64,27 @@ describe("minting an API session", () => {
       }
     },
   );
+
+  /**
+   * A caller-supplied lifetime must not exceed an ordinary session's. `--ttl-seconds` only
+   * rejects values <= 0, so without the clamp `penguin auth token --ttl-seconds 315360000`
+   * writes a ten-year row — and because its span passes the renewal window it would slide
+   * forever, turning a leaked cli-session.json into a permanent credential.
+   */
+  it("clamps a caller's TTL to the session ceiling", async () => {
+    const root = await makeTempRoot();
+    const dbPath = path.join(root, "web.db");
+    const t = await createTestApp({ config: { root, dbPath } });
+    try {
+      const now = new Date();
+      const r = mintApiToken(root, { dbPath, ttlMs: 10 * 365 * 24 * 60 * 60_000, now });
+      expect(r.outcome).toBe("minted");
+      if (r.outcome !== "minted") return;
+      expect(Date.parse(r.expiresAt)).toBe(now.getTime() + CLI_TOKEN_MAX_TTL_MS);
+    } finally {
+      await t.cleanup();
+    }
+  });
 
   it("refuses an account that does not exist", async () => {
     const root = await makeTempRoot();

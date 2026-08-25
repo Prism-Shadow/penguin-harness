@@ -66,17 +66,6 @@ export function clearSession(root: string): boolean {
   }
 }
 
-/** The server a login defaults to: the one running on this data root, from its own lock. */
-export function localServerUrl(root: string): string | null {
-  try {
-    const lock: unknown = JSON.parse(fs.readFileSync(path.join(root, "server.lock"), "utf8"));
-    const port = (lock as { port?: unknown }).port;
-    return typeof port === "number" ? `http://localhost:${port}` : null;
-  } catch {
-    return null;
-  }
-}
-
 export interface HttpAnswer {
   status: number;
   headers: Record<string, string | string[] | undefined>;

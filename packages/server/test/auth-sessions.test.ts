@@ -5,6 +5,7 @@
  * user's rows, and sliding renewal tops the expiry up IN PLACE so the cookie value never
  * changes and a short minted token never stretches into a long one.
  */
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { SESSION_COOKIE } from "../src/auth/middleware.js";
 import { apiClient, cookieFrom, createTestApp, loginAdmin, makeTempRoot } from "./helpers.js";
@@ -14,6 +15,35 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const TEST_SESSION_TTL_MS = 30 * DAY_MS;
 
 describe("auth sessions", () => {
+  /**
+   * A v0.2.0 web.db has auth_sessions WITHOUT the `via` column, and CREATE TABLE IF NOT EXISTS
+   * never adds one — so without the ensureColumn migration every login, first-login mint and
+   * `penguin auth token` on an upgraded database fails "no column named via".
+   */
+  it("upgrades a v0.2.0 database that has auth_sessions without `via`", async () => {
+    const root = await makeTempRoot();
+    const p = path.join(root, "web.db");
+    const sqlite = process.getBuiltinModule("node:sqlite");
+    const legacy = new sqlite.DatabaseSync(p);
+    legacy.exec(
+      "CREATE TABLE auth_sessions (token_hash TEXT PRIMARY KEY, user_id TEXT, created_at TEXT, expires_at TEXT)",
+    );
+    legacy.close();
+
+    const t = await createTestApp({ config: { root, dbPath: p } });
+    try {
+      const cols = (
+        t.deps.db.prepare("PRAGMA table_info(auth_sessions)").all() as { name: string }[]
+      ).map((c) => c.name);
+      expect(cols).toContain("via");
+      // And the whole login path works on it.
+      const { cookie } = await loginAdmin(t.app);
+      expect((await apiClient(t.app, cookie).get("/api/me")).status).toBe(200);
+    } finally {
+      await t.cleanup();
+    }
+  });
+
   it("survives a restart, because the session is a row on disk", async () => {
     const root = await makeTempRoot();
     const config = { root, dbPath: `${root}/web.db` };

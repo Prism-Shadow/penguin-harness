@@ -123,6 +123,37 @@ describe("the first-login link", () => {
   });
 
   /**
+   * Setting a password must end EVERY first-login session for the account, not just the link
+   * the current process printed. An earlier boot's link stays live in a terminal scrollback,
+   * and a `setup` session may change the password without knowing the old one — so one left
+   * behind is an account takeover, not merely an extra session.
+   */
+  it("kills a setup session left over from an earlier boot", async () => {
+    const root = await makeTempRoot();
+    const config = { root, dbPath: path.join(root, "web.db"), seedAdminPassword: null };
+    const boot1 = await createTestApp({ config });
+    const linkA = boot1.deps.authService.mintFirstLogin()!;
+    await boot1.cleanup();
+
+    // Still unclaimed, so this boot prints its OWN link; both rows are live setup sessions.
+    const boot2 = await createTestApp({ config });
+    try {
+      const linkB = boot2.deps.authService.mintFirstLogin()!;
+      expect(linkB).not.toBe(linkA);
+      const set = await apiClient(boot2.app, `${SESSION_COOKIE}=${linkB}`).put("/api/me/password", {
+        newPassword: "claimed-password-1",
+      });
+      expect(set.status).toBe(204);
+      // The older link is dead too — not merely unable to set a password, but unauthenticated.
+      expect((await apiClient(boot2.app, `${SESSION_COOKIE}=${linkA}`).get("/api/me")).status).toBe(
+        401,
+      );
+    } finally {
+      await boot2.cleanup();
+    }
+  });
+
+  /**
    * The setup session renews in place (the row's expiry is topped up, the cookie value is
    * unchanged), so it survives well past the printed link's original 30-day mark. Setting a
    * password deletes that row, and the link goes dead — no surviving setup session, whether

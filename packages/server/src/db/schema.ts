@@ -30,6 +30,10 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
   expires_at TEXT NOT NULL,                  -- 30-day sliding renewal, topped up in place when <29 days remain
   via        TEXT                            -- 'password'|'desktop'|'setup'|'cli'; NULL = legacy (password)
 );
+-- deleteExpired runs on every login and mint, deleteByUser on every admin reset; without
+-- these both scan the whole table.
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires ON auth_sessions(expires_at);
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id);
 
 CREATE TABLE IF NOT EXISTS projects (
   project_id    TEXT PRIMARY KEY,            -- directory name doubles as id; display name lives in project_config.toml

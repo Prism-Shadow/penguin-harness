@@ -1,7 +1,7 @@
 /**
  * Auth routes: POST /api/auth/login | logout, GET /api/auth/claim.
  * No self-registration: users are created by an admin in the user backend (/api/admin/users).
- * Login issues a cookie session; logout revokes it by jti and clears the cookie.
+ * Login issues a cookie session; logout deletes its row and clears the cookie.
  *
  * `claim` is the one password-free entry: it answers a BROWSER with no session yet — the only
  * way to give one of those a session is for the server to set an HttpOnly cookie — and proves

@@ -44,7 +44,6 @@ describe("resetAdminPassword", () => {
       isAdmin: true,
       passwordIsInitial: false,
       createdAt,
-      sessionsNotBefore: null,
     });
     users.insert({
       userId: "alice",
@@ -52,7 +51,6 @@ describe("resetAdminPassword", () => {
       isAdmin: false,
       passwordIsInitial: false,
       createdAt,
-      sessionsNotBefore: null,
     });
     const sessions = new AuthSessionsRepo(db);
     const later = "2027-01-01T00:00:00.000Z";

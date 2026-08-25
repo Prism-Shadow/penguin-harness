@@ -24,7 +24,6 @@ import type { Command } from "commander";
 import {
   call,
   clearSession,
-  localServerUrl,
   promptLine,
   promptPassword,
   readSession,
@@ -218,8 +217,11 @@ export function registerAuthCommand(program: Command, t: Messages): void {
       const root = resolveRootOption(opts.root);
       // No server needed: the token is a session row this writes straight into web.db, which
       // reading the data root already authorizes (auth-token.ts). Safe while the server runs.
+      // PENGUIN_WEB_DB is honored exactly as the server and `reset-admin-password` honor it —
+      // minting into the wrong file would print a token the live server refuses.
       const result = mintApiToken(root, {
         userId: opts.userId,
+        ...(process.env.PENGUIN_WEB_DB ? { dbPath: process.env.PENGUIN_WEB_DB } : {}),
         ...(ttl === undefined ? {} : { ttlMs: ttl * 1000 }),
       });
       if (result.outcome === "no_server") {
@@ -228,7 +230,11 @@ export function registerAuthCommand(program: Command, t: Messages): void {
       if (result.outcome === "failed") {
         return fail(t.authToken.failed(result.detail));
       }
-      const server = localServerUrl(root);
+      // The session file records where to send a later `logout`, so the URL comes from a
+      // LIVE lock: a stale one from a crashed server names a port another process may now
+      // hold, and logging out would hand it the token (same rule as `login` above).
+      const lock = await liveServerLock(root);
+      const server = lock === null ? null : `http://localhost:${lock.port}`;
       if (server !== null) {
         writeSession(root, {
           server,

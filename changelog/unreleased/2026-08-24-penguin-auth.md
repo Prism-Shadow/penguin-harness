@@ -4,7 +4,7 @@
 - **Type:** feature
 - **Scope:** `cli`, `server`, `docs`
 - **PR:** [#443](https://github.com/Prism-Shadow/penguin-harness/pull/443)
-- **Breaking:** yes — the fixed seed password retires, and everyone signs in once after upgrade
+- **Breaking:** yes — the fixed seed password retires; claim the account through the printed first-login link
 
 [中文版](2026-08-24-penguin-auth.zh.md)
 
@@ -70,7 +70,10 @@ carried over from an earlier build has any `initial-admin-password` plaintext de
 next start (swept until no supported upgrade path can carry it — tracked in
 `initial-password.ts`).
 
-Sessions issued by a build in between (the interim signed-token scheme) do not verify against
-this one, so everyone signs in once after the upgrade — an upgrade restarts the server, and a
-sign-in is a one-time cost. `penguin server auth-token` is now `penguin auth token`;
-`GET /api/auth/desktop-login` is now `GET /api/auth/claim`.
+Sessions in a v0.2.0 `web.db` are kept: the `auth_sessions` table gains its `via` column on the
+next start and existing rows read as ordinary password sessions, so an upgrade from a release
+does not sign anyone out. (Sessions issued by an unreleased build in between — the interim
+signed-token scheme — are not rows at all and simply stop working.)
+
+`penguin server auth-token` is now `penguin auth token`; `GET /api/auth/desktop-login` is now
+`GET /api/auth/claim`.

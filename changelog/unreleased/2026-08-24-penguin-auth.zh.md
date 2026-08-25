@@ -4,7 +4,7 @@
 - **Type:** feature
 - **Scope:** `cli`, `server`, `docs`
 - **PR:** [#443](https://github.com/Prism-Shadow/penguin-harness/pull/443)
-- **Breaking:** yes —— 固定种子密码退役，升级后所有人需重新登录一次
+- **Breaking:** yes —— 固定种子密码退役，改为通过打印的首次登录链接认领账号
 
 [English](2026-08-24-penguin-auth.md)
 
@@ -40,4 +40,6 @@ CLI 会话记在 `<root>/cli-session.json`（0600，防 symlink 写）；`logout
 
 固定种子密码（未设置 `PENGUIN_SEED_ADMIN_PASSWORD` 时旧版打印 `penguin-<四位数字>`）退役：改为通过服务器打印的首次登录链接认领账号。从旧版沿用的数据根，其 `initial-admin-password` 明文会在下次启动时删除（一直清扫到没有受支持的升级路径能携带它——记录在 `initial-password.ts`）。
 
-中间某个版本（临时的签名令牌方案）签发的会话在本版本无法校验，因此升级后所有人需重新登录一次——升级会重启服务器，而登录是一次性成本。`penguin server auth-token` 现为 `penguin auth token`；`GET /api/auth/desktop-login` 现为 `GET /api/auth/claim`。
+v0.2.0 的 `web.db` 里的会话会保留：`auth_sessions` 表在下次启动时补上 `via` 列，已有行按普通密码会话处理，因此从正式版升级不会让任何人掉线。（中间那个未发布版本——临时的签名令牌方案——签发的会话根本不是行，会直接失效。）
+
+`penguin server auth-token` 现为 `penguin auth token`；`GET /api/auth/desktop-login` 现为 `GET /api/auth/claim`。

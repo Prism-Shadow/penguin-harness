@@ -15,6 +15,23 @@ import { SCHEMA_SQL } from "./schema.js";
 // recognize this experimental module).
 const sqlite = process.getBuiltinModule("node:sqlite");
 
+/**
+ * Opens an EXISTING database for a narrow write, without running any schema work.
+ *
+ * `openDatabase` migrates — CREATE TABLE, six ensureColumn calls, a DROP INDEX and a backfill.
+ * That is right for the process that owns the database and wrong for a short-lived CLI writing
+ * one row (`penguin auth token`): after `penguin update` the CLI on disk can be NEWER than the
+ * running server, and migrating under a live server's prepared statements is not something a
+ * token mint should do. The caller has already established that the file exists.
+ */
+export function openExistingDatabase(dbPath: string): DatabaseSync {
+  const db = new sqlite.DatabaseSync(dbPath);
+  db.exec("PRAGMA foreign_keys = ON;");
+  // Wait for the live server's write lock instead of failing SQLITE_BUSY at once.
+  db.exec("PRAGMA busy_timeout = 5000;");
+  return db;
+}
+
 /** Open (creating if necessary) the database: ensure the parent directory exists, set PRAGMAs, run table creation. */
 export function openDatabase(dbPath: string): DatabaseSync {
   if (dbPath !== ":memory:") {
@@ -34,7 +51,9 @@ export function openDatabase(dbPath: string): DatabaseSync {
   ensureColumn(db, "sessions", "has_trace", "INTEGER NOT NULL DEFAULT 0");
   ensureColumn(db, "sessions", "fork_count", "INTEGER NOT NULL DEFAULT 0");
   ensureColumn(db, "sessions", "thinking_level", "TEXT");
-  ensureColumn(db, "users", "sessions_not_before", "TEXT");
+  // A v0.2.0 web.db has auth_sessions without `via`; CREATE TABLE IF NOT EXISTS never adds a
+  // column, so every INSERT would fail "no column named via" until this runs.
+  ensureColumn(db, "auth_sessions", "via", "TEXT");
   ensureColumn(db, "trace_files", "page_stats", "TEXT");
   // Superseded by idx_usage_session_ts (session_id, ts), which SCHEMA_SQL just created on
   // this database: the old index is a strict prefix of it, so every query it served is

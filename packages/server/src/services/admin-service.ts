@@ -66,7 +66,6 @@ export class AdminService {
       isAdmin: false,
       passwordIsInitial: true,
       createdAt: this.now().toISOString(),
-      sessionsNotBefore: null,
     };
     this.deps.users.insert(user);
     try {
