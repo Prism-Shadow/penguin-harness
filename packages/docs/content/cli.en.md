@@ -203,6 +203,42 @@ This is the one thing the version line cannot report. A pushed bundle lands outs
 It describes the store, not the process: `penguin` runs the packaged CLI while `penguin-hmr` runs the store's, so a non-null `harness` does not by itself mean the command printing it is the pushed code. `source` is null for a version pushed by a client that recorded no provenance, including anything pushed before it was recorded at all.
 
 An installed penguin never shells out to git: it reads constants stamped into the build. A release gets them from the release workflow; every other build gets its git position inlined by the bundler that produced it, so an artifact still identifies itself after it has left the checkout it came from — a hot-pushed bundle under `<root>/hmr/store/` reports the revision it was built at, on a machine with no checkout and no git installed. Asking git at run time is only the fallback, for an un-bundled `tsx` run; even then it asks about its own checkout, so `penguin version` inside an unrelated repository reports the harness's revision and not that repository's.
+## penguin auth
+
+Signs in to a running PenguinHarness server from the terminal. This is the only part of the CLI that talks to a server as a client — `config`, `run` and `chat` all work on the data root directly.
+
+Two ways in, and which is right depends on where you are standing.
+
+```bash
+penguin auth login                      # password, against the server on this data root
+penguin auth login --server https://penguin.example --user-id alice
+penguin auth status
+penguin auth logout
+penguin auth token                      # no password: minted from this data root
+```
+
+`login` takes a password and asks a running server for a session, exactly as the browser's login page does. The target defaults to the server running on this data root (read from its lock file), so signing in to your own needs no URL.
+
+Run interactively it asks for the account first, then the password — and the password prompt names the account, so one account's password is never typed at another's. Supply the password non-interactively (`--password` or `PENGUIN_PASSWORD`) and neither question is asked: that is a script, and a script cannot answer one.
+
+| Option | Description |
+| --- | --- |
+| `--server <url>` | Server to sign in to; default the one running on this data root |
+| `--user-id <id>` | Account; asked for when omitted, defaulting to `admin` on a bare Enter |
+| `--password <pw>` | Password; also read from `PENGUIN_PASSWORD`, otherwise prompted without echo |
+| `--print` | Also print the session token to stdout, for piping |
+
+Prefer `PENGUIN_PASSWORD` or the prompt over `--password`: a command line is world-readable through `ps`.
+
+`token` takes no password at all. It mints a session straight from the data root, and what authorizes it is that you can read that root — which already holds every credential the token could reach. Use it where there is no password to give: a machine whose admin password somebody set by hand, or a script that must not hold one. It is also what a controller runs over ssh to reach a machine it manages.
+
+| Option | Description |
+| --- | --- |
+| `--user-id <id>` | Account, default `admin` |
+| `--ttl-seconds <n>` | Lifetime, default 3600 |
+| `--mark` | Print a fixed marker line before the token — for a caller parsing it out of a shell whose login profile may print a banner |
+
+The session is written to `<root>/cli-session.json` at mode 0600, which is what `status` reads and `logout` revokes and deletes. `logout` tells the server first, so the session dies there rather than merely being forgotten here; if the server cannot be reached it says so, and the local file goes anyway.
 
 ## penguin update
 

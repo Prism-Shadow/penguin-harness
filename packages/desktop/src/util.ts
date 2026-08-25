@@ -21,7 +21,7 @@ export function appOriginFor(port: number): string {
 
 /** The window's first navigation: redeems the shell's one-shot token for a cookie session. */
 export function desktopLoginUrl(origin: string, token: string): string {
-  return `${origin}/api/auth/desktop-login?token=${encodeURIComponent(token)}`;
+  return `${origin}/api/auth/claim?token=${encodeURIComponent(token)}`;
 }
 
 /**

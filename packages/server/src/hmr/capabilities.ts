@@ -110,6 +110,7 @@ export const RUNTIME_INTERFACES: RuntimeInterfaces = {
   ],
   db: ["prepare", "exec", "close"],
   auth: [
+    "sessionTtlMs",
     "authenticateWithMeta",
     "seedAdmin",
     "adminPasswordIsInitial",
@@ -117,7 +118,9 @@ export const RUNTIME_INTERFACES: RuntimeInterfaces = {
     "logout",
     "changePassword",
     "loginDesktop",
-    "setPasswordDesktop",
+    "setInitialPassword",
+    "redeemOwnerToken",
+    "redeemFirstLogin",
     "setProvisioner",
   ],
   channels: ["get", "peek", "broadcast", "dispose", "setActivityProbe"],

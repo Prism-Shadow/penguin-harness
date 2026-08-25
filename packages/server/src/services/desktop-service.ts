@@ -3,7 +3,7 @@
  * with a per-launch random token, which backs two endpoints with different consumption
  * rules:
  *
- * - `GET /api/auth/desktop-login?token=…` — ONE-SHOT: the window's first navigation
+ * - `GET /api/auth/claim?token=…` — ONE-SHOT: the window's first navigation
  *   redeems the token for a standard admin cookie session; every later attempt fails,
  *   so a leaked URL cannot be replayed.
  * - `POST /api/desktop/shutdown` (Authorization: Bearer <token>) — REUSABLE for the

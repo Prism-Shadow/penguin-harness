@@ -1,5 +1,5 @@
 /**
- * Desktop mode: one-shot desktop-login, Bearer-token shutdown, desktopMode in /api/me,
+ * Desktop mode: the one-shot desktop claim, Bearer-token shutdown, desktopMode in /api/me,
  * the desktop-session password change without oldPassword, and the single-user guard
  * closing the user-management and Project-member surfaces.
  */
@@ -14,11 +14,11 @@ import {
 } from "./helpers.js";
 import type { ErrorBody, MeResponse } from "../src/api/types.js";
 
-describe("desktop-login", () => {
+describe("desktop claim", () => {
   it("redeems the token once: cookie session, redirect to /, second attempt 401", async () => {
     const t = await createDesktopApp();
     try {
-      const res = await t.app.request(`/api/auth/desktop-login?token=${TEST_DESKTOP_TOKEN}`);
+      const res = await t.app.request(`/api/auth/claim?token=${TEST_DESKTOP_TOKEN}`);
       expect(res.status).toBe(302);
       expect(res.headers.get("location")).toBe("/");
       const cookie = res.headers.get("set-cookie");
@@ -32,7 +32,7 @@ describe("desktop-login", () => {
       expect(body.user.userId).toBe("admin");
       expect(body.desktopMode).toBe(true);
 
-      const replay = await t.app.request(`/api/auth/desktop-login?token=${TEST_DESKTOP_TOKEN}`);
+      const replay = await t.app.request(`/api/auth/claim?token=${TEST_DESKTOP_TOKEN}`);
       expect(replay.status).toBe(401);
     } finally {
       await t.cleanup();
@@ -42,21 +42,22 @@ describe("desktop-login", () => {
   it("rejects a wrong or missing token without consuming the real one", async () => {
     const t = await createDesktopApp();
     try {
-      expect((await t.app.request("/api/auth/desktop-login?token=wrong")).status).toBe(401);
-      expect((await t.app.request("/api/auth/desktop-login")).status).toBe(401);
+      expect((await t.app.request("/api/auth/claim?token=wrong")).status).toBe(401);
+      expect((await t.app.request("/api/auth/claim")).status).toBe(401);
       // The real token still works after failed attempts.
-      expect(
-        (await t.app.request(`/api/auth/desktop-login?token=${TEST_DESKTOP_TOKEN}`)).status,
-      ).toBe(302);
+      expect((await t.app.request(`/api/auth/claim?token=${TEST_DESKTOP_TOKEN}`)).status).toBe(302);
     } finally {
       await t.cleanup();
     }
   });
 
-  it("is 404 outside desktop mode, and /api/me reports desktopMode false", async () => {
+  it("refuses a desktop token outside desktop mode, and /api/me reports desktopMode false", async () => {
     const t = await createTestApp();
     try {
-      expect((await t.app.request("/api/auth/desktop-login?token=x")).status).toBe(404);
+      // The claim route serves the first-login link too, so it exists in every mode. A
+      // server with no shell has no shell token to honour, and says so as 401 — the same
+      // answer any wrong value gets, so the reply does not report which modes are enabled.
+      expect((await t.app.request("/api/auth/claim?token=x")).status).toBe(401);
       const admin = await loginAdmin(t.app);
       const me = await apiClient(t.app, admin.cookie).get("/api/me");
       expect(((await me.json()) as MeResponse).desktopMode).toBe(false);

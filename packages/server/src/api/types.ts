@@ -92,7 +92,12 @@ export interface MeResponse {
    * password when changing it — only "desktop" sessions (opened by the shell's one-shot
    * token) may omit it.
    */
-  sessionVia: "password" | "desktop";
+  /**
+   * How this session was established. "setup" is a session claimed through the first-login
+   * link on a server whose admin password has never been set — like "desktop", it may set a
+   * password without knowing the old one, and unlike it, it opens no desktop-only routes.
+   */
+  sessionVia: "password" | "desktop" | "setup";
   /**
    * The upload limits currently in force, so the composer can refuse an oversize pick before
    * reading it and can name the real number in the message. They are admin-settable and ride

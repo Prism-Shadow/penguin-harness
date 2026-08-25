@@ -21,12 +21,7 @@ import { serve } from "@hono/node-server";
 import { bootAppDeps, createRuntimeApp, type AppDeps } from "./app.js";
 import { ADMIN_USER_ID } from "./auth/service.js";
 import { resolveServerConfig, type ServerConfig } from "./config.js";
-import {
-  clearInitialAdminPassword,
-  readInitialAdminPassword,
-  renderInitialPasswordNotice,
-  storeInitialAdminPassword,
-} from "./initial-password.js";
+import { clearInitialAdminPassword, renderFirstLoginNotice } from "./initial-password.js";
 import { applyProxySettings, installGlobalProxyDispatcher } from "./net/proxy.js";
 import { attachTerminalWebSocket } from "./terminal/ws.js";
 import { loopbackHostRoles } from "./services/preview-token.js";
@@ -61,6 +56,9 @@ async function main(): Promise<void> {
  * read without a null check from the step after the one that assigns them.
  */
 class PenguinServer {
+  /** Set at seed when this server still has no admin password; printed once the port is known. */
+  private pendingFirstLoginNotice = false;
+
   /** Assigned by readConfig(); every later step reads it. */
   private config!: ServerConfig;
   /** Assigned by buildDeps(); the merged runtime + business view (see app.ts). */
@@ -142,32 +140,24 @@ class PenguinServer {
 
   /**
    * Built-in admin seed (idempotent): creates admin and adopts default_project when the
-   * users table is empty. The returned initial password (random unless pinned via
-   * PENGUIN_SEED_ADMIN_PASSWORD) is persisted in the data root while it remains the
-   * initial one, and EVERY startup re-prints the framed reminder until the password is
-   * changed (any password update for admin removes the file — see initial-password.ts).
-   * Never printed (or persisted) in desktop mode: the seed there is fully random by design
-   * (config.ts) and sign-in goes through the shell's one-shot token, so showing it would
-   * only leak a credential into a log nobody needs.
+   * users table is empty. The seed password is random, hashed, and discarded — nobody ever
+   * sees it — so a server that still has no admin password of its own prints a one-time
+   * sign-in LINK instead, carrying this boot's first-login token. The notice re-prints on
+   * every start until a password is set, because the link is regenerated every start.
+   *
+   * Nothing is printed in desktop mode: the shell's own window signs in through its one-shot
+   * token, so a link in a log would be a credential nobody needs. Nothing is printed either
+   * when an operator pinned the seed with PENGUIN_SEED_ADMIN_PASSWORD — they already know it.
+   *
+   * The sweep runs unconditionally: a root carried over from a build that stored the
+   * plaintext must not keep holding it (see initial-password.ts).
    */
   async seedAdmin(): Promise<void> {
-    const seededPassword = await this.deps.authService.seedAdmin();
-    if (this.config.desktopToken !== null) return;
-    if (seededPassword !== null) {
-      storeInitialAdminPassword(this.config.root, seededPassword);
-    }
-    if (this.deps.authService.adminPasswordIsInitial()) {
-      const initialPassword = seededPassword ?? readInitialAdminPassword(this.config.root);
-      // Roots seeded before the password was persisted have no file: stay silent — the
-      // plaintext is unrecoverable, and a reminder with nothing to type is pure nagging.
-      if (initialPassword !== null) {
-        console.log(renderInitialPasswordNotice(ADMIN_USER_ID, initialPassword));
-      }
-    } else {
-      // Heal: the flag was cleared while the file survived (e.g. the password was changed
-      // under a build that predates the file) — a stale plaintext must not outlive it.
-      clearInitialAdminPassword(this.config.root);
-    }
+    await this.deps.authService.seedAdmin();
+    clearInitialAdminPassword(this.config.root);
+    if (this.config.desktopToken !== null || this.config.seedAdminPassword !== null) return;
+    if (!this.deps.authService.adminPasswordIsInitial()) return;
+    this.pendingFirstLoginNotice = true;
   }
 
   /**

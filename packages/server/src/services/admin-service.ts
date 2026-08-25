@@ -14,7 +14,6 @@ import type { UserInfo } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import { MIN_PASSWORD_LENGTH, toUserInfo } from "../auth/service.js";
 import { SCRYPT_COST, hashPassword } from "../auth/password.js";
-import type { AuthSessionsRepo } from "../db/repos/auth-sessions.js";
 import type { ProjectsRepo } from "../db/repos/projects.js";
 import type { UserRow, UsersRepo } from "../db/repos/users.js";
 import { SEMANTIC_ID_RULE, USERNAME_PATTERN } from "./ids.js";
@@ -22,7 +21,6 @@ import type { ProjectService } from "./project-service.js";
 
 export interface AdminServiceDeps {
   users: UsersRepo;
-  authSessions: AuthSessionsRepo;
   projects: ProjectsRepo;
   projectService: ProjectService;
   /**
@@ -73,6 +71,7 @@ export class AdminService {
       isAdmin: false,
       passwordIsInitial: true,
       createdAt: this.now().toISOString(),
+      sessionsNotBefore: null,
     };
     this.deps.users.insert(user);
     try {
@@ -94,7 +93,9 @@ export class AdminService {
       throw new HttpError(400, "invalid_password", "Password must be at least 8 characters.");
     }
     this.deps.users.updatePassword(userId, await hashPassword(password, this.hashCost), true);
-    this.deps.authSessions.deleteByUser(userId);
+    // A session is a signature, so there is nothing to delete: the not-before mark is what
+    // makes every token issued to this account before now stop verifying.
+    this.deps.users.setSessionsNotBefore(userId, new Date().toISOString());
     this.deps.onPasswordChanged?.(userId);
   }
 
@@ -110,6 +111,6 @@ export class AdminService {
     for (const project of this.deps.projects.listByOwner(userId)) {
       await this.deps.projectService.destroyProject(project.projectId);
     }
-    this.deps.users.delete(userId); // auth_sessions / project_members / ui_prefs cascade-deleted
+    this.deps.users.delete(userId); // project_members / ui_prefs cascade-deleted
   }
 }

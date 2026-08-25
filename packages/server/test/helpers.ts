@@ -52,8 +52,8 @@ export function testConfig(root: string): ServerConfig {
     webDist: path.join(root, "__no_web_dist__"),
     // Fixed seed password so loginAdmin needs no seed-time capture.
     seedAdminPassword: TEST_ADMIN_PASSWORD,
-    authSessionTtlMs: 7 * DAY_MS,
-    authSessionRenewMs: 6 * DAY_MS,
+    authSessionTtlMs: 30 * DAY_MS,
+    authSessionRenewMs: 29 * DAY_MS,
     desktopToken: null,
     portFile: null,
     trustProxy: false,
@@ -116,9 +116,9 @@ export function createDesktopApp(): Promise<TestApp> {
   return createTestApp({ config: { desktopToken: TEST_DESKTOP_TOKEN } });
 }
 
-/** Redeems the one-shot desktop-login for a `sessionVia: "desktop"` cookie. */
+/** Redeems the shell's one-shot token for a `sessionVia: "desktop"` cookie. */
 export async function desktopLoginCookie(app: Hono<AppEnv>): Promise<string> {
-  const res = await app.request(`/api/auth/desktop-login?token=${TEST_DESKTOP_TOKEN}`);
+  const res = await app.request(`/api/auth/claim?token=${TEST_DESKTOP_TOKEN}`);
   if (res.status !== 302) {
     throw new Error(`Desktop login failed: ${res.status} ${await res.text()}`);
   }

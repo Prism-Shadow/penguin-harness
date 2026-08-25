@@ -85,7 +85,7 @@ const STRIPPED_ENV_KEYS = new Set([
   "FORCE_COLOR",
   "CLICOLOR_FORCE",
   // Desktop-mode process credentials and wiring: the shell's token authorizes the
-  // server shutdown endpoint (and desktop-login until redeemed), and the port file is
+  // server shutdown endpoint (and the claim link until redeemed), and the port file is
   // the shell's private channel — neither is a user-facing setting, and leaking them
   // into Agent-run commands would let a prompt-injected command stop the server.
   "PENGUIN_DESKTOP_TOKEN",

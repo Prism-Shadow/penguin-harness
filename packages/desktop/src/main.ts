@@ -12,7 +12,7 @@
  * One window over the embedded server: fork penguin-server as a utilityProcess on the
  * shared data root (PENGUIN_HOME or ~/.penguin/data), learn its port (last launch's when
  * still free, so origin-scoped localStorage preferences survive restarts), and load
- * `http://localhost:<port>/api/auth/desktop-login?token=…` — the one-shot token lands
+ * `http://localhost:<port>/api/auth/claim?token=…` — the one-shot token lands
  * the window signed in as admin. The window is a plain browser environment (no preload,
  * no node integration); every capability flows through the server's HTTP API.
  *
@@ -164,7 +164,7 @@ function wireUpdaterRelay(child: EmbeddedServer["child"]): void {
   child.postMessage(updaterStatusMessage(getUpdaterStatus()));
 }
 
-/** Starts (or restarts) the embedded server and points the window at desktop-login. */
+/** Starts (or restarts) the embedded server and points the window at the claim link. */
 async function startServerAndWindow(dataRoot: string): Promise<void> {
   const started = await startEmbeddedServer({
     dataRoot,

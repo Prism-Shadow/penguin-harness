@@ -18,7 +18,7 @@ export interface EmbeddedServer {
   child: UtilityProcess;
   /** App origin, e.g. `http://localhost:53187` (always localhost — 127.0.0.1 is the preview host). */
   origin: string;
-  /** This launch's PENGUIN_DESKTOP_TOKEN: one-shot for desktop-login, reusable for the shutdown endpoint. */
+  /** This launch's PENGUIN_DESKTOP_TOKEN: one-shot for the claim link, reusable for the shutdown endpoint. */
   token: string;
 }
 

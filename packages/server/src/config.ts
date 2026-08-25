@@ -48,13 +48,18 @@ export interface ServerConfig {
    * seed.
    */
   seedAdminPassword: string | null;
-  /** Login session validity period (7 days). */
+  /** Login session validity period (30 days). */
   authSessionTtlMs: number;
-  /** Sliding renewal threshold: if the remaining validity is below this value when validation succeeds, it's renewed to the full TTL (renews under 6 days). */
+  /**
+   * Sliding renewal threshold: a session validated with less than this much left is renewed to
+   * the full TTL. Set one day below the TTL, so any session used at least a day after it was
+   * issued renews — in practice a session in regular use never expires, and the TTL is the
+   * idle timeout.
+   */
   authSessionRenewMs: number;
   /**
    * Desktop mode (PENGUIN_DESKTOP_TOKEN): the per-launch token minted by the desktop
-   * shell. Non-null enables the one-shot desktop-login and Bearer-token shutdown
+   * shell. Non-null enables the one-shot claim link and the Bearer-token shutdown
    * endpoints and requires a loopback HOST — desktop mode passes the token through a
    * URL, which must never leave the machine.
    */
@@ -140,8 +145,8 @@ export function resolveServerConfig(env: NodeJS.ProcessEnv = process.env): Serve
     seedAdminPassword:
       env.PENGUIN_SEED_ADMIN_PASSWORD?.trim() ||
       (desktopToken !== null ? randomBytes(24).toString("base64url") : null),
-    authSessionTtlMs: 7 * DAY_MS,
-    authSessionRenewMs: 6 * DAY_MS,
+    authSessionTtlMs: 30 * DAY_MS,
+    authSessionRenewMs: 29 * DAY_MS,
     desktopToken,
     portFile: env.PENGUIN_PORT_FILE?.trim() || null,
     trustProxy: env.PENGUIN_TRUST_PROXY === "1",

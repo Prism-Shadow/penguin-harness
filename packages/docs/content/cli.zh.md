@@ -203,6 +203,42 @@ JSON 与 `GET /api/version` 返回的是同一份记录，因此在 HTTP 边界�
 它描述的是 store 而非当前进程：`penguin` 运行的是随包发布的 CLI，`penguin-hmr` 才运行 store 里的那份，因此 `harness` 非 null 并不意味着打印它的这条命令本身就是被推送的代码。若推送方未记录来源（包括在该机制存在之前推送的版本），`source` 为 null。
 
 已安装的 penguin 从不调用 git，只读取构建时打入的常量：发布版由发布流程打入，其余构建则由打包器把 git 位置内联进产物，因此产物离开生成它的 checkout 之后依然能说明自己的身份——位于 `<root>/hmr/store/` 下被热推送的 bundle，在既无 checkout 也未安装 git 的机器上，仍会报告它被构建时的 revision。运行时询问 git 只是兜底，用于未经打包的 `tsx` 运行；即便如此它也只问自己所在的那个 checkout，所以在无关仓库里执行 `penguin version` 报告的仍是 harness 自身的版本，而非该仓库的。
+## penguin auth
+
+在终端里登录正在运行的 PenguinHarness 服务。这是 CLI 里唯一以客户端身份与服务通信的部分——`config`、`run`、`chat` 都是直接操作数据根。
+
+有两种登录方式，取决于你站在哪里。
+
+```bash
+penguin auth login                      # 用密码登录该数据根上运行的服务
+penguin auth login --server https://penguin.example --user-id alice
+penguin auth status
+penguin auth logout
+penguin auth token                      # 不需要密码：直接从数据根签发
+```
+
+`login` 需要密码，向正在运行的服务请求会话，和浏览器登录页做的事完全一样。目标默认是该数据根上正在运行的服务（从锁文件读端口），所以登录自己的服务不必写 URL。
+
+交互运行时会先问账号，再问密码，并且密码提示里写明是哪个账号的，避免把一个账号的密码输到另一个账号上。如果用非交互方式给了密码（`--password` 或 `PENGUIN_PASSWORD`），两个问题都不会问——那是脚本，脚本没法回答。
+
+| 选项 | 说明 |
+| --- | --- |
+| `--server <url>` | 要登录的服务；默认是该数据根上运行的那个 |
+| `--user-id <id>` | 账号；不给时会询问，直接回车即用 `admin` |
+| `--password <pw>` | 密码；也可用 `PENGUIN_PASSWORD`，都没给时会无回显地提示输入 |
+| `--print` | 同时把会话令牌打印到 stdout，便于管道使用 |
+
+优先用 `PENGUIN_PASSWORD` 或交互输入，而不是 `--password`：命令行参数可以被 `ps` 看到。
+
+`token` 完全不需要密码。它直接从数据根签发会话，其授权依据就是你能读这个数据根——而它本来就装着这个令牌所能触及的全部凭据。适用于没有密码可给的场合：管理员密码被人改过的机器，或不该持有密码的脚本。控制端通过 ssh 管理机器时执行的也是它。
+
+| 选项 | 说明 |
+| --- | --- |
+| `--user-id <id>` | 账号，默认 `admin` |
+| `--ttl-seconds <n>` | 有效期秒数，默认 3600 |
+| `--mark` | 在令牌前打印固定标记行——供需要从 shell 输出里解析它的调用方使用，因为登录 profile 可能打印横幅 |
+
+会话写入 `<root>/cli-session.json`，权限 0600；`status` 读它，`logout` 吊销并删除它。`logout` 会先告诉服务端，让会话真正失效，而不只是本地忘记；连不上服务时会明说，本地文件照样删除。
 
 ## penguin update
 

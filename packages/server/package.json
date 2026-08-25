@@ -37,6 +37,10 @@
     "./version-report": {
       "types": "./dist/version-report.d.ts",
       "import": "./dist/version-report.js"
+    },
+    "./auth-token": {
+      "types": "./dist/auth-token.d.ts",
+      "import": "./dist/auth-token.js"
     }
   },
   "main": "./dist/index.js",

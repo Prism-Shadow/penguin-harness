@@ -10,13 +10,15 @@
  * - An initial password (whether seeded or set by an admin) is flagged with
  *   password_is_initial, which the frontend uses to prompt for a password change soon.
  * - Sessions: a 32-byte random token, with only its sha256 hash stored in the DB;
- *   valid for 7 days, with sliding renewal once less than 6 days remain.
+ *   valid for 30 days, renewed to the full term whenever one is used a day or more after issue.
  */
-import { createHash, randomBytes, randomInt } from "node:crypto";
+import { randomBytes, randomInt } from "node:crypto";
 import type { UserInfo } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
-import type { AuthSessionsRepo } from "../db/repos/auth-sessions.js";
 import type { UserRow, UsersRepo } from "../db/repos/users.js";
+import type { AuthRevocationsRepo } from "../db/repos/auth-revocations.js";
+import { looksSigned, newClaims, signToken, verifyToken } from "./token-codec.js";
+import { ownerTokenMatches } from "./owner-token.js";
 import { SCRYPT_COST, hashPassword, verifyPassword } from "./password.js";
 
 export const MIN_PASSWORD_LENGTH = 8;
@@ -45,25 +47,29 @@ const LOGIN_BACKOFF_CAP_MS = 60_000;
 const LOGIN_FAILURE_IDLE_MS = 15 * 60_000;
 
 /**
- * Random initial password for the seeded admin: `penguin-<4 digits>` — brand-related and
- * easy to type, shown once in the server startup output (the README, docs and login-page
- * hint all describe this form).
+ * The seeded/reset admin password: `penguin-<4 digits>`, generated and never shown — the
+ * account is claimed through the first-login link instead (initial-password.ts). Short and
+ * printable only because nothing depends on reading it back.
  */
 export function generateInitialAdminPassword(): string {
   return "penguin-" + String(randomInt(0, 10000)).padStart(4, "0");
 }
 
-function sha256Hex(value: string): string {
-  return createHash("sha256").update(value).digest("hex");
-}
-
 /**
- * How a session was established: "password" via the login form, "desktop" via the
- * desktop shell's one-shot token. Persisted per session so desktop-specific allowances
- * (password change without the old password) apply only to sessions the shell itself
- * opened. Legacy rows (NULL) read as "password".
+ * How a session was established: "password" via the login form, "desktop" via the desktop
+ * shell's one-shot token, "setup" via the first-login link printed for a server whose admin
+ * password has never been set.
+ *
+ * Carried per session because two allowances key off it. Setting a password WITHOUT the old
+ * one is open to "desktop" and "setup" — in both, the account's current password is a random
+ * value nobody has ever seen, so there is nothing to type into an old-password field. The
+ * desktop-only ROUTES remain open to "desktop" alone: "setup" proves someone read this boot's
+ * link, not that they own the machine the shell runs on.
+ *
+ * Anything else — legacy rows (NULL), and the "cli" claim on minted tokens — reads as
+ * "password", the least-privileged kind.
  */
-export type SessionVia = "password" | "desktop";
+export type SessionVia = "password" | "desktop" | "setup";
 
 export function toUserInfo(row: UserRow): UserInfo {
   return {
@@ -76,7 +82,20 @@ export function toUserInfo(row: UserRow): UserInfo {
 
 export interface AuthServiceDeps {
   users: UsersRepo;
-  authSessions: AuthSessionsRepo;
+  /** Revoked-before-expiry token ids; the in-memory copy is what the hot path consults. */
+  authRevocations: AuthRevocationsRepo;
+  /**
+   * Signing key for session tokens. IN MEMORY ONLY, generated at process start: a key that
+   * exists nowhere at rest cannot be taken from a backup, and rotation is simply a restart.
+   * The price is that signed sessions die with the process — hot pushes swap the App and
+   * keep this alive; only a real restart pays it, and mostly in re-typed passwords.
+   */
+  tokenSecret: Buffer;
+  /**
+   * This boot's owner token (auth/owner-token.ts), for the redemption endpoint. Null in
+   * constructions that have no data root to anchor it to (some tests).
+   */
+  ownerToken: string | null;
   /** Provisions the initial Project at signup (injected by project-service, to avoid a circular dependency). */
   provisionInitialProject: (user: UserRow, isAdmin: boolean) => Promise<void>;
   /** Fixed initial password for the seeded admin (config.seedAdminPassword); null generates a random one at seed time. */
@@ -109,11 +128,47 @@ export class AuthService {
 
   private readonly now: () => Date;
   private readonly hashCost: number;
+  /**
+   * Revoked token ids, mirrored from auth_revocations at construction and kept in step by
+   * logout. This is what keeps the per-request path off the database: the set only ever
+   * holds tokens revoked before their own expiry, so it stays tiny by construction.
+   */
+  private readonly revokedJtis: Set<string>;
+  /**
+   * The session in the link a fresh server prints — an ordinary `setup` session, minted here
+   * and never written down. A session rather than a separate secret so it dies the ordinary
+   * way: setting a password revokes it, through the same denylist every logout uses. A link
+   * from an earlier run is dead already, since the signing key does not outlive its process.
+   */
+  private readonly firstLogin: string;
+
+  /**
+   * How long a session this service issues is good for. Exposed because the cookie that
+   * carries one has to expire with it, and a second copy of the number written at the cookie's
+   * own call site is how the two drift — a cookie that expired first would log someone out
+   * while their session was still valid.
+   */
+  get sessionTtlMs(): number {
+    return this.deps.sessionTtlMs;
+  }
 
   constructor(private readonly deps: AuthServiceDeps) {
     this.provisioner = deps.provisionInitialProject;
     this.now = deps.now ?? (() => new Date());
     this.hashCost = deps.passwordHashCost ?? SCRYPT_COST;
+    // Boot-time sweep: rows whose token has expired anyway are dead weight — the signature
+    // check refuses those tokens on its own — so they are dropped before the set is seeded.
+    this.deps.authRevocations.deleteExpired(this.now().toISOString());
+    this.revokedJtis = new Set(this.deps.authRevocations.listJtis());
+    // Minted eagerly, printed only when the server turns out to be unclaimed (index.ts). It
+    // signs cleanly even before the admin row exists — verification is what looks the account
+    // up, so a token for an unseeded root simply never authenticates.
+    this.firstLogin = this.issueSession(ADMIN_USER_ID, "setup");
+  }
+
+  /** The session the first-login link carries; the caller prints it, nothing stores it. */
+  get firstLoginToken(): string {
+    return this.firstLogin;
   }
 
   /**
@@ -142,6 +197,7 @@ export class AuthService {
       isAdmin: true,
       passwordIsInitial: true,
       createdAt: this.now().toISOString(),
+      sessionsNotBefore: null,
     };
     this.deps.users.insert(user);
     try {
@@ -156,6 +212,25 @@ export class AuthService {
   /** Installs the current App's provisioning policy (see the `provisioner` field). */
   setProvisioner(provision: (user: UserRow, isAdmin: boolean) => Promise<void>): void {
     this.provisioner = provision;
+  }
+
+  /**
+   * Redeems this boot's first-login token for a setup session.
+   *
+   * Valid only while the admin password has never been set: the link exists to claim an
+   * unclaimed server, and the moment a password is set there is nothing left to claim. Not
+   * single-use on purpose — a browser prefetching the link would burn a one-shot token and
+   * strand the person holding it, and the window it stays open is precisely the window in
+   * which the account protects nothing yet.
+   */
+  redeemFirstLogin(given: string): string | null {
+    // Compared against the printed value rather than merely verified: an endpoint that made a
+    // cookie out of ANY valid token would let one person hand another a link that signs them
+    // into the sender's account — work done there, including pasted credentials, would land
+    // in it. Only the link this server printed is accepted.
+    if (given === "" || !ownerTokenMatches(given, this.firstLogin)) return null;
+    // Live means unclaimed: setting a password revokes it, so verification answers both.
+    return this.authenticateWithMeta(this.firstLogin) === null ? null : this.firstLogin;
   }
 
   /** Whether the built-in admin still runs on its initial password (drives the startup reminder notice). */
@@ -199,14 +274,14 @@ export class AuthService {
       throw new HttpError(401, "invalid_credentials", "Incorrect username or password.");
     }
     this.loginFailures.delete(userId);
-    this.deps.authSessions.deleteExpired(this.now().toISOString());
+    this.deps.authRevocations.deleteExpired(this.now().toISOString());
     return { user: toUserInfo(row), token: this.issueSession(row.userId, "password") };
   }
 
   /**
    * Desktop-mode sign-in: issues an admin session WITHOUT a password check — the caller
-   * (the desktop-login route) has already redeemed the shell's one-shot token, which is
-   * the credential here. Throws if the admin has not been seeded yet (desktop-login runs
+   * (the claim route) has already redeemed the shell's one-shot token, which is
+   * the credential here. Throws if the admin has not been seeded yet (the claim route runs
    * after startup seeding, so this only trips on a broken deployment).
    */
   loginDesktop(): { user: UserInfo; token: string } {
@@ -214,7 +289,6 @@ export class AuthService {
     if (!row) {
       throw new HttpError(500, "internal", "Built-in admin has not been seeded.");
     }
-    this.deps.authSessions.deleteExpired(this.now().toISOString());
     return { user: toUserInfo(row), token: this.issueSession(row.userId, "desktop") };
   }
 
@@ -232,12 +306,15 @@ export class AuthService {
   }
 
   /**
-   * Desktop-session password set: no old-password check. Only reachable for sessions
-   * established via desktop-login (the me route gates on sessionVia) — the seed password
-   * of a desktop-created root is random and never shown, so its holder has nothing to
-   * type into an old-password field; the shell's token already proved machine ownership.
+   * Sets a password with no old-password check — for the two sessions where there is no old
+   * password to know: the desktop shell's window, and a first-login link. In both, the
+   * account's current password is a random value generated at seed and never shown to
+   * anyone. The me route is what gates which sessions may call this.
    */
-  async setPasswordDesktop(userId: string, newPassword: string): Promise<void> {
+  async setInitialPassword(userId: string, newPassword: string): Promise<void> {
+    // The link exists to let somebody in when no password does; once one is set it has no
+    // reason to work, and a console scrollback must stop being a way in.
+    this.logout(this.firstLogin);
     if (newPassword.length < MIN_PASSWORD_LENGTH) {
       throw new HttpError(400, "invalid_password", "Password must be at least 8 characters.");
     }
@@ -245,42 +322,93 @@ export class AuthService {
     this.deps.onPasswordChanged?.(userId);
   }
 
+  /**
+   * Revocation is the ONLY per-session write in the signed scheme: the row records the
+   * exception (a logout before expiry), never the session. An unverifiable token revokes
+   * nothing — its signature already refuses it everywhere.
+   */
   logout(token: string): void {
-    this.deps.authSessions.delete(sha256Hex(token));
+    const claims = looksSigned(token) ? verifyToken(token, this.deps.tokenSecret) : null;
+    // An unverifiable or already-expired token revokes nothing: its signature refuses it
+    // everywhere already, and a row for it would outlive the thing it describes.
+    if (claims === null || claims.exp <= this.now().getTime()) return;
+    this.revokedJtis.add(claims.jti);
+    this.deps.authRevocations.insert(claims.jti, new Date(claims.exp).toISOString());
   }
 
-  /** Validates the cookie token: returns null if expired/unknown; sliding renewal once less than 6 days remain. */
-  authenticateWithMeta(token: string): { user: UserRow; via: SessionVia } | null {
-    const tokenHash = sha256Hex(token);
-    const session = this.deps.authSessions.findByTokenHash(tokenHash);
-    if (!session) return null;
+  /**
+   * Validates the cookie token. Signed tokens verify on CPU alone plus one users read — the
+   * hot path this scheme exists for; the row lookup remains only for sessions issued before
+   * the switch, which age out within one TTL and are never issued again.
+   *
+   * Sliding renewal changes shape: a signature cannot be extended, so nearing expiry the
+   * answer carries a REPLACEMENT token for the middleware to set — same claims, fresh
+   * window. Only sessions whose own span is at least the renewal window slide; a short
+   * minted token (an hour) must expire at its hour, not stretch to a week by being used.
+   */
+  authenticateWithMeta(
+    token: string,
+  ): { user: UserRow; via: SessionVia; renewedToken?: string } | null {
     const now = this.now();
-    const expiresAt = Date.parse(session.expiresAt);
-    if (!(expiresAt > now.getTime())) {
-      this.deps.authSessions.delete(tokenHash);
-      return null;
+    if (looksSigned(token)) {
+      const claims = verifyToken(token, this.deps.tokenSecret);
+      if (claims === null) return null;
+      if (claims.exp <= now.getTime()) return null;
+      if (this.revokedJtis.has(claims.jti)) return null;
+      const user = this.deps.users.findById(claims.u);
+      if (!user) return null;
+      // Per-user revocation: an admin password reset stamps the mark, and every token
+      // issued before it dies here — the signed-world replacement for deleteByUser.
+      if (user.sessionsNotBefore !== null && claims.iat < Date.parse(user.sessionsNotBefore)) {
+        return null;
+      }
+      const via: SessionVia =
+        claims.v === "desktop" ? "desktop" : claims.v === "setup" ? "setup" : "password";
+      const renewable = claims.exp - claims.iat >= this.deps.sessionRenewMs;
+      if (renewable && claims.exp - now.getTime() < this.deps.sessionRenewMs) {
+        return {
+          user,
+          via,
+          renewedToken: signToken(
+            newClaims(claims.u, claims.v, now.getTime(), this.deps.sessionTtlMs),
+            this.deps.tokenSecret,
+          ),
+        };
+      }
+      return { user, via };
     }
-    if (expiresAt - now.getTime() < this.deps.sessionRenewMs) {
-      this.deps.authSessions.touch(
-        tokenHash,
-        new Date(now.getTime() + this.deps.sessionTtlMs).toISOString(),
-      );
-    }
-    const user = this.deps.users.findById(session.userId);
-    if (!user) return null;
-    return { user, via: session.via === "desktop" ? "desktop" : "password" };
+    // Anything that is not a signed token is not a session: the only per-session state that
+    // survives a request is a revocation.
+    return null;
   }
 
   private issueSession(userId: string, via: SessionVia): string {
-    const token = randomBytes(32).toString("base64url");
-    const now = this.now();
-    this.deps.authSessions.insert({
-      tokenHash: sha256Hex(token),
-      userId,
-      createdAt: now.toISOString(),
-      expiresAt: new Date(now.getTime() + this.deps.sessionTtlMs).toISOString(),
-      via,
-    });
-    return token;
+    const claims = newClaims(userId, via, this.now().getTime(), this.deps.sessionTtlMs);
+    return signToken(claims, this.deps.tokenSecret);
+  }
+
+  /**
+   * Redeems this boot's owner token for a signed session — the ONE bootstrap primitive.
+   *
+   * Whoever presents the token read `<root>/owner-token`, and reading the data root is what
+   * ownership has always meant here: the CLI redeems it for `penguin auth token`, a machine
+   * redeems it when this server's controller asks over ssh, and nothing needs a password or
+   * a key at rest to exist. The TTL is capped at the ordinary session TTL — the owner can
+   * mint again forever, so a longer-lived token would add risk and no capability.
+   */
+  redeemOwnerToken(
+    given: string,
+    userId: string,
+    ttlMs: number,
+  ): { token: string; expiresAt: string } | "bad_token" | "no_user" {
+    const expected = this.deps.ownerToken;
+    if (expected === null || !ownerTokenMatches(given, expected)) return "bad_token";
+    if (this.deps.users.findById(userId) === null) return "no_user";
+    const bounded = Math.max(1_000, Math.min(ttlMs, this.deps.sessionTtlMs));
+    const claims = newClaims(userId, "cli", this.now().getTime(), bounded);
+    return {
+      token: signToken(claims, this.deps.tokenSecret),
+      expiresAt: new Date(claims.exp).toISOString(),
+    };
   }
 }

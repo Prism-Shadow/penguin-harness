@@ -2,14 +2,15 @@
  * Offline admin-password reset — the rescue path when the Web admin password is
  * forgotten (`penguin server reset-admin-password`).
  *
- * The admin can reset every OTHER user from the user-management page, but nobody can
- * reset the admin itself once its password is lost: the plaintext file in the data root
- * only survives while the password is still the initial one. This module closes that
- * gap from the machine that owns the data root: it re-arms the whole initial-password
- * machinery — a fresh `penguin-<4 digits>` password flagged password_is_initial, the
- * plaintext stored via initial-password.ts so every server start re-prints the framed
- * reminder until the password is changed, and all of the admin's login sessions
- * cleared (matching an admin-initiated reset).
+ * The admin can reset every OTHER user from the user-management page, but nobody can reset
+ * the admin itself once its password is lost. This module closes that gap from the machine
+ * that owns the data root: it returns the account to the UNCLAIMED state — a random password
+ * nobody has ever seen, flagged password_is_initial, with every one of the admin's sessions
+ * revoked. The next server start then prints a first-login link, exactly as a fresh install
+ * does, and claiming it sets a real password.
+ *
+ * No plaintext is produced or stored, so there is nothing for the caller to write down and
+ * nothing left on disk afterwards. The rescue is "start the server and open the link".
  *
  * web.db is single-process / single-writer (see db/database.ts and lock.ts), so the
  * reset refuses while a live server owns the root: the caller tells the user to stop it
@@ -25,9 +26,8 @@ import path from "node:path";
 import { hashPassword } from "./auth/password.js";
 import { ADMIN_USER_ID, generateInitialAdminPassword } from "./auth/service.js";
 import { openDatabase } from "./db/database.js";
-import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
 import { UsersRepo } from "./db/repos/users.js";
-import { storeInitialAdminPassword } from "./initial-password.js";
+import { clearInitialAdminPassword } from "./initial-password.js";
 import { liveServerLock } from "./lock.js";
 import type { ServerLock } from "./lock.js";
 
@@ -38,7 +38,8 @@ export type ResetAdminPasswordResult =
   | { outcome: "no_database"; dbPath: string }
   /** Nothing to reset: the database exists but the admin was never seeded. */
   | { outcome: "no_admin" }
-  | { outcome: "reset"; password: string };
+  /** Returned to the unclaimed state: start the server and open the first-login link it prints. */
+  | { outcome: "reset" };
 
 /**
  * Resets the built-in admin to a fresh initial password. `dbPath` defaults to the
@@ -58,11 +59,17 @@ export async function resetAdminPassword(
   try {
     const users = new UsersRepo(db);
     if (users.findById(ADMIN_USER_ID) === null) return { outcome: "no_admin" };
+    // Random and discarded: the account is being returned to "never claimed", and the
+    // first-login link is what claims it. A value nobody holds cannot be typed, phished,
+    // or left in a terminal buffer.
     const password = generateInitialAdminPassword();
     users.updatePassword(ADMIN_USER_ID, await hashPassword(password), true);
-    new AuthSessionsRepo(db).deleteByUser(ADMIN_USER_ID);
-    storeInitialAdminPassword(root, password);
-    return { outcome: "reset", password };
+    // Works offline because the server reads the mark per request: every token issued to the
+    // admin before this instant stops verifying the moment it comes back up.
+    users.setSessionsNotBefore(ADMIN_USER_ID, new Date().toISOString());
+    // Nothing writes it any more; sweep a plaintext an older build may have left behind.
+    clearInitialAdminPassword(root);
+    return { outcome: "reset" };
   } finally {
     db.close();
   }

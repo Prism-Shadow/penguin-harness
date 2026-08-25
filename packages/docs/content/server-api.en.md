@@ -33,7 +33,7 @@ packages/server/src
 
 ## Authentication
 
-- Cookie session: `penguin_session` (HttpOnly, SameSite=Lax), valid for 7 days with sliding renewal;
+- Cookie session: `penguin_session` (HttpOnly, SameSite=Lax), valid for 30 days with sliding renewal;
 - Passwords are stored as scrypt hashes; the server keeps only the sha256 of the session token, never the plaintext;
 - No open registration: the built-in admin `admin` is seeded at startup with a random initial password (of the form `penguin-1234`) — kept in `<root>/initial-admin-password` and re-printed to the server console on every start until it is changed; `PENGUIN_SEED_ADMIN_PASSWORD` pins it for automation — and all other accounts are created by an admin;
 - Same-origin only — no CORS middleware is enabled.
