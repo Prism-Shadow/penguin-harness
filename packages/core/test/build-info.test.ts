@@ -30,20 +30,39 @@ afterEach(async () => {
   await fsp.rm(tmp, { recursive: true, force: true });
 });
 
+/**
+ * git against a fixture repository. stderr is dropped rather than inherited: on Windows,
+ * `git add` warns about LF being replaced by CRLF for every file, which floods the CI log
+ * with dozens of lines that say nothing about the test.
+ */
 function git(cwd: string, ...args: string[]): string {
-  return execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+  return execFileSync("git", args, {
+    cwd,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+    windowsHide: true,
+  }).trim();
 }
 
-/** A repository with one commit, plus the workspace marker that makes it "ours". */
+/**
+ * A repository with one commit, plus the workspace marker that makes it "ours".
+ *
+ * Identity rides on the commit as `-c` flags rather than two `git config` calls: this file
+ * builds nine of these, and process spawning is expensive enough on a Windows runner to be
+ * worth not paying for twice per repository.
+ */
 async function makeCheckout(dir: string): Promise<void> {
   await fsp.mkdir(dir, { recursive: true });
   git(dir, "init", "-q", "-b", "main", ".");
-  git(dir, "config", "user.email", "test@example.com");
-  git(dir, "config", "user.name", "Test");
   await fsp.writeFile(path.join(dir, "pnpm-workspace.yaml"), "packages:\n  - packages/*\n");
   await fsp.writeFile(path.join(dir, "tracked.txt"), "one\n");
   git(dir, "add", ".");
-  git(dir, "commit", "-qm", "initial");
+  commit(dir, "initial");
+}
+
+/** A commit that carries its own author identity, so the fixture needs no `git config`. */
+function commit(dir: string, message: string): void {
+  git(dir, "-c", "user.email=test@example.com", "-c", "user.name=Test", "commit", "-qm", message);
 }
 
 describe("resolveBuildInfo", () => {
@@ -138,7 +157,8 @@ describe("readCheckout", () => {
     expect(readCheckout(tmp).described).toBe("v0.2.3");
 
     await fsp.writeFile(path.join(tmp, "tracked.txt"), "two\n");
-    git(tmp, "commit", "-qam", "second");
+    git(tmp, "add", ".");
+    commit(tmp, "second");
     expect(readCheckout(tmp).described).toMatch(/^v0\.2\.3-1-g[0-9a-f]+$/);
   });
 
