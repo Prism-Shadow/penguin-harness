@@ -256,18 +256,18 @@ describe("exec_command run_in_background", () => {
     expect(events).toHaveLength(0);
     // And the session is gone from the registry.
     const again = await runTool(env, "input_command", { process_id: id, kill: true });
-    expect(again.stopReason).toBe("failed");
+    expect(again.stopReason).toBe("fatal");
   });
 
   it("input_command kill fails on an unknown process_id; the legacy kill_command name is an unknown tool", async () => {
     const { env } = await makeEnv();
     const res = await runTool(env, "input_command", { process_id: "proc-deadbeef", kill: true });
-    expect(res.stopReason).toBe("failed");
+    expect(res.stopReason).toBe("fatal");
     expect(res.output).toContain("unknown process_id");
     // A stale stored config may still carry the removed tool; the registry no longer
     // assembles it, so a model call collapses to the standard unknown-tool failure.
     const legacy = await runTool(env, "kill_command", { process_id: "proc-deadbeef" });
-    expect(legacy.stopReason).toBe("failed");
+    expect(legacy.stopReason).toBe("fatal");
     expect(legacy.output).toContain("Unknown tool: kill_command");
   });
 
@@ -549,7 +549,7 @@ describe("run_subagent run_in_background", () => {
     cleanups.push(() => manager.dispose());
     const input = createInputSubagentTool(SUB_INPUT_DEF, { subagentSessions: manager });
     const res = await drive(input, { subagent_id: "subagent-deadbeef" });
-    expect(res.stopReason).toBe("failed");
+    expect(res.stopReason).toBe("fatal");
     expect(res.output).toContain("unknown subagent_id");
   });
 });

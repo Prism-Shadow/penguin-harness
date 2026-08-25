@@ -505,7 +505,7 @@ export class Agent {
     // must not block the resume itself.
     if (resumed.danglingCompaction) {
       try {
-        await trace.write(compactionEnd({ ...resumed.danglingCompaction, status: "failed" }));
+        await trace.write(compactionEnd({ ...resumed.danglingCompaction, status: "retryable" }));
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         process.stderr.write(`[trace] interrupted-compaction closure failed: ${detail}\n`);

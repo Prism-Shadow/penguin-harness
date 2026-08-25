@@ -362,8 +362,8 @@ export class ManagedSession {
 /** Converts exit info into a tool result (the terminal marker is appended via `note`, outside the truncation, so it isn't lost with long output). */
 export function resultForExit(exit: ProcessExit | null): ToolResult {
   if (!exit) return { stopReason: "completed" };
-  if (exit.signal) return { stopReason: "failed", note: `[terminated by signal ${exit.signal}]` };
+  if (exit.signal) return { stopReason: "fatal", note: `[terminated by signal ${exit.signal}]` };
   if (exit.code !== 0)
-    return { stopReason: "failed", note: `[exit code: ${exit.code ?? "unknown"}]` };
+    return { stopReason: "fatal", note: `[exit code: ${exit.code ?? "unknown"}]` };
   return { stopReason: "completed" };
 }

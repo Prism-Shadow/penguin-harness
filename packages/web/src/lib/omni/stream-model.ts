@@ -61,13 +61,10 @@ import type {
   CompactionReason,
   CompleteModelPayload,
   EventPayload,
-  McpConnectStatus,
   OmniMessage,
   PartialModelPayload,
   SessionMetaPayload,
-  CompactionStatus,
   StopReason,
-  ToolStopReason,
   TokenUsagePayload,
 } from "@prismshadow/penguin-core/omnimessage";
 import type { TracePosition } from "@prismshadow/penguin-server/api";
@@ -195,7 +192,7 @@ export interface ToolCallItem {
   images?: string[];
   outputStreaming: boolean;
   outputComplete: boolean;
-  outputStopReason?: ToolStopReason;
+  outputStopReason?: StopReason;
   /** Approval decision (annotated by the approval_decision event). */
   decision?: ApprovalDecision;
   decisionSource?: DecisionSource;
@@ -283,7 +280,7 @@ export interface CompactionItem {
   mode: CompactionMode;
   /** True between begin and end (renders a "compaction in progress" banner). */
   running: boolean;
-  status?: CompactionStatus;
+  status?: StopReason;
   /** Last failure detail from compaction_end.error_message (its share of the RetryDetail block; present on failed ends from new cores). */
   errorMessage?: string;
   /** The begin message's timestamp (ms); ticks the running row and anchors durationMs. */
@@ -309,7 +306,8 @@ export interface McpToolSummary {
 /** One server's connect outcome (from the end payload), backing the row's per-server groups. */
 export interface McpServerOutcome {
   server: string;
-  status: McpConnectStatus;
+  /** `completed` / `fatal`; legacy Traces spell the failure `failed`. */
+  status: StopReason;
   /** That server's own connect + discovery time (the payload's duration_ms). */
   durationMs: number;
   /** Discovered tool count (present on a completed connect). */
@@ -1398,9 +1396,7 @@ function settleUndispatchedCall(card: ToolCallItem): void {
   if (!card.callStopReason || card.callStopReason === "completed" || card.outputComplete) return;
   card.outputComplete = true;
   card.outputStreaming = false;
-  // The call's closure reason is LLM vocabulary; the output slot keeps the tool
-  // vocabulary — an interrupt stays aborted, every failure shape settles as failed.
-  card.outputStopReason ??= card.callStopReason === "aborted" ? "aborted" : "failed";
+  card.outputStopReason ??= card.callStopReason;
 }
 
 /** Settle the thinking duration: end time - start time (skipped if either is missing; negative values clamp to 0). */
@@ -1557,7 +1553,9 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
         ...(r.tools !== undefined ? { tools: r.tools } : {}),
         ...(r.error !== undefined ? { error: r.error.slice(0, 500) } : {}),
       }));
-      const failedResults = p.results.filter((r) => r.status === "failed");
+      const failedResults = p.results.filter(
+        (r) => r.status === "fatal" || (r.status as string) === "failed",
+      );
       if (failedResults.length > 0) item.failed = failedResults.map((r) => r.server);
       return;
     }

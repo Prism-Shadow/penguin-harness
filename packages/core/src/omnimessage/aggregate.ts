@@ -13,7 +13,7 @@
  * Docs: /docs/omni-message § "The streaming discipline".
  */
 import { assistantText, thinkingMessage, toolCall, toolCallOutput } from "./builders.js";
-import type { OmniMessage, PartialModelPayload, StopReason, ToolStopReason } from "./types.js";
+import type { OmniMessage, PartialModelPayload, StopReason } from "./types.js";
 import { isPartialPayload } from "./types.js";
 
 type PartialKind = PartialModelPayload["type"];
@@ -26,8 +26,7 @@ interface OpenFragment {
   toolCallId?: string;
   /** Images carried by tool_call_output (images aren't incremental — a single delta carries the whole set; a later one overwrites). */
   images?: string[];
-  /** Always matches the fragment kind: tool outputs write ToolStopReason values, everything else StopReason. */
-  lastStopReason: StopReason | ToolStopReason;
+  lastStopReason: StopReason;
 }
 
 /** Merge key for partial fragments: same type + same tool_call_id counts as the same fragment. */
@@ -39,21 +38,21 @@ function fragmentKey(p: PartialModelPayload): string {
 function finalize(frag: OpenFragment): OmniMessage {
   switch (frag.kind) {
     case "partial_text":
-      return assistantText(frag.buffer, frag.lastStopReason as StopReason);
+      return assistantText(frag.buffer, frag.lastStopReason);
     case "partial_thinking":
-      return thinkingMessage(frag.buffer, frag.lastStopReason as StopReason);
+      return thinkingMessage(frag.buffer, frag.lastStopReason);
     case "partial_tool_call":
       return toolCall({
         name: frag.name ?? "",
         arguments: frag.buffer,
         toolCallId: frag.toolCallId ?? "",
-        stopReason: frag.lastStopReason as StopReason,
+        stopReason: frag.lastStopReason,
       });
     case "partial_tool_call_output":
       return toolCallOutput({
         output: frag.buffer,
         toolCallId: frag.toolCallId ?? "",
-        stopReason: frag.lastStopReason as ToolStopReason,
+        stopReason: frag.lastStopReason,
         ...(frag.images !== undefined ? { images: frag.images } : {}),
       });
   }

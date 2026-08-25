@@ -1262,7 +1262,7 @@ describe("ContextEngine tool execution resilience", () => {
         yield toolCallOutput({
           output: "[tool error] boom",
           toolCallId: id,
-          stopReason: "failed",
+          stopReason: "fatal",
         });
       },
     };
@@ -1304,11 +1304,11 @@ describe("ContextEngine tool execution resilience", () => {
     for await (const msg of engine.run([userText("go")], { approve: allowAll })) {
       all.push(msg);
     }
-    // A failed failure output was produced, and the Task normally advanced to the second turn.
+    // A fatal failure output was produced, and the Task normally advanced to the second turn.
     const failed = all.find(
       (m) =>
         (m.payload as { type?: string }).type === "tool_call_output" &&
-        (m.payload as { stop_reason?: string }).stop_reason === "failed",
+        (m.payload as { stop_reason?: string }).stop_reason === "fatal",
     );
     expect(failed).toBeDefined();
     expect(
@@ -1364,7 +1364,7 @@ describe("ContextEngine tool execution resilience", () => {
         );
         expect(outputs).toHaveLength(1);
         expect((outputs[0]!.payload as { output: string }).output).toContain("custom env exploded");
-        expect((outputs[0]!.payload as { stop_reason?: string }).stop_reason).toBe("failed");
+        expect((outputs[0]!.payload as { stop_reason?: string }).stop_reason).toBe("fatal");
         yield assistantText("survived");
         yield usage();
         return { status: "completed" };

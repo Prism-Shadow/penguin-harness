@@ -214,7 +214,7 @@ describe("run_subagent tool (foreground)", () => {
       const { services } = makeServices(runner);
       const tool = createSubagentTool(DEF, services);
       const { out, result } = await collectWithReturn(tool.execute(args, CTX));
-      expect(result?.stopReason).toBe("failed");
+      expect(result?.stopReason).toBe("fatal");
       expect(ownDeltas(out)).toContain("must be given together");
       expect(spawned).toHaveLength(0);
     }
@@ -255,7 +255,7 @@ describe("run_subagent tool (foreground)", () => {
       const { out, result } = await collectWithReturn(
         tool.execute({ prompt: "x", thinking_level }, CTX),
       );
-      expect(result?.stopReason).toBe("failed");
+      expect(result?.stopReason).toBe("fatal");
       expect(ownDeltas(out)).toContain("invalid `thinking_level`");
       expect(ownDeltas(out)).toContain("low / medium / high / xhigh / max");
       expect(spawned).toHaveLength(0);
@@ -302,7 +302,7 @@ describe("run_subagent tool (foreground)", () => {
     const { services } = makeServices();
     const tool = createSubagentTool(DEF, services);
     const { out, result } = await collectWithReturn(tool.execute({ prompt: "x" }, CTX));
-    expect(result?.stopReason).toBe("failed");
+    expect(result?.stopReason).toBe("fatal");
     expect(ownDeltas(out)).toContain("no subagent runner");
   });
 
@@ -316,7 +316,7 @@ describe("run_subagent tool (foreground)", () => {
     const { services } = makeServices(runner);
     const tool = createSubagentTool(DEF, services);
     const { out, result } = await collectWithReturn(tool.execute({}, CTX));
-    expect(result?.stopReason).toBe("failed");
+    expect(result?.stopReason).toBe("fatal");
     expect(ownDeltas(out)).toContain("prompt");
   });
 
@@ -342,7 +342,7 @@ describe("run_subagent tool (foreground)", () => {
     const { services } = makeServices(runner);
     const tool = createSubagentTool(DEF, services);
     const { result } = await collectWithReturn(tool.execute({ prompt: "x" }, CTX));
-    expect(result?.stopReason).toBe("failed");
+    expect(result?.stopReason).toBe("fatal");
     expect(result?.note).toContain("subagent aborted: llm error");
   });
 
@@ -489,7 +489,7 @@ describe("run_subagent backgrounding + input_subagent", () => {
     const { out, result } = await collectWithReturn(
       writeTool.execute({ subagent_id: id, prompt: "more", yield_time_ms: 250 }, CTX),
     );
-    expect(result?.stopReason).toBe("failed");
+    expect(result?.stopReason).toBe("fatal");
     expect(ownDeltas(out)).toContain("still running");
     child.release();
   });
@@ -500,7 +500,7 @@ describe("run_subagent backgrounding + input_subagent", () => {
     const { out, result } = await collectWithReturn(
       writeTool.execute({ subagent_id: "subagent-deadbeef" }, CTX),
     );
-    expect(result?.stopReason).toBe("failed");
+    expect(result?.stopReason).toBe("fatal");
     expect(ownDeltas(out)).toContain("unknown subagent_id subagent-deadbeef");
   });
 
@@ -558,7 +558,7 @@ describe("run_subagent backgrounding + input_subagent", () => {
     }
     const tool = createSubagentTool(DEF, services);
     const { out, result } = await collectWithReturn(tool.execute({ prompt: "x" }, CTX));
-    expect(result?.stopReason).toBe("failed");
+    expect(result?.stopReason).toBe("fatal");
     expect(ownDeltas(out)).toContain("too many background subagents");
   });
 
@@ -722,7 +722,7 @@ describe("subagent steering and per-run abort", () => {
     );
     expect(ownDeltas(out)).toContain(`aborting subagent ${id}'s current run`);
     // The aborted round settles as failed with the child's abort reason; the session is kept.
-    expect(result?.stopReason).toBe("failed");
+    expect(result?.stopReason).toBe("fatal");
     expect(result?.note).toContain("subagent aborted");
     expect(result?.note).toContain(`subagent idle with subagent_id ${id}`);
     expect(manager.get(id)).toBeDefined();

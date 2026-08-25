@@ -352,7 +352,7 @@ describe("context compaction", () => {
       compactionEvents(out).map(
         (e) => `${e.type}:${(e as Partial<CompactionEndPayload>).status ?? ""}`,
       ),
-    ).toEqual(["compaction_begin:", "compaction_end:failed"]);
+    ).toEqual(["compaction_begin:", "compaction_end:fatal"]);
     expect(payloadTypes(out)).toContain("abort");
     expect(created).toBe(0);
 
@@ -415,7 +415,7 @@ describe("context compaction", () => {
     expect((newTrace[2]!.payload as { text?: string }).text).toBe("task 2");
   });
 
-  it("reconnect exhaustion on the compaction request converges to failed", async () => {
+  it("reconnect exhaustion on the compaction request converges to retryable", async () => {
     const llm1 = new ScriptedLLM(
       [
         { messages: [assistantText("answer"), usage(150, 150)] },
@@ -438,7 +438,7 @@ describe("context compaction", () => {
     // The end event reports the attempts spent (issue #170's cost-center row message).
     expect(events[1]).toMatchObject({
       type: "compaction_end",
-      status: "failed",
+      status: "retryable",
       attempt: 2,
     });
     // The retry resends the original input (tool results + prompt; here there are no tool results, just the prompt).
@@ -552,7 +552,7 @@ describe("context compaction", () => {
 
     const out = await collect(engine.run([userText("go")], { approve: allowAll }));
     const events = compactionEvents(out);
-    expect(events[1]).toMatchObject({ type: "compaction_end", status: "failed" });
+    expect(events[1]).toMatchObject({ type: "compaction_end", status: "retryable" });
     // 1 turn request + 3 compaction attempts (initial + compactionMaxReconnects retries).
     expect(llm1.calls).toHaveLength(4);
     // The Trace-written compaction request_ends announce the planned backoff under the
@@ -571,7 +571,7 @@ describe("context compaction", () => {
     expect(attempts).toEqual([undefined, 1, 2, 3]);
   });
 
-  it("an empty compaction response (thinking only, no text) is retried like any failure: 5 attempts, then failed with the context kept", async () => {
+  it("an empty compaction response (thinking only, no text) is retried like any failure: 5 attempts, then retryable with the context kept", async () => {
     // Issue #83/#170: the compaction request completes but yields no text. Committing the
     // empty summary would discard the whole context and lose the task state — the response
     // counts as one more failed attempt on the unified reconnect budget, and once the budget
@@ -618,7 +618,7 @@ describe("context compaction", () => {
     const events = compactionEvents(out1);
     expect(
       events.map((e) => `${e.type}:${(e as Partial<CompactionEndPayload>).status ?? ""}`),
-    ).toEqual(["compaction_begin:", "compaction_end:failed"]);
+    ).toEqual(["compaction_begin:", "compaction_end:retryable"]);
     expect(events[1]).toMatchObject({
       attempt: 5,
       error_message: "the response contained no usable summary",
@@ -703,7 +703,7 @@ describe("context compaction", () => {
 
     const out = await collect(engine.run([userText("go")], { approve: allowAll }));
     const events = compactionEvents(out);
-    expect(events[1]).toMatchObject({ type: "compaction_end", status: "failed" });
+    expect(events[1]).toMatchObject({ type: "compaction_end", status: "retryable" });
     // The rejected tool calls are never approved or executed, and nothing of the compaction
     // dialogue (repairs included) reaches the output stream.
     expect(payloadTypes(out)).not.toContain("approval_decision");
@@ -731,7 +731,7 @@ describe("context compaction", () => {
       expect(repair.output).toBe(
         "[tool error] the compaction request expects a summary, not tool calls",
       );
-      expect(repair.stop_reason).toBe("failed");
+      expect(repair.stop_reason).toBe("fatal");
       expect(textOf(retry[1]!)).toBe(SUMMARY_RETRY_GUIDANCE);
       expect(textOf(retry[2]!)).toBe("COMPACT NOW");
     }
@@ -878,7 +878,7 @@ describe("context compaction", () => {
     expect(repair.output).toBe(
       "[tool error] the compaction request expects a summary, not tool calls",
     );
-    expect(repair.stop_reason).toBe("failed");
+    expect(repair.stop_reason).toBe("fatal");
     expect(textOf(retry[1]!)).toBe(SUMMARY_RETRY_GUIDANCE);
     expect(textOf(retry[2]!)).toBe("COMPACT NOW");
 
@@ -993,7 +993,10 @@ describe("context compaction", () => {
 
     const out1 = await collect(engine.run([userText("task one")], { approve: allowAll }));
 
-    expect(compactionEvents(out1)[1]).toMatchObject({ type: "compaction_end", status: "failed" });
+    expect(compactionEvents(out1)[1]).toMatchObject({
+      type: "compaction_end",
+      status: "retryable",
+    });
     // The abandonment ends the run through the interruption flow: an abort follows the
     // failed compaction_end, and no further request is issued in this run.
     const abort = out1.find((m) => (m.payload as { type?: string }).type === "abort");
@@ -1052,7 +1055,7 @@ describe("context compaction", () => {
     });
 
     const out = await collect(engine.run([userText("go")], { approve: allowAll }));
-    expect(compactionEvents(out)[1]).toMatchObject({ type: "compaction_end", status: "failed" });
+    expect(compactionEvents(out)[1]).toMatchObject({ type: "compaction_end", status: "retryable" });
     expect(payloadTypes(out)).toContain("abort");
     expect(llm1.calls).toHaveLength(6);
     // Attempt 1 folds the outputs; attempts 2-5 are note + Prompt (absorbed by the first commit).
@@ -1099,7 +1102,7 @@ describe("context compaction", () => {
     });
 
     const out = await collect(engine.run([userText("go")], { approve: allowAll }));
-    expect(compactionEvents(out)[1]).toMatchObject({ type: "compaction_end", status: "failed" });
+    expect(compactionEvents(out)[1]).toMatchObject({ type: "compaction_end", status: "retryable" });
     expect(payloadTypes(out)).toContain("abort");
     expect(llm1.calls).toHaveLength(3);
 
@@ -1456,7 +1459,7 @@ describe("context compaction", () => {
     expect(llm1.calls).toHaveLength(1); // the aborted run never reached the LLM
 
     const out = await collect(engine.compact());
-    expect(compactionEvents(out)[1]).toMatchObject({ type: "compaction_end", status: "failed" });
+    expect(compactionEvents(out)[1]).toMatchObject({ type: "compaction_end", status: "retryable" });
     // The compaction folded the carry-over into its (uncommitted) attempts...
     expect(llm1.calls).toHaveLength(3);
     expect(llm1.calls[1]!.map(textOf)).toEqual(["pending question", "COMPACT NOW"]);
@@ -1504,7 +1507,7 @@ describe("context compaction", () => {
     );
 
     const out = await collect(engine.compact());
-    expect(compactionEvents(out)[1]).toMatchObject({ type: "compaction_end", status: "failed" });
+    expect(compactionEvents(out)[1]).toMatchObject({ type: "compaction_end", status: "retryable" });
     expect(llm1.calls).toHaveLength(6);
     // Attempt 1 folded the carry-over in (and committed it); later attempts resend the note +
     // Prompt — the absorbed carry-over never again.
@@ -2025,7 +2028,7 @@ describe("mid-task compaction runs the tools first (issue #288)", () => {
         yield toolCallOutput({
           output: "[tool error] boom",
           toolCallId: tc.payload.tool_call_id,
-          stopReason: "failed",
+          stopReason: "fatal",
         });
       },
       toolPermission() {
@@ -2052,7 +2055,7 @@ describe("mid-task compaction runs the tools first (issue #288)", () => {
     expect(payloadTypes(compactionInput)).toEqual(["tool_call_output", "text"]);
     const out = compactionInput[0]!.payload as { output: string; stop_reason?: string };
     expect(out.output).toBe("[tool error] boom");
-    expect(out.stop_reason).toBe("failed");
+    expect(out.stop_reason).toBe("fatal");
   });
 
   it("a denied tool still pairs: the denial output rides the compaction request", async () => {

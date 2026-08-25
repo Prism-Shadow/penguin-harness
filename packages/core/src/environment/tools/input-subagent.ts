@@ -57,13 +57,13 @@ export function createInputSubagentTool(
 
       if (!manager) {
         yield delta("[input_subagent unavailable: no subagent session manager configured]");
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
 
       const subagentId = args["subagent_id"];
       if (typeof subagentId !== "string" || subagentId.length === 0) {
         yield delta('Missing required argument "subagent_id" for input_subagent.');
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
       let session = manager.get(subagentId);
       if (!session) {
@@ -96,7 +96,7 @@ export function createInputSubagentTool(
           `[input_subagent error: unknown subagent_id ${subagentId} ` +
             `(not from this conversation, or its session could not be resumed)]`,
         );
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
 
       const prompt = typeof args["prompt"] === "string" ? (args["prompt"] as string) : "";
@@ -137,7 +137,7 @@ export function createInputSubagentTool(
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
             yield delta(`[input_subagent error: ${message}]`);
-            return { stopReason: "failed" };
+            return { stopReason: "fatal" };
           }
         } else {
           // Running, but the handle predates steering (an older embedder's SubagentRunner).
@@ -145,7 +145,7 @@ export function createInputSubagentTool(
             `[input_subagent error: subagent ${subagentId} is still running; ` +
               `poll with an empty prompt to collect progress first]`,
           );
-          return { stopReason: "failed" };
+          return { stopReason: "fatal" };
         }
       }
 

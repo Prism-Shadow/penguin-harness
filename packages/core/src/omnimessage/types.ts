@@ -39,22 +39,18 @@ export type Role = "user" | "assistant";
  *     the run and surfaces the error; the fix is a config/credential change, then a new
  *     request.
  *
+ * The one vocabulary every stop_reason-carrying record shares — model messages, tool
+ * results, request and compaction terminals alike. Tool executions rarely have a
+ * retryable failure: a tool error or timeout is definitive for that call and is fed back
+ * to the model as a `fatal` result (nothing in the harness retries it), with `retryable`
+ * available for genuinely transient tool situations.
+ *
  * Legacy Traces may still carry the retired values `failed` / `timeout` / `malformed` /
  * `auth` on their records; replay logic only ever compares against `completed`, and render
- * layers keep read-only labels for the old spellings.
+ * layers keep read-only handling for the old spellings.
  * Docs: /docs/omni-message § "stop_reason".
  */
 export type StopReason = "completed" | "aborted" | "retryable" | "fatal";
-
-/**
- * Terminal state of one tool execution, written on `tool_call_output` /
- * `partial_tool_call_output` by Environment. Deliberately NOT the LLM `StopReason`
- * vocabulary: a tool failure is fed back to the model as content — nothing in the harness
- * retries it and nothing treats it as fatal — so the tool result keeps naming what
- * happened (`failed` / `timeout`), while `retryable` / `fatal` stay reserved for the LLM
- * request loop.
- */
-export type ToolStopReason = "completed" | "failed" | "aborted" | "timeout";
 
 /** The event phase of a streaming fragment. `stop` marks the end of a fragment and usually carries no incremental content. */
 export type StreamEventType = "start" | "delta" | "stop";
@@ -236,7 +232,7 @@ export interface ToolCallOutputPayload {
    */
   images?: string[];
   tool_call_id: string;
-  stop_reason?: ToolStopReason;
+  stop_reason?: StopReason;
 }
 
 // ---------------------------------------------------------------------------
@@ -279,7 +275,7 @@ export interface PartialToolCallOutputPayload {
   /** Images carried by the tool output (optional): images aren't incremental, carried as a whole by a single delta (consistent with the complete message). */
   images?: string[];
   tool_call_id: string;
-  stop_reason?: ToolStopReason;
+  stop_reason?: StopReason;
 }
 
 // ---------------------------------------------------------------------------
@@ -390,11 +386,12 @@ export type CompactionMode = "summarize" | "discard";
  * the stream carries only each attempt's `token_usage` and the summary being written as
  * ordinary `partial_text` fragments (or the complete text when nothing streamed) — the
  * compaction request's other raw messages stay Trace-only. Both `reason` and
- * `mode` are carried on both events, for stateless frontend rendering; `status` has its own
- * three-value vocabulary (a compaction converges to a terminal state — `failed` here means
- * "abandoned this time, made up at the next trigger", which is neither the LLM loop's
- * `retryable` nor its `fatal`; the request-level failures collapse into it once the
- * compaction's own retries are exhausted).
+ * `mode` are carried on both events, for stateless frontend rendering; `status` uses the
+ * shared StopReason vocabulary: `retryable` means "abandoned this time on exhausted
+ * retries — the standing trigger makes it up at the next opportunity", while `fatal`
+ * means the compaction request died on a failure no retry can fix (credentials, a
+ * provider rejection) and needs a config change first. Legacy Traces spell the abandoned
+ * case `failed`.
  */
 export interface CompactionBeginPayload {
   type: "compaction_begin";
@@ -406,13 +403,10 @@ export interface CompactionBeginPayload {
   turns: number;
 }
 
-/** Terminal state of one compaction: succeeded / abandoned (made up at the next trigger) / user-interrupted. */
-export type CompactionStatus = "completed" | "failed" | "aborted";
-
 /**
  * Inherits the shared RetryDetail block: `attempt` is the final attempt's 1-based ordinal
  * (failed attempts and retries included — stamped by summarize mode), `error_message` is
- * the last failure's detail (present only when `status` is `failed`), and `retry_in_ms` is
+ * the last failure's detail (present on `retryable` / `fatal` ends), and `retry_in_ms` is
  * never stamped here (compaction retries are announced on the compaction request's own
  * request_end, which is Trace-only).
  */
@@ -421,7 +415,7 @@ export interface CompactionEndPayload extends RetryDetail {
   reason: CompactionReason;
   mode: CompactionMode;
   /** Compaction result; non-`completed` means compaction was abandoned and the original context was kept. */
-  status: CompactionStatus;
+  status: StopReason;
 }
 
 /** How a goal ended: the goal file's terminal status, or `aborted` when a round was cut off. */
@@ -472,18 +466,16 @@ export interface ToolListReadyPayload {
   tools: ToolDefinition[];
 }
 
-/** Terminal status of the MCP connect phase (and of each server inside it) — the same style as `compaction_end.status`. */
-export type McpConnectStatus = "completed" | "failed" | "aborted";
-
 /** One MCP server's outcome inside `mcp_connect_end.results`; `duration_ms` covers that server's connect + tool discovery (individual servers have no messages of their own to derive it from). */
 export interface McpServerConnectResult {
   server: string;
   transport: "stdio" | "http" | "sse";
-  status: McpConnectStatus;
+  /** `completed` / `fatal` (connect or discovery failed; not retried within the run) / `aborted`. Legacy Traces spell the failure `failed`. */
+  status: StopReason;
   duration_ms: number;
   /** Number of tools discovered (present on completed). */
   tools?: number;
-  /** Failure detail (present on failed). */
+  /** Failure detail (present on fatal). */
   error?: string;
 }
 
@@ -491,10 +483,11 @@ export interface McpServerConnectResult {
  * MCP connect boundary events: one pair around the first run's connect + discovery phase,
  * emitted only when MCP Servers are configured. The begin lists the servers being
  * contacted (frontends show a connecting status off it); the end carries the overall
- * `status` (compaction_end-style) plus the per-server results — the phase's total wall
+ * `status` (the shared `StopReason` vocabulary) plus the per-server results — the phase's total wall
  * time is the pair's timestamp difference (messages carry timestamps, so the payload
  * records no duplicate duration). Failures are per-server and non-fatal: an unreachable
- * server is skipped — its tools are absent — and the run continues. `status: "aborted"`
+ * server is skipped — its tools are absent — and the run continues (a failed phase is
+ * `fatal`: nothing retries it within the run). `status: "aborted"`
  * means the user interrupted mid-connect: the attempt is cancelled and the next run
  * reconnects from scratch. Streamed live; written to the Trace right after the run's
  * input so the phase belongs to the new turn (an attempt aborted before the engine
@@ -509,8 +502,8 @@ export interface McpConnectBeginPayload {
 
 export interface McpConnectEndPayload {
   type: "mcp_connect_end";
-  /** Overall terminal status: completed (every server connected) / failed (some server failed) / aborted (user interrupted). */
-  status: McpConnectStatus;
+  /** Overall terminal status: completed (every server connected) / fatal (some server failed) / aborted (user interrupted). Legacy Traces spell the failure `failed`. */
+  status: StopReason;
   /** Per-server outcomes (empty on an aborted attempt — nothing settled is claimed). */
   results: McpServerConnectResult[];
 }

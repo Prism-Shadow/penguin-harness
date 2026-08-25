@@ -567,8 +567,17 @@ const en: Messages = {
       ? mode === "discard"
         ? "[compaction] done; old context discarded"
         : "[compaction] done; continuing with the summarized context"
-      : `[compaction] ${status}${errorMessage !== undefined ? ` (${errorMessage})` : ""}; keeping the current context`) +
-    (tokens ? ` · tokens ${tokens.total} (${tokens.delta})` : ""),
+      : status === "aborted"
+        ? "[compaction] aborted; keeping the current context"
+        : `[compaction] failed${errorMessage !== undefined ? ` (${errorMessage})` : ""}; keeping the current context${
+            // retryable = abandoned this time, retried at the next trigger; fatal = a config
+            // or credential change has to come first. Legacy Traces spell both "failed".
+            status === "retryable"
+              ? "; retries at the next trigger"
+              : status === "fatal"
+                ? "; fix the model configuration to retry"
+                : ""
+          }`) + (tokens ? ` · tokens ${tokens.total} (${tokens.delta})` : ""),
   compactNothing: () => "[compaction] nothing to compact yet",
   clearDone: () => "[clear] started a fresh session (the previous one is kept and resumable)",
   goalRound: (round) => `[goal] round ${round}`,
@@ -866,8 +875,16 @@ const zh: Messages = {
       ? mode === "discard"
         ? "[压缩] 完成，旧上下文已丢弃"
         : "[压缩] 完成，已切换到摘要后的新上下文"
-      : `[压缩] ${status === "aborted" ? "已中断" : `失败${errorMessage !== undefined ? `（${errorMessage}）` : ""}`}，保留当前上下文`) +
-    (tokens ? ` · tokens ${tokens.total} (${tokens.delta})` : ""),
+      : status === "aborted"
+        ? "[压缩] 已中断，保留当前上下文"
+        : `[压缩] 失败${errorMessage !== undefined ? `（${errorMessage}）` : ""}，保留当前上下文${
+            // retryable = 本次放弃、下次触发自动重试；fatal = 需先修复模型配置或凭据。旧 Trace 两者都拼作 "failed"。
+            status === "retryable"
+              ? "，下次触发时重试"
+              : status === "fatal"
+                ? "，需修复模型配置后重试"
+                : ""
+          }`) + (tokens ? ` · tokens ${tokens.total} (${tokens.delta})` : ""),
   compactNothing: () => "[压缩] 当前上下文为空，无需压缩",
   clearDone: () => "[清空] 已开启全新 Session（原会话仍保留，可恢复）",
   goalRound: (round) => `[目标] 第 ${round} 轮`,

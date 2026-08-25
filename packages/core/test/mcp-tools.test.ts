@@ -162,7 +162,7 @@ describe("MCP over stdio through Environment", () => {
 
   it("maps a tool-level isError result to failed with the server's message", async () => {
     const final = finalPayload(await runTool(env, "mcp__fx__fail", {}));
-    expect(final.stop_reason).toBe("failed");
+    expect(final.stop_reason).toBe("fatal");
     expect(final.output).toBe("boom");
   });
 
@@ -193,7 +193,7 @@ describe("MCP over stdio through Environment", () => {
 
   it("collapses an unknown MCP name into the unknown-tool reply", async () => {
     const final = finalPayload(await runTool(env, "mcp__fx__nope", {}));
-    expect(final.stop_reason).toBe("failed");
+    expect(final.stop_reason).toBe("fatal");
     expect(final.output).toContain("Unknown tool: mcp__fx__nope");
   });
 });
@@ -233,7 +233,7 @@ describe("MCP over stdio — per-server budgets and interruption", () => {
     const env = makeEnv({ timeoutMs: 300 });
     try {
       const final = finalPayload(await runTool(env, "mcp__fx__slow", { ms: 60_000 }));
-      expect(final.stop_reason).toBe("failed");
+      expect(final.stop_reason).toBe("fatal");
       expect(final.output).toContain("[tool timeout: exceeded 300ms]");
     } finally {
       env.dispose();
@@ -602,7 +602,7 @@ describe("Session first-run bootstrap events", () => {
         status: "completed",
         tools: 6,
       });
-      expect(results[1]).toMatchObject({ server: "broken", transport: "stdio", status: "failed" });
+      expect(results[1]).toMatchObject({ server: "broken", transport: "stdio", status: "fatal" });
       expect(results[1]!.error).toBeTruthy();
       expect(results[1]!.duration_ms).toBeGreaterThanOrEqual(0);
     } finally {

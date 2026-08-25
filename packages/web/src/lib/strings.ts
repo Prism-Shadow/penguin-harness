@@ -1594,9 +1594,11 @@ Benchmark：
     compactionTitle: (mode: string): string => (mode === "discard" ? "清空" : "压缩"),
     compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "已中断，保留当前上下文";
-      return errorMessage !== undefined
-        ? `失败（${errorMessage}），保留当前上下文`
-        : "失败，保留当前上下文";
+      const detail = errorMessage !== undefined ? `（${errorMessage}）` : "";
+      // retryable = 本次放弃、下次触发自动重试；fatal = 需先修复模型配置或凭据。旧 Trace 两者都拼作 "failed"。
+      if (status === "retryable") return `失败${detail}，保留当前上下文，下次触发时重试`;
+      if (status === "fatal") return `失败${detail}，保留当前上下文，需修复模型配置后重试`;
+      return `失败${detail}，保留当前上下文`;
     },
     unknownTool: "（未知工具）",
     workRunning: "运行中",

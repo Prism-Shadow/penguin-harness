@@ -506,14 +506,14 @@ describe("StreamRenderer", () => {
     r.handle(compactionEnd({ reason: "context", mode: "summarize", status: "completed" }));
     r.handle(compactionBegin({ reason: "manual", mode: "discard", context: 10, turns: 1 }));
     r.handle(compactionEnd({ reason: "manual", mode: "discard", status: "completed" }));
-    r.handle(compactionEnd({ reason: "context", mode: "summarize", status: "failed" }));
+    r.handle(compactionEnd({ reason: "context", mode: "summarize", status: "retryable" }));
     expect(stripAnsi(text())).toBe(
       [
         "[compaction] summarizing context (context)…",
         "[compaction] done; continuing with the summarized context",
         "[compaction] discarding context (manual)…",
         "[compaction] done; old context discarded",
-        "[compaction] failed; keeping the current context",
+        "[compaction] failed; keeping the current context; retries at the next trigger",
         "",
       ].join("\n"),
     );

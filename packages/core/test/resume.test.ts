@@ -203,7 +203,7 @@ describe("agent.resumeSession", () => {
       type: "compaction_end",
       reason: "context",
       mode: "summarize",
-      status: "failed",
+      status: "retryable",
     });
     // Nothing was reconstructed from the interrupted compaction: the original context is
     // resumed as it stood before it, with no `[context_summary]` injected.

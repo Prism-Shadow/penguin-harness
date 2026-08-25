@@ -21,7 +21,7 @@
  * cancels the in-flight request. Result content maps as: text blocks → output text; image
  * blocks → `images` data URLs; audio/binary-resource blocks → placeholder lines;
  * `structuredContent` is serialized only when no text block was present; `isError` →
- * `stopReason: "failed"`. Permission for the frontend's read-only mode comes from the
+ * `stopReason: "fatal"`. Permission for the frontend's read-only mode comes from the
  * spec's `readOnlyHint` annotation (`true` → `"r"`, anything else → `"rw"` — hints are
  * untrusted, so the default is the restrictive direction), unless the entry sets an
  * explicit `permission`, which then applies to every tool of that server.
@@ -289,7 +289,7 @@ export class McpToolProvider {
               result: {
                 server: server.name,
                 transport: server.transport.kind,
-                status: aborted ? "aborted" : "failed",
+                status: aborted ? "aborted" : "fatal",
                 duration_ms: durationMs(),
                 ...(aborted ? {} : { error: describeError(err) }),
               },
@@ -442,7 +442,7 @@ export class McpToolProvider {
           });
         }
         return {
-          stopReason: failed ? "failed" : "completed",
+          stopReason: failed ? "fatal" : "completed",
           ...(rendered.images.length > 0 ? { images: rendered.images } : {}),
         };
       },

@@ -64,7 +64,6 @@ import type {
   ApprovalDecision,
   CompactionMode,
   CompactionReason,
-  CompactionStatus,
   OmniMessage,
   StopReason,
   TextPayload,
@@ -104,14 +103,14 @@ export interface CompactionSettings {
   prompt: string;
 }
 
-/** Result of one compaction run: status is a terminal state (completed / failed / aborted); carries the summary message when summarize succeeds. */
+/** Result of one compaction run: a StopReason terminal state (completed / aborted / retryable — abandoned, made up at the next trigger / fatal — needs a config change first); carries the summary message when summarize succeeds. */
 interface CompactionResult {
-  status: CompactionStatus;
+  status: StopReason;
   summary?: OmniMessage;
   /**
    * Whether at least one summarize attempt was **committed** by AgentHub (only a `completed`
-   * attempt commits — a `retryable` attempt ends an incomplete stream and fatal/aborted throw
-   * or cut off before a clean end). The carry rule at every caller is a two-case binary on
+   * attempt commits — a `retryable` attempt ends an incomplete stream and fatal/aborted
+   * throw or cut off before a clean end). The carry rule at every caller is a two-case binary on
    * this flag (issue #85): committed → the input the caller folded in (mid-Task tool outputs,
    * or the carry-over a manual `compact()` folds in) now lives in the old LLM object's history
    * and must never be resent — strict providers reject the duplicates as stale tool_results;
@@ -1308,7 +1307,7 @@ export class ContextEngine {
       const failed = toolCallOutput({
         output: `[tool error] ${message}`,
         toolCallId: toolCall.payload.tool_call_id,
-        stopReason: "failed",
+        stopReason: "fatal",
       });
       queue.push(failed);
       await this.write(failed);
@@ -1513,7 +1512,7 @@ export class ContextEngine {
           toolCallOutput({
             output: "[tool error] the compaction request expects a summary, not tool calls",
             toolCallId: tc.payload.tool_call_id,
-            stopReason: "failed",
+            stopReason: "fatal",
           }),
         );
         for (const repair of pendingRepairs) await this.write(repair);
@@ -1523,15 +1522,15 @@ export class ContextEngine {
         return { status: "aborted", committed };
       } else if (attempt.status === "fatal") {
         // `fatal` never retries: a definitive rejection or a dead credential doesn't heal
-        // on a ladder. It folds into `failed` here: the compaction event pair keeps its
-        // completed/failed/aborted set, the original context is kept, and the error detail
-        // rides the compaction_end for the host to surface.
+        // on a ladder. The compaction ends `fatal` too — the next trigger will hit the
+        // same wall until a config or credential change; the original context is kept and
+        // the error detail rides the compaction_end for the host to surface.
         this.stashRepairs(pendingRepairs);
-        yield* this.emitCompactionEnd(reason, "summarize", "failed", {
+        yield* this.emitCompactionEnd(reason, "summarize", "fatal", {
           attempt: attempts,
           ...(attempt.errorMessage !== undefined ? { errorMessage: attempt.errorMessage } : {}),
         });
-        return { status: "failed", committed };
+        return { status: "fatal", committed };
       } else {
         // Retryable failure: keep its detail as the last error of record.
         lastError = attempt.errorMessage;
@@ -1543,12 +1542,15 @@ export class ContextEngine {
       // request_end carries status completed, for which no retry_in_ms is announced — the
       // backoff wait still happens.
       if (reconnects >= this.compactionMaxReconnects) {
+        // Retries exhausted on retryable failures (transport faults and unusable
+        // summaries alike): the compaction ends `retryable` — abandoned this time, and
+        // the standing trigger makes it up at the next opportunity.
         this.stashRepairs(pendingRepairs);
-        yield* this.emitCompactionEnd(reason, "summarize", "failed", {
+        yield* this.emitCompactionEnd(reason, "summarize", "retryable", {
           attempt: attempts,
           ...(lastError !== undefined ? { errorMessage: lastError } : {}),
         });
-        return { status: "failed", committed };
+        return { status: "retryable", committed };
       }
       reconnects += 1;
       const ok = await this.backoff(reconnects, signal);
@@ -1749,7 +1751,7 @@ export class ContextEngine {
   private async *emitCompactionEnd(
     reason: CompactionReason,
     mode: CompactionMode,
-    status: CompactionStatus,
+    status: StopReason,
     detail?: { attempt?: number; errorMessage?: string },
   ): AsyncGenerator<OmniMessage> {
     const msg = compactionEnd({ reason, mode, status, ...detail });

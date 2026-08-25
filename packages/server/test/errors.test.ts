@@ -24,7 +24,7 @@ import {
   toolCallOutput,
   withOrigin,
 } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { OmniMessage, StopReason } from "@prismshadow/penguin-core";
 import type { ProjectCreateResponse, UsageErrorsPage, UsageResponse } from "../src/api/types.js";
 import { openDatabase } from "../src/db/database.js";
 import { ErrorsRepo } from "../src/db/repos/errors.js";
@@ -588,22 +588,22 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
       toolCallOutput({
         output: "grep: no match\n[exit code: 1]",
         toolCallId: "tc-1",
-        stopReason: "failed",
+        stopReason: "fatal",
       }),
       call("input_command", "tc-2"),
       toolCallOutput({
         output: "make: *** [build] Error 2\n[exit code: 2]",
         toolCallId: "tc-2",
-        stopReason: "failed",
+        stopReason: "fatal",
       }),
       call("write_file", "tc-3"),
       toolCallOutput({
         output: "EACCES\n[exit code: 1]",
         toolCallId: "tc-3",
-        stopReason: "failed",
+        stopReason: "fatal",
       }),
     ]);
-    expect(got.map((r) => r.code)).toEqual(["tool_failed:write_file"]);
+    expect(got.map((r) => r.code)).toEqual(["tool_fatal:write_file"]);
   });
 
   it("a command tool killed by a signal, or that never spawned, is still recorded", () => {
@@ -617,19 +617,16 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
       toolCallOutput({
         output: "cc1plus: out of memory\n[terminated by signal SIGKILL]",
         toolCallId: "tc-1",
-        stopReason: "failed",
+        stopReason: "fatal",
       }),
       call("input_command", "tc-2"),
       toolCallOutput({
         output: "[spawn error: ENOENT: no such file or directory, posix_spawn '/bin/nope']",
         toolCallId: "tc-2",
-        stopReason: "failed",
+        stopReason: "fatal",
       }),
     ]);
-    expect(got.map((r) => r.code)).toEqual([
-      "tool_failed:exec_command",
-      "tool_failed:input_command",
-    ]);
+    expect(got.map((r) => r.code)).toEqual(["tool_fatal:exec_command", "tool_fatal:input_command"]);
   });
 
   it("a command tool's timeout and a missing session manager are recorded (neither is an exit)", () => {
@@ -642,57 +639,60 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
       toolCallOutput({
         output: "still building…\n[tool timeout: exceeded 60000ms]",
         toolCallId: "tc-1",
-        stopReason: "failed",
+        stopReason: "fatal",
       }),
       call("input_command", "tc-2"),
       toolCallOutput({
         output: "[input_command unavailable: no command session manager configured]",
         toolCallId: "tc-2",
-        stopReason: "failed",
+        stopReason: "fatal",
       }),
     ]);
-    expect(got.map((r) => r.code)).toEqual([
-      "tool_failed:exec_command",
-      "tool_failed:input_command",
-    ]);
+    expect(got.map((r) => r.code)).toEqual(["tool_fatal:exec_command", "tool_fatal:input_command"]);
   });
 
-  it("an exit marker with no cached tool name is dropped, not filed under tool_failed:unknown", () => {
+  it("an exit marker with no cached tool name is dropped, not filed under tool_fatal:unknown", () => {
     // Only the command tools ever write that marker, so a cache miss (the tool_call evicted, or
     // never seen) is still that noise — recording it nameless would defeat the exclusion.
     const got = feed([
-      toolCallOutput({ output: "[exit code: 1]", toolCallId: "tc-1", stopReason: "failed" }),
-      toolCallOutput({ output: "boom", toolCallId: "tc-2", stopReason: "failed" }),
+      toolCallOutput({ output: "[exit code: 1]", toolCallId: "tc-1", stopReason: "fatal" }),
+      toolCallOutput({ output: "boom", toolCallId: "tc-2", stopReason: "fatal" }),
     ]);
-    expect(got.map((r) => [r.code, r.message])).toEqual([["tool_failed:unknown", "boom"]]);
+    expect(got.map((r) => [r.code, r.message])).toEqual([["tool_fatal:unknown", "boom"]]);
   });
 
-  it("tool failed / timeout → environment + expected, code carries the tool name", () => {
+  it("a tool fatal → environment + expected, code carries the tool name; legacy failed/timeout spellings still record", () => {
+    const legacyOutput = (args: { output: string; toolCallId: string; stopReason: string }) =>
+      toolCallOutput(args as Parameters<typeof toolCallOutput>[0]);
     const got = feed([
       call("write_file", "tc-1"),
       toolCallOutput({
         output: "EACCES: permission denied\n[tool error] write failed",
         toolCallId: "tc-1",
-        stopReason: "failed",
+        stopReason: "fatal",
       }),
+      // Traces written before the stop-reason unification spell tool failures failed/timeout.
       call("read_file", "tc-2"),
-      toolCallOutput({
+      legacyOutput({
         output: "[tool timeout: exceeded 30000ms]",
         toolCallId: "tc-2",
         stopReason: "timeout",
       }),
+      call("edit_file", "tc-3"),
+      legacyOutput({ output: "[tool error] boom", toolCallId: "tc-3", stopReason: "failed" }),
     ]);
-    expect(got).toHaveLength(2);
+    expect(got).toHaveLength(3);
     expect(got[0]).toMatchObject({
       source: "environment",
       kind: "expected", // error fed back to the model; the Agent adjusts on its own — no human needed
-      code: "tool_failed:write_file",
+      code: "tool_fatal:write_file",
       project_id: "p1",
       agent_id: "a1",
       session_id: "s1",
     });
     expect(got[0]!.message).toContain("[tool error] write failed"); // the actual error text
     expect(got[1]).toMatchObject({ code: "tool_timeout:read_file", kind: "expected" });
+    expect(got[2]).toMatchObject({ code: "tool_failed:edit_file", kind: "expected" });
   });
 
   it("tool aborted (denial / user interrupt) and completed are not recorded", () => {
@@ -715,11 +715,11 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
       call("write_file", "tc-1"),
       call("read_file", "tc-2"),
       call("write_file", "tc-3"),
-      toolCallOutput({ output: "boom-2", toolCallId: "tc-2", stopReason: "failed" }),
+      toolCallOutput({ output: "boom-2", toolCallId: "tc-2", stopReason: "fatal" }),
       toolCallOutput({ output: "ok", toolCallId: "tc-3", stopReason: "completed" }),
-      toolCallOutput({ output: "boom-1", toolCallId: "tc-1", stopReason: "failed" }),
+      toolCallOutput({ output: "boom-1", toolCallId: "tc-1", stopReason: "fatal" }),
     ]);
-    expect(got.map((r) => r.code)).toEqual(["tool_failed:read_file", "tool_failed:write_file"]);
+    expect(got.map((r) => r.code)).toEqual(["tool_fatal:read_file", "tool_fatal:write_file"]);
     expect(got.map((r) => r.message)).toEqual(["boom-2", "boom-1"]);
   });
 
@@ -728,18 +728,18 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
       call("read_file", "tc-1"), // parent session
       withOrigin(call("write_file", "tc-1"), "session-child"), // sub-session happens to share the same id
       withOrigin(
-        toolCallOutput({ output: "child boom", toolCallId: "tc-1", stopReason: "failed" }),
+        toolCallOutput({ output: "child boom", toolCallId: "tc-1", stopReason: "fatal" }),
         "session-child",
       ),
-      toolCallOutput({ output: "parent boom", toolCallId: "tc-1", stopReason: "failed" }),
+      toolCallOutput({ output: "parent boom", toolCallId: "tc-1", stopReason: "fatal" }),
     ]);
     expect(got).toHaveLength(2);
     expect(got[0]).toMatchObject({
-      code: "tool_failed:write_file", // the sub-session's tool name, not overwritten by the parent's tc-1
+      code: "tool_fatal:write_file", // the sub-session's tool name, not overwritten by the parent's tc-1
       message: "child boom",
       session_id: "s1", // this test didn't feed the sub-session's session_meta → attribution falls back to the parent ctx (see the "attribution" test cases below)
     });
-    expect(got[1]).toMatchObject({ code: "tool_failed:read_file", message: "parent boom" });
+    expect(got[1]).toMatchObject({ code: "tool_fatal:read_file", message: "parent boom" });
   });
 
   it("overlong tool output: message takes the tail (the reason is at the end)", () => {
@@ -748,7 +748,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
       toolCallOutput({
         output: `${"x".repeat(2000)}\n[tool error] boom`,
         toolCallId: "tc-1",
-        stopReason: "failed",
+        stopReason: "fatal",
       }),
     ]);
     const message = got[0]!.message as string;
@@ -762,7 +762,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
       feed([
         assistantText("normal output"),
         call("write_file", "tc-1"),
-        partialToolCallOutput({ eventType: "stop", toolCallId: "tc-1", stopReason: "failed" }),
+        partialToolCallOutput({ eventType: "stop", toolCallId: "tc-1", stopReason: "fatal" }),
       ]),
     ).toHaveLength(0);
   });
@@ -792,14 +792,14 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
       childMeta("session-child", "/data/agents/agent-child/agent_state"),
       withOrigin(call("write_file", "tc-1"), "session-child"),
       withOrigin(
-        toolCallOutput({ output: "child boom", toolCallId: "tc-1", stopReason: "failed" }),
+        toolCallOutput({ output: "child boom", toolCallId: "tc-1", stopReason: "fatal" }),
         "session-child",
       ),
     ]);
     expect(got).toHaveLength(1);
     expect(got[0]).toMatchObject({
       source: "environment",
-      code: "tool_failed:write_file",
+      code: "tool_fatal:write_file",
       message: "child boom",
       agent_id: "agent-child",
       session_id: "session-child",
@@ -816,19 +816,19 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
       withOrigin(abortEvent("llm request error: 401 dead key"), "session-child"),
       withOrigin(call("write_file", "tc-9"), "session-child"),
       withOrigin(
-        toolCallOutput({ output: "child tool boom", toolCallId: "tc-9", stopReason: "failed" }),
+        toolCallOutput({ output: "child tool boom", toolCallId: "tc-9", stopReason: "fatal" }),
         "session-child",
       ),
       call("read_file", "tc-9"), // parent session happens to share the same id
-      toolCallOutput({ output: "parent tool boom", toolCallId: "tc-9", stopReason: "failed" }),
+      toolCallOutput({ output: "parent tool boom", toolCallId: "tc-9", stopReason: "fatal" }),
       requestEnd("retryable"), // the parent session's LLM failure only wraps up now
       abortEvent("llm request error: 500 upstream"),
     ]);
     // The sub-session's LLM / tool failures attribute to it, the parent's to the parent — the four entries never mix (each has a distinct code, so short-window dedup doesn't suppress any of them).
     expect(got.map((r) => [r.code, r.agent_id, r.session_id])).toEqual([
       ["llm_fatal", "agent-child", "session-child"],
-      ["tool_failed:write_file", "agent-child", "session-child"],
-      ["tool_failed:read_file", "a1", "s1"],
+      ["tool_fatal:write_file", "agent-child", "session-child"],
+      ["tool_fatal:read_file", "a1", "s1"],
       ["llm_failed", "a1", "s1"],
     ]);
   });
@@ -854,15 +854,15 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
 
   // —— Compaction ——
 
-  it("a failed compaction records one error row; the message carries attempts and the error", () => {
+  it("an abandoned compaction records one error row; the message carries attempts and the error", () => {
     // Issue #170: a compaction is an ordinary LLM request whose failures core retries under
-    // the standard budget — a failed end means the retries ran out, and the cost center's
-    // row shows how many attempts were spent and what the last failure was.
+    // the standard budget — a retryable end means the retries ran out, and the cost
+    // center's row shows how many attempts were spent and what the last failure was.
     const got = feed([
       compactionEnd({
         reason: "context",
         mode: "summarize",
-        status: "failed",
+        status: "retryable",
         attempt: 5,
         errorMessage: "the response contained no usable summary",
       }),
@@ -880,15 +880,21 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     });
   });
 
-  it("compaction completed / aborted are not errors; an old-core failed still records", () => {
+  it("compaction completed / aborted are not errors; fatal and an old-core failed still record", () => {
+    const legacyEnd = (status: string) =>
+      compactionEnd({ reason: "turns", mode: "summarize", status: status as StopReason });
     const got = feed([
       compactionEnd({ reason: "context", mode: "summarize", status: "completed", attempt: 1 }),
       compactionEnd({ reason: "manual", mode: "summarize", status: "aborted", attempt: 2 }),
-      // An old core's compaction_end has no attempt/error fields at all.
-      compactionEnd({ reason: "turns", mode: "summarize", status: "failed" }),
+      compactionEnd({ reason: "context", mode: "summarize", status: "fatal", attempt: 1 }),
     ]);
     expect(got).toHaveLength(1);
-    expect(got[0]).toMatchObject({
+    expect(got[0]).toMatchObject({ code: "compaction_failed" });
+    // An old core's compaction_end (retired `failed` spelling, no attempt/error fields)
+    // still records — its own feed, since the short-window dedup shares the code above.
+    const legacy = feed([legacyEnd("failed")]);
+    expect(legacy).toHaveLength(2); // rows are cumulative: the fatal row above plus this one
+    expect(legacy[1]).toMatchObject({
       code: "compaction_failed",
       message: "summarize compaction failed; trigger turns, original context kept.",
     });
@@ -898,7 +904,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     const got = feed([
       childMeta("session-child", "/data/agents/agent-child/agent_state"),
       withOrigin(
-        compactionEnd({ reason: "context", mode: "summarize", status: "failed", attempt: 6 }),
+        compactionEnd({ reason: "context", mode: "summarize", status: "retryable", attempt: 6 }),
         "session-child",
       ),
     ]);

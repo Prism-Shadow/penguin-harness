@@ -880,7 +880,7 @@ export class StreamRenderer {
         // One line, reasons included: the failure reason (spawn error, timeout, HTTP
         // status) otherwise never reaches the terminal — only the server-side stderr warning.
         const failures = p.results
-          .filter((r) => r.status === "failed")
+          .filter((r) => r.status === "fatal" || (r.status as string) === "failed")
           .map((r) => ({ server: r.server, error: r.error ?? "unknown error" }));
         this.out.write(
           `${dim(this.t.mcpConnectStop(durationMs, failures, p.status === "aborted"), this.c)}\n`,

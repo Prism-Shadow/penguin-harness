@@ -493,7 +493,8 @@ describe("trace-service", () => {
       at("2026-07-05T10:00:05.000Z", legacyEnd("failed")), // compaction gives up here
       at(
         "2026-07-05T10:00:06.000Z",
-        compactionEnd({ reason: "context", mode: "summarize", status: "failed" }),
+        // Legacy Trace spelling for an abandoned compaction (see legacyEnd).
+        compactionEnd({ reason: "context", mode: "summarize", status: "failed" as StopReason }),
       ),
     ]);
     const a = await service.analyze(P, A, S, 1);
@@ -1126,7 +1127,7 @@ describe("trace-service", () => {
       at(T("04.500"), requestBegin()),
       at(T("05.000"), assistantText("bad summary")),
       at(T("05.500"), requestEnd("retryable")),
-      at(T("06.000"), compactionEnd({ reason: "context", mode: "summarize", status: "failed" })),
+      at(T("06.000"), compactionEnd({ reason: "context", mode: "summarize", status: "retryable" })),
       at(T("07.000"), requestBegin()),
       at(T("08.000"), assistantText("answer")),
       at(T("08.500"), requestEnd("completed")),

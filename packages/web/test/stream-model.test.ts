@@ -433,13 +433,13 @@ describe("approvals and events", () => {
       compactionEnd({
         reason: "context",
         mode: "summarize",
-        status: "failed",
+        status: "retryable",
         attempt: 5,
         errorMessage: "the response contained no usable summary",
       }),
     );
     expect(banner.running).toBe(false);
-    expect(banner.status).toBe("failed");
+    expect(banner.status).toBe("retryable");
     expect(banner.errorMessage).toBe("the response contained no usable summary");
   });
 
@@ -528,8 +528,8 @@ describe("approvals and events", () => {
     pushMessage(m, userText("COMPACT NOW"));
     pushMessage(m, requestBegin());
     pushMessage(m, assistantText("[summary]half-writ")); // the draft the crash interrupted
-    // ...process died here; the resume closes the span as failed before writing anything else:
-    pushMessage(m, compactionEnd({ reason: "context", mode: "summarize", status: "failed" }));
+    // ...process died here; the resume closes the span as retryable before writing anything else:
+    pushMessage(m, compactionEnd({ reason: "context", mode: "summarize", status: "retryable" }));
     // The conversation continues and must render.
     pushMessage(m, userText("q2 after the crash"));
     pushMessage(m, requestBegin());
@@ -547,7 +547,7 @@ describe("approvals and events", () => {
     // The interrupted compaction reads as failed, and its half-written draft is discarded
     // rather than shown as if it were the adopted summary.
     const banner = items(m).find((i) => i.kind === "compaction") as CompactionItem;
-    expect(banner).toMatchObject({ running: false, status: "failed" });
+    expect(banner).toMatchObject({ running: false, status: "retryable" });
     expect(banner.summaryText).toBeUndefined();
   });
 
@@ -589,13 +589,13 @@ describe("approvals and events", () => {
       m,
       at(
         mcpConnectEnd({
-          status: "failed",
+          status: "fatal",
           results: [
             { server: "fx", transport: "stdio", status: "completed", duration_ms: 180, tools: 2 },
             {
               server: "bad",
               transport: "stdio",
-              status: "failed",
+              status: "fatal",
               duration_ms: 60,
               error: "spawn nope ENOENT",
             },
@@ -611,8 +611,26 @@ describe("approvals and events", () => {
     // Per-server outcomes back the expanded server groups (failure reasons live there).
     expect(row.results).toEqual([
       { server: "fx", status: "completed", durationMs: 180, tools: 2 },
-      { server: "bad", status: "failed", durationMs: 60, error: "spawn nope ENOENT" },
+      { server: "bad", status: "fatal", durationMs: 60, error: "spawn nope ENOENT" },
     ]);
+  });
+
+  it('mcp connect row: a legacy Trace\'s "failed" spelling still lists the server as failed', () => {
+    const m = createStreamModel();
+    pushMessage(m, mcpConnectBegin(["old"]));
+    const legacy = mcpConnectEnd({
+      status: "fatal",
+      results: [
+        { server: "old", transport: "stdio", status: "fatal", duration_ms: 10, error: "gone" },
+      ],
+    });
+    // Traces written before the one-vocabulary convergence spell the failure "failed".
+    (legacy.payload as { status: string }).status = "failed";
+    (legacy.payload as { results: { status: string }[] }).results[0]!.status = "failed";
+    pushMessage(m, legacy);
+    const row = items(m)[0] as McpConnectItem;
+    expect(row.running).toBe(false);
+    expect(row.failed).toEqual(["old"]);
   });
 
   it("tool_list_ready attaches the MCP share of the toolset to the connect row (built-ins filtered out)", () => {
@@ -857,10 +875,9 @@ describe("approvals and events", () => {
     const card = findToolCard(m, undefined, "tc-broken")!;
     expect(card.callComplete).toBe(true);
     // This call was never dispatched for execution and will never have output: close it
-    // immediately (LLM closure vocabulary settles as the tool vocabulary's "failed"), so
-    // execution timing doesn't spin idle.
+    // immediately with the call's own closure reason, so execution timing doesn't spin idle.
     expect(card.outputComplete).toBe(true);
-    expect(card.outputStopReason).toBe("failed");
+    expect(card.outputStopReason).toBe("retryable");
   });
 
   it("request events inside a compaction span produce no retry notice (history rebuild exposes only the event pair for compaction)", () => {

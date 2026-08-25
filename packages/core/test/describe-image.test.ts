@@ -123,7 +123,7 @@ describe("describe_image (the text-only-model variant of read_image)", () => {
       }
       text += (res.value.payload as { output?: string }).output ?? "";
     }
-    expect(result?.stopReason).toBe("failed");
+    expect(result?.stopReason).toBe("fatal");
     expect(text).toContain("No vision model");
   });
 
@@ -170,7 +170,7 @@ describe("describe_image (the text-only-model variant of read_image)", () => {
   it("no vision model configured: failed plus an explanation of how to configure one", async () => {
     await writeFile(path.join(tmp, "a.png"), PNG_1X1);
     const { result, text } = await run({ source: "a.png" }, tmp, { modelId: null });
-    expect(result?.stopReason).toBe("failed");
+    expect(result?.stopReason).toBe("fatal");
     expect(text).toContain("No vision model");
     expect(text).toContain("vision_model");
   });
@@ -182,7 +182,7 @@ describe("describe_image (the text-only-model variant of read_image)", () => {
       modelId: "vis-1",
       createLLM: () => llm,
     });
-    expect(result?.stopReason).toBe("failed");
+    expect(result?.stopReason).toBe("fatal");
     expect(text).toContain("fatal");
     expect(text).toContain("401 unauthorized");
   });
@@ -194,7 +194,7 @@ describe("describe_image (the text-only-model variant of read_image)", () => {
       modelId: "vis-1",
       createLLM: () => llm,
     });
-    expect(result?.stopReason).toBe("failed");
+    expect(result?.stopReason).toBe("fatal");
     expect(calls).toHaveLength(0);
   });
 

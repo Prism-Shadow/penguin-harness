@@ -521,7 +521,7 @@ export class Session {
     const { tools, llm, mcp } = outcome.value;
     if (this.mcpServers.length > 0) {
       const end = mcpConnectEnd({
-        status: mcp.some((r) => r.status !== "completed") ? "failed" : "completed",
+        status: mcp.some((r) => r.status !== "completed") ? "fatal" : "completed",
         results: mcp,
       });
       yield end;

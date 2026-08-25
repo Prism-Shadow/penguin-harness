@@ -1635,9 +1635,16 @@ Scenarios:
     compactionTitle: (mode: string): string => (mode === "discard" ? "Clear" : "Compaction"),
     compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "aborted, keeping current context";
-      return errorMessage !== undefined
-        ? `failed (${errorMessage}), keeping current context`
-        : "failed, keeping current context";
+      const detail = errorMessage !== undefined ? ` (${errorMessage})` : "";
+      // retryable = abandoned this time, the standing trigger retries it; fatal = a config
+      // or credential change has to come first. Legacy Traces spell both "failed".
+      if (status === "retryable") {
+        return `failed${detail}, keeping current context; retries at the next trigger`;
+      }
+      if (status === "fatal") {
+        return `failed${detail}, keeping current context; fix the model configuration to retry`;
+      }
+      return `failed${detail}, keeping current context`;
     },
     unknownTool: "(unknown tool)",
     workRunning: "Running",

@@ -38,9 +38,10 @@
  * Pending state is bucketed by origin: subagent messages interleave with the parent
  * session's (even more so with parallel subagents), and mixing them up would misattribute.
  *
- * Environment (source = `environment`): reads `tool_call_output`'s stop_reason ∈
- * {failed, timeout} → expected (the error is fed back to the model, and the Agent
- * adjusts on its own; `aborted` is denial/interruption, not recorded). Exactly one shape is
+ * Environment (source = `environment`): reads `tool_call_output`'s stop_reason —
+ * `fatal` (and the legacy failed/timeout spellings) → expected (the error is fed back to
+ * the model, and the Agent adjusts on its own; `aborted` is denial/interruption, not
+ * recorded). Exactly one shape is
  * dropped: a command tool's ordinary non-zero exit, which is how a shell command reports
  * information rather than a fault — see isOrdinaryCommandExit; the same tools' environment
  * faults (killed by a signal, spawn failure, tool timeout) still record.
@@ -64,13 +65,7 @@
  */
 import { isEventMessage, isModelMessage, isSessionMeta } from "@prismshadow/penguin-core";
 import path from "node:path";
-import type {
-  CompactionStatus,
-  OmniMessage,
-  SessionMetaMessage,
-  StopReason,
-  ToolStopReason,
-} from "@prismshadow/penguin-core";
+import type { OmniMessage, SessionMetaMessage, StopReason } from "@prismshadow/penguin-core";
 import { MESSAGE_MAX } from "./error-recorder.js";
 import type { ErrorContext, ErrorKind, ErrorSink } from "./error-recorder.js";
 
@@ -130,15 +125,15 @@ const LLM_RETRIED: FailureSpec = {
   text: "LLM request failed (the engine reconnects and retries).",
 };
 
-/** Recorded tool failure states (`aborted` = denial/interruption, not an error). */
-type ToolFailure = "failed" | "timeout";
+/** Recorded tool failure states (`aborted` = denial/interruption, not an error): `fatal` is the live spelling, failed/timeout the legacy Trace ones. */
+type ToolFailure = "fatal" | "failed" | "timeout";
 
 function isLlmFailure(s: unknown): s is LlmFailure {
   return s === "retryable" || s === "fatal";
 }
 
 function isToolFailure(s: unknown): s is ToolFailure {
-  return s === "failed" || s === "timeout";
+  return s === "fatal" || s === "failed" || s === "timeout";
 }
 
 /**
@@ -369,11 +364,14 @@ export class StreamErrorWatcher {
     const p = msg.payload as {
       mode?: string;
       reason?: string;
-      status?: CompactionStatus;
+      status?: StopReason;
       attempt?: number;
       error_message?: string;
     };
-    if (p.status !== "failed") return;
+    // Abandoned (retryable — made up at the next trigger) and fatal ends both record;
+    // legacy Traces spell the abandoned case "failed".
+    const status = p.status as string | undefined;
+    if (status !== "retryable" && status !== "fatal" && status !== "failed") return;
     const attempts =
       typeof p.attempt === "number" && p.attempt > 0
         ? ` after ${p.attempt} attempt${p.attempt === 1 ? "" : "s"}`
@@ -397,7 +395,7 @@ export class StreamErrorWatcher {
       name?: string;
       output?: string;
       tool_call_id?: string;
-      stop_reason?: ToolStopReason;
+      stop_reason?: StopReason;
     };
     if (typeof p.tool_call_id !== "string") return;
     const origin = originKey(msg); // The session that made this call (both attribution and the tool-name cache are bucketed by it)

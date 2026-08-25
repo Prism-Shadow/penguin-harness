@@ -495,8 +495,11 @@ export class ManagedSubagentSession {
   }
 }
 
-/** Converts a run's terminal state into a tool result (note is appended outside the truncation, so it isn't lost with long output). */
+/** Converts a run's terminal state into a tool result (note is appended outside the truncation, so it isn't lost with long output). A failed child run is fatal for this call — nothing retries a tool. */
 export function resultForSubagentExit(exit: SubagentExit | null): ToolResult {
   if (!exit) return { stopReason: "completed" };
-  return { stopReason: exit.status, ...(exit.note !== undefined ? { note: exit.note } : {}) };
+  return {
+    stopReason: exit.status === "failed" ? "fatal" : exit.status,
+    ...(exit.note !== undefined ? { note: exit.note } : {}),
+  };
 }

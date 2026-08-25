@@ -58,13 +58,13 @@ export function createExecCommandTool(
 
       if (!manager) {
         yield delta(`[${definition.name} unavailable: no command session manager configured]`);
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
 
       const cmd = args["cmd"];
       if (typeof cmd !== "string" || cmd.length === 0) {
         yield delta(`Missing required argument "cmd" for ${definition.name}.`);
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
       // workdir defaults to workspaceDir; relative paths are resolved against workspaceDir.
       const rawWorkdir = args["workdir"];
@@ -88,7 +88,7 @@ export function createExecCommandTool(
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         yield delta(`[spawn error: ${message}]`);
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
 
       // run_in_background: no collect window at all — register immediately, arm the completion
@@ -128,7 +128,7 @@ export function createExecCommandTool(
         // Already exited: report exit status; process group cleanup (reaping any leftover
         // background children) is handled uniformly in finally.
         if (session.error) {
-          return { stopReason: "failed", note: `[spawn error: ${session.error.message}]` };
+          return { stopReason: "fatal", note: `[spawn error: ${session.error.message}]` };
         }
         return resultForExit(session.exit);
       } finally {

@@ -309,7 +309,7 @@ describe("resumeTrace", () => {
       userText("please summarize"),
       requestBegin(),
       requestEnd("retryable"),
-      compactionEnd({ reason: "context", mode: "summarize", status: "failed" }),
+      compactionEnd({ reason: "context", mode: "summarize", status: "retryable" }),
       userText("continue"),
       requestBegin(),
       assistantText("sure"),
@@ -707,13 +707,13 @@ describe("resumeTrace regressions (PR #39 review)", () => {
       toolCallOutput({
         output: "[tool error] the compaction request expects a summary, not tool calls",
         toolCallId: "c1",
-        stopReason: "failed",
+        stopReason: "fatal",
       }),
       requestBegin(),
       thinkingMessage("still nothing"),
       requestEnd("completed"),
       tokenUsage(usage(170), usage(480)),
-      compactionEnd({ reason: "context", mode: "summarize", status: "failed" }),
+      compactionEnd({ reason: "context", mode: "summarize", status: "retryable" }),
     ]);
     expect(result.contextClosed).toBe(false);
     expect(result.pendingSummary).toBeUndefined();
@@ -757,7 +757,7 @@ describe("resumeTrace regressions (PR #39 review)", () => {
       toolCallOutput({
         output: "[tool error] the compaction request expects a summary, not tool calls",
         toolCallId: "c1",
-        stopReason: "failed",
+        stopReason: "fatal",
       }),
       compactionEnd({ reason: "context", mode: "summarize", status: "aborted" }),
     ]);

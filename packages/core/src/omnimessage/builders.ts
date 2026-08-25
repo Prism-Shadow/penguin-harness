@@ -13,7 +13,6 @@ import type {
   CompactionEndPayload,
   CompactionMode,
   CompactionReason,
-  CompactionStatus,
   EventMessage,
   Fidelity,
   GoalFinishedPayload,
@@ -36,10 +35,8 @@ import type {
   Role,
   SessionMetaMessage,
   SessionMetaPayload,
-  McpConnectStatus,
   StopReason,
   StreamEventType,
-  ToolStopReason,
   SubagentPayload,
   TextPayload,
   TextSender,
@@ -187,7 +184,7 @@ export function toolCall(args: {
 export function toolCallOutput(args: {
   output: string;
   toolCallId: string;
-  stopReason?: ToolStopReason;
+  stopReason?: StopReason;
   /** Images carried by the tool output (array of data URLs); images aren't incremental — a single delta carries the whole set in the streaming path, and the complete message carries them too. */
   images?: string[];
 }): OmniMessage<ToolCallOutputPayload> {
@@ -253,7 +250,7 @@ export function partialToolCallOutput(args: {
   eventType: StreamEventType;
   output?: string;
   toolCallId: string;
-  stopReason?: ToolStopReason;
+  stopReason?: StopReason;
   /** Images carried by the tool output (array of data URLs); images aren't incremental — a single delta carries the whole set. */
   images?: string[];
 }): OmniMessage<PartialToolCallOutputPayload> {
@@ -335,7 +332,7 @@ export function compactionBegin(args: {
 export function compactionEnd(args: {
   reason: CompactionReason;
   mode: CompactionMode;
-  status: CompactionStatus;
+  status: StopReason;
   attempt?: number;
   errorMessage?: string;
 }): OmniMessage<CompactionEndPayload> {
@@ -384,9 +381,9 @@ export function mcpConnectBegin(servers: string[]): OmniMessage<McpConnectBeginP
   return event({ type: "mcp_connect_begin", servers });
 }
 
-/** mcp_connect end event: overall status (compaction_end-style) + per-server outcomes; total wall time = end timestamp − begin timestamp. */
+/** mcp_connect end event: overall status (shared StopReason vocabulary) + per-server outcomes; total wall time = end timestamp − begin timestamp. */
 export function mcpConnectEnd(args: {
-  status: McpConnectStatus;
+  status: StopReason;
   results: McpServerConnectResult[];
 }): OmniMessage<McpConnectEndPayload> {
   return event({ type: "mcp_connect_end", status: args.status, results: args.results });

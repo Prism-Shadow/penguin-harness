@@ -75,14 +75,14 @@ export function createWriteFileTool(definition: ToolDefinitionConfig): BuiltinTo
       const filePath = args["file_path"];
       if (typeof filePath !== "string" || filePath.length === 0) {
         yield delta(`Missing required argument "file_path" for ${definition.name}.`);
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
       // An empty string is valid content (creates an empty file); only a missing/non-string
       // value is an argument error.
       const content = args["content"];
       if (typeof content !== "string") {
         yield delta(`Missing required argument "content" for ${definition.name}.`);
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
 
       const resolved = path.resolve(ctx.workspaceDir, filePath);
@@ -95,7 +95,7 @@ export function createWriteFileTool(definition: ToolDefinitionConfig): BuiltinTo
         const st = await stat(resolved);
         if (st.isDirectory()) {
           yield delta(`Cannot write "${filePath}": it is a directory.`);
-          return { stopReason: "failed" };
+          return { stopReason: "fatal" };
         }
         existed = true;
         fileMode = st.mode & 0o777; // Preserved across the atomic temp-file + rename write
@@ -124,7 +124,7 @@ export function createWriteFileTool(definition: ToolDefinitionConfig): BuiltinTo
         if (signal?.aborted) return { stopReason: "aborted" };
         const message = err instanceof Error ? err.message : String(err);
         yield delta(`Failed to write "${filePath}": ${message}`);
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
 
       const lines = countLines(content);

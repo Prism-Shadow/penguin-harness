@@ -551,7 +551,7 @@ describe("session-manager", () => {
         yield toolCallOutput({
           output: "ls: /nope\n[tool error] exit code 2",
           toolCallId: "tc-1",
-          stopReason: "failed",
+          stopReason: "fatal",
         });
         yield requestEnd("retryable");
         yield abortEvent("llm request error: 500 upstream");
@@ -563,7 +563,7 @@ describe("session-manager", () => {
     await waitFor(() => manager.statusOf("session-1") === "idle" && captured.length >= 2);
 
     expect(captured.map((a) => [a.source, a.code, a.kind])).toEqual([
-      ["environment", "tool_failed:write_file", "expected"], // error fed back to the model; the Agent adjusts on its own
+      ["environment", "tool_fatal:write_file", "expected"], // error fed back to the model; the Agent adjusts on its own
       ["llm", "llm_failed", "unexpected"], // the abort follows it: the retries did not recover it, so a human is needed
     ]);
     expect(captured[0]!.ctx).toEqual({ projectId: "p1", agentId: "a1", sessionId: "session-1" });
