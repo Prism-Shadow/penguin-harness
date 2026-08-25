@@ -27,6 +27,8 @@ import {
   sameModelRef,
   visibleChatModels,
 } from "../models/model-grouping";
+import { loadModelGroupOrder } from "../models/model-group-order";
+import { useProject } from "../../state/project";
 
 /** Display label for a model: the display name, or falls back to the upstream id (model_id is the raw field, no prefix parsing). */
 export function modelLabel(m: ModelInfo): string {
@@ -180,12 +182,29 @@ export function ModelMenuList({
   const [query, setQuery] = useState("");
   // Expanded "show all" state: collapses back to key-configured models on each open (remount).
   const [showAll, setShowAll] = useState(false);
-  const visible = visibleChatModels(models, { showAll, query, selected: value, defaultModel });
+  // The model page's dragged group order, so "mirrors the model library page" keeps holding
+  // once a user has arranged their groups. Read here rather than threaded through every call
+  // site, and re-read on each open (the panel remounts) so an order changed on that page in
+  // another tab is picked up without a reload.
+  const { currentProject } = useProject();
+  const groupOrder = loadModelGroupOrder(currentProject?.projectId ?? null);
+  const visible = visibleChatModels(models, {
+    showAll,
+    query,
+    selected: value,
+    defaultModel,
+    groupOrder,
+  });
   // How many models the key filter hides under the current query (0 when expanded): drives the bottom "show all" row.
   const hiddenCount = showAll
     ? 0
-    : visibleChatModels(models, { showAll: true, query, selected: value, defaultModel }).length -
-      visible.length;
+    : visibleChatModels(models, {
+        showAll: true,
+        query,
+        selected: value,
+        defaultModel,
+        groupOrder,
+      }).length - visible.length;
   return (
     <PickerList
       items={visible}
