@@ -16,7 +16,7 @@ import {
 } from "../src/environment/tools/read-image.js";
 import type { ToolResult } from "../src/environment/tools/types.js";
 import type { OmniMessage } from "../src/omnimessage/index.js";
-import type { ToolDefinitionConfig } from "../src/interfaces.js";
+import type { ToolDefinitionConfig } from "../src/interfaces/index.js";
 
 /** Full bytes of a 1x1 transparent PNG (including the magic number, enough for mime sniffing
  *  and data URL assertions). */

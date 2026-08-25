@@ -47,7 +47,7 @@ import type {
   EnvironmentInterface,
   LLMInterface,
   ToolPermission,
-} from "./interfaces.js";
+} from "./interfaces/index.js";
 import { withCommandPolicy } from "./internal/command-policy.js";
 import { generateTitleWithLLM } from "./internal/session-title.js";
 import type { SessionTitleResult } from "./internal/session-title.js";
@@ -818,11 +818,11 @@ export class Session {
    */
   async sendToBackgroundSubagent(
     childSessionId: string,
-    text: string,
+    messages: OmniMessage[],
     opts?: SubagentMessageOptions,
   ): Promise<SubagentMessageOutcome> {
     return (
-      (await this.environment.sendToBackgroundSubagent?.(childSessionId, text, opts)) ?? "gone"
+      (await this.environment.sendToBackgroundSubagent?.(childSessionId, messages, opts)) ?? "gone"
     );
   }
 

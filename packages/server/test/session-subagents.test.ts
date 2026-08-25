@@ -58,9 +58,11 @@ function subagentsFakeSession(
     listBackgroundSubagents: () => children.map((c) => ({ ...c })),
     sendToBackgroundSubagent: async (
       childSessionId: string,
-      text: string,
+      messages: OmniMessage[],
       opts?: SubagentMessageOptions,
     ): Promise<SubagentMessageOutcome> => {
+      // The route turns the request's text into OmniMessage; the fake reads it back out.
+      const text = messages.map((m) => (m.payload as { text?: string }).text ?? "").join("");
       sent.push({ childSessionId, text, ...(opts !== undefined ? { opts } : {}) });
       const child = children.find((c) => c.sessionId === childSessionId);
       if (!child) {

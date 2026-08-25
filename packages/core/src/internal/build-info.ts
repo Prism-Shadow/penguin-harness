@@ -20,7 +20,7 @@
  */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { BuildInfo } from "../interfaces.js";
+import type { BuildInfo } from "../version-info.js";
 import type { CheckoutFacts } from "./git-facts.js";
 import { findCheckoutRoot, readCheckout } from "./git-facts.js";
 

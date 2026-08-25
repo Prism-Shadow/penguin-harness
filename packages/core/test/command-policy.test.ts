@@ -17,7 +17,7 @@ import type {
   EnvironmentInterface,
   LLMInterface,
   LLMOutcome,
-} from "../src/interfaces.js";
+} from "../src/interfaces/index.js";
 
 /** Shorthand: the matched rule name, or null. */
 function hit(cmd: string, policy?: CommandPolicyConfig): string | null {

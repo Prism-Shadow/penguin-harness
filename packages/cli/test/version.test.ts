@@ -10,7 +10,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { Command } from "commander";
 import { buildInfo } from "@prismshadow/penguin-core";
-import type { VersionReport } from "@prismshadow/penguin-core/interfaces";
+import type { VersionReport } from "@prismshadow/penguin-core";
 import { versionReport } from "@prismshadow/penguin-server/version-report";
 import { registerVersionCommand } from "../src/commands/version.js";
 import { cli } from "../src/index.js";

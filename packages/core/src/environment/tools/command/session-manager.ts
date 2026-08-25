@@ -11,7 +11,7 @@
  */
 import { ManagedSession } from "./session.js";
 import { BackgroundRegistry } from "../background/index.js";
-import type { ProxyEnvPolicy } from "../../../interfaces.js";
+import type { ProxyEnvPolicy } from "../../../interfaces/index.js";
 
 /** Concurrent managed-session cap: evicts once exceeded (exited sessions first, otherwise LRU — killing a background process has bounded cost). */
 const MAX_SESSIONS = 64;

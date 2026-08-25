@@ -1,37 +1,28 @@
 /**
- * Internal SDK interface contracts: LLM, Environment.
+ * What the Environment side needs: the contract `context_engine` executes an approved tool
+ * call through, plus the configuration and runtime services an Environment is built with.
  *
- * `context_engine` only handles OmniMessage; protocol conversion and concrete implementations
- * are each interface's own responsibility.
- * Human is not an "interface/class with methods" but the SDK's input/output boundary itself:
- * output is streamed by `Session.run()` as an async generator, and input is delivered via
- * `run`'s `RunOptions` — approvals are requested one at a time through the injected `approve`
- * callback, and interruption goes through `signal`. Hence no Human interface is defined here.
+ * Two planes live in this file and must not be confused (see the docs page):
+ * - the **message plane** — `executeTool`, which the engine drives: an OmniMessage tool call
+ *   in, a stream of OmniMessage out, nothing else;
+ * - the **management plane** — the tool list, the permission lookup, the background command
+ *   and subagent listings, their stop/steer entry points and the listener attachments. These
+ *   never pass through `context_engine`: they serve a host's own UI (the Web App's process
+ *   and subagents panels, an approval mode's permission check) and are ordinary method calls
+ *   returning ordinary data.
  *
- * These types form the foundational contract shared by all units; implementing units integrate
- * against them.
- *
- * Docs: packages/docs/content/interfaces.{zh,en}.md (site path /docs/interfaces) explains each
- * contract and its extension seams — keep the page in sync when changing signatures here.
+ * Docs: packages/docs/content/interfaces.{zh,en}.md (site path /docs/interfaces).
  */
-import type {
-  ApprovalDecision,
-  OmniMessage,
-  StopReason,
-  ToolCallPayload,
-  ToolDefinition,
-} from "./omnimessage/types.js";
+import type { OmniMessage, ToolCallPayload, ToolDefinition } from "../omnimessage/types.js";
+import type { ApproveFn, ThinkingLevelName } from "./shared.js";
+import type { LLMInterface } from "./llm.js";
 // Concrete classes, used only for EnvironmentServices type annotations (type-only import; no runtime dependency, no circular reference).
-import type { CommandSessionManager } from "./environment/tools/command/session-manager.js";
-import type { SubagentSessionManager } from "./environment/tools/subagent/session-manager.js";
-import type { ToolCallIdAllocator } from "./llm/tool-call-ids.js";
+import type { CommandSessionManager } from "../environment/tools/command/session-manager.js";
+import type { SubagentSessionManager } from "../environment/tools/subagent/session-manager.js";
 
 // ---------------------------------------------------------------------------
-// Tool definitions and configuration
+// Tool configuration
 // ---------------------------------------------------------------------------
-
-// ToolDefinition is defined in omnimessage/types.ts (the tool_list_ready event carries the full tool schema); re-exported here to keep the original import path.
-export type { ToolDefinition } from "./omnimessage/types.js";
 
 /** Tool permission: read-only / read-write. */
 export type ToolPermission = "r" | "rw";
@@ -89,181 +80,8 @@ export interface ToolConfig {
   mcpServers: MCPServerConfig[];
 }
 
-/**
- * Per-tool approval callback: the Human boundary gives allow/deny for each complete `tool_call`.
- * `context_engine` calls it once per tool call within a turn. Subagents forward the parent's
- * approval callback, so the child Agent **inherits the parent Agent's approval mode**.
- * The third decision, `"forbidden"`, is never a host's answer: `Session.run` wraps the
- * injected callback with the project sandbox command policy (see {@link CommandPolicyConfig}),
- * and a vetoed call answers `"forbidden"` without the wrapped callback being consulted.
- * Docs: /docs/interfaces § "ApproveFn".
- */
-export type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalDecision>;
-
-/**
- * One command-policy deny rule — plain project-editable data: a name (identifies the rule
- * in the settings UI), a regex source tested against the whitespace-normalized command, an
- * optional free-text description, and a per-rule switch.
- * Docs: /docs/configuration § "Command policy".
- */
-export interface CommandPolicyRule {
-  name: string;
-  /** JavaScript regex source (no flags). */
-  pattern: string;
-  /** What the rule catches (free text, shown in the settings UI). */
-  description?: string;
-  /** Per-rule switch; absent = true. */
-  enabled?: boolean;
-}
-
-/**
- * The project sandbox command policy (the `[command_policy]` block of
- * `.project_config.toml`, threaded into every Session the Agent creates). `Session.run`
- * wraps the injected approval callback with it, so a hit is denied without the human being
- * asked — under every approval mode. It is Project-owned security config, deliberately
- * outside Agent State so the Agent cannot rewrite it. The factory rule set is seeded into
- * new projects like model presets (copied at creation, never rewritten); an absent config
- * or an absent `rules` list means the factory set applies, and `enabled: false` switches
- * the whole policy off. An accident guardrail, not a security boundary — see
- * internal/command-policy.ts for what walks past it.
- * Docs: /docs/configuration § "Command policy".
- */
-export interface CommandPolicyConfig {
-  /** Master switch; absent = true. */
-  enabled?: boolean;
-  /** The deny-rule list, evaluated in order; absent = the factory set (a stored empty list means no rules). */
-  rules?: CommandPolicyRule[];
-}
-
 // ---------------------------------------------------------------------------
-// LLM interface
-// ---------------------------------------------------------------------------
-
-export type ThinkingLevelName = "none" | "low" | "medium" | "high" | "xhigh" | "max";
-
-/**
- * GenerativeModel initialization config.
- * Docs: /docs/interfaces § "GenerativeModelConfig".
- */
-export interface GenerativeModelConfig {
-  modelId: string;
-  apiKey?: string;
-  baseUrl?: string;
-  /**
-   * AgentHub client protocol (`openai-chat` / `openai-responses` / `claude-4-8` /
-   * `deepseek-v4` / …; the bare `openai` spelling is a deprecated alias of `openai-chat`). If
-   * omitted, AgentHub infers it from `modelId`; custom-named models or third-party models
-   * using an OpenAI protocol must specify it explicitly.
-   */
-  clientType?: string;
-  tools: ToolDefinition[];
-  /** Full system Prompt after placeholder substitution in the system_config.system_prompt template. */
-  systemPrompt?: string;
-  /**
-   * Model context window (tokens, from the model entry). Used to clamp each request's
-   * effective output cap so `input + max_tokens` stays inside the window (issue #218).
-   * Unset (or implausibly small, see llm/context-limits.ts resolveContextWindow): the
-   * clamp is disabled — a hard cap is never derived from an assumed window.
-   */
-  contextWindow?: number;
-  /**
-   * Output token cap per Request; non-positive (-1) means no explicit cap (omitted from the
-   * request). With `contextWindow` set, a positive cap is a ceiling, not a constant: each
-   * request sends `min(maxTokens, contextWindow − estimated input − safety margin)` (see
-   * llm/context-limits.ts) so small-window models never fail provider validation.
-   */
-  maxTokens?: number;
-  /**
-   * Per-model fast mode (from the model entry's `fast_mode` annotation): when true, every
-   * request opts into the provider's faster serving tier at premium pricing (AgentHub
-   * UniConfig `fast_mode`). Off by default. Models without a fast tier reject the parameter
-   * before any network I/O (AgentHub `UnsupportedParameterError`); `streamGenerate` reports
-   * that as a permanent `failed` outcome so the engine surfaces it instead of retrying.
-   */
-  fastMode?: boolean;
-  /** Construction-time default thinking level; a per-request `GenerativeModelParameters.thinkingLevel` overrides it for that request. */
-  thinkingLevel?: ThinkingLevelName;
-  /** LLM Request timeout (ms): from system_config.model.timeoutMs; <=0 disables it. Defaults to 120000. */
-  requestTimeoutMs?: number;
-  /**
-   * tool_call_id uniqueness registry (Session-level). Pass the same instance when rebuilding a new
-   * GenerativeModel on compaction so the uniqueness scope covers the whole Session; defaults to a fresh
-   * one. See llm/tool-call-ids.ts.
-   */
-  toolCallIds?: ToolCallIdAllocator;
-}
-
-export interface GenerativeModelParameters {
-  /** OmniMessage array for the input newly added this turn; implementations must merge it into a single UniMessage (multiple roles not accepted). */
-  newMessages: OmniMessage[];
-  signal?: AbortSignal;
-  /**
-   * Per-request thinking level override: applied to **this request only**; omitted falls back
-   * to the construction-time default (`GenerativeModelConfig.thinkingLevel`). The thinking
-   * level is a per-turn parameter, not a Session invariant.
-   */
-  thinkingLevel?: ThinkingLevelName;
-}
-
-/**
- * The terminal state of an LLM request, returned as the **return value** of the `streamGenerate`
- * async generator (not a yielded message). The status values share the same six-value protocol
- * as OmniMessage `stop_reason`:
- *   - `completed`: finished normally (already produced `token_usage`);
- *   - `timeout`: LLM timed out or lost connection, needs reconnect — retried by `context_engine`
- *     within the same run;
- *   - `malformed`: AgentHub response failed JSON parsing, needs reconnect — also retried by
- *     `context_engine`;
- *   - `aborted`: user-initiated interruption — stop and hand back to the user;
- *   - `failed`: an error the retry classifier did not judge transient (params, etc.) — still
- *     retried by `context_engine` within the same run (`errorMessage` provides the display text).
- *     The classification stays honest — this is reported as `failed`, not relabelled a
- *     timeout — while the *policy* retries it, because that classifier is an allowlist and a
- *     gateway phrasing a transient fault its own way lands here;
- *   - `auth`: the provider rejected the credentials (see `isAuthenticationError`) — the one
- *     status that stops the run outright, since no retry can turn a rejected credential into
- *     a working one; hosts also key on it to disable input until the model's API key is
- *     updated (only the model reference is fixed at Session creation; credentials come from
- *     the current Project config, so a key update lets the Session continue).
- * Docs: /docs/interfaces § "LLMOutcome semantics".
- */
-export interface LLMOutcome {
-  status: StopReason;
-  /**
-   * Error detail (`describeError` text): present on `failed` / `auth`, and on `timeout` /
-   * `malformed` when a concrete transport/provider error was caught (a plain idle timeout
-   * has none). Carried onto the `request_end` event as `error_message` — one name across
-   * the internal outcome and the wire — so observability (the Cost center's errors panel)
-   * can show the real reason behind a retried request.
-   */
-  errorMessage?: string;
-  /**
-   * Marks a `failed` outcome as deterministic: a client-side rejection thrown before any
-   * network I/O (currently AgentHub's `UnsupportedParameterError` for `fast_mode` on a model
-   * without a fast tier), which the identical request can never retry into working. The
-   * engine skips the reconnect ladder for it and aborts the run with `errorMessage` — the
-   * same terminal handling as `auth`, but the fix is a config change (turn off fast mode for
-   * the model), not a credential update, so it stays a `failed` and hosts don't gate input.
-   */
-  permanent?: boolean;
-}
-
-/**
- * A stateful LLM object attached to a Session.
- * `streamGenerate` yields streaming `partial_*` messages as an async generator, and appends the
- * corresponding complete `model_msg` once each fragment ends; Token usage is emitted as a
- * `token_usage` event_msg. **Never throws to `context_engine`**: any interruption/exception is
- * closed off in well-formed structure and returned normally, and **must** report the terminal
- * state via `LLMOutcome` — error handling happens entirely inside the LLM interface, and
- * `context_engine` only decides subsequent actions based on the outcome.
- * Docs: /docs/interfaces § "LLMInterface".
- */
-export interface LLMInterface {
-  streamGenerate(parameters: GenerativeModelParameters): AsyncGenerator<OmniMessage, LLMOutcome>;
-}
-
-// ---------------------------------------------------------------------------
-// Environment interface
+// Subagents, services and configuration
 // ---------------------------------------------------------------------------
 
 /**
@@ -291,8 +109,13 @@ export interface SubagentHandle {
    * carry origin as well.
    */
   run(input: {
-    /** The task Prompt handed to the child Agent. */
-    prompt: string;
+    /**
+     * The round's input, in the shape `Session.run` takes a Prompt in — the same OmniMessage
+     * list `steer` carries, so both ways into a child session speak one vocabulary. The
+     * caller owns the messages' `sender`: the model's dispatch is `parent_agent`, a human's
+     * message from a host panel carries none.
+     */
+    messages: OmniMessage[];
     signal?: AbortSignal;
     /** The parent Agent's approval callback; forwarded to the child Session to inherit the parent's approval mode. */
     approve?: ApproveFn;
@@ -520,111 +343,6 @@ export interface BackgroundCommandInfo {
 }
 
 /**
- * Node and OS the build is executing on — the part of a build's identity that is a property
- * of the run rather than of the artifact.
- */
-export interface BuildRuntimeInfo {
-  /** `process.versions.node`. */
-  node: string;
-  /** `process.platform`. */
-  platform: string;
-  /** `process.arch`. */
-  arch: string;
-}
-
-/**
- * Identity of the running build: everything `penguin version --json` prints and everything
- * GET /api/version returns. Both render this object without adding facts of their own, so a
- * report gathered over HTTP and one gathered at a shell are the same report.
- *
- * Produced by core's `buildInfo()`. Which fields carry information depends on `channel`: a
- * release knows its date and the commit it was built from, a source build knows its git
- * position instead.
- */
-export interface BuildInfo {
-  /** Dotted release number, from core's VERSION constant. Never null, never prefixed. */
-  version: string;
-  /**
-   * The one-line human identity, and the whole of `penguin version`'s output: `v0.2.3` for a
-   * release, and git's own description for a source build — `v0.2.3-14-g9e8f7d6-dirty` reads
-   * as fourteen commits past v0.2.3, at 9e8f7d6, with uncommitted changes. Always begins
-   * `v` followed by a digit, so any form reads as a version.
-   *
-   * Not necessarily `v{version}`: a tag description names the nearest reachable TAG, which
-   * during release preparation is the previous one — `VERSION` is bumped in its own commit
-   * and the new tag is created afterwards, so a build from that window truthfully reports
-   * `v0.2.3-N-g…` while `version` already reads 0.2.4. Compare `version` when you mean the
-   * release number and `describe` when you mean the position in history.
-   */
-  describe: string;
-  /** `release` once the release workflow has stamped the build; `source` for every other build. */
-  channel: "release" | "source";
-  /** Release build date (UTC yyyy-mm-dd); null in a source build. */
-  buildDate: string | null;
-  /** Full commit sha this build came from; null when neither the stamp nor git supplied one. */
-  commit: string | null;
-  /** Branch checked out at build time; null for a release, and for a detached HEAD. */
-  branch: string | null;
-  /**
-   * Whether tracked files differed from the commit. Null means the question does not apply
-   * rather than "clean": a release stamps its constants into the tree before building, so
-   * cleanliness is not a fact about release artifacts.
-   */
-  dirty: boolean | null;
-  runtime: BuildRuntimeInfo;
-}
-
-/**
- * Where a hot update was pushed from, as the pusher recorded it. Provenance only: nothing
- * here is ever executed or resolved, and both fields are whatever the pushing client sent.
- */
-export interface HarnessSource {
-  /** The pushing checkout's origin remote, or its directory name when it has no remote. */
-  repo: string;
-  /** `git describe --tags --dirty` of the pushing checkout, spelled as {@link BuildInfo.describe}. */
-  revision: string;
-}
-
-/**
- * What this machine's HMR store has committed — the harness code a hot update put there,
- * which a restart resumes. A property of the data root rather than of the running process:
- * it answers "which harness was pushed here", not "which code is executing".
- *
- * That distinction matters because the two can differ. `penguin` runs the packaged CLI
- * while `penguin-hmr` runs the store's; a server whose committed version failed to restore
- * warns and falls back to its packaged platform. Null in {@link VersionReport} means
- * nothing was ever pushed to this root.
- */
-export interface HarnessInfo {
-  /** Null for a version pushed by a client that recorded no provenance. */
-  source: HarnessSource | null;
-  /** When the version was committed to the store (ISO 8601); null if it predates the record. */
-  pushedAt: string | null;
-  /**
-   * The committed artifacts' content-addressed pointers, relative to `<root>/hmr` — the
-   * identity of the pushed code itself, independent of what the pusher claimed about it.
-   */
-  bundles: {
-    platform: string | null;
-    cli: string | null;
-    web: string | null;
-  };
-}
-
-/**
- * What `penguin version --json` prints and what GET /api/version returns: the running
- * build's identity, plus the harness this machine has in its HMR store.
- *
- * The two halves come from different places and neither can supply the other. {@link
- * BuildInfo} describes the artifact this process is executing and core resolves it alone;
- * `harness` describes the data root's store, so only a caller that knows which root is in
- * play can fill it.
- */
-export interface VersionReport extends BuildInfo {
-  harness: HarnessInfo | null;
-}
-
-/**
  * One live subagent child session owned by the environment: the child Session id (the origin
  * hop the frontend already correlates by), the registry handle when the session was promoted
  * to the background (null while it only lives inside a foreground collect window), and
@@ -696,11 +414,12 @@ export interface EnvironmentInterface {
    * Host-initiated message to one child session, by child Session id: steering while the
    * child runs, a follow-up run while it is idle, a revival (`opts.resume`) when the session
    * is no longer live (see SubagentMessageOutcome/SubagentMessageOptions). The human and the
-   * model (`input_subagent`) converge on the managed session's same channel. Optional.
+   * model (`input_subagent`) converge on the managed session's same channel, and both hand
+   * it the same thing — an OmniMessage list, whichever state the child is in. Optional.
    */
   sendToBackgroundSubagent?(
     childSessionId: string,
-    text: string,
+    messages: OmniMessage[],
     opts?: SubagentMessageOptions,
   ): Promise<SubagentMessageOutcome>;
   /**

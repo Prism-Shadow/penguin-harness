@@ -42,7 +42,7 @@
  * it and no substitute.
  * Docs: /docs/configuration § "Command policy".
  */
-import type { ApproveFn, CommandPolicyConfig, CommandPolicyRule } from "../interfaces.js";
+import type { ApproveFn, CommandPolicyConfig, CommandPolicyRule } from "../interfaces/index.js";
 import { effectiveCommandPolicyRules } from "../state/command-policy-defaults.js";
 import { EXEC_COMMAND_NAME } from "../environment/tools/exec-command.js";
 import { INPUT_COMMAND_NAME, INTERRUPT } from "../environment/tools/input-command.js";

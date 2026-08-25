@@ -24,7 +24,7 @@ import type {
   LLMOutcome,
   ToolDefinitionConfig,
   VisionDescriberService,
-} from "../src/interfaces.js";
+} from "../src/interfaces/index.js";
 
 /** 1x1 transparent PNG (includes magic bytes, enough for mime sniffing). */
 const PNG_1X1 = Buffer.from(

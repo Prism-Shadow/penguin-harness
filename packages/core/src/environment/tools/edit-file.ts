@@ -25,7 +25,7 @@ import path from "node:path";
 import { readFile, stat } from "node:fs/promises";
 import { partialToolCallOutput } from "../../omnimessage/index.js";
 import type { OmniMessage } from "../../omnimessage/index.js";
-import type { ToolDefinitionConfig } from "../../interfaces.js";
+import type { ToolDefinitionConfig } from "../../interfaces/index.js";
 import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
 import { atomicWriteFile } from "../../internal/atomic-write.js";
 import { buildReplacementHunks, renderHunk } from "./diff.js";

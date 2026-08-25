@@ -15,6 +15,7 @@ import {
   assistantText,
   partialText,
   toolCall,
+  userText,
   withOrigin,
 } from "../src/omnimessage/index.js";
 import { collectWindow } from "../src/environment/tools/subagent/collect.js";
@@ -25,7 +26,7 @@ import type {
   SubagentHandle,
   SubagentRunner,
   ToolDefinitionConfig,
-} from "../src/interfaces.js";
+} from "../src/interfaces/index.js";
 import type { ToolExecutionContext, ToolResult } from "../src/environment/tools/types.js";
 
 const DEF: ToolDefinitionConfig = {
@@ -60,6 +61,19 @@ const pl = (m: OmniMessage): LoosePayload => m.payload as LoosePayload;
 
 type RunInput = { prompt: string; signal?: AbortSignal; approve?: ApproveFn };
 
+/**
+ * Test fakes still talk in prompt strings; the contract now takes the OmniMessage list a
+ * Session's `run` takes, so the adapters below unwrap it once (see SubagentHandle.run).
+ */
+const promptOf = (messages: OmniMessage[]): string =>
+  messages.map((m) => (m.payload as { text?: string }).text ?? "").join("");
+
+/** Adapts a prompt-string fake to SubagentHandle.run's OmniMessage input. */
+const asHandleRun =
+  <T extends RunInput>(run: (input: T) => AsyncGenerator<OmniMessage>): SubagentHandle["run"] =>
+  ({ messages, ...rest }) =>
+    run({ prompt: promptOf(messages), ...rest } as unknown as T);
+
 /** Builds a SubagentRunner from a run implementation (spawn arguments observed via a spy). */
 function runnerOf(
   run: (input: RunInput) => AsyncGenerator<OmniMessage>,
@@ -73,7 +87,11 @@ function runnerOf(
   return {
     async spawn(input) {
       spawnSpy?.(input);
-      const handle: SubagentHandle = { sessionId: HOP, run, dispose() {} };
+      const handle: SubagentHandle = {
+        sessionId: HOP,
+        run: ({ messages, ...rest }) => run({ prompt: promptOf(messages), ...rest }),
+        dispose() {},
+      };
       return handle;
     },
   };
@@ -548,12 +566,12 @@ describe("run_subagent backgrounding + input_subagent", () => {
       const session = new ManagedSubagentSession({
         sessionId: `session-occupy-0000000${i}`,
         // eslint-disable-next-line require-yield
-        run: async function* ({ signal }: RunInput): AsyncGenerator<OmniMessage> {
+        run: async function* ({ signal }): AsyncGenerator<OmniMessage> {
           await aborted(signal);
         },
         dispose() {},
       });
-      session.startRun("occupy");
+      session.startRun([userText("occupy")]);
       manager.register(session);
     }
     const tool = createSubagentTool(DEF, services);
@@ -595,7 +613,7 @@ describe("run_subagent backgrounding + input_subagent", () => {
     let emitSecond: (() => void) | null = null;
     const session = new ManagedSubagentSession({
       sessionId: HOP,
-      run: async function* ({ signal }: RunInput): AsyncGenerator<OmniMessage> {
+      run: async function* ({ signal }): AsyncGenerator<OmniMessage> {
         yield withOrigin(partialText("delta", "first"), HOP);
         await new Promise<void>((resolve) => {
           emitSecond = resolve;
@@ -606,7 +624,7 @@ describe("run_subagent backgrounding + input_subagent", () => {
       dispose() {},
     });
     try {
-      session.startRun("go");
+      session.startRun([userText("go")]);
       const gen = collectWindow(session, { yieldMs: 5000, toolCallId: "call_race" });
       const first = await gen.next(); // First: the forwarded "first" child session message
       expect(first.done).toBe(false);
@@ -643,10 +661,13 @@ describe("subagent steering and per-run abort", () => {
   function steerableChild(): {
     runner: SubagentRunner;
     prompts: string[];
+    /** Each round's raw input messages (the contract's own shape — sender included). */
+    inputs: OmniMessage[][];
     steers: OmniMessage[][];
     release: () => void;
   } {
     const prompts: string[] = [];
+    const inputs: OmniMessage[][] = [];
     const steers: OmniMessage[][] = [];
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
@@ -654,7 +675,9 @@ describe("subagent steering and per-run abort", () => {
       async spawn() {
         const handle: SubagentHandle = {
           sessionId: HOP,
-          async *run({ prompt, signal }): AsyncGenerator<OmniMessage> {
+          async *run({ messages, signal }): AsyncGenerator<OmniMessage> {
+            const prompt = promptOf(messages);
+            inputs.push(messages);
             prompts.push(prompt);
             if (prompts.length === 1) {
               yield withOrigin(partialText("delta", `start:${prompt} `), HOP);
@@ -679,7 +702,7 @@ describe("subagent steering and per-run abort", () => {
         return handle;
       },
     };
-    return { runner, prompts, steers, release: () => release() };
+    return { runner, prompts, inputs, steers, release: () => release() };
   }
 
   it("queues a mid-run prompt as a steering message with the parent_agent sender", async () => {
@@ -810,7 +833,7 @@ describe("subagent steering and per-run abort", () => {
       ]);
 
       // Host steering while running: human sender (field absent), same handle channel.
-      expect(await env.sendToBackgroundSubagent(HOP, "from the panel")).toBe("steered");
+      expect(await env.sendToBackgroundSubagent(HOP, [userText("from the panel")])).toBe("steered");
       expect(child.steers).toHaveLength(1);
       const payload = child.steers[0]![0]!.payload as { text?: string; sender?: string };
       expect(payload.text).toBe("from the panel");
@@ -823,9 +846,15 @@ describe("subagent steering and per-run abort", () => {
 
       // Host message on the idle child starts a follow-up round; its messages reach the
       // frontend live through the tap the first host touch attached.
-      expect(await env.sendToBackgroundSubagent(HOP, "round two")).toBe("started");
+      expect(await env.sendToBackgroundSubagent(HOP, [userText("round two")])).toBe("started");
       await until(() => env.listBackgroundSubagents()[0]?.running === false);
       expect(child.prompts).toEqual(["task", "round two"]);
+      // The caller's own message reaches the child unchanged: a human's panel round records
+      // no sender, exactly like the steering above — only the model's dispatch is
+      // "parent_agent" (round one, through run_subagent).
+      const [dispatched, panelRound] = child.inputs as [OmniMessage[], OmniMessage[]];
+      expect((dispatched[0]!.payload as { sender?: string }).sender).toBe("parent_agent");
+      expect((panelRound[0]!.payload as { sender?: string }).sender).toBeUndefined();
       await until(() =>
         forwarded.some((m) => {
           const p = m.payload as { type?: string; text?: string };
@@ -833,7 +862,7 @@ describe("subagent steering and per-run abort", () => {
         }),
       );
 
-      expect(await env.sendToBackgroundSubagent("session-unknown", "x")).toBe("gone");
+      expect(await env.sendToBackgroundSubagent("session-unknown", [userText("x")])).toBe("gone");
       expect(env.abortBackgroundSubagentRun("session-unknown")).toBe(false);
     } finally {
       env.dispose();
@@ -900,11 +929,11 @@ describe("subagent steering and per-run abort", () => {
     };
     const runner: SubagentRunner = {
       async spawn() {
-        return { sessionId: HOP, run, dispose() {} };
+        return { sessionId: HOP, run: asHandleRun(run), dispose() {} };
       },
       async resume(input) {
         resumes.push(input);
-        return { sessionId: HOP, run, dispose() {} };
+        return { sessionId: HOP, run: asHandleRun(run), dispose() {} };
       },
     };
     const env = new Environment({
@@ -930,9 +959,9 @@ describe("subagent steering and per-run abort", () => {
 
       // Without the resume option the child is simply gone; with it, the session revives,
       // re-registers (the model can address it again), and runs the message as a new round.
-      expect(await env.sendToBackgroundSubagent(HOP, "wake up")).toBe("gone");
+      expect(await env.sendToBackgroundSubagent(HOP, [userText("wake up")])).toBe("gone");
       expect(
-        await env.sendToBackgroundSubagent(HOP, "wake up", {
+        await env.sendToBackgroundSubagent(HOP, [userText("wake up")], {
           thinkingLevel: "high",
           resume: { agentId: "owner_agent" },
         }),
@@ -957,29 +986,33 @@ describe("subagent steering and per-run abort", () => {
     };
     const runner: SubagentRunner = {
       async spawn() {
-        return { sessionId: HOP, run, dispose() {} };
+        return { sessionId: HOP, run: asHandleRun(run), dispose() {} };
       },
       async resume(input) {
         resumes.push(input);
-        return { sessionId: HOP, run, dispose() {} };
+        return { sessionId: HOP, run: asHandleRun(run), dispose() {} };
       },
     };
     const { services, manager } = makeServices(runner);
 
     // Register the target, let its round settle, then fill the registry so capacity
     // eviction RELEASES it (frees the slot — nothing is destroyed).
-    const target = new ManagedSubagentSession({ sessionId: HOP, run, dispose() {} });
-    target.startRun("first");
+    const target = new ManagedSubagentSession({
+      sessionId: HOP,
+      run: asHandleRun(run),
+      dispose() {},
+    });
+    target.startRun([userText("first")]);
     await until(() => !target.running);
     manager.track(target);
     const id = manager.register(target);
     for (let i = 0; i < 8; i += 1) {
       const filler = new ManagedSubagentSession({
         sessionId: `session-filler-0000000${i}`,
-        run,
+        run: asHandleRun(run),
         dispose() {},
       });
-      filler.startRun("filler");
+      filler.startRun([userText("filler")]);
       await until(() => !filler.running);
       manager.register(filler);
     }
@@ -1005,7 +1038,7 @@ describe("subagent steering and per-run abort", () => {
     const session = new ManagedSubagentSession({
       sessionId: HOP,
       // eslint-disable-next-line require-yield
-      async *run({ signal }: RunInput): AsyncGenerator<OmniMessage> {
+      async *run({ signal }): AsyncGenerator<OmniMessage> {
         await aborted(signal);
       },
       dispose() {},
@@ -1015,7 +1048,7 @@ describe("subagent steering and per-run abort", () => {
     expect(manager.bySessionId(HOP)).toBe(session);
     expect(manager.listLive()).toEqual([{ sessionId: HOP, subagentId: null, running: false }]);
 
-    session.startRun("occupy");
+    session.startRun([userText("occupy")]);
     const id = manager.register(session);
     expect(manager.listLive()).toEqual([{ sessionId: HOP, subagentId: id, running: true }]);
 

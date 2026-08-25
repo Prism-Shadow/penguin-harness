@@ -67,7 +67,7 @@ import type {
   ThinkingLevelName,
   ToolDefinition,
   VisionDescriberService,
-} from "./interfaces.js";
+} from "./interfaces/index.js";
 import type { ModelEntry } from "./state/index.js";
 
 /**
@@ -744,7 +744,7 @@ export class Agent {
           metaSent = true;
           return withOrigin(childSession.metaMessage, hop);
         },
-        async *run({ prompt, signal, approve, thinkingLevel: turnThinkingLevel }) {
+        async *run({ messages, signal, approve, thinkingLevel: turnThinkingLevel }) {
           if (!metaSent) {
             metaSent = true;
             yield withOrigin(childSession.metaMessage, hop);
@@ -759,18 +759,18 @@ export class Agent {
           // The engine writes a run's input to the CHILD's own Trace but never replays
           // it to its consumer (a session's normal caller typed that input itself) —
           // here the consumer is the PARENT, whose frontend has never seen the child's
-          // prompt. Forward the input message itself (origin-tagged, ahead of the run's
-          // output) so the live nested view shows the child's user side exactly like a
-          // reloaded one (history expansion splices the child Trace, which carries this
-          // same message). The parent engine drops origin messages from the parent
-          // Trace, so replay never duplicates it. Later rounds (input_subagent
-          // follow-up prompts) come through this same generator and are forwarded the
-          // same way.
-          // sender "parent_agent": in the child's Trace this user turn came from the
-          // parent agent (run_subagent's prompt / input_subagent's follow-up), not a human.
-          const input = userText(prompt, "parent_agent");
-          yield withOrigin(input, hop);
-          for await (const msg of childSession.run([input], {
+          // prompt. Forward the input messages themselves (origin-tagged, ahead of the
+          // run's output) so the live nested view shows the child's user side exactly
+          // like a reloaded one (history expansion splices the child Trace, which
+          // carries these same messages). The parent engine drops origin messages from
+          // the parent Trace, so replay never duplicates them. Later rounds
+          // (input_subagent follow-up prompts, a host panel's message) come through this
+          // same generator and are forwarded the same way.
+          // The caller owns each message's `sender` — "parent_agent" for the model's own
+          // dispatch, none for a human's message from a host panel — so the child's Trace
+          // records who actually spoke.
+          for (const input of messages) yield withOrigin(input, hop);
+          for await (const msg of childSession.run(messages, {
             ...(signal ? { signal } : {}),
             ...(childApprove ? { approve: childApprove } : {}),
             ...(turnThinkingLevel !== undefined ? { thinkingLevel: turnThinkingLevel } : {}),

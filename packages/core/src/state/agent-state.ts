@@ -19,7 +19,7 @@ import {
   parseSkillFrontmatter,
   type SkillMetadata,
 } from "@prismshadow/penguin-skills";
-import type { ToolConfig, ToolDefinitionConfig } from "../interfaces.js";
+import type { ToolConfig, ToolDefinitionConfig } from "../interfaces/index.js";
 import { atomicWriteFile } from "../internal/atomic-write.js";
 import {
   AGENT_ID_PLACEHOLDER,

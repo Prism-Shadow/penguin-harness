@@ -44,7 +44,7 @@ import type {
   ToolDefinition,
   ToolExecutionRequest,
   ToolPermission,
-} from "../interfaces.js";
+} from "../interfaces/index.js";
 import type { BuiltinTool, ToolResult } from "./tools/types.js";
 import { BUILTIN_TOOL_FACTORIES } from "./tools/registry.js";
 import { McpToolProvider } from "./mcp/provider.js";
@@ -286,24 +286,26 @@ export class Environment implements EnvironmentInterface {
    * Host-initiated message to one child session — a user's input on the child, whatever its
    * state: steering mid-run, a follow-up run when idle, a revival through the runner when the
    * session is no longer live (see EnvironmentInterface.sendToBackgroundSubagent). Converges
-   * on the same managed-session channel input_subagent uses; the message carries no sender
-   * (human origin), unlike the model path's "parent_agent". `opts.thinkingLevel` pins only a
-   * round this call starts — steering cannot change the round already in flight.
+   * on the same managed-session channel input_subagent uses, taking the same OmniMessage list;
+   * the caller's messages carry no sender (human origin), unlike the model path's
+   * "parent_agent" — and they reach both branches unchanged, so a steered round and a started
+   * round record the same author. `opts.thinkingLevel` pins only a round this call starts —
+   * steering cannot change the round already in flight.
    */
   async sendToBackgroundSubagent(
     childSessionId: string,
-    text: string,
+    messages: OmniMessage[],
     opts?: SubagentMessageOptions,
   ): Promise<SubagentMessageOutcome> {
     const session = this.subagentSessions.bySessionId(childSessionId);
-    if (!session) return this.resumeAndRun(childSessionId, text, opts);
+    if (!session) return this.resumeAndRun(childSessionId, messages, opts);
     this.attachHostTap(session);
-    if (session.steer([userText(text)])) return "steered";
+    if (session.steer(messages)) return "steered";
     if (session.running) return "busy";
     try {
       // A host round is the user's own conversation with the child, not work the model
       // dispatched: it must not fire a background completion notice at the parent.
-      session.startRun(text, {
+      session.startRun(messages, {
         ...(opts?.thinkingLevel !== undefined ? { thinkingLevel: opts.thinkingLevel } : {}),
         suppressDoneReport: true,
       });
@@ -317,11 +319,11 @@ export class Environment implements EnvironmentInterface {
    * The resume fallback of sendToBackgroundSubagent: revives the released child Session
    * (resumeSession semantics via SubagentRunner.resume), re-manages it — live index,
    * background registration (so the model can address it again by subagent_id), forwarding
-   * tap, and the host approval fallback via track — and starts its next round with the text.
+   * tap, and the host approval fallback via track — and starts its next round with the messages.
    */
   private async resumeAndRun(
     childSessionId: string,
-    text: string,
+    messages: OmniMessage[],
     opts?: SubagentMessageOptions,
   ): Promise<SubagentMessageOutcome> {
     const agentId = opts?.resume?.agentId;
@@ -345,7 +347,7 @@ export class Environment implements EnvironmentInterface {
     this.attachHostTap(session);
     try {
       // Host-initiated like the started path: no completion notice at the parent.
-      session.startRun(text, {
+      session.startRun(messages, {
         ...(opts?.thinkingLevel !== undefined ? { thinkingLevel: opts.thinkingLevel } : {}),
         suppressDoneReport: true,
       });

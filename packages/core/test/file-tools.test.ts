@@ -31,7 +31,7 @@ import { EDIT_FILE_NAME, createEditFileTool } from "../src/environment/tools/edi
 import { WRITE_FILE_NAME, createWriteFileTool } from "../src/environment/tools/write-file.js";
 import type { BuiltinTool, ToolResult } from "../src/environment/tools/types.js";
 import type { OmniMessage } from "../src/omnimessage/index.js";
-import type { ToolDefinitionConfig } from "../src/interfaces.js";
+import type { ToolDefinitionConfig } from "../src/interfaces/index.js";
 import { modelVisiblePath } from "../src/internal/model-visible-path.js";
 
 function def(name: string, permission: "r" | "rw"): ToolDefinitionConfig {

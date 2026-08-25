@@ -15,12 +15,14 @@
  * ```
  */
 
-import type { BuildInfo } from "./interfaces.js";
+import type { BuildInfo } from "./version-info.js";
 import { resolveBuildInfo } from "./internal/build-info.js";
 
 // Protocol and interface contracts (foundation)
 export * from "./omnimessage/index.js";
-export * from "./interfaces.js";
+export * from "./interfaces/index.js";
+// Build/harness identity: not an interface contract, so it sits outside interfaces/ (see version-info.ts).
+export type * from "./version-info.js";
 
 // Only the default server port leaves internal: the CLI / server default-port source of truth.
 export { DEFAULT_SERVER_PORT } from "./internal/ports.js";

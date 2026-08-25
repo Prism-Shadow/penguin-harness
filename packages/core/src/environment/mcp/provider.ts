@@ -37,7 +37,7 @@ import { StdioClientTransport, getDefaultEnvironment } from "@modelcontextprotoc
 import { partialToolCallOutput } from "../../omnimessage/index.js";
 import type { McpServerConnectResult, OmniMessage } from "../../omnimessage/index.js";
 import { VERSION } from "../../index.js";
-import type { MCPServerConfig, ToolDefinition, ToolPermission } from "../../interfaces.js";
+import type { MCPServerConfig, ToolDefinition, ToolPermission } from "../../interfaces/index.js";
 import type { BuiltinTool, ToolResult } from "../tools/types.js";
 import { resolveMCPServers, type ResolvedMCPServer } from "./config.js";
 

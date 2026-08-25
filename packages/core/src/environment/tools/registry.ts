@@ -11,7 +11,7 @@
  * Docs: packages/docs/content/tools.{zh,en}.md (site path /docs/tools) documents every
  * built-in tool and the approval flow — keep the page in sync when this table changes.
  */
-import type { EnvironmentServices, ToolDefinitionConfig } from "../../interfaces.js";
+import type { EnvironmentServices, ToolDefinitionConfig } from "../../interfaces/index.js";
 import type { BuiltinTool } from "./types.js";
 import { READ_FILE_NAME, createReadFileTool } from "./read-file.js";
 import { EDIT_FILE_NAME, createEditFileTool } from "./edit-file.js";

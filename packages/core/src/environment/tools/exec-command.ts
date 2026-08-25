@@ -21,7 +21,7 @@
 import path from "node:path";
 import { partialToolCallOutput } from "../../omnimessage/index.js";
 import type { OmniMessage } from "../../omnimessage/index.js";
-import type { EnvironmentServices, ToolDefinitionConfig } from "../../interfaces.js";
+import type { EnvironmentServices, ToolDefinitionConfig } from "../../interfaces/index.js";
 import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
 import { DEFAULT_EXEC_YIELD_MS, isStopSignal, resultForExit } from "./command/index.js";
 import type { ManagedSession } from "./command/index.js";

@@ -19,7 +19,7 @@
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
-import type { HarnessInfo } from "@prismshadow/penguin-core/interfaces";
+import type { HarnessInfo } from "@prismshadow/penguin-core";
 
 /**
  * The committed on-disk record: a runtime restart resumes exactly this CODE (platform,

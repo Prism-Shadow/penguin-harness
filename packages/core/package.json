@@ -26,8 +26,8 @@
       "import": "./dist/omnimessage/markers/index.js"
     },
     "./interfaces": {
-      "types": "./dist/interfaces.d.ts",
-      "import": "./dist/interfaces.js"
+      "types": "./dist/interfaces/index.d.ts",
+      "import": "./dist/interfaces/index.js"
     },
     "./model-catalog": {
       "types": "./dist/state/model-catalog.d.ts",
