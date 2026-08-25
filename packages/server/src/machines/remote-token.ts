@@ -6,7 +6,7 @@
  * is what a person setting a machine up properly does — and then never again, leaving a
  * machine that is connected, healthy, and impossible for this server to configure.
  *
- * This asks instead: `penguin server auth-token` mints a short-lived session from the data
+ * This asks instead: `penguin auth token` mints a short-lived session from the data
  * root the ssh account already owns. What authorizes it is that access, not a secret — anyone
  * who can run it can already read every credential on that machine by hand. And the token is
  * the better artifact in every direction: an hour long, one row to revoke, and it leaves the
@@ -20,7 +20,7 @@ import { execFailureText } from "./exec.js";
 import type { RemoteTarget } from "./commands.js";
 import type { ExecResult } from "./exec.js";
 
-/** Precedes the token on its own line — the same mark the CLI prints (cli/commands/auth-token.ts). */
+/** Precedes the token on its own line — the same mark the CLI prints (cli/commands/auth.ts). */
 const TOKEN_MARK = "---penguin-auth-token---";
 
 export type RemoteTokenOutcome =
@@ -39,7 +39,9 @@ export type RemoteTokenOutcome =
 export function authTokenCommand(ttlSeconds = 3600): string {
   if (!Number.isInteger(ttlSeconds) || ttlSeconds < 1) throw new Error(`bad ttl ${ttlSeconds}`);
   const bin = '"$HOME/.penguin/bin/penguin"';
-  return `${bin} server auth-token --ttl-seconds ${ttlSeconds} 2>&1`;
+  // `--mark` is what makes the output parseable: without it the CLI prints the bare token,
+  // and parseToken has no anchor to find it by in a shell that may print a banner of its own.
+  return `${bin} auth token --ttl-seconds ${ttlSeconds} --mark 2>&1`;
 }
 
 /**
