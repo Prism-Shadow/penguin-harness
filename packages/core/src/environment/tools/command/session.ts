@@ -262,6 +262,14 @@ export class ManagedSession {
   get running(): boolean {
     return !this.exited;
   }
+  /**
+   * Whether a stop was asked of this session (`kill`/`killHard`) — the host's stop button, a
+   * capacity eviction, an idle reap. The exit that follows is a deliberate stop, never a
+   * crash, and the background completion report says so instead of calling it a failure.
+   */
+  get stopRequested(): boolean {
+    return this.killed;
+  }
   /** OS pid of the shell leading the process group; null when the spawn itself failed. */
   get pid(): number | null {
     return typeof this.child.pid === "number" ? this.child.pid : null;
@@ -357,6 +365,19 @@ export class ManagedSession {
     }
     this.signalGroup("SIGKILL", true);
   }
+}
+
+/**
+ * Signals that mean "stop", as opposed to "something broke": the harness's own SIGTERM, a
+ * Ctrl-C from a terminal sharing the process group, a `pkill`, a supervisor shutting a dev
+ * server down. Dying from one of these is somebody's decision, not a fault — SIGKILL and the
+ * fault signals stay failures, so an OOM kill or a segfault still reads as one.
+ */
+const STOP_SIGNALS: ReadonlySet<string> = new Set(["SIGTERM", "SIGINT", "SIGHUP"]);
+
+/** Whether an exit signal means the process was deliberately stopped (see STOP_SIGNALS). */
+export function isStopSignal(signal: NodeJS.Signals | null | undefined): boolean {
+  return signal != null && STOP_SIGNALS.has(signal);
 }
 
 /** Converts exit info into a tool result (the terminal marker is appended via `note`, outside the truncation, so it isn't lost with long output). */
