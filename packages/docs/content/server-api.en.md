@@ -56,7 +56,7 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 | POST | /api/auth/logout | Log out, returns 204 |
 | GET | /api/auth/claim?token=… | Redeem a sign-in link (first-login, or the desktop shell's one-shot token): sets the cookie, redirects to `/` |
 | GET | /api/me | Current user info |
-| PUT | /api/me/password | Change password: `{oldPassword, newPassword}` |
+| PUT | /api/me/password | Change password: `{oldPassword, newPassword}`; a desktop or first-login session may omit `oldPassword` — its current password is random and was never shown |
 | GET | /api/me/prefs | Read UI preferences |
 | PUT | /api/me/prefs | Write UI preferences (shallow merge) |
 

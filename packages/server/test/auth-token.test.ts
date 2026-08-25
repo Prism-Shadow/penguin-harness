@@ -11,6 +11,7 @@ import { serve } from "@hono/node-server";
 import type { AddressInfo } from "node:net";
 import { describe, expect, it } from "vitest";
 import { mintApiToken } from "../src/auth-token.js";
+import { issueOwnerToken, ownerTokenPath, readOwnerToken } from "../src/auth/owner-token.js";
 import { SESSION_COOKIE } from "../src/auth/middleware.js";
 import { apiClient, createTestApp, makeTempRoot } from "./helpers.js";
 
@@ -57,5 +58,28 @@ describe("minting an API session", () => {
       server.close();
       await t.cleanup();
     }
+  });
+});
+
+describe("issuing the owner token", () => {
+  /**
+   * The root's own mode is the umask's, so someone who can only WRITE the root could park a
+   * symlink here and have the next boot deliver the token into a file they can read — turning
+   * write access into the admin session that reading the root is supposed to gate. The write
+   * must refuse to follow.
+   */
+  it("refuses to write through a symlink parked at the token path", async () => {
+    const root = await makeTempRoot();
+    const outside = path.join(root, "attacker-readable");
+    fs.writeFileSync(outside, "");
+    fs.symlinkSync(outside, ownerTokenPath(root));
+    // rm-then-exclusive-create makes the parked link vanish rather than be followed; a link
+    // re-planted inside the race window makes the exclusive create throw instead. Either
+    // way the attacker's file never receives a token.
+    issueOwnerToken(root);
+    expect(fs.readFileSync(outside, "utf8")).toBe("");
+    expect(fs.lstatSync(ownerTokenPath(root)).isSymbolicLink()).toBe(false);
+    expect(readOwnerToken(root)).not.toBeNull();
+    await fs.promises.rm(root, { recursive: true, force: true });
   });
 });

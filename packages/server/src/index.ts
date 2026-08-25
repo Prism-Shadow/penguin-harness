@@ -147,7 +147,10 @@ class PenguinServer {
    *
    * Nothing is printed in desktop mode: the shell's own window signs in through its one-shot
    * token, so a link in a log would be a credential nobody needs. Nothing is printed either
-   * when an operator pinned the seed with PENGUIN_SEED_ADMIN_PASSWORD — they already know it.
+   * when the pinned PENGUIN_SEED_ADMIN_PASSWORD is still the admin's actual password — the
+   * operator knows it. The pin alone is not enough: an offline reset-admin-password replaces
+   * the password with an unknowable one while the pin stays configured, and the rescue flow
+   * IS this link, so the gate verifies the pin against the hash rather than trusting it.
    *
    * The sweep runs unconditionally: a root carried over from a build that stored the
    * plaintext must not keep holding it (see initial-password.ts).
@@ -155,8 +158,10 @@ class PenguinServer {
   async seedAdmin(): Promise<void> {
     await this.deps.authService.seedAdmin();
     clearInitialAdminPassword(this.config.root);
-    if (this.config.desktopToken !== null || this.config.seedAdminPassword !== null) return;
+    if (this.config.desktopToken !== null) return;
     if (!this.deps.authService.adminPasswordIsInitial()) return;
+    const pinned = this.config.seedAdminPassword;
+    if (pinned !== null && (await this.deps.authService.adminPasswordIs(pinned))) return;
     this.pendingFirstLoginNotice = true;
   }
 

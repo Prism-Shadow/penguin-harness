@@ -19,12 +19,15 @@ export class AuthRevocationsRepo {
       .run(jti, expiresAt);
   }
 
-  /** Every live revocation, for seeding the in-memory set at boot. */
-  listJtis(): string[] {
+  /** Every live revocation with its expiry, for seeding the in-memory mirror at boot. */
+  list(): { jti: string; expiresAt: string }[] {
     return this.db
-      .prepare("SELECT jti FROM auth_revocations")
+      .prepare("SELECT jti, expires_at FROM auth_revocations")
       .all()
-      .map((r) => String((r as { jti: unknown }).jti));
+      .map((r) => {
+        const row = r as { jti: unknown; expires_at: unknown };
+        return { jti: String(row.jti), expiresAt: String(row.expires_at) };
+      });
   }
 
   deleteExpired(nowIso: string): void {

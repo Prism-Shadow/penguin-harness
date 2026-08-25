@@ -128,11 +128,12 @@ export class AuthService {
   private readonly now: () => Date;
   private readonly hashCost: number;
   /**
-   * Revoked token ids, mirrored from auth_revocations at construction and kept in step by
-   * logout. This is what keeps the per-request path off the database: the set only ever
-   * holds tokens revoked before their own expiry, so it stays tiny by construction.
+   * Revoked token ids with their expiry (epoch ms), mirrored from auth_revocations at
+   * construction and kept in step by logout. This is what keeps the per-request path off the
+   * database: it only ever holds tokens revoked before their own expiry, so it stays tiny —
+   * and entries whose token has since expired are pruned wherever the table itself is swept.
    */
-  private readonly revokedJtis: Set<string>;
+  private readonly revokedJtis: Map<string, number>;
   /**
    * The setup session a first-login link carries; null until mintFirstLogin(). An ordinary
    * session rather than a separate secret, so setting a password kills it through the same
@@ -155,9 +156,20 @@ export class AuthService {
     this.now = deps.now ?? (() => new Date());
     this.hashCost = deps.passwordHashCost ?? SCRYPT_COST;
     // Boot-time sweep: rows whose token has expired anyway are dead weight — the signature
-    // check refuses those tokens on its own — so they are dropped before the set is seeded.
+    // check refuses those tokens on its own — so they are dropped before the mirror is seeded.
     this.deps.authRevocations.deleteExpired(this.now().toISOString());
-    this.revokedJtis = new Set(this.deps.authRevocations.listJtis());
+    this.revokedJtis = new Map(
+      this.deps.authRevocations.list().map((r) => [r.jti, Date.parse(r.expiresAt)]),
+    );
+  }
+
+  /** Sweeps expired revocations from the table AND the in-memory mirror, in one place. */
+  private sweepRevocations(): void {
+    const nowMs = this.now().getTime();
+    this.deps.authRevocations.deleteExpired(new Date(nowMs).toISOString());
+    for (const [jti, expMs] of this.revokedJtis) {
+      if (expMs <= nowMs) this.revokedJtis.delete(jti);
+    }
   }
 
   /**
@@ -168,8 +180,25 @@ export class AuthService {
    */
   mintFirstLogin(): string | null {
     if (!this.adminPasswordIsInitial()) return null;
+    // A cached link that no longer authenticates (it aged past the session TTL on a server
+    // nobody claimed) is re-minted rather than returned: handing out a dead link helps nobody.
+    if (this.firstLogin !== null && this.authenticateWithMeta(this.firstLogin) === null) {
+      this.firstLogin = null;
+    }
     this.firstLogin ??= this.issueSession(ADMIN_USER_ID, "setup");
     return this.firstLogin;
+  }
+
+  /**
+   * Whether `password` is the admin's current password. Sole consumer: the startup notice's
+   * pinned-seed gate (index.ts) — a pinned PENGUIN_SEED_ADMIN_PASSWORD normally means the
+   * operator knows the password and needs no first-login link, but an offline reset replaces
+   * the password with an unknowable one while the pin is still configured, and the gate must
+   * see through that or the rescue flow dead-ends.
+   */
+  async adminPasswordIs(password: string): Promise<boolean> {
+    const row = this.deps.users.findById(ADMIN_USER_ID);
+    return row !== null && (await verifyPassword(password, row.passwordHash));
   }
 
   /**
@@ -272,7 +301,7 @@ export class AuthService {
       throw new HttpError(401, "invalid_credentials", "Incorrect username or password.");
     }
     this.loginFailures.delete(userId);
-    this.deps.authRevocations.deleteExpired(this.now().toISOString());
+    this.sweepRevocations();
     return { user: toUserInfo(row), token: this.issueSession(row.userId, "password") };
   }
 
@@ -313,13 +342,14 @@ export class AuthService {
    * anyone. The me route is what gates which sessions may call this.
    */
   async setInitialPassword(userId: string, newPassword: string): Promise<void> {
-    // The link exists to let somebody in when no password does; once one is set it has no
-    // reason to work, and a console scrollback must stop being a way in.
-    if (this.firstLogin !== null) this.logout(this.firstLogin);
     if (newPassword.length < MIN_PASSWORD_LENGTH) {
       throw new HttpError(400, "invalid_password", "Password must be at least 8 characters.");
     }
     this.deps.users.updatePassword(userId, await hashPassword(newPassword, this.hashCost), false);
+    // Revoked only AFTER the update succeeds: the link exists to let somebody in while no
+    // password does, and a rejected attempt (too short, hash failure) must leave it alive —
+    // burning it on a typo would strand the claimer until a restart.
+    if (this.firstLogin !== null) this.logout(this.firstLogin);
   }
 
   /**
@@ -329,9 +359,16 @@ export class AuthService {
    */
   logout(token: string): void {
     const claims = verifyToken(token, this.deps.tokenSecret);
-    if (claims === null || claims.exp <= this.now().getTime()) return;
-    this.revokedJtis.add(claims.jti);
-    this.deps.authRevocations.insert(claims.jti, new Date(claims.exp).toISOString());
+    const nowMs = this.now().getTime();
+    if (claims === null || claims.exp <= nowMs) return;
+    // Renewal keeps the jti and slides the expiry, so the copy being presented here may not
+    // be the longest-lived one — a sibling renewed later expires up to a full TTL from now.
+    // The revocation must outlive every copy, and now+TTL bounds them all; a token that
+    // cannot renew has no siblings, so its own expiry is exact.
+    const renewable = claims.exp - claims.iat >= this.deps.sessionRenewMs;
+    const holdUntil = renewable ? nowMs + this.deps.sessionTtlMs : claims.exp;
+    this.revokedJtis.set(claims.jti, holdUntil);
+    this.deps.authRevocations.insert(claims.jti, new Date(holdUntil).toISOString());
   }
 
   /**
@@ -362,11 +399,16 @@ export class AuthService {
       claims.v === "desktop" ? "desktop" : claims.v === "setup" ? "setup" : "password";
     const renewable = claims.exp - claims.iat >= this.deps.sessionRenewMs;
     if (renewable && claims.exp - now.getTime() < this.deps.sessionRenewMs) {
+      // The replacement keeps the jti and iat and moves ONLY the expiry — it is the same
+      // session with a longer life, exactly as the row model's in-place update was. A fresh
+      // jti here would mint a second identity: revoking one (logout, or the first-login
+      // link's death) would leave the other alive, and the per-user not-before mark would
+      // date the copy from its renewal instead of its issue.
       return {
         user,
         via,
         renewedToken: signToken(
-          newClaims(claims.u, claims.v, now.getTime(), this.deps.sessionTtlMs),
+          { ...claims, exp: now.getTime() + this.deps.sessionTtlMs },
           this.deps.tokenSecret,
         ),
       };

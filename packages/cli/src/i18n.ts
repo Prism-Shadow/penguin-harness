@@ -508,7 +508,7 @@ const en: Messages = {
     done: (root) =>
       `The admin account on data root ${root} was returned to its unclaimed state, and all of its sign-in sessions were revoked.`,
     next: () =>
-      "Start the service (`penguin web`): it will print a one-time sign-in link to claim the account.",
+      "Start the service (`penguin web`): it will print a sign-in link that claims the account — usable until a password is set.",
   },
   version: {
     description: "Show which build is running",
@@ -856,7 +856,8 @@ const zh: Messages = {
     noAdmin: () =>
       "Web 数据库中尚无管理员账号，无可重置。请先执行 `penguin web` 启动一次服务完成种子创建。",
     done: (root) => `数据根目录 ${root} 的管理员账号已退回未认领状态，其全部登录会话已吊销。`,
-    next: () => "启动服务（`penguin web`），它会打印一条一次性登录链接用于认领该账号。",
+    next: () =>
+      "启动服务（`penguin web`），它会打印一条登录链接用于认领该账号——在密码被设置之前一直有效。",
   },
   version: {
     description: "显示当前运行的是哪个构建",

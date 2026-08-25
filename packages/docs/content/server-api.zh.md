@@ -56,7 +56,7 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 | POST | /api/auth/logout | 退出登录，返回 204 |
 | GET | /api/auth/claim?token=… | 兑换登录链接（首次登录链接，或桌面 shell 的一次性 token）：种下 Cookie 并跳转到 `/` |
 | GET | /api/me | 当前用户信息 |
-| PUT | /api/me/password | 修改密码：`{oldPassword, newPassword}` |
+| PUT | /api/me/password | 修改密码：`{oldPassword, newPassword}`；桌面会话与首次登录会话可省略 `oldPassword`——其当前密码是随机生成且从未展示过的 |
 | GET | /api/me/prefs | 读取 UI 偏好 |
 | PUT | /api/me/prefs | 写入 UI 偏好（浅合并） |
 

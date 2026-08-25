@@ -233,7 +233,7 @@ export const en: Strings = {
     tabCli: "CLI",
     webStep2: "Open the web interface",
     webStep2Desc:
-      "penguin web starts the local service and opens your browser; sign in as the built-in admin “admin” with the initial password printed in the terminal on first start (looks like penguin-1234; change it right after).",
+      "penguin web starts the local service and opens your browser; the terminal prints a first-login link — open it to claim the built-in admin “admin” and set your password.",
     webCmd: "penguin web   # opens http://127.0.0.1:7364",
     webStep3: "Configure a model in the UI and start chatting",
     webStep3Desc:

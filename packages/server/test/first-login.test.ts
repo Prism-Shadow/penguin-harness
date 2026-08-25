@@ -123,6 +123,82 @@ describe("the first-login link", () => {
   });
 
   /**
+   * The renewal window is a day short of the TTL, so a setup session starts renewing the day
+   * after it is claimed — the replacement cookie is the COMMON case, not an edge. It carries
+   * the same jti, so the revocation that fires when a password is set kills it too; a fresh
+   * jti here once meant a renewed claimer kept a password-setting session after the password
+   * existed.
+   */
+  it("a renewed setup cookie dies with the original when the password is set", async () => {
+    let nowMs = Date.now();
+    const clocked = await createTestApp({
+      config: { seedAdminPassword: null },
+      now: () => new Date(nowMs),
+    });
+    try {
+      const first = clocked.deps.authService.mintFirstLogin()!;
+      // Two days in: authentication hands back a replacement setup cookie.
+      nowMs += 2 * 24 * 60 * 60 * 1000;
+      const renewed = await apiClient(clocked.app, `${SESSION_COOKIE}=${first}`).get("/api/me");
+      expect(renewed.status).toBe(200);
+      const replacement = (renewed.headers.get("set-cookie") ?? "").split(";")[0]!;
+      expect(replacement).toContain(`${SESSION_COOKIE}=v1.`);
+      // The replacement can still set the password without an old one…
+      const set = await apiClient(clocked.app, replacement).put("/api/me/password", {
+        newPassword: "claimed-password-1",
+      });
+      expect(set.status).toBe(204);
+      // …and that act ends every copy: the original AND the replacement itself.
+      expect(
+        (await apiClient(clocked.app, `${SESSION_COOKIE}=${first}`).get("/api/me")).status,
+      ).toBe(401);
+      expect((await apiClient(clocked.app, replacement).get("/api/me")).status).toBe(401);
+    } finally {
+      await clocked.cleanup();
+    }
+  });
+
+  /**
+   * The revocation fires only after the password actually updates: a rejected attempt must
+   * leave the link alive, or a typo (or anyone poking the endpoint with a bad value) burns
+   * the only way in until a restart.
+   */
+  it("keeps the link alive when the chosen password is rejected", async () => {
+    const res = await redeem(link);
+    const cookie = (res.headers.get("set-cookie") ?? "").split(";")[0]!;
+    const short = await apiClient(t.app, cookie).put("/api/me/password", {
+      newPassword: "short",
+    });
+    expect(short.status).toBe(400);
+    // The same printed link still redeems — nothing was spent on the failure.
+    expect((await redeem(link)).status).toBe(302);
+    expect(t.deps.authService.mintFirstLogin()).toBe(link);
+  });
+
+  /**
+   * An unclaimed server outliving the session TTL (30 days without anyone setting a
+   * password) must not keep handing out the same dead link: the cached token no longer
+   * authenticates, so minting re-rolls it.
+   */
+  it("re-mints the link once the cached one has aged out", async () => {
+    let nowMs = Date.now();
+    const clocked = await createTestApp({
+      config: { seedAdminPassword: null },
+      now: () => new Date(nowMs),
+    });
+    try {
+      const first = clocked.deps.authService.mintFirstLogin()!;
+      nowMs += 31 * 24 * 60 * 60 * 1000;
+      const second = clocked.deps.authService.mintFirstLogin();
+      expect(second).not.toBeNull();
+      expect(second).not.toBe(first);
+      expect(clocked.deps.authService.redeemFirstLogin(second!)).toBe(second);
+    } finally {
+      await clocked.cleanup();
+    }
+  });
+
+  /**
    * A claimed server that restarts must not end up holding a usable setup session. Revocation
    * cannot be what prevents that — a restart's token is new, and nothing revoked a token that
    * did not exist yet — so the server declines to mint one at all.

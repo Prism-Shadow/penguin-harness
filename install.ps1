@@ -725,5 +725,5 @@ if ($PathUpdateMessage) {
 Write-Host ""
 Write-Host "Get started:"
 Write-Host "  penguin --help    # all commands"
-Write-Host "  penguin web       # start the Web UI at http://127.0.0.1:7364 (login: admin, initial password printed on first start)"
+Write-Host "  penguin web       # start the Web UI at http://127.0.0.1:7364 (a first-login link is printed on first start)"
 Write-Host "  penguin server    # headless server (PORT / HOST to override)"

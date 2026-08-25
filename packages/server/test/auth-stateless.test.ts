@@ -68,6 +68,32 @@ describe("token codec", () => {
     }
   });
 
+  it("revocations age out of memory as well as the table", async () => {
+    let nowMs = Date.now();
+    const t = await createTestApp({ now: () => new Date(nowMs) });
+    try {
+      const { cookie } = await loginAdmin(t.app);
+      await apiClient(t.app, cookie).post("/api/auth/logout");
+      const rows = () =>
+        Number(
+          (t.deps.db.prepare("SELECT COUNT(*) AS n FROM auth_revocations").get() as { n: unknown })
+            .n,
+        );
+      const mirror = () =>
+        (t.deps.authService as unknown as { revokedJtis: Map<string, number> }).revokedJtis.size;
+      expect(rows()).toBe(1);
+      expect(mirror()).toBe(1);
+      // Past every copy's possible expiry, the next login sweeps table and mirror together —
+      // a mirror that only grew would leak one entry per logout for the life of the process.
+      nowMs += TEST_SESSION_TTL_MS + DAY_MS;
+      await loginAdmin(t.app);
+      expect(rows()).toBe(0);
+      expect(mirror()).toBe(0);
+    } finally {
+      await t.cleanup();
+    }
+  });
+
   it("an admin password reset kills the user's outstanding tokens", async () => {
     const t = await createTestApp();
     try {
@@ -159,9 +185,26 @@ describe("token codec", () => {
       expect(renewed.status).toBe(200);
       const setCookie = renewed.headers.get("set-cookie") ?? "";
       expect(setCookie).toContain(`${SESSION_COOKIE}=v1.`);
-      // The replacement is a genuine signed token for the same account.
+      // The replacement is the SAME session with a longer life — jti and iat carry over,
+      // only the expiry moves. A fresh jti would be a second identity: logout of one copy
+      // would leave the other alive, still renewing, and the per-user not-before mark
+      // would date the copy from its renewal rather than its issue.
       const fresh = setCookie.split(";")[0]!.split("=").slice(1).join("=");
-      expect(verifyToken(fresh, secret)?.u).toBe("admin");
+      const freshClaims = verifyToken(fresh, secret);
+      expect(freshClaims?.u).toBe("admin");
+      expect(freshClaims?.jti).toBe("slide1");
+      expect(freshClaims?.iat).toBe(now - 2 * DAY_MS);
+      expect(freshClaims!.exp).toBeGreaterThan(now + ttl - 2 * DAY_MS);
+
+      // And BECAUSE the identity carries over, logging out with either copy ends both.
+      const out = await apiClient(t.app, `${SESSION_COOKIE}=${fresh}`).post("/api/auth/logout");
+      expect(out.status).toBe(204);
+      expect((await apiClient(t.app, `${SESSION_COOKIE}=${sliding}`).get("/api/me")).status).toBe(
+        401,
+      );
+      expect((await apiClient(t.app, `${SESSION_COOKIE}=${fresh}`).get("/api/me")).status).toBe(
+        401,
+      );
 
       // A one-hour minted token in its final minutes must expire at its hour: renewing it
       // would stretch "short-lived" into the full session term by mere use.

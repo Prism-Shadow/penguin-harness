@@ -238,6 +238,13 @@ describe("auth", () => {
     }
   });
 
+  it("adminPasswordIs verifies the pin against the hash, not the config", async () => {
+    // Sole consumer is the startup notice gate: a pinned seed normally silences the
+    // first-login link, but an offline reset makes the pin stale — the gate must notice.
+    expect(await t.deps.authService.adminPasswordIs(TEST_ADMIN_PASSWORD)).toBe(true);
+    expect(await t.deps.authService.adminPasswordIs("not-the-password")).toBe(false);
+  });
+
   it("generateInitialAdminPassword is 24 base64url characters, and never repeats", () => {
     const seen = new Set<string>();
     for (let i = 0; i < 64; i++) {

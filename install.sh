@@ -781,5 +781,5 @@ fi
 echo ""
 echo "Get started:"
 echo "  penguin --help    # all commands"
-echo "  penguin web       # start the Web UI at http://127.0.0.1:7364 (login: admin, initial password printed on first start)"
+echo "  penguin web       # start the Web UI at http://127.0.0.1:7364 (a first-login link is printed on first start)"
 echo "  penguin server    # headless server (PORT / HOST to override)"

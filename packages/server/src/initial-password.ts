@@ -55,7 +55,7 @@ export function renderFirstLoginNotice(url: string): string {
     "",
     `  ${url}`,
     "",
-    "The link works until a password is set, and changes on every restart.",
+    "The link lasts 30 days or until a password is set; restarting prints a fresh one.",
   ];
   const width = Math.max(...lines.map((line) => line.length));
   const bar = `+${"-".repeat(width + NOTICE_PADDING * 2)}+`;

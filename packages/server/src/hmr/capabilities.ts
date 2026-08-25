@@ -114,6 +114,7 @@ export const RUNTIME_INTERFACES: RuntimeInterfaces = {
     "authenticateWithMeta",
     "seedAdmin",
     "adminPasswordIsInitial",
+    "adminPasswordIs",
     "login",
     "logout",
     "changePassword",

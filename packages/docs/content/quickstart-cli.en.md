@@ -46,7 +46,7 @@ penguin config model add --provider deepseek --model-id deepseek-v4-flash --api-
 penguin web
 ```
 
-The service runs at http://127.0.0.1:7364 and opens your browser (`--no-open` to skip). The account is `admin`, and it has no password yet: the server prints a first-login link in a framed notice, which opens the browser signed in so you can set one. The link works until a password exists — reopen it as often as you need — and is reprinted on every start until then. `penguin server` starts the same process headless.
+The service runs at http://127.0.0.1:7364 and opens your browser (`--no-open` to skip). The account is `admin`, and it has no password yet: the server prints a first-login link in a framed notice, which opens the browser signed in so you can set one. The link works until a password exists (30-day ceiling — a restart prints a fresh one), and you can reopen it as often as you need. `penguin server` starts the same process headless.
 
 The [Web App Guide](/web-app) covers the interface in full.
 
