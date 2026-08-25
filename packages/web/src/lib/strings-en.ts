@@ -91,6 +91,16 @@ export const en: Strings = {
     showCliSessions: "Show CLI sessions",
     showCliSessionsInfo:
       "Off, the conversation list holds only Sessions created in the Web App and is served straight from the database. On, the Trace directories are scanned too and CLI-created Sessions are listed alongside them. Applies to this account only.",
+    /** Trace import (below the CLI-sessions filter): the two pickers' accessible names, the pick-a-file action, and its outcomes. */
+    importTrace: "Import Trace",
+    importTraceInfo:
+      "Upload a .jsonl Trace exported from another install and it becomes a conversation of the chosen Agent. Both halves of the destination are picked here: the endpoint is per-Agent — a Trace file's own session_meta cannot name a local Agent, since its agent_state path belongs to the machine that exported it — and the Project is asked for because this dialog does not show which one is open, which also means a Trace can go to a Project other than the open one. Exporting happens in a conversation's Trace panel.",
+    importTraceProject: "Import into project",
+    importTraceAgent: "Import into agent",
+    importTracePick: "Choose file",
+    importTraceRunning: "Importing…",
+    importTraceDone: (target: string) => `Trace imported into ${target}`,
+    importTraceTooLarge: "The file exceeds the 14MB limit.",
     /** Admin-only sub-page (server-global); its explanation is disclosed at the pane heading. */
     proxyTitle: "Proxy options",
     proxyInfo:
@@ -1555,8 +1565,6 @@ Scenarios:
     /** Visible label on the Memory panel's header link (not a tooltip-only glyph): says what the click does and where it lands. */
     openAgentMemory: "Manage in agent settings",
     memoryShowMore: (n: number) => `Show ${n} more`,
-    /** Reveal the next page of the Trace page's group tree; n = groups still hidden. */
-    moreGroups: (n: number) => `More groups (${n})`,
     /** Sidebar group pagination (#139): the pager's step buttons and the "2/5" readout's accessible name. */
     prevGroupPage: "Previous groups",
     nextGroupPage: "Next groups",
@@ -1814,8 +1822,8 @@ Scenarios:
       `Page ${page} / ${pages} · ${total} total`,
   },
 
+  /** The Trace panel's own view of a Trace file (trace-file-view / timeline-chart); the standalone browsing page these once also served is gone. */
   traces: {
-    title: "Traces",
     timeline: "Execution timeline",
     laneLLM: "Model",
     kindThinking: "thinking",
@@ -1839,25 +1847,16 @@ Scenarios:
     linkHint:
       "Hover a timeline segment or event row to cross-highlight, click a segment to jump to its message; legend highlights its kind; drag the bar below to pan/zoom",
     filesTitle: "Trace files",
-    selectSession: "Select a Session on the left",
     toolCalls: "Tool calls",
     taskInput: "Input tokens this turn",
     taskOutput: "Output tokens this turn",
     cacheHit: "Cache hits",
     hitRate: "Hit rate",
     compactions: "compactions",
-    empty: "No Traces for this agent",
     inProgress: "in progress",
     systemPrompt: "System prompt",
     toolDefs: (n: number) => `Tool definitions (${n})`,
     exportFile: "Export",
-    importTrace: "Import Trace",
-    /** Import dialog: which Agent receives the file (the endpoint is per-Agent). */
-    importAgent: "Import into Agent",
-    importPickFile: "Choose file",
-    importing: "Importing…",
-    /** Client-side pre-check before reading the picked file (same cap as the server's import route). */
-    fileTooLarge: "The file exceeds the 14MB limit.",
   },
 
   benchmark: {

@@ -126,15 +126,17 @@ test("compaction mid-turn: the reply's stats line is still reachable by hovering
   await expect(banner).toHaveAttribute("aria-expanded", "false");
   await expect(card.getByText(summaryLine)).toHaveCount(0);
 
-  // —— Trace page ——
+  // —— Trace panel ——
   // Compaction is its own round: the user round's elapsed time and TPS don't include compaction
   // (matching the chat page's convention), and the compaction round has **its own TPS** (how
-  // fast the summary was generated), not a "—".
-  await page.goto(`${BASE}/traces`);
+  // fast the summary was generated), not a "—". The panel opens on this conversation's own
+  // Trace file, so the rounds are on screen with nothing to drill into.
+  await page.getByTestId("dock-toggle-bottom").click();
+  await page
+    .locator("[data-testid='dock'][data-position='bottom']")
+    .getByTestId("dock-pick-trace")
+    .click();
   const main = page.locator("main");
-  const node = main.getByText(/Configure|新对话/).first();
-  await expect(node).toBeVisible();
-  await node.click();
   await expect(main.getByText("第 1 轮")).toBeVisible();
   await expect(main.getByText("第 2 轮")).toBeVisible();
   const roundRows = main.locator("button").filter({ hasText: /第 \d 轮/ });

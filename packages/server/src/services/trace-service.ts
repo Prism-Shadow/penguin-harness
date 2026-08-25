@@ -71,6 +71,7 @@ import type {
   WindowPriorStats,
 } from "./message-window.js";
 import { buildContextBreakdown, emptyContextBreakdown } from "./context-breakdown.js";
+import { sessionIdCreatedAt } from "./session-service.js";
 import { TraceIndexService, traceFilePath } from "./trace-index.js";
 
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
@@ -213,6 +214,10 @@ function subagentPointer(msg: OmniMessage): string | null {
  */
 export interface TraceSessionIndex {
   listByAgent(projectId: string, agentId: string): SessionRow[];
+  /** One row by id, from anywhere in the install — the import path's uniqueness check (see importTraceFile). Optional, like the index itself: narrow tests stub only what they read. */
+  findById?(sessionId: string): SessionRow | null;
+  /** Registers an imported Trace as a Session of the receiving Agent (see importTraceFile); optional for the same reason. */
+  insertOrIgnore?(row: SessionRow): void;
 }
 
 /** TraceService wiring (the trace-file index is required: every listing/locating path serves from it — no directory walks). */
@@ -1587,9 +1592,16 @@ export class TraceService {
       new HttpError(
         409,
         "trace_session_exists",
-        `This Agent already has a Session with id ${sessionId}; a duplicate Trace cannot be imported.`,
+        `A Session with id ${sessionId} already exists here; a duplicate Trace cannot be imported.`,
       );
+    // A Session id is the identity everywhere — the sessions table keys on it, the frontend
+    // dedupes rows by it, and /chat/:sessionId routes by it — so the check spans the whole
+    // install, not just the receiving Agent. Importing the same Trace under a second Agent
+    // used to "succeed" into a Session nothing could own: no row could be inserted beside
+    // the existing one, and the list folded the two into a single conversation, leaving a
+    // group's count one above the rows it could ever show.
     if ((await this.locateAll(projectId, agentId, sessionId)).length > 0) throw duplicate();
+    if (this.deps.sessions?.findById?.(sessionId)) throw duplicate();
     const ts = Date.parse(first.timestamp);
     const date = formatLocalDate(Number.isNaN(ts) ? new Date() : new Date(ts));
     const index = 1;
@@ -1618,6 +1630,47 @@ export class TraceService {
       sizeBytes: Buffer.byteLength(body, "utf8"),
       records,
     });
+    this.indexImportedSession(projectId, agentId, sessionId);
     return { sessionId, index, date };
+  }
+
+  /**
+   * Registers an imported Trace as a **Session of the receiving Agent**, from the facts the
+   * registration above just head-read (no second parse).
+   *
+   * Without this the import produced a Trace file and nothing else: the conversation list is
+   * served straight from the sessions table, so an imported Trace stayed invisible unless
+   * "show CLI sessions" was on — that filter adopts Sessions this server never created, and
+   * a file the user deliberately imported is not one of those. Hence `client: "web"`: an
+   * imported conversation is a conversation of this install.
+   *
+   * `approvalMode` is backfilled with the default (a Trace does not record it), and the
+   * origin is recorded in the shared registry so the row lands in the right sidebar
+   * category. Facts too old or too broken to name a model are skipped rather than inserted
+   * half-formed — the Trace file itself is already written and readable either way.
+   */
+  private indexImportedSession(projectId: string, agentId: string, sessionId: string): void {
+    const sessions = this.deps.sessions;
+    if (!sessions) return;
+    const facts = this.deps.index.repo.getSession(sessionId);
+    if (!facts?.metaRead || facts.provider === null || facts.modelId === null) return;
+    if (facts.source !== null) this.deps.sources?.set(sessionId, facts.source);
+    const createdAt = sessionIdCreatedAt(sessionId) ?? facts.firstTs ?? new Date().toISOString();
+    sessions.insertOrIgnore?.({
+      sessionId,
+      projectId,
+      agentId,
+      provider: facts.provider,
+      modelId: facts.modelId,
+      workspace: facts.workspace,
+      approvalMode: "allow-all",
+      title: facts.title,
+      client: "web",
+      hasTrace: true,
+      createdAt,
+      // Nothing has run here yet: the imported conversation reads as last-active when it
+      // was created, until it is resumed on this install.
+      lastActiveAt: createdAt,
+    });
   }
 }

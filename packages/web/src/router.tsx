@@ -15,7 +15,6 @@ import { AgentSettingsPage } from "./features/agents/agent-settings-page";
 import { SkillsPage } from "./features/skills/skills-page";
 import { ModelsPage } from "./features/models/models-page";
 import { UsagePage } from "./features/usage/usage-page";
-import { TracesPage } from "./features/traces/traces-page";
 import { BenchmarkPage } from "./features/benchmark/benchmark-page";
 import { TerminalPage } from "./features/terminal/terminal-page";
 
@@ -73,7 +72,6 @@ export function AppRouter() {
           <Route path="/skills" element={<SkillsPage />} />
           <Route path="/models" element={<ModelsPage />} />
           <Route path="/usage" element={<UsagePage />} />
-          <Route path="/traces" element={<TracesPage />} />
           <Route path="/benchmark" element={<BenchmarkPage />} />
           {/* System settings and user management live in the settings dialog now (see
               SettingsDialog); their old routes fall through to the catch-all. */}

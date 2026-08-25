@@ -61,6 +61,10 @@ export function Select({
   value,
   onChange,
   disabled,
+  // Forwarded like a native select would: a control with no visible `label` (one sitting in
+  // an already-labelled settings row, say) still has to name itself to a screen reader, and
+  // the selected option's text says what is chosen, not what is being chosen.
+  "aria-label": ariaLabel,
 }: SelectProps) {
   const options = parseOptions(children);
   const current = String(value ?? "");
@@ -90,6 +94,7 @@ export function Select({
         disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={open}
+        {...(ariaLabel !== undefined ? { "aria-label": ariaLabel } : {})}
         aria-required={required || undefined}
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? errorId : undefined}

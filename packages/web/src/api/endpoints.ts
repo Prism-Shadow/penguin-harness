@@ -21,7 +21,6 @@ import type {
   AgentSkillsResponse,
   AgentVaultConfigDto,
   AgentsResponse,
-  AgentTracesResponse,
   ApprovalDecisionRequest,
   AuthLoginRequest,
   AuthResponse,
@@ -395,30 +394,6 @@ export const kernelUpdateAgentConfig = (projectId: string, agentId: string) =>
   apiFetch<AgentKernelUpdateResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/config/kernel-update`,
     { method: "POST" },
-  );
-
-/**
- * Optional paging (absent = the legacy full date-grouped response): pages Session groups
- * newest-first; a paged response answers with `sessions` (titles + category/workspace),
- * `totalSessions`, and per-category `counts` / `workspaceCounts`. `category` filters to
- * one sidebar bucket (paging applies within it, mirroring the sessions list); `cli`
- * includes CLI-origin Sessions (the "show CLI sessions" preference, default off — same
- * parameter convention as listSessions). The Trace page requests `limit+1` per page to
- * detect "has more" (splitPage).
- */
-export const getAgentTraces = (
-  projectId: string,
-  agentId: string,
-  paging?: { offset: number; limit: number; category?: SessionCategory; cli?: boolean },
-) =>
-  apiFetch<AgentTracesResponse>(
-    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/traces${
-      paging
-        ? `?limit=${paging.limit}&offset=${paging.offset}` +
-          (paging.category ? `&category=${paging.category}` : "") +
-          (paging.cli ? "&cli=1" : "")
-        : ""
-    }`,
   );
 
 // Session ---------------------------------------------------------------------

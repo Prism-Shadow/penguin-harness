@@ -57,9 +57,9 @@ describe("list-options glyphs", () => {
     expect(SORT_MODE_ICONS).toEqual({ recent: CLOCK_ICON, manual: REORDER_ICON });
   });
 
-  it("is what the menu rows and the header toggle both actually render", () => {
+  it("is what the list-options menu actually renders", () => {
     // The claim worth pinning is not the map's contents but that nothing re-picks an icon
-    // beside it: a hardcoded glyph at either call site is how the toggle and the menu would
+    // beside it: a hardcoded glyph at a call site is how a row and the mode it names would
     // drift apart. Node-only suite, so this reads the sources (title-reveal.test.ts).
     const read = (p: string) =>
       readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), p), "utf8");
@@ -68,8 +68,6 @@ describe("list-options glyphs", () => {
       expect(sidebar).toContain(`icon={GROUP_MODE_ICONS.${mode}}`);
     for (const mode of ["recent", "manual"] satisfies SessionSortMode[])
       expect(sidebar).toContain(`icon={SORT_MODE_ICONS.${mode}}`);
-    // The header toggle reads the same map rather than the raw constants.
-    expect(read("../src/components/ui/group-list.tsx")).toContain("GROUP_MODE_ICONS.workspace");
   });
 
   it("gives every row a glyph that differs, so an icon distinguishes rather than decorates", () => {

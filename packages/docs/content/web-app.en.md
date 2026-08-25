@@ -116,10 +116,6 @@ A per-Project model table grouped by provider. Models can be added and edited: i
 - Two things a chart cannot draw. A bucket with **no rate** — an entity that made no request in it, or a bucket with no cache traffic — has its line carried across at the top of the axis so the stroke stays continuous; the hover table prints a dash there, never a percentage, and a real 0% (requests were made and all of them failed) still prints 0%. A bucket that recorded **nothing at all** is not plotted: every chart drops it and packs the rest left to right, so all four share one x axis that skips the quiet intervals and carries a break mark at each skip. Emptiness is judged per bucket, never per entity — an interval anything ran in stays, with the entities that were idle in it showing their zeros and dashes;
 - A server error panel: summary stats plus an errors table paged at a fixed page size (no scrolling).
 
-## Trace Browser (/traces)
-
-Drill down Agent → date → Session → Trace file. Per-turn cards show a context-occupancy donut and a cache breakdown, alongside a lane-based execution timeline and the full event list. For the storage model, see [Sessions and Traces](/sessions-and-traces).
-
 ## Benchmark (/benchmark)
 
 Read-only scoreboards per Benchmark: switch the metric (score / cost / duration), drill into each Case's runs, and jump to the linked Session and Trace. Works together with the [Self-Improvement](/self-improvement) workflow.
@@ -132,7 +128,7 @@ The rail is grouped. **Personal** holds preferences that belong to the signed-in
 
 ### General
 
-Personal. **Language** (Chinese / English / follow the browser) and the **display currency** for prices (USD / CNY; storage is always USD — conversion happens only at the edge of the screen). **Show CLI sessions** (default off): off, the conversation list holds only Sessions created in the Web App and is served straight from the database; on, the Trace directories are scanned too and CLI-created Sessions are listed alongside them. Stored per user, and the Trace browser follows the same preference.
+Personal. **Language** (Chinese / English / follow the browser) and the **display currency** for prices (USD / CNY; storage is always USD — conversion happens only at the edge of the screen). **Show CLI sessions** (default off): off, the conversation list holds only Sessions created in the Web App and is served straight from the database; on, the Trace directories are scanned too and CLI-created Sessions are listed alongside them. Stored per user. **Import Trace**: choose the destination Project and Agent, upload a `.jsonl` Trace exported from another install, and it becomes a conversation of that Agent. Both halves are asked for: the endpoint is per-Agent because a Trace file cannot name a local Agent of its own, and the Project because this dialog does not show which one is open — which also means a Trace can go to a Project other than the open one. Exporting is the other direction of the same road and lives with the file it downloads, in a conversation's Trace panel.
 
 ### Appearance
 

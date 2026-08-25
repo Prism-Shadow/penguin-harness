@@ -99,6 +99,16 @@ export const zh = {
     showCliSessions: "显示 CLI 会话",
     showCliSessionsInfo:
       "关闭时会话列表只列出在 Web 端创建的会话，直接由数据库返回；开启后会额外扫描轨迹目录，把 CLI 创建的会话一并列出。仅影响当前账号。",
+    /** Trace import (below the CLI-sessions filter): the two pickers' accessible names, the pick-a-file action, and its outcomes. */
+    importTrace: "导入 Trace",
+    importTraceInfo:
+      "上传从其他部署导出的 .jsonl 轨迹文件，它会成为所选 Agent 的一个会话。目的地的两个部分都在这里选择：导入接口按 Agent 划分——轨迹文件自带的 session_meta 无法指认本机的 Agent，其中的 agent_state 路径属于导出它的那台机器——而 Project 需要明确指定，因为本对话框不显示当前是哪一个，也因此可以导入到当前打开之外的 Project。导出在对话的 Trace 面板中进行。",
+    importTraceProject: "导入到 Project",
+    importTraceAgent: "导入到 Agent",
+    importTracePick: "选择文件",
+    importTraceRunning: "导入中…",
+    importTraceDone: (target: string) => `轨迹已导入到 ${target}`,
+    importTraceTooLarge: "文件超过 14MB 上限。",
     /** Admin-only sub-page (server-global); its explanation is disclosed at the pane heading. */
     proxyTitle: "代理选项",
     proxyInfo: "服务器全局设置，保存后立即生效，无需重启。回环地址始终直连。",
@@ -1514,8 +1524,6 @@ Benchmark：
     /** Visible label on the Memory panel's header link (not a tooltip-only glyph): says what the click does and where it lands. */
     openAgentMemory: "在 Agent 设置中管理",
     memoryShowMore: (n: number) => `显示其余 ${n} 条`,
-    /** Reveal the next page of the Trace page's group tree; n = groups still hidden. */
-    moreGroups: (n: number) => `更多分组（${n}）`,
     /** Sidebar group pagination (#139): the pager's step buttons and the "2/5" readout's accessible name. */
     prevGroupPage: "上一页分组",
     nextGroupPage: "下一页分组",
@@ -1771,8 +1779,8 @@ Benchmark：
       `第 ${page} / ${pages} 页 · 共 ${total} 条`,
   },
 
+  /** The Trace panel's own view of a Trace file (trace-file-view / timeline-chart); the standalone browsing page these once also served is gone. */
   traces: {
-    title: "轨迹观测",
     timeline: "执行时间线",
     laneLLM: "模型",
     kindThinking: "思考",
@@ -1796,26 +1804,17 @@ Benchmark：
     linkHint:
       "鼠标移到时间线段或消息行即可联动高亮，点击时间线段跳转到对应消息；图例可高亮同类；拖动下方滑块平移/缩放",
     filesTitle: "Trace 文件",
-    selectSession: "在左侧选择一个 Session",
     toolCalls: "工具调用",
     taskInput: "本轮输入 tokens",
     taskOutput: "本轮输出 tokens",
     cacheHit: "命中缓存",
     hitRate: "命中率",
     compactions: "压缩次数",
-    /** The round-card badge reuses `chat.compactionTitle`, which names the mode (压缩 / 清空), so the Trace page and the conversation cannot drift apart; there is deliberately no Trace-local copy of that word. */
-    empty: "该 Agent 暂无 Trace",
+    /** The round-card badge reuses `chat.compactionTitle`, which names the mode (压缩 / 清空), so the Trace view and the conversation cannot drift apart; there is deliberately no Trace-local copy of that word. */
     inProgress: "进行中",
     systemPrompt: "系统提示词",
     toolDefs: (n: number) => `工具定义（${n}）`,
     exportFile: "导出",
-    importTrace: "导入 Trace",
-    /** Import dialog: which Agent receives the file (the endpoint is per-Agent). */
-    importAgent: "导入到 Agent",
-    importPickFile: "选择文件",
-    importing: "导入中…",
-    /** Client-side pre-check before reading the picked file (same cap as the server's import route). */
-    fileTooLarge: "文件超过 14MB 上限。",
   },
 
   benchmark: {

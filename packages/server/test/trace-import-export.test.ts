@@ -2,15 +2,17 @@
  * Trace file export/import integration tests:
  * export serves the raw JSONL verbatim as an attachment (any member); import validates the
  * uploaded content (parseable JSONL, leading session_meta, filename-safe session_id) and
- * always stores it as index 1 of a new Session — a session id the Agent already has is
- * rejected with 409 trace_session_exists — and the file is then browsable through the
- * existing tree/detail endpoints. Import is owner-only, mirroring the Agent snapshot import.
+ * always stores it as index 1 of a new Session — a session id that exists ANYWHERE in the
+ * install is rejected with 409 trace_session_exists — the imported file becomes a listed
+ * Session of the receiving Agent, and is browsable through the existing tree/detail
+ * endpoints. Import is owner-only, mirroring the Agent snapshot import.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { OmniMessage, SessionMetaPayload } from "@prismshadow/penguin-core";
 import type {
   AgentTracesResponse,
   ProjectCreateResponse,
+  SessionsResponse,
   TraceEventsResponse,
   TraceImportResponse,
 } from "../src/api/types.js";
@@ -167,6 +169,56 @@ describe("trace-import-export", () => {
     expect(tree.dates[0]!.date).toBe("2026-07-05");
     expect(tree.dates[0]!.sessions[0]!.files.map((f) => f.index)).toEqual([1]);
     expect(await (await owner.get(`${base()}/${SID}/1/download`)).text()).toBe(toContent(original));
+  });
+
+  it("import: the file becomes a Session of the receiving Agent, listed without the CLI filter", async () => {
+    // An imported Trace IS a conversation of this install, not a foreign artefact: it has to
+    // appear in the conversation list, which is served from the sessions table. Registering
+    // only the Trace file left it visible solely under "show CLI sessions" — the filter for
+    // Sessions this server never created.
+    expect(
+      (await owner.post(`${base()}/import`, { dataBase64: b64(toContent(sampleTrace(SID))) }))
+        .status,
+    ).toBe(200);
+    const listed = (await (
+      await owner.get(`/api/projects/${projectId}/agents/default_agent/sessions?counts=1`)
+    ).json()) as SessionsResponse;
+    expect(listed.sessions.map((x) => x.sessionId)).toEqual([SID]);
+    expect(listed.counts?.active).toBe(1);
+    // Carried over from the file's own session_meta, so the row is a usable conversation
+    // rather than a stub: model reference, Workspace, and the Trace it was imported from.
+    const row = listed.sessions[0]!;
+    expect(row.provider).toBe("custom");
+    expect(row.modelId).toBe("m");
+    expect(row.workspace).toBe("/tmp/w");
+    expect(row.hasTrace).toBe(true);
+    // Its Workspace group knows it too — the per-Workspace share the sidebar counts a group by.
+    expect(listed.workspaceCounts?.["/tmp/w"]?.active).toBe(1);
+  });
+
+  it("import: a session id that exists anywhere in the install → 409, whichever Agent holds it", async () => {
+    // A session id is the identity everywhere: the sessions table keys on it, the frontend
+    // dedupes rows by it. Importing the same Trace under a SECOND Agent used to pass the
+    // per-Agent check and produce a Session nothing could own — no row could sit beside the
+    // existing one, so a group's count stood one above the rows it could ever show.
+    expect(
+      (await owner.post(`${base()}/import`, { dataBase64: b64(toContent(sampleTrace(SID))) }))
+        .status,
+    ).toBe(200);
+    expect(
+      (await owner.post(`/api/projects/${projectId}/agents`, { agentId: "second", name: "Second" }))
+        .status,
+    ).toBe(201);
+    const res = await owner.post(`/api/projects/${projectId}/agents/second/traces/import`, {
+      dataBase64: b64(toContent(sampleTrace(SID))),
+    });
+    expect(res.status).toBe(409);
+    expect(await errorCode(res)).toBe("trace_session_exists");
+    // Nothing was written for the second Agent.
+    const tree = (await (
+      await owner.get(`/api/projects/${projectId}/agents/second/traces`)
+    ).json()) as AgentTracesResponse;
+    expect(tree.dates).toEqual([]);
   });
 
   it("import: concurrent imports of the same new session id — exactly one wins", async () => {
