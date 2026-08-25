@@ -380,10 +380,25 @@ describe("approvals and events", () => {
     });
   });
 
-  it("abort events produce an abort marker item", () => {
+  it("abort events produce an abort marker item, carrying the machine-readable cause when stamped", () => {
     const m = createStreamModel();
     pushMessage(m, abortEvent("user abort"));
     expect(items(m)[0]).toMatchObject({ kind: "abort", reason: "user abort" });
+    // A stamped abort carries the localization inputs through to the item; a legacy one
+    // (above) has only its English prose.
+    pushMessage(
+      m,
+      abortEvent("llm request error: 401 nope", {
+        code: "llm_fatal",
+        detail: "401 nope",
+      }),
+    );
+    expect(items(m)[1]).toMatchObject({
+      kind: "abort",
+      reason: "llm request error: 401 nope",
+      code: "llm_fatal",
+      detail: "401 nope",
+    });
   });
 
   it("compaction begin/end produce a banner item; tokens accounting for the completion row", () => {

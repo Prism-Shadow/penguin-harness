@@ -186,7 +186,7 @@ function humanizeDuration(ms: number): string {
 }
 
 export function formatAbort(p: AbortPayload, t: Messages, c: Palette = STDOUT_PALETTE): string {
-  return dim(t.abortLabel(p.reason ?? undefined), c);
+  return dim(t.abortLabel(p), c);
 }
 
 /** Options shared by history and streaming rendering. */

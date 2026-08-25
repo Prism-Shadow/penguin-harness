@@ -379,7 +379,7 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
     case "abort":
       return (
         <p className="anim-msg my-1 font-mono text-xs text-gray-500 dark:text-gray-400">
-          {S.chat.aborted(item.reason)}
+          {S.chat.aborted(item)}
         </p>
       );
     case "reconnect":

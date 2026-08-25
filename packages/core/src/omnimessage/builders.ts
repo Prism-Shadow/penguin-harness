@@ -5,6 +5,7 @@
  * Docs: /docs/omni-message § "Builders and guards".
  */
 import type {
+  AbortCode,
   AbortPayload,
   ApprovalDecision,
   ApprovalDecisionPayload,
@@ -276,8 +277,17 @@ export function approvalDecision(
   return event({ type: "approval_decision", decision, tool_call_id: toolCallId });
 }
 
-export function abortEvent(reason: string | null = null): OmniMessage<AbortPayload> {
-  return event({ type: "abort", reason });
+export function abortEvent(
+  reason: string | null = null,
+  extra?: { code?: AbortCode; detail?: string; attempts?: number },
+): OmniMessage<AbortPayload> {
+  return event({
+    type: "abort",
+    reason,
+    ...(extra?.code !== undefined ? { code: extra.code } : {}),
+    ...(extra?.detail !== undefined ? { detail: extra.detail } : {}),
+    ...(extra?.attempts !== undefined ? { attempts: extra.attempts } : {}),
+  });
 }
 
 /** request begin event: marks the start of one LLM Request. */

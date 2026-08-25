@@ -194,7 +194,13 @@ export interface Messages {
     elapsedDelta: string;
   }): string;
   /** Abort event label (may include a reason). */
-  abortLabel(reason?: string): string;
+  /** Abort line: a machine-readable `code` localizes the cause (detail appended verbatim, attempts filling the retry count); a legacy Trace without one renders its English `reason` as-is. */
+  abortLabel(abort?: {
+    reason?: string | null;
+    code?: string;
+    detail?: string;
+    attempts?: number;
+  }): string;
   /**
    * request_end ended with a status the engine reconnects on (`failed` / `timeout` /
    * `malformed` — only `auth` is terminal): the engine retries carrying already-produced
@@ -517,7 +523,24 @@ const en: Messages = {
   approvePrompt: () => "? Approve this tool call? [Y/n] ",
   taskStats: (s) =>
     `[stats] context ${s.context} (${s.contextDelta}) · tokens ${s.tokens} (${s.tokensDelta}) · ${s.elapsed} (${s.elapsedDelta})`,
-  abortLabel: (reason) => `[abort]${reason ? `: ${reason}` : ""}`,
+  abortLabel: (abort) => {
+    const cause =
+      abort?.code === "user_abort"
+        ? "aborted by user"
+        : abort?.code === "llm_fatal"
+          ? "llm request error"
+          : abort?.code === "llm_retries_exhausted"
+            ? `llm request failed after ${abort.attempts ?? "several"} retries`
+            : abort?.code === "backoff_interrupted"
+              ? "aborted during reconnect backoff"
+              : abort?.code === "compaction_aborted"
+                ? "aborted during compaction"
+                : abort?.code === "compaction_failed"
+                  ? "compaction failed"
+                  : (abort?.reason ?? undefined);
+    const text = cause ? `${cause}${abort?.detail ? `: ${abort.detail}` : ""}` : "";
+    return `[abort]${text ? `: ${text}` : ""}`;
+  },
   reconnectLabel: (status, attempt) =>
     `[retry] ${
       status === "timeout"
@@ -799,7 +822,24 @@ const zh: Messages = {
   approvePrompt: () => "? 批准此工具调用？[Y/n] ",
   taskStats: (s) =>
     `[统计信息] 上下文 ${s.context} (${s.contextDelta}) · tokens ${s.tokens} (${s.tokensDelta}) · 用时 ${s.elapsed} (${s.elapsedDelta})`,
-  abortLabel: (reason) => `[已中断]${reason ? `：${reason}` : ""}`,
+  abortLabel: (abort) => {
+    const cause =
+      abort?.code === "user_abort"
+        ? "用户中断"
+        : abort?.code === "llm_fatal"
+          ? "模型请求错误"
+          : abort?.code === "llm_retries_exhausted"
+            ? `模型请求重试 ${abort.attempts ?? "多"} 次后失败`
+            : abort?.code === "backoff_interrupted"
+              ? "重试等待中被中断"
+              : abort?.code === "compaction_aborted"
+                ? "压缩过程中被中断"
+                : abort?.code === "compaction_failed"
+                  ? "压缩失败"
+                  : (abort?.reason ?? undefined);
+    const text = cause ? `${cause}${abort?.detail ? `：${abort.detail}` : ""}` : "";
+    return `[已中断]${text ? `：${text}` : ""}`;
+  },
   reconnectLabel: (status, attempt) =>
     `[重试] ${
       status === "timeout"

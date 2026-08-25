@@ -1439,7 +1439,34 @@ Scenarios:
     thinking: "Thinking",
     subagent: "Subagent",
     subagentRunning: "Running",
-    aborted: (reason?: string) => `[Aborted]${reason ? `: ${reason}` : ""}`,
+    /**
+     * Abort banner. A machine-readable `code` localizes the cause (with `detail` appended
+     * verbatim and `attempts` filling the retry count); a legacy Trace without one renders
+     * its English `reason` prose as-is.
+     */
+    aborted: (item?: {
+      reason?: string | null;
+      code?: string;
+      detail?: string;
+      attempts?: number;
+    }) => {
+      const cause =
+        item?.code === "user_abort"
+          ? "aborted by user"
+          : item?.code === "llm_fatal"
+            ? "llm request error"
+            : item?.code === "llm_retries_exhausted"
+              ? `llm request failed after ${item.attempts ?? "several"} retries`
+              : item?.code === "backoff_interrupted"
+                ? "aborted during reconnect backoff"
+                : item?.code === "compaction_aborted"
+                  ? "aborted during compaction"
+                  : item?.code === "compaction_failed"
+                    ? "compaction failed"
+                    : (item?.reason ?? undefined);
+      const text = cause ? `${cause}${item?.detail ? `: ${item.detail}` : ""}` : "";
+      return `[Aborted]${text ? `: ${text}` : ""}`;
+    },
     /**
      * Reconnect hint line; `secondsLeft` (waiting state only) switches to the live-countdown
      * wording. `retryable` is the live status; the finer spellings only appear when

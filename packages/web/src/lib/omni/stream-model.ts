@@ -229,14 +229,16 @@ export interface SubagentItem {
 export interface AbortItem {
   kind: "abort";
   id: number;
+  /** English prose of record; rendered verbatim when no machine-readable code arrived (legacy Traces). */
   reason?: string;
+  /** Machine-readable cause (core AbortCode): the banner localizes from it, appending `detail`. */
+  code?: string;
+  /** Concrete error detail, appended verbatim after the localized cause. */
+  detail?: string;
+  /** Retry count behind an llm_retries_exhausted abort. */
+  attempts?: number;
 }
 
-/**
- * The statuses the engine reconnects on — every LLM failure except `auth`, which is terminal
- * (see core's TURN_RETRY_STATUSES). A retry the user cannot see is a stalled session with no
- * explanation and no way out, so all three render the same countdown and the same controls.
- */
 /** `retryable` is the live protocol; failed/timeout/malformed are legacy Trace spellings kept for replay. */
 export type ReconnectStatus = "retryable" | "failed" | "timeout" | "malformed";
 
@@ -1515,6 +1517,9 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       if (waiting) waiting.gaveUp = true;
       const item: AbortItem = { kind: "abort", id: nextId(model) };
       if (p.reason != null) item.reason = p.reason;
+      if (typeof p.code === "string") item.code = p.code;
+      if (typeof p.detail === "string") item.detail = p.detail;
+      if (typeof p.attempts === "number") item.attempts = p.attempts;
       model.items.push(item);
       return;
     }

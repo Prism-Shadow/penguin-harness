@@ -1397,7 +1397,34 @@ Benchmark：
     thinking: "思考",
     subagent: "子会话",
     subagentRunning: "运行中",
-    aborted: (reason?: string) => `[已中断]${reason ? `：${reason}` : ""}`,
+    /**
+     * Abort banner. A machine-readable `code` localizes the cause (with `detail` appended
+     * verbatim and `attempts` filling the retry count); a legacy Trace without one renders
+     * its English `reason` prose as-is.
+     */
+    aborted: (item?: {
+      reason?: string | null;
+      code?: string;
+      detail?: string;
+      attempts?: number;
+    }) => {
+      const cause =
+        item?.code === "user_abort"
+          ? "用户中断"
+          : item?.code === "llm_fatal"
+            ? "模型请求错误"
+            : item?.code === "llm_retries_exhausted"
+              ? `模型请求重试 ${item.attempts ?? "多"} 次后失败`
+              : item?.code === "backoff_interrupted"
+                ? "重试等待中被中断"
+                : item?.code === "compaction_aborted"
+                  ? "压缩过程中被中断"
+                  : item?.code === "compaction_failed"
+                    ? "压缩失败"
+                    : (item?.reason ?? undefined);
+      const text = cause ? `${cause}${item?.detail ? `：${item.detail}` : ""}` : "";
+      return `[已中断]${text ? `：${text}` : ""}`;
+    },
     /**
      * Reconnect hint line; `secondsLeft` (waiting state only) switches to the live-countdown
      * wording. `retryable` is the live status; the finer spellings only appear when

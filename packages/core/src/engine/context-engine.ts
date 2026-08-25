@@ -60,6 +60,7 @@ import {
   userSteeringText,
 } from "../omnimessage/markers/index.js";
 import type {
+  AbortCode,
   ApprovalDecision,
   CompactionMode,
   CompactionReason,
@@ -688,7 +689,7 @@ export class ContextEngine {
       // multimodal input isn't lost. The message is already written to Trace, so it won't be
       // rewritten on the next send.
       this.pendingCarryOver = input;
-      yield* this.emitAbort("aborted by user");
+      yield* this.emitAbort("aborted by user", { code: "user_abort" });
       return;
     }
 
@@ -747,7 +748,7 @@ export class ContextEngine {
         // during tool execution): stop and hand control back to the user.
         if (signal?.aborted || turn.outcome.status === "aborted") {
           this.pendingCarryOver = this.buildCarryOver(attemptInput, turn);
-          yield* this.emitAbort("aborted by user");
+          yield* this.emitAbort("aborted by user", { code: "user_abort" });
           return;
         }
         // `fatal` stops the run: a definitive provider rejection, a dead credential, or a
@@ -755,7 +756,12 @@ export class ContextEngine {
         // the ladder would only delay the actionable message the outcome already carries.
         if (turn.outcome.status === "fatal") {
           this.pendingCarryOver = this.buildCarryOver(attemptInput, turn);
-          yield* this.emitAbort(`llm request error: ${turn.outcome.errorMessage ?? "unknown"}`);
+          yield* this.emitAbort(`llm request error: ${turn.outcome.errorMessage ?? "unknown"}`, {
+            code: "llm_fatal",
+            ...(turn.outcome.errorMessage !== undefined
+              ? { detail: turn.outcome.errorMessage }
+              : {}),
+          });
           return;
         }
         // Completed normally.
@@ -781,13 +787,19 @@ export class ContextEngine {
           // detail, last — when the final failure carried one.
           const detail = turn.outcome.errorMessage;
           const reason = `llm request failed after ${this.maxReconnects} retries${detail ? `: ${detail}` : ""}`;
-          yield* this.emitAbort(reason);
+          yield* this.emitAbort(reason, {
+            code: "llm_retries_exhausted",
+            attempts: this.maxReconnects,
+            ...(detail !== undefined ? { detail } : {}),
+          });
           return;
         }
         reconnects += 1;
         if (!(await this.backoff(reconnects, signal))) {
           this.pendingCarryOver = attemptInput;
-          yield* this.emitAbort("aborted during reconnect backoff");
+          yield* this.emitAbort("aborted during reconnect backoff", {
+            code: "backoff_interrupted",
+          });
           return;
         }
       }
@@ -858,6 +870,7 @@ export class ContextEngine {
             }
             yield* this.emitAbort(
               result.status === "aborted" ? "aborted during compaction" : "compaction failed",
+              { code: result.status === "aborted" ? "compaction_aborted" : "compaction_failed" },
             );
             return;
           }
@@ -1744,9 +1757,12 @@ export class ContextEngine {
     await this.write(msg);
   }
 
-  /** Interruption: emits an abort event. Cleanup/resending is managed centrally by `run` via carry-over; the LLM history is never touched again. */
-  private async *emitAbort(reason: string): AsyncGenerator<OmniMessage> {
-    const msg = abortEvent(reason);
+  /** Interruption: emits an abort event (reason = English prose of record; `extra` carries the machine-readable cause render layers localize by). Cleanup/resending is managed centrally by `run` via carry-over; the LLM history is never touched again. */
+  private async *emitAbort(
+    reason: string,
+    extra?: { code?: AbortCode; detail?: string; attempts?: number },
+  ): AsyncGenerator<OmniMessage> {
+    const msg = abortEvent(reason, extra);
     yield msg;
     await this.write(msg);
   }

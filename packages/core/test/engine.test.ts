@@ -1863,6 +1863,11 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect(reason).toBe(
       "llm request failed after 2 retries: Upstream HTTP/2 stream failed (upstream_http2_stream_error)",
     );
+    expect(abort!.payload).toMatchObject({
+      code: "llm_retries_exhausted",
+      attempts: 2,
+      detail: "Upstream HTTP/2 stream failed (upstream_http2_stream_error)",
+    });
 
     // The spent turn's input is stashed as carry-over; the next run (attempt index 3, after
     // this run's three) resends it merged with the new input.
@@ -1945,6 +1950,9 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     const abort = all.find((m) => (m.payload as { type?: string }).type === "abort");
     expect(abort).toBeDefined();
     expect((abort!.payload as { reason?: string }).reason).toContain("llm request error");
+    // The machine-readable cause rides the event so render layers can localize the banner
+    // without parsing the English prose; the raw detail comes along verbatim.
+    expect(abort!.payload).toMatchObject({ code: "llm_fatal", detail: "401 invalid x-api-key" });
   });
 
   it("a fast-mode rejection (fatal) stops the run without burning the ladder", async () => {
