@@ -1,6 +1,6 @@
 /**
- * The installer that runs ON the target (embedded in the platform bundle, see
- * installer-script.ts), executed for real against a temporary HOME. It is plain Node with no dependencies precisely so it can run
+ * The installer that runs ON the target (shipped as an asset, see installer-script.ts),
+ * executed for real against a temporary HOME. It is plain Node with no dependencies precisely so it can run
  * anywhere — including here — so these tests drive the actual script rather than a model of
  * it: fresh install, upgrade over an existing one, rollback when the staged tree does not run,
  * and the data directory surviving all of it.
@@ -13,7 +13,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { REMOTE_INSTALLER_SCRIPT } from "../src/machines/installer-script.js";
+import { readRemoteInstaller } from "../src/machines/installer-script.js";
 import { packDirectory } from "../src/machines/pack.js";
 
 const posixOnly = process.platform === "win32" ? describe.skip : describe;
@@ -89,7 +89,7 @@ posixOnly("remote-installer.cjs", () => {
     fs.mkdirSync(home, { recursive: true });
     // The embedded text becomes a file the same way the push makes it one: to ride scp.
     INSTALLER = path.join(work, "remote-installer.cjs");
-    fs.writeFileSync(INSTALLER, REMOTE_INSTALLER_SCRIPT);
+    fs.writeFileSync(INSTALLER, readRemoteInstaller());
   });
   afterEach(() => {
     fs.rmSync(work, { recursive: true, force: true });
@@ -228,18 +228,31 @@ posixOnly("remote-installer.cjs", () => {
   });
 });
 
-describe("the embedded installer text", () => {
+describe("reaching the installer", () => {
   /**
-   * installer-script.ts is GENERATED from remote-installer.cjs (scripts/gen-installer-script.mjs):
-   * the .cjs is the source everyone reads and prettier formats, the .ts is what actually reaches a
-   * remote machine inside the platform bundle. Nothing at build time regenerates it, so this is
-   * what makes editing only the .cjs a build failure rather than a silently stale push.
+   * The push copies this file out and scp's it; it is never imported. Reading it through the
+   * accessor the push uses is what proves the file is reachable at all — the job a generated
+   * string literal used to do, and the reason a drift test was needed to keep two copies in
+   * step. There is only one copy now.
    */
-  it("is exactly the .cjs beside it", () => {
+  it("reads the .cjs from the source tree when there are no assets", () => {
     const source = fs.readFileSync(
       path.resolve(__dirname, "..", "src", "machines", "remote-installer.cjs"),
       "utf8",
     );
-    expect(REMOTE_INSTALLER_SCRIPT).toBe(source);
+    expect(readRemoteInstaller()).toBe(source);
+    expect(readRemoteInstaller(() => null)).toBe(source);
+  });
+
+  it("prefers a pushed bundle's asset, and says where it looked when there is none", () => {
+    const assets = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-assets-"));
+    try {
+      const target = path.join(assets, "machines", "remote-installer.cjs");
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, "// pushed\n");
+      expect(readRemoteInstaller(() => assets)).toBe("// pushed\n");
+    } finally {
+      fs.rmSync(assets, { recursive: true, force: true });
+    }
   });
 });

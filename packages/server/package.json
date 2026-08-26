@@ -57,7 +57,7 @@
     "start": "node --disable-warning=ExperimentalWarning dist/index.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
-    "build": "tsup"
+    "build": "tsup && node scripts/copy-machine-assets.mjs"
   },
   "dependencies": {
     "@hono/node-server": "^2.0.5",

@@ -716,7 +716,7 @@ export function buildAppDeps(
     desktop: caps.desktop,
     // Anchored at the data root: that is where the hmr store the pushable image comes from
     // lives, and where verified Node runtime downloads are cached between installs.
-    machines: overrides.machines ?? new MachinesService(config.root),
+    machines: overrides.machines ?? new MachinesService(config.root, {}, () => hmr.assetsDir()),
     hmr,
     proxyControl: caps.proxyControl,
     log,
