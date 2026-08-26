@@ -330,7 +330,7 @@ describe("shipping the installers", () => {
   /**
    * The push copies these files out of dist/; they are never imported, so nothing in the
    * module graph would notice one going missing from a built package. The build copies them
-   * in (copy-machine-assets.mjs), and that copy is worth an assertion rather than a comment.
+   * in (tsup.config.ts's onSuccess), and that copy is worth an assertion rather than a comment.
    */
   it.each(["install.sh", "install.ps1"])("%s is copied into dist at build time", (name) => {
     const built = path.resolve(__dirname, "..", "dist", name);
