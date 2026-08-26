@@ -344,29 +344,26 @@
   .anim-line-dot {
     opacity: 1;
   }
+  .anim-block {
+    opacity: 1 !important;
+    transform: none !important;
+  }
 }
 
-/* ---------- Building-blocks loop (LangChain comparison): each block pops in at its
-   negative delay within the shared cycle, holds while the rest of the tower lands,
-   then the whole skyline fades and rebuilds. Reduced-motion shows towers complete. */
+/* ---------- Building blocks (LangChain comparison): React remounts both skylines on
+   one shared cycle; each block then lands once at its positive delay and holds. */
 .anim-block {
-  animation: block-build var(--cycle, 7.2s) linear infinite;
+  opacity: 0;
+  transform: translateY(5px) scale(0.92);
+  animation: block-land 220ms cubic-bezier(0.2, 0.75, 0.25, 1) var(--land-delay, 0s) both;
 }
-@keyframes block-build {
-  0% {
+@keyframes block-land {
+  from {
     opacity: 0;
     transform: translateY(5px) scale(0.92);
   }
-  3% {
+  to {
     opacity: 1;
-    transform: none;
-  }
-  93% {
-    opacity: 1;
-    transform: none;
-  }
-  100% {
-    opacity: 0;
     transform: none;
   }
 }
