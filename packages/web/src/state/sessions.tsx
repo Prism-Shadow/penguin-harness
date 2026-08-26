@@ -146,7 +146,12 @@ function parsePageKey(
   if (parts.length !== 4) return null;
   const [agentId, category, scope, source] = parts as [string, string, string, string];
   return ALL_CATEGORIES.includes(category)
-    ? { agentId, category: category as SessionCategory, scope, source: source === "" ? null : source }
+    ? {
+        agentId,
+        category: category as SessionCategory,
+        scope,
+        source: source === "" ? null : source,
+      }
     : null;
 }
 
