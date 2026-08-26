@@ -128,24 +128,16 @@ export const zh = {
     altOss: "改用 OSS 镜像下载",
     checksums: "校验和（SHA256SUMS.desktop）",
     allReleases: "打开 GitHub 发布页",
-    /** First-launch FAQ: one collapsible item per platform, the visitor's own pre-expanded. */
+    /**
+     * First-launch FAQ. The macOS builds are Developer ID signed and notarized and the
+     * Windows installers are Authenticode signed, so those two platforms have nothing to
+     * unblock; the Linux AppImage's execute bit is the one item left, pre-expanded for a
+     * Linux visitor.
+     */
     faq: {
       title: "首次启动常见问题",
-      intro: "当前构建暂未签名，系统可能拦截首次启动——按对应系统的步骤解除即可，只需操作一次。",
-      mac: {
-        question: "macOS 提示「PenguinHarness」已损坏，无法打开？",
-        why: "macOS 会给从网络下载的文件加上隔离标记，应用未签名时会因此被误报「已损坏」。删除该标记即可解除：",
-        stepDrag: "打开下载的 dmg，把 PenguinHarness 拖入「应用程序（Applications）」文件夹。",
-        stepTerminal: "打开终端：「启动台 → 其他 → 终端」。",
-        stepPaste:
-          "在终端粘贴这条命令并回车，然后输入开机密码（输入时屏幕不显示字符，输完回车即可）：",
-        stepOpen: "执行完成后，双击即可正常打开应用。",
-      },
-      windows: {
-        question: "Windows SmartScreen 提示「Windows 已保护你的电脑」？",
-        answer:
-          "安装程序暂未签名，SmartScreen 会拦截首次运行：点「更多信息」，再点「仍要运行」即可继续安装，仅首次运行需要。",
-      },
+      intro:
+        "macOS 安装包已由 Developer ID 签名并公证，Windows 安装程序已 Authenticode 签名，两个平台首次启动都无需额外放行；只有 Linux 是例外。",
       linux: {
         question: "Linux 双击 AppImage 没有反应？",
         answer:
@@ -403,7 +395,7 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
   features: {
     eyebrow: "主要功能",
     title: "桌面级界面里的完整能力",
-    subtitle: "与 Web 界面的菜单一一对应，装好即用。",
+    subtitle: "每一项都在 Web 界面里，装好即用。",
     more: "以及更多……",
     items: [
       {
@@ -450,11 +442,23 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
     title: "内置 Skill 库一览",
     subtitle: "四组 Skill 开箱即用，Agent 也能编写并优化自己的 Skill。",
     groups: [
-      { title: "办公效率", skills: ["data-analysis", "firecrawl"] },
-      { title: "软件开发", skills: ["web-design", "software-engineering"] },
+      { title: "办公效率", skills: ["data-analysis", "firecrawl", "bento-slides", "humanizer"] },
+      {
+        title: "软件开发",
+        skills: ["web-design", "software-engineering", "remote-claude-code"],
+      },
       {
         title: "AI 应用开发",
-        skills: ["penguin-sdk", "penguin-cli", "agenthub-models", "vllm", "ollama", "llamafactory"],
+        skills: [
+          "penguin-sdk",
+          "penguin-cli",
+          "penguin-orchestration",
+          "agenthub-models",
+          "vllm",
+          "ollama",
+          "llamafactory",
+          "skill-porting",
+        ],
       },
       {
         title: "Agent 调优",

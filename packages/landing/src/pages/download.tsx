@@ -8,7 +8,6 @@ import {
   DESKTOP_SHA256SUMS,
   GITHUB_LATEST_DOWNLOAD,
   LINUX_APPIMAGE_CHMOD_CMD,
-  MAC_UNQUARANTINE_CMD,
   OSS_ORIGIN,
   RELEASES_URL,
 } from "../lib/links";
@@ -347,21 +346,6 @@ export function DownloadPage() {
           {S.download.faq.intro}
         </p>
         <div className="mt-4 flex flex-col gap-3 text-left">
-          <FaqItem question={S.download.faq.mac.question} defaultOpen={detected === "mac"}>
-            <p>{S.download.faq.mac.why}</p>
-            <ol className="mt-2 flex list-decimal flex-col gap-1.5 pl-5">
-              <li>{S.download.faq.mac.stepDrag}</li>
-              <li>{S.download.faq.mac.stepTerminal}</li>
-              <li>
-                {S.download.faq.mac.stepPaste}
-                <CodeCard code={MAC_UNQUARANTINE_CMD} label="Terminal" className="mt-2 mb-1" />
-              </li>
-              <li>{S.download.faq.mac.stepOpen}</li>
-            </ol>
-          </FaqItem>
-          <FaqItem question={S.download.faq.windows.question} defaultOpen={detected === "windows"}>
-            <p>{S.download.faq.windows.answer}</p>
-          </FaqItem>
           <FaqItem question={S.download.faq.linux.question} defaultOpen={detected === "linux"}>
             <p>{S.download.faq.linux.answer}</p>
             <CodeCard code={LINUX_APPIMAGE_CHMOD_CMD} label="shell" className="mt-2" />

@@ -143,11 +143,9 @@ export const DESKTOP_INSTALLERS: Record<"mac" | "windows" | "linux", DesktopInst
 export const DESKTOP_SHA256SUMS = "SHA256SUMS.desktop";
 
 /**
- * First-launch fixes for the unsigned desktop builds (the download page FAQ).
- * Language-neutral, like the install commands above. The macOS one deletes the
- * quarantine flag that makes Gatekeeper report the app as "damaged"; the Linux
- * one restores the execute bit browsers strip from a downloaded AppImage.
+ * The one first-launch fix the desktop builds still need (the download page FAQ):
+ * restoring the execute bit browsers strip from a downloaded AppImage. macOS is
+ * Developer ID signed and notarized and Windows is Authenticode signed, so neither
+ * has anything to unblock. Language-neutral, like the install commands above.
  */
-export const MAC_UNQUARANTINE_CMD =
-  "sudo xattr -rd com.apple.quarantine /Applications/PenguinHarness.app";
 export const LINUX_APPIMAGE_CHMOD_CMD = `chmod +x ${LINUX_APPIMAGE.file}`;

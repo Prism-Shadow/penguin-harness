@@ -86,26 +86,26 @@ https://github.com/user-attachments/assets/aec49ae9-b743-467b-b247-37bedfeaa36e
 
 开箱内置四组 Skill（[文档](https://penguin.ooo/docs/skills)），Agent 也能编写并优化自己的 Skill：
 
-| 分组        | Skill                                                                          |
-| ----------- | ------------------------------------------------------------------------------ |
-| 办公效率    | `data-analysis`、`firecrawl`                                                   |
-| 软件开发    | `web-design`、`software-engineering`                                           |
-| AI 应用开发 | `penguin-sdk`、`penguin-cli`、`agenthub-models`、`vllm`、`ollama`、`llamafactory` |
-| Agent 调优  | `agent-initialization`、`benchmark-design`、`agent-evaluation`、`agent-optimization` |
+| 分组        | Skill                                                                                                                       |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------- |
+| 办公效率    | `data-analysis`、`firecrawl`、`bento-slides`、`humanizer`                                                                   |
+| 软件开发    | `web-design`、`software-engineering`、`remote-claude-code`                                                                  |
+| AI 应用开发 | `penguin-sdk`、`penguin-cli`、`penguin-orchestration`、`agenthub-models`、`vllm`、`ollama`、`llamafactory`、`skill-porting` |
+| Agent 调优  | `agent-initialization`、`benchmark-design`、`agent-evaluation`、`agent-optimization`                                        |
 
 ## 支持的模型
 
-| 模型             | 可用供应商                                                                       |
-| ---------------- | -------------------------------------------------------------------------------- |
-| DeepSeek V4      | DeepSeek, OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan, Qwen Pay-As-You-Go |
-| Kimi K3          | Moonshot AI, OpenRouter, Qwen Pay-As-You-Go                                      |
-| GLM 5.2          | Z.AI, OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan, Qwen Pay-As-You-Go |
-| Hunyuan 3        | OpenRouter                                                                       |
-| Qwen 3.8 Max     | Qwen Token Plan, Qwen Pay-As-You-Go, OpenRouter                                  |
-| GPT 5.6          | OpenRouter                                                                       |
-| Gemini 3.6 Flash | Google Gemini, OpenRouter                                                        |
-| Claude 5         | Anthropic, OpenRouter                                                            |
-| Inkling          | OpenRouter, Fireworks AI                                                         |
+| 模型             | 可用供应商                                                                                       |
+| ---------------- | ------------------------------------------------------------------------------------------------ |
+| DeepSeek V4      | DeepSeek, OpenRouter, Fireworks AI, SiliconFlow, TokenDance, Qwen Token Plan, Qwen Pay-As-You-Go |
+| Kimi K3          | Moonshot AI, OpenRouter, Fireworks AI, TokenDance, Qwen Pay-As-You-Go                            |
+| GLM 5.3          | Z.AI, OpenRouter, TokenDance                                                                     |
+| Hunyuan 3        | OpenRouter                                                                                       |
+| Qwen 3.8 Max     | Qwen Token Plan, Qwen Pay-As-You-Go, OpenRouter, TokenDance                                      |
+| GPT 5.6          | OpenAI, OpenRouter                                                                               |
+| Gemini 3.7 Flash | Google Gemini, OpenRouter                                                                        |
+| Claude 5         | Anthropic, OpenRouter                                                                            |
+| Inkling          | OpenRouter, Fireworks AI                                                                         |
 
 上表每个系列只列最新一代，完整预置清单请在应用的**模型**页查看；只要是 OpenAI 协议的端点都可以接入：选择预置，或用自定义端点连接 1000+ 在线与本地模型。
 
@@ -140,31 +140,7 @@ https://github.com/user-attachments/assets/aec49ae9-b743-467b-b247-37bedfeaa36e
 | Windows 10+   | 安装程序（.exe，x64）        |
 | Linux（x64）  | AppImage / deb               |
 
-当前构建暂未签名，系统可能拦截首次启动。展开对应系统的步骤，操作一次即可解除：
-
-<details>
-<summary><b>🍎 macOS 提示「PenguinHarness」已损坏，无法打开？</b></summary>
-
-macOS 会给从网络下载的文件加上隔离标记，应用未签名时会因此被误报「已损坏」。删除该标记即可解除：
-
-1. 打开下载的 dmg，把 `PenguinHarness.app` 拖入「应用程序（Applications）」文件夹。
-2. 打开终端：「启动台 → 其他 → 终端」。
-3. 在终端粘贴这条命令并回车，然后输入开机密码（输入时屏幕不显示字符，输完回车即可）：
-
-   ```bash
-   sudo xattr -rd com.apple.quarantine /Applications/PenguinHarness.app
-   ```
-
-4. 执行完成后，双击即可正常打开应用。
-
-</details>
-
-<details>
-<summary><b>🪟 Windows SmartScreen 提示「Windows 已保护你的电脑」？</b></summary>
-
-安装程序暂未签名，SmartScreen 会拦截首次运行：点「更多信息」，再点「仍要运行」即可继续安装，仅首次运行需要。
-
-</details>
+macOS 安装包已由 Developer ID 签名并公证，Windows 安装程序已 Authenticode 签名，两个平台首次启动都无需额外放行；只有 Linux 是例外：
 
 <details>
 <summary><b>🐧 Linux 双击 AppImage 没有反应？</b></summary>
