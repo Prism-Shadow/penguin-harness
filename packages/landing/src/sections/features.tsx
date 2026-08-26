@@ -1,6 +1,6 @@
 /**
- * Product tour: three real captures in a compact switcher. The homepage keeps the
- * experience tangible without repeating every capability as another card grid.
+ * Feature section in two layers: the three features with real captures form
+ * switchable tabs, while the remaining capabilities stay visible in a card grid.
  */
 import { useState } from "react";
 import { S } from "../lib/strings";
@@ -8,7 +8,17 @@ import { useLocale } from "../state/locale";
 import type { Locale } from "../state/locale";
 import { Section } from "../components/section";
 import { BrowserFrame } from "../components/browser-frame";
-import { ActivityIcon, BarChartIcon, MessageSquareIcon } from "../components/icons";
+import {
+  ActivityIcon,
+  BarChartIcon,
+  BotIcon,
+  ClockIcon,
+  MessageSquareIcon,
+  PieChartIcon,
+  ShareIcon,
+  SparklesIcon,
+  UsersIcon,
+} from "../components/icons";
 import chatZhLight from "../assets/shots/chat-zh-light.webp";
 import chatZhDark from "../assets/shots/chat-zh-dark.webp";
 import chatEnLight from "../assets/shots/chat-en-light.webp";
@@ -77,6 +87,16 @@ const SHOT_TABS: Array<{
   { index: 7, shot: "benchmark", icon: BarChartIcon },
 ];
 
+/** Capabilities without a dedicated screenshot, in the source-copy order. */
+const PLAIN_FEATURES = [
+  { index: 1, icon: BotIcon },
+  { index: 2, icon: SparklesIcon },
+  { index: 3, icon: ClockIcon },
+  { index: 4, icon: ShareIcon },
+  { index: 5, icon: PieChartIcon },
+  { index: 8, icon: UsersIcon },
+];
+
 export function Features() {
   const [active, setActive] = useState(0);
   const tab = SHOT_TABS[active] ?? SHOT_TABS[0]!;
@@ -126,6 +146,30 @@ export function Features() {
         <BrowserFrame>
           <ThemedShot set={SHOTS[tab.shot]} alt={item.title} />
         </BrowserFrame>
+      </div>
+
+      <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        {PLAIN_FEATURES.map(({ index, icon: Icon }) => {
+          const feature = S.features.items[index]!;
+          return (
+            <article
+              key={feature.title}
+              className="relative overflow-hidden rounded-xl border border-gray-200 bg-white p-5 transition-colors hover:border-gray-300 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700"
+            >
+              <Icon
+                strokeWidth={1.25}
+                className="pointer-events-none absolute -right-5 -bottom-5 h-26 w-26 text-gray-100 dark:text-gray-800"
+              />
+              <h3 className="relative text-[15px] font-semibold tracking-tight">{feature.title}</h3>
+              <p className="relative mt-2 text-sm leading-6 text-gray-600 dark:text-gray-400">
+                {feature.desc}
+              </p>
+            </article>
+          );
+        })}
+        <article className="flex items-center justify-center rounded-xl border border-dashed border-gray-300 p-5 text-sm text-gray-400 dark:border-gray-700 dark:text-gray-500">
+          {S.features.more}
+        </article>
       </div>
     </Section>
   );
