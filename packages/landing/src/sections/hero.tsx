@@ -32,7 +32,7 @@ export function Hero() {
         </h1>
 
         <p
-          className="hero-positioning anim-rise mx-auto mt-6 whitespace-nowrap leading-tight font-semibold tracking-[-0.035em]"
+          className="hero-positioning anim-rise mx-auto mt-6 leading-tight font-semibold tracking-[-0.035em] text-balance"
           style={{ animationDelay: "70ms" }}
         >
           {S.hero.platformLead}
@@ -41,7 +41,7 @@ export function Hero() {
         </p>
 
         <p
-          className="hero-automation anim-rise mt-5 leading-6 text-gray-600 sm:leading-8 dark:text-gray-300"
+          className="hero-automation anim-rise mt-5 leading-6 text-balance text-gray-600 sm:leading-8 dark:text-gray-300"
           style={{ animationDelay: "120ms" }}
         >
           {S.hero.automationLead}
