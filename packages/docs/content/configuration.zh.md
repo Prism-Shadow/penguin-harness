@@ -34,13 +34,13 @@ CLI 与服务端启动时会自动加载工作目录下的 `.env` 文件。
 | --- | --- | --- |
 | deepseek | `DEEPSEEK_API_KEY` | `DEEPSEEK_BASE_URL` |
 | anthropic | `ANTHROPIC_API_KEY` | `ANTHROPIC_BASE_URL` |
-| openai、openrouter、fireworks、siliconflow、qwen-token-plan、qwen-pay-as-you-go、custom | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
+| openai、openrouter、fireworks、siliconflow、tokendance、qwen-pay-as-you-go、qwen-token-plan、custom | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
 | minimax | `MINIMAX_API_KEY` | `MINIMAX_BASE_URL` |
 | google | `GEMINI_API_KEY` | `GEMINI_BASE_URL` |
 | zhipu | `ZAI_API_KEY` | `ZAI_BASE_URL` |
 | moonshot | `MOONSHOT_API_KEY` | `MOONSHOT_BASE_URL` |
 
-openrouter、fireworks、siliconflow、qwen-token-plan、qwen-pay-as-you-go 与 custom 分组走 OpenAI 兼容协议，因此复用 `OPENAI_*` 变量。直连 MiniMax M3 Responses 客户端使用 `MINIMAX_*`；内置 MiniMax 预设已固定官方端点。Provider 分组与内置模型目录见[模型与 Provider](/models)。
+openrouter、fireworks、siliconflow、tokendance、qwen-pay-as-you-go、qwen-token-plan 与 custom 分组走 OpenAI 兼容协议，因此复用 `OPENAI_*` 变量。直连 MiniMax M3 Responses 客户端使用 `MINIMAX_*`；内置 MiniMax 预设已固定官方端点。Provider 分组与内置模型目录见[模型与 Provider](/models)。
 
 ## Project 配置
 

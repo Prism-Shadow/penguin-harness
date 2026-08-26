@@ -69,6 +69,7 @@ import type {
   ThinkingLevelName,
   ToolDefinition,
 } from "../interfaces/index.js";
+import { attributionHeaders } from "../state/model-catalog.js";
 import { ToolCallIdAllocator, stripToolCallIdSuffix } from "./tool-call-ids.js";
 import {
   approximateMessagesTokens,
@@ -980,12 +981,17 @@ export class GenerativeModel implements LLMInterface {
     // variables. clientType determines which protocol to speak (`openai-chat` means OpenAI
     // Chat Completions compatible; the bare `openai` spelling is a deprecated upstream alias);
     // when omitted, AgentHub infers it from model_id, so it only needs to be specified
-    // explicitly for custom-named models.
+    // explicitly for custom-named models. `defaultHeaders` carries the app attribution the
+    // configured endpoint reads (see attributionHeaders); AgentHub hands it to every request
+    // the routed client makes, and endpoints with no attribution scheme get no extra headers
+    // at all.
+    const headers = attributionHeaders(config.baseUrl);
     this.client = new AutoLLMClient({
       model: config.modelId,
       ...(config.apiKey !== undefined ? { apiKey: config.apiKey } : {}),
       ...(config.baseUrl !== undefined ? { baseUrl: config.baseUrl } : {}),
       ...(config.clientType !== undefined ? { clientType: config.clientType } : {}),
+      ...(headers ? { defaultHeaders: headers } : {}),
     });
 
     this.uniConfig = buildUniConfig(config);

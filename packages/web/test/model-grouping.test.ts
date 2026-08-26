@@ -75,21 +75,22 @@ describe("groupModelRows", () => {
     expect(groups[4]!.provider.label).toBe("unknown-vendor");
     expect(groups[4]!.provider.envKey).toBe("OPENAI_API_KEY");
     expect(groups[4]!.rows.map((r) => r.modelId)).toEqual(["weird-model"]);
-    // Group order matches MODEL_PROVIDERS: DeepSeek and gateway groups first, then first-party
-    // providers, with MiniMax immediately before custom.
+    // Group order matches MODEL_PROVIDERS, whose sequence is hand-curated (gateways and
+    // first-party vendors interleaved): DeepSeek first, custom last.
     expect(MODEL_PROVIDERS.map((p) => p.id)).toEqual([
       "deepseek",
       "openrouter",
       "fireworks",
-      "siliconflow",
-      "qwen-token-plan",
-      "qwen-pay-as-you-go",
       "google",
-      "anthropic",
       "openai",
+      "anthropic",
+      "siliconflow",
+      "tokendance",
       "zhipu",
       "moonshot",
       "minimax",
+      "qwen-pay-as-you-go",
+      "qwen-token-plan",
       "custom",
     ]);
     expect(MODEL_PROVIDERS.find((p) => p.id === "siliconflow")!.label).toBe("SiliconFlow");

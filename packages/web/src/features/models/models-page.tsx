@@ -166,6 +166,8 @@ const KEY_ICON =
   "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4";
 const EXTERNAL_LINK_ICON =
   "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3";
+/** Arrow entering a door: authorize with the provider and come back with a key. */
+const SIGN_IN_ICON = "M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3";
 
 /** Speed-test glyphs (24x24 line paths): gauge for the group action, clock = TTFT, zap = TPS. */
 const GAUGE_ICON = "M12 14l3.5-3.5M20.49 17A10 10 0 1 0 3.5 17";
@@ -583,6 +585,8 @@ export function ModelsPage() {
   const [groupDropHint, setGroupDropHint] = useState<{ key: string; after: boolean } | null>(null);
   /** Vendor group (provider id) currently having its API key configured in bulk. */
   const [groupKeyFor, setGroupKeyFor] = useState<string | null>(null);
+  /** Vendor group (provider id) whose authorization dialog is open (groups that publish a key-minting flow only). */
+  const [oauthFor, setOauthFor] = useState<string | null>(null);
   /** User-defined group (provider id) whose delete confirmation is open (built-in groups never offer this). */
   const [deleteGroupFor, setDeleteGroupFor] = useState<string | null>(null);
   /** "Add group" popup (user-defined group): create-only hands off to that group's add-model dialog, import mode fills the group from its endpoint (see AddGroupDialog). */
@@ -981,6 +985,25 @@ export function ModelsPage() {
                           <span className="hidden @3xl:inline">{S.models.addToGroup}</span>
                         </Button>
                       )}
+                      {isOwner && group.provider.oauth && (
+                        // Authorize-a-key action: rendered off the group's own catalog
+                        // descriptor, so a provider gains this button by publishing a flow
+                        // rather than by being named here. Same narrow-row rule as its
+                        // neighbours — the label goes, the icon and its names stay. It leads the
+                        // manual key action: where a group can mint a key, that is the shorter path.
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="shrink-0"
+                          disabled={busy}
+                          aria-label={`${S.models.oauthKey} ${group.provider.label}`}
+                          title={S.models.oauthKey}
+                          onClick={() => setOauthFor(group.provider.id)}
+                        >
+                          <GlyphIcon d={SIGN_IN_ICON} size={13} />
+                          <span className="hidden @3xl:inline">{S.models.oauthKey}</span>
+                        </Button>
+                      )}
                       {isOwner && group.provider.id !== "custom" && (
                         // Bulk key action: icon-only while this row is narrow, labeled from
                         // @3xl up. The button itself never disappears — aria-label + title
@@ -1145,6 +1168,22 @@ export function ModelsPage() {
               visionModel,
               S.models.groupKeyApplied(affected.length),
             );
+          }}
+        />
+      )}
+
+      {rows && projectId && oauthFor !== null && (
+        <ModelOAuthDialog
+          projectId={projectId}
+          provider={MODEL_PROVIDERS.find((p) => p.id === oauthFor) ?? userProviderInfo(oauthFor)}
+          count={rows.filter((r) => r.provider === oauthFor).length}
+          onClose={() => setOauthFor(null)}
+          onApplied={(applied) => {
+            setOauthFor(null);
+            toastSuccess(S.models.oauthApplied(applied));
+            // The key was written server-side, so the table in hand is stale in exactly one
+            // place: reload rather than patch, and the masked key comes back with it.
+            void load();
           }}
         />
       )}
@@ -2973,6 +3012,204 @@ function GroupKeyDialog({
             {S.models.getApiKey} ↗
           </a>
         )}
+      </div>
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Authorize a new API key for a provider group
+// ---------------------------------------------------------------------------
+
+/** Where the dialog is: opening a flow, holding one, waiting on an outcome, or reporting a failure. */
+type OAuthPhase = "starting" | "ready" | "waiting" | "failed";
+
+/** How often the redirect flow's outcome is asked for while the user is in the other tab. */
+const OAUTH_POLL_MS = 2000;
+
+/**
+ * Mint a fresh API key for a whole provider group by authorizing in the browser.
+ *
+ * The dialog never handles the key, and never handles the PKCE verifier either: it opens a
+ * flow, sends the user to the provider's page, and asks the server how that flow ended. Two
+ * routes back — the provider redirects to the server (polled here), or, when that redirect
+ * cannot reach the harness, the user carries a one-time code across by hand.
+ */
+function ModelOAuthDialog({
+  projectId,
+  provider,
+  count,
+  onClose,
+  onApplied,
+}: {
+  projectId: string;
+  provider: ModelProviderInfo;
+  /** Models in the group; every one of them gets the new key. */
+  count: number;
+  onClose: () => void;
+  onApplied: (applied: number) => void;
+}) {
+  const [manual, setManual] = useState(false);
+  const [phase, setPhase] = useState<OAuthPhase>("starting");
+  const [flow, setFlow] = useState<{ flowId: string; authorizeUrl: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [code, setCode] = useState("");
+  /** Bumped to reopen a flow after a failure; switching modes reopens one too (the URL differs). */
+  const [attempt, setAttempt] = useState(0);
+  // Latest-callback ref: the parent passes an inline arrow, and depending on its identity
+  // would tear down and restart the poll interval on every render.
+  const onAppliedRef = useRef(onApplied);
+  onAppliedRef.current = onApplied;
+
+  // A flow is opened as soon as the dialog shows, so the authorize URL is already in hand
+  // when the button is pressed — window.open then runs inside that click's own user
+  // activation, which is what keeps a popup blocker out of the way.
+  useEffect(() => {
+    let cancelled = false;
+    setPhase("starting");
+    setFlow(null);
+    setError(null);
+    setCode("");
+    void (async () => {
+      try {
+        const res = await api.startModelOAuth(projectId, {
+          provider: provider.id,
+          mode: manual ? "manual" : "callback",
+        });
+        if (cancelled) return;
+        setFlow(res);
+        setPhase("ready");
+      } catch (e) {
+        if (cancelled) return;
+        setError(apiErrorText(e));
+        setPhase("failed");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, provider.id, manual, attempt]);
+
+  // Redirect mode: the outcome lands on the server, so this tab only learns of it by asking.
+  // A flow that has expired answers 404, which reads the same as never coming back.
+  useEffect(() => {
+    if (phase !== "waiting" || manual || flow === null) return;
+    let stopped = false;
+    const tick = async (): Promise<void> => {
+      try {
+        const res = await api.getModelOAuthStatus(projectId, flow.flowId);
+        if (stopped) return;
+        if (res.status === "done") {
+          onAppliedRef.current(count);
+          return;
+        }
+        if (res.status === "error") {
+          setError(res.error ? S.models.oauthErrors[res.error] : S.models.oauthTimedOut);
+          setPhase("failed");
+        }
+      } catch {
+        if (stopped) return;
+        setError(S.models.oauthTimedOut);
+        setPhase("failed");
+      }
+    };
+    const timer = window.setInterval(() => void tick(), OAUTH_POLL_MS);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, [phase, manual, flow, projectId, count]);
+
+  const openAuthorizePage = (): void => {
+    if (flow === null) return;
+    window.open(flow.authorizeUrl, "_blank", "noopener,noreferrer");
+    if (!manual) setPhase("waiting");
+  };
+
+  const submitCode = async (): Promise<void> => {
+    if (flow === null) return;
+    setPhase("waiting");
+    setError(null);
+    try {
+      const res = await api.submitModelOAuthCode(projectId, flow.flowId, code.trim());
+      if (res.ok) {
+        onAppliedRef.current(res.applied ?? count);
+        return;
+      }
+      setError(res.error ? S.models.oauthErrors[res.error] : S.models.oauthTimedOut);
+      setPhase("failed");
+    } catch (e) {
+      setError(apiErrorText(e));
+      setPhase("failed");
+    }
+  };
+
+  const primary =
+    phase === "failed" ? (
+      <Button variant="primary" onClick={() => setAttempt((n) => n + 1)}>
+        {S.models.oauthRetry}
+      </Button>
+    ) : manual ? (
+      <Button
+        variant="primary"
+        disabled={flow === null || phase === "waiting" || !code.trim()}
+        onClick={() => void submitCode()}
+      >
+        {S.models.oauthSubmitCode}
+      </Button>
+    ) : (
+      <Button variant="primary" disabled={flow === null} onClick={openAuthorizePage}>
+        {S.models.oauthAuthorize}
+      </Button>
+    );
+
+  return (
+    <Modal
+      open
+      title={S.models.oauthTitle(provider.label)}
+      onClose={onClose}
+      footer={
+        <>
+          <Button onClick={onClose}>{S.common.cancel}</Button>
+          {primary}
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <p className="text-sm text-gray-700 dark:text-gray-300">
+          {S.models.oauthIntro(provider.label, count)}
+        </p>
+        {manual && (
+          <>
+            <Button variant="ghost" disabled={flow === null} onClick={openAuthorizePage}>
+              <GlyphIcon d={SIGN_IN_ICON} size={13} />
+              {S.models.oauthAuthorize}
+            </Button>
+            <Input
+              size="sm"
+              label={S.models.oauthCodeLabel}
+              hint={S.models.oauthManualHint}
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              className="font-mono"
+              autoComplete="off"
+            />
+          </>
+        )}
+        {phase === "waiting" && !manual && (
+          <p className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+            <span className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent" />
+            {S.models.oauthWaiting}
+          </p>
+        )}
+        {error !== null && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+        <button
+          type="button"
+          onClick={() => setManual((v) => !v)}
+          className="text-xs text-brand-600 underline-offset-2 hover:underline dark:text-brand-300"
+        >
+          {manual ? S.models.oauthCallbackSwitch : S.models.oauthManualSwitch}
+        </button>
       </div>
     </Modal>
   );
