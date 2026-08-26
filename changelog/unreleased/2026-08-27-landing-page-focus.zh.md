@@ -3,6 +3,7 @@
 - **Date:** 2026-08-27
 - **Type:** feature
 - **Scope:** `landing`
+- **PR:** [#473](https://github.com/Prism-Shadow/penguin-harness/pull/473)
 
 [English](2026-08-27-landing-page-focus.md)
 

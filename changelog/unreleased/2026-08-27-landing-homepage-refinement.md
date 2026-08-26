@@ -3,6 +3,7 @@
 - **Date:** 2026-08-27
 - **Type:** fix
 - **Scope:** `landing`, `docs`
+- **PR:** [#473](https://github.com/Prism-Shadow/penguin-harness/pull/473)
 
 [中文版](2026-08-27-landing-homepage-refinement.zh.md)
 
