@@ -1,7 +1,7 @@
 # Refine the landing page hierarchy and downloads
 
 - **Date:** 2026-08-27
-- **Type:** fix
+- **Type:** feature
 - **Scope:** `landing`, `docs`
 - **PR:** [#473](https://github.com/Prism-Shadow/penguin-harness/pull/473)
 

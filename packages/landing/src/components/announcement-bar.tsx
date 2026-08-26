@@ -20,7 +20,7 @@ const ROTATE_MS = 6000;
  * freshest news goes at the front.
  */
 const ITEMS = [
-  { key: "k3AndFree", to: "/blog/free-models-in-penguin-harness" },
+  { key: "flashModels", to: "/blog/penguinharness-0-2-5" },
   { key: "fireworks", to: "/blog/fireworks-credits-amd" },
 ] as const;
 
@@ -32,7 +32,7 @@ function prefersReducedMotion(): boolean {
 
 export function AnnouncementBar() {
   const texts: Record<(typeof ITEMS)[number]["key"], string> = {
-    k3AndFree: S.announcement.k3AndFree,
+    flashModels: S.announcement.flashModels,
     fireworks: S.announcement.fireworks,
   };
   // pos runs 0..ITEMS.length where ITEMS.length is the clone of slide 0.

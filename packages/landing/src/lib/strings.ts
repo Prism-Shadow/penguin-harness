@@ -13,7 +13,7 @@ export const zh = {
     label: "公告",
     prev: "上一条公告",
     next: "下一条公告",
-    k3AndFree: "Kimi K3 与 Ling 3.0 Flash 等免费模型现已在 PenguinHarness 可用",
+    flashModels: "GLM-5.3 Flash 与 Qwen 3.8 Flash 现已在 PenguinHarness 可用",
     fireworks: "携手 AMD 开发者计划：$50 Fireworks API 额度免费领取中",
   },
 
