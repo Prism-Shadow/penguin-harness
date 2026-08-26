@@ -3,6 +3,7 @@
 - **Date:** 2026-08-24
 - **Type:** refactor
 - **Scope:** `core`, `server`, `web`, `cli`
+- **PR:** [#458](https://github.com/Prism-Shadow/penguin-harness/pull/458)
 - **Breaking:** yes — `StopReason` 移除 `failed` / `timeout` / `malformed` / `auth`，改为 `retryable` / `fatal`，并成为唯一的停止原因词表（`ToolStopReason` / `CompactionStatus` / `McpConnectStatus` 删除）；`LLMOutcome.permanent` 删除；Web 输入区的鉴权置灰门控退役
 
 [English](2026-08-24-stop-reason-converges-to-four-values.md)
@@ -23,3 +24,15 @@
 - 服务端异常记录重划错误码：llm 侧 `llm_fatal`（unexpected）、`llm_failed`（重试耗尽，unexpected）、`llm_retried`（被阶梯吸收，expected）；工具失败记为 `tool_fatal:<name>`。旧的 `llm_auth` / `llm_timeout` / `llm_malformed` / `llm_failed_retried` / `tool_failed:` / `tool_timeout:` 不再产生。重试耗尽现在记为 unexpected——此前耗尽的 timeout 仍按 expected 归档。
 - 模型连通性探测放宽：任何流出过真实内容的 `retryable` 结束都判通过（此前只有 `malformed` 形态享此待遇）——内容到达本身就是连通性测试要测的东西。
 - 旧 Trace 保持可读：重放判定只与 `completed` 比较，Web / CLI / 轨迹分析对废弃拼写保留渲染（LLM 分段的 `failed` / `timeout` / `malformed` / `auth`、工具输出的 `failed` / `timeout`、压缩与 MCP 收尾的 `failed`）。
+
+## 兼容性
+
+磁盘上没有任何东西发生变化，也不跑迁移；以废弃拼写记录的 Trace 照常渲染，见上文最后一条。
+
+不兼容发生在源码层面，影响读取停止原因的 SDK 嵌入方与 HTTP 调用方。把 `failed` / `timeout` /
+`malformed` / `auth` 改为：值得再试的用 `retryable`，不值得的用 `fatal`；具体失败改从
+`error_message` 读，而不再从原因值读。`ToolStopReason`、`CompactionStatus`、`McpConnectStatus`
+已删除，改用 `StopReason`；对 `LLMOutcome.permanent` 的判断改为判断 `fatal`。读取服务端异常记录的
+调用方，把废弃的 `llm_auth` / `llm_timeout` / `llm_malformed` / `llm_failed_retried` /
+`tool_failed:` / `tool_timeout:` 换成 `llm_fatal` / `llm_failed` / `llm_retried` /
+`tool_fatal:<name>`。

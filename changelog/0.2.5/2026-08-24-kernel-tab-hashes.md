@@ -18,7 +18,7 @@ Changed the unit of the kernel update from a config leaf to an Agent settings **
 - Reported `advanced` / `kept` entries became tab keys instead of dotted leaf paths. The Web App renders them with the settings page's own tab labels, replacing the per-leaf display dictionary and its per-tool special case; the update's confirm and result copy now speaks of tabs in both languages.
 - Reworked the pinned-hash guard to compare `computeKernelTabHashes(defaultSystemConfig())` against `KERNEL_DEFAULT_TAB_HASHES`, with the failure message naming the tabs that moved and the edit each needs.
 - Carried the generation narrative over as prose on the record: the pre-[#257](https://github.com/Prism-Shadow/penguin-harness/pull/257) template with its hardcoded Vault and Skills sections, the toggles generation, `run_subagent` gaining `thinking_level` and then the widened `max` ladder, `compaction.max_context_length` rising to 256000, and the background-execution batch alongside the reworded memory prompt.
-- Derived the six superseded tab hashes from the built-in defaults as they stood at each recorded generation, and checked every reconstruction against the retired per-leaf table before writing the literals. Kept the pre-#257 reconstruction proof, retargeted to the prompt tab.
+- Derived the six superseded tab hashes from the built-in defaults as they stood at each recorded generation, and checked every reconstruction against the retired per-leaf table before writing the literals. Kept the pre-[#257](https://github.com/Prism-Shadow/penguin-harness/pull/257) reconstruction proof, retargeted to the prompt tab.
 - Updated the configuration guide's merge description and developer paragraph in both languages.
 
 ## Compatibility

@@ -41,3 +41,14 @@ entry is not re-runnable, e.g. a tsx dev run). Accepted break, stated here: full
 core-direct execution is no longer a CLI mode — the SDK keeps that capability for
 embedders. Old binaries keep working against their own cores until updated; nothing on
 disk stops them.
+
+## Compatibility
+
+Nothing on disk has to be migrated and no action is required to keep an install working.
+
+Update the CLI along with the server: `penguin run` and `penguin chat` are server-backed from this
+version on, and an old binary keeps executing against its own core until it is replaced. Where a
+CLI cannot start a server — a `tsx` development entry that is not re-runnable — start one first, or
+point the command at a running install with `--server` plus `PENGUIN_API_TOKEN`. A workflow that
+relied on the CLI running a Task with no server at all moves to the SDK, which keeps core-direct
+execution. Nobody has to clear a stored `showCliSessions` preference; it is ignored where it sits.

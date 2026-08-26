@@ -1,7 +1,7 @@
 # The standalone Trace page is gone; a Trace is read where it was produced
 
 - **Date:** 2026-08-25
-- **Type:** change
+- **Type:** feature
 - **Scope:** `web`, `docs`
 - **PR:** [#462](https://github.com/Prism-Shadow/penguin-harness/pull/462)
 
@@ -16,9 +16,10 @@ outright: reading a Trace happens in a conversation's Trace panel, which is the 
 - The `/traces` route and page are deleted, along with the Trace-file tree that only it rendered
   (its lazy per-Agent loading, its Workspace/Agent grouping toggle, and its own group paging).
   An existing `/traces?sessionId=…` link no longer resolves.
-- **Importing a Trace moved to System settings → General**, below the CLI-sessions filter — the one
-  capability that lived nowhere else. Choose the destination Project and Agent, then pick a `.jsonl`
-  file; the pick is the confirmation, and the toast names where it landed.
+- **Importing a Trace moved to System settings → General**, below the language and currency
+  preferences — the one capability that lived nowhere else. Choose the destination Project and
+  Agent, then pick a `.jsonl` file; the pick is the confirmation, and the toast names where it
+  landed.
 - Both halves of the destination are picked, where the old dialog asked only for the Agent. The
   endpoint is per-Agent because a Trace file's own `session_meta` cannot name a local Agent — its
   `agent_state` path belongs to the machine that exported it. The Project is asked for because the
@@ -51,13 +52,10 @@ outright: reading a Trace happens in a conversation's Trace panel, which is the 
 
 ## Existing data
 
-Traces imported **before** this change carry no Session row, so they stay as they were: visible only
-with "show CLI sessions" on. No migration is offered because none is possible — a Trace with no
-Session row is indistinguishable from a CLI-created one, and adopting every such Session would
-promote genuine CLI Sessions along with them. To pull an old import into the list, delete its Trace
-file and import it again.
-
-## Known gap
-
-The landing page's feature grid still shows a capture of the removed page. The copy describes the
-capability, which the Trace panel still provides; the screenshot is re-captured at release time.
+Traces imported **before** this change carry no Session row, so this change did not put them in the
+conversation list. It offered no migration, because none was possible on its own — a Trace with no
+Session row is indistinguishable from a CLI-created one, and adopting every such Session would have
+promoted genuine CLI Sessions along with them. Deleting the Trace file and importing it again was
+the way to pull an old import into the list. The boot-time adoption sweep added later in this
+release ([backward compatibility](2026-08-25-backward-compatibility.md)) then adopted every Trace
+carrying no Session row — old imports and genuine CLI Sessions alike — as a `client: "cli"` row.

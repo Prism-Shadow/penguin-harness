@@ -5,6 +5,8 @@
 - **Scope:** `core`, `server`
 - **PR:** [#387](https://github.com/Prism-Shadow/penguin-harness/pull/387)
 
+[中文版](2026-08-20-hot-update-failure-modes.zh.md)
+
 Pushing a platform ([hot update](../0.2.3/2026-08-18-hot-update.md)) had three ways to go
 wrong that ended somewhere other than "the push failed": a bundle the target could not run
 landed as half a version, a swap left the old App's work running behind the new one's back,

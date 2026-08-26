@@ -18,7 +18,7 @@
 - 结果中的 `advanced` / `kept` 由点号叶子路径改为设置页键名。Web App 直接用设置页自己的标签渲染它们，原先的逐叶显示词典与逐工具特例一并移除；更新的确认文案与结果文案在中英文下都改为以设置页表述。
 - 重做 pinned-hash 守卫：改为用 `computeKernelTabHashes(defaultSystemConfig())` 与 `KERNEL_DEFAULT_TAB_HASHES` 比对，失败信息列出发生变化的设置页及各自需要的改动。
 - 把代际叙述改写为记录上的注释：[#257](https://github.com/Prism-Shadow/penguin-harness/pull/257) 之前带硬编码 Vault、Skills 段落的模板，开关那一代，`run_subagent` 先后获得 `thinking_level` 与加宽后的 `max` 档位，`compaction.max_context_length` 提升到 256000，以及后台执行那一批改动连同重写后的 memory prompt。
-- 六条旧设置页哈希取自各记录代际当时的内置默认值，写入字面量之前逐代与退役的逐叶表核对无误。保留了 #257 之前的重建证明，并改为针对 prompt 设置页。
+- 六条旧设置页哈希取自各记录代际当时的内置默认值，写入字面量之前逐代与退役的逐叶表核对无误。保留了 [#257](https://github.com/Prism-Shadow/penguin-harness/pull/257) 之前的重建证明，并改为针对 prompt 设置页。
 - 同步更新配置文档中英文版的合并说明与面向开发者的段落。
 
 ## 兼容性

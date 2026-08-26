@@ -3,6 +3,7 @@
 - **Date:** 2026-08-24
 - **Type:** refactor
 - **Scope:** `core`, `server`, `web`, `cli`
+- **PR:** [#458](https://github.com/Prism-Shadow/penguin-harness/pull/458)
 - **Breaking:** yes — `StopReason` drops `failed` / `timeout` / `malformed` / `auth` in favor of `retryable` / `fatal` and becomes the only stop-reason vocabulary (`ToolStopReason` / `CompactionStatus` / `McpConnectStatus` are removed); `LLMOutcome.permanent` is removed; the Web composer's auth-dead gate is retired
 
 [中文版](2026-08-24-stop-reason-converges-to-four-values.zh.md)
@@ -23,3 +24,17 @@ There is now exactly one stop-reason vocabulary: `completed` / `aborted` / `retr
 - The server's error records reclassify: `llm_fatal` (unexpected), `llm_failed` (retries exhausted, unexpected), `llm_retried` (absorbed by the ladder, expected); tool failures file as `tool_fatal:<name>`. The old `llm_auth` / `llm_timeout` / `llm_malformed` / `llm_failed_retried` / `tool_failed:` / `tool_timeout:` codes are no longer produced. An exhausted retry run is now recorded as unexpected — previously an exhausted timeout still filed as expected.
 - The model connectivity probe passes any `retryable` ending that streamed real content (previously only the `malformed` shape did): content arriving is what a connectivity test measures.
 - Legacy Traces stay readable: replay only ever compares against `completed`, and the Web, CLI and trace analysis keep rendering the retired spellings (`failed` / `timeout` / `malformed` / `auth` on LLM fragments, `failed` / `timeout` on tool outputs, `failed` on compaction and MCP ends).
+
+## Compatibility
+
+Nothing on disk changes and no migration runs; Traces recorded with the retired spellings keep
+rendering, as the last point above states.
+
+The break is source-level, for an SDK embedder or an HTTP consumer that reads a stop reason.
+Replace `failed` / `timeout` / `malformed` / `auth` with `retryable` where the work is worth another
+attempt and `fatal` where it is not, and read the concrete failure off `error_message` rather than
+off the reason value. `ToolStopReason`, `CompactionStatus` and `McpConnectStatus` are gone — import
+`StopReason` in their place — and a check on `LLMOutcome.permanent` becomes a check for `fatal`. A
+consumer of the server's error records replaces the retired `llm_auth` / `llm_timeout` /
+`llm_malformed` / `llm_failed_retried` / `tool_failed:` / `tool_timeout:` codes with `llm_fatal` /
+`llm_failed` / `llm_retried` / `tool_fatal:<name>`.
