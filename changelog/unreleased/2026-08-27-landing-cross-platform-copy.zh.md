@@ -3,6 +3,7 @@
 - **Date:** 2026-08-27
 - **Type:** fix
 - **Scope:** `landing`
+- **PR:** [#478](https://github.com/Prism-Shadow/penguin-harness/pull/478)
 
 [English](2026-08-27-landing-cross-platform-copy.md)
 
