@@ -129,7 +129,12 @@ async function attemptWindows(): Promise<Attempt> {
     const { stdout } = await execFileAsync("reg", ["query", "HKCU\\Environment", "/v", "Path"]);
     // Output line: "    Path    REG_EXPAND_SZ    C:\foo;C:\bar"
     const m = /^\s*Path\s+REG(?:_EXPAND)?_SZ\s+(.*)$/im.exec(stdout);
-    if (m) current = m[1]!.trim();
+    if (m === null) {
+      // The value is there and this output does not name it. Writing the merge now would
+      // put the app's directory in place of the whole user PATH, so nothing is written.
+      return { ok: false, result: "failed", detail: `Could not read the user PATH:\n${stdout}` };
+    }
+    current = m[1]!.trim();
   } catch {
     current = null; // No user Path value yet.
   }

@@ -43,6 +43,18 @@ function appDirs() {
   return found;
 }
 
+/**
+ * Whether `penguin --version` named this build. The CLI prints its identity rather than a
+ * bare version number: a release build prints `v<version>`, while a build from a checkout
+ * prints git's description of it — `v<version>-3-g<sha>` when a tag is reachable, and
+ * `v<version>-g<sha>` when none is, which is what a shallow CI checkout produces (core's
+ * composeDescribe assembles both). Every form is `v<version>` alone or carrying a `-`
+ * suffix; a launcher that ran some other bundle, or printed anything but a version, is not.
+ */
+function namesThisBuild(printed) {
+  return printed === `v${version}` || printed.startsWith(`v${version}-`);
+}
+
 const problems = [];
 let ran = 0;
 
@@ -92,9 +104,9 @@ for (const app of dirs) {
     console.log(`[verify-packed-cli] ${app}: launcher did not run on this host (${why}).`);
     continue;
   }
-  if (printed !== `v${version}`) {
+  if (!namesThisBuild(printed)) {
     problems.push(
-      `${app}: penguin --version printed ${JSON.stringify(printed)}, want v${version}.`,
+      `${app}: penguin --version printed ${JSON.stringify(printed)}, want v${version} or v${version}-<git description>.`,
     );
     continue;
   }

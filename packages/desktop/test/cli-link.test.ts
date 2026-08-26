@@ -21,6 +21,13 @@ import { appImageWrapperScript, posixLauncherScript } from "../src/launcher.js";
  */
 let tmp: string;
 
+/**
+ * Tests whose assertion is a POSIX fact: the target a dangling symlink stores (Windows
+ * rewrites it into a backslash path that no longer names the packaged layout), and the exec
+ * bit, which Windows does not carry. Both belong to forms that only run on macOS and Linux.
+ */
+const itPosix = it.skipIf(process.platform === "win32");
+
 beforeEach(() => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-cli-link-"));
 });
@@ -60,7 +67,7 @@ describe("syncSymlink (the macOS form)", () => {
     expect(fs.lstatSync(link).mtimeMs).toBe(before);
   });
 
-  it("repairs a link left dangling by a moved or updated app", () => {
+  itPosix("repairs a link left dangling by a moved or updated app", () => {
     // What a launch from the dmg used to leave behind, and what an app moved out of a
     // previous location leaves behind: the link is ours, and its target is gone.
     const link = path.join(tmp, "bin", "penguin");
@@ -128,14 +135,20 @@ describe("syncSymlink (the macOS form)", () => {
 describe("syncWrapper (the Linux AppImage form)", () => {
   const script = appImageWrapperScript("/home/u/Apps/penguin-desktop-linux-x86_64.AppImage");
 
-  it("installs an executable wrapper when nothing is there", () => {
+  it("installs a wrapper when nothing is there", () => {
     const target = path.join(tmp, "local-bin", "penguin");
 
     expect(syncWrapper(target, script, false).action).toBe("installed");
     expect(fs.readFileSync(target, "utf8")).toBe(script);
-    expect(fs.statSync(target).mode & 0o111).not.toBe(0);
     // Written through a temporary file; it must not be left behind.
     expect(fs.existsSync(`${target}.tmp`)).toBe(false);
+  });
+
+  itPosix("installs it executable, or nothing on PATH can run it", () => {
+    const target = path.join(tmp, "local-bin", "penguin");
+    syncWrapper(target, script, false);
+
+    expect(fs.statSync(target).mode & 0o111).not.toBe(0);
   });
 
   it("does nothing when the wrapper already runs this AppImage", () => {
@@ -181,10 +194,12 @@ describe("syncWrapper (the Linux AppImage form)", () => {
   it("does not read a large binary sitting at the target", () => {
     const target = path.join(tmp, "local-bin", "penguin");
     fs.mkdirSync(path.dirname(target), { recursive: true });
-    fs.writeFileSync(target, Buffer.alloc(128 * 1024, 7));
+    // The marker sits past the size cap on purpose: what makes this foreign has to be the
+    // refusal to read the file, not the absence of the text.
+    fs.writeFileSync(target, Buffer.concat([Buffer.alloc(128 * 1024, 7), Buffer.from(script)]));
 
     expect(syncWrapper(target, script, false).action).toBe("skipped");
-    expect(fs.statSync(target).size).toBe(128 * 1024);
+    expect(fs.statSync(target).size).toBe(128 * 1024 + Buffer.byteLength(script));
   });
 });
 
