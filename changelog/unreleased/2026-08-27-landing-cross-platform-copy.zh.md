@@ -1,4 +1,4 @@
-# 落地页特点文案
+# 落地页文案与 RAG 视频封面
 
 - **Date:** 2026-08-27
 - **Type:** fix
@@ -7,10 +7,11 @@
 
 [English](2026-08-27-landing-cross-platform-copy.md)
 
-优化了落地页的三项特点文案。
+优化了落地页的三项特点文案与 RAG 演示视频封面。
 
 ## 细节
 
 - 将略显生硬的平台表述改为“Cross-Platform Local Deployment”，同时保留下方支持的操作系统列表。
 - 将自进化特点改为更自然的英文表达“First Self-Improving Harness”。
 - 精简 Apache 2.0 的中文说明，避免与上方“100% 开源”重复表达。
+- 将 RAG 演示视频的成品应用封面替换为匹配语言与亮暗主题的 PenguinHarness 构建运行截图。
