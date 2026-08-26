@@ -94,7 +94,8 @@ const GLYPHS: Record<string, Glyph> = {
     // The official TokenDance mark, taken from the brand SVG with its black rounded-square
     // backdrop dropped: the ribbon is a plain fill, while the two motion ticks keep the round
     // caps they are drawn with and override the wrapper's fill-only presentation. The
-    // viewBox is cropped to the mark's ink so it fills an icon box like the square glyphs do.
+    // viewBox is cropped to the mark's ink, so the ribbon spans the icon's full width; at
+    // 1.35:1 it letterboxes top and bottom in a square box, as the other wide marks do.
     viewBox: "50.79 100 378.72 280.5",
     path: (
       <>

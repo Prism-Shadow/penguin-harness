@@ -890,6 +890,8 @@ describe("attributionHeaders (how the harness names itself to the gateways that 
     // The host decides, not the catalog: an entry filed under custom that points at the same
     // gateway is the same app calling it.
     expect(attributionHeaders("https://openrouter.ai/api/v1/")).toEqual(expected);
+    // `URL` keeps a fully-qualified trailing dot in `hostname`; it names the same server.
+    expect(attributionHeaders("https://openrouter.ai./api/v1")).toEqual(expected);
     // OpenRouter accepts at most two categories per request and drops anything unrecognised.
     expect(expected["X-OpenRouter-Categories"].split(",")).toHaveLength(2);
   });
@@ -909,6 +911,8 @@ describe("attributionHeaders (how the harness names itself to the gateways that 
     // Suffix-anchored host matching: a lookalike domain is not the gateway.
     expect(attributionHeaders("https://notopenrouter.ai/api/v1")).toBeUndefined();
     expect(attributionHeaders("https://tokendance.space.example.com/v1")).toBeUndefined();
+    // Stripping the trailing dot must not widen that anchoring.
+    expect(attributionHeaders("https://openrouter.ai.attacker.com./v1")).toBeUndefined();
   });
 
   it("catalog invariant: every gateway row whose host runs an attribution scheme carries it", () => {

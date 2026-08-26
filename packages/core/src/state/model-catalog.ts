@@ -909,7 +909,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // re-read anonymously). TokenDance publishes an input price and a cache-hit price with no
   // separate cache-write fee, so cache_write carries the input price.
   //
-  // Discounts: like the other gateway groups, these rows store what TokenDance actually
+  // Discounts: like the OpenRouter rows — and unlike the two Qwen groups below, which store
+  // official list prices and leave promotions out — these rows store what TokenDance actually
   // BILLS, so a running promotion is stored at its discounted rate — qwen3.8-max sits on a
   // limited-time 20% off (list 1.5 / 12 / 36 CNY), and a lapse there silently raises the real
   // cost 25% above what the catalog says. --
@@ -1585,11 +1586,16 @@ const APP_TITLE = "PenguinHarness";
  */
 const OPENROUTER_CATEGORIES = "cli-agent,personal-agent";
 
-/** Lowercase host of a base URL; undefined when it is blank or unparseable. */
+/**
+ * Lowercase host of a base URL; undefined when it is blank or unparseable. A fully-qualified
+ * trailing dot is stripped: `URL` keeps it in `hostname`, but `openrouter.ai.` names the same
+ * server as `openrouter.ai` and has to match the same way. Stripping cannot widen the match —
+ * a suffix-anchored comparison rejects `openrouter.ai.attacker.com` with or without the dot.
+ */
 function endpointHost(baseUrl: string | undefined): string | undefined {
   if (!baseUrl?.trim()) return undefined;
   try {
-    return new URL(baseUrl).hostname.toLowerCase();
+    return new URL(baseUrl).hostname.toLowerCase().replace(/\.$/, "");
   } catch {
     return undefined;
   }
