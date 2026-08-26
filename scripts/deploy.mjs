@@ -219,12 +219,10 @@ async function readNativeAssets() {
       exec.push(target);
     }
   }
-  // The remote installer and the launcher module it requires: scripts the platform COPIES and
-  // sends, never imports, so they have to exist as files on the pushing side too. Riding here
-  // keeps them readable .cjs in the repo instead of string literals compiled into the bundle.
-  for (const name of ["remote-installer.cjs", "launcher.cjs"]) {
-    const abs = path.join(ROOT, "packages", "server", "src", "machines", name);
-    files[name] = (await fsp.readFile(abs)).toString("base64");
+  // The ordinary installers: the machines push scp's one to the far side and runs it there
+  // against the payload, so they have to exist as files on the pushing side too.
+  for (const name of ["install.sh", "install.ps1"]) {
+    files[name] = (await fsp.readFile(path.join(ROOT, name))).toString("base64");
   }
   return { files, exec };
 }

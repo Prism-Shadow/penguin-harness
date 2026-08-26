@@ -12,8 +12,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { tarGzBytes, zipBytes } from "../src/machines/archive.js";
 import { installOnRemote } from "../src/machines/install-server.js";
-import { packDirectory } from "../src/machines/pack.js";
 import { runtimeArtifact, sha256Of } from "../src/machines/runtime.js";
 
 const posixOnly = process.platform === "win32" ? describe.skip : describe;
@@ -24,19 +24,29 @@ posixOnly("installOnRemote", () => {
   let logFile: string;
   let originalPath: string | undefined;
 
-  /** An install image just real enough to pack (the installer now travels embedded). */
-  const image = () => {
-    const payloadRoot = path.join(work, "payload");
-    fs.mkdirSync(path.join(payloadRoot, "penguin", "lib", "dist"), { recursive: true });
-    fs.writeFileSync(path.join(payloadRoot, "penguin", "lib", "dist", "penguin.js"), "//\n");
-    return { version: "9.9.9", pack: () => packDirectory(payloadRoot) };
-  };
+  /** An install image just real enough to assemble a payload from. */
+  const image = () => ({
+    version: "9.9.9",
+    files: () => [{ path: "penguin/lib/dist/penguin.js", data: Buffer.from("//\n") }],
+  });
 
-  /** A runtime archive already in the cache, so no test ever reaches the network. */
+  /** Where the push finds install.sh / install.ps1 — the repo root, in a source checkout. */
+  const assets = () => path.resolve(__dirname, "..", "..", "..");
+
+  /**
+   * A runtime archive already in the cache, so no test ever reaches the network. A real
+   * archive, because the push opens it to lift the node binary into the payload.
+   */
   const seedRuntimeCache = (): string => {
     const cacheDir = path.join(work, "runtime-cache");
     fs.mkdirSync(cacheDir, { recursive: true });
-    fs.writeFileSync(path.join(cacheDir, runtimeArtifact("linux", "x64").fileName), "runtime");
+    const artifact = runtimeArtifact("linux", "x64");
+    fs.writeFileSync(
+      path.join(cacheDir, artifact.fileName),
+      tarGzBytes([
+        { path: `${artifact.rootDirName}/bin/node`, data: Buffer.from("elf"), mode: 0o755 },
+      ]),
+    );
     return cacheDir;
   };
 
@@ -62,9 +72,9 @@ posixOnly("installOnRemote", () => {
         `  *PROCESSOR_ARCHITECTURE*) printf '%b' ${JSON.stringify(opts.probe)} ;;`,
         "  *mktemp*) echo /tmp/remote-scratch ;;",
         // cmd.exe has no mktemp: the Windows form builds a path under %TEMP% instead.
-        "  *%TEMP%*) echo C:\\Temp\\penguin-scratch ;;",
-        "  *tar\\ -xf*) : ;;",
-        `  *remote-installer.cjs*) echo "PenguinHarness 9.9.9 installed"; exit ${opts.installExit ?? 0} ;;`,
+        // Single-quoted: sh's echo would otherwise eat the backslashes.
+        "  *%TEMP%*) echo 'C:\\Temp\\penguin-scratch' ;;",
+        `  *install.sh*|*install.ps1*) echo "PenguinHarness 9.9.9 installed"; exit ${opts.installExit ?? 0} ;;`,
         "  *) : ;;",
         "esac",
         "exit 0",
@@ -96,12 +106,13 @@ posixOnly("installOnRemote", () => {
 
   const target = { alias: "build-box", user: "deploy" };
 
-  it("detects, packs, copies image + runtime, unpacks it, installs, clears the scratch dir", async () => {
+  it("detects, packs, copies payload + checksum + installer, installs, clears the scratch dir", async () => {
     writeStubs({ probe: "Linux x86_64\\n---penguin---\\n" });
     const progress: string[] = [];
     const outcome = await installOnRemote({
       target,
       image: image(),
+      assets,
       runtimeCacheDir: seedRuntimeCache(),
       fetchBuffer: noFetch,
       onProgress: (line) => progress.push(line),
@@ -111,14 +122,11 @@ posixOnly("installOnRemote", () => {
     const log = calls();
     expect(log[0]).toContain("uname -s -m"); // identity first
     expect(log[1]).toContain("mktemp -d");
-    // One transfer carrying the image, the job, the installer and the runtime.
-    expect(log[2]).toMatch(
-      /^scp .*penguin-image\.pack .*job\.json .*remote-installer\.cjs .*node-.*\.tar\.gz/,
-    );
+    // One transfer: the payload (runtime baked in), its checksum, and the ordinary installer.
+    expect(log[2]).toMatch(/^scp .*payload\.tar\.gz .*payload\.tar\.gz\.sha256 .*install\.sh/);
     expect(log[2]).toContain("build-box:/tmp/remote-scratch");
-    expect(log[3]).toContain("tar -xf '/tmp/remote-scratch/node-");
-    expect(log[4]).toContain("/bin/node' '/tmp/remote-scratch/remote-installer.cjs'");
-    expect(log[5]).toContain("rm -rf '/tmp/remote-scratch'");
+    expect(log[3]).toContain("sh '/tmp/remote-scratch/install.sh'");
+    expect(log[4]).toContain("rm -rf '/tmp/remote-scratch'");
     // Every connection carries the account and the no-prompt guarantee.
     expect(log.every((line) => line.includes("User=deploy"))).toBe(true);
     expect(log.every((line) => line.includes("BatchMode=yes"))).toBe(true);
@@ -130,10 +138,15 @@ posixOnly("installOnRemote", () => {
     const outcome = await installOnRemote({
       target,
       image: image(),
+      assets,
       runtimeCacheDir: (() => {
         const dir = path.join(work, "runtime-cache");
         fs.mkdirSync(dir, { recursive: true });
-        fs.writeFileSync(path.join(dir, runtimeArtifact("win32", "x64").fileName), "runtime");
+        const artifact = runtimeArtifact("win32", "x64");
+        fs.writeFileSync(
+          path.join(dir, artifact.fileName),
+          zipBytes([{ path: `${artifact.rootDirName}/node.exe`, data: Buffer.from("MZ") }]),
+        );
         return dir;
       })(),
       fetchBuffer: noFetch,
@@ -146,8 +159,15 @@ posixOnly("installOnRemote", () => {
     // From here on everything speaks cmd.exe: double quotes, %TEMP%, rmdir.
     expect(log[2]).toContain('mkdir "%TEMP%\\penguin-');
     expect(log.at(-1)).toContain("rmdir /s /q");
-    // …and the runtime that went over is the Windows one.
-    expect(log.some((line) => line.includes("-win-x64.zip"))).toBe(true);
+    // …the payload is the zip form, and its installer is the PowerShell one.
+    expect(log.some((line) => line.includes("payload.zip"))).toBe(true);
+    expect(
+      log.some((line) =>
+        line.includes(
+          'powershell -NoProfile -ExecutionPolicy Bypass -File "C:\\Temp\\penguin-scratch\\install.ps1"',
+        ),
+      ),
+    ).toBe(true);
   });
 
   it("sends no runtime when the remote's own node is new enough", async () => {
@@ -156,6 +176,7 @@ posixOnly("installOnRemote", () => {
     const outcome = await installOnRemote({
       target,
       image: image(),
+      assets,
       // Empty cache and a fetcher that would throw: proving the download never happens.
       runtimeCacheDir: path.join(work, "empty-cache"),
       fetchBuffer: noFetch,
@@ -165,10 +186,7 @@ posixOnly("installOnRemote", () => {
     expect(outcome).toMatchObject({ kind: "installed" });
     const log = calls();
     expect(log.some((line) => line.includes("node-v"))).toBe(false); // nothing runtime-shaped
-    expect(log.some((line) => line.includes("tar -xf"))).toBe(false); // nothing to unpack
-    expect(
-      log.some((line) => line.includes("node '/tmp/remote-scratch/remote-installer.cjs'")),
-    ).toBe(true);
+    expect(log.some((line) => line.includes("sh '/tmp/remote-scratch/install.sh'"))).toBe(true);
     expect(progress).toContain("Using the Node v24.3.0 already on that machine.");
   });
 
@@ -177,6 +195,7 @@ posixOnly("installOnRemote", () => {
     const outcome = await installOnRemote({
       target,
       image: image(),
+      assets,
       runtimeCacheDir: seedRuntimeCache(),
       fetchBuffer: noFetch,
     });
@@ -189,6 +208,7 @@ posixOnly("installOnRemote", () => {
     const outcome = await installOnRemote({
       target,
       image: image(),
+      assets,
       runtimeCacheDir: seedRuntimeCache(),
       fetchBuffer: noFetch,
     });
@@ -203,6 +223,7 @@ posixOnly("installOnRemote", () => {
     const outcome = await installOnRemote({
       target,
       image: image(),
+      assets,
       runtimeCacheDir: cacheDir,
       // Serves a checksum file that does not match the "runtime" it then hands over.
       fetchBuffer: async (url) =>

@@ -8,10 +8,12 @@
  * That is what makes "the two ends must match" trivially true: the far side receives the
  * bytes this side runs.
  *
- * Nothing here assumes anything about the far side except an sshd and, for four commands, a
- * shell of some kind. The installer that does the real work is embedded as text
- * (./remote-installer.cjs) and runs over there on a Node runtime that is either the remote's
- * own (new enough) or fetched, verified and pushed alongside.
+ * Nothing here assumes anything about the far side except an sshd and, for three commands, a
+ * shell of some kind. The installer that does the real work is the ORDINARY one — install.sh
+ * on POSIX, install.ps1 on Windows, the same files a release ships — run in its offline mode
+ * against a payload we assemble to exactly the release shape: `penguin/{bin,lib,web,node?}`
+ * plus a manifest stamped with the remote's own target. Staging, smoke test, swap, rollback,
+ * the legacy-layout migration and the PATH plumbing are therefore one implementation, not two.
  *
  * The remote is left with exactly what a local install leaves: the program directory
  * (`~/.local/share/penguin`, `%LOCALAPPDATA%\penguin`) and, on POSIX, the `~/.local/bin/penguin`
@@ -23,24 +25,22 @@ import os from "node:os";
 import path from "node:path";
 import zlib from "node:zlib";
 import { fileURLToPath } from "node:url";
+import { execFileSync } from "node:child_process";
+import { filesFromDirectory, tarGzBytes, zipBytes, zipExtract } from "./archive.js";
+import type { PackFile } from "./archive.js";
 import {
   cleanupCommand,
-  extractRuntimeCommand,
   makeScratchCommand,
-  runInstallerCommand,
+  runInstallScriptCommand,
   scpArgs,
   sshArgs,
 } from "./commands.js";
 import type { RemoteTarget } from "./commands.js";
 import { parseProbeOutput, POSIX_PROBE, WINDOWS_PROBE } from "./detect.js";
-import type { RemoteIdentity } from "./detect.js";
+import type { RemoteIdentity, RemotePlatform } from "./detect.js";
 import { looksLikeAuthFailure, run } from "./exec.js";
-import { packDirectory, packFiles } from "./pack.js";
-import type { PackFile } from "./pack.js";
-import { ensureRuntimeArchive, remoteNodeIsUsable } from "./runtime.js";
-
-/** Name the pack travels under, inside the scratch directory. */
-const PACK_NAME = "penguin-image.pack";
+import { posixLauncher, windowsLauncher } from "./launcher.cjs";
+import { ensureRuntimeArchive, remoteNodeIsUsable, sha256Of } from "./runtime.js";
 
 /**
  * Where this running server's pushable image is, and how to pack it. `version` is read from
@@ -49,7 +49,12 @@ const PACK_NAME = "penguin-image.pack";
  */
 export interface PayloadImage {
   version: string;
-  pack: () => Buffer;
+  /**
+   * The image's own files, `penguin/…`-prefixed — WITHOUT `bin/`, `node/` or a manifest.
+   * Those three depend on the remote (its node version decides the launcher flags, its
+   * platform the target stamp), so the push assembles them per install.
+   */
+  files: () => PackFile[];
 }
 
 /** The version out of a lib/package.json path, or null when it is not a manifest. */
@@ -74,11 +79,54 @@ function versionOfManifest(manifestPath: string): string | null {
  * shim is the packaged `dist/penguin.js` bin (penguin.ts) in miniature: run cli(), report
  * the code.
  */
+/** Which installer runs the far side of a push; also the asset keys deploy.mjs pushes. */
+const installerFileFor = (platform: RemotePlatform): string =>
+  platform === "win32" ? "install.ps1" : "install.sh";
+
 /**
- * Sent to the far side, where the first requires the second. The names are also the asset
- * keys deploy.mjs pushes.
+ * The node binary (and its LICENSE) out of a verified runtime archive, as payload files under
+ * `penguin/node/` — where every launcher looks for a bundled runtime. Only the binary
+ * travels: npm serves no purpose inside a program directory that exists to run penguin, and
+ * the nodejs.org archives reach it through symlinks a re-pack could not carry anyway.
+ *
+ * POSIX archives are opened with the system tar (always present where a server runs); the
+ * win-x64 zip with the reader in archive.ts, because GNU tar cannot open zips.
  */
-const INSTALLER_FILES = ["remote-installer.cjs", "launcher.cjs"];
+function runtimeNodeFiles(
+  archivePath: string,
+  rootDirName: string,
+  platform: RemotePlatform,
+  tmpDir: string,
+): PackFile[] {
+  if (platform === "win32") {
+    const archive = fs.readFileSync(archivePath);
+    const exe = zipExtract(archive, `${rootDirName}/node.exe`);
+    if (exe === null) throw new Error(`no node.exe in ${path.basename(archivePath)}`);
+    const license = zipExtract(archive, `${rootDirName}/LICENSE`);
+    return [
+      { path: "penguin/node/node.exe", data: exe },
+      ...(license === null ? [] : [{ path: "penguin/node/LICENSE", data: license }]),
+    ];
+  }
+  execFileSync("tar", ["-xzf", archivePath, "-C", tmpDir, `${rootDirName}/bin/node`]);
+  const files: PackFile[] = [
+    {
+      path: "penguin/node/bin/node",
+      data: fs.readFileSync(path.join(tmpDir, rootDirName, "bin", "node")),
+      mode: 0o755,
+    },
+  ];
+  try {
+    execFileSync("tar", ["-xzf", archivePath, "-C", tmpDir, `${rootDirName}/LICENSE`]);
+    files.push({
+      path: "penguin/node/LICENSE",
+      data: fs.readFileSync(path.join(tmpDir, rootDirName, "LICENSE")),
+    });
+  } catch {
+    // No LICENSE member: nothing rides.
+  }
+  return files;
+}
 
 const CLI_BIN_SHIM = `// penguin bin shim (written by the machines image): the pushed CLI
 // bundle beside this file is a library exporting cli(); this file is the bin the
@@ -166,7 +214,7 @@ export function hmrPayloadImage(dataRoot: string): PayloadImage | null {
     const version = `0.0.0-hmr.${sha(cliPath)}.${sha(webzPath)}`;
     return {
       version,
-      pack: () => {
+      files: () => {
         const files: PackFile[] = [
           { path: "penguin/lib/dist/cli.mjs", data: fs.readFileSync(cliPath) },
           { path: "penguin/lib/dist/penguin.js", data: Buffer.from(CLI_BIN_SHIM) },
@@ -188,7 +236,7 @@ export function hmrPayloadImage(dataRoot: string): PayloadImage | null {
         // The skill library: content the bundle reads from `lib/skills` beside itself.
         const skills = skillsContentRoot();
         if (skills !== null) files.push(...packFilesUnder(skills, "penguin/lib/skills"));
-        return packFiles(files);
+        return files;
       },
     };
   } catch {
@@ -202,8 +250,8 @@ export function hmrPayloadImage(dataRoot: string): PayloadImage | null {
  * 1. **The hot-pushed version** (hmrPayloadImage above) — what this server actually runs.
  * 2. **Tarball install** — the CLI entry is `<root>/lib/dist/penguin.js` and `<root>` is the
  *    program directory itself; pack it under a `penguin/` prefix, leaving out `node` (this
- *    machine's Node must not ride along — the far side gets a build for ITS platform) and
- *    `bin` (the installer writes fresh launchers).
+ *    machine's Node must not ride along — the far side gets a build for ITS platform), `bin`
+ *    (the push writes launchers for the remote) and the manifest (stamped per remote).
  * 3. **Desktop app** — the server entry is
  *    `<resources>/app/node_modules/@prismshadow/penguin-server/dist/index.js` and the staged
  *    universal image sits beside it at `<resources>/payload/penguin`.
@@ -228,7 +276,11 @@ export function resolvePayloadImage(
     if (version !== null) {
       return {
         version,
-        pack: () => packDirectory(root, { prefix: "penguin", exclude: ["node", "bin"] }),
+        files: () =>
+          filesFromDirectory(root, {
+            prefix: "penguin",
+            exclude: ["node", "bin", "package-manifest.json"],
+          }),
       };
     }
   }
@@ -245,7 +297,13 @@ export function resolvePayloadImage(
       const payloadRoot = path.join(path.dirname(appDir), "payload");
       const version = versionOfManifest(path.join(payloadRoot, "penguin", "lib", "package.json"));
       if (version === null) return null;
-      return { version, pack: () => packDirectory(payloadRoot) };
+      return {
+        version,
+        files: () =>
+          filesFromDirectory(payloadRoot, {
+            exclude: ["penguin/node", "penguin/bin", "penguin/package-manifest.json"],
+          }),
+      };
     }
     const parent = path.dirname(dir);
     if (parent === dir) return null;
@@ -332,49 +390,87 @@ export async function installOnRemote(opts: {
   const localTmp = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-push-"));
   let scratch = "";
   try {
-    say("Packing this build…");
     /**
      * A remote with a new enough Node of its own keeps it: no download, no ~30 MB on the
      * wire, and no second runtime installed on a machine that already has one. Only a
-     * machine with no node, or one too old to run the program, gets one pushed.
+     * machine with no node, or one too old to run the program, gets one baked in.
      */
     const useRemoteNode = remoteNodeIsUsable(identity.nodeVersion);
-    let packPath: string;
-    let runtime: Awaited<ReturnType<typeof ensureRuntimeArchive>> | null = null;
-    try {
-      packPath = path.join(localTmp, PACK_NAME);
-      fs.writeFileSync(packPath, image.pack());
-      if (useRemoteNode) {
-        say(`Using the Node ${identity.nodeVersion} already on that machine.`);
-      } else {
+    let runtimeFiles: PackFile[] = [];
+    if (useRemoteNode) {
+      say(`Using the Node ${identity.nodeVersion} already on that machine.`);
+    } else {
+      try {
         // A runtime that fails verification throws here — before anything has been sent,
         // which is the point: an unverified runtime must never reach someone else's machine.
-        runtime = await ensureRuntimeArchive({
+        const runtime = await ensureRuntimeArchive({
           platform: identity.platform,
           arch: identity.arch,
           cacheDir: opts.runtimeCacheDir,
           fetchBuffer,
           ...(opts.onProgress ? { onProgress: opts.onProgress } : {}),
         });
+        runtimeFiles = runtimeNodeFiles(
+          runtime.archivePath,
+          runtime.artifact.rootDirName,
+          identity.platform,
+          localTmp,
+        );
+      } catch (err) {
+        return {
+          kind: "failed",
+          step: "prepare the runtime",
+          detail: err instanceof Error ? err.message : String(err),
+        };
       }
-    } catch (err) {
-      return {
-        kind: "failed",
-        step: "prepare the runtime",
-        detail: err instanceof Error ? err.message : String(err),
-      };
     }
 
-    // Copied out to ride scp. Where they sit follows from what this server is: a hot-pushed
-    // bundle has them among the assets published with that same version, anything else is a
-    // packaged install and they are beside this module (dist/ after a build, which is why
-    // packages/server/scripts/copy-machine-assets.mjs puts them there).
+    say("Packing this build…");
+    // On 22 and 23 the server's node:sqlite sits behind this flag; a baked runtime is the
+    // pinned v24 build and needs none. Rides the launchers' system-node branch only.
+    const nodeMajor = Number(/^v?(\d+)\./.exec(identity.nodeVersion ?? "")?.[1]);
+    const nodeFlags =
+      useRemoteNode && Number.isFinite(nodeMajor) && nodeMajor < 24
+        ? ["--experimental-sqlite"]
+        : [];
+    // The release shape, completed per remote: launchers with the flags this machine needs,
+    // a manifest stamped with ITS target (which is what its own uname check accepts —
+    // install.ps1 knows only win32-x64, so an arm64 Windows host gets that label with an
+    // arm64 node.exe inside), and the runtime when one travels.
+    const payloadFiles: PackFile[] = [
+      ...image.files(),
+      { path: "penguin/bin/penguin", data: Buffer.from(posixLauncher(nodeFlags)), mode: 0o755 },
+      { path: "penguin/bin/penguin.cmd", data: Buffer.from(windowsLauncher(nodeFlags)) },
+      {
+        path: "penguin/package-manifest.json",
+        data: Buffer.from(
+          JSON.stringify({
+            schemaVersion: 1,
+            target:
+              identity.platform === "win32" ? "win32-x64" : `${identity.platform}-${identity.arch}`,
+          }) + "\n",
+        ),
+      },
+      ...runtimeFiles,
+    ];
+    const payloadName = identity.platform === "win32" ? "payload.zip" : "payload.tar.gz";
+    const payloadPath = path.join(localTmp, payloadName);
+    const payload =
+      identity.platform === "win32" ? zipBytes(payloadFiles) : tarGzBytes(payloadFiles);
+    fs.writeFileSync(payloadPath, payload);
+    // The adjacent checksum the installers' offline mode requires (sha256sum format).
+    const shaPath = `${payloadPath}.sha256`;
+    fs.writeFileSync(shaPath, `${sha256Of(payload)}  ${payloadName}\n`);
+
+    // The ordinary installer, copied out to ride scp. Where it sits follows from what this
+    // server is: a hot-pushed bundle has it among the assets published with that same version,
+    // anything else is a packaged install and it is beside this module (dist/ after a build,
+    // which is why packages/server/scripts/copy-machine-assets.mjs puts it there).
+    const installerFile = installerFileFor(identity.platform);
     const installerHome = opts.assets?.() ?? path.dirname(fileURLToPath(import.meta.url));
-    const installerPaths = INSTALLER_FILES.map((name) => path.join(localTmp, name));
+    const installerPath = path.join(localTmp, installerFile);
     try {
-      for (const [i, name] of INSTALLER_FILES.entries()) {
-        fs.copyFileSync(path.join(installerHome, name), installerPaths[i]!);
-      }
+      fs.copyFileSync(path.join(installerHome, installerFile), installerPath);
     } catch (err) {
       return {
         kind: "failed",
@@ -382,20 +478,6 @@ export async function installOnRemote(opts: {
         detail: err instanceof Error ? err.message : String(err),
       };
     }
-
-    // The job the installer reads instead of taking arguments — no second round of quoting.
-    const jobPath = path.join(localTmp, "job.json");
-    fs.writeFileSync(
-      jobPath,
-      JSON.stringify({
-        packName: PACK_NAME,
-        // null tells the installer to leave the machine's own node in charge…
-        runtimeDirName: runtime?.artifact.rootDirName ?? null,
-        // …and this is the version it will be, so the installer can decide about
-        // --experimental-sqlite without asking the machine a second time.
-        nodeVersion: runtime ? null : identity.nodeVersion,
-      }) + "\n",
-    );
 
     // A scratch name of our own making: hex only, so it needs no quoting on either side.
     const scratchName = `penguin-${randomBytes(6).toString("hex")}`;
@@ -415,42 +497,16 @@ export async function installOnRemote(opts: {
       };
     }
 
-    say(runtime ? "Copying the build and the runtime…" : "Copying the build…");
-    const copy = await run(
-      "scp",
-      scpArgs(
-        target,
-        [packPath, jobPath, ...installerPaths, ...(runtime ? [runtime.archivePath] : [])],
-        scratch,
-      ),
-    );
+    say("Copying the build…");
+    const copy = await run("scp", scpArgs(target, [payloadPath, shaPath, installerPath], scratch));
     if (copy.code !== 0) {
       return { kind: "failed", step: "copy", detail: copy.stderr.trim() || "scp failed" };
-    }
-
-    if (runtime) {
-      say("Unpacking the runtime…");
-      const remoteArchive = joinRemote(identity.platform, scratch, runtime.artifact.fileName);
-      const extract = await run(
-        "ssh",
-        sshArgs(target, extractRuntimeCommand(identity.platform, remoteArchive, scratch)),
-      );
-      if (extract.code !== 0) {
-        return {
-          kind: "failed",
-          step: "unpack the runtime",
-          detail: extract.stderr.trim() || `tar exited ${extract.code}`,
-        };
-      }
     }
 
     say("Installing…");
     const install = await run(
       "ssh",
-      sshArgs(
-        target,
-        runInstallerCommand(identity.platform, scratch, runtime?.artifact.rootDirName ?? null),
-      ),
+      sshArgs(target, runInstallScriptCommand(identity.platform, scratch)),
     );
     if (install.code !== 0) {
       return {
