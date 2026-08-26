@@ -39,7 +39,13 @@ afterEach(() => {
   fs.rmSync(work, { recursive: true, force: true });
 });
 
-describe("runOnShell", () => {
+/**
+ * POSIX-only: the stub is a `#!/bin/sh` script reached through PATH, which Windows neither
+ * executes nor joins with ':'. What is under test is the module's own logic, not anything
+ * platform-specific — so the coverage is real everywhere the harness can drive it, and
+ * pretending otherwise on Windows only produced 15 failures about the stub, not the code.
+ */
+describe.skipIf(process.platform === "win32")("runOnShell", () => {
   it("runs a command and reports its output and exit code", async () => {
     const result = await runOnShell("ssh:somehost", target, "echo hello");
     expect(result.output).toBe("hello\n");
