@@ -31,6 +31,7 @@ import type {
   TelegramCredentials,
   TelegramTransport,
   TelegramUpdate,
+  TelegramWebhookInfo,
 } from "../src/runtime/messaging/telegram-api.js";
 import { createTelegramTransport } from "../src/runtime/messaging/telegram-api.js";
 import { TelegramConnector, telegramBotIdOf } from "../src/runtime/messaging/telegram-connector.js";
@@ -71,10 +72,11 @@ class FakeBotClient implements TelegramBotClient {
     private readonly t: FakeTelegramTransport,
   ) {}
 
-  deleteWebhookCalls = 0;
+  webhookInfoCalls = 0;
 
-  async deleteWebhook(): Promise<void> {
-    this.deleteWebhookCalls++;
+  async getWebhookInfo(): Promise<TelegramWebhookInfo> {
+    this.webhookInfoCalls++;
+    return { url: this.t.webhookUrl };
   }
 
   async getMe(): Promise<TelegramBotUser> {
@@ -157,6 +159,8 @@ class FakeTelegramTransport {
   failSend: string | null = null;
   /** Fails this many upcoming getUpdates calls. */
   failPolls = 0;
+  /** The webhook registered on the bot; the empty string means none, as the Bot API encodes it. */
+  webhookUrl = "";
   private nextUpdateId = 100;
 
   createClient(creds: TelegramCredentials): FakeBotClient {
@@ -764,21 +768,25 @@ const CONFLICT_DESCRIPTION =
 /** A bot client whose getMe always answers and whose getUpdates can be made to conflict. */
 class ConflictBotClient implements TelegramBotClient {
   getMeCalls = 0;
-  deleteWebhookCalls = 0;
+  webhookInfoCalls = 0;
   pollCalls = 0;
   /** getUpdates rejects with the 409 while this is true. */
   conflict = false;
   /** Rejects the parked long poll (what Telegram does to the loser of the conflict). */
   private parkedReject: ((err: Error) => void) | null = null;
 
-  constructor(readonly creds: TelegramCredentials) {}
+  constructor(
+    readonly creds: TelegramCredentials,
+    private readonly t: ConflictTransport,
+  ) {}
 
   async getMe(): Promise<TelegramBotUser> {
     this.getMeCalls++;
     return { id: 7000000001, first_name: "Penguin Test", username: "penguin_test_bot" };
   }
-  async deleteWebhook(): Promise<void> {
-    this.deleteWebhookCalls++;
+  async getWebhookInfo(): Promise<TelegramWebhookInfo> {
+    this.webhookInfoCalls++;
+    return { url: this.t.webhookUrl };
   }
   async sendMessage(): Promise<void> {}
   getUpdates(args: {
@@ -804,8 +812,10 @@ class ConflictBotClient implements TelegramBotClient {
 
 class ConflictTransport implements TelegramTransport {
   readonly clients: ConflictBotClient[] = [];
+  /** The webhook registered on the bot; the empty string means none, as the Bot API encodes it. */
+  webhookUrl = "";
   createClient(creds: TelegramCredentials): ConflictBotClient {
-    const client = new ConflictBotClient(creds);
+    const client = new ConflictBotClient(creds, this);
     this.clients.push(client);
     return client;
   }
@@ -898,7 +908,7 @@ describe("telegram poll loop under a persistent 409", () => {
     expect(inbound).toEqual([]);
   });
 
-  it("clears a stale webhook once per connection, before the first poll", async () => {
+  it("probes for a webhook once per connection, before the first poll", async () => {
     const { connector, transport } = conflictConnector();
     let readies = 0;
     const conn = await connector.connect(
@@ -913,13 +923,46 @@ describe("telegram poll loop under a persistent 409", () => {
     );
     const bot = transport.clients[0]!;
     await waitFor(() => readies === 1);
-    expect(bot.deleteWebhookCalls).toBe(1);
-    // A conflict-and-recover cycle must not re-issue the write.
+    expect(bot.webhookInfoCalls).toBe(1);
+    // A bot that answered "no webhook" is not asked again by a conflict-and-recover cycle.
     bot.startConflicting();
     await settle(30);
     bot.conflict = false;
     await waitFor(() => readies === 2);
-    expect(bot.deleteWebhookCalls).toBe(1);
+    expect(bot.webhookInfoCalls).toBe(1);
+    conn.close();
+  });
+
+  it("names the registered webhook and leaves the bot alone, then recovers once it is gone", async () => {
+    const { connector, transport } = conflictConnector();
+    const errors: string[] = [];
+    let readies = 0;
+    // The bot is pointed at a webhook before this connection is made.
+    transport.webhookUrl = "https://hooks.example.test/telegram/abc123";
+    const conn = await connector.connect(
+      { botToken: TOKEN },
+      {
+        onMessage: async () => {},
+        onReady: () => {
+          readies++;
+        },
+        onError: (err) => {
+          errors.push(err instanceof Error ? err.message : String(err));
+        },
+      },
+    );
+    await waitFor(() => errors.length === 1);
+    // The URL is the whole point: "a webhook is set" does not say which one to go remove.
+    expect(errors[0]).toContain("https://hooks.example.test/telegram/abc123");
+    expect(errors[0]).toContain("recovers on its own");
+    // Nothing was written to the bot, and the loop never got as far as polling.
+    expect(transport.clients[0]!.pollCalls).toBe(0);
+    expect(readies).toBe(0);
+
+    // The user removes it elsewhere. No re-enable: the next probe passes and polling starts.
+    transport.webhookUrl = "";
+    await waitFor(() => readies === 1);
+    expect(errors).toHaveLength(1);
     conn.close();
   });
 

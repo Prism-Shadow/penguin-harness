@@ -9,10 +9,11 @@
  *
  * The poll loop's lifecycle: a `getMe` probe (a bad token surfaces immediately as the
  * connection error instead of an eternally failing poll — it runs again ahead of every
- * recovery attempt, so a token revoked mid-outage stops reading as a stale conflict), one
- * `deleteWebhook` (a webhook and `getUpdates` are mutually exclusive on the Bot API — a bot
- * pointed at a webhook before it was bound here could otherwise never be polled), then a
- * one-time backlog drain (`offset: -1` confirms everything sent while no connection existed
+ * recovery attempt, so a token revoked mid-outage stops reading as a stale conflict), a
+ * `getWebhookInfo` probe (a webhook and `getUpdates` are mutually exclusive on the Bot API,
+ * so a bot pointed at one cannot be polled until the webhook goes — the probe names it and
+ * stops there, because removing it is the user's call: see below), then a one-time backlog
+ * drain (`offset: -1` confirms everything sent while no connection existed
  * — a disabled binding must not replay its dark period as a task flood, matching Feishu,
  * where missed events are simply gone), then long polls advancing `offset` past each update.
  * Failures back off exponentially and report once per outage; recovery fires `onReady`
@@ -20,11 +21,17 @@
  *
  * Readiness is proven by a `getUpdates`, NEVER by `getMe`. Telegram's one-poller-per-token
  * rule shows up only on `getUpdates`, as a 409 — a second server (or any other program)
- * holding the same token, or a leftover webhook. `getMe` answers happily throughout, so a
+ * holding the same token. `getMe` answers happily throughout, so a
  * recovery gated on `getMe` alone would clear the outage counter on every cycle: the
  * backoff would never leave its first step and every single failure would report again.
  * The recovery poll therefore runs with `timeoutSec: 0` — it must come back now, not park
  * for the long-poll window — and only its success clears `failures` and fires `onReady`.
+ *
+ * Nothing here writes to the bot. A registered webhook is reported, never deleted: it points
+ * at whatever service the user set it on, and clearing it to make polling work here would
+ * take that service off the air with no notice and no way to trace it back. So the probe
+ * repeats on every recovery attempt rather than latching — the outage ends the moment the
+ * user removes the webhook, and the connection then comes back on its own.
  */
 import type {
   MessagingChannelConnector,
@@ -183,8 +190,8 @@ export class TelegramConnector implements MessagingChannelConnector {
   ): Promise<void> {
     /** A `getUpdates` has succeeded since the last failure, and onReady fired for that up-streak. */
     let ready = false;
-    /** The webhook clear runs once per connection: it is a one-time repair, not a per-retry write. */
-    let webhookCleared = false;
+    /** A webhook probe has come back clean; a bot with none never has to be asked twice. */
+    let webhookChecked = false;
     /** The backlog drain runs once per connection, never again after an outage: messages sent during a mere blip still deliver. */
     let drained = false;
     let failures = 0;
@@ -194,11 +201,18 @@ export class TelegramConnector implements MessagingChannelConnector {
         if (!ready) {
           await bot.getMe();
           if (isClosed()) return;
-          if (!webhookCleared) {
-            // Pending updates are kept: the drain below decides what counts as backlog.
-            await bot.deleteWebhook();
+          if (!webhookChecked) {
+            const { url } = await bot.getWebhookInfo();
             if (isClosed()) return;
-            webhookCleared = true;
+            if (url !== "") {
+              // Named, not cleared. `getUpdates` would 409 on the next line anyway, but its
+              // description cannot say which webhook — and that is the whole of what the
+              // user has to go and find. The flag stays unset so the next attempt re-probes.
+              throw new Error(
+                `a webhook is registered on this bot at ${url}, which blocks polling — remove it there and the connection recovers on its own`,
+              );
+            }
+            webhookChecked = true;
           }
           if (!drained) {
             const backlog = await bot.getUpdates({ offset: -1, timeoutSec: 0, signal });

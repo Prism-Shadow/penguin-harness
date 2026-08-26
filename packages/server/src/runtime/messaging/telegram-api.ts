@@ -1,6 +1,6 @@
 /**
  * The Telegram Bot API seam: the four methods the Telegram connector uses (`getMe`,
- * `deleteWebhook`, `sendMessage`, `getUpdates`), behind an injectable transport so unit
+ * `getWebhookInfo`, `sendMessage`, `getUpdates`), behind an injectable transport so unit
  * tests substitute a fake and never open real network. Telegram needs no SDK — the Bot API is plain HTTPS
  * POSTs against https://api.telegram.org — so the production transport is a thin fetch
  * wrapper.
@@ -41,6 +41,14 @@ export interface TelegramMessage {
   };
 }
 
+/**
+ * The slice of `getWebhookInfo`'s result the connector consumes. `url` is the empty string
+ * when no webhook is registered — that is the Bot API's own encoding, not a normalization.
+ */
+export interface TelegramWebhookInfo {
+  url: string;
+}
+
 /** One `getUpdates` entry. Only `message` updates are processed; the rest are skipped. */
 export interface TelegramUpdate {
   update_id: number;
@@ -52,12 +60,14 @@ export interface TelegramBotClient {
   /** Credential probe: resolves the bot's own account (the test endpoint surfaces its username). */
   getMe(): Promise<TelegramBotUser>;
   /**
-   * Drops any webhook registered on the bot, keeping pending updates. A webhook and
-   * `getUpdates` are mutually exclusive on the Bot API, so a bot that was pointed at one
-   * before it was bound here can never be polled until this runs. A no-op on a bot that
-   * has no webhook.
+   * Reports the webhook registered on the bot, if any. A webhook and `getUpdates` are
+   * mutually exclusive on the Bot API, so a bot pointed at one cannot be polled at all
+   * until it is removed — and removing it is the user's call, not this app's: the
+   * registration belongs to whatever service they pointed it at, and clearing it here
+   * would silently take that service off the air. Read-only on purpose; the connector
+   * reports the URL and leaves the bot alone.
    */
-  deleteWebhook(): Promise<void>;
+  getWebhookInfo(): Promise<TelegramWebhookInfo>;
   /** Sends a text message into a chat; `replyToMessageId` threads it under an inbound message. */
   sendMessage(args: { chatId: string; text: string; replyToMessageId?: number }): Promise<void>;
   /**
@@ -105,7 +115,7 @@ function conflictText(description: string): string | null {
     return "another program is already polling this bot — one bot token can serve only one PenguinHarness server at a time";
   }
   if (/webhook is active/i.test(description)) {
-    return "a webhook is set on this bot, which blocks polling — remove it and re-enable the connection";
+    return "a webhook is set on this bot, which blocks polling — remove it and the connection recovers on its own";
   }
   return null;
 }
@@ -169,11 +179,7 @@ export function createTelegramTransport(): TelegramTransport {
 
       return {
         getMe: () => call<TelegramBotUser>("getMe", {}),
-        async deleteWebhook(): Promise<void> {
-          // drop_pending_updates stays false: the connector's own backlog drain decides
-          // what counts as the dark period, and dropping here would pre-empt it.
-          await call("deleteWebhook", { drop_pending_updates: false });
-        },
+        getWebhookInfo: () => call<TelegramWebhookInfo>("getWebhookInfo", {}),
         async sendMessage({ chatId, text, replyToMessageId }): Promise<void> {
           await call("sendMessage", {
             chat_id: wireChatId(chatId),
