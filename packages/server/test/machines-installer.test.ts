@@ -1,250 +1,181 @@
 /**
- * The installer that runs ON the target (shipped as a file beside the module that sends it),
- * executed for real against a temporary HOME. It is plain Node with no dependencies precisely so it can run
- * anywhere — including here — so these tests drive the actual script rather than a model of
- * it: fresh install, upgrade over an existing one, rollback when the staged tree does not run,
- * and the data directory surviving all of it.
+ * The far side of a push, run for real: the payload install-server.ts would assemble, fed to
+ * the ACTUAL install.sh in its sibling-offline mode against a temporary HOME. This is the
+ * whole point of pushing the ordinary installer — the staging, smoke test, swap, rollback and
+ * symlink behavior under test here is the same code every release install runs, so these
+ * tests only cover what the PUSH adds: the payload's shape, the launchers baked for the
+ * remote, and the checksum handshake.
  *
- * POSIX-only: the fake runtime is a shell script standing in for node. The Windows branches it
- * exercises (launcher text, program directory) are covered by reading the produced files.
+ * POSIX-only: install.ps1 would need a Windows host. The Windows payload's shape is covered
+ * by the zip assertions in machines-archive.test.ts and machines.test.ts.
  */
 import cp from "node:child_process";
+import { createRequire } from "node:module";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { packDirectory } from "../src/machines/pack.js";
+import { tarGzBytes } from "../src/machines/archive.js";
+import type { PackFile } from "../src/machines/archive.js";
+import { sha256Of } from "../src/machines/runtime.js";
 
 const posixOnly = process.platform === "win32" ? describe.skip : describe;
 
-/** The real script under test — the file the push copies out. */
-const INSTALLER_SOURCE = path.resolve(__dirname, "..", "src", "machines", "remote-installer.cjs");
-/** Required by the installer on the far side, so it rides scp beside it. */
-const LAUNCHER_SOURCE = path.resolve(__dirname, "..", "src", "machines", "launcher.cjs");
+const require = createRequire(import.meta.url);
+const { posixLauncher, windowsLauncher } = require(
+  path.resolve(__dirname, "..", "src", "machines", "launcher.cjs"),
+) as {
+  posixLauncher: (nodeFlags?: string[]) => string;
+  windowsLauncher: (nodeFlags?: string[]) => string;
+};
 
-let INSTALLER: string;
-const RUNTIME_DIR_NAME = "node-v24.18.0-linux-x64";
+/** The installer the push copies out — the repo's own release install.sh. */
+const INSTALL_SH = path.resolve(__dirname, "..", "..", "..", "install.sh");
 
-posixOnly("remote-installer.cjs", () => {
+posixOnly("pushing through install.sh", () => {
   let work: string;
   let home: string;
   let scratch: string;
 
-  /** A scratch directory shaped exactly like the one the push leaves on the remote. */
-  const prepareScratch = (opts: {
-    cliBody: string;
-    withRuntime?: boolean;
-    /** What the push probed on that machine; drives the --experimental-sqlite decision. */
-    nodeVersion?: string;
-  }) => {
-    // The image: penguin/{lib,web}. Only lib/dist/penguin.js has to be real — the installer
-    // smoke-tests it and copies everything else verbatim.
-    const image = path.join(work, "image");
-    fs.mkdirSync(path.join(image, "penguin", "lib", "dist"), { recursive: true });
-    fs.mkdirSync(path.join(image, "penguin", "web"), { recursive: true });
-    fs.writeFileSync(path.join(image, "penguin", "lib", "dist", "penguin.js"), opts.cliBody);
-    fs.writeFileSync(path.join(image, "penguin", "web", "index.html"), "<html>");
-    fs.writeFileSync(
-      path.join(image, "penguin", "lib", "package.json"),
-      JSON.stringify({ name: "@prismshadow/penguin-cli", version: "9.9.9" }),
-    );
+  /** The target string install.sh's own uname check on THIS machine will accept. */
+  const hostTarget = `${process.platform}-${process.arch}`;
 
-    fs.mkdirSync(scratch, { recursive: true });
-    fs.writeFileSync(path.join(scratch, "penguin-image.pack"), packDirectory(image));
-    const withRuntime = opts.withRuntime ?? true;
+  /** Assembles the payload the way installOnRemote does, parameterized like a push. */
+  const writePayload = (opts: { cliBody: string; withRuntime?: boolean; nodeFlags?: string[] }) => {
+    const files: PackFile[] = [
+      { path: "penguin/lib/dist/penguin.js", data: Buffer.from(opts.cliBody) },
+      {
+        path: "penguin/lib/package.json",
+        data: Buffer.from(JSON.stringify({ name: "@prismshadow/penguin-cli", version: "9.9.9" })),
+      },
+      { path: "penguin/web/index.html", data: Buffer.from("<html>") },
+      {
+        path: "penguin/bin/penguin",
+        data: Buffer.from(posixLauncher(opts.nodeFlags ?? [])),
+        mode: 0o755,
+      },
+      { path: "penguin/bin/penguin.cmd", data: Buffer.from(windowsLauncher(opts.nodeFlags ?? [])) },
+      {
+        path: "penguin/package-manifest.json",
+        data: Buffer.from(JSON.stringify({ schemaVersion: 1, target: hostTarget }) + "\n"),
+      },
+      // The baked runtime: a node stand-in that forwards to the real one, so the installer's
+      // smoke test runs the staged CLI for real on the "bundled" runtime path.
+      ...(opts.withRuntime !== false
+        ? [
+            {
+              path: "penguin/node/bin/node",
+              data: Buffer.from(`#!/bin/sh\nexec ${process.execPath} "$@"\n`),
+              mode: 0o755,
+            },
+          ]
+        : []),
+    ];
+    const payload = tarGzBytes(files);
+    fs.writeFileSync(path.join(scratch, "payload.tar.gz"), payload);
     fs.writeFileSync(
-      path.join(scratch, "job.json"),
-      JSON.stringify({
-        packName: "penguin-image.pack",
-        // null = the machine had a usable node of its own, so none was sent.
-        runtimeDirName: withRuntime ? RUNTIME_DIR_NAME : null,
-        nodeVersion: withRuntime ? null : (opts.nodeVersion ?? process.version),
-      }),
+      path.join(scratch, "payload.tar.gz.sha256"),
+      `${sha256Of(payload)}  payload.tar.gz\n`,
     );
-    // The "runtime" the bootstrap would have unpacked: a node stand-in that forwards to the
-    // real one, so the installer's smoke test runs the staged CLI for real.
-    const runtimeBin = path.join(scratch, RUNTIME_DIR_NAME, "bin");
-    fs.mkdirSync(runtimeBin, { recursive: true });
-    fs.writeFileSync(path.join(runtimeBin, "node"), `#!/bin/sh\nexec ${process.execPath} "$@"\n`, {
-      mode: 0o755,
-    });
-    // The push copies both scripts INTO the scratch directory, and the installer reads
-    // job.json from its own directory — so the test has to place them the same way.
-    fs.copyFileSync(INSTALLER, path.join(scratch, "remote-installer.cjs"));
-    fs.copyFileSync(LAUNCHER_SOURCE, path.join(scratch, "launcher.cjs"));
+    fs.copyFileSync(INSTALL_SH, path.join(scratch, "install.sh"));
   };
 
+  /** `sh <scratch>/install.sh` — exactly the command the push runs over ssh. */
   const runInstaller = () =>
-    cp.spawnSync(process.execPath, [path.join(scratch, "remote-installer.cjs")], {
+    cp.spawnSync("sh", [path.join(scratch, "install.sh")], {
       cwd: scratch,
       encoding: "utf8",
-      env: { ...process.env, HOME: home, XDG_DATA_HOME: path.join(home, ".local", "share") },
+      env: {
+        ...process.env,
+        HOME: home,
+        XDG_DATA_HOME: path.join(home, ".local", "share"),
+        PENGUIN_INSTALL_DIR: "",
+        PENGUIN_VERSION: "",
+        PENGUIN_ARCHIVE: "",
+      },
     });
 
   const programDir = () => path.join(home, ".local", "share", "penguin");
 
   beforeEach(() => {
     // realpathSync: on macOS os.tmpdir() is /var/… which is a symlink to /private/var/…, and
-    // the installer's own realpath of the launcher symlink resolves it — comparing the two
-    // spellings of the same directory fails there and nowhere else.
+    // resolved and unresolved spellings of the same tree must not be compared to each other.
     work = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "penguin-installer-test-")));
     home = path.join(work, "home");
     scratch = path.join(work, "scratch");
     fs.mkdirSync(home, { recursive: true });
-    INSTALLER = path.join(work, "remote-installer.cjs");
-    fs.copyFileSync(INSTALLER_SOURCE, INSTALLER);
+    fs.mkdirSync(scratch, { recursive: true });
   });
   afterEach(() => {
     fs.rmSync(work, { recursive: true, force: true });
   });
 
-  it("installs into the XDG program directory, runtime and launchers included", () => {
-    prepareScratch({ cliBody: "console.log('9.9.9');\n" });
+  it("installs the payload: program tree, baked runtime, launchers, symlink", () => {
+    writePayload({ cliBody: "console.log('9.9.9');\n" });
     const result = runInstaller();
+    expect(result.stderr).toBe("");
     expect(result.status).toBe(0);
+    expect(result.stdout).toContain("Payload checksum OK.");
     expect(result.stdout).toContain(`installed to ${programDir()}`);
 
-    // The image, plus the runtime moved in as node/ so the install carries its own Node.
     expect(fs.existsSync(path.join(programDir(), "lib", "dist", "penguin.js"))).toBe(true);
     expect(fs.existsSync(path.join(programDir(), "web", "index.html"))).toBe(true);
     expect(fs.existsSync(path.join(programDir(), "node", "bin", "node"))).toBe(true);
-
-    // Both launchers are written, and the POSIX one is executable and finds that runtime.
-    const launcher = fs.readFileSync(path.join(programDir(), "bin", "penguin"), "utf8");
-    expect(launcher).toContain('"$DIR/node/bin/node"');
-    expect(launcher).toContain('PENGUIN_WEB_DIST="${PENGUIN_WEB_DIST:-$DIR/web}"');
     expect(fs.statSync(path.join(programDir(), "bin", "penguin")).mode & 0o111).not.toBe(0);
-    const cmd = fs.readFileSync(path.join(programDir(), "bin", "penguin.cmd"), "utf8");
-    expect(cmd).toContain("%DIR%\\node\\node.exe");
-
     // …and the convenience symlink an ordinary install also leaves.
     expect(fs.realpathSync(path.join(home, ".local", "bin", "penguin"))).toBe(
       path.join(programDir(), "bin", "penguin"),
     );
-    // Nothing is left behind next to the program directory.
-    const siblings = fs.readdirSync(path.dirname(programDir()));
-    expect(siblings.filter((name) => name.startsWith("penguin."))).toEqual([]);
   });
 
-  it("installs without a runtime when the machine's own node is used", () => {
-    prepareScratch({ cliBody: "console.log('9.9.9');\n", withRuntime: false });
+  it("installs without a runtime, on the launcher's system-node branch", () => {
+    writePayload({ cliBody: "console.log('9.9.9');\n", withRuntime: false });
     const result = runInstaller();
-
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain("using this machine's Node");
-    // No runtime inside the install, and the launcher's fallback path is what will run it.
     expect(fs.existsSync(path.join(programDir(), "node"))).toBe(false);
     expect(fs.readFileSync(path.join(programDir(), "bin", "penguin"), "utf8")).toContain(
       'exec node "$DIR/lib/dist/penguin.js"',
     );
   });
 
-  it("flags an older Node into the launcher, since node:sqlite is gated there", () => {
-    // 22 and 23 have node:sqlite only behind --experimental-sqlite. The decision is made
-    // once, at install time, from the version the push probed.
-    prepareScratch({
-      cliBody: "console.log('9.9.9');\n",
-      withRuntime: false,
-      nodeVersion: "v22.11.0",
-    });
-    const result = runInstaller();
-
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain("with --experimental-sqlite");
-    expect(fs.readFileSync(path.join(programDir(), "bin", "penguin"), "utf8")).toContain(
-      'exec node --experimental-sqlite "$DIR/lib/dist/penguin.js"',
-    );
-    expect(fs.readFileSync(path.join(programDir(), "bin", "penguin.cmd"), "utf8")).toContain(
-      'node --experimental-sqlite "%DIR%\\lib\\dist\\penguin.js"',
-    );
-  });
-
-  it("does not flag a current Node, and never flags the bundled runtime", () => {
-    prepareScratch({
-      cliBody: "console.log('9.9.9');\n",
-      withRuntime: false,
-      nodeVersion: "v24.3.0",
-    });
+  it("a broken build never replaces a working one, and data survives", () => {
+    writePayload({ cliBody: "console.log('9.9.9');\n" });
     expect(runInstaller().status).toBe(0);
-    expect(fs.readFileSync(path.join(programDir(), "bin", "penguin"), "utf8")).toContain(
-      'exec node "$DIR/lib/dist/penguin.js"',
-    );
-  });
-
-  it("refuses a machine whose Node cannot provide node:sqlite", () => {
-    prepareScratch({ cliBody: "console.log('9.9.9');\n", withRuntime: true });
-    // A runtime that runs, but whose node has no node:sqlite — the shape of an old or
-    // stripped build. The check must catch it here, not at first server start.
-    const fakeNode = path.join(scratch, RUNTIME_DIR_NAME, "bin", "node");
-    fs.writeFileSync(
-      fakeNode,
-      [
-        "#!/bin/sh",
-        // The capability probe is the only call with -e; fail it, pass everything else.
-        'case "$*" in *getBuiltinModule*) exit 9 ;; esac',
-        `exec ${process.execPath} "$@"`,
-        "",
-      ].join("\n"),
-      { mode: 0o755 },
-    );
-
-    const result = runInstaller();
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain("cannot provide node:sqlite");
-    expect(fs.existsSync(programDir())).toBe(false);
-  });
-
-  it("upgrades over an existing install and leaves the data directory alone", () => {
-    // A previous install, and a data directory that must survive it.
-    fs.mkdirSync(path.join(programDir(), "lib"), { recursive: true });
-    fs.writeFileSync(path.join(programDir(), "lib", "old-marker"), "old");
     const dataFile = path.join(home, ".penguin", "data", "web.db");
     fs.mkdirSync(path.dirname(dataFile), { recursive: true });
-    fs.writeFileSync(dataFile, "sessions");
+    fs.writeFileSync(dataFile, "precious");
 
-    prepareScratch({ cliBody: "console.log('9.9.9');\n" });
-    expect(runInstaller().status).toBe(0);
-
-    expect(fs.existsSync(path.join(programDir(), "lib", "old-marker"))).toBe(false);
-    expect(fs.existsSync(path.join(programDir(), "lib", "dist", "penguin.js"))).toBe(true);
-    expect(fs.readFileSync(dataFile, "utf8")).toBe("sessions");
+    writePayload({ cliBody: "process.exit(3);\n" });
+    const result = runInstaller();
+    expect(result.status).not.toBe(0);
+    // The previous install is back in place, still running the old build.
+    const version = cp.spawnSync(path.join(programDir(), "bin", "penguin"), ["--version"], {
+      encoding: "utf8",
+    });
+    expect(version.stdout.trim()).toBe("9.9.9");
+    expect(fs.readFileSync(dataFile, "utf8")).toBe("precious");
   });
 
-  it("leaves the existing install untouched when the staged one does not run", () => {
-    fs.mkdirSync(path.join(programDir(), "lib"), { recursive: true });
-    fs.writeFileSync(path.join(programDir(), "lib", "old-marker"), "old");
-
-    // A CLI that fails its smoke test, the way a broken or half-copied image would.
-    prepareScratch({ cliBody: "process.exit(3);\n" });
+  it("refuses a payload whose checksum does not match", () => {
+    writePayload({ cliBody: "console.log('9.9.9');\n" });
+    fs.appendFileSync(path.join(scratch, "payload.tar.gz"), "tampered");
     const result = runInstaller();
-
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain("does not run");
-    // The smoke test runs BEFORE the swap, so the working install was never disturbed and
-    // there is nothing to restore — the restore branch is the safety net for a failure
-    // between the two renames.
-    expect(fs.readFileSync(path.join(programDir(), "lib", "old-marker"), "utf8")).toBe("old");
-    expect(result.stdout).not.toContain("previous installation was restored");
-    // No staging or backup husks left in the way of the next attempt.
-    const siblings = fs.readdirSync(path.dirname(programDir()));
-    expect(siblings.filter((name) => name.startsWith("penguin."))).toEqual([]);
+    expect(result.status).not.toBe(0);
+    expect(`${result.stdout}${result.stderr}`).toContain("checksum mismatch");
+    expect(fs.existsSync(programDir())).toBe(false);
   });
 });
 
-describe("shipping the installer", () => {
+describe("shipping the installers", () => {
   /**
-   * The push copies these files out; they are never imported, so nothing in the module graph
-   * would notice one going missing from a built package. `files: ["dist"]` is what npm ships
-   * and tsup only emits entries, which is why the build copies them in — and why that copy is
-   * worth an assertion rather than a comment. Missing launcher.cjs would break every install
-   * at the far side's `require`, long after the bytes were sent.
+   * The push copies these files out of dist/; they are never imported, so nothing in the
+   * module graph would notice one going missing from a built package. The build copies them
+   * in (copy-machine-assets.mjs), and that copy is worth an assertion rather than a comment.
    */
-  it.each([
-    ["remote-installer.cjs", INSTALLER_SOURCE],
-    ["launcher.cjs", LAUNCHER_SOURCE],
-  ])("copies %s into dist at build time", (name, source) => {
+  it.each(["install.sh", "install.ps1"])("copies %s into dist at build time", (name) => {
     const built = path.resolve(__dirname, "..", "dist", name);
     if (!fs.existsSync(built)) return; // Not built in this run; `pnpm build` covers it in CI.
+    const source = path.resolve(__dirname, "..", "..", "..", name);
     expect(fs.readFileSync(built, "utf8")).toBe(fs.readFileSync(source, "utf8"));
   });
 });

@@ -3,11 +3,10 @@
  * side) plus the small commands the far side executes. Pure, so every command this app would
  * run against someone's machine is unit-visible.
  *
- * Only four things ever run through a remote SHELL — probe, make a scratch directory, unpack
- * the runtime, start the installer — and each has a POSIX and a Windows form, because a
- * default Windows OpenSSH session is cmd.exe, where `;`, `$VAR`, `'…'` and `rm` mean nothing.
- * Everything past the fourth step runs under the Node runtime we just put there, on one
- * script for all platforms.
+ * Only three things ever run through a remote SHELL — probe, make a scratch directory, run
+ * the installer — and each has a POSIX and a Windows form, because a default Windows OpenSSH
+ * session is cmd.exe, where `;`, `$VAR`, `'…'` and `rm` mean nothing. The installer itself is
+ * the ordinary one (install.sh, install.ps1), fed the payload we scp beside it.
  *
  * Two further rules encoded here:
  * - **BatchMode.** A GUI app has no terminal: an ssh that decides to ask for a password or a
@@ -79,38 +78,17 @@ export function makeScratchCommand(platform: RemotePlatform, name: string): stri
 }
 
 /**
- * Unpacks the Node runtime archive beside the installer. `tar -xf` handles both shapes we
- * send — a .tar.gz on POSIX, and a .zip on Windows, where the bundled bsdtar reads zips.
+ * Runs the ordinary installer against the payload scp put beside it. No arguments: both
+ * installers pick up a sibling payload on their own (their offline mode), so nothing has to
+ * survive another round of quoting. `-ExecutionPolicy Bypass` because client Windows defaults
+ * to Restricted, and this is our own script arriving over our own ssh session.
  */
-export function extractRuntimeCommand(
-  platform: RemotePlatform,
-  archivePath: string,
-  destDir: string,
-): string {
-  const archive = quoteFor(platform, archivePath);
-  const dest = quoteFor(platform, destDir);
-  return `tar -xf ${archive} -C ${dest}`;
-}
-
-/**
- * Runs the installer on the runtime that was just unpacked. No arguments: the installer reads
- * `job.json` from its own directory, so nothing has to survive another round of quoting.
- */
-export function runInstallerCommand(
-  platform: RemotePlatform,
-  scratchDir: string,
-  /** The unpacked runtime to run it with, or null when the remote's own node is new enough. */
-  runtimeDirName: string | null,
-): string {
-  const sep = platform === "win32" ? "\\" : "/";
-  const script = [scratchDir, "remote-installer.cjs"].join(sep);
-  if (runtimeDirName === null) return `node ${quoteFor(platform, script)}`;
-  const nodeBin = [
-    scratchDir,
-    runtimeDirName,
-    ...(platform === "win32" ? ["node.exe"] : ["bin", "node"]),
-  ].join(sep);
-  return `${quoteFor(platform, nodeBin)} ${quoteFor(platform, script)}`;
+export function runInstallScriptCommand(platform: RemotePlatform, scratchDir: string): string {
+  if (platform === "win32") {
+    const script = cmdQuote(`${scratchDir}\\install.ps1`);
+    return `powershell -NoProfile -ExecutionPolicy Bypass -File ${script}`;
+  }
+  return `sh ${shQuote(`${scratchDir}/install.sh`)}`;
 }
 
 /** Best-effort scratch cleanup; failure here never fails an install that already succeeded. */

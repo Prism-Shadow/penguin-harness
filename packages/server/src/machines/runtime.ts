@@ -4,9 +4,10 @@
  * The install image is the universal one — pure JavaScript, no runtime — so a remote that has
  * no Node, or too old a Node, could not run it. Rather than requiring the user to install
  * Node on every machine first (and rather than trusting whatever version happens to be
- * there), the app fetches the official build for the remote's platform and arch and installs
- * it inside the program directory at `lib/runtime`. The launchers prefer it, so the install
- * is self-contained and nothing on that machine is touched outside the program directory.
+ * there), the app fetches the official build for the remote's platform and arch and bakes
+ * its node binary into the payload as `node/` — the same place a platform release package
+ * carries one. The launchers prefer it, so the install is self-contained and nothing on that
+ * machine is touched outside the program directory.
  *
  * Downloads are verified against nodejs.org's own `SHASUMS256.txt` for the release: we are
  * putting an executable on someone else's machine, so "it downloaded" is not good enough.
@@ -33,10 +34,9 @@ const DIST_BASE = "https://nodejs.org/dist";
  * Deliberately BELOW the `engines.node: ">=24"` the packages declare, because 22 and 23 can
  * run the program with one flag: the server reaches SQLite through
  * `process.getBuiltinModule("node:sqlite")`, which those versions expose only behind
- * `--experimental-sqlite` (unflagged from 23.4). The remote installer bakes that flag into the
- * launchers when it keeps such a Node, and proves the module is actually reachable before it
- * swaps the install in — so a machine that cannot provide it fails the install rather than the
- * first server start.
+ * `--experimental-sqlite` (unflagged from 23.4). The push bakes that flag into the payload's
+ * launchers when it keeps such a Node, and the installer's own smoke test proves the staged
+ * tree runs before it swaps the install in.
  */
 export const MIN_REMOTE_NODE_MAJOR = 22;
 

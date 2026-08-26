@@ -22,13 +22,11 @@ import {
   runtimeArtifact,
   sha256Of,
 } from "../src/machines/runtime.js";
-import { packDirectory, unpackTo } from "../src/machines/pack.js";
 import {
   cleanupCommand,
   cmdQuote,
-  extractRuntimeCommand,
   makeScratchCommand,
-  runInstallerCommand,
+  runInstallScriptCommand,
   scpArgs,
   shQuote,
   sshArgs,
@@ -262,35 +260,6 @@ describe("runtime selection", () => {
   });
 });
 
-describe("the image container", () => {
-  it("round-trips a tree, keeping relative paths and the executable bit", () => {
-    const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-pack-"));
-    try {
-      const src = path.join(work, "src");
-      fs.mkdirSync(path.join(src, "penguin", "bin"), { recursive: true });
-      fs.mkdirSync(path.join(src, "penguin", "lib", "web"), { recursive: true });
-      fs.writeFileSync(path.join(src, "penguin", "bin", "penguin"), "#!/bin/sh\n", { mode: 0o755 });
-      fs.writeFileSync(path.join(src, "penguin", "lib", "web", "index.html"), "<html>");
-
-      const dest = path.join(work, "dest");
-      const entries = unpackTo(packDirectory(src), dest);
-
-      expect(entries.map((e) => e.path)).toEqual([
-        "penguin/bin/penguin",
-        "penguin/lib/web/index.html",
-      ]);
-      expect(fs.readFileSync(path.join(dest, "penguin", "lib", "web", "index.html"), "utf8")).toBe(
-        "<html>",
-      );
-      if (process.platform !== "win32") {
-        expect(fs.statSync(path.join(dest, "penguin", "bin", "penguin")).mode & 0o111).not.toBe(0);
-      }
-    } finally {
-      fs.rmSync(work, { recursive: true, force: true });
-    }
-  });
-});
-
 describe("ssh / scp invocations", () => {
   const target = { alias: "build-box", user: "deploy" };
 
@@ -325,28 +294,11 @@ describe("ssh / scp invocations", () => {
     expect(windows).toContain("&"); // cmd chains with &, not ;
   });
 
-  it("unpacks the runtime with tar on both sides — bsdtar reads the Windows zip", () => {
-    expect(extractRuntimeCommand("linux", "/tmp/s/node.tar.gz", "/tmp/s")).toBe(
-      "tar -xf '/tmp/s/node.tar.gz' -C '/tmp/s'",
+  it("runs the ordinary installer against the sibling payload, with no arguments to quote", () => {
+    expect(runInstallScriptCommand("linux", "/tmp/s")).toBe("sh '/tmp/s/install.sh'");
+    expect(runInstallScriptCommand("win32", "C:\\t")).toBe(
+      'powershell -NoProfile -ExecutionPolicy Bypass -File "C:\\t\\install.ps1"',
     );
-    expect(extractRuntimeCommand("win32", "C:\\t\\node.zip", "C:\\t")).toBe(
-      'tar -xf "C:\\t\\node.zip" -C "C:\\t"',
-    );
-  });
-
-  it("starts the installer on the runtime it just unpacked, with no arguments to quote", () => {
-    // The installer reads job.json from its own directory instead of taking parameters.
-    expect(runInstallerCommand("linux", "/tmp/s", "node-v24.18.0-linux-x64")).toBe(
-      "'/tmp/s/node-v24.18.0-linux-x64/bin/node' '/tmp/s/remote-installer.cjs'",
-    );
-    expect(runInstallerCommand("win32", "C:\\t", "node-v24.18.0-win-x64")).toBe(
-      '"C:\\t\\node-v24.18.0-win-x64\\node.exe" "C:\\t\\remote-installer.cjs"',
-    );
-  });
-
-  it("uses the remote's own node when no runtime was sent", () => {
-    expect(runInstallerCommand("linux", "/tmp/s", null)).toBe("node '/tmp/s/remote-installer.cjs'");
-    expect(runInstallerCommand("win32", "C:\\t", null)).toBe('node "C:\\t\\remote-installer.cjs"');
   });
 
   it("cleans up with each platform's own command", () => {
@@ -369,16 +321,18 @@ describe("resolvePayloadImage", () => {
       fs.writeFileSync(path.join(root, "lib", "package.json"), manifest);
       fs.writeFileSync(path.join(root, "node", "bin", "node"), "elf");
       fs.writeFileSync(path.join(root, "bin", "penguin"), "#!/bin/sh\n");
+      fs.writeFileSync(path.join(root, "package-manifest.json"), '{"target":"universal"}\n');
 
       const image = resolvePayloadImage(null, path.join(root, "lib", "dist", "penguin.js"));
       expect(image?.version).toBe("9.9.9");
-      const dest = path.join(work, "unpacked");
-      const entries = unpackTo(image!.pack(), dest).map((entry) => entry.path);
+      const entries = image!.files().map((file) => file.path);
       expect(entries).toContain("penguin/lib/dist/penguin.js");
       expect(entries).toContain("penguin/lib/package.json");
-      // This machine's Node and the old launchers must not ride in a universal image.
+      // This machine's Node, its launchers and its manifest must not ride along: all three
+      // are assembled per remote (its node decides the flags, its platform the target stamp).
       expect(entries.some((p) => p.startsWith("penguin/node/"))).toBe(false);
       expect(entries.some((p) => p.startsWith("penguin/bin/"))).toBe(false);
+      expect(entries).not.toContain("penguin/package-manifest.json");
     } finally {
       fs.rmSync(work, { recursive: true, force: true });
     }
@@ -404,8 +358,7 @@ describe("resolvePayloadImage", () => {
 
       const image = resolvePayloadImage(null, path.join(serverDist, "index.js"));
       expect(image?.version).toBe("9.9.9");
-      const dest = path.join(work, "unpacked");
-      const entries = unpackTo(image!.pack(), dest).map((entry) => entry.path);
+      const entries = image!.files().map((file) => file.path);
       expect(entries).toContain("penguin/lib/dist/penguin.js");
     } finally {
       fs.rmSync(work, { recursive: true, force: true });
@@ -461,8 +414,10 @@ describe("hmrPayloadImage", () => {
       seedStore(work);
       const image = resolvePayloadImage(work, "/repo/packages/server/src/index.ts");
       expect(image?.version).toBe("0.0.0-hmr.cafe01234567.beef01234567");
-      const dest = path.join(work, "unpacked");
-      const entries = unpackTo(image!.pack(), dest).map((entry) => entry.path);
+      const files = image!.files();
+      const entries = files.map((file) => file.path);
+      const content = (at: string): string =>
+        files.find((file) => file.path === at)!.data.toString("utf8");
       // The pushed bundle is a LIBRARY (it exports cli() and does nothing when executed),
       // so the image carries it as cli.mjs and ships a bin shim as the entry.
       expect(entries).toContain("penguin/lib/dist/cli.mjs");
@@ -471,15 +426,12 @@ describe("hmrPayloadImage", () => {
       expect(entries).toContain("penguin/web/index.html");
       // The skill library rides along: the bundle reads it from lib/skills beside itself.
       expect(entries.some((e) => /^penguin\/lib\/skills\/.+\/SKILL\.md$/.test(e))).toBe(true);
-      expect(
-        fs.readFileSync(path.join(dest, "penguin", "lib", "dist", "penguin.js"), "utf8"),
-      ).toContain('import { cli } from "./cli.mjs"');
-      expect(fs.readFileSync(path.join(dest, "penguin", "web", "index.html"), "utf8")).toBe(
-        "<html>",
-      );
-      const manifest = JSON.parse(
-        fs.readFileSync(path.join(dest, "penguin", "lib", "package.json"), "utf8"),
-      ) as { version: string; type?: string };
+      expect(content("penguin/lib/dist/penguin.js")).toContain('import { cli } from "./cli.mjs"');
+      expect(content("penguin/web/index.html")).toBe("<html>");
+      const manifest = JSON.parse(content("penguin/lib/package.json")) as {
+        version: string;
+        type?: string;
+      };
       expect(manifest.version).toBe(image!.version);
       // ESM on both files, and no per-run re-parse of a 10 MB bundle.
       expect(manifest.type).toBe("module");

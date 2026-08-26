@@ -9,12 +9,12 @@
  *
  * Three trees are built to that shape and all three take their launchers from here: the
  * release packages (.github/workflows/release.yml, via scripts/write-launchers.mjs), the
- * install image (packages/desktop/scripts/build-install-image.mjs), and what a push leaves
- * on a remote (remote-installer.cjs beside this file). They used to carry a copy each, and
- * the copies disagreed about where `web/` and `node/` sat.
+ * install image (packages/desktop/scripts/build-install-image.mjs), and the payload a push
+ * assembles (install-server.ts). They used to carry a copy each, and the copies disagreed
+ * about where `web/` and `node/` sat.
  *
- * CommonJS with no dependencies, because remote-installer.cjs requires it on the far side
- * after both files ride scp there.
+ * CommonJS with no dependencies, so the two .mjs build scripts can require() it without a
+ * compile step; launcher.d.cts carries its types for the TypeScript importer.
  *
  * @param nodeFlags flags for the system-node fallback only — a bundled runtime is the pinned
  *   build and needs none. Node 22 and 23 keep `node:sqlite` behind `--experimental-sqlite`.

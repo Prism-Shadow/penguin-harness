@@ -48,7 +48,7 @@ function effects(over: Partial<MachinesEffects> = {}): Partial<MachinesEffects> 
       },
       machine: `deploy@${alias}`,
     }),
-    resolveImage: () => ({ version: "9.9.9", pack: () => Buffer.alloc(0) }),
+    resolveImage: () => ({ version: "9.9.9", files: () => [] }),
     now: () => new Date("2026-08-24T12:00:00.000Z"),
     install: async (opts): Promise<RemoteInstallOutcome> => {
       opts.onProgress?.("Pushing…");
