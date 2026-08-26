@@ -21,9 +21,7 @@ import { ThemeToggle } from "./theme-toggle";
 import { LangToggle } from "./lang-toggle";
 
 const SECTION_IDS = [
-  "cases",
   "highlights",
-  "self-improvement",
   "quickstart",
   "scenarios",
   "benchmark",
@@ -79,9 +77,7 @@ export function Nav({
 
   const sectionLabel: Record<(typeof SECTION_IDS)[number], string> = {
     highlights: S.nav.highlights,
-    "self-improvement": S.nav.selfImprove,
     quickstart: S.nav.quickstart,
-    cases: S.nav.cases,
     scenarios: S.nav.scenarios,
     benchmark: S.nav.benchmark,
     contract: S.nav.contract,

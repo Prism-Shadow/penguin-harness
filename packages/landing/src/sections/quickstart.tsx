@@ -198,11 +198,16 @@ export function Quickstart() {
                 </div>
               </div>
 
-              <CodeCard
-                code={installCommand}
-                label={os === "windows" ? "PowerShell" : "curl | sh"}
-                className="mt-6"
-              />
+              <div className="mt-6">
+                <h4 className="text-sm font-semibold tracking-tight">
+                  {S.quickstart.install.onlineTitle}
+                </h4>
+                <CodeCard
+                  code={installCommand}
+                  label={os === "windows" ? "PowerShell" : "curl | sh"}
+                  className="mt-3"
+                />
+              </div>
 
               <div className="mt-6 rounded-xl bg-gray-50 p-4 dark:bg-gray-950">
                 <h4 className="text-sm font-semibold tracking-tight">

@@ -15,8 +15,13 @@ import type { MouseEvent } from "react";
 import { Link, useLocation } from "react-router";
 import { S } from "../lib/strings";
 import { DOCS_URL, REPO_API_URL, REPO_URL } from "../lib/links";
-import { getActiveNavItem, SECTION_IDS } from "../lib/nav-state";
-import type { ActiveNavItem, SectionId } from "../lib/nav-state";
+import {
+  getActiveNavItem,
+  getNavItemForSection,
+  NAV_SECTION_IDS,
+  OBSERVED_SECTION_IDS,
+} from "../lib/nav-state";
+import type { ActiveNavItem, ObservedSectionId } from "../lib/nav-state";
 import { useScrollSpy } from "../lib/use-scroll-spy";
 import { GitHubIcon, MenuIcon, XIcon } from "./icons";
 import { ThemeToggle } from "./theme-toggle";
@@ -62,16 +67,16 @@ function GitHubStarsLink() {
 export function Nav() {
   const { pathname, hash } = useLocation();
   const onHome = pathname === "/";
-  const spied = useScrollSpy(onHome ? SECTION_IDS : NO_IDS) as SectionId | null;
-  const activeItem: ActiveNavItem = onHome ? spied : getActiveNavItem(pathname, hash);
+  const spied = useScrollSpy(onHome ? OBSERVED_SECTION_IDS : NO_IDS) as ObservedSectionId | null;
+  const activeItem: ActiveNavItem = onHome
+    ? getNavItemForSection(spied)
+    : getActiveNavItem(pathname, hash);
   const [open, setOpen] = useState(false);
   const pillRef = useRef<HTMLSpanElement | null>(null);
   const pillVisible = useRef(false);
 
-  const sectionLabel: Record<(typeof SECTION_IDS)[number], string> = {
-    cases: S.nav.cases,
+  const sectionLabel: Record<(typeof NAV_SECTION_IDS)[number], string> = {
     highlights: S.nav.highlights,
-    "self-improvement": S.nav.selfImprove,
     quickstart: S.nav.quickstart,
     scenarios: S.nav.scenarios,
     benchmark: S.nav.benchmark,
@@ -121,7 +126,7 @@ export function Nav() {
 
   const desktopLinks = (
     <>
-      {SECTION_IDS.map((id) => {
+      {NAV_SECTION_IDS.map((id) => {
         const active = activeItem === id;
         return (
           <Link
@@ -160,7 +165,7 @@ export function Nav() {
 
   const mobileLinks = (
     <>
-      {SECTION_IDS.map((id) => {
+      {NAV_SECTION_IDS.map((id) => {
         const active = activeItem === id;
         return (
           <Link

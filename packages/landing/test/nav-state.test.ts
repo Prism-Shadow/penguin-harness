@@ -4,8 +4,12 @@ import { getActiveNavItem } from "../src/lib/nav-state";
 describe("landing navigation active state", () => {
   it("tracks known section hashes on the home page", () => {
     expect(getActiveNavItem("/", "#features")).toBe("features");
-    expect(getActiveNavItem("/", "#self-improvement")).toBe("self-improvement");
+    expect(getActiveNavItem("/", "#self-improvement")).toBe("highlights");
     expect(getActiveNavItem("/", "#quickstart")).toBe("quickstart");
+  });
+
+  it("leaves the case section out of the reduced navigation", () => {
+    expect(getActiveNavItem("/", "#cases")).toBeNull();
   });
 
   it("tracks the Blog route and blog posts", () => {

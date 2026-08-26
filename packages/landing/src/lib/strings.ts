@@ -262,6 +262,7 @@ export const zh = {
       title: "一行命令安装 PenguinHarness",
       desc: "适合开发机、服务器和私有化环境。安装包自带运行时，不依赖系统里的 Node.js。",
       osLabel: "选择操作系统",
+      onlineTitle: "在线安装",
       offlineTitle: "离线安装包",
       offlineDesc: "在有网机器下载目标系统的安装包，再拷贝到离线机器完成安装。",
       offlineCommand: "展开离线安装命令",
@@ -307,17 +308,17 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
   scenarios: {
     eyebrow: "应用场景",
     title: "从体检中心到工厂车间",
-    subtitle: "都是已经上线的真实部署，不是概念演示。",
+    subtitle: "企业使用 PenguinHarness 自动开发 Agent，并部署到生产环境的真实案例。",
     items: [
       {
         title: "体检报告质控",
         alt: "体检中心的 CT 检查室",
-        body: "一家体检机构把报告质控交给了 Agent，跑在本地部署的 Qwen3 14B 上，数据不出机房。过去一轮人工复核要 30 分钟，现在一分钟自动过 30 份，核查结论与医学专家基本一致，审核产能提升数倍。",
+        body: "一家体检机构使用 PenguinHarness 自动开发了报告质控 Agent，并将它部署到院内生产环境，接入本地 Qwen3 14B，数据不出机房。过去一轮人工复核要 30 分钟，现在每分钟自动核查 30 份报告，结论与医学专家基本一致，审核产能提升数倍。",
       },
       {
         title: "产线设备巡检",
         alt: "自动化半导体生产线",
-        body: "一家制造企业在各条流水线上部署巡检 Agent，全天候盯着设备状态，异常时先尝试自动恢复。停机时间减少 65%，产出提升约 2 倍。",
+        body: "一家制造企业使用 PenguinHarness 自动开发了产线巡检 Agent，并将它部署到多条流水线的生产环境。Agent 全天候监测设备状态，发现异常后优先尝试自动恢复；上线后停机时间减少 65%，产出提升约 2 倍。",
       },
     ],
   },

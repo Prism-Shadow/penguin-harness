@@ -269,6 +269,7 @@ export const en: Strings = {
       title: "Install PenguinHarness with one command",
       desc: "Made for developer machines, servers, and private environments. The bundle includes its runtime and does not depend on system Node.js.",
       osLabel: "Choose an operating system",
+      onlineTitle: "Online install",
       offlineTitle: "Offline packages",
       offlineDesc:
         "Download the package for the target system on a connected machine, then copy it to the offline machine to install.",
@@ -324,17 +325,18 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
   scenarios: {
     eyebrow: "Scenarios",
     title: "From screening centers to factory floors",
-    subtitle: "Real deployments in production — not concept demos.",
+    subtitle:
+      "Production stories of teams using PenguinHarness to build agents automatically and deploy them to production.",
     items: [
       {
         title: "Screening-report QC",
         alt: "A CT scanner room at a health screening center",
-        body: "A health-screening group handed report QC to an agent on a locally deployed Qwen3 14B — data never leaves the facility. A review round that took 30 minutes by hand now clears 30 reports a minute, with findings in line with medical experts and several times the review capacity.",
+        body: "A health-screening group used PenguinHarness to automatically build a report-QC agent and deploy it into its production environment on a local Qwen3 14B, so data never leaves the facility. A review round that took 30 minutes by hand now clears 30 reports a minute, with findings in line with medical experts and several times the review capacity.",
       },
       {
         title: "Production-line inspection",
         alt: "An automated semiconductor production line",
-        body: "A manufacturer runs inspection agents across its production lines, watching equipment around the clock and trying automated recovery first when something goes wrong. Downtime is down 65%; output roughly doubled.",
+        body: "A manufacturer used PenguinHarness to automatically build a production-line inspection agent and deploy it across multiple live lines. The agent watches equipment around the clock and tries automated recovery first when something goes wrong; after deployment, downtime fell 65% and output roughly doubled.",
       },
     ],
   },
