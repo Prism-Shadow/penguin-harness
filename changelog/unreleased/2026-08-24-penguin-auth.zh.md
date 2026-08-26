@@ -42,4 +42,6 @@ CLI 会话记在 `<root>/cli-session.json`（0600，防 symlink 写）；`logout
 
 v0.2.0 的 `web.db` 里的会话会保留：`auth_sessions` 表在下次启动时补上 `via` 列，已有行按普通密码会话处理，因此从正式版升级不会让任何人掉线。（中间那个未发布版本——临时的签名令牌方案——签发的会话根本不是行，会直接失效。）
 
+会话 Cookie 的 `Secure` 标记现在需要部署方显式开启：此前 `x-forwarded-proto` 被无条件信任，任何能连到明文 HTTP 端口的人都能骗出一个浏览器随后拒绝回传的 `Secure` Cookie。经反向代理提供 HTTPS 的部署需设置 `PENGUIN_TRUST_PROXY=1`（并继续转发 `x-forwarded-proto`）以保持会话 Cookie 带 `Secure`；不设置则签发的 Cookie 不带该标记。
+
 `penguin server auth-token` 现为 `penguin auth token`；`GET /api/auth/desktop-login` 现为 `GET /api/auth/claim`。

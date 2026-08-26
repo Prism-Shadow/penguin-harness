@@ -190,6 +190,44 @@ describe("the first-login link", () => {
   });
 
   /**
+   * The claim ends with its own sign-in (routes/me.ts hands the claimer a replacement
+   * session), and that sign-in must not be blockable from outside: anyone who can reach the
+   * port can spam POST /api/auth/login with wrong guesses and hold the per-user backoff
+   * window open. A successful password set resets the counter — it proves at least what the
+   * successful login that already resets it proves — so the claimer lands signed in instead
+   * of 429ing AFTER the password committed, with the setup session already deleted.
+   */
+  it("signs the claimer in even while a guessing spree has the login throttled", async () => {
+    const nowMs = Date.now();
+    const clocked = await createTestApp({ now: () => new Date(nowMs) });
+    try {
+      const clockedLink = clocked.deps.authService.mintFirstLogin()!;
+      const guess = () =>
+        clocked.app.request("/api/auth/login", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ userId: "admin", password: "not-the-password" }),
+        });
+      // Six wrong guesses arm the backoff; the frozen clock keeps its window open.
+      for (let i = 0; i < 6; i++) expect((await guess()).status).toBe(401);
+      expect((await guess()).status).toBe(429);
+
+      const res = await clocked.app.request(
+        `/api/auth/claim?token=${encodeURIComponent(clockedLink)}`,
+        { redirect: "manual" },
+      );
+      const set = await apiClient(clocked.app, cookieFrom(res)).put("/api/me/password", {
+        newPassword: "claimed-password-1",
+      });
+      expect(set.status).toBe(204);
+      // The replacement session works: the claim was not spent on somebody else's 429.
+      expect((await apiClient(clocked.app, cookieFrom(set)).get("/api/me")).status).toBe(200);
+    } finally {
+      await clocked.cleanup();
+    }
+  });
+
+  /**
    * An unclaimed server outliving the session TTL (30 days without anyone setting a
    * password) must not keep handing out the same dead link: the cached token no longer
    * authenticates, so minting re-rolls it.

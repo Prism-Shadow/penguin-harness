@@ -44,19 +44,37 @@ const DEFAULT_USER = "admin";
 export const TOKEN_MARK = "---penguin-auth-token---";
 
 /**
- * What the server said about a refusal, as one line. The API's own error body is quoted in
- * full; anything else (a proxy's HTML page) is collapsed and bounded with the cut MARKED, so a
- * fragment is never presented as the whole message.
+ * One line for the terminal out of text the TARGET SERVER chose: whitespace collapsed, C0
+ * controls and DEL made visible in caret form, C1 controls dropped. `--server` takes any URL,
+ * so this text is as untrusted as a web page — printed raw, an ESC would let that server run
+ * terminal escape sequences (retitle the window, write the clipboard via OSC 52) on the
+ * machine signing in.
  */
-function serverSaid(text: string): string {
+function neutralLine(raw: string): string {
+  return raw
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[\u0000-\u001f\u007f-\u009f]/g, (ch) => {
+      const code = ch.charCodeAt(0);
+      if (code <= 0x1f) return `^${String.fromCharCode(code + 64)}`;
+      return code === 0x7f ? "^?" : "";
+    });
+}
+
+/**
+ * What the server said about a refusal, as one line (neutralized — see {@link neutralLine}).
+ * The API's own error body is quoted in full; anything else (a proxy's HTML page) is bounded
+ * with the cut MARKED, so a fragment is never presented as the whole message.
+ */
+export function serverSaid(text: string): string {
   try {
     const body: unknown = JSON.parse(text);
     const message = (body as { error?: { message?: unknown } })?.error?.message;
-    if (typeof message === "string") return message;
+    if (typeof message === "string") return neutralLine(message);
   } catch {
     // Not the API's shape; fall through to the bounded raw form.
   }
-  const line = text.replace(/\s+/g, " ").trim();
+  const line = neutralLine(text);
   if (line === "") return "(no message)";
   return line.length <= 500 ? line : `${line.slice(0, 500)}… (truncated)`;
 }

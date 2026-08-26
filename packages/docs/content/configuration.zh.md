@@ -17,6 +17,7 @@ CLI 与服务端启动时会自动加载工作目录下的 `.env` 文件。
 | `PENGUIN_WEB_DB` | 服务端 SQLite 数据库路径 | `<root>/web.db` |
 | `PENGUIN_WEB_DIST` | 前端静态资源目录 | npm 安装的服务端包回退到内置 web-dist |
 | `PENGUIN_PREVIEW_ORIGIN` | 提供 Workspace HTML 预览的独立源，如 `https://preview.example.com` | 未设置，按请求推导回环对应名 |
+| `PENGUIN_TRUST_PROXY` | 设为 `1` 信任 `x-forwarded-proto` 请求头——在终结 TLS 的反向代理（且由代理自行设置/清除该头）之后设置，使会话 Cookie 带 `Secure` 标记、热更新网络门禁识别 HTTPS | 未设置，忽略该请求头 |
 | `PENGUIN_SEED_ADMIN_PASSWORD` | 固定内置管理员的种子初始密码（自动化测试 / e2e 使用） | 未设置，种子时随机生成一个密码，哈希后即丢弃、无人见过；账号通过首次登录链接认领 |
 | `PENGUIN_LANG` | CLI 语言（`en` / `zh`），用 `penguin config lang` 设置 | `en` |
 | `PENGUIN_UPDATE_CHECK` | 设为 `off` 关闭 Web 应用的新版本检查（服务端唯一的对外网络请求） | 开启 |

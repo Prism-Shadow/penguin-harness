@@ -21,7 +21,7 @@ The full route tables and the SSE protocol are documented in the [Server API ref
 | `PENGUIN_HOME` | Data root (shared with SDK/CLI) | `~/.penguin/data` |
 | `PENGUIN_WEB_DB` | SQLite file path | `<root>/web.db` |
 | `PENGUIN_WEB_DIST` | Front-end build dir (static hosting + SPA fallback when present) | `../web/dist`, or the bundled `web-dist/` in the npm package |
-| `PENGUIN_TRUST_PROXY` | Trust `x-forwarded-proto` for the hot-update network gate (`1` to enable) — only behind a reverse proxy that sets/strips the header itself | unset (untrusted) |
+| `PENGUIN_TRUST_PROXY` | Trust `x-forwarded-proto` (`1` to enable): it opens the hot-update network gate over proxied HTTPS and marks session cookies `Secure` — only behind a reverse proxy that sets/strips the header itself | unset (untrusted) |
 
 `.env` in the process cwd is loaded automatically.
 
@@ -43,6 +43,6 @@ pnpm --filter @prismshadow/penguin-server start   # node dist/index.js
 - Passwords use `node:crypto` scrypt (`scrypt$N$r$p$salt$hash`, timingSafeEqual). A session is a row in `auth_sessions` (the cookie holds a random token, the row its sha256); it survives a restart, renews the expiry in place, and logout deletes the row. Sessions run 30 days with sliding renewal.
 - Model credentials live in the Project's hidden 0600 config file; the API always masks them.
 - **Terminals are a shell as the OS account running the server**, i.e. the most privileged thing the API hands out — they are not Project-scoped. A terminal is only visible to the account that created it (someone else's id answers 404, not 403), and the stream WebSocket checks `Origin` on top of the session cookie because a WebSocket handshake is not subject to CORS. Do not expose a deployment with terminals enabled to accounts you would not give SSH.
-- Behind a reverse proxy, disable response buffering for SSE paths (the server already sends `X-Accel-Buffering: no`) and forward `x-forwarded-proto` to enable Secure cookies.
+- Behind a reverse proxy, disable response buffering for SSE paths (the server already sends `X-Accel-Buffering: no`), and set `PENGUIN_TRUST_PROXY=1` with `x-forwarded-proto` forwarded so session cookies are marked `Secure` — the header alone is not trusted, so without the opt-in an HTTPS deployment issues its cookies without the flag.
 
 Part of [PenguinHarness](https://github.com/Prism-Shadow/penguin-harness) · Apache-2.0

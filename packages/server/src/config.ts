@@ -71,8 +71,11 @@ export interface ServerConfig {
    * Trust `x-forwarded-proto` from the request (PENGUIN_TRUST_PROXY=1). Off by default:
    * the header is caller-supplied, so on a non-loopback bind an untrusted caller could
    * set it to `https` to walk through the hot-update network gate (hmr/routes.ts) while
-   * actually speaking plaintext. Enable this only behind a reverse proxy that terminates
-   * TLS and either sets or strips the header itself before it reaches this process.
+   * actually speaking plaintext — or get session cookies stamped `Secure` over plain HTTP,
+   * which the browser then never sends back (a sign-in that never takes). Enable this only
+   * behind a reverse proxy that terminates TLS and either sets or strips the header itself
+   * before it reaches this process; an HTTPS deployment that leaves it off issues session
+   * cookies WITHOUT the `Secure` flag (auth/middleware.ts cookieOptions).
    */
   trustProxy: boolean;
 }

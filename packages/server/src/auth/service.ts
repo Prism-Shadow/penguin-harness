@@ -249,6 +249,12 @@ export class AuthService {
       throw new HttpError(400, "invalid_password", "Password must be at least 8 characters.");
     }
     this.deps.users.updatePassword(userId, await hashPassword(newPassword, this.hashCost), false);
+    // A successful set proves at least what the successful login that resets the counter
+    // proves (the old password, or a desktop/setup session), so it resets it too. Without
+    // this, anyone spamming the login endpoint holds the backoff window open, and the sign-in
+    // that follows a first-login claim (routes/me.ts) would 429 AFTER the password committed —
+    // reporting failure for a change that took, with the claimer's setup session already gone.
+    this.loginFailures.delete(userId);
     // EVERY first-login session for this account, not just the link this process printed: an
     // earlier boot's link can still be live in a terminal scrollback, and a `setup` session is
     // allowed to change the password without knowing the old one — so one left behind is an

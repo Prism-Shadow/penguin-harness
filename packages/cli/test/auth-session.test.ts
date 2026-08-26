@@ -10,6 +10,8 @@
  * - The stored token's file mode. It is a credential; 0600 has to survive an overwrite, where
  *   the `mode` write option silently does not apply.
  * - Picking the session cookie out of Set-Cookie, which arrives beside others.
+ * - What a refusal prints (commands/auth.ts serverSaid): the text is the target server's, so
+ *   it is neutralized before it reaches this terminal.
  */
 import fs from "node:fs";
 import http from "node:http";
@@ -24,6 +26,34 @@ import {
   tokenFromSetCookie,
   writeSession,
 } from "../src/auth-session.js";
+import { serverSaid } from "../src/commands/auth.js";
+
+describe("serverSaid", () => {
+  it("quotes the API's own error message", () => {
+    expect(
+      serverSaid(JSON.stringify({ error: { message: "Incorrect username or password." } })),
+    ).toBe("Incorrect username or password.");
+  });
+
+  it("neutralizes terminal control sequences a hostile server embeds", () => {
+    // ESC ] 0 ; … BEL — an OSC window-title write. `--server` accepts any URL, so this text
+    // is attacker-chosen; the ESC must not reach the terminal from either the JSON path or
+    // the raw one.
+    const osc = "\u001b]0;owned\u0007done";
+    expect(serverSaid(JSON.stringify({ error: { message: osc } }))).toBe("^[]0;owned^Gdone");
+    expect(serverSaid(`<html>${osc}</html>`)).toBe("<html>^[]0;owned^Gdone</html>");
+    // A C1 control (0x9b is a one-byte CSI) is dropped outright.
+    expect(serverSaid(JSON.stringify({ error: { message: "a\u009b31mb" } }))).toBe("a31mb");
+  });
+
+  it("collapses and bounds a non-API body, marking the cut", () => {
+    expect(serverSaid(" a \n\n b ")).toBe("a b");
+    expect(serverSaid("")).toBe("(no message)");
+    const out = serverSaid("x".repeat(600));
+    expect(out.endsWith("… (truncated)")).toBe(true);
+    expect(out.length).toBeLessThan(600);
+  });
+});
 
 describe("tokenFromSetCookie", () => {
   it("takes the session cookie and not its neighbours", () => {

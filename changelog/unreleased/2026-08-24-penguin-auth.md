@@ -75,5 +75,11 @@ next start and existing rows read as ordinary password sessions, so an upgrade f
 does not sign anyone out. (Sessions issued by an unreleased build in between — the interim
 signed-token scheme — are not rows at all and simply stop working.)
 
+The `Secure` flag on session cookies now requires the deployment's opt-in: `x-forwarded-proto`
+used to be believed unconditionally, which let anyone reaching a plain-HTTP port force a
+`Secure` cookie the browser then never sends back over that connection. An HTTPS deployment
+behind a reverse proxy sets `PENGUIN_TRUST_PROXY=1` (and keeps forwarding `x-forwarded-proto`)
+to keep its session cookies `Secure`; left unset, they are issued without the flag.
+
 `penguin server auth-token` is now `penguin auth token`; `GET /api/auth/desktop-login` is now
 `GET /api/auth/claim`.
