@@ -240,12 +240,13 @@ describe("follow-up queue route", () => {
   it("one queued follow-up starts exactly one task, whether the run completes or is aborted", async () => {
     // The whole point of the queue: a message posted while a Task runs is delivered once.
     // drive's finally is the only drain trigger and it shifts under the session lock, so a
-    // run's end can never launch the same queued input twice — pin that, for both ways a
-    // run can end (a queued follow-up deliberately survives an abort of the run under way).
+    // run's end can never launch the same queued input twice — pin that for both ways a run
+    // can end, each with something actually queued behind it (a queued follow-up
+    // deliberately survives an abort of the run under way).
     await api.post(`/api/sessions/${SID}/tasks`, { input: [{ type: "text", text: "task 1" }] });
     await waitFor(() => t.deps.manager.pendingApprovalCount(SID) === 1);
     await api.post(`/api/sessions/${SID}/tasks`, {
-      input: [{ type: "text", text: "exactly once" }],
+      input: [{ type: "text", text: "after a finish" }],
       queueIfBusy: true,
     });
     expect(t.deps.manager.pendingFollowUpCount(SID)).toBe(1);
@@ -255,13 +256,26 @@ describe("follow-up queue route", () => {
     await waitFor(() => runs.length === 2);
     expect(t.deps.manager.pendingFollowUpCount(SID)).toBe(0);
 
-    // Abort run 2 rather than completing it — the other exit from drive's finally, and the
-    // one that re-broadcasts idle with an empty queue. Nothing may start a third run.
+    // Queue behind run 2, then abort it rather than letting it finish — the other exit from
+    // drive's finally, this time with a queue to drain. The abort discards the run under
+    // way, never the tasks queued behind it, so exactly one third run starts.
+    await waitFor(() => t.deps.manager.pendingApprovalCount(SID) === 1);
+    await api.post(`/api/sessions/${SID}/tasks`, {
+      input: [{ type: "text", text: "after an abort" }],
+      queueIfBusy: true,
+    });
+    expect(t.deps.manager.pendingFollowUpCount(SID)).toBe(1);
     await api.post(`/api/sessions/${SID}/abort`, {});
-    await waitFor(() => t.deps.manager.statusOf(SID) === "idle");
+    await waitFor(() => runs.length === 3);
+    // Settle window: a second launch rides the same lock chain and would land well inside it.
     await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(runs).toEqual([["task 1"], ["exactly once"]]);
+    expect(runs).toEqual([["task 1"], ["after a finish"], ["after an abort"]]);
     expect(t.deps.manager.pendingFollowUpCount(SID)).toBe(0);
+
+    // Settle the last run so teardown does not race it.
+    await waitFor(() => t.deps.manager.pendingApprovalCount(SID) === 1);
+    t.deps.manager.decideApproval(SID, "tc-fu", "allow");
+    await waitFor(() => t.deps.manager.statusOf(SID) === "idle");
   });
 
   it("recall (#287) works on a follow-up queued straight through the manager (the messaging bridge's path)", async () => {

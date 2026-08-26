@@ -427,10 +427,11 @@ function followUpInfo(f: QueuedFollowUp): PendingFollowUpInfo {
 }
 
 /**
- * The recall store of a queued input whose caller supplied none (the messaging bridge, the
- * SDK): everything recallable is already in the input itself — the user's text and the
- * inline image URLs. `files` is empty because only the HTTP route writes file attachments
- * to the Session scratchpad, and only it knows the paths they landed on.
+ * The recall store of a queued input whose caller supplied none (the messaging bridge's
+ * inbound path): everything recallable is already in the input itself — the user's text and
+ * the inline image URLs, the only two shapes a task input is ever built from. `files` is
+ * empty because only the HTTP route writes file attachments to the Session scratchpad, and
+ * only it knows the paths they landed on.
  */
 function recallStoreOf(input: OmniMessage[]): RecallStore {
   const text = input
