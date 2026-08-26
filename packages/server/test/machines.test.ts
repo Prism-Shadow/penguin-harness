@@ -118,10 +118,10 @@ describe("identity probe", () => {
     // POSIX: `;` chains, $VAR expands, `cat` reads. Windows cmd: `&` chains, %VAR% expands,
     // `type` reads. One command cannot do both, which is why there are two.
     expect(POSIX_PROBE).toContain("uname -s -m");
-    expect(POSIX_PROBE).toContain("${XDG_DATA_HOME:-$HOME/.local/share}");
+    expect(POSIX_PROBE).toContain('"$HOME/.penguin/lib/package.json"');
     expect(POSIX_PROBE).toContain(".penguin/data/hmr/harness.json");
     expect(WINDOWS_PROBE).toContain("%PROCESSOR_ARCHITECTURE%");
-    expect(WINDOWS_PROBE).toContain("%LOCALAPPDATA%");
+    expect(WINDOWS_PROBE).toContain("%USERPROFILE%\\.penguin\\lib\\package.json");
     expect(WINDOWS_PROBE).toContain("%USERPROFILE%\\.penguin\\data\\hmr\\harness.json");
     expect(WINDOWS_PROBE).not.toContain(";");
   });

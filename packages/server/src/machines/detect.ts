@@ -15,16 +15,16 @@
 const SECTION = "---penguin---";
 
 /**
- * POSIX probe. `uname -s -m` names the machine; the manifest is read from the XDG program
- * directory, the same location the installer writes; harness.json from the default data
- * root (core's resolveRoot: `~/.penguin/data`) — a remote's PENGUIN_HOME override is not
- * visible over a non-interactive ssh, and the default is where an install this page made
- * would run.
+ * POSIX probe. `uname -s -m` names the machine; the manifest is read from the program
+ * directory the installer writes (`~/.penguin`), and harness.json from the default data root
+ * (core's resolveRoot: `~/.penguin/data`) — a remote's PENGUIN_INSTALL_DIR or PENGUIN_HOME
+ * override is not visible over a non-interactive ssh, and the defaults are where an install
+ * this page made would land.
  */
 export const POSIX_PROBE = [
   "uname -s -m",
   `echo ${SECTION}`,
-  `cat "\${XDG_DATA_HOME:-$HOME/.local/share}"/penguin/lib/package.json 2>/dev/null || true`,
+  'cat "$HOME/.penguin/lib/package.json" 2>/dev/null || true',
   `echo ${SECTION}`,
   'cat "$HOME/.penguin/data/hmr/harness.json" 2>/dev/null || true',
 ].join("; ");
@@ -37,7 +37,7 @@ export const POSIX_PROBE = [
 export const WINDOWS_PROBE = [
   "echo %OS% %PROCESSOR_ARCHITECTURE%",
   `echo ${SECTION}`,
-  'type "%LOCALAPPDATA%\\penguin\\lib\\package.json" 2>nul',
+  'type "%USERPROFILE%\\.penguin\\lib\\package.json" 2>nul',
   `echo ${SECTION}`,
   'type "%USERPROFILE%\\.penguin\\data\\hmr\\harness.json" 2>nul',
 ].join("&");
