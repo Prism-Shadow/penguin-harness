@@ -47,14 +47,24 @@ describe("the session file", () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  it("stays 0600 even when it is overwritten", () => {
+  it("replaces the previous session when it is written again", () => {
+    writeSession(root, { server: "http://localhost:1", userId: "admin", token: "t1" });
+    writeSession(root, { server: "http://localhost:1", userId: "admin", token: "t2" });
+    expect(readSession(root)?.token).toBe("t2");
+  });
+
+  /**
+   * Windows has no POSIX mode bits — chmod there only toggles the read-only attribute and
+   * stat reports 0o666 whatever was asked for — so the permission this guards can only be
+   * checked where it exists. The write itself is platform-neutral (the case above).
+   */
+  it.skipIf(process.platform === "win32")("stays 0600 even when it is overwritten", () => {
     writeSession(root, { server: "http://localhost:1", userId: "admin", token: "t1" });
     fs.chmodSync(path.join(root, "cli-session.json"), 0o644); // As a careless editor might.
     writeSession(root, { server: "http://localhost:1", userId: "admin", token: "t2" });
-    // The write option only applies at creation, so without the explicit chmod this is 644 —
-    // a token readable by everyone on the machine.
+    // A create-time mode does not apply to an existing file, so without the write's own
+    // unlink-and-recreate this stays 644 — a token readable by everyone on the machine.
     expect(fs.statSync(path.join(root, "cli-session.json")).mode & 0o777).toBe(0o600);
-    expect(readSession(root)?.token).toBe("t2");
   });
 
   it("refuses to write the token through a symlink parked at its path", () => {
