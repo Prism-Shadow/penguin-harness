@@ -6,6 +6,7 @@ export const en: Strings = {
 
   nav: {
     highlights: "Highlights",
+    selfImprove: "Self-evolution",
     quickstart: "Quick start",
     cases: "Cases",
     scenarios: "Scenarios",

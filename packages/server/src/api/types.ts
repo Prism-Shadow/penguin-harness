@@ -639,6 +639,65 @@ export interface DefaultModelResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Provider key-minting flows (/api/projects/:p/model-oauth, owner)
+// ---------------------------------------------------------------------------
+
+/**
+ * How the authorization code travels back. `callback` sends the browser to a harness URL
+ * the provider redirects to; `manual` asks the provider for a one-time code the user copies
+ * back by hand, for the case where that redirect cannot reach the harness.
+ */
+export type ModelOAuthMode = "callback" | "manual";
+
+/**
+ * POST /api/projects/:p/model-oauth/start (owner): opens a flow for one provider group.
+ * The group must declare an authorization flow in the built-in catalog — the endpoints it
+ * uses come from there, never from this request.
+ */
+export interface ModelOAuthStartRequest {
+  /** Provider group id (must be a catalog group that publishes a key-minting flow). */
+  provider: string;
+  /** Defaults to `callback`. */
+  mode?: ModelOAuthMode;
+}
+
+/** The opaque flow handle plus the page to send the user to. No secret of the flow's is included. */
+export interface ModelOAuthStartResponse {
+  flowId: string;
+  authorizeUrl: string;
+}
+
+/** Why a flow failed, as a code the frontend phrases; never carries a code, a verifier or a key. */
+export type ModelOAuthErrorCode =
+  "invalid_request" | "code_rejected" | "upstream_failed" | "unreachable" | "apply_failed";
+
+/**
+ * GET /api/projects/:p/model-oauth/:flowId (owner): where a flow stands. Unknown, expired,
+ * and other users' flows are all 404 alike.
+ */
+export interface ModelOAuthStatusResponse {
+  status: "pending" | "done" | "error";
+  /** The provider group the flow mints a key for. */
+  provider: string;
+  error?: ModelOAuthErrorCode;
+}
+
+/**
+ * POST /api/projects/:p/model-oauth/:flowId/code (owner): redeems a code the user pasted,
+ * the manual counterpart of the redirect callback. A flow is single-use either way.
+ */
+export interface ModelOAuthCodeRequest {
+  code: string;
+}
+
+/** Redemption outcome; `applied` counts the models the minted key was written to. */
+export interface ModelOAuthCodeResponse {
+  ok: boolean;
+  applied?: number;
+  error?: ModelOAuthErrorCode;
+}
+
+// ---------------------------------------------------------------------------
 // New-chat defaults (the `[default_chat]` block of .project_config.toml)
 // ---------------------------------------------------------------------------
 

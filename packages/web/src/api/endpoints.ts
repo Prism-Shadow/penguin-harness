@@ -51,6 +51,10 @@ import type {
   MemoryOverviewResponse,
   MemoryScopeExport,
   MessagesResponse,
+  ModelOAuthCodeResponse,
+  ModelOAuthStartRequest,
+  ModelOAuthStartResponse,
+  ModelOAuthStatusResponse,
   ModelProtocolDetectRequest,
   ModelProtocolDetectResponse,
   ModelsResponse,
@@ -252,6 +256,32 @@ export const detectVision = (projectId: string, body: ModelVisionDetectRequest) 
   apiFetch<ModelVisionDetectResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/models/detect-vision`,
     { method: "POST", body },
+  );
+
+// Provider key minting (owner) ----------------------------------------------------------
+
+/**
+ * Opens an authorization flow for a provider group that publishes one, and returns the page
+ * to send the user to. The PKCE verifier and the key it eventually mints stay on the server;
+ * this side only ever holds the flow id.
+ */
+export const startModelOAuth = (projectId: string, body: ModelOAuthStartRequest) =>
+  apiFetch<ModelOAuthStartResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/model-oauth/start`,
+    { method: "POST", body },
+  );
+
+/** Where a flow stands; 404 once it has expired. */
+export const getModelOAuthStatus = (projectId: string, flowId: string) =>
+  apiFetch<ModelOAuthStatusResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/model-oauth/${encodeURIComponent(flowId)}`,
+  );
+
+/** Redeems a code the user pasted, for when the provider's redirect cannot reach the harness. */
+export const submitModelOAuthCode = (projectId: string, flowId: string, code: string) =>
+  apiFetch<ModelOAuthCodeResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/model-oauth/${encodeURIComponent(flowId)}/code`,
+    { method: "POST", body: { code } },
   );
 
 // Vault environment variables (Agent-level) -------------------------------------------------------

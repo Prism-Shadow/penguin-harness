@@ -207,6 +207,14 @@ export class CommandSessionManager {
       // first (see STRIPPED_ENV_KEYS) and has the proxyEnv policy applied (strip or
       // inject); the vault still wins over the host env — over an injected proxy too — so
       // a user who genuinely wants PORT, or their own proxy, in commands can set it there.
+      //
+      // The strip governs inheritance only: it runs inside hostEnvForChild and never
+      // re-applies to entries spread in after it, so the vault and controlEnv carry
+      // authoritative values into the child — stripped names, PENGUIN_* included, and all.
+      // Both guarantees hold because of that order: no PENGUIN_* reaches a command by
+      // inheritance, while the control variables the host does sanction arrive as injected
+      // values rather than as surviving copies. Pinned by the "an explicit injection
+      // layered after the strip wins" test.
       env: {
         ...hostEnvForChild(this.proxyEnv?.() ?? null),
         ...this.vault,

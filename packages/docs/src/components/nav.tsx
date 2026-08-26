@@ -11,11 +11,11 @@
  * (packages/landing/src/components/nav.tsx — the two sites share no package, as with
  * site-prefs.ts); keep the two files aligned so the navbars render identically.
  */
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { MouseEvent, RefObject } from "react";
 import { Link } from "react-router";
 import { S } from "../lib/strings";
-import { REPO_URL, SITE_URL } from "../lib/links";
+import { REPO_API_URL, REPO_URL, SITE_URL } from "../lib/links";
 import { GitHubIcon, MenuIcon, XIcon } from "./icons";
 import { ThemeToggle } from "./theme-toggle";
 import { LangToggle } from "./lang-toggle";
@@ -23,12 +23,45 @@ import { LangToggle } from "./lang-toggle";
 const SECTION_IDS = [
   "highlights",
   "quickstart",
-  "cases",
   "scenarios",
   "benchmark",
   "contract",
   "features",
 ] as const;
+
+function GitHubStarsLink() {
+  const [stars, setStars] = useState<number | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch(REPO_API_URL, {
+      signal: controller.signal,
+      headers: { Accept: "application/vnd.github+json" },
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { stargazers_count?: unknown } | null) => {
+        if (typeof data?.stargazers_count === "number") setStars(data.stargazers_count);
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, []);
+
+  const count = stars?.toLocaleString("en-US");
+  const label = count ? `${S.nav.github} · ${count} stars` : S.nav.github;
+  return (
+    <a
+      href={REPO_URL}
+      target="_blank"
+      rel="noreferrer"
+      title={label}
+      aria-label={label}
+      className="inline-flex h-9 min-w-9 items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 hover:text-gray-950 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white"
+    >
+      <GitHubIcon className="h-[18px] w-[18px]" />
+      <span className="min-w-8 tabular-nums">{count ?? "-"}</span>
+    </a>
+  );
+}
 
 export function Nav({
   menuOpen,
@@ -45,7 +78,6 @@ export function Nav({
   const sectionLabel: Record<(typeof SECTION_IDS)[number], string> = {
     highlights: S.nav.highlights,
     quickstart: S.nav.quickstart,
-    cases: S.nav.cases,
     scenarios: S.nav.scenarios,
     benchmark: S.nav.benchmark,
     contract: S.nav.contract,
@@ -58,7 +90,7 @@ export function Nav({
   const deskInactiveLinkCls = `${inactiveLinkCls} hover:text-gray-900 dark:hover:text-gray-100`;
   // Same class recipe as the landing nav's desktop links; here only "Docs" is ever active.
   const deskLinkCls = (active: boolean) =>
-    `relative z-10 rounded-md px-2.5 py-1.5 text-sm transition-colors ${active ? activeLinkCls : deskInactiveLinkCls}`;
+    `relative z-10 shrink-0 whitespace-nowrap rounded-md px-2 py-1.5 text-[13px] transition-colors ${active ? activeLinkCls : deskInactiveLinkCls}`;
 
   /**
    * The hover pill appears IN PLACE under the first link it lands on (position
@@ -117,9 +149,11 @@ export function Nav({
   return (
     <header className="sticky top-0 z-40 border-b border-gray-200 bg-white/85 backdrop-blur dark:border-gray-800 dark:bg-gray-950/85">
       <div className="mx-auto flex h-14 max-w-7xl items-center gap-2 px-4 sm:px-6">
-        <a href={SITE_URL} className="flex items-center gap-2">
+        <a href={SITE_URL} className="flex shrink-0 items-center gap-2">
           <img src={`${import.meta.env.BASE_URL}penguin-logo.svg`} alt="" className="h-7 w-7" />
-          <span className="text-[15px] font-semibold tracking-tight">{S.siteName}</span>
+          <span className="hidden text-[15px] font-semibold tracking-tight sm:inline">
+            {S.siteName}
+          </span>
         </a>
 
         <nav
@@ -140,16 +174,7 @@ export function Nav({
         <div className="ml-auto flex items-center gap-1">
           <LangToggle />
           <ThemeToggle />
-          <a
-            href={REPO_URL}
-            target="_blank"
-            rel="noreferrer"
-            title={S.nav.github}
-            aria-label={S.nav.github}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-transparent text-gray-600 transition-colors hover:border-gray-200 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-400 dark:hover:border-gray-800 dark:hover:bg-gray-900 dark:hover:text-gray-100"
-          >
-            <GitHubIcon className="h-[18px] w-[18px]" />
-          </a>
+          <GitHubStarsLink />
           {/* Sidebar toggle: same slot and styling as the landing nav's menu button, but it
               opens the docs sidebar and hides at lg (the sidebar's own breakpoint). */}
           <button

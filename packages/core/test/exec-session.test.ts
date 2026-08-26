@@ -463,6 +463,31 @@ describe("harness environment variables never reach a spawned command", () => {
       vaultEnv.dispose();
     }
   });
+
+  it("an explicit injection layered after the strip wins, for any PENGUIN_* name", async () => {
+    // The strip governs inheritance only — it runs while the host env is copied and never
+    // re-applies to entries spread in after it. That seam is what every injection layer
+    // relies on (the vault stands in for all of them here): the host's copy of the name is
+    // set to a different value to prove the child's value came from the injection, not
+    // through inheritance.
+    const savedInherited = process.env.PENGUIN_API_URL;
+    process.env.PENGUIN_API_URL = "http://inherited.invalid";
+    const vaultEnv = new Environment({
+      workspaceDir: tmp,
+      toolConfig: sessionConfig(),
+      vault: { PENGUIN_API_URL: "http://injected.example" },
+    });
+    try {
+      const res = await runTool(vaultEnv, "exec_command", {
+        cmd: `node -e "console.log('A=[' + (process.env.PENGUIN_API_URL ?? '') + ']')"`,
+      });
+      expect(res.output).toContain("A=[http://injected.example]");
+    } finally {
+      vaultEnv.dispose();
+      if (savedInherited === undefined) delete process.env.PENGUIN_API_URL;
+      else process.env.PENGUIN_API_URL = savedInherited;
+    }
+  });
 });
 
 describe("proxyEnv policy governs the proxy variables commands inherit", () => {

@@ -4,15 +4,18 @@
 
 <h1 align="center">PenguinHarness</h1>
 
-<p align="center"><b>Your Automated Agent Builder, Right on Your Desktop / Server</b><br />Create Self-Evolving Agents in One Click</p>
-
-<h3 align="center"><a href="https://penguin.ooo/download/">⬇️ Click to Download</a></h3>
-
-<p align="center">macOS · Windows · Linux</p>
+<p align="center"><strong>Open-source, local-first platform for automated agent app development</strong><br />Fully automate <strong>building</strong> · <strong>optimizing</strong> · <strong>deploying</strong> AI applications</p>
 
 <p align="center">
-  <a href="https://www.producthunt.com/products/penguinharness?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-penguinharness" target="_blank" rel="noopener noreferrer"><img alt="PenguinHarness - Let Agents Autonomously Build Better Agents for $0.02 | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1202577&amp;theme=light&amp;t=1784804711946" /></a>
+  <a href="https://penguin.ooo/download">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="assets/readme/download-en-dark.svg" />
+      <img src="assets/readme/download-en-light.svg" alt="Download App" height="44" />
+    </picture>
+  </a>
 </p>
+
+<p align="center">1000+ Models · Multi-Platform · Apache 2.0 · Agent Self-Evolution</p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@prismshadow/penguin-core"><img src="https://img.shields.io/npm/v/@prismshadow/penguin-core" alt="npm version" /></a>
@@ -34,13 +37,17 @@
   <a href="https://github.com/Prism-Shadow/penguin-harness-community/blob/main/wechat/group.jpg"><img src="https://img.shields.io/badge/WeChat-user%20group-07C160?logo=wechat&logoColor=white" alt="WeChat" /></a>
 </p>
 
+<p align="center">
+  <a href="https://www.producthunt.com/products/penguinharness?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-penguinharness" target="_blank" rel="noopener noreferrer"><img alt="PenguinHarness - Let Agents Autonomously Build Better Agents for $0.02 | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1202577&amp;theme=light&amp;t=1784804711946" /></a>
+</p>
+
 <p align="center">English | <a href="README.zh.md">简体中文</a></p>
 
 ## Why PenguinHarness
 
 > With LangChain, you build agents by hand — at 1× speed.<br />With PenguinHarness, agents build agents — at 100×.
 
-Three reasons, in deliberate order — from task quality, to how agents get built, to how they keep improving.
+PenguinHarness runs on your computer or server and automates the agent app lifecycle from creation and evaluation to optimization and deployment. Three reasons define the platform:
 
 ### 1. 🏆 Outstanding results at tens of times less cost
 
@@ -55,9 +62,9 @@ A deliberately minimal toolset over clean low-level interfaces: fewer tool calls
 
 **Best accuracy on data analysis — at 1/70 of Claude Code's cost.**
 
-### 2. ⚡ One sentence, and an agent builds your agent app
+### 2. ⚡ One sentence generates a runnable agent app
 
-Type one sentence, and an agent builds the complete agent application for you — scaffold, code, and run instructions, end to end:
+Describe what you need in one sentence. PenguinHarness builds the complete agent application — scaffold, code, and run instructions, end to end:
 
 ```text
 Collect the docs from https://github.com/ericbuess/claude-code-docs and build a RAG app that answers Claude Code questions as a configuration expert, citing its sources.
@@ -69,9 +76,9 @@ https://github.com/user-attachments/assets/9b7033e8-f08a-4c3f-bd33-547896664e6e
 
 **And generating this entire RAG app burned just $0.02 (¥0.2) of tokens — on DeepSeek V4 Pro.**
 
-### 3. 🧬 Self-evolution: it gets stronger with use
+### 3. 🧬 Native agent self-evolution engine
 
-With PenguinHarness Skills, an agent evaluates and optimizes itself: run the benchmark, find the lost points, ship version N+1 — with a snapshot before every round, and every request observable in the Trace view.
+With PenguinHarness Skills, an agent evaluates and optimizes itself: run the benchmark, find the lost points, ship version N+1 — with a snapshot before every round and every request observable in the Trace view.
 
 https://github.com/user-attachments/assets/922d13a6-5ffc-4685-9a39-352f02f9afc0
 
@@ -113,7 +120,7 @@ Each family's latest generation only — the app's **Models** page lists every b
 
 ## Installation
 
-Two ways in — both work on the same `~/.penguin/data` root, so a desktop install and a CLI install can be mixed freely:
+Start with the desktop app, or install the command line on a workstation or server. Both use the same `~/.penguin/data` root and can be mixed freely:
 
 - **🖥️ Desktop app** — a double-click install: it embeds the server and opens already signed in, no terminal involved.
 - **⌨️ CLI** — a one-line installer (or npm / offline package) puts the `penguin` command on the machine; `penguin web` then serves the full Web experience in your browser at `http://127.0.0.1:7364` (multi-session chat, agent / skill / model management, usage stats, Trace observability, evaluation center). The online installers bundle their own Node runtime — unpack and run; upgrades and reinstalls never touch your data.
@@ -125,7 +132,7 @@ Two ways in — both work on the same `~/.penguin/data` root, so a desktop insta
 
 The full Web experience as a standalone application: it embeds the server and opens already signed in — no terminal, no login page, no initial password to copy. It works on the same `~/.penguin/data` root as a CLI install, so the two can be used interchangeably (a data root only ever runs one server; if a CLI-started instance is already up, the app attaches to it).
 
-**[⬇️ Get it from the download page](https://penguin.ooo/download)** — the page serves the OSS-accelerated mirror when it is reachable, and every installer is also attached to each [GitHub Release](https://github.com/Prism-Shadow/penguin-harness/releases).
+Download the desktop app from the [download page](https://penguin.ooo/download). The page serves the OSS-accelerated mirror when it is reachable, and every installer is also attached to each [GitHub Release](https://github.com/Prism-Shadow/penguin-harness/releases).
 
 | Platform    | Installers                  |
 | ----------- | --------------------------- |

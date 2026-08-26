@@ -164,6 +164,12 @@ export const zh = {
     newVersionBadge: "有新版本可用",
     newVersion: (v: string) => `新版本 v${v} 可用`,
     /**
+     * The combined wording for an anchor that leads to BOTH update trails at once (the
+     * mobile menu button): something is updatable, without claiming which — naming one of
+     * two would send the user down the wrong one.
+     */
+    updatesAvailable: "有可用更新",
+    /**
      * The sidebar user menu's SINGLE update row: it reads checkNow until a newer release
      * is known and runs the manual check; once one is known it reads newVersion() and
      * opens the update dialog instead (which carries the release-notes link and, for
@@ -564,6 +570,8 @@ export const zh = {
     kernelTitle: "内核",
     kernelLegacy: "早于内核版本机制",
     kernelOutdatedHint: "内核有更新",
+    /** The Agents-list card's dark-red capsule on an outdated Agent — a control, not a label: it opens the settings overview where the update runs. */
+    kernelUpdateNeeded: "内核需要更新",
     kernelUpToDate: "已是最新",
     kernelUpdateTitle: "更新内核",
     /** Inline labels around the outdated line's two generation values (the values themselves render dark and semibold). */
@@ -583,7 +591,7 @@ export const zh = {
   models: {
     title: "模型配置",
     addCustom: "添加自定义模型",
-    addToGroup: "新增模型",
+    addToGroup: "添加模型",
     editTitle: "模型配置",
     addTitle: "新增模型（OpenAI 协议）",
     addTitleVendor: "新增模型",
@@ -613,7 +621,7 @@ export const zh = {
     groupNameHint: "小写字母 / 数字开头，可含 - 与 _",
     groupNameInvalid: "分组名只能用小写字母、数字、- 与 _（首字符为字母或数字），长度不超过 32",
     groupNameExists: "该分组名已被内置分组或既有条目占用",
-    groupEmptyHint: "该分组暂无模型，点「新增模型」添加",
+    groupEmptyHint: "该分组暂无模型，点「添加模型」创建",
     deleteGroup: "删除分组",
     deleteGroupTitle: "删除分组",
     deleteGroupConfirm: (label: string, n: number): string =>
@@ -737,12 +745,35 @@ export const zh = {
     confirmDeleteTitle: "删除模型",
     confirmDelete: (name: string): string =>
       `确定删除「${name}」？该模型的配置与 API key 将一并移除。`,
-    groupApiKey: "统一配置 API key",
+    groupApiKey: "手动设置密钥",
     groupApiKeyTitle: (label: string): string => `为「${label}」统一配置 API key`,
     groupApiKeyHint: (n: number): string => `将写入该分组下全部 ${n} 个模型；留空不改动。`,
-    getApiKey: "获取 API key",
+    getApiKey: "前往密钥管理",
     getModelIds: "获取模型 id",
     groupKeyApplied: (n: number): string => `已为 ${n} 个模型配置 API key`,
+    // 供应商授权取 key（模型分组头部动作）：整个 PKCE 流程都在服务端跑，前端只拿到一个
+    // 不透明的 flow id 和状态。
+    oauthKey: "自动获取密钥",
+    oauthTitle: (label: string): string => `从「${label}」授权新建 API key`,
+    oauthIntro: (label: string, n: number): string =>
+      `将在你的 ${label} 账户下新建一个 API key，并写入该分组下全部 ${n} 个模型，覆盖它们当前的 key。`,
+    oauthAuthorize: "打开授权页",
+    oauthWaiting: "等待在新标签页中完成授权…",
+    oauthApplied: (n: number): string => `已为 ${n} 个模型配置新的 API key`,
+    oauthManualSwitch: "授权页跳不回来？改为手动填写授权码",
+    oauthCallbackSwitch: "改回自动跳转",
+    oauthManualHint: "先打开授权页，再把页面上显示的一次性授权码粘贴到这里。",
+    oauthCodeLabel: "授权码",
+    oauthSubmitCode: "提交授权码",
+    oauthTimedOut: "没有等到授权结果。可以改为手动填写授权码，或重新开始。",
+    oauthRetry: "重新开始",
+    oauthErrors: {
+      invalid_request: "授权请求被拒绝，请重新开始。",
+      code_rejected: "该授权已失效：可能已过期或被用过，请重新开始。",
+      upstream_failed: "供应商没有返回可用的 key，请重新开始。",
+      unreachable: "连不上供应商，请检查网络后重新开始。",
+      apply_failed: "key 已创建但未能保存。请重新授权，并到供应商控制台删掉那个没用上的 key。",
+    },
     // Providers with separate domestic / international endpoints: note on the default
     // endpoint used when left blank via env var (the other side's key needs an explicit
     // base URL). Written to match AgentHub's actual behavior; rendered wherever the env fallback hint appears.

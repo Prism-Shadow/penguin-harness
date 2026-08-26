@@ -49,8 +49,8 @@ importers:
         specifier: ^2.0.0
         version: 2.0.0
       '@prismshadow/agenthub':
-        specifier: ^0.4.6
-        version: 0.4.6(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+        specifier: ^0.4.8
+        version: 0.4.8(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: link:../core
@@ -95,8 +95,8 @@ importers:
         specifier: ^2.0.0
         version: 2.0.0
       '@prismshadow/agenthub':
-        specifier: ^0.4.7
-        version: 0.4.7(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+        specifier: ^0.4.8
+        version: 0.4.8(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       '@prismshadow/penguin-skills':
         specifier: workspace:*
         version: link:../skills
@@ -951,11 +951,8 @@ packages:
     engines: {node: '>=18'}
     hasBin: true
 
-  '@prismshadow/agenthub@0.4.6':
-    resolution: {integrity: sha512-0umTpATCfaPpxI9wRwC19oLJswbBKUOvMOCAQMiVcUXALQ6EoDC7sPnciDuFh2F17MLJZUajsVZWGjaBN4V/tQ==}
-
-  '@prismshadow/agenthub@0.4.7':
-    resolution: {integrity: sha512-TmsWkFSu/O0Esk9jHyb4BRU0WUD1IZADsmpyPc8jATnxrUA0yVUG7gXttlf8W2cWjmWm58T4h7/R5I421H+dPw==}
+  '@prismshadow/agenthub@0.4.8':
+    resolution: {integrity: sha512-d+NBK/KaJeAA0kICkT1Ww4yVOf5TwuENsHXAxPp4LHMKL9CDIQotK9Wcb9jVa5WUjVEqLg/5Tiu/MhmlW7IW8A==}
 
   '@prismshadow/penguin-cli@file:packages/cli':
     resolution: {directory: packages/cli, type: directory}
@@ -4508,7 +4505,7 @@ snapshots:
     dependencies:
       playwright: 1.61.1
 
-  '@prismshadow/agenthub@0.4.6(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)':
+  '@prismshadow/agenthub@0.4.8(supports-color@10.2.2)(ws@8.21.0)':
     dependencies:
       '@anthropic-ai/bedrock-sdk': 0.26.4(zod@4.4.3)
       '@anthropic-ai/sdk': 0.91.1(zod@4.4.3)
@@ -4523,22 +4520,7 @@ snapshots:
       - ws
       - zod
 
-  '@prismshadow/agenthub@0.4.7(supports-color@10.2.2)(ws@8.21.0)':
-    dependencies:
-      '@anthropic-ai/bedrock-sdk': 0.26.4(zod@4.4.3)
-      '@anthropic-ai/sdk': 0.91.1(zod@4.4.3)
-      '@google/genai': 1.52.0(supports-color@10.2.2)
-      express: 4.22.2(supports-color@10.2.2)
-      openai: 6.42.0(ws@8.21.0)(zod@4.4.3)
-    transitivePeerDependencies:
-      - '@modelcontextprotocol/sdk'
-      - bufferutil
-      - supports-color
-      - utf-8-validate
-      - ws
-      - zod
-
-  '@prismshadow/agenthub@0.4.7(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)':
+  '@prismshadow/agenthub@0.4.8(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)':
     dependencies:
       '@anthropic-ai/bedrock-sdk': 0.26.4(zod@4.4.3)
       '@anthropic-ai/sdk': 0.91.1(zod@4.4.3)
@@ -4556,8 +4538,8 @@ snapshots:
   '@prismshadow/penguin-cli@file:packages/cli(supports-color@10.2.2)':
     dependencies:
       '@modelcontextprotocol/client': 2.0.0
-      '@prismshadow/agenthub': 0.4.6(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
-      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/agenthub': 0.4.8(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)
       '@prismshadow/penguin-server': file:packages/server(supports-color@10.2.2)
       '@prismshadow/penguin-skills': file:packages/skills
       commander: 13.1.0
@@ -4572,10 +4554,26 @@ snapshots:
       - ws
       - zod
 
+  '@prismshadow/penguin-core@file:packages/core(supports-color@10.2.2)':
+    dependencies:
+      '@modelcontextprotocol/client': 2.0.0
+      '@prismshadow/agenthub': 0.4.8(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-skills': file:packages/skills
+      arktype: 2.2.3
+      smol-toml: 1.6.1
+      yaml: 2.9.0
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
   '@prismshadow/penguin-core@file:packages/core(supports-color@10.2.2)(ws@8.21.0)':
     dependencies:
       '@modelcontextprotocol/client': 2.0.0
-      '@prismshadow/agenthub': 0.4.7(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/agenthub': 0.4.8(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-skills': file:packages/skills
       arktype: 2.2.3
       smol-toml: 1.6.1
@@ -4591,7 +4589,7 @@ snapshots:
   '@prismshadow/penguin-core@file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)':
     dependencies:
       '@modelcontextprotocol/client': 2.0.0
-      '@prismshadow/agenthub': 0.4.7(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+      '@prismshadow/agenthub': 0.4.8(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       '@prismshadow/penguin-skills': file:packages/skills
       arktype: 2.2.3
       smol-toml: 1.6.1

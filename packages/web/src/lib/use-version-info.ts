@@ -1,14 +1,18 @@
 /**
- * Lazily fetched version identity + update check for the sidebar user menu.
+ * Version identity + update check, shared by every surface that shows either.
  *
- * Neither request fires on app load: both start on the first activation (the first time
- * the user opens the bottom dropdown) and the results are cached at module level for the
- * rest of the browser session — a locale switch remounts the whole tree, and component
- * state would refetch on every remount. Failures resolve to null and clear the shared
- * promise so a later dropdown open retries; nothing is surfaced as an error (the footer
- * simply shows nothing, and "no update known" hides the reminder). forceUpdateCheck is
- * the one deliberate exception to the laziness: the user asked, so it refetches now and
- * broadcasts the result to every mounted hook.
+ * Both requests fire once per browser session, from the first hook activated with
+ * `active` — the app layout, which activates on mount so the update badge can appear on a
+ * fresh load without the user opening anything. The results are cached at module level for
+ * the rest of the session: a locale switch remounts the whole tree, and component state
+ * would refetch on every remount. Passive consumers (`active: false`) never fetch and read
+ * that cache. Failures resolve to null and clear the shared promise so a later activation
+ * retries; nothing is surfaced as an error (the footer simply shows nothing, and "no update
+ * known" hides the reminder and every badge). The server caches its own lookup for an hour
+ * and shares one in-flight call, so an app load costs no outbound request of its own, and
+ * `PENGUIN_UPDATE_CHECK=off` still answers without dialing out at all. forceUpdateCheck is
+ * the user asking directly: it refetches past the server's TTL and broadcasts the result to
+ * every mounted hook.
  */
 import { useEffect, useState } from "react";
 import type { UpdateCheckResponse, VersionResponse } from "@prismshadow/penguin-server/api";
@@ -23,10 +27,10 @@ let updatePromise: Promise<UpdateCheckResponse> | null = null;
  * Mounted hooks subscribe here so any refresh of the module cache reaches every
  * consumer at once — the footer, the update dots, the reminder rows, and the draft
  * page's version line all react without a remount. Two paths push: forceUpdateCheck
- * (the sidebar's manual "check for updates" action) and the lazy fetch resolving.
+ * (the sidebar's manual "check for updates" action) and the shared fetch resolving.
  * Active hooks await the shared promise themselves, but passive ones (active=false,
- * e.g. the collapsed rail's avatar dot) only ever read the cache — without the lazy
- * push they would miss a result that lands while they are mounted.
+ * e.g. the collapsed rail's avatar dot) only ever read the cache — without this push
+ * they would miss a result that lands while they are mounted.
  */
 const listeners = new Set<() => void>();
 
@@ -64,7 +68,7 @@ export interface VersionInfo {
 
 export function useVersionInfo(active: boolean): VersionInfo {
   // Initial state comes from the module cache, so a remounted sidebar (locale switch)
-  // shows the version footer and the update dot immediately, without reopening anything.
+  // shows the version footer and the update dot immediately, with no second request.
   const [version, setVersion] = useState<VersionResponse | null>(versionCache);
   const [update, setUpdate] = useState<UpdateCheckResponse | null>(updateCache);
 

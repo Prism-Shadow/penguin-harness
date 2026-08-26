@@ -212,6 +212,7 @@ export const SKILL_GROUPS: SkillGroupInfo[] = [
     skills: [
       "penguin-sdk",
       "penguin-cli",
+      "penguin-orchestration",
       "agenthub-models",
       "vllm",
       "ollama",

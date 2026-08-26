@@ -9,13 +9,14 @@ import { NavLink, Outlet, useMatch, useNavigate } from "react-router";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { latestConversation } from "../../lib/session-grouping";
-import { useVersionInfo } from "../../lib/use-version-info";
+import { useUpdateBadges } from "../../lib/use-update-badges";
 import { useAuth } from "../../state/auth";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import { useCompletionNotifications } from "../../state/use-completion-notifications";
 import { Drawer } from "../ui/drawer";
 import { GlyphIcon } from "../ui/glyph-icon";
+import { UpdateDot } from "../ui/update-dot";
 import { CloseIcon, NAV_ICONS } from "../ui/icons";
 import { NEW_CHAT_ICON, Sidebar } from "./sidebar";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
@@ -28,9 +29,9 @@ import { toneStrip } from "../../lib/tone";
 /** "Last conversation" glyph (chat lines + resume arrow), used only by the rail. */
 const LAST_CHAT_ICON = "M8 10h8M8 14h5M21 12a9 9 0 1 1-4.2-7.6L21 4v5h-5";
 
-/** Shared look of rail entries (icon buttons and NavLinks alike): solid gray fill when active, gray hover otherwise. */
+/** Shared look of rail entries (icon buttons and NavLinks alike): solid gray fill when active, gray hover otherwise. `relative` so an entry can anchor an update badge on its corner (no z-index, so it still creates no stacking context). */
 const railItemClass = (active: boolean) =>
-  `flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-150 ${
+  `relative flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-150 ${
     active
       ? "bg-gray-200/70 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
       : "text-gray-500 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
@@ -48,13 +49,12 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
   const { agents, currentProject, setCurrentAgentId } = useProject();
   const { sessions, loading } = useSessions();
   /**
-   * Passive (active=false): never triggers a fetch — the rail mirrors whatever the lazy
-   * check has already learned (the pinned sidebar's dropdown or the draft page started it),
-   * matching the pinned sidebar's avatar dot. Cache pushes keep it live while mounted.
+   * Passive: the layout above owns the one fetch per session, so the rail only reads the
+   * shared caches — and gets pushed a result that lands while it is mounted. Two badges here:
+   * the avatar mirrors the pinned sidebar's software dot (the user menu behind it holds the
+   * update row), and the Agents entry leads to the outdated Agent's kernel action.
    */
-  const { update } = useVersionInfo(false);
-  /** Same "named release only" gate as the pinned sidebar's update row (see sidebar.tsx). */
-  const newVersion = update?.updateAvailable === true ? (update.latestVersion ?? null) : null;
+  const badges = useUpdateBadges();
   const activeSessionId = useMatch("/chat/:sessionId")?.params.sessionId ?? null;
   /** On some conversation (any non-draft /chat/:id): the "you are here" state of the last-conversation entry. */
   const onConversation = activeSessionId !== null && activeSessionId !== DRAFT_SESSION_ID;
@@ -133,41 +133,42 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
           <GlyphIcon d={NEW_CHAT_ICON} size={18} />
         </button>
         {/* 3-8. Page entries */}
-        {pages.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            title={item.label}
-            aria-label={item.label}
-            className={({ isActive }) => railItemClass(isActive)}
-          >
-            <GlyphIcon d={item.icon} size={18} />
-          </NavLink>
-        ))}
+        {pages.map((item) => {
+          /* Agents is the one entry on a badge trail: an outdated kernel is fixed on the
+             Agent settings page this entry leads to. The dot itself is decorative — the
+             tooltip and the accessible name say what is updatable. */
+          const note = item.to === "/agents" ? badges.kernelNote : null;
+          return (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              title={note !== null ? `${item.label} · ${note}` : item.label}
+              aria-label={note !== null ? `${item.label} · ${note}` : item.label}
+              className={({ isActive }) => railItemClass(isActive)}
+            >
+              <GlyphIcon d={item.icon} size={18} />
+              {note !== null && <UpdateDot />}
+            </NavLink>
+          );
+        })}
       </nav>
       <button
         type="button"
         title={[user?.userId ?? "", S.nav.expandSidebar]
-          .concat(newVersion !== null ? [S.update.newVersion(newVersion)] : [])
+          .concat(badges.softwareNote !== null ? [badges.softwareNote] : [])
           .join(" · ")}
         aria-label={
-          newVersion !== null
-            ? `${user?.userId ?? ""} · ${S.update.newVersion(newVersion)}`
+          badges.softwareNote !== null
+            ? `${user?.userId ?? ""} · ${badges.softwareNote}`
             : (user?.userId ?? S.auth.admin)
         }
         onClick={onExpand}
         className="relative mt-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-900 text-xs font-bold text-white dark:bg-gray-200 dark:text-gray-900"
       >
         {(user?.userId ?? "?").slice(0, 1).toUpperCase()}
-        {/* Update reminder dot, mirroring the pinned sidebar's avatar (same look, same
-            border trick against the rail background); the title/aria-label above name the
-            release, since the rail has no update row of its own. */}
-        {newVersion !== null && (
-          <span
-            aria-hidden
-            className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-gray-50 bg-[var(--accent-bg)] dark:border-gray-900"
-          />
-        )}
+        {/* Update reminder, mirroring the pinned sidebar's avatar: expanding the rail is the
+            only way to the update row, so the title/aria-label above name what is waiting. */}
+        {badges.software !== null && <UpdateDot />}
       </button>
     </div>
   );
@@ -188,6 +189,10 @@ export function AppLayout() {
   // Desktop shell only (gated inside): system notification when a task finishes while
   // the window is unfocused.
   useCompletionNotifications();
+  // The single eager owner of the update checks (use-update-badges.ts): one request per
+  // browser session, so a dot can be there on a fresh load instead of waiting for someone to
+  // open the sidebar menu. Every other anchor reads the same caches passively.
+  const badges = useUpdateBadges(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   // Initial-password banner dismissal: server-persisted per user (ui_prefs). null = prefs not
@@ -247,11 +252,18 @@ export function AppLayout() {
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Mobile: top thin bar (hamburger + brand) */}
         <header className="flex h-12 shrink-0 items-center gap-2 border-b border-gray-200 bg-white px-2 md:hidden dark:border-gray-800 dark:bg-gray-950">
+          {/* The outermost menu on a phone: it carries a dot for EITHER trail, so its wording
+              is the combined one — naming one of two updates would point at the wrong trail.
+              Both trails continue inside the drawer's sidebar (the Agents entry, the user
+              row's update entry). */}
           <button
             type="button"
-            aria-label={S.chat.sessionList}
+            aria-label={
+              badges.note !== null ? `${S.chat.sessionList} · ${badges.note}` : S.chat.sessionList
+            }
+            {...(badges.note !== null ? { title: badges.note } : {})}
             onClick={() => setDrawerOpen(true)}
-            className="flex h-9 w-9 items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+            className="relative flex h-9 w-9 items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
           >
             <svg
               width="18"
@@ -265,6 +277,7 @@ export function AppLayout() {
             >
               <path d="M4 6h16M4 12h16M4 18h16" />
             </svg>
+            {badges.any && <UpdateDot />}
           </button>
           <span className="text-sm font-semibold">{S.appName}</span>
         </header>
