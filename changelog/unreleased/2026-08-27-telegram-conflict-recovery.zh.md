@@ -11,7 +11,7 @@
 
 ## 细节
 
-- 中断后的恢复以一次成功的 `getUpdates` 为准，而不是它前面的 `getMe` 探测。`getMe` 从不发生冲突，因此原先每一轮都会清零失败计数：指数退避停留在第一档，连接器无限期地每秒重试一次，每次重试都记一条错误，连接状态在 `connected` 与 `error` 之间翻转的速度快过面板的轮询。现在一次中断只上报一次，并按文档退避到 60 秒上限。
+- 中断后的恢复以一次成功的 `getUpdates` 为准，而不是它前面的 `getMe` 探测。`getMe` 从不发生冲突，因此原先每一轮都会清零失败计数：指数退避停留在第一档，连接器无限期地每秒重试一次，每次重试都触发一次 `onError`，连接状态在 `connected` 与 `error` 之间翻转的速度快过面板的轮询。现在一次中断只上报一次，并按文档退避到 60 秒上限。
 - 恢复用的轮询以 0 秒超时发出，中断结束会被立即观察到，而不必等下一个 30 秒长轮询窗口。
 - 每条连接在首次轮询前执行一次 `deleteWebhook`。Bot API 中 webhook 与 `getUpdates` 互斥，因此绑定之前被指向过 webhook 的机器人此前永远无法轮询。待处理更新予以保留，仍由连接器自己的积压清理决定哪些算作离线期。
 - Bot API 中两种可操作的 409 被改写为以行动开头——「another program is already polling this bot …」与「a webhook is set on this bot, which blocks polling …」——不再沿用把要点放在句尾的 Telegram 原文。

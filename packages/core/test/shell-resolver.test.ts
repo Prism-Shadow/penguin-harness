@@ -81,6 +81,19 @@ describe("resolveShell — POSIX", () => {
     expect(shell).toEqual({ command: "/usr/bin/zsh", args: ["-lc"], name: "zsh" });
   });
 
+  it("skips a $SHELL that is not a shell at all", () => {
+    // A service account's login shell field is routinely /usr/sbin/nologin or /bin/false.
+    // Both exist; neither runs a command, and `-lc` would make every command exit silently.
+    for (const login of ["/usr/sbin/nologin", "/bin/false"]) {
+      const shell = resolveShell({
+        platform: "linux",
+        env: { PATH: "/usr/games", SHELL: login },
+        exists: has(login, "/bin/sh"),
+      });
+      expect(shell).toEqual({ command: "/bin/sh", args: ["-lc"], name: "sh" });
+    }
+  });
+
   it("falls back to sh when there is neither a bash nor a usable $SHELL", () => {
     const shell = resolveShell({
       platform: "linux",

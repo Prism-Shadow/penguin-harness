@@ -24,7 +24,11 @@ export interface MessagingInboundMessage {
    * Channel-scoped id of the inbound message itself (the group reply target). Opaque to
    * the bridge: the connector both mints it here and consumes it in `replyText`, so a
    * channel whose native message ids are not globally unique encodes whatever context a
-   * reply needs (Telegram packs `chatId:messageId`).
+   * reply needs (Telegram packs `chatId:messageId`). It is also the bridge's inbound
+   * dedupe key, so it must identify the MESSAGE and not the delivery: a channel that
+   * redelivers one message must mint the same id both times. `""` opts the channel out of
+   * deduplication entirely — the honest answer for a connector with no message identity,
+   * and better than every message after the first reading as a duplicate.
    */
   messageId: string;
   /**

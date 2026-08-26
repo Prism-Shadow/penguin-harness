@@ -1,8 +1,9 @@
 /**
  * Shell selection for command sessions.
  *
- * POSIX behavior is unchanged: commands run via `bash -lc <cmd>`. On Windows there is no
- * bash by default, so the resolver picks the best available shell once per process:
+ * Commands run via `bash -lc <cmd>` wherever a bash exists. Neither platform guarantees one
+ * — Windows has none by default, and a POSIX box can be launched with a PATH that has none —
+ * so the resolver picks the best available shell once per process:
  *
  * 1. `PENGUIN_SHELL` (explicit executable name or path) always wins, on every platform;
  *    the argument shape is inferred from its basename (see below).
@@ -90,6 +91,25 @@ const POSIX_BASH_PATHS = [
 /** POSIX shells worth falling back to, in the order they are tried, once bash is ruled out. */
 const POSIX_FALLBACK_SHELLS = ["sh", "/bin/sh", "/usr/bin/sh"];
 
+/**
+ * Basenames `$SHELL` is allowed to name. It carries the login shell of whatever account the
+ * server runs as, and on a service account that field is routinely `/usr/sbin/nologin` or
+ * `/bin/false` — both exist, neither runs a command, and `-lc` would turn every command into
+ * a silent non-zero exit. Membership here means "accepts `-lc <cmd>`"; anything else falls
+ * through to `sh`, which does.
+ */
+const POSIX_LOGIN_SHELLS = new Set([
+  "bash",
+  "zsh",
+  "fish",
+  "ksh",
+  "ksh93",
+  "mksh",
+  "dash",
+  "ash",
+  "sh",
+]);
+
 /** Argument prefix for a shell, chosen by its basename (PowerShell-style vs cmd vs POSIX-style). */
 function argsForShell(name: string): string[] {
   if (name === "pwsh" || name === "powershell") return ["-NoLogo", "-NoProfile", "-Command"];
@@ -104,6 +124,8 @@ function argsForShell(name: string): string[] {
 function onPath(name: string, env: NodeJS.ProcessEnv, exists: (p: string) => boolean): boolean {
   const raw = env.PATH ?? "";
   for (const dir of raw.split(path.posix.delimiter)) {
+    // An empty entry means the working directory. Skipped deliberately: the Workspace is
+    // model-writable, and picking a shell out of it would be an execution primitive.
     if (dir === "") continue;
     if (exists(path.posix.join(dir, name))) return true;
   }
@@ -125,13 +147,13 @@ function resolvePosixShell(
   for (const candidate of POSIX_BASH_PATHS) {
     if (exists(candidate)) return { command: candidate, args: ["-lc"], name: "bash" };
   }
-  // The user's own login shell, when it is not bash (zsh, fish, ksh …). It is named
-  // honestly to the model: `-lc` is what every one of them speaks, but the syntax the
-  // model should write is that shell's, not bash's.
+  // The user's own login shell, when it is one of the shells POSIX_LOGIN_SHELLS names (zsh,
+  // fish, ksh …). It is named honestly to the model: `-lc` is what every one of them speaks,
+  // but the syntax the model should write is that shell's, not bash's.
   const login = env.SHELL?.trim();
-  if (login !== undefined && login !== "" && login.startsWith("/") && exists(login)) {
+  if (login !== undefined && login.startsWith("/") && exists(login)) {
     const name = shellBasename(login);
-    return { command: login, args: argsForShell(name), name };
+    if (POSIX_LOGIN_SHELLS.has(name)) return { command: login, args: argsForShell(name), name };
   }
   for (const candidate of POSIX_FALLBACK_SHELLS) {
     if (candidate.startsWith("/") ? exists(candidate) : onPath(candidate, env, exists)) {

@@ -7,13 +7,14 @@
  * public webhook URL, so the connector pulls, which keeps local deployments working
  * exactly like the Feishu long connection does.
  *
- * The poll loop's lifecycle: one `getMe` probe (a bad token surfaces immediately as the
- * connection error instead of an eternally failing poll), one `deleteWebhook` (a webhook
- * and `getUpdates` are mutually exclusive on the Bot API — a bot pointed at a webhook
- * before it was bound here could otherwise never be polled), then a one-time backlog
- * drain (`offset: -1` confirms everything sent while no connection existed — a disabled
- * binding must not replay its dark period as a task flood, matching Feishu, where missed
- * events are simply gone), then long polls advancing `offset` past each processed update.
+ * The poll loop's lifecycle: a `getMe` probe (a bad token surfaces immediately as the
+ * connection error instead of an eternally failing poll — it runs again ahead of every
+ * recovery attempt, so a token revoked mid-outage stops reading as a stale conflict), one
+ * `deleteWebhook` (a webhook and `getUpdates` are mutually exclusive on the Bot API — a bot
+ * pointed at a webhook before it was bound here could otherwise never be polled), then a
+ * one-time backlog drain (`offset: -1` confirms everything sent while no connection existed
+ * — a disabled binding must not replay its dark period as a task flood, matching Feishu,
+ * where missed events are simply gone), then long polls advancing `offset` past each update.
  * Failures back off exponentially and report once per outage; recovery fires `onReady`
  * again, so the bridge's status tracks the outage.
  *

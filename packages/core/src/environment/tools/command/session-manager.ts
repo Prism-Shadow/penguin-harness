@@ -168,6 +168,10 @@ function hostEnvForChild(policy: ProxyEnvPolicy | null): NodeJS.ProcessEnv {
  * Never auto-created: Agent.createSession and the server's Workspace guard both refuse to
  * create a Workspace so a typo cannot silently start working in the wrong place, and a
  * directory that disappeared under a live Session is a fact to report rather than paper over.
+ *
+ * A check before a spawn cannot close the gap between them: a directory removed in that
+ * window still produces the old ENOENT. That is the rare case, and the only alternative is
+ * re-reading Node's error after the fact, which is the string this exists to stop trusting.
  */
 function assertUsableCwd(cwd: string): void {
   let stat;
