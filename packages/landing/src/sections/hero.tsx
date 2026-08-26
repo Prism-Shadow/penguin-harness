@@ -19,14 +19,16 @@ export function Hero() {
   return (
     <section className="relative overflow-hidden">
       <div className="hero-dots pointer-events-none absolute inset-0" aria-hidden="true" />
-      <div className="relative mx-auto max-w-6xl px-4 pt-16 pb-12 text-center sm:px-6 sm:pt-24 sm:pb-14">
-        <h1 className="anim-rise flex items-center justify-center gap-3.5">
+      <div className="relative mx-auto max-w-6xl px-4 pt-12 pb-12 text-center sm:px-6 sm:pt-24 sm:pb-14">
+        <h1 className="anim-rise flex items-center justify-center gap-2.5 sm:gap-3.5">
           <img
             src={`${import.meta.env.BASE_URL}penguin-logo.svg`}
             alt=""
-            className="h-14 w-14 sm:h-16 sm:w-16"
+            className="h-12 w-12 sm:h-16 sm:w-16"
           />
-          <span className="text-3xl font-semibold tracking-tight sm:text-4xl">{S.siteName}</span>
+          <span className="text-[1.7rem] font-semibold tracking-tight sm:text-4xl">
+            {S.siteName}
+          </span>
         </h1>
 
         <p
@@ -39,7 +41,7 @@ export function Hero() {
         </p>
 
         <p
-          className="hero-automation anim-rise mt-5 leading-8 text-gray-600 dark:text-gray-300"
+          className="hero-automation anim-rise mt-5 leading-6 text-gray-600 sm:leading-8 dark:text-gray-300"
           style={{ animationDelay: "120ms" }}
         >
           {S.hero.automationLead}
@@ -76,15 +78,15 @@ export function Hero() {
         </div>
 
         <dl
-          className="anim-rise mx-auto mt-12 grid max-w-5xl grid-cols-2 gap-x-6 gap-y-8 sm:grid-cols-4"
+          className="anim-rise mx-auto mt-10 grid max-w-6xl grid-cols-2 gap-x-4 gap-y-7 sm:mt-12 sm:gap-x-6 sm:gap-y-8 xl:grid-cols-4 xl:gap-x-2"
           style={{ animationDelay: "250ms" }}
         >
           {S.hero.stats.map((stat) => (
             <div key={stat.value} className="min-w-0">
-              <dt className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">
+              <dt className="mx-auto mt-1 max-w-56 text-xs leading-5 text-gray-500 dark:text-gray-400">
                 {stat.label}
               </dt>
-              <dd className="whitespace-nowrap text-2xl font-semibold tracking-tight text-gray-900 dark:text-gray-100">
+              <dd className="hero-stat-value mx-auto mt-0.5 max-w-64 text-[19px] leading-tight font-semibold tracking-tight text-balance text-gray-900 sm:text-2xl xl:max-w-none dark:text-gray-100">
                 {stat.value}
               </dd>
             </div>
@@ -92,10 +94,10 @@ export function Hero() {
         </dl>
 
         <div
-          className="anim-rise mx-auto mt-12 flex max-w-5xl flex-wrap items-center justify-center gap-x-6 gap-y-4 text-center text-sm"
+          className="anim-rise mx-auto mt-12 flex max-w-5xl flex-wrap items-center justify-center gap-x-5 gap-y-4 text-center text-sm sm:gap-x-6"
           style={{ animationDelay: "300ms" }}
         >
-          <span className="mr-1 text-xs font-semibold tracking-wide text-gray-400 uppercase dark:text-gray-500">
+          <span className="mr-1 basis-full text-xs font-semibold tracking-wide text-gray-400 uppercase sm:basis-auto dark:text-gray-500">
             {S.hero.supportedModelsLabel}
           </span>
           {MODEL_PROVIDERS.map((provider, index) => (
@@ -108,7 +110,7 @@ export function Hero() {
               <ModelProviderLogo provider={provider} className="h-6 w-6" />
             </span>
           ))}
-          <span className="whitespace-nowrap font-medium text-gray-400 dark:text-gray-500">
+          <span className="basis-full whitespace-nowrap font-medium text-gray-400 sm:basis-auto dark:text-gray-500">
             {S.hero.supportedModelsMore}
           </span>
         </div>

@@ -80,8 +80,8 @@ export function Cases() {
       </div>
 
       <figure role="tabpanel" className="anim-fade mx-auto mt-8 max-w-5xl" key={tab.label}>
-        <div className="mx-auto mb-5 w-fit max-w-full overflow-x-auto rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 dark:border-gray-800 dark:bg-gray-900">
-          <code className="font-mono text-[13px] whitespace-nowrap text-gray-800 dark:text-gray-200">
+        <div className="mx-auto mb-5 w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-left sm:w-fit sm:max-w-full sm:overflow-x-auto dark:border-gray-800 dark:bg-gray-900">
+          <code className="font-mono text-[12px] leading-5 whitespace-pre-wrap text-gray-800 sm:text-[13px] sm:whitespace-nowrap dark:text-gray-200">
             <span className="mr-2 text-gray-400 select-none dark:text-gray-500">&gt;</span>
             {tab.prompt}
           </code>

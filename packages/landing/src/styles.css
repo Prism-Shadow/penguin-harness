@@ -143,14 +143,22 @@
   font-size: clamp(0.95rem, 4.3vw, 3rem);
 }
 :lang(en) .hero-positioning {
-  font-size: clamp(0.72rem, 3.3vw, 2.6rem);
+  font-size: clamp(0.6rem, 3.1vw, 2.6rem);
 }
 .hero-automation {
   font-size: clamp(0.8rem, 3.5vw, 1.125rem);
 }
 :lang(en) .hero-automation {
-  font-size: clamp(0.64rem, 2.1vw, 1.125rem);
+  font-size: clamp(0.56rem, 2.65vw, 1.125rem);
   white-space: nowrap;
+}
+:lang(en) .hero-stat-value {
+  font-size: clamp(1.05rem, 2vw, 1.25rem);
+}
+@media (min-width: 64rem) {
+  :lang(en) .hero-stat-value {
+    font-size: 1.4375rem;
+  }
 }
 
 /* ---------- Ambient neon backdrop: blurred glows wandering across the screen ----------
