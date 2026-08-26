@@ -1618,9 +1618,9 @@ export function Sidebar({
               >
                 {navItems.map((item) => {
                   /* Agents is the one nav entry on a badge trail: an outdated kernel is fixed
-                     on the Agent settings page two clicks down. The dot hangs off the LABEL,
-                     not the full-width row — a mark at the far end of a nav row reads as a
-                     count, not as a badge on the entry. */
+                     on the Agent settings page two clicks down. The dot sits at the top-right
+                     corner of the full-width row, inside its box — anchored to the row, not to
+                     the label text, where it would float over whatever follows the word. */
                   const note = item.to === "/agents" ? badges.kernelNote : null;
                   return (
                     <NavLink
@@ -1638,7 +1638,7 @@ export function Sidebar({
                           }
                         : {})}
                       className={({ isActive }) =>
-                        `flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors duration-150 ${
+                        `relative flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors duration-150 ${
                           isActive
                             ? "bg-gray-200/70 font-medium text-gray-900 dark:bg-gray-800 dark:text-gray-100"
                             : "text-gray-600 hover:bg-gray-200/50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800/70 dark:hover:text-gray-200"
@@ -1648,10 +1648,8 @@ export function Sidebar({
                       <span className="text-gray-500 dark:text-gray-400">
                         <Icon d={item.icon} />
                       </span>
-                      <span className="relative">
-                        {item.label}
-                        {note !== null && <UpdateDot size="inline" position="-right-2 -top-0.5" />}
-                      </span>
+                      {item.label}
+                      {note !== null && <UpdateDot size="inline" position="right-1.5 top-1.5" />}
                     </NavLink>
                   );
                 })}

@@ -18,21 +18,26 @@ Project. The mobile menu button carries a dot for either.
 - **Software** — the `<md` top bar's menu button, the collapsed rail's avatar and the pinned
   sidebar's avatar, ending at the user menu's update row and its update dialog.
 - **Agent kernel** — the same menu button, the pinned sidebar's Agents entry, the collapsed
-  rail's Agents icon, the Agents list card of each outdated Agent, then that Agent's settings
-  page: the Overview tab, the Kernel section, and the enabled "update kernel" button beside it.
-  The badge clears with the config refresh the update already performs.
+  rail's Agents icon, the Agents list card of each outdated Agent — which carries a dark-red
+  "Kernel update needed" capsule in the version badge's own shape, itself the control that
+  opens the right settings page — then that page's Overview tab and the enabled "update
+  kernel" button in the Kernel section. The badge clears with the config refresh the update
+  already performs.
 
 The session list's conversation groups are deliberately left unbadged: that list is about
 conversations, not Agent configuration, and a dot there would lead to no action.
 
 ## Details
 
-- `components/ui/update-dot.tsx` is the one place the badge colour is written, and every dot in
-  the feature renders through it — including the sidebar avatar's, which previously drew its own
-  accent-coloured mark. A notification badge is not a status tone, so the colour lives there
-  rather than in `lib/tone.ts`, whose five tones each judge a thing's state; the component's
-  header states that and records the measured contrast on all four surfaces a dot lands on. Each
-  dot is `aria-hidden` and its anchor names what is updatable in its `title` and accessible name.
+- `components/ui/update-dot.tsx` is the one place the badge colours are written — the dot's and
+  the Agents-card capsule's — and every mark in the feature renders through it, the sidebar
+  avatar's included, which previously drew its own accent-coloured dot. A notification badge is
+  not a status tone, so the colours live there rather than in `lib/tone.ts`, whose five tones
+  each judge a thing's state; the component's header states that and records the measured
+  contrast on every surface a mark lands on. A dot anchors to the top-right corner of its
+  control's full box — the row, tab or button — inside it, never hung off the label text's
+  width. Each dot is `aria-hidden` and its anchor names what is updatable in its `title` and
+  accessible name.
 - The update check runs once per browser session from the app layout, so a badge is present on a
   fresh load; it was previously activated by opening the sidebar's user menu. The module-level
   cache keeps it to one request, the check stays fail-soft, and `PENGUIN_UPDATE_CHECK=off`
@@ -47,5 +52,5 @@ conversations, not Agent configuration, and a dot there would lead to no action.
 - `Tabs` gained an optional per-tab badge, which folds its sentence into the tab's tooltip and
   accessible name and sits inside the button's padding so the tab strip's vertical clip cannot
   cut it.
-- One new bilingual string, for the anchor that covers both trails at once and must not claim to
-  be either.
+- Two new bilingual strings: one for the anchor that covers both trails at once and must not
+  claim to be either, and the Agents-card capsule's label.

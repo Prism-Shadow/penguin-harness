@@ -574,6 +574,8 @@ export const zh = {
     kernelTitle: "内核",
     kernelLegacy: "早于内核版本机制",
     kernelOutdatedHint: "内核有更新",
+    /** The Agents-list card's dark-red capsule on an outdated Agent — a control, not a label: it opens the settings overview where the update runs. */
+    kernelUpdateNeeded: "内核需要更新",
     kernelUpToDate: "已是最新",
     kernelUpdateTitle: "更新内核",
     /** Inline labels around the outdated line's two generation values (the values themselves render dark and semibold). */

@@ -23,7 +23,13 @@
  *
  * Layout-neutral: absolutely positioned, so a caller only has to be `relative`, and no row
  * changes height for carrying one. `pointer-events-none` keeps it out of its anchor's hit area.
+ *
+ * Anchoring rule, owner-specified: a dot marks the **top-right corner of its control's full
+ * box** — the whole row, tab or button — sitting inside that box, never hung off the label
+ * glyphs (a dot that tracks the text's width floats over whatever follows the label and rides
+ * above the line box). Chrome anchors are their own box, so their default overhang stands.
  */
+import type { ReactNode } from "react";
 
 /**
  * Sizes named by the anchor they sit on, not by a number (the `icon-scale.ts` convention).
@@ -64,5 +70,30 @@ export function UpdateDot({
       aria-hidden
       className={`pointer-events-none absolute rounded-full bg-red-500 ${DOT_SIZE[size]} ${position}`}
     />
+  );
+}
+
+/**
+ * The labeled form of the badge, for the one stop on a trail where a bare dot undersells the
+ * state: the Agents list card of an outdated Agent, which is also the control the sidebar's
+ * dot leads to. A real button — it performs the same navigation the icon it replaced did —
+ * shaped exactly like the `Badge` pills sharing its row (`v<version>`: same radius, padding
+ * and 11px semibold type), so the row reads as one family of capsules.
+ *
+ * Dark red rather than the dot's `red-500`, because unlike the dot this pill has an interior
+ * to read: the label needs WCAG 1.4.3's 4.5 : 1 on its own background. Measured: white on
+ * red-700 6.42 : 1 in light, red-100 on red-900 8.23 : 1 in dark; both hover fills (red-800)
+ * clear 4.5 : 1 with their resting text. The badge colours stay in this module, with the dot's,
+ * for the reason the header gives — an update mark is not a `tone.ts` status.
+ */
+export function UpdatePill({ onClick, children }: { onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-red-700 px-2 py-0.5 text-[11px] font-semibold text-white transition-colors duration-150 hover:bg-red-800 dark:bg-red-900 dark:text-red-100 dark:hover:bg-red-800"
+    >
+      {children}
+    </button>
   );
 }

@@ -40,7 +40,7 @@ import { Skeleton, SkeletonCard } from "../../components/ui/skeleton";
 import { EmptyState } from "../../components/ui/empty-state";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { UpdateDot } from "../../components/ui/update-dot";
+import { UpdatePill } from "../../components/ui/update-dot";
 import { GEAR_ICON } from "../../components/ui/icons";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
@@ -83,8 +83,6 @@ const CARD_ICONS = {
   /** Memory (brain: two hemispheres + inner fold, lucide simplified), opens the settings tab */
   memory:
     "M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18ZM12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18ZM15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4",
-  /** Kernel update available (rotate-cw — the skill library's update glyph), deep-links to the settings overview */
-  kernelUpdate: "M23 4v6h-6M20.49 15a9 9 0 1 1-2.12-9.36L23 10",
 } as const;
 
 /**
@@ -411,21 +409,14 @@ export function AgentsPage() {
                         {a.agentId}
                       </span>
                       <Badge tone="gray">v{a.version}</Badge>
-                      {/* Kernel-outdated hint: a minimal icon + tooltip deep-linking to the
-                          settings overview where the update action lives, badged so the dot
-                          the sidebar's Agents entry carries continues onto the one card that
-                          needs opening. */}
+                      {/* Kernel-outdated pill: the card the sidebar's Agents dot leads to, so it
+                          names the state in words rather than as another bare dot — a capsule in
+                          the version badge's own geometry, dark red, opening the settings
+                          overview where the update action lives. */}
                       {a.kernelOutdated && (
-                        <button
-                          type="button"
-                          className="relative shrink-0 cursor-pointer text-gray-400 transition-colors duration-150 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
-                          title={S.agent.kernelOutdatedHint}
-                          aria-label={S.agent.kernelOutdatedHint}
-                          onClick={() => openSettingsTab(a.agentId, "overview")}
-                        >
-                          <GlyphIcon d={CARD_ICONS.kernelUpdate} size={ICON_SIZE.inlineGlyph} />
-                          <UpdateDot size="inline" position="-right-1 -top-1" />
-                        </button>
+                        <UpdatePill onClick={() => openSettingsTab(a.agentId, "overview")}>
+                          {S.agent.kernelUpdateNeeded}
+                        </UpdatePill>
                       )}
                     </div>
                     {/* Description truncated to one line (an empty description still takes up a line, keeping card heights equal) */}

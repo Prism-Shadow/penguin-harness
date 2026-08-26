@@ -607,6 +607,7 @@ export const en: Strings = {
     kernelTitle: "Kernel",
     kernelLegacy: "predates kernel versioning",
     kernelOutdatedHint: "Kernel update available",
+    kernelUpdateNeeded: "Kernel update needed",
     kernelUpToDate: "Up to date",
     kernelUpdateTitle: "Update kernel",
     kernelCurrent: "current",
