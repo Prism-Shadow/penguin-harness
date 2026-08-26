@@ -86,26 +86,26 @@ https://github.com/user-attachments/assets/922d13a6-5ffc-4685-9a39-352f02f9afc0
 
 Four Skill groups ship in the box ([docs](https://penguin.ooo/docs/skills)); agents can also write and optimize their own:
 
-| Group                | Skills                                                                            |
-| -------------------- | --------------------------------------------------------------------------------- |
-| Office Productivity  | `data-analysis`, `firecrawl`                                                      |
-| Software Development | `web-design`, `software-engineering`                                              |
-| AI App Development   | `penguin-sdk`, `penguin-cli`, `agenthub-models`, `vllm`, `ollama`, `llamafactory` |
-| Agent Tuning         | `agent-initialization`, `benchmark-design`, `agent-evaluation`, `agent-optimization`    |
+| Group                | Skills                                                                                                                      |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Office Productivity  | `data-analysis`, `firecrawl`, `bento-slides`, `humanizer`                                                                   |
+| Software Development | `web-design`, `software-engineering`, `remote-claude-code`                                                                  |
+| AI App Development   | `penguin-sdk`, `penguin-cli`, `penguin-orchestration`, `agenthub-models`, `vllm`, `ollama`, `llamafactory`, `skill-porting` |
+| Agent Tuning         | `agent-initialization`, `benchmark-design`, `agent-evaluation`, `agent-optimization`                                        |
 
 ## Supported Models
 
-| Model            | Providers                                                                        |
-| ---------------- | -------------------------------------------------------------------------------- |
-| DeepSeek V4      | DeepSeek, OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan, Qwen Pay-As-You-Go |
-| Kimi K3          | Moonshot AI, OpenRouter, Qwen Pay-As-You-Go                                      |
-| GLM 5.2          | Z.AI, OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan, Qwen Pay-As-You-Go |
-| Hunyuan 3        | OpenRouter                                                                       |
-| Qwen 3.8 Max     | Qwen Token Plan, Qwen Pay-As-You-Go, OpenRouter                                  |
-| GPT 5.6          | OpenRouter                                                                       |
-| Gemini 3.6 Flash | Google Gemini, OpenRouter                                                        |
-| Claude 5         | Anthropic, OpenRouter                                                            |
-| Inkling          | OpenRouter, Fireworks AI                                                         |
+| Model            | Providers                                                                                        |
+| ---------------- | ------------------------------------------------------------------------------------------------ |
+| DeepSeek V4      | DeepSeek, OpenRouter, Fireworks AI, SiliconFlow, TokenDance, Qwen Token Plan, Qwen Pay-As-You-Go |
+| Kimi K3          | Moonshot AI, OpenRouter, Fireworks AI, TokenDance, Qwen Pay-As-You-Go                            |
+| GLM 5.3          | Z.AI, OpenRouter, TokenDance                                                                     |
+| Hunyuan 3        | OpenRouter                                                                                       |
+| Qwen 3.8 Max     | Qwen Token Plan, Qwen Pay-As-You-Go, OpenRouter, TokenDance                                      |
+| GPT 5.6          | OpenAI, OpenRouter                                                                               |
+| Gemini 3.7 Flash | Google Gemini, OpenRouter                                                                        |
+| Claude 5         | Anthropic, OpenRouter                                                                            |
+| Inkling          | OpenRouter, Fireworks AI                                                                         |
 
 Each family's latest generation only — the app's **Models** page lists every built-in preset, and any OpenAI-protocol endpoint works too: pick a preset, or point a custom endpoint at any of the 1000+ online and local models.
 
@@ -140,31 +140,7 @@ Download the desktop app from the [download page](https://penguin.ooo/download).
 | Windows 10+ | installer (.exe, x64)       |
 | Linux (x64) | AppImage / deb              |
 
-Current builds are unsigned, so the system may block the very first launch. Expand your platform for the one-time fix:
-
-<details>
-<summary><b>🍎 macOS says “PenguinHarness” is damaged and can’t be opened</b></summary>
-
-macOS quarantines files downloaded from the internet, and the missing signature makes that flag surface as a false “damaged” alert. Deleting the flag clears it:
-
-1. Open the downloaded dmg and drag `PenguinHarness.app` into the **Applications** folder.
-2. Open **Terminal** (Launchpad → Other → Terminal).
-3. Paste this command into Terminal and press Enter, then type your login password (nothing shows while you type; press Enter when done):
-
-   ```bash
-   sudo xattr -rd com.apple.quarantine /Applications/PenguinHarness.app
-   ```
-
-4. Once it finishes, double-click the app — it now opens normally.
-
-</details>
-
-<details>
-<summary><b>🪟 Windows SmartScreen says “Windows protected your PC”</b></summary>
-
-The installer is not signed yet, so SmartScreen holds the first run: click **More info**, then **Run anyway** to continue installing — first run only.
-
-</details>
+The macOS builds are Developer ID signed and notarized, and the Windows installers are Authenticode signed, so neither platform needs a first-launch unblock. Linux is the one exception:
 
 <details>
 <summary><b>🐧 Linux: double-clicking the AppImage does nothing</b></summary>

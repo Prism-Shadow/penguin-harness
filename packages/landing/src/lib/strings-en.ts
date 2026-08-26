@@ -132,25 +132,16 @@ export const en: Strings = {
     altOss: "Use the OSS mirror instead",
     checksums: "Checksums (SHA256SUMS.desktop)",
     allReleases: "Open GitHub Releases",
-    /** First-launch FAQ: one collapsible item per platform, the visitor's own pre-expanded. */
+    /**
+     * First-launch FAQ. The macOS builds are Developer ID signed and notarized and the
+     * Windows installers are Authenticode signed, so those two platforms have nothing to
+     * unblock; the Linux AppImage's execute bit is the one item left, pre-expanded for a
+     * Linux visitor.
+     */
     faq: {
       title: "First-launch FAQ",
       intro:
-        "Current builds are not signed yet, so the system may block the very first launch — the fix for your platform below is needed only once.",
-      mac: {
-        question: "macOS says “PenguinHarness” is damaged and can’t be opened?",
-        why: "macOS quarantines files downloaded from the internet, and the missing signature makes that flag surface as a false “damaged” alert. Deleting the flag clears it:",
-        stepDrag: "Open the downloaded dmg and drag PenguinHarness into the Applications folder.",
-        stepTerminal: "Open Terminal (Launchpad → Other → Terminal).",
-        stepPaste:
-          "Paste this command into Terminal and press Enter, then type your login password (nothing shows while you type; press Enter when done):",
-        stepOpen: "Once it finishes, double-click the app — it now opens normally.",
-      },
-      windows: {
-        question: "Windows SmartScreen says “Windows protected your PC”?",
-        answer:
-          "The installer is not signed yet, so SmartScreen holds the first run: click “More info”, then “Run anyway” to continue installing — first run only.",
-      },
+        "The macOS builds are Developer ID signed and notarized, and the Windows installers are Authenticode signed, so neither platform needs a first-launch unblock. Linux is the one exception.",
       linux: {
         question: "Nothing happens when double-clicking the AppImage on Linux?",
         answer:
@@ -423,7 +414,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
   features: {
     eyebrow: "Features",
     title: "The full capability set, one desktop-grade UI",
-    subtitle: "One-to-one with the web interface's menu — installed means ready.",
+    subtitle: "Every one of them lives in the web interface itself — installed means ready.",
     more: "and more…",
     items: [
       {
@@ -470,11 +461,26 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     title: "The built-in Skill library at a glance",
     subtitle: "Four Skill groups out of the box — agents can write and optimize their own, too.",
     groups: [
-      { title: "Office Productivity", skills: ["data-analysis", "firecrawl"] },
-      { title: "Software Development", skills: ["web-design", "software-engineering"] },
+      {
+        title: "Office Productivity",
+        skills: ["data-analysis", "firecrawl", "bento-slides", "humanizer"],
+      },
+      {
+        title: "Software Development",
+        skills: ["web-design", "software-engineering", "remote-claude-code"],
+      },
       {
         title: "AI App Development",
-        skills: ["penguin-sdk", "penguin-cli", "agenthub-models", "vllm", "ollama", "llamafactory"],
+        skills: [
+          "penguin-sdk",
+          "penguin-cli",
+          "penguin-orchestration",
+          "agenthub-models",
+          "vllm",
+          "ollama",
+          "llamafactory",
+          "skill-porting",
+        ],
       },
       {
         title: "agent tuning",
