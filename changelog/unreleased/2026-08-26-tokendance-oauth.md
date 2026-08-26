@@ -3,6 +3,7 @@
 - **Date:** 2026-08-26
 - **Type:** feature
 - **Scope:** `core`, `server`, `web`, `docs`, `model-catalog`
+- **PR:** [#470](https://github.com/Prism-Shadow/penguin-harness/pull/470)
 
 [中文版](2026-08-26-tokendance-oauth.zh.md)
 
