@@ -49,19 +49,18 @@ export const zh = {
   },
 
   hero: {
-    eyebrow: "本地优先的 Agent 应用自动开发平台。",
-    titleLead: "一句话，创建",
-    titleAccent: "可自进化",
-    titleTail: "的 AI 应用。",
-    subtitle: "一句话创建可自进化的 AI 应用。",
+    platformLead: "开源、本地的 Agent 应用",
+    platformAccent: "自动开发",
+    platformTail: "平台",
+    automationLead: "自动化",
+    automationActions: ["创建", "优化", "部署"],
+    automationTail: "AI 应用。",
     downloadCta: "下载桌面版",
-    downloadCtaFor: (platform: string) => `下载桌面版（${platform}）`,
     cliInstall: "命令行安装",
-    installHint: "macOS · Windows · Linux · 本地数据默认保存在 ~/.penguin/data",
     stats: [
-      { value: "1000+模型", label: "支持主流供应商" },
+      { value: "1000+ 模型", label: "支持主流供应商" },
       { value: "跨平台", label: "Linux，Windows，macOS 多系统兼容" },
-      { value: "私有化", label: "本地与服务器灵活部署" },
+      { value: "100% 开源", label: "本地与服务器灵活部署" },
       { value: "首个自进化 Harness", label: "Agent 自进化引擎" },
     ],
   },
@@ -272,7 +271,7 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
 
   cases: {
     eyebrow: "案例",
-    title: "从一句话到可运行的应用",
+    title: "一句话生成可运行的 Agent 应用",
     subtitle: "把需求交给 Agent，端到端拿到可运行的结果；更多案例陆续加入。",
     tabs: [
       {

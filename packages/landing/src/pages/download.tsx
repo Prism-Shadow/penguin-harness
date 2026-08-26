@@ -13,6 +13,7 @@ import {
 } from "../lib/links";
 import { detectPlatform } from "../lib/platform";
 import type { Platform } from "../lib/platform";
+import { RELEASE_VERSION } from "../lib/version";
 import {
   GATE_BUDGET_MS,
   MIRROR_POINTER_MS,
@@ -49,10 +50,14 @@ const PLATFORM_ICONS: Record<Platform, ComponentType<SVGProps<SVGSVGElement>>> =
   linux: LinuxIcon,
 };
 const PLATFORM_ICON_CLASSES: Record<Platform, string> = {
-  mac: "bg-gradient-to-br from-fuchsia-500 via-violet-500 to-blue-500 text-white",
-  windows: "bg-sky-50 text-[#0078d4] dark:bg-sky-950/60 dark:text-[#38bdf8]",
-  linux: "bg-amber-50 dark:bg-amber-950/50",
+  mac: "bg-gray-100 text-gray-950 dark:bg-gray-800 dark:text-white",
+  windows: "bg-gray-100 dark:bg-gray-800",
+  linux: "bg-gray-100 dark:bg-gray-800",
 };
+
+function installerSuffix(file: string): string {
+  return file.match(/(\.AppImage|\.dmg|\.exe|\.deb)$/)?.[1] ?? "";
+}
 
 function FaqItem({
   question,
@@ -94,69 +99,74 @@ function speedText(measurement: Measurement | null, testing: boolean): string {
   return formatSpeed(measurement.bytesPerSecond);
 }
 
-function filledBlocks(
+function filledSignalBars(
   measurement: Measurement | null,
   testing: boolean,
   selected: boolean,
 ): number {
-  if (testing) return 5;
-  if (!measurement || !measurement.reachable) return selected ? 3 : 1;
-  if (measurement.bytesPerSecond <= 0) return 2;
-  return Math.min(8, Math.max(2, Math.round(Math.log2(measurement.bytesPerSecond / 32768) + 2)));
+  if (testing) return 2;
+  if (!measurement || !measurement.reachable) return selected ? 2 : 1;
+  if (measurement.bytesPerSecond <= 0) return 1;
+  return Math.min(4, Math.max(1, Math.round(Math.log2(measurement.bytesPerSecond / 65536) + 1)));
 }
 
-function SourceSpeedCard({
+const SIGNAL_HEIGHTS = [4, 7, 10, 13] as const;
+
+function SourceSpeedButton({
   title,
-  hint,
   measurement,
   testing,
   selected,
+  disabled,
+  onSelect,
 }: {
   title: string;
-  hint: string;
   measurement: Measurement | null;
   testing: boolean;
   selected: boolean;
+  disabled: boolean;
+  onSelect: () => void;
 }) {
-  const filled = filledBlocks(measurement, testing, selected);
+  const filled = filledSignalBars(measurement, testing, selected);
   return (
-    <article
-      className={`rounded-lg border p-3 transition-colors ${
+    <button
+      type="button"
+      disabled={disabled}
+      aria-pressed={selected}
+      onClick={onSelect}
+      className={`flex min-w-0 items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
         selected
           ? "border-brand-400 bg-brand-50/70 dark:border-brand-700 dark:bg-brand-950/50"
-          : "border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"
+          : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700 dark:hover:bg-gray-800"
       }`}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h4 className="text-sm font-semibold tracking-tight">{title}</h4>
-          <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{hint}</p>
-        </div>
-        {selected && (
-          <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-brand-600 text-white dark:bg-brand-400 dark:text-gray-950">
-            <CheckIcon className="h-3 w-3" />
-          </span>
-        )}
+      <div className="min-w-0">
+        <span className="flex items-center gap-1.5 truncate text-xs font-semibold tracking-tight sm:text-sm">
+          {title}
+          {selected && (
+            <CheckIcon className="h-3 w-3 shrink-0 text-brand-600 dark:text-brand-300" />
+          )}
+        </span>
+        <span className="mt-0.5 block font-mono text-[11px] text-gray-500 tabular-nums dark:text-gray-400">
+          {speedText(measurement, testing)}
+        </span>
       </div>
-      <p className="mt-2 font-mono text-base font-semibold tracking-tight tabular-nums">
-        {speedText(measurement, testing)}
-      </p>
-      <div className="mt-2 flex h-5 items-end gap-0.5" aria-hidden="true">
-        {Array.from({ length: 8 }, (_, index) => (
+      <span className="flex h-4 shrink-0 items-end gap-0.5" aria-hidden="true">
+        {SIGNAL_HEIGHTS.map((height, index) => (
           <span
-            key={index}
-            className={`min-w-0 flex-1 rounded-[3px] ${testing ? "animate-pulse" : ""} ${
+            key={height}
+            className={`w-1 rounded-[1px] ${testing ? "animate-pulse" : ""} ${
               index < filled
                 ? selected
                   ? "bg-brand-500 dark:bg-brand-400"
                   : "bg-gray-500 dark:bg-gray-400"
                 : "bg-gray-200 dark:bg-gray-800"
             }`}
-            style={{ height: `${6 + ((index * 5) % 14)}px`, animationDelay: `${index * 55}ms` }}
+            style={{ height: `${height}px`, animationDelay: `${index * 55}ms` }}
           />
         ))}
-      </div>
-    </article>
+      </span>
+    </button>
   );
 }
 
@@ -245,23 +255,30 @@ export function DownloadPage() {
               </p>
               <div className="mt-auto flex flex-col gap-2">
                 {DESKTOP_INSTALLERS[platform].map(({ file, variant }) => (
-                  <a
-                    key={file}
-                    href={probing ? undefined : hrefFor(file)}
-                    aria-disabled={probing || undefined}
-                    className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-3.5 py-2.5 text-sm font-medium transition-colors ${
-                      probing
-                        ? "cursor-progress bg-gray-200 text-gray-500 dark:bg-gray-800 dark:text-gray-500"
-                        : "bg-gray-900 text-white hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
-                    }`}
-                  >
-                    {probing ? (
-                      <SpinnerIcon className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <DownloadIcon className="h-4 w-4" />
-                    )}
-                    {variant}
-                  </a>
+                  <div key={file}>
+                    <a
+                      href={probing ? undefined : hrefFor(file)}
+                      aria-disabled={probing || undefined}
+                      className={`inline-flex w-full items-center justify-center gap-1.5 rounded-lg px-3.5 py-2.5 text-sm font-medium transition-colors ${
+                        probing
+                          ? "cursor-progress bg-gray-200 text-gray-500 dark:bg-gray-800 dark:text-gray-500"
+                          : "bg-gray-900 text-white hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
+                      }`}
+                    >
+                      {probing ? (
+                        <SpinnerIcon className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <DownloadIcon className="h-4 w-4" />
+                      )}
+                      <span>{variant}</span>
+                      <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold">
+                        {installerSuffix(file)}
+                      </span>
+                    </a>
+                    <p className="mt-1 text-center text-[11px] font-medium text-gray-400 tabular-nums dark:text-gray-500">
+                      {RELEASE_VERSION}
+                    </p>
+                  </div>
                 ))}
               </div>
             </article>
@@ -269,72 +286,50 @@ export function DownloadPage() {
         })}
       </div>
 
-      <section className="mx-auto mt-7 max-w-4xl rounded-xl border border-gray-200 bg-gray-50/80 p-3 dark:border-gray-800 dark:bg-gray-950/70">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h3 className="text-base font-semibold tracking-tight">{S.download.speed.title}</h3>
-            <p className="mt-0.5 max-w-2xl text-[11px] leading-4 text-gray-500 dark:text-gray-400">
-              {S.download.speed.subtitle}
-            </p>
-          </div>
-          {refining && (
-            <span className="inline-flex shrink-0 items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
-              <SpinnerIcon className="h-3.5 w-3.5 animate-spin" />
-              {S.download.statusRefining}
+      <section
+        className="mx-auto mt-7 max-w-4xl rounded-xl border border-gray-200 bg-gray-50/80 p-2.5 dark:border-gray-800 dark:bg-gray-950/70"
+        title={S.download.speed.subtitle}
+      >
+        <div className="flex items-center justify-between gap-3 px-0.5">
+          <h3 className="text-sm font-semibold tracking-tight">{S.download.speed.title}</h3>
+          <span className="inline-flex min-w-0 items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400">
+            {(probing || refining) && <SpinnerIcon className="h-3 w-3 shrink-0 animate-spin" />}
+            <span className="truncate">
+              {selected === "oss" ? S.download.speed.oss : S.download.speed.github} ·{" "}
+              {override ? S.download.speed.manual : S.download.speed.automatic}
             </span>
-          )}
+          </span>
         </div>
 
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <SourceSpeedCard
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <SourceSpeedButton
             title={S.download.speed.github}
-            hint={S.download.speed.githubHint}
             measurement={report?.github ?? null}
             testing={probing || refining}
             selected={selected === "github"}
+            disabled={probing}
+            onSelect={() => setOverride("github")}
           />
-          <SourceSpeedCard
+          <SourceSpeedButton
             title={S.download.speed.oss}
-            hint={S.download.speed.ossHint}
             measurement={report?.oss ?? null}
             testing={probing || refining}
             selected={selected === "oss"}
+            disabled={probing || mirror === null}
+            onSelect={() => setOverride("oss")}
           />
-        </div>
-
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-gray-950 px-3 py-2 text-white dark:bg-gray-100 dark:text-gray-900">
-          <div className="flex min-w-0 items-center gap-2 text-xs">
-            {probing && <SpinnerIcon className="h-3.5 w-3.5 shrink-0 animate-spin" />}
-            <span className="text-gray-400 dark:text-gray-500">{S.download.speed.selected}</span>
-            <strong className="truncate font-semibold">
-              {selected === "oss" ? S.download.speed.oss : S.download.speed.github}
-            </strong>
-            <span className="hidden text-gray-400 sm:inline dark:text-gray-500">
-              · {override ? S.download.speed.manual : S.download.speed.automatic}
-              {mirror?.tag ? ` · ${mirror.tag}` : ""}
-            </span>
-          </div>
-          {mirror !== null && !probing && (
-            <button
-              type="button"
-              className="shrink-0 text-xs underline decoration-gray-600 underline-offset-4 transition-colors hover:text-brand-300 dark:decoration-gray-400 dark:hover:text-brand-700"
-              onClick={() => setOverride(viaMirror ? "github" : "oss")}
-            >
-              {viaMirror ? S.download.altGithub : S.download.altOss}
-            </button>
-          )}
         </div>
       </section>
 
-      <div className="mx-auto mt-5 max-w-5xl text-center text-sm text-gray-600 dark:text-gray-400">
-        <p aria-live="polite">
+      <div className="mx-auto mt-4 max-w-5xl text-center text-sm text-gray-600 dark:text-gray-400">
+        <p className="sr-only" aria-live="polite">
           {probing
             ? S.download.statusProbing
             : viaMirror
               ? S.download.statusOss(mirror.tag)
               : S.download.statusGithub}
         </p>
-        <p className="mt-2">
+        <p>
           <a href={hrefFor(DESKTOP_SHA256SUMS)} className={textLink}>
             {S.download.checksums}
           </a>

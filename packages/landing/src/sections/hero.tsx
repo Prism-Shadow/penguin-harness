@@ -1,30 +1,10 @@
-/** Product-first hero with one visible install path at a time. */
-import { useState } from "react";
+/** Product-first hero with two direct installation paths. */
 import { Link } from "react-router";
 import { S } from "../lib/strings";
-import { INSTALL_CMD, INSTALL_CMD_WINDOWS } from "../lib/links";
-import { detectPlatform } from "../lib/platform";
-import { ArrowRightIcon, DownloadIcon, TerminalIcon } from "../components/icons";
-import { CopyButton } from "../components/copy-button";
-
-type InstallMode = "desktop" | "cli";
+import { RELEASE_VERSION } from "../lib/version";
+import { DownloadIcon, TerminalIcon } from "../components/icons";
 
 export function Hero() {
-  const [mode, setMode] = useState<InstallMode>("desktop");
-  const detected = detectPlatform();
-  const downloadLabel = detected
-    ? S.hero.downloadCtaFor(S.download.platforms[detected].name)
-    : S.hero.downloadCta;
-  const installCommand = detected === "windows" ? INSTALL_CMD_WINDOWS : INSTALL_CMD;
-  const installShell = detected === "windows" ? "PowerShell" : "Terminal";
-
-  const modeButton = (active: boolean) =>
-    `inline-flex h-9 items-center justify-center gap-1.5 rounded-lg px-3.5 text-sm font-medium transition-colors ${
-      active
-        ? "bg-gray-900 text-white shadow-sm dark:bg-gray-100 dark:text-gray-900"
-        : "text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
-    }`;
-
   return (
     <section className="relative overflow-hidden border-b border-gray-200/70 dark:border-gray-800/70">
       <div className="hero-dots pointer-events-none absolute inset-0" aria-hidden="true" />
@@ -42,91 +22,53 @@ export function Hero() {
           className="anim-rise mx-auto mt-7 whitespace-nowrap text-[clamp(0.95rem,4.3vw,3rem)] leading-tight font-semibold tracking-[-0.035em]"
           style={{ animationDelay: "70ms" }}
         >
-          {S.hero.eyebrow}
+          {S.hero.platformLead}
+          <span className="text-brand-600 dark:text-brand-300">{S.hero.platformAccent}</span>
+          {S.hero.platformTail}
         </p>
 
         <p
           className="anim-rise mt-4 text-sm text-gray-600 sm:text-base dark:text-gray-300"
           style={{ animationDelay: "120ms" }}
         >
-          {S.hero.subtitle}
+          {S.hero.automationLead}
+          {S.hero.automationActions.map((action, index) => (
+            <span key={action}>
+              {index > 0 && <span className="font-normal"> · </span>}
+              <strong className="font-semibold text-gray-900 dark:text-gray-100">{action}</strong>
+            </span>
+          ))}{" "}
+          {S.hero.automationTail}
         </p>
 
         <div
-          className="anim-rise mx-auto mt-7 inline-flex rounded-xl border border-gray-200 bg-white/90 p-1 shadow-sm dark:border-gray-800 dark:bg-gray-900/90"
-          role="tablist"
-          aria-label={S.quickstart.eyebrow}
+          className="anim-rise mx-auto mt-7 grid max-w-md grid-cols-2 gap-3"
           style={{ animationDelay: "170ms" }}
         >
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === "desktop"}
-            className={modeButton(mode === "desktop")}
-            onClick={() => setMode("desktop")}
-          >
-            <DownloadIcon className="h-4 w-4" />
-            {S.quickstart.tabs.desktop}
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === "cli"}
-            className={modeButton(mode === "cli")}
-            onClick={() => setMode("cli")}
-          >
-            <TerminalIcon className="h-4 w-4" />
-            {S.quickstart.tabs.install}
-          </button>
-        </div>
-
-        <div
-          className="anim-rise mx-auto mt-4 flex min-h-14 max-w-2xl items-start justify-center"
-          style={{ animationDelay: "220ms" }}
-        >
-          {mode === "desktop" ? (
+          <div>
             <Link
               to="/download"
-              role="tabpanel"
-              className="inline-flex h-12 items-center gap-2 rounded-xl bg-gray-900 px-6 text-sm font-semibold text-white shadow-sm transition-[background-color,transform] hover:-translate-y-0.5 hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
+              className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-gray-900 px-4 text-sm font-semibold text-white shadow-sm transition-[background-color,transform] hover:-translate-y-0.5 hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
             >
               <DownloadIcon className="h-4 w-4" />
-              {downloadLabel}
+              {S.hero.downloadCta}
             </Link>
-          ) : (
-            <div role="tabpanel" className="w-full">
-              <div className="overflow-hidden rounded-xl border border-gray-800 bg-gray-950 text-left shadow-lg shadow-gray-950/5">
-                <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-2.5">
-                  <span className="inline-flex items-center gap-2 text-xs text-gray-400">
-                    <TerminalIcon className="h-3.5 w-3.5" />
-                    {installShell}
-                  </span>
-                  <CopyButton
-                    text={installCommand}
-                    className="border-white/10 bg-white/5 text-gray-300 hover:bg-white/10 hover:text-white dark:border-white/10 dark:bg-white/5"
-                  />
-                </div>
-                <div className="flex min-w-0 items-center gap-3 px-4 py-4 font-mono text-[13px] sm:text-sm">
-                  <span className="shrink-0 text-brand-400">$</span>
-                  <code className="min-w-0 overflow-x-auto whitespace-nowrap text-gray-100">
-                    {installCommand}
-                  </code>
-                </div>
-              </div>
-              <Link
-                to="/#quickstart-install"
-                className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-brand-700 hover:text-brand-600 dark:text-brand-300"
-              >
-                {S.download.cliHintLink}
-                <ArrowRightIcon className="h-3.5 w-3.5" />
-              </Link>
-            </div>
-          )}
+            <p className="mt-2 text-xs font-medium text-gray-400 tabular-nums dark:text-gray-500">
+              {RELEASE_VERSION}
+            </p>
+          </div>
+          <Link
+            to="/#quickstart-install"
+            className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-900 shadow-sm transition-[background-color,transform] hover:-translate-y-0.5 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
+          >
+            <TerminalIcon className="h-4 w-4" />
+            {S.hero.cliInstall}
+          </Link>
         </div>
 
         <dl
-          className="anim-rise mx-auto mt-11 grid max-w-5xl grid-cols-2 overflow-hidden rounded-2xl border border-gray-200 bg-white/80 text-left shadow-sm lg:grid-cols-4 dark:border-gray-800 dark:bg-gray-900/75"
-          style={{ animationDelay: "270ms" }}
+          className="anim-rise mx-auto mt-10 grid max-w-5xl grid-cols-2 overflow-hidden rounded-2xl border border-gray-200 bg-white/80 text-left shadow-sm lg:grid-cols-4 dark:border-gray-800 dark:bg-gray-900/75"
+          style={{ animationDelay: "250ms" }}
         >
           {S.hero.stats.map((stat, index) => (
             <div

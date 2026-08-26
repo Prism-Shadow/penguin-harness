@@ -48,19 +48,18 @@ export const en: Strings = {
   },
 
   hero: {
-    eyebrow: "The local-first platform for autonomous Agent app development.",
-    titleLead: "One sentence. One ",
-    titleAccent: "self-evolving",
-    titleTail: " AI app.",
-    subtitle: "Create a self-evolving AI app in one sentence.",
+    platformLead: "The open-source, local-first Agent app ",
+    platformAccent: "development",
+    platformTail: " platform",
+    automationLead: "Automate ",
+    automationActions: ["build", "optimize", "deploy"],
+    automationTail: "AI apps.",
     downloadCta: "Download the desktop app",
-    downloadCtaFor: (platform: string) => `Download for ${platform}`,
     cliInstall: "Install from the command line",
-    installHint: "macOS · Windows · Linux · Local data stays in ~/.penguin/data by default",
     stats: [
       { value: "1000+ models", label: "Support for major providers" },
       { value: "Cross-platform", label: "Linux, Windows, and macOS compatible" },
-      { value: "Private", label: "Flexible local and server deployment" },
+      { value: "100% open source", label: "Flexible local and server deployment" },
       { value: "First self-evolving Harness", label: "Agent self-evolution engine" },
     ],
   },
@@ -285,7 +284,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
 
   cases: {
     eyebrow: "Cases",
-    title: "From one sentence to a running app",
+    title: "Generate a runnable Agent app in one sentence",
     subtitle:
       "Hand the requirement to an Agent and get a runnable result end to end — more cases are on the way.",
     tabs: [
