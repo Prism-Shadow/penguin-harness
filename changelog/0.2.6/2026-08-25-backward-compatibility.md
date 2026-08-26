@@ -2,14 +2,14 @@
 
 - **Date:** 2026-08-25
 - **Type:** process
-- **Scope:** `cli`, `server`, `web`
-- **PR:** [#466](https://github.com/Prism-Shadow/penguin-harness/pull/466)
-- **Breaking:** yes — old CLI binaries ran tasks core-direct and offline; the rebuilt commands require a server (auto-started locally) and the per-user "show CLI sessions" preference is gone
+- **Scope:** `cli`, `server`, `web`, `desktop`
+- **PR:** [#466](https://github.com/Prism-Shadow/penguin-harness/pull/466), [#477](https://github.com/Prism-Shadow/penguin-harness/pull/477), [#479](https://github.com/Prism-Shadow/penguin-harness/pull/479)
+- **Breaking:** yes — old CLI binaries ran tasks core-direct and offline; the rebuilt commands require a server (auto-started locally), the per-user "show CLI sessions" preference is gone, and a Windows desktop client installed from 0.2.4 refuses this update after the signing identity change
 
 [中文版](2026-08-25-backward-compatibility.zh.md)
 
-The CLI-on-server batch touches three kinds of existing state. What breaks without
-handling, and what was chosen:
+This release touches four kinds of existing state — three from the CLI-on-server batch, one
+from the Windows signing change. What breaks without handling, and what was chosen:
 
 ## Legacy CLI-direct traces on disk
 
@@ -42,9 +42,34 @@ core-direct execution is no longer a CLI mode — the SDK keeps that capability 
 embedders. Old binaries keep working against their own cores until updated; nothing on
 disk stops them.
 
+## The Windows update publisher name
+
+Installers through v0.2.4 were signed by `RushRush Network Technology Ltd`, and each installed
+client recorded that one name as `publisherName` in its own `app-update.yml`. Builds from this
+release on are signed by `NaisNet Technology Co., Ltd.`. electron-updater verifies a downloaded
+update against the names the **installed** client holds, and that file is written once at install
+time, so nothing in this repository can reach a client that already exists: a Windows desktop
+client installed from 0.2.4 or earlier refuses this update and has to be reinstalled by hand. That
+break is accepted and stated here. Nothing under `~/.penguin/data` is affected, and the CLI, the
+Linux packages and the notarized macOS builds are not involved.
+
+Forward, the field is a list rather than one name, and it carries the previous identity alongside
+the current one — each in the full-DN and bare-CN forms electron-updater compares. A client
+installed from this release therefore still accepts a build signed by the next certificate, so the
+next rotation does not repeat this. A retired identity leaves the list once no supported client was
+installed by a release that signed with it; until then it is trusted by builds it did not sign,
+which is the cost of the arrangement.
+
 ## Compatibility
 
-Nothing on disk has to be migrated and no action is required to keep an install working.
+Nothing on disk has to be migrated, and on macOS, Linux and the CLI no action is required to keep
+an install working.
+
+Reinstall the Windows desktop app once, from
+[penguin.ooo/download](https://penguin.ooo/download). A client installed from 0.2.4 or earlier
+cannot auto-update onto the new signing identity, because the publisher list it recorded at install
+time holds only the old one; from that reinstall onward auto-update works again and accepts either
+identity. See [the signing entry](2026-08-27-windows-signing-publisher.md).
 
 Update the CLI along with the server: `penguin run` and `penguin chat` are server-backed from this
 version on, and an old binary keeps executing against its own core until it is replaced. Where a

@@ -20,7 +20,7 @@ const ROTATE_MS = 6000;
  * freshest news goes at the front.
  */
 const ITEMS = [
-  { key: "flashModels", to: "/blog/penguinharness-0-2-5" },
+  { key: "flashModels", to: "/blog/penguinharness-0-2-6" },
   { key: "fireworks", to: "/blog/fireworks-credits-amd" },
 ] as const;
 
