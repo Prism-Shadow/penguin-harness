@@ -77,31 +77,32 @@ export function scpArgs(target: RemoteTarget, localFiles: string[], remoteDir: s
  * Runs the ordinary installer on the far side, pinned to this server's own base release so
  * the remote downloads exactly the version this side stands on.
  *
- * POSIX takes the script on stdin (`sh -s`) — no file, so nothing has to be copied, made a
- * place for, or cleaned up afterwards. Windows does not: `param()` is not valid in a
- * PowerShell command stream, and `-File -` is PowerShell 7 only while a remote may have 5.1,
- * so there the script is copied to the home directory and run from a path — with the delete
- * chained onto the same command rather than costing a connection of its own.
- * `-ExecutionPolicy Bypass` because client Windows defaults to Restricted, and this is our
- * own script arriving over our own ssh session.
+ * The two forms differ in WHERE THE SCRIPT IS, which is why that is in the type rather than
+ * in a comment: POSIX takes it on stdin (`sh -s`, the same shape as the documented
+ * `curl … | sh`), so the returned command carries no path and `scriptOnStdin` says the caller
+ * must pipe it — the command alone is only half the invocation. Windows cannot: `param()` is
+ * not valid in a PowerShell command stream, and `-File -` is PowerShell 7 only while a remote
+ * may have 5.1, so the script is copied to a path first and that path is required to build
+ * the command at all. Its delete is chained on rather than costing another handshake, and
+ * `-ExecutionPolicy Bypass` covers client Windows defaulting to Restricted.
  *
  * `versionTag` is a release tag (`v` + semver); the caller validated the spelling, and the
  * quoting here keeps it one word regardless.
  */
 export function runInstallScriptCommand(
-  platform: RemotePlatform,
   versionTag: string,
-  /** Where the script was copied on a Windows remote; unused on POSIX, where it rides stdin. */
-  remoteScriptPath?: string,
-): string {
-  if (platform === "win32") {
-    const script = cmdQuote(remoteScriptPath ?? "");
-    return (
-      `powershell -NoProfile -ExecutionPolicy Bypass -File ${script} -Version ${cmdQuote(versionTag)}` +
-      ` & del /q ${script}`
-    );
+  where: { platform: "linux" | "darwin" } | { platform: "win32"; scriptPath: string },
+): { command: string; scriptOnStdin: boolean } {
+  if (where.platform === "win32") {
+    const script = cmdQuote(where.scriptPath);
+    return {
+      command:
+        `powershell -NoProfile -ExecutionPolicy Bypass -File ${script} -Version ${cmdQuote(versionTag)}` +
+        ` & del /q ${script}`,
+      scriptOnStdin: false,
+    };
   }
-  return `PENGUIN_VERSION=${shQuote(versionTag)} sh -s`;
+  return { command: `PENGUIN_VERSION=${shQuote(versionTag)} sh -s`, scriptOnStdin: true };
 }
 
 /**
