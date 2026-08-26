@@ -92,6 +92,15 @@ describe("getMessages", () => {
       expect(m.logs.tailInvalid("x")).toContain("x");
       expect(m.cost.byInvalid("bogus")).toContain("bogus");
       expect(m.run.sessionNoOverride()).toContain("--session");
+      // The soft-yield / poll / caller-context family.
+      expect(m.common.timeout.length).toBeGreaterThan(0);
+      expect(m.client.timeoutInvalid("5d")).toContain("5d");
+      expect(m.client.stillRunning("abcd1234")).toContain("abcd1234");
+      expect(m.client.callerDefaultsFailed("session-x")).toContain("session-x");
+      expect(m.input.noWaitNeedsMessage()).toContain("-m");
+      expect(m.input.noReplyYet().length).toBeGreaterThan(0);
+      expect(m.logs.timeoutNeedsFollow().length).toBeGreaterThan(0);
+      expect(m.run.timeoutWithBackground()).toContain("--background");
     }
     // The dictionaries are genuinely two languages, not one copied twice.
     expect(getMessages("zh").ls.desc).not.toBe(getMessages("en").ls.desc);

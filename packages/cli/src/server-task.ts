@@ -128,21 +128,55 @@ export interface WatchTaskOptions {
   renderer?: StreamRenderer;
   /**
    * Answers an `approval_request` (the [Y/n] prompt); the decision is POSTed back.
-   * Absent = deny (a session in always-ask mode driven by a caller that cannot ask).
+   * Absent = the request is left pending untouched — a passive watcher (the poll form,
+   * `--json` collectors) must never decide another surface's approvals.
    */
   approvalPrompt?: (tc: OmniMessage<ToolCallPayload>) => Promise<ApprovalDecision>;
   /** Goal mode: receives the dim round/summary lines (same rhythm as the core-direct loop had); a minimal sink so --json can swallow them. */
   goal?: { out: { write(text: string): unknown } };
   /** Collects main-session assistant text (complete messages) for `--json` output. */
   onAssistantText?: (text: string) => void;
+  /**
+   * `--timeout` soft-yield deadline (epoch ms): once it passes, the watch detaches
+   * cleanly and reports `timedOut` — the exec_command yield-window semantics, applied to
+   * the wait rather than the task. The task keeps running server-side; nothing is
+   * aborted. Absent = wait indefinitely.
+   */
+  deadlineMs?: number;
 }
 
 /** Result of one watched task. */
 export interface WatchTaskResult {
   /** The task ended with a main-session abort event (user interrupt / LLM failure). */
   aborted: boolean;
+  /** The `deadlineMs` budget expired before the task ended: the watch detached, the task runs on. */
+  timedOut: boolean;
   /** Goal-mode outcome (absent when the stream ended before the terminal event). */
   goal?: GoalOutcome;
+}
+
+/**
+ * One frame, racing the soft-yield deadline: "timeout" once `deadlineMs` passes. The
+ * losing `stream.next()` stays pending against the stream's internal iterator — the
+ * caller detaches by closing the stream, which settles it. Shared by watchTask and
+ * `logs -f`.
+ */
+export async function nextFrameOrDeadline(
+  stream: SessionStream,
+  deadlineMs: number | undefined,
+): Promise<SseFrame | null | "timeout"> {
+  if (deadlineMs === undefined) return stream.next();
+  const remaining = deadlineMs - Date.now();
+  if (remaining <= 0) return "timeout";
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expiry = new Promise<"timeout">((resolve) => {
+    timer = setTimeout(() => resolve("timeout"), remaining);
+  });
+  try {
+    return await Promise.race([stream.next(), expiry]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
@@ -156,6 +190,7 @@ export async function watchTask(
 ): Promise<WatchTaskResult> {
   const { t, renderer } = opts;
   let aborted = false;
+  let timedOut = false;
   let outcome: GoalOutcome | undefined;
   let round = 0;
   let segmentStartedAt = Date.now();
@@ -165,19 +200,18 @@ export async function watchTask(
 
   const answerApproval = (ev: ServerEventFrame): void => {
     const tc = ev.toolCall;
-    if (tc === undefined) return;
+    if (tc === undefined || opts.approvalPrompt === undefined) return;
+    const prompt = opts.approvalPrompt;
     const run = async (): Promise<void> => {
       let decision: ApprovalDecision = "deny";
-      if (opts.approvalPrompt) {
-        renderer?.beginUserPrompt(tc);
-        try {
-          decision = await opts.approvalPrompt(tc);
-        } finally {
-          // The decision line renders before the screen unlocks, keeping
-          // call → prompt → result adjacent (same contract as the core-direct loop).
-          renderer?.noteApprovalDecision(tc, decision);
-          renderer?.endUserPrompt();
-        }
+      renderer?.beginUserPrompt(tc);
+      try {
+        decision = await prompt(tc);
+      } finally {
+        // The decision line renders before the screen unlocks, keeping
+        // call → prompt → result adjacent (same contract as the core-direct loop).
+        renderer?.noteApprovalDecision(tc, decision);
+        renderer?.endUserPrompt();
       }
       try {
         await opts.client.request(
@@ -193,7 +227,11 @@ export async function watchTask(
   };
 
   for (;;) {
-    const frame = await stream.next();
+    const frame = await nextFrameOrDeadline(stream, opts.deadlineMs);
+    if (frame === "timeout") {
+      timedOut = true;
+      break;
+    }
     if (frame === null) break;
     if (frame.event === "server_event") {
       const ev = JSON.parse(frame.data) as ServerEventFrame;
@@ -234,5 +272,5 @@ export async function watchTask(
       `${dim(t.goalFinished(outcome.outcome, outcome.rounds, humanizeTokens(outcome.tokensUsed)))}\n`,
     );
   }
-  return { aborted, ...(outcome !== undefined ? { goal: outcome } : {}) };
+  return { aborted, timedOut, ...(outcome !== undefined ? { goal: outcome } : {}) };
 }

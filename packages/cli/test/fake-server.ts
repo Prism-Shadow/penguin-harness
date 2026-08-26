@@ -71,6 +71,8 @@ export class FakeServer {
   compact: "reject" | ((session: FakeSessionState) => unknown[]) = "reject";
   /** POST /steer behavior: accept (202) or reject (409 not_running). */
   steerMode: "accept" | "reject" = "accept";
+  /** When true, a task POST emits `running` + the script's messages but never `idle` — the turn hangs (soft-yield timeout tests). */
+  hangTasks = false;
   usage: Json = {
     summary: {
       today: { total: 1000, requests: 2, cost: 0.5, hasUncosted: false },
@@ -130,13 +132,23 @@ export class FakeServer {
   /** Installs the fetch stub and env pinning; returns the uninstaller. */
   install(): () => void {
     this.savedFetch = globalThis.fetch;
-    for (const key of ["PENGUIN_API_URL", "PENGUIN_API_TOKEN", "PENGUIN_HOME"]) {
+    for (const key of [
+      "PENGUIN_API_URL",
+      "PENGUIN_API_TOKEN",
+      "PENGUIN_HOME",
+      "PENGUIN_SESSION_ID",
+      "PENGUIN_PROJECT_ID",
+      "PENGUIN_AGENT_ID",
+    ]) {
       this.savedEnv.set(key, process.env[key]);
     }
     this.scratch = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-cli-test-"));
     process.env.PENGUIN_HOME = this.scratch;
     process.env.PENGUIN_API_URL = "http://127.0.0.1:7399";
     delete process.env.PENGUIN_API_TOKEN;
+    delete process.env.PENGUIN_SESSION_ID;
+    delete process.env.PENGUIN_PROJECT_ID;
+    delete process.env.PENGUIN_AGENT_ID;
     globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) =>
       this.handle(input, init)) as typeof globalThis.fetch;
     return () => this.uninstall();
@@ -329,7 +341,13 @@ export class FakeServer {
       }
       if (rest === "/tasks" && method === "POST") {
         session.tasks.push(body ?? {});
-        this.runTurn(session, this.onTask(session, body ?? {}));
+        if (this.hangTasks) {
+          session.status = "running";
+          this.emitServerEvent(session.sessionId, { type: "task_state", state: "running" });
+          for (const msg of this.onTask(session, body ?? {})) this.emit(session.sessionId, msg);
+        } else {
+          this.runTurn(session, this.onTask(session, body ?? {}));
+        }
         return this.json({ sessionId: session.sessionId }, 202);
       }
       if (rest === "/steer" && method === "POST") {

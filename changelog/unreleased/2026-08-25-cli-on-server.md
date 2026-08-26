@@ -66,6 +66,25 @@ each Session's own coordinates and re-evaluates it at every spawn; injected entr
 override vault entries of the same name; subagent sessions evaluate it with their own ids;
 SDK/CLI-direct embedding without the option injects nothing.
 
+## Agent-side ergonomics
+
+- **Caller-context defaults**: inside a harness agent (`PENGUIN_SESSION_ID` present), a
+  session created by `run` / `chat` defaults each unspecified field to the calling
+  session's live values (`GET /api/sessions/$PENGUIN_SESSION_ID`) — Workspace, the model
+  pair, approval mode and thinking level — the same inheritance `run_subagent` applies to
+  spawned children. Per field: explicit flag > caller value > plain fallback; a failed
+  lookup warns (dim) and falls back; outside an agent nothing changes.
+- **`--timeout <duration>` soft yield** on `run` (non-background), `input` and `logs -f`:
+  wait up to the budget (`30s` / `5m` / `2h`, or bare seconds), then detach cleanly —
+  exit 0, a dim still-running line with the session id (`status: "running"` under
+  `--json`) — while the task keeps running server-side, mirroring the command tools'
+  yield-window semantics. No flag = wait indefinitely.
+- **Bare `penguin input <session>` (no `-m`) polls**: prints the session's most recent
+  complete assistant text (an idempotent last-answer snapshot; thinking and tool output
+  skipped), mirroring `input_subagent`'s empty-prompt semantics — nothing queued, nothing
+  steered. A running session is waited on silently (bounded by `--timeout` when given);
+  still running at expiry prints the current latest text plus the still-running note.
+
 ## The CLI-session toggle is retired
 
 Sessions created through the API now carry a `client` hint (`"cli"` from the CLI, default

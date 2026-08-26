@@ -42,6 +42,8 @@ export interface Messages {
     json: string;
     /** --server: explicit server URL (overrides PENGUIN_API_URL, the local lock and auto-start). */
     server: string;
+    /** --timeout: soft-yield wait budget on run/input/logs -f (30s / 5m / 2h / bare seconds). */
+    timeout: string;
   };
   config: {
     desc: string;
@@ -91,6 +93,8 @@ export interface Messages {
     background: string;
     /** --session combined with --workspace / the model pair: neither can change after creation. */
     sessionNoOverride(): string;
+    /** --background never waits, so a wait budget cannot apply to it. */
+    timeoutWithBackground(): string;
   };
   chat: {
     desc: string;
@@ -119,6 +123,12 @@ export interface Messages {
     message: string;
     /** --no-wait: return right after the 202 instead of rendering to completion. */
     noWait: string;
+    /** Bare `input` (no -m) is a poll and has nothing to return a 202 for. */
+    noWaitNeedsMessage(): string;
+    /** --no-wait never waits, so a wait budget cannot apply to it. */
+    timeoutWithNoWait(): string;
+    /** Poll form on a session that has produced no assistant text yet. */
+    noReplyYet(): string;
   };
   /** `penguin logs`: render a session's history, optionally following the live stream. */
   logs: {
@@ -126,6 +136,8 @@ export interface Messages {
     tail: string;
     follow: string;
     tailInvalid(value: string): string;
+    /** --timeout without -f: there is no wait to bound. */
+    timeoutNeedsFollow(): string;
   };
   /** `penguin agent`: agent listing and creation. */
   agent: {
@@ -214,6 +226,12 @@ export interface Messages {
     streamLost(detail: string): string;
     /** resync_required: the reconnect fell off the server's replay buffer (a display gap, not data loss). */
     streamResynced(): string;
+    /** Invalid --timeout value (names the accepted shapes). */
+    timeoutInvalid(value: string): string;
+    /** Soft-yield detach: the wait budget expired, the task keeps running server-side. */
+    stillRunning(shortId: string): string;
+    /** Caller-context lookup failed (PENGUIN_SESSION_ID names a session this server cannot answer for): plain defaults apply. */
+    callerDefaultsFailed(sessionId: string): string;
   };
   /** `/thinking` display when the Session pins no level: the Agent's configured default applies. */
   chatThinkingConfigured(): string;
@@ -495,6 +513,8 @@ const en: Messages = {
     json: "Print raw JSON instead of the rendered output",
     server:
       "Server URL to connect to (defaults to PENGUIN_API_URL, then the local running server, then auto-start)",
+    timeout:
+      "Wait at most this long (30s / 5m / 2h, or bare seconds), then detach and leave the task running (exit 0)",
   },
   config: {
     desc: "Manage Project configuration",
@@ -545,6 +565,8 @@ const en: Messages = {
     background: "Post the task and exit immediately, printing the session id",
     sessionNoOverride: () =>
       "--session reuses an existing Session: --workspace, --model-id and --provider cannot be combined with it (neither can change after creation).",
+    timeoutWithBackground: () =>
+      "--timeout bounds the wait, and --background does not wait: drop one of them.",
   },
   chat: {
     desc: "Open the interactive REPL",
@@ -567,15 +589,22 @@ const en: Messages = {
     stateRunning: () => "running",
   },
   input: {
-    desc: "Send a message into an existing session (steering while it runs, a new task when idle)",
-    message: "Message text",
+    desc: "Send a message into an existing session (steering while it runs, a new task when idle); without -m, print its most recent assistant reply",
+    message: "Message text (omit to poll the session's last assistant reply instead)",
     noWait: "Return right after the server accepts the message instead of rendering the turn",
+    noWaitNeedsMessage: () =>
+      "--no-wait needs a message (-m): the bare form polls the last reply and has nothing to hand the server.",
+    timeoutWithNoWait: () =>
+      "--timeout bounds the wait, and --no-wait does not wait: drop one of them.",
+    noReplyYet: () => "(no assistant reply yet)",
   },
   logs: {
     desc: "Render a session's history",
     tail: "Show only the last <n> entries",
     follow: "Keep following the live stream after the history",
     tailInvalid: (value) => `Invalid --tail value "${value}": expected a positive integer.`,
+    timeoutNeedsFollow: () =>
+      "--timeout only applies to -f/--follow: without it, logs never waits.",
   },
   agent: {
     desc: "Manage the project's agents",
@@ -656,6 +685,12 @@ const en: Messages = {
     streamLost: (detail) => `Lost the server stream and reconnecting failed: ${detail}`,
     streamResynced: () =>
       "[stream] reconnected past the server's replay buffer; some output may be missing here (penguin logs shows the full history)",
+    timeoutInvalid: (value) =>
+      `Invalid --timeout value "${value}": expected 30s, 5m, 2h, or a bare number of seconds.`,
+    stillRunning: (shortId) =>
+      `[still running] session ${shortId} continues on the server — follow with \`penguin logs -f ${shortId}\` or poll with \`penguin input ${shortId}\``,
+    callerDefaultsFailed: (sessionId) =>
+      `[caller context] could not read calling session ${sessionId}; using the plain defaults`,
   },
   chatThinkingConfigured: () => "agent default",
   serve: {
@@ -927,6 +962,8 @@ const zh: Messages = {
     thinking: "本会话的思考等级：low、medium、high、xhigh 或 max（缺省用 Agent 配置的等级）",
     json: "输出原始 JSON，不做渲染",
     server: "要连接的服务器地址（缺省依次取 PENGUIN_API_URL、本机运行中的服务器、自动拉起）",
+    timeout:
+      "最长等待时长（30s / 5m / 2h，或纯数字秒数）；到时脱开、任务继续在服务端运行（退出码 0）",
   },
   config: {
     desc: "管理 Project 配置",
@@ -973,6 +1010,7 @@ const zh: Messages = {
     background: "提交任务后立即退出，打印 session id",
     sessionNoOverride: () =>
       "--session 复用既有 Session：不能与 --workspace、--model-id、--provider 同时使用（二者创建后不可更换）。",
+    timeoutWithBackground: () => "--timeout 限定等待，而 --background 不等待：二者去其一。",
   },
   chat: {
     desc: "打开交互式 REPL",
@@ -994,15 +1032,20 @@ const zh: Messages = {
     stateRunning: () => "运行中",
   },
   input: {
-    desc: "向既有会话发送消息（运行中即插话，空闲时发起新 Task）",
-    message: "消息文本",
+    desc: "向既有会话发送消息（运行中即插话，空闲时发起新 Task）；不带 -m 时输出其最近一条助手回复",
+    message: "消息文本（省略时改为轮询该会话的最近助手回复）",
     noWait: "服务端受理后立即返回，不渲染本轮输出",
+    noWaitNeedsMessage: () =>
+      "--no-wait 需要消息（-m）：不带 -m 的形式是轮询最近回复，没有可供受理的内容。",
+    timeoutWithNoWait: () => "--timeout 限定等待，而 --no-wait 不等待：二者去其一。",
+    noReplyYet: () => "（还没有助手回复）",
   },
   logs: {
     desc: "渲染会话的历史消息",
     tail: "只显示最后 <n> 条",
     follow: "渲染历史后继续跟随实时输出流",
     tailInvalid: (value) => `--tail 值「${value}」无效：应为正整数。`,
+    timeoutNeedsFollow: () => "--timeout 只与 -f/--follow 搭配：不跟随时 logs 不等待。",
   },
   agent: {
     desc: "管理 Project 的 Agent",
@@ -1082,6 +1125,11 @@ const zh: Messages = {
     streamLost: (detail) => `与服务器的输出流断开且重连失败：${detail}`,
     streamResynced: () =>
       "[stream] 重连时已超出服务端回放缓冲，此处可能缺少部分输出（penguin logs 可查看完整历史）",
+    timeoutInvalid: (value) => `--timeout 值「${value}」无效：应为 30s、5m、2h 或纯数字秒数。`,
+    stillRunning: (shortId) =>
+      `[仍在运行] 会话 ${shortId} 继续在服务端执行——可用 \`penguin logs -f ${shortId}\` 跟随，或 \`penguin input ${shortId}\` 轮询`,
+    callerDefaultsFailed: (sessionId) =>
+      `[调用方上下文] 无法读取调用方会话 ${sessionId}，改用普通缺省值`,
   },
   chatThinkingConfigured: () => "Agent 配置值",
   serve: {

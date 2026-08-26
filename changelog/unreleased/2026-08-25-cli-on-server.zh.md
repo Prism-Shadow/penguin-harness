@@ -59,6 +59,22 @@ penguin schedule ls ...
 getter：core 按各 Session 自身坐标绑定、逐次 spawn 重新求值；注入条目覆盖 vault 同名条目；
 子会话以自己的 id 求值；SDK / CLI 直连嵌入不提供该选项时不注入任何内容。
 
+## Agent 侧易用性
+
+- **调用方上下文缺省值**：在 harness Agent 内部（存在 `PENGUIN_SESSION_ID`）时，`run` /
+  `chat` 新建会话的每个未指定字段都缺省取调用方会话的实时值（`GET
+  /api/sessions/$PENGUIN_SESSION_ID`）——Workspace、模型对、审批模式与思考等级——与
+  `run_subagent` 派生子会话的继承同一条约定。逐字段优先级：显式选项 > 调用方值 > 普通缺省；
+  查询失败打印暗色警告并回落；不在 Agent 内时一切不变。
+- **`--timeout <duration>` 软让出**（`run` 非 background、`input`、`logs -f`）：最多等待该
+  预算（`30s` / `5m` / `2h` 或纯数字秒数），到期干净脱开——退出 0，打印一行暗色「仍在运行」
+  （含 session id；`--json` 下 `status: "running"`）——任务继续在服务端运行，与命令工具的
+  yield 窗口语义互为镜像。不带该选项即无限等待。
+- **不带 `-m` 的 `penguin input <session>` 即轮询**：打印该会话最近一条完整助手文本（幂等的
+  「最新答案」快照；跳过思考与工具输出），与 `input_subagent` 的空 prompt 语义互为镜像——不
+  排队、不插话。运行中的会话先静默等待（给出 `--timeout` 时以其为限）；到期仍在运行则打印当
+  前最新文本并附仍在运行提示。
+
 ## 「显示 CLI 会话」开关退役
 
 经 API 创建的 Session 现在携带 `client` 标记（CLI 传 `"cli"`，缺省 `"web"`），存入既有列、

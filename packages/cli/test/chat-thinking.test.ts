@@ -187,3 +187,27 @@ describe("chat /verbose (tool-output collapsing)", () => {
     expect(collapsed).not.toContain("-> l5\n");
   });
 });
+
+describe("chat caller-context defaults (PENGUIN_SESSION_ID inheritance)", () => {
+  it("a new chat inside an agent inherits workspace/model/approve and pins the caller's thinking", async () => {
+    const caller = server.addSession({
+      sessionId: "session-2026-08-25-10-00-00-ca11c0de",
+      workspace: "/callers/dir",
+      modelId: "caller-model",
+      provider: "caller-prov",
+      approvalMode: "read-only",
+      thinkingLevel: "xhigh",
+    });
+    process.env.PENGUIN_SESSION_ID = caller.sessionId;
+    const out = await driveChat(["/thinking", "/exit"]);
+    const created = [...server.sessions.values()].find((x) => x.sessionId !== caller.sessionId)!;
+    expect(created.workspace).toBe("/callers/dir");
+    expect(created.modelId).toBe("caller-model");
+    expect(created.provider).toBe("caller-prov");
+    expect(created.approvalMode).toBe("read-only");
+    // The caller's level pins the new Session (sticky, so subagents follow), and the
+    // display names it as the Session default — not an override.
+    expect(created.patches).toContainEqual({ thinkingLevel: "xhigh" });
+    expect(out).toContain(t.thinkingCurrentDefault("xhigh"));
+  });
+});

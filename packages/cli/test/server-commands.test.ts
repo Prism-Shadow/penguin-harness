@@ -287,3 +287,180 @@ describe("penguin schedule ls", () => {
     expect(out()).toContain("broken");
   });
 });
+
+describe("caller-context defaults (PENGUIN_SESSION_ID inheritance)", () => {
+  it("run inherits workspace/model/approve from the calling session and thinking rides the task", async () => {
+    const caller = server.addSession({
+      sessionId: "session-2026-08-25-10-00-00-ca11e001",
+      workspace: "/callers/workdir",
+      modelId: "caller-model",
+      provider: "caller-prov",
+      approvalMode: "always-ask",
+      thinkingLevel: "high",
+    });
+    process.env.PENGUIN_SESSION_ID = caller.sessionId;
+    const code = await cli(["run", "-m", "child job"]);
+    expect(code).toBe(0);
+    const create = server.requests.find((r) => r.method === "POST" && r.path.endsWith("/sessions"));
+    expect(create?.body).toMatchObject({
+      workspace: "/callers/workdir",
+      modelId: "caller-model",
+      provider: "caller-prov",
+      approvalMode: "always-ask",
+      client: "cli",
+    });
+    const created = [...server.sessions.values()].find((x) => x.sessionId !== caller.sessionId)!;
+    expect(created.tasks[0]!.thinkingLevel).toBe("high");
+  });
+
+  it("an explicit flag overrides its own field only (the rest still inherit)", async () => {
+    const caller = server.addSession({
+      sessionId: "session-2026-08-25-10-00-00-ca11e002",
+      workspace: "/callers/workdir",
+      modelId: "caller-model",
+      provider: "caller-prov",
+      approvalMode: "always-ask",
+      thinkingLevel: "high",
+    });
+    process.env.PENGUIN_SESSION_ID = caller.sessionId;
+    const code = await cli(["run", "-m", "x", "--workspace", "/elsewhere", "--thinking", "low"]);
+    expect(code).toBe(0);
+    const create = server.requests.find((r) => r.method === "POST" && r.path.endsWith("/sessions"));
+    expect(create?.body).toMatchObject({
+      workspace: "/elsewhere", // flag wins
+      modelId: "caller-model", // still inherited
+      provider: "caller-prov",
+      approvalMode: "always-ask",
+    });
+    const created = [...server.sessions.values()].find((x) => x.sessionId !== caller.sessionId)!;
+    expect(created.tasks[0]!.thinkingLevel).toBe("low"); // flag wins
+  });
+
+  it("a failed caller lookup warns (dim, stderr) and falls back to the plain defaults", async () => {
+    process.env.PENGUIN_SESSION_ID = "session-2026-08-25-10-00-00-deadc0de"; // unknown to the server
+    const code = await cli(["run", "-m", "x"]);
+    expect(code).toBe(0);
+    expect(stderr.join("")).toContain("session-2026-08-25-10-00-00-deadc0de");
+    const create = server.requests.find((r) => r.method === "POST" && r.path.endsWith("/sessions"));
+    expect(create?.body?.workspace).toBe(process.cwd()); // plain default
+    expect(create?.body?.modelId).toBeUndefined(); // project default applies
+    expect(create?.body?.approvalMode).toBeUndefined();
+  });
+
+  it("outside an agent (no PENGUIN_SESSION_ID) nothing changes", async () => {
+    await cli(["run", "-m", "x"]);
+    const create = server.requests.find((r) => r.method === "POST" && r.path.endsWith("/sessions"));
+    expect(create?.body?.workspace).toBe(process.cwd());
+    expect(create?.body?.modelId).toBeUndefined();
+    expect(create?.body?.approvalMode).toBeUndefined();
+  });
+});
+
+describe("--timeout soft yield", () => {
+  it("run detaches at expiry with the still-running note, exit 0, no abort", async () => {
+    server.hangTasks = true;
+    server.onTask = () => streamedText("partial answer");
+    const code = await cli(["run", "-m", "slow job", "--timeout", "1"]);
+    expect(code).toBe(0);
+    const session = [...server.sessions.values()][0]!;
+    expect(session.aborts).toBe(0); // detach, never abort
+    expect(out()).toContain("partial answer"); // what streamed before expiry rendered
+    expect(out()).toContain("still running");
+  });
+
+  it("run --json reports status running with the collected text", async () => {
+    server.hangTasks = true;
+    server.onTask = () => streamedText("early text");
+    const code = await cli(["run", "-m", "slow job", "--timeout", "1", "--json"]);
+    expect(code).toBe(0);
+    const parsed = JSON.parse(out()) as { sessionId: string; status: string; text: string };
+    expect(parsed.status).toBe("running");
+    expect(parsed.text).toBe("early text");
+  });
+
+  it("rejects --timeout with --background, and junk durations", async () => {
+    expect(await cli(["run", "-m", "x", "--background", "--timeout", "5s"])).toBe(1);
+    expect(stderr.join("")).toContain("--background");
+    stderr.length = 0;
+    expect(await cli(["run", "-m", "x", "--timeout", "5d"])).toBe(1);
+    expect(stderr.join("")).toContain("5d");
+    expect(server.sessions.size).toBe(0); // validated before anything touches the server
+  });
+
+  it("input -m detaches at expiry the same way", async () => {
+    server.hangTasks = true;
+    const idle = server.addSession({ sessionId: "session-2026-08-25-10-00-00-51ee0001" });
+    const code = await cli(["input", "51ee0001", "-m", "go", "--timeout", "1"]);
+    expect(code).toBe(0);
+    expect(idle.tasks).toHaveLength(1);
+    expect(idle.aborts).toBe(0);
+    expect(out()).toContain("still running");
+  });
+
+  it("logs -f stops following at expiry, exit 0", async () => {
+    server.history = [assistantText("old line")];
+    const s = server.addSession({ sessionId: "session-2026-08-25-10-00-00-10f00001" });
+    const code = await cli(["logs", s.sessionId, "-f", "--timeout", "1"]);
+    expect(code).toBe(0);
+    expect(out()).toContain("old line");
+    const bad = await cli(["logs", s.sessionId, "--timeout", "1"]); // no -f: nothing waits
+    expect(bad).toBe(1);
+  });
+});
+
+describe("penguin input (bare poll form)", () => {
+  it("idle: prints the most recent complete assistant text (skipping user/nested messages)", async () => {
+    server.history = [
+      assistantText("first answer"),
+      { timestamp: "t", type: "model_msg", payload: { type: "text", role: "user", text: "q2" } },
+      assistantText("nested"),
+      assistantText("final answer"),
+    ];
+    // Mark the third entry as a subagent-expanded message: it must be skipped.
+    (server.history[2] as { origin?: string[] }).origin = ["session-child"];
+    const s = server.addSession({ sessionId: "session-2026-08-25-10-00-00-b0110001" });
+    const code = await cli(["input", "b0110001"]);
+    expect(code).toBe(0);
+    expect(out().trim()).toBe("final answer");
+    expect(s.tasks).toHaveLength(0); // nothing queued
+    expect(s.steers).toHaveLength(0); // nothing steered
+  });
+
+  it("running + --timeout: waits out the window, then prints the latest text plus the still-running note", async () => {
+    server.history = [assistantText("latest so far")];
+    server.addSession({ sessionId: "session-2026-08-25-10-00-00-b0110002", status: "running" });
+    const code = await cli(["input", "b0110002", "--timeout", "1"]);
+    expect(code).toBe(0);
+    expect(out()).toContain("latest so far");
+    expect(out()).toContain("still running");
+  });
+
+  it("running + --timeout --json reports status running with the snapshot", async () => {
+    server.history = [assistantText("snapshot")];
+    server.addSession({ sessionId: "session-2026-08-25-10-00-00-b0110003", status: "running" });
+    const code = await cli(["input", "b0110003", "--timeout", "1", "--json"]);
+    expect(code).toBe(0);
+    const parsed = JSON.parse(out()) as { status: string; text: string };
+    expect(parsed.status).toBe("running");
+    expect(parsed.text).toBe("snapshot");
+  });
+
+  it("no reply yet prints the dim placeholder; --json carries an empty text", async () => {
+    server.history = [];
+    server.addSession({ sessionId: "session-2026-08-25-10-00-00-b0110004" });
+    let code = await cli(["input", "b0110004"]);
+    expect(code).toBe(0);
+    expect(out()).toContain(t.input.noReplyYet());
+    stdout.length = 0;
+    code = await cli(["input", "b0110004", "--json"]);
+    expect(code).toBe(0);
+    expect(JSON.parse(out())).toMatchObject({ status: "idle", text: "" });
+  });
+
+  it("--no-wait without -m is rejected", async () => {
+    server.addSession({ sessionId: "session-2026-08-25-10-00-00-b0110005" });
+    const code = await cli(["input", "b0110005", "--no-wait"]);
+    expect(code).toBe(1);
+    expect(stderr.join("")).toContain("-m");
+  });
+});

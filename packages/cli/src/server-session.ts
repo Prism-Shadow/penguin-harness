@@ -15,16 +15,42 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import { ServerClient } from "./client.js";
+import { dim } from "./render.js";
+import type { Messages } from "./i18n.js";
 
 const enc = encodeURIComponent;
 
 /**
  * `--workspace` resolution: the flag (resolved against the CLI's cwd — the server and
  * the CLI share the machine in the default flow, so a relative path means "relative to
- * where I am"), else the cwd itself — the CLI's historical default Workspace.
+ * where I am"), else `fallback` — the CLI's cwd historically, or the calling session's
+ * Workspace when the CLI runs inside a harness agent (see callerSessionContext).
  */
-export function resolveWorkspace(flag: string | undefined): string {
-  return flag === undefined || flag.trim() === "" ? process.cwd() : path.resolve(flag);
+export function resolveWorkspace(flag: string | undefined, fallback = process.cwd()): string {
+  return flag === undefined || flag.trim() === "" ? fallback : path.resolve(flag);
+}
+
+/**
+ * The calling session's live values, when this CLI runs inside a harness agent
+ * (server-driven sessions inject PENGUIN_SESSION_ID into tool subprocesses): a session
+ * created here defaults each UNSPECIFIED field to the caller's — workspace, the model
+ * pair, approval mode and thinking level — the same inheritance `run_subagent` applies
+ * to spawned children, so the two surfaces read as one convention. Per field the
+ * precedence is explicit flag > caller value > the plain fallback. Null outside an
+ * agent; a failed lookup warns (dim, stderr) and falls back to the plain defaults.
+ */
+export async function callerSessionContext(
+  client: ServerClient,
+  t: Messages,
+): Promise<SessionInfo | null> {
+  const sessionId = process.env.PENGUIN_SESSION_ID?.trim();
+  if (!sessionId) return null;
+  try {
+    return await getSessionInfo(client, sessionId);
+  } catch {
+    process.stderr.write(`${dim(t.client.callerDefaultsFailed(sessionId))}\n`);
+    return null;
+  }
 }
 
 export interface CreateSessionArgs {

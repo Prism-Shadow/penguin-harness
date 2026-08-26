@@ -27,7 +27,8 @@
  */
 import type { Command } from "commander";
 import { UNLIMITED_BUDGET, VERSION } from "@prismshadow/penguin-core";
-import { StreamRenderer } from "../render.js";
+import { StreamRenderer, dim } from "../render.js";
+import { parseDurationMs } from "../duration.js";
 import { parseTokenBudget } from "../goal-command.js";
 import { resolveThinkingLevel } from "../thinking-command.js";
 import { denyActivePrompt, promptApproval, resolveApprovalMode } from "../approval.js";
@@ -37,8 +38,14 @@ import {
   resolveProjectId,
   resolveSessionRef,
   ServerClient,
+  shortSessionId,
 } from "../client.js";
-import { createServerSession, getSessionInfo, resolveWorkspace } from "../server-session.js";
+import {
+  callerSessionContext,
+  createServerSession,
+  getSessionInfo,
+  resolveWorkspace,
+} from "../server-session.js";
 import { SessionStream, watchTask } from "../server-task.js";
 import type { Messages } from "../i18n.js";
 
@@ -56,6 +63,7 @@ export function registerRunCommand(program: Command, t: Messages): void {
     .option("--thinking <level>", t.common.thinking)
     .option("--session <sessionId>", t.run.session)
     .option("--background", t.run.background)
+    .option("--timeout <duration>", t.common.timeout)
     .option("--goal [budget]", t.run.goal)
     .option("--json", t.common.json)
     .option("--server <url>", t.common.server)
@@ -90,6 +98,23 @@ export function registerRunCommand(program: Command, t: Messages): void {
         process.exitCode = 1;
         return;
       }
+      // --timeout is a soft-yield budget on the WAIT: meaningless when the command does
+      // not wait at all.
+      let timeoutMs: number | undefined;
+      if (opts.timeout !== undefined) {
+        if (opts.background === true) {
+          process.stderr.write(`${t.error(t.run.timeoutWithBackground())}\n`);
+          process.exitCode = 1;
+          return;
+        }
+        const parsed = parseDurationMs(String(opts.timeout));
+        if (parsed === null) {
+          process.stderr.write(`${t.error(t.client.timeoutInvalid(String(opts.timeout)))}\n`);
+          process.exitCode = 1;
+          return;
+        }
+        timeoutMs = parsed;
+      }
       const mode = resolveApprovalMode(opts.approve, t);
       const thinking = resolveThinkingLevel(opts.thinking, t);
       const json = opts.json === true;
@@ -99,6 +124,7 @@ export function registerRunCommand(program: Command, t: Messages): void {
       const agentId = resolveAgentId(opts.agentId);
 
       let session;
+      let callerThinking: string | undefined;
       if (opts.session !== undefined) {
         const sessionId = await resolveSessionRef(client, projectId, String(opts.session), t);
         session = await getSessionInfo(client, sessionId);
@@ -108,20 +134,37 @@ export function registerRunCommand(program: Command, t: Messages): void {
           });
         }
       } else {
+        // Inside a harness agent, unspecified fields default to the CALLING session's
+        // values — the run_subagent inheritance, applied to the CLI surface. Per field:
+        // explicit flag > caller value > the plain fallback (cwd / Project default /
+        // allow-all / no level).
+        const caller = await callerSessionContext(client, t);
         session = await createServerSession(client, {
           projectId,
           agentId,
-          workspace: resolveWorkspace(opts.workspace),
-          ...(opts.modelId ? { modelId: opts.modelId, provider: opts.provider } : {}),
+          workspace: resolveWorkspace(opts.workspace, caller?.workspace),
+          ...(opts.modelId
+            ? { modelId: opts.modelId, provider: opts.provider }
+            : caller
+              ? { modelId: caller.modelId, provider: caller.provider }
+              : {}),
           // The historical run default is allow-all — also the server default; sent
-          // explicitly only when the user picked a mode.
-          ...(opts.approve !== undefined ? { approvalMode: mode } : {}),
+          // explicitly only when the user picked a mode (or the caller carries one).
+          ...(opts.approve !== undefined
+            ? { approvalMode: mode }
+            : caller
+              ? { approvalMode: caller.approvalMode }
+              : {}),
         });
+        if (thinking === undefined && caller?.thinkingLevel !== undefined) {
+          callerThinking = caller.thinkingLevel;
+        }
       }
 
+      const effectiveThinking = thinking ?? callerThinking;
       const taskBody = {
         input: [{ type: "text", text: String(opts.message) }],
-        ...(thinking ? { thinkingLevel: thinking } : {}),
+        ...(effectiveThinking ? { thinkingLevel: effectiveThinking } : {}),
         ...(goalBudget !== null ? { goal: { budget: goalBudget } } : {}),
       };
 
@@ -164,6 +207,8 @@ export function registerRunCommand(program: Command, t: Messages): void {
       try {
         await stream.waitReady();
         await client.request("POST", `/api/sessions/${session.sessionId}/tasks`, taskBody);
+        // The soft-yield clock starts once the task is actually posted: the budget bounds
+        // the wait for THIS turn, never the connection setup.
         const result = await watchTask(stream, {
           client,
           sessionId: session.sessionId,
@@ -175,7 +220,19 @@ export function registerRunCommand(program: Command, t: Messages): void {
           onAssistantText: (text) => {
             texts.push(text);
           },
+          ...(timeoutMs !== undefined ? { deadlineMs: Date.now() + timeoutMs } : {}),
         });
+        if (result.timedOut) {
+          // Soft yield, not an error: detach and leave the task running server-side.
+          if (json) {
+            out.write(
+              `${JSON.stringify({ sessionId: session.sessionId, status: "running", text: texts.join("\n") })}\n`,
+            );
+          } else {
+            out.write(`${dim(t.client.stillRunning(shortSessionId(session.sessionId)))}\n`);
+          }
+          return;
+        }
         const status =
           goalBudget !== null
             ? (result.goal?.outcome ?? "aborted")
