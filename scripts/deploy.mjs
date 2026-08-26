@@ -178,7 +178,7 @@ async function readWebManifest() {
 }
 
 /**
- * Native modules the pushed platform needs as real files. A bundle cannot carry one: it is
+ * Files the pushed platform needs as real files rather than bundled code. A bundle cannot carry one: it is
  * imported from the runtime's data root, where node-pty's own relative `build/Release/
  * pty.node` does not resolve. So the package ships whole — its JS, its prebuilds and its
  * darwin `spawn-helper` — and the runtime unpacks it next to the bundle (hmr/host.ts's
@@ -219,6 +219,18 @@ async function readNativeAssets() {
       exec.push(target);
     }
   }
+  // The remote installer: a script the platform COPIES and sends, never imports, so it has
+  // to exist as a file on the pushing side too. Riding here keeps one readable .cjs in the
+  // repo instead of a generated string literal compiled into the bundle.
+  const installer = path.join(
+    ROOT,
+    "packages",
+    "server",
+    "src",
+    "machines",
+    "remote-installer.cjs",
+  );
+  files["machines/remote-installer.cjs"] = (await fsp.readFile(installer)).toString("base64");
   return { files, exec };
 }
 

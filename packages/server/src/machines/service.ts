@@ -56,10 +56,15 @@ export class MachinesService {
    * assembled from, and the runtime cache verified Node downloads are kept in, so the second
    * host of a given platform-arch costs no download.
    */
+  /** Where a pushed bundle's assets were unpacked; null in a packaged server (hmr.assetsDir). */
+  readonly #assets: () => string | null;
+
   constructor(
     private readonly dataRoot: string,
     effects: Partial<MachinesEffects> = {},
+    assets: () => string | null = () => null,
   ) {
+    this.#assets = assets;
     this.#effects = {
       listAliases: listHostAliases,
       resolveTarget,
@@ -155,6 +160,7 @@ export class MachinesService {
           image,
           runtimeCacheDir: path.join(this.dataRoot, "runtime-cache"),
           onProgress: say,
+          assets: this.#assets,
         });
         if (outcome.kind === "failed") {
           job.result = { ok: false, step: outcome.step, message: outcome.detail };

@@ -34,7 +34,7 @@ import type { RemoteTarget } from "./commands.js";
 import { parseProbeOutput, POSIX_PROBE, WINDOWS_PROBE } from "./detect.js";
 import type { RemoteIdentity } from "./detect.js";
 import { looksLikeAuthFailure, run } from "./exec.js";
-import { REMOTE_INSTALLER_SCRIPT } from "./installer-script.js";
+import { readRemoteInstaller } from "./installer-script.js";
 import { packDirectory, packFiles } from "./pack.js";
 import type { PackFile } from "./pack.js";
 import { ensureRuntimeArchive, remoteNodeIsUsable } from "./runtime.js";
@@ -297,6 +297,8 @@ export async function installOnRemote(opts: {
   onProgress?: (line: string) => void;
   /** Identity from an earlier probe in the same flow, to save the round trips. */
   identity?: RemoteIdentity;
+  /** The hmr capability's assetsDir accessor: where a pushed bundle's assets were unpacked. */
+  assets?: () => string | null;
 }): Promise<RemoteInstallOutcome> {
   const { target, image } = opts;
   const say = opts.onProgress ?? (() => {});
@@ -357,9 +359,18 @@ export async function installOnRemote(opts: {
       };
     }
 
-    // The installer travels as text in this bundle; it becomes a file only to ride scp.
+    // The installer is a file on this side too (an asset beside the bundle, or the sibling
+    // in a packaged install); it is copied out only to ride scp.
     const installerPath = path.join(localTmp, "remote-installer.cjs");
-    fs.writeFileSync(installerPath, REMOTE_INSTALLER_SCRIPT);
+    try {
+      fs.writeFileSync(installerPath, readRemoteInstaller(opts.assets));
+    } catch (err) {
+      return {
+        kind: "failed",
+        step: "prepare the installer",
+        detail: err instanceof Error ? err.message : String(err),
+      };
+    }
 
     // The job the installer reads instead of taking arguments — no second round of quoting.
     const jobPath = path.join(localTmp, "job.json");
