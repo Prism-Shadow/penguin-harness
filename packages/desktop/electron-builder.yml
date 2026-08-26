@@ -99,8 +99,8 @@ win:
     signingHashAlgorithms:
       - sha256
     publisherName:
-      - CN=RushRush Network Technology Ltd, O=RushRush Network Technology Ltd
-      - RushRush Network Technology Ltd
+      - "CN=NaisNet Technology Co., Ltd., O=NaisNet Technology Co., Ltd."
+      - "NaisNet Technology Co., Ltd."
   target:
     - target: nsis
       arch: [x64]

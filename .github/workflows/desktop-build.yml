@@ -285,7 +285,7 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
 
-          $publisher = "RushRush Network Technology Ltd"
+          $publisher = "NaisNet Technology Co., Ltd."
           $outDir = "packages/desktop/out"
           $installer = Join-Path $outDir "penguin-desktop-win32-x64.exe"
           $latest = Join-Path $outDir "latest.yml"
