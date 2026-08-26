@@ -1,0 +1,6 @@
+<svg width="176" height="44" viewBox="0 0 176 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>Command line install</title>
+  <rect x="0.5" y="0.5" width="175" height="43" rx="8" fill="white" stroke="#D1D5DB"/>
+  <path d="M14.5 17L19 21.5L14.5 26M21.5 26H27" stroke="#111827" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="36" y="27" fill="#111827" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="600">Command line install</text>
+</svg>

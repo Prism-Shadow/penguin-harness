@@ -1,0 +1,6 @@
+<svg width="184" height="44" viewBox="0 0 184 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>Download desktop</title>
+  <rect x="0.5" y="0.5" width="183" height="43" rx="8" fill="#111827" stroke="#111827"/>
+  <path d="M19 13.5V24.5M19 24.5L14.5 20M19 24.5L23.5 20M13 28.5H25" stroke="white" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="34" y="27" fill="white" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="600">Download desktop</text>
+</svg>
