@@ -27,10 +27,10 @@
  * is only ever a failed membership lookup (applyManualOrder), so it costs a map entry
  * and changes nothing on screen. Pruning was tried at the drop and removed: deciding a
  * group is *gone* needs the mode's complete live key set, and the client cannot prove
- * one. In Workspace mode the per-Agent `workspaceCounts` look like such a proof but are
- * filtered by the "show CLI sessions" preference (the server builds its row set with
- * `webOnly: !includeCli` before counting), so a Workspace used only from the CLI is
- * absent from a complete-looking picture; in Agent mode `agentsLoading === false` is not
+ * one. In Workspace mode the per-Agent `workspaceCounts` look like such a proof but
+ * describe only the rows the server's index knew at fetch time, so a Workspace whose
+ * Sessions arrive later (a boot-time adoption, an import) can be absent from a
+ * complete-looking picture; in Agent mode `agentsLoading === false` is not
  * proof of a *successful* fetch, and an empty Agent list is indistinguishable from a
  * failed one. A wrong proof silently discards an arrangement the user cannot restore,
  * which is a bad trade against a few hundred short strings in localStorage. If a group

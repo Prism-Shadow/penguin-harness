@@ -93,9 +93,7 @@ describe("openDatabase column upgrade", () => {
       ).toEqual({ fork_count: 0 });
       // last_active_at is ALTERed in too; with no usage_records the backfill falls to created_at.
       expect(legacy!.lastActiveAt).toBe("2026-01-01T00:00:00.000Z");
-      expect(repo.listByAgent("p1", "a1", { webOnly: true }).map((r) => r.sessionId)).toEqual([
-        "session-legacy",
-      ]);
+      expect(repo.listByAgent("p1", "a1").map((r) => r.sessionId)).toEqual(["session-legacy"]);
       // The upgraded table accepts writes to the new columns.
       repo.insert({
         sessionId: "session-new",
@@ -112,7 +110,10 @@ describe("openDatabase column upgrade", () => {
         lastActiveAt: "2026-01-02T00:00:00.000Z",
       });
       expect(repo.findById("session-new")!.client).toBe("cli");
-      expect(repo.listByAgent("p1", "a1", { webOnly: true }).map((r) => r.sessionId)).toEqual([
+      // Listing carries every row whichever client created it — the client column is
+      // provenance, not a filter.
+      expect(repo.listByAgent("p1", "a1").map((r) => r.sessionId)).toEqual([
+        "session-new",
         "session-legacy",
       ]);
       repo.markHasTrace("session-legacy");
