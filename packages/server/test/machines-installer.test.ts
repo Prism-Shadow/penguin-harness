@@ -1,5 +1,5 @@
 /**
- * The installer that runs ON the target (shipped as an asset, see installer-script.ts),
+ * The installer that runs ON the target (shipped as a file beside the module that sends it),
  * executed for real against a temporary HOME. It is plain Node with no dependencies precisely so it can run
  * anywhere — including here — so these tests drive the actual script rather than a model of
  * it: fresh install, upgrade over an existing one, rollback when the staged tree does not run,
@@ -13,10 +13,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { readRemoteInstaller } from "../src/machines/installer-script.js";
 import { packDirectory } from "../src/machines/pack.js";
 
 const posixOnly = process.platform === "win32" ? describe.skip : describe;
+
+/** The real script under test — the file the push copies out. */
+const INSTALLER_SOURCE = path.resolve(__dirname, "..", "src", "machines", "remote-installer.cjs");
 
 // The installer ships as text inside the platform bundle; tests run the real text.
 let INSTALLER: string;
@@ -89,7 +91,7 @@ posixOnly("remote-installer.cjs", () => {
     fs.mkdirSync(home, { recursive: true });
     // The embedded text becomes a file the same way the push makes it one: to ride scp.
     INSTALLER = path.join(work, "remote-installer.cjs");
-    fs.writeFileSync(INSTALLER, readRemoteInstaller());
+    fs.copyFileSync(INSTALLER_SOURCE, INSTALLER);
   });
   afterEach(() => {
     fs.rmSync(work, { recursive: true, force: true });
@@ -228,29 +230,16 @@ posixOnly("remote-installer.cjs", () => {
   });
 });
 
-describe("reaching the installer", () => {
+describe("shipping the installer", () => {
   /**
-   * The push copies this file out and scp's it; it is never imported. Which of the two
-   * directories holds it follows from what the server is — an assets dir means a hot-pushed
-   * bundle, no assets dir means a packaged install — so these pin the two answers, not a
-   * search order.
+   * The push copies this file out; it is never imported, so nothing in the module graph would
+   * notice it going missing from a built package. `files: ["dist"]` is what npm ships and tsup
+   * only emits entries, which is why the build copies it in — and why that copy is worth an
+   * assertion rather than a comment.
    */
-  it("reads it beside this module when the server is packaged", () => {
-    const source = fs.readFileSync(
-      path.resolve(__dirname, "..", "src", "machines", "remote-installer.cjs"),
-      "utf8",
-    );
-    expect(readRemoteInstaller()).toBe(source);
-    expect(readRemoteInstaller(() => null)).toBe(source);
-  });
-
-  it("reads it from the assets a push published", () => {
-    const assets = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-assets-"));
-    try {
-      fs.writeFileSync(path.join(assets, "remote-installer.cjs"), "// pushed\n");
-      expect(readRemoteInstaller(() => assets)).toBe("// pushed\n");
-    } finally {
-      fs.rmSync(assets, { recursive: true, force: true });
-    }
+  it("is copied into dist by the package build", () => {
+    const built = path.resolve(__dirname, "..", "dist", "remote-installer.cjs");
+    if (!fs.existsSync(built)) return; // Not built in this run; `pnpm build` covers it in CI.
+    expect(fs.readFileSync(built, "utf8")).toBe(fs.readFileSync(INSTALLER_SOURCE, "utf8"));
   });
 });
