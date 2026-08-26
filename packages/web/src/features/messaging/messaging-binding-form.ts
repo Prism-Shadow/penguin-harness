@@ -30,11 +30,15 @@ export interface FeishuFormFields {
   /** Always starts empty; a non-empty value replaces the stored secret on save. */
   appSecret: string;
   baseDomain: string;
+  /** The stored-secret clear checkbox (models idiom): applied on save, a typed secret wins over it. */
+  clearSecret: boolean;
 }
 
 export interface TelegramFormFields {
   /** Always starts empty; a non-empty value replaces the stored token on save. */
   botToken: string;
+  /** The stored-token clear checkbox (models idiom): applied on save, a typed token wins over it. */
+  clearToken: boolean;
 }
 
 /** Editable state backing the binding editor: the selected channel plus both channels' fields. */
@@ -63,16 +67,30 @@ export type MessagingTestRequestByChannel =
 export function emptyMessagingForm(channel: MessagingChannel = "feishu"): MessagingFormState {
   return {
     channel,
-    feishu: { appId: "", appSecret: "", baseDomain: FEISHU_DEFAULT_DOMAIN },
-    telegram: { botToken: "" },
+    feishu: { appId: "", appSecret: "", baseDomain: FEISHU_DEFAULT_DOMAIN, clearSecret: false },
+    telegram: { botToken: "", clearToken: false },
   };
 }
 
-/** Loads the stored binding into form state; secret fields stay empty (masked values never round-trip). */
-export function bindingToForm(info: MessagingBindingInfo): MessagingFormState {
-  const form = emptyMessagingForm(info.channel);
-  if (info.channel === "feishu") {
-    form.feishu = { appId: info.appId, appSecret: "", baseDomain: info.baseDomain };
+/**
+ * Builds the editor's form from every saved config: each channel's non-secret fields
+ * load (secrets stay empty — masked values never round-trip — and clear checkboxes start
+ * unchecked), and the selector starts on the enabled channel, else the first saved one,
+ * else Feishu.
+ */
+export function bindingsToForm(bindings: MessagingBindingInfo[]): MessagingFormState {
+  const enabled = bindings.find((b) => b.enabled)?.channel;
+  const form = emptyMessagingForm(enabled ?? bindings[0]?.channel ?? "feishu");
+  for (const info of bindings) {
+    if (info.channel === "feishu") {
+      form.feishu = {
+        appId: info.appId,
+        appSecret: "",
+        baseDomain: info.baseDomain,
+        clearSecret: false,
+      };
+    }
+    // Telegram's one field is the secret itself, so its sub-state always loads empty.
   }
   return form;
 }
@@ -98,6 +116,8 @@ export function formToPut(form: MessagingFormState, hasStoredSecret: boolean): M
   const errors: MessagingFormErrors = {};
   if (form.channel === "telegram") {
     const botToken = form.telegram.botToken.trim();
+    // A typed token wins over a stale clear checkbox (the models idiom).
+    const clearing = botToken === "" && form.telegram.clearToken && hasStoredSecret;
     if (botToken === "" && !hasStoredSecret) errors.botToken = "required";
     else if (botToken !== "" && !TELEGRAM_TOKEN_RE.test(botToken)) {
       errors.botToken = "token_invalid";
@@ -106,12 +126,16 @@ export function formToPut(form: MessagingFormState, hasStoredSecret: boolean): M
     return {
       ok: true,
       channel: "telegram",
-      body: { ...(botToken !== "" ? { botToken } : {}) },
+      body: {
+        ...(botToken !== "" ? { botToken } : {}),
+        ...(clearing ? { clearBotToken: true } : {}),
+      },
     };
   }
   const appId = form.feishu.appId.trim();
   if (appId === "") errors.appId = "required";
   const appSecret = form.feishu.appSecret.trim();
+  const clearing = appSecret === "" && form.feishu.clearSecret && hasStoredSecret;
   if (appSecret === "" && !hasStoredSecret) errors.appSecret = "required";
   const baseDomain = form.feishu.baseDomain.trim() || FEISHU_DEFAULT_DOMAIN;
   if (!isHttpUrl(baseDomain)) errors.baseDomain = "url_invalid";
@@ -122,6 +146,7 @@ export function formToPut(form: MessagingFormState, hasStoredSecret: boolean): M
     body: {
       appId,
       ...(appSecret !== "" ? { appSecret } : {}),
+      ...(clearing ? { clearAppSecret: true } : {}),
       baseDomain,
     },
   };
@@ -152,24 +177,30 @@ export function formToTest(form: MessagingFormState): MessagingTestRequestByChan
 
 /**
  * Unsaved edits on the selected channel: any field differing from the loaded baseline (a
- * typed secret always counts — it always loads empty).
+ * typed secret always counts — it always loads empty — and so does a checked clear box).
  */
 export function formDirty(form: MessagingFormState, baseline: MessagingFormState): boolean {
-  if (form.channel === "telegram") return form.telegram.botToken.trim() !== "";
+  if (form.channel === "telegram") {
+    return form.telegram.botToken.trim() !== "" || form.telegram.clearToken;
+  }
   return (
     form.feishu.appId !== baseline.feishu.appId ||
     form.feishu.baseDomain !== baseline.feishu.baseDomain ||
-    form.feishu.appSecret.trim() !== ""
+    form.feishu.appSecret.trim() !== "" ||
+    form.feishu.clearSecret
   );
 }
 
-/** The credential probe needs an account identity: the selected channel's draft, or its stored binding. */
-export function formTestable(
-  form: MessagingFormState,
-  boundChannel: MessagingChannel | null,
-): boolean {
+/**
+ * The credential probe needs a testable credential: the selected channel's draft, or its
+ * stored secret (`secretConfigured` — a stored config whose secret was cleared has
+ * nothing to probe).
+ */
+export function formTestable(form: MessagingFormState, secretConfigured: boolean): boolean {
   if (form.channel === "telegram") {
-    return form.telegram.botToken.trim() !== "" || boundChannel === "telegram";
+    return form.telegram.botToken.trim() !== "" || secretConfigured;
   }
-  return form.feishu.appId.trim() !== "" || boundChannel === "feishu";
+  return (
+    (form.feishu.appId.trim() !== "" && form.feishu.appSecret.trim() !== "") || secretConfigured
+  );
 }

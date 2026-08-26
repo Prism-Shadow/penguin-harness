@@ -55,7 +55,7 @@ import type {
   MemoryOverviewResponse,
   MemoryScopeExport,
   MessagesResponse,
-  MessagingBindingResponse,
+  MessagingBindingsResponse,
   MessagingChannel,
   MessagingTestMessageResponse,
   ModelProtocolDetectRequest,
@@ -482,9 +482,9 @@ export const deleteSession = (sessionId: string) =>
 
 // Messaging bindings ----------------------------------------------------------
 
-/** The channel-agnostic read: whichever channel is bound (the channel-aware editor's load + poll). */
+/** The channel-agnostic read: every saved channel config + status (the channel-aware editor's load + poll). */
 export const getMessagingBinding = (sessionId: string) =>
-  apiFetch<MessagingBindingResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/messaging`);
+  apiFetch<MessagingBindingsResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/messaging`);
 
 /** Saves Feishu credentials only — the connection toggle is setMessagingBindingState (an enabled binding restarts on save so config and connection never diverge). */
 export const putFeishuBinding = (sessionId: string, body: FeishuBindingPutRequest) =>
@@ -500,19 +500,13 @@ export const putTelegramBinding = (sessionId: string, body: TelegramBindingPutRe
     { method: "PUT", body },
   );
 
-/** Unbind one channel: disconnects and deletes its stored binding (secret included). */
-export const deleteMessagingBinding = (sessionId: string, channel: MessagingChannel) =>
-  apiFetch<void>(`/api/sessions/${encodeURIComponent(sessionId)}/messaging/${channel}`, {
-    method: "DELETE",
-  });
-
-/** The connection toggle: enable connects with the STORED credentials, disable terminates. */
+/** The connection toggle: enable connects with the STORED credentials (409 `another_channel_enabled` while the other channel is enabled), disable terminates. */
 export const setMessagingBindingState = (
   sessionId: string,
   channel: MessagingChannel,
   enabled: boolean,
 ) =>
-  apiFetch<MessagingBindingResponse>(
+  apiFetch<FeishuBindingResponse | TelegramBindingResponse>(
     `/api/sessions/${encodeURIComponent(sessionId)}/messaging/${channel}/state`,
     { method: "POST", body: { enabled } },
   );

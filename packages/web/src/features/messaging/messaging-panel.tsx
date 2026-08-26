@@ -1,30 +1,28 @@
 /**
- * Messaging panel — the current conversation's messaging binding as a dock tab, sitting
+ * Messaging panel — the current conversation's messaging bindings as a dock tab, sitting
  * in the panel rail beside the subagents and Trace panels. It renders the SAME shared
  * channel-aware binding editor as the session-row dialog (hook + body, not a fork): the
- * channel selector (Feishu / Telegram, locked once bound), credentials + Save, the
- * enable/disable toggle acting on the stored credentials, the live status line, both
- * probes, the per-channel tutorial/console links, and Unbind behind a confirmation.
- * Unbound, the editor's intro text explains the binding and the empty form is the offer
- * to create one.
+ * channel selector switching between the two channels' forms (each independently
+ * savable), the per-channel credential fields with the console link at the field corner
+ * and the models-style stored-secret row, the enable/disable toggle (one enabled channel
+ * per conversation), the live status line, both probes, and the collapsed FAQ folds
+ * below the Save area. There is no unbind action — removing a credential is the secret
+ * field's clear checkbox.
  *
  * Status polling is gated on `active` (the dock keeps hidden tabs mounted): a hidden tab
  * neither polls nor loses the form state it accumulated.
  */
-import { useState } from "react";
 import { S } from "../../lib/strings";
 import { Button } from "../../components/ui/button";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Skeleton } from "../../components/ui/skeleton";
-import { MessagingBindingBody, useMessagingBinding } from "./messaging-binding-editor";
+import {
+  MessagingBindingBody,
+  MessagingBindingHelp,
+  useMessagingBinding,
+} from "./messaging-binding-editor";
 
 export function MessagingPanel({ sessionId, active }: { sessionId: string; active: boolean }) {
   const b = useMessagingBinding(sessionId, { poll: active });
-  const [unbinding, setUnbinding] = useState(false);
-
-  const confirmUnbind = async () => {
-    if (await b.unbind()) setUnbinding(false);
-  };
 
   return (
     <div className="h-full overflow-y-auto p-3">
@@ -36,38 +34,16 @@ export function MessagingPanel({ sessionId, active }: { sessionId: string; activ
       ) : (
         <div className="space-y-3">
           <MessagingBindingBody b={b} />
-          {/* The dialog places these in its footer; the panel keeps them under the form. */}
+          {/* The dialog places Save in its footer; the panel keeps it under the form. */}
           <div className="flex items-center justify-end gap-2">
-            {b.hasStored && (
-              <Button
-                variant="danger"
-                size="sm"
-                disabled={b.busy}
-                onClick={() => setUnbinding(true)}
-              >
-                {S.messaging.unbind}
-              </Button>
-            )}
             <Button variant="primary" size="sm" disabled={b.busy} onClick={() => void b.save()}>
               {b.busy ? S.common.saving : S.common.save}
             </Button>
           </div>
+          {/* Below the save area: the collapsed setup/what/troubleshooting folds. */}
+          <MessagingBindingHelp channel={b.form.channel} />
         </div>
       )}
-
-      <ConfirmModal
-        open={unbinding}
-        title={S.messaging.unbindConfirmTitle}
-        busy={b.busy}
-        onClose={() => setUnbinding(false)}
-        onConfirm={() => void confirmUnbind()}
-      >
-        <p className="text-sm text-gray-600 dark:text-gray-300">
-          {b.boundChannel === "telegram"
-            ? S.telegram.unbindConfirmBody
-            : S.feishu.unbindConfirmBody}
-        </p>
-      </ConfirmModal>
     </div>
   );
 }

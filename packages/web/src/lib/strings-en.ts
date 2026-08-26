@@ -1743,33 +1743,49 @@ Scenarios:
 
   /** Feishu-channel strings of the messaging binding editor (channel-neutral ones live under `messaging`). */
   feishu: {
+    /** The what-binding-does FAQ fold's body (this channel's flavor). */
     intro:
       "Once bound, messages sent to the Feishu bot flow into this conversation, and the AI's replies are sent back to Feishu as plain text. You need a self-built Feishu app with the bot capability and the message-receive event subscribed in long-connection mode.",
     appId: "App ID",
     appSecret: "App Secret",
     /** Shown while a saved secret exists: submitting an empty field keeps it. */
     appSecretKeepHint: "Leave empty to keep the saved App Secret",
+    /** The stored-secret row's clear checkbox (the models-page clear idiom). */
+    clearSecret: "Clear stored App Secret",
     baseDomain: "API domain",
     baseDomainHint: "https://open.feishu.cn for Feishu, https://open.larksuite.com for Lark",
     invalidDomain: "The domain must be an http(s) URL",
     /** Why "send test message" is disabled before the bot has ever been messaged. */
     testMessageNoChat: "Message the bot once in Feishu first, so it knows which chat to send to",
-    unbindConfirmBody:
-      "Disconnects from the Feishu bot and deletes the binding configuration (App Secret included).",
+    /** The setup FAQ fold's steps. */
+    setupSteps: [
+      "Create a self-built app in the Feishu developer console",
+      "Enable the bot capability for the app",
+      "Subscribe to the message-receive event, with the subscription mode set to long connection",
+      "Copy the App ID and App Secret from the credentials page into the form above",
+      "Publish an app version, get it approved, then message the bot once in Feishu",
+    ],
   },
 
   /** Telegram-channel strings of the messaging binding editor (channel-neutral ones live under `messaging`). */
   telegram: {
+    /** The what-binding-does FAQ fold's body (this channel's flavor). */
     intro:
       "Once bound, messages sent to the Telegram bot flow into this conversation, and the AI's replies are sent back to Telegram as plain text. Create a bot with @BotFather and paste its Bot Token — no public URL is needed.",
     botToken: "Bot Token",
     /** Shown while a saved token exists: submitting an empty field keeps it. */
     botTokenKeepHint: "Leave empty to keep the saved Bot Token",
+    /** The stored-token row's clear checkbox (the models-page clear idiom). */
+    clearToken: "Clear stored Bot Token",
     invalidToken: "The Bot Token looks like <digits>:<secret>, as issued by @BotFather",
     /** Why "send test message" is disabled before the bot has ever been messaged. */
     testMessageNoChat: "Message the bot once in Telegram first, so it knows which chat to send to",
-    unbindConfirmBody:
-      "Disconnects from the Telegram bot and deletes the binding configuration (Bot Token included).",
+    /** The setup FAQ fold's steps. */
+    setupSteps: [
+      "Open @BotFather in Telegram and send /newbot to create a bot",
+      "Name it as prompted, then copy the Bot Token @BotFather returns into the form above",
+      "Find the bot in Telegram and send it one message",
+    ],
   },
 
   /**
@@ -1781,15 +1797,13 @@ Scenarios:
     /** Session-row context-menu action (the trailing ellipsis marks that a dialog follows). */
     bindAction: "Messaging binding…",
     dialogTitle: "Messaging binding",
-    /** The channel selector shown while unbound (the choice decides every field below). */
+    /** The channel selector (always live: each channel's config is saved independently). */
     channelLabel: "Channel",
     channelName: {
       feishu: "Feishu",
       telegram: "Telegram",
     },
-    /** Replaces the selector once bound: switching means unbinding first. */
-    channelLocked: "Unbind first to switch channels",
-    /** The per-channel external-links row (labels shared across channels, URLs per channel). */
+    /** Per-channel external links: the tutorial (in the setup FAQ fold) and the console (at the credential field's corner). */
     tutorial: "Open tutorial",
     console: "Open developer console",
     /** The connection toggle (flips immediately, using the stored credentials). */
@@ -1812,13 +1826,27 @@ Scenarios:
       connected: "Connected",
       error: "Connection error",
     },
-    unbind: "Unbind",
-    unbindConfirmTitle: "Remove the messaging binding?",
-    /** Bound-row indicator's tooltip / sr text (the small per-channel glyph on the session row). */
-    boundIndicator: {
-      feishu: "Bound to Feishu",
-      telegram: "Bound to Telegram",
+    /** Why the enable switch is gated while the OTHER channel holds the connection. */
+    otherEnabledHint: (other: string): string =>
+      `Only one channel can be enabled per conversation: turn off the ${other} connection first`,
+    /** Why the enable switch is gated while the selected channel has no stored credential. */
+    credentialMissingHint: "Enter and save the credential first, then enable the connection",
+    /** Why the clear checkbox is gated while the channel's connection is enabled. */
+    disableBeforeClearHint: "Disable the connection before clearing the credential",
+    /** Enabled-row indicator's tooltip / sr text (the small per-channel glyph on the session row). */
+    enabledIndicator: {
+      feishu: "Feishu connection enabled",
+      telegram: "Telegram connection enabled",
     },
+    /** The collapsed FAQ folds below the save area. */
+    faqSetupTitle: "Set up the bot",
+    faqWhatTitle: "What binding does",
+    faqTroubleTitle: "Troubleshooting",
+    /** Troubleshooting entries (bot must be messaged once; connection errors point at credentials). */
+    troubleNoChat:
+      "“Send test message” disabled? The bot must have received one message first, so it knows which chat to send to.",
+    troubleConnError:
+      "Connection status shows an error? Check the credentials; for Feishu also confirm the API domain and the long-connection event subscription.",
   },
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */
@@ -2055,6 +2083,10 @@ Scenarios:
       telegram_no_chat:
         "No Telegram message received yet — message the bot once in Telegram first.",
       telegram_send_failed: "Sending the Telegram message failed.",
+      another_channel_enabled:
+        "Another channel's connection is enabled on this conversation: disable it first.",
+      messaging_disable_before_clear:
+        "Disable this channel's connection before clearing its credential.",
     },
   },
 };

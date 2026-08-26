@@ -1,18 +1,22 @@
 /**
  * Messaging binding dialog (session-row "Messaging binding…"): a Modal shell over the
  * shared channel-aware binding editor — the same hook + body the conversation's Messaging
- * dock panel renders, so the sidebar can manage a binding without opening the chat and
+ * dock panel renders, so the sidebar can manage bindings without opening the chat and
  * the two surfaces can never drift. This host contributes only the Modal frame, the
- * footer's Unbind / Close / Save placement, and the unbind confirmation; every behavior
- * (channel selector, save/enable split, masked secret, status poll) lives in the editor.
+ * footer's Close / Save placement, and the FAQ folds' position at the body's end; every
+ * behavior (channel switching, save/enable split, single-enabled gating, models-style
+ * secret clearing, status poll) lives in the editor. There is no unbind action —
+ * removing a credential is the secret field's clear checkbox.
  */
-import { useState } from "react";
 import type { MessagingChannel } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import { Button } from "../../components/ui/button";
 import { Modal } from "../../components/ui/modal";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { MessagingBindingBody, useMessagingBinding } from "./messaging-binding-editor";
+import {
+  MessagingBindingBody,
+  MessagingBindingHelp,
+  useMessagingBinding,
+} from "./messaging-binding-editor";
 
 export function MessagingBindingModal({
   sessionId,
@@ -21,7 +25,7 @@ export function MessagingBindingModal({
 }: {
   sessionId: string;
   onClose: () => void;
-  /** Fired after a save/unbind changed the binding (null = unbound); callers refresh their row/list. */
+  /** Fired when the ENABLED channel changed (null = none); callers refresh their row/list indicator. */
   onChanged?: (sessionId: string, channel: MessagingChannel | null) => void;
 }) {
   // The dialog polls for its whole lifetime (it unmounts on close).
@@ -30,55 +34,30 @@ export function MessagingBindingModal({
     ...(onChanged ? { onChanged } : {}),
     onLoadFailed: onClose,
   });
-  const [unbinding, setUnbinding] = useState(false);
-
-  const confirmUnbind = async () => {
-    if (await b.unbind()) {
-      setUnbinding(false);
-      onClose();
-    }
-  };
 
   return (
-    <>
-      <Modal
-        open
-        title={S.messaging.dialogTitle}
-        onClose={onClose}
-        footer={
-          <>
-            {b.hasStored && (
-              <Button variant="danger" disabled={b.busy} onClick={() => setUnbinding(true)}>
-                {S.messaging.unbind}
-              </Button>
-            )}
-            <Button onClick={onClose}>{S.common.close}</Button>
-            <Button
-              variant="primary"
-              disabled={b.busy || b.form === null}
-              onClick={() => void b.save()}
-            >
-              {b.busy ? S.common.saving : S.common.save}
-            </Button>
-          </>
-        }
-      >
+    <Modal
+      open
+      title={S.messaging.dialogTitle}
+      onClose={onClose}
+      footer={
+        <>
+          <Button onClick={onClose}>{S.common.close}</Button>
+          <Button
+            variant="primary"
+            disabled={b.busy || b.form === null}
+            onClick={() => void b.save()}
+          >
+            {b.busy ? S.common.saving : S.common.save}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
         <MessagingBindingBody b={b} />
-      </Modal>
-
-      <ConfirmModal
-        open={unbinding}
-        title={S.messaging.unbindConfirmTitle}
-        busy={b.busy}
-        onClose={() => setUnbinding(false)}
-        onConfirm={() => void confirmUnbind()}
-      >
-        <p className="text-sm text-gray-600 dark:text-gray-300">
-          {b.boundChannel === "telegram"
-            ? S.telegram.unbindConfirmBody
-            : S.feishu.unbindConfirmBody}
-        </p>
-      </ConfirmModal>
-    </>
+        {/* The Save action lives in the footer; the collapsed FAQ trails the body. */}
+        {b.form !== null && <MessagingBindingHelp channel={b.form.channel} />}
+      </div>
+    </Modal>
   );
 }

@@ -1,18 +1,24 @@
 /**
  * Repo for Session ↔ messaging-channel bot bindings (Feishu and Telegram today).
  *
- * Two uniqueness rules, both enforced here: one messaging binding per Session (primary
- * key, whatever the channel) and one binding per bot account per channel (unique index on
+ * A Session keeps at most one saved config PER channel — the `(session_id, channel)`
+ * primary key — and both channels' credentials may sit saved side by side. Which of them
+ * (at most one) holds a live connection is the per-row `enabled` intent; the
+ * one-enabled-per-session invariant is enforced by the state route (409
+ * `another_channel_enabled`), not here — the repo stays a dumb store.
+ *
+ * Cross-session uniqueness is per bot account: the unique index on
  * `(channel, account_id)` — one account has one event stream, and two Sessions racing it
- * is meaningless). `upsert` reports the account conflict as a result value rather than
- * throwing, so a route can answer its channel's 409 (`feishu_app_in_use` /
- * `telegram_bot_in_use`) without parsing SQLite errors.
+ * is meaningless. `upsert` reports that conflict as a result value rather than throwing,
+ * so a route can answer its channel's 409 (`feishu_app_in_use` / `telegram_bot_in_use`)
+ * without parsing SQLite errors.
  *
  * `config` is the channel-specific credential/config document, stored as JSON. Secrets
  * inside it are plaintext at rest (same trade-off as the proxy address in
  * server_settings) and must be masked at every API surface — nothing here ever masks,
- * callers do. The repo does not interpret the document; each channel's connector and
- * route own its shape.
+ * callers do. A cleared secret is stored as the empty string: the row, its non-secret
+ * fields and its account identity stay. The repo does not interpret the document; each
+ * channel's connector and route own its shape.
  */
 import type { DatabaseSync } from "node:sqlite";
 
@@ -27,7 +33,8 @@ export interface MessagingBindingRow {
   /**
    * INTENT state: whether the binding should hold a live connection (the connection's
    * runtime status stays in memory). Saving credentials never flips it — only the
-   * explicit state toggle does — and new bindings start disabled.
+   * explicit state toggle does — and new bindings start disabled. At most one of a
+   * Session's rows is enabled (route-enforced).
    */
   enabled: boolean;
   /** Most recent inbound chat (null until the bot is messaged once). */
@@ -64,11 +71,28 @@ function mapRow(r: Record<string, unknown>): MessagingBindingRow {
 export class MessagingBindingsRepo {
   constructor(private readonly db: DatabaseSync) {}
 
-  find(sessionId: string): MessagingBindingRow | null {
+  /** The Session's saved config of ONE channel (null when that channel is not configured). */
+  find(sessionId: string, channel: string): MessagingBindingRow | null {
     const r = this.db
-      .prepare("SELECT * FROM messaging_bindings WHERE session_id = ?")
+      .prepare("SELECT * FROM messaging_bindings WHERE session_id = ? AND channel = ?")
+      .get(sessionId, channel);
+    return r ? mapRow(r as Record<string, unknown>) : null;
+  }
+
+  /** The Session's enabled binding — at most one exists (route-enforced); null when all are dark. */
+  findEnabled(sessionId: string): MessagingBindingRow | null {
+    const r = this.db
+      .prepare("SELECT * FROM messaging_bindings WHERE session_id = ? AND enabled = 1")
       .get(sessionId);
     return r ? mapRow(r as Record<string, unknown>) : null;
+  }
+
+  /** Every channel config the Session has saved, in stable channel order. */
+  listForSession(sessionId: string): MessagingBindingRow[] {
+    const rows = this.db
+      .prepare("SELECT * FROM messaging_bindings WHERE session_id = ? ORDER BY channel")
+      .all(sessionId);
+    return rows.map((r) => mapRow(r as Record<string, unknown>));
   }
 
   findByAccount(channel: string, accountId: string): MessagingBindingRow | null {
@@ -79,19 +103,20 @@ export class MessagingBindingsRepo {
   }
 
   listAll(): MessagingBindingRow[] {
-    const rows = this.db.prepare("SELECT * FROM messaging_bindings ORDER BY session_id").all();
+    const rows = this.db
+      .prepare("SELECT * FROM messaging_bindings ORDER BY session_id, channel")
+      .all();
     return rows.map((r) => mapRow(r as Record<string, unknown>));
   }
 
   /**
-   * Create or replace the Session's binding — credentials/config only: `enabled` is
-   * intent state the state toggle owns, so an insert starts disabled and an update keeps
-   * the stored value. Returns `account_in_use` (writing nothing) when the
+   * Create or replace the Session's config for one channel — credentials/config only:
+   * `enabled` is intent state the state toggle owns, so an insert starts disabled and an
+   * update keeps the stored value. Returns `account_in_use` (writing nothing) when the
    * `(channel, accountId)` pair is already bound to a DIFFERENT Session; re-saving a
    * Session's own binding keeps its last-chat memory, so a settings edit never loses the
-   * reply target — unless the account (or channel) changed, whose chats are unrelated:
-   * the remembered chat is dropped so replies can never land in the old bot's
-   * conversation.
+   * reply target — unless the account changed, whose chats are unrelated: the remembered
+   * chat is dropped so replies can never land in the old bot's conversation.
    */
   upsert(args: {
     sessionId: string;
@@ -105,7 +130,7 @@ export class MessagingBindingsRepo {
     }
     const now = new Date().toISOString();
     const configJson = JSON.stringify(args.config);
-    const existing = this.find(args.sessionId);
+    const existing = this.find(args.sessionId, args.channel);
     if (existing === null) {
       this.db
         .prepare(
@@ -115,50 +140,61 @@ export class MessagingBindingsRepo {
         )
         .run(args.sessionId, args.channel, args.accountId, configJson, now, now);
     } else {
-      const keepChat = existing.channel === args.channel && existing.accountId === args.accountId;
+      const keepChat = existing.accountId === args.accountId;
       this.db
         .prepare(
           `UPDATE messaging_bindings
-             SET channel = ?, account_id = ?, config_json = ?,
+             SET account_id = ?, config_json = ?,
                  last_chat_id = CASE WHEN ? THEN last_chat_id ELSE NULL END,
                  last_chat_is_direct = CASE WHEN ? THEN last_chat_is_direct ELSE 1 END,
                  updated_at = ?
-           WHERE session_id = ?`,
+           WHERE session_id = ? AND channel = ?`,
         )
         .run(
-          args.channel,
           args.accountId,
           configJson,
           keepChat ? 1 : 0,
           keepChat ? 1 : 0,
           now,
           args.sessionId,
+          args.channel,
         );
     }
-    const row = this.find(args.sessionId);
+    const row = this.find(args.sessionId, args.channel);
     if (!row) throw new Error("Failed to read back messaging_bindings after upsert");
     return { ok: true, row };
   }
 
-  /** The state toggle's write: flip the connection intent (the bridge then aligns the live connection). */
-  setEnabled(sessionId: string, enabled: boolean): void {
+  /** The state toggle's write: flip one channel's connection intent (the bridge then aligns the live connection). */
+  setEnabled(sessionId: string, channel: string, enabled: boolean): void {
     this.db
-      .prepare("UPDATE messaging_bindings SET enabled = ?, updated_at = ? WHERE session_id = ?")
-      .run(enabled ? 1 : 0, new Date().toISOString(), sessionId);
+      .prepare(
+        `UPDATE messaging_bindings SET enabled = ?, updated_at = ?
+         WHERE session_id = ? AND channel = ?`,
+      )
+      .run(enabled ? 1 : 0, new Date().toISOString(), sessionId, channel);
   }
 
-  /** Remember the most recent inbound chat (the reply and test-message target). */
-  recordChat(sessionId: string, chatId: string, isDirect: boolean): void {
+  /** Remember the most recent inbound chat (the reply and test-message target; chats are channel-scoped). */
+  recordChat(sessionId: string, channel: string, chatId: string, isDirect: boolean): void {
     this.db
       .prepare(
         `UPDATE messaging_bindings
            SET last_chat_id = ?, last_chat_is_direct = ?, updated_at = ?
-         WHERE session_id = ?`,
+         WHERE session_id = ? AND channel = ?`,
       )
-      .run(chatId, isDirect ? 1 : 0, new Date().toISOString(), sessionId);
+      .run(chatId, isDirect ? 1 : 0, new Date().toISOString(), sessionId, channel);
   }
 
-  delete(sessionId: string): void {
+  /** Drop one channel's config. */
+  delete(sessionId: string, channel: string): void {
+    this.db
+      .prepare("DELETE FROM messaging_bindings WHERE session_id = ? AND channel = ?")
+      .run(sessionId, channel);
+  }
+
+  /** Drop every channel config of a Session (the session-delete cascade). */
+  deleteSession(sessionId: string): void {
     this.db.prepare("DELETE FROM messaging_bindings WHERE session_id = ?").run(sessionId);
   }
 }

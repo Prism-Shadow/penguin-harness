@@ -2705,15 +2705,16 @@ function SessionRow({
               <span className="sr-only">{S.chat.pinnedSession}</span>
             </span>
           )}
-          {/* Messaging-bound indicator, with the bound channel's own glyph: same dim
-              treatment as the pin (the binding dialog lives in the row menu). */}
+          {/* Enabled-messaging indicator, with the enabled channel's own glyph: same dim
+              treatment as the pin (saved-but-disabled configs stay off the row; the
+              binding dialog lives in the row menu). */}
           {s.messagingChannel !== undefined && (
             <span
-              title={S.messaging.boundIndicator[s.messagingChannel]}
+              title={S.messaging.enabledIndicator[s.messagingChannel]}
               className="shrink-0 text-gray-400 dark:text-gray-500"
             >
               <Icon d={CHANNEL_ICONS[s.messagingChannel]} size={12} />
-              <span className="sr-only">{S.messaging.boundIndicator[s.messagingChannel]}</span>
+              <span className="sr-only">{S.messaging.enabledIndicator[s.messagingChannel]}</span>
             </span>
           )}
           {/* No per-row source tag: subagent / scheduled Sessions live in their own labelled, collapsed folders, so a badge on the title would just repeat the folder. */}

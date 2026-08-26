@@ -12,7 +12,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { assistantText } from "@prismshadow/penguin-core";
 import type { OmniMessage, TextPayload } from "@prismshadow/penguin-core";
 import type {
-  MessagingBindingResponse,
+  FeishuBindingResponse,
+  MessagingBindingsResponse,
   TelegramBindingResponse,
   TelegramTestResponse,
 } from "../src/api/types.js";
@@ -29,6 +30,12 @@ import type {
   TelegramUpdate,
 } from "../src/runtime/messaging/telegram-api.js";
 import { telegramBotIdOf } from "../src/runtime/messaging/telegram-connector.js";
+import type {
+  FeishuApiClient,
+  FeishuCredentials,
+  FeishuEventHandlers,
+  FeishuSdk,
+} from "../src/runtime/messaging/feishu-sdk.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -175,6 +182,26 @@ class FakeTelegramTransport {
   }
 }
 
+/**
+ * Minimal fake Feishu SDK for the cross-channel tests (enabling the feishu side must not
+ * import the real Lark SDK or open network): connects instantly, records nothing.
+ */
+class FakeFeishuSdk implements FeishuSdk {
+  async createClient(_creds: FeishuCredentials): Promise<FeishuApiClient> {
+    return {
+      async checkCredentials() {
+        return null;
+      },
+      async sendText() {},
+      async replyText() {},
+    };
+  }
+  async connect(_creds: FeishuCredentials, handlers: FeishuEventHandlers) {
+    handlers.onReady?.();
+    return { close: () => {} };
+  }
+}
+
 /** A private-chat text message from a fixed user. */
 function privateText(text: string, messageId = 1): TelegramUpdate["message"] {
   return {
@@ -241,7 +268,7 @@ describe("telegram binding routes and connector loop", () => {
   const bindEnabled = async (sid: string, botToken = TOKEN) => {
     expect((await api.put(BASE(sid), { botToken })).status).toBe(200);
     expect((await api.post(`${BASE(sid)}/state`, { enabled: true })).status).toBe(200);
-    await waitFor(() => t.deps.messaging.statusOf(sid).state === "connected");
+    await waitFor(() => t.deps.messaging.statusOf(sid, "telegram").state === "connected");
   };
 
   beforeEach(async () => {
@@ -249,6 +276,7 @@ describe("telegram binding routes and connector loop", () => {
     t = await createTestApp({
       telegramTransport: fake,
       telegramRetryDelayMs: () => 1,
+      feishuSdk: new FakeFeishuSdk(),
     });
     const { cookie } = await provisionUser(t.app, "birder");
     api = apiClient(t.app, cookie);
@@ -274,18 +302,18 @@ describe("telegram binding routes and connector loop", () => {
     expect(body.binding?.enabled).toBe(false);
     expect(body.status.state).toBe("disconnected");
     expect(fake.clients).toHaveLength(0);
-    const stored = t.deps.messagingRepo.find(SID)!;
+    const stored = t.deps.messagingRepo.find(SID, "telegram")!;
     expect(stored.channel).toBe("telegram");
     expect(stored.accountId).toBe("7000000001");
 
     // Re-save with a blank token: the stored one stays; still disabled, still dark.
     const resave = await api.put(BASE(SID), { botToken: "" });
     expect(resave.status).toBe(200);
-    expect(t.deps.messagingRepo.find(SID)?.config.botToken).toBe(TOKEN);
+    expect(t.deps.messagingRepo.find(SID, "telegram")?.config.botToken).toBe(TOKEN);
     expect(fake.clients).toHaveLength(0);
 
     // First-time bind without a token, and a token whose bot id cannot be read: refused.
-    t.deps.messagingRepo.delete(SID);
+    t.deps.messagingRepo.delete(SID, "telegram");
     const bare = await api.put(BASE(SID), {});
     expect(bare.status).toBe(400);
     expect(((await bare.json()) as { error: { code: string } }).error.code).toBe(
@@ -305,7 +333,7 @@ describe("telegram binding routes and connector loop", () => {
     const on = await api.post(`${BASE(SID)}/state`, { enabled: true });
     expect(on.status).toBe(200);
     expect(((await on.json()) as TelegramBindingResponse).binding?.enabled).toBe(true);
-    await waitFor(() => t.deps.messaging.statusOf(SID).state === "connected");
+    await waitFor(() => t.deps.messaging.statusOf(SID, "telegram").state === "connected");
     // Connected with the STORED token — the toggle carries none of its own.
     expect(fake.lastClient().creds.botToken).toBe(TOKEN);
     expect(fake.lastClient().getMeCalls).toBeGreaterThan(0);
@@ -327,7 +355,7 @@ describe("telegram binding routes and connector loop", () => {
     expect(((await res.json()) as TelegramBindingResponse).binding?.enabled).toBe(true);
     // The old poll was aborted and a fresh client runs on the just-saved token.
     expect(fake.clients[0]!.sawAbort).toBe(true);
-    await waitFor(() => t.deps.messaging.statusOf(SID).state === "connected");
+    await waitFor(() => t.deps.messaging.statusOf(SID, "telegram").state === "connected");
     expect(fake.lastClient().creds.botToken).toBe(rotated);
   });
 
@@ -340,35 +368,85 @@ describe("telegram binding routes and connector loop", () => {
     expect(((await res.json()) as { error: { code: string } }).error.code).toBe(
       "telegram_bot_in_use",
     );
-    expect(t.deps.messagingRepo.find(SID2)).toBeNull();
+    expect(t.deps.messagingRepo.find(SID2, "telegram")).toBeNull();
   });
 
-  it("GET /messaging reads whichever channel is bound; a channel view of the other channel reads unbound", async () => {
-    // Unbound: the channel-agnostic read reports null + disconnected.
+  it("GET /messaging lists every saved channel config; both channels sit saved side by side", async () => {
+    // Nothing saved: an empty list.
     const before = await api.get(`/api/sessions/${SID}/messaging`);
-    expect((await before.json()) as MessagingBindingResponse).toEqual({
-      binding: null,
-      status: { state: "disconnected" },
-    });
+    expect((await before.json()) as MessagingBindingsResponse).toEqual({ bindings: [] });
 
+    // Save BOTH channels (telegram enabled, feishu dark): both configs coexist.
     await bindEnabled(SID);
-    const res = await api.get(`/api/sessions/${SID}/messaging`);
-    const body = (await res.json()) as MessagingBindingResponse;
-    expect(body.binding?.channel).toBe("telegram");
-    expect(body.binding?.channel === "telegram" && body.binding.botId).toBe("7000000001");
-    expect(body.status.state).toBe("connected");
-    expect(JSON.stringify(body)).not.toContain(TOKEN);
-
-    // The feishu-scoped view of a telegram-bound Session: unbound, and dark — the live
-    // connection belongs to the other channel.
-    const feishu = await api.get(`/api/sessions/${SID}/messaging/feishu`);
-    expect((await feishu.json()) as MessagingBindingResponse).toEqual({
-      binding: null,
-      status: { state: "disconnected" },
+    const feishuSave = await api.put(`/api/sessions/${SID}/messaging/feishu`, {
+      appId: "cli_side_by_side",
+      appSecret: "feishu-secret-000111",
     });
-    // Same for the feishu test-message probe: that channel is not bound.
-    expect((await api.post(`/api/sessions/${SID}/messaging/feishu/test-message`, {})).status).toBe(
-      404,
+    expect(feishuSave.status).toBe(200);
+    // Saving the second channel must not disturb the first one's live connection.
+    expect(t.deps.messaging.statusOf(SID, "telegram").state).toBe("connected");
+
+    const res = await api.get(`/api/sessions/${SID}/messaging`);
+    const body = (await res.json()) as MessagingBindingsResponse;
+    expect(body.bindings.map((b) => b.binding.channel)).toEqual(["feishu", "telegram"]);
+    const feishu = body.bindings[0]!;
+    const telegram = body.bindings[1]!;
+    expect(feishu.binding.enabled).toBe(false);
+    expect(feishu.status.state).toBe("disconnected");
+    expect(telegram.binding.enabled).toBe(true);
+    expect(telegram.binding.channel === "telegram" && telegram.binding.botId).toBe("7000000001");
+    expect(telegram.status.state).toBe("connected");
+    expect(JSON.stringify(body)).not.toContain(TOKEN);
+    expect(JSON.stringify(body)).not.toContain("feishu-secret-000111");
+
+    // The feishu-scoped test-message probe still 409s on ITS channel's missing chat, not
+    // the telegram one's.
+    const probe = await api.post(`/api/sessions/${SID}/messaging/feishu/test-message`, {});
+    expect(probe.status).toBe(409);
+    expect(((await probe.json()) as { error: { code: string } }).error.code).toBe("feishu_no_chat");
+  });
+
+  it("enabling is mutually exclusive per Session: the second channel answers 409 another_channel_enabled", async () => {
+    await bindEnabled(SID);
+    await api.put(`/api/sessions/${SID}/messaging/feishu`, {
+      appId: "cli_exclusive",
+      appSecret: "feishu-secret-222333",
+    });
+    const refused = await api.post(`/api/sessions/${SID}/messaging/feishu/state`, {
+      enabled: true,
+    });
+    expect(refused.status).toBe(409);
+    expect(((await refused.json()) as { error: { code: string } }).error.code).toBe(
+      "another_channel_enabled",
+    );
+    // Turn telegram off, and the same enable goes through (the telegram poll is aborted).
+    expect((await api.post(`${BASE(SID)}/state`, { enabled: false })).status).toBe(200);
+    expect(fake.lastClient().sawAbort).toBe(true);
+    const on = await api.post(`/api/sessions/${SID}/messaging/feishu/state`, { enabled: true });
+    expect(on.status).toBe(200);
+    expect(((await on.json()) as FeishuBindingResponse).binding?.enabled).toBe(true);
+    expect(t.deps.messaging.statusOf(SID, "telegram").state).toBe("disconnected");
+  });
+
+  it("the clear flag drops the stored token after disabling, and re-enabling is refused until one is saved", async () => {
+    await bindEnabled(SID);
+    const blocked = await api.put(BASE(SID), { clearBotToken: true });
+    expect(blocked.status).toBe(409);
+    expect(((await blocked.json()) as { error: { code: string } }).error.code).toBe(
+      "messaging_disable_before_clear",
+    );
+    await api.post(`${BASE(SID)}/state`, { enabled: false });
+    const cleared = await api.put(BASE(SID), { clearBotToken: true });
+    expect(cleared.status).toBe(200);
+    const body = (await cleared.json()) as TelegramBindingResponse;
+    // No stored token -> no mask; the row keeps its bot identity.
+    expect(body.binding?.botTokenMasked).toBeUndefined();
+    expect(body.binding?.botId).toBe("7000000001");
+    expect(t.deps.messagingRepo.find(SID, "telegram")?.config.botToken).toBe("");
+    const on = await api.post(`${BASE(SID)}/state`, { enabled: true });
+    expect(on.status).toBe(400);
+    expect(((await on.json()) as { error: { code: string } }).error.code).toBe(
+      "telegram_token_required",
     );
   });
 
@@ -396,7 +474,7 @@ describe("telegram binding routes and connector loop", () => {
     });
 
     // No stored binding and no draft token: the telegram 400 shape.
-    t.deps.messagingRepo.delete(SID);
+    t.deps.messagingRepo.delete(SID, "telegram");
     const none = await api.post(`${BASE(SID)}/test`, {});
     expect(none.status).toBe(400);
     expect(((await none.json()) as { error: { code: string } }).error.code).toBe(
@@ -414,7 +492,7 @@ describe("telegram binding routes and connector loop", () => {
     );
 
     fake.push(privateText("hello"));
-    await waitFor(() => t.deps.messagingRepo.find(SID)?.lastChatId === "42424242");
+    await waitFor(() => t.deps.messagingRepo.find(SID, "telegram")?.lastChatId === "42424242");
     const res = await api.post(`${BASE(SID)}/test-message`, {});
     expect(res.status).toBe(200);
     expect(fake.allSends()).toContainEqual({
@@ -433,7 +511,7 @@ describe("telegram binding routes and connector loop", () => {
     expect(input.text).toBe("how is the build?");
     expect(input.role).toBe("user");
     expect("sender" in input).toBe(false);
-    const row = t.deps.messagingRepo.find(SID)!;
+    const row = t.deps.messagingRepo.find(SID, "telegram")!;
     expect(row.lastChatId).toBe("42424242");
     expect(row.lastChatIsDirect).toBe(true);
     // Task end mirrors the assistant text to that chat as a plain send (direct chat).
@@ -459,7 +537,7 @@ describe("telegram binding routes and connector loop", () => {
       from: { first_name: "Ada" },
     });
     await waitFor(() => runs.length === 1);
-    const row = t.deps.messagingRepo.find(SID)!;
+    const row = t.deps.messagingRepo.find(SID, "telegram")!;
     expect(row.lastChatId).toBe("-1002233445566");
     expect(row.lastChatIsDirect).toBe(false);
     await waitFor(() => fake.allSends().length > 0);
@@ -487,7 +565,7 @@ describe("telegram binding routes and connector loop", () => {
     });
     expect(runs).toHaveLength(0);
     // Even a rejected type teaches the bridge where the user is.
-    expect(t.deps.messagingRepo.find(SID)?.lastChatId).toBe("42424242");
+    expect(t.deps.messagingRepo.find(SID, "telegram")?.lastChatId).toBe("42424242");
   });
 
   it("chunks a long reply under the shared 4000-char cap (inside Telegram's 4096 limit)", async () => {
@@ -509,7 +587,7 @@ describe("telegram binding routes and connector loop", () => {
     fake.push(privateText("sent while dark", 1));
     fake.push(privateText("also dark", 2));
     expect((await api.post(`${BASE(SID)}/state`, { enabled: true })).status).toBe(200);
-    await waitFor(() => t.deps.messaging.statusOf(SID).state === "connected");
+    await waitFor(() => t.deps.messaging.statusOf(SID, "telegram").state === "connected");
     // … and are skipped by the connect-time drain; only live traffic starts tasks.
     fake.push(privateText("live", 3));
     await waitFor(() => runs.length === 1);
@@ -524,9 +602,9 @@ describe("telegram binding routes and connector loop", () => {
     fake.failPolls = 1;
     fake.failGetMe = "getUpdates failed: ECONNRESET";
     fake.push(privateText("before the outage", 5));
-    await waitFor(() => t.deps.messaging.statusOf(SID).state === "error");
+    await waitFor(() => t.deps.messaging.statusOf(SID, "telegram").state === "error");
     fake.failGetMe = null;
-    await waitFor(() => t.deps.messaging.statusOf(SID).state === "connected");
+    await waitFor(() => t.deps.messaging.statusOf(SID, "telegram").state === "connected");
     // The message delivered ahead of the failure was processed; recovery kept the offset,
     // so it does not re-deliver.
     await waitFor(() => runs.length === 1);
@@ -542,17 +620,17 @@ describe("telegram binding routes and connector loop", () => {
       accountId: "7000000001",
       config: { botToken: TOKEN },
     });
-    t.deps.messagingRepo.setEnabled(SID, true);
+    t.deps.messagingRepo.setEnabled(SID, "telegram", true);
     await t.deps.messaging.start();
-    await waitFor(() => t.deps.messaging.statusOf(SID).state === "connected");
+    await waitFor(() => t.deps.messaging.statusOf(SID, "telegram").state === "connected");
     expect(fake.lastClient().creds.botToken).toBe(TOKEN);
     await waitFor(() => fake.lastClient().parked);
     t.deps.messaging.stop();
     expect(fake.lastClient().sawAbort).toBe(true);
   });
 
-  it("the session list marks a telegram-bound row with messagingChannel telegram", async () => {
-    await api.put(BASE(SID), { botToken: TOKEN });
+  it("the session list marks a telegram-ENABLED row with messagingChannel telegram", async () => {
+    await bindEnabled(SID);
     const res = await api.get(`/api/projects/${projectId}/agents/default_agent/sessions`);
     const body = (await res.json()) as {
       sessions: Array<{ sessionId: string; messagingChannel?: string }>;

@@ -1,33 +1,33 @@
 /**
  * Shared messaging binding editor — ONE implementation behind both the session-row dialog
  * and the conversation's Messaging dock panel (the two hosts differ only in where they
- * place the Save/Unbind actions, so the state machine is a hook and the fields are a
- * body component; neither host forks the form).
+ * place the Save action and the FAQ folds, so the state machine is a hook and the pieces
+ * are body components; neither host forks the form).
  *
- * Channel-aware: a channel selector (Feishu / Telegram) chooses which channel's fields
- * the editor shows while the Session is unbound — the mcp-servers transport idiom, the
- * choice decides every field below — and locks once bound (one binding per Session;
- * switching means unbinding first). The hook loads the channel-agnostic GET, so whichever
- * channel is bound is what it renders, and submits to that channel's endpoints.
+ * Channel model: a Session keeps at most one saved config PER channel — both may sit
+ * saved side by side — and AT MOST ONE of them is enabled. The channel selector switches
+ * freely between the two channel forms (each independently savable, each showing its own
+ * configured/enabled state); enabling one channel while the other is enabled is gated
+ * with a "turn that one off first" hint (the server refuses it too, 409).
  *
- * Two separate concerns, two separate controls:
- * - **Save** persists the selected channel's credential form — credentials only, it
- *   never opens or closes a connection (server-side exception: an enabled binding's
- *   connector restarts with the just-saved credentials, so stored config and live
- *   connection never diverge).
- * - **Enable** is a Switch that flips the connection immediately using the STORED
- *   credentials. While the form has unsaved edits the toggle is gated with a "save
- *   credentials first" hint rather than silently saving on the user's behalf.
+ * The form starts with the fields; the explanation lives in collapsed FAQ folds below
+ * the save area (`MessagingBindingHelp`), and the channel's leading credential field —
+ * where the console values start being pasted — carries the developer-console link at
+ * its label's top-right corner (the models-page "get API key" idiom, which puts the link
+ * on the field, not in a row of its own). Secrets follow that page's interaction: the field
+ * always starts empty, a stored secret shows as a masked line under it with a
+ * "clear stored …" checkbox (typing unchecks it; applied on Save), blank keeps the
+ * stored value — and clearing requires the channel's connection to be disabled first.
+ * There is no unbind affordance: removing a credential IS the per-field clear.
  *
  * The GET is re-polled while the host shows the editor (the hook's `poll` flag) so
- * connect/error flips show up live. Secrets never round-trip: the field always starts
- * empty, a stored secret shows only as the site-wide masked placeholder (models-page
- * configured-key idiom — type to replace, blank keeps stored).
+ * connect/error flips show up live.
  */
 import { useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import type {
   MessagingBindingInfo,
-  MessagingBindingResponse,
+  MessagingBindingsResponse,
   MessagingChannel,
   MessagingRuntimeStatus,
 } from "@prismshadow/penguin-server/api";
@@ -36,15 +36,15 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { toneInk, type Tone } from "../../lib/tone";
 import { Button } from "../../components/ui/button";
-import { CHANNEL_ICONS } from "../../components/ui/icons";
-import { Icon } from "../../components/ui/group-list";
+import { FieldLabel } from "../../components/ui/field";
+import { HelpFold } from "../../components/ui/help-fold";
 import { Input } from "../../components/ui/input";
 import { PasswordInput } from "../../components/ui/password-input";
 import { Segmented } from "../../components/ui/segmented";
 import { Switch } from "../../components/ui/switch";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import {
-  bindingToForm,
+  bindingsToForm,
   emptyMessagingForm,
   formDirty,
   formTestable,
@@ -57,7 +57,7 @@ import {
 /** How often the visible editor refreshes the runtime status (connects settle within a poll or two). */
 const STATUS_POLL_MS = 3000;
 
-/** Per-channel external links: the walkthrough, and the console where the bot/app is created. */
+/** Per-channel external links: the walkthrough (setup FAQ fold) and the console where the credential is fetched (field corner). */
 const CHANNEL_LINKS: Record<MessagingChannel, { tutorial: string; console: string }> = {
   feishu: {
     // Feishu's own echo-bot walkthrough: creating a self-built app and its long connection.
@@ -84,38 +84,76 @@ function errorText(code: MessagingFormErrors[keyof MessagingFormErrors]): string
   return S.feishu.invalidDomain;
 }
 
-/** Everything a host renders the editor from: state + handlers, one instance per session. */
-export interface MessagingBindingEditorState {
-  /** null until the stored binding has been loaded (hosts show nothing until then). */
-  form: MessagingFormState | null;
-  patchForm(patch: Partial<MessagingFormState>): void;
-  /** The stored binding's channel; null while unbound (the selector is live only then). */
-  boundChannel: MessagingChannel | null;
-  /** The selector's write: switches the form's channel while unbound (no-op once bound). */
-  selectChannel(channel: MessagingChannel): void;
-  hasStored: boolean;
+/** One channel's server-side facts, as the editor renders them (the form fields stay client-side). */
+export interface MessagingChannelFacts {
+  /** A secret is stored (a cleared config keeps its row but loses this). */
+  secretConfigured: boolean;
+  /** The stored secret's site-wide mask (display-only, never round-trips); null without one. */
+  secretMasked: string | null;
   enabled: boolean;
   status: MessagingRuntimeStatus;
   lastChatKnown: boolean;
-  /** The stored secret's site-wide mask (display-only, never round-trips); null while unbound. */
-  secretMasked: string | null;
+}
+
+const EMPTY_FACTS: MessagingChannelFacts = {
+  secretConfigured: false,
+  secretMasked: null,
+  enabled: false,
+  status: { state: "disconnected" },
+  lastChatKnown: false,
+};
+
+type ChannelFactsMap = Record<MessagingChannel, MessagingChannelFacts>;
+
+function factsOf(
+  binding: MessagingBindingInfo | null,
+  status: MessagingRuntimeStatus,
+): MessagingChannelFacts {
+  if (binding === null) return { ...EMPTY_FACTS, status };
+  const masked = binding.channel === "telegram" ? binding.botTokenMasked : binding.appSecretMasked;
+  return {
+    secretConfigured: masked !== undefined,
+    secretMasked: masked ?? null,
+    enabled: binding.enabled,
+    status,
+    lastChatKnown: binding.lastChatKnown,
+  };
+}
+
+function factsFromList(res: MessagingBindingsResponse): ChannelFactsMap {
+  const map: ChannelFactsMap = { feishu: EMPTY_FACTS, telegram: EMPTY_FACTS };
+  for (const entry of res.bindings) {
+    map[entry.binding.channel] = factsOf(entry.binding, entry.status);
+  }
+  return map;
+}
+
+/** Everything a host renders the editor from: state + handlers, one instance per session. */
+export interface MessagingBindingEditorState {
+  /** null until the stored bindings have been loaded (hosts show nothing until then). */
+  form: MessagingFormState | null;
+  patchForm(patch: Partial<MessagingFormState>): void;
+  /** The selector's write: switches which channel's form shows (both stay editable). */
+  selectChannel(channel: MessagingChannel): void;
+  /** Per-channel server-side facts (secret / enabled / status / chat-known). */
+  channels: ChannelFactsMap;
   fieldErrors: MessagingFormErrors;
-  /** Unsaved edits: any selected-channel field differing from the loaded baseline (a typed secret always counts). */
+  /** Unsaved edits on the SELECTED channel (a typed secret and a checked clear box count). */
   dirty: boolean;
   busy: boolean;
   toggling: boolean;
   testing: boolean;
   sendingTest: boolean;
-  /** The credential probe needs an account identity: the draft's, or the stored binding's. */
+  /** The credential probe needs a testable credential: the selected channel's draft or stored secret. */
   testable: boolean;
-  /** The toggle acts on STORED credentials only: gated while unsaved edits would diverge. */
+  /** The enable switch is gated (see toggleHint for the reason shown to the user). */
   toggleBlocked: boolean;
+  /** Why the switch is gated, when a reason is worth showing (null otherwise). */
+  toggleHint: string | null;
   save(): Promise<void>;
   toggleEnabled(next: boolean): Promise<void>;
   testConnection(): Promise<void>;
   sendTestMessage(): Promise<void>;
-  /** The confirmed unbind (hosts own the confirmation dialog); resets to the unbound form. */
-  unbind(): Promise<boolean>;
 }
 
 export function useMessagingBinding(
@@ -123,7 +161,7 @@ export function useMessagingBinding(
   opts: {
     /** Keep the status poll running (hosts pass their visibility, e.g. the dock tab's `active`). */
     poll: boolean;
-    /** Fired after a save/unbind changed the binding (null = unbound); callers refresh their row/list. */
+    /** Fired when the ENABLED channel changed (null = none); callers refresh their row/list indicator. */
     onChanged?: (sessionId: string, channel: MessagingChannel | null) => void;
     /** Fired when the initial load fails (the dialog closes itself; the panel shows its own retry). */
     onLoadFailed?: () => void;
@@ -133,12 +171,10 @@ export function useMessagingBinding(
   const [form, setForm] = useState<MessagingFormState | null>(null);
   /** What the form last loaded/saved — the dirty check compares against it. */
   const [baseline, setBaseline] = useState<MessagingFormState | null>(null);
-  const [boundChannel, setBoundChannel] = useState<MessagingChannel | null>(null);
-  const [secretMasked, setSecretMasked] = useState<string | null>(null);
-  /** Stored connection INTENT (the Switch's value); `status` is what the connection actually is. */
-  const [enabled, setEnabled] = useState(false);
-  const [status, setStatus] = useState<MessagingRuntimeStatus>({ state: "disconnected" });
-  const [lastChatKnown, setLastChatKnown] = useState(false);
+  const [channels, setChannels] = useState<ChannelFactsMap>({
+    feishu: EMPTY_FACTS,
+    telegram: EMPTY_FACTS,
+  });
   const [fieldErrors, setFieldErrors] = useState<MessagingFormErrors>({});
   const [busy, setBusy] = useState(false);
   const [toggling, setToggling] = useState(false);
@@ -148,25 +184,10 @@ export function useMessagingBinding(
   /** Which session the form was loaded for (the initial load runs once per session, not per poll flip). */
   const loadedFor = useRef<string | null>(null);
 
-  /** The masked secret of whichever channel a response's binding is (never the plaintext). */
-  const maskOf = (binding: MessagingBindingInfo | null): string | null => {
-    if (binding === null) return null;
-    return binding.channel === "telegram" ? binding.botTokenMasked : binding.appSecretMasked;
-  };
-
-  /** Applies one GET/PUT/state response's runtime facts (never the fields being edited). */
-  const applyResponse = (res: MessagingBindingResponse): void => {
-    setStatus(res.status);
-    setBoundChannel(res.binding?.channel ?? null);
-    setSecretMasked(maskOf(res.binding));
-    setEnabled(res.binding?.enabled ?? false);
-    setLastChatKnown(res.binding?.lastChatKnown ?? false);
-  };
-
-  // Initial load fills the form; the poll afterwards refreshes ONLY the runtime facts
-  // (status / chat-known / bound / enabled / mask), never the fields being edited. A
-  // re-shown editor (the dock keeps hidden tabs mounted, `poll` flips back on) only
-  // resumes that refresh: the form survives hide/show untouched.
+  // Initial load fills the form; the poll afterwards refreshes ONLY the per-channel
+  // facts (stored / secret / enabled / status / chat-known), never the fields being
+  // edited. A re-shown editor (the dock keeps hidden tabs mounted, `poll` flips back on)
+  // only resumes that refresh: the form survives hide/show untouched.
   useEffect(() => {
     let cancelled = false;
     let initialDone = loadedFor.current === sessionId;
@@ -174,9 +195,9 @@ export function useMessagingBinding(
       try {
         const res = await api.getMessagingBinding(sessionId);
         if (cancelled) return;
-        applyResponse(res);
+        setChannels(factsFromList(res));
         if (initial) {
-          const initialForm = res.binding ? bindingToForm(res.binding) : emptyMessagingForm();
+          const initialForm = bindingsToForm(res.bindings.map((b) => b.binding));
           setForm(initialForm);
           setBaseline(initialForm);
           initialDone = true;
@@ -216,13 +237,33 @@ export function useMessagingBinding(
   };
 
   const selectChannel = (channel: MessagingChannel) => {
-    // Locked once bound: one binding per Session, switching means unbinding first.
-    if (boundChannel !== null) return;
     patchForm({ channel });
   };
 
-  const hasStored = boundChannel !== null;
+  const selected: MessagingChannel = form?.channel ?? "feishu";
+  const facts = channels[selected];
+  const enabledChannel: MessagingChannel | null = channels.feishu.enabled
+    ? "feishu"
+    : channels.telegram.enabled
+      ? "telegram"
+      : null;
+  const otherEnabled = enabledChannel !== null && enabledChannel !== selected;
   const dirty = form !== null && baseline !== null && formDirty(form, baseline);
+
+  /** One channel's PUT/state response lands only in that channel's facts + form baseline. */
+  const applyChannel = (
+    channel: MessagingChannel,
+    binding: MessagingBindingInfo | null,
+    status: MessagingRuntimeStatus,
+  ): void => {
+    setChannels((prev) => ({ ...prev, [channel]: factsOf(binding, status) }));
+    if (binding !== null) {
+      const fresh = bindingsToForm([binding]);
+      const sub = channel === "feishu" ? { feishu: fresh.feishu } : { telegram: fresh.telegram };
+      setForm((prev) => (prev ? { ...prev, ...sub } : prev));
+      setBaseline((prev) => (prev ? { ...prev, ...sub } : prev));
+    }
+  };
 
   const testConnection = async () => {
     if (!form) return;
@@ -253,10 +294,9 @@ export function useMessagingBinding(
   };
 
   const sendTestMessage = async () => {
-    if (boundChannel === null) return;
     setSendingTest(true);
     try {
-      await api.sendMessagingTestMessage(sessionId, boundChannel);
+      await api.sendMessagingTestMessage(sessionId, selected);
       toastSuccess(S.messaging.testMessageSent);
     } catch (e) {
       toastError(apiErrorText(e));
@@ -268,7 +308,7 @@ export function useMessagingBinding(
   /** Save = persist the selected channel's credentials (no connection side effect; the toggle owns that). */
   const save = async () => {
     if (!form) return;
-    const built = formToPut(form, hasStored && boundChannel === form.channel);
+    const built = formToPut(form, channels[form.channel].secretConfigured);
     if (!built.ok) {
       setFieldErrors(built.errors);
       return;
@@ -279,15 +319,8 @@ export function useMessagingBinding(
         built.channel === "telegram"
           ? await api.putTelegramBinding(sessionId, built.body)
           : await api.putFeishuBinding(sessionId, built.body);
-      applyResponse(res);
-      // The secret is stored now: clear the field back to the keep-stored state.
-      if (res.binding) {
-        const saved = bindingToForm(res.binding);
-        setForm(saved);
-        setBaseline(saved);
-      }
+      applyChannel(built.channel, res.binding, res.status);
       toastSuccess(S.common.saved);
-      onChanged?.(sessionId, res.binding?.channel ?? null);
     } catch (e) {
       toastError(apiErrorText(e));
     } finally {
@@ -295,13 +328,13 @@ export function useMessagingBinding(
     }
   };
 
-  /** The Switch: connect/disconnect with the stored credentials, reflected in the status line. */
+  /** The Switch: connect/disconnect the SELECTED channel with its stored credentials. */
   const toggleEnabled = async (next: boolean) => {
-    if (boundChannel === null) return;
     setToggling(true);
     try {
-      const res = await api.setMessagingBindingState(sessionId, boundChannel, next);
-      applyResponse(res);
+      const res = await api.setMessagingBindingState(sessionId, selected, next);
+      applyChannel(selected, res.binding, res.status);
+      onChanged?.(sessionId, next && res.binding?.enabled === true ? selected : null);
     } catch (e) {
       toastError(apiErrorText(e));
     } finally {
@@ -309,65 +342,47 @@ export function useMessagingBinding(
     }
   };
 
-  /** Returns whether the unbind went through (hosts close/reset on true). */
-  const unbind = async (): Promise<boolean> => {
-    if (boundChannel === null) return true;
-    setBusy(true);
-    try {
-      await api.deleteMessagingBinding(sessionId, boundChannel);
-      // Back to the unbound shape: an empty form (still on this channel) ready for a fresh bind.
-      const fresh = emptyMessagingForm(boundChannel);
-      setForm(fresh);
-      setBaseline(fresh);
-      setBoundChannel(null);
-      setSecretMasked(null);
-      setEnabled(false);
-      setStatus({ state: "disconnected" });
-      setLastChatKnown(false);
-      onChanged?.(sessionId, null);
-      return true;
-    } catch (e) {
-      toastError(apiErrorText(e));
-      return false;
-    } finally {
-      setBusy(false);
-    }
-  };
+  // Enabling needs a saved credential, no unsaved edits, and the other channel dark;
+  // disabling is always allowed. The hint names the strongest reason.
+  const enableBlocked = !facts.enabled && (otherEnabled || !facts.secretConfigured || dirty);
+  const toggleHint =
+    !facts.enabled && enabledChannel !== null && otherEnabled
+      ? S.messaging.otherEnabledHint(S.messaging.channelName[enabledChannel])
+      : !facts.enabled && !facts.secretConfigured
+        ? S.messaging.credentialMissingHint
+        : !facts.enabled && dirty
+          ? S.messaging.saveBeforeEnable
+          : null;
 
   return {
     form,
     patchForm,
-    boundChannel,
     selectChannel,
-    hasStored,
-    enabled,
-    status,
-    lastChatKnown,
-    secretMasked,
+    channels,
     fieldErrors,
     dirty,
     busy,
     toggling,
     testing,
     sendingTest,
-    testable: form !== null && formTestable(form, boundChannel),
-    toggleBlocked: !hasStored || dirty || toggling || busy,
+    testable: form !== null && formTestable(form, facts.secretConfigured),
+    toggleBlocked: enableBlocked || toggling || busy,
+    toggleHint,
     save,
     toggleEnabled,
     testConnection,
     sendTestMessage,
-    unbind,
   };
 }
 
-/** External link in the intro row (tutorial / developer console), same styling for both. */
-function IntroLink({ href, label }: { href: string; label: string }) {
+/** External link styled like the models dialog's "get API key" corner action. */
+function ExternalLink({ href, label }: { href: string; label: string }) {
   return (
     <a
       href={href}
       target="_blank"
       rel="noreferrer noopener"
-      className="whitespace-nowrap text-brand-600 underline-offset-2 hover:underline dark:text-brand-300"
+      className="shrink-0 text-xs text-brand-600 underline-offset-2 hover:underline dark:text-brand-300"
     >
       {label} ↗
     </a>
@@ -375,137 +390,183 @@ function IntroLink({ href, label }: { href: string; label: string }) {
 }
 
 /**
- * The editor's body — the channel selector, intro + links row, the enable toggle with
- * the live status line, the two probes, and the selected channel's credential fields.
- * Hosts place their own Save/Unbind actions (dialog footer vs panel action row) around it.
+ * A field with an action link at the label's top-right corner — the models dialog's
+ * "get API key" idiom. The control inside carries `aria-label` itself: this wrapper's
+ * label row is layout, not a <label> element.
+ */
+function CornerLinkedField({
+  label,
+  required,
+  link,
+  children,
+}: {
+  label: string;
+  required?: boolean;
+  link: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className="block">
+      <span className="mb-1 flex items-baseline justify-between gap-2">
+        <FieldLabel block={false} {...(required ? { required: true } : {})}>
+          {label}
+        </FieldLabel>
+        {link}
+      </span>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * The stored secret's status row, under the secret field — the models-page configured-key
+ * idiom: the site-wide mask in mono, and a "clear stored …" checkbox applied on Save
+ * (typing into the field unchecks it). Clearing requires the channel's connection to be
+ * disabled first, so the checkbox is gated with that hint while enabled.
+ */
+function StoredSecretRow({
+  masked,
+  clearLabel,
+  checked,
+  enabled,
+  onChange,
+}: {
+  masked: string;
+  clearLabel: string;
+  /** The clear checkbox's state (lives in the form, applied on Save). */
+  checked: boolean;
+  /** The channel's connection is enabled: clearing is gated until it is turned off. */
+  enabled: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+      <span className="font-mono">{masked}</span>
+      <label
+        className={`flex items-center gap-1.5 ${enabled ? "cursor-not-allowed opacity-60" : ""}`}
+      >
+        <input
+          type="checkbox"
+          checked={checked}
+          disabled={enabled}
+          onChange={(e) => onChange(e.target.checked)}
+        />
+        {clearLabel}
+      </label>
+      {/* A disabled checkbox does not reliably fire hover, so the reason is on screen rather
+          than in a title: a gated control that never says why is the bug this avoids. */}
+      {enabled && (
+        <span className="text-gray-400 dark:text-gray-500">
+          {S.messaging.disableBeforeClearHint}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The editor's body — the channel selector, the selected channel's credential fields
+ * (console link at the credential field's corner, models-style stored-secret row), and
+ * the enable toggle + live status + probes. Hosts place their own Save action after it
+ * and `MessagingBindingHelp` below that.
  */
 export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) {
   const { form } = b;
   if (!form) return null;
-  const channel = b.boundChannel ?? form.channel;
+  const channel = form.channel;
+  const facts = b.channels[channel];
   const links = CHANNEL_LINKS[channel];
-  const perChannel = channel === "telegram" ? S.telegram : S.feishu;
   return (
     <div className="space-y-3">
-      {/* Channel first — the choice decides every field below (the mcp transport idiom).
-          Once bound it collapses to a read-only identity row: switching = unbind first. */}
-      {b.boundChannel === null ? (
+      {/* Channel first — each channel's config is saved independently, so the selector
+          switches forms rather than locking (the mcp transport idiom). */}
+      <div role="group" aria-label={S.messaging.channelLabel}>
         <Segmented
           cols={2}
           options={[
             { value: "feishu" as MessagingChannel, label: S.messaging.channelName.feishu },
             { value: "telegram" as MessagingChannel, label: S.messaging.channelName.telegram },
           ]}
-          value={form.channel}
+          value={channel}
           onChange={(v) => b.selectChannel(v)}
         />
-      ) : (
-        <div className="flex flex-wrap items-center gap-1.5 text-sm text-gray-700 dark:text-gray-300">
-          <span className="text-gray-400 dark:text-gray-500">
-            <Icon d={CHANNEL_ICONS[channel]} size={14} />
-          </span>
-          {S.messaging.channelName[channel]}
-          <span className="ml-1 text-xs text-gray-400 dark:text-gray-500">
-            {S.messaging.channelLocked}
-          </span>
-        </div>
-      )}
-      <p className="text-xs text-gray-500 dark:text-gray-400">
-        {perChannel.intro} <IntroLink href={links.tutorial} label={S.messaging.tutorial} />{" "}
-        <IntroLink href={links.console} label={S.messaging.console} />
-      </p>
-      {/* The connection toggle + live status on one line: the Switch is the intent, the
-          tone-colored text is what the connection actually is right now. */}
-      <div className="flex flex-wrap items-center gap-2 text-xs">
-        <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-          <Switch
-            checked={b.enabled}
-            disabled={b.toggleBlocked}
-            onChange={(v) => void b.toggleEnabled(v)}
-          />
-          {S.messaging.enabled}
-        </label>
-        <span className="ml-2 text-gray-500 dark:text-gray-400">{S.messaging.statusLabel}</span>
-        <span
-          {...(b.status.lastError !== undefined ? { title: b.status.lastError } : {})}
-          className={`font-medium ${toneInk[STATUS_TONE[b.status.state]]}`}
-        >
-          {S.messaging.status[b.status.state]}
-        </span>
-        {b.status.state === "error" && b.status.lastError !== undefined && (
-          <span className="min-w-0 flex-1 truncate text-gray-400 dark:text-gray-500">
-            {b.status.lastError}
-          </span>
-        )}
       </div>
-      {/* Why the toggle is gated: it connects with the STORED credentials, so unsaved
-          edits must be saved first rather than silently submitted. */}
-      {b.hasStored && b.dirty && (
-        <p className="text-xs text-gray-400 dark:text-gray-500">{S.messaging.saveBeforeEnable}</p>
-      )}
-      {/* Entry-level probes — the MCP dialog idiom: standalone buttons, results as toasts. */}
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          size="sm"
-          disabled={b.testing || b.busy || !b.testable}
-          onClick={() => void b.testConnection()}
-        >
-          {b.testing ? S.messaging.testing : S.messaging.test}
-        </Button>
-        <Button
-          size="sm"
-          disabled={b.sendingTest || b.busy || b.status.state !== "connected" || !b.lastChatKnown}
-          {...(!b.lastChatKnown ? { title: perChannel.testMessageNoChat } : {})}
-          onClick={() => void b.sendTestMessage()}
-        >
-          {b.sendingTest ? S.messaging.sendingTestMessage : S.messaging.sendTestMessage}
-        </Button>
-      </div>
-      {/* Format guidance, kept visible while the target chat is still unknown: the send
-          button above stays disabled until the bot has been messaged once. */}
-      {!b.lastChatKnown && (
-        <p className="text-xs text-gray-400 dark:text-gray-500">{perChannel.testMessageNoChat}</p>
-      )}
+      {/* The fields lead the form; explanations live in the FAQ folds below the save area. */}
       {channel === "telegram" ? (
-        /* Stored token: the site-wide mask shows as the placeholder (models-page
-           configured-key idiom) — type to replace it, leave blank to keep it. */
-        <PasswordInput
-          size="sm"
-          label={S.telegram.botToken}
-          {...(b.hasStored
-            ? { hint: S.telegram.botTokenKeepHint, placeholder: b.secretMasked ?? undefined }
-            : { required: true })}
-          error={errorText(b.fieldErrors.botToken)}
-          value={form.telegram.botToken}
-          onChange={(e) => b.patchForm({ telegram: { botToken: e.target.value } })}
-          autoComplete="off"
-        />
+        <>
+          <CornerLinkedField
+            label={S.telegram.botToken}
+            required={!facts.secretConfigured}
+            link={<ExternalLink href={links.console} label={S.messaging.console} />}
+          >
+            <PasswordInput
+              size="sm"
+              aria-label={S.telegram.botToken}
+              {...(facts.secretConfigured ? { placeholder: S.telegram.botTokenKeepHint } : {})}
+              error={errorText(b.fieldErrors.botToken)}
+              value={form.telegram.botToken}
+              onChange={(e) =>
+                b.patchForm({ telegram: { botToken: e.target.value, clearToken: false } })
+              }
+              autoComplete="off"
+            />
+          </CornerLinkedField>
+          {facts.secretMasked !== null && form.telegram.botToken === "" && (
+            <StoredSecretRow
+              masked={facts.secretMasked}
+              clearLabel={S.telegram.clearToken}
+              checked={form.telegram.clearToken}
+              enabled={facts.enabled}
+              onChange={(checked) =>
+                b.patchForm({ telegram: { ...form.telegram, clearToken: checked } })
+              }
+            />
+          )}
+        </>
       ) : (
         <>
-          <Input
-            size="sm"
+          <CornerLinkedField
             label={S.feishu.appId}
             required
-            error={errorText(b.fieldErrors.appId)}
-            value={form.feishu.appId}
-            onChange={(e) => b.patchForm({ feishu: { ...form.feishu, appId: e.target.value } })}
-            className="font-mono"
-            placeholder="cli_xxxxxxxxxxxxxxxx"
-            autoComplete="off"
-          />
-          {/* Stored secret: the site-wide mask shows as the placeholder (models-page
-              configured-key idiom) — type to replace it, leave blank to keep it. */}
+            link={<ExternalLink href={links.console} label={S.messaging.console} />}
+          >
+            <Input
+              size="sm"
+              aria-label={S.feishu.appId}
+              error={errorText(b.fieldErrors.appId)}
+              value={form.feishu.appId}
+              onChange={(e) => b.patchForm({ feishu: { ...form.feishu, appId: e.target.value } })}
+              className="font-mono"
+              placeholder="cli_xxxxxxxxxxxxxxxx"
+              autoComplete="off"
+            />
+          </CornerLinkedField>
           <PasswordInput
             size="sm"
             label={S.feishu.appSecret}
-            {...(b.hasStored
-              ? { hint: S.feishu.appSecretKeepHint, placeholder: b.secretMasked ?? undefined }
+            {...(facts.secretConfigured
+              ? { placeholder: S.feishu.appSecretKeepHint }
               : { required: true })}
             error={errorText(b.fieldErrors.appSecret)}
             value={form.feishu.appSecret}
-            onChange={(e) => b.patchForm({ feishu: { ...form.feishu, appSecret: e.target.value } })}
+            onChange={(e) =>
+              b.patchForm({
+                feishu: { ...form.feishu, appSecret: e.target.value, clearSecret: false },
+              })
+            }
             autoComplete="off"
           />
+          {facts.secretMasked !== null && form.feishu.appSecret === "" && (
+            <StoredSecretRow
+              masked={facts.secretMasked}
+              clearLabel={S.feishu.clearSecret}
+              checked={form.feishu.clearSecret}
+              enabled={facts.enabled}
+              onChange={(checked) =>
+                b.patchForm({ feishu: { ...form.feishu, clearSecret: checked } })
+              }
+            />
+          )}
           <Input
             size="sm"
             label={S.feishu.baseDomain}
@@ -521,6 +582,95 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
           />
         </>
       )}
+      {/* The connection toggle + live status on one line: the Switch is the intent, the
+          tone-colored text is what the connection actually is right now. At most one
+          channel is enabled per Session — the hint below names what gates the switch. */}
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+          <Switch
+            checked={facts.enabled}
+            disabled={b.toggleBlocked}
+            onChange={(v) => void b.toggleEnabled(v)}
+          />
+          {S.messaging.enabled}
+        </label>
+        <span className="ml-2 text-gray-500 dark:text-gray-400">{S.messaging.statusLabel}</span>
+        <span
+          {...(facts.status.lastError !== undefined ? { title: facts.status.lastError } : {})}
+          className={`font-medium ${toneInk[STATUS_TONE[facts.status.state]]}`}
+        >
+          {S.messaging.status[facts.status.state]}
+        </span>
+        {facts.status.state === "error" && facts.status.lastError !== undefined && (
+          <span className="min-w-0 flex-1 truncate text-gray-400 dark:text-gray-500">
+            {facts.status.lastError}
+          </span>
+        )}
+      </div>
+      {b.toggleHint !== null && (
+        <p className="text-xs text-gray-400 dark:text-gray-500">{b.toggleHint}</p>
+      )}
+      {/* Entry-level probes — the MCP dialog idiom: standalone buttons, results as toasts. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          size="sm"
+          disabled={b.testing || b.busy || !b.testable}
+          onClick={() => void b.testConnection()}
+        >
+          {b.testing ? S.messaging.testing : S.messaging.test}
+        </Button>
+        <Button
+          size="sm"
+          disabled={
+            b.sendingTest || b.busy || facts.status.state !== "connected" || !facts.lastChatKnown
+          }
+          {...(!facts.lastChatKnown
+            ? {
+                title:
+                  channel === "telegram"
+                    ? S.telegram.testMessageNoChat
+                    : S.feishu.testMessageNoChat,
+              }
+            : {})}
+          onClick={() => void b.sendTestMessage()}
+        >
+          {b.sendingTest ? S.messaging.sendingTestMessage : S.messaging.sendTestMessage}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The collapsed-by-default FAQ under the save area — three titled `HelpFold`s: the
+ * selected channel's setup steps (ending in its tutorial link), what binding does (the
+ * explanation that leads no form), and troubleshooting. Hosts place it below their Save
+ * controls, so the form itself opens on its fields.
+ */
+export function MessagingBindingHelp({ channel }: { channel: MessagingChannel }) {
+  const per = channel === "telegram" ? S.telegram : S.feishu;
+  const links = CHANNEL_LINKS[channel];
+  return (
+    <div className="space-y-2 border-t border-gray-200 pt-3 dark:border-gray-800">
+      <HelpFold title={S.messaging.faqSetupTitle}>
+        <ol className="list-decimal space-y-1 pl-4">
+          {per.setupSteps.map((step) => (
+            <li key={step}>{step}</li>
+          ))}
+        </ol>
+        <p className="mt-1.5">
+          <ExternalLink href={links.tutorial} label={S.messaging.tutorial} />
+        </p>
+      </HelpFold>
+      <HelpFold title={S.messaging.faqWhatTitle}>
+        <p>{per.intro}</p>
+      </HelpFold>
+      <HelpFold title={S.messaging.faqTroubleTitle}>
+        <ul className="list-disc space-y-1 pl-4">
+          <li>{S.messaging.troubleNoChat}</li>
+          <li>{S.messaging.troubleConnError}</li>
+        </ul>
+      </HelpFold>
     </div>
   );
 }

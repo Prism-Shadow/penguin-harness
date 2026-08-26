@@ -1,9 +1,13 @@
 /**
  * Messaging-binding routes: /api/sessions/:sessionId/messaging[...] — the binding
- * editor's and the Messaging dock panel's shared surface. The channel-agnostic GET reads
- * whichever binding the Session has (the channel-aware editor decides what to render
- * from it); each channel then owns a subtree with its own config shape — /feishu and
- * /telegram carry the same verb set, and a further channel adds its own.
+ * editor's and the Messaging dock panel's shared surface. A Session keeps at most one
+ * saved config PER channel (both may sit saved side by side); the channel-agnostic GET
+ * returns them all, and each channel owns a subtree with its own config shape — /feishu
+ * and /telegram carry the same verb set, and a further channel adds its own.
+ *
+ * At most ONE of a Session's channels is enabled at a time: the state toggle refuses to
+ * enable a channel while another is enabled (409 `another_channel_enabled` — turn that
+ * one off first) and to enable a config whose secret is missing (its channel's 400).
  *
  * Authorization mirrors the vault's split, through the sessions routes' resolveSession
  * pattern (404 never leaks a Session's existence): any Project member can read bindings
@@ -13,13 +17,10 @@
  * Round-trip rule for secrets: GET only ever returns the masked value, and a PUT whose
  * secret (feishu `appSecret`, telegram `botToken`) is omitted or blank keeps the stored
  * one (the same never-round-trip-masked-keys convention as the models test endpoint), so
- * the plaintext exists only at first entry.
- *
- * A channel subtree sees only its own channel's binding: bound to another channel, its
- * GET reads as unbound (and disconnected — the live connection belongs to the other
- * channel), state/test-message answer 404 not-bound, DELETE is a no-op, and PUT replaces
- * the binding outright (one binding per Session; the web UI's channel selector locks
- * once bound, so a cross-channel PUT is an explicit API-level rebind).
+ * the plaintext exists only at first entry. Dropping a stored secret is the explicit
+ * clear flag (the models-page idiom), refused while the binding is enabled — the cleared
+ * config's row and account identity stay; full removal is the DELETE, which the web UI
+ * no longer offers (API completeness only).
  */
 import { Hono } from "hono";
 import type { Context } from "hono";
@@ -28,8 +29,9 @@ import type {
   FeishuBindingResponse,
   FeishuTestResponse,
   MessagingBindingInfo,
-  MessagingBindingResponse,
+  MessagingBindingsResponse,
   MessagingBindingStateRequest,
+  MessagingChannelState,
   MessagingTestMessageResponse,
   TelegramBindingInfo,
   TelegramBindingResponse,
@@ -71,7 +73,9 @@ function toFeishuInfo(row: MessagingBindingRow): FeishuBindingInfo {
     channel: "feishu",
     sessionId: row.sessionId,
     appId: fields.appId,
-    appSecretMasked: maskApiKey(fields.appSecret),
+    // A cleared/never-entered secret has no mask: the field's absence is what tells the
+    // editor to render "not configured" instead of a masked placeholder.
+    ...(fields.appSecret !== "" ? { appSecretMasked: maskApiKey(fields.appSecret) } : {}),
     baseDomain: fields.baseDomain,
     enabled: row.enabled,
     lastChatKnown: row.lastChatId !== null,
@@ -81,11 +85,12 @@ function toFeishuInfo(row: MessagingBindingRow): FeishuBindingInfo {
 }
 
 function toTelegramInfo(row: MessagingBindingRow): TelegramBindingInfo {
+  const { botToken } = telegramFieldsOf(row);
   return {
     channel: "telegram",
     sessionId: row.sessionId,
     botId: row.accountId,
-    botTokenMasked: maskApiKey(telegramFieldsOf(row).botToken),
+    ...(botToken !== "" ? { botTokenMasked: maskApiKey(botToken) } : {}),
     enabled: row.enabled,
     lastChatKnown: row.lastChatId !== null,
     createdAt: row.createdAt,
@@ -144,38 +149,55 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
     return row;
   };
 
-  /** The Session's binding of ONE channel; a binding on another channel reads as unbound + dark. */
-  const channelRow = (sessionId: string, channel: string): MessagingBindingRow | null => {
-    const row = deps.messagingRepo.find(sessionId);
-    return row !== null && row.channel === channel ? row : null;
-  };
-
   const feishuResponse = (sessionId: string): FeishuBindingResponse => {
-    const row = channelRow(sessionId, "feishu");
+    const row = deps.messagingRepo.find(sessionId, "feishu");
     return {
       binding: row ? toFeishuInfo(row) : null,
-      status: row ? deps.messaging.statusOf(sessionId) : { state: "disconnected" },
+      status: deps.messaging.statusOf(sessionId, "feishu"),
     };
   };
 
   const telegramResponse = (sessionId: string): TelegramBindingResponse => {
-    const row = channelRow(sessionId, "telegram");
+    const row = deps.messagingRepo.find(sessionId, "telegram");
     return {
       binding: row ? toTelegramInfo(row) : null,
-      status: row ? deps.messaging.statusOf(sessionId) : { state: "disconnected" },
+      status: deps.messaging.statusOf(sessionId, "telegram"),
     };
   };
 
-  // The channel-agnostic read: whichever channel is bound. The channel-aware binding
-  // editor loads this one endpoint and renders the right per-channel form from it.
+  /**
+   * The one-enabled-per-session rule plus the secret prerequisite, checked before an
+   * enable flips intent. Disabling is always allowed.
+   */
+  const guardEnable = (sessionId: string, channel: string, row: MessagingBindingRow): void => {
+    const enabledRow = deps.messagingRepo.findEnabled(sessionId);
+    if (enabledRow !== null && enabledRow.channel !== channel) {
+      throw new HttpError(
+        409,
+        "another_channel_enabled",
+        "Another channel's connection is enabled on this Session: disable it first.",
+      );
+    }
+    const secret =
+      channel === "feishu" ? feishuFieldsOf(row).appSecret : telegramFieldsOf(row).botToken;
+    if (secret === "") {
+      const code = channel === "feishu" ? "feishu_secret_required" : "telegram_token_required";
+      throw new HttpError(400, code, "The stored config has no credential: save one first.");
+    }
+  };
+
+  // The channel-agnostic read: every saved channel config with its runtime status. The
+  // channel-aware binding editor loads this one endpoint and renders both channel forms
+  // (and the at-most-one-enabled state) from it.
   app.get("/:sessionId/messaging", (c) => {
     const row = resolveSession(c);
-    const stored = deps.messagingRepo.find(row.sessionId);
-    const binding = stored ? toBindingInfo(stored) : null;
-    return c.json({
-      binding,
-      status: binding !== null ? deps.messaging.statusOf(row.sessionId) : { state: "disconnected" },
-    } satisfies MessagingBindingResponse);
+    const bindings: MessagingChannelState[] = [];
+    for (const stored of deps.messagingRepo.listForSession(row.sessionId)) {
+      const binding = toBindingInfo(stored);
+      if (binding === null) continue;
+      bindings.push({ binding, status: deps.messaging.statusOf(row.sessionId, stored.channel) });
+    }
+    return c.json({ bindings } satisfies MessagingBindingsResponse);
   });
 
   // —— Feishu ————————————————————————————————————————————————————————————————
@@ -192,14 +214,30 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
     const appId = requireString(body, "appId", { minLen: 1, maxLen: 200 }).trim();
     if (appId === "") throw badRequest("appId must not be blank.");
     const secretInput = optionalString(body, "appSecret", { maxLen: 500 })?.trim();
+    const clearSecret = (body as { clearAppSecret?: unknown }).clearAppSecret === true;
     const baseDomain = parseBaseDomain(optionalString(body, "baseDomain", { maxLen: 500 }));
-    const existing = channelRow(row.sessionId, "feishu");
-    // Omitted/blank keeps the stored secret; a first-time bind must carry one.
-    const storedSecret =
-      existing !== null ? feishuFieldsOf(existing).appSecret || undefined : undefined;
-    const appSecret = secretInput !== undefined && secretInput !== "" ? secretInput : storedSecret;
-    if (appSecret === undefined) {
-      throw new HttpError(400, "feishu_secret_required", "appSecret is required to bind.");
+    const existing = deps.messagingRepo.find(row.sessionId, "feishu");
+    const typed = secretInput !== undefined && secretInput !== "" ? secretInput : undefined;
+    // Blank keeps the stored secret; the clear flag (models idiom — a typed secret wins
+    // over it) drops it, refused while the binding is enabled: a live connection must
+    // never be running on a credential the store no longer has.
+    let appSecret: string;
+    if (typed !== undefined) appSecret = typed;
+    else if (clearSecret && existing !== null) {
+      if (existing.enabled) {
+        throw new HttpError(
+          409,
+          "messaging_disable_before_clear",
+          "Disable the connection before clearing its credential.",
+        );
+      }
+      appSecret = "";
+    } else {
+      const stored = existing !== null ? feishuFieldsOf(existing).appSecret : "";
+      if (stored === "") {
+        throw new HttpError(400, "feishu_secret_required", "appSecret is required to bind.");
+      }
+      appSecret = stored;
     }
     const result = deps.messagingRepo.upsert({
       sessionId: row.sessionId,
@@ -228,20 +266,22 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
     const row = resolveSession(c);
     deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
     const enabled = await readStateBody(c);
-    if (channelRow(row.sessionId, "feishu") === null) {
+    const binding = deps.messagingRepo.find(row.sessionId, "feishu");
+    if (binding === null) {
       throw new HttpError(404, "feishu_not_bound", "This Session has no Feishu binding.");
     }
-    deps.messagingRepo.setEnabled(row.sessionId, enabled);
+    if (enabled) guardEnable(row.sessionId, "feishu", binding);
+    deps.messagingRepo.setEnabled(row.sessionId, "feishu", enabled);
     await deps.messaging.sync(row.sessionId);
     return c.json(feishuResponse(row.sessionId));
   });
 
+  // Full removal of the channel's config. Kept for API completeness: the web UI's removal
+  // affordance is the per-field clear (PUT clear flag), not this.
   app.delete("/:sessionId/messaging/feishu", (c) => {
     const row = resolveSession(c);
     deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
-    // Unbinds only this channel's binding: a binding on another channel is not touched
-    // (deleting an absent binding is already a 204 no-op, and this keeps it one).
-    if (channelRow(row.sessionId, "feishu") !== null) deps.messaging.unbind(row.sessionId);
+    deps.messaging.unbind(row.sessionId, "feishu");
     return c.body(null, 204);
   });
 
@@ -250,7 +290,7 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
   app.post("/:sessionId/messaging/feishu/test", async (c) => {
     const row = resolveSession(c);
     const body = await readJson(c);
-    const stored = channelRow(row.sessionId, "feishu");
+    const stored = deps.messagingRepo.find(row.sessionId, "feishu");
     const storedFields = stored !== null ? feishuFieldsOf(stored) : null;
     const appId = optionalString(body, "appId", { maxLen: 200 })?.trim() || storedFields?.appId;
     const appSecret =
@@ -278,7 +318,7 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
   // user must message the bot once in Feishu first.
   app.post("/:sessionId/messaging/feishu/test-message", async (c) => {
     const row = resolveSession(c);
-    const binding = channelRow(row.sessionId, "feishu");
+    const binding = deps.messagingRepo.find(row.sessionId, "feishu");
     if (!binding) {
       throw new HttpError(404, "feishu_not_bound", "This Session has no Feishu binding.");
     }
@@ -313,23 +353,42 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
     deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
     const body = await readJson(c);
     const tokenInput = optionalString(body, "botToken", { maxLen: 200 })?.trim();
-    const existing = channelRow(row.sessionId, "telegram");
-    // Omitted/blank keeps the stored token; a first-time bind must carry one.
-    const storedToken =
-      existing !== null ? telegramFieldsOf(existing).botToken || undefined : undefined;
-    const botToken = tokenInput !== undefined && tokenInput !== "" ? tokenInput : storedToken;
-    if (botToken === undefined) {
-      throw new HttpError(400, "telegram_token_required", "botToken is required to bind.");
-    }
-    // The id half in front of the colon is the account identity the uniqueness rule
-    // hangs on, so a token it cannot be read from is refused rather than stored.
-    const botId = telegramBotIdOf(botToken);
-    if (botId === null) {
-      throw new HttpError(
-        400,
-        "telegram_token_invalid",
-        "botToken must look like <numeric bot id>:<secret> (as issued by @BotFather).",
-      );
+    const clearToken = (body as { clearBotToken?: unknown }).clearBotToken === true;
+    const existing = deps.messagingRepo.find(row.sessionId, "telegram");
+    const typed = tokenInput !== undefined && tokenInput !== "" ? tokenInput : undefined;
+    // Same ladder as the Feishu PUT: typed wins, then the clear flag (disable first),
+    // then the stored token; a first bind must carry one. A cleared config keeps its bot
+    // identity — the token half in front of the colon never changes for a bot.
+    let botToken: string;
+    let botId: string;
+    if (typed !== undefined) {
+      const id = telegramBotIdOf(typed);
+      if (id === null) {
+        throw new HttpError(
+          400,
+          "telegram_token_invalid",
+          "botToken must look like <numeric bot id>:<secret> (as issued by @BotFather).",
+        );
+      }
+      botToken = typed;
+      botId = id;
+    } else if (clearToken && existing !== null) {
+      if (existing.enabled) {
+        throw new HttpError(
+          409,
+          "messaging_disable_before_clear",
+          "Disable the connection before clearing its credential.",
+        );
+      }
+      botToken = "";
+      botId = existing.accountId;
+    } else {
+      const stored = existing !== null ? telegramFieldsOf(existing).botToken : "";
+      if (stored === "" || existing === null) {
+        throw new HttpError(400, "telegram_token_required", "botToken is required to bind.");
+      }
+      botToken = stored;
+      botId = existing.accountId;
     }
     const result = deps.messagingRepo.upsert({
       sessionId: row.sessionId,
@@ -353,10 +412,12 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
     const row = resolveSession(c);
     deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
     const enabled = await readStateBody(c);
-    if (channelRow(row.sessionId, "telegram") === null) {
+    const binding = deps.messagingRepo.find(row.sessionId, "telegram");
+    if (binding === null) {
       throw new HttpError(404, "telegram_not_bound", "This Session has no Telegram binding.");
     }
-    deps.messagingRepo.setEnabled(row.sessionId, enabled);
+    if (enabled) guardEnable(row.sessionId, "telegram", binding);
+    deps.messagingRepo.setEnabled(row.sessionId, "telegram", enabled);
     await deps.messaging.sync(row.sessionId);
     return c.json(telegramResponse(row.sessionId));
   });
@@ -364,7 +425,7 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
   app.delete("/:sessionId/messaging/telegram", (c) => {
     const row = resolveSession(c);
     deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
-    if (channelRow(row.sessionId, "telegram") !== null) deps.messaging.unbind(row.sessionId);
+    deps.messaging.unbind(row.sessionId, "telegram");
     return c.body(null, 204);
   });
 
@@ -374,7 +435,7 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
   app.post("/:sessionId/messaging/telegram/test", async (c) => {
     const row = resolveSession(c);
     const body = await readJson(c);
-    const stored = channelRow(row.sessionId, "telegram");
+    const stored = deps.messagingRepo.find(row.sessionId, "telegram");
     const botToken =
       optionalString(body, "botToken", { maxLen: 200 })?.trim() ||
       (stored !== null ? telegramFieldsOf(stored).botToken || undefined : undefined);
@@ -392,7 +453,7 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
 
   app.post("/:sessionId/messaging/telegram/test-message", async (c) => {
     const row = resolveSession(c);
-    const binding = channelRow(row.sessionId, "telegram");
+    const binding = deps.messagingRepo.find(row.sessionId, "telegram");
     if (!binding) {
       throw new HttpError(404, "telegram_not_bound", "This Session has no Telegram binding.");
     }

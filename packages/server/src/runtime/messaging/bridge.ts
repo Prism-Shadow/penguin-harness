@@ -3,9 +3,11 @@
  * platforms through channel connectors (Feishu and Telegram today — see
  * feishu-connector.ts / telegram-connector.ts). Started by the platform next to the
  * Scheduler, stopped when the
- * App is disposed — a hot swap hard-stops it like the scheduler. Per ENABLED binding it
- * holds one inbound event connection: `enabled` is stored intent the state toggle owns —
- * saving credentials never opens or closes a connection (with one deliberate exception:
+ * App is disposed — a hot swap hard-stops it like the scheduler. A Session may keep a
+ * saved config per channel, but AT MOST ONE of them is enabled (the state route enforces
+ * that), so the bridge holds at most one inbound event connection per Session — the
+ * enabled binding's. `enabled` is stored intent the state toggle owns — saving
+ * credentials never opens or closes a connection (with one deliberate exception:
  * re-saving an enabled binding restarts its connector with the new credentials, so the
  * stored config and the live connection never diverge).
  *
@@ -111,6 +113,8 @@ export interface MessagingBridgeDeps {
 /** One connected (or connecting/errored) binding's in-memory state. */
 interface BridgeEntry {
   sessionId: string;
+  /** The connected binding's channel (a Session's OTHER saved channels read as disconnected). */
+  channel: string;
   connector: MessagingChannelConnector;
   config: Record<string, unknown>;
   status: MessagingRuntimeStatus;
@@ -144,14 +148,14 @@ export class MessagingBridge {
 
   /**
    * Server startup: connect every ENABLED binding (disabled ones keep their credentials
-   * and stay dark). A binding whose Session no longer exists (deleted while this server
-   * was down, or by a bulk Agent/Project delete that bypassed the per-session cascade)
-   * is reconciled away instead of connected.
+   * and stay dark; at most one per Session is enabled). A binding whose Session no longer
+   * exists (deleted while this server was down, or by a bulk Agent/Project delete that
+   * bypassed the per-session cascade) is reconciled away instead of connected.
    */
   async start(): Promise<void> {
     for (const row of this.deps.repo.listAll()) {
       if (this.deps.sessions.findById(row.sessionId) === null) {
-        this.deps.repo.delete(row.sessionId);
+        this.deps.repo.delete(row.sessionId, row.channel);
         continue;
       }
       if (row.enabled) await this.connect(row);
@@ -164,29 +168,37 @@ export class MessagingBridge {
   }
 
   /**
-   * Align the live connection with the stored row: enabled → (re)connect with the
-   * CURRENT config, disabled or unbound → disconnect. The state toggle calls this after
-   * flipping intent, and a credential save calls it only while the binding is enabled —
-   * the restart that keeps stored config and live connection from diverging.
+   * Align the live connection with the stored intent: an enabled binding exists →
+   * (re)connect with its CURRENT config, none → disconnect. The state toggle calls this
+   * after flipping intent, and a credential save calls it only while the saved binding is
+   * enabled — the restart that keeps stored config and live connection from diverging.
    */
   async sync(sessionId: string): Promise<void> {
-    const row = this.deps.repo.find(sessionId);
-    if (row === null || !row.enabled) {
+    const row = this.deps.repo.findEnabled(sessionId);
+    if (row === null) {
       this.disconnect(sessionId);
       return;
     }
     await this.connect(row);
   }
 
-  /** Unbind (route DELETE + session-delete cascade): disconnect and drop the row. No-op when unbound. */
-  unbind(sessionId: string): void {
-    this.disconnect(sessionId);
-    this.deps.repo.delete(sessionId);
+  /** Route DELETE: disconnect (when this channel holds the connection) and drop the row. No-op when unbound. */
+  unbind(sessionId: string, channel: string): void {
+    if (this.entries.get(sessionId)?.channel === channel) this.disconnect(sessionId);
+    this.deps.repo.delete(sessionId, channel);
   }
 
-  /** Runtime status for the API (a binding never connected reads as disconnected). */
-  statusOf(sessionId: string): MessagingRuntimeStatus {
-    return this.entries.get(sessionId)?.status ?? { state: "disconnected" };
+  /** Session-delete cascade: disconnect and drop every channel's config. */
+  unbindSession(sessionId: string): void {
+    this.disconnect(sessionId);
+    this.deps.repo.deleteSession(sessionId);
+  }
+
+  /** One channel's runtime status (only the connected channel is ever anything but disconnected). */
+  statusOf(sessionId: string, channel: string): MessagingRuntimeStatus {
+    const entry = this.entries.get(sessionId);
+    if (!entry || entry.channel !== channel) return { state: "disconnected" };
+    return entry.status;
   }
 
   /**
@@ -245,6 +257,7 @@ export class MessagingBridge {
     const runState = this.deps.runner.statusOf(row.sessionId);
     const entry: BridgeEntry = {
       sessionId: row.sessionId,
+      channel: row.channel,
       connector,
       config: row.config,
       status: { state: "connecting", changedAt: new Date(this.now()).toISOString() },
@@ -307,10 +320,13 @@ export class MessagingBridge {
   }
 
   private async clientFor(sessionId: string, row: MessagingBindingRow): Promise<MessagingClient> {
+    // The cached client belongs to the CONNECTED channel; another channel's caller (a
+    // test message on a saved-but-dark binding) gets a fresh client instead.
     const entry = this.entries.get(sessionId);
-    if (entry?.client) return entry.client;
+    const cacheable = entry !== undefined && entry.channel === row.channel;
+    if (cacheable && entry.client) return entry.client;
     const client = await this.connectorFor(row.channel).createClient(row.config);
-    if (entry) entry.client = client;
+    if (cacheable) entry.client = client;
     return client;
   }
 
@@ -322,7 +338,7 @@ export class MessagingBridge {
       const isDirect = msg.chatKind === "direct";
       // The chat becomes the reply target BEFORE any processing: even a rejected message
       // type teaches the bridge where the user is.
-      this.deps.repo.recordChat(entry.sessionId, msg.chatId, isDirect);
+      this.deps.repo.recordChat(entry.sessionId, entry.channel, msg.chatId, isDirect);
       entry.lastInboundMessageId = isDirect ? null : msg.messageId;
       if (msg.text === null || msg.text.trim() === "") {
         await this.replyInbound(entry, msg, MESSAGING_TEXT_ONLY_NOTICE);
@@ -345,7 +361,7 @@ export class MessagingBridge {
     msg: MessagingInboundMessage,
     text: string,
   ): Promise<void> {
-    const row = this.deps.repo.find(entry.sessionId);
+    const row = this.deps.repo.find(entry.sessionId, entry.channel);
     if (!row) return;
     const client = await this.clientFor(entry.sessionId, row);
     if (msg.chatKind === "direct") await client.sendText(msg.chatId, text);
@@ -406,7 +422,7 @@ export class MessagingBridge {
   /** Sends one completed reply to the last known chat; a send failure is recorded, never thrown. */
   private async flush(entry: BridgeEntry, text: string): Promise<void> {
     try {
-      const row = this.deps.repo.find(entry.sessionId);
+      const row = this.deps.repo.find(entry.sessionId, entry.channel);
       if (!row || row.lastChatId === null) return; // no chat known yet: nothing mirrors
       const client = await this.clientFor(entry.sessionId, row);
       for (const chunk of chunkMessagingText(text)) {
@@ -424,7 +440,7 @@ export class MessagingBridge {
   /** One-line notice (approval waiting) to the last known chat; silent before one exists. */
   private async deliverNotice(entry: BridgeEntry, text: string): Promise<void> {
     try {
-      const row = this.deps.repo.find(entry.sessionId);
+      const row = this.deps.repo.find(entry.sessionId, entry.channel);
       if (!row || row.lastChatId === null) return;
       const client = await this.clientFor(entry.sessionId, row);
       await client.sendText(row.lastChatId, text);

@@ -61,10 +61,11 @@ export interface SessionServiceDeps {
    */
   proxyEnv?: () => ProxyEnvPolicy | null;
   /**
-   * The Session's messaging-binding channel, or null when unbound
-   * (SessionInfo.messagingChannel, the sidebar row's per-channel indicator). A lookup
-   * lambda rather than the repo, so the service stays decoupled from the bindings table;
-   * absent (older assemblies/tests) means the field is never set.
+   * The channel of the Session's ENABLED messaging binding, or null when none is enabled
+   * (SessionInfo.messagingChannel, the sidebar row's per-channel indicator — saved-but-
+   * disabled configs stay off the row). A lookup lambda rather than the repo, so the
+   * service stays decoupled from the bindings table; absent (older assemblies/tests)
+   * means the field is never set.
    */
   messagingChannel?: (sessionId: string) => MessagingChannel | null;
 }

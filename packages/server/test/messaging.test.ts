@@ -233,21 +233,56 @@ describe("messaging binding routes and bridge", () => {
     expect(body.status.state).toBe("disconnected");
     expect(fake.connections).toHaveLength(0);
     // The stored row carries the channel discriminator and the account identity.
-    const stored = t.deps.messagingRepo.find(SID)!;
+    const stored = t.deps.messagingRepo.find(SID, "feishu")!;
     expect(stored.channel).toBe("feishu");
     expect(stored.accountId).toBe(PUT_BODY.appId);
 
     // Re-save with a blank secret: the stored one stays; still disabled, still dark.
     const resave = await api.put(BASE(SID), { appId: PUT_BODY.appId, appSecret: "" });
     expect(resave.status).toBe(200);
-    expect(t.deps.messagingRepo.find(SID)?.config.appSecret).toBe(PUT_BODY.appSecret);
+    expect(t.deps.messagingRepo.find(SID, "feishu")?.config.appSecret).toBe(PUT_BODY.appSecret);
     expect(fake.connections).toHaveLength(0);
 
     // First-time bind without a secret is refused.
-    t.deps.messagingRepo.delete(SID);
+    t.deps.messagingRepo.delete(SID, "feishu");
     const bare = await api.put(BASE(SID), { appId: "cli_other" });
     expect(bare.status).toBe(400);
     expect(((await bare.json()) as { error: { code: string } }).error.code).toBe(
+      "feishu_secret_required",
+    );
+  });
+
+  it("the clear flag drops the stored secret (disable first), and enabling without one is refused", async () => {
+    await api.put(BASE(SID), PUT_BODY);
+    await api.post(`${BASE(SID)}/state`, { enabled: true });
+    // Clearing while enabled is refused: a live connection must never outrun its stored credential.
+    const blocked = await api.put(BASE(SID), { appId: PUT_BODY.appId, clearAppSecret: true });
+    expect(blocked.status).toBe(409);
+    expect(((await blocked.json()) as { error: { code: string } }).error.code).toBe(
+      "messaging_disable_before_clear",
+    );
+    await api.post(`${BASE(SID)}/state`, { enabled: false });
+    const cleared = await api.put(BASE(SID), { appId: PUT_BODY.appId, clearAppSecret: true });
+    expect(cleared.status).toBe(200);
+    const body = (await cleared.json()) as FeishuBindingResponse;
+    // No stored secret -> no mask; the row and its non-secret fields stay.
+    expect(body.binding?.appSecretMasked).toBeUndefined();
+    expect(body.binding?.appId).toBe(PUT_BODY.appId);
+    expect(t.deps.messagingRepo.find(SID, "feishu")?.config.appSecret).toBe("");
+    // A typed secret wins over a stale clear flag (the models idiom).
+    const typed = await api.put(BASE(SID), {
+      appId: PUT_BODY.appId,
+      appSecret: "fresh-secret-123456",
+      clearAppSecret: true,
+    });
+    expect(((await typed.json()) as FeishuBindingResponse).binding?.appSecretMasked).toBe(
+      "fres…3456",
+    );
+    // Clear again, then try to enable: the state toggle refuses a credential-less config.
+    await api.put(BASE(SID), { appId: PUT_BODY.appId, clearAppSecret: true });
+    const on = await api.post(`${BASE(SID)}/state`, { enabled: true });
+    expect(on.status).toBe(400);
+    expect(((await on.json()) as { error: { code: string } }).error.code).toBe(
       "feishu_secret_required",
     );
   });
@@ -296,7 +331,7 @@ describe("messaging binding routes and bridge", () => {
     expect(((await res.json()) as { error: { code: string } }).error.code).toBe(
       "feishu_app_in_use",
     );
-    expect(t.deps.messagingRepo.find(SID2)).toBeNull();
+    expect(t.deps.messagingRepo.find(SID2, "feishu")).toBeNull();
   });
 
   it("authz: non-members get 404; a member reads but cannot write or toggle (owner-only)", async () => {
@@ -340,7 +375,7 @@ describe("messaging binding routes and bridge", () => {
     });
 
     // No stored binding and no draft appId: a plain 400.
-    t.deps.messagingRepo.delete(SID);
+    t.deps.messagingRepo.delete(SID, "feishu");
     expect((await api.post(`${BASE(SID)}/test`, {})).status).toBe(400);
   });
 
@@ -384,7 +419,7 @@ describe("messaging binding routes and bridge", () => {
     expect(input.role).toBe("user");
     expect("sender" in input).toBe(false);
     // The inbound chat became the reply target.
-    const row = t.deps.messagingRepo.find(SID)!;
+    const row = t.deps.messagingRepo.find(SID, "feishu")!;
     expect(row.lastChatId).toBe("oc_chat_1");
     expect(row.lastChatIsDirect).toBe(true);
     // Task end mirrors the assistant text to that chat.
@@ -446,7 +481,7 @@ describe("messaging binding routes and bridge", () => {
     });
     expect(runs).toHaveLength(0);
     // Even a rejected type teaches the bridge where the user is.
-    expect(t.deps.messagingRepo.find(SID)?.lastChatId).toBe("oc_chat_1");
+    expect(t.deps.messagingRepo.find(SID, "feishu")?.lastChatId).toBe("oc_chat_1");
   });
 
   it("an approval_request sends the waiting-for-approval notice", async () => {
@@ -472,32 +507,32 @@ describe("messaging binding routes and bridge", () => {
   it("DELETE unbinds + disconnects, and deleting the Session cascades the binding away", async () => {
     await bindEnabled(SID);
     expect((await api.delete(BASE(SID))).status).toBe(204);
-    expect(t.deps.messagingRepo.find(SID)).toBeNull();
+    expect(t.deps.messagingRepo.find(SID, "feishu")).toBeNull();
     expect(fake.connections[0]!.closed).toBe(true);
-    expect(t.deps.messaging.statusOf(SID).state).toBe("disconnected");
+    expect(t.deps.messaging.statusOf(SID, "feishu").state).toBe("disconnected");
 
     // Rebind + enable, then delete the Session itself: the binding goes with it.
     await bindEnabled(SID);
     expect((await api.delete(`/api/sessions/${SID}`)).status).toBe(204);
-    expect(t.deps.messagingRepo.find(SID)).toBeNull();
+    expect(t.deps.messagingRepo.find(SID, "feishu")).toBeNull();
     expect(fake.connections[1]!.closed).toBe(true);
   });
 
-  it("the session list marks bound rows with their messagingChannel", async () => {
+  it("the session list marks rows with the ENABLED channel only", async () => {
+    // Saved but disabled: no indicator — the row marks live connections, not stored configs.
     await api.put(BASE(SID), PUT_BODY);
+    const saved = await api.get(`/api/projects/${projectId}/agents/default_agent/sessions`);
+    const savedBody = (await saved.json()) as {
+      sessions: Array<{ sessionId: string; messagingChannel?: string }>;
+    };
+    expect("messagingChannel" in savedBody.sessions.find((s) => s.sessionId === SID)!).toBe(false);
+
+    await api.post(`${BASE(SID)}/state`, { enabled: true });
     const res = await api.get(`/api/projects/${projectId}/agents/default_agent/sessions`);
     const body = (await res.json()) as {
       sessions: Array<{ sessionId: string; messagingChannel?: string }>;
     };
     expect(body.sessions.find((s) => s.sessionId === SID)?.messagingChannel).toBe("feishu");
-    // Unbound rows omit the field entirely rather than carrying a null.
-    const row2 = sessionRowOf(SID2, projectId);
-    t.deps.sessionsRepo.insert(row2);
-    const again = await api.get(`/api/projects/${projectId}/agents/default_agent/sessions`);
-    const list = (await again.json()) as {
-      sessions: Array<{ sessionId: string; messagingChannel?: string }>;
-    };
-    expect("messagingChannel" in list.sessions.find((s) => s.sessionId === SID2)!).toBe(false);
   });
 
   it("start() connects only enabled bindings and reconciles away rows whose Session is gone", async () => {
@@ -507,7 +542,7 @@ describe("messaging binding routes and bridge", () => {
       accountId: "cli_boot",
       config: { appId: "cli_boot", appSecret: "boot-secret", baseDomain: "https://open.feishu.cn" },
     });
-    t.deps.messagingRepo.setEnabled(SID, true);
+    t.deps.messagingRepo.setEnabled(SID, "feishu", true);
     // A saved-but-disabled binding keeps its credentials and stays dark across restarts.
     t.deps.sessionsRepo.insert(sessionRowOf(SID2, projectId));
     t.deps.messagingRepo.upsert({
@@ -528,8 +563,8 @@ describe("messaging binding routes and bridge", () => {
     });
     await t.deps.messaging.start();
     expect(fake.connections.map((c) => c.creds.appId)).toEqual(["cli_boot"]);
-    expect(t.deps.messagingRepo.find("session-2026-08-25-10-00-02-dead0001")).toBeNull();
-    expect(t.deps.messagingRepo.find(SID2)?.enabled).toBe(false);
+    expect(t.deps.messagingRepo.find("session-2026-08-25-10-00-02-dead0001", "feishu")).toBeNull();
+    expect(t.deps.messagingRepo.find(SID2, "feishu")?.enabled).toBe(false);
     t.deps.messaging.stop();
     expect(fake.connections[0]!.closed).toBe(true);
   });

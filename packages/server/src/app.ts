@@ -709,13 +709,13 @@ export function buildAppDeps(
     sources: sessionSources,
     traceIndex,
     proxyEnv,
-    // List rows carry a per-channel messaging indicator; a point query per row keeps the
-    // repo out of the service. An unknown stored channel reads as unbound (same defensive
-    // skip as the bridge and the routes).
+    // List rows carry the ENABLED channel's indicator (saved-but-dark configs stay off
+    // the row); a point query per row keeps the repo out of the service. An unknown
+    // stored channel reads as none (same defensive skip as the bridge and the routes).
     messagingChannel: (sessionId) => {
-      const bound = messagingRepo.find(sessionId);
-      return bound !== null && (bound.channel === "feishu" || bound.channel === "telegram")
-        ? bound.channel
+      const enabled = messagingRepo.findEnabled(sessionId);
+      return enabled !== null && (enabled.channel === "feishu" || enabled.channel === "telegram")
+        ? enabled.channel
         : null;
     },
   });
