@@ -9,6 +9,7 @@ import {
   GITHUB_LATEST_DOWNLOAD,
   LINUX_APPIMAGE_CHMOD_CMD,
   MAC_UNQUARANTINE_CMD,
+  OSS_ORIGIN,
   RELEASES_URL,
 } from "../lib/links";
 import { detectPlatform } from "../lib/platform";
@@ -53,6 +54,10 @@ const PLATFORM_ICON_CLASSES: Record<Platform, string> = {
   mac: "bg-gray-100 text-gray-950 dark:bg-gray-800 dark:text-white",
   windows: "bg-gray-100 dark:bg-gray-800",
   linux: "bg-gray-100 dark:bg-gray-800",
+};
+const RELEASE_MIRROR: Mirror = {
+  tag: RELEASE_VERSION,
+  base: `${OSS_ORIGIN}/releases/${RELEASE_VERSION}`,
 };
 
 function installerSuffix(file: string): string {
@@ -117,24 +122,21 @@ function SourceSpeedButton({
   measurement,
   testing,
   selected,
-  disabled,
   onSelect,
 }: {
   title: string;
   measurement: Measurement | null;
   testing: boolean;
   selected: boolean;
-  disabled: boolean;
   onSelect: () => void;
 }) {
   const filled = filledSignalBars(measurement, testing, selected);
   return (
     <button
       type="button"
-      disabled={disabled}
       aria-pressed={selected}
       onClick={onSelect}
-      className={`flex min-w-0 items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+      className={`flex min-w-0 items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left transition-colors ${
         selected
           ? "border-brand-400 bg-brand-50/70 dark:border-brand-700 dark:bg-brand-950/50"
           : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700 dark:hover:bg-gray-800"
@@ -209,9 +211,11 @@ export function DownloadPage() {
   const detected = detectPlatform();
   const probing = source === null;
   const selected: DownloadSource = override ?? source ?? "github";
-  const viaMirror = mirror !== null && selected === "oss";
+  const availableMirror = mirror ?? RELEASE_MIRROR;
+  const awaitingAutomaticSource = probing && override === null;
+  const viaMirror = selected === "oss";
   const hrefFor = (file: string) =>
-    viaMirror ? `${mirror.base}/${file}` : `${GITHUB_LATEST_DOWNLOAD}/${file}`;
+    viaMirror ? `${availableMirror.base}/${file}` : `${GITHUB_LATEST_DOWNLOAD}/${file}`;
   const textLink =
     "inline-flex items-center gap-1 text-brand-700 underline decoration-brand-300 underline-offset-2 transition-colors hover:text-brand-600 dark:text-brand-300 dark:decoration-brand-700";
 
@@ -257,15 +261,15 @@ export function DownloadPage() {
                 {DESKTOP_INSTALLERS[platform].map(({ file, variant }) => (
                   <div key={file}>
                     <a
-                      href={probing ? undefined : hrefFor(file)}
-                      aria-disabled={probing || undefined}
+                      href={awaitingAutomaticSource ? undefined : hrefFor(file)}
+                      aria-disabled={awaitingAutomaticSource || undefined}
                       className={`inline-flex w-full items-center justify-center gap-1.5 rounded-lg px-3.5 py-2.5 text-sm font-medium transition-colors ${
-                        probing
+                        awaitingAutomaticSource
                           ? "cursor-progress bg-gray-200 text-gray-500 dark:bg-gray-800 dark:text-gray-500"
                           : "bg-gray-900 text-white hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
                       }`}
                     >
-                      {probing ? (
+                      {awaitingAutomaticSource ? (
                         <SpinnerIcon className="h-4 w-4 animate-spin" />
                       ) : (
                         <DownloadIcon className="h-4 w-4" />
@@ -307,7 +311,6 @@ export function DownloadPage() {
             measurement={report?.github ?? null}
             testing={probing || refining}
             selected={selected === "github"}
-            disabled={probing}
             onSelect={() => setOverride("github")}
           />
           <SourceSpeedButton
@@ -315,7 +318,6 @@ export function DownloadPage() {
             measurement={report?.oss ?? null}
             testing={probing || refining}
             selected={selected === "oss"}
-            disabled={probing || mirror === null}
             onSelect={() => setOverride("oss")}
           />
         </div>
@@ -326,7 +328,7 @@ export function DownloadPage() {
           {probing
             ? S.download.statusProbing
             : viaMirror
-              ? S.download.statusOss(mirror.tag)
+              ? S.download.statusOss(availableMirror.tag)
               : S.download.statusGithub}
         </p>
         <p>

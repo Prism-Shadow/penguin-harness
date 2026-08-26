@@ -52,15 +52,13 @@ export const zh = {
     platformLead: "开源、本地的 Agent 应用",
     platformAccent: "自动开发",
     platformTail: "平台",
-    automationLead: "自动化",
-    automationActions: ["创建", "优化", "部署"],
-    automationTail: "AI 应用。",
+    automation: "全自动",
     downloadCta: "下载桌面版",
     cliInstall: "命令行安装",
     stats: [
       { value: "1000+ 模型", label: "支持主流供应商" },
-      { value: "跨平台", label: "Linux，Windows，macOS 多系统兼容" },
-      { value: "100% 开源", label: "本地与服务器灵活部署" },
+      { value: "跨平台本地部署", label: "Linux，Windows，macOS 多系统兼容" },
+      { value: "100% 开源", label: "Apache 2.0 协议开源" },
       { value: "首个自进化 Harness", label: "Agent 自进化引擎" },
     ],
   },
@@ -117,7 +115,7 @@ export const zh = {
     altGithub: "改从 GitHub 下载",
     altOss: "改用 OSS 镜像下载",
     checksums: "校验和（SHA256SUMS.desktop）",
-    allReleases: "全部版本",
+    allReleases: "打开 GitHub 发布页",
     /** First-launch FAQ: one collapsible item per platform, the visitor's own pre-expanded. */
     faq: {
       title: "首次启动常见问题",
@@ -226,8 +224,12 @@ export const zh = {
 
   quickstart: {
     eyebrow: "快速开始",
-    title: "选择最适合你的启动方式",
-    subtitle: "桌面端开箱即用；需要服务器、浏览器或自动化脚本时，再切换到命令行。",
+    title: "分两步开始使用 PenguinHarness",
+    subtitle: "先选择安装方式；使用命令行安装时，再选择 Web UI 或 CLI 启动。",
+    stepOne: "第一步",
+    chooseInstall: "选择安装方式",
+    stepTwo: "第二步",
+    chooseLaunch: "选择启动方式",
     tabs: {
       desktop: "桌面端",
       install: "命令行安装",
@@ -248,9 +250,9 @@ export const zh = {
       title: "一行命令安装 PenguinHarness",
       desc: "适合开发机、服务器和私有化环境。安装包自带运行时，不依赖系统里的 Node.js。",
       osLabel: "选择操作系统",
-      offlinePrefix: "无网络环境也可以安装。",
-      offlineLink: "查看全部离线安装包",
-      offlineTitle: "展开离线安装命令",
+      offlineTitle: "离线安装包",
+      offlineDesc: "在有网机器下载目标系统的安装包，再拷贝到离线机器完成安装。",
+      offlineCommand: "展开离线安装命令",
     },
     web: {
       title: "在浏览器里使用完整界面",

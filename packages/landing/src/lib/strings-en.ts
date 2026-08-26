@@ -51,15 +51,13 @@ export const en: Strings = {
     platformLead: "The open-source, local-first Agent app ",
     platformAccent: "development",
     platformTail: " platform",
-    automationLead: "Automate ",
-    automationActions: ["build", "optimize", "deploy"],
-    automationTail: "AI apps.",
+    automation: "Fully automated",
     downloadCta: "Download the desktop app",
     cliInstall: "Install from the command line",
     stats: [
       { value: "1000+ models", label: "Support for major providers" },
-      { value: "Cross-platform", label: "Linux, Windows, and macOS compatible" },
-      { value: "100% open source", label: "Flexible local and server deployment" },
+      { value: "Cross-platform local deployment", label: "Linux, Windows, and macOS compatible" },
+      { value: "100% open source", label: "Open source under Apache 2.0" },
       { value: "First self-evolving Harness", label: "Agent self-evolution engine" },
     ],
   },
@@ -121,7 +119,7 @@ export const en: Strings = {
     altGithub: "Download from GitHub instead",
     altOss: "Use the OSS mirror instead",
     checksums: "Checksums (SHA256SUMS.desktop)",
-    allReleases: "All releases",
+    allReleases: "Open GitHub Releases",
     /** First-launch FAQ: one collapsible item per platform, the visitor's own pre-expanded. */
     faq: {
       title: "First-launch FAQ",
@@ -233,9 +231,12 @@ export const en: Strings = {
 
   quickstart: {
     eyebrow: "Quick start",
-    title: "Start the way that fits your setup",
-    subtitle:
-      "The desktop app works out of the box. Switch to the command line when you need a server, browser UI, or automation.",
+    title: "Get started with PenguinHarness in two steps",
+    subtitle: "Choose how to install first. With a CLI install, then choose Web UI or CLI.",
+    stepOne: "Step one",
+    chooseInstall: "Choose an installation method",
+    stepTwo: "Step two",
+    chooseLaunch: "Choose how to start",
     tabs: {
       desktop: "Desktop app",
       install: "CLI install",
@@ -256,9 +257,10 @@ export const en: Strings = {
       title: "Install PenguinHarness with one command",
       desc: "Made for developer machines, servers, and private environments. The bundle includes its runtime and does not depend on system Node.js.",
       osLabel: "Choose an operating system",
-      offlinePrefix: "Installing without internet access?",
-      offlineLink: "Browse every offline package",
-      offlineTitle: "Show offline install commands",
+      offlineTitle: "Offline packages",
+      offlineDesc:
+        "Download the package for the target system on a connected machine, then copy it to the offline machine to install.",
+      offlineCommand: "Show offline install commands",
     },
     web: {
       title: "Use the full interface in your browser",

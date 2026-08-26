@@ -44,6 +44,26 @@ cd penguin-install
 .\\install.cmd`,
 };
 
+export interface CliInstaller {
+  /** Stable Release asset file name used by both online and offline installation. */
+  file: string;
+  /** Language-neutral architecture label rendered on the direct download link. */
+  variant: string;
+}
+
+/** Direct offline-install downloads shown under the selected command-line platform. */
+export const CLI_INSTALLERS: Record<"linux" | "macos" | "windows", CliInstaller[]> = {
+  linux: [
+    { file: "penguin-linux-x64.tar.gz", variant: "x64" },
+    { file: "penguin-linux-arm64.tar.gz", variant: "arm64" },
+  ],
+  macos: [
+    { file: "penguin-darwin-arm64.tar.gz", variant: "Apple Silicon" },
+    { file: "penguin-darwin-x64.tar.gz", variant: "Intel" },
+  ],
+  windows: [{ file: "penguin-win32-x64.zip", variant: "x64" }],
+};
+
 /**
  * Heavy marketing media lives in the sibling `penguin-harness-community` repo rather than
  * in this one, so that assets only the landing site ever renders stay out of the clone of

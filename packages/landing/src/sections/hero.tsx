@@ -6,7 +6,7 @@ import { DownloadIcon, TerminalIcon } from "../components/icons";
 
 export function Hero() {
   return (
-    <section className="relative overflow-hidden border-b border-gray-200/70 dark:border-gray-800/70">
+    <section className="relative overflow-hidden">
       <div className="hero-dots pointer-events-none absolute inset-0" aria-hidden="true" />
       <div className="relative mx-auto max-w-7xl px-4 pt-16 pb-14 text-center sm:px-6 sm:pt-24 sm:pb-20">
         <h1 className="anim-rise flex items-center justify-center gap-3.5">
@@ -31,14 +31,7 @@ export function Hero() {
           className="anim-rise mt-4 text-sm text-gray-600 sm:text-base dark:text-gray-300"
           style={{ animationDelay: "120ms" }}
         >
-          {S.hero.automationLead}
-          {S.hero.automationActions.map((action, index) => (
-            <span key={action}>
-              {index > 0 && <span className="font-normal"> · </span>}
-              <strong className="font-semibold text-gray-900 dark:text-gray-100">{action}</strong>
-            </span>
-          ))}{" "}
-          {S.hero.automationTail}
+          {S.hero.automation}
         </p>
 
         <div
@@ -67,18 +60,11 @@ export function Hero() {
         </div>
 
         <dl
-          className="anim-rise mx-auto mt-10 grid max-w-5xl grid-cols-2 overflow-hidden rounded-2xl border border-gray-200 bg-white/80 text-left shadow-sm lg:grid-cols-4 dark:border-gray-800 dark:bg-gray-900/75"
+          className="anim-rise mx-auto mt-11 grid max-w-5xl grid-cols-2 gap-x-4 gap-y-8 text-center lg:grid-cols-4"
           style={{ animationDelay: "250ms" }}
         >
-          {S.hero.stats.map((stat, index) => (
-            <div
-              key={stat.value}
-              className={`px-4 py-4 sm:px-5 ${index > 1 ? "border-t border-gray-200 dark:border-gray-800" : ""} ${
-                index % 2 === 1 ? "border-l border-gray-200 dark:border-gray-800" : ""
-              } ${index > 0 ? "lg:border-l lg:border-gray-200 lg:dark:border-gray-800" : ""} ${
-                index > 1 ? "lg:border-t-0" : ""
-              }`}
-            >
+          {S.hero.stats.map((stat) => (
+            <div key={stat.value}>
               <dt className="text-sm font-semibold tracking-tight text-gray-900 dark:text-gray-100">
                 {stat.value}
               </dt>
