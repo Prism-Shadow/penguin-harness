@@ -2,7 +2,7 @@
 
 - **Date:** 2026-08-26
 - **Type:** feature
-- **Scope:** `model-catalog`, `core`, `docs`
+- **Scope:** `model-catalog`, `core`, `docs`, `skills`
 - **PR:** [#469](https://github.com/Prism-Shadow/penguin-harness/pull/469)
 
 [English](2026-08-26-flash-model-presets.md)
@@ -17,9 +17,10 @@
 - **`qwen3.8-flash`（provider `qwen-pay-as-you-go`）**——展示名 Qwen 3.8 Flash，1,000,000 Token 输入窗口（输出上限 131K），`vision = true`，固定 `client_type = "openai-chat"` 与预置的 DashScope base URL。官方 CNY 牌价于 2026-08-26 从 https://www.qianwenai.com/models/qwen3.8-flash 读取：每百万 Token 输入 CNY 1 / 缓存命中 CNY 0.1 / 输出 CNY 3，按目录 7:1 的展示口径换算后存储。
 - 每条都放在目录排序规则要求的位置——分组内按 model id 字典序排列、同一系列的新版本在前——因此 `glm-5.3-flash` 紧随 `glm-5.3`、`z-ai/glm-5.3-flash` 紧随 `z-ai/glm-5.3`、`qwen3.8-flash` 位于 `qwen3.8-max` 之前。测试固定了这三处位置，以及每条的价格、上下文窗口、视觉标记与协议固定值，并固定了 `glm-5.3-flash` 仍解析到 `ZAI_*` 变量对。
 
-## 文档
+## 文档与 Skill
 
 - 中英文 `models` 页在预置目录的示例清单中列出这三个 id，并记下 `glm-5.3-flash` 为何被收录两份、视觉标记不同，以及促销期间价格为何不同。
+- `agenthub-models` skill（v16）的模型 id 表收入这三个 id——`glm-5.3-flash` 与 `z-ai/glm-5.3-flash` 并入 GLM 5.3 行，`qwen3.8-flash` 新起一行 Qwen 3.8 Flash——并补了一条说明：直连 GLM id 实际上只能用于纯文本，因为 GLM 客户端拒绝图像输入；同时在其余 Qwen 网关旁点出 DashScope 的端点。
 
 ## 兼容性
 

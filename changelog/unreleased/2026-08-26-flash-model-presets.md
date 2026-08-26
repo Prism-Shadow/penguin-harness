@@ -2,7 +2,7 @@
 
 - **Date:** 2026-08-26
 - **Type:** feature
-- **Scope:** `model-catalog`, `core`, `docs`
+- **Scope:** `model-catalog`, `core`, `docs`, `skills`
 - **PR:** [#469](https://github.com/Prism-Shadow/penguin-harness/pull/469)
 
 [中文版](2026-08-26-flash-model-presets.zh.md)
@@ -17,9 +17,10 @@ The built-in model catalog gained three low-cost rows: `glm-5.3-flash` in the di
 - **`qwen3.8-flash` (provider `qwen-pay-as-you-go`)** — display name Qwen 3.8 Flash, 1,000,000-token input window (131K output cap), `vision = true`, `client_type = "openai-chat"` and the preset DashScope base URL. Official CNY list price from https://www.qianwenai.com/models/qwen3.8-flash, read on 2026-08-26: CNY 1 input / CNY 0.1 cache hit / CNY 3 output per MTok, stored through the catalog's 7:1 display conversion.
 - Each row sits at the position the catalog's ordering rule dictates — dictionary order by model id within a provider, newer versions of a series first — so `glm-5.3-flash` follows `glm-5.3`, `z-ai/glm-5.3-flash` follows `z-ai/glm-5.3`, and `qwen3.8-flash` precedes `qwen3.8-max`. Tests pin all three positions along with each row's price, context window, vision flag and protocol pin, and pin that `glm-5.3-flash` still resolves to the `ZAI_*` pair.
 
-## Docs
+## Docs and skill
 
 - The bilingual `models` page names the three ids in its sample of the preset catalog and records why `glm-5.3-flash` is listed twice with different vision flags and, during the promotion, different prices.
+- The `agenthub-models` skill (v16) carries the three ids in its model-id table — `glm-5.3-flash` and `z-ai/glm-5.3-flash` in the GLM 5.3 row, `qwen3.8-flash` in a new Qwen 3.8 Flash row — with a note that the direct GLM id is text-only in practice because the GLM client rejects image parts, and names DashScope's endpoint alongside the other Qwen gateways.
 
 ## Compatibility
 
