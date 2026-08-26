@@ -3,6 +3,7 @@
  * server: run (foreground/background/json/goal exit codes), ls, input (steer vs task),
  * logs, agent ls/create, project ls, cost, schedule ls.
  */
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { assistantText, partialText, type OmniMessage } from "@prismshadow/penguin-core";
 import { cli } from "../src/index.js";
@@ -327,7 +328,9 @@ describe("caller-context defaults (PENGUIN_SESSION_ID inheritance)", () => {
     expect(code).toBe(0);
     const create = server.requests.find((r) => r.method === "POST" && r.path.endsWith("/sessions"));
     expect(create?.body).toMatchObject({
-      workspace: "/elsewhere", // flag wins
+      // The flag wins over the caller; the value is path.resolve'd against the CLI's cwd
+      // (drive-letter absolute on Windows), so compare the same resolution.
+      workspace: path.resolve("/elsewhere"),
       modelId: "caller-model", // still inherited
       provider: "caller-prov",
       approvalMode: "always-ask",
