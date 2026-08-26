@@ -19,8 +19,9 @@ const posixOnly = process.platform === "win32" ? describe.skip : describe;
 
 /** The real script under test — the file the push copies out. */
 const INSTALLER_SOURCE = path.resolve(__dirname, "..", "src", "machines", "remote-installer.cjs");
+/** Required by the installer on the far side, so it rides scp beside it. */
+const LAUNCHER_SOURCE = path.resolve(__dirname, "..", "src", "machines", "launcher.cjs");
 
-// The installer ships as text inside the platform bundle; tests run the real text.
 let INSTALLER: string;
 const RUNTIME_DIR_NAME = "node-v24.18.0-linux-x64";
 
@@ -36,13 +37,13 @@ posixOnly("remote-installer.cjs", () => {
     /** What the push probed on that machine; drives the --experimental-sqlite decision. */
     nodeVersion?: string;
   }) => {
-    // The image: penguin/{bin,lib}. Only lib/dist/penguin.js has to be real — the installer
+    // The image: penguin/{lib,web}. Only lib/dist/penguin.js has to be real — the installer
     // smoke-tests it and copies everything else verbatim.
     const image = path.join(work, "image");
     fs.mkdirSync(path.join(image, "penguin", "lib", "dist"), { recursive: true });
-    fs.mkdirSync(path.join(image, "penguin", "lib", "web"), { recursive: true });
+    fs.mkdirSync(path.join(image, "penguin", "web"), { recursive: true });
     fs.writeFileSync(path.join(image, "penguin", "lib", "dist", "penguin.js"), opts.cliBody);
-    fs.writeFileSync(path.join(image, "penguin", "lib", "web", "index.html"), "<html>");
+    fs.writeFileSync(path.join(image, "penguin", "web", "index.html"), "<html>");
     fs.writeFileSync(
       path.join(image, "penguin", "lib", "package.json"),
       JSON.stringify({ name: "@prismshadow/penguin-cli", version: "9.9.9" }),
@@ -67,9 +68,10 @@ posixOnly("remote-installer.cjs", () => {
     fs.writeFileSync(path.join(runtimeBin, "node"), `#!/bin/sh\nexec ${process.execPath} "$@"\n`, {
       mode: 0o755,
     });
-    // The push copies the installer INTO the scratch directory, and the script reads job.json
-    // from its own directory — so the test has to place it the same way.
+    // The push copies both scripts INTO the scratch directory, and the installer reads
+    // job.json from its own directory — so the test has to place them the same way.
     fs.copyFileSync(INSTALLER, path.join(scratch, "remote-installer.cjs"));
+    fs.copyFileSync(LAUNCHER_SOURCE, path.join(scratch, "launcher.cjs"));
   };
 
   const runInstaller = () =>
@@ -89,7 +91,6 @@ posixOnly("remote-installer.cjs", () => {
     home = path.join(work, "home");
     scratch = path.join(work, "scratch");
     fs.mkdirSync(home, { recursive: true });
-    // The embedded text becomes a file the same way the push makes it one: to ride scp.
     INSTALLER = path.join(work, "remote-installer.cjs");
     fs.copyFileSync(INSTALLER_SOURCE, INSTALLER);
   });
@@ -103,18 +104,18 @@ posixOnly("remote-installer.cjs", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain(`installed to ${programDir()}`);
 
-    // The image, plus the runtime moved under lib/ so the install carries its own Node.
+    // The image, plus the runtime moved in as node/ so the install carries its own Node.
     expect(fs.existsSync(path.join(programDir(), "lib", "dist", "penguin.js"))).toBe(true);
-    expect(fs.existsSync(path.join(programDir(), "lib", "web", "index.html"))).toBe(true);
-    expect(fs.existsSync(path.join(programDir(), "lib", "runtime", "bin", "node"))).toBe(true);
+    expect(fs.existsSync(path.join(programDir(), "web", "index.html"))).toBe(true);
+    expect(fs.existsSync(path.join(programDir(), "node", "bin", "node"))).toBe(true);
 
-    // Both launchers are written, and the POSIX one is executable and points at lib/runtime.
+    // Both launchers are written, and the POSIX one is executable and finds that runtime.
     const launcher = fs.readFileSync(path.join(programDir(), "bin", "penguin"), "utf8");
-    expect(launcher).toContain('"$DIR/lib/runtime/bin/node"');
-    expect(launcher).toContain('PENGUIN_WEB_DIST="${PENGUIN_WEB_DIST:-$DIR/lib/web}"');
+    expect(launcher).toContain('"$DIR/node/bin/node"');
+    expect(launcher).toContain('PENGUIN_WEB_DIST="${PENGUIN_WEB_DIST:-$DIR/web}"');
     expect(fs.statSync(path.join(programDir(), "bin", "penguin")).mode & 0o111).not.toBe(0);
     const cmd = fs.readFileSync(path.join(programDir(), "bin", "penguin.cmd"), "utf8");
-    expect(cmd).toContain("%DIR%\\lib\\runtime\\node.exe");
+    expect(cmd).toContain("%DIR%\\node\\node.exe");
 
     // …and the convenience symlink an ordinary install also leaves.
     expect(fs.realpathSync(path.join(home, ".local", "bin", "penguin"))).toBe(
@@ -132,7 +133,7 @@ posixOnly("remote-installer.cjs", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("using this machine's Node");
     // No runtime inside the install, and the launcher's fallback path is what will run it.
-    expect(fs.existsSync(path.join(programDir(), "lib", "runtime"))).toBe(false);
+    expect(fs.existsSync(path.join(programDir(), "node"))).toBe(false);
     expect(fs.readFileSync(path.join(programDir(), "bin", "penguin"), "utf8")).toContain(
       'exec node "$DIR/lib/dist/penguin.js"',
     );
@@ -232,14 +233,18 @@ posixOnly("remote-installer.cjs", () => {
 
 describe("shipping the installer", () => {
   /**
-   * The push copies this file out; it is never imported, so nothing in the module graph would
-   * notice it going missing from a built package. `files: ["dist"]` is what npm ships and tsup
-   * only emits entries, which is why the build copies it in — and why that copy is worth an
-   * assertion rather than a comment.
+   * The push copies these files out; they are never imported, so nothing in the module graph
+   * would notice one going missing from a built package. `files: ["dist"]` is what npm ships
+   * and tsup only emits entries, which is why the build copies them in — and why that copy is
+   * worth an assertion rather than a comment. Missing launcher.cjs would break every install
+   * at the far side's `require`, long after the bytes were sent.
    */
-  it("is copied into dist by the package build", () => {
-    const built = path.resolve(__dirname, "..", "dist", "remote-installer.cjs");
+  it.each([
+    ["remote-installer.cjs", INSTALLER_SOURCE],
+    ["launcher.cjs", LAUNCHER_SOURCE],
+  ])("copies %s into dist at build time", (name, source) => {
+    const built = path.resolve(__dirname, "..", "dist", name);
     if (!fs.existsSync(built)) return; // Not built in this run; `pnpm build` covers it in CI.
-    expect(fs.readFileSync(built, "utf8")).toBe(fs.readFileSync(INSTALLER_SOURCE, "utf8"));
+    expect(fs.readFileSync(built, "utf8")).toBe(fs.readFileSync(source, "utf8"));
   });
 });

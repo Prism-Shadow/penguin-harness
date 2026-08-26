@@ -199,29 +199,13 @@ jobs:
       # lib/: the CLI and its production deps (including workspace core/server/skills, all build outputs);
       # Use pnpm's current deploy implementation with injected workspace packages; the hoisted target layout
       # avoids deeply nested .pnpm/node_modules paths that exceed Windows PowerShell 5.1's legacy MAX_PATH limit.
-      # bin/penguin launcher: resolve its own real path (following symlinks) -> default PENGUIN_WEB_DIST to
-      # the sibling web/ -> use the bundled runtime (node/bin/node) if present, else fall back to system node.
+      # The launcher comes from packages/server/src/machines/launcher.cjs, which is also where the install
+      # image and the remote installer get theirs — one spelling of the payload layout, not three.
       - name: Assemble penguin/ (lib + web + bin)
         run: |
           pnpm --config.node-linker=hoisted --filter @prismshadow/penguin-cli --prod deploy "$PWD/out/penguin/lib"
           cp -r packages/web/dist out/penguin/web
-          mkdir -p out/penguin/bin
-          cat > out/penguin/bin/penguin <<'EOF'
-          #!/bin/sh
-          SELF="$0"
-          while [ -h "$SELF" ]; do
-            DIR="$(cd "$(dirname "$SELF")" && pwd)"
-            SELF="$(readlink "$SELF")"
-            case "$SELF" in /*) ;; *) SELF="$DIR/$SELF" ;; esac
-          done
-          DIR="$(cd "$(dirname "$SELF")/.." && pwd)"
-          export PENGUIN_WEB_DIST="${PENGUIN_WEB_DIST:-$DIR/web}"
-          if [ -x "$DIR/node/bin/node" ]; then
-            exec "$DIR/node/bin/node" "$DIR/lib/dist/penguin.js" "$@"
-          fi
-          exec node "$DIR/lib/dist/penguin.js" "$@"
-          EOF
-          chmod +x out/penguin/bin/penguin
+          node scripts/write-launchers.mjs out/penguin posix
 
       # Program payloads: linux runtimes use .tar.xz, darwin .tar.gz (nodejs.org naming);
       # node/ is only lightly trimmed (drop share/doc and share/man, keep the rest). Payloads
@@ -254,14 +238,9 @@ jobs:
           tar -czf payloads/universal.tar.gz -C out penguin
 
       # Windows payload: same lib/ + web/ layout, but a .zip (the native format), the official
-      # win-x64 Node runtime — whose zip has node.exe at the ARCHIVE ROOT, not bin/ — and a
-      # cmd launcher replacing the sh one (resolves its own dir, defaults PENGUIN_WEB_DIST to
-      # the sibling web\, prefers the bundled node\node.exe, falls back to system node).
-      # Deliberately NO penguin.ps1 launcher: PowerShell prefers .ps1 over .cmd on PATH, and
-      # client Windows defaults to the Restricted execution policy, so shipping one makes the
-      # plain `penguin` command fail with "running scripts is disabled" out of the box. Batch
-      # files are exempt from the policy and both PowerShell and cmd.exe resolve penguin.cmd,
-      # which forwards all args and the exit code.
+      # win-x64 Node runtime — whose zip has node.exe at the ARCHIVE ROOT, not bin/ — and
+      # penguin.cmd replacing the sh launcher (see packages/server/src/machines/launcher.cjs,
+      # including why there is deliberately no penguin.ps1).
       #
       # It also bundles MinGit under git\, so exec_command has a POSIX shell even on a machine
       # with no Git for Windows: the shims advertise git\usr\bin\sh.exe as PENGUIN_BUNDLED_SHELL
@@ -286,23 +265,10 @@ jobs:
           # Fail loudly here rather than shipping a package whose shell silently does not exist.
           test -f out/penguin/git/usr/bin/sh.exe
           test -f out/penguin/git/etc/profile
-          rm -f out/penguin/bin/penguin
           printf '{"schemaVersion":1,"target":"win32-x64"}\n' > out/penguin/package-manifest.json
-          cat > out/penguin/bin/penguin.cmd <<'EOF'
-          @echo off
-          setlocal
-          set "DIR=%~dp0.."
-          if not defined PENGUIN_WEB_DIST set "PENGUIN_WEB_DIST=%DIR%\web"
-          if exist "%DIR%\git\usr\bin\sh.exe" set "PENGUIN_BUNDLED_SHELL=%DIR%\git\usr\bin\sh.exe"
-          if exist "%DIR%\node\node.exe" (
-            "%DIR%\node\node.exe" "%DIR%\lib\dist\penguin.js" %*
-          ) else (
-            node "%DIR%\lib\dist\penguin.js" %*
-          )
-          exit /b %ERRORLEVEL%
-          EOF
-          # cmd.exe is only fully reliable with CRLF batch files.
-          sed -i 's/$/\r/' out/penguin/bin/penguin.cmd
+          # Swaps the sh launcher for penguin.cmd; the generator emits it with CRLF, which is
+          # the only form cmd.exe is fully reliable with.
+          node scripts/write-launchers.mjs out/penguin windows
           (cd out && zip -qr ../payloads/win32-x64.zip penguin)
 
       # The canonical artifacts: each payload is sealed with its checksum and the native

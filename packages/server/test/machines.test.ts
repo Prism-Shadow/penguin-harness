@@ -363,11 +363,11 @@ describe("resolvePayloadImage", () => {
     try {
       const root = path.join(work, "penguin");
       fs.mkdirSync(path.join(root, "lib", "dist"), { recursive: true });
-      fs.mkdirSync(path.join(root, "lib", "runtime", "bin"), { recursive: true });
+      fs.mkdirSync(path.join(root, "node", "bin"), { recursive: true });
       fs.mkdirSync(path.join(root, "bin"), { recursive: true });
       fs.writeFileSync(path.join(root, "lib", "dist", "penguin.js"), "//\n");
       fs.writeFileSync(path.join(root, "lib", "package.json"), manifest);
-      fs.writeFileSync(path.join(root, "lib", "runtime", "bin", "node"), "elf");
+      fs.writeFileSync(path.join(root, "node", "bin", "node"), "elf");
       fs.writeFileSync(path.join(root, "bin", "penguin"), "#!/bin/sh\n");
 
       const image = resolvePayloadImage(null, path.join(root, "lib", "dist", "penguin.js"));
@@ -377,7 +377,7 @@ describe("resolvePayloadImage", () => {
       expect(entries).toContain("penguin/lib/dist/penguin.js");
       expect(entries).toContain("penguin/lib/package.json");
       // This machine's Node and the old launchers must not ride in a universal image.
-      expect(entries.some((p) => p.startsWith("penguin/lib/runtime/"))).toBe(false);
+      expect(entries.some((p) => p.startsWith("penguin/node/"))).toBe(false);
       expect(entries.some((p) => p.startsWith("penguin/bin/"))).toBe(false);
     } finally {
       fs.rmSync(work, { recursive: true, force: true });
@@ -468,13 +468,13 @@ describe("hmrPayloadImage", () => {
       expect(entries).toContain("penguin/lib/dist/cli.mjs");
       expect(entries).toContain("penguin/lib/dist/penguin.js");
       expect(entries).toContain("penguin/lib/package.json");
-      expect(entries).toContain("penguin/lib/web/index.html");
+      expect(entries).toContain("penguin/web/index.html");
       // The skill library rides along: the bundle reads it from lib/skills beside itself.
       expect(entries.some((e) => /^penguin\/lib\/skills\/.+\/SKILL\.md$/.test(e))).toBe(true);
       expect(
         fs.readFileSync(path.join(dest, "penguin", "lib", "dist", "penguin.js"), "utf8"),
       ).toContain('import { cli } from "./cli.mjs"');
-      expect(fs.readFileSync(path.join(dest, "penguin", "lib", "web", "index.html"), "utf8")).toBe(
+      expect(fs.readFileSync(path.join(dest, "penguin", "web", "index.html"), "utf8")).toBe(
         "<html>",
       );
       const manifest = JSON.parse(

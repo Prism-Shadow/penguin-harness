@@ -13,9 +13,6 @@ import {
   LINUX_EXECUTABLE,
   MAC_EXECUTABLE,
   mergeWindowsUserPath,
-  PAYLOAD_CLI_RELPATH,
-  payloadLauncherCmd,
-  payloadLauncherScript,
   posixLauncherScript,
   shellQuote,
   WIN_EXECUTABLE,
@@ -86,43 +83,6 @@ describe("appImageWrapperScript", () => {
 
   it("refuses paths containing single quotes (they would break the quoting)", () => {
     expect(() => appImageWrapperScript("/tmp/it's.AppImage")).toThrow(/single quote/);
-  });
-});
-
-describe("payload launchers (the install image, not the packaged app)", () => {
-  const script = payloadLauncherScript();
-  const cmd = payloadLauncherCmd();
-
-  it("runs on plain Node, not on Electron: no ELECTRON_RUN_AS_NODE anywhere", () => {
-    // This tree is handed to a machine that has no PenguinHarness — an Electron runtime is
-    // exactly what it does not have.
-    expect(script).not.toContain("ELECTRON_RUN_AS_NODE");
-    expect(cmd).not.toContain("ELECTRON_RUN_AS_NODE");
-  });
-
-  it("resolves symlinks, then the CLI entry and web assets inside lib/", () => {
-    expect(script.startsWith("#!/bin/sh\n")).toBe(true);
-    expect(script).toContain('while [ -h "$SOURCE" ]');
-    expect(script).toContain('export PENGUIN_WEB_DIST="${PENGUIN_WEB_DIST:-$DIR/lib/web}"');
-    expect(script).toContain(`exec node "$DIR/lib/${PAYLOAD_CLI_RELPATH}" "$@"`);
-  });
-
-  it("prefers a bundled runtime when the payload carries one", () => {
-    expect(script).toContain('if [ -x "$DIR/node/bin/node" ]; then');
-    expect(script).toContain(`exec "$DIR/node/bin/node" "$DIR/lib/${PAYLOAD_CLI_RELPATH}" "$@"`);
-  });
-
-  it("names the entry the CLI actually builds", () => {
-    expect(PAYLOAD_CLI_RELPATH).toBe("dist/penguin.js");
-    expect(script).not.toContain("dist/index.js");
-    expect(cmd).not.toContain("dist\\index.js");
-  });
-
-  it("the cmd launcher is CRLF and mirrors the same layout in backslashes", () => {
-    expect(cmd.startsWith("@echo off\r\n")).toBe(true);
-    expect(cmd.split("\n").every((line) => line === "" || line.endsWith("\r"))).toBe(true);
-    expect(cmd).toContain('set "PENGUIN_WEB_DIST=%DIR%\\lib\\web"');
-    expect(cmd).toContain('node "%DIR%\\lib\\dist\\penguin.js" %*');
   });
 });
 
