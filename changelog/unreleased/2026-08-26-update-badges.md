@@ -1,0 +1,59 @@
+# Update notification badges lead from the outermost menu to the update itself
+
+- **Date:** 2026-08-26
+- **Type:** feature
+- **Scope:** `web`
+- **PR:** [#472](https://github.com/Prism-Shadow/penguin-harness/pull/472)
+
+[中文版](2026-08-26-update-badges.zh.md)
+
+A phone-style red dot now marks the chrome whenever something is updatable, and every dot leads
+down an unbroken path to the control that performs the update. Two trails carry one: a
+**software** update — a newer release for a browser install, or a downloaded client build for
+the desktop shell's own window — and an **Agent kernel** update for any Agent in the current
+Project. The mobile menu button carries a dot for either.
+
+## The trails
+
+- **Software** — the `<md` top bar's menu button, the collapsed rail's avatar and the pinned
+  sidebar's avatar, ending at the user menu's update row and its update dialog.
+- **Agent kernel** — the same menu button, the pinned sidebar's Agents entry, the collapsed
+  rail's Agents icon, the Agents list card of each outdated Agent — which carries a pale-red
+  "Kernel update needed" capsule in the version badge's own shape, itself the control that
+  opens the right settings page — then that page's Overview tab and the enabled "update
+  kernel" button in the Kernel section. The badge clears with the config refresh the update
+  already performs.
+
+The session list's conversation groups are deliberately left unbadged: that list is about
+conversations, not Agent configuration, and a dot there would lead to no action.
+
+## Details
+
+- `components/ui/update-dot.tsx` is the one place the badge colours are written — the dot's and
+  the Agents-card capsule's — and every mark in the feature renders through it, the sidebar
+  avatar's included, which previously drew its own accent-coloured dot. A notification badge is
+  not a status tone, so the colours live there rather than in `lib/tone.ts`, whose five tones
+  each judge a thing's state; the component's header states that and records the measured
+  contrast on every surface a mark lands on, including the light-theme surfaces where the pale
+  red the marks are set in falls under WCAG 1.4.11's 3 : 1 and why that is accepted. A dot
+  anchors to its control's full box — the row, tab or button — never to the label text's width:
+  a full-width row carries it at the right edge, vertically centred, while a button or a tab
+  takes the top-right corner, straddling the border where that corner is visible and pulled
+  inside the padding where an ancestor clips it. Each dot is `aria-hidden` and its anchor names
+  what is updatable in its `title` and accessible name.
+- The update check runs once per browser session from the app layout, so a badge is present on a
+  fresh load; it was previously activated by opening the sidebar's user menu. The module-level
+  cache keeps it to one request, the check stays fail-soft, and `PENGUIN_UPDATE_CHECK=off`
+  produces no dot and no notice.
+- A badge only appears where the running mode offers a control to act on. Desktop mode hides the
+  server-release row and updates through the shell instead, so the avatar there marks a
+  downloaded client build waiting to install rather than a server release; a client download
+  still in flight is not badged, since there is nothing to act on until it lands.
+- The gates are pure functions in `lib/update-badges.ts` with unit tests: the release gate
+  (including the disabled and failed-lookup paths, and an available-but-unnamed release), the
+  client-build gate over every shell state, "any Agent outdated", and the combined wording.
+- `Tabs` gained an optional per-tab badge, which folds its sentence into the tab's tooltip and
+  accessible name and sits inside the button's padding so the tab strip's vertical clip cannot
+  cut it.
+- Two new bilingual strings: one for the anchor that covers both trails at once and must not
+  claim to be either, and the Agents-card capsule's label.

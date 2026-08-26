@@ -168,6 +168,12 @@ export const zh = {
     newVersionBadge: "有新版本可用",
     newVersion: (v: string) => `新版本 v${v} 可用`,
     /**
+     * The combined wording for an anchor that leads to BOTH update trails at once (the
+     * mobile menu button): something is updatable, without claiming which — naming one of
+     * two would send the user down the wrong one.
+     */
+    updatesAvailable: "有可用更新",
+    /**
      * The sidebar user menu's SINGLE update row: it reads checkNow until a newer release
      * is known and runs the manual check; once one is known it reads newVersion() and
      * opens the update dialog instead (which carries the release-notes link and, for
@@ -568,6 +574,8 @@ export const zh = {
     kernelTitle: "内核",
     kernelLegacy: "早于内核版本机制",
     kernelOutdatedHint: "内核有更新",
+    /** The Agents-list card's dark-red capsule on an outdated Agent — a control, not a label: it opens the settings overview where the update runs. */
+    kernelUpdateNeeded: "内核需要更新",
     kernelUpToDate: "已是最新",
     kernelUpdateTitle: "更新内核",
     /** Inline labels around the outdated line's two generation values (the values themselves render dark and semibold). */
