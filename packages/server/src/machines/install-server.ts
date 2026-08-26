@@ -121,33 +121,30 @@ export function resolvePushPlan(
   };
 }
 
-/** The base release version around the process entry, or null for a dev checkout. */
+/**
+ * The base release version around the process entry, or null when this process stands on no
+ * published release. Read from disk rather than from the running artifact's own build info,
+ * because a hot-pushed server must still report the BASE it was installed from.
+ */
 function baseReleaseVersion(argv1: string | undefined): string | null {
-  if (!argv1) return null;
+  if (!argv1 || path.basename(path.dirname(argv1)) !== "dist") return null;
+  const parent = path.dirname(path.dirname(argv1));
 
-  // Tarball shape: <root>/lib/dist/<entry>.js
-  const libDir = path.dirname(path.dirname(argv1));
-  if (path.basename(libDir) === "lib" && path.basename(path.dirname(argv1)) === "dist") {
-    const version = versionOfManifest(path.join(libDir, "package.json"));
-    if (version !== null) return version;
+  // Tarball install: <root>/lib/dist/<entry>.js. lib/package.json is the CLI package's own
+  // manifest, and keeps naming the base release while this process runs a pushed bundle.
+  if (path.basename(parent) === "lib") {
+    return versionOfManifest(path.join(parent, "package.json"));
   }
 
-  // Desktop shape: walk up to node_modules/@prismshadow/penguin-server, then to resources/.
-  let dir = path.dirname(argv1);
-  for (;;) {
-    if (
-      path.basename(dir) === "penguin-server" &&
-      path.basename(path.dirname(dir)) === "@prismshadow" &&
-      path.basename(path.dirname(path.dirname(dir))) === "node_modules"
-    ) {
-      const appDir = path.dirname(path.dirname(path.dirname(dir)));
-      const payloadRoot = path.join(path.dirname(appDir), "payload");
-      return versionOfManifest(path.join(payloadRoot, "penguin", "lib", "package.json"));
-    }
-    const parent = path.dirname(dir);
-    if (parent === dir) return null;
-    dir = parent;
+  // Packaged desktop app: <resources>/app/dist/server.js — the app forks the server as one
+  // bundled file (packages/desktop/tsup.config.ts), and asar is off, so these are real files.
+  // The app's own manifest names the release it was published under, app and tarballs
+  // shipping from one tag. A source run sits at packages/desktop rather than under
+  // resources/, and is deliberately unmatched: it stands on no release a remote could fetch.
+  if (path.basename(parent) === "app" && path.basename(path.dirname(parent)) === "resources") {
+    return versionOfManifest(path.join(parent, "package.json"));
   }
+  return null;
 }
 
 /**
