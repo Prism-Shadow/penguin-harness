@@ -643,9 +643,9 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
 
 /**
  * The collapsed-by-default FAQ under the save area — three titled `HelpFold`s: the
- * selected channel's setup steps (ending in its tutorial link), what binding does (the
- * explanation that leads no form), and troubleshooting. Hosts place it below their Save
- * controls, so the form itself opens on its fields.
+ * selected channel's setup steps (ending in its tutorial link), what binding does, and
+ * troubleshooting. Hosts place it below their Save controls, which is what keeps the
+ * form itself opening on its fields.
  */
 export function MessagingBindingHelp({ channel }: { channel: MessagingChannel }) {
   const per = channel === "telegram" ? S.telegram : S.feishu;
