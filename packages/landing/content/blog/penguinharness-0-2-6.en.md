@@ -1,11 +1,11 @@
 ---
-title: "PenguinHarness 0.2.5: two Flash models, a TokenDance gateway, and subagents you can talk to"
+title: "PenguinHarness 0.2.6: two Flash models, a TokenDance gateway, and subagents you can talk to"
 date: 2026-08-27
 category: news
 excerpt: GLM-5.3 Flash and Qwen 3.8 Flash joined the built-in catalog, and GLM-5.3 Flash is listed three times over — once per route that sells it, at three different prices. A TokenDance gateway group arrived with an authorization flow that mints its own key. And an agent's reach grew three ways: a subagent can be steered mid-run, by the model and by you; the `penguin` CLI became a client of the running server, so an agent can drive the install hosting it; and a Session can be bound to a Feishu app or a Telegram bot and answered from the chat.
 ---
 
-PenguinHarness 0.2.5 is out. The model catalog gained two low-cost Flash models and a whole new gateway, and an agent's reach grew in three directions: the subagents panel turned from a place you watch a child agent into a place you talk to one, the `penguin` CLI became a client of the running server so an agent can drive the harness hosting it, and a Session can be bound to a Feishu app or a Telegram bot and answered from there.
+PenguinHarness 0.2.6 is out. The model catalog gained two low-cost Flash models and a whole new gateway, and an agent's reach grew in three directions: the subagents panel turned from a place you watch a child agent into a place you talk to one, the `penguin` CLI became a client of the running server so an agent can drive the harness hosting it, and a Session can be bound to a Feishu app or a Telegram bot and answered from there.
 
 ## Two Flash models, one of them three times over
 
@@ -106,4 +106,4 @@ Five changes in this release need a decision from you rather than just an update
 
 **New catalog rows are not automatic.** Presets are copied into `.project_config.toml` at Project creation and nothing rewrites them. Use **sync presets** on the models page to pick up GLM-5.3 Flash, Qwen 3.8 Flash and the TokenDance group. A Project older than that group has to sync once before the group — and its **Authorize key** action — appears at all.
 
-Full detail for every change is in [`changelog/0.2.5/`](https://github.com/Prism-Shadow/penguin-harness/tree/main/changelog/0.2.5).
+Full detail for every change is in [`changelog/0.2.6/`](https://github.com/Prism-Shadow/penguin-harness/tree/main/changelog/0.2.6).

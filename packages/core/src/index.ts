@@ -74,7 +74,7 @@ export type {
 } from "./agent.js";
 
 /** SDK version number. */
-export const VERSION = "0.2.5";
+export const VERSION = "0.2.6";
 /** Release build date (UTC yyyy-mm-dd), stamped by the release workflow next to VERSION; null in a dev/source build. */
 export const BUILD_DATE: string | null = null;
 /** Full commit sha the release was built from, stamped by the release workflow next to VERSION; null in a dev/source build. */

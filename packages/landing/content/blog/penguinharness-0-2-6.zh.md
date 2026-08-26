@@ -1,11 +1,11 @@
 ---
-title: "PenguinHarness 0.2.5：两个 Flash 模型、TokenDance 网关，以及可以对话的子智能体"
+title: "PenguinHarness 0.2.6：两个 Flash 模型、TokenDance 网关，以及可以对话的子智能体"
 date: 2026-08-27
 category: news
 excerpt: GLM-5.3 Flash 与 Qwen 3.8 Flash 进入预置模型库，其中 GLM-5.3 Flash 被列了三次——每条售卖它的通路各一条记录，价格各不相同。新增 TokenDance 网关分组，并带一套能直接签发密钥的授权流程。智能体的触达范围也向三个方向长了一截：子智能体可以在运行途中被纠偏，模型能做，你也能做；`penguin` CLI 变成了服务端的客户端，智能体由此能操作运行着自己的那套 PenguinHarness；Session 还能绑定飞书应用或 Telegram 机器人，直接在聊天里对话。
 ---
 
-PenguinHarness 0.2.5 发布。预置模型库多了两个低价 Flash 模型和一整个新网关；智能体的触达范围则向三个方向各长了一截：子智能体面板从「看着子智能体跑」变成了「和它对话」，`penguin` CLI 变成了服务端的客户端——这正是智能体得以驱动运行着自己的那套 Harness 的前提，而 Session 可以绑定飞书应用或 Telegram 机器人，从聊天里对话。
+PenguinHarness 0.2.6 发布。预置模型库多了两个低价 Flash 模型和一整个新网关；智能体的触达范围则向三个方向各长了一截：子智能体面板从「看着子智能体跑」变成了「和它对话」，`penguin` CLI 变成了服务端的客户端——这正是智能体得以驱动运行着自己的那套 Harness 的前提，而 Session 可以绑定飞书应用或 Telegram 机器人，从聊天里对话。
 
 ## 两个 Flash 模型，其中一个出现了三次
 
@@ -106,4 +106,4 @@ TokenDance 现在是独立的供应商分组，通过 Chat Completions 协议访
 
 **模型库的新条目不会自动出现。** 预置模型是在创建 Project 时复制进 `.project_config.toml` 的，此后不再被改写。在模型页点**同步预置**即可补入 GLM-5.3 Flash、Qwen 3.8 Flash 与 TokenDance 分组。比该分组更早创建的 Project，需要先同步一次，这个分组——以及它的**自动获取密钥**——才会出现。
 
-每一项改动的完整细节见 [`changelog/0.2.5/`](https://github.com/Prism-Shadow/penguin-harness/tree/main/changelog/0.2.5)。
+每一项改动的完整细节见 [`changelog/0.2.6/`](https://github.com/Prism-Shadow/penguin-harness/tree/main/changelog/0.2.6)。

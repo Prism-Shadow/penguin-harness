@@ -2,13 +2,14 @@
 
 - **Date:** 2026-08-25
 - **Type:** process
-- **Scope:** `cli`, `server`, `web`
-- **PR:** [#466](https://github.com/Prism-Shadow/penguin-harness/pull/466)
-- **Breaking:** yes — 旧 CLI 二进制直连 core、可离线运行；重建后的命令依赖服务端（本机自动拉起），按用户的「显示 CLI 会话」偏好随之移除
+- **Scope:** `cli`, `server`, `web`, `desktop`
+- **PR:** [#466](https://github.com/Prism-Shadow/penguin-harness/pull/466), [#477](https://github.com/Prism-Shadow/penguin-harness/pull/477)
+- **Breaking:** yes — 旧 CLI 二进制直连 core、可离线运行；重建后的命令依赖服务端（本机自动拉起），按用户的「显示 CLI 会话」偏好随之移除；签名主体更换后，从 0.2.4 安装的 Windows 桌面端会拒绝本次更新
 
 [English](2026-08-25-backward-compatibility.md)
 
-CLI 直连服务端这一批改动触及三类存量状态。不处理会发生什么、以及选定的方案：
+本次发布触及四类存量状态——三类来自 CLI 直连服务端这一批改动，一类来自 Windows 签名主体更换。
+不处理会发生什么、以及选定的方案：
 
 ## 磁盘上的存量 CLI 直连 Trace
 
@@ -35,9 +36,28 @@ CLI 直连服务端这一批改动触及三类存量状态。不处理会发生�
 CLI 的一种模式——SDK 为嵌入方保留该能力。旧二进制在升级前仍按自己的 core 正常工作，磁盘
 上没有任何东西会阻止它们。
 
+## Windows 更新签名主体
+
+v0.2.4 及此前的安装包由 `RushRush Network Technology Ltd` 签名，每个已安装的客户端都把这一个名字
+作为 `publisherName` 记进了自己的 `app-update.yml`。本次发布起的构建改由
+`NaisNet Technology Co., Ltd.` 签名。electron-updater 用**已安装客户端**自己持有的那份名单校验下载
+到的更新，而这份文件在安装时写定，本仓库中的任何改动都够不到已经存在的客户端：从 0.2.4 及更早版本
+安装的 Windows 桌面端会拒绝本次更新，需手动重装。这一不兼容被接受并在此声明。`~/.penguin/data` 下
+的数据不受影响，CLI、Linux 包与经过公证的 macOS 构建都不涉及。
+
+向后看，该字段是一个列表而非单个名字，其中同时保留当前主体与上一个主体——每个都按 electron-updater
+比对时使用的完整 DN 与裸 CN 两种写法各列一条。因此由本次发布安装的客户端仍能接受下一张证书签名的构
+建，下一次轮换不会重演此事。某个主体在「已无受支持的客户端由使用它签名的版本安装」之后从列表中移
+除；在此之前，它会被并非由它签名的构建所信任，这是该方案的代价。
+
 ## 兼容性
 
-磁盘上没有任何东西需要迁移，也不需要做任何事就能让现有安装继续工作。
+磁盘上没有任何东西需要迁移；在 macOS、Linux 与 CLI 上也不需要做任何事就能让现有安装继续工作。
+
+Windows 桌面端请手动重装一次，从 [penguin.ooo/download](https://penguin.ooo/download) 下载。从
+0.2.4 及更早版本安装的客户端无法自动更新到新的签名主体，因为它在安装时记下的签名主体列表里只有旧
+的那一个；从这次重装起自动更新恢复正常，且两个主体都接受。参见
+[签名条目](2026-08-27-windows-signing-publisher.zh.md)。
 
 CLI 请与服务端一同升级：从本版本起 `penguin run` 与 `penguin chat` 都走服务端，旧二进制在被替换
 之前仍按自己的 core 执行。若 CLI 无法拉起服务端（入口不可重跑的 `tsx` 开发态运行），先自行启动一
