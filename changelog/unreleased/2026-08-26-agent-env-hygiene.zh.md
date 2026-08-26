@@ -3,6 +3,7 @@
 - **Date:** 2026-08-26
 - **Type:** fix
 - **Scope:** `tooling`, `core`, `cli`
+- **PR:** [#471](https://github.com/Prism-Shadow/penguin-harness/pull/471)
 
 [English](2026-08-26-agent-env-hygiene.md)
 
