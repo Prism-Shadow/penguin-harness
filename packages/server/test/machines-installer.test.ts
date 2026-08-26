@@ -230,12 +230,12 @@ posixOnly("remote-installer.cjs", () => {
 
 describe("reaching the installer", () => {
   /**
-   * The push copies this file out and scp's it; it is never imported. Reading it through the
-   * accessor the push uses is what proves the file is reachable at all — the job a generated
-   * string literal used to do, and the reason a drift test was needed to keep two copies in
-   * step. There is only one copy now.
+   * The push copies this file out and scp's it; it is never imported. Which of the two
+   * directories holds it follows from what the server is — an assets dir means a hot-pushed
+   * bundle, no assets dir means a packaged install — so these pin the two answers, not a
+   * search order.
    */
-  it("reads the .cjs from the source tree when there are no assets", () => {
+  it("reads it beside this module when the server is packaged", () => {
     const source = fs.readFileSync(
       path.resolve(__dirname, "..", "src", "machines", "remote-installer.cjs"),
       "utf8",
@@ -244,7 +244,7 @@ describe("reaching the installer", () => {
     expect(readRemoteInstaller(() => null)).toBe(source);
   });
 
-  it("prefers a pushed bundle's asset, and says where it looked when there is none", () => {
+  it("reads it from the assets a push published", () => {
     const assets = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-assets-"));
     try {
       fs.writeFileSync(path.join(assets, "remote-installer.cjs"), "// pushed\n");
