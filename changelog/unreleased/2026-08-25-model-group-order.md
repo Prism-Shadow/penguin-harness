@@ -15,9 +15,12 @@ page's model picker follows it.
 
 - Dragging a group is itself the intent: there is no sort toggle and no pinning. A Project with
   nothing stored renders exactly the built-in catalog order it did before.
-- A group with no stored position sorts to the TOP of the page, keeping its catalog order among
-  the other unplaced groups, so a provider used for the first time does not appear at the bottom
-  of a long page.
+- A group with no stored position TRAILS, keeping its automatic order among the other unplaced
+  groups. The control that creates a user-defined group sits below every group on the page, so a
+  new group appears where it was made rather than leaping over the whole arrangement — and it
+  matches the automatic order, which already puts user-defined groups after the built-in ones.
+  (This is the opposite of the sidebar's rule, where an unplaced group is a Workspace or Agent
+  that would otherwise be lost at the bottom of a long list.)
 - A drop is committed against **every group the library could show**, including the built-in
   groups that hold no models and are therefore not rendered. A provider that gains its first
   model appears at its catalog place instead of arriving at the top as a newcomer.

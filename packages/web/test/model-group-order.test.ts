@@ -5,9 +5,10 @@
  * Dragging is the whole intent — no sort toggle and no pinning — so an empty stored
  * order must be the identity: a Project that has never been dragged renders exactly the
  * built-in catalog sequence. Beyond that: one array per Project, groups with no stored
- * place surfacing at the TOP, stale keys inert, the always-visible custom group still
- * obeying its own rule, and a drop committed against every group the library could show
- * so an empty built-in keeps its catalog place.
+ * place TRAILING (a group is created from a control below every group, so a new one must
+ * not jump to the top), stale keys inert, the always-visible custom group still obeying
+ * its own rule, and a drop committed against every group the library could show so an
+ * empty built-in keeps its catalog place.
  *
  * Provider ids are read from MODEL_PROVIDERS rather than spelled out: this file is about
  * the ordering algebra, and the catalog's own membership is model-catalog.test.ts's.
@@ -16,8 +17,10 @@ import { describe, expect, it } from "vitest";
 import { MODEL_PROVIDERS } from "@prismshadow/penguin-core/model-catalog";
 
 import {
+  commitModelGroupOrder,
   loadModelGroupOrder,
   modelGroupOrderKey,
+  orderModelGroups,
   saveModelGroupOrder,
 } from "../src/features/models/model-group-order";
 import type { ModelGroupOrderStorage } from "../src/features/models/model-group-order";
@@ -28,7 +31,6 @@ import {
   visibleChatModels,
 } from "../src/features/models/model-grouping";
 import type { ModelRowLike } from "../src/features/models/model-grouping";
-import { commitGroupOrder } from "../src/lib/group-order";
 
 /** In-memory storage (vitest runs in a Node environment, no localStorage; group-order.test.ts convention). */
 function memStorage(): ModelGroupOrderStorage & { map: Map<string, string> } {
@@ -140,17 +142,36 @@ describe("groupModelRows with a manual group order", () => {
     ]);
   });
 
-  it("named groups take the stored order; unnamed ones keep their catalog order and come FIRST", () => {
-    // minimax and anthropic are placed; the rest are unplaced and surface above them
-    // keeping their own relative catalog order.
+  it("named groups take the stored order; unnamed ones keep their catalog order and TRAIL", () => {
+    // minimax and anthropic are placed; the rest are unplaced and follow them, keeping
+    // their own relative catalog order.
     expect(idsOf(["minimax", "anthropic"])).toEqual([
+      "minimax",
+      "anthropic",
       "moonshot",
       "custom",
       "alpha-vendor",
       "zeta-vendor",
-      "minimax",
-      "anthropic",
     ]);
+  });
+
+  it("a group created after the order was stored appears at the BOTTOM, not the top", () => {
+    // The control that creates a user-defined group sits below every group on the page, so
+    // the group it makes must not leap over the whole arrangement.
+    const stored = commitModelGroupOrder([], allGroupKeys(rows), "minimax", "anthropic", false);
+    const ids = groupModelRows([...rows, { provider: "brand-new", modelId: "m1" }], "", stored).map(
+      (g) => g.provider.id,
+    );
+    expect(ids.at(-1)).toBe("brand-new");
+    // Being unplaced is what puts it last, not its name — with no order stored, the
+    // automatic sort files it between the two user-defined groups already on the page.
+    const automatic = groupModelRows(
+      [...rows, { provider: "brand-new", modelId: "m1" }],
+      "",
+      [],
+    ).map((g) => g.provider.id);
+    expect(automatic.at(-1)).toBe("zeta-vendor");
+    expect(automatic.indexOf("brand-new")).toBeLessThan(automatic.indexOf("zeta-vendor"));
   });
 
   it("a user-defined group can be dragged above the built-ins", () => {
@@ -193,12 +214,12 @@ describe("the chat model picker follows the same order", () => {
   it("orderModelsLikeLibrary and visibleChatModels both take the stored order", () => {
     const order = ["minimax", "anthropic"];
     expect(orderModelsLikeLibrary(rows, order).map((r) => r.provider)).toEqual([
+      "minimax",
+      "anthropic",
       "moonshot",
       "custom",
       "alpha-vendor",
       "zeta-vendor",
-      "minimax",
-      "anthropic",
     ]);
     // No model here has a key, so the key filter degrades to "show everything" and the
     // group order is the only thing deciding the sequence.
@@ -209,12 +230,29 @@ describe("the chat model picker follows the same order", () => {
   });
 });
 
+describe("orderModelGroups (the placement rule the commit half has to match)", () => {
+  const keys = ["a", "b", "c", "d"];
+  const id = (x: string) => x;
+
+  it("an empty order is the identity", () => {
+    expect(orderModelGroups(keys, id, [])).toEqual(keys);
+  });
+
+  it("placed keys take the stored sequence, unplaced ones trail in their input order", () => {
+    expect(orderModelGroups(keys, id, ["d", "b"])).toEqual(["d", "b", "a", "c"]);
+  });
+
+  it("stored keys naming nothing are simply absent from the result", () => {
+    expect(orderModelGroups(keys, id, ["gone", "c"])).toEqual(["c", "a", "b", "d"]);
+  });
+});
+
 describe("committing a drop against the full group list", () => {
   it("the first drop materialises the catalog order with one group moved", () => {
     const keys = allGroupKeys(rows);
     const first = keys[0]!;
     const third = keys[2]!;
-    const stored = commitGroupOrder([], keys, first, third, true);
+    const stored = commitModelGroupOrder([], keys, first, third, true);
     expect(stored).toEqual([keys[1], keys[2], first, ...keys.slice(3)]);
     // Everything is placed, so nothing surfaces to the top on the next render.
     expect(groupModelRows(rows, "", stored).map((g) => g.provider.id)).toEqual(
@@ -231,7 +269,7 @@ describe("committing a drop against the full group list", () => {
     const empty = [...CATALOG_IDS]
       .reverse()
       .find((id) => id !== "custom" && !rows.some((r) => r.provider === id))!;
-    const stored = commitGroupOrder([], keys, "minimax", "anthropic", false);
+    const stored = commitModelGroupOrder([], keys, "minimax", "anthropic", false);
     expect(stored).toContain(empty);
     const before = groupModelRows(rows, "", stored).map((g) => g.provider.id);
     const after = groupModelRows(
@@ -250,8 +288,8 @@ describe("committing a drop against the full group list", () => {
   it("a drop that moves nothing returns the input array, so nothing is persisted", () => {
     const keys = allGroupKeys(rows);
     const order = [...keys];
-    expect(commitGroupOrder(order, keys, keys[0]!, keys[0]!, false)).toBe(order);
+    expect(commitModelGroupOrder(order, keys, keys[0]!, keys[0]!, false)).toBe(order);
     // Dropping just above the neighbour it already sits above changes no sequence.
-    expect(commitGroupOrder(order, keys, keys[0]!, keys[1]!, false)).toBe(order);
+    expect(commitModelGroupOrder(order, keys, keys[0]!, keys[1]!, false)).toBe(order);
   });
 });

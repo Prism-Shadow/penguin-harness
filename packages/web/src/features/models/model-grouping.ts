@@ -19,7 +19,7 @@
 import { MODEL_PROVIDERS } from "@prismshadow/penguin-core/model-catalog";
 import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
 
-import { applyManualOrder } from "../../lib/session-order";
+import { orderModelGroups } from "./model-group-order";
 
 /** Paired model reference (same shape as the server DTO's ModelRefDto; a model is always referenced as (provider, modelId)). */
 export interface ModelRefValue {
@@ -92,10 +92,10 @@ export interface ProviderGroup<T extends ModelRowLike> {
  * appended after custom.
  *
  * `groupOrder` then rearranges that list: groups it names take its order, groups it does
- * not keep their automatic order and come FIRST (session-order.ts's rule — a newly used
- * provider surfaces rather than hiding at the bottom of a long page). Reordering happens
- * before empty groups are dropped, so a stored key for a group holding no models costs
- * nothing and is not visible.
+ * not keep their automatic order and TRAIL (orderModelGroups — a group the user just
+ * created appears where the control that created it sits, at the bottom of the page).
+ * Reordering happens before empty groups are dropped, so a stored key for a group holding
+ * no models costs nothing and is not visible.
  */
 export function groupModelRows<T extends ModelRowLike>(
   rows: T[],
@@ -112,7 +112,7 @@ export function groupModelRows<T extends ModelRowLike>(
     provider: userProviderInfo(id),
     rows: filtered.filter((r) => r.provider === id),
   }));
-  const ordered = applyManualOrder([...builtin, ...extras], (g) => g.provider.id, groupOrder);
+  const ordered = orderModelGroups([...builtin, ...extras], (g) => g.provider.id, groupOrder);
   return ordered.filter((g) => g.rows.length > 0 || (!searching && g.provider.id === "custom"));
 }
 

@@ -84,8 +84,11 @@ import {
   sameModelRef,
   userProviderInfo,
 } from "./model-grouping";
-import { loadModelGroupOrder, saveModelGroupOrder } from "./model-group-order";
-import { commitGroupOrder } from "../../lib/group-order";
+import {
+  commitModelGroupOrder,
+  loadModelGroupOrder,
+  saveModelGroupOrder,
+} from "./model-group-order";
 import { protocolPathForModel } from "./protocol-path";
 import { ProtocolSuffixMenu } from "./protocol-suffix";
 import {
@@ -836,8 +839,8 @@ export function ModelsPage() {
         onDrop: (e: ReactDragEvent) => {
           if (!acceptsDrop || dragging === null || !isModelGroupDrag(e)) return;
           e.preventDefault();
-          const next = commitGroupOrder(groupOrder, allKeys, dragging, key, edgeOf(e));
-          // commitGroupOrder hands back its input for a drop that moves nothing: no state
+          const next = commitModelGroupOrder(groupOrder, allKeys, dragging, key, edgeOf(e));
+          // commitModelGroupOrder hands back its input for a drop that moves nothing: no state
           // update, and no freshly allocated identical array written to storage.
           if (next !== groupOrder) {
             setGroupOrder(next);
