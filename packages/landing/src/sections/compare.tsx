@@ -5,7 +5,7 @@
  * PenguinHarness side raises a whole skyline almost instantly and holds it.
  * Reduced-motion users see both skylines complete.
  */
-import type { CSSProperties, ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { S } from "../lib/strings";
 import { Section } from "../components/section";
 
@@ -23,7 +23,7 @@ function Block({
   return (
     <span
       className={`anim-block rounded-[3px] ${className}`}
-      style={{ "--cycle": `${CYCLE_S}s`, animationDelay: `${delay - CYCLE_S}s` } as CSSProperties}
+      style={{ "--land-delay": `${delay}s` } as CSSProperties}
     />
   );
 }
@@ -106,6 +106,15 @@ function CompareCard({
 }
 
 export function Compare() {
+  const [cycle, setCycle] = useState(0);
+
+  // Remount both skylines together: every child begins hidden, then lands once
+  // at its positive delay. A shared reset keeps the 1x/100x pace comparison aligned.
+  useEffect(() => {
+    const timer = window.setInterval(() => setCycle((value) => value + 1), CYCLE_S * 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
   return (
     <Section
       id="compare"
@@ -115,10 +124,10 @@ export function Compare() {
     >
       <div className="mx-auto grid max-w-4xl gap-5 sm:grid-cols-2">
         <CompareCard {...S.compare.langchain}>
-          <SlowBuild />
+          <SlowBuild key={`slow-${cycle}`} />
         </CompareCard>
         <CompareCard {...S.compare.penguin} emphasized>
-          <FastBuild />
+          <FastBuild key={`fast-${cycle}`} />
         </CompareCard>
       </div>
     </Section>

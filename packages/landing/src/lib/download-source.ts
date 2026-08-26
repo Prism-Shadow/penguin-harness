@@ -295,6 +295,14 @@ export interface SourceProbes {
   measure(base: string, probe: ReleaseProbe): Promise<Measurement>;
 }
 
+/** Measurements retained for the download page's visual source report. */
+export interface DownloadProbeReport {
+  source: DownloadSource;
+  github: Measurement;
+  /** Null when GitHub already cleared the threshold, so probing paid mirror traffic was unnecessary. */
+  oss: Measurement | null;
+}
+
 /**
  * The throughput half of the rule, in the order the installers apply it. It runs once the
  * reachability pass has found a mirror, which is why an unreachable GitHub here needs no second
@@ -307,16 +315,33 @@ export interface SourceProbes {
  * The measurements run one after another on purpose: concurrent transfers share the link and would
  * each read as half as fast, which an absolute threshold cannot tolerate.
  */
+export async function decideDownloadSourceWithReport(
+  sources: ProbeSources,
+  probes: ReleaseProbes,
+  io: SourceProbes,
+): Promise<DownloadProbeReport> {
+  const github = await io.measure(sources.githubBase, probes.large);
+  if (github.bytesPerSecond >= SPEED_PROBE_GITHUB_MIN_BYTES_PER_SECOND) {
+    return { source: "github", github, oss: null };
+  }
+  if (!github.reachable) {
+    return { source: "oss", github, oss: null };
+  }
+  const oss = await io.measure(sources.ossBase, probes.large);
+  return {
+    source: selectDownloadSource(github.bytesPerSecond, oss.bytesPerSecond),
+    github,
+    oss,
+  };
+}
+
+/** Source-only compatibility wrapper used by the installer-rule tests and other callers. */
 export async function decideDownloadSource(
   sources: ProbeSources,
   probes: ReleaseProbes,
   io: SourceProbes,
 ): Promise<DownloadSource> {
-  const github = await io.measure(sources.githubBase, probes.large);
-  if (github.bytesPerSecond >= SPEED_PROBE_GITHUB_MIN_BYTES_PER_SECOND) return "github";
-  if (!github.reachable) return "oss";
-  const oss = await io.measure(sources.ossBase, probes.large);
-  return selectDownloadSource(github.bytesPerSecond, oss.bytesPerSecond);
+  return (await decideDownloadSourceWithReport(sources, probes, io)).source;
 }
 
 /** The decision above, wired to real requests under the shared budget. */
@@ -326,6 +351,17 @@ export function probeDownloadSource(
   deadline: ProbeDeadline,
 ): Promise<DownloadSource> {
   return decideDownloadSource(sources, probes, {
+    measure: (base, probe) => measureSource(probeUrl(base, probe.file), probe.size, deadline),
+  });
+}
+
+/** The same real probe, retaining both measurements for the download page. */
+export function probeDownloadSourceWithReport(
+  sources: ProbeSources,
+  probes: ReleaseProbes,
+  deadline: ProbeDeadline,
+): Promise<DownloadProbeReport> {
+  return decideDownloadSourceWithReport(sources, probes, {
     measure: (base, probe) => measureSource(probeUrl(base, probe.file), probe.size, deadline),
   });
 }
@@ -454,9 +490,17 @@ export async function refineDownloadSource(
   mirror: Mirror,
   deadline: ProbeDeadline,
 ): Promise<DownloadSource> {
+  return (await refineDownloadSourceWithReport(mirror, deadline))?.source ?? "github";
+}
+
+/** Refines the source and returns the measurements the download page renders. */
+export async function refineDownloadSourceWithReport(
+  mirror: Mirror,
+  deadline: ProbeDeadline,
+): Promise<DownloadProbeReport | null> {
   const probes = await fetchProbes(mirror.base, mirror.tag, deadline);
-  if (!probes) return "github";
-  return probeDownloadSource(
+  if (!probes) return null;
+  return probeDownloadSourceWithReport(
     { githubBase: GITHUB_LATEST_DOWNLOAD, ossBase: mirror.base },
     probes,
     deadline,

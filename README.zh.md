@@ -4,15 +4,18 @@
 
 <h1 align="center">PenguinHarness</h1>
 
-<p align="center"><b>全自动 Agent 构建平台，运行在你的桌面 / 服务器上</b><br />一键创建自进化 Agent</p>
-
-<h3 align="center"><a href="https://penguin.ooo/download/">⬇️ 点击下载</a></h3>
-
-<p align="center">macOS · Windows · Linux</p>
+<p align="center"><strong>开源、本地的 Agent 应用自动开发平台</strong><br />全自动<strong>创建</strong> · <strong>优化</strong> · <strong>部署</strong> AI 应用</p>
 
 <p align="center">
-  <a href="https://www.producthunt.com/products/penguinharness?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-penguinharness" target="_blank" rel="noopener noreferrer"><img alt="PenguinHarness - Let Agents Autonomously Build Better Agents for $0.02 | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1202577&amp;theme=light&amp;t=1784804711946" /></a>
+  <a href="https://penguin.ooo/download">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="assets/readme/download-zh-dark.svg" />
+      <img src="assets/readme/download-zh-light.svg" alt="下载应用" height="44" />
+    </picture>
+  </a>
 </p>
+
+<p align="center">1000+ 模型 · 多平台 · Apache 2.0 · Agent 自进化</p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@prismshadow/penguin-core"><img src="https://img.shields.io/npm/v/@prismshadow/penguin-core" alt="npm 版本" /></a>
@@ -34,13 +37,17 @@
   <a href="https://github.com/Prism-Shadow/penguin-harness-community/blob/main/wechat/group.jpg"><img src="https://img.shields.io/badge/%E5%BE%AE%E4%BF%A1-%E4%BA%A4%E6%B5%81%E7%BE%A4-07C160?logo=wechat&logoColor=white" alt="微信群" /></a>
 </p>
 
+<p align="center">
+  <a href="https://www.producthunt.com/products/penguinharness?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-penguinharness" target="_blank" rel="noopener noreferrer"><img alt="PenguinHarness - Let Agents Autonomously Build Better Agents for $0.02 | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1202577&amp;theme=light&amp;t=1784804711946" /></a>
+</p>
+
 <p align="center"><a href="README.md">English</a> | 简体中文</p>
 
 ## 为什么选择 PenguinHarness
 
 > 使用 LangChain，以 1 倍速度人工构建 Agent；<br />使用 PenguinHarness，以 100 倍速度用 Agent 构建 Agent。
 
-三个递进的理由——从任务效果，到构建方式，再到进化能力。
+PenguinHarness 运行在你的电脑或服务器上，自动串联 Agent 应用的创建、评测、优化与部署。三个递进的理由定义了这个平台：
 
 ### 1. 🏆 以几十分之一的成本，跑出优异的效果
 
@@ -55,9 +62,9 @@
 
 **数据分析准确率最高——成本只有 Claude Code 的 1/70。**
 
-### 2. ⚡ 一句话，让 Agent 构建 Agent 应用
+### 2. ⚡ 一句话生成可运行的 Agent 应用
 
-输入一句话，Agent 为你构建完整的 Agent 应用——脚手架、代码、运行说明，一步到位：
+用一句话描述需求，PenguinHarness 自动构建完整的 Agent 应用——脚手架、代码、运行说明，一步到位：
 
 ```text
 收集 https://github.com/ericbuess/claude-code-docs 的文档，做一个化身 Claude Code 配置专家、回答带来源引用的 RAG 问答应用。
@@ -69,7 +76,7 @@ https://github.com/user-attachments/assets/604eb626-0a5d-4a62-87e3-14ebade1cd5f
 
 **而生成整个 RAG 应用，仅消耗了 0.2 元（$0.02）的 token——使用 DeepSeek V4 Pro 模型。**
 
-### 3. 🧬 自进化，越用越强
+### 3. 🧬 原生 Agent 自进化引擎
 
 借助 PenguinHarness 技能库，Agent 自己评估、自己优化：跑 Benchmark、找失分点、发布 N+1 版——每轮之前自动快照，每个请求都可在轨迹观测中回放。
 
@@ -113,7 +120,7 @@ https://github.com/user-attachments/assets/aec49ae9-b743-467b-b247-37bedfeaa36e
 
 ## 安装
 
-两条路线——数据同在 `~/.penguin/data` 目录，桌面端与命令行安装可自由混用：
+优先使用桌面端，也可以在本地电脑或服务器上安装命令行。两种方式共用 `~/.penguin/data` 目录，可自由混用：
 
 - **🖥️ 桌面端应用**——双击安装：内嵌服务端，打开即已登录，全程无需终端。
 - **⌨️ 命令行**——一行命令（或 npm / 离线包）装出 `penguin` 命令，`penguin web` 即在浏览器打开完整 Web 体验 `http://127.0.0.1:7364`（多会话对话、Agent / 技能 / 模型管理、用量统计、轨迹观测、评估中心）。在线安装器自带 Node 运行时，解压即用；升级与重装不触碰数据。
@@ -125,7 +132,7 @@ https://github.com/user-attachments/assets/aec49ae9-b743-467b-b247-37bedfeaa36e
 
 完整的 Web 体验打包为独立应用：内嵌服务端，打开即已登录——无需终端、无登录页、也不用抄初始密码——并与 CLI 安装共用同一个 `~/.penguin/data` 数据目录，两者可以混用（一个数据目录同一时刻只运行一个服务端；CLI 已启动实例时，应用会直接接入它）。
 
-**[⬇️ 前往下载页获取](https://penguin.ooo/download)**——国内自动走 OSS 镜像加速，安装包也附于每个 [GitHub Release](https://github.com/Prism-Shadow/penguin-harness/releases)。
+从[下载页](https://penguin.ooo/download)获取桌面端应用。下载页会自动选择可用的 OSS 加速源，安装包也附于每个 [GitHub Release](https://github.com/Prism-Shadow/penguin-harness/releases)。
 
 | 平台          | 安装包                       |
 | ------------- | ---------------------------- |
