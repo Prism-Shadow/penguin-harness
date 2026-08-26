@@ -22,18 +22,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  cleanupCommand,
-  makeScratchCommand,
-  runInstallScriptCommand,
-  scpArgs,
-  sshArgs,
-  unpackStoreCommand,
-} from "./commands.js";
+import { runInstallScriptCommand, scpArgs, sshArgs, unpackStoreCommand } from "./commands.js";
 import type { RemoteTarget } from "./commands.js";
 import { parseProbeOutput, POSIX_PROBE, WINDOWS_PROBE } from "./detect.js";
 import type { RemoteIdentity, RemotePlatform } from "./detect.js";
-import { looksLikeAuthFailure, run, runPiped } from "./exec.js";
+import { looksLikeAuthFailure, run, runPiped, runWithInput } from "./exec.js";
 
 /** Which installer runs the far side; also the asset keys deploy.mjs pushes. */
 const installerFileFor = (platform: RemotePlatform): string =>
@@ -227,20 +220,19 @@ export async function installOnRemote(opts: {
     };
   }
 
-  const localTmp = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-push-"));
-  let scratch = "";
+  let windowsTmp: { local: string; remote: string } | null = null;
   try {
     const output: string[] = [];
     if (!baseCurrent) {
-      // The ordinary installer, copied out to ride scp. Where it sits follows from what this
-      // server is: a hot-pushed bundle has it among the assets published with that same
-      // version, anything else is a packaged install and it is beside this module (dist/
-      // after a build; this package's tsup.config.ts copies it there).
+      // The ordinary installer. Where it sits follows from what this server is: a hot-pushed
+      // bundle has it among the assets published with that same version, anything else is a
+      // packaged install and it is beside this module (dist/ after a build; this package's
+      // tsup.config.ts copies it there).
       const installerFile = installerFileFor(identity.platform);
       const installerHome = opts.assets?.() ?? path.dirname(fileURLToPath(import.meta.url));
-      const installerPath = path.join(localTmp, installerFile);
+      let installer: Buffer;
       try {
-        fs.copyFileSync(path.join(installerHome, installerFile), installerPath);
+        installer = fs.readFileSync(path.join(installerHome, installerFile));
       } catch (err) {
         return {
           kind: "failed",
@@ -249,35 +241,36 @@ export async function installOnRemote(opts: {
         };
       }
 
-      // A scratch name of our own making: hex only, so it needs no quoting on either side.
-      const scratchName = `penguin-${randomBytes(6).toString("hex")}`;
-      const made = await run(
-        "ssh",
-        sshArgs(target, makeScratchCommand(identity.platform, scratchName)),
-        { timeoutMs: 30_000 },
-      );
-      scratch = made.stdout.trim().split("\n").at(-1)?.trim() ?? "";
-      if (made.code !== 0 || scratch === "") {
-        return {
-          kind: "failed",
-          step: "prepare",
-          detail: made.stderr.trim() || "could not create a scratch directory on the remote",
-        };
-      }
-
-      const copy = await run("scp", scpArgs(target, [installerPath], scratch));
-      if (copy.code !== 0) {
-        return { kind: "failed", step: "copy", detail: copy.stderr.trim() || "scp failed" };
-      }
-
       say(`Installing release ${plan.baseVersion} (downloaded on the remote)…`);
-      const install = await run(
-        "ssh",
-        sshArgs(
-          target,
-          runInstallScriptCommand(identity.platform, scratch, `v${plan.baseVersion}`),
-        ),
-      );
+      let install;
+      if (identity.platform === "win32") {
+        // PowerShell cannot take this script on stdin (see runInstallScriptCommand), so it
+        // is copied to the home directory under a name of our own making — hex only, so it
+        // needs no quoting on either side — and deleted by the same command that runs it.
+        const name = `penguin-${randomBytes(6).toString("hex")}.ps1`;
+        const local = path.join(os.tmpdir(), name);
+        fs.writeFileSync(local, installer);
+        windowsTmp = { local, remote: `%USERPROFILE%\\${name}` };
+        const copy = await run("scp", scpArgs(target, [local], "."));
+        if (copy.code !== 0) {
+          return { kind: "failed", step: "copy", detail: copy.stderr.trim() || "scp failed" };
+        }
+        install = await run(
+          "ssh",
+          sshArgs(
+            target,
+            runInstallScriptCommand(identity.platform, `v${plan.baseVersion}`, windowsTmp.remote),
+          ),
+        );
+      } else {
+        // One connection: the script rides ssh's stdin, and its own progress is relayed as it
+        // arrives rather than after the minutes an install can take.
+        install = await runWithInput(
+          "ssh",
+          sshArgs(target, runInstallScriptCommand(identity.platform, `v${plan.baseVersion}`)),
+          { input: installer, onLine: say },
+        );
+      }
       if (install.code !== 0) {
         return {
           kind: "failed",
@@ -307,11 +300,8 @@ export async function installOnRemote(opts: {
 
     return { kind: "installed", output: output.join("\n").trim(), identity };
   } finally {
-    fs.rmSync(localTmp, { recursive: true, force: true });
-    if (scratch !== "") {
-      await run("ssh", sshArgs(target, cleanupCommand(identity.platform, scratch)), {
-        timeoutMs: 30_000,
-      });
-    }
+    // Nothing to clean on a POSIX remote: the installer was never a file there. A Windows
+    // one deletes its own copy as part of the install command; this is the local original.
+    if (windowsTmp !== null) fs.rmSync(windowsTmp.local, { force: true });
   }
 }

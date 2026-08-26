@@ -61,7 +61,8 @@ posixOnly("installOnRemote", () => {
         "  *mktemp*) echo /tmp/remote-scratch ;;",
         // Single-quoted: sh's echo would otherwise eat the backslashes.
         "  *%TEMP%*) echo 'C:\\Temp\\penguin-scratch' ;;",
-        `  *install.sh*|*install.ps1*) echo "PenguinHarness 0.2.4 installed"; exit ${opts.installExit ?? 0} ;;`,
+        `  *sh\\ -s*) cat > /dev/null; echo "PenguinHarness 0.2.4 installed"; exit ${opts.installExit ?? 0} ;;`,
+        `  *install.ps1*) echo "PenguinHarness 0.2.4 installed"; exit ${opts.installExit ?? 0} ;;`,
         // The store stream: swallow stdin so the local tar does not die on a broken pipe.
         "  *'tar -xzf -'*) cat > /dev/null ;;",
         "  *) : ;;",
@@ -95,7 +96,7 @@ posixOnly("installOnRemote", () => {
 
   const target = { alias: "build-box", user: "deploy" };
 
-  it("probes, installs the pinned release, streams the store, clears the scratch dir", async () => {
+  it("probes, installs over ONE ssh call, then streams the store", async () => {
     writeStubs({ probe: "Linux x86_64\\n---penguin---\\n---penguin---\\n" });
     const progress: string[] = [];
     const outcome = await installOnRemote({
@@ -107,17 +108,20 @@ posixOnly("installOnRemote", () => {
 
     expect(outcome).toMatchObject({ kind: "installed" });
     const log = calls();
+    // Three handshakes, and no scp, mktemp or rm anywhere: the installer went in on stdin.
+    expect(log).toHaveLength(3);
     expect(log[0]).toContain("uname -s -m"); // identity first
-    expect(log[1]).toContain("mktemp -d");
-    expect(log[2]).toMatch(/^scp .*install\.sh build-box:\/tmp\/remote-scratch$/);
     // The release is downloaded ON THE REMOTE, pinned to this server's own base.
-    expect(log[3]).toContain("PENGUIN_VERSION='v0.2.4' sh '/tmp/remote-scratch/install.sh'");
+    expect(log[1]).toContain("PENGUIN_VERSION='v0.2.4' sh -s");
     // The hmr state crosses as a stream into the default data root.
-    expect(log[4]).toContain('tar -xzf - -C "$HOME/.penguin/data"');
-    expect(log[5]).toContain("rm -rf '/tmp/remote-scratch'");
+    expect(log[2]).toContain('tar -xzf - -C "$HOME/.penguin/data"');
+    expect(log.some((line) => line.startsWith("scp"))).toBe(false);
+    expect(log.some((line) => line.includes("mktemp") || line.includes("rm -rf"))).toBe(false);
     expect(log.every((line) => line.includes("User=deploy"))).toBe(true);
     expect(log.every((line) => line.includes("BatchMode=yes"))).toBe(true);
-    expect(progress).toContain("linux-x86_64.".replace("x86_64", "x64"));
+    expect(progress).toContain("linux-x64.");
+    // The far side's own output is relayed as it arrives, not withheld until exit.
+    expect(progress).toContain("PenguinHarness 0.2.4 installed");
   });
 
   it("falls back to the Windows probe when the POSIX one is not understood", async () => {
@@ -131,14 +135,13 @@ posixOnly("installOnRemote", () => {
     const log = calls();
     expect(log[0]).toContain("uname -s -m");
     expect(log[1]).toContain("%PROCESSOR_ARCHITECTURE%");
-    // From here on everything speaks cmd.exe: double quotes, %TEMP%, rmdir.
-    expect(log[2]).toContain('mkdir "%TEMP%\\penguin-');
-    expect(
-      log.some((line) =>
-        line.includes('-File "C:\\Temp\\penguin-scratch\\install.ps1" -Version "v0.2.4"'),
-      ),
-    ).toBe(true);
-    expect(log.at(-1)).toContain("rmdir /s /q");
+    // PowerShell cannot take the script on stdin, so a Windows remote gets a copy — scp'd to
+    // the home directory, with the delete chained onto the command that runs it.
+    expect(log[2]).toMatch(/^scp .*\.ps1 build-box:\.$/);
+    expect(log[3]).toContain('-File "%USERPROFILE%\\penguin-');
+    expect(log[3]).toContain('-Version "v0.2.4"');
+    expect(log[3]).toContain("& del /q");
+    expect(log.some((line) => line.includes('mkdir "%TEMP%'))).toBe(false);
   });
 
   it("a matching base skips the installer and only streams the store", async () => {
@@ -172,7 +175,7 @@ posixOnly("installOnRemote", () => {
     expect(calls().some((line) => line.includes("tar -xzf -"))).toBe(false);
   });
 
-  it("reports the installer's own output on failure and still clears the scratch dir", async () => {
+  it("reports the installer's own output on failure", async () => {
     writeStubs({
       probe: 'Linux x86_64\\n---penguin---\\n{"version":"0.0.1"}\\n---penguin---\\n',
       installExit: 3,
@@ -180,7 +183,6 @@ posixOnly("installOnRemote", () => {
     const outcome = await installOnRemote({ target, plan: plan(), assets });
     expect(outcome).toMatchObject({ kind: "failed", step: "install" });
     expect((outcome as { detail: string }).detail).toContain("PenguinHarness 0.2.4 installed");
-    expect(calls().at(-1)).toContain("rm -rf '/tmp/remote-scratch'");
   });
 
   it("refuses a base that cannot name a release", async () => {

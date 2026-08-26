@@ -3,11 +3,17 @@
  * side) plus the small commands the far side executes. Pure, so every command this app would
  * run against someone's machine is unit-visible.
  *
- * Everything runs through a remote SHELL — probe, make a scratch directory, run the release
- * installer online, unpack the replicated hmr store — and each has a POSIX and a Windows
- * form, because a default Windows OpenSSH session is cmd.exe, where `;`, `$VAR`, `'…'` and
- * `rm` mean nothing. The installer itself is the ordinary one (install.sh, install.ps1),
- * downloading the pinned release from the remote's own network.
+ * Three things run through a remote SHELL — probe, run the release installer, unpack the
+ * replicated hmr store — and each has a POSIX and a Windows form, because a default Windows
+ * OpenSSH session is cmd.exe, where `;`, `$VAR`, `'…'` and `rm` mean nothing. The installer
+ * itself is the ordinary one (install.sh, install.ps1), downloading the pinned release from
+ * the remote's own network.
+ *
+ * COUNT THE HANDSHAKES. Every one of these is a separate ssh connection, and a handshake to
+ * a distant or loaded host costs tens of seconds — so a step that can ride an existing
+ * connection must. A POSIX install is one call: the installer goes in on ssh's stdin, the
+ * same shape as the documented `curl … | sh`, which is what lets the scratch directory, the
+ * scp and the cleanup disappear entirely.
  *
  * Two further rules encoded here:
  * - **BatchMode.** A GUI app has no terminal: an ssh that decides to ask for a password or a
@@ -68,35 +74,34 @@ export function scpArgs(target: RemoteTarget, localFiles: string[], remoteDir: s
 }
 
 /**
- * Creates a scratch directory and prints its path. POSIX gets `mktemp -d`; Windows builds one
- * under %TEMP% from a name the caller generated, because cmd.exe has no mktemp.
- */
-export function makeScratchCommand(platform: RemotePlatform, name: string): string {
-  if (platform === "win32") {
-    return `mkdir "%TEMP%\\${name}" & echo %TEMP%\\${name}`;
-  }
-  return `d=$(mktemp -d) && mkdir -p "$d/${name}" && echo "$d/${name}"`;
-}
-
-/**
- * Runs the ordinary installer ONLINE, pinned to this server's own base release, so the far
- * side downloads exactly the version this side stands on. `-ExecutionPolicy Bypass` because
- * client Windows defaults to Restricted, and this is our own script arriving over our own
- * ssh session.
+ * Runs the ordinary installer on the far side, pinned to this server's own base release so
+ * the remote downloads exactly the version this side stands on.
+ *
+ * POSIX takes the script on stdin (`sh -s`) — no file, so nothing has to be copied, made a
+ * place for, or cleaned up afterwards. Windows does not: `param()` is not valid in a
+ * PowerShell command stream, and `-File -` is PowerShell 7 only while a remote may have 5.1,
+ * so there the script is copied to the home directory and run from a path — with the delete
+ * chained onto the same command rather than costing a connection of its own.
+ * `-ExecutionPolicy Bypass` because client Windows defaults to Restricted, and this is our
+ * own script arriving over our own ssh session.
  *
  * `versionTag` is a release tag (`v` + semver); the caller validated the spelling, and the
  * quoting here keeps it one word regardless.
  */
 export function runInstallScriptCommand(
   platform: RemotePlatform,
-  scratchDir: string,
   versionTag: string,
+  /** Where the script was copied on a Windows remote; unused on POSIX, where it rides stdin. */
+  remoteScriptPath?: string,
 ): string {
   if (platform === "win32") {
-    const script = cmdQuote(`${scratchDir}\\install.ps1`);
-    return `powershell -NoProfile -ExecutionPolicy Bypass -File ${script} -Version ${cmdQuote(versionTag)}`;
+    const script = cmdQuote(remoteScriptPath ?? "");
+    return (
+      `powershell -NoProfile -ExecutionPolicy Bypass -File ${script} -Version ${cmdQuote(versionTag)}` +
+      ` & del /q ${script}`
+    );
   }
-  return `PENGUIN_VERSION=${shQuote(versionTag)} sh ${shQuote(`${scratchDir}/install.sh`)}`;
+  return `PENGUIN_VERSION=${shQuote(versionTag)} sh -s`;
 }
 
 /**
@@ -112,9 +117,4 @@ export function unpackStoreCommand(platform: RemotePlatform): string {
   }
   const root = "$HOME/.penguin/data";
   return `mkdir -p "${root}" && tar -xzf - -C "${root}"`;
-}
-
-/** Best-effort scratch cleanup; failure here never fails an install that already succeeded. */
-export function cleanupCommand(platform: RemotePlatform, dir: string): string {
-  return platform === "win32" ? `rmdir /s /q ${cmdQuote(dir)}` : `rm -rf ${shQuote(dir)}`;
 }

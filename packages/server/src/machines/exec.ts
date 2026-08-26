@@ -45,6 +45,58 @@ export function run(
 }
 
 /**
+ * Runs one command with `input` on its stdin, reporting each line of output as it arrives.
+ *
+ * This is how the ordinary installer reaches a POSIX remote: `ssh host 'sh -s'` with
+ * install.sh piped in, which is the same shape as the documented `curl … | sh` and saves the
+ * scratch directory, the scp and the cleanup a copied file would need — three ssh handshakes,
+ * each of which can cost tens of seconds.
+ *
+ * `onLine` exists because an install takes minutes: buffering until exit would show the far
+ * side's own progress only once it no longer matters. Lines are split on the way through, so
+ * a partial chunk never surfaces as a line of its own.
+ */
+export function runWithInput(
+  file: string,
+  args: string[],
+  opts: { input: Buffer; onLine?: (line: string) => void; timeoutMs?: number },
+): Promise<ExecResult> {
+  return new Promise((resolve) => {
+    const child = spawn(file, args, { stdio: ["pipe", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    let pending = "";
+    const timer = setTimeout(() => child.kill(), opts.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+    child.stdout.on("data", (chunk: Buffer) => {
+      const text = chunk.toString("utf8");
+      stdout += text;
+      if (opts.onLine === undefined) return;
+      pending += text;
+      const lines = pending.split("\n");
+      pending = lines.pop() ?? "";
+      for (const line of lines) {
+        const trimmed = line.trimEnd();
+        if (trimmed !== "") opts.onLine(trimmed);
+      }
+    });
+    child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString("utf8")));
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      // Whatever the last chunk left without a newline is still a line the far side wrote.
+      if (pending.trim() !== "") opts.onLine?.(pending.trim());
+      resolve({ code: code ?? 1, stdout, stderr });
+    });
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      resolve({ code: 1, stdout, stderr: `${stderr}${err.message}\n` });
+    });
+    // A remote that never reads stdin (a refused connection) closes the pipe under us.
+    child.stdin.on("error", () => {});
+    child.stdin.end(opts.input);
+  });
+}
+
+/**
  * `producer | consumer`, without a shell: the producer's stdout is piped straight into the
  * consumer's stdin — how the hmr store crosses to the remote (local tar → ssh). Failure of
  * EITHER side fails the pair, with both stderr streams in the result; a broken pipe from a

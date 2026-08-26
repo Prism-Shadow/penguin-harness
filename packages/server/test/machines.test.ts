@@ -14,9 +14,7 @@ import { describe, expect, it } from "vitest";
 import { machineIdentity, parseHostAliases, parseSshSettings } from "../src/machines/ssh-config.js";
 import { parseProbeOutput, POSIX_PROBE, WINDOWS_PROBE } from "../src/machines/detect.js";
 import {
-  cleanupCommand,
   cmdQuote,
-  makeScratchCommand,
   runInstallScriptCommand,
   unpackStoreCommand,
   scpArgs,
@@ -208,19 +206,17 @@ describe("ssh / scp invocations", () => {
     expect(() => cmdQuote('C:\\weird"path')).toThrow();
   });
 
-  it("creates the scratch directory the way each shell can", () => {
-    expect(makeScratchCommand("linux", "penguin-abc")).toContain("mktemp -d");
-    const windows = makeScratchCommand("win32", "penguin-abc");
-    expect(windows).toContain('mkdir "%TEMP%\\penguin-abc"');
-    expect(windows).toContain("&"); // cmd chains with &, not ;
+  it("takes the installer on stdin, so a POSIX install costs ONE ssh handshake", () => {
+    // No path anywhere in it: nothing was copied, so nothing has to be placed or cleaned up.
+    expect(runInstallScriptCommand("linux", "v0.2.4")).toBe("PENGUIN_VERSION='v0.2.4' sh -s");
   });
 
-  it("runs the release installer online, pinned to this server's base", () => {
-    expect(runInstallScriptCommand("linux", "/tmp/s", "v0.2.4")).toBe(
-      "PENGUIN_VERSION='v0.2.4' sh '/tmp/s/install.sh'",
-    );
-    expect(runInstallScriptCommand("win32", "C:\\t", "v0.2.4")).toBe(
-      'powershell -NoProfile -ExecutionPolicy Bypass -File "C:\\t\\install.ps1" -Version "v0.2.4"',
+  it("runs a Windows remote's copy from a path, and deletes it in the same command", () => {
+    // PowerShell cannot take a param()-carrying script on stdin, so the file is real there —
+    // but the delete rides the same connection rather than costing another handshake.
+    expect(runInstallScriptCommand("win32", "v0.2.4", "%USERPROFILE%\\penguin-ab12.ps1")).toBe(
+      'powershell -NoProfile -ExecutionPolicy Bypass -File "%USERPROFILE%\\penguin-ab12.ps1"' +
+        ' -Version "v0.2.4" & del /q "%USERPROFILE%\\penguin-ab12.ps1"',
     );
   });
 
@@ -231,11 +227,6 @@ describe("ssh / scp invocations", () => {
     expect(unpackStoreCommand("win32")).toBe(
       '(if not exist "%USERPROFILE%\\.penguin\\data" mkdir "%USERPROFILE%\\.penguin\\data") & tar -xzf - -C "%USERPROFILE%\\.penguin\\data"',
     );
-  });
-
-  it("cleans up with each platform's own command", () => {
-    expect(cleanupCommand("linux", "/tmp/s")).toBe("rm -rf '/tmp/s'");
-    expect(cleanupCommand("win32", "C:\\t")).toBe('rmdir /s /q "C:\\t"');
   });
 });
 
