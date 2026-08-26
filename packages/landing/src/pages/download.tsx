@@ -240,11 +240,16 @@ export function DownloadPage() {
                 >
                   <PlatformIcon className="h-7 w-7" />
                 </span>
-                {recommended && (
-                  <span className="rounded-full bg-brand-600/10 px-2 py-0.5 text-xs font-medium text-brand-700 dark:text-brand-300">
-                    {S.download.recommended}
+                <div className="flex flex-wrap justify-end gap-1.5">
+                  {recommended && (
+                    <span className="rounded-full bg-brand-600/10 px-2 py-0.5 text-xs font-medium text-brand-700 dark:text-brand-300">
+                      {S.download.recommended}
+                    </span>
+                  )}
+                  <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600 tabular-nums dark:bg-gray-800 dark:text-gray-300">
+                    {RELEASE_VERSION}
                   </span>
-                )}
+                </div>
               </div>
               <h3 className="mt-5 text-lg font-semibold tracking-tight">
                 {S.download.platforms[platform].name}
@@ -254,30 +259,26 @@ export function DownloadPage() {
               </p>
               <div className="mt-auto flex flex-col gap-2">
                 {DESKTOP_INSTALLERS[platform].map(({ file, variant }) => (
-                  <div key={file}>
-                    <a
-                      href={awaitingAutomaticSource ? undefined : hrefFor(file)}
-                      aria-disabled={awaitingAutomaticSource || undefined}
-                      className={`inline-flex w-full items-center justify-center gap-1.5 rounded-lg px-3.5 py-2.5 text-sm font-medium transition-colors ${
-                        awaitingAutomaticSource
-                          ? "cursor-progress bg-gray-200 text-gray-500 dark:bg-gray-800 dark:text-gray-500"
-                          : "bg-gray-900 text-white hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
-                      }`}
-                    >
-                      {awaitingAutomaticSource ? (
-                        <SpinnerIcon className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <DownloadIcon className="h-4 w-4" />
-                      )}
-                      <span>{variant}</span>
-                      <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold">
-                        {installerSuffix(file)}
-                      </span>
-                    </a>
-                    <p className="mt-1 text-center text-[11px] font-medium text-gray-400 tabular-nums dark:text-gray-500">
-                      {RELEASE_VERSION}
-                    </p>
-                  </div>
+                  <a
+                    key={file}
+                    href={awaitingAutomaticSource ? undefined : hrefFor(file)}
+                    aria-disabled={awaitingAutomaticSource || undefined}
+                    className={`inline-flex w-full items-center justify-center gap-1.5 rounded-lg px-3.5 py-2.5 text-sm font-medium transition-colors ${
+                      awaitingAutomaticSource
+                        ? "cursor-progress bg-gray-200 text-gray-500 dark:bg-gray-800 dark:text-gray-500"
+                        : "bg-gray-900 text-white hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
+                    }`}
+                  >
+                    {awaitingAutomaticSource ? (
+                      <SpinnerIcon className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <DownloadIcon className="h-4 w-4" />
+                    )}
+                    <span>{variant}</span>
+                    <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold">
+                      {installerSuffix(file)}
+                    </span>
+                  </a>
                 ))}
               </div>
             </article>
