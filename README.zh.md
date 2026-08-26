@@ -4,7 +4,7 @@
 
 <h1 align="center">PenguinHarness</h1>
 
-<p align="center"><strong>开源、本地的 Agent 应用自动开发平台</strong><br />全自动<strong>创建</strong> · <strong>优化</strong> · <strong>部署</strong> AI 应用</p>
+<p align="center"><strong>开源、本地的多 Agent 应用自动开发平台</strong><br />全自动<strong>创建</strong> · <strong>优化</strong> · <strong>部署</strong> AI 应用</p>
 
 <p align="center">
   <a href="https://penguin.ooo/download">

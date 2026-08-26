@@ -49,7 +49,7 @@ export const zh = {
   },
 
   hero: {
-    platformLead: "开源、本地的 Agent 应用",
+    platformLead: "开源、本地的多 Agent 应用",
     platformAccent: "自动开发",
     platformTail: "平台",
     automationLead: "全自动",

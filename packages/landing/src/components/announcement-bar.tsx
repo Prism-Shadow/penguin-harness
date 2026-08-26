@@ -91,34 +91,38 @@ export function AnnouncementBar() {
       onBlurCapture={() => setFocused(false)}
       className="border-b border-brand-100 bg-brand-50 dark:border-brand-950 dark:bg-brand-950/50"
     >
-      <div className="mx-auto h-9 max-w-6xl overflow-hidden px-4 sm:px-6">
-        <div
-          className={`flex h-full ${animate ? "transition-transform duration-500 ease-out" : ""}`}
-          style={{ transform: `translateX(-${pos * 100}%)` }}
-          onTransitionEnd={(e) => {
-            if (e.target !== e.currentTarget || e.propertyName !== "transform") return;
-            if (pos === ITEMS.length) {
-              setAnimate(false);
-              setPos(0);
-            }
-          }}
-        >
-          {slides.map((item, i) => (
-            <div
-              key={`${item.key}-${i}`}
-              aria-hidden={i !== pos}
-              className="flex w-full shrink-0 items-center justify-center"
-            >
-              <Link
-                to={item.to}
-                tabIndex={i === pos ? 0 : -1}
-                className="inline-flex min-w-0 items-center gap-1.5 text-[13px] font-medium text-brand-800 underline-offset-2 hover:underline dark:text-brand-200"
+      <div className="mx-auto h-9 max-w-6xl px-4 sm:px-6">
+        {/* Clip inside the horizontal padding. Otherwise the next slide peeks through
+            the padding box on narrow screens before its turn. */}
+        <div className="h-full overflow-hidden">
+          <div
+            className={`flex h-full ${animate ? "transition-transform duration-500 ease-out" : ""}`}
+            style={{ transform: `translateX(-${pos * 100}%)` }}
+            onTransitionEnd={(e) => {
+              if (e.target !== e.currentTarget || e.propertyName !== "transform") return;
+              if (pos === ITEMS.length) {
+                setAnimate(false);
+                setPos(0);
+              }
+            }}
+          >
+            {slides.map((item, i) => (
+              <div
+                key={`${item.key}-${i}`}
+                aria-hidden={i !== pos}
+                className="flex w-full shrink-0 items-center justify-center"
               >
-                <span className="truncate">{texts[item.key]}</span>
-                <ArrowRightIcon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-              </Link>
-            </div>
-          ))}
+                <Link
+                  to={item.to}
+                  tabIndex={i === pos ? 0 : -1}
+                  className="inline-flex min-w-0 items-center gap-1.5 text-[13px] font-medium text-brand-800 underline-offset-2 hover:underline dark:text-brand-200"
+                >
+                  <span className="truncate">{texts[item.key]}</span>
+                  <ArrowRightIcon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                </Link>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>

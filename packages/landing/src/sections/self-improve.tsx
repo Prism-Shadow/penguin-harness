@@ -359,6 +359,73 @@ const TRENDS: Array<{
   },
 ];
 
+function MobileFlowNode({
+  label,
+  badge,
+  accent = false,
+}: {
+  label: string;
+  badge?: string;
+  accent?: boolean;
+}) {
+  return (
+    <div
+      className={`flex min-w-0 items-center justify-center gap-2 rounded-lg border px-3 py-3 text-center text-xs font-semibold ${
+        accent
+          ? "border-brand-300 bg-brand-50 text-brand-800 dark:border-brand-800 dark:bg-brand-950 dark:text-brand-200"
+          : "border-gray-200 bg-gray-50 text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+      }`}
+    >
+      <span>{label}</span>
+      {badge && (
+        <span
+          className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] ${
+            accent
+              ? "bg-brand-600 text-white dark:bg-brand-400 dark:text-gray-950"
+              : "bg-gray-400 text-white dark:bg-gray-600"
+          }`}
+        >
+          {badge}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** Compact reading order for phones; the full SVG remains visible from sm upward. */
+function MobileEvolutionFlow() {
+  return (
+    <div
+      role="img"
+      aria-label={S.selfImprove.diagramLabel}
+      className="rounded-xl border border-gray-200 bg-white p-4 sm:hidden dark:border-gray-800 dark:bg-gray-900"
+    >
+      <MobileFlowNode label={S.selfImprove.nodeOptimizer} accent />
+      <div className="my-2 flex flex-col items-center text-[10px] leading-4 text-gray-500 dark:text-gray-400">
+        <span>{S.selfImprove.edgeSpawn}</span>
+        <span aria-hidden="true">↓</span>
+      </div>
+      <MobileFlowNode label={S.selfImprove.nodeEvaluator} />
+      <div className="my-2 flex flex-col items-center text-[10px] leading-4 text-gray-500 dark:text-gray-400">
+        <span>
+          {S.selfImprove.edgeFeedback} · {S.selfImprove.edgeBench}
+        </span>
+        <span aria-hidden="true">↓</span>
+      </div>
+      <div className="grid grid-cols-[minmax(0,1fr)_3.5rem_minmax(0,1fr)] items-center gap-2">
+        <MobileFlowNode label={S.selfImprove.nodeTarget} badge={S.selfImprove.badgeOld} />
+        <div className="text-center text-[10px] leading-4 font-medium text-brand-700 dark:text-brand-300">
+          <span className="block">{S.selfImprove.edgeImprove}</span>
+          <span className="block text-base" aria-hidden="true">
+            →
+          </span>
+        </div>
+        <MobileFlowNode label={S.selfImprove.nodeTarget} badge={S.selfImprove.badgeNew} accent />
+      </div>
+    </div>
+  );
+}
+
 export function SelfImprove() {
   const { locale } = useLocale();
   return (
@@ -369,7 +436,8 @@ export function SelfImprove() {
       subtitle={S.selfImprove.subtitle}
     >
       <div className="mx-auto grid max-w-5xl items-center gap-6 lg:grid-cols-[minmax(0,1fr)_15.5rem]">
-        <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+        <MobileEvolutionFlow />
+        <div className="hidden overflow-x-auto rounded-xl border border-gray-200 bg-white p-4 sm:block dark:border-gray-800 dark:bg-gray-900">
           <svg
             viewBox="0 0 720 380"
             role="img"

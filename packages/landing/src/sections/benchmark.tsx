@@ -202,7 +202,53 @@ function SuiteBlock({
           format={(v) => formatUsd(v, costDp)}
         />
       </div>
-      <div className="mt-5 overflow-x-auto rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+      <div className="mt-5 grid gap-2 sm:hidden">
+        {rows.map((r) => (
+          <article
+            key={r.framework}
+            className={`rounded-xl border p-4 ${
+              r.emphasized
+                ? "border-brand-200 bg-brand-25 dark:border-brand-800 dark:bg-brand-950/40"
+                : "border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"
+            }`}
+          >
+            <div className="flex min-w-0 items-center gap-2">
+              <HarnessLogo kind={r.kind} className="h-4 w-4 shrink-0" />
+              <strong className="truncate text-sm">{r.framework}</strong>
+              <span className="ml-auto truncate text-xs text-gray-500 dark:text-gray-400">
+                {r.model}
+              </span>
+            </div>
+            <dl className="mt-3 grid grid-cols-3 gap-2 text-center">
+              <div>
+                <dt className="text-[10px] leading-4 text-gray-500 dark:text-gray-400">
+                  {S.benchmark.colAccuracy}
+                </dt>
+                <dd className="mt-0.5 text-sm font-semibold tabular-nums">
+                  {formatAccuracy(r.accuracyPct, accDp)}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-[10px] leading-4 text-gray-500 dark:text-gray-400">
+                  {S.benchmark.colTokens}
+                </dt>
+                <dd className="mt-0.5 text-sm font-semibold tabular-nums">
+                  {r.tokensM.toFixed(tokenDp)}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-[10px] leading-4 text-gray-500 dark:text-gray-400">
+                  {S.benchmark.colCost}
+                </dt>
+                <dd className="mt-0.5 text-sm font-semibold tabular-nums">
+                  {r.costUsd.toFixed(costDp)}
+                </dd>
+              </div>
+            </dl>
+          </article>
+        ))}
+      </div>
+      <div className="mt-5 hidden overflow-x-auto rounded-xl border border-gray-200 bg-white sm:block dark:border-gray-800 dark:bg-gray-900">
         <table className="w-full min-w-[38rem] text-sm">
           <thead>
             <tr className="border-b border-gray-200 text-left text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400">
