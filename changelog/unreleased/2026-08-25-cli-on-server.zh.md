@@ -93,6 +93,9 @@ getter：core 按各 Session 自身坐标绑定、逐次 spawn 重新求值；�
   发生了什么」，裸 `penguin input` 就是「我的 Agent 最后说了什么」；`--agent-id` 决定是哪个
   Agent。该 Agent 一个会话都没有时，打印一行指向 `penguin run` / `penguin chat` 的提示，并以
   非零码退出。
+- **`penguin-orchestration` Skill 跟上命令面**：随包发布的该 Skill，其命令块与会话定位说明
+  现已包含 `input` / `logs` 可省的 session id，以及决定是哪个 Agent 的 `--agent-id`（Skill
+  版本 2）。
 
 ## 参数错误按界面语言呈现
 

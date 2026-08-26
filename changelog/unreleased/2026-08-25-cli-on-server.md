@@ -108,6 +108,9 @@ SDK/CLI-direct embedding without the option injects nothing.
   therefore "what just happened" and bare `penguin input` is "what did my agent last
   say"; `--agent-id` picks whose. An agent with no session at all gets one line pointing
   at `penguin run` / `penguin chat`, and a non-zero exit.
+- **The `penguin-orchestration` skill tracks the surface**: the shipped skill's command
+  block and its session-targeting notes now carry the optional session id on `input` /
+  `logs` and the `--agent-id` that picks whose (skill version 2).
 
 ## Argument errors speak the interface language
 
