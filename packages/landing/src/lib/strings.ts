@@ -61,7 +61,7 @@ export const zh = {
       { value: "1000+ 模型", label: "支持主流供应商" },
       { value: "跨平台本地部署", label: "Linux，Windows，macOS 多系统兼容" },
       { value: "100% 开源", label: "Apache 2.0 协议开源" },
-      { value: "首个自进化 Harness", label: "Agent 自进化引擎" },
+      { value: "首个自进化 Harness", label: "原生 Agent 自进化引擎" },
     ],
     supportedModelsLabel: "支持模型",
     supportedModels: [

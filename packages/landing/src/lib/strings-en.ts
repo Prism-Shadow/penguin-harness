@@ -60,7 +60,7 @@ export const en: Strings = {
       { value: "1000+ models", label: "Support for major providers" },
       { value: "Local on every platform", label: "Linux · Windows · macOS" },
       { value: "100% open source", label: "Apache 2.0 licensed" },
-      { value: "First self-evolving harness", label: "agent self-evolution engine" },
+      { value: "First self-evolving harness", label: "native agent self-evolution engine" },
     ],
     supportedModelsLabel: "Supported models",
     supportedModels: [

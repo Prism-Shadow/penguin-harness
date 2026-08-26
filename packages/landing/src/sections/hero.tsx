@@ -92,7 +92,7 @@ export function Hero() {
         </dl>
 
         <div
-          className="anim-rise mx-auto mt-8 flex max-w-5xl flex-wrap items-center justify-start gap-x-5 gap-y-3 text-left text-sm"
+          className="anim-rise mx-auto mt-12 flex max-w-5xl flex-wrap items-center justify-center gap-x-6 gap-y-4 text-center text-sm"
           style={{ animationDelay: "300ms" }}
         >
           <span className="mr-1 text-xs font-semibold tracking-wide text-gray-400 uppercase dark:text-gray-500">
@@ -101,10 +101,11 @@ export function Hero() {
           {MODEL_PROVIDERS.map((provider, index) => (
             <span
               key={provider}
-              className="inline-flex items-center gap-1.5 whitespace-nowrap font-medium text-gray-700 dark:text-gray-300"
+              aria-label={S.hero.supportedModels[index]}
+              title={S.hero.supportedModels[index]}
+              className="inline-flex items-center text-gray-700 dark:text-gray-300"
             >
-              <ModelProviderLogo provider={provider} className="h-4.5 w-4.5" />
-              {S.hero.supportedModels[index]}
+              <ModelProviderLogo provider={provider} className="h-6 w-6" />
             </span>
           ))}
           <span className="whitespace-nowrap font-medium text-gray-400 dark:text-gray-500">
