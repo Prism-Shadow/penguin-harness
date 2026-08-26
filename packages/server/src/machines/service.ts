@@ -2,11 +2,10 @@
  * The machines service: this server's own `~/.ssh/config` as a list of targets, and putting
  * this build on one of them.
  *
- * An install is a JOB, not a request. It probes the far side, may fetch and verify a ~30 MB
- * Node runtime, copies an image over scp and runs an installer there — minutes, in the bad
- * case — so POST starts it and the Web App polls for the progress lines. One at a time: the
- * surface is a person installing on one machine, and a second concurrent push would compete
- * for the same runtime cache directory.
+ * An install is a JOB, not a request. It probes the far side, has it download and install
+ * this server's base release, and streams the hmr state across — minutes, in the bad case —
+ * so POST starts it and the Web App polls for the progress lines. One at a time: the
+ * surface is a person installing on one machine.
  *
  * The JOB is not persisted. It lives in this App's memory and dies with it (see the park
  * list in ../hmr/platform.ts — it is on the SUSPENDED side): a hot push during an install
@@ -24,7 +23,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { MachineInfo, MachineInstallJob } from "../api/types.js";
 import { listHostAliases, resolveTarget } from "./targets.js";
-import { installOnRemote, resolvePayloadImage } from "./install-server.js";
+import { installOnRemote, resolvePushPlan } from "./install-server.js";
 import { parseInstallRecords, withInstallRecord } from "./installs.js";
 import type { InstallRecord } from "./installs.js";
 
@@ -41,7 +40,7 @@ export type InstallRefusal = "busy" | "unknown-machine" | "unresolvable" | "no-i
 export interface MachinesEffects {
   listAliases: typeof listHostAliases;
   resolveTarget: typeof resolveTarget;
-  resolveImage: typeof resolvePayloadImage;
+  resolvePlan: typeof resolvePushPlan;
   install: typeof installOnRemote;
   /** Injected so a test can pin the recorded timestamp instead of asserting around the clock. */
   now: () => Date;
@@ -52,9 +51,8 @@ export class MachinesService {
   readonly #effects: MachinesEffects;
 
   /**
-   * `dataRoot` is the server's own data root: it holds the hmr store the pushable image is
-   * assembled from, and the runtime cache verified Node downloads are kept in, so the second
-   * host of a given platform-arch costs no download.
+   * `dataRoot` is the server's own data root: it holds the hmr state a push replicates, and
+   * the install records below.
    */
   /** Where a pushed bundle's assets were unpacked; null in a packaged server (hmr.assetsDir). */
   readonly #assets: () => string | null;
@@ -68,7 +66,7 @@ export class MachinesService {
     this.#effects = {
       listAliases: listHostAliases,
       resolveTarget,
-      resolveImage: resolvePayloadImage,
+      resolvePlan: resolvePushPlan,
       install: installOnRemote,
       now: () => new Date(),
       ...effects,
@@ -107,7 +105,7 @@ export class MachinesService {
    * so it can say so up front, rather than letting every install fail at the same step.
    */
   imageVersion(): string | null {
-    return this.#effects.resolveImage(this.#assets)?.version ?? null;
+    return this.#effects.resolvePlan(this.dataRoot)?.version ?? null;
   }
 
   /** The running or last job; null before the first one. */
@@ -129,8 +127,8 @@ export class MachinesService {
     const machine = this.list().find((entry) => entry.id === machineId);
     if (machine === undefined) return { ok: false, why: "unknown-machine" };
 
-    const image = this.#effects.resolveImage(this.#assets);
-    if (image === null) return { ok: false, why: "no-image" };
+    const plan = this.#effects.resolvePlan(this.dataRoot);
+    if (plan === null) return { ok: false, why: "no-image" };
 
     const resolved = await this.#effects.resolveTarget(machine.alias);
     if (resolved === null) return { ok: false, why: "unresolvable" };
@@ -152,13 +150,12 @@ export class MachinesService {
     // path does not turn into a `failed` outcome itself.
     void (async () => {
       try {
-        say(`Installing ${image.version} on ${resolved.machine}…`);
+        say(`Installing ${plan.version} on ${resolved.machine}…`);
         // No identity passed: installOnRemote runs the probe itself as its first step and
         // narrates it, so the page shows what the machine turned out to be.
         const outcome = await this.#effects.install({
           target: { alias: machine.alias, user: resolved.settings.user },
-          image,
-          runtimeCacheDir: path.join(this.dataRoot, "runtime-cache"),
+          plan,
           onProgress: say,
           assets: this.#assets,
         });
@@ -166,7 +163,7 @@ export class MachinesService {
           job.result = { ok: false, step: outcome.step, message: outcome.detail };
           return;
         }
-        const version = outcome.kind === "already-installed" ? outcome.version : image.version;
+        const version = outcome.kind === "already-installed" ? outcome.version : plan.version;
         // Remember it BEFORE the job settles, so the first poll that sees `running: false`
         // already sees the machine marked installed — otherwise the page would flash the
         // verdict and a still-uninstalled row in the same frame.

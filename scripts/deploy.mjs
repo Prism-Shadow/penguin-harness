@@ -187,61 +187,6 @@ async function readWebManifest() {
  * `exec` carries the files whose exec bit must survive the trip: base64 has no mode, and a
  * spawn-helper without it makes every terminal fail to start on macOS.
  */
-/**
- * The standard-built install image, as pushed assets. Built fresh each push by the same
- * pipeline a release or the desktop app uses (build-install-image.mjs), so the machines page
- * on the target spreads a tree the standard tooling prepared — nothing is synthesized on the
- * server. The version stamped into lib/package.json is derived from the image's own content,
- * which is what makes "same tree → same version → remote skips" hold across re-pushes.
- *
- * Symlinks (node_modules/.bin) are skipped: the launchers run node directly, and a symlink
- * cannot ride a base64 file map anyway.
- */
-async function readInstallImage() {
-  log("building the install image…");
-  execFileSync("pnpm", ["--filter", "@prismshadow/penguin-cli...", "build"], {
-    cwd: ROOT,
-    stdio: "inherit",
-  });
-  execFileSync(
-    process.execPath,
-    [path.join(ROOT, "packages", "desktop", "scripts", "build-install-image.mjs")],
-    { cwd: ROOT, stdio: "inherit" },
-  );
-  const imageRoot = path.join(ROOT, "packages", "desktop", "install-image", "penguin");
-
-  const entries = [];
-  for (const entry of await fsp.readdir(imageRoot, { recursive: true, withFileTypes: true })) {
-    if (!entry.isFile()) continue;
-    const abs = path.join(entry.parentPath, entry.name);
-    entries.push({ rel: path.relative(imageRoot, abs).split(path.sep).join("/"), abs });
-  }
-  entries.sort((a, b) => (a.rel < b.rel ? -1 : 1));
-
-  // Content-derived stamp, computed BEFORE stamping so it is deterministic for a given tree.
-  const { createHash } = await import("node:crypto");
-  const hash = createHash("sha256");
-  for (const { rel, abs } of entries) {
-    hash.update(rel);
-    hash.update(await fsp.readFile(abs));
-  }
-  const version = `0.0.0-hmr.${hash.digest("hex").slice(0, 12)}`;
-  const manifestPath = path.join(imageRoot, "lib", "package.json");
-  const manifest = JSON.parse(await fsp.readFile(manifestPath, "utf8"));
-  manifest.version = version;
-  await fsp.writeFile(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
-
-  const files = {};
-  const exec = [];
-  for (const { rel, abs } of entries) {
-    const target = `install-image/penguin/${rel}`;
-    files[target] = (await fsp.readFile(abs)).toString("base64");
-    if (((await fsp.stat(abs)).mode & 0o111) !== 0) exec.push(target);
-  }
-  log(`install image ${version}: ${entries.length} files`);
-  return { files, exec };
-}
-
 async function readNativeAssets() {
   const ptyDir = path.dirname(
     require.resolve("node-pty/package.json", {
@@ -302,9 +247,6 @@ async function main() {
 
   const files = await readWebManifest();
   const assets = await readNativeAssets();
-  const image = await readInstallImage();
-  Object.assign(assets.files, image.files);
-  assets.exec.push(...image.exec);
   const source = pushSource();
   const gz = zlib.gzipSync(
     Buffer.from(
