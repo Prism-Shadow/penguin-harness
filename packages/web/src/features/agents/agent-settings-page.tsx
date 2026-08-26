@@ -502,8 +502,8 @@ function OverviewTab({
           light, mirroring the State rows' label/value contrast. */}
       <section className="border-t border-gray-200 pt-4 dark:border-gray-800">
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-          {/* Last stop on the kernel trail: the dot sits on the update control itself — inside
-              the top-right corner of the enabled button's box (the anchoring rule in
+          {/* Last stop on the kernel trail: the dot sits on the update control itself, straddling
+              the top-right corner of the enabled button's border (the anchoring rule in
               update-dot.tsx), not hung off the section title's text, whose flex item is only
               as wide as its glyphs. The dot is decorative — the sr-only sentence folds what is
               waiting into the button's accessible name, in the same wording the trail carried
@@ -519,7 +519,10 @@ function OverviewTab({
               {S.agent.kernelUpdateAction}
               {data.config.kernelOutdated && (
                 <>
-                  <UpdateDot size="inline" position="right-1 top-1" />
+                  <UpdateDot
+                    size="inline"
+                    position="right-0.5 top-0.5 -translate-y-1/2 translate-x-1/2"
+                  />
                   <span className="sr-only"> · {S.agent.kernelOutdatedHint}</span>
                 </>
               )}

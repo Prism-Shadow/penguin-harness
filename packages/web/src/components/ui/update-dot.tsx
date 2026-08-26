@@ -10,12 +10,19 @@
  * keeps out of scope. So the badge colour lives here instead, written once, and every dot on
  * an update trail renders through this component rather than spelling a palette class inline.
  *
- * Red, because that is what a notification badge is everywhere else a user has seen one.
- * `red-500` measures, as WCAG 2.x contrast against the four surfaces a dot lands on, 3.76 : 1
- * on white and 3.66 : 1 on the sidebar's gray-50 in light, and 5.58 : 1 on gray-950 (`#000000`
- * here) and 5.16 : 1 on gray-900 (`#0d0d0d` here) in dark — clearing the 3 : 1 WCAG 1.4.11 asks
- * of a graphical object on every one of them. One value across both themes, for the reason
- * `toneDot` keeps one: a dot this small has no interior to read.
+ * Red, because that is what a notification badge is everywhere else a user has seen one, and
+ * `red-400`, the pale rung, so the mark reads as news rather than as an alarm. WCAG 2.x contrast
+ * against the six surfaces a dot lands on — in light, 2.89 : 1 on white, 2.76 : 1 on the
+ * sidebar's gray-50 and 2.46 : 1 on a nav row's active/hover fill (gray-200/70 over gray-50); in
+ * dark, 7.27 : 1 on gray-950 (`#000000` here), 6.73 : 1 on gray-900 (`#0d0d0d` here) and
+ * 5.71 : 1 on gray-800. Dark clears on all three the 3 : 1 WCAG 1.4.11 asks of a graphical
+ * object; light misses on all three, by 4% to 18%, knowingly. 1.4.11 scopes to a graphical
+ * object *required* to understand the content, and this one never is: it is `aria-hidden`, and
+ * its anchor states what is updatable in its own `title` and accessible name, so no information
+ * reaches the user through the mark alone. Light is what binds: red-500 is the palest rung on
+ * Tailwind's red ramp that clears 3 : 1 on all three light surfaces (3.81 / 3.64 / 3.25 : 1), so
+ * the pale end of the ramp and the threshold do not overlap. One value across both themes, for
+ * the reason `toneDot` keeps one: a dot this small has no interior to read.
  *
  * **The dot never carries the meaning.** It is `aria-hidden`, and the anchor states what is
  * updatable in its own `title` and accessible name ("<anchor> · <what is updatable>"). A
@@ -24,10 +31,15 @@
  * Layout-neutral: absolutely positioned, so a caller only has to be `relative`, and no row
  * changes height for carrying one. `pointer-events-none` keeps it out of its anchor's hit area.
  *
- * Anchoring rule, owner-specified: a dot marks the **top-right corner of its control's full
- * box** — the whole row, tab or button — sitting inside that box, never hung off the label
- * glyphs (a dot that tracks the text's width floats over whatever follows the label and rides
- * above the line box). Chrome anchors are their own box, so their default overhang stands.
+ * Anchoring rule, owner-specified: a dot marks its control's **full box** — the whole row, tab or
+ * button — never the label glyphs, where it would track the text's width, float over whatever
+ * follows the word and ride above the line box. Two shapes of box, two placements. A full-width
+ * row hangs the dot at the right edge, vertically centred (`right-2.5 top-1/2 -translate-y-1/2`,
+ * the inset matching the row's own horizontal padding): a row has an end to align to and no
+ * corner a reader's eye goes to. A button or a tab takes the top-right corner, straddling the
+ * border where that corner is visible and pulled inside the padding where an ancestor clips it
+ * (the tab strip's `overflow-y-hidden`). Chrome anchors are their own box, so their default
+ * overhang stands.
  */
 import type { ReactNode } from "react";
 
@@ -59,16 +71,18 @@ export function UpdateDot({
 }: {
   size?: UpdateDotSize;
   /**
-   * Where the dot sits inside its `relative` anchor — Tailwind inset utilities only. The
-   * default hangs it just past the anchor's top-right corner; an anchor whose own padding or
-   * a clipping ancestor would swallow that (a tab strip's `overflow-y-hidden`) moves it in.
+   * Where the dot sits inside its `relative` anchor — Tailwind inset utilities, plus a
+   * `translate-*` where the dot is centred on an edge or straddles a corner instead of being
+   * inset from one. The default hangs it just past the anchor's top-right corner; an anchor
+   * whose own padding or a clipping ancestor would swallow that (a tab strip's
+   * `overflow-y-hidden`) moves it in.
    */
   position?: string;
 }) {
   return (
     <span
       aria-hidden
-      className={`pointer-events-none absolute rounded-full bg-red-500 ${DOT_SIZE[size]} ${position}`}
+      className={`pointer-events-none absolute rounded-full bg-red-400 ${DOT_SIZE[size]} ${position}`}
     />
   );
 }
@@ -76,22 +90,25 @@ export function UpdateDot({
 /**
  * The labeled form of the badge, for the one stop on a trail where a bare dot undersells the
  * state: the Agents list card of an outdated Agent, which is also the control the sidebar's
- * dot leads to. A real button — it performs the same navigation the icon it replaced did —
+ * dot leads to. A real button — it opens the Agent settings overview the trail ends on —
  * shaped exactly like the `Badge` pills sharing its row (`v<version>`: same radius, padding
  * and 11px semibold type), so the row reads as one family of capsules.
  *
- * Dark red rather than the dot's `red-500`, because unlike the dot this pill has an interior
- * to read: the label needs WCAG 1.4.3's 4.5 : 1 on its own background. Measured: white on
- * red-700 6.42 : 1 in light, red-100 on red-900 8.23 : 1 in dark; both hover fills (red-800)
- * clear 4.5 : 1 with their resting text. The badge colours stay in this module, with the dot's,
- * for the reason the header gives — an update mark is not a `tone.ts` status.
+ * A tinted capsule, not the dot's flat fill: this one has an interior, so its label owes WCAG
+ * 1.4.3's 4.5 : 1 against its own background, and a surface pale enough to belong beside the
+ * dots can only pay that with a dark ink. Measured red-800 on red-100 6.85 : 1 in light and
+ * red-300 on red-950 8.42 : 1 in dark, with the hover fills (red-200 / red-900) still at
+ * 5.75 : 1 and 5.22 : 1 under the same ink. Tint against card rather than ink against card is
+ * what the neighbouring gray `Badge` also runs on: the capsule is found by its text.
+ * The badge colours stay in this module, with the dot's, for the reason the header gives — an
+ * update mark is not a `tone.ts` status.
  */
 export function UpdatePill({ onClick, children }: { onClick: () => void; children: ReactNode }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-red-700 px-2 py-0.5 text-[11px] font-semibold text-white transition-colors duration-150 hover:bg-red-800 dark:bg-red-900 dark:text-red-100 dark:hover:bg-red-800"
+      className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-800 transition-colors duration-150 hover:bg-red-200 dark:bg-red-950 dark:text-red-300 dark:hover:bg-red-900"
     >
       {children}
     </button>

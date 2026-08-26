@@ -1618,9 +1618,10 @@ export function Sidebar({
               >
                 {navItems.map((item) => {
                   /* Agents is the one nav entry on a badge trail: an outdated kernel is fixed
-                     on the Agent settings page two clicks down. The dot sits at the top-right
-                     corner of the full-width row, inside its box — anchored to the row, not to
-                     the label text, where it would float over whatever follows the word. */
+                     on the Agent settings page two clicks down. The dot is anchored to the row,
+                     not to the label text (where it would float over whatever follows the word):
+                     at the row's right edge, on the same inset as its horizontal padding, and
+                     vertically centred on the row rather than on the line of text. */
                   const note = item.to === "/agents" ? badges.kernelNote : null;
                   return (
                     <NavLink
@@ -1649,7 +1650,9 @@ export function Sidebar({
                         <Icon d={item.icon} />
                       </span>
                       {item.label}
-                      {note !== null && <UpdateDot size="inline" position="right-1.5 top-1.5" />}
+                      {note !== null && (
+                        <UpdateDot size="inline" position="right-2.5 top-1/2 -translate-y-1/2" />
+                      )}
                     </NavLink>
                   );
                 })}

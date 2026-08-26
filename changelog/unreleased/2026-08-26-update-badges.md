@@ -18,7 +18,7 @@ Project. The mobile menu button carries a dot for either.
 - **Software** — the `<md` top bar's menu button, the collapsed rail's avatar and the pinned
   sidebar's avatar, ending at the user menu's update row and its update dialog.
 - **Agent kernel** — the same menu button, the pinned sidebar's Agents entry, the collapsed
-  rail's Agents icon, the Agents list card of each outdated Agent — which carries a dark-red
+  rail's Agents icon, the Agents list card of each outdated Agent — which carries a pale-red
   "Kernel update needed" capsule in the version badge's own shape, itself the control that
   opens the right settings page — then that page's Overview tab and the enabled "update
   kernel" button in the Kernel section. The badge clears with the config refresh the update
@@ -34,10 +34,13 @@ conversations, not Agent configuration, and a dot there would lead to no action.
   avatar's included, which previously drew its own accent-coloured dot. A notification badge is
   not a status tone, so the colours live there rather than in `lib/tone.ts`, whose five tones
   each judge a thing's state; the component's header states that and records the measured
-  contrast on every surface a mark lands on. A dot anchors to the top-right corner of its
-  control's full box — the row, tab or button — inside it, never hung off the label text's
-  width. Each dot is `aria-hidden` and its anchor names what is updatable in its `title` and
-  accessible name.
+  contrast on every surface a mark lands on, including the light-theme surfaces where the pale
+  red the marks are set in falls under WCAG 1.4.11's 3 : 1 and why that is accepted. A dot
+  anchors to its control's full box — the row, tab or button — never to the label text's width:
+  a full-width row carries it at the right edge, vertically centred, while a button or a tab
+  takes the top-right corner, straddling the border where that corner is visible and pulled
+  inside the padding where an ancestor clips it. Each dot is `aria-hidden` and its anchor names
+  what is updatable in its `title` and accessible name.
 - The update check runs once per browser session from the app layout, so a badge is present on a
   fresh load; it was previously activated by opening the sidebar's user menu. The module-level
   cache keeps it to one request, the check stays fail-soft, and `PENGUIN_UPDATE_CHECK=off`

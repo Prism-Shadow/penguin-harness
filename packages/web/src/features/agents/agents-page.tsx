@@ -411,8 +411,9 @@ export function AgentsPage() {
                       <Badge tone="gray">v{a.version}</Badge>
                       {/* Kernel-outdated pill: the card the sidebar's Agents dot leads to, so it
                           names the state in words rather than as another bare dot — a capsule in
-                          the version badge's own geometry, dark red, opening the settings
-                          overview where the update action lives. */}
+                          the version badge's own geometry, tinted the same pale red the dots on
+                          this trail carry, opening the settings overview where the update action
+                          lives. */}
                       {a.kernelOutdated && (
                         <UpdatePill onClick={() => openSettingsTab(a.agentId, "overview")}>
                           {S.agent.kernelUpdateNeeded}
