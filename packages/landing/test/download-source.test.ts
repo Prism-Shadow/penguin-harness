@@ -12,6 +12,7 @@ import {
   SPEED_PROBE_GITHUB_MIN_BYTES_PER_SECOND,
   createDeadline,
   decideDownloadSource,
+  decideDownloadSourceWithReport,
   parseMirror,
   parseProbes,
   selectDownloadSource,
@@ -192,6 +193,17 @@ describe("decideDownloadSource", () => {
     const { asked, io } = fakeProbes(reachable(0), reachable(1));
     await expect(decideDownloadSource(SOURCES, PROBES, io)).resolves.toBe("oss");
     expect(asked).toEqual(["measure:github", "measure:oss"]);
+  });
+
+  it("retains the measurements used by the visible speed report", async () => {
+    const github = reachable(MIN / 2);
+    const oss = reachable(MIN);
+    const { io } = fakeProbes(github, oss);
+    await expect(decideDownloadSourceWithReport(SOURCES, PROBES, io)).resolves.toEqual({
+      source: "oss",
+      github,
+      oss,
+    });
   });
 });
 

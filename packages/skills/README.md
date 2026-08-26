@@ -10,7 +10,7 @@ Included skills, in the order of the `SKILL_GROUPS` manifest in `src/index.ts` (
 | --- | --- |
 | Office Productivity | `data-analysis`, `firecrawl`, `bento-slides`, `humanizer` |
 | Software Development | `web-design`, `software-engineering`, `remote-claude-code` |
-| AI App Development | `penguin-sdk`, `penguin-cli`, `agenthub-models`, `vllm`, `ollama`, `llamafactory`, `skill-porting` |
+| AI App Development | `penguin-sdk`, `penguin-cli`, `penguin-orchestration`, `agenthub-models`, `vllm`, `ollama`, `llamafactory`, `skill-porting` |
 | Agent Tuning | `agent-initialization`, `benchmark-design`, `agent-evaluation`, `agent-optimization` |
 
 `humanizer` and `remote-claude-code` carry `preinstall: false`, so `default_agent` does not get them at initialization — they are installed from the library on demand.

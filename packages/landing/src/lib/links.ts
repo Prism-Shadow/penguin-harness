@@ -1,6 +1,7 @@
 /** External links and language-independent constants used across the landing page. */
 
 export const REPO_URL = "https://github.com/Prism-Shadow/penguin-harness";
+export const REPO_API_URL = "https://api.github.com/repos/Prism-Shadow/penguin-harness";
 export const RELEASES_URL = `${REPO_URL}/releases`;
 export const LICENSE_URL = `${REPO_URL}/blob/main/LICENSE`;
 
@@ -41,6 +42,26 @@ tar -xzf penguin-darwin-arm64.tar.gz -C penguin-install
   windows: `Expand-Archive penguin-win32-x64.zip -DestinationPath penguin-install
 cd penguin-install
 .\\install.cmd`,
+};
+
+export interface CliInstaller {
+  /** Stable Release asset file name used by both online and offline installation. */
+  file: string;
+  /** Language-neutral architecture label rendered on the direct download link. */
+  variant: string;
+}
+
+/** Direct offline-install downloads shown under the selected command-line platform. */
+export const CLI_INSTALLERS: Record<"linux" | "macos" | "windows", CliInstaller[]> = {
+  linux: [
+    { file: "penguin-linux-x64.tar.gz", variant: "x64" },
+    { file: "penguin-linux-arm64.tar.gz", variant: "arm64" },
+  ],
+  macos: [
+    { file: "penguin-darwin-arm64.tar.gz", variant: "Apple Silicon" },
+    { file: "penguin-darwin-x64.tar.gz", variant: "Intel" },
+  ],
+  windows: [{ file: "penguin-win32-x64.zip", variant: "x64" }],
 };
 
 /**

@@ -1,10 +1,10 @@
-/** Home: section composition, ordered to match the nav anchors. */
+/** Home: preserve the full product story, with the one-sentence build demo first. */
 import { Hero } from "../sections/hero";
+import { Cases } from "../sections/cases";
 import { Pillars } from "../sections/pillars";
 import { Compare } from "../sections/compare";
 import { SelfImprove } from "../sections/self-improve";
 import { Quickstart } from "../sections/quickstart";
-import { Cases } from "../sections/cases";
 import { Scenarios } from "../sections/scenarios";
 import { Benchmark } from "../sections/benchmark";
 import { Contract } from "../sections/contract";
@@ -18,11 +18,11 @@ export function HomePage() {
   return (
     <>
       <Hero />
+      <Cases />
       <Pillars />
       <Compare />
       <SelfImprove />
       <Quickstart />
-      <Cases />
       <Scenarios />
       <Benchmark />
       <Contract />

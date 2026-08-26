@@ -1,7 +1,7 @@
 /**
  * English dictionary (constrained by the `Strings` type to the same shape as zh):
- * locale switching goes through state/locale.tsx. Keep domain term capitalization
- * consistent with zh — Agent, Workspace, Token, Task, Skill, Trace, etc.
+ * locale switching goes through state/locale.tsx. Marketing copy uses lowercase `agent`;
+ * preserve the established casing of Workspace, Token, Task, Skill, Trace, and other terms.
  */
 import type { Strings } from "./strings";
 
@@ -18,6 +18,7 @@ export const en: Strings = {
 
   nav: {
     highlights: "Highlights",
+    selfImprove: "Self-evolution",
     quickstart: "Quick start",
     cases: "Cases",
     scenarios: "Scenarios",
@@ -47,27 +48,32 @@ export const en: Strings = {
   },
 
   hero: {
-    // The trailing space lives in the PREFIX (a breakable space before the nowrap
-    // span) — inside titleNoWrap it would glue "Builder," to the unbreakable chunk.
-    titlePrefix: "Your Automated Agent Builder, ",
-    titleNoWrap: "Right on Your ",
-    titleWords: ["Desktop", "Server"],
-    titleSuffix: "",
-    subtitle: "Create Self-Evolving Agents in One Click",
-    /** Primary CTA: base label, and the platform-aware variant once the OS is detected. */
-    downloadCta: "Download the desktop app",
-    downloadCtaFor: (platform: string) => `Download for ${platform}`,
-    ctaQuickstart: "Get started",
-    ctaGithub: "GitHub",
-    /** Line under the CTAs: all installers on /download, CLI / self-hosted below the fold. */
-    downloadAll: "All platforms (macOS / Windows / Linux)",
-    cliAlt: "CLI and self-hosted install ↓",
+    platformLead: "The open-source, local-first agent app ",
+    platformAccent: "development",
+    platformTail: " platform",
+    automationLead: "Fully automated ",
+    automationActions: ["creation", "optimization", "deployment"],
+    automationTail: "of AI apps",
+    downloadCta: "Download desktop",
+    cliInstall: "Command-line install",
     stats: [
-      { value: "1000+", label: "supported models" },
-      { value: "1×CPU", label: "minimum footprint" },
-      { value: "100%", label: "open source, local deploy" },
-      { value: "First native", label: "recursively self-improving harness" },
+      { value: "1000+ models", label: "Support for major providers" },
+      { value: "Local on every platform", label: "Linux · Windows · macOS" },
+      { value: "100% open source", label: "Apache 2.0 licensed" },
+      { value: "First self-evolving harness", label: "native agent self-evolution engine" },
     ],
+    supportedModelsLabel: "Supported models",
+    supportedModels: [
+      "OpenAI",
+      "Anthropic",
+      "Gemini",
+      "DeepSeek",
+      "Zai",
+      "MoonShot",
+      "Qwen",
+      "Openrouter",
+    ],
+    supportedModelsMore: "+992 more",
   },
 
   install: {
@@ -92,8 +98,6 @@ export const en: Strings = {
   download: {
     eyebrow: "Download",
     title: "Download the desktop app",
-    subtitle:
-      "The full Web experience as a standalone application: it embeds the server and opens already signed in — no terminal, no login page; data lives in the same ~/.penguin/data root as a CLI install.",
     recommended: "Your system",
     platforms: {
       mac: { name: "macOS", require: "macOS 11 or later, dmg disk image (pick your chip)" },
@@ -103,6 +107,22 @@ export const en: Strings = {
         require: "x64 — AppImage runs in place, deb goes to your package manager",
       },
     },
+    speed: {
+      title: "Automatically pick the fastest source",
+      subtitle:
+        "The page checks reachability first, then measures speed in the background. Download buttons do not wait for the full test.",
+      github: "GitHub Releases",
+      githubHint: "Global source",
+      oss: "OSS mirror",
+      ossHint: "Optimized for mainland China",
+      testing: "Testing",
+      skipped: "Not tested",
+      unreachable: "Unavailable",
+      belowFloor: "Too slow to measure",
+      selected: "Current download route",
+      automatic: "Automatic",
+      manual: "Manual",
+    },
     statusProbing: "Finding a download source that answers …",
     statusRefining: "Still comparing the two sources — the faster one takes over on its own.",
     statusOss: (version: string) =>
@@ -111,7 +131,7 @@ export const en: Strings = {
     altGithub: "Download from GitHub instead",
     altOss: "Use the OSS mirror instead",
     checksums: "Checksums (SHA256SUMS.desktop)",
-    allReleases: "All releases",
+    allReleases: "Open GitHub Releases",
     /** First-launch FAQ: one collapsible item per platform, the visitor's own pre-expanded. */
     faq: {
       title: "First-launch FAQ",
@@ -162,21 +182,21 @@ export const en: Strings = {
         desc: "A deliberately minimal toolset over clean low-level interfaces: fewer tool calls, fewer Tokens, complex tasks done efficiently.",
       },
       {
-        title: "Harness for Building Agents",
+        title: "Harness for building agents",
         tag: "",
-        desc: "With the PenguinHarness SDK, an Agent builds complete Agent applications for you — autonomously, from scratch.",
+        desc: "With the PenguinHarness SDK, an agent builds complete agent applications for you — autonomously, from scratch.",
       },
       {
         title: "Harness for Recursive Self-Improvement",
         tag: "",
-        desc: "With PenguinHarness Skills, an Agent evaluates and optimizes itself, improving recursively over time.",
+        desc: "With PenguinHarness Skills, an agent evaluates and optimizes itself, improving recursively over time.",
       },
     ],
   },
 
   compare: {
     eyebrow: "vs. LangChain",
-    title: "Building Agents with Agents",
+    title: "Building agents with agents",
     subtitle: [
       "With LangChain, you build agents by hand — at 1× speed.",
       "With PenguinHarness, agents build agents — at 100×.",
@@ -184,14 +204,14 @@ export const en: Strings = {
     langchain: {
       name: "LangChain",
       speed: "1×",
-      mode: "Agents built by hand",
+      mode: "agents built by hand",
       note: "Chains, tools and prompts written line by line — every app starts from zero.",
     },
     penguin: {
       name: "PenguinHarness",
       speed: "100×",
-      mode: "Agents built by agents",
-      note: "One sentence in — an Agent delivers scaffold, code and run instructions end to end.",
+      mode: "agents built by agents",
+      note: "One sentence in — an agent delivers scaffold, code and run instructions end to end.",
     },
   },
 
@@ -199,13 +219,13 @@ export const en: Strings = {
     eyebrow: "The self-improvement loop",
     title: "Multi-agent collaboration makes evolution automatic",
     subtitle:
-      "The Optimizer orchestrates multiple Evaluators to score the Target Agent in parallel, uses the scores and run traces to find where points were lost, and upgrades the Agent from version N to N+1 — with a snapshot before every round.",
+      "The Optimizer orchestrates multiple Evaluators to score the target agent in parallel, uses the scores and run traces to find where points were lost, and upgrades the agent from version N to N+1 — with a snapshot before every round.",
     videoLabel: "Self-improvement demo video",
     videoCaption:
       "The self-improvement loop end to end: run the benchmark, find the lost points, ship the next version.",
     nodeOptimizer: "Optimizer",
     nodeEvaluator: "Evaluator × N",
-    nodeTarget: "Target Agent",
+    nodeTarget: "target agent",
     badgeOld: "vN",
     badgeNew: "vN+1",
     edgeSpawn: "spawn parallel evaluations",
@@ -218,60 +238,70 @@ export const en: Strings = {
       { label: "Time", hint: "keeps shrinking" },
     ],
     diagramLabel:
-      "Self-improvement loop: the Optimizer orchestrates Evaluators to score, then upgrades the Target Agent from vN to vN+1 via scores and traces",
+      "Self-improvement loop: the Optimizer orchestrates Evaluators to score, then upgrades the target agent from vN to vN+1 via scores and traces",
   },
 
   quickstart: {
     eyebrow: "Quick start",
-    title: "Your first task in three steps",
-    subtitle:
-      "Install with one command and let the Agent work from a desktop-grade interface — all data stays in your local ~/.penguin/data directory.",
-    step1: "Install",
-    step1Desc:
-      "Pick your OS and method — the online one-liner, or an offline package; the bundle carries its own Node runtime, and upgrades never touch your data.",
-    tabWeb: "Web UI",
-    tabCli: "CLI",
-    webStep2: "Open the web interface",
-    webStep2Desc:
-      "penguin web starts the local service and opens your browser; sign in as the built-in admin “admin” with the initial password printed in the terminal on first start (looks like penguin-1234; change it right after).",
-    webCmd: "penguin web   # opens http://127.0.0.1:7364",
-    webStep3: "Configure a model in the UI and start chatting",
-    webStep3Desc:
-      "Open the Models page, paste an API key under the DeepSeek or OpenRouter group and set it as default; then head back to Chat and hand the Agent its first task — e.g. “Analyze data.csv and summarize quarterly sales”.",
-    getKeyPrefix: "Get an API key: ",
-    getDeepseekKey: "DeepSeek console",
-    getOpenrouterKey: "OpenRouter console",
-    cliStep2: "Configure a model",
-    cliStep2Desc:
-      "Using the DeepSeek official API or the OpenRouter gateway as examples — one command configures it and sets the default.",
-    tabDeepseek: "DeepSeek",
-    tabOpenrouter: "OpenRouter",
-    deepseekCmd: `penguin config model add \\
-  --provider deepseek \\
-  --model-id deepseek-v4-pro \\
-  --api-key sk-your-deepseek-key \\
-  --set-default`,
-    deepseekNote:
-      "A model is always referenced by the (provider, model_id) pair, so --provider is required; omit --api-key to fall back to the DEEPSEEK_API_KEY environment variable.",
-    openrouterCmd: `penguin config model add \\
-  --provider openrouter \\
-  --model-id deepseek/deepseek-v4-pro \\
-  --api-key sk-or-your-key \\
-  --set-default`,
-    openrouterNote:
-      "Gateway groups pre-fill the OpenAI-compatible protocol and base URL — one key unlocks a thousand models.",
-    cliStep3: "Run",
-    cliStep3Desc:
-      "penguin run executes a single task; penguin chat drops you into an interactive REPL.",
-    runCmd: `penguin run --approve allow-all \\
-  --message "Analyze data.csv and summarize quarterly sales"`,
+    title: "Get started with PenguinHarness in two steps",
+    subtitle: "Choose how to install first. With a CLI install, then choose Web UI or CLI.",
+    stepOne: "Step one",
+    chooseInstall: "Choose an installation method",
+    stepTwo: "Step two",
+    chooseLaunch: "Choose how to start",
+    tabs: {
+      desktop: "Desktop app",
+      install: "CLI install",
+      web: "Start Web UI",
+      cli: "Start CLI",
+    },
+    desktop: {
+      title: "Desktop first, ready when it opens",
+      desc: "The local server and full Web UI are built in, with no runtime setup and no terminal process to keep alive.",
+      cta: "Choose your system and download",
+      steps: [
+        "Download the installer for your system",
+        "Open PenguinHarness and follow the model setup",
+        "Describe your first agent app in one sentence",
+      ],
+    },
+    install: {
+      title: "Install PenguinHarness with one command",
+      desc: "Made for developer machines, servers, and private environments. The bundle includes its runtime and does not depend on system Node.js.",
+      osLabel: "Choose an operating system",
+      onlineTitle: "Online install",
+      offlineTitle: "Offline packages",
+      offlineDesc:
+        "Download the package for the target system on a connected machine, then copy it to the offline machine to install.",
+      offlineCommand: "Show offline install commands",
+    },
+    web: {
+      title: "Use the full interface in your browser",
+      desc: "This starts the local service and opens the Web UI, a good fit for servers and remote access.",
+      command: "penguin web   # opens http://127.0.0.1:7364",
+      steps: [
+        "Complete the command-line install",
+        "Run penguin web",
+        "Follow the terminal prompt to sign in and configure a model",
+      ],
+    },
+    cli: {
+      title: "Run an agent directly from the terminal",
+      desc: "Start an interactive conversation or connect a one-off task to scripts and automated workflows.",
+      command: `penguin chat
+
+# Or run one task
+penguin run --message "Analyze data.csv and summarize quarterly sales"`,
+    },
+    localNote:
+      "Desktop, Web UI, and CLI share ~/.penguin/data; switching entry points never moves or copies your data.",
   },
 
   cases: {
     eyebrow: "Cases",
-    title: "From one sentence to a running app",
+    title: "Generate a runnable agent app in one sentence",
     subtitle:
-      "Hand the requirement to an Agent and get a runnable result end to end — more cases are on the way.",
+      "Hand the requirement to an agent and get a runnable result end to end — more cases are on the way.",
     tabs: [
       {
         label: "RAG app",
@@ -295,17 +325,18 @@ export const en: Strings = {
   scenarios: {
     eyebrow: "Scenarios",
     title: "From screening centers to factory floors",
-    subtitle: "Real deployments in production — not concept demos.",
+    subtitle:
+      "Production stories of teams using PenguinHarness to build agents automatically and deploy them to production.",
     items: [
       {
         title: "Screening-report QC",
         alt: "A CT scanner room at a health screening center",
-        body: "A health-screening group handed report QC to an agent on a locally deployed Qwen3 14B — data never leaves the facility. A review round that took 30 minutes by hand now clears 30 reports a minute, with findings in line with medical experts and several times the review capacity.",
+        body: "A health-screening group used PenguinHarness to automatically build a report-QC agent and deploy it into its production environment on a local Qwen3 14B, so data never leaves the facility. A review round that took 30 minutes by hand now clears 30 reports a minute, with findings in line with medical experts and several times the review capacity.",
       },
       {
         title: "Production-line inspection",
         alt: "An automated semiconductor production line",
-        body: "A manufacturer runs inspection agents across its production lines, watching equipment around the clock and trying automated recovery first when something goes wrong. Downtime is down 65%; output roughly doubled.",
+        body: "A manufacturer used PenguinHarness to automatically build a production-line inspection agent and deploy it across multiple live lines. The agent watches equipment around the clock and tries automated recovery first when something goes wrong; after deployment, downtime fell 65% and output roughly doubled.",
       },
     ],
   },
@@ -316,15 +347,15 @@ export const en: Strings = {
     subtitle:
       "PenguinHarness treats this contract as the boundary and bedrock of evolution: capability may grow, the boundary never drifts.",
     intro:
-      "Evolution needs boundaries. The contract is the covenant between harness and Agent: capability grows within; the boundary holds without.",
+      "Evolution needs boundaries. The contract is the covenant between harness and agent: capability grows within; the boundary holds without.",
     items: [
       {
         term: "Working boundary",
-        text: "Every Agent runs on the same harness: Sessions are created under an Agent, Tasks run inside a Session; self-improvement happens only inside Workspace and Skills, while the harness kernel and its safety mechanisms never change.",
+        text: "Every agent runs on the same harness: Sessions are created under an agent, Tasks run inside a Session; self-improvement happens only inside Workspace and Skills, while the harness kernel and its safety mechanisms never change.",
       },
       {
         term: "Editable files",
-        text: "An Agent's prompts, Skills and configuration live as editable files on disk, never as constants baked into code. What you can see, the Agent can improve; what you can edit, it can learn.",
+        text: "An agent's prompts, Skills and configuration live as editable files on disk, never as constants baked into code. What you can see, the agent can improve; what you can edit, it can learn.",
       },
       {
         term: "Full tracing",
@@ -332,11 +363,11 @@ export const en: Strings = {
       },
       {
         term: "Approvals & audit",
-        text: "Every tool call passes approval before it runs, and every decision leaves an audit record — what the Agent did is never a mystery.",
+        text: "Every tool call passes approval before it runs, and every decision leaves an audit record — what the agent did is never a mystery.",
       },
       {
         term: "Version control",
-        text: "Before each optimization, the Agent State is snapshotted. If a round fails or regresses, restore any historical version in one step.",
+        text: "Before each optimization, the agent state is snapshotted. If a round fails or regresses, restore any historical version in one step.",
       },
       {
         term: "Progressive loading",
@@ -352,14 +383,14 @@ export const en: Strings = {
       },
       {
         term: "Model decoupling",
-        text: "Models are not bound to Agents: switch to a stronger or cheaper model at any time without rewriting the Agent.",
+        text: "Models are not bound to agents: switch to a stronger or cheaper model at any time without rewriting the agent.",
       },
       {
         term: "Recoverable trajectories",
         text: "Any Session can be fully restored from its Trace: restart the process or move machines without losing context.",
       },
     ],
-    outro: "The contract does not cap what an Agent can become — only how it gets there.",
+    outro: "The contract does not cap what an agent can become — only how it gets there.",
   },
 
   benchmark: {
@@ -397,19 +428,19 @@ export const en: Strings = {
     items: [
       {
         title: "Multi-session chat",
-        desc: "Any number of sessions per Agent — streaming output, tool approvals and image paste out of the box.",
+        desc: "Any number of sessions per agent — streaming output, tool approvals and image paste out of the box.",
       },
       {
-        title: "Agent hub",
-        desc: "Create and manage Agents in one click; names, descriptions and prompts stay editable.",
+        title: "agent hub",
+        desc: "Create and manage agents in one click; names, descriptions and prompts stay editable.",
       },
       {
         title: "Skill library",
-        desc: "Browse, install and quick-invoke Skills — Agents can write and optimize their own.",
+        desc: "Browse, install and quick-invoke Skills — agents can write and optimize their own.",
       },
       {
         title: "Scheduled tasks",
-        desc: "Cron-style schedules run Agents on time, fully traced, unattended.",
+        desc: "Cron-style schedules run agents on time, fully traced, unattended.",
       },
       {
         title: "Subagents",
@@ -424,8 +455,8 @@ export const en: Strings = {
         desc: "Replay every request and tool call round by round, with Token breakdown and timing.",
       },
       {
-        title: "Agent evaluation",
-        desc: "Built-in Benchmark suites and scoreboards — scores keep climbing as Agents evolve.",
+        title: "agent evaluation",
+        desc: "Built-in Benchmark suites and scoreboards — scores keep climbing as agents evolve.",
       },
       {
         title: "Multi-user management",
@@ -437,7 +468,7 @@ export const en: Strings = {
   skills: {
     eyebrow: "Built-in Skills",
     title: "The built-in Skill library at a glance",
-    subtitle: "Four Skill groups out of the box — Agents can write and optimize their own, too.",
+    subtitle: "Four Skill groups out of the box — agents can write and optimize their own, too.",
     groups: [
       { title: "Office Productivity", skills: ["data-analysis", "firecrawl"] },
       { title: "Software Development", skills: ["web-design", "software-engineering"] },
@@ -446,7 +477,7 @@ export const en: Strings = {
         skills: ["penguin-sdk", "penguin-cli", "agenthub-models", "vllm", "ollama", "llamafactory"],
       },
       {
-        title: "Agent Tuning",
+        title: "agent tuning",
         skills: [
           "agent-initialization",
           "benchmark-design",
@@ -496,7 +527,7 @@ export const en: Strings = {
   cta: {
     title: "Complex AI development, made ever simpler",
     subtitle:
-      "Through continuous evolution, PenguinHarness gives you a more efficient, more reliable, lower-hallucination and lower-cost Agent productivity engine.",
+      "Through continuous evolution, PenguinHarness gives you a more efficient, more reliable, lower-hallucination and lower-cost agent productivity engine.",
     download: "Download the desktop app",
     quickstart: "Get started",
     docs: "Read the docs",
@@ -508,7 +539,8 @@ export const en: Strings = {
     resources: "Resources",
     quickstart: "Quick start",
     features: "Features",
-    benchmark: "Benchmark",
+    selfImprove: "Self-evolution engine",
+    cases: "Cases",
     blog: "Blog",
     repo: "GitHub repository",
     docs: "Documentation",

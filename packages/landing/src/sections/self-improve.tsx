@@ -497,8 +497,6 @@ export function SelfImprove() {
           ))}
         </div>
       </div>
-      {/* The loop above is a diagram; this is the same loop actually running. Replaces the
-          "demo video coming soon" pill that stood here while the recording was in progress. */}
       <div className="mt-10">
         <DemoVideo
           src={demoVideoUrl(locale === "zh" ? "evo_zh" : "evo_en")}

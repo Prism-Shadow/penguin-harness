@@ -162,6 +162,7 @@ export const en: Strings = {
     /** Superscript badge on the version lines when the update check found a newer release. */
     newVersionBadge: "New version available",
     newVersion: (v: string) => `New version v${v} available`,
+    updatesAvailable: "Updates available",
     /**
      * The sidebar user menu's SINGLE update row: it reads "Check for updates" until a newer
      * release is known and runs the manual check; once one is known it reads newVersion() and
@@ -606,6 +607,7 @@ export const en: Strings = {
     kernelTitle: "Kernel",
     kernelLegacy: "predates kernel versioning",
     kernelOutdatedHint: "Kernel update available",
+    kernelUpdateNeeded: "Kernel update needed",
     kernelUpToDate: "Up to date",
     kernelUpdateTitle: "Update kernel",
     kernelCurrent: "current",
