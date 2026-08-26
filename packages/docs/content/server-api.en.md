@@ -129,6 +129,19 @@ Every endpoint that names a model takes the complete `(provider, modelId)` pair.
 
 `PUT /models` also invalidates the Project's cached Session runtimes (same effective-value semantics as a vault update): no hot swap into a run already in flight, but the next Task on any Session of the Project re-resumes and reads the new `api_key` / `base_url`. It additionally publishes a `credentials_updated` event to the Project's open Session channels (see Streaming below), and the models response carries `updatedAt` (the config file's mtime) — the Web App compares it against the last auth failure to decide whether an auth-dead composer should stay disabled.
 
+#### Provider key minting
+
+Owner-only. A provider group that publishes an authorization flow in the built-in catalog can mint a **new** API key for the user in the browser, instead of the user copying one out of a console.
+
+| Method | Path | Description |
+| --- | --- | --- |
+| POST | /api/projects/:projectId/model-oauth/start | Open a flow: `{provider, mode?: callback\|manual}` → `{flowId, authorizeUrl}` |
+| GET | /api/projects/:projectId/model-oauth/callback | Where the provider redirects (`?flow=&code=`); exchanges, applies the key, answers an HTML page |
+| GET | /api/projects/:projectId/model-oauth/:flowId | Poll a flow: `{status: pending\|done\|error, provider, error?}` |
+| POST | /api/projects/:projectId/model-oauth/:flowId/code | Redeem a code the user pasted: `{code}` → `{ok, applied?, error?}` |
+
+The PKCE verifier is generated server-side, held in memory for ten minutes, and never sent to a client; the minted key goes straight into the provider group's models and is never returned, logged, or put in a URL. A flow belongs to one user in one Project and is single-use — anyone else's request, and any second redemption, is refused. `mode: manual` omits the callback so the authorization page shows a one-time code to carry back by hand, for deployments the redirect cannot reach. A completed flow invalidates cached runtimes and publishes `credentials_updated`, exactly as `PUT /models` does.
+
 ### Agents
 
 The paths below omit the `/api/projects/:projectId` prefix.
@@ -360,7 +373,7 @@ export type ServerEvent =
 | session_title | The model-generated title after the first turn has been persisted |
 | session_state | The user-channel counterpart of `task_state`: the same run-state flip, named by `sessionId`, so a Session list stays live for every row and not only the conversation a client has open. Carries the row fields needed to redraw it without refetching — `lastActiveAt` as just stamped, and `hasTrace` (true whenever the state is running or compacting, since a Session that is running has by definition started a Task). Published to the user channels of the Project's owner and members |
 | resync_required | The Last-Event-ID was evicted from the buffer; the client must refetch history |
-| credentials_updated | The Project's model credentials changed (`PUT /models`): cached runtimes were invalidated, so the client clears any auth-dead composer state |
+| credentials_updated | The Project's model credentials changed (`PUT /models`, or a completed key-minting flow): cached runtimes were invalidated, so the client clears any auth-dead composer state |
 | hello | Handshake on the user channel |
 | session_created | A new Session was registered (e.g. a subagent session) |
 | schedule_fired | A scheduled task fired and was delivered |

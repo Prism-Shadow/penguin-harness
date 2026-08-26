@@ -193,6 +193,14 @@ export class CommandSessionManager {
       // policy applied (strip or inject); the vault still wins — over an injected proxy
       // too — so a user who genuinely wants PORT, or their own proxy, in commands can set
       // it there.
+      //
+      // The strip governs inheritance only: it runs inside hostEnvForChild and never
+      // re-applies to later spread entries, so anything the harness deliberately layers
+      // into this spread after the host env carries authoritative values into the child,
+      // stripped names — PENGUIN_* included — and all. An injection layer added to this
+      // spread later composes with the strip for free: the inherited copy is gone, the
+      // injected value stands (pinned by the "an explicit injection layered after the
+      // strip wins" test).
       env: { ...hostEnvForChild(this.proxyEnv?.() ?? null), ...this.vault, ...HARDENED_ENV },
     });
   }

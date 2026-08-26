@@ -769,13 +769,36 @@ export const en: Strings = {
     confirmDeleteTitle: "Delete model",
     confirmDelete: (name: string): string =>
       `Delete "${name}"? Its configuration and API key will be removed.`,
-    groupApiKey: "Set API key for group",
+    groupApiKey: "Set key",
     groupApiKeyTitle: (label: string): string => `Set the API key for ${label}`,
     groupApiKeyHint: (n: number): string =>
       `Applies to all ${n} models in this group; leave empty to keep them unchanged.`,
-    getApiKey: "Get API key",
+    getApiKey: "Manage keys",
     getModelIds: "Get model IDs",
     groupKeyApplied: (n: number): string => `API key set for ${n} models`,
+    oauthKey: "Authorize key",
+    oauthTitle: (label: string): string => `Authorize a new ${label} API key`,
+    oauthIntro: (label: string, n: number): string =>
+      `A new API key will be created on your ${label} account and written to all ${n} models in this group, replacing the key they use now.`,
+    oauthAuthorize: "Open authorization page",
+    oauthWaiting: "Waiting for the authorization to finish in the other tab…",
+    oauthApplied: (n: number): string => `New API key set for ${n} models`,
+    oauthManualSwitch: "Page can't redirect back? Enter the code by hand",
+    oauthCallbackSwitch: "Go back to the automatic redirect",
+    oauthManualHint: "Open the authorization page, then paste the one-time code it shows you here.",
+    oauthCodeLabel: "Authorization code",
+    oauthSubmitCode: "Submit code",
+    oauthTimedOut: "The authorization never came back. Enter the code by hand, or start again.",
+    oauthRetry: "Start again",
+    oauthErrors: {
+      invalid_request: "The authorization request was rejected. Start again.",
+      code_rejected:
+        "That authorization is no longer valid: it expired or was already used. Start again.",
+      upstream_failed: "The provider returned no usable key. Start again.",
+      unreachable: "The provider could not be reached. Check the network and start again.",
+      apply_failed:
+        "A key was created but could not be saved. Authorize again, then delete the unused key in the provider's console.",
+    },
     providerEnvNotes: {
       zhipu:
         "Defaults to the Z.AI global endpoint (api.z.ai); keys from bigmodel.cn need base URL https://open.bigmodel.cn/api/paas/v4",

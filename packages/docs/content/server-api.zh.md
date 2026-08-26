@@ -129,6 +129,19 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 
 `PUT /models` 同时会使该 Project 已缓存的 Session 运行时失效（与 vault 更新同一套生效语义）：进行中的运行不做热替换，但该 Project 下任何 Session 的下一个 Task 都会重新装载并读到新的 `api_key` / `base_url`。它还会向该 Project 已打开的 Session 通道发布 `credentials_updated` 事件（见下文「流式推送」），且模型响应携带 `updatedAt`（配置文件 mtime）——Web App 用它与最近一次鉴权失败的时间比较，决定鉴权失败的输入框是否继续禁用。
 
+#### 授权新建 API key
+
+仅限 Owner。若某个供应商分组在内置目录中声明了授权流程，用户可以在浏览器里授权并**新建**一个 API key，不必再去控制台复制。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| POST | /api/projects/:projectId/model-oauth/start | 开启一次流程：`{provider, mode?: callback\|manual}` → `{flowId, authorizeUrl}` |
+| GET | /api/projects/:projectId/model-oauth/callback | 供应商跳回的地址（`?flow=&code=`）：兑换、写入 key，并返回一个 HTML 页面 |
+| GET | /api/projects/:projectId/model-oauth/:flowId | 轮询流程状态：`{status: pending\|done\|error, provider, error?}` |
+| POST | /api/projects/:projectId/model-oauth/:flowId/code | 兑换用户粘贴的授权码：`{code}` → `{ok, applied?, error?}` |
+
+PKCE 的 verifier 在服务端生成、只在内存中保留十分钟，绝不下发到客户端；新建出的 key 直接写入该分组的模型，不回传、不记录日志、也不出现在 URL 中。一次流程只属于某个 Project 下的某个用户且只能用一次——其他人的请求、以及第二次兑换，都会被拒绝。`mode: manual` 不传回调地址，授权页改为显示一次性授权码供用户手动带回，适用于跳转回不来的部署。流程完成后同样会使缓存的运行时失效并发布 `credentials_updated`，与 `PUT /models` 一致。
+
 ### Agent
 
 以下路径均省略前缀 `/api/projects/:projectId`。
@@ -357,7 +370,7 @@ export type ServerEvent =
 | session_title | 首轮后模型生成的标题已持久化 |
 | session_state | `task_state` 在用户通道上的对应事件：同一次运行状态翻转，带上 `sessionId`，因此会话列表的每一行都能保持实时，而不只是客户端当前打开的那个会话。事件还携带重绘该行所需的行字段，无需重新拉取列表 —— 刚刚写入的 `lastActiveAt`，以及 `hasTrace`（状态为 running 或 compacting 时必为 true，因为正在运行的会话必然已经启动过 Task）。仅发往该 Project 拥有者与成员的用户通道 |
 | resync_required | Last-Event-ID 已被缓冲区淘汰，客户端须重新拉取历史 |
-| credentials_updated | Project 模型凭据已变更（`PUT /models`）：缓存运行时已失效，客户端应清除鉴权失败的输入框禁用态 |
+| credentials_updated | Project 模型凭据已变更（`PUT /models`，或一次完成的授权新建 key 流程）：缓存运行时已失效，客户端应清除鉴权失败的输入框禁用态 |
 | hello | 用户通道连接握手 |
 | session_created | 新 Session 注册（如子 Agent 会话） |
 | schedule_fired | 定时任务已触发并发送 |
