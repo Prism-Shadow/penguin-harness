@@ -291,6 +291,16 @@ export interface EnvironmentConfig {
    * for SDK/CLI standalone use).
    */
   proxyEnv?: () => ProxyEnvPolicy | null;
+  /**
+   * Harness-control variables for exec_command / input_command subprocess environments
+   * (see {@link CreateAgentOptions.controlEnv}): the hosting server injects its own API
+   * address, its local API token and this Session's coordinates so commands the Agent
+   * runs can drive the harness back through the CLI/API. Re-read at every spawn like
+   * `proxyEnv`. These entries override vault entries of the same name (sanctioned host
+   * wiring outranks per-Agent variables) but never the hardened entries. Absent = nothing
+   * is injected (SDK/CLI standalone use).
+   */
+  controlEnv?: () => Record<string, string>;
 }
 
 /**

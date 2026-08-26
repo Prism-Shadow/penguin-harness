@@ -45,6 +45,21 @@ curl -c cookies.txt -H "Content-Type: application/json" \
   http://127.0.0.1:7364/api/auth/login
 ```
 
+### 本机 API token（Bearer）
+
+所有受保护路由同时接受携带**本机 API token** 的 `Authorization: Bearer <token>`——这是 CLI（以及经 CLI 驱动 harness 的 Agent）用来替代登录的本机凭据：
+
+- 服务端每次启动铸造新 token 并写入 `<root>/api-token`（仅属主可读，`0600`）；新 token 铸造的那一刻，上一次启动的 token 即失效。
+- 有效的 Bearer 即以内置 `admin` 身份通过认证。这个等价关系是授权模型本身，不是疏漏：对数据根目录的本机文件系统访问本就等于管理员权限——能读 `api-token` 的人也能读旁边的 `web.db`，与 `penguin server reset-admin-password` 是同一条规则。
+- 服务端驱动的会话把当前 token 以 `PENGUIN_API_TOKEN` 注入每个工具子进程（连同 `PENGUIN_API_URL`、`PENGUIN_PROJECT_ID`、`PENGUIN_AGENT_ID`、`PENGUIN_SESSION_ID`），Agent 自己的 `penguin` / API 调用由此获得连回运行它的服务器的授权。
+- SSE 端点与其它路由一样接受该请求头（用 `fetch` 消费，不要用 `EventSource`——后者无法携带请求头）。
+- 写请求的 JSON-only Content-Type 检查对 Bearer 请求同样生效。
+
+```bash
+curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
+  http://127.0.0.1:7364/api/me
+```
+
 ## 路由参考
 
 ### 认证与账户
@@ -177,8 +192,8 @@ Schedule 写操作仅限 Owner。新建 Session 模式的任务，`modelId` 与 
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | /agents/:agentId/sessions | Session 列表（含运行状态） |
-| POST | /agents/:agentId/sessions | 创建 Session：`{modelId?, provider?, workspace?, approvalMode?}` → 201 |
+| GET | /agents/:agentId/sessions | Session 列表（含运行状态）；无论由哪个客户端创建，所有行都会列出 |
+| POST | /agents/:agentId/sessions | 创建 Session：`{modelId?, provider?, workspace?, approvalMode?, client?}` → 201。`client` 是存入索引行的创建客户端标记（CLI 传 `"cli"`，缺省 `"web"`）——仅作来源信息，绝不参与列表过滤 |
 | GET | /dirs?path= | 服务器端目录浏览（Workspace 选择器数据源） |
 
 创建 Session 时，`modelId` 与 `provider` 要么成对给出、要么都不给：给出完整二元组即指定模型，两个都省略则取 Project 默认模型，只给一个返回 400。Workspace 默认自动创建临时工作区，审批模式默认 `allow-all`。

@@ -92,10 +92,6 @@ interface SessionsContextValue {
   setStatus: (sessionId: string, status: SessionStatus, row?: LiveRowFields) => void;
   /** session_title server event → update the title in place. */
   setTitle: (sessionId: string, title: string) => void;
-  /** Whether CLI-created Sessions are listed too (persisted per user; default off = the list is served from the DB without Trace scanning). */
-  showCliSessions: boolean;
-  /** Flip the CLI-session preference: persists it and refetches the whole list under the new filter. */
-  setShowCliSessions: (value: boolean) => void;
 }
 
 /**
@@ -170,10 +166,6 @@ interface SessionsStoreState {
   countsByAgent: ReadonlyMap<string, SessionCategoryCounts>;
   workspaceCountsByAgent: ReadonlyMap<string, Readonly<Record<string, SessionCategoryCounts>>>;
   loading: boolean;
-  // "Show CLI sessions" preference: server-persisted per user (ui_prefs); hydrated once by the
-  // Provider on mount, default off. Changing it makes the Provider's reset effect refetch the
-  // whole list under the new filter.
-  showCliSessions: boolean;
 
   reload: () => Promise<void>;
   loadMoreFor: (
@@ -186,7 +178,6 @@ interface SessionsStoreState {
   replace: (session: SessionInfo) => void;
   setStatus: (sessionId: string, status: SessionStatus, row?: LiveRowFields) => void;
   setTitle: (sessionId: string, title: string) => void;
-  setShowCliSessions: (value: boolean) => void;
 }
 
 /**
@@ -241,10 +232,9 @@ export function createSessionsStore() {
       countsByAgent: new Map(),
       workspaceCountsByAgent: new Map(),
       loading: true,
-      showCliSessions: false,
 
       reload: async () => {
-        const { projectId, agentIds, showCliSessions } = get();
+        const { projectId, agentIds } = get();
         if (!projectId || agentIds.length === 0) return;
         const g = ++gen;
         set({ loading: true });
@@ -273,7 +263,6 @@ export function createSessionsStore() {
                       category,
                       ...(scope === "" ? {} : { workspaceGroup: scope }),
                       ...(category === "active" && scope === "" ? { withCounts: true } : {}),
-                      ...(showCliSessions ? { cli: true } : {}),
                     });
                     return {
                       category,
@@ -343,7 +332,7 @@ export function createSessionsStore() {
        * walked, so the pool absorbs any overlap by sessionId.
        */
       loadMoreFor: async (agentIds, category, workspaceGroup) => {
-        const { projectId, showCliSessions } = get();
+        const { projectId } = get();
         if (!projectId) return;
         const scope = scopeOf(workspaceGroup);
         const targets = [...new Set(agentIds)].filter((agentId) => {
@@ -387,7 +376,6 @@ export function createSessionsStore() {
                   limit: SIDEBAR_PAGE_SIZE + 1,
                   category,
                   ...(scope === "" ? {} : { workspaceGroup: scope }),
-                  ...(showCliSessions ? { cli: true } : {}),
                 })
               ).sessions;
               return { agentId, offset, ...splitPage(fetched, SIDEBAR_PAGE_SIZE) };
@@ -535,13 +523,6 @@ export function createSessionsStore() {
           sessions: prev.map((s) => (s.sessionId === sessionId ? { ...s, title } : s)),
         });
       },
-
-      setShowCliSessions: (value) => {
-        set({ showCliSessions: value });
-        // Fire-and-forget: PUT /me/prefs merges shallowly; a lost write only costs persistence,
-        // the in-memory toggle already took effect.
-        void api.putPrefs({ showCliSessions: value }).catch(() => undefined);
-      },
     };
   });
 }
@@ -615,29 +596,11 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
   const [store] = useState(createSessionsStore);
   const state = useStore(store);
 
-  // Hydrate the "show CLI sessions" preference once on mount (a bare setState, not the
-  // setShowCliSessions action: hydration must not write the preference back).
-  useEffect(() => {
-    let cancelled = false;
-    void api
-      .getPrefs()
-      .then((res) => {
-        if (!cancelled && res.prefs.showCliSessions === true)
-          store.setState({ showCliSessions: true });
-      })
-      .catch(() => undefined); // Unreachable prefs: stay with the default (web only).
-    return () => {
-      cancelled = true;
-    };
-  }, [store]);
-
-  const { showCliSessions } = state;
   useEffect(() => {
     // Sync the fetch context and reset the loaded pages in the same synchronous step:
     // reload() picks the categories to refetch from pageState, so a Project switch can't
     // carry folder page state across via shared Agent ids (default_agent exists in every
-    // Project). Also reruns on a showCliSessions flip: refetch the whole list under the
-    // new filter.
+    // Project).
     // deletedSessionIds is deliberately NOT reset: session ids are globally unique and never
     // reused, so a Session deleted before a Project switch is still deleted after it — and
     // re-arming its lookup would just re-create the 404 this set exists to prevent.
@@ -650,7 +613,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       workspaceCountsByAgent: new Map(),
     });
     void store.getState().reload();
-  }, [store, projectId, agentIdsKey, showCliSessions]);
+  }, [store, projectId, agentIdsKey]);
 
   // User-level event stream (/api/events); see applyUserEvent for what each event does. The
   // connection stays a single one for the whole login session and doesn't reconnect on Project
@@ -723,8 +686,6 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       replace: state.replace,
       setStatus: state.setStatus,
       setTitle: state.setTitle,
-      showCliSessions: state.showCliSessions,
-      setShowCliSessions: state.setShowCliSessions,
     };
   }, [state, isLoadedFor, hasMoreFor, isDeleted]);
 

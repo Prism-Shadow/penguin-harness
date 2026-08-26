@@ -13,6 +13,7 @@
  *   valid for 7 days, with sliding renewal once less than 6 days remain.
  */
 import { createHash, randomBytes, randomInt } from "node:crypto";
+import { tokensEqual } from "./api-token.js";
 import type { UserInfo } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import type { AuthSessionsRepo } from "../db/repos/auth-sessions.js";
@@ -59,11 +60,12 @@ function sha256Hex(value: string): string {
 
 /**
  * How a session was established: "password" via the login form, "desktop" via the
- * desktop shell's one-shot token. Persisted per session so desktop-specific allowances
- * (password change without the old password) apply only to sessions the shell itself
- * opened. Legacy rows (NULL) read as "password".
+ * desktop shell's one-shot token, "token" via the local API token's Bearer header (no
+ * stored session — the value is per request). Persisted per session (Bearer excepted) so
+ * desktop-specific allowances (password change without the old password) apply only to
+ * sessions the shell itself opened. Legacy rows (NULL) read as "password".
  */
-export type SessionVia = "password" | "desktop";
+export type SessionVia = "password" | "desktop" | "token";
 
 export function toUserInfo(row: UserRow): UserInfo {
   return {
@@ -247,6 +249,37 @@ export class AuthService {
 
   logout(token: string): void {
     this.deps.authSessions.delete(sha256Hex(token));
+  }
+
+  /**
+   * The boot-scoped local API token (`<root>/api-token`, see auth/api-token.ts): held in
+   * memory by the process that minted it. Null until the startup assembly installs it
+   * (standalone/test constructions without one simply never authenticate a Bearer
+   * header).
+   */
+  private apiToken: string | null = null;
+
+  /** Installs the boot's local API token (called once by the startup assembly). */
+  setLocalApiToken(token: string): void {
+    this.apiToken = token;
+  }
+
+  /** The current boot's local API token (what control-env injection hands to tool subprocesses); null when none was installed. */
+  localApiToken(): string | null {
+    return this.apiToken;
+  }
+
+  /**
+   * Validates a Bearer token against the boot's local API token (constant-time compare):
+   * a match authenticates as the built-in admin — holding the token proves filesystem
+   * access to the data root, which is admin authority (see auth/api-token.ts). Returns
+   * null on mismatch, when no token is installed, or when the admin row is missing.
+   */
+  authenticateApiToken(token: string): { user: UserRow; via: SessionVia } | null {
+    if (this.apiToken === null || token.length === 0) return null;
+    if (!tokensEqual(token, this.apiToken)) return null;
+    const user = this.deps.users.findById(ADMIN_USER_ID);
+    return user === null ? null : { user, via: "token" };
   }
 
   /** Validates the cookie token: returns null if expired/unknown; sliding renewal once less than 6 days remain. */

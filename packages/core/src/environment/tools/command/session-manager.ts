@@ -172,10 +172,22 @@ export class CommandSessionManager {
    * are already running. Absent = pass through (SDK/CLI standalone use).
    */
   private readonly proxyEnv: (() => ProxyEnvPolicy | null) | undefined;
+  /**
+   * Harness-control variables (PENGUIN_API_URL / PENGUIN_API_TOKEN / the Session
+   * coordinates, see {@link EnvironmentConfig.controlEnv}): injected on every spawn AFTER
+   * the vault, so the host's sanctioned wiring wins over a vault entry of the same name.
+   * A getter like `proxyEnv`, re-read at every spawn. Absent = nothing injected.
+   */
+  private readonly controlEnv: (() => Record<string, string>) | undefined;
 
-  constructor(opts?: { vault?: Record<string, string>; proxyEnv?: () => ProxyEnvPolicy | null }) {
+  constructor(opts?: {
+    vault?: Record<string, string>;
+    proxyEnv?: () => ProxyEnvPolicy | null;
+    controlEnv?: () => Record<string, string>;
+  }) {
     this.vault = opts?.vault ?? {};
     this.proxyEnv = opts?.proxyEnv;
+    this.controlEnv = opts?.controlEnv;
   }
 
   /** Starts a command, returning an **unregistered** session (no process_id yet). */
@@ -186,22 +198,29 @@ export class CommandSessionManager {
     return new ManagedSession({
       cmd: opts.cmd,
       cwd: opts.cwd,
-      // Spread order is priority: vault overrides host variables of the same name, but must
-      // come before HARDENED_ENV — the hardening entries (GIT_EDITOR/PAGER etc. that prevent
-      // interactive hangs) must never be overridable by vault. The host side is stripped of
-      // the harness's own variables first (see STRIPPED_ENV_KEYS) and has the proxyEnv
-      // policy applied (strip or inject); the vault still wins — over an injected proxy
-      // too — so a user who genuinely wants PORT, or their own proxy, in commands can set
-      // it there.
+      // Spread order is priority: vault overrides host variables of the same name; the
+      // host's control variables (controlEnv) override the vault — they are the hosting
+      // server's own wiring (API URL/token, Session coordinates) and a vault entry must
+      // not silently point commands at another server; and HARDENED_ENV comes last — the
+      // hardening entries (GIT_EDITOR/PAGER etc. that prevent interactive hangs) are never
+      // overridable by anything. The host side is stripped of the harness's own variables
+      // first (see STRIPPED_ENV_KEYS) and has the proxyEnv policy applied (strip or
+      // inject); the vault still wins over the host env — over an injected proxy too — so
+      // a user who genuinely wants PORT, or their own proxy, in commands can set it there.
       //
       // The strip governs inheritance only: it runs inside hostEnvForChild and never
-      // re-applies to later spread entries, so anything the harness deliberately layers
-      // into this spread after the host env carries authoritative values into the child,
-      // stripped names — PENGUIN_* included — and all. An injection layer added to this
-      // spread later composes with the strip for free: the inherited copy is gone, the
-      // injected value stands (pinned by the "an explicit injection layered after the
-      // strip wins" test).
-      env: { ...hostEnvForChild(this.proxyEnv?.() ?? null), ...this.vault, ...HARDENED_ENV },
+      // re-applies to entries spread in after it, so the vault and controlEnv carry
+      // authoritative values into the child — stripped names, PENGUIN_* included, and all.
+      // Both guarantees hold because of that order: no PENGUIN_* reaches a command by
+      // inheritance, while the control variables the host does sanction arrive as injected
+      // values rather than as surviving copies. Pinned by the "an explicit injection
+      // layered after the strip wins" test.
+      env: {
+        ...hostEnvForChild(this.proxyEnv?.() ?? null),
+        ...this.vault,
+        ...(this.controlEnv?.() ?? {}),
+        ...HARDENED_ENV,
+      },
     });
   }
 

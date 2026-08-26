@@ -44,9 +44,10 @@ interface AuthContextValue {
   /**
    * How THIS session was established. A browser signed into a desktop-mode server holds
    * a "password" session; only "desktop" sessions (the shell's window) may change the
-   * password without the old one.
+   * password without the old one. ("token" marks Bearer-authenticated API callers and
+   * never occurs in a browser session; it is carried for type parity with the server.)
    */
-  sessionVia: "password" | "desktop";
+  sessionVia: "password" | "desktop" | "token";
   /**
    * Upload limits in force on this server (admin-settable). The composer reads them to refuse an
    * oversize pick before reading it and to name the real number in the message, so the client
@@ -67,7 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // flashing it during initialization would be noise.
   const [previewIsolated, setPreviewIsolated] = useState(true);
   const [desktopMode, setDesktopMode] = useState(false);
-  const [sessionVia, setSessionVia] = useState<"password" | "desktop">("password");
+  const [sessionVia, setSessionVia] = useState<"password" | "desktop" | "token">("password");
   const [uploadLimits, setUploadLimits] = useState<UploadLimits>(DEFAULT_UPLOAD_LIMITS);
 
   // Any API returning 401 (session expired / database rebuilt) clears the current user, and

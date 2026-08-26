@@ -90,9 +90,10 @@ export interface MeResponse {
    * How THIS session was established. Distinct from desktopMode: a browser signed into a
    * desktop-mode server holds a "password" session and must still provide the old
    * password when changing it — only "desktop" sessions (opened by the shell's one-shot
-   * token) may omit it.
+   * token) may omit it. "token" marks a request authenticated by the local API token's
+   * Bearer header (the CLI and agent-driven calls).
    */
-  sessionVia: "password" | "desktop";
+  sessionVia: "password" | "desktop" | "token";
   /**
    * The upload limits currently in force, so the composer can refuse an oversize pick before
    * reading it and can name the real number in the message. They are admin-settable and ride
@@ -252,12 +253,6 @@ export interface UiPrefs {
   lastProjectId?: string;
   /** Whether the "no API key configured" guide has already been shown: once ever (on first visit to the chat page). */
   credentialGuideSeen?: boolean;
-  /**
-   * Also list CLI-created Sessions in the sidebar (`cli=1` on the sessions list). Default
-   * off: the list then serves web rows straight from the DB, with no Trace-directory
-   * scanning (#139).
-   */
-  showCliSessions?: boolean;
   /** The initial-password notice banner (app layout) was permanently dismissed by the user. */
   initialPasswordBannerDismissed?: boolean;
   /**
@@ -1251,6 +1246,12 @@ export interface SessionCreateRequest {
   workspace?: string;
   /** Defaults to allow-all. */
   approvalMode?: ApprovalMode;
+  /**
+   * Creating-client hint stored on the Session row: "cli" when the CLI creates the
+   * Session through the API; defaults to "web". Informational provenance only — lists
+   * serve every row regardless of client.
+   */
+  client?: "web" | "cli";
 }
 
 export interface SessionCreateResponse {

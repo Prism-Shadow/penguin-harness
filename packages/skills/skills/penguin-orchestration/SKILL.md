@@ -3,8 +3,8 @@ name: penguin-orchestration
 description: Drive PenguinHarness itself from a shell — list and create agents and sessions, send and steer messages mid-flight, and query costs and scheduled tasks via the penguin CLI over the local server.
 short_description: Orchestrate agents, sessions, costs and schedules with the penguin CLI.
 short_description_zh: 用 penguin CLI 编排智能体、会话、成本与定时任务。
-version: 1
-updated: 2026-08-25T00:00:00Z
+version: 2
+updated: 2026-08-26T18:46:22Z
 ---
 
 # Penguin Orchestration
@@ -42,10 +42,10 @@ penguin run -m <msg> [--project-id <id>] [--agent-id <id>] [--workspace <path>]
             [--session <session_id>] [--background] [--timeout <duration>]
             [--goal [budget]] [--json]
 penguin ls [--project-id <id>] [--agent-id <id>] [--days <n>] [-a|--all] [--json]
-penguin input <session_id> [-m <text>] [--timeout <duration>]
-              [--project-id <id>] [--json] [--server <url>]
-penguin logs <session_id> [--project-id <id>] [--tail <n>] [-f|--follow]
-             [--timeout <duration>] [--json]
+penguin input [session_id] [-m <text>] [--timeout <duration>]
+              [--project-id <id>] [--agent-id <id>] [--json] [--server <url>]
+penguin logs [session_id] [--project-id <id>] [--agent-id <id>] [--tail <n>]
+             [-f|--follow] [--timeout <duration>] [--json]
 penguin agent ls [--project-id <id>] [--json]
 penguin agent create --agent-id <id> [--name <s>] [--description <s>] [--skills <a,b>]
                      [--project-id <id>] [--json]
@@ -65,9 +65,10 @@ penguin schedule rm <name> [--project-id <id>] [--agent-id <id>]
 - `run` starts a task and waits, rendering the conversation, unless `--background` — then it prints the new session id and exits while the server keeps running the task. `--session <session_id>` runs the task in an existing session instead of creating one; the model reference is the `--provider` + `--model-id` pair (both or neither); `--goal [budget]` runs in goal mode — the session loops until the agent declares the goal complete, with an optional spend budget.
 - **Caller-context defaults.** Inside a harness agent, a session-creating `run` fills every field you leave unspecified from your own live session, per field independently: `--workspace`, the `--model-id`/`--provider` pair, `--approve` and `--thinking` inherit the caller's values — the same convention as `run_subagent` parent inheritance. Precedence: explicit flag > caller value > plain fallback (cwd, the Project default model, `allow-all`, none — used wholesale if the caller lookup fails, with a dim stderr note). So inside an agent, `penguin run -m "..."` alone typically does the right thing; pass flags only to diverge.
 - `--timeout <duration>` (`30s`, `5m`, `2h`, or bare seconds) bounds the wait of a foreground `run`, an `input`, or a `logs -f`. Expiry is a soft yield, not an error: the command exits 0 while the task keeps running server-side, printing a still-running note that names the follow-up commands (`--json` prints `{sessionId, status: "running", text}` with the text so far). `--timeout 0` (also `0s`) returns immediately after delivery — the same note without collected text (`--json`: `{sessionId, status: "running"}`); on a bare poll it snapshots a running session instantly. `run --background` stays the idiomatic fire-and-forget for new tasks and rejects `--timeout`; `logs --timeout` requires `-f`.
-- `input` with `-m` steers a **running** session mid-turn (the agent absorbs it as a course correction within the current task) or starts a new turn on an idle one; it waits for the reply unless a `--timeout` bounds the wait (`--timeout 0` = deliver and return at once). Bare `input <session_id>` (no `-m`) **polls**: it prints the session's most recent complete assistant text — an idempotent snapshot that skips user/thinking/tool output and never touches approvals, mirroring `input_subagent`'s empty-prompt semantics. A running session is waited on first (bounded by `--timeout`, else indefinitely); a session with no reply yet prints `(no assistant reply yet)`. `--json` reports `{sessionId, status, text}` — `idle`/`running` when polling, `completed`/`aborted`/`running` with `-m`.
+- `input` with `-m` steers a **running** session mid-turn (the agent absorbs it as a course correction within the current task) or starts a new turn on an idle one; it waits for the reply unless a `--timeout` bounds the wait (`--timeout 0` = deliver and return at once). Bare `input [session_id]` (no `-m`) **polls**: it prints the session's most recent complete assistant text — an idempotent snapshot that skips user/thinking/tool output and never touches approvals, mirroring `input_subagent`'s empty-prompt semantics. A running session is waited on first (bounded by `--timeout`, else indefinitely); a session with no reply yet prints `(no assistant reply yet)`. `--json` reports `{sessionId, status, text}` — `idle`/`running` when polling, `completed`/`aborted`/`running` with `-m`.
 - `ls` spans every agent of the project, newest first (by last active); archived sessions are left out unless `-a`/`--all` includes them, and `--days <n>` keeps only sessions last active since local midnight n−1 days ago — today counts as day 1, so `--days 2` is yesterday and today, `--days 7` this week. `logs` renders a session's transcript: `--tail <n>` for the last entries, `-f` to follow live.
 - Session ids embed their creation timestamp — `session-YYYY-MM-DD-HH-mm-ss-<8hex>`. Every `<session_id>` argument takes any unique substring of an id; the 8-hex tail is the recommended short form, and an ambiguous fragment errors listing the candidates. On `input` and `logs`, `--project-id` scopes that fragment search (unnecessary with a full id).
+- On `input` and `logs` the id is optional altogether: omitted, it is the agent's most recent session, off the same newest-first listing `chat --resume` uses, with `--agent-id` picking whose. The chosen id is announced as a dim `[latest]` line on stderr, so the target is never ambiguous and `--json` on stdout stays parseable. Bare `penguin logs` is therefore "what just happened" and bare `penguin input` is "what did my agent last say"; an agent with no session at all gets one line pointing at `penguin run` and a non-zero exit.
 
 ## Recipes
 

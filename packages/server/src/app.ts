@@ -51,6 +51,7 @@ import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
 import { UsersRepo } from "./db/repos/users.js";
 import type { UserRow } from "./db/repos/users.js";
 import { authMiddleware, jsonOnlyWrites } from "./auth/middleware.js";
+import { mintApiToken, storeApiToken } from "./auth/api-token.js";
 import type { Identity } from "./terminal/identity.js";
 import { terminalRoutes } from "./terminal/routes.js";
 import type { TerminalManager } from "./terminal/manager.js";
@@ -98,7 +99,7 @@ import {
 } from "./services/preview-token.js";
 import type { PreviewTokenSigner } from "./services/preview-token.js";
 
-import type { ProxyEnvPolicy } from "@prismshadow/penguin-core";
+import type { ControlEnvContext, ProxyEnvPolicy } from "@prismshadow/penguin-core";
 import { declined } from "./hmr/hono-seam.js";
 import { AgentsRepo } from "./db/repos/agents.js";
 import { MembersRepo } from "./db/repos/members.js";
@@ -252,6 +253,15 @@ export async function bootAppDeps(
       : {}),
     ...(overrides.now ? { now: overrides.now } : {}),
   });
+
+  // Local API token: minted per boot, persisted at <root>/api-token (0600) and installed
+  // on the runtime auth service, so authMiddleware accepts it as the admin for this
+  // process's whole life — across hot swaps too (the auth service is a runtime
+  // singleton). Local filesystem access to the data root is admin authority (the
+  // reset-admin-password rule); see auth/api-token.ts.
+  const apiToken = mintApiToken();
+  storeApiToken(config.root, apiToken);
+  authService.setLocalApiToken(apiToken);
 
   // The capability set buildAppDeps claims (see hmr/capabilities.ts) — every
   // entry must be in place before ensure() below performs the first boot. The interface
@@ -549,6 +559,31 @@ export function buildAppDeps(
     const url = serverSettingsRepo.getProxyUrl();
     return url === null ? null : { mode: "inject", url, noProxy: mergedNoProxy() };
   };
+  // Harness-control env for command subprocesses of server-driven Sessions: the server's
+  // own canonical URL, its boot API token, and the Session's coordinates — what lets
+  // commands the Agent runs drive this harness back through the CLI/API. Threaded like
+  // proxyEnv through BOTH core entry paths (loader + SessionService), and evaluated per
+  // spawn: config.port is written back by index.ts once the real port is bound (PORT=0),
+  // so the URL must not be captured at assembly time. On a loopback bind the URL uses the
+  // canonical App host (`localhost`) — the counterpart name serves only /preview/*; a
+  // wildcard bind falls back to 127.0.0.1.
+  const canonicalApiUrl = (): string => {
+    const host =
+      config.host === "0.0.0.0" || config.host === "::"
+        ? "127.0.0.1"
+        : (loopbackHostRoles(config.host)?.app ?? config.host);
+    return `http://${host}:${config.port}`;
+  };
+  const controlEnv = (ctx: ControlEnvContext): Record<string, string> => {
+    const token = authService.localApiToken();
+    return {
+      PENGUIN_API_URL: canonicalApiUrl(),
+      ...(token !== null ? { PENGUIN_API_TOKEN: token } : {}),
+      PENGUIN_PROJECT_ID: ctx.projectId,
+      PENGUIN_AGENT_ID: ctx.agentId,
+      PENGUIN_SESSION_ID: ctx.sessionId,
+    };
+  };
   const schedulesRepo = new SchedulesRepo(db);
   const goalsRepo = new GoalsRepo(db);
 
@@ -625,7 +660,9 @@ export function buildAppDeps(
   const manager = new SessionManager({
     sessions: sessionsRepo,
     channels,
-    loader: overrides.loader ?? createCoreSessionLoader(config.root, sessionSources, { proxyEnv }),
+    loader:
+      overrides.loader ??
+      createCoreSessionLoader(config.root, sessionSources, { proxyEnv, controlEnv }),
     sources: sessionSources,
     recorder,
     errors,
@@ -680,6 +717,7 @@ export function buildAppDeps(
     sources: sessionSources,
     traceIndex,
     proxyEnv,
+    controlEnv,
   });
   // Schedule scheduler: assembled here, started by platform.ts's create() (tests drive it
   // via tickOnce, no real timer), stopped by the same create()'s dispose effect.
