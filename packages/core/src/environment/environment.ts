@@ -170,6 +170,7 @@ export class Environment implements EnvironmentInterface {
     this.commandSessions = new CommandSessionManager({
       ...(config.vault !== undefined ? { vault: config.vault } : {}),
       ...(config.proxyEnv !== undefined ? { proxyEnv: config.proxyEnv } : {}),
+      ...(config.controlEnv !== undefined ? { controlEnv: config.controlEnv } : {}),
     });
     this.subagentSessions = new SubagentSessionManager();
     this.subagentRunner = config.services?.subagentRunner ?? null;

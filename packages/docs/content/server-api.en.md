@@ -45,6 +45,21 @@ curl -c cookies.txt -H "Content-Type: application/json" \
   http://127.0.0.1:7364/api/auth/login
 ```
 
+### Local API token (Bearer)
+
+Every protected route also accepts `Authorization: Bearer <token>` carrying the **local API token** — the machine-local credential the CLI (and agents driving the harness through it) use instead of a login:
+
+- The server mints a fresh token at every boot and writes it to `<root>/api-token` (owner-only permissions, `0600`); the previous boot's token stops working the moment a new one is minted.
+- A valid Bearer authenticates as the built-in `admin`. That equivalence is the authorization model, not an accident: local filesystem access to the data root already **is** admin authority — whoever can read `api-token` can read `web.db` next to it, and it is the same rule `penguin server reset-admin-password` stands on.
+- Server-driven sessions inject the current token into every tool subprocess as `PENGUIN_API_TOKEN` (together with `PENGUIN_API_URL`, `PENGUIN_PROJECT_ID`, `PENGUIN_AGENT_ID`, `PENGUIN_SESSION_ID`), which is how an agent's own `penguin` / API calls are sanctioned to reach the server that runs them.
+- SSE endpoints accept the header like any other route (consume them with `fetch`, not `EventSource` — the latter cannot send headers).
+- The JSON-only Content-Type check on writes still applies to Bearer requests.
+
+```bash
+curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
+  http://127.0.0.1:7364/api/me
+```
+
 ## Route Reference
 
 ### Auth and Account
@@ -177,8 +192,8 @@ Schedule writes are owner-only. A task in new-Session mode carries `modelId` and
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | /agents/:agentId/sessions | List Sessions (including run state) |
-| POST | /agents/:agentId/sessions | Create a Session: `{modelId?, provider?, workspace?, approvalMode?}` → 201 |
+| GET | /agents/:agentId/sessions | List Sessions (including run state); every row is listed whichever client created it |
+| POST | /agents/:agentId/sessions | Create a Session: `{modelId?, provider?, workspace?, approvalMode?, client?}` → 201. `client` is the creating-client hint stored on the row (`"cli"` from the CLI; default `"web"`) — informational provenance, never a list filter |
 | GET | /dirs?path= | Server-side directory browser (backs the Workspace picker) |
 
 On Session creation, `modelId` and `provider` are both-or-neither: send the complete pair to pick a model, or omit both to take the Project's default model — one without the other is a 400. The Workspace defaults to an auto-created temporary workspace, and the approval mode defaults to `allow-all`.

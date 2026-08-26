@@ -44,6 +44,7 @@ import type {
   BackgroundCommandInfo,
   BackgroundSubagentInfo,
   CompactAvailability,
+  ControlEnvContext,
   OmniMessage,
   ProxyEnvPolicy,
   SessionMetaPayload,
@@ -199,12 +200,17 @@ export interface SessionLoader {
  * rebuilt Session is unsourced — session_meta is the single source of truth, and none survived.
  * `opts.proxyEnv` threads the admin proxy settings into core (a live getter returning the
  * agent-command-subprocess policy: strip the proxy variables, inject the explicit proxy
- * address, or null = pass the environment through).
+ * address, or null = pass the environment through). `opts.controlEnv` threads the
+ * harness-control injection the same way (the server's API URL/token plus the Session's
+ * coordinates; core evaluates it per Session — see CreateAgentOptions.controlEnv).
  */
 export function createCoreSessionLoader(
   root: string,
   sources?: SessionSources,
-  opts: { proxyEnv?: () => ProxyEnvPolicy | null } = {},
+  opts: {
+    proxyEnv?: () => ProxyEnvPolicy | null;
+    controlEnv?: (ctx: ControlEnvContext) => Record<string, string>;
+  } = {},
 ): SessionLoader {
   return {
     async load(row: SessionRow): Promise<RuntimeSession> {
@@ -213,6 +219,7 @@ export function createCoreSessionLoader(
         projectId: row.projectId,
         agentId: row.agentId,
         ...(opts.proxyEnv ? { proxyEnv: opts.proxyEnv } : {}),
+        ...(opts.controlEnv ? { controlEnv: opts.controlEnv } : {}),
       });
       const located = await findLatestTraceFile(
         tracesDir(root, row.projectId, row.agentId),

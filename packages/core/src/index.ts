@@ -66,7 +66,12 @@ export { modelVisiblePath } from "./internal/model-visible-path.js";
 export { atomicWriteFile } from "./internal/atomic-write.js";
 export type { AtomicWriteOptions } from "./internal/atomic-write.js";
 export { Agent, createAgent } from "./agent.js";
-export type { CreateAgentOptions, CreateSessionOptions, ResumeSessionOptions } from "./agent.js";
+export type {
+  ControlEnvContext,
+  CreateAgentOptions,
+  CreateSessionOptions,
+  ResumeSessionOptions,
+} from "./agent.js";
 
 /** SDK version number. */
 export const VERSION = "0.2.4";

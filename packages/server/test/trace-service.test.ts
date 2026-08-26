@@ -621,12 +621,12 @@ describe("trace-service", () => {
     await writeTraceFile(root, P, A, "2026-07-06", s2, 1, [userText("c")]);
     await writeTraceFile(root, P, A, "2026-07-07", s3, 1, [userText("d")]);
 
-    const page1 = await service.agentTraces(P, A, { offset: 0, limit: 2 }, { includeCli: true });
+    const page1 = await service.agentTraces(P, A, { offset: 0, limit: 2 });
     expect(page1.totalSessions).toBe(3);
     expect(page1.dates).toEqual([]); // paged responses are session-centric; per-file stats happen only for the slice
     expect(page1.sessions!.map((s) => s.sessionId)).toEqual([s3, s2]);
 
-    const page2 = await service.agentTraces(P, A, { offset: 2, limit: 2 }, { includeCli: true });
+    const page2 = await service.agentTraces(P, A, { offset: 2, limit: 2 });
     expect(page2.totalSessions).toBe(3);
     expect(page2.sessions!.map((s) => s.sessionId)).toEqual([S]);
     expect(page2.sessions![0]!.files.map((f) => ({ index: f.index, date: f.date }))).toEqual([
@@ -636,12 +636,7 @@ describe("trace-service", () => {
     expect(page2.sessions![0]!.files.every((f) => f.sizeBytes > 0)).toBe(true);
 
     // Paging an empty Agent stays well-formed.
-    const empty = await service.agentTraces(
-      P,
-      "agent-none",
-      { offset: 0, limit: 2 },
-      { includeCli: true },
-    );
+    const empty = await service.agentTraces(P, "agent-none", { offset: 0, limit: 2 });
     expect(empty.sessions).toEqual([]);
     expect(empty.totalSessions).toBe(0);
   });
@@ -678,7 +673,7 @@ describe("trace-service", () => {
       },
     });
 
-    const res = await h.service.agentTraces(P, A, { offset: 0, limit: 10 }, { includeCli: true });
+    const res = await h.service.agentTraces(P, A, { offset: 0, limit: 10 });
     const byId = new Map(res.sessions!.map((x) => [x.sessionId, x]));
     expect(byId.get(S)!.category).toBe("archived");
     expect(byId.get(S)!.workspace).toBe("/ws/one");
@@ -703,7 +698,7 @@ describe("trace-service", () => {
       P,
       A,
       { offset: 0, limit: 10 },
-      { category: "active", includeCli: true },
+      { category: "active" },
     );
     expect(active.sessions!.map((x) => x.sessionId)).toEqual([s3]);
     expect(active.totalSessions).toBe(1);
@@ -712,7 +707,7 @@ describe("trace-service", () => {
       P,
       A,
       { offset: 0, limit: 10 },
-      { category: "archived", includeCli: true },
+      { category: "archived" },
     );
     expect(archived.sessions!.map((x) => x.sessionId)).toEqual([S]);
     h.close();
@@ -727,7 +722,7 @@ describe("trace-service", () => {
       userText("child prompt"),
     ]);
 
-    const first = await service.agentTraces(P, A, { offset: 0, limit: 10 }, { includeCli: true });
+    const first = await service.agentTraces(P, A, { offset: 0, limit: 10 });
     expect(first.sessions![0]!.category).toBe("subagent");
     expect(first.sessions![0]!.workspace).toBe("/ws/child");
     expect(first.counts).toEqual({ active: 0, subagent: 1, schedule: 0, archived: 0 });
@@ -735,14 +730,14 @@ describe("trace-service", () => {
     expect(harness.sources.get(S)).toBe("subagent");
     const reads = harness.traceIndex.counters.headReads;
 
-    const second = await service.agentTraces(P, A, { offset: 0, limit: 10 }, { includeCli: true });
+    const second = await service.agentTraces(P, A, { offset: 0, limit: 10 });
     expect(second.sessions![0]!.category).toBe("subagent");
     expect(harness.traceIndex.counters.headReads).toBe(reads); // classification never re-reads
   });
 
-  it("Agent-level paging: CLI-origin Sessions are hidden by default and shown with includeCli (subagent/schedule stay visible)", async () => {
-    const cliSid = "session-2026-07-06-09-00-00-11112222"; // untracked, user-created meta -> CLI-origin
-    const childSid = "session-2026-07-07-08-00-00-33334444"; // untracked but subagent-origin -> its folder, regardless
+  it("Agent-level paging: every Session is listed whichever client created it (no CLI filter)", async () => {
+    const cliSid = "session-2026-07-06-09-00-00-11112222"; // untracked, user-created meta (a legacy CLI-direct run)
+    const childSid = "session-2026-07-07-08-00-00-33334444"; // untracked but subagent-origin -> its folder
     await writeTraceFile(root, P, A, "2026-07-06", cliSid, 1, [
       sessionMeta(metaPayload({ session_id: cliSid })),
       userText("cli run"),
@@ -760,20 +755,16 @@ describe("trace-service", () => {
       sessions: { listByAgent: () => [dbRow({ sessionId: webSid, workspace: "/ws/web" })] },
     });
 
-    const hidden = await h.service.agentTraces(P, A, { offset: 0, limit: 10 });
-    expect(hidden.sessions!.map((x) => x.sessionId)).toEqual([childSid, webSid]);
-    expect(hidden.totalSessions).toBe(2);
-    expect(hidden.counts).toEqual({ active: 1, subagent: 1, schedule: 0, archived: 0 });
-
-    const shown = await h.service.agentTraces(P, A, { offset: 0, limit: 10 }, { includeCli: true });
-    expect(shown.sessions!.map((x) => x.sessionId)).toEqual([childSid, cliSid, webSid]);
-    expect(shown.counts).toEqual({ active: 2, subagent: 1, schedule: 0, archived: 0 });
+    const listed = await h.service.agentTraces(P, A, { offset: 0, limit: 10 });
+    expect(listed.sessions!.map((x) => x.sessionId)).toEqual([childSid, cliSid, webSid]);
+    expect(listed.totalSessions).toBe(3);
+    expect(listed.counts).toEqual({ active: 2, subagent: 1, schedule: 0, archived: 0 });
     h.close();
   });
 
   it("Agent-level paging: a Session whose head has no user text gets no title (the client falls back to its default)", async () => {
     await writeTraceFile(root, P, A, "2026-07-05", S, 1, [sessionMeta(metaPayload())]);
-    const res = await service.agentTraces(P, A, { offset: 0, limit: 10 }, { includeCli: true });
+    const res = await service.agentTraces(P, A, { offset: 0, limit: 10 });
     expect(res.sessions![0]!.title).toBeUndefined();
   });
 

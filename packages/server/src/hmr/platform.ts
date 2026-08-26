@@ -211,6 +211,15 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       // now — nothing is running in THIS App yet — so the chat banner never restores a
       // phantom "running" goal. GOAL.yaml on disk stays `active` as the resume point.
       deps.goalsRepo.abortOrphanedActive();
+      // Startup adoption sweep: fold Trace-only Sessions (legacy CLI-direct runs) into
+      // the sessions index as client:'cli' rows, so every later list is pure SQLite.
+      // Fire-and-forget — a broken trace shard must not block the boot — with failures
+      // recorded like any background capture point. Idempotent and mtime-gated, so the
+      // re-run after a hot swap costs only the gate checks.
+      const errors = deps.errors;
+      void deps.sessionService.adoptUnmanagedTraceSessions().catch((err: unknown) => {
+        errors.record({ source: "process", err, code: "trace_adoption_failed" });
+      });
     }
 
     // ONE app, ONE pointer: every route this App serves — terminal group and business

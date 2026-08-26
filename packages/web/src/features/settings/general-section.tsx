@@ -1,24 +1,21 @@
 /**
  * General page of System settings: per-account preferences that are neither appearance nor
  * credentials. Everything applies the moment it is touched — the stores persist each value
- * (language and currency per browser, the CLI-sessions filter per user via PUT /me/prefs)
- * — so the page carries no Save button and no draft state to lose.
+ * (language and currency per browser) — so the page carries no Save button and no draft
+ * state to lose.
  */
 import { S } from "../../lib/strings";
 import { Segmented } from "../../components/ui/segmented";
-import { Switch } from "../../components/ui/switch";
 import { useLocale } from "../../state/locale";
 import type { LangPref } from "../../state/locale";
 import { useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
-import { useSessions } from "../../state/sessions";
 import { PrefRow } from "./setting-row";
 import { TraceImportRow } from "./trace-import-row";
 
 export function GeneralSection() {
   const { lang, setLang } = useLocale();
   const { currency, setCurrency } = useTheme();
-  const { showCliSessions, setShowCliSessions } = useSessions();
 
   const langOptions: ReadonlyArray<{ value: LangPref; label: string }> = [
     { value: "en", label: S.settings.langEn },
@@ -38,12 +35,6 @@ export function GeneralSection() {
       <PrefRow label={S.models.currency} info={S.settings.currencyInfo}>
         <Segmented options={currencyOptions} value={currency} onChange={setCurrency} cols={2} />
       </PrefRow>
-      {/* Flipping this refetches the whole conversation list under the new filter, so the
-          sidebar behind the dialog updates without a reload. */}
-      <PrefRow label={S.settings.showCliSessions} info={S.settings.showCliSessionsInfo}>
-        <Switch checked={showCliSessions} onChange={setShowCliSessions} />
-      </PrefRow>
-      {/* Beside the filter above: both rows decide what the conversation list holds. */}
       <TraceImportRow />
     </div>
   );

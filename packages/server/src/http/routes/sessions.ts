@@ -429,8 +429,8 @@ function parseGoalField(body: Record<string, unknown>): { budget: number } | nul
 export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
-  // `cli=1` widens the list to CLI-created Sessions (Trace-directory discovery + adoption);
-  // the default serves web rows straight from the DB (see SessionService.listSessions).
+  // Serves every row straight from the DB, whichever client created it (legacy CLI-direct
+  // Traces were adopted by the boot sweep; see SessionService.listSessions).
   app.get("/", async (c) => {
     // Id validity is checked before any path is constructed: guards against agentId path traversal across Projects.
     const projectId = requireValidId(c, "projectId");
@@ -455,8 +455,6 @@ export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     }
     const rawCounts = c.req.query("counts");
     if (rawCounts !== undefined && rawCounts !== "1") throw badRequest("counts only accepts 1.");
-    const rawCli = c.req.query("cli");
-    if (rawCli !== undefined && rawCli !== "1") throw badRequest("cli only accepts 1.");
     const { sessions, counts, workspaceCounts } = await deps.sessionService.listSessions(
       projectId,
       agentId,
@@ -465,7 +463,6 @@ export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
         ...(rawCategory !== undefined ? { category: rawCategory as SessionCategory } : {}),
         ...(rawWorkspaceGroup !== undefined ? { workspaceGroup: rawWorkspaceGroup } : {}),
         ...(rawCounts !== undefined ? { withCounts: true } : {}),
-        ...(rawCli !== undefined ? { includeCli: true } : {}),
       },
     );
     return c.json({
@@ -493,6 +490,9 @@ export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       );
     }
     const approvalMode = optionalEnum(body, "approvalMode", APPROVAL_MODES);
+    // Creating-client hint stored on the row ("cli" from the CLI; default "web").
+    // Informational provenance only — lists serve every row regardless.
+    const client = optionalEnum(body, "client", ["web", "cli"] as const);
     let workspace = optionalString(body, "workspace", { minLen: 1, label: "workspace" });
     if (workspace !== undefined) {
       // An explicitly specified Workspace must be an existing directory (never auto-created); reachability is determined by file permissions.
@@ -505,6 +505,7 @@ export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       ...(provider !== undefined ? { provider } : {}),
       ...(workspace !== undefined ? { workspace } : {}),
       ...(approvalMode !== undefined ? { approvalMode } : {}),
+      ...(client !== undefined ? { client } : {}),
     });
     return c.json({ session } satisfies SessionCreateResponse, 201);
   });

@@ -234,7 +234,8 @@ describe("session-index", () => {
       sessionMeta(junkMeta),
       userText("junk"),
     ]);
-    const list = (await (await api.get(`${base()}?cli=1`)).json()) as SessionsResponse;
+    await t.deps.sessionService.adoptUnmanagedTraceSessions();
+    const list = (await (await api.get(base())).json()) as SessionsResponse;
     expect(list.sessions.find((s) => s.sessionId === adopted)?.source).toBe("schedule");
     expect(list.sessions.find((s) => s.sessionId === junk)?.source).toBeUndefined();
   });
@@ -506,7 +507,7 @@ describe("session-index", () => {
     ).toBe(400);
   });
 
-  it("list union: Trace directory discovery finds unmanaged Sessions and backfills index rows", async () => {
+  it("startup adoption sweep: an unmanaged Trace becomes a client:'cli' row, and lists serve it from the DB", async () => {
     await configureModels();
     const discovered = "session-2026-07-01-08-30-00-deadbeef";
     const meta: SessionMetaPayload = {
@@ -523,13 +524,16 @@ describe("session-index", () => {
       userText("cli session"),
     ]);
 
-    // The default list is DB-only (web rows): an unmanaged CLI Trace is neither listed
-    // nor adopted by it (#139 — no Trace-directory scanning on the default path).
-    const webOnly = (await (await api.get(base())).json()) as SessionsResponse;
-    expect(webOnly.sessions.find((s) => s.sessionId === discovered)).toBeUndefined();
+    // Lists are DB-only (#139 — no Trace-directory scanning per request): before the
+    // sweep runs, the unmanaged Trace is neither listed nor reachable.
+    const before = (await (await api.get(base())).json()) as SessionsResponse;
+    expect(before.sessions.find((s) => s.sessionId === discovered)).toBeUndefined();
     expect((await api.get(`/api/sessions/${discovered}`)).status).toBe(404);
 
-    const list = (await (await api.get(`${base()}?cli=1`)).json()) as SessionsResponse;
+    // The boot-time sweep (fired at platform create; called directly here) adopts it.
+    const adopted = await t.deps.sessionService.adoptUnmanagedTraceSessions();
+    expect(adopted).toBe(1);
+    const list = (await (await api.get(base())).json()) as SessionsResponse;
     const found = list.sessions.find((s) => s.sessionId === discovered);
     expect(found).toBeDefined();
     expect(found!.modelId).toBe("cli-model");
@@ -537,15 +541,28 @@ describe("session-index", () => {
     expect(found!.approvalMode).toBe("allow-all");
     expect(found!.hasTrace).toBe(true);
     expect(found!.createdAt).toBe(sessionIdCreatedAt(discovered));
+    expect(t.deps.sessionsRepo.findById(discovered)!.client).toBe("cli");
 
-    // Adopted as client "cli": the default list still excludes it afterwards, and counts
-    // follow the same filter…
+    // Counts include the adopted row, the deep link works, and a re-run adopts nothing new.
     const after = (await (await api.get(`${base()}?counts=1`)).json()) as SessionsResponse;
-    expect(after.sessions.find((s) => s.sessionId === discovered)).toBeUndefined();
-    expect(after.counts!.active).toBe(0);
-    // …but the adopted row makes the Session individually reachable (deep links work).
-    const single = await api.get(`/api/sessions/${discovered}`);
-    expect(single.status).toBe(200);
+    expect(after.counts!.active).toBe(1);
+    expect((await api.get(`/api/sessions/${discovered}`)).status).toBe(200);
+    expect(await t.deps.sessionService.adoptUnmanagedTraceSessions()).toBe(0);
+  });
+
+  it("create stores the client hint: 'cli' when sent, 'web' by default, junk 400s; lists carry both", async () => {
+    await configureModels();
+    const fromCli = (await (
+      await api.post(base(), { client: "cli" })
+    ).json()) as SessionCreateResponse;
+    const fromWeb = (await (await api.post(base(), {})).json()) as SessionCreateResponse;
+    expect(t.deps.sessionsRepo.findById(fromCli.session.sessionId)!.client).toBe("cli");
+    expect(t.deps.sessionsRepo.findById(fromWeb.session.sessionId)!.client).toBe("web");
+    expect((await api.post(base(), { client: "carrier-pigeon" })).status).toBe(400);
+    const list = (await (await api.get(base())).json()) as SessionsResponse;
+    const ids = list.sessions.map((s) => s.sessionId);
+    expect(ids).toContain(fromCli.session.sessionId);
+    expect(ids).toContain(fromWeb.session.sessionId);
   });
 
   it("legacy rows without a client marker stay visible by default (grandfathered as web)", async () => {
@@ -639,7 +656,8 @@ describe("session-index", () => {
       }),
     ]);
     const created = (await (await api.post(base(), {})).json()) as SessionCreateResponse;
-    const list = (await (await api.get(`${base()}?cli=1`)).json()) as SessionsResponse;
+    await t.deps.sessionService.adoptUnmanagedTraceSessions();
+    const list = (await (await api.get(base())).json()) as SessionsResponse;
     expect(list.sessions[0]!.sessionId).toBe(created.session.sessionId);
     expect(list.sessions[list.sessions.length - 1]!.sessionId).toBe(older);
   });
