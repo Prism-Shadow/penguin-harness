@@ -1,7 +1,8 @@
 /**
  * Messaging bridge: a Web server runtime component connecting Sessions to external chat
- * platforms through channel connectors (Feishu is the only channel today — see
- * feishu-connector.ts). Started by the platform next to the Scheduler, stopped when the
+ * platforms through channel connectors (Feishu and Telegram today — see
+ * feishu-connector.ts / telegram-connector.ts). Started by the platform next to the
+ * Scheduler, stopped when the
  * App is disposed — a hot swap hard-stops it like the scheduler. Per ENABLED binding it
  * holds one inbound event connection: `enabled` is stored intent the state toggle owns —
  * saving credentials never opens or closes a connection (with one deliberate exception:
@@ -42,9 +43,11 @@ import type {
 } from "./connector.js";
 
 /**
- * Max characters per outbound text message. Feishu caps a text message's `content` around
- * 150KB, but a chat bubble that long is unreadable anyway; 4000 chars stays far under the
- * cap in any UTF-8 width while keeping replies in a handful of bubbles.
+ * Max characters per outbound text message, shared by every channel: it must sit under
+ * the tightest hard cap across them. Telegram rejects a `sendMessage` text over 4096
+ * characters (counted as UTF-16 units, which is what a JS string length measures), and
+ * Feishu caps a text message's `content` around 150KB — 4000 stays under both while
+ * keeping replies in a handful of bubbles.
  */
 export const MESSAGING_TEXT_CHUNK_CHARS = 4000;
 
@@ -186,16 +189,24 @@ export class MessagingBridge {
     return this.entries.get(sessionId)?.status ?? { state: "disconnected" };
   }
 
-  /** Credential probe for the test endpoints: ok/error with latency, never a throw. */
+  /**
+   * Credential probe for the test endpoints: ok/error with latency, never a throw. A
+   * channel whose check identifies the account (Telegram: the bot's @username) passes
+   * that label through for the route's success feedback.
+   */
   async testCredentials(
     channel: string,
     config: Record<string, unknown>,
-  ): Promise<{ ok: boolean; latencyMs?: number; error?: string }> {
+  ): Promise<{ ok: boolean; latencyMs?: number; accountLabel?: string; error?: string }> {
     const startedAt = this.now();
     try {
       const client = await this.connectorFor(channel).createClient(config);
-      await client.checkCredentials();
-      return { ok: true, latencyMs: this.now() - startedAt };
+      const info = await client.checkCredentials();
+      return {
+        ok: true,
+        latencyMs: this.now() - startedAt,
+        ...(info?.accountLabel !== undefined ? { accountLabel: info.accountLabel } : {}),
+      };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }

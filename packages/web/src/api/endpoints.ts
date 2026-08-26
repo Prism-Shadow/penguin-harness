@@ -38,7 +38,6 @@ import type {
   EndpointModelListResponse,
   FeishuBindingPutRequest,
   FeishuBindingResponse,
-  FeishuTestMessageResponse,
   FeishuTestRequest,
   FeishuTestResponse,
   FilesStatRequest,
@@ -56,6 +55,9 @@ import type {
   MemoryOverviewResponse,
   MemoryScopeExport,
   MessagesResponse,
+  MessagingBindingResponse,
+  MessagingChannel,
+  MessagingTestMessageResponse,
   ModelProtocolDetectRequest,
   ModelProtocolDetectResponse,
   ModelsResponse,
@@ -96,6 +98,10 @@ import type {
   SubagentMessageResponse,
   TaskCreateRequest,
   TaskCreateResponse,
+  TelegramBindingPutRequest,
+  TelegramBindingResponse,
+  TelegramTestRequest,
+  TelegramTestResponse,
   TraceAnalysisResponse,
   TraceEventsResponse,
   TraceImportRequest,
@@ -476,41 +482,59 @@ export const deleteSession = (sessionId: string) =>
 
 // Messaging bindings ----------------------------------------------------------
 
-export const getFeishuBinding = (sessionId: string) =>
-  apiFetch<FeishuBindingResponse>(
-    `/api/sessions/${encodeURIComponent(sessionId)}/messaging/feishu`,
-  );
+/** The channel-agnostic read: whichever channel is bound (the channel-aware editor's load + poll). */
+export const getMessagingBinding = (sessionId: string) =>
+  apiFetch<MessagingBindingResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/messaging`);
 
-/** Saves credentials only — the connection toggle is setFeishuBindingState (an enabled binding restarts on save so config and connection never diverge). */
+/** Saves Feishu credentials only — the connection toggle is setMessagingBindingState (an enabled binding restarts on save so config and connection never diverge). */
 export const putFeishuBinding = (sessionId: string, body: FeishuBindingPutRequest) =>
   apiFetch<FeishuBindingResponse>(
     `/api/sessions/${encodeURIComponent(sessionId)}/messaging/feishu`,
     { method: "PUT", body },
   );
 
-export const deleteFeishuBinding = (sessionId: string) =>
-  apiFetch<void>(`/api/sessions/${encodeURIComponent(sessionId)}/messaging/feishu`, {
+/** Saves the Telegram token only — the same save/enable split as the Feishu PUT. */
+export const putTelegramBinding = (sessionId: string, body: TelegramBindingPutRequest) =>
+  apiFetch<TelegramBindingResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/messaging/telegram`,
+    { method: "PUT", body },
+  );
+
+/** Unbind one channel: disconnects and deletes its stored binding (secret included). */
+export const deleteMessagingBinding = (sessionId: string, channel: MessagingChannel) =>
+  apiFetch<void>(`/api/sessions/${encodeURIComponent(sessionId)}/messaging/${channel}`, {
     method: "DELETE",
   });
 
 /** The connection toggle: enable connects with the STORED credentials, disable terminates. */
-export const setFeishuBindingState = (sessionId: string, enabled: boolean) =>
-  apiFetch<FeishuBindingResponse>(
-    `/api/sessions/${encodeURIComponent(sessionId)}/messaging/feishu/state`,
+export const setMessagingBindingState = (
+  sessionId: string,
+  channel: MessagingChannel,
+  enabled: boolean,
+) =>
+  apiFetch<MessagingBindingResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/messaging/${channel}/state`,
     { method: "POST", body: { enabled } },
   );
 
-/** Credential probe with the form's draft values; omitted fields fall back to the stored binding. */
+/** Feishu credential probe with the form's draft values; omitted fields fall back to the stored binding. */
 export const testFeishuBinding = (sessionId: string, body: FeishuTestRequest) =>
   apiFetch<FeishuTestResponse>(
     `/api/sessions/${encodeURIComponent(sessionId)}/messaging/feishu/test`,
     { method: "POST", body },
   );
 
-/** Short fixed text to the binding's last known chat (409 feishu_no_chat before one exists). */
-export const sendFeishuTestMessage = (sessionId: string) =>
-  apiFetch<FeishuTestMessageResponse>(
-    `/api/sessions/${encodeURIComponent(sessionId)}/messaging/feishu/test-message`,
+/** Telegram credential probe (`getMe`); success additionally names the bot's @username. */
+export const testTelegramBinding = (sessionId: string, body: TelegramTestRequest) =>
+  apiFetch<TelegramTestResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/messaging/telegram/test`,
+    { method: "POST", body },
+  );
+
+/** Short fixed text to the binding's last known chat (409 `feishu_no_chat` / `telegram_no_chat` before one exists). */
+export const sendMessagingTestMessage = (sessionId: string, channel: MessagingChannel) =>
+  apiFetch<MessagingTestMessageResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/messaging/${channel}/test-message`,
     { method: "POST", body: {} },
   );
 

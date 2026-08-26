@@ -74,6 +74,9 @@ import { MessagingBridge } from "./runtime/messaging/bridge.js";
 import { FeishuConnector } from "./runtime/messaging/feishu-connector.js";
 import { createLarkSdk } from "./runtime/messaging/feishu-sdk.js";
 import type { FeishuSdk } from "./runtime/messaging/feishu-sdk.js";
+import { TelegramConnector } from "./runtime/messaging/telegram-connector.js";
+import { createTelegramTransport } from "./runtime/messaging/telegram-api.js";
+import type { TelegramTransport } from "./runtime/messaging/telegram-api.js";
 import { TitleGenerator, TitleNotifier } from "./runtime/title-generator.js";
 import { AdminService } from "./services/admin-service.js";
 import { DesktopService } from "./services/desktop-service.js";
@@ -201,6 +204,10 @@ export interface BuildDepsOverrides {
   updateCheck?: UpdateCheckService;
   /** Test double: the Feishu connector's SDK factory (avoids real Lark network / long connections). */
   feishuSdk?: FeishuSdk;
+  /** Test double: the Telegram connector's Bot API transport (avoids real Telegram network / long polls). */
+  telegramTransport?: TelegramTransport;
+  /** Test hook: the Telegram connector's poll backoff (tests collapse it to zero). */
+  telegramRetryDelayMs?: (failures: number) => number;
   /**
    * Test double: scrypt work factor for password hashes written through this app.
    * Omitted in production, where the KDF runs at full strength.
@@ -676,14 +683,20 @@ export function buildAppDeps(
   });
   const messagingRepo = new MessagingBindingsRepo(db);
   // Messaging bridge: assembled here, started by platform.ts's create() (tests drive it
-  // via sync()/fake SDK, no real network), stopped by the same create()'s dispose effect.
-  // Feishu is the only channel connector today; further channels register here.
+  // via sync()/fake transports, no real network), stopped by the same create()'s dispose
+  // effect. One connector per channel; further channels register here.
   const messaging = new MessagingBridge({
     repo: messagingRepo,
     sessions: sessionsRepo,
     channels,
     runner: manager,
-    connectors: [new FeishuConnector(overrides.feishuSdk ?? createLarkSdk())],
+    connectors: [
+      new FeishuConnector(overrides.feishuSdk ?? createLarkSdk()),
+      new TelegramConnector(
+        overrides.telegramTransport ?? createTelegramTransport(),
+        overrides.telegramRetryDelayMs ? { retryDelayMs: overrides.telegramRetryDelayMs } : {},
+      ),
+    ],
     errors,
     log,
     ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}),
@@ -696,8 +709,15 @@ export function buildAppDeps(
     sources: sessionSources,
     traceIndex,
     proxyEnv,
-    // List rows carry a messaging indicator; a point query per row keeps the repo out of the service.
-    messagingBound: (sessionId) => messagingRepo.find(sessionId) !== null,
+    // List rows carry a per-channel messaging indicator; a point query per row keeps the
+    // repo out of the service. An unknown stored channel reads as unbound (same defensive
+    // skip as the bridge and the routes).
+    messagingChannel: (sessionId) => {
+      const bound = messagingRepo.find(sessionId);
+      return bound !== null && (bound.channel === "feishu" || bound.channel === "telegram")
+        ? bound.channel
+        : null;
+    },
   });
   // Schedule scheduler: assembled here, started by platform.ts's create() (tests drive it
   // via tickOnce, no real timer), stopped by the same create()'s dispose effect.

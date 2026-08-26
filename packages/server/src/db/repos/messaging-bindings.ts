@@ -1,12 +1,12 @@
 /**
- * Repo for Session ↔ messaging-channel bot bindings (Feishu is the only channel today).
+ * Repo for Session ↔ messaging-channel bot bindings (Feishu and Telegram today).
  *
  * Two uniqueness rules, both enforced here: one messaging binding per Session (primary
  * key, whatever the channel) and one binding per bot account per channel (unique index on
  * `(channel, account_id)` — one account has one event stream, and two Sessions racing it
  * is meaningless). `upsert` reports the account conflict as a result value rather than
- * throwing, so a route can answer its channel's 409 (feishu: `feishu_app_in_use`) without
- * parsing SQLite errors.
+ * throwing, so a route can answer its channel's 409 (`feishu_app_in_use` /
+ * `telegram_bot_in_use`) without parsing SQLite errors.
  *
  * `config` is the channel-specific credential/config document, stored as JSON. Secrets
  * inside it are plaintext at rest (same trade-off as the proxy address in
@@ -18,11 +18,11 @@ import type { DatabaseSync } from "node:sqlite";
 
 export interface MessagingBindingRow {
   sessionId: string;
-  /** Messaging channel discriminator (`feishu` is the only value today). */
+  /** Messaging channel discriminator (`feishu` | `telegram`). */
   channel: string;
-  /** Channel-scoped bot/app identity (feishu: the app_id); never secret. */
+  /** Channel-scoped bot/app identity (feishu: the app_id; telegram: the bot token's numeric id); never secret. */
   accountId: string;
-  /** Channel-specific config document (feishu: appId/appSecret/baseDomain). */
+  /** Channel-specific config document (feishu: appId/appSecret/baseDomain; telegram: botToken). */
   config: Record<string, unknown>;
   /**
    * INTENT state: whether the binding should hold a live connection (the connection's

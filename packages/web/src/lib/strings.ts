@@ -1697,12 +1697,9 @@ Benchmark：
     } as Record<string, string>,
   },
 
-  /** Session ↔ Feishu (Lark) bot binding: the row action, the binding dialog, and the chat banner. */
+  /** Feishu-channel strings of the messaging binding editor (channel-neutral ones live under `messaging`). */
   feishu: {
-    /** Session-row context-menu action (the trailing ellipsis marks that a dialog follows). */
-    bindAction: "绑定到飞书…",
-    dialogTitle: "绑定到飞书",
-    dialogIntro:
+    intro:
       "绑定后，发给飞书机器人的消息会进入本对话，AI 的回复会以纯文本发回飞书。需要一个开通了机器人能力、订阅了接收消息事件（长连接方式）的飞书自建应用。",
     appId: "App ID",
     appSecret: "App Secret",
@@ -1710,6 +1707,45 @@ Benchmark：
     appSecretKeepHint: "留空保持已保存的 App Secret 不变",
     baseDomain: "API 域名",
     baseDomainHint: "飞书为 https://open.feishu.cn，Lark 为 https://open.larksuite.com",
+    invalidDomain: "域名需为 http(s):// 地址",
+    /** Why "send test message" is disabled before the bot has ever been messaged. */
+    testMessageNoChat: "先在飞书中给机器人发一条消息，机器人才知道要发到哪个会话",
+    unbindConfirmBody: "将断开与飞书机器人的连接，并删除绑定配置（含 App Secret）。",
+  },
+
+  /** Telegram-channel strings of the messaging binding editor (channel-neutral ones live under `messaging`). */
+  telegram: {
+    intro:
+      "绑定后，发给 Telegram 机器人的消息会进入本对话，AI 的回复会以纯文本发回 Telegram。用 @BotFather 创建机器人并粘贴其 Bot Token 即可，无需公网地址。",
+    botToken: "Bot Token",
+    /** Shown while a saved token exists: submitting an empty field keeps it. */
+    botTokenKeepHint: "留空保持已保存的 Bot Token 不变",
+    invalidToken: "Bot Token 形如「数字:密钥」，由 @BotFather 签发",
+    /** Why "send test message" is disabled before the bot has ever been messaged. */
+    testMessageNoChat: "先在 Telegram 中给机器人发一条消息，机器人才知道要发到哪个会话",
+    unbindConfirmBody: "将断开与 Telegram 机器人的连接，并删除绑定配置（含 Bot Token）。",
+  },
+
+  /**
+   * Session ↔ messaging-bot binding: the dock panel, the row action + dialog, and the
+   * channel-neutral editor strings (per-channel fields live under `feishu` / `telegram`).
+   */
+  messaging: {
+    panelTitle: "消息软件",
+    /** Session-row context-menu action (the trailing ellipsis marks that a dialog follows). */
+    bindAction: "消息软件绑定…",
+    dialogTitle: "消息软件绑定",
+    /** The channel selector shown while unbound (the choice decides every field below). */
+    channelLabel: "渠道",
+    channelName: {
+      feishu: "飞书",
+      telegram: "Telegram",
+    },
+    /** Replaces the selector once bound: switching means unbinding first. */
+    channelLocked: "解除绑定后才能更换渠道",
+    /** The per-channel external-links row (labels shared across channels, URLs per channel). */
+    tutorial: "前往教程",
+    console: "前往开发者后台",
     /** The connection toggle (flips immediately, using the stored credentials). */
     enabled: "启用连接",
     /** Why the toggle is gated while the form has unsaved edits. */
@@ -1717,12 +1753,12 @@ Benchmark：
     test: "测试连接",
     testing: "测试中…",
     testOk: (ms: number): string => `连接成功（${ms}ms）`,
+    /** Success feedback naming the account the credentials sign in as (Telegram: the bot's @username). */
+    testOkAs: (account: string, ms: number): string => `连接成功，机器人为 ${account}（${ms}ms）`,
     testFail: (reason: string): string => `连接失败：${reason}`,
     sendTestMessage: "发送测试消息",
     sendingTestMessage: "发送中…",
     testMessageSent: "测试消息已发送",
-    /** Why "send test message" is disabled before the bot has ever been messaged. */
-    testMessageNoChat: "先在飞书中给机器人发一条消息，机器人才知道要发到哪个会话",
     statusLabel: "连接状态",
     status: {
       disconnected: "未连接",
@@ -1730,19 +1766,13 @@ Benchmark：
       connected: "已连接",
       error: "连接错误",
     },
-    /** External link to Feishu's echo-bot tutorial (open a self-built app + long connection). */
-    tutorial: "前往教程",
     unbind: "解除绑定",
-    unbindConfirmTitle: "解除飞书绑定？",
-    unbindConfirmBody: "将断开与飞书机器人的连接，并删除绑定配置（含 App Secret）。",
-    /** Bound-row indicator's tooltip / sr text (the tiny paper-plane glyph on the session row). */
-    boundIndicator: "已绑定飞书",
-    invalidDomain: "域名需为 http(s):// 地址",
-  },
-
-  /** The Messaging dock panel (this conversation's messaging binding; the editor's strings live under `feishu`). */
-  messaging: {
-    panelTitle: "消息软件",
+    unbindConfirmTitle: "解除消息绑定？",
+    /** Bound-row indicator's tooltip / sr text (the small per-channel glyph on the session row). */
+    boundIndicator: {
+      feishu: "已绑定飞书",
+      telegram: "已绑定 Telegram",
+    },
   },
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */
@@ -1970,6 +2000,12 @@ Benchmark：
       feishu_not_bound: "该 Session 尚未绑定飞书。",
       feishu_no_chat: "尚未收到飞书消息：先在飞书中给机器人发一条消息。",
       feishu_send_failed: "飞书消息发送失败。",
+      telegram_bot_in_use: "该 Telegram 机器人已绑定到其他 Session，请先解除或换一个机器人。",
+      telegram_token_required: "需要填写 Bot Token。",
+      telegram_token_invalid: "Bot Token 格式不正确：应形如「数字:密钥」。",
+      telegram_not_bound: "该 Session 尚未绑定 Telegram。",
+      telegram_no_chat: "尚未收到 Telegram 消息：先在 Telegram 中给机器人发一条消息。",
+      telegram_send_failed: "Telegram 消息发送失败。",
     },
   },
 };

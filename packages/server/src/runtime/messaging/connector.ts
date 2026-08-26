@@ -1,10 +1,10 @@
 /**
  * The messaging-channel connector seam: what the MessagingBridge needs from one chat
- * platform (Feishu today; further channels implement the same interface and register in
- * app assembly). A connector owns everything channel-specific — credential shape, wire
- * protocol, event normalization — and hands the bridge a channel-neutral view: a client
- * for outbound sends and credential checks, and a long-lived event connection delivering
- * normalized inbound messages.
+ * platform (Feishu and Telegram today; further channels implement the same interface and
+ * register in app assembly). A connector owns everything channel-specific — credential
+ * shape, wire protocol, event normalization — and hands the bridge a channel-neutral
+ * view: a client for outbound sends and credential checks, and a long-lived event
+ * connection delivering normalized inbound messages.
  *
  * Config documents are the repo's stored per-channel JSON (`MessagingBindingRow.config`);
  * every connector method validates its own shape and throws a readable error on a
@@ -12,7 +12,7 @@
  */
 
 /** Known messaging channels (the DB stores the discriminator as text; unknown values are skipped defensively). */
-export type MessagingChannel = "feishu";
+export type MessagingChannel = "feishu" | "telegram";
 
 /** One inbound chat message, normalized across channels. */
 export interface MessagingInboundMessage {
@@ -20,7 +20,12 @@ export interface MessagingInboundMessage {
   chatId: string;
   /** Direct chat with the bot, or a group chat (groups prefer reply-to-message). */
   chatKind: "direct" | "group";
-  /** Channel-scoped id of the inbound message itself (the group reply target). */
+  /**
+   * Channel-scoped id of the inbound message itself (the group reply target). Opaque to
+   * the bridge: the connector both mints it here and consumes it in `replyText`, so a
+   * channel whose native message ids are not globally unique encodes whatever context a
+   * reply needs (Telegram packs `chatId:messageId`).
+   */
   messageId: string;
   /**
    * The message's plain text; null for anything that is not a text message (stickers,
@@ -44,10 +49,19 @@ export interface MessagingConnection {
   close(): void;
 }
 
+/**
+ * A successful credential check's optional payload: a short human-readable label of the
+ * account the credentials sign in as (Telegram: the bot's `@username`), surfaced in the
+ * test endpoint's success feedback. Channels with no cheap label return null.
+ */
+export interface MessagingAccountInfo {
+  accountLabel?: string;
+}
+
 /** Outbound half of one bound account. Every method throws on failure with a readable reason. */
 export interface MessagingClient {
   /** Credential check (used by the test endpoint); resolving means the config signs in. */
-  checkCredentials(): Promise<void>;
+  checkCredentials(): Promise<MessagingAccountInfo | null>;
   /** Sends a text message into a chat by chat id. */
   sendText(chatId: string, text: string): Promise<void>;
   /** Replies a text message to a specific inbound message (threads correctly in group chats). */

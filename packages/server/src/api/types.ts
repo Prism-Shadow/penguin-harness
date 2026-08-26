@@ -1126,8 +1126,8 @@ export interface SessionInfo {
    * history itself when it needs it.
    */
   tracePath?: string;
-  /** Present (true) when the Session has a messaging binding (the sidebar row's indicator). */
-  messagingBound?: boolean;
+  /** Present when the Session has a messaging binding: its channel (the sidebar row's per-channel indicator). */
+  messagingChannel?: MessagingChannel;
 }
 
 /**
@@ -1542,8 +1542,8 @@ export interface SessionProcessesResponse {
 // Messaging bindings (/api/sessions/:sessionId/messaging/*)
 // ---------------------------------------------------------------------------
 
-/** Messaging channels a Session can bind to (`feishu` is the only channel today). */
-export type MessagingChannel = "feishu";
+/** Messaging channels a Session can bind to. */
+export type MessagingChannel = "feishu" | "telegram";
 
 /** Event-connection runtime state of one binding (kept in memory, not persisted). */
 export type MessagingRuntimeState = "disconnected" | "connecting" | "connected" | "error";
@@ -1558,6 +1558,7 @@ export interface MessagingRuntimeStatus {
 
 /** The stored Feishu binding, secret masked (plaintext never leaves the server). */
 export interface FeishuBindingInfo {
+  channel: "feishu";
   sessionId: string;
   appId: string;
   /** Masked app secret (site-wide mask rule: `***`, or `first4…last4` for long values). */
@@ -1574,9 +1575,50 @@ export interface FeishuBindingInfo {
   updatedAt: string;
 }
 
-/** GET / PUT …/messaging/feishu response: the binding (null = not bound) plus its runtime status. */
+/** The stored Telegram binding, token masked (plaintext never leaves the server). */
+export interface TelegramBindingInfo {
+  channel: "telegram";
+  sessionId: string;
+  /** The numeric bot id (the token's half before the colon) — the channel-scoped account identity, never secret. */
+  botId: string;
+  /** Masked bot token (site-wide mask rule: `***`, or `first4…last4` for long values). */
+  botTokenMasked: string;
+  /** Connection INTENT (the state toggle's value); new bindings start disabled. */
+  enabled: boolean;
+  /**
+   * Whether an inbound Telegram chat is known (the bot has been messaged at least once).
+   * Replies and test messages target that chat; until it exists nothing can be sent.
+   */
+  lastChatKnown: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A Session's messaging binding, whatever the channel (`channel` is the discriminant). */
+export type MessagingBindingInfo = FeishuBindingInfo | TelegramBindingInfo;
+
+/**
+ * GET …/messaging response — the channel-agnostic read the channel-aware binding editor
+ * loads: the binding of whichever channel is bound (null = not bound) plus its runtime
+ * status. The per-channel GETs below return the same envelope narrowed to their channel.
+ */
+export interface MessagingBindingResponse {
+  binding: MessagingBindingInfo | null;
+  status: MessagingRuntimeStatus;
+}
+
+/**
+ * GET / PUT …/messaging/feishu response: the Feishu binding (null = not bound, or bound
+ * to another channel — that view also reads as disconnected) plus its runtime status.
+ */
 export interface FeishuBindingResponse {
   binding: FeishuBindingInfo | null;
+  status: MessagingRuntimeStatus;
+}
+
+/** GET / PUT …/messaging/telegram response (the Telegram narrowing of the same envelope). */
+export interface TelegramBindingResponse {
+  binding: TelegramBindingInfo | null;
   status: MessagingRuntimeStatus;
 }
 
@@ -1593,7 +1635,17 @@ export interface FeishuBindingPutRequest {
   baseDomain?: string;
 }
 
-/** POST …/messaging/feishu/state — enable connects with the STORED credentials, disable terminates. */
+/**
+ * PUT …/messaging/telegram — saves the credential ONLY, same contract as the Feishu PUT
+ * (an enabled binding's connector restarts with the new token; the connection toggle is
+ * POST …/state). 409 `telegram_bot_in_use` when the token's bot id is bound elsewhere.
+ */
+export interface TelegramBindingPutRequest {
+  /** Omitted or blank keeps the stored token (the masked value never round-trips). */
+  botToken?: string;
+}
+
+/** POST …/messaging/<channel>/state — enable connects with the STORED credentials, disable terminates. */
 export interface MessagingBindingStateRequest {
   enabled: boolean;
 }
@@ -1612,8 +1664,25 @@ export interface FeishuTestResponse {
   error?: string;
 }
 
-/** POST …/messaging/feishu/test-message — sent to the last known chat (409 `feishu_no_chat` before one exists). */
-export interface FeishuTestMessageResponse {
+/** POST …/messaging/telegram/test — a draft token, falling back to the stored binding when omitted. */
+export interface TelegramTestRequest {
+  botToken?: string;
+}
+
+/** Telegram credential-test outcome: success additionally names the bot the token signs in as. */
+export interface TelegramTestResponse {
+  ok: boolean;
+  latencyMs?: number;
+  /** The bot's `@username`, when the API reports one. */
+  botUsername?: string;
+  error?: string;
+}
+
+/**
+ * POST …/messaging/<channel>/test-message — sent to the last known chat (409
+ * `feishu_no_chat` / `telegram_no_chat` before one exists).
+ */
+export interface MessagingTestMessageResponse {
   ok: true;
 }
 

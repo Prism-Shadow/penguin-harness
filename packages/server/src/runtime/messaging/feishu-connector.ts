@@ -1,9 +1,10 @@
 /**
- * Feishu (Lark) messaging connector — the first (and currently only) implementation of
- * the MessagingChannelConnector seam. It owns everything Feishu-specific: the config
- * document's shape, the SDK adapter behind it (injectable for tests — see feishu-sdk.ts),
- * and the reduction of `im.message.receive_v1` events to the bridge's normalized inbound
- * shape (text extracted from the content JSON; anything non-text reads as `text: null`).
+ * Feishu (Lark) messaging connector — the first implementation of the
+ * MessagingChannelConnector seam (telegram-connector.ts is the second). It owns
+ * everything Feishu-specific: the config document's shape, the SDK adapter behind it
+ * (injectable for tests — see feishu-sdk.ts), and the reduction of
+ * `im.message.receive_v1` events to the bridge's normalized inbound shape (text extracted
+ * from the content JSON; anything non-text reads as `text: null`).
  */
 import type {
   MessagingChannelConnector,

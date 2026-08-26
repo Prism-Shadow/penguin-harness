@@ -13,15 +13,16 @@
  *   the ellipsis) opens the whole set — pin, rename, messaging, archive, delete — as a
  *   labelled menu.
  *
- * Rename therefore keeps a home: `design/specs/06-PROTOTYPE.md` requires that every
- * Session支持重命名、归档与删除, and paring the hover affordance down would otherwise have
- * dropped rename off the row entirely.
+ * Rename therefore keeps a home: every Session must stay renamable, archivable and
+ * deletable, and paring the hover affordance down would otherwise have dropped rename
+ * off the row entirely.
  */
 import type { MouseEvent as ReactMouseEvent } from "react";
 import type { AnchorRect } from "../../lib/context-menu";
 import { S } from "../../lib/strings";
 import { GlyphIcon } from "./glyph-icon";
 import { Icon } from "./group-list";
+import { MESSAGING_ICON } from "./icons";
 
 /** Pushpin (lucide pin: head + body + stem), the group-header pin toggle / pinned indicator. */
 export const PIN_ICON =
@@ -35,8 +36,6 @@ export const UNARCHIVE_ICON =
   "M3 8h18M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M4 8l1.5-3h13L20 8M12 17v-5m-2.5 2L12 11l2.5 3";
 export const TRASH_ICON =
   "M4 6h16M9 6V4.5A1.5 1.5 0 0 1 10.5 3h3A1.5 1.5 0 0 1 15 4.5V6M6 6v13a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V6M10 10.5v6M14 10.5v6";
-/** Paper plane (lucide send): the messaging-binding action and the bound row's indicator. */
-export const FEISHU_ICON = "M22 2 11 13M22 2l-7 20-4-9-9-4z";
 /**
  * Three-dot ellipsis, drawn as FILLED circles: the hover "more" button. Hairline-stroke
  * dots vanish at row-glyph size, so this mark renders through GlyphIcon's `filled` mode —
@@ -62,7 +61,7 @@ export const overflowMenuGlyph = (d: string) => (
 );
 
 /** One thing a Session row can do to its Session. */
-export type SessionRowAction = "pin" | "rename" | "feishu" | "archive" | "delete";
+export type SessionRowAction = "pin" | "rename" | "messaging" | "archive" | "delete";
 
 /** Row state the labels and glyphs read (both of the toggles flip on it). */
 export interface SessionRowState {
@@ -80,13 +79,13 @@ export const HOVER_ROW_ACTIONS: readonly SessionRowAction[] = ["archive"];
 /**
  * The context menu's actions. Pin only reorders rows in the active list, so folder rows
  * (archived / subagent / scheduled) offer the rest without it — the same gate the
- * ellipsis menu applied before this moved. Feishu binding sits with the other
+ * ellipsis menu applied before this moved. The messaging binding sits with the other
  * configuration actions, before the archive/delete pair.
  */
 export function contextMenuActions(canPin: boolean): readonly SessionRowAction[] {
   return canPin
-    ? ["pin", "rename", "feishu", "archive", "delete"]
-    : ["rename", "feishu", "archive", "delete"];
+    ? ["pin", "rename", "messaging", "archive", "delete"]
+    : ["rename", "messaging", "archive", "delete"];
 }
 
 export interface SessionRowMenuItem {
@@ -111,8 +110,8 @@ export function sessionRowMenuItem(
       };
     case "rename":
       return { label: S.chat.renameSession, icon: PENCIL_ICON, danger: false };
-    case "feishu":
-      return { label: S.feishu.bindAction, icon: FEISHU_ICON, danger: false };
+    case "messaging":
+      return { label: S.messaging.bindAction, icon: MESSAGING_ICON, danger: false };
     case "archive":
       return {
         label: state.archived ? S.chat.unarchiveSession : S.chat.archiveSession,

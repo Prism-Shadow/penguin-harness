@@ -1741,12 +1741,9 @@ Scenarios:
     } as Record<string, string>,
   },
 
-  /** Session ↔ Feishu (Lark) bot binding: the row action, the binding dialog, and the chat banner. */
+  /** Feishu-channel strings of the messaging binding editor (channel-neutral ones live under `messaging`). */
   feishu: {
-    /** Session-row context-menu action (the trailing ellipsis marks that a dialog follows). */
-    bindAction: "Bind to Feishu…",
-    dialogTitle: "Bind to Feishu",
-    dialogIntro:
+    intro:
       "Once bound, messages sent to the Feishu bot flow into this conversation, and the AI's replies are sent back to Feishu as plain text. You need a self-built Feishu app with the bot capability and the message-receive event subscribed in long-connection mode.",
     appId: "App ID",
     appSecret: "App Secret",
@@ -1754,6 +1751,47 @@ Scenarios:
     appSecretKeepHint: "Leave empty to keep the saved App Secret",
     baseDomain: "API domain",
     baseDomainHint: "https://open.feishu.cn for Feishu, https://open.larksuite.com for Lark",
+    invalidDomain: "The domain must be an http(s) URL",
+    /** Why "send test message" is disabled before the bot has ever been messaged. */
+    testMessageNoChat: "Message the bot once in Feishu first, so it knows which chat to send to",
+    unbindConfirmBody:
+      "Disconnects from the Feishu bot and deletes the binding configuration (App Secret included).",
+  },
+
+  /** Telegram-channel strings of the messaging binding editor (channel-neutral ones live under `messaging`). */
+  telegram: {
+    intro:
+      "Once bound, messages sent to the Telegram bot flow into this conversation, and the AI's replies are sent back to Telegram as plain text. Create a bot with @BotFather and paste its Bot Token — no public URL is needed.",
+    botToken: "Bot Token",
+    /** Shown while a saved token exists: submitting an empty field keeps it. */
+    botTokenKeepHint: "Leave empty to keep the saved Bot Token",
+    invalidToken: "The Bot Token looks like <digits>:<secret>, as issued by @BotFather",
+    /** Why "send test message" is disabled before the bot has ever been messaged. */
+    testMessageNoChat: "Message the bot once in Telegram first, so it knows which chat to send to",
+    unbindConfirmBody:
+      "Disconnects from the Telegram bot and deletes the binding configuration (Bot Token included).",
+  },
+
+  /**
+   * Session ↔ messaging-bot binding: the dock panel, the row action + dialog, and the
+   * channel-neutral editor strings (per-channel fields live under `feishu` / `telegram`).
+   */
+  messaging: {
+    panelTitle: "Messaging",
+    /** Session-row context-menu action (the trailing ellipsis marks that a dialog follows). */
+    bindAction: "Messaging binding…",
+    dialogTitle: "Messaging binding",
+    /** The channel selector shown while unbound (the choice decides every field below). */
+    channelLabel: "Channel",
+    channelName: {
+      feishu: "Feishu",
+      telegram: "Telegram",
+    },
+    /** Replaces the selector once bound: switching means unbinding first. */
+    channelLocked: "Unbind first to switch channels",
+    /** The per-channel external-links row (labels shared across channels, URLs per channel). */
+    tutorial: "Open tutorial",
+    console: "Open developer console",
     /** The connection toggle (flips immediately, using the stored credentials). */
     enabled: "Enable connection",
     /** Why the toggle is gated while the form has unsaved edits. */
@@ -1761,12 +1799,12 @@ Scenarios:
     test: "Test connection",
     testing: "Testing…",
     testOk: (ms: number): string => `Connected (${ms}ms)`,
+    /** Success feedback naming the account the credentials sign in as (Telegram: the bot's @username). */
+    testOkAs: (account: string, ms: number): string => `Connected as ${account} (${ms}ms)`,
     testFail: (reason: string): string => `Connection failed: ${reason}`,
     sendTestMessage: "Send test message",
     sendingTestMessage: "Sending…",
     testMessageSent: "Test message sent",
-    /** Why "send test message" is disabled before the bot has ever been messaged. */
-    testMessageNoChat: "Message the bot once in Feishu first, so it knows which chat to send to",
     statusLabel: "Connection status",
     status: {
       disconnected: "Not connected",
@@ -1774,20 +1812,13 @@ Scenarios:
       connected: "Connected",
       error: "Connection error",
     },
-    /** External link to Feishu's echo-bot tutorial (open a self-built app + long connection). */
-    tutorial: "Open tutorial",
     unbind: "Unbind",
-    unbindConfirmTitle: "Unbind from Feishu?",
-    unbindConfirmBody:
-      "Disconnects from the Feishu bot and deletes the binding configuration (App Secret included).",
-    /** Bound-row indicator's tooltip / sr text (the tiny paper-plane glyph on the session row). */
-    boundIndicator: "Bound to Feishu",
-    invalidDomain: "The domain must be an http(s) URL",
-  },
-
-  /** The Messaging dock panel (this conversation's messaging binding; the editor's strings live under `feishu`). */
-  messaging: {
-    panelTitle: "Messaging",
+    unbindConfirmTitle: "Remove the messaging binding?",
+    /** Bound-row indicator's tooltip / sr text (the small per-channel glyph on the session row). */
+    boundIndicator: {
+      feishu: "Bound to Feishu",
+      telegram: "Bound to Telegram",
+    },
   },
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */
@@ -2016,6 +2047,14 @@ Scenarios:
       feishu_not_bound: "This Session has no Feishu binding yet.",
       feishu_no_chat: "No Feishu message received yet — message the bot once in Feishu first.",
       feishu_send_failed: "Sending the Feishu message failed.",
+      telegram_bot_in_use:
+        "This Telegram bot is already bound to another Session — unbind it there or use a different bot.",
+      telegram_token_required: "Bot Token is required.",
+      telegram_token_invalid: "The Bot Token is malformed: it looks like <digits>:<secret>.",
+      telegram_not_bound: "This Session has no Telegram binding yet.",
+      telegram_no_chat:
+        "No Telegram message received yet — message the bot once in Telegram first.",
+      telegram_send_failed: "Sending the Telegram message failed.",
     },
   },
 };

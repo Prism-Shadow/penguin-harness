@@ -7,8 +7,8 @@
  * button and nothing else** — the ellipsis opens the context menu anchored at itself, so
  * every menu action (delete and the messaging binding included) is one visible click
  * away — while the right-click menu carries the full set. Rename in particular must stay
- * in the context menu: `design/specs/06-PROTOTYPE.md` requires every Session to support
- * 重命名、归档与删除, and the pared-back hover affordance alone would not satisfy that.
+ * in the context menu: every Session must remain renamable, archivable and deletable, and
+ * the pared-back hover affordance alone would not satisfy that.
  *
  * vitest runs node-only here (`environment: "node"`, no jsdom), so these assert against
  * the exported manifests and label helpers rather than a rendered DOM
@@ -20,7 +20,6 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   ARCHIVE_ICON,
-  FEISHU_ICON,
   HOVER_ROW_ACTIONS,
   PENCIL_ICON,
   PIN_ICON,
@@ -30,6 +29,7 @@ import {
   sessionRowMenuItem,
 } from "../src/components/ui/session-row-menu";
 import type { SessionRowAction } from "../src/components/ui/session-row-menu";
+import { MESSAGING_ICON } from "../src/components/ui/icons";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 
@@ -44,7 +44,7 @@ describe("HOVER_ROW_ACTIONS", () => {
   });
 
   it("does not carry rename, pin, delete or the messaging binding — those live in the menu", () => {
-    for (const action of ["rename", "pin", "delete", "feishu"]) {
+    for (const action of ["rename", "pin", "delete", "messaging"]) {
       expect(HOVER_ROW_ACTIONS as readonly string[]).not.toContain(action);
     }
   });
@@ -52,11 +52,17 @@ describe("HOVER_ROW_ACTIONS", () => {
 
 describe("contextMenuActions", () => {
   it("carries the whole set when the row can be pinned", () => {
-    expect([...contextMenuActions(true)]).toEqual(["pin", "rename", "feishu", "archive", "delete"]);
+    expect([...contextMenuActions(true)]).toEqual([
+      "pin",
+      "rename",
+      "messaging",
+      "archive",
+      "delete",
+    ]);
   });
 
   it("drops only pin on rows where pinning cannot reorder anything (folder rows)", () => {
-    expect([...contextMenuActions(false)]).toEqual(["rename", "feishu", "archive", "delete"]);
+    expect([...contextMenuActions(false)]).toEqual(["rename", "messaging", "archive", "delete"]);
   });
 
   it("is a superset of the hover actions, so nothing is reachable by hover alone", () => {
@@ -67,7 +73,7 @@ describe("contextMenuActions", () => {
     }
   });
 
-  it("keeps rename reachable in every state (design/specs/06-PROTOTYPE.md: 重命名、归档与删除)", () => {
+  it("keeps rename reachable in every state", () => {
     expect(contextMenuActions(true)).toContain("rename");
     expect(contextMenuActions(false)).toContain("rename");
   });
@@ -107,7 +113,7 @@ describe("the hover buttons' CSS contract", () => {
 
 describe("sessionRowMenuItem", () => {
   it("gives every action a label, a glyph, and only delete the destructive treatment", () => {
-    const all: SessionRowAction[] = ["pin", "rename", "feishu", "archive", "delete"];
+    const all: SessionRowAction[] = ["pin", "rename", "messaging", "archive", "delete"];
     for (const action of all) {
       const item = sessionRowMenuItem(action, RESTING);
       expect(item.label).toBeTruthy();
@@ -117,11 +123,11 @@ describe("sessionRowMenuItem", () => {
   });
 
   it("gives the actions distinct glyphs, so a row is not read by its label alone", () => {
-    const icons = (["pin", "rename", "feishu", "archive", "delete"] as SessionRowAction[]).map(
+    const icons = (["pin", "rename", "messaging", "archive", "delete"] as SessionRowAction[]).map(
       (a) => sessionRowMenuItem(a, RESTING).icon,
     );
     expect(new Set(icons).size).toBe(icons.length);
-    expect(icons).toEqual([PIN_ICON, PENCIL_ICON, FEISHU_ICON, ARCHIVE_ICON, TRASH_ICON]);
+    expect(icons).toEqual([PIN_ICON, PENCIL_ICON, MESSAGING_ICON, ARCHIVE_ICON, TRASH_ICON]);
   });
 
   it("flips archive's label and glyph on an archived row", () => {
@@ -150,7 +156,7 @@ describe("sessionRowMenuItem", () => {
     expect(sessionRowMenuItem("archive", RESTING).label).toBe(en.chat.archiveSession);
     expect(sessionRowMenuItem("delete", RESTING).label).toBe(en.chat.deleteSession);
     expect(sessionRowMenuItem("rename", RESTING).label).toBe(en.chat.renameSession);
-    expect(sessionRowMenuItem("feishu", RESTING).label).toBe(en.feishu.bindAction);
+    expect(sessionRowMenuItem("messaging", RESTING).label).toBe(en.messaging.bindAction);
     // The hover buttons are icon-only, so their label IS their accessible name: an English
     // row must not fall back to the zh catalog and leave a Chinese name on the button.
     for (const action of HOVER_ROW_ACTIONS) {

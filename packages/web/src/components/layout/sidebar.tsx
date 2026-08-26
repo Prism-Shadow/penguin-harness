@@ -107,7 +107,6 @@ import {
 import { Dropdown } from "../ui/dropdown";
 import { useRowContextMenu } from "../ui/context-menu";
 import {
-  FEISHU_ICON,
   HOVER_ROW_ACTIONS,
   PENCIL_ICON,
   PIN_ICON,
@@ -121,7 +120,7 @@ import {
 } from "../ui/session-row-menu";
 import type { SessionRowAction } from "../ui/session-row-menu";
 import { AgentAvatar } from "../ui/agent-avatar";
-import { CheckIcon, ChevronDown, GEAR_ICON, NAV_ICONS } from "../ui/icons";
+import { CHANNEL_ICONS, CheckIcon, ChevronDown, GEAR_ICON, NAV_ICONS } from "../ui/icons";
 import {
   FOLDER_ICON,
   FOLDER_OPEN_ICON,
@@ -147,7 +146,7 @@ import { Button } from "../ui/button";
 import { Input, noAutofill } from "../ui/input";
 import { SkeletonList } from "../ui/skeleton";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
-import { FeishuBindingModal } from "../../features/chat/feishu-binding-modal";
+import { MessagingBindingModal } from "../../features/messaging/messaging-binding-modal";
 import { WorkspaceSelect } from "../../features/chat/workspace-select";
 import { clearDraft, sessionDraftKey } from "../../features/chat/draft-cache";
 import {
@@ -479,8 +478,8 @@ export function Sidebar({
   const [renameText, setRenameText] = useState("");
   const [renameBusy, setRenameBusy] = useState(false);
   const [renameError, setRenameError] = useState<string | null>(null);
-  /** Session whose Feishu binding dialog is open (null = none). */
-  const [feishuSession, setFeishuSession] = useState<SessionInfo | null>(null);
+  /** Session whose messaging-binding dialog is open (null = none). */
+  const [messagingSession, setMessagingSession] = useState<SessionInfo | null>(null);
 
   const setGroupMode = (mode: GroupMode) => {
     storeGroupMode(mode);
@@ -1252,7 +1251,7 @@ export function Sidebar({
               setRenameText(x.title ?? "");
               setRenamingSession(x);
             }}
-            onFeishu={(x) => setFeishuSession(x)}
+            onMessaging={(x) => setMessagingSession(x)}
             onDelete={(x) => setDeletingSession(x)}
             onToggleArchive={(x) => void toggleArchive(x)}
           />
@@ -2314,18 +2313,18 @@ export function Sidebar({
         />
       </Modal>
 
-      {/* Feishu binding dialog (row menu "Bind to Feishu…"): the row indicator updates in
-          place from the dialog's own save/unbind outcome. */}
-      {feishuSession && (
-        <FeishuBindingModal
-          sessionId={feishuSession.sessionId}
-          onClose={() => setFeishuSession(null)}
-          onChanged={(sessionId, bound) => {
+      {/* Messaging binding dialog (row menu "Messaging binding…"): the row indicator
+          updates in place from the dialog's own save/unbind outcome. */}
+      {messagingSession && (
+        <MessagingBindingModal
+          sessionId={messagingSession.sessionId}
+          onClose={() => setMessagingSession(null)}
+          onChanged={(sessionId, channel) => {
             const current = sessions.find((x) => x.sessionId === sessionId);
             if (!current) return;
             const updated = { ...current };
-            if (bound) updated.messagingBound = true;
-            else delete updated.messagingBound;
+            if (channel !== null) updated.messagingChannel = channel;
+            else delete updated.messagingChannel;
             replace(updated);
           }}
         />
@@ -2571,7 +2570,7 @@ function SessionRow({
   onOpen,
   onTogglePin,
   onRename,
-  onFeishu,
+  onMessaging,
   onDelete,
   onToggleArchive,
 }: {
@@ -2599,7 +2598,7 @@ function SessionRow({
   onOpen: (s: SessionInfo) => void;
   onTogglePin: (s: SessionInfo) => void;
   onRename: (s: SessionInfo) => void;
-  onFeishu: (s: SessionInfo) => void;
+  onMessaging: (s: SessionInfo) => void;
   onDelete: (s: SessionInfo) => void;
   onToggleArchive: (s: SessionInfo) => void;
 }) {
@@ -2610,7 +2609,7 @@ function SessionRow({
     const handler: Record<SessionRowAction, (x: SessionInfo) => void> = {
       pin: onTogglePin,
       rename: onRename,
-      feishu: onFeishu,
+      messaging: onMessaging,
       archive: onToggleArchive,
       delete: onDelete,
     };
@@ -2706,14 +2705,15 @@ function SessionRow({
               <span className="sr-only">{S.chat.pinnedSession}</span>
             </span>
           )}
-          {/* Messaging-bound indicator: same dim treatment as the pin (the binding dialog lives in the row menu). */}
-          {s.messagingBound === true && (
+          {/* Messaging-bound indicator, with the bound channel's own glyph: same dim
+              treatment as the pin (the binding dialog lives in the row menu). */}
+          {s.messagingChannel !== undefined && (
             <span
-              title={S.feishu.boundIndicator}
+              title={S.messaging.boundIndicator[s.messagingChannel]}
               className="shrink-0 text-gray-400 dark:text-gray-500"
             >
-              <Icon d={FEISHU_ICON} size={12} />
-              <span className="sr-only">{S.feishu.boundIndicator}</span>
+              <Icon d={CHANNEL_ICONS[s.messagingChannel]} size={12} />
+              <span className="sr-only">{S.messaging.boundIndicator[s.messagingChannel]}</span>
             </span>
           )}
           {/* No per-row source tag: subagent / scheduled Sessions live in their own labelled, collapsed folders, so a badge on the title would just repeat the folder. */}

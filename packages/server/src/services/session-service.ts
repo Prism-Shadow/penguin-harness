@@ -18,6 +18,7 @@ import { createAgent, isSessionMeta } from "@prismshadow/penguin-core";
 import type { ProxyEnvPolicy } from "@prismshadow/penguin-core";
 import type {
   ApprovalMode,
+  MessagingChannel,
   SessionCategory,
   SessionCategoryCounts,
   SessionInfo,
@@ -60,12 +61,12 @@ export interface SessionServiceDeps {
    */
   proxyEnv?: () => ProxyEnvPolicy | null;
   /**
-   * Whether a Session has a messaging binding (SessionInfo.messagingBound, the sidebar
-   * row's indicator). A lookup lambda rather than the repo, so the service stays
-   * decoupled from the bindings table; absent (older assemblies/tests) means the field is
-   * never set.
+   * The Session's messaging-binding channel, or null when unbound
+   * (SessionInfo.messagingChannel, the sidebar row's per-channel indicator). A lookup
+   * lambda rather than the repo, so the service stays decoupled from the bindings table;
+   * absent (older assemblies/tests) means the field is never set.
    */
-  messagingBound?: (sessionId: string) => boolean;
+  messagingChannel?: (sessionId: string) => MessagingChannel | null;
 }
 
 export class SessionService {
@@ -79,6 +80,7 @@ export class SessionService {
    */
   async toInfo(row: SessionRow, hasTrace: boolean): Promise<SessionInfo> {
     const source = await this.sourceOf(row, hasTrace);
+    const messagingChannel = this.deps.messagingChannel?.(row.sessionId) ?? null;
     return {
       sessionId: row.sessionId,
       projectId: row.projectId,
@@ -97,7 +99,7 @@ export class SessionService {
       pendingFollowUpCount: this.deps.manager.pendingFollowUpCount(row.sessionId),
       hasTrace,
       archived: (row.archivedAt ?? null) !== null,
-      ...(this.deps.messagingBound?.(row.sessionId) === true ? { messagingBound: true } : {}),
+      ...(messagingChannel !== null ? { messagingChannel } : {}),
     };
   }
 

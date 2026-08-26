@@ -34,8 +34,12 @@ export interface FeishuInboundEvent {
 
 /** OpenAPI half of the seam: credential probe + text sends. Every method throws on failure. */
 export interface FeishuApiClient {
-  /** Credential check: obtains a tenant access token (no scopes needed); throws with a readable reason. */
-  checkCredentials(): Promise<void>;
+  /**
+   * Credential check: obtains a tenant access token (no scopes needed); throws with a
+   * readable reason. Resolves null — the token exchange yields no account label to
+   * surface (`MessagingClient.checkCredentials`' optional payload).
+   */
+  checkCredentials(): Promise<null>;
   /** Sends a text message into a chat by chat_id. */
   sendText(chatId: string, text: string): Promise<void>;
   /** Replies a text message to a specific inbound message (threads correctly in group chats). */
@@ -177,7 +181,7 @@ export function createLarkSdk(): FeishuSdk {
         loggerLevel: lark.LoggerLevel.error,
       });
       return {
-        async checkCredentials(): Promise<void> {
+        async checkCredentials(): Promise<null> {
           let res: LarkResponse;
           try {
             res = await client.auth.v3.tenantAccessToken.internal({
@@ -187,6 +191,7 @@ export function createLarkSdk(): FeishuSdk {
             throw new Error(larkErrorText(err));
           }
           ensureOk(res, "Credential check");
+          return null;
         },
         async sendText(chatId: string, text: string): Promise<void> {
           let res: LarkResponse;

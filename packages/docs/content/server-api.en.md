@@ -255,20 +255,27 @@ Workspace files may be Agent-generated, so `GET /files/content` treats them as u
 
 The filename always rides along as `filename*=UTF-8''` with percent-encoding. `preview=1` is where the preview redirect falls back when no separate preview origin is available: the document keeps its real type and does render and run, but the sandbox deliberately omits `allow-same-origin`, so it lands in an opaque origin and can reach neither this origin's cookies nor the API. That isolation is also why `localStorage`, `document.cookie` and third-party embeds do not work there.
 
-### Messaging Bindings (Feishu)
+### Messaging Bindings (Feishu, Telegram)
 
-A Session can be bound to a messaging bot — Feishu is the only channel today, and further channels slot in under `/messaging/<channel>`. Inbound messages to the bot start Tasks on the Session as ordinary user input, exactly as if typed into the web composer (no marker, queued as follow-ups while the Session is busy), and completed replies are relayed back to the chat. Saving and connecting are separate: PUT persists credentials only, and the explicit state endpoint owns the connection. Paths omit the `/api/sessions/:sessionId` prefix like the table above.
+A Session can be bound to a messaging bot — Feishu and Telegram are the channels today, each under `/messaging/<channel>`. Inbound messages to the bot start Tasks on the Session as ordinary user input, exactly as if typed into the web composer (no marker, queued as follow-ups while the Session is busy), and completed replies are relayed back to the chat, chunked under the channel's text-size limit (Telegram's hard cap is 4096 characters). Feishu listens over the SDK's WebSocket long connection; Telegram long-polls `getUpdates` — neither needs a public callback URL. Saving and connecting are separate: PUT persists credentials only, and the explicit state endpoint owns the connection. Paths omit the `/api/sessions/:sessionId` prefix like the table above.
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | /messaging/feishu | The binding (App Secret masked, `enabled` intent) + event-connection runtime status + `lastChatKnown` |
+| GET | /messaging | Channel-agnostic read: whichever channel's binding the Session has (`channel` discriminant, secrets masked, `enabled` intent) + event-connection runtime status + `lastChatKnown`. The channel-aware binding editor loads this one |
+| GET | /messaging/feishu | The Feishu binding in the same envelope; bound to another channel it reads as unbound + disconnected |
 | PUT | /messaging/feishu | Bind or update credentials: `{appId, appSecret?, baseDomain?}`. An omitted/blank `appSecret` keeps the stored one; `baseDomain` defaults to `https://open.feishu.cn`. No connection side effect — except that an **enabled** binding's connector restarts with the new credentials, so stored config and live connection never diverge. 409 `feishu_app_in_use` when the app is bound to another Session |
 | POST | /messaging/feishu/state | The connection toggle: `{enabled}` — enabling connects with the STORED credentials, disabling terminates the connection. New bindings start disabled; server startup connects only enabled bindings |
-| DELETE | /messaging/feishu | Unbind: disconnects and deletes the stored binding (App Secret included) |
+| DELETE | /messaging/feishu | Unbind: disconnects and deletes the stored binding (App Secret included). A binding on another channel is untouched |
 | POST | /messaging/feishu/test | Credential probe with the request's draft values, each falling back to the stored binding → `{ok, latencyMs?, error?}` (a rejected credential is `ok: false`, not an HTTP error) |
 | POST | /messaging/feishu/test-message | Send a short fixed text to the last known chat; 409 `feishu_no_chat` until the bot has been messaged once in Feishu |
+| GET | /messaging/telegram | The Telegram binding in the same envelope (`botId`, `botTokenMasked`) |
+| PUT | /messaging/telegram | Bind or update the credential: `{botToken?}` — the whole credential is the one `<bot id>:<secret>` token from @BotFather (omitted/blank keeps the stored one; 400 `telegram_token_invalid` when the numeric id cannot be read). Same save/enable split as Feishu. 409 `telegram_bot_in_use` when the bot id is bound to another Session |
+| POST | /messaging/telegram/state | Same contract as the Feishu toggle |
+| DELETE | /messaging/telegram | Unbind: disconnects and deletes the stored binding (Bot Token included) |
+| POST | /messaging/telegram/test | Credential probe (`getMe`) with the draft token falling back to the stored one → `{ok, latencyMs?, botUsername?, error?}` — success names the bot the token signs in as |
+| POST | /messaging/telegram/test-message | Send a short fixed text to the last known chat; 409 `telegram_no_chat` until the bot has been messaged once in Telegram |
 
-One messaging binding per Session (whatever the channel) and one per bot account per channel. Reads and the two tests are open to any Project member; PUT, the state toggle and DELETE are owner-only (vault semantics — the binding writes carry or act on the secret). The secret is masked in every response and never round-trips. Deleting the Session removes its binding, and inbound processing accepts text messages only (other types get a bilingual "text only" reply).
+One messaging binding per Session (whatever the channel) and one per bot account per channel — Feishu's account identity is the `app_id`, Telegram's is the numeric bot id in front of the token's colon (robust against token rotation). Reads and the two tests are open to any Project member; PUT, the state toggle and DELETE are owner-only (vault semantics — the binding writes carry or act on the secret). Secrets are masked in every response and never round-trip. Deleting the Session removes its binding, and inbound processing accepts text messages only (other types get a bilingual "text only" reply). Telegram connects by draining the backlog first: messages sent while no connection existed are skipped, matching Feishu, where missed events are simply gone.
 
 ### Preview on a separate origin
 

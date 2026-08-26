@@ -1,6 +1,7 @@
 /**
- * Messaging-binding tests (Feishu is the only channel): the repo's two uniqueness rules,
- * the /api/sessions/:id/messaging/feishu routes (masking, secret keep-on-blank, the
+ * Messaging-binding tests, Feishu side (the Telegram connector's mirror suite is
+ * messaging-telegram.test.ts): the repo's two uniqueness rules, the
+ * /api/sessions/:id/messaging/feishu routes (masking, secret keep-on-blank, the
  * save/enable split — PUT persists credentials only, POST /state owns the connection —
  * 409s, authz split, cascade on session delete), and the bridge's routing through a fake
  * Feishu SDK — inbound text becomes an ordinary user task
@@ -52,9 +53,10 @@ class FakeClient implements FeishuApiClient {
     readonly creds: FeishuCredentials,
     private readonly sdk: FakeSdk,
   ) {}
-  async checkCredentials(): Promise<void> {
+  async checkCredentials(): Promise<null> {
     this.checks++;
     if (this.sdk.failCheck !== null) throw new Error(this.sdk.failCheck);
+    return null;
   }
   async sendText(chatId: string, text: string): Promise<void> {
     this.sends.push({ kind: "send", target: chatId, text });
@@ -220,6 +222,7 @@ describe("messaging binding routes and bridge", () => {
     const res = await api.put(BASE(SID), PUT_BODY);
     expect(res.status).toBe(200);
     const body = (await res.json()) as FeishuBindingResponse;
+    expect(body.binding?.channel).toBe("feishu");
     expect(body.binding?.appId).toBe(PUT_BODY.appId);
     // Site-wide mask rule: first4…last4, never the plaintext.
     expect(body.binding?.appSecretMasked).toBe("secr…3456");
@@ -480,21 +483,21 @@ describe("messaging binding routes and bridge", () => {
     expect(fake.connections[1]!.closed).toBe(true);
   });
 
-  it("the session list marks bound rows with messagingBound", async () => {
+  it("the session list marks bound rows with their messagingChannel", async () => {
     await api.put(BASE(SID), PUT_BODY);
     const res = await api.get(`/api/projects/${projectId}/agents/default_agent/sessions`);
     const body = (await res.json()) as {
-      sessions: Array<{ sessionId: string; messagingBound?: boolean }>;
+      sessions: Array<{ sessionId: string; messagingChannel?: string }>;
     };
-    expect(body.sessions.find((s) => s.sessionId === SID)?.messagingBound).toBe(true);
-    // Unbound rows omit the field entirely rather than carrying false.
+    expect(body.sessions.find((s) => s.sessionId === SID)?.messagingChannel).toBe("feishu");
+    // Unbound rows omit the field entirely rather than carrying a null.
     const row2 = sessionRowOf(SID2, projectId);
     t.deps.sessionsRepo.insert(row2);
     const again = await api.get(`/api/projects/${projectId}/agents/default_agent/sessions`);
     const list = (await again.json()) as {
-      sessions: Array<{ sessionId: string; messagingBound?: boolean }>;
+      sessions: Array<{ sessionId: string; messagingChannel?: string }>;
     };
-    expect("messagingBound" in list.sessions.find((s) => s.sessionId === SID2)!).toBe(false);
+    expect("messagingChannel" in list.sessions.find((s) => s.sessionId === SID2)!).toBe(false);
   });
 
   it("start() connects only enabled bindings and reconciles away rows whose Session is gone", async () => {

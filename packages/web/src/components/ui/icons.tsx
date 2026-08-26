@@ -164,6 +164,20 @@ export function CloseButton({
 /** Info circle: the app's 9-radius status circle with a bar and a dot inside it. */
 export const INFO_ICON = "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5m0-8h.01";
 
+/** Chat bubble: the messaging binding's channel-neutral mark (dock panel tab, row-menu action). */
+export const MESSAGING_ICON = "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z";
+
+/**
+ * Messaging-channel identity glyphs (session-row indicator, the bound-channel label in
+ * the binding editor): a feather for Feishu ("flying book"), the paper plane for
+ * Telegram. Shape alone is not the carrier — every use pairs the glyph with the channel
+ * name in a tooltip, sr text or an adjacent label.
+ */
+export const CHANNEL_ICONS: Record<"feishu" | "telegram", string> = {
+  feishu: "M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5zM16 8 2 22M17.5 15H9",
+  telegram: "M22 2 11 13M22 2l-7 20-4-9-9-4z",
+};
+
 /** Standard gear (lucide settings): full tooth outline + center circle, crisp and undistorted at 16px. */
 export const GEAR_ICON =
   "M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2zM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z";
