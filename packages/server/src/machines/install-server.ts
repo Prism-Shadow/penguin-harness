@@ -235,7 +235,7 @@ export async function installOnRemote(opts: {
       // The ordinary installer, copied out to ride scp. Where it sits follows from what this
       // server is: a hot-pushed bundle has it among the assets published with that same
       // version, anything else is a packaged install and it is beside this module (dist/
-      // after a build; packages/server/scripts/copy-machine-assets.mjs puts it there).
+      // after a build; this package's tsup.config.ts copies it there).
       const installerFile = installerFileFor(identity.platform);
       const installerHome = opts.assets?.() ?? path.dirname(fileURLToPath(import.meta.url));
       const installerPath = path.join(localTmp, installerFile);
