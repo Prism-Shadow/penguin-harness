@@ -34,7 +34,7 @@ nobody is thinking about it, so a variable a future feature adds is covered with
 - Matching is case-insensitive, like every other stripped name, so a Windows `set Penguin_Home=…`
   is removed too.
 
-## 兼容性
+## Compatibility
 
 A command run by an Agent that relied on inheriting any `PENGUIN_*` variable from the serving
 process now sees none of them, and any harness it starts resolves the default root

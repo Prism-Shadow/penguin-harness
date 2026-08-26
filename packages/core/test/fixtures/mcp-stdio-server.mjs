@@ -52,9 +52,20 @@ server.registerTool(
 
 server.registerTool(
   "probe",
-  { description: "Reports FIXTURE_SECRET and the process cwd.", inputSchema: z.object({}) },
+  {
+    description:
+      "Reports FIXTURE_SECRET, the process cwd, and the host's PENGUIN_HOME/PORT (which must not arrive).",
+    inputSchema: z.object({}),
+  },
   async () => ({
-    content: [{ type: "text", text: `${process.env.FIXTURE_SECRET ?? ""}|${process.cwd()}` }],
+    content: [
+      {
+        type: "text",
+        text:
+          `${process.env.FIXTURE_SECRET ?? ""}|${process.cwd()}` +
+          `|${process.env.PENGUIN_HOME ?? ""}|${process.env.PORT ?? ""}`,
+      },
+    ],
   }),
 );
 
