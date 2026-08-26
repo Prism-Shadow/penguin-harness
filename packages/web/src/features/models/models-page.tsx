@@ -512,9 +512,9 @@ const MODEL_GROUP_DRAG_MIME = "application/x-penguin-model-group";
 
 /**
  * Is the drag in flight one of our group reorders? `types` is readable during dragover
- * (unlike getData), so the payload authorizes the drop rather than React state alone: a
- * `dragGroup` left behind by a header that unmounted mid-drag can no longer make the page
- * swallow an unrelated drag, paint a phantom line, and commit on release.
+ * (unlike getData), so the payload authorizes the drop rather than React state alone:
+ * without it, a `dragGroup` left behind by a header that unmounted mid-drag would make the
+ * page swallow an unrelated drag, paint a phantom line, and commit on release.
  */
 const isModelGroupDrag = (e: ReactDragEvent): boolean =>
   e.dataTransfer.types.includes(MODEL_GROUP_DRAG_MIME);
@@ -807,6 +807,12 @@ export function ModelsPage() {
       header: {
         draggable: true,
         onDragStart: (e: ReactDragEvent) => {
+          // dragstart fires AT the source node, so target === currentTarget exactly when
+          // the header row itself is what the browser picked up. The row also carries the
+          // provider's external key link, which is natively draggable: a drag begun there
+          // is a link drag, and claiming it would overwrite the link's payload and effect
+          // and turn a release over any other header into a silent reorder.
+          if (e.target !== e.currentTarget) return;
           e.dataTransfer.setData(MODEL_GROUP_DRAG_MIME, key);
           e.dataTransfer.effectAllowed = "move" as const;
           setDragGroup(key);

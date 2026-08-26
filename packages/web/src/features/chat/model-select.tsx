@@ -9,7 +9,7 @@
  *   expander) shared by the draft dropdown and the in-session `/model` switch picker;
  * - ModelSelect: the dropdown trigger (provider logo + name + chevron), pill or form style.
  */
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import type { ModelInfo, ModelRefDto } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
@@ -184,10 +184,13 @@ export function ModelMenuList({
   const [showAll, setShowAll] = useState(false);
   // The model page's dragged group order, so "mirrors the model library page" keeps holding
   // once a user has arranged their groups. Read here rather than threaded through every call
-  // site, and re-read on each open (the panel remounts) so an order changed on that page in
-  // another tab is picked up without a reload.
+  // site, once per open (both hosts render the panel only while open, so opening it remounts
+  // this) — an order changed on that page, in this tab or another, is picked up on the next
+  // open without a reload. Not on every render: the search box below re-renders this panel
+  // on each keystroke, and the Project context does so for reasons of its own.
   const { currentProject } = useProject();
-  const groupOrder = loadModelGroupOrder(currentProject?.projectId ?? null);
+  const projectId = currentProject?.projectId ?? null;
+  const groupOrder = useMemo(() => loadModelGroupOrder(projectId), [projectId]);
   const visible = visibleChatModels(models, {
     showAll,
     query,

@@ -119,7 +119,7 @@ export function groupModelRows<T extends ModelRowLike>(
 /**
  * Flattens the library grouping into one ordered list (the chat model dropdown uses this):
  * rows ordered exactly as the model page shows them — built-in provider groups in
- * MODEL_PROVIDERS order, then user-defined groups, custom last, with `groupOrder` applied
+ * MODEL_PROVIDERS order (custom last), then user-defined groups, with `groupOrder` applied
  * on top; in-group row order preserved. Passing the page's stored order here is what keeps
  * "exactly as the model page shows them" true once a user has dragged their groups.
  */
