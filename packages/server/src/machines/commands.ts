@@ -178,7 +178,7 @@ export function readServerStateCommand(): string {
 // --- starting, stopping and tunnelling to that server (POSIX only) --------------------------
 //
 // These run against a machine the install already ran on, so the layout is known: the
-// launcher at `${XDG_DATA_HOME:-$HOME/.local/share}/penguin/bin/penguin` (absolute — sshd's
+// launcher at `$HOME/.penguin/bin/penguin` (absolute — sshd's
 // non-login shell has no ~/.local/bin on PATH) and the data root at `~/.penguin/data`. POSIX
 // only because starting a detached background process from a cmd.exe ssh session is a
 // different mechanism entirely; connect refuses a Windows remote rather than pretending.
@@ -192,7 +192,7 @@ export function readServerStateCommand(): string {
 export function startServerCommand(port: number): string {
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`bad port ${port}`);
   return [
-    `bin="\${XDG_DATA_HOME:-$HOME/.local/share}/penguin/bin/penguin"`,
+    `bin="$HOME/.penguin/bin/penguin"`,
     `mkdir -p "$HOME/.penguin/data"`,
     `PORT=${port} HOST=127.0.0.1 nohup "$bin" server </dev/null >>"$HOME/.penguin/data/server.log" 2>&1 &`,
   ].join("; ");

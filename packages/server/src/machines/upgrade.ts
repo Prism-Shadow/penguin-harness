@@ -137,7 +137,7 @@ export async function upgradeRemote(opts: {
       sshArgs(
         opts.target,
         `cd ${scratch} && ` +
-          `"\${XDG_DATA_HOME:-$HOME/.local/share}/penguin/lib/runtime/bin/node" remote-upgrade.cjs 2>&1 || ` +
+          `"$HOME/.penguin/node/bin/node" remote-upgrade.cjs 2>&1 || ` +
           `node remote-upgrade.cjs 2>&1`,
       ),
       { timeoutMs: 10 * 60_000 },

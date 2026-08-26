@@ -18,7 +18,7 @@ describe("startServerCommand", () => {
   const command = startServerCommand(7364);
 
   it("runs the launcher by absolute path — sshd's shell has no ~/.local/bin on PATH", () => {
-    expect(command).toContain('bin="${XDG_DATA_HOME:-$HOME/.local/share}/penguin/bin/penguin"');
+    expect(command).toContain('bin="$HOME/.penguin/bin/penguin"');
     expect(command).toContain('"$bin" server');
   });
 
