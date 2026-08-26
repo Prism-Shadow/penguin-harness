@@ -3,6 +3,7 @@
 - **Date:** 2026-08-27
 - **Type:** fix
 - **Scope:** `landing`
+- **PR:** [#475](https://github.com/Prism-Shadow/penguin-harness/pull/475)
 
 [English](2026-08-27-landing-mobile-layout.md)
 
