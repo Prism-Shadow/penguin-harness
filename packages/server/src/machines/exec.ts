@@ -10,7 +10,7 @@
  * host-key mismatch or a refused connection is the user's to read, and rewording OpenSSH's
  * diagnostics into our own vocabulary would only lose detail.
  */
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 
 export interface ExecResult {
   code: number;
@@ -41,6 +41,64 @@ export function run(
         resolve({ code, stdout: String(stdout), stderr: String(stderr) });
       },
     );
+  });
+}
+
+/**
+ * `producer | consumer`, without a shell: the producer's stdout is piped straight into the
+ * consumer's stdin — how the hmr store crosses to the remote (local tar → ssh). Failure of
+ * EITHER side fails the pair, with both stderr streams in the result; a broken pipe from a
+ * dead consumer must not read as a successful transfer.
+ */
+export function runPiped(
+  producer: { file: string; args: string[] },
+  consumer: { file: string; args: string[] },
+  opts: { timeoutMs?: number } = {},
+): Promise<ExecResult> {
+  return new Promise((resolve) => {
+    const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    const a = spawn(producer.file, producer.args, { stdio: ["ignore", "pipe", "pipe"] });
+    const b = spawn(consumer.file, consumer.args, { stdio: ["pipe", "pipe", "pipe"] });
+    a.stdout.pipe(b.stdin);
+    // A consumer that dies mid-stream closes the pipe; without this the producer's EPIPE
+    // would surface as an unhandled stream error instead of the consumer's own exit below.
+    b.stdin.on("error", () => a.kill());
+    let stdout = "";
+    let stderr = "";
+    b.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString("utf8")));
+    a.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString("utf8")));
+    b.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString("utf8")));
+    let aCode: number | null = null;
+    let bCode: number | null = null;
+    let settled = false;
+    const timer = setTimeout(() => {
+      a.kill();
+      b.kill();
+    }, timeoutMs);
+    const finish = () => {
+      if (settled || aCode === null || bCode === null) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({ code: aCode !== 0 ? aCode : bCode, stdout, stderr });
+    };
+    a.on("close", (code) => {
+      aCode = code ?? 1;
+      finish();
+    });
+    b.on("close", (code) => {
+      bCode = code ?? 1;
+      finish();
+    });
+    a.on("error", (err) => {
+      aCode = 1;
+      stderr += `${err.message}\n`;
+      finish();
+    });
+    b.on("error", (err) => {
+      bCode = 1;
+      stderr += `${err.message}\n`;
+      finish();
+    });
   });
 }
 

@@ -29,8 +29,8 @@ import type { TestApp } from "./helpers.js";
 const IDENTITY: RemoteIdentity = {
   platform: "linux",
   arch: "x64",
-  nodeVersion: "v24.0.0",
   installedVersion: null,
+  harness: null,
 };
 
 /** An effects set that names two hosts and installs successfully, with the parts a test cares about overridden. */
@@ -48,7 +48,7 @@ function effects(over: Partial<MachinesEffects> = {}): Partial<MachinesEffects> 
       },
       machine: `deploy@${alias}`,
     }),
-    resolveImage: () => ({ version: "9.9.9", files: () => [] }),
+    resolvePlan: () => ({ baseVersion: "9.9.9", harness: null, hmrDir: null, version: "9.9.9" }),
     now: () => new Date("2026-08-24T12:00:00.000Z"),
     install: async (opts): Promise<RemoteInstallOutcome> => {
       opts.onProgress?.("Pushing…");
@@ -114,7 +114,7 @@ describe("machines API", () => {
     });
 
     it("reports no image when this server has none to push", async () => {
-      await boot({ resolveImage: () => null });
+      await boot({ resolvePlan: () => null });
       const body = (await (await admin.get("/api/machines")).json()) as MachinesResponse;
       expect(body.imageVersion).toBeNull();
     });
@@ -308,7 +308,7 @@ describe("machines API", () => {
     });
 
     it("409s when this server carries no install image", async () => {
-      await boot({ resolveImage: () => null });
+      await boot({ resolvePlan: () => null });
       const res = await admin.post("/api/machines/ssh:nas/install");
       expect(res.status).toBe(409);
       expect(((await res.json()) as { error: { code: string } }).error.code).toBe(

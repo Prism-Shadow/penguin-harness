@@ -14,24 +14,16 @@ import { describe, expect, it } from "vitest";
 import { machineIdentity, parseHostAliases, parseSshSettings } from "../src/machines/ssh-config.js";
 import { parseProbeOutput, POSIX_PROBE, WINDOWS_PROBE } from "../src/machines/detect.js";
 import {
-  checksumFor,
-  ensureRuntimeArchive,
-  MIN_REMOTE_NODE_MAJOR,
-  NODE_RUNTIME_VERSION,
-  remoteNodeIsUsable,
-  runtimeArtifact,
-  sha256Of,
-} from "../src/machines/runtime.js";
-import {
   cleanupCommand,
   cmdQuote,
   makeScratchCommand,
   runInstallScriptCommand,
+  unpackStoreCommand,
   scpArgs,
   shQuote,
   sshArgs,
 } from "../src/machines/commands.js";
-import { resolvePayloadImage } from "../src/machines/install-server.js";
+import { resolvePushPlan } from "../src/machines/install-server.js";
 
 describe("parseHostAliases", () => {
   const noIncludes = () => [];
@@ -127,136 +119,65 @@ describe("identity probe", () => {
     // `type` reads. One command cannot do both, which is why there are two.
     expect(POSIX_PROBE).toContain("uname -s -m");
     expect(POSIX_PROBE).toContain("${XDG_DATA_HOME:-$HOME/.local/share}");
+    expect(POSIX_PROBE).toContain(".penguin/data/hmr/harness.json");
     expect(WINDOWS_PROBE).toContain("%PROCESSOR_ARCHITECTURE%");
     expect(WINDOWS_PROBE).toContain("%LOCALAPPDATA%");
+    expect(WINDOWS_PROBE).toContain("%USERPROFILE%\\.penguin\\data\\hmr\\harness.json");
     expect(WINDOWS_PROBE).not.toContain(";");
   });
 
-  it("reads a POSIX answer: identity, the machine's own node, and the installed version", () => {
+  it("reads identity, installed version and pushed state from the three sections", () => {
     expect(
-      parseProbeOutput('Linux x86_64\nv24.3.0\n---penguin---\n{"name":"x","version":"0.2.2"}\n'),
+      parseProbeOutput(
+        'Linux x86_64\n---penguin---\n{"name":"x","version":"0.2.2"}\n---penguin---\n{"platform":{}}\n',
+      ),
     ).toEqual({
       platform: "linux",
       arch: "x64",
-      nodeVersion: "v24.3.0",
       installedVersion: "0.2.2",
+      harness: '{"platform":{}}',
     });
   });
 
-  it("a machine with no node answers 'none', which reads as no node at all", () => {
-    expect(parseProbeOutput("Linux x86_64\nnone\n---penguin---\n")).toMatchObject({
-      nodeVersion: null,
+  it("a machine with nothing installed answers empty sections", () => {
+    expect(parseProbeOutput("Linux x86_64\n---penguin---\n---penguin---\n")).toMatchObject({
+      installedVersion: null,
+      harness: null,
     });
   });
 
-  it("finds the identity past a shell banner instead of trusting the first line", () => {
+  it("skips a login banner before the identity line", () => {
     expect(
-      parseProbeOutput("Welcome to build-box!\nLinux x86_64\nv24.3.0\n---penguin---\n"),
-    ).toMatchObject({ platform: "linux", arch: "x64", nodeVersion: "v24.3.0" });
+      parseProbeOutput("Welcome to build-box!\nLinux x86_64\n---penguin---\n---penguin---\n"),
+    ).toMatchObject({ platform: "linux", arch: "x64" });
   });
 
-  it("reads a Windows answer and normalizes its names onto Node's", () => {
-    expect(parseProbeOutput("Windows_NT AMD64\nnone\n---penguin---\n")).toEqual({
+  it("recognizes every platform-arch pair the release targets name", () => {
+    expect(parseProbeOutput("Windows_NT AMD64\n---penguin---\n")).toMatchObject({
       platform: "win32",
       arch: "x64",
-      nodeVersion: null,
-      installedVersion: null,
     });
-    expect(parseProbeOutput("Darwin arm64\nnone\n---penguin---\n")).toMatchObject({
+    expect(parseProbeOutput("Darwin arm64\n---penguin---\n")).toMatchObject({
       platform: "darwin",
       arch: "arm64",
     });
-    expect(parseProbeOutput("Linux aarch64\nnone\n---penguin---\n")).toMatchObject({
+    expect(parseProbeOutput("Linux aarch64\n---penguin---\n")).toMatchObject({
+      platform: "linux",
       arch: "arm64",
     });
   });
 
-  it("returns null when the shell did not understand the probe", () => {
-    // What cmd.exe says to the POSIX probe — the signal to try the other dialect.
+  it("an unrecognized answer (or an error message) parses as null", () => {
     expect(
       parseProbeOutput("'uname' is not recognized as an internal or external command"),
     ).toBeNull();
     expect(parseProbeOutput("")).toBeNull();
   });
 
-  it("treats an unreadable manifest as 'nothing installed' rather than failing", () => {
-    expect(parseProbeOutput("Linux x86_64\nnone\n---penguin---\nnot json at all")).toMatchObject({
+  it("a damaged manifest reads as nothing installed", () => {
+    expect(parseProbeOutput("Linux x86_64\n---penguin---\nnot json at all")).toMatchObject({
       installedVersion: null,
     });
-  });
-});
-
-describe("runtime selection", () => {
-  it("skips the whole download when the remote's own node is new enough", () => {
-    // The common case for a developer box: no 30 MB transfer, and no second runtime
-    // installed on a machine that already has one.
-    expect(MIN_REMOTE_NODE_MAJOR).toBe(22);
-    expect(remoteNodeIsUsable("v22.11.0")).toBe(true);
-    expect(remoteNodeIsUsable("v24.3.0")).toBe(true);
-    expect(remoteNodeIsUsable("v20.11.0")).toBe(false);
-    expect(remoteNodeIsUsable(null)).toBe(false);
-    expect(remoteNodeIsUsable("not a version")).toBe(false);
-  });
-
-  it("picks the official build for the remote's shape, gzip on POSIX and zip on Windows", () => {
-    // .tar.gz rather than the smaller .tar.xz: xz is a separate binary minimal images lack,
-    // and the far side has no runtime of ours yet to fall back on.
-    expect(runtimeArtifact("linux", "x64")).toMatchObject({
-      fileName: `node-${NODE_RUNTIME_VERSION}-linux-x64.tar.gz`,
-      rootDirName: `node-${NODE_RUNTIME_VERSION}-linux-x64`,
-      url: `https://nodejs.org/dist/${NODE_RUNTIME_VERSION}/node-${NODE_RUNTIME_VERSION}-linux-x64.tar.gz`,
-    });
-    expect(runtimeArtifact("darwin", "arm64").fileName).toBe(
-      `node-${NODE_RUNTIME_VERSION}-darwin-arm64.tar.gz`,
-    );
-    expect(runtimeArtifact("win32", "x64").fileName).toBe(
-      `node-${NODE_RUNTIME_VERSION}-win-x64.zip`,
-    );
-  });
-
-  it("reads the published checksum for exactly the file it is going to send", () => {
-    const shasums = [
-      `${"a".repeat(64)}  node-${NODE_RUNTIME_VERSION}-linux-arm64.tar.gz`,
-      `${"b".repeat(64)}  node-${NODE_RUNTIME_VERSION}-linux-x64.tar.gz`,
-    ].join("\n");
-    expect(checksumFor(shasums, `node-${NODE_RUNTIME_VERSION}-linux-x64.tar.gz`)).toBe(
-      "b".repeat(64),
-    );
-    expect(checksumFor(shasums, "node-v1.0.0-linux-x64.tar.gz")).toBeNull();
-  });
-
-  it("verifies what it downloads and refuses to cache a runtime it cannot vouch for", async () => {
-    const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-runtime-cache-"));
-    try {
-      const artifact = runtimeArtifact("linux", "x64");
-      const good = Buffer.from("pretend runtime");
-      const shasums = Buffer.from(`${sha256Of(good)}  ${artifact.fileName}\n`);
-      const tampering = async (url: string) =>
-        url.endsWith("SHASUMS256.txt") ? shasums : Buffer.from("tampered");
-      await expect(
-        ensureRuntimeArchive({ platform: "linux", arch: "x64", cacheDir, fetchBuffer: tampering }),
-      ).rejects.toThrow(/checksum mismatch/);
-      expect(fs.existsSync(path.join(cacheDir, artifact.fileName))).toBe(false);
-
-      // The honest download lands, and a second call serves it from the cache without fetching.
-      let fetches = 0;
-      const honest = async (url: string) => {
-        fetches += 1;
-        return url.endsWith("SHASUMS256.txt") ? shasums : good;
-      };
-      const first = await ensureRuntimeArchive({
-        platform: "linux",
-        arch: "x64",
-        cacheDir,
-        fetchBuffer: honest,
-      });
-      expect(fs.readFileSync(first.archivePath)).toEqual(good);
-      const before = fetches;
-      await ensureRuntimeArchive({ platform: "linux", arch: "x64", cacheDir, fetchBuffer: honest });
-      expect(fetches).toBe(before);
-    } finally {
-      fs.rmSync(cacheDir, { recursive: true, force: true });
-    }
   });
 });
 
@@ -294,10 +215,21 @@ describe("ssh / scp invocations", () => {
     expect(windows).toContain("&"); // cmd chains with &, not ;
   });
 
-  it("runs the ordinary installer against the sibling payload, with no arguments to quote", () => {
-    expect(runInstallScriptCommand("linux", "/tmp/s")).toBe("sh '/tmp/s/install.sh'");
-    expect(runInstallScriptCommand("win32", "C:\\t")).toBe(
-      'powershell -NoProfile -ExecutionPolicy Bypass -File "C:\\t\\install.ps1"',
+  it("runs the release installer online, pinned to this server's base", () => {
+    expect(runInstallScriptCommand("linux", "/tmp/s", "v0.2.4")).toBe(
+      "PENGUIN_VERSION='v0.2.4' sh '/tmp/s/install.sh'",
+    );
+    expect(runInstallScriptCommand("win32", "C:\\t", "v0.2.4")).toBe(
+      'powershell -NoProfile -ExecutionPolicy Bypass -File "C:\\t\\install.ps1" -Version "v0.2.4"',
+    );
+  });
+
+  it("unpacks the streamed store into the default data root", () => {
+    expect(unpackStoreCommand("linux")).toBe(
+      'mkdir -p "$HOME/.penguin/data" && tar -xzf - -C "$HOME/.penguin/data"',
+    );
+    expect(unpackStoreCommand("win32")).toBe(
+      '(if not exist "%USERPROFILE%\\.penguin\\data" mkdir "%USERPROFILE%\\.penguin\\data") & tar -xzf - -C "%USERPROFILE%\\.penguin\\data"',
     );
   });
 
@@ -307,39 +239,55 @@ describe("ssh / scp invocations", () => {
   });
 });
 
-describe("resolvePayloadImage", () => {
-  const manifest = JSON.stringify({ name: "@prismshadow/penguin-cli", version: "9.9.9" });
+describe("resolvePushPlan", () => {
+  const manifest = JSON.stringify({ name: "@prismshadow/penguin-cli", version: "0.2.4" });
 
-  it("tarball install: packs its own program directory, without runtime or launchers", () => {
-    const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-image-"));
+  it("tarball install: the base release, with no pushed state", () => {
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-plan-"));
     try {
       const root = path.join(work, "penguin");
       fs.mkdirSync(path.join(root, "lib", "dist"), { recursive: true });
-      fs.mkdirSync(path.join(root, "node", "bin"), { recursive: true });
-      fs.mkdirSync(path.join(root, "bin"), { recursive: true });
       fs.writeFileSync(path.join(root, "lib", "dist", "penguin.js"), "//\n");
       fs.writeFileSync(path.join(root, "lib", "package.json"), manifest);
-      fs.writeFileSync(path.join(root, "node", "bin", "node"), "elf");
-      fs.writeFileSync(path.join(root, "bin", "penguin"), "#!/bin/sh\n");
-      fs.writeFileSync(path.join(root, "package-manifest.json"), '{"target":"universal"}\n');
 
-      const image = resolvePayloadImage(() => null, path.join(root, "lib", "dist", "penguin.js"));
-      expect(image?.version).toBe("9.9.9");
-      const entries = image!.files().map((file) => file.path);
-      expect(entries).toContain("penguin/lib/dist/penguin.js");
-      expect(entries).toContain("penguin/lib/package.json");
-      // This machine's Node, its launchers and its manifest must not ride along: all three
-      // are assembled per remote (its node decides the flags, its platform the target stamp).
-      expect(entries.some((p) => p.startsWith("penguin/node/"))).toBe(false);
-      expect(entries.some((p) => p.startsWith("penguin/bin/"))).toBe(false);
-      expect(entries).not.toContain("penguin/package-manifest.json");
+      const plan = resolvePushPlan(work, path.join(root, "lib", "dist", "penguin.js"));
+      expect(plan).toMatchObject({ baseVersion: "0.2.4", harness: null, version: "0.2.4" });
     } finally {
       fs.rmSync(work, { recursive: true, force: true });
     }
   });
 
-  it("desktop app: the staged payload beside the app resources", () => {
-    const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-image-"));
+  it("a pushed server adds its hmr state, sha-suffixed", () => {
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-plan-"));
+    try {
+      const root = path.join(work, "penguin");
+      fs.mkdirSync(path.join(root, "lib", "dist"), { recursive: true });
+      fs.writeFileSync(path.join(root, "lib", "dist", "penguin.js"), "//\n");
+      fs.writeFileSync(path.join(root, "lib", "package.json"), manifest);
+      const hmrDir = path.join(work, "data", "hmr");
+      fs.mkdirSync(hmrDir, { recursive: true });
+      const harness = JSON.stringify({
+        platform: { bundle: "store/platform/cafe0123456789ab.mjs" },
+      });
+      fs.writeFileSync(path.join(hmrDir, "harness.json"), harness);
+
+      const plan = resolvePushPlan(
+        path.join(work, "data"),
+        path.join(root, "lib", "dist", "penguin.js"),
+      );
+      expect(plan).toMatchObject({
+        baseVersion: "0.2.4",
+        harness,
+        hmrDir,
+        version: "0.2.4+hmr.cafe01234567",
+      });
+    } finally {
+      fs.rmSync(work, { recursive: true, force: true });
+    }
+  });
+
+  it("desktop app: the staged payload names the base release", () => {
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-plan-"));
     try {
       const serverDist = path.join(
         work,
@@ -352,85 +300,32 @@ describe("resolvePayloadImage", () => {
       );
       fs.mkdirSync(serverDist, { recursive: true });
       const payload = path.join(work, "resources", "payload", "penguin", "lib");
-      fs.mkdirSync(path.join(payload, "dist"), { recursive: true });
-      fs.writeFileSync(path.join(payload, "dist", "penguin.js"), "//\n");
+      fs.mkdirSync(payload, { recursive: true });
       fs.writeFileSync(path.join(payload, "package.json"), manifest);
 
-      const image = resolvePayloadImage(() => null, path.join(serverDist, "index.js"));
-      expect(image?.version).toBe("9.9.9");
-      const entries = image!.files().map((file) => file.path);
-      expect(entries).toContain("penguin/lib/dist/penguin.js");
+      const plan = resolvePushPlan(null, path.join(serverDist, "index.js"));
+      expect(plan).toMatchObject({ baseVersion: "0.2.4" });
     } finally {
       fs.rmSync(work, { recursive: true, force: true });
     }
   });
 
-  it("a dev checkout has no pushable image", () => {
-    expect(resolvePayloadImage(() => null, "/repo/packages/server/src/index.ts")).toBeNull();
-    expect(resolvePayloadImage(() => null, undefined)).toBeNull();
+  it("a dev checkout stands on no release and answers null", () => {
+    expect(resolvePushPlan(null, "/repo/packages/server/src/index.ts")).toBeNull();
+    expect(resolvePushPlan(null, undefined)).toBeNull();
   });
 });
 
-describe("pushedPayloadImage", () => {
-  /** The image directory the way a push materializes it among the version's assets. */
-  const seedImage = (assetsDir: string, version = "0.0.0-hmr.cafe012345") => {
-    const root = path.join(assetsDir, "install-image", "penguin");
-    fs.mkdirSync(path.join(root, "lib", "dist"), { recursive: true });
-    fs.mkdirSync(path.join(root, "web"), { recursive: true });
-    fs.mkdirSync(path.join(root, "bin"), { recursive: true });
-    fs.writeFileSync(path.join(root, "lib", "dist", "penguin.js"), "// built by tsup\n");
-    fs.writeFileSync(
-      path.join(root, "lib", "package.json"),
-      JSON.stringify({ name: "@prismshadow/penguin-cli", version }),
-    );
-    fs.writeFileSync(path.join(root, "web", "index.html"), "<html>");
-    fs.writeFileSync(path.join(root, "bin", "penguin"), "#!/bin/sh\n");
-    fs.writeFileSync(path.join(root, "package-manifest.json"), '{"target":"universal"}\n');
-  };
-
-  it("reads the standard-built image the push delivered, nothing synthesized", () => {
-    const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-hmr-image-"));
-    try {
-      seedImage(work);
-      const image = resolvePayloadImage(() => work, "/repo/packages/server/src/index.ts");
-      expect(image?.version).toBe("0.0.0-hmr.cafe012345");
-      const entries = image!.files().map((file) => file.path);
-      expect(entries).toContain("penguin/lib/dist/penguin.js");
-      expect(entries).toContain("penguin/web/index.html");
-      // Launchers, runtime and manifest are per-remote; the image must not carry its own.
-      expect(entries.some((p) => p.startsWith("penguin/bin/"))).toBe(false);
-      expect(entries).not.toContain("penguin/package-manifest.json");
-    } finally {
-      fs.rmSync(work, { recursive: true, force: true });
-    }
-  });
-
-  it("outranks the disk shapes — the pushed version is what this server should spread", () => {
-    const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-hmr-image-"));
-    try {
-      seedImage(work);
-      // A valid tarball shape is offered too; the pushed version still wins.
-      const root = path.join(work, "penguin");
-      fs.mkdirSync(path.join(root, "lib", "dist"), { recursive: true });
-      fs.writeFileSync(path.join(root, "lib", "dist", "penguin.js"), "//\n");
-      fs.writeFileSync(
-        path.join(root, "lib", "package.json"),
-        JSON.stringify({ name: "@prismshadow/penguin-cli", version: "9.9.9" }),
-      );
-      const image = resolvePayloadImage(() => work, path.join(root, "lib", "dist", "penguin.js"));
-      expect(image?.version).toBe("0.0.0-hmr.cafe012345");
-    } finally {
-      fs.rmSync(work, { recursive: true, force: true });
-    }
-  });
-
-  it("an assets dir without an image answers null and the disk shapes take over", () => {
-    const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-hmr-image-"));
-    try {
-      expect(resolvePayloadImage(() => work, undefined)).toBeNull();
-      expect(resolvePayloadImage(() => null, undefined)).toBeNull();
-    } finally {
-      fs.rmSync(work, { recursive: true, force: true });
-    }
+describe("shipping the installers", () => {
+  /**
+   * The push copies these files out of dist/; they are never imported, so nothing in the
+   * module graph would notice one going missing from a built package. The build copies them
+   * in (copy-machine-assets.mjs), and that copy is worth an assertion rather than a comment.
+   */
+  it.each(["install.sh", "install.ps1"])("%s is copied into dist at build time", (name) => {
+    const built = path.resolve(__dirname, "..", "dist", name);
+    if (!fs.existsSync(built)) return; // Not built in this run; `pnpm build` covers it in CI.
+    const source = path.resolve(__dirname, "..", "..", "..", name);
+    expect(fs.readFileSync(built, "utf8")).toBe(fs.readFileSync(source, "utf8"));
   });
 });

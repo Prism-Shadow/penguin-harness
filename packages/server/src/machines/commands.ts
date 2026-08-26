@@ -3,10 +3,11 @@
  * side) plus the small commands the far side executes. Pure, so every command this app would
  * run against someone's machine is unit-visible.
  *
- * Only three things ever run through a remote SHELL — probe, make a scratch directory, run
- * the installer — and each has a POSIX and a Windows form, because a default Windows OpenSSH
- * session is cmd.exe, where `;`, `$VAR`, `'…'` and `rm` mean nothing. The installer itself is
- * the ordinary one (install.sh, install.ps1), fed the payload we scp beside it.
+ * Everything runs through a remote SHELL — probe, make a scratch directory, run the release
+ * installer online, unpack the replicated hmr store — and each has a POSIX and a Windows
+ * form, because a default Windows OpenSSH session is cmd.exe, where `;`, `$VAR`, `'…'` and
+ * `rm` mean nothing. The installer itself is the ordinary one (install.sh, install.ps1),
+ * downloading the pinned release from the remote's own network.
  *
  * Two further rules encoded here:
  * - **BatchMode.** A GUI app has no terminal: an ssh that decides to ask for a password or a
@@ -78,17 +79,39 @@ export function makeScratchCommand(platform: RemotePlatform, name: string): stri
 }
 
 /**
- * Runs the ordinary installer against the payload scp put beside it. No arguments: both
- * installers pick up a sibling payload on their own (their offline mode), so nothing has to
- * survive another round of quoting. `-ExecutionPolicy Bypass` because client Windows defaults
- * to Restricted, and this is our own script arriving over our own ssh session.
+ * Runs the ordinary installer ONLINE, pinned to this server's own base release, so the far
+ * side downloads exactly the version this side stands on. `-ExecutionPolicy Bypass` because
+ * client Windows defaults to Restricted, and this is our own script arriving over our own
+ * ssh session.
+ *
+ * `versionTag` is a release tag (`v` + semver); the caller validated the spelling, and the
+ * quoting here keeps it one word regardless.
  */
-export function runInstallScriptCommand(platform: RemotePlatform, scratchDir: string): string {
+export function runInstallScriptCommand(
+  platform: RemotePlatform,
+  scratchDir: string,
+  versionTag: string,
+): string {
   if (platform === "win32") {
     const script = cmdQuote(`${scratchDir}\\install.ps1`);
-    return `powershell -NoProfile -ExecutionPolicy Bypass -File ${script}`;
+    return `powershell -NoProfile -ExecutionPolicy Bypass -File ${script} -Version ${cmdQuote(versionTag)}`;
   }
-  return `sh ${shQuote(`${scratchDir}/install.sh`)}`;
+  return `PENGUIN_VERSION=${shQuote(versionTag)} sh ${shQuote(`${scratchDir}/install.sh`)}`;
+}
+
+/**
+ * Unpacks the replicated hmr state (harness.json + store/), streamed to ssh's stdin as one
+ * tar.gz, into the remote's default data root — where a server this page installed will look
+ * for it on boot (hmr/host.ts's restore). `tar` reads stdin with `-f -` on both sides;
+ * Windows 10+ ships bsdtar.
+ */
+export function unpackStoreCommand(platform: RemotePlatform): string {
+  if (platform === "win32") {
+    const root = "%USERPROFILE%\\.penguin\\data";
+    return `(if not exist ${cmdQuote(root)} mkdir ${cmdQuote(root)}) & tar -xzf - -C ${cmdQuote(root)}`;
+  }
+  const root = "$HOME/.penguin/data";
+  return `mkdir -p "${root}" && tar -xzf - -C "${root}"`;
 }
 
 /** Best-effort scratch cleanup; failure here never fails an install that already succeeded. */

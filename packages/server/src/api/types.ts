@@ -2536,8 +2536,9 @@ export interface MachineInstallJob {
 export interface MachinesResponse {
   machines: MachineInfo[];
   /**
-   * The version this server would push, or null when it has no install image at all — a
-   * development checkout that has never been hot-pushed to is the one shape without one.
+   * The version an install would leave on the remote — the base release, plus a `+hmr.<sha>`
+   * suffix when this server carries a pushed version to replicate. Null for a development
+   * checkout, which stands on no release the remote could download.
    */
   imageVersion: string | null;
   job: MachineInstallJob | null;
