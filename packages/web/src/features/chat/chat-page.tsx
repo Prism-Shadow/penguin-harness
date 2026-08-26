@@ -105,6 +105,7 @@ import { useMemoryListing } from "./use-memory-listing";
 import { deletedChangeKeys } from "./memory-nav";
 import { SubagentsView } from "./subagents-view";
 import { TracePanel } from "../traces/trace-panel";
+import { MessagingPanel } from "../messaging/messaging-panel";
 import { DockPanel } from "../dock/dock-panel";
 import { useDockMount } from "../dock/use-dock-mount";
 import { panelLabel } from "../dock/panel-meta";
@@ -1511,6 +1512,10 @@ export function ChatPage() {
         );
       case "trace":
         return <TracePanel key={selected.sessionId} session={selected} active={active} />;
+      case "messaging":
+        return (
+          <MessagingPanel key={selected.sessionId} sessionId={selected.sessionId} active={active} />
+        );
     }
   };
 

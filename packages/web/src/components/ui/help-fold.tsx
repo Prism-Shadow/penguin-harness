@@ -17,6 +17,10 @@
  *
  * The chevron is the app's one collapse indicator, the same glyph every other collapsible
  * rotates; a help fold that announced itself differently would be a second pattern for no reason.
+ *
+ * A lone row reads "More info" and borrows its subject from `label`. Several stacked into an FAQ
+ * take `title` instead and say what each one holds, because a column of identical "More info" rows
+ * tells a reader nothing about which one answers their question.
  */
 import { useId, useState } from "react";
 import type { ReactNode } from "react";
@@ -27,6 +31,7 @@ import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 export function HelpFold({
   children,
   label,
+  title,
   className = "",
 }: {
   /** The explanation. Revealed only on request — a description that shows up uninvited is what this replaces. */
@@ -37,6 +42,13 @@ export function HelpFold({
    * user tabbing past knows what the fold is about without the panel repeating the tab bar.
    */
   label?: string;
+  /**
+   * A fold that names its own subject ("Set up the bot"), replacing the generic row text — for a
+   * stack of folds, where a column of identical "More info" rows would say nothing about which
+   * one to open. A title IS the accessible name, so it takes `label`'s place rather than joining
+   * it: two names for one trigger is what breaks "label in name".
+   */
+  title?: string;
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -49,12 +61,14 @@ export function HelpFold({
         aria-controls={panelId}
         // The visible text is a prefix of the accessible name, so "label in name" holds and a
         // voice-control user can still say what they see.
-        {...(label !== undefined ? { "aria-label": S.common.moreInfoAbout(label) } : {})}
+        {...(title === undefined && label !== undefined
+          ? { "aria-label": S.common.moreInfoAbout(label) }
+          : {})}
         onClick={() => setOpen((v) => !v)}
         className={`flex items-center ${ICON_GAP.tight} rounded text-xs text-gray-500 transition-colors duration-150 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200`}
       >
         <Chevron open={open} size={ICON_SIZE.chevronDense} />
-        {S.common.moreInfo}
+        {title ?? S.common.moreInfo}
       </button>
       {/* pl-4.5 = the chevron's 12px plus the row's gap, so the body lines up under the label. */}
       <div

@@ -1180,6 +1180,8 @@ export interface SessionInfo {
    * history itself when it needs it.
    */
   tracePath?: string;
+  /** Present when the Session has an ENABLED messaging binding: its channel (the sidebar row's per-channel indicator). */
+  messagingChannel?: MessagingChannel;
 }
 
 /**
@@ -1594,6 +1596,181 @@ export interface SessionProcessInfo {
 
 export interface SessionProcessesResponse {
   processes: SessionProcessInfo[];
+}
+
+// ---------------------------------------------------------------------------
+// Messaging bindings (/api/sessions/:sessionId/messaging/*)
+// ---------------------------------------------------------------------------
+
+/** Messaging channels a Session can bind to. */
+export type MessagingChannel = "feishu" | "telegram";
+
+/** Event-connection runtime state of one binding (kept in memory, not persisted). */
+export type MessagingRuntimeState = "disconnected" | "connecting" | "connected" | "error";
+
+export interface MessagingRuntimeStatus {
+  state: MessagingRuntimeState;
+  /** Failure detail; present only in the `error` state. */
+  lastError?: string;
+  /** When the state last changed (ISO 8601); absent for a binding that never connected. */
+  changedAt?: string;
+}
+
+/** The stored Feishu config, secret masked (plaintext never leaves the server). */
+export interface FeishuBindingInfo {
+  channel: "feishu";
+  sessionId: string;
+  appId: string;
+  /**
+   * Masked app secret (site-wide mask rule: `***`, or `first4…last4` for long values);
+   * absent when no secret is stored (never entered, or cleared) — the binding cannot be
+   * enabled until one is saved.
+   */
+  appSecretMasked?: string;
+  baseDomain: string;
+  /** Connection INTENT (the state toggle's value); new bindings start disabled, and at most one of a Session's channels is enabled. */
+  enabled: boolean;
+  /**
+   * Whether an inbound Feishu chat is known (the bot has been messaged at least once).
+   * Replies and test messages target that chat; until it exists nothing can be sent.
+   */
+  lastChatKnown: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** The stored Telegram config, token masked (plaintext never leaves the server). */
+export interface TelegramBindingInfo {
+  channel: "telegram";
+  sessionId: string;
+  /** The numeric bot id (the token's half before the colon) — the channel-scoped account identity, never secret. */
+  botId: string;
+  /**
+   * Masked bot token (site-wide mask rule: `***`, or `first4…last4` for long values);
+   * absent when no token is stored (cleared) — the binding cannot be enabled until one
+   * is saved.
+   */
+  botTokenMasked?: string;
+  /** Connection INTENT (the state toggle's value); new bindings start disabled, and at most one of a Session's channels is enabled. */
+  enabled: boolean;
+  /**
+   * Whether an inbound Telegram chat is known (the bot has been messaged at least once).
+   * Replies and test messages target that chat; until it exists nothing can be sent.
+   */
+  lastChatKnown: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A Session's saved config for one messaging channel (`channel` is the discriminant). */
+export type MessagingBindingInfo = FeishuBindingInfo | TelegramBindingInfo;
+
+/** One saved channel config with its event-connection runtime status. */
+export interface MessagingChannelState {
+  binding: MessagingBindingInfo;
+  /** Only the enabled channel's connection is ever anything but disconnected. */
+  status: MessagingRuntimeStatus;
+}
+
+/**
+ * GET …/messaging response — the channel-agnostic read the channel-aware binding editor
+ * loads: EVERY saved channel config (masked) with its runtime status. A Session may keep
+ * both channels saved; at most one of them is enabled.
+ */
+export interface MessagingBindingsResponse {
+  bindings: MessagingChannelState[];
+}
+
+/** GET / PUT …/messaging/feishu response: the Feishu config (null = not saved) plus its runtime status. */
+export interface FeishuBindingResponse {
+  binding: FeishuBindingInfo | null;
+  status: MessagingRuntimeStatus;
+}
+
+/** GET / PUT …/messaging/telegram response (the Telegram narrowing of the same envelope). */
+export interface TelegramBindingResponse {
+  binding: TelegramBindingInfo | null;
+  status: MessagingRuntimeStatus;
+}
+
+/**
+ * PUT …/messaging/feishu — saves credentials/config ONLY, never flipping the connection
+ * (exception: an enabled binding's connector restarts with the new credentials so stored
+ * config and live connection never diverge). The connection toggle is POST …/state.
+ */
+export interface FeishuBindingPutRequest {
+  appId: string;
+  /** Omitted or blank keeps the stored secret (the masked value never round-trips). */
+  appSecret?: string;
+  /** Defaults to https://open.feishu.cn when omitted or blank. */
+  baseDomain?: string;
+  /**
+   * Drops the STORED secret (the models-page clear idiom; a typed `appSecret` wins over
+   * it). Refused with 409 `messaging_disable_before_clear` while the binding is enabled.
+   */
+  clearAppSecret?: boolean;
+}
+
+/**
+ * PUT …/messaging/telegram — saves the credential ONLY, same contract as the Feishu PUT
+ * (an enabled binding's connector restarts with the new token; the connection toggle is
+ * POST …/state). 409 `telegram_bot_in_use` when the token's bot id is bound elsewhere.
+ */
+export interface TelegramBindingPutRequest {
+  /** Omitted or blank keeps the stored token (the masked value never round-trips). */
+  botToken?: string;
+  /**
+   * Drops the STORED token (the models-page clear idiom; a typed `botToken` wins over
+   * it — and the row keeps its bot identity). Refused with 409
+   * `messaging_disable_before_clear` while the binding is enabled.
+   */
+  clearBotToken?: boolean;
+}
+
+/**
+ * POST …/messaging/<channel>/state — enable connects with the STORED credentials,
+ * disable terminates. Enabling is mutually exclusive per Session: while another channel
+ * is enabled it answers 409 `another_channel_enabled` (turn that one off first), and a
+ * config whose secret is missing answers its channel's 400 `*_required`.
+ */
+export interface MessagingBindingStateRequest {
+  enabled: boolean;
+}
+
+/** POST …/messaging/feishu/test — draft values; each omitted field falls back to the stored binding. */
+export interface FeishuTestRequest {
+  appId?: string;
+  appSecret?: string;
+  baseDomain?: string;
+}
+
+/** Credential-test outcome (an unreachable/rejected credential is `ok:false`, not an HTTP error). */
+export interface FeishuTestResponse {
+  ok: boolean;
+  latencyMs?: number;
+  error?: string;
+}
+
+/** POST …/messaging/telegram/test — a draft token, falling back to the stored binding when omitted. */
+export interface TelegramTestRequest {
+  botToken?: string;
+}
+
+/** Telegram credential-test outcome: success additionally names the bot the token signs in as. */
+export interface TelegramTestResponse {
+  ok: boolean;
+  latencyMs?: number;
+  /** The bot's `@username`, when the API reports one. */
+  botUsername?: string;
+  error?: string;
+}
+
+/**
+ * POST …/messaging/<channel>/test-message — sent to the last known chat (409
+ * `feishu_no_chat` / `telegram_no_chat` before one exists).
+ */
+export interface MessagingTestMessageResponse {
+  ok: true;
 }
 
 // ---------------------------------------------------------------------------

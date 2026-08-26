@@ -43,6 +43,7 @@ import type { ProxyControl } from "./hmr/capabilities.js";
 import { openDatabase } from "./db/database.js";
 import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
 import { ErrorsRepo } from "./db/repos/errors.js";
+import { MessagingBindingsRepo } from "./db/repos/messaging-bindings.js";
 import { GoalsRepo } from "./db/repos/goals.js";
 import { SchedulesRepo } from "./db/repos/schedules.js";
 import { ServerSettingsRepo } from "./db/repos/server-settings.js";
@@ -70,6 +71,13 @@ import {
 } from "./runtime/session-manager.js";
 import { SessionSources } from "./runtime/session-sources.js";
 import { Scheduler } from "./runtime/scheduler.js";
+import { MessagingBridge } from "./runtime/messaging/bridge.js";
+import { FeishuConnector } from "./runtime/messaging/feishu-connector.js";
+import { createLarkSdk } from "./runtime/messaging/feishu-sdk.js";
+import type { FeishuSdk } from "./runtime/messaging/feishu-sdk.js";
+import { TelegramConnector } from "./runtime/messaging/telegram-connector.js";
+import { createTelegramTransport } from "./runtime/messaging/telegram-api.js";
+import type { TelegramTransport } from "./runtime/messaging/telegram-api.js";
 import { TitleGenerator, TitleNotifier } from "./runtime/title-generator.js";
 import { AdminService } from "./services/admin-service.js";
 import { DesktopService } from "./services/desktop-service.js";
@@ -130,6 +138,7 @@ import { agentConfigRoutes } from "./http/routes/agent-config.js";
 import { agentTracesRoutes } from "./http/routes/agent-traces.js";
 import { usageRoutes } from "./http/routes/usage.js";
 import { agentSessionsRoutes, sessionsRoutes } from "./http/routes/sessions.js";
+import { sessionMessagingRoutes } from "./http/routes/messaging.js";
 import { versionRoutes } from "./http/routes/version.js";
 import { UsageRecorder } from "./runtime/usage-recorder.js";
 import { previewRoutes } from "./http/routes/preview.js";
@@ -165,6 +174,10 @@ export interface AppDeps {
   schedulesRepo: SchedulesRepo;
   goalsRepo: GoalsRepo;
   errorsRepo: ErrorsRepo;
+  /** Session ↔ messaging-channel bot bindings (stored; runtime connections live on `messaging`). */
+  messagingRepo: MessagingBindingsRepo;
+  /** Messaging bridge — channel connectors + event connections (started by the platform next to the scheduler). */
+  messaging: MessagingBridge;
   scheduler: Scheduler;
   channels: ChannelHub;
   manager: SessionManager;
@@ -194,6 +207,12 @@ export interface BuildDepsOverrides {
   titles?: TitleNotifier;
   /** Test double: update-check service with a stubbed fetch/clock (avoids real network calls). */
   updateCheck?: UpdateCheckService;
+  /** Test double: the Feishu connector's SDK factory (avoids real Lark network / long connections). */
+  feishuSdk?: FeishuSdk;
+  /** Test double: the Telegram connector's Bot API transport (avoids real Telegram network / long polls). */
+  telegramTransport?: TelegramTransport;
+  /** Test hook: the Telegram connector's poll backoff (tests collapse it to zero). */
+  telegramRetryDelayMs?: (failures: number) => number;
   /**
    * Test double: scrypt work factor for password hashes written through this app.
    * Omitted in production, where the KDF runs at full strength.
@@ -709,6 +728,26 @@ export function buildAppDeps(
       : {}),
     ...(overrides.now ? { now: overrides.now } : {}),
   });
+  const messagingRepo = new MessagingBindingsRepo(db);
+  // Messaging bridge: assembled here, started by platform.ts's create() (tests drive it
+  // via sync()/fake transports, no real network), stopped by the same create()'s dispose
+  // effect. One connector per channel; further channels register here.
+  const messaging = new MessagingBridge({
+    repo: messagingRepo,
+    sessions: sessionsRepo,
+    channels,
+    runner: manager,
+    connectors: [
+      new FeishuConnector(overrides.feishuSdk ?? createLarkSdk()),
+      new TelegramConnector(
+        overrides.telegramTransport ?? createTelegramTransport(),
+        overrides.telegramRetryDelayMs ? { retryDelayMs: overrides.telegramRetryDelayMs } : {},
+      ),
+    ],
+    errors,
+    log,
+    ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}),
+  });
   const sessionService = new SessionService({
     root: config.root,
     sessions: sessionsRepo,
@@ -718,6 +757,15 @@ export function buildAppDeps(
     traceIndex,
     proxyEnv,
     controlEnv,
+    // List rows carry the ENABLED channel's indicator (saved-but-dark configs stay off
+    // the row); a point query per row keeps the repo out of the service. An unknown
+    // stored channel reads as none (same defensive skip as the bridge and the routes).
+    messagingChannel: (sessionId) => {
+      const enabled = messagingRepo.findEnabled(sessionId);
+      return enabled !== null && (enabled.channel === "feishu" || enabled.channel === "telegram")
+        ? enabled.channel
+        : null;
+    },
   });
   // Schedule scheduler: assembled here, started by platform.ts's create() (tests drive it
   // via tickOnce, no real timer), stopped by the same create()'s dispose effect.
@@ -762,6 +810,8 @@ export function buildAppDeps(
     schedulesRepo,
     goalsRepo,
     errorsRepo,
+    messagingRepo,
+    messaging,
     scheduler,
     channels,
     manager,
@@ -859,6 +909,7 @@ export function createApp(
   app.route("/api/projects/:projectId/agents/:agentId/sessions", agentSessionsRoutes(deps));
   app.route("/api/projects/:projectId/usage", usageRoutes(deps));
   app.route("/api/sessions", sessionsRoutes(deps));
+  app.route("/api/sessions", sessionMessagingRoutes(deps));
 
   // Workspace HTML preview on the separate preview origin: deliberately outside /api and
   // outside the auth middleware — that origin never receives the session cookie, so the

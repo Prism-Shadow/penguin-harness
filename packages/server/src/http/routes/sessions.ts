@@ -707,6 +707,10 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       );
       deps.sessionsRepo.deleteById(row.sessionId);
       deps.goalsRepo.deleteBySession(row.sessionId);
+      // A bound Session takes its messaging bindings with it: close the channel
+      // connection and drop every channel's row (no-op when unbound; bulk Agent/Project
+      // deletes are reconciled by the bridge's next start()).
+      deps.messaging.unbindSession(row.sessionId);
       // Drop the derived-origin entry along with the Session (bulk Agent/Project deletion
       // may leave stale entries; session ids are never reused, so they are never matched).
       deps.sessionSources.delete(row.sessionId);

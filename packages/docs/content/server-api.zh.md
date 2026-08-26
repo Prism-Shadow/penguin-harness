@@ -282,6 +282,28 @@ Workspace 文件可能由 Agent 生成，`GET /files/content` 一律按不可信
 
 文件名始终以 `filename*=UTF-8''` 形式携带（百分号编码）。`preview=1` 是预览跳转在没有独立预览源时的回退目标：文档保留真实类型，可以正常渲染并执行脚本，但沙箱刻意不含 `allow-same-origin`，因此它落在一个不透明源里，既拿不到本源的 Cookie，也调不动 API。这份隔离也正是那里 `localStorage`、`document.cookie` 与第三方 embed 全都不可用的原因。
 
+### 消息绑定（飞书、Telegram）
+
+Session 可以接入消息软件机器人——目前的渠道是飞书与 Telegram，各自挂在 `/messaging/<channel>` 之下。一个 Session **每个渠道至多保存一份配置**（两份可同时保存），其中**至多一个渠道处于启用状态**——启用的渠道持有在线连接。发给机器人的消息以普通用户输入在该 Session 上发起 Task——与在网页输入框里输入完全一致（无标记块；忙碌时排入 follow-up 队列）——完成的回复再转发回对应会话，并按渠道文本上限分段（Telegram 硬上限 4096 字符）。飞书经 SDK 的 WebSocket 长连接接收事件；Telegram 用 `getUpdates` 长轮询——两者都无需公网回调地址。保存与连接是两件事：PUT 只保存凭据，连接由独立的 state 接口开关。路径同上表，省略 `/api/sessions/:sessionId` 前缀。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | /messaging | 渠道无关读取：该 Session **每一份**已保存的渠道配置（`channel` 判别字段、密钥掩码、逐行 `enabled` 意图 + 连接运行状态 + `lastChatKnown`）。渠道感知的绑定编辑器只加载这一个 |
+| GET | /messaging/feishu | `{binding, status}` 形态下的飞书配置（未保存时为 null） |
+| PUT | /messaging/feishu | 保存凭据：`{appId, appSecret?, baseDomain?, clearAppSecret?}`。`appSecret` 省略或留空则保持已存值；`clearAppSecret: true` 清除已存密钥（新输入的密钥优先于清除标记；启用中返回 409 `messaging_disable_before_clear`——清除后配置行与非密钥字段保留）；`baseDomain` 默认 `https://open.feishu.cn`。不带连接副作用——唯一例外：**已启用**绑定的连接器会用新凭据重启，保证存储配置与在线连接永不背离。应用已绑定到其他 Session 时返回 409 `feishu_app_in_use` |
+| POST | /messaging/feishu/state | 连接开关：`{enabled}`——启用即用**已存凭据**建立连接，停用即断开。该 Session 另一渠道已启用时返回 409 `another_channel_enabled`（先停用它）；已存配置没有密钥时返回 400 `feishu_secret_required`。新配置默认停用；服务端启动只连接已启用的配置 |
+| DELETE | /messaging/feishu | 整体删除该渠道的配置（含 App Secret；另一渠道不受影响）。仅为 API 完整性保留——Web 界面的移除入口是清除标记 |
+| POST | /messaging/feishu/test | 用请求携带的草稿值做凭据探测，缺省字段回落到已存配置 → `{ok, latencyMs?, error?}`（凭据被拒是 `ok: false`，不是 HTTP 错误） |
+| POST | /messaging/feishu/test-message | 向最近一次收到消息的会话发送一条固定测试文本；在飞书里给机器人发过消息之前返回 409 `feishu_no_chat` |
+| GET | /messaging/telegram | 同一形态下的 Telegram 配置（`botId`、`botTokenMasked`） |
+| PUT | /messaging/telegram | 保存凭据：`{botToken?, clearBotToken?}`——整份凭据就是 @BotFather 签发的一条 `<机器人 id>:<密钥>` Token（省略或留空则保持已存值；读不出数字 id 时返回 400 `telegram_token_invalid`；清除标记与飞书同口径，清除后配置保留其机器人身份）。保存与启用的分离一致。机器人 id 已绑定到其他 Session 时返回 409 `telegram_bot_in_use` |
+| POST | /messaging/telegram/state | 与飞书开关同一契约（无已存 Token 时返回 400 `telegram_token_required`） |
+| DELETE | /messaging/telegram | 整体删除该渠道的配置（含 Bot Token）。仅为 API 完整性保留 |
+| POST | /messaging/telegram/test | 凭据探测（`getMe`），草稿 Token 缺省回落到已存值 → `{ok, latencyMs?, botUsername?, error?}`——成功时报出 Token 登录到的机器人 |
+| POST | /messaging/telegram/test-message | 向最近一次收到消息的会话发送一条固定测试文本；在 Telegram 里给机器人发过消息之前返回 409 `telegram_no_chat` |
+
+没有已存密钥的配置（被清除过的）不返回掩码字段，也无法启用。跨 Session 的唯一性按渠道内机器人账号计——飞书的账号身份是 `app_id`，Telegram 是 Token 冒号前的数字机器人 id（换发 Token 也不会改变）。读取与两个测试接口对任意 Project 成员开放；PUT、state 开关与 DELETE 仅限所有者（与 Vault 同口径——绑定写操作携带或作用于密钥）。密钥永不回传。删除 Session 会连带删除其全部渠道配置；入站仅处理文本消息（其他类型收到双语的“仅支持文本”回复）。Telegram 建立连接时先清空积压：无连接期间发来的消息会被跳过，与飞书“错过的事件即消失”同口径。
+
 ### 独立源预览
 
 Files 面板内的 HTML 渲染视图（iframe）与“新页面打开”都走 `GET /files/preview-redirect?path=`：先鉴权，再签发一枚短时效 HMAC 令牌，然后 302 跳转到**另一个源**：

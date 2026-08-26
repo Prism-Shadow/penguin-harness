@@ -36,6 +36,10 @@ import type {
   DirListResponse,
   EndpointModelListRequest,
   EndpointModelListResponse,
+  FeishuBindingPutRequest,
+  FeishuBindingResponse,
+  FeishuTestRequest,
+  FeishuTestResponse,
   FilesStatRequest,
   FilesStatResponse,
   GoalResponse,
@@ -51,6 +55,9 @@ import type {
   MemoryOverviewResponse,
   MemoryScopeExport,
   MessagesResponse,
+  MessagingBindingsResponse,
+  MessagingChannel,
+  MessagingTestMessageResponse,
   ModelOAuthCodeResponse,
   ModelOAuthStartRequest,
   ModelOAuthStartResponse,
@@ -95,6 +102,10 @@ import type {
   SubagentMessageResponse,
   TaskCreateRequest,
   TaskCreateResponse,
+  TelegramBindingPutRequest,
+  TelegramBindingResponse,
+  TelegramTestRequest,
+  TelegramTestResponse,
   TraceAnalysisResponse,
   TraceEventsResponse,
   TraceImportRequest,
@@ -495,6 +506,58 @@ export const patchSession = (sessionId: string, body: SessionPatchRequest) =>
 
 export const deleteSession = (sessionId: string) =>
   apiFetch<void>(`/api/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
+
+// Messaging bindings ----------------------------------------------------------
+
+/** The channel-agnostic read: every saved channel config + status (the channel-aware editor's load + poll). */
+export const getMessagingBinding = (sessionId: string) =>
+  apiFetch<MessagingBindingsResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/messaging`);
+
+/** Saves Feishu credentials only — the connection toggle is setMessagingBindingState (an enabled binding restarts on save so config and connection never diverge). */
+export const putFeishuBinding = (sessionId: string, body: FeishuBindingPutRequest) =>
+  apiFetch<FeishuBindingResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/messaging/feishu`,
+    { method: "PUT", body },
+  );
+
+/** Saves the Telegram token only — the same save/enable split as the Feishu PUT. */
+export const putTelegramBinding = (sessionId: string, body: TelegramBindingPutRequest) =>
+  apiFetch<TelegramBindingResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/messaging/telegram`,
+    { method: "PUT", body },
+  );
+
+/** The connection toggle: enable connects with the STORED credentials (409 `another_channel_enabled` while the other channel is enabled), disable terminates. */
+export const setMessagingBindingState = (
+  sessionId: string,
+  channel: MessagingChannel,
+  enabled: boolean,
+) =>
+  apiFetch<FeishuBindingResponse | TelegramBindingResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/messaging/${channel}/state`,
+    { method: "POST", body: { enabled } },
+  );
+
+/** Feishu credential probe with the form's draft values; omitted fields fall back to the stored binding. */
+export const testFeishuBinding = (sessionId: string, body: FeishuTestRequest) =>
+  apiFetch<FeishuTestResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/messaging/feishu/test`,
+    { method: "POST", body },
+  );
+
+/** Telegram credential probe (`getMe`); success additionally names the bot's @username. */
+export const testTelegramBinding = (sessionId: string, body: TelegramTestRequest) =>
+  apiFetch<TelegramTestResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/messaging/telegram/test`,
+    { method: "POST", body },
+  );
+
+/** Short fixed text to the binding's last known chat (409 `feishu_no_chat` / `telegram_no_chat` before one exists). */
+export const sendMessagingTestMessage = (sessionId: string, channel: MessagingChannel) =>
+  apiFetch<MessagingTestMessageResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/messaging/${channel}/test-message`,
+    { method: "POST", body: {} },
+  );
 
 /** Windowed history request: the newest N units (tail), or the N units before a cursor. */
 export type MessagesPageQuery =

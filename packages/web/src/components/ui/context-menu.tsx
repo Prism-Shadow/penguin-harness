@@ -64,6 +64,12 @@ export interface RowContextMenu {
    * row's click handler calls it first so opening the menu does not also open the row.
    */
   consumeLongPressClick: () => boolean;
+  /**
+   * Programmatic open at a given viewport box (the row's ellipsis "more" button anchors
+   * the panel at itself). Same direct setAnchor path as the keyboard chord — no hold
+   * lifecycle is involved, and the Dropdown's dismiss stack takes over once open.
+   */
+  openAt: (rect: AnchorRect) => void;
   /** Close from inside the panel (an item ran). */
   close: () => void;
 }
@@ -188,6 +194,7 @@ export function useRowContextMenu(): RowContextMenu {
     anchor,
     returnFocus: () => row.current?.querySelector<HTMLElement>("button") ?? null,
     consumeLongPressClick: () => dispatch({ kind: "click" }).swallow,
+    openAt: setAnchor,
     close,
   };
 }

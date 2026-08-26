@@ -49,4 +49,16 @@ describe("HelpFold", () => {
     expect(named).toContain(`aria-label="${accessible}"`);
     expect(accessible.startsWith(S.common.moreInfo)).toBe(true);
   });
+
+  it("lets a fold in a stack title itself, and then carries no second name", () => {
+    // A column of identical "More info" rows says nothing about which one to open, so an FAQ
+    // titles each fold. The visible title IS the accessible name — an aria-label beside it
+    // would be a second name for one trigger, which is what breaks "label in name".
+    const titled = renderToStaticMarkup(
+      createElement(HelpFold, { title: "Set up the bot", label: "Vault", children: DESC }),
+    );
+    expect(titled).toContain("Set up the bot");
+    expect(titled).not.toContain(S.common.moreInfo);
+    expect(titled).not.toContain("aria-label=");
+  });
 });
