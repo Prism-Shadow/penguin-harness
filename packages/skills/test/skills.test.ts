@@ -21,6 +21,30 @@ import {
 
 const skillsRoot = path.resolve(import.meta.dirname, "../skills");
 
+/** READMEs carrying the group table, relative to this directory. */
+const README_TABLES = [
+  { label: "packages/skills/README.md", file: "../README.md" },
+  { label: "README.md", file: "../../../README.md" },
+  { label: "README.zh.md", file: "../../../README.zh.md" },
+];
+
+/**
+ * Skill names in a README's group table. Located by the table's own `Group` / `分组` header
+ * row rather than by a surrounding heading, so the three files parse the same way despite
+ * different headings and list separators; rows end at the first line that is not a table row.
+ */
+function readmeTableSkills(markdown: string): string[] {
+  const lines = markdown.split("\n");
+  const header = lines.findIndex((line) => /^\|\s*(?:Group|分组)\s*\|/.test(line));
+  if (header === -1) return [];
+  const names: string[] = [];
+  for (const line of lines.slice(header + 1)) {
+    if (!line.startsWith("|")) break;
+    for (const match of line.matchAll(/`([^`]+)`/g)) names.push(match[1]!);
+  }
+  return names;
+}
+
 /** Minimal LibrarySkill for groupSkills unit tests. */
 const fakeSkill = (name: string): LibrarySkill => ({
   name,
@@ -243,17 +267,29 @@ describe("loadSkillGroups / groupSkills", () => {
   });
 
   /**
-   * The package README repeats the manifest as a table for human readers. Derived from the
-   * library rather than pinned, so adding a Skill fails here instead of leaving the table
-   * quietly short — the same guard the docs pages get from docs' skills-sync test.
+   * This package's README and the repository's two root READMEs each repeat the manifest as a
+   * table for human readers, and nothing else reads those tables. Derived from the library
+   * rather than pinned, so adding a Skill fails here instead of leaving a table quietly short —
+   * the same guard the docs pages get from docs' skills-sync test. The root READMEs are checked
+   * from here because this package owns the library the tables claim to list; they belong to no
+   * package of their own.
    */
-  it("the package README's group table names every library Skill", async () => {
-    const readme = await fs.readFile(path.resolve(import.meta.dirname, "../README.md"), "utf8");
-    const missing = loadLibrarySkills()
-      .map((skill) => skill.name)
-      .filter((name) => !readme.includes(`\`${name}\``));
-    expect(missing, "skills missing from README.md").toEqual([]);
-  });
+  for (const { label, file } of README_TABLES) {
+    it(`${label}'s group table names exactly the library's Skills`, async () => {
+      const markdown = await fs.readFile(path.resolve(import.meta.dirname, file), "utf8");
+      const listed = readmeTableSkills(markdown);
+      expect(listed.length, `no Group/分组 table found in ${label}`).toBeGreaterThan(0);
+      const library = loadLibrarySkills().map((skill) => skill.name);
+      expect(
+        library.filter((name) => !listed.includes(name)),
+        `Skills that ship but are missing from ${label}`,
+      ).toEqual([]);
+      expect(
+        listed.filter((name) => !library.includes(name)).sort(),
+        `Skills listed in ${label} that no longer ship`,
+      ).toEqual([]);
+    });
+  }
 });
 
 describe("librarySkill", () => {
