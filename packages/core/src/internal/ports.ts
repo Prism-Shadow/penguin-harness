@@ -36,8 +36,8 @@
  * to the left -- `dev:server` failing to bind, or the Vite proxy answering from the harness.
  * Its data root is split from `dev-data` for the same reason as its port: a data root
  * admits one server at a time (`<root>/server.lock`), so on a shared root the Agent's
- * `dev:server` would refuse to start against the harness's own lock no matter how the
- * ports are laid out. The dev desktop shell deliberately stays on `dev-data`: a second
+ * `dev:server` would refuse to start, blocked by the harness's own lock, no matter how
+ * the ports are laid out. The dev desktop shell deliberately stays on `dev-data`: a second
  * server on a locked root is its attach-mode case (the window opens the running
  * instance), not a startup failure, and sharing one dataset between `pnpm dev` and
  * `pnpm desktop` used alternately is the point of the common root.
