@@ -80,7 +80,10 @@ posixOnly("remote-installer.cjs", () => {
   const programDir = () => path.join(home, ".local", "share", "penguin");
 
   beforeEach(() => {
-    work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-installer-test-"));
+    // realpathSync: on macOS os.tmpdir() is /var/… which is a symlink to /private/var/…, and
+    // the installer's own realpath of the launcher symlink resolves it — comparing the two
+    // spellings of the same directory fails there and nowhere else.
+    work = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "penguin-installer-test-")));
     home = path.join(work, "home");
     scratch = path.join(work, "scratch");
     fs.mkdirSync(home, { recursive: true });

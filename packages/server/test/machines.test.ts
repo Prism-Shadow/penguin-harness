@@ -9,6 +9,7 @@ import fs from "node:fs";
 import zlib from "node:zlib";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { machineIdentity, parseHostAliases, parseSshSettings } from "../src/machines/ssh-config.js";
 import { parseProbeOutput, POSIX_PROBE, WINDOWS_PROBE } from "../src/machines/detect.js";
@@ -452,7 +453,10 @@ describe("hmrPayloadImage", () => {
     // argv[1] is the test runner, which resolves nothing — stand in a file of this
     // package, the same resolution context every real entry shape has.
     const originalArgv1 = process.argv[1];
-    process.argv[1] = new URL(import.meta.url).pathname;
+    // fileURLToPath, not URL.pathname: on Windows the latter yields "/D:/…" — a leading
+    // slash before the drive letter — and the resolver then finds no skill library, so the
+    // image ships without one and the assertion below reads as a missing feature.
+    process.argv[1] = fileURLToPath(import.meta.url);
     try {
       seedStore(work);
       const image = resolvePayloadImage(work, "/repo/packages/server/src/index.ts");
