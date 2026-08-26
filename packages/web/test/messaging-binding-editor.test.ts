@@ -1,11 +1,12 @@
 /**
  * The messaging binding editor's rendered shape (src/features/messaging/messaging-binding-editor.tsx).
  *
- * Four rules this pins, all of which are invisible to a type checker: the form opens on its
+ * Five rules this pins, all of which are invisible to a type checker: the form opens on its
  * FIELDS (the explanation lives in the collapsed FAQ under the save area, not above the first
  * input), each channel's developer-console link rides the credential field's corner, a stored
- * secret is removed by the models-page clear checkbox rather than an unbind button — and that
- * checkbox is gated, on screen, while the channel holds the connection.
+ * secret is removed by the models-page clear checkbox rather than an unbind button — that
+ * checkbox is gated, on screen, while the channel holds the connection — and a connection
+ * error's detail reaches the reader whole rather than as a few words of a shared row.
  */
 import { describe, expect, it } from "vitest";
 import { createElement } from "react";
@@ -98,6 +99,33 @@ describe("MessagingBindingBody", () => {
     );
     expect(live).toContain('type="checkbox" disabled=""');
     expect(live).toContain(S.messaging.disableBeforeClearHint);
+  });
+
+  it("gives a connection error its own line, whole, instead of a share of the status row", () => {
+    // The connection failures worth reporting name the action in the sentence — a share of
+    // a row that already carries a switch, a label and a status word cut this one to
+    // "Conflict: ter", which tells the reader nothing they can act on.
+    const lastError =
+      "getUpdates failed: another program is already polling this bot — one bot token can serve only one PenguinHarness server at a time (code 409)";
+    const html = render(
+      stateOf("telegram", {
+        telegram: {
+          ...DARK,
+          secretConfigured: true,
+          enabled: true,
+          status: { state: "error", lastError },
+        },
+      }),
+    );
+    // A paragraph of its own, carrying the message whole.
+    expect(html).toContain(`>${lastError}</p>`);
+    // Outside the toggle row: the row closes before the message begins.
+    const rowAt = html.indexOf("flex flex-wrap items-center gap-2 text-xs");
+    expect(rowAt).toBeGreaterThanOrEqual(0);
+    expect(html.slice(rowAt, html.indexOf(lastError, rowAt))).toContain("</div>");
+    // Bounded so an error still cannot push the probes far, with the whole text on hover.
+    expect(html).toContain("line-clamp-2");
+    expect(html).toContain(`title="${lastError}"`);
   });
 
   it("shows the switch's gating reason when the other channel holds the connection", () => {

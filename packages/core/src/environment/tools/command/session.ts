@@ -1,12 +1,12 @@
 /**
  * ManagedSession — runtime state and collection logic for a single command session.
  *
- * Spawns the process with `bash -lc <cmd>` (on Windows, the shell picked by `sessionShell()`
- * — see shell.ts), with stdout/stderr going through plain pipes (no
- * native dependency, clean output; an interactive program that detects no TTY falls back to
- * non-interactive mode, which parses more cleanly for the Agent anyway). `detached` makes the
- * child process the process-group leader, so both Ctrl-C and killing the whole group rely on
- * **process-group signals** (sending a signal to `-pid` also reaches background child processes).
+ * Spawns the process with the shell `sessionShell()` picked — `bash -lc <cmd>` wherever a bash
+ * exists, its fallback chain otherwise (see shell.ts) — with stdout/stderr going through plain
+ * pipes (no native dependency, clean output; an interactive program that detects no TTY falls
+ * back to non-interactive mode, which parses more cleanly for the Agent anyway). `detached`
+ * makes the child process the process-group leader, so both Ctrl-C and killing the whole group
+ * rely on **process-group signals** (a signal to `-pid` also reaches background child processes).
  * Windows has neither process groups nor real signals: every "signal" degrades to a hard
  * TerminateProcess, and tree-wide cleanup goes through `taskkill /t` instead (see signalGroup).
  *

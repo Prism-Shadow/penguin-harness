@@ -1,7 +1,7 @@
 /**
- * The Telegram Bot API seam: the three methods the Telegram connector uses (`getMe`,
- * `sendMessage`, `getUpdates`), behind an injectable transport so unit tests substitute a
- * fake and never open real network. Telegram needs no SDK — the Bot API is plain HTTPS
+ * The Telegram Bot API seam: the four methods the Telegram connector uses (`getMe`,
+ * `getWebhookInfo`, `sendMessage`, `getUpdates`), behind an injectable transport so unit
+ * tests substitute a fake and never open real network. Telegram needs no SDK — the Bot API is plain HTTPS
  * POSTs against https://api.telegram.org — so the production transport is a thin fetch
  * wrapper.
  *
@@ -41,6 +41,14 @@ export interface TelegramMessage {
   };
 }
 
+/**
+ * The slice of `getWebhookInfo`'s result the connector consumes. `url` is the empty string
+ * when no webhook is registered — that is the Bot API's own encoding, not a normalization.
+ */
+export interface TelegramWebhookInfo {
+  url: string;
+}
+
 /** One `getUpdates` entry. Only `message` updates are processed; the rest are skipped. */
 export interface TelegramUpdate {
   update_id: number;
@@ -51,6 +59,15 @@ export interface TelegramUpdate {
 export interface TelegramBotClient {
   /** Credential probe: resolves the bot's own account (the test endpoint surfaces its username). */
   getMe(): Promise<TelegramBotUser>;
+  /**
+   * Reports the webhook registered on the bot, if any. A webhook and `getUpdates` are
+   * mutually exclusive on the Bot API, so a bot pointed at one cannot be polled at all
+   * until it is removed — and removing it is the user's call, not this app's: the
+   * registration belongs to whatever service they pointed it at, and clearing it here
+   * would silently take that service off the air. Read-only on purpose; the connector
+   * reports the URL and leaves the bot alone.
+   */
+  getWebhookInfo(): Promise<TelegramWebhookInfo>;
   /** Sends a text message into a chat; `replyToMessageId` threads it under an inbound message. */
   sendMessage(args: { chatId: string; text: string; replyToMessageId?: number }): Promise<void>;
   /**
@@ -84,6 +101,23 @@ interface TelegramEnvelope<T> {
   result?: T;
   description?: string;
   error_code?: number;
+}
+
+/**
+ * The two 409s a Bot API caller can actually act on, rewritten to lead with the action.
+ * Telegram's own wording buries it — "Conflict: terminated by other getUpdates request;
+ * make sure that only one bot instance is running" reads as an internal detail until the
+ * end of the sentence, and a status line has room for a few words, not a paragraph. Any
+ * other description passes through untouched.
+ */
+function conflictText(description: string): string | null {
+  if (/terminated by other getUpdates/i.test(description)) {
+    return "another program is already polling this bot — one bot token can serve only one PenguinHarness server at a time";
+  }
+  if (/webhook is active/i.test(description)) {
+    return "a webhook is set on this bot, which blocks polling — remove it and the connection recovers on its own";
+  }
+  return null;
 }
 
 /**
@@ -125,7 +159,11 @@ export function createTelegramTransport(): TelegramTransport {
         }
         const body = (await res.json().catch(() => null)) as TelegramEnvelope<T> | null;
         if (body === null || body.ok !== true) {
-          const detail = body?.description ?? `HTTP ${res.status}`;
+          const described = body?.description;
+          const detail =
+            (described !== undefined ? conflictText(described) : null) ??
+            described ??
+            `HTTP ${res.status}`;
           const code = body?.error_code !== undefined ? ` (code ${body.error_code})` : "";
           throw new Error(`${method} failed: ${detail}${code}`);
         }
@@ -141,6 +179,7 @@ export function createTelegramTransport(): TelegramTransport {
 
       return {
         getMe: () => call<TelegramBotUser>("getMe", {}),
+        getWebhookInfo: () => call<TelegramWebhookInfo>("getWebhookInfo", {}),
         async sendMessage({ chatId, text, replyToMessageId }): Promise<void> {
           await call("sendMessage", {
             chat_id: wireChatId(chatId),

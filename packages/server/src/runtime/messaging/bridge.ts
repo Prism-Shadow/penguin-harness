@@ -11,7 +11,9 @@
  * re-saving an enabled binding restarts its connector with the new credentials, so the
  * stored config and the live connection never diverge).
  *
- * Inbound (channel → Session): every inbound message first records its chat as the
+ * Inbound (channel → Session): a message the binding has already processed is dropped
+ * first (see MESSAGING_INBOUND_DEDUPE_*) — channels redeliver, and nothing downstream of
+ * here is idempotent. Then every inbound message records its chat as the
  * binding's reply target; a text message then starts a Task on the bound Session as an
  * ordinary user input — exactly as if typed into the web composer, no marker block and no
  * special sender (the model deliberately does not learn where the message came from) —
@@ -71,6 +73,49 @@ export const MESSAGING_TEST_MESSAGE =
   "PenguinHarness test message: this Session's messaging binding works. 测试消息：该会话的消息绑定工作正常。";
 
 /**
+ * How many recently processed inbound message ids one binding remembers, and for how long.
+ *
+ * A redelivery arrives seconds after the original — a Feishu long connection replaying
+ * across a reconnect, or any connector resuming a stream whose acknowledgement never
+ * landed — so a short window over the last few messages catches every realistic one. The
+ * bound is the point: an unbounded set on a server that runs for months is a leak.
+ */
+const MESSAGING_INBOUND_DEDUPE_SIZE = 64;
+const MESSAGING_INBOUND_DEDUPE_WINDOW_MS = 10 * 60_000;
+
+/**
+ * The ids one binding has already processed, bounded by both count and age.
+ *
+ * Identity is the channel's own message id (Feishu's `message_id`, Telegram's
+ * `chatId:message_id`), never the text: a user genuinely does send "status?" twice, and
+ * swallowing the second one is a worse failure than the duplicate it would prevent.
+ *
+ * A `Map` iterates in insertion order, which is the ring: the oldest key is the first one
+ * `keys()` yields, so eviction is a `delete` of that.
+ */
+class RecentInboundIds {
+  private readonly seen = new Map<string, number>();
+
+  /** True when this id was already processed inside the window; records it otherwise. */
+  check(messageId: string, now: number): boolean {
+    const firstSeen = this.seen.get(messageId);
+    if (firstSeen !== undefined && now - firstSeen <= MESSAGING_INBOUND_DEDUPE_WINDOW_MS) {
+      return true;
+    }
+    // An id past the window is treated as new and re-dated, so a message id a channel
+    // reuses after long enough is not silently dropped forever.
+    this.seen.delete(messageId);
+    this.seen.set(messageId, now);
+    while (this.seen.size > MESSAGING_INBOUND_DEDUPE_SIZE) {
+      const oldest = this.seen.keys().next();
+      if (oldest.done === true) break;
+      this.seen.delete(oldest.value);
+    }
+    return false;
+  }
+}
+
+/**
  * Splits an outbound reply into channel-sized chunks, preferring newline boundaries so a
  * split lands between paragraphs rather than mid-sentence when it can.
  */
@@ -88,6 +133,11 @@ export function chunkMessagingText(text: string, max = MESSAGING_TEXT_CHUNK_CHAR
   }
   if (rest.length > 0) out.push(rest);
   return out;
+}
+
+/** Dedupe scope: one binding, i.e. a Session's config for one channel. */
+function inboundKey(sessionId: string, channel: string): string {
+  return `${sessionId}:${channel}`;
 }
 
 /** Minimal dependency on SessionManager (eases test doubles; mirrors ScheduleTaskRunner). */
@@ -150,6 +200,16 @@ interface BridgeEntry {
 
 export class MessagingBridge {
   private readonly entries = new Map<string, BridgeEntry>();
+  /**
+   * Processed inbound ids per BINDING (`sessionId:channel`), deliberately not per
+   * connection: re-saving an enabled binding restarts its connector, and a message
+   * already turned into a Task must not run again because the connector is new. In memory
+   * only — a server restart forgets, so a redelivery that survives a restart still
+   * duplicates. Accepted: a channel replays within seconds of its own reconnect, and
+   * persisting this would put a write on every inbound message to close a window the
+   * restart itself has almost always already closed.
+   */
+  private readonly recentInbound = new Map<string, RecentInboundIds>();
   private readonly connectors: ReadonlyMap<string, MessagingChannelConnector>;
   private readonly now: () => number;
   private readonly log: (line: string) => void;
@@ -199,12 +259,16 @@ export class MessagingBridge {
   /** Route DELETE: disconnect (when this channel holds the connection) and drop the row. No-op when unbound. */
   unbind(sessionId: string, channel: string): void {
     if (this.entries.get(sessionId)?.channel === channel) this.disconnect(sessionId);
+    this.recentInbound.delete(inboundKey(sessionId, channel));
     this.deps.repo.delete(sessionId, channel);
   }
 
   /** Session-delete cascade: disconnect and drop every channel's config. */
   unbindSession(sessionId: string): void {
     this.disconnect(sessionId);
+    for (const key of [...this.recentInbound.keys()]) {
+      if (key.startsWith(`${sessionId}:`)) this.recentInbound.delete(key);
+    }
     this.deps.repo.deleteSession(sessionId);
   }
 
@@ -347,8 +411,33 @@ export class MessagingBridge {
 
   // —— Inbound ——————————————————————————————————————————————————————————————
 
+  /**
+   * Has this binding already processed this message? A duplicate is a complete no-op —
+   * ahead of the chat record and the text-only reply, not just the Task start, because a
+   * replayed sticker would otherwise answer with the notice twice.
+   *
+   * Nothing downstream is idempotent: `startTask` with `queueIfBusy` appends to the
+   * follow-up queue unconditionally, and a queued input is published to the Session
+   * channel, so one redelivery becomes two runs in the chat AND two messages in the Web
+   * App. A connector that mints no id opts out rather than having every message after the
+   * first read as a duplicate.
+   */
+  private isRedelivery(entry: BridgeEntry, msg: MessagingInboundMessage): boolean {
+    if (msg.messageId === "") return false;
+    const key = inboundKey(entry.sessionId, entry.channel);
+    let recent = this.recentInbound.get(key);
+    if (recent === undefined) {
+      recent = new RecentInboundIds();
+      this.recentInbound.set(key, recent);
+    }
+    if (!recent.check(msg.messageId, this.now())) return false;
+    this.log(`[messaging] ${entry.channel} redelivered message ${msg.messageId}, ignored`);
+    return true;
+  }
+
   private async onInbound(entry: BridgeEntry, msg: MessagingInboundMessage): Promise<void> {
     if (this.entries.get(entry.sessionId) !== entry) return; // stale connection
+    if (this.isRedelivery(entry, msg)) return;
     try {
       const isDirect = msg.chatKind === "direct";
       // The chat becomes the reply target BEFORE any processing: even a rejected message

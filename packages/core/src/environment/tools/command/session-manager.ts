@@ -9,6 +9,7 @@
  * injection + hardening).
  * Docs: /docs/tools § "Background session caps".
  */
+import { statSync } from "node:fs";
 import { ManagedSession } from "./session.js";
 import { BackgroundRegistry } from "../background/index.js";
 import type { ProxyEnvPolicy } from "../../../interfaces/index.js";
@@ -156,6 +157,36 @@ function hostEnvForChild(policy: ProxyEnvPolicy | null): NodeJS.ProcessEnv {
   return env;
 }
 
+/**
+ * Rejects a working directory that cannot be spawned into, before the spawn.
+ *
+ * Node reports a missing or unusable `cwd` as `spawn <shell> ENOENT` — the error names the
+ * COMMAND, not the directory, so a Workspace that has been deleted or moved reads exactly
+ * like a missing shell and sends the reader hunting for a `bash` that was there all along.
+ * The directory is therefore checked here, where the real reason can still be named.
+ *
+ * Never auto-created: Agent.createSession and the server's Workspace guard both refuse to
+ * create a Workspace so a typo cannot silently start working in the wrong place, and a
+ * directory that disappeared under a live Session is a fact to report rather than paper over.
+ *
+ * A check before a spawn cannot close the gap between them: a directory removed in that
+ * window still produces the old ENOENT. That is the rare case, and the only alternative is
+ * re-reading Node's error after the fact, which is the string this exists to stop trusting.
+ */
+function assertUsableCwd(cwd: string): void {
+  let stat;
+  try {
+    stat = statSync(cwd);
+  } catch {
+    throw new Error(
+      `working directory does not exist: ${cwd}. That is the Session's Workspace unless a workdir was given — restore the directory, or run the command somewhere that exists.`,
+    );
+  }
+  if (!stat.isDirectory()) {
+    throw new Error(`working directory is not a directory: ${cwd}.`);
+  }
+}
+
 export class CommandSessionManager {
   private readonly registry = new BackgroundRegistry<ManagedSession>({
     idPrefix: "proc",
@@ -195,6 +226,7 @@ export class CommandSessionManager {
     if (this.registry.isDisposed) {
       throw new Error("command session manager disposed");
     }
+    assertUsableCwd(opts.cwd);
     return new ManagedSession({
       cmd: opts.cmd,
       cwd: opts.cwd,

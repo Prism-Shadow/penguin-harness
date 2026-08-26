@@ -696,4 +696,109 @@ describe("messaging binding routes and bridge", () => {
     t.deps.messaging.stop();
     expect(fake.connections[0]!.closed).toBe(true);
   });
+
+  // —— Inbound deduplication ————————————————————————————————————————————————
+  // A channel can hand the bridge the same message twice: a Feishu long connection
+  // replays across a reconnect, and any connector that resumes an unconfirmed stream can
+  // do the same. Nothing about `queueIfBusy` is idempotent, so both copies used to queue
+  // and both used to run — reaching the chat AND the Web App, since a follow-up's input
+  // is published to the Session channel.
+
+  it("a redelivered message starts one Task, not two", async () => {
+    await bindEnabled(SID);
+    const replay = {
+      chatId: "oc_chat_1",
+      chatType: "p2p",
+      messageId: "om_replayed",
+      messageType: "text",
+      content: JSON.stringify({ text: "deploy the build" }),
+    };
+    await fake.lastConnection().fire(replay);
+    await waitFor(() => runs.length === 1);
+    // The channel replays the identical event — same message id, same text.
+    await fake.lastConnection().fire(replay);
+    await settle(80);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]![0]!.text).toBe("deploy the build");
+  });
+
+  it("does not swallow a genuine repeat: the same text sent twice runs twice", async () => {
+    await bindEnabled(SID);
+    const send = (messageId: string) =>
+      fake.lastConnection().fire({
+        chatId: "oc_chat_1",
+        chatType: "p2p",
+        messageId,
+        messageType: "text",
+        content: JSON.stringify({ text: "status?" }),
+      });
+    // Identity is the channel's message id, never the text — a user really does ask the
+    // same question twice, and swallowing that is worse than the duplicate it prevents.
+    await send("om_first");
+    await waitFor(() => runs.length === 1);
+    await send("om_second");
+    await waitFor(() => runs.length === 2);
+    expect(runs.map((r) => r[0]!.text)).toEqual(["status?", "status?"]);
+  });
+
+  it("dedupes a replayed non-text message too, so the text-only notice is sent once", async () => {
+    await bindEnabled(SID);
+    const sticker = {
+      chatId: "oc_chat_1",
+      chatType: "p2p",
+      messageId: "om_sticker",
+      messageType: "sticker",
+      content: JSON.stringify({}),
+    };
+    await fake.lastConnection().fire(sticker);
+    await waitFor(() => fake.allSends().length === 1);
+    await fake.lastConnection().fire(sticker);
+    await settle(80);
+    expect(fake.allSends().filter((x) => x.text === MESSAGING_TEXT_ONLY_NOTICE)).toHaveLength(1);
+  });
+
+  it("bounds what it remembers: an id far enough back is forgotten rather than kept forever", async () => {
+    await bindEnabled(SID);
+    const fire = (messageId: string) =>
+      fake.lastConnection().fire({
+        chatId: "oc_chat_1",
+        chatType: "p2p",
+        messageId,
+        messageType: "text",
+        content: JSON.stringify({ text: messageId }),
+      });
+    // 65 distinct messages: one past the per-binding cap, so the first is evicted. The
+    // cap is the point — a server that runs for months must not accumulate every id it
+    // has ever seen — and forgetting the oldest is the price it buys.
+    for (let i = 0; i < 65; i += 1) await fire(`om_bound_${i}`);
+    await waitFor(() => runs.length === 65, 10_000);
+    await fire("om_bound_0");
+    await waitFor(() => runs.length === 66, 10_000);
+    // The most recent ids are still remembered.
+    await fire("om_bound_64");
+    await settle(80);
+    expect(runs).toHaveLength(66);
+  });
+
+  it("remembers across a connector restart, so a re-enable does not replay a message", async () => {
+    await bindEnabled(SID);
+    const evt = {
+      chatId: "oc_chat_1",
+      chatType: "p2p",
+      messageId: "om_across_restart",
+      messageType: "text",
+      content: JSON.stringify({ text: "once only" }),
+    };
+    await fake.lastConnection().fire(evt);
+    await waitFor(() => runs.length === 1);
+    // Save-while-enabled restarts the connector with a fresh entry; the memory of what has
+    // already been processed belongs to the binding, not to one connection.
+    expect((await api.post(`${BASE(SID)}/state`, { enabled: false })).status).toBe(200);
+    expect((await api.post(`${BASE(SID)}/state`, { enabled: true })).status).toBe(200);
+    await fake.lastConnection().fire(evt);
+    await settle(80);
+    expect(runs).toHaveLength(1);
+  });
 });
+
+const settle = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

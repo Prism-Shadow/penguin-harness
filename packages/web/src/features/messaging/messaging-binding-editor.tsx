@@ -500,28 +500,34 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
       {/* The connection toggle + live status on one line: the Switch is the intent, the
           tone-colored text is what the connection actually is right now. At most one
           channel is enabled per Session — the hint under the probes names what gates the
-          switch. The error state's `lastError` stays on this line by truncating inside its
-          own flex track, so a long message never grows the row and pushes the probes. */}
-      <div className="flex flex-wrap items-center gap-2 text-xs">
-        <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-          <Switch
-            checked={facts.enabled}
-            disabled={b.toggleBlocked}
-            onChange={(v) => void b.toggleEnabled(v)}
-          />
-          {S.messaging.enabled}
-        </label>
-        <span className="ml-2 text-gray-500 dark:text-gray-400">{S.messaging.statusLabel}</span>
-        <span
-          {...(facts.status.lastError !== undefined ? { title: facts.status.lastError } : {})}
-          className={`font-medium ${toneInk[STATUS_TONE[facts.status.state]]}`}
-        >
-          {S.messaging.status[facts.status.state]}
-        </span>
-        {facts.status.state === "error" && facts.status.lastError !== undefined && (
-          <span className="min-w-0 flex-1 truncate text-gray-400 dark:text-gray-500">
-            {facts.status.lastError}
+          switch. The error state's `lastError` gets its own line below rather than a track
+          on this one: the connection failures worth reporting name what to do about them
+          ("another program is already polling this bot …"), and a share of a row that
+          already carries a switch, a label and a status word truncates that to a couple of
+          words. Clamped to two lines so an error still cannot push the probes far, with
+          the whole message on hover. */}
+      <div className="space-y-1">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+            <Switch
+              checked={facts.enabled}
+              disabled={b.toggleBlocked}
+              onChange={(v) => void b.toggleEnabled(v)}
+            />
+            {S.messaging.enabled}
+          </label>
+          <span className="ml-2 text-gray-500 dark:text-gray-400">{S.messaging.statusLabel}</span>
+          <span className={`font-medium ${toneInk[STATUS_TONE[facts.status.state]]}`}>
+            {S.messaging.status[facts.status.state]}
           </span>
+        </div>
+        {facts.status.state === "error" && facts.status.lastError !== undefined && (
+          <p
+            title={facts.status.lastError}
+            className="line-clamp-2 text-xs break-words text-gray-500 dark:text-gray-400"
+          >
+            {facts.status.lastError}
+          </p>
         )}
       </div>
       {/* Entry-level probes — the MCP dialog idiom: standalone buttons, results as toasts. */}
@@ -681,6 +687,7 @@ export function MessagingBindingHelp({ channel }: { channel: MessagingChannel })
         <ul className="list-disc space-y-1 pl-4">
           <li>{S.messaging.troubleNoChat}</li>
           <li>{S.messaging.troubleConnError}</li>
+          {channel === "telegram" && <li>{S.messaging.troubleOnePoller}</li>}
         </ul>
       </HelpFold>
     </div>
