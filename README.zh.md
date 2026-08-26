@@ -9,8 +9,8 @@
 <p align="center">
   <a href="https://penguin.ooo/download">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="assets/readme/download-dark.svg" />
-      <img src="assets/readme/download-light.svg" alt="Download" height="44" />
+      <source media="(prefers-color-scheme: dark)" srcset="assets/readme/download-zh-dark.svg" />
+      <img src="assets/readme/download-zh-light.svg" alt="下载应用" height="44" />
     </picture>
   </a>
 </p>

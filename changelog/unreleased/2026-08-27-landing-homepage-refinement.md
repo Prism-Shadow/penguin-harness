@@ -16,7 +16,7 @@ Refined the landing page without removing its existing product sections, and mad
 - Restored the six homepage capability cards for the agent hub, Skill library, scheduled tasks, Subagents, Cost center, and multi-user management below the three screenshot tabs.
 - Restored the localized self-improvement demonstration video below the evolution diagram and trend cards, including its poster and full-cycle caption.
 - Removed the redundant divider above the footer copyright while retaining the footer's single top boundary.
-- Aligned the bilingual repository READMEs with the landing page's local-first, automated agent-app lifecycle narrative and added a single color-scheme-aware Download button above the streamlined platform proof points.
+- Aligned the bilingual repository READMEs with the landing page's local-first, automated agent-app lifecycle narrative and added one localized, color-scheme-aware app-download button above the streamlined platform proof points.
 - Corrected the LangChain comparison animation so both builders reset on one shared cycle and the manual-build tower visibly stacks one block at a time from the bottom.
 - Reduced the landing and docs navigation by removing the Cases shortcut and folding the self-evolution section into Highlights, while keeping the full sections in the homepage story.
 - Added the live GitHub star count to the landing and docs navigation, using a neutral dash instead of a decorative star while the count loads.

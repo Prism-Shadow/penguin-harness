@@ -1,0 +1,6 @@
+<svg width="124" height="44" viewBox="0 0 124 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>下载应用</title>
+  <rect x="0.5" y="0.5" width="123" height="43" rx="8" fill="#F9FAFB" stroke="#9CA3AF"/>
+  <path d="M29 13.5V24.5M29 24.5L24.5 20M29 24.5L33.5 20M23 28.5H35" stroke="#111827" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="44" y="27" fill="#111827" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif" font-size="14" font-weight="600">下载应用</text>
+</svg>

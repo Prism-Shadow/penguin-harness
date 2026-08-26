@@ -9,13 +9,13 @@
 <p align="center">
   <a href="https://penguin.ooo/download">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="assets/readme/download-dark.svg" />
-      <img src="assets/readme/download-light.svg" alt="Download" height="44" />
+      <source media="(prefers-color-scheme: dark)" srcset="assets/readme/download-en-dark.svg" />
+      <img src="assets/readme/download-en-light.svg" alt="Download App" height="44" />
     </picture>
   </a>
 </p>
 
-<p align="center">1000+ models · Multi-platform · Apache 2.0 · agent self-evolution</p>
+<p align="center">1000+ Models · Multi-Platform · Apache 2.0 · Agent Self-Evolution</p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@prismshadow/penguin-core"><img src="https://img.shields.io/npm/v/@prismshadow/penguin-core" alt="npm version" /></a>
