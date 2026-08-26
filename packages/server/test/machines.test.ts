@@ -208,16 +208,28 @@ describe("ssh / scp invocations", () => {
 
   it("takes the installer on stdin, so a POSIX install costs ONE ssh handshake", () => {
     // No path anywhere in it: nothing was copied, so nothing has to be placed or cleaned up.
-    expect(runInstallScriptCommand("linux", "v0.2.4")).toBe("PENGUIN_VERSION='v0.2.4' sh -s");
+    // scriptOnStdin is the other half — the command alone would run an empty `sh -s`.
+    expect(runInstallScriptCommand("v0.2.4", { platform: "linux" })).toEqual({
+      command: "PENGUIN_VERSION='v0.2.4' sh -s",
+      scriptOnStdin: true,
+    });
   });
 
   it("runs a Windows remote's copy from a path, and deletes it in the same command", () => {
     // PowerShell cannot take a param()-carrying script on stdin, so the file is real there —
-    // but the delete rides the same connection rather than costing another handshake.
-    expect(runInstallScriptCommand("win32", "v0.2.4", "%USERPROFILE%\\penguin-ab12.ps1")).toBe(
-      'powershell -NoProfile -ExecutionPolicy Bypass -File "%USERPROFILE%\\penguin-ab12.ps1"' +
+    // but the delete rides the same connection rather than costing another handshake, and the
+    // path is required to build the command at all rather than defaulting to an empty one.
+    expect(
+      runInstallScriptCommand("v0.2.4", {
+        platform: "win32",
+        scriptPath: "%USERPROFILE%\\penguin-ab12.ps1",
+      }),
+    ).toEqual({
+      command:
+        'powershell -NoProfile -ExecutionPolicy Bypass -File "%USERPROFILE%\\penguin-ab12.ps1"' +
         ' -Version "v0.2.4" & del /q "%USERPROFILE%\\penguin-ab12.ps1"',
-    );
+      scriptOnStdin: false,
+    });
   });
 
   it("unpacks the streamed store into the default data root", () => {

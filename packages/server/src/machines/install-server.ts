@@ -242,11 +242,11 @@ export async function installOnRemote(opts: {
       }
 
       say(`Installing release ${plan.baseVersion} (downloaded on the remote)…`);
-      let install;
+      // Where the script ends up decides how it is invoked, so resolve that first and let the
+      // command itself say whether stdin has to carry it.
+      let where: Parameters<typeof runInstallScriptCommand>[1];
       if (identity.platform === "win32") {
-        // PowerShell cannot take this script on stdin (see runInstallScriptCommand), so it
-        // is copied to the home directory under a name of our own making — hex only, so it
-        // needs no quoting on either side — and deleted by the same command that runs it.
+        // A name of our own making: hex only, so it needs no quoting on either side.
         const name = `penguin-${randomBytes(6).toString("hex")}.ps1`;
         const local = path.join(os.tmpdir(), name);
         fs.writeFileSync(local, installer);
@@ -255,22 +255,19 @@ export async function installOnRemote(opts: {
         if (copy.code !== 0) {
           return { kind: "failed", step: "copy", detail: copy.stderr.trim() || "scp failed" };
         }
-        install = await run(
-          "ssh",
-          sshArgs(
-            target,
-            runInstallScriptCommand(identity.platform, `v${plan.baseVersion}`, windowsTmp.remote),
-          ),
-        );
+        where = { platform: "win32", scriptPath: windowsTmp.remote };
       } else {
-        // One connection: the script rides ssh's stdin, and its own progress is relayed as it
-        // arrives rather than after the minutes an install can take.
-        install = await runWithInput(
-          "ssh",
-          sshArgs(target, runInstallScriptCommand(identity.platform, `v${plan.baseVersion}`)),
-          { input: installer, onLine: say },
-        );
+        where = { platform: identity.platform };
       }
+      const step = runInstallScriptCommand(`v${plan.baseVersion}`, where);
+      // One connection when the script rides stdin, and the far side's own progress is
+      // relayed as it arrives rather than after the minutes an install can take.
+      const install = step.scriptOnStdin
+        ? await runWithInput("ssh", sshArgs(target, step.command), {
+            input: installer,
+            onLine: say,
+          })
+        : await run("ssh", sshArgs(target, step.command));
       if (install.code !== 0) {
         return {
           kind: "failed",
