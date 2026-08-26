@@ -25,7 +25,7 @@ CLI 是服务端的瘦客户端：所有会话相关命令（`run`、`chat`、`l
 - Session 引用：凡接受 session id 的地方（`input`、`logs`、`run --session`、`chat --resume`），完整 id 或任何唯一片段皆可——`penguin ls` 打印的末尾 8 位十六进制就是为此准备的简写。片段有歧义时报错并列出候选。
 - `--json` 输出原始 JSON 而非渲染 / 表格形式；`--server <url>` 指定目标服务器（见上）。
 - 调用方上下文缺省值：在 harness Agent 内部（环境里存在 `PENGUIN_SESSION_ID`）时，`run` / `chat` 新建会话的每个**未指定**字段都缺省取调用方会话的实时值——Workspace、模型对、审批模式与思考等级——与 `run_subagent` 派生子会话的继承是同一条约定，两个入口因此读作一套规则。逐字段优先级为显式选项 > 调用方值 > 普通缺省；查询失败打印一行暗色警告并回落普通缺省；不在 Agent 内时一切不变。（`--project-id` / `--agent-id` 保持上文的环境变量缺省。）
-- `--timeout <duration>`（`run`、`input` 与 `logs -f` 上）以软让出语义限定等待——即 `exec_command` yield 窗口的模型应用在 CLI 的等待上：到时命令干净脱开并以 0 退出，任务继续在服务端运行，之后可用 `penguin input` / `penguin logs` 接续。接受形式：`30s`、`5m`、`2h`，或表示秒数的纯整数；其余形式一律拒绝。不带该选项 = 无限等待。
+- `--timeout <duration>`（`run`、`input` 与 `logs -f` 上）以软让出语义限定等待——即 `exec_command` yield 窗口的模型应用在 CLI 的等待上：到时命令干净脱开并以 0 退出，任务继续在服务端运行，之后可用 `penguin input` / `penguin logs` 接续。接受形式：`30s`、`5m`、`2h`，或表示秒数的纯整数；其余形式一律拒绝。`--timeout 0` 是窗口的退化形式——送达后立即返回（`--json` 下为 `{sessionId, status: "running"}`）：一个旋钮同时覆盖「不等待」。不带该选项 = 无限等待。（`run --background` 仍是**新建任务**的惯用「发完即走」：它为脚本打印裸 session id，在创建时刻即脱开。）
 - 数据根目录（仅 `config`）：`--root <dir>` 覆盖数据根目录，优先级为 `--root` > 环境变量 `PENGUIN_HOME` > `~/.penguin/data`。
 
 ## penguin run
@@ -50,7 +50,7 @@ penguin run -m "长任务" --background            # 立即返回 session id
 | `--thinking <level>` | 本次 Task 的思考等级：`low` / `medium` / `high` / `xhigh` / `max`，随任务请求下发。省略时按会话钉定值（否则 Agent 配置）生效 |
 | `--session <sessionId>` | 复用既有 Session（完整 id 或唯一片段），不再新建；不能与 `--workspace` 及模型对同用 |
 | `--background` | 提交任务后立即退出并打印 session id（`--json` 下为 `{"sessionId"}`）；任务在服务端继续运行，可用 `penguin logs -f` 跟随 |
-| `--timeout <duration>` | 软让出等待预算（见「全局约定」）：到时打印已渲染内容与一行暗色「仍在运行」提示（含 session id；`--json` 下为 `{sessionId, status: "running", text}`）并以 0 退出——任务不被中止。不能与 `--background` 同用 |
+| `--timeout <duration>` | 软让出等待预算（见「全局约定」）：到时打印已渲染内容与一行暗色「仍在运行」提示（含 session id；`--json` 下为 `{sessionId, status: "running", text}`）并以 0 退出——任务不被中止。`--timeout 0` 在 POST 后立即返回（`--json` 下为 `{sessionId, status: "running"}`，无 `text`）。不能与 `--background` 同用 |
 | `--goal [budget]` | 目标模式：消息即目标，服务端循环直至终态；可选值为 token 预算（如 `500k`） |
 | `--json` | 输出最终的 `{sessionId, status, text}` 对象而非渲染流（`text` 为主会话各条助手文本消息拼接） |
 | `--server <url>` | 目标服务器（见「服务器连接」） |
@@ -104,17 +104,18 @@ penguin ls --json
 | --- | --- |
 | `--project-id <id>` / `--agent-id <id>` | 作用域（缺省值见「全局约定」；未给 `--agent-id` 时列出 Project 的全部 Agent） |
 | `-a, --all` | 包含已归档会话 |
+| `--days <n>` | 只列最近 n 个自然日内活跃过的会话——今天算第 1 天，`--days 2` 即昨天加今天（与 `cost --days` 同一自然日口径）。可与 `-a`、`--json` 组合 |
 | `--json` / `--server <url>` | 同各处约定 |
 
 ## penguin input
 
-向既有会话发送消息——或在不带 `-m` 时轮询其最近回复。带 `-m` 时：运行中的会话按插话（steering）送达（随下一轮交给模型），空闲会话则发起新 Task；缺省等待并渲染直至本轮结束，`--no-wait` 在服务端受理后立即返回，`--timeout` 限定等待（软让出，见「全局约定」）。
+向既有会话发送消息——或在不带 `-m` 时轮询其最近回复。带 `-m` 时：运行中的会话按插话（steering）送达（随下一轮交给模型），空闲会话则发起新 Task；缺省等待并渲染直至本轮结束，`--timeout` 限定等待（软让出，见「全局约定」；`--timeout 0` 在送达后立即返回）。
 
-不带 `-m` 时是**轮询**，与 `input_subagent` 的空 prompt 语义互为镜像：打印该会话最近一条完整助手文本（取自历史尾部的幂等「最新答案」快照；跳过思考与工具输出），不排队也不插话。运行中的会话先静默等待——给出 `--timeout` 时以其为上限——到时仍在运行则打印当前最新文本并附「仍在运行」提示（退出码 0）。
+不带 `-m` 时是**轮询**，与 `input_subagent` 的空 prompt 语义互为镜像：打印该会话最近一条完整助手文本（取自历史尾部的幂等「最新答案」快照；跳过思考与工具输出），不排队也不插话。运行中的会话先静默等待——给出 `--timeout` 时以其为上限，`--timeout 0` 立即取快照——到时仍在运行则打印当前最新文本并附「仍在运行」提示（退出码 0）。
 
 ```bash
 penguin input 402a2e24 -m "顺便检查一下测试"
-penguin input 402a2e24 -m "排个队" --no-wait
+penguin input 402a2e24 -m "排个队" --timeout 0    # 送达后立即返回
 penguin input 402a2e24                    # 轮询：打印最近一条助手回复
 penguin input 402a2e24 --timeout 5m       # 轮询，最多等运行中的一轮 5 分钟
 ```
@@ -122,10 +123,9 @@ penguin input 402a2e24 --timeout 5m       # 轮询，最多等运行中的一轮
 | 选项 | 说明 |
 | --- | --- |
 | `-m, --message <text>` | 消息文本；省略即改为轮询最近助手回复 |
-| `--no-wait` | 202 受理后立即返回，不渲染本轮（需要 `-m`——轮询形式没有可供受理的内容） |
-| `--timeout <duration>` | 软让出等待预算：带 `-m` 时到期脱开、行为同 `run`（`--json` 下为 `{sessionId, status: "running", text}`）；不带 `-m` 时到期取快照并附仍在运行提示。不能与 `--no-wait` 同用 |
+| `--timeout <duration>` | 软让出等待预算：带 `-m` 时到期脱开、行为同 `run`（`--json` 下为 `{sessionId, status: "running", text}`），`--timeout 0` 送达后立即返回（`{sessionId, status: "running"}`）；不带 `-m` 时到期取快照——`0` 即立即——并附仍在运行提示 |
 | `--project-id <id>` | 片段检索的作用域（完整 session id 不需要） |
-| `--json` / `--server <url>` | 同各处约定；带 `-m` 的 `--json` 输出 `{sessionId, status, text}`（status 为 `completed` / `aborted` / `running`），`--no-wait` 下仅 `{sessionId}`，轮询形式输出 `{sessionId, status, text}`（status 为 `idle` / `running`，尚无回复时 text 为 `""`） |
+| `--json` / `--server <url>` | 同各处约定；带 `-m` 的 `--json` 输出 `{sessionId, status, text}`（status 为 `completed` / `aborted` / `running`；`--timeout 0` 的形状不含 `text`），轮询形式输出 `{sessionId, status, text}`（status 为 `idle` / `running`，尚无回复时 text 为 `""`） |
 
 ## penguin logs
 
@@ -187,6 +187,27 @@ penguin cost --from 2026-08-01 --to 2026-08-25 --by agent
 ## penguin schedule
 
 `penguin schedule ls` 列出 Project 的定时任务——覆盖全部 Agent，或用 `--agent-id` 限定。列依次为：Agent、名称、启用与否、开始时刻、周期（一次性任务为「一次性」）、目标（绑定会话的短 id 或「新建会话」）、最近触发，以及非 active 状态的标记（`expired` / `done` / `missed` / `invalid`；无法解析的任务文件也会列出并标记 invalid）。`--json` / `--server` 同各处约定。
+
+`add` / `update` / `rm` 经 API 管理定时任务，由 API 写入任务的 TOML 文件——**文件仍是唯一真相源**，CLI 是带校验的写入器（与模型配置、vault 同一模式：一律经系统接口更新、校验收敛在接口层，手编依然可行）。API 错误原样透出，Agent 因此获得同步校验，而非手编 TOML 时要等对账周期的滞后。
+
+```bash
+penguin schedule add daily-report --prompt "总结今天的进展" --start-at 2026-09-01T09:00:00Z --period 1d
+penguin schedule add once-now --prompt "检查部署" --start-at now --session-id 402a2e24
+penguin schedule update daily-report --period 12h --disable
+penguin schedule rm daily-report
+```
+
+| 选项 | 说明 |
+| --- | --- |
+| `--prompt <s>` | 每次触发要发送的内容（`add` 必填） |
+| `--start-at <ISO\|now>` | 首次触发时刻，ISO 8601，或字面量 `now` 表示当前时刻（`add` 必填） |
+| `--period <dur>` | 固定间隔，下限 `5m`（如 `30m`、`12h`、`1d`、`7d`）；省略即一次性任务 |
+| `--end-at <ISO>` | 此时刻之后不再触发 |
+| `--session-id <id>` | 绑定到某个会话触发——与下面的新建会话形式互斥（XOR） |
+| `--workspace <path>` / `--model-id <id> --provider <p>` | 新建会话模式：每次触发在该 Workspace / 模型上开新会话（Workspace 省略即临时工作区；模型对「都给或都不给」，省略即 Project 默认） |
+| `--disabled`（`add`） | 与原始文件的一处有意分歧：`add` 缺省即**启用**——添加任务就是要它运行——原始文件的 `enabled = false` 缺省仍留给手编。`--disabled` 关闭 |
+| `--enable` / `--disable`（`update`） | 翻转启用位；`update` 对存储项读改写：未指定的字段保留原值，切换目标类型时清掉另一类字段 |
+| `--project-id` / `--agent-id` / `--json` / `--server` | 同各处约定；`rm` 直接删除、不做确认（服务端的 owner 授权照旧生效） |
 
 ## 审批模式（--approve）
 

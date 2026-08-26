@@ -1,23 +1,23 @@
 /**
  * `penguin input` — send a message into an existing session, or poll its last answer.
  *
- *   penguin input <session_id> [-m <text>] [--no-wait] [--timeout <duration>]
+ *   penguin input <session_id> [-m <text>] [--timeout <duration>]
  *                 [--project-id <id>] [--json] [--server <url>]
  *
  * `<session_id>` accepts a full id or a unique fragment (e.g. the 8-hex tail `penguin
  * ls` prints). With `-m`: a running session gets the text as steering (POST /steer,
  * delivered between turns); an idle one gets a new task (POST /tasks). The default
- * waits and renders the stream until the turn completes; `--no-wait` returns right
- * after the 202; `--timeout` bounds the wait with soft-yield semantics — on expiry the
- * command detaches (exit 0, the task keeps running server-side) instead of erroring.
+ * waits and renders the stream until the turn completes; `--timeout` bounds the wait
+ * with soft-yield semantics — on expiry the command detaches (exit 0, the task keeps
+ * running server-side) instead of erroring. `--timeout 0` is the degenerate window:
+ * return immediately after delivery — the one timeout knob covers "don't wait" too.
  *
  * Without `-m`: **poll** — print the session's most recent complete assistant text
  * (an idempotent last-answer snapshot from the messages tail; thinking and tool output
  * are skipped), mirroring `input_subagent`'s empty-prompt semantics. Nothing is queued
- * or steered. A running session with `--timeout` is waited on (silently, no rendering)
- * up to the window before the snapshot is taken; still running at expiry prints the
- * current latest text plus the still-running note, exit 0. `--no-wait` without `-m` is
- * meaningless and rejected.
+ * or steered. A running session is waited on (silently, no rendering) up to the window
+ * before the snapshot is taken; still running at expiry prints the current latest text
+ * plus the still-running note, exit 0 (`--timeout 0` snapshots immediately).
  *
  * The fragment search scopes to the project (PENGUIN_PROJECT_ID / default_project);
  * a full session id needs no scope.
@@ -55,26 +55,14 @@ export function registerInputCommand(program: Command, t: Messages): void {
     .command("input <sessionId>")
     .description(t.input.desc)
     .option("-m, --message <text>", t.input.message)
-    .option("--no-wait", t.input.noWait)
     .option("--timeout <duration>", t.common.timeout)
     .option("--project-id <id>", t.common.projectId)
     .option("--json", t.common.json)
     .option("--server <url>", t.common.server)
     .action(async (sessionRef: string, opts) => {
       const json = opts.json === true;
-      if (opts.message === undefined && opts.wait === false) {
-        // Poll has nothing to hand the server, so there is no 202 to return after.
-        process.stderr.write(`${t.error(t.input.noWaitNeedsMessage())}\n`);
-        process.exitCode = 1;
-        return;
-      }
       let timeoutMs: number | undefined;
       if (opts.timeout !== undefined) {
-        if (opts.wait === false) {
-          process.stderr.write(`${t.error(t.input.timeoutWithNoWait())}\n`);
-          process.exitCode = 1;
-          return;
-        }
         const parsed = parseDurationMs(String(opts.timeout));
         if (parsed === null) {
           process.stderr.write(`${t.error(t.client.timeoutInvalid(String(opts.timeout)))}\n`);
@@ -92,10 +80,10 @@ export function registerInputCommand(program: Command, t: Messages): void {
       if (opts.message === undefined) {
         const info = await getSessionInfo(client, sessionId);
         let status: "idle" | "running" = info.status === "idle" ? "idle" : "running";
-        if (status === "running") {
+        if (status === "running" && timeoutMs !== 0) {
           // Wait (silently — the snapshot is the output, not the stream) for the turn to
           // end, bounded by --timeout when given; unbounded like every waiting command
-          // otherwise.
+          // otherwise. A zero window skips the wait entirely: snapshot right away.
           const stream = new SessionStream(client, sessionId, t);
           try {
             const state = await stream.waitReady();
@@ -144,10 +132,13 @@ export function registerInputCommand(program: Command, t: Messages): void {
         });
       };
 
-      if (opts.wait === false) {
+      if (timeoutMs === 0) {
+        // The zero window: deliver and return — no subscription, no rendering. The
+        // still-running note carries the id for the later poll/follow.
         const info = await getSessionInfo(client, sessionId);
         await post(info.status !== "idle");
-        out.write(json ? `${JSON.stringify({ sessionId })}\n` : `${sessionId}\n`);
+        if (json) out.write(`${JSON.stringify({ sessionId, status: "running" })}\n`);
+        else out.write(`${dim(t.client.stillRunning(shortSessionId(sessionId)))}\n`);
         return;
       }
 

@@ -90,6 +90,8 @@ export class FakeServer {
     models: [],
   };
   schedules: Json = { schedules: [], invalidFiles: [] };
+  /** Named schedule store behind add/update/rm: name -> the stored item (single-agent tests). */
+  readonly scheduleItems = new Map<string, Json>();
 
   private nextSessionOrdinal = 1;
   private nextEventId = 1;
@@ -294,7 +296,48 @@ export class FakeServer {
     }
 
     m = /^\/api\/projects\/([^/]+)\/agents\/([^/]+)\/schedules$/.exec(apiPath);
-    if (m) return this.json(this.schedules);
+    if (m) {
+      if (method === "POST") {
+        const name = String(body?.name ?? "");
+        if (this.scheduleItems.has(name)) {
+          return this.error(409, "schedule_exists", `Schedule already exists: ${name}`);
+        }
+        if (typeof body?.enabled !== "boolean") {
+          return this.error(400, "bad_request", "enabled must be a boolean.");
+        }
+        const item = { ...body, status: body.enabled ? "active" : "disabled", queued: false };
+        delete (item as { name?: unknown }).name;
+        const stored = { name, ...item };
+        this.scheduleItems.set(name, stored);
+        return this.json(stored, 201);
+      }
+      return this.json(this.schedules);
+    }
+
+    m = /^\/api\/projects\/([^/]+)\/agents\/([^/]+)\/schedules\/([^/]+)$/.exec(apiPath);
+    if (m) {
+      const name = decodeURIComponent(m[3]!);
+      const stored = this.scheduleItems.get(name);
+      if (!stored) return this.error(404, "schedule_not_found", `Schedule does not exist: ${name}`);
+      if (method === "GET") return this.json(stored);
+      if (method === "PUT") {
+        if (typeof body?.enabled !== "boolean") {
+          return this.error(400, "bad_request", "enabled must be a boolean.");
+        }
+        const next = {
+          name,
+          ...body,
+          status: body.enabled ? "active" : "disabled",
+          queued: false,
+        };
+        this.scheduleItems.set(name, next);
+        return this.json(next);
+      }
+      if (method === "DELETE") {
+        this.scheduleItems.delete(name);
+        return new Response(null, { status: 204 });
+      }
+    }
 
     // Session-level endpoints
     m = /^\/api\/sessions\/([^/]+)(\/.*)?$/.exec(apiPath);

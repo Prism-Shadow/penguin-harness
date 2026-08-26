@@ -1,12 +1,15 @@
 /**
  * `penguin ls` — list the project's sessions.
  *
- *   penguin ls [--project-id <id>] [--agent-id <id>] [-a|--all] [--json] [--server <url>]
+ *   penguin ls [--project-id <id>] [--agent-id <id>] [-a|--all] [--days <n>] [--json] [--server <url>]
  *
  * All agents of the project unless `--agent-id` narrows it (the API lists per agent, so
  * the command iterates GET /agents then per-agent sessions). Columns: short id (the
  * 8-hex tail `penguin input` / `penguin logs` accept as a fragment), agent, title,
  * running/idle, last active, workspace tail. Archived sessions appear only with `-a`.
+ * `--days <n>` keeps sessions whose lastActiveAt falls within the last n calendar days
+ * (today is day 1, so `--days 2` covers yesterday and today — the `cost --days`
+ * calendar semantics); it combines with `-a` and `--json`.
  * Docs: /docs/cli § "penguin ls".
  */
 import type { Command } from "commander";
@@ -29,9 +32,23 @@ export function registerLsCommand(program: Command, t: Messages): void {
     .option("--project-id <id>", t.common.projectId)
     .option("--agent-id <id>", t.common.agentId)
     .option("-a, --all", t.ls.all)
+    .option("--days <n>", t.ls.days)
     .option("--json", t.common.json)
     .option("--server <url>", t.common.server)
     .action(async (opts) => {
+      let sinceMs: number | undefined;
+      if (opts.days !== undefined) {
+        const days = Number(opts.days);
+        if (!Number.isInteger(days) || days <= 0) {
+          process.stderr.write(`${t.error(t.ls.daysInvalid(String(opts.days)))}\n`);
+          process.exitCode = 1;
+          return;
+        }
+        // Calendar semantics (same as cost --days): today counts as day 1, so the window
+        // starts at local midnight (days - 1) days ago.
+        const now = new Date();
+        sinceMs = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (days - 1)).getTime();
+      }
       const client = new ServerClient(await resolveConnection({ server: opts.server }, t), t);
       const projectId = resolveProjectId(opts.projectId);
       const agentIds =
@@ -45,6 +62,7 @@ export function registerLsCommand(program: Command, t: Messages): void {
       }
       const rows = all
         .filter((s) => opts.all === true || !s.archived)
+        .filter((s) => sinceMs === undefined || Date.parse(s.lastActiveAt) >= sinceMs)
         .sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt));
 
       if (opts.json === true) {

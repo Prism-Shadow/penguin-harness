@@ -141,20 +141,24 @@ describe("penguin ls", () => {
 });
 
 describe("penguin input", () => {
-  it("running session -> steer; idle -> task; --no-wait returns right after the 202", async () => {
+  it("running session -> steer; idle -> task; --timeout 0 returns right after delivery", async () => {
     const running = server.addSession({
       sessionId: "session-2026-08-25-10-00-00-abcd0001",
       status: "running",
     });
-    let code = await cli(["input", "abcd0001", "-m", "note this", "--no-wait"]);
+    let code = await cli(["input", "abcd0001", "-m", "note this", "--timeout", "0"]);
     expect(code).toBe(0);
     expect(running.steers).toHaveLength(1);
     expect(running.tasks).toHaveLength(0);
+    expect(out()).toContain("still running"); // the delivered/still-running note
+    expect(server.requests.some((r) => r.path.endsWith("/stream"))).toBe(false); // no wait at all
 
+    stdout.length = 0;
     const idle = server.addSession({ sessionId: "session-2026-08-25-10-00-00-abcd0002" });
-    code = await cli(["input", "abcd0002", "-m", "new turn", "--no-wait"]);
+    code = await cli(["input", "abcd0002", "-m", "new turn", "--timeout", "0s", "--json"]);
     expect(code).toBe(0);
     expect(idle.tasks).toHaveLength(1);
+    expect(JSON.parse(out())).toEqual({ sessionId: idle.sessionId, status: "running" });
   });
 
   it("default waits and renders the turn; steer on an idle session falls back to a task", async () => {
@@ -381,6 +385,16 @@ describe("--timeout soft yield", () => {
     expect(parsed.text).toBe("early text");
   });
 
+  it("run --timeout 0 returns right after the POST with the still-running shape", async () => {
+    server.hangTasks = true;
+    const code = await cli(["run", "-m", "fire and check later", "--timeout", "0", "--json"]);
+    expect(code).toBe(0);
+    const session = [...server.sessions.values()][0]!;
+    expect(session.tasks).toHaveLength(1);
+    expect(JSON.parse(out())).toEqual({ sessionId: session.sessionId, status: "running" });
+    expect(server.requests.some((r) => r.path.endsWith("/stream"))).toBe(false);
+  });
+
   it("rejects --timeout with --background, and junk durations", async () => {
     expect(await cli(["run", "-m", "x", "--background", "--timeout", "5s"])).toBe(1);
     expect(stderr.join("")).toContain("--background");
@@ -460,10 +474,207 @@ describe("penguin input (bare poll form)", () => {
     expect(JSON.parse(out())).toMatchObject({ status: "idle", text: "" });
   });
 
-  it("--no-wait without -m is rejected", async () => {
-    server.addSession({ sessionId: "session-2026-08-25-10-00-00-b0110005" });
-    const code = await cli(["input", "b0110005", "--no-wait"]);
+  it("poll with --timeout 0 snapshots a running session immediately (no subscription)", async () => {
+    server.history = [assistantText("instant snapshot")];
+    server.addSession({ sessionId: "session-2026-08-25-10-00-00-b0110005", status: "running" });
+    const code = await cli(["input", "b0110005", "--timeout", "0"]);
+    expect(code).toBe(0);
+    expect(out()).toContain("instant snapshot");
+    expect(out()).toContain("still running");
+    expect(server.requests.some((r) => r.path.endsWith("/stream"))).toBe(false);
+  });
+});
+
+describe("penguin ls --days", () => {
+  it("keeps sessions last active within the trailing calendar window (today = day 1) and combines with -a", async () => {
+    const now = new Date();
+    const at = (daysAgo: number) =>
+      new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysAgo, 12).toISOString();
+    server.addSession({
+      sessionId: "session-2026-08-25-10-00-00-da150001",
+      lastActiveAt: at(0), // today
+    });
+    server.addSession({
+      sessionId: "session-2026-08-25-10-00-00-da150002",
+      lastActiveAt: at(1), // yesterday: inside --days 2
+    });
+    server.addSession({
+      sessionId: "session-2026-08-25-10-00-00-da150003",
+      lastActiveAt: at(2), // two days back: outside --days 2, inside --days 3
+    });
+    server.addSession({
+      sessionId: "session-2026-08-25-10-00-00-da150004",
+      lastActiveAt: at(1),
+      archived: true, // only visible with -a
+    });
+
+    await cli(["ls", "--days", "2"]);
+    expect(out()).toContain("da150001");
+    expect(out()).toContain("da150002");
+    expect(out()).not.toContain("da150003");
+    expect(out()).not.toContain("da150004");
+
+    stdout.length = 0;
+    await cli(["ls", "--days", "2", "-a", "--json"]);
+    const ids = (JSON.parse(out()) as Array<{ sessionId: string }>).map((r) => r.sessionId);
+    expect(ids.some((id) => id.endsWith("da150004"))).toBe(true);
+    expect(ids.some((id) => id.endsWith("da150003"))).toBe(false);
+
+    stdout.length = 0;
+    await cli(["ls", "--days", "3"]);
+    expect(out()).toContain("da150003");
+
+    expect(await cli(["ls", "--days", "0"])).toBe(1);
+    expect(await cli(["ls", "--days", "x"])).toBe(1);
+  });
+});
+
+describe("penguin schedule add/update/rm (validated writer over the API)", () => {
+  it("add posts the full definition, ENABLED by default (the deliberate divergence); --disabled opts out", async () => {
+    const code = await cli([
+      "schedule",
+      "add",
+      "daily-report",
+      "--prompt",
+      "summarize the day",
+      "--start-at",
+      "2026-08-27T09:00:00.000Z",
+      "--period",
+      "1d",
+      "--session-id",
+      "session-2026-08-25-10-00-00-dead0001",
+    ]);
+    expect(code).toBe(0);
+    const create = server.requests.find(
+      (r) => r.method === "POST" && r.path.endsWith("/schedules"),
+    );
+    expect(create?.body).toMatchObject({
+      name: "daily-report",
+      enabled: true,
+      prompt: "summarize the day",
+      startAt: "2026-08-27T09:00:00.000Z",
+      period: "1d",
+      sessionId: "session-2026-08-25-10-00-00-dead0001",
+    });
+    expect(out()).toContain("daily-report");
+
+    stdout.length = 0;
+    const disabled = await cli([
+      "schedule",
+      "add",
+      "paused-task",
+      "--prompt",
+      "p",
+      "--start-at",
+      "2026-08-27T09:00:00.000Z",
+      "--disabled",
+    ]);
+    expect(disabled).toBe(0);
+    expect(server.scheduleItems.get("paused-task")).toMatchObject({ enabled: false });
+  });
+
+  it("--start-at now resolves to the current instant before the request", async () => {
+    const before = Date.now();
+    await cli(["schedule", "add", "one-shot", "--prompt", "p", "--start-at", "now"]);
+    const stored = server.scheduleItems.get("one-shot") as { startAt: string };
+    const ms = Date.parse(stored.startAt);
+    expect(ms).toBeGreaterThanOrEqual(before - 1000);
+    expect(ms).toBeLessThanOrEqual(Date.now() + 1000);
+  });
+
+  it("target is --session-id XOR the new-session form; the model pair stays both-or-neither", async () => {
+    let code = await cli([
+      "schedule",
+      "add",
+      "bad-target",
+      "--prompt",
+      "p",
+      "--start-at",
+      "now",
+      "--session-id",
+      "session-x",
+      "--workspace",
+      "/w",
+    ]);
     expect(code).toBe(1);
-    expect(stderr.join("")).toContain("-m");
+    expect(stderr.join("")).toContain("--session-id");
+    stderr.length = 0;
+    code = await cli([
+      "schedule",
+      "add",
+      "bad-pair",
+      "--prompt",
+      "p",
+      "--start-at",
+      "now",
+      "--model-id",
+      "m",
+    ]);
+    expect(code).toBe(1);
+    expect(server.scheduleItems.has("bad-target")).toBe(false);
+    expect(server.scheduleItems.has("bad-pair")).toBe(false);
+  });
+
+  it("update is read-modify-write: unspecified fields keep stored values; --disable flips; switching target clears the other kind", async () => {
+    await cli([
+      "schedule",
+      "add",
+      "evolving",
+      "--prompt",
+      "original prompt",
+      "--start-at",
+      "2026-08-27T09:00:00.000Z",
+      "--period",
+      "1d",
+      "--workspace",
+      "/stored/ws",
+      "--model-id",
+      "m1",
+      "--provider",
+      "p1",
+    ]);
+    stdout.length = 0;
+    // Change the period only: prompt/startAt/workspace/model survive.
+    let code = await cli(["schedule", "update", "evolving", "--period", "12h", "--disable"]);
+    expect(code).toBe(0);
+    expect(server.scheduleItems.get("evolving")).toMatchObject({
+      prompt: "original prompt",
+      startAt: "2026-08-27T09:00:00.000Z",
+      period: "12h",
+      workspace: "/stored/ws",
+      modelId: "m1",
+      provider: "p1",
+      enabled: false,
+    });
+    // Switch to a bound session: the new-session fields are cleared, --enable flips back.
+    code = await cli([
+      "schedule",
+      "update",
+      "evolving",
+      "--session-id",
+      "session-2026-08-25-10-00-00-dead0002",
+      "--enable",
+    ]);
+    expect(code).toBe(0);
+    const after = server.scheduleItems.get("evolving") as Record<string, unknown>;
+    expect(after.sessionId).toBe("session-2026-08-25-10-00-00-dead0002");
+    expect(after.enabled).toBe(true);
+    expect(after.workspace).toBeUndefined();
+    expect(after.modelId).toBeUndefined();
+    // --enable with --disable is refused.
+    expect(await cli(["schedule", "update", "evolving", "--enable", "--disable"])).toBe(1);
+  });
+
+  it("rm deletes without prompting; API errors surface verbatim", async () => {
+    await cli(["schedule", "add", "doomed", "--prompt", "p", "--start-at", "now"]);
+    stdout.length = 0;
+    const code = await cli(["schedule", "rm", "doomed"]);
+    expect(code).toBe(0);
+    expect(server.scheduleItems.has("doomed")).toBe(false);
+    expect(out()).toContain("doomed");
+    // A second rm surfaces the server's 404 verbatim.
+    stderr.length = 0;
+    expect(await cli(["schedule", "rm", "doomed"])).toBe(1);
+    expect(stderr.join("")).toContain("schedule_not_found");
   });
 });

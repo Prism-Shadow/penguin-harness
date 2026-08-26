@@ -74,6 +74,17 @@ getter：core 按各 Session 自身坐标绑定、逐次 spawn 重新求值；�
   「最新答案」快照；跳过思考与工具输出），与 `input_subagent` 的空 prompt 语义互为镜像——不
   排队、不插话。运行中的会话先静默等待（给出 `--timeout` 时以其为限）；到期仍在运行则打印当
   前最新文本并附仍在运行提示。
+- **`--timeout 0` 取代 `input --no-wait`**（该表面尚未发布）：一个 timeout 旋钮同时覆盖「不
+  等待」——送达后立即返回并附仍在运行提示（`--json` 下为 `{sessionId, status: "running"}`）；
+  `run --timeout 0` 对称同义，而 `run --background` 保留为新建任务的惯用「发完即走」（为脚本
+  打印裸 session id）。
+- **`penguin ls --days <n>`**：只列最近 n 个自然日内活跃过的会话（今天算第 1 天，与
+  `cost --days` 同口径）；可与 `-a`、`--json` 组合。
+- **`penguin schedule add|update|rm <name>`**：映射既有 schedules API 的带校验写入器——由 API
+  写 TOML 文件，文件仍为唯一真相源（与模型配置 / vault 同一模式），API 错误原样透出、校验同
+  步呈现。目标为 `--session-id` 与新建会话形式二选一（XOR）；`--start-at now` 即当前时刻。一
+  处有意分歧：`add` 缺省启用（`--disabled` 关闭；原始文件的 enabled=false 缺省留给手编）；
+  `update` 为读改写；`rm` 直接删除、不做确认。
 
 ## 「显示 CLI 会话」开关退役
 

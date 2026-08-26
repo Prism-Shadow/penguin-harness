@@ -107,6 +107,9 @@ export interface Messages {
     desc: string;
     /** -a/--all: include archived sessions. */
     all: string;
+    /** --days: keep sessions last active within the trailing n calendar days (today = day 1). */
+    days: string;
+    daysInvalid(value: string): string;
     empty(projectId: string): string;
     colId(): string;
     colAgent(): string;
@@ -121,12 +124,6 @@ export interface Messages {
   input: {
     desc: string;
     message: string;
-    /** --no-wait: return right after the 202 instead of rendering to completion. */
-    noWait: string;
-    /** Bare `input` (no -m) is a poll and has nothing to return a 202 for. */
-    noWaitNeedsMessage(): string;
-    /** --no-wait never waits, so a wait budget cannot apply to it. */
-    timeoutWithNoWait(): string;
     /** Poll form on a session that has produced no assistant text yet. */
     noReplyYet(): string;
   };
@@ -184,10 +181,36 @@ export interface Messages {
     colCost(): string;
     colGroup(dimension: string): string;
   };
-  /** `penguin schedule`: scheduled-task listing. */
+  /** `penguin schedule`: scheduled-task listing and management (a validated writer over the schedules API; the TOML file stays the single source of truth). */
   schedule: {
     desc: string;
     lsDesc: string;
+    addDesc: string;
+    updateDesc: string;
+    rmDesc: string;
+    /** --prompt: the text the firing sends. */
+    prompt: string;
+    /** --start-at: first fire time, ISO 8601 — or the literal `now` for the current instant. */
+    startAt: string;
+    /** --period: fixed interval (30m / 12h / 1d / 7d, minimum 5m); omitted = one-shot. */
+    period: string;
+    /** --end-at: stop firing after this instant (ISO 8601). */
+    endAt: string;
+    /** --session-id: bind firings to one session (excludes the new-session form). */
+    sessionId: string;
+    /** --workspace: new-session mode's workspace (omitted = a temp workspace per firing). */
+    workspace: string;
+    /** add's --disabled: opt out of the CLI's enabled-by-default divergence. */
+    disabledOpt: string;
+    /** update's --enable / --disable pair. */
+    enableOpt: string;
+    disableOpt: string;
+    enableDisableConflict(): string;
+    /** --session-id given together with the new-session form: the target is one or the other. */
+    targetConflict(): string;
+    /** Confirmation after add/update; nextFireAt is absent for done/disabled/invalid tasks. */
+    written(name: string, enabledText: string, nextFireAt: string | undefined): string;
+    removed(name: string): string;
     enabled(): string;
     disabled(): string;
     /** Period column for a one-off task (no period configured). */
@@ -578,6 +601,8 @@ const en: Messages = {
   ls: {
     desc: "List the project's sessions (all agents unless --agent-id is given)",
     all: "Include archived sessions",
+    days: "Only sessions last active within the trailing <n> calendar days (today counts as day 1)",
+    daysInvalid: (value) => `Invalid --days value "${value}": expected a positive integer.`,
     empty: (projectId) => `No sessions in project ${projectId} yet.`,
     colId: () => "ID",
     colAgent: () => "AGENT",
@@ -591,11 +616,6 @@ const en: Messages = {
   input: {
     desc: "Send a message into an existing session (steering while it runs, a new task when idle); without -m, print its most recent assistant reply",
     message: "Message text (omit to poll the session's last assistant reply instead)",
-    noWait: "Return right after the server accepts the message instead of rendering the turn",
-    noWaitNeedsMessage: () =>
-      "--no-wait needs a message (-m): the bare form polls the last reply and has nothing to hand the server.",
-    timeoutWithNoWait: () =>
-      "--timeout bounds the wait, and --no-wait does not wait: drop one of them.",
     noReplyYet: () => "(no assistant reply yet)",
   },
   logs: {
@@ -649,6 +669,26 @@ const en: Messages = {
   schedule: {
     desc: "Manage scheduled tasks",
     lsDesc: "List the project's scheduled tasks (all agents unless --agent-id is given)",
+    addDesc:
+      "Create a scheduled task (writes the schedule file through the API; enabled by default — use --disabled to opt out)",
+    updateDesc:
+      "Update a scheduled task (read-modify-write: unspecified fields keep their stored values)",
+    rmDesc: "Delete a scheduled task (no prompt; the server's owner authorization applies)",
+    prompt: "The text each firing sends",
+    startAt: "First fire time (ISO 8601), or the literal `now` for the current instant",
+    period: "Fixed interval, minimum 5m (e.g. 30m, 12h, 1d, 7d); omitted = one-shot",
+    endAt: "Stop firing after this instant (ISO 8601)",
+    sessionId: "Bind firings to one session (excludes --workspace / the model pair)",
+    workspace: "New-session mode: workspace for each firing (omitted = a temp workspace)",
+    disabledOpt: "Create the task disabled (the CLI default is enabled)",
+    enableOpt: "Enable the task",
+    disableOpt: "Disable the task",
+    enableDisableConflict: () => "--enable and --disable are mutually exclusive.",
+    targetConflict: () =>
+      "--session-id and the new-session form (--workspace / --model-id / --provider) are mutually exclusive: the target is one or the other.",
+    written: (name, enabledText, nextFireAt) =>
+      `Schedule ${name} written (${enabledText}${nextFireAt !== undefined ? `, next fire ${nextFireAt}` : ""}).`,
+    removed: (name) => `Schedule ${name} removed.`,
     enabled: () => "on",
     disabled: () => "off",
     oneShot: () => "once",
@@ -1021,6 +1061,8 @@ const zh: Messages = {
   ls: {
     desc: "列出 Project 的会话（未指定 --agent-id 时覆盖全部 Agent）",
     all: "包含已归档会话",
+    days: "只列最近 <n> 个自然日内活跃过的会话（今天算第 1 天）",
+    daysInvalid: (value) => `--days 值「${value}」无效：应为正整数。`,
     empty: (projectId) => `Project ${projectId} 还没有会话。`,
     colId: () => "ID",
     colAgent: () => "AGENT",
@@ -1034,10 +1076,6 @@ const zh: Messages = {
   input: {
     desc: "向既有会话发送消息（运行中即插话，空闲时发起新 Task）；不带 -m 时输出其最近一条助手回复",
     message: "消息文本（省略时改为轮询该会话的最近助手回复）",
-    noWait: "服务端受理后立即返回，不渲染本轮输出",
-    noWaitNeedsMessage: () =>
-      "--no-wait 需要消息（-m）：不带 -m 的形式是轮询最近回复，没有可供受理的内容。",
-    timeoutWithNoWait: () => "--timeout 限定等待，而 --no-wait 不等待：二者去其一。",
     noReplyYet: () => "（还没有助手回复）",
   },
   logs: {
@@ -1090,6 +1128,24 @@ const zh: Messages = {
   schedule: {
     desc: "管理定时任务",
     lsDesc: "列出 Project 的定时任务（未指定 --agent-id 时覆盖全部 Agent）",
+    addDesc: "创建定时任务（经 API 写入任务文件；缺省即启用——用 --disabled 关闭）",
+    updateDesc: "更新定时任务（读改写：未指定的字段保留存储值）",
+    rmDesc: "删除定时任务（不做确认；服务端的 owner 授权照旧生效）",
+    prompt: "每次触发要发送的内容",
+    startAt: "首次触发时刻（ISO 8601），或字面量 `now` 表示当前时刻",
+    period: "固定间隔，下限 5m（如 30m、12h、1d、7d）；省略即一次性任务",
+    endAt: "此时刻之后不再触发（ISO 8601）",
+    sessionId: "绑定到某个会话触发（与 --workspace / 模型对互斥）",
+    workspace: "新建会话模式：每次触发所用 Workspace（省略即自动创建临时工作区）",
+    disabledOpt: "以停用状态创建（CLI 缺省为启用）",
+    enableOpt: "启用该任务",
+    disableOpt: "停用该任务",
+    enableDisableConflict: () => "--enable 与 --disable 互斥。",
+    targetConflict: () =>
+      "--session-id 与新建会话形式（--workspace / --model-id / --provider）互斥：目标二选一。",
+    written: (name, enabledText, nextFireAt) =>
+      `定时任务 ${name} 已写入（${enabledText}${nextFireAt !== undefined ? `，下次触发 ${nextFireAt}` : ""}）。`,
+    removed: (name) => `定时任务 ${name} 已删除。`,
     enabled: () => "开",
     disabled: () => "关",
     oneShot: () => "一次性",

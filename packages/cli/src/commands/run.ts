@@ -178,6 +178,24 @@ export function registerRunCommand(program: Command, t: Messages): void {
         return;
       }
 
+      if (timeoutMs === 0) {
+        // The zero window (`--timeout 0`): deliver and return, no subscription — the
+        // same return-after-POST shape `input --timeout 0` has. `--background` remains
+        // the idiomatic fire-and-forget for NEW tasks (it prints the bare session id for
+        // scripts); the zero timeout exists for symmetry with the wait budget.
+        await client.request("POST", `/api/sessions/${session.sessionId}/tasks`, taskBody);
+        if (json) {
+          process.stdout.write(
+            `${JSON.stringify({ sessionId: session.sessionId, status: "running" })}\n`,
+          );
+        } else {
+          process.stdout.write(
+            `${dim(t.client.stillRunning(shortSessionId(session.sessionId)))}\n`,
+          );
+        }
+        return;
+      }
+
       const out = process.stdout;
       if (!json) {
         out.write(

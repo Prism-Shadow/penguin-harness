@@ -84,6 +84,21 @@ SDK/CLI-direct embedding without the option injects nothing.
   skipped), mirroring `input_subagent`'s empty-prompt semantics — nothing queued, nothing
   steered. A running session is waited on silently (bounded by `--timeout` when given);
   still running at expiry prints the current latest text plus the still-running note.
+- **`--timeout 0` replaces `input --no-wait`** (the surface was unreleased): the one
+  timeout knob covers "don't wait" — deliver, then return immediately with the
+  still-running note (`{sessionId, status: "running"}` under `--json`); `run --timeout 0`
+  behaves the same for symmetry, while `run --background` stays the idiomatic
+  fire-and-forget for new tasks (bare session id for scripts).
+- **`penguin ls --days <n>`**: only sessions last active within the trailing n calendar
+  days (today counts as day 1 — `cost --days` semantics); combines with `-a` and
+  `--json`.
+- **`penguin schedule add|update|rm <name>`**: a validated writer over the schedules
+  API — the API writes the TOML file, which remains the single source of truth (the
+  model-config/vault pattern), and API errors surface verbatim for synchronous
+  validation. Target is `--session-id` XOR the new-session form; `--start-at now` means
+  the current instant. One deliberate divergence: `add` defaults to enabled (`--disabled`
+  opts out; the raw file's enabled=false default stays for hand edits); `update` is
+  read-modify-write; `rm` deletes without prompting.
 
 ## The CLI-session toggle is retired
 

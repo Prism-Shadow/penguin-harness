@@ -97,10 +97,18 @@ describe("getMessages", () => {
       expect(m.client.timeoutInvalid("5d")).toContain("5d");
       expect(m.client.stillRunning("abcd1234")).toContain("abcd1234");
       expect(m.client.callerDefaultsFailed("session-x")).toContain("session-x");
-      expect(m.input.noWaitNeedsMessage()).toContain("-m");
       expect(m.input.noReplyYet().length).toBeGreaterThan(0);
       expect(m.logs.timeoutNeedsFollow().length).toBeGreaterThan(0);
       expect(m.run.timeoutWithBackground()).toContain("--background");
+      // ls --days and the schedule writer family.
+      expect(m.ls.daysInvalid("x")).toContain("x");
+      expect(m.schedule.targetConflict()).toContain("--session-id");
+      expect(m.schedule.enableDisableConflict()).toContain("--enable");
+      expect(
+        m.schedule.written("daily", m.schedule.enabled(), "2026-08-27T09:00:00.000Z"),
+      ).toContain("daily");
+      expect(m.schedule.written("daily", m.schedule.enabled(), undefined)).toContain("daily");
+      expect(m.schedule.removed("daily")).toContain("daily");
     }
     // The dictionaries are genuinely two languages, not one copied twice.
     expect(getMessages("zh").ls.desc).not.toBe(getMessages("en").ls.desc);

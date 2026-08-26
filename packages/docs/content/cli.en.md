@@ -25,7 +25,7 @@ Authentication is the local API token: the server writes a fresh one to `<root>/
 - Session references: wherever a command takes a session id (`input`, `logs`, `run --session`, `chat --resume`), the full id or any unique fragment works — the 8-hex tail `penguin ls` prints is the intended shorthand. An ambiguous fragment errors listing the candidates.
 - `--json` prints raw JSON instead of the rendered/tabular output; `--server <url>` targets a specific server (see above).
 - Caller-context defaults: inside a harness agent (`PENGUIN_SESSION_ID` present in the environment), a session created by `run` / `chat` defaults each **unspecified** field to the calling session's live values — the Workspace, the model pair, the approval mode and the thinking level — the same inheritance `run_subagent` applies to spawned children, so the two surfaces follow one convention. Per field the precedence is explicit flag > caller value > the plain fallback; a failed lookup prints a dim warning and falls back; outside an agent nothing changes. (`--project-id` / `--agent-id` keep their env-var defaults above.)
-- `--timeout <duration>` (on `run`, `input`, and `logs -f`) bounds the wait with soft-yield semantics — the `exec_command` yield-window model applied to the CLI's wait: at expiry the command detaches cleanly and exits 0, and the task keeps running server-side for a later `penguin input` / `penguin logs` to pick up. Accepted shapes: `30s`, `5m`, `2h`, or a bare integer meaning seconds; anything else is rejected. No flag = wait indefinitely.
+- `--timeout <duration>` (on `run`, `input`, and `logs -f`) bounds the wait with soft-yield semantics — the `exec_command` yield-window model applied to the CLI's wait: at expiry the command detaches cleanly and exits 0, and the task keeps running server-side for a later `penguin input` / `penguin logs` to pick up. Accepted shapes: `30s`, `5m`, `2h`, or a bare integer meaning seconds; anything else is rejected. `--timeout 0` is the degenerate window — return immediately after delivery (`{sessionId, status: "running"}` under `--json`); the one knob covers "don't wait" too. No flag = wait indefinitely. (`run --background` remains the idiomatic fire-and-forget for NEW tasks: it prints the bare session id for scripts and detaches at creation time.)
 - Data root (`config` only): `--root <dir>` overrides the data root directory. Priority: `--root` > the `PENGUIN_HOME` env var > `~/.penguin/data`.
 
 ## penguin run
@@ -50,7 +50,7 @@ penguin run -m "long job" --background                # returns the session id i
 | `--thinking <level>` | Thinking level for this task: `low` / `medium` / `high` / `xhigh` / `max`; rides the task request. Omitted, the session's pinned level (else the Agent config) applies |
 | `--session <sessionId>` | Reuse an existing session (full id or unique fragment) instead of creating one; excludes `--workspace` and the model pair |
 | `--background` | POST the task and exit immediately, printing the session id (`{"sessionId"}` under `--json`); the task keeps running on the server — follow it with `penguin logs -f` |
-| `--timeout <duration>` | Soft-yield wait budget (see Global conventions): at expiry, print what has rendered plus a dim still-running line with the session id (`{sessionId, status: "running", text}` under `--json`) and exit 0 — the task is not aborted. Excludes `--background` |
+| `--timeout <duration>` | Soft-yield wait budget (see Global conventions): at expiry, print what has rendered plus a dim still-running line with the session id (`{sessionId, status: "running", text}` under `--json`) and exit 0 — the task is not aborted. `--timeout 0` returns right after the POST (`{sessionId, status: "running"}` under `--json`, no `text`). Excludes `--background` |
 | `--goal [budget]` | Goal mode: the message is the objective and the server loops until a terminal state; the optional value is a token budget (e.g. `500k`) |
 | `--json` | Print a final `{sessionId, status, text}` object instead of the rendered stream (`text` joins the main session's assistant text messages) |
 | `--server <url>` | Target server (see Server connection) |
@@ -104,17 +104,18 @@ penguin ls --json
 | --- | --- |
 | `--project-id <id>` / `--agent-id <id>` | Scope (see Global conventions for the defaults; without `--agent-id` every agent of the project is listed) |
 | `-a, --all` | Include archived sessions |
+| `--days <n>` | Only sessions whose last activity falls within the trailing n calendar days — today counts as day 1, so `--days 2` covers yesterday and today (the `cost --days` calendar semantics). Combines with `-a` and `--json` |
 | `--json` / `--server <url>` | As everywhere |
 
 ## penguin input
 
-Send a message into an existing session — or, without `-m`, poll its last answer. With `-m`, a running session receives the text as steering (delivered between turns) and an idle one gets a new task; by default the command waits and renders until the turn completes, `--no-wait` returns right after the server accepts it, and `--timeout` bounds the wait (soft yield — see Global conventions).
+Send a message into an existing session — or, without `-m`, poll its last answer. With `-m`, a running session receives the text as steering (delivered between turns) and an idle one gets a new task; by default the command waits and renders until the turn completes, and `--timeout` bounds the wait (soft yield — see Global conventions; `--timeout 0` returns right after delivery).
 
-Without `-m`, the command is a **poll**, mirroring `input_subagent`'s empty-prompt semantics: it prints the session's most recent complete assistant text (an idempotent last-answer snapshot from the history tail; thinking and tool output are skipped), queueing and steering nothing. A running session is waited on silently first — bounded by `--timeout` when given — and if it is still running at expiry, the current latest text is printed together with the still-running note (exit 0).
+Without `-m`, the command is a **poll**, mirroring `input_subagent`'s empty-prompt semantics: it prints the session's most recent complete assistant text (an idempotent last-answer snapshot from the history tail; thinking and tool output are skipped), queueing and steering nothing. A running session is waited on silently first — bounded by `--timeout` when given, with `--timeout 0` snapshotting immediately — and if it is still running at expiry, the current latest text is printed together with the still-running note (exit 0).
 
 ```bash
 penguin input 402a2e24 -m "also check the tests"
-penguin input 402a2e24 -m "queue this" --no-wait
+penguin input 402a2e24 -m "queue this" --timeout 0    # deliver and return immediately
 penguin input 402a2e24                    # poll: print the last assistant reply
 penguin input 402a2e24 --timeout 5m       # poll, waiting out a running turn up to 5 minutes
 ```
@@ -122,10 +123,9 @@ penguin input 402a2e24 --timeout 5m       # poll, waiting out a running turn up 
 | Option | Description |
 | --- | --- |
 | `-m, --message <text>` | The message text; omit it to poll the last assistant reply instead |
-| `--no-wait` | Return after the 202 instead of rendering the turn (requires `-m` — the poll form has nothing to accept) |
-| `--timeout <duration>` | Soft-yield wait budget: with `-m`, detach at expiry like `run` (`{sessionId, status: "running", text}` under `--json`); without `-m`, take the snapshot at expiry and note the session is still running. Excludes `--no-wait` |
+| `--timeout <duration>` | Soft-yield wait budget: with `-m`, detach at expiry like `run` (`{sessionId, status: "running", text}` under `--json`), and `--timeout 0` returns right after delivery (`{sessionId, status: "running"}`); without `-m`, take the snapshot at expiry — `0` immediately — and note the session is still running |
 | `--project-id <id>` | Fragment-search scope (a full session id needs none) |
-| `--json` / `--server <url>` | As everywhere; `--json` with `-m` prints `{sessionId, status, text}` (status `completed` / `aborted` / `running`), with `--no-wait` just `{sessionId}`, and the poll form `{sessionId, status, text}` with status `idle` / `running` (text `""` when there is no reply yet) |
+| `--json` / `--server <url>` | As everywhere; `--json` with `-m` prints `{sessionId, status, text}` (status `completed` / `aborted` / `running`; the `--timeout 0` shape drops `text`), and the poll form `{sessionId, status, text}` with status `idle` / `running` (text `""` when there is no reply yet) |
 
 ## penguin logs
 
@@ -187,6 +187,27 @@ A `+` after a cost marks a partial sum (some model in the bucket has no pricing 
 ## penguin schedule
 
 `penguin schedule ls` lists the project's scheduled tasks — all agents, or one with `--agent-id`. Columns: agent, name, enabled, start time, period (`once` for one-shot tasks), target (a bound session's short id or `new session`), last fired, and a status marker for every non-active state (`expired` / `done` / `missed` / `invalid`; unparsable schedule files are listed too, marked invalid). `--json` / `--server` as everywhere.
+
+`add` / `update` / `rm` manage schedules through the API, which writes the schedule's TOML file — **the file remains the single source of truth**, and the CLI is a validated writer (the same pattern model config and the vault follow: updates go through the system interface, validation converges at the interface layer, and hand edits stay possible). API errors surface verbatim, so an agent gets synchronous validation instead of the reconcile lag a hand edit hits.
+
+```bash
+penguin schedule add daily-report --prompt "summarize the day" --start-at 2026-09-01T09:00:00Z --period 1d
+penguin schedule add once-now --prompt "check the deploy" --start-at now --session-id 402a2e24
+penguin schedule update daily-report --period 12h --disable
+penguin schedule rm daily-report
+```
+
+| Option | Description |
+| --- | --- |
+| `--prompt <s>` | The text each firing sends (required on `add`) |
+| `--start-at <ISO\|now>` | First fire time, ISO 8601, or the literal `now` for the current instant (required on `add`) |
+| `--period <dur>` | Fixed interval, minimum `5m` (e.g. `30m`, `12h`, `1d`, `7d`); omitted = one-shot |
+| `--end-at <ISO>` | Stop firing after this instant |
+| `--session-id <id>` | Bind firings to one session — XOR with the new-session form below |
+| `--workspace <path>` / `--model-id <id> --provider <p>` | New-session mode: each firing creates a session on this workspace/model (workspace omitted = a temp workspace; the model pair is both-or-neither, omitted = the Project default) |
+| `--disabled` (`add`) | One deliberate divergence from the raw file: `add` creates the task **enabled** — you are adding a task to run — while the raw-file default of `enabled = false` stays for hand edits. `--disabled` opts out |
+| `--enable` / `--disable` (`update`) | Flip the enabled flag; `update` is read-modify-write against the stored item, so unspecified fields keep their values, and switching target kinds clears the other kind's fields |
+| `--project-id` / `--agent-id` / `--json` / `--server` | As everywhere; `rm` deletes without prompting (the server's owner authorization still applies) |
 
 ## Approval modes (--approve)
 

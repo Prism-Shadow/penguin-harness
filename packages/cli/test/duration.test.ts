@@ -12,10 +12,13 @@ describe("parseDurationMs", () => {
     expect(parseDurationMs("2h")).toBe(7_200_000);
     expect(parseDurationMs("45")).toBe(45_000); // bare integer = seconds
     expect(parseDurationMs(" 1s ")).toBe(1000); // trimmed
+    // Zero is legal and means "do not wait at all" (return right after delivery).
+    expect(parseDurationMs("0")).toBe(0);
+    expect(parseDurationMs("0s")).toBe(0);
   });
 
   it("rejects everything else", () => {
-    for (const bad of ["", "0", "0s", "-5s", "1.5m", "5 m", "5d", "m", "5ms", "abc", "1h30m"]) {
+    for (const bad of ["", "-5s", "1.5m", "5 m", "5d", "m", "5ms", "abc", "1h30m"]) {
       expect(parseDurationMs(bad)).toBeNull();
     }
   });
