@@ -199,12 +199,14 @@ jobs:
       # lib/: the CLI and its production deps (including workspace core/server/skills, all build outputs);
       # Use pnpm's current deploy implementation with injected workspace packages; the hoisted target layout
       # avoids deeply nested .pnpm/node_modules paths that exceed Windows PowerShell 5.1's legacy MAX_PATH limit.
-      # The launcher comes from scripts/write-launchers.mjs, the one spelling of the payload layout.
+      # bin/penguin is scripts/launchers/penguin, shipped verbatim — it is the one spelling of
+      # the payload layout (lib/dist/penguin.js, web/, an optional node/), and the shape
+      # scripts/test-installer.sh pins.
       - name: Assemble penguin/ (lib + web + bin)
         run: |
           pnpm --config.node-linker=hoisted --filter @prismshadow/penguin-cli --prod deploy "$PWD/out/penguin/lib"
           cp -r packages/web/dist out/penguin/web
-          node scripts/write-launchers.mjs out/penguin posix
+          install -D -m 755 scripts/launchers/penguin out/penguin/bin/penguin
 
       # Program payloads: linux runtimes use .tar.xz, darwin .tar.gz (nodejs.org naming);
       # node/ is only lightly trimmed (drop share/doc and share/man, keep the rest). Payloads
@@ -238,7 +240,7 @@ jobs:
 
       # Windows payload: same lib/ + web/ layout, but a .zip (the native format), the official
       # win-x64 Node runtime — whose zip has node.exe at the ARCHIVE ROOT, not bin/ — and
-      # penguin.cmd replacing the sh launcher (see scripts/write-launchers.mjs, including why
+      # penguin.cmd replacing the sh launcher (see scripts/launchers/penguin.cmd, including why
       # there is deliberately no penguin.ps1).
       #
       # It also bundles MinGit under git\, so exec_command has a POSIX shell even on a machine
@@ -265,9 +267,11 @@ jobs:
           test -f out/penguin/git/usr/bin/sh.exe
           test -f out/penguin/git/etc/profile
           printf '{"schemaVersion":1,"target":"win32-x64"}\n' > out/penguin/package-manifest.json
-          # Swaps the sh launcher for penguin.cmd; the generator emits it with CRLF, which is
-          # the only form cmd.exe is fully reliable with.
-          node scripts/write-launchers.mjs out/penguin windows
+          # The Windows package ships penguin.cmd INSTEAD of the sh launcher: a bare `penguin`
+          # on PATH would be picked up by Git Bash and run the wrong thing. The committed file
+          # is CRLF (.gitattributes), the only form cmd.exe is fully reliable with.
+          rm -f out/penguin/bin/penguin
+          install -D -m 644 scripts/launchers/penguin.cmd out/penguin/bin/penguin.cmd
           (cd out && zip -qr ../payloads/win32-x64.zip penguin)
 
       # The canonical artifacts: each payload is sealed with its checksum and the native
