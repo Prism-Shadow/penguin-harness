@@ -2,11 +2,10 @@
  * Installing THIS server's build onto another machine, from inside the server process —
  * platform code, so the whole capability travels by hot push (see ../hmr/README.md).
  *
- * What gets pushed is the running install itself: a server always sits inside a universal
- * image — the tarball layout (`…/penguin/{bin,lib}`) or the desktop app's staged payload —
- * so the payload is packed straight from disk, version-stamped by its own lib/package.json.
- * That is what makes "the two ends must match" trivially true: the far side receives the
- * bytes this side runs.
+ * Every image is a directory the standard tooling produced — the one deploy.mjs built and
+ * pushed among this version's assets, a tarball install's own tree, or the desktop app's
+ * staged payload — packed straight from disk and version-stamped by its own lib/package.json.
+ * Nothing installable is synthesized here.
  *
  * Nothing here assumes anything about the far side except an sshd and, for three commands, a
  * shell of some kind. The installer that does the real work is the ORDINARY one — install.sh
@@ -23,7 +22,6 @@ import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import zlib from "node:zlib";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { filesFromDirectory, tarGzBytes, zipBytes, zipExtract } from "./archive.js";
@@ -71,14 +69,6 @@ function versionOfManifest(manifestPath: string): string | null {
   return null;
 }
 
-/**
- * The bin shim the assembled image ships as `lib/dist/penguin.js`. The pushed CLI bundle
- * is a LIBRARY — the compile entry is index.ts, which exports `cli()` and has no side
- * effects, so executing the bundle directly loads it and exits 0 having done nothing
- * (found the hard way: a remote install whose `penguin server` "started" silently). This
- * shim is the packaged `dist/penguin.js` bin (penguin.ts) in miniature: run cli(), report
- * the code.
- */
 /** Which installer runs the far side of a push; also the asset keys deploy.mjs pushes. */
 const installerFileFor = (platform: RemotePlatform): string =>
   platform === "win32" ? "install.ps1" : "install.sh";
@@ -128,126 +118,35 @@ function runtimeNodeFiles(
   return files;
 }
 
-const CLI_BIN_SHIM = `// penguin bin shim (written by the machines image): the pushed CLI
-// bundle beside this file is a library exporting cli(); this file is the bin the
-// launchers exec.
-import { cli } from "./cli.mjs";
-cli(process.argv.slice(2))
-  .then((code) => {
-    process.exitCode = code;
-  })
-  .catch((err) => {
-    process.stderr.write(\`\${err instanceof Error ? err.message : String(err)}\\n\`);
-    process.exitCode = 1;
-  });
-`;
-
 /**
- * The skill library's content directory on THIS machine. The bundle inlines the skills
- * CODE, but the library is markdown on disk, resolved relative to the running module —
- * which for the assembled image means `lib/skills` beside the bundle, so the files must
- * ride along. They are found here through the PROCESS ENTRY's resolver (argv[1] is the
- * real dist file sitting next to a real node_modules in every install shape — tarball,
- * desktop, dev checkout), never through this bundle's own location: a hot-pushed bundle
- * lives in the hmr store, where no packages resolve.
- */
-function skillsContentRoot(argv1: string | undefined = process.argv[1]): string | null {
-  if (!argv1) return null;
-  // A plain upward walk, not require.resolve: the package's exports map carries only an
-  // `import` condition, so both CJS resolution and a manifest-subpath lookup throw — and
-  // any copy of the content directory is the right bytes anyway. The workspace arm
-  // covers dev runs, where the entry sits in packages/* above a pnpm-workspace.yaml.
-  let dir = path.dirname(path.resolve(argv1));
-  for (;;) {
-    const viaModules = path.join(dir, "node_modules", "@prismshadow", "penguin-skills", "skills");
-    if (fs.existsSync(viaModules)) return viaModules;
-    if (fs.existsSync(path.join(dir, "pnpm-workspace.yaml"))) {
-      const viaWorkspace = path.join(dir, "packages", "skills", "skills");
-      if (fs.existsSync(viaWorkspace)) return viaWorkspace;
-    }
-    const parent = path.dirname(dir);
-    if (parent === dir) return null;
-    dir = parent;
-  }
-}
-
-/** Every file under a directory as pack files below `prefix`, preserving modes. */
-function packFilesUnder(root: string, prefix: string): PackFile[] {
-  const out: PackFile[] = [];
-  for (const entry of fs.readdirSync(root, { recursive: true, withFileTypes: true })) {
-    if (!entry.isFile()) continue;
-    const abs = path.join(entry.parentPath, entry.name);
-    const rel = path.relative(root, abs).split(path.sep).join("/");
-    out.push({ path: `${prefix}/${rel}`, data: fs.readFileSync(abs) });
-  }
-  return out;
-}
-
-/**
- * The image assembled from the data root's OWN hot-pushed version — the FIRST choice: it
- * is literally what this server runs. The pushed CLI bundle is a self-contained esbuild
- * artifact carrying the whole program (server, platform, seam), and the web artifact is
- * the dist the server serves from memory — so the bundle as `lib/dist/cli.mjs`, the bin
- * shim above as `lib/dist/penguin.js`, `web/*` and a synthesized manifest (with
- * `"type": "module"` — both files are ESM, and without it Node re-parses the 10 MB bundle
- * per run) make a complete universal install with no node_modules tree at all.
+ * The image a hot push delivered — the FIRST choice. deploy.mjs builds it with the standard
+ * install-image pipeline (the same `pnpm deploy` tree a release or the desktop app stages),
+ * stamps its lib/package.json with a content-derived `0.0.0-hmr.<sha>` version, and pushes it
+ * among the version's assets; it materializes under the assets dir as real files. Nothing is
+ * synthesized here: this function just reads the directory the standard tooling produced.
  *
- * The version is minted from the two artifacts' content shas (`0.0.0-hmr.<cli>.<web>`):
- * the remote's installed manifest then equals ours exactly when it runs this pushed
- * version, and the existing "different → replace" decision keeps remotes in step with
- * every new push.
+ * The version is the stamp: a re-push of the same tree yields the same sha, so the existing
+ * "same → skip, different → replace" decision keeps remotes in step with every push.
  */
-export function hmrPayloadImage(dataRoot: string): PayloadImage | null {
-  try {
-    const hmrDir = path.join(dataRoot, "hmr");
-    const manifest = JSON.parse(fs.readFileSync(path.join(hmrDir, "harness.json"), "utf8")) as {
-      cli?: { bundle?: string };
-      web?: { manifest?: string };
-    };
-    if (typeof manifest.cli?.bundle !== "string" || typeof manifest.web?.manifest !== "string") {
-      return null;
-    }
-    const cliPath = path.join(hmrDir, manifest.cli.bundle);
-    const webzPath = path.join(hmrDir, manifest.web.manifest);
-    if (!fs.existsSync(cliPath) || !fs.existsSync(webzPath)) return null;
-    const sha = (p: string) => path.basename(p).split(".")[0]!.slice(0, 12);
-    const version = `0.0.0-hmr.${sha(cliPath)}.${sha(webzPath)}`;
-    return {
-      version,
-      files: () => {
-        const files: PackFile[] = [
-          { path: "penguin/lib/dist/cli.mjs", data: fs.readFileSync(cliPath) },
-          { path: "penguin/lib/dist/penguin.js", data: Buffer.from(CLI_BIN_SHIM) },
-          {
-            path: "penguin/lib/package.json",
-            data: Buffer.from(
-              JSON.stringify({ name: "@prismshadow/penguin-cli", version, type: "module" }) + "\n",
-            ),
-          },
-        ];
-        // The web artifact is gzip(JSON.stringify({ files: { relPath: base64 } })) — the
-        // same bytes the push carried and the server serves from memory.
-        const webz = JSON.parse(zlib.gunzipSync(fs.readFileSync(webzPath)).toString("utf8")) as {
-          files: Record<string, string>;
-        };
-        for (const [rel, base64] of Object.entries(webz.files)) {
-          files.push({ path: `penguin/web/${rel}`, data: Buffer.from(base64, "base64") });
-        }
-        // The skill library: content the bundle reads from `lib/skills` beside itself.
-        const skills = skillsContentRoot();
-        if (skills !== null) files.push(...packFilesUnder(skills, "penguin/lib/skills"));
-        return files;
-      },
-    };
-  } catch {
-    return null; // No pushes yet, or a damaged store: the disk shapes below take over.
-  }
+export function pushedPayloadImage(assetsDir: string | null): PayloadImage | null {
+  if (assetsDir === null) return null;
+  const root = path.join(assetsDir, "install-image", "penguin");
+  const version = versionOfManifest(path.join(root, "lib", "package.json"));
+  if (version === null) return null;
+  return {
+    version,
+    files: () =>
+      filesFromDirectory(root, {
+        prefix: "penguin",
+        exclude: ["node", "bin", "package-manifest.json"],
+      }),
+  };
 }
 
 /**
  * Finds the install image around the running server. Three real shapes, probed in order:
  *
- * 1. **The hot-pushed version** (hmrPayloadImage above) — what this server actually runs.
+ * 1. **The hot-pushed image** (pushedPayloadImage above) — built and stamped by deploy.mjs.
  * 2. **Tarball install** — the CLI entry is `<root>/lib/dist/penguin.js` and `<root>` is the
  *    program directory itself; pack it under a `penguin/` prefix, leaving out `node` (this
  *    machine's Node must not ride along — the far side gets a build for ITS platform), `bin`
@@ -259,13 +158,12 @@ export function hmrPayloadImage(dataRoot: string): PayloadImage | null {
  * Only a dev checkout that has never been pushed to has none of the three.
  */
 export function resolvePayloadImage(
-  dataRoot: string | null,
+  /** The hmr capability's assetsDir accessor; null in a packaged server that was never pushed to. */
+  assets: () => string | null,
   argv1: string | undefined = process.argv[1],
 ): PayloadImage | null {
-  if (dataRoot !== null) {
-    const pushed = hmrPayloadImage(dataRoot);
-    if (pushed !== null) return pushed;
-  }
+  const pushed = pushedPayloadImage(assets());
+  if (pushed !== null) return pushed;
   if (!argv1) return null;
 
   // Tarball shape: <root>/lib/dist/<entry>.js

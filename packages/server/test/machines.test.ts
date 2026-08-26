@@ -323,7 +323,7 @@ describe("resolvePayloadImage", () => {
       fs.writeFileSync(path.join(root, "bin", "penguin"), "#!/bin/sh\n");
       fs.writeFileSync(path.join(root, "package-manifest.json"), '{"target":"universal"}\n');
 
-      const image = resolvePayloadImage(null, path.join(root, "lib", "dist", "penguin.js"));
+      const image = resolvePayloadImage(() => null, path.join(root, "lib", "dist", "penguin.js"));
       expect(image?.version).toBe("9.9.9");
       const entries = image!.files().map((file) => file.path);
       expect(entries).toContain("penguin/lib/dist/penguin.js");
@@ -356,7 +356,7 @@ describe("resolvePayloadImage", () => {
       fs.writeFileSync(path.join(payload, "dist", "penguin.js"), "//\n");
       fs.writeFileSync(path.join(payload, "package.json"), manifest);
 
-      const image = resolvePayloadImage(null, path.join(serverDist, "index.js"));
+      const image = resolvePayloadImage(() => null, path.join(serverDist, "index.js"));
       expect(image?.version).toBe("9.9.9");
       const entries = image!.files().map((file) => file.path);
       expect(entries).toContain("penguin/lib/dist/penguin.js");
@@ -366,85 +366,49 @@ describe("resolvePayloadImage", () => {
   });
 
   it("a dev checkout has no pushable image", () => {
-    expect(resolvePayloadImage(null, "/repo/packages/server/src/index.ts")).toBeNull();
-    expect(resolvePayloadImage(null, undefined)).toBeNull();
+    expect(resolvePayloadImage(() => null, "/repo/packages/server/src/index.ts")).toBeNull();
+    expect(resolvePayloadImage(() => null, undefined)).toBeNull();
   });
 });
 
-describe("hmrPayloadImage", () => {
-  const seedStore = (work: string) => {
-    const hmrDir = path.join(work, "hmr");
-    fs.mkdirSync(path.join(hmrDir, "store", "cli"), { recursive: true });
-    fs.mkdirSync(path.join(hmrDir, "store", "web"), { recursive: true });
+describe("pushedPayloadImage", () => {
+  /** The image directory the way a push materializes it among the version's assets. */
+  const seedImage = (assetsDir: string, version = "0.0.0-hmr.cafe012345") => {
+    const root = path.join(assetsDir, "install-image", "penguin");
+    fs.mkdirSync(path.join(root, "lib", "dist"), { recursive: true });
+    fs.mkdirSync(path.join(root, "web"), { recursive: true });
+    fs.mkdirSync(path.join(root, "bin"), { recursive: true });
+    fs.writeFileSync(path.join(root, "lib", "dist", "penguin.js"), "// built by tsup\n");
     fs.writeFileSync(
-      path.join(hmrDir, "store", "cli", "cafe0123456789ab.mjs"),
-      "console.log('penguin');\n",
+      path.join(root, "lib", "package.json"),
+      JSON.stringify({ name: "@prismshadow/penguin-cli", version }),
     );
-    fs.writeFileSync(
-      path.join(hmrDir, "store", "web", "beef0123456789ab.webz"),
-      zlib.gzipSync(
-        Buffer.from(
-          JSON.stringify({
-            files: { "index.html": Buffer.from("<html>").toString("base64") },
-          }),
-        ),
-      ),
-    );
-    fs.writeFileSync(
-      path.join(hmrDir, "harness.json"),
-      JSON.stringify({
-        platform: { bundle: "store/platform/x.mjs", park: "store/platform/x.park.json" },
-        cli: { bundle: "store/cli/cafe0123456789ab.mjs" },
-        web: { manifest: "store/web/beef0123456789ab.webz" },
-      }),
-    );
+    fs.writeFileSync(path.join(root, "web", "index.html"), "<html>");
+    fs.writeFileSync(path.join(root, "bin", "penguin"), "#!/bin/sh\n");
+    fs.writeFileSync(path.join(root, "package-manifest.json"), '{"target":"universal"}\n');
   };
 
-  it("assembles a complete image from the pushed version, sha-stamped", () => {
+  it("reads the standard-built image the push delivered, nothing synthesized", () => {
     const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-hmr-image-"));
-    // The skill library resolves through the PROCESS ENTRY's resolver; under vitest
-    // argv[1] is the test runner, which resolves nothing — stand in a file of this
-    // package, the same resolution context every real entry shape has.
-    const originalArgv1 = process.argv[1];
-    // fileURLToPath, not URL.pathname: on Windows the latter yields "/D:/…" — a leading
-    // slash before the drive letter — and the resolver then finds no skill library, so the
-    // image ships without one and the assertion below reads as a missing feature.
-    process.argv[1] = fileURLToPath(import.meta.url);
     try {
-      seedStore(work);
-      const image = resolvePayloadImage(work, "/repo/packages/server/src/index.ts");
-      expect(image?.version).toBe("0.0.0-hmr.cafe01234567.beef01234567");
-      const files = image!.files();
-      const entries = files.map((file) => file.path);
-      const content = (at: string): string =>
-        files.find((file) => file.path === at)!.data.toString("utf8");
-      // The pushed bundle is a LIBRARY (it exports cli() and does nothing when executed),
-      // so the image carries it as cli.mjs and ships a bin shim as the entry.
-      expect(entries).toContain("penguin/lib/dist/cli.mjs");
+      seedImage(work);
+      const image = resolvePayloadImage(() => work, "/repo/packages/server/src/index.ts");
+      expect(image?.version).toBe("0.0.0-hmr.cafe012345");
+      const entries = image!.files().map((file) => file.path);
       expect(entries).toContain("penguin/lib/dist/penguin.js");
-      expect(entries).toContain("penguin/lib/package.json");
       expect(entries).toContain("penguin/web/index.html");
-      // The skill library rides along: the bundle reads it from lib/skills beside itself.
-      expect(entries.some((e) => /^penguin\/lib\/skills\/.+\/SKILL\.md$/.test(e))).toBe(true);
-      expect(content("penguin/lib/dist/penguin.js")).toContain('import { cli } from "./cli.mjs"');
-      expect(content("penguin/web/index.html")).toBe("<html>");
-      const manifest = JSON.parse(content("penguin/lib/package.json")) as {
-        version: string;
-        type?: string;
-      };
-      expect(manifest.version).toBe(image!.version);
-      // ESM on both files, and no per-run re-parse of a 10 MB bundle.
-      expect(manifest.type).toBe("module");
+      // Launchers, runtime and manifest are per-remote; the image must not carry its own.
+      expect(entries.some((p) => p.startsWith("penguin/bin/"))).toBe(false);
+      expect(entries).not.toContain("penguin/package-manifest.json");
     } finally {
-      if (originalArgv1 !== undefined) process.argv[1] = originalArgv1;
       fs.rmSync(work, { recursive: true, force: true });
     }
   });
 
-  it("outranks the disk shapes — the pushed version is what this server runs", () => {
+  it("outranks the disk shapes — the pushed version is what this server should spread", () => {
     const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-hmr-image-"));
     try {
-      seedStore(work);
+      seedImage(work);
       // A valid tarball shape is offered too; the pushed version still wins.
       const root = path.join(work, "penguin");
       fs.mkdirSync(path.join(root, "lib", "dist"), { recursive: true });
@@ -453,17 +417,18 @@ describe("hmrPayloadImage", () => {
         path.join(root, "lib", "package.json"),
         JSON.stringify({ name: "@prismshadow/penguin-cli", version: "9.9.9" }),
       );
-      const image = resolvePayloadImage(work, path.join(root, "lib", "dist", "penguin.js"));
-      expect(image?.version).toBe("0.0.0-hmr.cafe01234567.beef01234567");
+      const image = resolvePayloadImage(() => work, path.join(root, "lib", "dist", "penguin.js"));
+      expect(image?.version).toBe("0.0.0-hmr.cafe012345");
     } finally {
       fs.rmSync(work, { recursive: true, force: true });
     }
   });
 
-  it("a root without pushes answers null and the disk shapes take over", () => {
+  it("an assets dir without an image answers null and the disk shapes take over", () => {
     const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-hmr-image-"));
     try {
-      expect(resolvePayloadImage(work, undefined)).toBeNull();
+      expect(resolvePayloadImage(() => work, undefined)).toBeNull();
+      expect(resolvePayloadImage(() => null, undefined)).toBeNull();
     } finally {
       fs.rmSync(work, { recursive: true, force: true });
     }

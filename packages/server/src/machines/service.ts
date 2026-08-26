@@ -107,7 +107,7 @@ export class MachinesService {
    * so it can say so up front, rather than letting every install fail at the same step.
    */
   imageVersion(): string | null {
-    return this.#effects.resolveImage(this.dataRoot)?.version ?? null;
+    return this.#effects.resolveImage(this.#assets)?.version ?? null;
   }
 
   /** The running or last job; null before the first one. */
@@ -129,7 +129,7 @@ export class MachinesService {
     const machine = this.list().find((entry) => entry.id === machineId);
     if (machine === undefined) return { ok: false, why: "unknown-machine" };
 
-    const image = this.#effects.resolveImage(this.dataRoot);
+    const image = this.#effects.resolveImage(this.#assets);
     if (image === null) return { ok: false, why: "no-image" };
 
     const resolved = await this.#effects.resolveTarget(machine.alias);
