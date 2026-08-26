@@ -5,7 +5,7 @@
 # Options:
 #   $env:PENGUIN_VERSION = "vX.Y.Z"     choose a version (same as -Version vX.Y.Z); a published Release
 #                                         installer defaults to its own version, an unstamped source copy to latest
-#   $env:PENGUIN_INSTALL_DIR = "<dir>"  install dir; default $env:LOCALAPPDATA\penguin
+#   $env:PENGUIN_INSTALL_DIR = "<dir>"  install dir; default $env:USERPROFILE\.penguin
 #   $env:PENGUIN_ARCHIVE = "<file>"     install a local Release zip without network access (same as -ArchivePath)
 #   $env:PENGUIN_DOWNLOAD_SOURCE = "auto|oss|github" choose the online source; default auto
 #                                         (speed-probed, with the same-version other source as fallback)
@@ -25,12 +25,8 @@
 # There is no -Universal on Windows: where the zip is unsuitable, install Node.js >= 24 and run
 # `npm install -g @prismshadow/penguin-cli` instead.
 #
-# The program (bin/lib/web/node/git) and the data are separate trees: the program goes to
-# %LOCALAPPDATA%\penguin, while the data root stays at %USERPROFILE%\.penguin\data and is never
-# touched by install, reinstall or upgrade. Installs up to v0.2.2 put the program under
-# %USERPROFILE%\.penguin next to the data; a run of this installer moves that layout over (see the
-# one-time cleanup after the swap), and an explicit -InstallDir / PENGUIN_INSTALL_DIR opts out.
-# Upgrading = re-running this installer.
+# The data dir (%USERPROFILE%\.penguin\data) sits under the install home but is never touched by
+# reinstall/upgrade (which only replace bin/lib/web/node/git). Upgrading = re-running this installer.
 #
 # Docs: https://penguin.ooo/docs/quickstart-cli
 param(
@@ -356,19 +352,8 @@ function Restore-PreviousInstall(
 
 # --- Resolve options (parameters win over env vars, mirroring install.sh's --version) ---
 if (-not $Version) { $Version = if ($env:PENGUIN_VERSION) { $env:PENGUIN_VERSION } else { "" } }
-# Program tree: %LOCALAPPDATA% by default (Windows' equivalent of the XDG data dir install.sh
-# uses). $LegacyInstallDir is where installs up to v0.2.2 put it, beside the data root, which
-# does not move. $InstallDirExplicit opts the one-time move below out.
-$LegacyInstallDir = Join-Path $env:USERPROFILE ".penguin"
-$InstallDirExplicit = [bool]$InstallDir -or [bool]$env:PENGUIN_INSTALL_DIR
 if (-not $InstallDir) {
-  $InstallDir = if ($env:PENGUIN_INSTALL_DIR) {
-    $env:PENGUIN_INSTALL_DIR
-  } elseif ($env:LOCALAPPDATA) {
-    Join-Path $env:LOCALAPPDATA "penguin"
-  } else {
-    $LegacyInstallDir
-  }
+  $InstallDir = if ($env:PENGUIN_INSTALL_DIR) { $env:PENGUIN_INSTALL_DIR } else { Join-Path $env:USERPROFILE ".penguin" }
 }
 if (-not $ArchivePath) {
   $ArchivePath = if ($env:PENGUIN_ARCHIVE) { $env:PENGUIN_ARCHIVE } else { "" }
@@ -731,35 +716,8 @@ public static extern System.IntPtr SendMessageTimeout(System.IntPtr hWnd, uint M
 # Make `penguin` work in this session too.
 if (($env:Path -split ";") -notcontains $BinDir) { $env:Path = "$env:Path;$BinDir" }
 
-# --- One-time move out of %USERPROFILE%\.penguin (installs up to v0.2.2 kept the program beside
-#     the data). The new tree is installed and verified by now, so the legacy PROGRAM directories
-#     are just removed; data\ is never touched. Failure is a warning: the new install works, and
-#     only a stale copy is left behind. ---
-$MigratedLegacy = $false
-if (-not $InstallDirExplicit -and $InstallDir -ne $LegacyInstallDir) {
-  foreach ($d in @("bin", "lib", "web", "node", "git")) {
-    $Stale = Join-Path $LegacyInstallDir $d
-    if (Test-Path -LiteralPath $Stale) {
-      try {
-        Remove-Item -LiteralPath $Stale -Recurse -Force -ErrorAction Stop
-        $MigratedLegacy = $true
-      } catch {
-        Write-Warning "could not remove the previous program directory $Stale"
-      }
-    }
-  }
-  # Only when nothing of ours (notably data\) is left behind.
-  if ((Test-Path -LiteralPath $LegacyInstallDir) -and
-      -not (Get-ChildItem -LiteralPath $LegacyInstallDir -Force)) {
-    Remove-Item -LiteralPath $LegacyInstallDir -Force -ErrorAction SilentlyContinue
-  }
-}
-
 Write-Host ""
 Write-Host "PenguinHarness $InstalledVersion installed to $InstallDir"
-if ($MigratedLegacy) {
-  Write-Host "moved the program out of $LegacyInstallDir; your data stays in $LegacyInstallDir\data"
-}
 if ($PathUpdateMessage) {
   Write-Host ""
   Write-Host $PathUpdateMessage
@@ -767,5 +725,5 @@ if ($PathUpdateMessage) {
 Write-Host ""
 Write-Host "Get started:"
 Write-Host "  penguin --help    # all commands"
-Write-Host "  penguin web       # start the Web UI at http://127.0.0.1:7376 (a first-login link is printed on first start)"
+Write-Host "  penguin web       # start the Web UI at http://127.0.0.1:7364 (a first-login link is printed on first start)"
 Write-Host "  penguin server    # headless server (PORT / HOST to override)"
