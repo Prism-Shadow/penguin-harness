@@ -1171,9 +1171,10 @@ export function ChatPage() {
   );
 
   // Recall a queued message back into the composer (#287): the DELETE returns the original
-  // content (text / images / files) and the input area restores it as the draft. A 409
-  // not_pending (steering already delivered, follow-up already started) surfaces as a toast;
-  // the queued hint retires on its own via the re-broadcast task_state.
+  // content (text / images / files) and the input area restores it as the draft. A 409 —
+  // not_pending (steering already delivered) or follow_up_started (the follow-up already
+  // became a task) — surfaces as a toast, each with its own sentence; the queued hint
+  // retires on its own via the re-broadcast task_state.
   const onRecallSteering = useCallback(
     async (steerId: string) => {
       if (!selected) return null;

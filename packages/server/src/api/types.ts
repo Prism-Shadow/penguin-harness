@@ -1549,9 +1549,10 @@ export interface SubagentMessageResponse {
  * DELETE /api/sessions/:id/follow-ups/:followUpId: the withdrawn message's original content,
  * for the composer to restore into the input box for editing and resending (#287). File
  * attachments are read back from the Session scratchpad (then deleted from it); one that
- * disappeared meanwhile is omitted rather than failing the recall. 409 `not_pending` when
- * the entry is no longer queued — steering already delivered to the model, or a follow-up
- * already auto-started (or unknown id either way).
+ * disappeared meanwhile is omitted rather than failing the recall. 409 when the entry is no
+ * longer queued, with a code per endpoint because the reasons read differently to the user:
+ * `not_pending` — the steering message already reached the model; `follow_up_started` — the
+ * follow-up already auto-started as a task of its own (unknown ids land on the same code).
  */
 export interface RecalledMessageResponse {
   text: string;
