@@ -1,8 +1,6 @@
 /**
- * Feature section in two layers: the three features with real captures
- * (multi-session chat, trace view, agent evaluation) form switchable tabs whose
- * active panel embeds the locale/theme-matched screenshot; the remaining
- * features sit below as a plain card grid, closed by an "and more…" card.
+ * Product tour: three real captures in a compact switcher. The homepage keeps the
+ * experience tangible without repeating every capability as another card grid.
  */
 import { useState } from "react";
 import { S } from "../lib/strings";
@@ -10,17 +8,7 @@ import { useLocale } from "../state/locale";
 import type { Locale } from "../state/locale";
 import { Section } from "../components/section";
 import { BrowserFrame } from "../components/browser-frame";
-import {
-  ActivityIcon,
-  BarChartIcon,
-  BotIcon,
-  ClockIcon,
-  MessageSquareIcon,
-  PieChartIcon,
-  ShareIcon,
-  SparklesIcon,
-  UsersIcon,
-} from "../components/icons";
+import { ActivityIcon, BarChartIcon, MessageSquareIcon } from "../components/icons";
 import chatZhLight from "../assets/shots/chat-zh-light.webp";
 import chatZhDark from "../assets/shots/chat-zh-dark.webp";
 import chatEnLight from "../assets/shots/chat-en-light.webp";
@@ -78,28 +66,16 @@ function ThemedShot({ set, alt }: { set: ShotSet; alt: string }) {
   );
 }
 
-/** Icon order matches S.features.items. */
-const ICONS = [
-  MessageSquareIcon,
-  BotIcon,
-  SparklesIcon,
-  ClockIcon,
-  ShareIcon,
-  PieChartIcon,
-  ActivityIcon,
-  BarChartIcon,
-  UsersIcon,
-];
-
 /** Item indexes with a real capture, in tab order. */
-const SHOT_TABS: Array<{ index: number; shot: keyof typeof SHOTS }> = [
-  { index: 0, shot: "chat" },
-  { index: 6, shot: "traces" },
-  { index: 7, shot: "benchmark" },
+const SHOT_TABS: Array<{
+  index: number;
+  shot: keyof typeof SHOTS;
+  icon: typeof MessageSquareIcon;
+}> = [
+  { index: 0, shot: "chat", icon: MessageSquareIcon },
+  { index: 6, shot: "traces", icon: ActivityIcon },
+  { index: 7, shot: "benchmark", icon: BarChartIcon },
 ];
-
-/** The rest of the grid, in the original item order. */
-const PLAIN_INDEXES = [1, 2, 3, 4, 5, 8];
 
 export function Features() {
   const [active, setActive] = useState(0);
@@ -120,7 +96,7 @@ export function Features() {
       >
         {SHOT_TABS.map((t, i) => {
           const tabItem = S.features.items[t.index]!;
-          const TabIcon = ICONS[t.index] ?? SparklesIcon;
+          const TabIcon = t.icon;
           const activeTab = i === active;
           return (
             <button
@@ -150,33 +126,6 @@ export function Features() {
         <BrowserFrame>
           <ThemedShot set={SHOTS[tab.shot]} alt={item.title} />
         </BrowserFrame>
-      </div>
-
-      {/* Features without a capture: the classic card grid, closed by "and more…". */}
-      <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-        {PLAIN_INDEXES.map((index) => {
-          const plain = S.features.items[index]!;
-          const IconCmp = ICONS[index] ?? SparklesIcon;
-          return (
-            <article
-              key={plain.title}
-              className="relative overflow-hidden rounded-xl border border-gray-200 bg-white p-5 transition-colors hover:border-gray-300 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700"
-            >
-              {/* Oversized faint icon as the card backdrop (decorative). */}
-              <IconCmp
-                strokeWidth={1.25}
-                className="pointer-events-none absolute -right-5 -bottom-5 h-26 w-26 text-gray-100 dark:text-gray-800"
-              />
-              <h3 className="relative text-[15px] font-semibold tracking-tight">{plain.title}</h3>
-              <p className="relative mt-2 text-sm leading-6 text-gray-600 dark:text-gray-400">
-                {plain.desc}
-              </p>
-            </article>
-          );
-        })}
-        <article className="flex items-center justify-center rounded-xl border border-dashed border-gray-300 p-5 text-sm text-gray-400 dark:border-gray-700 dark:text-gray-500">
-          {S.features.more}
-        </article>
       </div>
     </Section>
   );

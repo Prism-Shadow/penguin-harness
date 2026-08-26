@@ -19,6 +19,7 @@ export const zh = {
 
   nav: {
     highlights: "特色",
+    selfImprove: "自进化",
     quickstart: "快速开始",
     cases: "案例",
     scenarios: "应用场景",
@@ -48,30 +49,21 @@ export const zh = {
   },
 
   hero: {
-    /**
-     * Headline: {titlePrefix}<nowrap>{titleNoWrap}{word}{titleSuffix}</nowrap>, the word
-     * rotating through titleWords (桌面/服务器 — where the builder runs; the README
-     * writes the pair as "桌面 / 服务器"). The nowrap span pins the wrap point in front
-     * of it, so a break never splits "Agent Builder" / "Right on Your Desktop" mid-phrase.
-     */
-    titlePrefix: "全自动 Agent 构建平台，",
-    titleNoWrap: "运行在你的",
-    titleWords: ["桌面", "服务器"],
-    titleSuffix: "上",
-    subtitle: "一键创建自进化 Agent",
-    /** Primary CTA: base label, and the platform-aware variant once the OS is detected. */
+    eyebrow: "本地优先的 Agent 应用自动开发平台",
+    titleLead: "一句话，创建",
+    titleAccent: "可自进化",
+    titleTail: "的 AI 应用。",
+    subtitle:
+      "PenguinHarness 运行在你的电脑或服务器上，把一句自然语言需求变成可运行、可评测、会持续进化的 Agent 应用。",
     downloadCta: "下载桌面版",
     downloadCtaFor: (platform: string) => `下载桌面版（${platform}）`,
-    ctaQuickstart: "快速开始",
-    ctaGithub: "GitHub",
-    /** Line under the CTAs: all installers on /download, CLI / self-hosted below the fold. */
-    downloadAll: "全部平台下载（macOS / Windows / Linux）",
-    cliAlt: "命令行与自托管安装 ↓",
+    cliInstall: "命令行安装",
+    installHint: "macOS · Windows · Linux · 本地数据默认保存在 ~/.penguin/data",
     stats: [
-      { value: "1000+", label: "支持模型数量" },
-      { value: "1×CPU", label: "最低运行配置" },
-      { value: "100%", label: "开源，可本地部署" },
-      { value: "首个原生", label: "递归自我进化 Harness" },
+      { value: "1000+", label: "模型与主流供应商" },
+      { value: "三大系统", label: "Linux · Windows · macOS" },
+      { value: "私有化", label: "本地与服务器灵活部署" },
+      { value: "首个", label: "Agent 自进化引擎" },
     ],
   },
 
@@ -104,6 +96,21 @@ export const zh = {
       mac: { name: "macOS", require: "macOS 11 及以上，dmg 安装镜像（按芯片选择）" },
       windows: { name: "Windows", require: "Windows 10 及以上（x64），NSIS 安装程序" },
       linux: { name: "Linux", require: "x64，AppImage 免安装运行，或 deb 交给包管理器" },
+    },
+    speed: {
+      title: "智能选择最快下载源",
+      subtitle: "页面会先确认连通性，再在后台测速；下载按钮无需等待完整测速即可使用。",
+      github: "GitHub Releases",
+      githubHint: "全球源",
+      oss: "OSS 国内镜像",
+      ossHint: "中国大陆优化",
+      testing: "测速中",
+      skipped: "未测速",
+      unreachable: "暂不可达",
+      belowFloor: "速度过低",
+      selected: "当前下载线路",
+      automatic: "自动选择",
+      manual: "手动选择",
     },
     statusProbing: "正在为你确认可用的下载源……",
     statusRefining: "仍在比较两个源的速度，更快的一个会自动生效。",
@@ -221,45 +228,47 @@ export const zh = {
 
   quickstart: {
     eyebrow: "快速开始",
-    title: "三步跑通第一个任务",
-    subtitle:
-      "一行命令安装，打开桌面级界面即可让 Agent 开始工作；数据全部保存在本地 ~/.penguin/data 目录。",
-    step1: "安装",
-    step1Desc:
-      "选择你的系统与安装方式：在线一行命令，或离线安装包；产物内嵌 Node 运行时，解压即用，升级与重装不触碰数据。",
-    tabWeb: "Web 界面",
-    tabCli: "命令行",
-    webStep2: "启动 Web 界面",
-    webStep2Desc:
-      "penguin web 启动本地服务并打开浏览器，用内置管理员 admin 登录——初始密码在服务端首次启动时打印到终端（形如 penguin-1234），登录后请尽快修改密码。",
-    webCmd: "penguin web   # 打开 http://127.0.0.1:7364",
-    webStep3: "在界面里配置模型，开始对话",
-    webStep3Desc:
-      "进入「模型库」页，在 DeepSeek 或 OpenRouter 分组里粘贴 API key 并设为默认；回到对话页把第一个任务交给 Agent，例如「分析 data.csv，输出各季度销售额汇总」。",
-    getKeyPrefix: "获取 API key：",
-    getDeepseekKey: "DeepSeek 控制台",
-    getOpenrouterKey: "OpenRouter 控制台",
-    cliStep2: "配置模型",
-    cliStep2Desc: "以 DeepSeek 官方 API 或 OpenRouter 网关为例，一条命令完成配置并设为默认。",
-    tabDeepseek: "DeepSeek",
-    tabOpenrouter: "OpenRouter",
-    deepseekCmd: `penguin config model add \\
-  --provider deepseek \\
-  --model-id deepseek-v4-pro \\
-  --api-key sk-your-deepseek-key \\
-  --set-default`,
-    deepseekNote:
-      "模型引用始终是 (provider, model_id) 二元组，--provider 必填；省略 --api-key 时回退环境变量 DEEPSEEK_API_KEY。",
-    openrouterCmd: `penguin config model add \\
-  --provider openrouter \\
-  --model-id deepseek/deepseek-v4-pro \\
-  --api-key sk-or-your-key \\
-  --set-default`,
-    openrouterNote: "网关分组自动预填 OpenAI 兼容协议与 base URL，一个 key 即可访问上千种模型。",
-    cliStep3: "运行",
-    cliStep3Desc: "penguin run 直接执行单个任务；penguin chat 进入交互式 REPL。",
-    runCmd: `penguin run --approve allow-all \\
-  --message "分析 data.csv，输出各季度销售额汇总"`,
+    title: "选择最适合你的启动方式",
+    subtitle: "桌面端开箱即用；需要服务器、浏览器或自动化脚本时，再切换到命令行。",
+    tabs: {
+      desktop: "桌面端",
+      install: "命令行安装",
+      web: "启动 Web UI",
+      cli: "启动 CLI",
+    },
+    desktop: {
+      title: "桌面端优先，打开就能用",
+      desc: "内置本地服务与完整 Web 界面，无需先配置运行环境，也无需在终端里保持进程。",
+      cta: "选择系统并下载",
+      steps: [
+        "下载适合当前系统的安装包",
+        "打开 PenguinHarness，按引导配置模型",
+        "输入一句话，创建第一个 Agent 应用",
+      ],
+    },
+    install: {
+      title: "一行命令安装 PenguinHarness",
+      desc: "适合开发机、服务器和私有化环境。安装包自带运行时，不依赖系统里的 Node.js。",
+      osLabel: "选择操作系统",
+      offlinePrefix: "无网络环境也可以安装。",
+      offlineLink: "查看全部离线安装包",
+      offlineTitle: "展开离线安装命令",
+    },
+    web: {
+      title: "在浏览器里使用完整界面",
+      desc: "命令会启动本地服务并自动打开 Web UI，适合服务器部署和远程访问。",
+      command: "penguin web   # 打开 http://127.0.0.1:7364",
+      steps: ["先完成命令行安装", "运行 penguin web", "按终端提示登录并配置模型"],
+    },
+    cli: {
+      title: "直接从终端运行 Agent",
+      desc: "进入交互式对话，或把单次任务接入脚本和自动化工作流。",
+      command: `penguin chat
+
+# 或执行单次任务
+penguin run --message "分析 data.csv，输出季度销售额"`,
+    },
+    localNote: "桌面端、Web UI 与 CLI 共用 ~/.penguin/data；切换入口不会迁移或复制数据。",
   },
 
   cases: {
@@ -497,7 +506,8 @@ export const zh = {
     resources: "资源",
     quickstart: "快速开始",
     features: "功能",
-    benchmark: "评测",
+    selfImprove: "自进化引擎",
+    cases: "案例",
     blog: "博客",
     repo: "GitHub 仓库",
     docs: "文档",

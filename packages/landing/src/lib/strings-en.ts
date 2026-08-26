@@ -18,6 +18,7 @@ export const en: Strings = {
 
   nav: {
     highlights: "Highlights",
+    selfImprove: "Self-evolution",
     quickstart: "Quick start",
     cases: "Cases",
     scenarios: "Scenarios",
@@ -47,26 +48,21 @@ export const en: Strings = {
   },
 
   hero: {
-    // The trailing space lives in the PREFIX (a breakable space before the nowrap
-    // span) — inside titleNoWrap it would glue "Builder," to the unbreakable chunk.
-    titlePrefix: "Your Automated Agent Builder, ",
-    titleNoWrap: "Right on Your ",
-    titleWords: ["Desktop", "Server"],
-    titleSuffix: "",
-    subtitle: "Create Self-Evolving Agents in One Click",
-    /** Primary CTA: base label, and the platform-aware variant once the OS is detected. */
+    eyebrow: "The local-first platform for autonomous Agent app development",
+    titleLead: "One sentence. One ",
+    titleAccent: "self-evolving",
+    titleTail: " AI app.",
+    subtitle:
+      "PenguinHarness runs on your computer or server and turns a natural-language request into an Agent app that runs, evaluates itself, and keeps improving.",
     downloadCta: "Download the desktop app",
     downloadCtaFor: (platform: string) => `Download for ${platform}`,
-    ctaQuickstart: "Get started",
-    ctaGithub: "GitHub",
-    /** Line under the CTAs: all installers on /download, CLI / self-hosted below the fold. */
-    downloadAll: "All platforms (macOS / Windows / Linux)",
-    cliAlt: "CLI and self-hosted install ↓",
+    cliInstall: "Install from the command line",
+    installHint: "macOS · Windows · Linux · Local data stays in ~/.penguin/data by default",
     stats: [
-      { value: "1000+", label: "supported models" },
-      { value: "1×CPU", label: "minimum footprint" },
-      { value: "100%", label: "open source, local deploy" },
-      { value: "First native", label: "recursively self-improving harness" },
+      { value: "1000+", label: "models and major providers" },
+      { value: "3 systems", label: "Linux · Windows · macOS" },
+      { value: "Private", label: "local and server deployment" },
+      { value: "First", label: "Agent self-evolution engine" },
     ],
   },
 
@@ -102,6 +98,22 @@ export const en: Strings = {
         name: "Linux",
         require: "x64 — AppImage runs in place, deb goes to your package manager",
       },
+    },
+    speed: {
+      title: "Automatically pick the fastest source",
+      subtitle:
+        "The page checks reachability first, then measures speed in the background. Download buttons do not wait for the full test.",
+      github: "GitHub Releases",
+      githubHint: "Global source",
+      oss: "OSS mirror",
+      ossHint: "Optimized for mainland China",
+      testing: "Testing",
+      skipped: "Not tested",
+      unreachable: "Unavailable",
+      belowFloor: "Too slow to measure",
+      selected: "Current download route",
+      automatic: "Automatic",
+      manual: "Manual",
     },
     statusProbing: "Finding a download source that answers …",
     statusRefining: "Still comparing the two sources — the faster one takes over on its own.",
@@ -223,48 +235,53 @@ export const en: Strings = {
 
   quickstart: {
     eyebrow: "Quick start",
-    title: "Your first task in three steps",
+    title: "Start the way that fits your setup",
     subtitle:
-      "Install with one command and let the Agent work from a desktop-grade interface — all data stays in your local ~/.penguin/data directory.",
-    step1: "Install",
-    step1Desc:
-      "Pick your OS and method — the online one-liner, or an offline package; the bundle carries its own Node runtime, and upgrades never touch your data.",
-    tabWeb: "Web UI",
-    tabCli: "CLI",
-    webStep2: "Open the web interface",
-    webStep2Desc:
-      "penguin web starts the local service and opens your browser; sign in as the built-in admin “admin” with the initial password printed in the terminal on first start (looks like penguin-1234; change it right after).",
-    webCmd: "penguin web   # opens http://127.0.0.1:7364",
-    webStep3: "Configure a model in the UI and start chatting",
-    webStep3Desc:
-      "Open the Models page, paste an API key under the DeepSeek or OpenRouter group and set it as default; then head back to Chat and hand the Agent its first task — e.g. “Analyze data.csv and summarize quarterly sales”.",
-    getKeyPrefix: "Get an API key: ",
-    getDeepseekKey: "DeepSeek console",
-    getOpenrouterKey: "OpenRouter console",
-    cliStep2: "Configure a model",
-    cliStep2Desc:
-      "Using the DeepSeek official API or the OpenRouter gateway as examples — one command configures it and sets the default.",
-    tabDeepseek: "DeepSeek",
-    tabOpenrouter: "OpenRouter",
-    deepseekCmd: `penguin config model add \\
-  --provider deepseek \\
-  --model-id deepseek-v4-pro \\
-  --api-key sk-your-deepseek-key \\
-  --set-default`,
-    deepseekNote:
-      "A model is always referenced by the (provider, model_id) pair, so --provider is required; omit --api-key to fall back to the DEEPSEEK_API_KEY environment variable.",
-    openrouterCmd: `penguin config model add \\
-  --provider openrouter \\
-  --model-id deepseek/deepseek-v4-pro \\
-  --api-key sk-or-your-key \\
-  --set-default`,
-    openrouterNote:
-      "Gateway groups pre-fill the OpenAI-compatible protocol and base URL — one key unlocks a thousand models.",
-    cliStep3: "Run",
-    cliStep3Desc:
-      "penguin run executes a single task; penguin chat drops you into an interactive REPL.",
-    runCmd: `penguin run --approve allow-all \\
-  --message "Analyze data.csv and summarize quarterly sales"`,
+      "The desktop app works out of the box. Switch to the command line when you need a server, browser UI, or automation.",
+    tabs: {
+      desktop: "Desktop app",
+      install: "CLI install",
+      web: "Start Web UI",
+      cli: "Start CLI",
+    },
+    desktop: {
+      title: "Desktop first, ready when it opens",
+      desc: "The local server and full Web UI are built in, with no runtime setup and no terminal process to keep alive.",
+      cta: "Choose your system and download",
+      steps: [
+        "Download the installer for your system",
+        "Open PenguinHarness and follow the model setup",
+        "Describe your first Agent app in one sentence",
+      ],
+    },
+    install: {
+      title: "Install PenguinHarness with one command",
+      desc: "Made for developer machines, servers, and private environments. The bundle includes its runtime and does not depend on system Node.js.",
+      osLabel: "Choose an operating system",
+      offlinePrefix: "Installing without internet access?",
+      offlineLink: "Browse every offline package",
+      offlineTitle: "Show offline install commands",
+    },
+    web: {
+      title: "Use the full interface in your browser",
+      desc: "This starts the local service and opens the Web UI, a good fit for servers and remote access.",
+      command: "penguin web   # opens http://127.0.0.1:7364",
+      steps: [
+        "Complete the command-line install",
+        "Run penguin web",
+        "Follow the terminal prompt to sign in and configure a model",
+      ],
+    },
+    cli: {
+      title: "Run an Agent directly from the terminal",
+      desc: "Start an interactive conversation or connect a one-off task to scripts and automated workflows.",
+      command: `penguin chat
+
+# Or run one task
+penguin run --message "Analyze data.csv and summarize quarterly sales"`,
+    },
+    localNote:
+      "Desktop, Web UI, and CLI share ~/.penguin/data; switching entry points never moves or copies your data.",
   },
 
   cases: {
@@ -508,7 +525,8 @@ export const en: Strings = {
     resources: "Resources",
     quickstart: "Quick start",
     features: "Features",
-    benchmark: "Benchmark",
+    selfImprove: "Self-evolution engine",
+    cases: "Cases",
     blog: "Blog",
     repo: "GitHub repository",
     docs: "Documentation",

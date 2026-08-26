@@ -1,36 +1,20 @@
-/** Home: section composition, ordered to match the nav anchors. */
+/** Home: one product story, ordered from promise to proof to getting started. */
 import { Hero } from "../sections/hero";
-import { Pillars } from "../sections/pillars";
-import { Compare } from "../sections/compare";
-import { SelfImprove } from "../sections/self-improve";
-import { Quickstart } from "../sections/quickstart";
-import { Cases } from "../sections/cases";
-import { Scenarios } from "../sections/scenarios";
-import { Benchmark } from "../sections/benchmark";
-import { Contract } from "../sections/contract";
 import { Features } from "../sections/features";
-import { Skills } from "../sections/skills";
-import { Security } from "../sections/security";
+import { SelfImprove } from "../sections/self-improve";
+import { Cases } from "../sections/cases";
+import { Quickstart } from "../sections/quickstart";
 import { Cta } from "../sections/cta";
-import { Community } from "../sections/community";
 
 export function HomePage() {
   return (
     <>
       <Hero />
-      <Pillars />
-      <Compare />
-      <SelfImprove />
-      <Quickstart />
-      <Cases />
-      <Scenarios />
-      <Benchmark />
-      <Contract />
       <Features />
-      <Skills />
-      <Security />
+      <SelfImprove />
+      <Cases />
+      <Quickstart />
       <Cta />
-      <Community />
     </>
   );
 }

@@ -35,13 +35,10 @@ export function Nav() {
   const pillVisible = useRef(false);
 
   const sectionLabel: Record<(typeof SECTION_IDS)[number], string> = {
-    highlights: S.nav.highlights,
-    quickstart: S.nav.quickstart,
-    cases: S.nav.cases,
-    scenarios: S.nav.scenarios,
-    benchmark: S.nav.benchmark,
-    contract: S.nav.contract,
     features: S.nav.features,
+    "self-improvement": S.nav.selfImprove,
+    cases: S.nav.cases,
+    quickstart: S.nav.quickstart,
   };
 
   const activeLinkCls =

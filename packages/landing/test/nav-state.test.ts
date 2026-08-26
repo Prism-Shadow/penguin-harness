@@ -4,6 +4,7 @@ import { getActiveNavItem } from "../src/lib/nav-state";
 describe("landing navigation active state", () => {
   it("tracks known section hashes on the home page", () => {
     expect(getActiveNavItem("/", "#features")).toBe("features");
+    expect(getActiveNavItem("/", "#self-improvement")).toBe("self-improvement");
     expect(getActiveNavItem("/", "#quickstart")).toBe("quickstart");
   });
 

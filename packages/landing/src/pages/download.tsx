@@ -1,24 +1,7 @@
-/**
- * Desktop download page. The buttons resolve to one of two sources: GitHub's static
- * `releases/latest/download/<name>` links — always valid because installer names are
- * version-less — or the OSS mirror's immutable per-tag URLs.
- *
- * Two passes decide, for the reason spelled out in lib/download-source.ts: whether a
- * source answers is a round trip, while how fast it is cannot be judged in under a
- * second at any probe size. So the buttons wait only on the first — one second at the
- * outside — and go live knowing nobody has been handed a link that will never start.
- * The throughput comparison then runs behind the live page and upgrades the links to the
- * mirror if it turns out to be worth switching to, which can cost a slower download but
- * never a broken one. Nothing is cached: conditions change between visits, so every load
- * measures again. Whatever the passes decide, the visitor can still switch by hand.
- *
- * Plain-anchor downloads are never CORS-gated; only the lookups and the probes are.
- * Below the cards, a first-launch FAQ covers the unsigned builds — one collapsible item
- * per platform (macOS quarantine removal, SmartScreen, AppImage execute bit), with the
- * visitor's own platform pre-expanded.
- */ import { useEffect, useState } from "react";
+/** Desktop downloads with platform-first choices and a visible source speed report. */
+import { useEffect, useState } from "react";
 import { Link } from "react-router";
-import type { ReactNode } from "react";
+import type { ComponentType, ReactNode, SVGProps } from "react";
 import { S } from "../lib/strings";
 import {
   DESKTOP_INSTALLERS,
@@ -37,21 +20,35 @@ import {
   createDeadline,
   fetchMirror,
   gateDownloadSource,
-  refineDownloadSource,
+  refineDownloadSourceWithReport,
   worthRefining,
 } from "../lib/download-source";
-import type { DownloadSource, Mirror } from "../lib/download-source";
+import type {
+  DownloadProbeReport,
+  DownloadSource,
+  Measurement,
+  Mirror,
+} from "../lib/download-source";
 import { Section } from "../components/section";
 import { CodeCard } from "../components/code-card";
-import { ChevronDownIcon, DownloadIcon, ExternalLinkIcon, SpinnerIcon } from "../components/icons";
+import {
+  CheckIcon,
+  ChevronDownIcon,
+  DownloadIcon,
+  ExternalLinkIcon,
+  LinuxIcon,
+  MacOSIcon,
+  SpinnerIcon,
+  WindowsIcon,
+} from "../components/icons";
 
 const PLATFORMS: Platform[] = ["mac", "windows", "linux"];
+const PLATFORM_ICONS: Record<Platform, ComponentType<SVGProps<SVGSVGElement>>> = {
+  mac: MacOSIcon,
+  windows: WindowsIcon,
+  linux: LinuxIcon,
+};
 
-/**
- * One collapsible item of the first-launch FAQ. `defaultOpen` pre-expands the visitor's
- * own platform on mount; after that the element owns its open state (React only writes
- * the `open` property again if the rendered value changes, which it never does here).
- */
 function FaqItem({
   question,
   defaultOpen,
@@ -77,18 +74,96 @@ function FaqItem({
   );
 }
 
+function formatSpeed(bytesPerSecond: number): string {
+  if (bytesPerSecond >= 1024 * 1024) {
+    return `${(bytesPerSecond / 1024 / 1024).toFixed(1)} MB/s`;
+  }
+  return `${Math.max(1, Math.round(bytesPerSecond / 1024))} KB/s`;
+}
+
+function speedText(measurement: Measurement | null, testing: boolean): string {
+  if (testing) return S.download.speed.testing;
+  if (measurement === null) return S.download.speed.skipped;
+  if (!measurement.reachable) return S.download.speed.unreachable;
+  if (measurement.bytesPerSecond <= 0) return S.download.speed.belowFloor;
+  return formatSpeed(measurement.bytesPerSecond);
+}
+
+function filledBlocks(
+  measurement: Measurement | null,
+  testing: boolean,
+  selected: boolean,
+): number {
+  if (testing) return 7;
+  if (!measurement || !measurement.reachable) return selected ? 3 : 1;
+  if (measurement.bytesPerSecond <= 0) return 2;
+  return Math.min(12, Math.max(2, Math.round(Math.log2(measurement.bytesPerSecond / 32768) + 3)));
+}
+
+function SourceSpeedCard({
+  title,
+  hint,
+  measurement,
+  testing,
+  selected,
+}: {
+  title: string;
+  hint: string;
+  measurement: Measurement | null;
+  testing: boolean;
+  selected: boolean;
+}) {
+  const filled = filledBlocks(measurement, testing, selected);
+  return (
+    <article
+      className={`rounded-xl border p-4 transition-colors ${
+        selected
+          ? "border-brand-400 bg-brand-50/70 dark:border-brand-700 dark:bg-brand-950/50"
+          : "border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"
+      }`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h4 className="text-sm font-semibold tracking-tight">{title}</h4>
+          <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{hint}</p>
+        </div>
+        {selected && (
+          <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-brand-600 text-white dark:bg-brand-400 dark:text-gray-950">
+            <CheckIcon className="h-3.5 w-3.5" />
+          </span>
+        )}
+      </div>
+      <p className="mt-5 font-mono text-lg font-semibold tracking-tight tabular-nums">
+        {speedText(measurement, testing)}
+      </p>
+      <div className="mt-4 flex h-8 items-end gap-1" aria-hidden="true">
+        {Array.from({ length: 12 }, (_, index) => (
+          <span
+            key={index}
+            className={`min-w-0 flex-1 rounded-[3px] ${testing ? "animate-pulse" : ""} ${
+              index < filled
+                ? selected
+                  ? "bg-brand-500 dark:bg-brand-400"
+                  : "bg-gray-500 dark:bg-gray-400"
+                : "bg-gray-200 dark:bg-gray-800"
+            }`}
+            style={{ height: `${9 + ((index * 7) % 22)}px`, animationDelay: `${index * 55}ms` }}
+          />
+        ))}
+      </div>
+    </article>
+  );
+}
+
 export function DownloadPage() {
   const [mirror, setMirror] = useState<Mirror | null>(null);
-  /** null until the reachability pass ends — the only thing the buttons wait on. */
   const [source, setSource] = useState<DownloadSource | null>(null);
-  /** True while the throughput pass is still running behind the live buttons. */
+  const [report, setReport] = useState<DownloadProbeReport | null>(null);
   const [refining, setRefining] = useState(false);
-  /** The visitor's own choice, which outranks both passes for the rest of the visit. */
   const [override, setOverride] = useState<DownloadSource | null>(null);
+
   useEffect(() => {
     let cancelled = false;
-    // The pointer starts now and is handed to the gate still in flight: the gate only needs it on
-    // the path where GitHub stayed silent, and the buttons should not wait on it otherwise.
     const mirrorPromise = fetchMirror(createDeadline(MIRROR_POINTER_MS));
     void mirrorPromise.then((resolved) => {
       if (!cancelled) setMirror(resolved);
@@ -100,9 +175,15 @@ export function DownloadPage() {
       const resolved = await mirrorPromise;
       if (cancelled || !worthRefining(resolved) || !resolved) return;
       setRefining(true);
-      const refined = await refineDownloadSource(resolved, createDeadline(THROUGHPUT_BUDGET_MS));
+      const refined = await refineDownloadSourceWithReport(
+        resolved,
+        createDeadline(THROUGHPUT_BUDGET_MS),
+      );
       if (cancelled) return;
-      setSource(refined);
+      if (refined) {
+        setSource(refined.source);
+        setReport(refined);
+      }
       setRefining(false);
     })();
     return () => {
@@ -116,92 +197,138 @@ export function DownloadPage() {
   const viaMirror = mirror !== null && selected === "oss";
   const hrefFor = (file: string) =>
     viaMirror ? `${mirror.base}/${file}` : `${GITHUB_LATEST_DOWNLOAD}/${file}`;
-
   const textLink =
     "inline-flex items-center gap-1 text-brand-700 underline decoration-brand-300 underline-offset-2 transition-colors hover:text-brand-600 dark:text-brand-300 dark:decoration-brand-700";
 
   return (
-    <Section eyebrow={S.download.eyebrow} title={S.download.title} subtitle={S.download.subtitle}>
-      <div className="mx-auto grid max-w-4xl gap-4 sm:grid-cols-3">
-        {PLATFORMS.map((platform) => (
-          <div
-            key={platform}
-            className={`flex flex-col rounded-xl border bg-white p-5 dark:bg-gray-900 ${
-              detected === platform
-                ? "border-brand-500 ring-1 ring-brand-500"
-                : "border-gray-200 dark:border-gray-800"
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-semibold tracking-tight">
+    <Section
+      eyebrow={S.download.eyebrow}
+      title={S.download.title}
+      subtitle={S.download.subtitle}
+      className="pt-14 sm:pt-20"
+    >
+      <div className="mx-auto grid max-w-5xl gap-4 sm:grid-cols-3">
+        {PLATFORMS.map((platform) => {
+          const PlatformIcon = PLATFORM_ICONS[platform];
+          const recommended = detected === platform;
+          return (
+            <article
+              key={platform}
+              className={`flex min-w-0 flex-col rounded-2xl border bg-white p-5 shadow-sm dark:bg-gray-900 ${
+                recommended
+                  ? "border-brand-500 ring-1 ring-brand-500"
+                  : "border-gray-200 dark:border-gray-800"
+              }`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <span className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100">
+                  <PlatformIcon className="h-6 w-6" />
+                </span>
+                {recommended && (
+                  <span className="rounded-full bg-brand-600/10 px-2 py-0.5 text-xs font-medium text-brand-700 dark:text-brand-300">
+                    {S.download.recommended}
+                  </span>
+                )}
+              </div>
+              <h3 className="mt-5 text-lg font-semibold tracking-tight">
                 {S.download.platforms[platform].name}
               </h3>
-              {detected === platform && (
-                <span className="rounded-full bg-brand-600/10 px-2 py-0.5 text-xs font-medium text-brand-700 dark:text-brand-300">
-                  {S.download.recommended}
-                </span>
-              )}
-            </div>
-            <p className="mt-1 mb-4 text-xs leading-5 text-gray-500 dark:text-gray-400">
-              {S.download.platforms[platform].require}
-            </p>
-            <div className="mt-auto flex flex-col gap-2">
-              {DESKTOP_INSTALLERS[platform].map(({ file, variant }) => (
-                <a
-                  key={file}
-                  // No href while probing: an anchor without one is not a link, which is exactly
-                  // the state this is in — the source is not decided yet. The label and the box
-                  // keep their size, so nothing shifts under the pointer when it resolves.
-                  href={probing ? undefined : hrefFor(file)}
-                  aria-disabled={probing || undefined}
-                  className={`inline-flex items-center justify-center gap-1.5 rounded-md px-3.5 py-2 text-sm font-medium transition-colors ${
-                    probing
-                      ? "cursor-progress bg-gray-200 text-gray-500 dark:bg-gray-800 dark:text-gray-500"
-                      : "bg-gray-900 text-white hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-300"
-                  }`}
-                >
-                  {probing ? (
-                    <SpinnerIcon className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <DownloadIcon className="h-4 w-4" />
-                  )}
-                  {variant}
-                </a>
-              ))}
-            </div>
-          </div>
-        ))}
+              <p className="mt-1 mb-5 min-h-10 text-xs leading-5 text-gray-500 dark:text-gray-400">
+                {S.download.platforms[platform].require}
+              </p>
+              <div className="mt-auto flex flex-col gap-2">
+                {DESKTOP_INSTALLERS[platform].map(({ file, variant }) => (
+                  <a
+                    key={file}
+                    href={probing ? undefined : hrefFor(file)}
+                    aria-disabled={probing || undefined}
+                    className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-3.5 py-2.5 text-sm font-medium transition-colors ${
+                      probing
+                        ? "cursor-progress bg-gray-200 text-gray-500 dark:bg-gray-800 dark:text-gray-500"
+                        : "bg-gray-900 text-white hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
+                    }`}
+                  >
+                    {probing ? (
+                      <SpinnerIcon className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <DownloadIcon className="h-4 w-4" />
+                    )}
+                    {variant}
+                  </a>
+                ))}
+              </div>
+            </article>
+          );
+        })}
       </div>
 
-      <div className="mx-auto mt-8 max-w-4xl text-center text-sm text-gray-600 dark:text-gray-400">
-        <p aria-live="polite">
-          {probing ? (
-            <span className="inline-flex items-center gap-1.5">
+      <section className="mx-auto mt-8 max-w-5xl rounded-2xl border border-gray-200 bg-gray-50/80 p-4 sm:p-5 dark:border-gray-800 dark:bg-gray-950/70">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h3 className="text-base font-semibold tracking-tight">{S.download.speed.title}</h3>
+            <p className="mt-1 max-w-2xl text-xs leading-5 text-gray-500 dark:text-gray-400">
+              {S.download.speed.subtitle}
+            </p>
+          </div>
+          {refining && (
+            <span className="inline-flex shrink-0 items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
               <SpinnerIcon className="h-3.5 w-3.5 animate-spin" />
-              {S.download.statusProbing}
+              {S.download.statusRefining}
             </span>
-          ) : (
-            <>
-              {viaMirror ? S.download.statusOss(mirror.tag) : S.download.statusGithub}{" "}
-              {refining && (
-                <>
-                  <span className="inline-flex items-center gap-1.5 text-gray-500 dark:text-gray-500">
-                    <SpinnerIcon className="h-3.5 w-3.5 animate-spin" />
-                    {S.download.statusRefining}
-                  </span>{" "}
-                </>
-              )}
-              {mirror !== null && (
-                <button
-                  type="button"
-                  className={textLink}
-                  onClick={() => setOverride(viaMirror ? "github" : "oss")}
-                >
-                  {viaMirror ? S.download.altGithub : S.download.altOss}
-                </button>
-              )}
-            </>
           )}
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <SourceSpeedCard
+            title={S.download.speed.github}
+            hint={S.download.speed.githubHint}
+            measurement={report?.github ?? null}
+            testing={probing || refining}
+            selected={selected === "github"}
+          />
+          <SourceSpeedCard
+            title={S.download.speed.oss}
+            hint={S.download.speed.ossHint}
+            measurement={report?.oss ?? null}
+            testing={probing || refining}
+            selected={selected === "oss"}
+          />
+          <article className="flex flex-col justify-between rounded-xl bg-gray-950 p-4 text-white dark:bg-gray-100 dark:text-gray-900">
+            <div>
+              <p className="text-xs text-gray-400 dark:text-gray-500">
+                {S.download.speed.selected}
+              </p>
+              <div className="mt-2 flex items-center gap-2">
+                {probing && <SpinnerIcon className="h-4 w-4 animate-spin" />}
+                <p className="text-lg font-semibold tracking-tight">
+                  {selected === "oss" ? S.download.speed.oss : S.download.speed.github}
+                </p>
+              </div>
+              <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                {override ? S.download.speed.manual : S.download.speed.automatic}
+                {mirror?.tag ? ` · ${mirror.tag}` : ""}
+              </p>
+            </div>
+            {mirror !== null && !probing && (
+              <button
+                type="button"
+                className="mt-5 w-fit text-xs underline decoration-gray-600 underline-offset-4 transition-colors hover:text-brand-300 dark:decoration-gray-400 dark:hover:text-brand-700"
+                onClick={() => setOverride(viaMirror ? "github" : "oss")}
+              >
+                {viaMirror ? S.download.altGithub : S.download.altOss}
+              </button>
+            )}
+          </article>
+        </div>
+      </section>
+
+      <div className="mx-auto mt-5 max-w-5xl text-center text-sm text-gray-600 dark:text-gray-400">
+        <p aria-live="polite">
+          {probing
+            ? S.download.statusProbing
+            : viaMirror
+              ? S.download.statusOss(mirror.tag)
+              : S.download.statusGithub}
         </p>
         <p className="mt-2">
           <a href={hrefFor(DESKTOP_SHA256SUMS)} className={textLink}>
@@ -215,7 +342,7 @@ export function DownloadPage() {
         </p>
       </div>
 
-      <div className="mx-auto mt-12 max-w-2xl">
+      <div className="mx-auto mt-14 max-w-3xl">
         <h3 className="text-center text-base font-semibold tracking-tight">
           {S.download.faq.title}
         </h3>
@@ -248,7 +375,7 @@ export function DownloadPage() {
       <div className="mx-auto mt-10 max-w-4xl text-center">
         <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">
           {S.download.cliHint}{" "}
-          <Link to="/#quickstart" className={textLink}>
+          <Link to="/#quickstart-install" className={textLink}>
             {S.download.cliHintLink}
           </Link>
         </p>

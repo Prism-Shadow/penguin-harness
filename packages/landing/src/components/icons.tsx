@@ -31,6 +31,34 @@ export function GitHubIcon(props: IconProps) {
   );
 }
 
+/** Platform marks used on the desktop download cards. */
+export function MacOSIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
+      <path d="M16.7 12.9c0-2.3 1.9-3.4 2-3.5a4.3 4.3 0 0 0-3.4-1.8c-1.4-.2-2.8.9-3.5.9-.8 0-1.9-.9-3.1-.9-1.6 0-3.1.9-3.9 2.4-1.7 2.9-.4 7.2 1.2 9.5.8 1.1 1.7 2.4 2.9 2.3 1.2 0 1.6-.7 3.1-.7 1.4 0 1.9.7 3.1.7 1.3 0 2.1-1.1 2.8-2.2.9-1.3 1.3-2.6 1.3-2.7-.1 0-2.5-1-2.5-4ZM14.4 6.1c.6-.8 1.1-1.9 1-3.1-1 .1-2.2.7-2.9 1.5-.6.7-1.1 1.8-1 2.9 1.1.1 2.2-.5 2.9-1.3Z" />
+    </svg>
+  );
+}
+
+export function WindowsIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
+      <path d="M2.5 5.1 10.7 4v7.3H2.5V5.1Zm9.2-1.3 9.8-1.3v8.8h-9.8V3.8ZM2.5 12.3h8.2v7.3l-8.2-1.1v-6.2Zm9.2 0h9.8v8.8l-9.8-1.3v-7.5Z" />
+    </svg>
+  );
+}
+
+export function LinuxIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M8 10.5C8 5.8 9.3 2 12 2s4 3.8 4 8.5c0 2.3.9 3.6 2.1 5.1 1.5 1.9.6 4.4-1.7 4.4H7.6c-2.3 0-3.2-2.5-1.7-4.4C7.1 14.1 8 12.8 8 10.5Z" />
+      <circle cx="10.2" cy="8.4" r=".7" fill="currentColor" stroke="none" />
+      <circle cx="13.8" cy="8.4" r=".7" fill="currentColor" stroke="none" />
+      <path d="m10.4 11.2 1.6 1 1.6-1M9 16.5c1.8.9 4.2.9 6 0" />
+    </Icon>
+  );
+}
+
 export function SunIcon(props: IconProps) {
   return (
     <Icon {...props}>

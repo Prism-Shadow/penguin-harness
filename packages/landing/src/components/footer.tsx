@@ -29,9 +29,10 @@ export function Footer() {
             <div>
               <p className="mb-3 font-medium">{S.footer.product}</p>
               <ul className="space-y-2 text-gray-500 dark:text-gray-400">
-                <li>{anchor("quickstart", S.footer.quickstart)}</li>
                 <li>{anchor("features", S.footer.features)}</li>
-                <li>{anchor("benchmark", S.footer.benchmark)}</li>
+                <li>{anchor("self-improvement", S.footer.selfImprove)}</li>
+                <li>{anchor("cases", S.footer.cases)}</li>
+                <li>{anchor("quickstart", S.footer.quickstart)}</li>
                 <li>
                   <Link to="/blog" className="hover:text-gray-900 dark:hover:text-gray-100">
                     {S.footer.blog}

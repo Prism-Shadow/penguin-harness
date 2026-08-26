@@ -9,11 +9,6 @@
 import { useEffect, useRef } from "react";
 import { S } from "../lib/strings";
 import { Section } from "../components/section";
-import { DemoVideo } from "../components/demo-video";
-import { demoVideoUrl } from "../lib/links";
-import { useLocale } from "../state/locale";
-import evoPosterZh from "../assets/evo-poster-zh.webp";
-import evoPosterEn from "../assets/evo-poster-en.webp";
 
 /** Rounded node with a centered label and an optional version pill. */
 function Node({
@@ -360,7 +355,6 @@ const TRENDS: Array<{
 ];
 
 export function SelfImprove() {
-  const { locale } = useLocale();
   return (
     <Section
       id="self-improvement"
@@ -496,16 +490,6 @@ export function SelfImprove() {
             />
           ))}
         </div>
-      </div>
-      {/* The loop above is a diagram; this is the same loop actually running. Replaces the
-          "demo video coming soon" pill that stood here while the recording was in progress. */}
-      <div className="mt-10">
-        <DemoVideo
-          src={demoVideoUrl(locale === "zh" ? "evo_zh" : "evo_en")}
-          poster={locale === "zh" ? evoPosterZh : evoPosterEn}
-          label={S.selfImprove.videoLabel}
-          caption={S.selfImprove.videoCaption}
-        />
       </div>
     </Section>
   );
