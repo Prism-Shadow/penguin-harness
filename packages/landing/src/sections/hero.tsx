@@ -2,13 +2,24 @@
 import { Link } from "react-router";
 import { S } from "../lib/strings";
 import { RELEASE_VERSION } from "../lib/version";
-import { DownloadIcon, TerminalIcon } from "../components/icons";
+import { DownloadIcon, ModelProviderLogo, TerminalIcon } from "../components/icons";
+
+const MODEL_PROVIDERS = [
+  "openai",
+  "anthropic",
+  "gemini",
+  "deepseek",
+  "zai",
+  "moonshot",
+  "qwen",
+  "openrouter",
+] as const;
 
 export function Hero() {
   return (
     <section className="relative overflow-hidden">
       <div className="hero-dots pointer-events-none absolute inset-0" aria-hidden="true" />
-      <div className="relative mx-auto min-h-[calc(100svh-2rem)] max-w-7xl px-4 pt-20 pb-20 text-center sm:px-6 sm:pt-28 sm:pb-24">
+      <div className="relative mx-auto max-w-6xl px-4 pt-16 pb-12 text-center sm:px-6 sm:pt-24 sm:pb-14">
         <h1 className="anim-rise flex items-center justify-center gap-3.5">
           <img
             src={`${import.meta.env.BASE_URL}penguin-logo.svg`}
@@ -19,7 +30,7 @@ export function Hero() {
         </h1>
 
         <p
-          className="hero-positioning anim-rise mx-auto mt-7 whitespace-nowrap leading-tight font-semibold tracking-[-0.035em]"
+          className="hero-positioning anim-rise mx-auto mt-6 whitespace-nowrap leading-tight font-semibold tracking-[-0.035em]"
           style={{ animationDelay: "70ms" }}
         >
           {S.hero.platformLead}
@@ -28,31 +39,36 @@ export function Hero() {
         </p>
 
         <p
-          className="anim-rise mt-4 text-sm text-gray-600 sm:text-base dark:text-gray-300"
+          className="hero-automation anim-rise mt-5 leading-8 text-gray-600 dark:text-gray-300"
           style={{ animationDelay: "120ms" }}
         >
-          {S.hero.automation}
+          {S.hero.automationLead}
+          {S.hero.automationActions.map((action, index) => (
+            <span key={action}>
+              {index > 0 && <span className="font-normal"> · </span>}
+              <strong className="font-semibold text-gray-900 dark:text-gray-100">{action}</strong>
+            </span>
+          ))}{" "}
+          {S.hero.automationTail}
         </p>
 
         <div
-          className="anim-rise mx-auto mt-7 grid max-w-xl grid-cols-2 gap-3"
+          className="anim-rise mt-7 flex flex-wrap items-center justify-center gap-3"
           style={{ animationDelay: "170ms" }}
         >
-          <div>
-            <Link
-              to="/download"
-              className="inline-flex h-12 w-full items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-gray-900 px-4 text-sm font-semibold text-white shadow-sm transition-[background-color,transform] hover:-translate-y-0.5 hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
-            >
-              <DownloadIcon className="h-4 w-4" />
-              {S.hero.downloadCta}
-            </Link>
-            <p className="mt-2 text-xs font-medium text-gray-400 tabular-nums dark:text-gray-500">
+          <Link
+            to="/download"
+            className="inline-flex h-11 items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-gray-900 px-5 text-sm font-semibold text-white shadow-sm transition-[background-color,transform] hover:-translate-y-0.5 hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
+          >
+            <DownloadIcon className="h-4 w-4" />
+            <span>{S.hero.downloadCta}</span>
+            <span className="border-l border-white/25 pl-2 text-xs font-medium text-white/70 tabular-nums dark:border-gray-900/20 dark:text-gray-900/60">
               {RELEASE_VERSION}
-            </p>
-          </div>
+            </span>
+          </Link>
           <Link
             to="/#quickstart-install"
-            className="inline-flex h-12 items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-900 shadow-sm transition-[background-color,transform] hover:-translate-y-0.5 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
+            className="inline-flex h-11 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-gray-200 bg-white px-5 text-sm font-semibold text-gray-900 shadow-sm transition-[background-color,transform] hover:-translate-y-0.5 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
           >
             <TerminalIcon className="h-4 w-4" />
             {S.hero.cliInstall}
@@ -60,37 +76,40 @@ export function Hero() {
         </div>
 
         <dl
-          className="anim-rise mx-auto mt-12 grid max-w-6xl grid-cols-2 gap-x-5 gap-y-9 text-center lg:grid-cols-4"
+          className="anim-rise mx-auto mt-12 grid max-w-5xl grid-cols-2 gap-x-6 gap-y-8 sm:grid-cols-4"
           style={{ animationDelay: "250ms" }}
         >
           {S.hero.stats.map((stat) => (
-            <div key={stat.value}>
-              <dt className="hero-stat-title text-xl font-semibold tracking-tight text-gray-900 sm:text-2xl dark:text-gray-100">
-                {stat.value}
-              </dt>
-              <dd className="hero-stat-label mt-2 text-sm leading-5 text-gray-500 dark:text-gray-400">
+            <div key={stat.value} className="min-w-0">
+              <dt className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">
                 {stat.label}
+              </dt>
+              <dd className="whitespace-nowrap text-2xl font-semibold tracking-tight text-gray-900 dark:text-gray-100">
+                {stat.value}
               </dd>
             </div>
           ))}
         </dl>
 
         <div
-          className="anim-rise mx-auto mt-12 flex max-w-6xl flex-wrap items-center justify-center gap-x-5 gap-y-3 text-sm"
+          className="anim-rise mx-auto mt-8 flex max-w-5xl flex-wrap items-center justify-start gap-x-5 gap-y-3 text-left text-sm"
           style={{ animationDelay: "300ms" }}
         >
-          <span className="text-xs font-semibold tracking-wide text-gray-400 uppercase dark:text-gray-500">
+          <span className="mr-1 text-xs font-semibold tracking-wide text-gray-400 uppercase dark:text-gray-500">
             {S.hero.supportedModelsLabel}
           </span>
-          {S.hero.supportedModels.map((model) => (
+          {MODEL_PROVIDERS.map((provider, index) => (
             <span
-              key={model}
+              key={provider}
               className="inline-flex items-center gap-1.5 whitespace-nowrap font-medium text-gray-700 dark:text-gray-300"
             >
-              <span className="h-1.5 w-1.5 rounded-full bg-brand-400 dark:bg-brand-300" />
-              {model}
+              <ModelProviderLogo provider={provider} className="h-4.5 w-4.5" />
+              {S.hero.supportedModels[index]}
             </span>
           ))}
+          <span className="whitespace-nowrap font-medium text-gray-400 dark:text-gray-500">
+            {S.hero.supportedModelsMore}
+          </span>
         </div>
       </div>
     </section>
