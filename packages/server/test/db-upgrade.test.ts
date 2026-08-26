@@ -3,6 +3,12 @@
  * existed gets it ALTERed in on open — CREATE TABLE IF NOT EXISTS alone never touches an
  * existing table, so without the guard, code writing the new columns would break on every
  * pre-existing database.
+ *
+ * The last two suites cover the other two directions a released build meets on disk: a table
+ * that did not exist when the database was formed, and a database written by a *newer* build
+ * than the one opening it (a user who updates, dislikes it, and reinstalls the previous
+ * release). Nothing records a schema version, so both properties rest entirely on every schema
+ * change staying additive; these pin that.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -11,6 +17,7 @@ import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { openDatabase } from "../src/db/database.js";
 import { SCHEMA_SQL } from "../src/db/schema.js";
+import { MessagingBindingsRepo } from "../src/db/repos/messaging-bindings.js";
 import { SessionsRepo } from "../src/db/repos/sessions.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 
@@ -279,5 +286,166 @@ describe("SessionsRepo last_active_at writes", () => {
     repo.touchLastActive("s1", "2026-05-10T00:00:00.000Z");
     expect(repo.findById("s2")!.lastActiveAt).toBe(base.createdAt);
     expect(repo.findById("s2")!.hasTrace).toBe(false);
+  });
+});
+
+/**
+ * A table added to the schema after a web.db was formed. CREATE TABLE IF NOT EXISTS is the
+ * whole mechanism — it creates the missing table and skips every table already there — so the
+ * property to hold is that the new table (and its unique index) arrive on open while the rows
+ * that were already on disk are untouched. `messaging_bindings` is the real instance: it
+ * shipped in 0.2.5, so every database formed by 0.2.4 or earlier meets this path.
+ */
+describe("openDatabase table upgrade", () => {
+  /**
+   * Seeds a database in the shape it had **before** messaging_bindings existed, derived from
+   * the real SCHEMA_SQL rather than a hand-copied DDL replica: create today's schema, then
+   * drop exactly what that change introduced (dropping the table takes its index with it).
+   */
+  function seedPreMessagingDb(dbPath: string, seed: (db: DatabaseSync) => void): void {
+    const db = new sqlite.DatabaseSync(dbPath);
+    try {
+      db.exec(SCHEMA_SQL);
+      db.exec("DROP TABLE messaging_bindings");
+      seed(db);
+    } finally {
+      db.close();
+    }
+  }
+
+  it("creates messaging_bindings on a database formed before it existed, keeping existing rows", () => {
+    const dbPath = path.join(dir, "web.db");
+    seedPreMessagingDb(dbPath, (old) => {
+      old
+        .prepare(
+          `INSERT INTO sessions (session_id, project_id, agent_id, provider, model_id, workspace, created_at)
+           VALUES ('session-pre-messaging', 'p1', 'a1', 'custom', 'm1', '/w', '2026-01-01T00:00:00.000Z')`,
+        )
+        .run();
+    });
+    const beforeTables = new sqlite.DatabaseSync(dbPath);
+    expect(
+      beforeTables
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'messaging_bindings'",
+        )
+        .all(),
+    ).toEqual([]);
+    beforeTables.close();
+
+    const db = openDatabase(dbPath);
+    try {
+      // The table and the account uniqueness index both arrive; the pre-existing Session is
+      // still there, which is what makes this an upgrade rather than a reset.
+      expect(
+        db
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_messaging_account'",
+          )
+          .all(),
+      ).toHaveLength(1);
+      expect(new SessionsRepo(db).findById("session-pre-messaging")).not.toBeNull();
+      // And it is immediately writable — a newly created table with no rows would look
+      // identical to one the upgrade forgot to create until something tries to use it.
+      const repo = new MessagingBindingsRepo(db);
+      const saved = repo.upsert({
+        sessionId: "session-pre-messaging",
+        channel: "telegram",
+        accountId: "12345",
+        config: { botToken: "t" },
+      });
+      expect(saved.ok).toBe(true);
+      expect(repo.find("session-pre-messaging", "telegram")?.accountId).toBe("12345");
+      // The unique index is doing its job: a second Session cannot claim the same account.
+      expect(
+        repo.upsert({
+          sessionId: "other-session",
+          channel: "telegram",
+          accountId: "12345",
+          config: { botToken: "t" },
+        }),
+      ).toEqual({ ok: false, reason: "account_in_use" });
+    } finally {
+      db.close();
+    }
+  });
+});
+
+/**
+ * The downgrade direction: a database written by a **newer** build, opened by this one. It is
+ * what a user produces by updating, disliking the update and reinstalling the previous
+ * release, and it is the direction with no safety net at all — nothing stamps a schema
+ * version, so an older build cannot tell it is looking at a newer database and simply proceeds.
+ *
+ * That is safe only while every schema change is additive, which is exactly the invariant
+ * asserted here: tables and columns this build has never heard of must survive the open
+ * untouched, because the only thing standing between them and deletion is that no code path
+ * drops what it does not recognize.
+ */
+describe("openDatabase tolerates a database from a newer build", () => {
+  it("leaves unknown tables, columns and indexes intact across an open", () => {
+    const dbPath = path.join(dir, "web.db");
+    const current = openDatabase(dbPath);
+    new SessionsRepo(current).insert({
+      sessionId: "s1",
+      projectId: "p1",
+      agentId: "a1",
+      provider: "custom",
+      modelId: "m1",
+      workspace: "/w",
+      approvalMode: "allow-all",
+      title: null,
+      createdAt: "2026-05-01T00:00:00.000Z",
+      lastActiveAt: "2026-05-01T00:00:00.000Z",
+    });
+    // Stand in for a future release: a table this build has never heard of, a column added to
+    // one it owns, and an index over that column. A NOT NULL column is given a DEFAULT because
+    // that is what SQLite's ALTER TABLE ADD COLUMN requires, and therefore what any future
+    // ensureColumn entry will also carry — which is why this build's own inserts keep working.
+    current.exec(`
+      CREATE TABLE future_feature (id TEXT PRIMARY KEY, payload TEXT NOT NULL);
+      INSERT INTO future_feature (id, payload) VALUES ('f1', 'written by a newer build');
+      ALTER TABLE sessions ADD COLUMN future_flag INTEGER NOT NULL DEFAULT 7;
+      CREATE INDEX idx_future_flag ON sessions(future_flag);
+    `);
+    current.close();
+
+    const reopened = openDatabase(dbPath);
+    try {
+      // The unknown table and its row are untouched.
+      expect(reopened.prepare("SELECT payload FROM future_feature WHERE id = 'f1'").get()).toEqual({
+        payload: "written by a newer build",
+      });
+      // So is the unknown column and the index over it.
+      expect(
+        reopened.prepare("SELECT future_flag FROM sessions WHERE session_id = 's1'").get(),
+      ).toEqual({ future_flag: 7 });
+      expect(
+        reopened
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_future_flag'",
+          )
+          .all(),
+      ).toHaveLength(1);
+      // And this build still reads and writes the rows it does own, alongside the column it
+      // cannot see — the unknown column's DEFAULT is what keeps this insert legal.
+      const repo = new SessionsRepo(reopened);
+      expect(repo.findById("s1")!.lastActiveAt).toBe("2026-05-01T00:00:00.000Z");
+      repo.insert({
+        sessionId: "s2",
+        projectId: "p1",
+        agentId: "a1",
+        provider: "custom",
+        modelId: "m1",
+        workspace: "/w",
+        approvalMode: "allow-all",
+        title: null,
+        createdAt: "2026-05-02T00:00:00.000Z",
+        lastActiveAt: "2026-05-02T00:00:00.000Z",
+      });
+      expect(repo.listByAgent("p1", "a1").map((r) => r.sessionId)).toEqual(["s2", "s1"]);
+    } finally {
+      reopened.close();
+    }
   });
 });
