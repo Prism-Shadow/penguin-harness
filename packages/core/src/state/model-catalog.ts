@@ -723,9 +723,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     // The gateway listing of the direct glm-5.3-flash row below, sitting on a 50%-off ZAI
     // promotion through 2026-09-09 16:00 UTC (Z.AI's own price list names the same window as
     // 24:00 on 2026-09-09, UTC+8). Stored at the discounted rate the gateway actually bills;
-    // when it lapses, restore 0.03 / 0.15 / 0.5. Unlike the direct row, this one carries
-    // vision: the listing takes text, images and video, and the generic openai-chat client it
-    // pins does convert image_url parts.
+    // when it lapses, restore 0.03 / 0.15 / 0.5. The listing takes text, images and video,
+    // and the generic openai-chat client it pins converts image_url parts.
     modelId: "z-ai/glm-5.3-flash",
     displayName: "GLM-5.3 Flash",
     provider: "openrouter",
