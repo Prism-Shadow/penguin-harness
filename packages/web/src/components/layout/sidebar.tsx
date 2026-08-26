@@ -120,7 +120,7 @@ import {
 } from "../ui/session-row-menu";
 import type { SessionRowAction } from "../ui/session-row-menu";
 import { AgentAvatar } from "../ui/agent-avatar";
-import { CHANNEL_ICONS, CheckIcon, ChevronDown, GEAR_ICON, NAV_ICONS } from "../ui/icons";
+import { CheckIcon, ChevronDown, GEAR_ICON, MESSAGING_RELAY_ICON, NAV_ICONS } from "../ui/icons";
 import {
   FOLDER_ICON,
   FOLDER_OPEN_ICON,
@@ -2705,15 +2705,15 @@ function SessionRow({
               <span className="sr-only">{S.chat.pinnedSession}</span>
             </span>
           )}
-          {/* Enabled-messaging indicator, with the enabled channel's own glyph: same dim
-              treatment as the pin (saved-but-disabled configs stay off the row; the
-              binding dialog lives in the row menu). */}
+          {/* Enabled-messaging indicator: one glyph for every channel, the channel named in
+              the tooltip and sr text. Same dim treatment as the pin (saved-but-disabled
+              configs stay off the row; the binding dialog lives in the row menu). */}
           {s.messagingChannel !== undefined && (
             <span
               title={S.messaging.enabledIndicator[s.messagingChannel]}
               className="shrink-0 text-gray-400 dark:text-gray-500"
             >
-              <Icon d={CHANNEL_ICONS[s.messagingChannel]} size={12} />
+              <Icon d={MESSAGING_RELAY_ICON} size={12} />
               <span className="sr-only">{S.messaging.enabledIndicator[s.messagingChannel]}</span>
             </span>
           )}

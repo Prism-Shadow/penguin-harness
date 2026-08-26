@@ -168,15 +168,11 @@ export const INFO_ICON = "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5m0-8h.01"
 export const MESSAGING_ICON = "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z";
 
 /**
- * Messaging-channel identity glyphs (session-row indicator, the bound-channel label in
- * the binding editor): a feather for Feishu ("flying book"), the paper plane for
- * Telegram. Shape alone is not the carrier — every use pairs the glyph with the channel
- * name in a tooltip, sr text or an adjacent label.
+ * Paper plane: the session-row mark for a Session that is relaying through a messaging
+ * channel. One shape for every channel — shape alone is not the carrier, so the row
+ * pairs it with the channel's name in a tooltip and in sr-only text.
  */
-export const CHANNEL_ICONS: Record<"feishu" | "telegram", string> = {
-  feishu: "M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5zM16 8 2 22M17.5 15H9",
-  telegram: "M22 2 11 13M22 2l-7 20-4-9-9-4z",
-};
+export const MESSAGING_RELAY_ICON = "M22 2 11 13M22 2l-7 20-4-9-9-4z";
 
 /** Standard gear (lucide settings): full tooth outline + center circle, crisp and undistorted at 16px. */
 export const GEAR_ICON =

@@ -10,15 +10,18 @@
  * configured/enabled state); enabling one channel while the other is enabled is gated
  * with a "turn that one off first" hint (the server refuses it too, 409).
  *
- * The form starts with the fields; the explanation lives in collapsed FAQ folds below
- * the save area (`MessagingBindingHelp`), and the channel's leading credential field —
- * where the console values start being pasted — carries the developer-console link at
- * its label's top-right corner (the models-page "get API key" idiom, which puts the link
- * on the field, not in a row of its own). Secrets follow that page's interaction: the field
- * always starts empty, a stored secret shows as a masked line under it with a
- * "clear stored …" checkbox (typing unchecks it; applied on Save), blank keeps the
- * stored value — and clearing requires the channel's connection to be disabled first.
- * There is no unbind affordance: removing a credential IS the per-field clear.
+ * The form opens on the connection controls and the credential fields trail them: the two
+ * channels' field lists differ in length, so controls placed under the fields would sit at
+ * a different height in each channel and move on every switch. The explanation lives in
+ * collapsed FAQ folds below the save area (`MessagingBindingHelp`), and the channel's
+ * leading credential field — where the console values start being pasted — carries the
+ * developer-console link at its label's top-right corner (the models-page "get API key"
+ * idiom, which puts the link on the field, not in a row of its own). Secrets follow that
+ * page's interaction: the field always starts empty, a stored secret shows as a masked
+ * line under it with a "clear stored …" checkbox (typing unchecks it; applied on Save),
+ * blank keeps the stored value — and clearing requires the channel's connection to be
+ * disabled first. There is no unbind affordance: removing a credential IS the per-field
+ * clear.
  *
  * The GET is re-polled while the host shows the editor (the hook's `poll` flag) so
  * connect/error flips show up live.
@@ -465,10 +468,13 @@ function StoredSecretRow({
 }
 
 /**
- * The editor's body — the channel selector, the selected channel's credential fields
- * (console link at the credential field's corner, models-style stored-secret row), and
- * the enable toggle + live status + probes. Hosts place their own Save action after it
- * and `MessagingBindingHelp` below that.
+ * The editor's body, top to bottom: the channel selector, the connection controls (enable
+ * toggle + live status, then the two probes, then the hint naming what gates the switch),
+ * then the selected channel's credential fields (console link at the credential field's
+ * corner, models-style stored-secret row). Only the selector and the controls sit above the
+ * fields, and everything above the fields is channel-independent in height, so the toggle
+ * and the probes hold one vertical position no matter which channel is selected. Hosts
+ * place their own Save action after it and `MessagingBindingHelp` below that.
  */
 export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) {
   const { form } = b;
@@ -491,7 +497,68 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
           onChange={(v) => b.selectChannel(v)}
         />
       </div>
-      {/* The fields lead the form; explanations live in the FAQ folds below the save area. */}
+      {/* The connection toggle + live status on one line: the Switch is the intent, the
+          tone-colored text is what the connection actually is right now. At most one
+          channel is enabled per Session — the hint under the probes names what gates the
+          switch. The error state's `lastError` stays on this line by truncating inside its
+          own flex track, so a long message never grows the row and pushes the probes. */}
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+          <Switch
+            checked={facts.enabled}
+            disabled={b.toggleBlocked}
+            onChange={(v) => void b.toggleEnabled(v)}
+          />
+          {S.messaging.enabled}
+        </label>
+        <span className="ml-2 text-gray-500 dark:text-gray-400">{S.messaging.statusLabel}</span>
+        <span
+          {...(facts.status.lastError !== undefined ? { title: facts.status.lastError } : {})}
+          className={`font-medium ${toneInk[STATUS_TONE[facts.status.state]]}`}
+        >
+          {S.messaging.status[facts.status.state]}
+        </span>
+        {facts.status.state === "error" && facts.status.lastError !== undefined && (
+          <span className="min-w-0 flex-1 truncate text-gray-400 dark:text-gray-500">
+            {facts.status.lastError}
+          </span>
+        )}
+      </div>
+      {/* Entry-level probes — the MCP dialog idiom: standalone buttons, results as toasts. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          size="sm"
+          disabled={b.testing || b.busy || !b.testable}
+          onClick={() => void b.testConnection()}
+        >
+          {b.testing ? S.messaging.testing : S.messaging.test}
+        </Button>
+        <Button
+          size="sm"
+          disabled={
+            b.sendingTest || b.busy || facts.status.state !== "connected" || !facts.lastChatKnown
+          }
+          {...(!facts.lastChatKnown
+            ? {
+                title:
+                  channel === "telegram"
+                    ? S.telegram.testMessageNoChat
+                    : S.feishu.testMessageNoChat,
+              }
+            : {})}
+          onClick={() => void b.sendTestMessage()}
+        >
+          {b.sendingTest ? S.messaging.sendingTestMessage : S.messaging.sendTestMessage}
+        </Button>
+      </div>
+      {/* The gating reason closes the control block rather than sitting under the switch:
+          it comes and goes with the switch's own state, so anything below it shifts by a
+          line — trailing the probes leaves both of them at a fixed offset. */}
+      {b.toggleHint !== null && (
+        <p className="text-xs text-gray-400 dark:text-gray-500">{b.toggleHint}</p>
+      )}
+      {/* The credential fields trail the controls above; explanations live in the FAQ folds
+          below the save area. */}
       {channel === "telegram" ? (
         <>
           <CornerLinkedField
@@ -582,61 +649,6 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
           />
         </>
       )}
-      {/* The connection toggle + live status on one line: the Switch is the intent, the
-          tone-colored text is what the connection actually is right now. At most one
-          channel is enabled per Session — the hint below names what gates the switch. */}
-      <div className="flex flex-wrap items-center gap-2 text-xs">
-        <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-          <Switch
-            checked={facts.enabled}
-            disabled={b.toggleBlocked}
-            onChange={(v) => void b.toggleEnabled(v)}
-          />
-          {S.messaging.enabled}
-        </label>
-        <span className="ml-2 text-gray-500 dark:text-gray-400">{S.messaging.statusLabel}</span>
-        <span
-          {...(facts.status.lastError !== undefined ? { title: facts.status.lastError } : {})}
-          className={`font-medium ${toneInk[STATUS_TONE[facts.status.state]]}`}
-        >
-          {S.messaging.status[facts.status.state]}
-        </span>
-        {facts.status.state === "error" && facts.status.lastError !== undefined && (
-          <span className="min-w-0 flex-1 truncate text-gray-400 dark:text-gray-500">
-            {facts.status.lastError}
-          </span>
-        )}
-      </div>
-      {b.toggleHint !== null && (
-        <p className="text-xs text-gray-400 dark:text-gray-500">{b.toggleHint}</p>
-      )}
-      {/* Entry-level probes — the MCP dialog idiom: standalone buttons, results as toasts. */}
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          size="sm"
-          disabled={b.testing || b.busy || !b.testable}
-          onClick={() => void b.testConnection()}
-        >
-          {b.testing ? S.messaging.testing : S.messaging.test}
-        </Button>
-        <Button
-          size="sm"
-          disabled={
-            b.sendingTest || b.busy || facts.status.state !== "connected" || !facts.lastChatKnown
-          }
-          {...(!facts.lastChatKnown
-            ? {
-                title:
-                  channel === "telegram"
-                    ? S.telegram.testMessageNoChat
-                    : S.feishu.testMessageNoChat,
-              }
-            : {})}
-          onClick={() => void b.sendTestMessage()}
-        >
-          {b.sendingTest ? S.messaging.sendingTestMessage : S.messaging.sendTestMessage}
-        </Button>
-      </div>
     </div>
   );
 }
@@ -645,7 +657,7 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
  * The collapsed-by-default FAQ under the save area — three titled `HelpFold`s: the
  * selected channel's setup steps (ending in its tutorial link), what binding does, and
  * troubleshooting. Hosts place it below their Save controls, which is what keeps the
- * form itself opening on its fields.
+ * form itself opening on the channel selector and the connection controls.
  */
 export function MessagingBindingHelp({ channel }: { channel: MessagingChannel }) {
   const per = channel === "telegram" ? S.telegram : S.feishu;
