@@ -629,9 +629,9 @@ try {
         'if not defined PENGUIN_WEB_DIST set "PENGUIN_WEB_DIST=%DIR%\web"'
         'if exist "%DIR%\git\usr\bin\sh.exe" set "PENGUIN_BUNDLED_SHELL=%DIR%\git\usr\bin\sh.exe"'
         'if exist "%DIR%\node\node.exe" ('
-        '  "%DIR%\node\node.exe" "%DIR%\lib\dist\index.js" %*'
+        '  "%DIR%\node\node.exe" "%DIR%\lib\dist\penguin.js" %*'
         ') else ('
-        '  node "%DIR%\lib\dist\index.js" %*'
+        '  node "%DIR%\lib\dist\penguin.js" %*'
         ')'
         'exit /b %ERRORLEVEL%'
       ) | Set-Content -LiteralPath $CmdShim -Encoding ascii

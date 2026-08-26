@@ -220,18 +220,13 @@ async function readNativeAssets() {
       exec.push(target);
     }
   }
-  // The remote installer: a script the platform COPIES and sends, never imports, so it has
-  // to exist as a file on the pushing side too. Riding here keeps one readable .cjs in the
-  // repo instead of a generated string literal compiled into the bundle.
-  const installer = path.join(
-    ROOT,
-    "packages",
-    "server",
-    "src",
-    "machines",
-    "remote-installer.cjs",
-  );
-  files["remote-installer.cjs"] = (await fsp.readFile(installer)).toString("base64");
+  // The remote installer and the launcher module it requires: scripts the platform COPIES and
+  // sends, never imports, so they have to exist as files on the pushing side too. Riding here
+  // keeps them readable .cjs in the repo instead of string literals compiled into the bundle.
+  for (const name of ["remote-installer.cjs", "launcher.cjs"]) {
+    const abs = path.join(ROOT, "packages", "server", "src", "machines", name);
+    files[name] = (await fsp.readFile(abs)).toString("base64");
+  }
   return { files, exec };
 }
 

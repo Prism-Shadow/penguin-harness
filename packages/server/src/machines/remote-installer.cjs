@@ -10,8 +10,8 @@
  *
  * What it does, in order, mirroring what install.sh does locally:
  *   1. unpack the image into a staging directory next to the final one;
- *   2. move the runtime in as `lib/runtime`, so the install carries its own Node;
- *   3. write the launchers (`bin/penguin`, `bin/penguin.cmd`);
+ *   2. move the runtime in as `node/`, so the install carries its own Node;
+ *   3. write the launchers (`bin/penguin`, `bin/penguin.cmd`) from launcher.cjs beside this file;
  *   4. smoke-test the staged tree by running `penguin --version` with that runtime;
  *   5. swap: current program directory aside, staged one in, delete the old one;
  *   6. on any failure after the swap started, put the previous one back.
@@ -25,6 +25,8 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const zlib = require("node:zlib");
+// Rides scp beside this script; the payload layout and both launchers live there.
+const { posixLauncher, windowsLauncher } = require("./launcher.cjs");
 
 const here = __dirname;
 const job = JSON.parse(fs.readFileSync(path.join(here, "job.json"), "utf8"));
@@ -66,48 +68,6 @@ const nodeFlags =
   !usingBundledRuntime && Number.isFinite(runningNodeMajor) && runningNodeMajor < 24
     ? ["--experimental-sqlite"]
     : [];
-
-// --- launchers ------------------------------------------------------------------------------
-// They resolve their own directory, prefer the bundled runtime at lib/runtime, and fall back
-// to a system node — so an install stays usable if the runtime is ever removed. The flags
-// above ride the system-node branch only: the bundled runtime never needs them.
-function posixLauncher() {
-  return `#!/bin/sh
-# penguin launcher (written by the PenguinHarness remote installer).
-SOURCE=$0
-while [ -h "$SOURCE" ]; do
-  DIR=$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)
-  SOURCE=$(readlink "$SOURCE")
-  case $SOURCE in
-    /*) ;;
-    *) SOURCE="$DIR/$SOURCE" ;;
-  esac
-done
-DIR=$(dirname "$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)")
-export PENGUIN_WEB_DIST="\${PENGUIN_WEB_DIST:-$DIR/lib/web}"
-if [ -x "$DIR/lib/runtime/bin/node" ]; then
-  exec "$DIR/lib/runtime/bin/node" "$DIR/lib/dist/penguin.js" "$@"
-fi
-exec node ${nodeFlags.join(" ")}${nodeFlags.length > 0 ? " " : ""}"$DIR/lib/dist/penguin.js" "$@"
-`;
-}
-
-function windowsLauncher() {
-  return [
-    "@echo off",
-    "rem penguin launcher (written by the PenguinHarness remote installer).",
-    "setlocal",
-    'set "DIR=%~dp0.."',
-    'if not defined PENGUIN_WEB_DIST set "PENGUIN_WEB_DIST=%DIR%\\lib\\web"',
-    'if exist "%DIR%\\lib\\runtime\\node.exe" (',
-    '  "%DIR%\\lib\\runtime\\node.exe" "%DIR%\\lib\\dist\\penguin.js" %*',
-    ") else (",
-    `  node ${nodeFlags.join(" ")}${nodeFlags.length > 0 ? " " : ""}"%DIR%\\lib\\dist\\penguin.js" %*`,
-    ")",
-    "exit /b %ERRORLEVEL%",
-    "",
-  ].join("\r\n");
-}
 
 // --- install ---------------------------------------------------------------------------------
 /**
@@ -156,23 +116,23 @@ try {
   // system `node`, and the smoke test below runs on the one executing this script).
   if (job.runtimeDirName) {
     log("Placing the runtime…");
-    // Unpacked beside this script by the bootstrap; move it under lib/ so the install owns
+    // Unpacked beside this script by the bootstrap; move it in as node/ so the install owns
     // it and nothing else on that machine is involved in running penguin.
-    fs.mkdirSync(path.join(staging, "lib"), { recursive: true });
-    fs.renameSync(path.join(here, job.runtimeDirName), path.join(staging, "lib", "runtime"));
+    fs.renameSync(path.join(here, job.runtimeDirName), path.join(staging, "node"));
   }
 
   const binDir = path.join(staging, "bin");
   fs.mkdirSync(binDir, { recursive: true });
-  fs.writeFileSync(path.join(binDir, "penguin"), posixLauncher(), { mode: 0o755 });
-  fs.writeFileSync(path.join(binDir, "penguin.cmd"), windowsLauncher());
+  // The flags ride the system-node branch only; a pushed runtime is the pinned build.
+  fs.writeFileSync(path.join(binDir, "penguin"), posixLauncher(nodeFlags), { mode: 0o755 });
+  fs.writeFileSync(path.join(binDir, "penguin.cmd"), windowsLauncher(nodeFlags));
   if (!isWindows) fs.chmodSync(path.join(binDir, "penguin"), 0o755);
 
   log("Checking the staged install…");
   // The bundled runtime when there is one, otherwise the node already running this script —
   // which is exactly the node the launcher will fall back to.
   const nodeBin = job.runtimeDirName
-    ? path.join(staging, "lib", "runtime", ...(isWindows ? ["node.exe"] : ["bin", "node"]))
+    ? path.join(staging, "node", ...(isWindows ? ["node.exe"] : ["bin", "node"]))
     : process.execPath;
   // The server opens its database through process.getBuiltinModule("node:sqlite"), which an
   // older Node only provides with the flag above — and some builds not at all. Prove it here,

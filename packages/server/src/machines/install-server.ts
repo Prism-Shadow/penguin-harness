@@ -74,8 +74,11 @@ function versionOfManifest(manifestPath: string): string | null {
  * shim is the packaged `dist/penguin.js` bin (penguin.ts) in miniature: run cli(), report
  * the code.
  */
-/** The installer sent to the far side; the same name as the asset key deploy.mjs pushes. */
-const INSTALLER_FILE = "remote-installer.cjs";
+/**
+ * Sent to the far side, where the first requires the second. The names are also the asset
+ * keys deploy.mjs pushes.
+ */
+const INSTALLER_FILES = ["remote-installer.cjs", "launcher.cjs"];
 
 const CLI_BIN_SHIM = `// penguin bin shim (written by the machines image): the pushed CLI
 // bundle beside this file is a library exporting cli(); this file is the bin the
@@ -137,7 +140,7 @@ function packFilesUnder(root: string, prefix: string): PackFile[] {
  * is literally what this server runs. The pushed CLI bundle is a self-contained esbuild
  * artifact carrying the whole program (server, platform, seam), and the web artifact is
  * the dist the server serves from memory — so the bundle as `lib/dist/cli.mjs`, the bin
- * shim above as `lib/dist/penguin.js`, `lib/web/*` and a synthesized manifest (with
+ * shim above as `lib/dist/penguin.js`, `web/*` and a synthesized manifest (with
  * `"type": "module"` — both files are ESM, and without it Node re-parses the 10 MB bundle
  * per run) make a complete universal install with no node_modules tree at all.
  *
@@ -180,7 +183,7 @@ export function hmrPayloadImage(dataRoot: string): PayloadImage | null {
           files: Record<string, string>;
         };
         for (const [rel, base64] of Object.entries(webz.files)) {
-          files.push({ path: `penguin/lib/web/${rel}`, data: Buffer.from(base64, "base64") });
+          files.push({ path: `penguin/web/${rel}`, data: Buffer.from(base64, "base64") });
         }
         // The skill library: content the bundle reads from `lib/skills` beside itself.
         const skills = skillsContentRoot();
@@ -198,9 +201,9 @@ export function hmrPayloadImage(dataRoot: string): PayloadImage | null {
  *
  * 1. **The hot-pushed version** (hmrPayloadImage above) — what this server actually runs.
  * 2. **Tarball install** — the CLI entry is `<root>/lib/dist/penguin.js` and `<root>` is the
- *    program directory itself; pack it under a `penguin/` prefix, leaving out `lib/runtime`
- *    (this machine's Node must not ride along in a universal image) and `bin` (the installer
- *    writes fresh launchers).
+ *    program directory itself; pack it under a `penguin/` prefix, leaving out `node` (this
+ *    machine's Node must not ride along — the far side gets a build for ITS platform) and
+ *    `bin` (the installer writes fresh launchers).
  * 3. **Desktop app** — the server entry is
  *    `<resources>/app/node_modules/@prismshadow/penguin-server/dist/index.js` and the staged
  *    universal image sits beside it at `<resources>/payload/penguin`.
@@ -225,7 +228,7 @@ export function resolvePayloadImage(
     if (version !== null) {
       return {
         version,
-        pack: () => packDirectory(root, { prefix: "penguin", exclude: ["lib/runtime", "bin"] }),
+        pack: () => packDirectory(root, { prefix: "penguin", exclude: ["node", "bin"] }),
       };
     }
   }
@@ -362,14 +365,16 @@ export async function installOnRemote(opts: {
       };
     }
 
-    // ./remote-installer.cjs, copied out to ride scp. Where it sits follows from what this
-    // server is: a hot-pushed bundle has it among the assets published with that same version,
-    // anything else is a packaged install and it is beside this module (dist/ after a build,
-    // which is why packages/server/scripts/copy-machine-assets.mjs puts it there).
-    const installerPath = path.join(localTmp, INSTALLER_FILE);
+    // Copied out to ride scp. Where they sit follows from what this server is: a hot-pushed
+    // bundle has them among the assets published with that same version, anything else is a
+    // packaged install and they are beside this module (dist/ after a build, which is why
+    // packages/server/scripts/copy-machine-assets.mjs puts them there).
     const installerHome = opts.assets?.() ?? path.dirname(fileURLToPath(import.meta.url));
+    const installerPaths = INSTALLER_FILES.map((name) => path.join(localTmp, name));
     try {
-      fs.copyFileSync(path.join(installerHome, INSTALLER_FILE), installerPath);
+      for (const [i, name] of INSTALLER_FILES.entries()) {
+        fs.copyFileSync(path.join(installerHome, name), installerPaths[i]!);
+      }
     } catch (err) {
       return {
         kind: "failed",
@@ -415,7 +420,7 @@ export async function installOnRemote(opts: {
       "scp",
       scpArgs(
         target,
-        [packPath, jobPath, installerPath, ...(runtime ? [runtime.archivePath] : [])],
+        [packPath, jobPath, ...installerPaths, ...(runtime ? [runtime.archivePath] : [])],
         scratch,
       ),
     );
