@@ -27,8 +27,22 @@ const REQUIRE_ONLY_BANNER =
   'import { createRequire as __penguinCreateRequire } from "node:module"; const require = __penguinCreateRequire(import.meta.url);';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-esm-cjs-banner-"));
-afterAll(() => fs.rmSync(tmp, { recursive: true, force: true }));
+
+// Every path asserted below is compared against one Node reported, and Node resolves a module's
+// real path before evaluating it — so the root they all derive from has to be a real one too.
+// macOS gets there on its own, where os.tmpdir() is a /var/... symlink onto /private/var/...;
+// reaching the root through a symlink of our own has every platform run that same resolution,
+// so dropping the realpathSync fails here rather than on one runner only. `fs.realpathSync`
+// and not its `.native` variant: that is the one the ESM loader uses, and the two disagree
+// about Windows 8.3 short paths.
+const tmpTarget = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-esm-cjs-banner-"));
+const tmpLink = `${tmpTarget}-link`;
+fs.symlinkSync(tmpTarget, tmpLink, "junction");
+const tmp = fs.realpathSync(tmpLink);
+afterAll(() => {
+  fs.rmSync(tmpLink, { recursive: true, force: true });
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
 
 /** Imports `moduleFile` in a real Node process and returns its `probe` export. */
 function probeInNode(moduleFile: string): Record<string, unknown> {
