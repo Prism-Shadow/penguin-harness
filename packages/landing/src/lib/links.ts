@@ -1,6 +1,7 @@
 /** External links and language-independent constants used across the landing page. */
 
 export const REPO_URL = "https://github.com/Prism-Shadow/penguin-harness";
+export const REPO_API_URL = "https://api.github.com/repos/Prism-Shadow/penguin-harness";
 export const RELEASES_URL = `${REPO_URL}/releases`;
 export const LICENSE_URL = `${REPO_URL}/blob/main/LICENSE`;
 

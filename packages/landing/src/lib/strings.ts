@@ -49,21 +49,20 @@ export const zh = {
   },
 
   hero: {
-    eyebrow: "本地优先的 Agent 应用自动开发平台",
+    eyebrow: "本地优先的 Agent 应用自动开发平台。",
     titleLead: "一句话，创建",
     titleAccent: "可自进化",
     titleTail: "的 AI 应用。",
-    subtitle:
-      "PenguinHarness 运行在你的电脑或服务器上，把一句自然语言需求变成可运行、可评测、会持续进化的 Agent 应用。",
+    subtitle: "一句话创建可自进化的 AI 应用。",
     downloadCta: "下载桌面版",
     downloadCtaFor: (platform: string) => `下载桌面版（${platform}）`,
     cliInstall: "命令行安装",
     installHint: "macOS · Windows · Linux · 本地数据默认保存在 ~/.penguin/data",
     stats: [
-      { value: "1000+", label: "模型与主流供应商" },
-      { value: "三大系统", label: "Linux · Windows · macOS" },
+      { value: "1000+模型", label: "支持主流供应商" },
+      { value: "跨平台", label: "Linux，Windows，macOS 多系统兼容" },
       { value: "私有化", label: "本地与服务器灵活部署" },
-      { value: "首个", label: "Agent 自进化引擎" },
+      { value: "首个自进化 Harness", label: "Agent 自进化引擎" },
     ],
   },
 

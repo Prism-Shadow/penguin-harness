@@ -50,12 +50,16 @@ export function WindowsIcon(props: IconProps) {
 
 export function LinuxIcon(props: IconProps) {
   return (
-    <Icon {...props}>
-      <path d="M8 10.5C8 5.8 9.3 2 12 2s4 3.8 4 8.5c0 2.3.9 3.6 2.1 5.1 1.5 1.9.6 4.4-1.7 4.4H7.6c-2.3 0-3.2-2.5-1.7-4.4C7.1 14.1 8 12.8 8 10.5Z" />
-      <circle cx="10.2" cy="8.4" r=".7" fill="currentColor" stroke="none" />
-      <circle cx="13.8" cy="8.4" r=".7" fill="currentColor" stroke="none" />
-      <path d="m10.4 11.2 1.6 1 1.6-1M9 16.5c1.8.9 4.2.9 6 0" />
-    </Icon>
+    <svg viewBox="0 0 48 48" fill="none" aria-hidden="true" {...props}>
+      <ellipse cx="24" cy="25" rx="12.5" ry="19" fill="#1F2937" />
+      <ellipse cx="24" cy="29.5" rx="8.5" ry="12.5" fill="#F8FAFC" />
+      <ellipse cx="19.5" cy="15.5" rx="4.5" ry="5.5" fill="#F8FAFC" />
+      <ellipse cx="28.5" cy="15.5" rx="4.5" ry="5.5" fill="#F8FAFC" />
+      <circle cx="20.5" cy="16" r="1.5" fill="#111827" />
+      <circle cx="27.5" cy="16" r="1.5" fill="#111827" />
+      <path d="m24 18-6 4 6 3 6-3-6-4Z" fill="#F59E0B" />
+      <path d="M17 41c-4 0-6 1.7-7 4h13l-6-4Zm14 0c4 0 6 1.7 7 4H25l6-4Z" fill="#F59E0B" />
+    </svg>
   );
 }
 

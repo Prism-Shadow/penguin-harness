@@ -48,6 +48,11 @@ const PLATFORM_ICONS: Record<Platform, ComponentType<SVGProps<SVGSVGElement>>> =
   windows: WindowsIcon,
   linux: LinuxIcon,
 };
+const PLATFORM_ICON_CLASSES: Record<Platform, string> = {
+  mac: "bg-gradient-to-br from-fuchsia-500 via-violet-500 to-blue-500 text-white",
+  windows: "bg-sky-50 text-[#0078d4] dark:bg-sky-950/60 dark:text-[#38bdf8]",
+  linux: "bg-amber-50 dark:bg-amber-950/50",
+};
 
 function FaqItem({
   question,
@@ -94,10 +99,10 @@ function filledBlocks(
   testing: boolean,
   selected: boolean,
 ): number {
-  if (testing) return 7;
+  if (testing) return 5;
   if (!measurement || !measurement.reachable) return selected ? 3 : 1;
   if (measurement.bytesPerSecond <= 0) return 2;
-  return Math.min(12, Math.max(2, Math.round(Math.log2(measurement.bytesPerSecond / 32768) + 3)));
+  return Math.min(8, Math.max(2, Math.round(Math.log2(measurement.bytesPerSecond / 32768) + 2)));
 }
 
 function SourceSpeedCard({
@@ -116,7 +121,7 @@ function SourceSpeedCard({
   const filled = filledBlocks(measurement, testing, selected);
   return (
     <article
-      className={`rounded-xl border p-4 transition-colors ${
+      className={`rounded-lg border p-3 transition-colors ${
         selected
           ? "border-brand-400 bg-brand-50/70 dark:border-brand-700 dark:bg-brand-950/50"
           : "border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"
@@ -128,16 +133,16 @@ function SourceSpeedCard({
           <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{hint}</p>
         </div>
         {selected && (
-          <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-brand-600 text-white dark:bg-brand-400 dark:text-gray-950">
-            <CheckIcon className="h-3.5 w-3.5" />
+          <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-brand-600 text-white dark:bg-brand-400 dark:text-gray-950">
+            <CheckIcon className="h-3 w-3" />
           </span>
         )}
       </div>
-      <p className="mt-5 font-mono text-lg font-semibold tracking-tight tabular-nums">
+      <p className="mt-2 font-mono text-base font-semibold tracking-tight tabular-nums">
         {speedText(measurement, testing)}
       </p>
-      <div className="mt-4 flex h-8 items-end gap-1" aria-hidden="true">
-        {Array.from({ length: 12 }, (_, index) => (
+      <div className="mt-2 flex h-5 items-end gap-0.5" aria-hidden="true">
+        {Array.from({ length: 8 }, (_, index) => (
           <span
             key={index}
             className={`min-w-0 flex-1 rounded-[3px] ${testing ? "animate-pulse" : ""} ${
@@ -147,7 +152,7 @@ function SourceSpeedCard({
                   : "bg-gray-500 dark:bg-gray-400"
                 : "bg-gray-200 dark:bg-gray-800"
             }`}
-            style={{ height: `${9 + ((index * 7) % 22)}px`, animationDelay: `${index * 55}ms` }}
+            style={{ height: `${6 + ((index * 5) % 14)}px`, animationDelay: `${index * 55}ms` }}
           />
         ))}
       </div>
@@ -221,8 +226,10 @@ export function DownloadPage() {
               }`}
             >
               <div className="flex items-start justify-between gap-3">
-                <span className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100">
-                  <PlatformIcon className="h-6 w-6" />
+                <span
+                  className={`inline-flex h-12 w-12 items-center justify-center rounded-xl ${PLATFORM_ICON_CLASSES[platform]}`}
+                >
+                  <PlatformIcon className="h-7 w-7" />
                 </span>
                 {recommended && (
                   <span className="rounded-full bg-brand-600/10 px-2 py-0.5 text-xs font-medium text-brand-700 dark:text-brand-300">
@@ -262,11 +269,11 @@ export function DownloadPage() {
         })}
       </div>
 
-      <section className="mx-auto mt-8 max-w-5xl rounded-2xl border border-gray-200 bg-gray-50/80 p-4 sm:p-5 dark:border-gray-800 dark:bg-gray-950/70">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+      <section className="mx-auto mt-7 max-w-4xl rounded-xl border border-gray-200 bg-gray-50/80 p-3 dark:border-gray-800 dark:bg-gray-950/70">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h3 className="text-base font-semibold tracking-tight">{S.download.speed.title}</h3>
-            <p className="mt-1 max-w-2xl text-xs leading-5 text-gray-500 dark:text-gray-400">
+            <p className="mt-0.5 max-w-2xl text-[11px] leading-4 text-gray-500 dark:text-gray-400">
               {S.download.speed.subtitle}
             </p>
           </div>
@@ -278,7 +285,7 @@ export function DownloadPage() {
           )}
         </div>
 
-        <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <div className="mt-3 grid grid-cols-2 gap-2">
           <SourceSpeedCard
             title={S.download.speed.github}
             hint={S.download.speed.githubHint}
@@ -293,32 +300,29 @@ export function DownloadPage() {
             testing={probing || refining}
             selected={selected === "oss"}
           />
-          <article className="flex flex-col justify-between rounded-xl bg-gray-950 p-4 text-white dark:bg-gray-100 dark:text-gray-900">
-            <div>
-              <p className="text-xs text-gray-400 dark:text-gray-500">
-                {S.download.speed.selected}
-              </p>
-              <div className="mt-2 flex items-center gap-2">
-                {probing && <SpinnerIcon className="h-4 w-4 animate-spin" />}
-                <p className="text-lg font-semibold tracking-tight">
-                  {selected === "oss" ? S.download.speed.oss : S.download.speed.github}
-                </p>
-              </div>
-              <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-                {override ? S.download.speed.manual : S.download.speed.automatic}
-                {mirror?.tag ? ` · ${mirror.tag}` : ""}
-              </p>
-            </div>
-            {mirror !== null && !probing && (
-              <button
-                type="button"
-                className="mt-5 w-fit text-xs underline decoration-gray-600 underline-offset-4 transition-colors hover:text-brand-300 dark:decoration-gray-400 dark:hover:text-brand-700"
-                onClick={() => setOverride(viaMirror ? "github" : "oss")}
-              >
-                {viaMirror ? S.download.altGithub : S.download.altOss}
-              </button>
-            )}
-          </article>
+        </div>
+
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-gray-950 px-3 py-2 text-white dark:bg-gray-100 dark:text-gray-900">
+          <div className="flex min-w-0 items-center gap-2 text-xs">
+            {probing && <SpinnerIcon className="h-3.5 w-3.5 shrink-0 animate-spin" />}
+            <span className="text-gray-400 dark:text-gray-500">{S.download.speed.selected}</span>
+            <strong className="truncate font-semibold">
+              {selected === "oss" ? S.download.speed.oss : S.download.speed.github}
+            </strong>
+            <span className="hidden text-gray-400 sm:inline dark:text-gray-500">
+              · {override ? S.download.speed.manual : S.download.speed.automatic}
+              {mirror?.tag ? ` · ${mirror.tag}` : ""}
+            </span>
+          </div>
+          {mirror !== null && !probing && (
+            <button
+              type="button"
+              className="shrink-0 text-xs underline decoration-gray-600 underline-offset-4 transition-colors hover:text-brand-300 dark:decoration-gray-400 dark:hover:text-brand-700"
+              onClick={() => setOverride(viaMirror ? "github" : "oss")}
+            >
+              {viaMirror ? S.download.altGithub : S.download.altOss}
+            </button>
+          )}
         </div>
       </section>
 

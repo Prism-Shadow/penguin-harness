@@ -2,7 +2,16 @@
  * Pure route state for the landing page navigation. Section links are represented by
  * hashes on the home page; Blog is a normal application route.
  */
-export const SECTION_IDS = ["features", "self-improvement", "cases", "quickstart"] as const;
+export const SECTION_IDS = [
+  "cases",
+  "highlights",
+  "self-improvement",
+  "quickstart",
+  "scenarios",
+  "benchmark",
+  "contract",
+  "features",
+] as const;
 
 export type SectionId = (typeof SECTION_IDS)[number];
 export type ActiveNavItem = SectionId | "blog" | "download" | null;

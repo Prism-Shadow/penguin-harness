@@ -48,21 +48,20 @@ export const en: Strings = {
   },
 
   hero: {
-    eyebrow: "The local-first platform for autonomous Agent app development",
+    eyebrow: "The local-first platform for autonomous Agent app development.",
     titleLead: "One sentence. One ",
     titleAccent: "self-evolving",
     titleTail: " AI app.",
-    subtitle:
-      "PenguinHarness runs on your computer or server and turns a natural-language request into an Agent app that runs, evaluates itself, and keeps improving.",
+    subtitle: "Create a self-evolving AI app in one sentence.",
     downloadCta: "Download the desktop app",
     downloadCtaFor: (platform: string) => `Download for ${platform}`,
     cliInstall: "Install from the command line",
     installHint: "macOS · Windows · Linux · Local data stays in ~/.penguin/data by default",
     stats: [
-      { value: "1000+", label: "models and major providers" },
-      { value: "3 systems", label: "Linux · Windows · macOS" },
-      { value: "Private", label: "local and server deployment" },
-      { value: "First", label: "Agent self-evolution engine" },
+      { value: "1000+ models", label: "Support for major providers" },
+      { value: "Cross-platform", label: "Linux, Windows, and macOS compatible" },
+      { value: "Private", label: "Flexible local and server deployment" },
+      { value: "First self-evolving Harness", label: "Agent self-evolution engine" },
     ],
   },
 
