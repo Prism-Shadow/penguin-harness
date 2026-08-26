@@ -41,8 +41,8 @@ penguin run -m <msg> [--project-id <id>] [--agent-id <id>] [--workspace <path>]
             [--model-id <id> --provider <p>] [--approve <mode>] [--thinking <level>]
             [--session <session_id>] [--background] [--timeout <duration>]
             [--goal [budget]] [--json]
-penguin ls [--project-id <id>] [--agent-id <id>] [-a|--all] [--json]
-penguin input <session_id> [-m <text>] [--no-wait] [--timeout <duration>]
+penguin ls [--project-id <id>] [--agent-id <id>] [--days <n>] [-a|--all] [--json]
+penguin input <session_id> [-m <text>] [--timeout <duration>]
               [--project-id <id>] [--json] [--server <url>]
 penguin logs <session_id> [--project-id <id>] [--tail <n>] [-f|--follow]
              [--timeout <duration>] [--json]
@@ -53,76 +53,84 @@ penguin project ls [--json]
 penguin cost [--days <n>] [--from <d> --to <d>] [--by date|agent|model|session]
              [--project-id <id>] [--agent-id <id>] [--json]
 penguin schedule ls [--project-id <id>] [--agent-id <id>] [--json]
+penguin schedule add <name> --prompt <s> --start-at <ISO|now> [--period <duration>]
+                    [--end-at <ISO>] [--session-id <id> | --workspace <path>
+                    [--model-id <id> --provider <p>]] [--disabled]
+                    [--project-id <id>] [--agent-id <id>]
+penguin schedule update <name> [<same field flags>] [--enable|--disable]
+                    [--project-id <id>] [--agent-id <id>]
+penguin schedule rm <name> [--project-id <id>] [--agent-id <id>]
 ```
 
 - `run` starts a task and waits, rendering the conversation, unless `--background` — then it prints the new session id and exits while the server keeps running the task. `--session <session_id>` runs the task in an existing session instead of creating one; the model reference is the `--provider` + `--model-id` pair (both or neither); `--goal [budget]` runs in goal mode — the session loops until the agent declares the goal complete, with an optional spend budget.
 - **Caller-context defaults.** Inside a harness agent, a session-creating `run` fills every field you leave unspecified from your own live session, per field independently: `--workspace`, the `--model-id`/`--provider` pair, `--approve` and `--thinking` inherit the caller's values — the same convention as `run_subagent` parent inheritance. Precedence: explicit flag > caller value > plain fallback (cwd, the Project default model, `allow-all`, none — used wholesale if the caller lookup fails, with a dim stderr note). So inside an agent, `penguin run -m "..."` alone typically does the right thing; pass flags only to diverge.
-- `--timeout <duration>` (`30s`, `5m`, `2h`, or bare seconds) bounds the wait of a foreground `run`, an `input`, or a `logs -f`. Expiry is a soft yield, not an error: the command exits 0 while the task keeps running server-side, printing a still-running note that names the follow-up commands (`--json` prints `{sessionId, status: "running", text}` with the text so far). Not combinable with `run --background`, `input --no-wait`, or `logs` without `-f`.
-- `input` with `-m` steers a **running** session mid-turn (the agent absorbs it as a course correction within the current task) or starts a new turn on an idle one; it waits for the reply unless `--no-wait`. Bare `input <session_id>` (no `-m`) **polls**: it prints the session's most recent complete assistant text — an idempotent snapshot that skips user/thinking/tool output and never touches approvals, mirroring `input_subagent`'s empty-prompt semantics. A running session is waited on first (bounded by `--timeout`, else indefinitely); a session with no reply yet prints `(no assistant reply yet)`. `--json` reports `{sessionId, status, text}` — `idle`/`running` when polling, `completed`/`aborted`/`running` with `-m`. `--no-wait` requires `-m`.
-- `ls` spans every agent of the project, newest first (by last active); archived sessions are left out unless `-a`/`--all` includes them. `logs` renders a session's transcript: `--tail <n>` for the last entries, `-f` to follow live.
+- `--timeout <duration>` (`30s`, `5m`, `2h`, or bare seconds) bounds the wait of a foreground `run`, an `input`, or a `logs -f`. Expiry is a soft yield, not an error: the command exits 0 while the task keeps running server-side, printing a still-running note that names the follow-up commands (`--json` prints `{sessionId, status: "running", text}` with the text so far). `--timeout 0` (also `0s`) returns immediately after delivery — the same note without collected text (`--json`: `{sessionId, status: "running"}`); on a bare poll it snapshots a running session instantly. `run --background` stays the idiomatic fire-and-forget for new tasks and rejects `--timeout`; `logs --timeout` requires `-f`.
+- `input` with `-m` steers a **running** session mid-turn (the agent absorbs it as a course correction within the current task) or starts a new turn on an idle one; it waits for the reply unless a `--timeout` bounds the wait (`--timeout 0` = deliver and return at once). Bare `input <session_id>` (no `-m`) **polls**: it prints the session's most recent complete assistant text — an idempotent snapshot that skips user/thinking/tool output and never touches approvals, mirroring `input_subagent`'s empty-prompt semantics. A running session is waited on first (bounded by `--timeout`, else indefinitely); a session with no reply yet prints `(no assistant reply yet)`. `--json` reports `{sessionId, status, text}` — `idle`/`running` when polling, `completed`/`aborted`/`running` with `-m`.
+- `ls` spans every agent of the project, newest first (by last active); archived sessions are left out unless `-a`/`--all` includes them, and `--days <n>` keeps only sessions last active since local midnight n−1 days ago — today counts as day 1, so `--days 2` is yesterday and today, `--days 7` this week. `logs` renders a session's transcript: `--tail <n>` for the last entries, `-f` to follow live.
 - Session ids embed their creation timestamp — `session-YYYY-MM-DD-HH-mm-ss-<8hex>`. Every `<session_id>` argument takes any unique substring of an id; the 8-hex tail is the recommended short form, and an ambiguous fragment errors listing the candidates. On `input` and `logs`, `--project-id` scopes that fragment search (unnecessary with a full id).
 
 ## Recipes
 
-### Summarize yesterday's conversations
+### Yesterday's or this week's sessions, with their latest replies
 
 ```bash
-Y="$(date -d yesterday +%F 2>/dev/null || date -v-1d +%F)"   # YYYY-MM-DD
-penguin ls -a --json    # every agent's sessions, archived included
+penguin ls --days 2 --json    # yesterday + today (today counts as day 1)
+penguin ls --days 7 --json    # this week; add -a to include archived sessions
+penguin input <session_id>    # one session's latest complete assistant reply
 ```
 
-- Pick the candidates from the listing: a session id starting `session-$Y-` was created yesterday; also keep earlier sessions whose last-active timestamp in the JSON falls on `$Y` — conversations that continued into yesterday.
-- Read each candidate with `penguin logs <8hex> --tail 100` (widen the tail if the transcript is cut short; `--json` if you want to parse rather than read).
-- Then write the summary yourself — per session: which agent, what was asked, what came of it. There is no summarize command; you are the summarizer.
+- `--days <n>` keeps sessions last active since local midnight n−1 days ago. For strictly-yesterday, take `--days 2` and drop today's entries client-side — ids embed the creation date and the JSON carries last-active.
+- Bare `input` prints the latest reply; add `--timeout 0` to snapshot a running session instantly instead of waiting for its turn to finish.
 
-### Last 7 days of cost
+### Summarize this week's history in a new session
+
+A fresh session gets a fresh context window for the summary; feed it through a file, not the prompt:
 
 ```bash
-penguin cost                       # summary card: today, last 7 days, total
-penguin cost --days 7 --by agent   # who spent it
+penguin ls --days 7 --json               # pick the sessions
+penguin logs <session_id> --tail 100     # gather each transcript (widen if cut short)
+# write what you gathered into a workspace file with your file tools, then:
+penguin run -m "Read ./weekly-material.md and write the weekly summary to ./weekly-summary.md"
 ```
 
-- The default summary already carries the last-7-days figure; `--by` breaks a range down per `date`, `agent`, `model` or `session`.
-- `--days 7 --by model` and `--days 7 --by date` answer "on which models" and "on which days"; `--from <d> --to <d>` takes an exact range; `--project-id` / `--agent-id` narrow the scope; `--json` for exact numbers.
+- **Exchange big material through workspace files.** Caller-context defaults mean the new session shares your workspace — write the gathered transcripts to `./weekly-material.md` and have the new session read it there. Pages of transcript do not belong in `-m`.
+- Read the result from `./weekly-summary.md` (the foreground run also renders the reply).
 
-### Create an agent and talk to it
+### Create an agent and say hello
 
 ```bash
-penguin agent create --agent-id research_bot --name "Research Bot" \
-  --description "Collects and digests sources" --skills firecrawl,data-analysis
-penguin run --agent-id research_bot -m "Introduce yourself and list your skills."
+penguin agent create --agent-id greeter --name "Greeter" --description "Welcomes people"
+penguin run --agent-id greeter -m "Hello! Introduce yourself."
 ```
 
 - Agent ids must match `^[a-z][a-z0-9_]{1,63}$`: a lowercase letter first, then lowercase letters, digits and underscores — no hyphens.
-- The new agent gets its own Agent State (system prompt, tools, skills, vault) in the current project; `--skills a,b` installs library skills at creation.
-- `--agent-id` switches only the agent: workspace, model, approval and thinking still inherit from your own session (caller-context defaults) — add those flags to change them too.
-- Each `run` without `--session` opens a fresh session; reuse a session id to continue a conversation.
+- A newly created agent starts with **no skills preinstalled**: seed it at creation with `--skills a,b` (library names) — include `penguin-orchestration` itself when the new agent must drive the harness too.
+- `--agent-id` switches only the agent: workspace, model, approval and thinking still inherit from your own session (caller-context defaults) — add those flags to change them too. Each `run` without `--session` opens a fresh session; reuse a session id to continue a conversation.
 
-### Inspect an agent's scheduled tasks
+### Summarize each agent's costs in a new session
 
 ```bash
-penguin schedule ls --agent-id research_bot
+penguin cost --days 7 --by agent --json    # who spent what this week
+penguin run -m "Summarize this per-agent cost report and flag anomalies: <the JSON>"
 ```
 
-Read the fields: the AGENT column (without `--agent-id` the listing spans agents), `enabled` (a disabled entry never fires), `startAt` (first firing), `period` (recurrence; absent means one-shot), the target — an existing session id versus a new session per firing — and `lastFiredAt`.
+- The default `penguin cost` card already carries today / last 7 days / total; `--by date|model|session` and `--from <d> --to <d>` give the other cuts, `--project-id` / `--agent-id` narrow the scope.
+- A `--by agent` report is small enough to inline in `-m`; for long breakdowns (`--by session` over a busy week), use the file-exchange pattern from the weekly-summary recipe.
 
-To **create** a schedule, write a TOML file with your file tools — that is the sanctioned path: schedule files are meant to be edited directly, and your own agent's current ones are already listed in your system prompt's schedule roster. The path is `<app_data_dir>/agents/<agent_id>/agent_state/schedule/<name>.toml` (App Data Dir is in your Environment section):
+### Set up a scheduled task for the current agent
 
-```toml
-prompt = "Summarize yesterday's sessions into notes/daily.md"   # required
-enabled = true                       # defaults to false — set true or it never fires
-start_at = "2026-08-26T09:00:00Z"    # ISO 8601, required
-period = "1d"                        # e.g. 30m / 12h / 1d / 7d, minimum 5m; omit for a one-shot
-# end_at = "2026-12-31T00:00:00Z"    # optional stop date
-# Target — either an existing session:
-# session_id = "session-2026-08-25-09-00-00-1a2b3c4d"
-# ...or a new session per firing (workspace plus the provider/model_id pair):
-workspace = "/home/user/project"
-provider = "deepseek"
-model_id = "deepseek-v4-flash"
+```bash
+penguin schedule add daily-report --prompt "Summarize yesterday's conversations" \
+  --start-at now --period 1d
+penguin schedule ls                                  # verify
+penguin schedule update daily-report --period 12h    # adjust; --enable/--disable to toggle
+penguin schedule rm daily-report                     # remove — no confirmation prompt
 ```
 
-The server's scheduler reconciles the folder periodically — a written file is picked up on its own; there is no register command and nothing to restart.
+- `--agent-id` defaults to yourself from the caller env, so this schedules the current agent. `--start-at` takes ISO 8601 or `now`; `--period` is at least 5m (`30m`/`12h`/`1d`/`7d`), omit it for a one-shot; `--end-at` bounds recurrence. Target flags are optional: `--session-id <id>` fires into that existing session, `--workspace <path>` (optionally with the `--model-id` + `--provider` pair) pins the new-session form.
+- `add` creates the schedule **enabled** (`--disabled` stages it off) — deliberately diverging from the raw file, where `enabled` defaults to false. `update` is read-modify-write: unspecified fields keep their stored values, and switching the target form clears the other one.
+- In `schedule ls`, read: the AGENT column (without `--agent-id` the listing spans agents), `enabled` (a disabled entry never fires), `startAt` (first firing), `period` (absent means one-shot), the target — an existing session versus a new session per firing — and `lastFiredAt`.
+- The CLI writes through the schedules API, so mistakes are rejected synchronously. The TOML file stays the single source of truth — `<app_data_dir>/agents/<agent_id>/agent_state/schedule/<name>.toml`, fields mirroring the flags (`prompt`, `enabled` — false by default in the file, `start_at`, `period`, `end_at`, `session_id` / `workspace`+`provider`+`model_id`) — and remains editable with file tools; your system prompt's schedule roster lists yours. A hand edit is only validated by the periodic reconcile (roughly every 30s), with errors landing in error records rather than your terminal — prefer the CLI.
 
 ### Run a conversation in the background and steer it mid-flight
 
@@ -131,14 +139,14 @@ Two patterns; both leave you free while the conversation runs.
 **(a) Background CLI process — you get a completion report.** Run the CLI itself as a background command: `exec_command` with `run_in_background: true` and the command
 
 ```bash
-penguin run --agent-id research_bot -m "<long task>"
+penguin run --agent-id <agent_id> -m "<long task>"
 ```
 
 - The harness delivers a `[background_task_done]` report when the CLI exits — no polling needed for completion.
-- Meanwhile, find the session with `penguin ls --json` (it shows as running, with the newest id) and steer it: `penguin input <session_id> -m "Focus on X; skip Y" --no-wait`.
+- Meanwhile, find the session with `penguin ls --json` (it shows as running, with the newest id) and steer it: `penguin input <session_id> -m "Focus on X; skip Y" --timeout 0` (deliver and return at once).
 - Poll the latest answer with bare `penguin input <session_id> --timeout 30s` — a bounded wait that exits 0 with a still-running note when the reply is not in yet — or read the raw transcript with `penguin logs <session_id> --tail 20`.
 
-**(b) Server-side background — survives you.** `penguin run --background --agent-id research_bot -m "<long task>"` prints the session id and exits; the server keeps running the task with no local process.
+**(b) Server-side background — survives you.** `penguin run --background --agent-id <agent_id> -m "<long task>"` prints the session id and exits; the server keeps running the task with no local process.
 
 - Poll the latest answer with bare `penguin input <session_id> --timeout 30s`, watch live with `penguin logs <session_id> -f`, and check running state with `penguin ls --json`; steer with `penguin input <session_id> -m ...` the same way.
 
