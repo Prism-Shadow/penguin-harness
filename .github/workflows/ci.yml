@@ -216,6 +216,14 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: pnpm --dir packages/desktop exec electron-builder ${{ matrix.platform }} --dir --publish never
 
+      # An installed desktop app installs the `penguin` command on the user's PATH — the deb
+      # postinst links /usr/bin/penguin, the other forms do it from the shell at launch — and
+      # every route runs <app>/bin/penguin against <app>/dist/penguin.js
+      # inside this tree. Nothing else in the build fails if those stop being packed, so the
+      # tree gets checked here, on all three platforms, where it already exists.
+      - name: Bundled CLI runs from the packed app
+        run: node packages/desktop/scripts/verify-packed-cli.mjs
+
       - name: Upload runtime artifact
         uses: actions/upload-artifact@v4
         with:
