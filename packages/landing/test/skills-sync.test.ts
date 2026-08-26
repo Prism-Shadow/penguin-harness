@@ -58,7 +58,15 @@ describe("landing ↔ skill library sync", () => {
     });
   }
 
-  it("both dictionaries list the same Skills", () => {
-    expect([...listedSkills(en)].sort()).toEqual([...listedSkills(zh)].sort());
+  /**
+   * Card by card rather than as one flat list: the two dictionaries render the same four cards
+   * in the same order, so a Skill that moves card in one language and not the other is drift a
+   * flattened comparison cannot see. Membership inside a card only — the chips are free to be
+   * reordered.
+   */
+  it("both dictionaries put each Skill on the same card", () => {
+    const cards = (dict: Strings): string[][] =>
+      dict.skills.groups.map((group) => [...group.skills].sort());
+    expect(cards(en)).toEqual(cards(zh));
   });
 });
