@@ -7,16 +7,15 @@
 <p align="center"><strong>Open-source, local-first platform for automated agent app development</strong><br />Fully automate <strong>building</strong> · <strong>optimizing</strong> · <strong>deploying</strong> AI applications</p>
 
 <p align="center">
-  <a href="https://penguin.ooo/download"><img src="assets/readme/download-desktop-en.svg" alt="Download desktop app" height="44" /></a>
-  &nbsp;&nbsp;
-  <a href="https://penguin.ooo/#quickstart-install"><img src="assets/readme/cli-install-en.svg" alt="Command line install" height="44" /></a>
+  <a href="https://penguin.ooo/download">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="assets/readme/download-dark.svg" />
+      <img src="assets/readme/download-light.svg" alt="Download" height="44" />
+    </picture>
+  </a>
 </p>
 
-<p align="center"><strong>1000+ models</strong> · Cross-platform local deployment · Apache 2.0 open source · Native agent self-evolution engine</p>
-
-<p align="center">
-  <a href="https://www.producthunt.com/products/penguinharness?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-penguinharness" target="_blank" rel="noopener noreferrer"><img alt="PenguinHarness - Let Agents Autonomously Build Better Agents for $0.02 | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1202577&amp;theme=light&amp;t=1784804711946" /></a>
-</p>
+<p align="center">1000+ models · Multi-platform · Apache 2.0 · agent self-evolution</p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@prismshadow/penguin-core"><img src="https://img.shields.io/npm/v/@prismshadow/penguin-core" alt="npm version" /></a>
@@ -36,6 +35,10 @@
   <a href="https://discord.gg/eFHKqqcU3D"><img src="https://img.shields.io/badge/Discord-join%20chat-5865F2?logo=discord&logoColor=white" alt="Discord" /></a>
   <a href="https://x.com/code_hiyouga"><img src="https://img.shields.io/badge/X-code%5Fhiyouga-000000?logo=x&logoColor=white" alt="X (Twitter)" /></a>
   <a href="https://github.com/Prism-Shadow/penguin-harness-community/blob/main/wechat/group.jpg"><img src="https://img.shields.io/badge/WeChat-user%20group-07C160?logo=wechat&logoColor=white" alt="WeChat" /></a>
+</p>
+
+<p align="center">
+  <a href="https://www.producthunt.com/products/penguinharness?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-penguinharness" target="_blank" rel="noopener noreferrer"><img alt="PenguinHarness - Let Agents Autonomously Build Better Agents for $0.02 | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1202577&amp;theme=light&amp;t=1784804711946" /></a>
 </p>
 
 <p align="center">English | <a href="README.zh.md">简体中文</a></p>
@@ -129,9 +132,7 @@ Start with the desktop app, or install the command line on a workstation or serv
 
 The full Web experience as a standalone application: it embeds the server and opens already signed in — no terminal, no login page, no initial password to copy. It works on the same `~/.penguin/data` root as a CLI install, so the two can be used interchangeably (a data root only ever runs one server; if a CLI-started instance is already up, the app attaches to it).
 
-<a href="https://penguin.ooo/download"><img src="assets/readme/download-desktop-en.svg" alt="Download desktop app" height="44" /></a>
-
-The download page serves the OSS-accelerated mirror when it is reachable, and every installer is also attached to each [GitHub Release](https://github.com/Prism-Shadow/penguin-harness/releases).
+Download the desktop app from the [download page](https://penguin.ooo/download). The page serves the OSS-accelerated mirror when it is reachable, and every installer is also attached to each [GitHub Release](https://github.com/Prism-Shadow/penguin-harness/releases).
 
 | Platform    | Installers                  |
 | ----------- | --------------------------- |

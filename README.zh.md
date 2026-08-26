@@ -7,16 +7,15 @@
 <p align="center"><strong>开源、本地的 Agent 应用自动开发平台</strong><br />全自动<strong>创建</strong> · <strong>优化</strong> · <strong>部署</strong> AI 应用</p>
 
 <p align="center">
-  <a href="https://penguin.ooo/download"><img src="assets/readme/download-desktop-zh.svg" alt="下载桌面版" height="44" /></a>
-  &nbsp;&nbsp;
-  <a href="https://penguin.ooo/#quickstart-install"><img src="assets/readme/cli-install-zh.svg" alt="命令行安装" height="44" /></a>
+  <a href="https://penguin.ooo/download">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="assets/readme/download-dark.svg" />
+      <img src="assets/readme/download-light.svg" alt="Download" height="44" />
+    </picture>
+  </a>
 </p>
 
-<p align="center"><strong>1000+ 模型</strong> · 跨平台本地部署 · Apache 2.0 协议开源 · 原生 Agent 自进化引擎</p>
-
-<p align="center">
-  <a href="https://www.producthunt.com/products/penguinharness?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-penguinharness" target="_blank" rel="noopener noreferrer"><img alt="PenguinHarness - Let Agents Autonomously Build Better Agents for $0.02 | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1202577&amp;theme=light&amp;t=1784804711946" /></a>
-</p>
+<p align="center">1000+ 模型 · 多平台 · Apache 2.0 · Agent 自进化</p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@prismshadow/penguin-core"><img src="https://img.shields.io/npm/v/@prismshadow/penguin-core" alt="npm 版本" /></a>
@@ -36,6 +35,10 @@
   <a href="https://discord.gg/eFHKqqcU3D"><img src="https://img.shields.io/badge/Discord-%E5%8A%A0%E5%85%A5%E8%AE%A8%E8%AE%BA-5865F2?logo=discord&logoColor=white" alt="Discord" /></a>
   <a href="https://x.com/code_hiyouga"><img src="https://img.shields.io/badge/X-code%5Fhiyouga-000000?logo=x&logoColor=white" alt="X（Twitter）" /></a>
   <a href="https://github.com/Prism-Shadow/penguin-harness-community/blob/main/wechat/group.jpg"><img src="https://img.shields.io/badge/%E5%BE%AE%E4%BF%A1-%E4%BA%A4%E6%B5%81%E7%BE%A4-07C160?logo=wechat&logoColor=white" alt="微信群" /></a>
+</p>
+
+<p align="center">
+  <a href="https://www.producthunt.com/products/penguinharness?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-penguinharness" target="_blank" rel="noopener noreferrer"><img alt="PenguinHarness - Let Agents Autonomously Build Better Agents for $0.02 | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1202577&amp;theme=light&amp;t=1784804711946" /></a>
 </p>
 
 <p align="center"><a href="README.md">English</a> | 简体中文</p>
@@ -129,9 +132,7 @@ https://github.com/user-attachments/assets/aec49ae9-b743-467b-b247-37bedfeaa36e
 
 完整的 Web 体验打包为独立应用：内嵌服务端，打开即已登录——无需终端、无登录页、也不用抄初始密码——并与 CLI 安装共用同一个 `~/.penguin/data` 数据目录，两者可以混用（一个数据目录同一时刻只运行一个服务端；CLI 已启动实例时，应用会直接接入它）。
 
-<a href="https://penguin.ooo/download"><img src="assets/readme/download-desktop-zh.svg" alt="下载桌面版" height="44" /></a>
-
-下载页会自动选择可用的 OSS 加速源，安装包也附于每个 [GitHub Release](https://github.com/Prism-Shadow/penguin-harness/releases)。
+从[下载页](https://penguin.ooo/download)获取桌面端应用。下载页会自动选择可用的 OSS 加速源，安装包也附于每个 [GitHub Release](https://github.com/Prism-Shadow/penguin-harness/releases)。
 
 | 平台          | 安装包                       |
 | ------------- | ---------------------------- |
