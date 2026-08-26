@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   adminSymlinkAppleScript,
@@ -222,5 +225,65 @@ describe("cliInstallKind", () => {
     expect(
       cliInstallKind({ packaged: true, platform: "linux", appImagePath: "/x/y.AppImage" }),
     ).toBe("appimage");
+  });
+});
+
+/**
+ * The couplings that make an installed desktop app carry a working `penguin`. They span
+ * three files nothing else compares: the constants above, the packaging decisions in
+ * electron-builder.yml, and the deb postinst templates. Each is load-bearing at run time
+ * and silent at build time — a packed app with no CLI in it builds, signs and ships
+ * exactly like one that has it (scripts/verify-packed-cli.mjs checks the produced tree).
+ */
+describe("packaged CLI", () => {
+  const pkgDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+  const read = (rel: string): string =>
+    fs.readFileSync(path.join(pkgDir, ...rel.split("/")), "utf8");
+  const builderConfig = read("electron-builder.yml");
+  /** The deb link target, spelled identically by the install and remove templates. */
+  const debTarget = "/opt/${sanitizedProductName}/resources/app/bin/penguin";
+
+  it("ships bin/, which is the only reason <app>/bin/penguin exists in an install", () => {
+    expect(builderConfig).toContain("- bin/**/*");
+  });
+
+  it("keeps asar off — inside an archive there is no bin/penguin to exec", () => {
+    expect(builderConfig).toMatch(/^asar: false$/m);
+  });
+
+  it("names the runtime the launchers exec", () => {
+    // posixLauncherScript and windowsLauncherScript hardcode these three names; they come
+    // from productName (macOS bundle executable and the .exe) and linux.executableName.
+    expect(builderConfig).toMatch(new RegExp(`^productName: ${MAC_EXECUTABLE}$`, "m"));
+    expect(WIN_EXECUTABLE).toBe(`${MAC_EXECUTABLE}.exe`);
+    expect(builderConfig).toMatch(new RegExp(`^ {2}executableName: ${LINUX_EXECUTABLE}$`, "m"));
+  });
+
+  it("bundles the CLI at the entry the launchers run", () => {
+    const entry = CLI_ENTRY_RELPATH.replace(/^dist\//, "").replace(/\.js$/, "");
+    expect(read("tsup.config.ts")).toMatch(
+      new RegExp(`^\\s*"?${entry}"?: "\\.\\./cli/dist/penguin\\.js",$`, "m"),
+    );
+  });
+
+  it("deb creates /usr/bin/penguin itself: it is the one form with no in-app installer", () => {
+    // cliInstallKind returns null for it, so nothing else would ever put the CLI on PATH.
+    expect(cliInstallKind({ packaged: true, platform: "linux", appImagePath: null })).toBeNull();
+    expect(builderConfig).toMatch(
+      /^deb:\n(?: .*\n|#.*\n)*? {2}afterInstall: build\/linux\/after-install\.tpl$/m,
+    );
+    const afterInstall = read("build/linux/after-install.tpl");
+    expect(afterInstall).toContain(`ln -sf '${debTarget}' '/usr/bin/penguin'`);
+    // Never over a real file of that name — a CLI installed by install.sh, say.
+    expect(afterInstall).toContain(`if [ ! -e '/usr/bin/penguin' ] || [ -L '/usr/bin/penguin' ]`);
+  });
+
+  it("deb removes only the link it made", () => {
+    expect(builderConfig).toMatch(
+      /^deb:\n(?: .*\n|#.*\n)*? {2}afterRemove: build\/linux\/after-remove\.tpl$/m,
+    );
+    const afterRemove = read("build/linux/after-remove.tpl");
+    expect(afterRemove).toContain(`[ "\`readlink '/usr/bin/penguin'\`" = '${debTarget}' ]`);
+    expect(afterRemove).toContain("rm -f '/usr/bin/penguin'");
   });
 });
