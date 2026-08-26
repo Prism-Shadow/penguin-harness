@@ -6,12 +6,19 @@
  * 409s, authz split, cascade on session delete), and the bridge's routing through a fake
  * Feishu SDK — inbound text becomes an ordinary user task
  * exactly as if typed in the composer (no marker, no special sender; queueIfBusy),
- * non-text gets the bilingual text-only reply, a completed run mirrors its assistant text
- * to the last known chat (reply-to-message in groups), and an approval_request sends the
- * one-line notice. No test opens real network.
+ * non-text gets the bilingual text-only reply, each completed assistant message mirrors on
+ * its own to the last known chat as soon as it completes (the run's first one threaded onto
+ * the inbound message in groups), and an approval_request sends the one-line notice. No
+ * test opens real network.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { assistantText, approvalDecision, toolCall } from "@prismshadow/penguin-core";
+import {
+  assistantText,
+  approvalDecision,
+  compactionBegin,
+  compactionEnd,
+  toolCall,
+} from "@prismshadow/penguin-core";
 import type { ApproveFn, OmniMessage, TextPayload } from "@prismshadow/penguin-core";
 import type { FeishuBindingResponse, FeishuTestResponse } from "../src/api/types.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
@@ -143,6 +150,53 @@ function parkingFakeSession(sessionId: string): RuntimeSession {
       const decision = await opts.approve(tc);
       yield approvalDecision(decision, "tc-feishu");
       yield assistantText("after approval");
+    },
+    async *compact() {},
+  };
+}
+
+/**
+ * Fake Session that completes several assistant messages in ONE run. `gate`, when given,
+ * holds the last message back: what lets a test observe the earlier ones already in the
+ * chat while the run is still running.
+ */
+function multiMessageFakeSession(
+  sessionId: string,
+  texts: readonly string[],
+  gate?: Promise<void>,
+): RuntimeSession {
+  return {
+    sessionId,
+    toolPermission: () => "rw",
+    generateTitle: async () => ({ title: null, usage: null }),
+    compactability: () => "ok" as const,
+    steer: () => false,
+    skipReconnectWait: () => false,
+    async *run() {
+      for (let i = 0; i < texts.length; i += 1) {
+        if (gate !== undefined && i === texts.length - 1) await gate;
+        yield assistantText(texts[i]!);
+      }
+    },
+    async *compact() {},
+  };
+}
+
+/** Fake Session that streams a compaction summary mid-run, then the actual answer. */
+function compactingFakeSession(sessionId: string): RuntimeSession {
+  const bounds = { reason: "context", mode: "summarize" } as const;
+  return {
+    sessionId,
+    toolPermission: () => "rw",
+    generateTitle: async () => ({ title: null, usage: null }),
+    compactability: () => "ok" as const,
+    steer: () => false,
+    skipReconnectWait: () => false,
+    async *run() {
+      yield compactionBegin({ ...bounds, context: 90, turns: 12 });
+      yield assistantText("SUMMARY that is not a reply");
+      yield compactionEnd({ ...bounds, status: "completed" });
+      yield assistantText("the actual answer");
     },
     async *compact() {},
   };
@@ -462,6 +516,80 @@ describe("messaging binding routes and bridge", () => {
       target: "om_group_1",
       text: "Reply text",
     });
+  });
+
+  it("relays every completed assistant message on its own, as it completes, never joined", async () => {
+    const row2 = sessionRowOf(SID2, projectId);
+    t.deps.sessionsRepo.insert(row2);
+    let release = () => {};
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    t.deps.manager.adopt(
+      row2,
+      multiMessageFakeSession(SID2, ["working on it", "still going", "here is the answer"], gate),
+    );
+    await bindEnabled(SID2, { ...PUT_BODY, appId: "cli_streamer" });
+    await fake.lastConnection().fire({
+      chatId: "oc_chat_5",
+      chatType: "p2p",
+      messageId: "om_5",
+      messageType: "text",
+      content: JSON.stringify({ text: "go" }),
+    });
+    // The first two are in the chat while the run is still running — the whole point:
+    // the chat follows the run instead of receiving it as one block at the end.
+    await waitFor(() => fake.allSends().length === 2);
+    expect(t.deps.manager.statusOf(SID2)).toBe("running");
+    expect(fake.allSends().map((s) => s.text)).toEqual(["working on it", "still going"]);
+    release();
+    await waitFor(() => fake.allSends().length === 3);
+    // Order preserved, and no message carries another one's text: nothing was joined.
+    expect(fake.allSends().map((s) => s.text)).toEqual([
+      "working on it",
+      "still going",
+      "here is the answer",
+    ]);
+    expect(fake.allSends().every((s) => !s.text.includes("\n\n"))).toBe(true);
+    expect(fake.allSends().every((s) => s.kind === "send" && s.target === "oc_chat_5")).toBe(true);
+  });
+
+  it("in a group only the run's first message threads onto the inbound one", async () => {
+    const row2 = sessionRowOf(SID2, projectId);
+    t.deps.sessionsRepo.insert(row2);
+    t.deps.manager.adopt(row2, multiMessageFakeSession(SID2, ["first", "second", "third"]));
+    await bindEnabled(SID2, { ...PUT_BODY, appId: "cli_grouped" });
+    await fake.lastConnection().fire({
+      chatId: "oc_group_7",
+      chatType: "group",
+      messageId: "om_group_7",
+      messageType: "text",
+      content: JSON.stringify({ text: "ping" }),
+    });
+    await waitFor(() => fake.allSends().length === 3);
+    // One reply-to anchors the exchange; the rest are plain sends into the same chat, so
+    // the group does not get a stack of quote headers.
+    expect(fake.allSends()).toEqual([
+      { kind: "reply", target: "om_group_7", text: "first" },
+      { kind: "send", target: "oc_group_7", text: "second" },
+      { kind: "send", target: "oc_group_7", text: "third" },
+    ]);
+  });
+
+  it("the streamed compaction summary is not a reply and never reaches the chat", async () => {
+    const row2 = sessionRowOf(SID2, projectId);
+    t.deps.sessionsRepo.insert(row2);
+    t.deps.manager.adopt(row2, compactingFakeSession(SID2));
+    await bindEnabled(SID2, { ...PUT_BODY, appId: "cli_compactor" });
+    await fake.lastConnection().fire({
+      chatId: "oc_chat_6",
+      chatType: "p2p",
+      messageId: "om_6",
+      messageType: "text",
+      content: JSON.stringify({ text: "summarize" }),
+    });
+    await waitFor(() => t.deps.manager.statusOf(SID2) === "idle");
+    expect(fake.allSends().map((s) => s.text)).toEqual(["the actual answer"]);
   });
 
   it("non-text messages get the bilingual text-only reply and start no task", async () => {

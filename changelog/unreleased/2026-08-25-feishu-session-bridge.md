@@ -60,11 +60,14 @@ one holding the live connection.
   transient poll failures back off, report once per outage, and recover) — neither needs
   a public URL. Inbound text started Tasks with `queueIfBusy` as plain composer-style
   input (no marker, no special sender — the model does not learn the message came from a
-  messaging channel); other message types got a bilingual "text only" reply; every
-  completed task mirrored its assistant text back to the last known chat (reply-to-message
-  in group chats), chunked under the channels' text-size limits (inside Telegram's
-  4096-character cap), and a pending tool-call approval sent a one-line notice pointing at
-  the web UI.
+  messaging channel); other message types got a bilingual "text only" reply; each
+  completed assistant message mirrored back to the last known chat on its own, the moment
+  it completed, so a run that writes working notes between tool calls before its answer
+  reaches the chat as that same sequence of messages rather than one block at the end —
+  sends serialised per Session so they arrive in the order they completed, chunked under
+  the channels' text-size limits (inside Telegram's 4096-character cap), and in a group
+  chat the run's first message threaded onto the inbound one while the rest were plain
+  sends. A pending tool-call approval sent a one-line notice pointing at the web UI.
 - New endpoints under `/api/sessions/:sessionId/messaging`: a channel-agnostic GET
   listing every saved channel config (`channel`-discriminated, per-row `enabled` and
   runtime status) plus the same verb set per channel — `/feishu` and `/telegram` each

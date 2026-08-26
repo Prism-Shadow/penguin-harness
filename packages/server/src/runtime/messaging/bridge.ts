@@ -19,13 +19,20 @@
  * message gets a polite bilingual "text only" reply.
  *
  * Outbound (Session → channel): the bridge subscribes to the Session's in-process channel
- * and accumulates the main conversation's completed assistant text; when the run flips
- * idle, the concatenated reply is sent to the last known chat (reply-to-message in group
- * chats, plain send in direct chats), chunked under the channel's text-size limits. EVERY
- * completed task mirrors once a chat is known — web-initiated turns included; before the
- * first inbound message no chat is known and nothing is sent. Compaction output (the
- * summary the model streams between compaction events) is not a reply and is skipped, and
- * a connection joining mid-run skips that run's partial tail rather than mirroring half a
+ * and relays each of the main conversation's completed assistant messages on its own, the
+ * moment it completes — a run that writes working notes between tool calls before its
+ * answer reaches the chat as that same sequence of messages, so the chat follows the run
+ * as it happens. Each is sent to the last known chat, chunked under the channel's
+ * text-size limits, and the sends of one entry are serialised through a promise chain:
+ * several messages completing in quick succession must reach the chat in the order they
+ * completed. In a group chat the run's FIRST outbound message threads onto the inbound
+ * one and everything after it is a plain send — one reply-to anchors the exchange, where
+ * repeating it per message would stack a quote header over each of them; a direct chat is
+ * plain sends throughout. EVERY completed assistant message mirrors once a chat is known
+ * — web-initiated turns included; before the first inbound message no chat is known and
+ * nothing is sent. Compaction output (the summary the model streams between compaction
+ * events) is not a reply and is skipped, and
+ * a connection joining mid-run relays nothing from that run rather than mirroring half a
  * reply. An `approval_request` additionally sends a one-line notice that a tool call is
  * waiting in the web UI.
  */
@@ -130,8 +137,15 @@ interface BridgeEntry {
   armed: boolean;
   /** Between compaction_begin/_end: the streamed summary is not a reply. */
   inCompaction: boolean;
-  /** Completed assistant text of the run in progress, flushed at the idle flip. */
-  buffer: string[];
+  /** The run in progress already threaded its first outbound message onto the inbound one. */
+  threadedThisRun: boolean;
+  /**
+   * Tail of this entry's outbound sends. Each relayed message is appended rather than
+   * started on its own, so messages completing in quick succession cannot race each other
+   * into the chat out of order. It never rejects — deliverReply records its own failures —
+   * so one slow or failing send delays this Session's later messages and nothing else.
+   */
+  sendChain: Promise<void>;
 }
 
 export class MessagingBridge {
@@ -268,7 +282,8 @@ export class MessagingBridge {
       active: runState,
       armed: runState === "idle",
       inCompaction: false,
-      buffer: [],
+      threadedThisRun: false,
+      sendChain: Promise.resolve(),
     };
     this.entries.set(row.sessionId, entry);
     entry.unsubscribe = this.deps.channels
@@ -370,7 +385,7 @@ export class MessagingBridge {
 
   // —— Outbound ——————————————————————————————————————————————————————————————
 
-  /** Channel tap: main-conversation completed assistant text + the run-state flips. */
+  /** Channel tap: each main-conversation completed assistant message + the run-state flips. */
   private observe(entry: BridgeEntry, evt: ChannelEvent): void {
     if (this.entries.get(entry.sessionId) !== entry) return;
     let data: unknown;
@@ -399,35 +414,57 @@ export class MessagingBridge {
     if (msg.type !== "model_msg" || entry.inCompaction) return;
     // Completed assistant text only: partials, thinking and tool traffic never mirror.
     if (payload.type === "text" && payload.role === "assistant" && payload.text !== undefined) {
-      entry.buffer.push(payload.text);
+      this.relay(entry, payload.text);
     }
+  }
+
+  /**
+   * Queues one completed assistant message for the bound chat. Appended to the entry's
+   * send chain rather than started here: a run can complete several messages within
+   * milliseconds, and two sends racing would reach the chat in the wrong order. Returns
+   * immediately either way, so a slow channel never blocks the Session's stream handling.
+   */
+  private relay(entry: BridgeEntry, text: string): void {
+    if (!entry.armed) return; // joined mid-run: this run's messages are not a reply
+    const body = text.trim();
+    if (body === "") return;
+    entry.sendChain = entry.sendChain.then(() => this.deliverReply(entry, body));
   }
 
   private onTaskState(entry: BridgeEntry, state: string): void {
     if (state === "running") {
-      // A fresh run observed from its start: reset the accumulator once (task_state is
-      // re-published mid-run for queue/steering changes and must not clear it then).
-      if (entry.armed && entry.active !== "running") entry.buffer = [];
+      // A fresh run observed from its start gets one thread reply again. Only a real
+      // idle -> running edge counts: task_state is re-published mid-run for queue and
+      // steering changes, and re-arming there would thread every message of the run.
+      if (entry.active !== "running") entry.threadedThisRun = false;
     } else if (state === "idle") {
-      const finishedRun = entry.armed && entry.active === "running";
-      const text = entry.buffer.join("\n\n").trim();
-      entry.buffer = [];
-      // Joined mid-run: drop that run's partial tail and arm for the next one.
+      // A run joined midway ends here; from the next one on its messages mirror.
       entry.armed = true;
-      if (finishedRun && text !== "") void this.flush(entry, text);
     }
     entry.active = state;
   }
 
-  /** Sends one completed reply to the last known chat; a send failure is recorded, never thrown. */
-  private async flush(entry: BridgeEntry, text: string): Promise<void> {
+  /**
+   * Sends one completed assistant message to the last known chat, in chunks under the
+   * channel's cap; a send failure is recorded, never thrown, so the chain behind it keeps
+   * moving. In a group the run's first outbound chunk threads onto the inbound message and
+   * everything after it is a plain send: the reply-to relation names which message is being
+   * answered, and one of them says it — repeating it per message and per chunk stacks quote
+   * headers over the whole conversation.
+   */
+  private async deliverReply(entry: BridgeEntry, text: string): Promise<void> {
     try {
       const row = this.deps.repo.find(entry.sessionId, entry.channel);
       if (!row || row.lastChatId === null) return; // no chat known yet: nothing mirrors
       const client = await this.clientFor(entry.sessionId, row);
       for (const chunk of chunkMessagingText(text)) {
-        if (!row.lastChatIsDirect && entry.lastInboundMessageId !== null) {
-          await client.replyText(entry.lastInboundMessageId, chunk);
+        const threadOnto =
+          !row.lastChatIsDirect && entry.lastInboundMessageId !== null && !entry.threadedThisRun
+            ? entry.lastInboundMessageId
+            : null;
+        if (threadOnto !== null) {
+          entry.threadedThisRun = true;
+          await client.replyText(threadOnto, chunk);
         } else {
           await client.sendText(row.lastChatId, chunk);
         }

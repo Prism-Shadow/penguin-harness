@@ -5,8 +5,8 @@
  * probe surfacing the bot username), the channel-agnostic GET the channel-aware editor
  * reads, and the connector's long-poll loop through a fake Bot API transport — offset
  * advancement, the connect-time backlog drain, inbound routing as plain user input,
- * task-end mirroring with reply threading in groups, 4096-safe chunking, non-text
- * notices, and poll-failure status flips. No test opens real network.
+ * per-message mirroring with one reply thread per run in groups, 4096-safe chunking,
+ * non-text notices, and poll-failure status flips. No test opens real network.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { assistantText } from "@prismshadow/penguin-core";
@@ -228,6 +228,33 @@ function echoFakeSession(
     async *run(input: OmniMessage[]) {
       runs.push(input.map((m) => m.payload as TextPayload));
       yield assistantText(reply);
+    },
+    async *compact() {},
+  };
+}
+
+/**
+ * Fake Session that completes several assistant messages in ONE run. `gate`, when given,
+ * holds the last message back: what lets a test observe the earlier ones already in the
+ * chat while the run is still running.
+ */
+function multiMessageFakeSession(
+  sessionId: string,
+  texts: readonly string[],
+  gate?: Promise<void>,
+): RuntimeSession {
+  return {
+    sessionId,
+    toolPermission: () => "rw",
+    generateTitle: async () => ({ title: null, usage: null }),
+    compactability: () => "ok" as const,
+    steer: () => false,
+    skipReconnectWait: () => false,
+    async *run() {
+      for (let i = 0; i < texts.length; i += 1) {
+        if (gate !== undefined && i === texts.length - 1) await gate;
+        yield assistantText(texts[i]!);
+      }
     },
     async *compact() {},
   };
@@ -566,6 +593,47 @@ describe("telegram binding routes and connector loop", () => {
     expect(runs).toHaveLength(0);
     // Even a rejected type teaches the bridge where the user is.
     expect(t.deps.messagingRepo.find(SID, "telegram")?.lastChatId).toBe("42424242");
+  });
+
+  it("relays each completed assistant message separately, in order, as it completes", async () => {
+    const row2 = sessionRowOf(SID2, projectId);
+    t.deps.sessionsRepo.insert(row2);
+    let release = () => {};
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    t.deps.manager.adopt(row2, multiMessageFakeSession(SID2, ["step one", "step two"], gate));
+    await bindEnabled(SID2, "7000000003:test-secret-EEEE-5555");
+    fake.push(privateText("go"));
+    // The first message is already in the chat while the run is still running.
+    await waitFor(() => fake.allSends().length === 1);
+    expect(t.deps.manager.statusOf(SID2)).toBe("running");
+    expect(fake.allSends()).toEqual([{ chatId: "42424242", text: "step one" }]);
+    release();
+    await waitFor(() => fake.allSends().length === 2);
+    expect(fake.allSends()).toEqual([
+      { chatId: "42424242", text: "step one" },
+      { chatId: "42424242", text: "step two" },
+    ]);
+  });
+
+  it("in a group only the run's first message carries the reply ref", async () => {
+    const row2 = sessionRowOf(SID2, projectId);
+    t.deps.sessionsRepo.insert(row2);
+    t.deps.manager.adopt(row2, multiMessageFakeSession(SID2, ["first", "second"]));
+    await bindEnabled(SID2, "7000000004:test-secret-FFFF-6666");
+    fake.push({
+      message_id: 91,
+      chat: { id: -1002233445566, type: "supergroup" },
+      text: "ping",
+      from: { first_name: "Ada" },
+    });
+    await waitFor(() => fake.allSends().length === 2);
+    // One reply-to anchors the exchange; the follow-up is a plain send into the same chat.
+    expect(fake.allSends()).toEqual([
+      { chatId: "-1002233445566", text: "first", replyTo: 91 },
+      { chatId: "-1002233445566", text: "second" },
+    ]);
   });
 
   it("chunks a long reply under the shared 4000-char cap (inside Telegram's 4096 limit)", async () => {
