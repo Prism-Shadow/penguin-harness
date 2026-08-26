@@ -39,10 +39,13 @@ penguin ls --json         # the project's sessions, with running state
 ```
 penguin run -m <msg> [--project-id <id>] [--agent-id <id>] [--workspace <path>]
             [--model-id <id> --provider <p>] [--approve <mode>] [--thinking <level>]
-            [--session <session_id>] [--background] [--goal [budget]] [--json]
+            [--session <session_id>] [--background] [--timeout <duration>]
+            [--goal [budget]] [--json]
 penguin ls [--project-id <id>] [--agent-id <id>] [-a|--all] [--json]
-penguin input <session_id> -m <text> [--project-id <id>] [--no-wait] [--json]
-penguin logs <session_id> [--project-id <id>] [--tail <n>] [-f|--follow] [--json]
+penguin input <session_id> [-m <text>] [--no-wait] [--timeout <duration>]
+              [--project-id <id>] [--json] [--server <url>]
+penguin logs <session_id> [--project-id <id>] [--tail <n>] [-f|--follow]
+             [--timeout <duration>] [--json]
 penguin agent ls [--project-id <id>] [--json]
 penguin agent create --agent-id <id> [--name <s>] [--description <s>] [--skills <a,b>]
                      [--project-id <id>] [--json]
@@ -52,8 +55,10 @@ penguin cost [--days <n>] [--from <d> --to <d>] [--by date|agent|model|session]
 penguin schedule ls [--project-id <id>] [--agent-id <id>] [--json]
 ```
 
-- `run` starts a task and waits, rendering the conversation, unless `--background` — then it prints the new session id and exits while the server keeps running the task. `--session <session_id>` runs the task in an existing session instead of creating one. The model reference is the `--provider` + `--model-id` pair (both or neither; neither means the project default). `--thinking <level>` overrides the agent's thinking level for this run; `--workspace` sets the session's working directory (omit for a temporary workspace); `--goal [budget]` runs in goal mode — the session loops until the agent declares the goal complete, with an optional spend budget.
-- `input` steers a **running** session mid-turn (the agent absorbs it as a course correction within the current task) or starts a new turn on an idle one. By default it waits for the reply; `--no-wait` returns right after delivery.
+- `run` starts a task and waits, rendering the conversation, unless `--background` — then it prints the new session id and exits while the server keeps running the task. `--session <session_id>` runs the task in an existing session instead of creating one; the model reference is the `--provider` + `--model-id` pair (both or neither); `--goal [budget]` runs in goal mode — the session loops until the agent declares the goal complete, with an optional spend budget.
+- **Caller-context defaults.** Inside a harness agent, a session-creating `run` fills every field you leave unspecified from your own live session, per field independently: `--workspace`, the `--model-id`/`--provider` pair, `--approve` and `--thinking` inherit the caller's values — the same convention as `run_subagent` parent inheritance. Precedence: explicit flag > caller value > plain fallback (cwd, the Project default model, `allow-all`, none — used wholesale if the caller lookup fails, with a dim stderr note). So inside an agent, `penguin run -m "..."` alone typically does the right thing; pass flags only to diverge.
+- `--timeout <duration>` (`30s`, `5m`, `2h`, or bare seconds) bounds the wait of a foreground `run`, an `input`, or a `logs -f`. Expiry is a soft yield, not an error: the command exits 0 while the task keeps running server-side, printing a still-running note that names the follow-up commands (`--json` prints `{sessionId, status: "running", text}` with the text so far). Not combinable with `run --background`, `input --no-wait`, or `logs` without `-f`.
+- `input` with `-m` steers a **running** session mid-turn (the agent absorbs it as a course correction within the current task) or starts a new turn on an idle one; it waits for the reply unless `--no-wait`. Bare `input <session_id>` (no `-m`) **polls**: it prints the session's most recent complete assistant text — an idempotent snapshot that skips user/thinking/tool output and never touches approvals, mirroring `input_subagent`'s empty-prompt semantics. A running session is waited on first (bounded by `--timeout`, else indefinitely); a session with no reply yet prints `(no assistant reply yet)`. `--json` reports `{sessionId, status, text}` — `idle`/`running` when polling, `completed`/`aborted`/`running` with `-m`. `--no-wait` requires `-m`.
 - `ls` spans every agent of the project, newest first (by last active); archived sessions are left out unless `-a`/`--all` includes them. `logs` renders a session's transcript: `--tail <n>` for the last entries, `-f` to follow live.
 - Session ids embed their creation timestamp — `session-YYYY-MM-DD-HH-mm-ss-<8hex>`. Every `<session_id>` argument takes any unique substring of an id; the 8-hex tail is the recommended short form, and an ambiguous fragment errors listing the candidates. On `input` and `logs`, `--project-id` scopes that fragment search (unnecessary with a full id).
 
@@ -90,6 +95,7 @@ penguin run --agent-id research_bot -m "Introduce yourself and list your skills.
 
 - Agent ids must match `^[a-z][a-z0-9_]{1,63}$`: a lowercase letter first, then lowercase letters, digits and underscores — no hyphens.
 - The new agent gets its own Agent State (system prompt, tools, skills, vault) in the current project; `--skills a,b` installs library skills at creation.
+- `--agent-id` switches only the agent: workspace, model, approval and thinking still inherit from your own session (caller-context defaults) — add those flags to change them too.
 - Each `run` without `--session` opens a fresh session; reuse a session id to continue a conversation.
 
 ### Inspect an agent's scheduled tasks
@@ -130,18 +136,18 @@ penguin run --agent-id research_bot -m "<long task>"
 
 - The harness delivers a `[background_task_done]` report when the CLI exits — no polling needed for completion.
 - Meanwhile, find the session with `penguin ls --json` (it shows as running, with the newest id) and steer it: `penguin input <session_id> -m "Focus on X; skip Y" --no-wait`.
-- Peek at progress any time with `penguin logs <session_id> --tail 20`.
+- Poll the latest answer with bare `penguin input <session_id> --timeout 30s` — a bounded wait that exits 0 with a still-running note when the reply is not in yet — or read the raw transcript with `penguin logs <session_id> --tail 20`.
 
 **(b) Server-side background — survives you.** `penguin run --background --agent-id research_bot -m "<long task>"` prints the session id and exits; the server keeps running the task with no local process.
 
-- Poll with `penguin ls --json` (running state) and read with `penguin logs <session_id> -f` or `--tail`; steer with `penguin input` the same way.
+- Poll the latest answer with bare `penguin input <session_id> --timeout 30s`, watch live with `penguin logs <session_id> -f`, and check running state with `penguin ls --json`; steer with `penguin input <session_id> -m ...` the same way.
 
-Prefer (a) when you stay around for the result — the completion report comes to you. Prefer (b) when the work must survive your own session ending, or when fanning out many tasks without holding a process per task.
+Prefer (a) when you stay around for the result — the completion report comes to you. Prefer (b) when the work must survive your own session ending, or when fanning out many tasks without holding a process per task. A bounded foreground run is the middle ground: `penguin run --timeout 5m -m "..."` renders up to the bound, then soft-yields with the task still running — pick up the answer later with a bare `penguin input <session_id>`.
 
 ## Cautions
 
 - **One active task per session.** `penguin input` at a busy session steers the running task rather than starting a second one; a new task sent at a busy session waits its turn. For parallel work, start parallel sessions.
-- **Unattended sessions must not need a human.** `penguin run` defaults to `--approve allow-all`; choose `--approve read-only` when the spawned agent should not write. Only an explicitly set `always-ask` carries the hang risk — that session waits for approval in the web UI.
+- **Unattended sessions must not need a human.** A spawned session inherits your approval mode (`allow-all` when there is no caller to inherit from); if you yourself run under `always-ask`, pass `--approve allow-all` (trusted work) or `--approve read-only` explicitly — an unattended `always-ask` session hangs waiting for approval in the web UI.
 - **No runaway loops.** An agent that messages itself — directly, through a chain of agents, or through a schedule aimed back at its own session — keeps spending until someone stops it. Make every automated conversation terminate.
 - **Spawned work bills the project.** Everything you start lands in the same project's usage (`penguin cost` shows it); a fan-out of sessions multiplies spend.
 - **Configuration stays CLI-managed.** Never read or hand-edit `.project_config.toml` or `agent_state/.vault.toml` — models and secrets go through `penguin config` (see the penguin-cli skill).
