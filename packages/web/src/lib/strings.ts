@@ -747,6 +747,29 @@ export const zh = {
     getApiKey: "获取 API key",
     getModelIds: "获取模型 id",
     groupKeyApplied: (n: number): string => `已为 ${n} 个模型配置 API key`,
+    // 供应商授权取 key（模型分组头部动作）：整个 PKCE 流程都在服务端跑，前端只拿到一个
+    // 不透明的 flow id 和状态。
+    oauthKey: "授权新建 API key",
+    oauthTitle: (label: string): string => `从「${label}」授权新建 API key`,
+    oauthIntro: (label: string, n: number): string =>
+      `将在你的 ${label} 账户下新建一个 API key，并写入该分组下全部 ${n} 个模型，覆盖它们当前的 key。`,
+    oauthAuthorize: "打开授权页",
+    oauthWaiting: "等待在新标签页中完成授权…",
+    oauthApplied: (n: number): string => `已为 ${n} 个模型配置新的 API key`,
+    oauthManualSwitch: "授权页跳不回来？改为手动填写授权码",
+    oauthCallbackSwitch: "改回自动跳转",
+    oauthManualHint: "先打开授权页，再把页面上显示的一次性授权码粘贴到这里。",
+    oauthCodeLabel: "授权码",
+    oauthSubmitCode: "提交授权码",
+    oauthTimedOut: "没有等到授权结果。可以改为手动填写授权码，或重新开始。",
+    oauthRetry: "重新开始",
+    oauthErrors: {
+      invalid_request: "授权请求被拒绝，请重新开始。",
+      code_rejected: "该授权已失效：可能已过期或被用过，请重新开始。",
+      upstream_failed: "供应商没有返回可用的 key，请重新开始。",
+      unreachable: "连不上供应商，请检查网络后重新开始。",
+      apply_failed: "key 已创建但未能保存。请重新授权，并到供应商控制台删掉那个没用上的 key。",
+    },
     // Providers with separate domestic / international endpoints: note on the default
     // endpoint used when left blank via env var (the other side's key needs an explicit
     // base URL). Written to match AgentHub's actual behavior; rendered wherever the env fallback hint appears.

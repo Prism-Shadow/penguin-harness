@@ -93,6 +93,18 @@ Some gateways read a request header that files a call under the app that made it
 
 Every other endpoint — every direct vendor, and every gateway that reads no such header — receives no extra headers at all. The headers state the app's identity only; they carry nothing about the user, the Agent or the Session.
 
+## Authorizing a new API key
+
+A provider that publishes an authorization flow puts an extra action on its group header in the models page: **Authorize new API key**. TokenDance is the one built-in group that does. It creates a **new** key on your account — it does not read a key you already have — and writes it to every model in that group, replacing whatever key those entries carry.
+
+Pressing it opens the provider's authorization page in a new tab. Authorize there and the provider sends the browser back to PenguinHarness, which redeems the one-time code and saves the key; the tab you started from reports the result on its own. The same app URL the attribution table above lists is stamped onto the key, so calls made with it stay attributed even from another tool.
+
+The exchange runs entirely on the server: the PKCE verifier is generated there and never reaches the browser, and the minted key goes straight into the model table without passing through it. An authorization is good for one key and expires in ten minutes.
+
+Where the redirect cannot come back — a desktop window that hands external links to the system browser, or a server the browser cannot reach on the address it was given — pick **Page can't redirect back? Enter the code by hand**. The authorization page then displays a one-time code instead of redirecting, and pasting it into the dialog finishes the same flow.
+
+Only the Project owner can start or finish an authorization. The full key is shown once and never again, so if saving it fails you have to authorize again and delete the unused key in the provider's console.
+
 ## Local / self-hosted OpenAI-compatible endpoints (e.g. vLLM)
 
 A local inference server is just a `custom` entry: `client_type = "openai-chat"`, `base_url` pointing at the server (e.g. `http://127.0.0.1:8000/v1`), and the served model name as `model_id` (`openai-chat` is also what the protocol detection below settles on for such servers, and what the base URL field's suffix menu selects by hand). Two settings make it run smoothly:

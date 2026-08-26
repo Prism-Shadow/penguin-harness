@@ -28,9 +28,10 @@ import type { AppDeps } from "../../app.js";
  * Live unlock for auth-dead composers: after a models/credential update, publish
  * `credentials_updated` to every EXISTING channel of this Project's Sessions (`peek` —
  * never creates channels: a tab that isn't subscribed learns the same fact from the models
- * response's `updatedAt` when it next loads).
+ * response's `updatedAt` when it next loads). Shared with the key-minting routes, which
+ * change the same credentials by a different path.
  */
-function publishCredentialsUpdated(deps: AppDeps, projectId: string): void {
+export function publishCredentialsUpdated(deps: AppDeps, projectId: string): void {
   const event: ServerEvent = { type: "credentials_updated" };
   for (const row of deps.sessionsRepo.listByProject(projectId)) {
     deps.channels.peek(row.sessionId)?.publish(event, "server_event");
