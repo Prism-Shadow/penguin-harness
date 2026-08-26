@@ -4,7 +4,7 @@
 
 <h1 align="center">PenguinHarness</h1>
 
-<p align="center"><strong>Open-source, local-first platform for automated agent app development</strong><br />Fully automate <strong>building</strong> · <strong>optimizing</strong> · <strong>deploying</strong> AI applications</p>
+<p align="center"><strong>Open-source, local-first multi-agent app development platform</strong><br />Fully automate <strong>building</strong> · <strong>optimizing</strong> · <strong>deploying</strong> AI applications</p>
 
 <p align="center">
   <a href="https://penguin.ooo/download">

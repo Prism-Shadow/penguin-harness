@@ -12,6 +12,7 @@ Refined the landing page for narrow phone viewports while preserving the desktop
 ## Details
 
 - Kept the announcement carousel inside its mobile clipping boundary and condensed the expanded navigation into a two-column menu.
+- Aligned the landing page and bilingual README positioning around open-source, local-first multi-agent app development.
 - Let the hero positioning lines and four title-cased platform proof points wrap at a consistent scale instead of clipping at 320–390 px widths, and centered the supported-model marks in predictable rows.
 - Let case prompts wrap on phones, added a compact mobile self-improvement flow, and replaced horizontally clipped benchmark tables with readable result cards.
 - Tightened scenario-card padding so production stories remain easy to scan on narrow screens.

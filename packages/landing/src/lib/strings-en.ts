@@ -48,7 +48,7 @@ export const en: Strings = {
   },
 
   hero: {
-    platformLead: "The open-source, local-first agent app ",
+    platformLead: "Open-source, local-first multi-agent app ",
     platformAccent: "development",
     platformTail: " platform",
     automationLead: "Fully automated ",
