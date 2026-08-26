@@ -331,8 +331,14 @@ interface QueuedFollowUp {
   id: string;
   input: OmniMessage[];
   thinkingLevel?: ThinkingLevelName;
-  /** Original content for recall; absent when the queueing path predates or bypasses the route (recall then returns 409). */
-  recall?: RecallStore;
+  /**
+   * Original content for recall, and the content `task_state` shows on the queued line.
+   * Always present: a caller that knows more than the input carries (the HTTP route, which
+   * also knows where the file attachments landed on disk) supplies it, and every other
+   * queueing path gets it derived from the input — what can be recalled must not depend on
+   * which door the message came through.
+   */
+  recall: RecallStore;
 }
 
 /** One undelivered steering entry: the display info broadcast on task_state, plus what a recall needs — the exact input list core queued (its unsteer handle) and the original content. */
@@ -410,14 +416,39 @@ function agentKey(projectId: string, agentId: string): string {
   return `${projectId}\0${agentId}`;
 }
 
-/** The `task_state` display info of one queued follow-up (see PendingFollowUpInfo); an entry queued without a recall store truthfully reports empty content. */
+/** The `task_state` display info of one queued follow-up (see PendingFollowUpInfo). */
 function followUpInfo(f: QueuedFollowUp): PendingFollowUpInfo {
   return {
     id: f.id,
-    text: f.recall?.text ?? "",
-    images: f.recall?.images.length ?? 0,
-    files: f.recall?.files.length ?? 0,
+    text: f.recall.text,
+    images: f.recall.images.length,
+    files: f.recall.files.length,
   };
+}
+
+/**
+ * The recall store of a queued input whose caller supplied none (the messaging bridge, the
+ * SDK): everything recallable is already in the input itself — the user's text and the
+ * inline image URLs. `files` is empty because only the HTTP route writes file attachments
+ * to the Session scratchpad, and only it knows the paths they landed on.
+ */
+function recallStoreOf(input: OmniMessage[]): RecallStore {
+  const text = input
+    .filter(isPlainText("user"))
+    .map((m) => m.payload.text)
+    .join("\n");
+  const images: string[] = [];
+  for (const msg of input) {
+    const payload = msg.payload as { type?: string; image_url?: unknown };
+    if (
+      msg.type === "model_msg" &&
+      payload.type === "image_url" &&
+      typeof payload.image_url === "string"
+    ) {
+      images.push(payload.image_url);
+    }
+  }
+  return { text, images, files: [] };
 }
 
 /** If msg is a run_subagent tool call carrying a `prompt`, return its id and prompt (for use as the subagent's title); otherwise null. */
@@ -789,7 +820,11 @@ export class SessionManager {
    * With `queueIfBusy`, a busy session (running/compacting) enqueues the input as a
    * follow-up instead of 409: it auto-starts as an ordinary next task once the session
    * returns to idle (`queued: true` in the result; see startQueuedFollowUp), keeping its
-   * thinkingLevel for that auto-start.
+   * thinkingLevel for that auto-start. `opts.recall` is that queued message's original
+   * content — optional, because only the HTTP route knows the parts of it the input does
+   * not carry (the pre-attachment text and where each file landed on disk); every other
+   * caller's store is read off the input, so a queued follow-up is recallable and shows
+   * its content whichever path queued it.
    */
   async startTask(
     sessionId: string,
@@ -806,8 +841,10 @@ export class SessionManager {
           id: randomUUID(),
           input,
           ...(opts.thinkingLevel !== undefined ? { thinkingLevel: opts.thinkingLevel } : {}),
-          // The original content rides the queue so a recall can hand it back (see recallFollowUp).
-          ...(opts.recall !== undefined ? { recall: opts.recall } : {}),
+          // The original content rides the queue so a recall can hand it back, and so the
+          // queued line shows what is waiting (see recallFollowUp). Callers that know more
+          // than the input carries pass their own; the rest get it read off the input.
+          recall: opts.recall ?? recallStoreOf(input),
         });
         entry.lastActivityMs = Date.now();
         // Re-publish the current state so subscribers pick up the new queued count (the
@@ -1173,9 +1210,12 @@ export class SessionManager {
   /**
    * Recall a queued follow-up task (#287): remove it from the queue before it auto-starts,
    * re-broadcast state, and hand back its original content (plus the thinking level it was
-   * queued with). 409 `not_pending` when the id is not in the queue — it already
-   * auto-started (or the runtime was evicted/restarted, which empties the queue) — or the
-   * entry has no recall store to give back.
+   * queued with). Being in the queue is the whole condition — every queued entry carries a
+   * recall store (see QueuedFollowUp.recall), so no queued message is ever refused. 409
+   * `follow_up_started` when the id is not in the queue: it already auto-started, or the
+   * runtime was released and took the queue with it. Its own code, distinct from steering's
+   * `not_pending`, because the two mean different things to the user — a follow-up became a
+   * task of its own, a steering message reached the model mid-run.
    */
   recallFollowUp(
     sessionId: string,
@@ -1184,10 +1224,10 @@ export class SessionManager {
     const entry = this.entries.get(sessionId);
     const i = entry?.followUps.findIndex((f) => f.id === followUpId) ?? -1;
     const queued = i >= 0 ? entry!.followUps[i]! : undefined;
-    if (!entry || !queued?.recall) {
+    if (!entry || !queued) {
       throw new HttpError(
         409,
-        "not_pending",
+        "follow_up_started",
         "This follow-up message already started and can no longer be recalled.",
       );
     }

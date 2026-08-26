@@ -671,7 +671,7 @@ export const recallSteer = (sessionId: string, steerId: string) =>
     { method: "DELETE" },
   );
 
-/** Recall a queued follow-up task back to the composer (#287): returns its original content (+ queued thinking level); 409 not_pending once it already auto-started. */
+/** Recall a queued follow-up task back to the composer (#287): returns its original content (+ queued thinking level); 409 follow_up_started once it already auto-started. */
 export const recallFollowUp = (sessionId: string, followUpId: string) =>
   apiFetch<RecalledMessageResponse>(
     `/api/sessions/${encodeURIComponent(sessionId)}/follow-ups/${encodeURIComponent(followUpId)}`,

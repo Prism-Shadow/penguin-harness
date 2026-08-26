@@ -1061,7 +1061,10 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
 
   // Recall a queued follow-up task back to the composer (#287): removes it from the queue
   // before it auto-starts and returns its original content (with the thinking level it was
-  // queued with). 409 not_pending once it already started (or the id is unknown).
+  // queued with). Every queued follow-up carries that content, whichever path queued it, so
+  // being in the queue is the whole condition. 409 follow_up_started once it already
+  // started (or the id is unknown) — steering's not_pending is a different sentence to the
+  // user and keeps its own code.
   app.delete("/:sessionId/follow-ups/:followUpId", async (c) => {
     const row = resolveSession(c);
     const { recall, thinkingLevel } = deps.manager.recallFollowUp(
