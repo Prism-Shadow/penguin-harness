@@ -3,6 +3,7 @@
 - **Date:** 2026-08-27
 - **Type:** process
 - **Scope:** `server`
+- **PR:** [#483](https://github.com/Prism-Shadow/penguin-harness/pull/483)
 
 [English](2026-08-27-web-db-upgrade-direction-tests.md)
 
