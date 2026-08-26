@@ -247,9 +247,7 @@ describe("reaching the installer", () => {
   it("prefers a pushed bundle's asset, and says where it looked when there is none", () => {
     const assets = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-assets-"));
     try {
-      const target = path.join(assets, "machines", "remote-installer.cjs");
-      fs.mkdirSync(path.dirname(target), { recursive: true });
-      fs.writeFileSync(target, "// pushed\n");
+      fs.writeFileSync(path.join(assets, "remote-installer.cjs"), "// pushed\n");
       expect(readRemoteInstaller(() => assets)).toBe("// pushed\n");
     } finally {
       fs.rmSync(assets, { recursive: true, force: true });

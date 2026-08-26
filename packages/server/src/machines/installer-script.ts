@@ -1,47 +1,31 @@
 /**
  * Locating the installer that runs ON the remote machine (./remote-installer.cjs).
  *
- * It is an ASSET, not a string in this module: the file travels with the pushed platform the
- * way node-pty's binaries do (deploy.mjs's native assets → hmr/host.ts's UpgradeAssets), and
- * is read from disk at push time. That keeps one copy of it — a real .cjs that lints, formats
- * and runs — instead of a generated escaped literal that no reviewer can read and a test has
- * to keep in step with its source.
+ * It is a FILE, not a string in this module: the platform copies it and scp's it, and never
+ * imports it, so it rides along the way node-pty's binaries do (deploy.mjs's assets →
+ * hmr/host.ts's UpgradeAssets). One readable .cjs, no generated literal to keep in step.
  *
- * Two homes, because the server pushing it can be either shape:
- *   - packaged (tarball / desktop / a dev checkout): beside this module in the package;
- *   - hot-pushed bundle: a single .mjs in the hmr store with no siblings, so the file rides
- *     along as an asset and is found through the hmr capability's assetsDir().
+ * Two places it can be, because the pushing server is one of two shapes: a hot-pushed bundle
+ * (a lone .mjs in the hmr store, so the file arrives as an asset) or a packaged install
+ * (tarball, desktop, dev checkout — the file sits beside this module, in src/machines/ from
+ * source and in dist/ from a build, which is why the build copies it there).
  */
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-/** Asset-relative path, and the name it keeps in the package — the same on both sides. */
-export const REMOTE_INSTALLER_ASSET = "machines/remote-installer.cjs";
+/** The name it keeps everywhere: the asset key, the copy in dist/, the source file. */
+export const REMOTE_INSTALLER_FILE = "remote-installer.cjs";
 
-/**
- * The installer's text. `assets` is the hmr capability's assetsDir accessor; a packaged
- * server has no assets dir and reads its own sibling instead.
- */
+/** The installer's text. `assets` is the hmr capability's assetsDir accessor (null when packaged). */
 export function readRemoteInstaller(assets?: () => string | null): string {
-  const here = path.dirname(fileURLToPath(import.meta.url));
-  const dir = assets?.() ?? null;
-  const candidates = [
-    // Hot-pushed bundle: unpacked beside it by the runtime (hmr/host.ts's UpgradeAssets).
-    ...(dir === null ? [] : [path.join(dir, ...REMOTE_INSTALLER_ASSET.split("/"))]),
-    // Source tree (dev, vitest): this module's own sibling.
-    path.join(here, "remote-installer.cjs"),
-    // Built package: tsup collapses the modules into dist/, and the build copies the file to
-    // the same relative path the asset uses (packages/server/scripts/copy-machine-assets.mjs).
-    path.join(here, ...REMOTE_INSTALLER_ASSET.split("/")),
-  ];
-
-  for (const candidate of candidates) {
-    try {
-      return fs.readFileSync(candidate, "utf8");
-    } catch {
-      // Try the next shape.
-    }
+  const dirs = [assets?.(), path.dirname(fileURLToPath(import.meta.url))];
+  const tried: string[] = [];
+  for (const dir of dirs) {
+    if (!dir) continue;
+    const candidate = path.join(dir, REMOTE_INSTALLER_FILE);
+    tried.push(candidate);
+    if (fs.existsSync(candidate)) return fs.readFileSync(candidate, "utf8");
   }
-  throw new Error(`the remote installer was not found (looked in: ${candidates.join(", ")})`);
+  throw new Error(`the remote installer was not found (looked in: ${tried.join(", ")})`);
 }
