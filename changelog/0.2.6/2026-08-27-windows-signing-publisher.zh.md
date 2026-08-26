@@ -3,7 +3,7 @@
 - **Date:** 2026-08-27
 - **Type:** fix
 - **Scope:** `desktop`, `ci`
-- **PR:** [#477](https://github.com/Prism-Shadow/penguin-harness/pull/477)
+- **PR:** [#477](https://github.com/Prism-Shadow/penguin-harness/pull/477), [#479](https://github.com/Prism-Shadow/penguin-harness/pull/479)
 - **Breaking:** yes — 从 0.2.4 及更早版本安装的 Windows 桌面端会拒绝本次更新，需手动重装
 
 [English](2026-08-27-windows-signing-publisher.md)

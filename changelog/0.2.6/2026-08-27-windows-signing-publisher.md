@@ -3,7 +3,7 @@
 - **Date:** 2026-08-27
 - **Type:** fix
 - **Scope:** `desktop`, `ci`
-- **PR:** [#477](https://github.com/Prism-Shadow/penguin-harness/pull/477)
+- **PR:** [#477](https://github.com/Prism-Shadow/penguin-harness/pull/477), [#479](https://github.com/Prism-Shadow/penguin-harness/pull/479)
 - **Breaking:** yes — a Windows desktop client installed from 0.2.4 or earlier refuses this update and has to be reinstalled by hand
 
 [中文版](2026-08-27-windows-signing-publisher.zh.md)
