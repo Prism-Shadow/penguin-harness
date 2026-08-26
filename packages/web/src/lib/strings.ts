@@ -587,7 +587,7 @@ export const zh = {
   models: {
     title: "模型配置",
     addCustom: "添加自定义模型",
-    addToGroup: "新增模型",
+    addToGroup: "添加模型",
     editTitle: "模型配置",
     addTitle: "新增模型（OpenAI 协议）",
     addTitleVendor: "新增模型",
@@ -617,7 +617,7 @@ export const zh = {
     groupNameHint: "小写字母 / 数字开头，可含 - 与 _",
     groupNameInvalid: "分组名只能用小写字母、数字、- 与 _（首字符为字母或数字），长度不超过 32",
     groupNameExists: "该分组名已被内置分组或既有条目占用",
-    groupEmptyHint: "该分组暂无模型，点「新增模型」添加",
+    groupEmptyHint: "该分组暂无模型，点「添加模型」创建",
     deleteGroup: "删除分组",
     deleteGroupTitle: "删除分组",
     deleteGroupConfirm: (label: string, n: number): string =>
@@ -741,15 +741,15 @@ export const zh = {
     confirmDeleteTitle: "删除模型",
     confirmDelete: (name: string): string =>
       `确定删除「${name}」？该模型的配置与 API key 将一并移除。`,
-    groupApiKey: "统一配置 API key",
+    groupApiKey: "手动设置密钥",
     groupApiKeyTitle: (label: string): string => `为「${label}」统一配置 API key`,
     groupApiKeyHint: (n: number): string => `将写入该分组下全部 ${n} 个模型；留空不改动。`,
-    getApiKey: "获取 API key",
+    getApiKey: "前往密钥管理",
     getModelIds: "获取模型 id",
     groupKeyApplied: (n: number): string => `已为 ${n} 个模型配置 API key`,
     // 供应商授权取 key（模型分组头部动作）：整个 PKCE 流程都在服务端跑，前端只拿到一个
     // 不透明的 flow id 和状态。
-    oauthKey: "授权新建 API key",
+    oauthKey: "自动获取密钥",
     oauthTitle: (label: string): string => `从「${label}」授权新建 API key`,
     oauthIntro: (label: string, n: number): string =>
       `将在你的 ${label} 账户下新建一个 API key，并写入该分组下全部 ${n} 个模型，覆盖它们当前的 key。`,

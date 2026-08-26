@@ -7,7 +7,7 @@
 
 [中文版](2026-08-26-tokendance-oauth.zh.md)
 
-The TokenDance group header gained an **Authorize new API key** action. It creates a new key on the user's TokenDance account through the provider's authorization page and writes it to every model in the group, so a first run no longer needs a trip to the console to copy a key out by hand.
+The TokenDance group header gained an **Authorize key** action. It creates a new key on the user's TokenDance account through the provider's authorization page and writes it to every model in the group, so a first run no longer needs a trip to the console to copy a key out by hand.
 
 ## Details
 
@@ -18,6 +18,7 @@ The TokenDance group header gained an **Authorize new API key** action. It creat
 - The callback URL is derived from the incoming request's own URL, so loopback, a LAN address and a custom port all work without configuration; `x-forwarded-proto` and `x-forwarded-host` are honoured only under `PENGUIN_TRUST_PROXY=1`.
 - A manual mode drops the callback so the authorization page shows a one-time code instead of redirecting, for the desktop shell and any deployment the redirect cannot reach. The dialog offers it alongside the redirect path.
 - Completing a flow invalidates the Project's cached Session runtimes and publishes `credentials_updated`, the same follow-up the models PUT performs.
+- The group header's five actions were relabelled to one or two words — **Add model**, **Authorize key**, **Set key**, **Speed test**, **Manage keys** — and reordered so the authorized path comes before the manual one.
 - The Server API and Models documents describe the routes and the user-facing flow in both languages.
 
 ## Compatibility

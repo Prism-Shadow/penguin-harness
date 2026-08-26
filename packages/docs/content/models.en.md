@@ -95,7 +95,7 @@ Every other endpoint — every direct vendor, and every gateway that reads no su
 
 ## Authorizing a new API key
 
-A provider that publishes an authorization flow puts an extra action on its group header in the models page: **Authorize new API key**. TokenDance is the one built-in group that does. It creates a **new** key on your account — it does not read a key you already have — and writes it to every model in that group, replacing whatever key those entries carry.
+A provider that publishes an authorization flow puts an extra action on its group header in the models page: **Authorize key**. TokenDance is the one built-in group that does. It creates a **new** key on your account — it does not read a key you already have — and writes it to every model in that group, replacing whatever key those entries carry.
 
 Pressing it opens the provider's authorization page in a new tab. Authorize there and the provider sends the browser back to PenguinHarness, which redeems the one-time code and saves the key; the tab you started from reports the result on its own. The same app URL the attribution table above lists is stamped onto the key, so calls made with it stay attributed even from another tool.
 

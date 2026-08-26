@@ -769,14 +769,14 @@ export const en: Strings = {
     confirmDeleteTitle: "Delete model",
     confirmDelete: (name: string): string =>
       `Delete "${name}"? Its configuration and API key will be removed.`,
-    groupApiKey: "Set API key for group",
+    groupApiKey: "Set key",
     groupApiKeyTitle: (label: string): string => `Set the API key for ${label}`,
     groupApiKeyHint: (n: number): string =>
       `Applies to all ${n} models in this group; leave empty to keep them unchanged.`,
-    getApiKey: "Get API key",
+    getApiKey: "Manage keys",
     getModelIds: "Get model IDs",
     groupKeyApplied: (n: number): string => `API key set for ${n} models`,
-    oauthKey: "Authorize new API key",
+    oauthKey: "Authorize key",
     oauthTitle: (label: string): string => `Authorize a new ${label} API key`,
     oauthIntro: (label: string, n: number): string =>
       `A new API key will be created on your ${label} account and written to all ${n} models in this group, replacing the key they use now.`,

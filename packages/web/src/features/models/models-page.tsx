@@ -827,6 +827,25 @@ export function ModelsPage() {
                         <span className="hidden @3xl:inline">{S.models.addToGroup}</span>
                       </Button>
                     )}
+                    {isOwner && group.provider.oauth && (
+                      // Authorize-a-key action: rendered off the group's own catalog
+                      // descriptor, so a provider gains this button by publishing a flow
+                      // rather than by being named here. Same narrow-row rule as its
+                      // neighbours — the label goes, the icon and its names stay. It leads the
+                      // manual key action: where a group can mint a key, that is the shorter path.
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="shrink-0"
+                        disabled={busy}
+                        aria-label={`${S.models.oauthKey} ${group.provider.label}`}
+                        title={S.models.oauthKey}
+                        onClick={() => setOauthFor(group.provider.id)}
+                      >
+                        <GlyphIcon d={SIGN_IN_ICON} size={13} />
+                        <span className="hidden @3xl:inline">{S.models.oauthKey}</span>
+                      </Button>
+                    )}
                     {isOwner && group.provider.id !== "custom" && (
                       // Bulk key action: icon-only while this row is narrow, labeled from
                       // @3xl up. The button itself never disappears — aria-label + title
@@ -842,24 +861,6 @@ export function ModelsPage() {
                       >
                         <GlyphIcon d={KEY_ICON} size={13} />
                         <span className="hidden @3xl:inline">{S.models.groupApiKey}</span>
-                      </Button>
-                    )}
-                    {isOwner && group.provider.oauth && (
-                      // Authorize-a-key action: rendered off the group's own catalog
-                      // descriptor, so a provider gains this button by publishing a flow
-                      // rather than by being named here. Same narrow-row rule as its
-                      // neighbours — the label goes, the icon and its names stay.
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="shrink-0"
-                        disabled={busy}
-                        aria-label={`${S.models.oauthKey} ${group.provider.label}`}
-                        title={S.models.oauthKey}
-                        onClick={() => setOauthFor(group.provider.id)}
-                      >
-                        <GlyphIcon d={SIGN_IN_ICON} size={13} />
-                        <span className="hidden @3xl:inline">{S.models.oauthKey}</span>
                       </Button>
                     )}
                     {isOwner && (
