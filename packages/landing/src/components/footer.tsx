@@ -87,9 +87,7 @@ export function Footer() {
             </div>
           </div>
         </div>
-        <p className="mt-10 border-t border-gray-200 pt-6 text-xs text-gray-400 dark:border-gray-800 dark:text-gray-500">
-          {S.footer.copyright}
-        </p>
+        <p className="mt-10 pt-6 text-xs text-gray-400 dark:text-gray-500">{S.footer.copyright}</p>
       </div>
     </footer>
   );
