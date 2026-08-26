@@ -21,7 +21,10 @@ one holding the live connection.
   panel rail (after the Trace panel) managing the current conversation's bindings. The
   channel selector switches freely between the two channels' forms, each independently
   savable and each showing its own configured / enabled state — Feishu takes App ID / App
-  Secret / API domain, Telegram a single Bot Token. The form opens on its fields; the
+  Secret / API domain, Telegram a single Bot Token. The form opens on the connection
+  controls — the enable switch with its live status, the two probes, then the hint naming
+  what gates the switch — and the credential fields follow them, so the controls hold one
+  vertical offset in both channels even though their field lists differ in length. The
   channel's developer-console link rides the credential field's top-right corner (the
   models page's "get API key" idiom), and collapsed folds below the Save area hold the
   setup steps (ending in the channel's tutorial link), what binding does, and
@@ -40,8 +43,9 @@ one holding the live connection.
   credentials. Enabling is mutually exclusive per Session: the switch is grayed with a
   "turn the other channel's connection off first" hint, and the server refuses it with
   409 `another_channel_enabled`. New configs started disabled; server startup connected
-  only the enabled ones, and the session row's small channel glyph marks the enabled
-  channel rather than a merely saved one.
+  only the enabled ones, and the session row carries a small paper plane — one mark for
+  every channel, the channel itself named in the mark's tooltip and screen-reader text —
+  for an enabled connection rather than a merely saved one.
 - The sidebar row's hover affordance changed shape: archive stayed a direct button, and
   the delete button was replaced by a solid three-dot "more" button that opens the row's
   full context menu anchored at itself — the menu gained configuration actions that
