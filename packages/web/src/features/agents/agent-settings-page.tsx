@@ -38,6 +38,7 @@ import { ConfirmModal, useSaveConfirm } from "../../components/ui/confirm-modal"
 import { CopyButton, ROW_COPY_CLASS } from "../../components/ui/copy-button";
 import { Skeleton } from "../../components/ui/skeleton";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { UpdateDot } from "../../components/ui/update-dot";
 import { SkillsTab } from "./skills-tab";
 import { MemoryTab } from "./memory-tab";
 import { kernelTabLabel } from "./kernel-labels";
@@ -245,7 +246,17 @@ export function AgentSettingsPage() {
         </Button>
         <h1 className="mb-1 text-xl font-semibold">{data.config.name ?? agentId}</h1>
         <p className="mb-4 font-mono text-xs text-gray-400">{agentId}</p>
-        <Tabs items={TABS} active={tab} onChange={switchTab} />
+        {/* The kernel update action lives in the Overview tab's Kernel section, so the trail
+            from the Agents list has to cross the tab strip to reach it. */}
+        <Tabs
+          items={TABS.map((t) =>
+            t.key === "overview" && data.config.kernelOutdated
+              ? { ...t, badge: S.agent.kernelOutdatedHint }
+              : t,
+          )}
+          active={tab}
+          onChange={switchTab}
+        />
         <div className="py-4">
           {tab === "overview" && (
             <OverviewTab
@@ -491,7 +502,20 @@ function OverviewTab({
           light, mirroring the State rows' label/value contrast. */}
       <section className="border-t border-gray-200 pt-4 dark:border-gray-800">
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-          <p className="text-sm font-medium">{S.agent.kernelTitle}</p>
+          {/* Last stop on the kernel trail: the badge sits on the section title and the enabled
+              update button beside it is where the trail ends. The title is a flex item, so it
+              is only as wide as its text and the dot lands right after the word rather than at
+              the far edge of the row. The dot is decorative — the sr-only sentence is what a
+              screen reader hears, in the same wording the trail carried all the way down. */}
+          <p className="relative text-sm font-medium">
+            {S.agent.kernelTitle}
+            {data.config.kernelOutdated && (
+              <>
+                <UpdateDot size="inline" position="-right-2 -top-0.5" />
+                <span className="sr-only"> · {S.agent.kernelOutdatedHint}</span>
+              </>
+            )}
+          </p>
           <div className="flex shrink-0 items-center gap-2">
             <Button
               size="sm"

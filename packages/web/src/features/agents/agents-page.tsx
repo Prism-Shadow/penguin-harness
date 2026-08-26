@@ -40,6 +40,7 @@ import { Skeleton, SkeletonCard } from "../../components/ui/skeleton";
 import { EmptyState } from "../../components/ui/empty-state";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { UpdateDot } from "../../components/ui/update-dot";
 import { GEAR_ICON } from "../../components/ui/icons";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
@@ -410,18 +411,20 @@ export function AgentsPage() {
                         {a.agentId}
                       </span>
                       <Badge tone="gray">v{a.version}</Badge>
-                      {/* Kernel-outdated hint: minimal icon + tooltip (skills-library update
-                          convention, no textual/red alarm), deep-linking to the settings
-                          overview where the update action lives. */}
+                      {/* Kernel-outdated hint: a minimal icon + tooltip deep-linking to the
+                          settings overview where the update action lives, badged so the dot
+                          the sidebar's Agents entry carries continues onto the one card that
+                          needs opening. */}
                       {a.kernelOutdated && (
                         <button
                           type="button"
-                          className="shrink-0 cursor-pointer text-gray-400 transition-colors duration-150 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+                          className="relative shrink-0 cursor-pointer text-gray-400 transition-colors duration-150 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
                           title={S.agent.kernelOutdatedHint}
                           aria-label={S.agent.kernelOutdatedHint}
                           onClick={() => openSettingsTab(a.agentId, "overview")}
                         >
                           <GlyphIcon d={CARD_ICONS.kernelUpdate} size={ICON_SIZE.inlineGlyph} />
+                          <UpdateDot size="inline" position="-right-1 -top-1" />
                         </button>
                       )}
                     </div>

@@ -168,6 +168,12 @@ export const zh = {
     newVersionBadge: "有新版本可用",
     newVersion: (v: string) => `新版本 v${v} 可用`,
     /**
+     * The combined wording for an anchor that leads to BOTH update trails at once (the
+     * mobile menu button): something is updatable, without claiming which — naming one of
+     * two would send the user down the wrong one.
+     */
+    updatesAvailable: "有可用更新",
+    /**
      * The sidebar user menu's SINGLE update row: it reads checkNow until a newer release
      * is known and runs the manual check; once one is known it reads newVersion() and
      * opens the update dialog instead (which carries the release-notes link and, for

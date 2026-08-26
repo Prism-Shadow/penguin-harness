@@ -85,6 +85,15 @@ function poll(): Promise<void> {
   return inflight;
 }
 
+/**
+ * One passive read of the shell's updater snapshot, for a consumer that does not poll: the
+ * update badge asks once per app load so a build downloaded before this load can raise its
+ * dot without the user opening the menu first. Concurrent callers ride the in-flight GET.
+ */
+export function refreshDesktopUpdate(): void {
+  void poll();
+}
+
 /** Row action: arm the settle watch, then ask the shell to check. A failed POST disarms and reports itself. */
 export async function requestClientCheck(): Promise<void> {
   if (watch !== null) return;
