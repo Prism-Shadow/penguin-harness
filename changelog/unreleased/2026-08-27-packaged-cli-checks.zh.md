@@ -10,7 +10,8 @@
 桌面应用把 CLI 一并打包在自身内部——`<app>/bin/penguin` 与 `<app>/bin/penguin.cmd` 以应用自带的
 Electron 运行时执行 `<app>/dist/penguin.js`，而所有把 `penguin` 放上 PATH 的途径（deb 的 postinst、
 macOS 的符号链接、Windows 的 PATH 条目、AppImage 的包装脚本）指向的都是这两个启动器之一。此前没有任何
-检查确认它们仍在打包产物中，本批次补上了这些检查。
+检查确认它们仍在打包产物中，本批次补上了这些检查——与
+[让应用自行安装该命令](2026-08-27-desktop-installs-cli.zh.md)同批。
 
 ## 细节
 

@@ -1,22 +1,32 @@
 /**
- * "Install 'penguin' Command" — PATH exposure for the bundled CLI launcher
- * (<app>/bin/penguin, generated at stage time; see launcher.ts).
+ * The `penguin` command an installed desktop app provides: PATH exposure for the bundled
+ * CLI launcher (`<app>/bin/penguin`, generated at stage time; see launcher.ts).
  *
- * Per platform (deb is absent on purpose — its postinst ships /usr/bin/penguin, see
+ * It installs itself, at every launch, without asking — the CLI is part of what the app
+ * is, and an update that left a stale command behind would point an old client at a new
+ * server. Per platform (deb is absent on purpose: its postinst ships /usr/bin/penguin, see
  * build/linux/after-install.tpl):
- * - macOS: symlink /usr/local/bin/penguin → <app>/bin/penguin; on permission errors,
- *   escalate ONCE via osascript "with administrator privileges".
- * - Windows: append <app>\bin to the user PATH (HKCU\Environment) via reg.exe,
- *   idempotently (read + compare first); new terminals pick it up.
- * - Linux AppImage: write an executable ~/.local/bin/penguin wrapper that runs the
- *   AppImage itself as Node (see launcher.ts appImageWrapperScript).
+ * - macOS: symlink /usr/local/bin/penguin → <app>/bin/penguin. The unprivileged write is
+ *   tried first and an administrator prompt appears only where it actually fails, which on
+ *   a Mac without Homebrew is where /usr/local/bin has to be created.
+ * - Windows: append <app>\bin to the user PATH (HKCU\Environment) via reg.exe, idempotently
+ *   and append-only; new terminals pick it up. No elevation is involved.
+ * - Linux AppImage: write an executable ~/.local/bin/penguin wrapper that runs the AppImage
+ *   itself as Node (see launcher.ts appImageWrapperScript).
  *
- * Everything is native UI (menu item + dialogs) in English: the main process stays
- * outside the web app's i18n, and per the design the desktop shell talks to the page
- * only through the server's HTTP API — never a private IPC channel.
+ * Two rules follow from doing this silently, both enforced in cli-link.ts:
+ * - A `penguin` this app did not write is never replaced. `install.sh` puts its own symlink
+ *   at the very path the AppImage form uses, and the user may have one from anywhere else.
+ *   Such a target is skipped and the reason recorded.
+ * - Nothing is installed from a location that will not persist — a macOS bundle still on
+ *   its dmg, or one Gatekeeper is running translocated — because the link would dangle the
+ *   moment the mount goes away. The next launch from /Applications installs it.
+ *
+ * Everything is native UI (menu item + dialogs) in English: the main process stays outside
+ * the web app's i18n, and per the design the desktop shell talks to the page only through
+ * the server's HTTP API — never a private IPC channel.
  */
 import { execFile } from "node:child_process";
-import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -29,8 +39,23 @@ import {
   mergeWindowsUserPath,
 } from "./launcher.js";
 import type { CliInstallKind } from "./launcher.js";
+import {
+  isVolatileAppLocation,
+  readCliCommandState,
+  syncSymlink,
+  syncWrapper,
+  writeCliCommandState,
+} from "./cli-link.js";
+import type { CliCommandState, SyncResult } from "./cli-link.js";
 
 const execFileAsync = promisify(execFile);
+
+/** The macOS PATH directory. Fixed: it is on the default PATH of every Mac. */
+const MAC_LINK_DIR = "/usr/local/bin";
+
+function log(line: string): void {
+  process.stdout.write(`[cli] ${line}\n`);
+}
 
 /** The launcher directory inside the packaged app. */
 function binDir(): string {
@@ -46,56 +71,58 @@ export function currentCliInstallKind(): CliInstallKind | null {
   });
 }
 
-function showResult(win: BrowserWindow | null, ok: boolean, detail: string): void {
-  const opts = {
-    type: ok ? ("info" as const) : ("error" as const),
-    title: "PenguinHarness",
-    message: ok
-      ? "The 'penguin' command is installed."
-      : "Could not install the 'penguin' command.",
-    detail,
-  };
-  void (win !== null ? dialog.showMessageBox(win, opts) : dialog.showMessageBox(opts));
+interface Attempt {
+  ok: boolean;
+  result: NonNullable<CliCommandState["lastResult"]>;
+  detail: string;
+  /** The user dismissed the administrator prompt: stop attempting automatically. */
+  declined?: boolean;
 }
 
-/** macOS: /usr/local/bin/penguin symlink, escalating once via osascript on EACCES/EPERM. */
-async function installDarwin(win: BrowserWindow | null): Promise<void> {
-  const target = path.join(binDir(), "penguin");
-  const linkDir = "/usr/local/bin";
-  const link = path.join(linkDir, "penguin");
+/** macOS: /usr/local/bin/penguin symlink, escalating via osascript only on EACCES/EPERM. */
+async function attemptDarwin(force: boolean): Promise<Attempt> {
+  const appPath = app.getAppPath();
+  if (isVolatileAppLocation(appPath, process.platform)) {
+    return {
+      ok: false,
+      result: "deferred",
+      detail: `The app is running from ${appPath}, which will not stay there. Move PenguinHarness to your Applications folder and open it from there; the command installs itself on that launch.`,
+    };
+  }
+  const desired = path.join(binDir(), "penguin");
+  const link = path.join(MAC_LINK_DIR, "penguin");
   try {
-    fs.mkdirSync(linkDir, { recursive: true });
-    fs.rmSync(link, { force: true });
-    fs.symlinkSync(target, link);
+    const synced = syncSymlink(link, desired, force);
+    if (synced.action === "current") return { ok: true, result: "current", detail: synced.detail };
+    if (synced.action === "skipped") return { ok: false, result: "foreign", detail: synced.detail };
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code !== "EACCES" && code !== "EPERM") {
-      showResult(win, false, String(err));
-      return;
+      return { ok: false, result: "failed", detail: String(err) };
     }
     // Privileged retry — the common path on a Mac without Homebrew, where /usr/local/bin
     // does not exist and creating it needs root. The command's quoting is the generator's
     // job (launcher.ts): the bundle path comes off disk and may hold an apostrophe.
     try {
-      await execFileAsync("osascript", ["-e", adminSymlinkAppleScript(target, link)]);
+      await execFileAsync("osascript", ["-e", adminSymlinkAppleScript(desired, link)]);
     } catch (escalated) {
-      showResult(
-        win,
-        false,
-        `Administrator authorization failed or was cancelled.\n${String(escalated)}`,
-      );
-      return;
+      return {
+        ok: false,
+        result: "failed",
+        declined: true,
+        detail: `Administrator authorization was cancelled or failed, so ${link} was not created. Use "Install 'penguin' Command…" in the application menu to try again.\n${String(escalated)}`,
+      };
     }
   }
-  showResult(
-    win,
-    true,
-    `${link} now points at the app's bundled CLI. Run 'penguin' from any terminal.`,
-  );
+  return {
+    ok: true,
+    result: "installed",
+    detail: `${link} now points at the app's bundled CLI. Run 'penguin' from any terminal.`,
+  };
 }
 
-/** Windows: idempotent HKCU\Environment PATH append via reg.exe. */
-async function installWindows(win: BrowserWindow | null): Promise<void> {
+/** Windows: idempotent, append-only HKCU\Environment PATH entry via reg.exe. */
+async function attemptWindows(): Promise<Attempt> {
   const dir = binDir();
   let current: string | null = null;
   try {
@@ -108,8 +135,7 @@ async function installWindows(win: BrowserWindow | null): Promise<void> {
   }
   const merged = mergeWindowsUserPath(current, dir);
   if (merged === null) {
-    showResult(win, true, `${dir} is already on your PATH. Run 'penguin' from any terminal.`);
-    return;
+    return { ok: true, result: "current", detail: `${dir} is already on your PATH.` };
   }
   try {
     // REG_EXPAND_SZ keeps any %VAR% entries of the existing value expandable.
@@ -125,96 +151,141 @@ async function installWindows(win: BrowserWindow | null): Promise<void> {
       "/f",
     ]);
   } catch (err) {
-    showResult(win, false, String(err));
-    return;
+    return { ok: false, result: "failed", detail: String(err) };
   }
-  showResult(
-    win,
-    true,
-    `${dir} was added to your user PATH. Open a NEW terminal (existing ones keep the old PATH) and run 'penguin'.`,
-  );
+  // Nothing on disk is touched here: the entry is appended, so another `penguin` earlier in
+  // PATH keeps winning and no other software's entry is rewritten.
+  return {
+    ok: true,
+    result: "installed",
+    detail: `${dir} was added to your user PATH. Open a NEW terminal (existing ones keep the old PATH) and run 'penguin'.`,
+  };
 }
 
 /** Linux AppImage: executable ~/.local/bin/penguin wrapper invoking the AppImage as Node. */
-function installAppImage(win: BrowserWindow | null): void {
+function attemptAppImage(force: boolean): Attempt {
   const appImage = process.env.APPIMAGE;
   if (!appImage) {
-    showResult(win, false, "APPIMAGE is not set; this build cannot install the command.");
-    return;
+    return {
+      ok: false,
+      result: "failed",
+      detail: "APPIMAGE is not set; this build cannot install the command.",
+    };
   }
-  const dir = path.join(os.homedir(), ".local", "bin");
-  const wrapper = path.join(dir, "penguin");
+  const target = path.join(os.homedir(), ".local", "bin", "penguin");
   let script: string;
   try {
     script = appImageWrapperScript(appImage);
   } catch (err) {
-    showResult(win, false, String(err));
-    return;
+    return { ok: false, result: "failed", detail: String(err) };
   }
+  let synced: SyncResult;
   try {
-    fs.mkdirSync(dir, { recursive: true });
-    // Written to a temp file and renamed over the wrapper: a failed write leaves the previous
-    // command in place instead of a truncated script on PATH. chmod before the rename, since
-    // writeFileSync's mode is masked by the umask.
-    const tmp = `${wrapper}.tmp`;
-    fs.writeFileSync(tmp, script, { mode: 0o755, flush: true });
-    fs.chmodSync(tmp, 0o755);
-    fs.renameSync(tmp, wrapper);
+    synced = syncWrapper(target, script, force);
   } catch (err) {
-    showResult(win, false, String(err));
-    return;
+    return { ok: false, result: "failed", detail: String(err) };
   }
-  showResult(
-    win,
-    true,
-    `${wrapper} now runs the CLI bundled in this AppImage. Make sure ~/.local/bin is on your PATH (most distributions add it at login), then run 'penguin' from a new terminal. Re-run this menu item if you move the AppImage.`,
-  );
+  if (synced.action === "current") return { ok: true, result: "current", detail: synced.detail };
+  if (synced.action === "skipped") return { ok: false, result: "foreign", detail: synced.detail };
+  return {
+    ok: true,
+    result: "installed",
+    detail: `${target} now runs the CLI bundled in this AppImage. Make sure ~/.local/bin is on your PATH (most distributions add it at login), then run 'penguin' from a new terminal.`,
+  };
 }
 
-/** Runs the platform installer (menu item and first-launch offer both land here). */
-export async function installCliCommand(win: BrowserWindow | null): Promise<void> {
-  switch (currentCliInstallKind()) {
+async function attempt(kind: CliInstallKind, force: boolean): Promise<Attempt> {
+  switch (kind) {
     case "darwin":
-      await installDarwin(win);
-      return;
+      return await attemptDarwin(force);
     case "windows":
-      await installWindows(win);
-      return;
+      return await attemptWindows();
     case "appimage":
-      installAppImage(win);
-      return;
-    case null:
-      showResult(win, false, "This build has no bundled CLI to install (development run).");
+      return attemptAppImage(force);
   }
+}
+
+/** The record every attempt leaves; `declined` is the only field that changes later behaviour. */
+function record(outcome: Attempt): void {
+  writeCliCommandState(app.getPath("userData"), {
+    version: 1,
+    decision: outcome.declined === true ? "declined" : undefined,
+    lastResult: outcome.result,
+    detail: outcome.detail,
+    at: new Date().toISOString(),
+  });
 }
 
 /**
- * One-time first-launch offer: asks once per installation whether to install the
- * command, and never again (the app menu keeps the entry point available). The
- * "offered" flag persists under userData next to the shell's other state files.
+ * Every launch: install the command, repair it, or record why neither happened. Cheap when
+ * there is nothing to do — one lstat, or one `reg query` on Windows — and it runs again
+ * next launch, which is what repairs a link left dangling by a moved or updated app.
  */
-export async function maybeOfferCliInstall(win: BrowserWindow | null): Promise<void> {
-  if (currentCliInstallKind() === null) return;
-  const flag = path.join(app.getPath("userData"), "cli-install-offered");
+export async function ensureCliCommand(): Promise<void> {
+  const kind = currentCliInstallKind();
+  if (kind === null) return;
   try {
-    if (fs.existsSync(flag)) return;
-    fs.mkdirSync(path.dirname(flag), { recursive: true });
-    fs.writeFileSync(flag, `${new Date().toISOString()}\n`);
-  } catch {
-    return; // Unreadable/unwritable userData: skip rather than re-offer forever.
+    // A dismissed administrator prompt is a decision and is respected; nothing else here
+    // is. In particular the pre-0.2.7 `cli-install-offered` marker is not read at all —
+    // it was written before its dialog was answered, so it records the question, not a
+    // decline (writeCliCommandState removes it).
+    if (readCliCommandState(app.getPath("userData")).decision === "declined") {
+      log("skipped: the administrator prompt was declined; use the application menu to retry");
+      return;
+    }
+    const outcome = await attempt(kind, false);
+    record(outcome);
+    log(`${outcome.result}: ${outcome.detail.split("\n")[0]}`);
+  } catch (err) {
+    // Never let this stop a launch.
+    log(`failed: ${String(err)}`);
   }
+}
+
+function showResult(win: BrowserWindow | null, ok: boolean, detail: string): void {
   const opts = {
-    type: "question" as const,
+    type: ok ? ("info" as const) : ("error" as const),
     title: "PenguinHarness",
-    message: "Install the 'penguin' command line tool?",
-    detail:
-      "Makes the CLI bundled with this app available in your terminal. You can do this later from the application menu: Install 'penguin' Command.",
-    buttons: ["Install", "Not Now"],
-    defaultId: 0,
-    cancelId: 1,
+    message: ok
+      ? "The 'penguin' command is installed."
+      : "Could not install the 'penguin' command.",
+    detail,
   };
-  const { response } = await (win !== null
-    ? dialog.showMessageBox(win, opts)
-    : dialog.showMessageBox(opts));
-  if (response === 0) await installCliCommand(win);
+  void (win !== null ? dialog.showMessageBox(win, opts) : dialog.showMessageBox(opts));
+}
+
+/**
+ * The menu item. Same install, but it reports every outcome and it is the one place a
+ * `penguin` this app did not write can be replaced — with the user looking at what is
+ * about to be overwritten. Invoking it also clears a previously declined prompt.
+ */
+export async function installCliCommand(win: BrowserWindow | null): Promise<void> {
+  const kind = currentCliInstallKind();
+  if (kind === null) {
+    showResult(win, false, "This build has no bundled CLI to install (development run).");
+    return;
+  }
+  let outcome = await attempt(kind, false);
+  if (outcome.result === "foreign") {
+    const opts = {
+      type: "warning" as const,
+      title: "PenguinHarness",
+      message: "Something else already provides the 'penguin' command.",
+      detail: `${outcome.detail}\n\nReplace it with this app's command? The file it replaces is not backed up.`,
+      buttons: ["Replace", "Cancel"],
+      defaultId: 1,
+      cancelId: 1,
+    };
+    const { response } = await (win !== null
+      ? dialog.showMessageBox(win, opts)
+      : dialog.showMessageBox(opts));
+    if (response !== 0) {
+      record(outcome);
+      showResult(win, false, `Left the existing command untouched.\n${outcome.detail}`);
+      return;
+    }
+    outcome = await attempt(kind, true);
+  }
+  record(outcome);
+  showResult(win, outcome.ok, outcome.detail);
 }

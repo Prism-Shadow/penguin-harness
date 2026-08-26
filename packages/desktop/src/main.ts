@@ -34,7 +34,7 @@ import { resolveRoot } from "@prismshadow/penguin-core";
 import { liveServerLock } from "@prismshadow/penguin-server/lock";
 import { appIdentity, desktopDataRoot } from "./app-identity.js";
 import { resolveWindowIcon } from "./app-icon.js";
-import { installCliCommand, maybeOfferCliInstall, currentCliInstallKind } from "./cli-install.js";
+import { installCliCommand, ensureCliCommand, currentCliInstallKind } from "./cli-install.js";
 import { applyLoginShellEnv } from "./login-shell-env.js";
 import { installAppMenu } from "./menu.js";
 import { startEmbeddedServer, stopEmbeddedServer } from "./server-process.js";
@@ -285,9 +285,10 @@ if (!app.requestSingleInstanceLock()) {
       });
       initUpdater(() => win);
       await boot();
-      // First launch only: offer the 'penguin' command once; the menu entry remains.
-      // Skipped in smoke mode — a modal dialog would hang the automated run.
-      if (process.env.PENGUIN_DESKTOP_SMOKE !== "1") await maybeOfferCliInstall(win);
+      // Install or repair the bundled 'penguin' command. Runs every launch: that is what
+      // carries it across an update and repairs a link a moved app left dangling. Skipped
+      // in smoke mode — the macOS administrator prompt would hang the automated run.
+      if (process.env.PENGUIN_DESKTOP_SMOKE !== "1") await ensureCliCommand();
     })().catch((err) => fatal(`${app.name} failed to start.`, err)),
   );
 }

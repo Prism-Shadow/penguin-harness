@@ -2,9 +2,9 @@
  * The packed app carries a working `penguin`.
  *
  * Run after `electron-builder --dir` (CI's runtime job builds exactly that tree). An
- * installed desktop app is a supported way to get the CLI: the deb postinst links
- * /usr/bin/penguin at install time, and the other three forms expose this same launcher
- * through "Install 'penguin' Command". Every one of them resolves <app>/bin/penguin and
+ * installed desktop app puts the CLI on the user's PATH: the deb postinst links
+ * /usr/bin/penguin at install time, and the other three forms install this same launcher
+ * from the shell at launch (src/cli-install.ts). Every one of them resolves <app>/bin/penguin and
  * <app>/dist/penguin.js as plain files inside the packed tree, so `bin/` dropping out of
  * electron-builder's `files`, asar being switched on, or the bundled entry being renamed
  * would ship an app whose `penguin` command does not exist — with nothing else in the

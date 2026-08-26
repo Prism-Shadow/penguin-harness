@@ -9,6 +9,7 @@ import {
   appleScriptString,
   CLI_ENTRY_RELPATH,
   cliInstallKind,
+  LAUNCHER_MARKER,
   LINUX_EXECUTABLE,
   MAC_EXECUTABLE,
   mergeWindowsUserPath,
@@ -113,6 +114,21 @@ describe("appImageBootstrapJs", () => {
   it("is valid JavaScript", () => {
     // eslint-disable-next-line @typescript-eslint/no-implied-eval
     expect(() => new Function(js)).not.toThrow();
+  });
+});
+
+describe("LAUNCHER_MARKER", () => {
+  it("appears in every generated launcher", () => {
+    // cli-link.ts recognises a `penguin` this app wrote by this text, and skips anything
+    // that lacks it. A launcher that stopped carrying it would be classified as somebody
+    // else's command and the install would silently stop repairing itself.
+    for (const script of [
+      posixLauncherScript(),
+      windowsLauncherScript(),
+      appImageWrapperScript("/home/user/Apps/penguin.AppImage"),
+    ]) {
+      expect(script).toContain(LAUNCHER_MARKER);
+    }
   });
 });
 
@@ -266,7 +282,7 @@ describe("packaged CLI", () => {
     );
   });
 
-  it("deb creates /usr/bin/penguin itself: it is the one form with no in-app installer", () => {
+  it("deb creates /usr/bin/penguin itself: it is the one form the shell does not install", () => {
     // cliInstallKind returns null for it, so nothing else would ever put the CLI on PATH.
     expect(cliInstallKind({ packaged: true, platform: "linux", appImagePath: null })).toBeNull();
     expect(builderConfig).toMatch(

@@ -11,7 +11,8 @@ The desktop app ships the CLI inside itself — `<app>/bin/penguin` and `<app>/b
 run `<app>/dist/penguin.js` on the app's own Electron runtime, and every route that puts
 `penguin` on PATH (the deb postinst, the macOS symlink, the Windows PATH entry, the AppImage
 wrapper) points at one of those two launchers. Nothing verified that they were still in the
-packed tree, so this batch added the checks.
+packed tree, so this batch added the checks — alongside
+[making the app install that command itself](2026-08-27-desktop-installs-cli.md).
 
 ## Details
 
