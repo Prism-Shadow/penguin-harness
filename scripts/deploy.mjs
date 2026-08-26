@@ -231,7 +231,7 @@ async function readNativeAssets() {
     "machines",
     "remote-installer.cjs",
   );
-  files["machines/remote-installer.cjs"] = (await fsp.readFile(installer)).toString("base64");
+  files["remote-installer.cjs"] = (await fsp.readFile(installer)).toString("base64");
   return { files, exec };
 }
 

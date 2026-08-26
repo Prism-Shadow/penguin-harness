@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 
 const pkgDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const from = path.join(pkgDir, "src", "machines", "remote-installer.cjs");
-const to = path.join(pkgDir, "dist", "machines", "remote-installer.cjs");
+const to = path.join(pkgDir, "dist", "remote-installer.cjs");
 
 fs.mkdirSync(path.dirname(to), { recursive: true });
 fs.copyFileSync(from, to);
