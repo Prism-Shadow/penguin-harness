@@ -5,6 +5,8 @@
 - **Scope:** `server`, `cli`, `desktop`
 - **PR:** [#359](https://github.com/Prism-Shadow/penguin-harness/pull/359)
 
+[English](2026-08-20-business-surface-rides-the-platform.md)
+
 每一个业务服务和路由——从 `/api/me` 到 `/api/sessions`、调度器、会话管理器——都从 runtime 外壳
 搬进了 platform：在 `platformImpl.create()` 里、基于 runtime 通过资源注册表发布的能力（数据库
 句柄、认证服务、频道 hub、config、代理控制、桌面服务）组装，经 HTTP seam 对外服务。因此一次

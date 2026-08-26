@@ -50,4 +50,4 @@ revealed group back, and real pagination over the groups themselves.
 - Time mode has at most three buckets — last day / last month / earlier — so it does not paginate.
 - A Project switch or a grouping-mode switch clears the per-group reveal state: a cap keyed by an
   Agent id means nothing to a Workspace group, and the other Project's groups are gone.
-- The Traces page's group tree is unaffected; this changes the chat sidebar only.
+- This changes the chat sidebar's grouped list only; no other grouped list is affected.

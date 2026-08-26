@@ -42,8 +42,8 @@ per grouping mode, and it survives a reload.
   once one of its conversations has loaded, so the groups that have not loaded yet keep their
   stored positions rather than being pushed behind the ones on screen.
 - Stored keys that match no group are ignored and are never pruned: deciding a group is gone needs
-  the mode's complete key set, which the Web App cannot establish — the per-Workspace counts are
-  filtered by the "show CLI sessions" preference, and a settled Agent list may be a failed fetch.
-  A group that returns under the same key resumes its place. A malformed stored value degrades to
-  the automatic sort.
-- Manual order applies to the chat sidebar only; the Traces page's Workspace tree is unaffected.
+  the mode's complete key set, which the Web App cannot establish — a settled Agent list may be a
+  failed fetch, and a Workspace group exists only once one of its conversations has loaded. A group
+  that returns under the same key resumes its place. A malformed stored value degrades to the
+  automatic sort.
+- Manual order applies to the chat sidebar only; no other grouped list reads it.

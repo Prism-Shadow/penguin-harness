@@ -3,6 +3,7 @@
 - **Date:** 2026-08-23
 - **Type:** fix
 - **Scope:** `core`, `server`
+- **PR:** [#408](https://github.com/Prism-Shadow/penguin-harness/pull/408)
 
 [中文版](2026-08-23-hmr-teardown-transaction.zh.md)
 

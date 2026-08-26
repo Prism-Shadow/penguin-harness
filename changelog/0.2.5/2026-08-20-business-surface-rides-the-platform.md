@@ -5,6 +5,8 @@
 - **Scope:** `server`, `cli`, `desktop`
 - **PR:** [#359](https://github.com/Prism-Shadow/penguin-harness/pull/359)
 
+[中文版](2026-08-20-business-surface-rides-the-platform.zh.md)
+
 Every business service and route — `/api/me` through `/api/sessions`, the scheduler, the
 session manager — moved out of the runtime shell and into the platform: assembled inside
 `platformImpl.create()` over capabilities the runtime publishes through the resource
