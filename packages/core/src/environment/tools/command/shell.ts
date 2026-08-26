@@ -6,7 +6,12 @@
  *
  * 1. `PENGUIN_SHELL` (explicit executable name or path) always wins, on every platform;
  *    the argument shape is inferred from its basename (see below).
- * 2. Otherwise, non-Windows uses `bash -lc` (today's behavior, bit for bit).
+ * 2. Otherwise, non-Windows uses `bash -lc` — but only after confirming a `bash` exists.
+ *    A GUI-launched app inherits the desktop session's PATH, not a login shell's, and a
+ *    trimmed session PATH (or a distribution that simply does not install bash) leaves
+ *    `spawn("bash")` dying with ENOENT before the command runs at all. So: `bash` on
+ *    PATH, then the usual absolute locations, then `$SHELL` when it is some other POSIX
+ *    shell, then `sh`. The probe is a PATH walk, not a subprocess.
  * 3. On Windows, probe PATH for `bash` (a full Git for Windows install — best compatibility
  *    with the skill/prompt ecosystem, which is written for a POSIX shell). A `bash` that
  *    resolves into the Windows system directory is ignored: that is the WSL launcher, which
@@ -71,11 +76,70 @@ function shellBasename(command: string): string {
     .toLowerCase();
 }
 
+/**
+ * Absolute POSIX locations to try when no `bash` is on PATH. A GUI launch can inherit a
+ * PATH that omits the directory bash actually lives in, while the binary is right there.
+ */
+const POSIX_BASH_PATHS = [
+  "/bin/bash",
+  "/usr/bin/bash",
+  "/usr/local/bin/bash",
+  "/opt/homebrew/bin/bash",
+];
+
+/** POSIX shells worth falling back to, in the order they are tried, once bash is ruled out. */
+const POSIX_FALLBACK_SHELLS = ["sh", "/bin/sh", "/usr/bin/sh"];
+
 /** Argument prefix for a shell, chosen by its basename (PowerShell-style vs cmd vs POSIX-style). */
 function argsForShell(name: string): string[] {
   if (name === "pwsh" || name === "powershell") return ["-NoLogo", "-NoProfile", "-Command"];
   if (name === "cmd") return ["/d", "/s", "/c"];
   return ["-lc"];
+}
+
+/**
+ * Is `name` reachable as a bare command on this PATH? A plain directory walk — the POSIX
+ * branch resolves at every process start and must not pay for a subprocess to do it.
+ */
+function onPath(name: string, env: NodeJS.ProcessEnv, exists: (p: string) => boolean): boolean {
+  const raw = env.PATH ?? "";
+  for (const dir of raw.split(path.posix.delimiter)) {
+    if (dir === "") continue;
+    if (exists(path.posix.join(dir, name))) return true;
+  }
+  return false;
+}
+
+/**
+ * The POSIX shell, in preference order. `bash` stays first and stays a *bare* name when
+ * PATH has it, so the overwhelmingly common case is byte-identical to what shipped
+ * before: the Skill and prompt ecosystem is written for bash, and the child resolves the
+ * name against its own PATH. Everything after it exists so a box without bash degrades to
+ * a working shell instead of an ENOENT on every single command.
+ */
+function resolvePosixShell(
+  env: NodeJS.ProcessEnv,
+  exists: (filePath: string) => boolean,
+): ShellInvocation {
+  if (onPath("bash", env, exists)) return { command: "bash", args: ["-lc"], name: "bash" };
+  for (const candidate of POSIX_BASH_PATHS) {
+    if (exists(candidate)) return { command: candidate, args: ["-lc"], name: "bash" };
+  }
+  // The user's own login shell, when it is not bash (zsh, fish, ksh …). It is named
+  // honestly to the model: `-lc` is what every one of them speaks, but the syntax the
+  // model should write is that shell's, not bash's.
+  const login = env.SHELL?.trim();
+  if (login !== undefined && login !== "" && login.startsWith("/") && exists(login)) {
+    const name = shellBasename(login);
+    return { command: login, args: argsForShell(name), name };
+  }
+  for (const candidate of POSIX_FALLBACK_SHELLS) {
+    if (candidate.startsWith("/") ? exists(candidate) : onPath(candidate, env, exists)) {
+      return { command: candidate, args: ["-lc"], name: "sh" };
+    }
+  }
+  // Nothing answered. Keep the historical invocation so the failure is the familiar one.
+  return { command: "bash", args: ["-lc"], name: "bash" };
 }
 
 /** Default PATH probe: `where` lists every match line by line, in PATH order (win32 only). */
@@ -110,12 +174,12 @@ export function resolveShell(opts: ResolveShellOptions = {}): ShellInvocation {
     return { command: explicit, args: argsForShell(name), name };
   }
 
+  const exists = opts.exists ?? existsSync;
   if (platform !== "win32") {
-    return { command: "bash", args: ["-lc"], name: "bash" };
+    return resolvePosixShell(env, exists);
   }
 
   const whichAll = opts.whichAll ?? defaultWhichAll;
-  const exists = opts.exists ?? existsSync;
   const systemRoot = opts.systemRoot ?? env.SystemRoot ?? "C:\\Windows";
   // The WSL launcher lives in <SystemRoot>\System32 (or Sysnative under WOW64); a Git for
   // Windows bash lives under the Git install dir. Only the first PATH match counts — that

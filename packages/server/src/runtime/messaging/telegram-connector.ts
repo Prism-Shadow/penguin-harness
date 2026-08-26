@@ -8,14 +8,22 @@
  * exactly like the Feishu long connection does.
  *
  * The poll loop's lifecycle: one `getMe` probe (a bad token surfaces immediately as the
- * connection error instead of an eternally failing poll), then a one-time backlog drain
- * (`offset: -1` confirms everything sent while no connection existed — a disabled binding
- * must not replay its dark period as a task flood, matching Feishu, where missed events
- * are simply gone), then long polls advancing `offset` past each processed update.
- * Failures back off exponentially and report once per outage; recovery re-probes and
- * fires `onReady` again, so the bridge's status tracks the outage. A save-while-enabled
- * restart can briefly race Telegram's one-poller-per-token rule (409 until the server
- * notices the old poll is gone) — that resolves through the same retry path.
+ * connection error instead of an eternally failing poll), one `deleteWebhook` (a webhook
+ * and `getUpdates` are mutually exclusive on the Bot API — a bot pointed at a webhook
+ * before it was bound here could otherwise never be polled), then a one-time backlog
+ * drain (`offset: -1` confirms everything sent while no connection existed — a disabled
+ * binding must not replay its dark period as a task flood, matching Feishu, where missed
+ * events are simply gone), then long polls advancing `offset` past each processed update.
+ * Failures back off exponentially and report once per outage; recovery fires `onReady`
+ * again, so the bridge's status tracks the outage.
+ *
+ * Readiness is proven by a `getUpdates`, NEVER by `getMe`. Telegram's one-poller-per-token
+ * rule shows up only on `getUpdates`, as a 409 — a second server (or any other program)
+ * holding the same token, or a leftover webhook. `getMe` answers happily throughout, so a
+ * recovery gated on `getMe` alone would clear the outage counter on every cycle: the
+ * backoff would never leave its first step and every single failure would report again.
+ * The recovery poll therefore runs with `timeoutSec: 0` — it must come back now, not park
+ * for the long-poll window — and only its success clears `failures` and fires `onReady`.
  */
 import type {
   MessagingChannelConnector,
@@ -172,8 +180,10 @@ export class TelegramConnector implements MessagingChannelConnector {
     signal: AbortSignal,
     isClosed: () => boolean,
   ): Promise<void> {
-    /** Probe + drain done and onReady fired for the current up-streak. */
+    /** A `getUpdates` has succeeded since the last failure, and onReady fired for that up-streak. */
     let ready = false;
+    /** The webhook clear runs once per connection: it is a one-time repair, not a per-retry write. */
+    let webhookCleared = false;
     /** The backlog drain runs once per connection, never again after an outage: messages sent during a mere blip still deliver. */
     let drained = false;
     let failures = 0;
@@ -183,6 +193,12 @@ export class TelegramConnector implements MessagingChannelConnector {
         if (!ready) {
           await bot.getMe();
           if (isClosed()) return;
+          if (!webhookCleared) {
+            // Pending updates are kept: the drain below decides what counts as backlog.
+            await bot.deleteWebhook();
+            if (isClosed()) return;
+            webhookCleared = true;
+          }
           if (!drained) {
             const backlog = await bot.getUpdates({ offset: -1, timeoutSec: 0, signal });
             if (isClosed()) return;
@@ -190,18 +206,21 @@ export class TelegramConnector implements MessagingChannelConnector {
             if (newest !== undefined) offset = newest.update_id + 1;
             drained = true;
           }
-          ready = true;
-          failures = 0;
-          handlers.onReady?.();
-          continue;
         }
         const updates = await bot.getUpdates({
           ...(offset !== undefined ? { offset } : {}),
-          timeoutSec: POLL_TIMEOUT_SEC,
+          // Recovery polls must answer immediately — the outage is only over once a
+          // `getUpdates` comes back, and parking for the long-poll window would hide that
+          // for another 30s. Steady state parks as usual.
+          timeoutSec: ready ? POLL_TIMEOUT_SEC : 0,
           signal,
         });
         if (isClosed()) return;
         failures = 0;
+        if (!ready) {
+          ready = true;
+          handlers.onReady?.();
+        }
         for (const update of updates) {
           offset = update.update_id + 1;
           const msg = normalizeUpdate(update);
@@ -211,7 +230,10 @@ export class TelegramConnector implements MessagingChannelConnector {
         if (isClosed()) return;
         failures += 1;
         // One report per outage: the first failure flips the bridge to `error` and lands
-        // one error record; the retries stay quiet until recovery re-fires onReady.
+        // one error record; the retries stay quiet until recovery re-fires onReady. The
+        // counter survives the recovery attempt above precisely so a failure that only
+        // ever hits `getUpdates` — a 409 conflict — still walks the backoff up to its
+        // ceiling instead of re-polling every second forever.
         if (failures === 1) handlers.onError?.(err);
         ready = false;
         await sleep(this.retryDelayMs(failures), signal);

@@ -1863,11 +1863,13 @@ Scenarios:
     faqSetupTitle: "Set up the bot",
     faqWhatTitle: "What binding does",
     faqTroubleTitle: "Troubleshooting",
-    /** Troubleshooting entries (bot must be messaged once; connection errors point at credentials). */
+    /** Troubleshooting entries (bot must be messaged once; connection errors point at credentials; one poller per Telegram token). */
     troubleNoChat:
       "“Send test message” disabled? The bot must have received one message first, so it knows which chat to send to.",
     troubleConnError:
       "Connection status shows an error? Check the credentials; for Feishu also confirm the API domain and the long-connection event subscription.",
+    troubleOnePoller:
+      "Telegram reports that another program is polling? A Bot Token serves exactly one program at a time — close the other PenguinHarness server or bot script using it, or give this conversation a bot of its own.",
   },
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */

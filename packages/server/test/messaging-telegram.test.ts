@@ -6,7 +6,9 @@
  * reads, and the connector's long-poll loop through a fake Bot API transport — offset
  * advancement, the connect-time backlog drain, inbound routing as plain user input,
  * per-message mirroring with one reply thread per run in groups, 4096-safe chunking,
- * non-text notices, and poll-failure status flips. No test opens real network.
+ * non-text notices, poll-failure status flips, and the conflict path a second poller
+ * produces (the 409 backoff, the connect-time webhook clear, and the actionable text the
+ * transport maps a 409 to). No test opens real network.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { assistantText } from "@prismshadow/penguin-core";
@@ -27,9 +29,11 @@ import type {
   TelegramBotClient,
   TelegramBotUser,
   TelegramCredentials,
+  TelegramTransport,
   TelegramUpdate,
 } from "../src/runtime/messaging/telegram-api.js";
-import { telegramBotIdOf } from "../src/runtime/messaging/telegram-connector.js";
+import { createTelegramTransport } from "../src/runtime/messaging/telegram-api.js";
+import { TelegramConnector, telegramBotIdOf } from "../src/runtime/messaging/telegram-connector.js";
 import type {
   FeishuApiClient,
   FeishuCredentials,
@@ -66,6 +70,12 @@ class FakeBotClient implements TelegramBotClient {
     readonly creds: TelegramCredentials,
     private readonly t: FakeTelegramTransport,
   ) {}
+
+  deleteWebhookCalls = 0;
+
+  async deleteWebhook(): Promise<void> {
+    this.deleteWebhookCalls++;
+  }
 
   async getMe(): Promise<TelegramBotUser> {
     this.getMeCalls++;
@@ -697,6 +707,24 @@ describe("telegram binding routes and connector loop", () => {
     expect(fake.lastClient().sawAbort).toBe(true);
   });
 
+  it("two syncs racing leave exactly one live poller (a second one would 409 the first)", async () => {
+    await api.put(BASE(SID), { botToken: TOKEN });
+    t.deps.messagingRepo.setEnabled(SID, "telegram", true);
+    // The state toggle and a credential save both call sync(); nothing serialises them.
+    // Telegram allows one getUpdates per token, so a leftover poller does not merely waste
+    // a socket — it takes the live one's polls away with a 409.
+    await Promise.all([t.deps.messaging.sync(SID), t.deps.messaging.sync(SID)]);
+    await waitFor(() => t.deps.messaging.statusOf(SID, "telegram").state === "connected");
+    await waitFor(() => fake.clients.filter((c) => c.parked).length === 1);
+    expect(fake.clients.length).toBeGreaterThan(1);
+    expect(fake.clients.filter((c) => c.parked)).toHaveLength(1);
+    // And an inbound message starts one Task, not one per surviving poller.
+    fake.push(privateText("hello once", 7));
+    await waitFor(() => runs.length === 1);
+    await settle(40);
+    expect(runs).toHaveLength(1);
+  });
+
   it("the session list marks a telegram-ENABLED row with messagingChannel telegram", async () => {
     await bindEnabled(SID);
     const res = await api.get(`/api/projects/${projectId}/agents/default_agent/sessions`);
@@ -704,5 +732,263 @@ describe("telegram binding routes and connector loop", () => {
       sessions: Array<{ sessionId: string; messagingChannel?: string }>;
     };
     expect(body.sessions.find((s) => s.sessionId === SID)?.messagingChannel).toBe("telegram");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The conflict path: what a second poller on the same bot token does to the loop.
+// Driven against the connector directly (no app, no HTTP) so a whole outage runs in
+// milliseconds and the backoff the loop *would* sleep is observable.
+// ---------------------------------------------------------------------------
+
+/** Telegram's 409, verbatim, as the Bot API sends it when a second getUpdates takes over. */
+const CONFLICT_DESCRIPTION =
+  "Conflict: terminated by other getUpdates request; make sure that only one bot instance is running";
+
+/** A bot client whose getMe always answers and whose getUpdates can be made to conflict. */
+class ConflictBotClient implements TelegramBotClient {
+  getMeCalls = 0;
+  deleteWebhookCalls = 0;
+  pollCalls = 0;
+  /** getUpdates rejects with the 409 while this is true. */
+  conflict = false;
+  /** Rejects the parked long poll (what Telegram does to the loser of the conflict). */
+  private parkedReject: ((err: Error) => void) | null = null;
+
+  constructor(readonly creds: TelegramCredentials) {}
+
+  async getMe(): Promise<TelegramBotUser> {
+    this.getMeCalls++;
+    return { id: 7000000001, first_name: "Penguin Test", username: "penguin_test_bot" };
+  }
+  async deleteWebhook(): Promise<void> {
+    this.deleteWebhookCalls++;
+  }
+  async sendMessage(): Promise<void> {}
+  getUpdates(args: {
+    offset?: number;
+    timeoutSec: number;
+    signal: AbortSignal;
+  }): Promise<TelegramUpdate[]> {
+    this.pollCalls++;
+    if (this.conflict)
+      return Promise.reject(new Error(`getUpdates failed: ${CONFLICT_DESCRIPTION}`));
+    if (args.timeoutSec === 0) return Promise.resolve([]);
+    return new Promise((_resolve, reject) => {
+      this.parkedReject = reject;
+      args.signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+    });
+  }
+  /** A second poller takes over: every poll from here on conflicts, parked one included. */
+  startConflicting(): void {
+    this.conflict = true;
+    this.parkedReject?.(new Error(`getUpdates failed: ${CONFLICT_DESCRIPTION}`));
+  }
+}
+
+class ConflictTransport implements TelegramTransport {
+  readonly clients: ConflictBotClient[] = [];
+  createClient(creds: TelegramCredentials): ConflictBotClient {
+    const client = new ConflictBotClient(creds);
+    this.clients.push(client);
+    return client;
+  }
+}
+
+const settle = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+describe("telegram poll loop under a persistent 409", () => {
+  /**
+   * Builds a connector whose backoff is instant but which records the delay the shipped
+   * exponential curve would have slept, so a test can assert the curve without waiting on it.
+   */
+  function conflictConnector(): {
+    connector: TelegramConnector;
+    transport: ConflictTransport;
+    backoff: number[];
+  } {
+    const transport = new ConflictTransport();
+    const backoff: number[] = [];
+    const connector = new TelegramConnector(transport, {
+      retryDelayMs: (failures) => {
+        backoff.push(Math.min(1000 * 2 ** (failures - 1), 60_000));
+        return 1;
+      },
+    });
+    return { connector, transport, backoff };
+  }
+
+  it("reports once and walks the backoff up, instead of re-polling every second forever", async () => {
+    const { connector, transport, backoff } = conflictConnector();
+    let errors = 0;
+    let readies = 0;
+    const conn = await connector.connect(
+      { botToken: TOKEN },
+      {
+        onMessage: async () => {},
+        onReady: () => {
+          readies++;
+        },
+        onError: () => {
+          errors++;
+        },
+      },
+    );
+    const bot = transport.clients[0]!;
+    await waitFor(() => readies === 1);
+    // A second program takes the token over. getMe keeps answering throughout — it is not
+    // the call that conflicts — so nothing but a real getUpdates may end the outage.
+    bot.startConflicting();
+    await settle(150);
+    conn.close();
+    // One outage, one report, one error record. Before the fix this fired on every cycle.
+    expect(errors).toBe(1);
+    expect(readies).toBe(1);
+    // The curve climbs to its ceiling. Before the fix the getMe-gated recovery reset the
+    // counter every cycle, so this was [1000] and the loop hammered getUpdates at 1 Hz.
+    expect(backoff.length).toBeGreaterThan(3);
+    expect(backoff[0]).toBe(1000);
+    expect(backoff.at(-1)).toBeGreaterThan(1000);
+    expect(Math.max(...backoff)).toBeLessThanOrEqual(60_000);
+  });
+
+  it("recovers as soon as getUpdates stops conflicting, and fires onReady again", async () => {
+    const { connector, transport } = conflictConnector();
+    const inbound: string[] = [];
+    let errors = 0;
+    let readies = 0;
+    const conn = await connector.connect(
+      { botToken: TOKEN },
+      {
+        onMessage: async (msg) => {
+          inbound.push(msg.text ?? "");
+        },
+        onReady: () => {
+          readies++;
+        },
+        onError: () => {
+          errors++;
+        },
+      },
+    );
+    const bot = transport.clients[0]!;
+    await waitFor(() => readies === 1);
+    bot.startConflicting();
+    await waitFor(() => errors === 1);
+    bot.conflict = false;
+    await waitFor(() => readies === 2);
+    expect(errors).toBe(1);
+    conn.close();
+    expect(inbound).toEqual([]);
+  });
+
+  it("clears a stale webhook once per connection, before the first poll", async () => {
+    const { connector, transport } = conflictConnector();
+    let readies = 0;
+    const conn = await connector.connect(
+      { botToken: TOKEN },
+      {
+        onMessage: async () => {},
+        onReady: () => {
+          readies++;
+        },
+        onError: () => {},
+      },
+    );
+    const bot = transport.clients[0]!;
+    await waitFor(() => readies === 1);
+    expect(bot.deleteWebhookCalls).toBe(1);
+    // A conflict-and-recover cycle must not re-issue the write.
+    bot.startConflicting();
+    await settle(30);
+    bot.conflict = false;
+    await waitFor(() => readies === 2);
+    expect(bot.deleteWebhookCalls).toBe(1);
+    conn.close();
+  });
+
+  it("close() ends the poll: a closed connection issues no further calls", async () => {
+    const { connector, transport } = conflictConnector();
+    let readies = 0;
+    const conn = await connector.connect(
+      { botToken: TOKEN },
+      {
+        onMessage: async () => {},
+        onReady: () => {
+          readies++;
+        },
+        onError: () => {},
+      },
+    );
+    const bot = transport.clients[0]!;
+    await waitFor(() => readies === 1);
+    conn.close();
+    await settle(30);
+    const pollsAtClose = bot.pollCalls;
+    await settle(60);
+    expect(bot.pollCalls).toBe(pollsAtClose);
+  });
+});
+
+describe("telegram transport error mapping", () => {
+  /** Runs one transport call against a stubbed fetch and returns the error it throws. */
+  async function callWithBody(
+    body: unknown,
+    run: (bot: TelegramBotClient) => Promise<unknown>,
+  ): Promise<string> {
+    const original = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify(body), {
+        status: 409,
+        headers: { "content-type": "application/json" },
+      })) as typeof fetch;
+    try {
+      const bot = createTelegramTransport().createClient({ botToken: TOKEN });
+      await run(bot);
+      return "";
+    } catch (err) {
+      return err instanceof Error ? err.message : String(err);
+    } finally {
+      globalThis.fetch = original;
+    }
+  }
+
+  it("leads a getUpdates conflict with the action, not with Telegram's wording", async () => {
+    const message = await callWithBody(
+      { ok: false, error_code: 409, description: CONFLICT_DESCRIPTION },
+      (bot) => bot.getUpdates({ timeoutSec: 0, signal: new AbortController().signal }),
+    );
+    // The first words survive the status line's truncation, and they name what to do.
+    expect(message).toContain("another program is already polling this bot");
+    expect(message).toContain("(code 409)");
+    expect(message).not.toContain("Conflict: terminated");
+  });
+
+  it("names a leftover webhook as the reason polling is blocked", async () => {
+    const message = await callWithBody(
+      {
+        ok: false,
+        error_code: 409,
+        description: "Conflict: can't use getUpdates method while webhook is active",
+      },
+      (bot) => bot.getUpdates({ timeoutSec: 0, signal: new AbortController().signal }),
+    );
+    expect(message).toContain("a webhook is set on this bot");
+  });
+
+  it("passes any other Bot API description through unchanged", async () => {
+    const message = await callWithBody(
+      { ok: false, error_code: 401, description: "Unauthorized" },
+      (bot) => bot.getMe(),
+    );
+    expect(message).toBe("getMe failed: Unauthorized (code 401)");
+  });
+
+  it("never echoes the bot token, which the request URL embeds", async () => {
+    const message = await callWithBody(
+      { ok: false, error_code: 409, description: CONFLICT_DESCRIPTION },
+      (bot) => bot.getUpdates({ timeoutSec: 0, signal: new AbortController().signal }),
+    );
+    expect(message).not.toContain(TOKEN);
   });
 });
