@@ -3,6 +3,13 @@
  * existed gets it ALTERed in on open — CREATE TABLE IF NOT EXISTS alone never touches an
  * existing table, so without the guard, code writing the new columns would break on every
  * pre-existing database.
+ *
+ * The last two suites cover the other two directions a released build meets on disk: a table
+ * that did not exist when the database was formed, and a database written by a *newer* build
+ * than the one opening it (a user who updates, dislikes it, and reinstalls the previous
+ * release). Nothing records a schema version, so both properties rest on every schema change
+ * staying additive — and the downgrade one on more than that, which the last suite pins next to
+ * the tolerance rather than leaving it implied.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -11,6 +18,7 @@ import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { openDatabase } from "../src/db/database.js";
 import { SCHEMA_SQL } from "../src/db/schema.js";
+import { MessagingBindingsRepo } from "../src/db/repos/messaging-bindings.js";
 import { SessionsRepo } from "../src/db/repos/sessions.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 
@@ -279,5 +287,273 @@ describe("SessionsRepo last_active_at writes", () => {
     repo.touchLastActive("s1", "2026-05-10T00:00:00.000Z");
     expect(repo.findById("s2")!.lastActiveAt).toBe(base.createdAt);
     expect(repo.findById("s2")!.hasTrace).toBe(false);
+  });
+});
+
+/**
+ * A table added to the schema after a web.db was formed. CREATE TABLE IF NOT EXISTS is the
+ * whole mechanism — it creates the missing table and skips every table already there — so the
+ * property to hold is that the new table (and its unique index) arrive on open while the rows
+ * that were already on disk are untouched. `messaging_bindings` is the real instance: it
+ * shipped in 0.2.5, so every database formed by 0.2.4 or earlier meets this path.
+ */
+describe("openDatabase table upgrade", () => {
+  /**
+   * Seeds a database in the shape it had **before** messaging_bindings existed, derived from
+   * the real SCHEMA_SQL rather than a hand-copied DDL replica: create today's schema, then
+   * drop exactly what that change introduced (dropping the table takes its index with it).
+   */
+  function seedPreMessagingDb(dbPath: string, seed: (db: DatabaseSync) => void): void {
+    const db = new sqlite.DatabaseSync(dbPath);
+    try {
+      db.exec(SCHEMA_SQL);
+      db.exec("DROP TABLE messaging_bindings");
+      seed(db);
+    } finally {
+      db.close();
+    }
+  }
+
+  it("creates messaging_bindings on a database formed before it existed, keeping existing rows", () => {
+    const dbPath = path.join(dir, "web.db");
+    seedPreMessagingDb(dbPath, (old) => {
+      old
+        .prepare(
+          `INSERT INTO sessions (session_id, project_id, agent_id, provider, model_id, workspace, created_at)
+           VALUES ('session-pre-messaging', 'p1', 'a1', 'custom', 'm1', '/w', '2026-01-01T00:00:00.000Z')`,
+        )
+        .run();
+    });
+    // Read the pre-state and close before asserting on it: a failed expect between open and
+    // close leaks the handle, which is exactly what afterEach's rm cannot survive on Windows.
+    const beforeTables = new sqlite.DatabaseSync(dbPath);
+    let tablesBefore: unknown[];
+    try {
+      tablesBefore = beforeTables
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'messaging_bindings'",
+        )
+        .all();
+    } finally {
+      beforeTables.close();
+    }
+    expect(tablesBefore).toEqual([]);
+
+    const db = openDatabase(dbPath);
+    try {
+      // The table and the account uniqueness index both arrive; the pre-existing Session is
+      // still there, which is what makes this an upgrade rather than a reset.
+      expect(
+        db
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_messaging_account'",
+          )
+          .all(),
+      ).toHaveLength(1);
+      expect(new SessionsRepo(db).findById("session-pre-messaging")).not.toBeNull();
+      // And it is immediately writable — a newly created table with no rows would look
+      // identical to one the upgrade forgot to create until something tries to use it.
+      const repo = new MessagingBindingsRepo(db);
+      const saved = repo.upsert({
+        sessionId: "session-pre-messaging",
+        channel: "telegram",
+        accountId: "12345",
+        config: { botToken: "t" },
+      });
+      expect(saved.ok).toBe(true);
+      expect(repo.find("session-pre-messaging", "telegram")?.accountId).toBe("12345");
+      // A second Session claiming the same account is refused...
+      expect(
+        repo.upsert({
+          sessionId: "other-session",
+          channel: "telegram",
+          accountId: "12345",
+          config: { botToken: "t" },
+        }),
+      ).toEqual({ ok: false, reason: "account_in_use" });
+      // ...but that refusal comes from the repo's own findByAccount pre-check, which answers
+      // identically over a non-unique index — so it says nothing about what the upgrade
+      // created. Only a write that goes around the pre-check reaches the index, so the
+      // uniqueness is asserted on the raw INSERT. (The row differs in session_id, so the
+      // (session_id, channel) primary key cannot be what rejects it.)
+      expect(() =>
+        db
+          .prepare(
+            `INSERT INTO messaging_bindings
+               (session_id, channel, account_id, config_json, created_at, updated_at)
+             VALUES ('other-session', 'telegram', '12345', '{}', ?, ?)`,
+          )
+          .run("2026-01-01T00:00:00.000Z", "2026-01-01T00:00:00.000Z"),
+      ).toThrow(/UNIQUE constraint failed/);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+/**
+ * The downgrade direction: a database written by a **newer** build, opened by this one. It is
+ * what a user produces by updating, disliking the update and reinstalling the previous
+ * release, and it is the direction with no safety net at all — nothing stamps a schema
+ * version, so an older build cannot tell it is looking at a newer database and simply proceeds.
+ *
+ * That is safe only while every schema change is additive, which is the first invariant
+ * asserted here: tables and columns this build has never heard of must survive the open
+ * untouched, because the only thing standing between them and deletion is that no code path
+ * drops what it does not recognize.
+ *
+ * Additive is necessary but not sufficient, which the second test pins: two changes that add
+ * and remove nothing — a NOT NULL column with no default, a new unique index — still land on
+ * this build's own writes. Read together the pair states the real rule a future schema change
+ * has to obey, and the second half is the half that is easy to miss.
+ */
+describe("openDatabase tolerates a database from a newer build", () => {
+  /**
+   * `sessions` as a newer build that FORMED the database would have written it: the real
+   * SCHEMA_SQL with one column spliced in, so the fixture cannot fork from the schema it
+   * imitates. It throws rather than returning the schema unchanged when the anchor moves — a
+   * splice that silently stops splicing leaves a test that passes forever and asserts nothing.
+   */
+  function schemaWithExtraSessionsColumn(ddl: string): string {
+    const anchor = "  last_active_at TEXT,";
+    if (!SCHEMA_SQL.includes(anchor)) {
+      throw new Error(`sessions anchor missing from SCHEMA_SQL: ${anchor}`);
+    }
+    return SCHEMA_SQL.replace(anchor, `${anchor}\n  ${ddl},`);
+  }
+
+  it("leaves unknown tables, columns and indexes intact across an open", () => {
+    const dbPath = path.join(dir, "web.db");
+    const current = openDatabase(dbPath);
+    new SessionsRepo(current).insert({
+      sessionId: "s1",
+      projectId: "p1",
+      agentId: "a1",
+      provider: "custom",
+      modelId: "m1",
+      workspace: "/w",
+      approvalMode: "allow-all",
+      title: null,
+      createdAt: "2026-05-01T00:00:00.000Z",
+      lastActiveAt: "2026-05-01T00:00:00.000Z",
+    });
+    // Stand in for a future release: a table this build has never heard of, a column added to
+    // one it owns, and an index over that column. The column carries a DEFAULT because that is
+    // what SQLite's ALTER TABLE ADD COLUMN requires, so it is what a future ensureColumn entry
+    // would carry too — which is why this build's own inserts keep working here. A newer build
+    // that FORMS the database is under no such constraint; the next test covers that.
+    current.exec(`
+      CREATE TABLE future_feature (id TEXT PRIMARY KEY, payload TEXT NOT NULL);
+      INSERT INTO future_feature (id, payload) VALUES ('f1', 'written by a newer build');
+      ALTER TABLE sessions ADD COLUMN future_flag INTEGER NOT NULL DEFAULT 7;
+      CREATE INDEX idx_future_flag ON sessions(future_flag);
+    `);
+    current.close();
+
+    const reopened = openDatabase(dbPath);
+    try {
+      // The unknown table and its row are untouched.
+      expect(reopened.prepare("SELECT payload FROM future_feature WHERE id = 'f1'").get()).toEqual({
+        payload: "written by a newer build",
+      });
+      // So is the unknown column and the index over it.
+      expect(
+        reopened.prepare("SELECT future_flag FROM sessions WHERE session_id = 's1'").get(),
+      ).toEqual({ future_flag: 7 });
+      expect(
+        reopened
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_future_flag'",
+          )
+          .all(),
+      ).toHaveLength(1);
+      // And this build still reads and writes the rows it does own, alongside the column it
+      // cannot see — the unknown column's DEFAULT is what keeps this insert legal.
+      const repo = new SessionsRepo(reopened);
+      expect(repo.findById("s1")!.lastActiveAt).toBe("2026-05-01T00:00:00.000Z");
+      repo.insert({
+        sessionId: "s2",
+        projectId: "p1",
+        agentId: "a1",
+        provider: "custom",
+        modelId: "m1",
+        workspace: "/w",
+        approvalMode: "allow-all",
+        title: null,
+        createdAt: "2026-05-02T00:00:00.000Z",
+        lastActiveAt: "2026-05-02T00:00:00.000Z",
+      });
+      expect(repo.listByAgent("p1", "a1").map((r) => r.sessionId)).toEqual(["s2", "s1"]);
+    } finally {
+      reopened.close();
+    }
+  });
+
+  it("a defaultless NOT NULL column or a new unique index still breaks this build's writes", () => {
+    // Neither change removes anything, so both pass an "is it additive?" reading — and both
+    // leave this build opening the database happily and then failing on its first write. The
+    // open is where a version stamp would be checked, so the failure surfaces at an arbitrary
+    // later moment instead; that is the cost of not having one, stated as an assertion.
+
+    // 1. A NOT NULL column with no default. SQLite forbids that shape in ALTER TABLE ADD
+    //    COLUMN, which is what makes every ensureColumn entry safe — but a newer build that
+    //    forms the database writes CREATE TABLE, where the shape is perfectly legal.
+    const formedByNewer = path.join(dir, "formed-by-newer.db");
+    const newer = new sqlite.DatabaseSync(formedByNewer);
+    try {
+      newer.exec(schemaWithExtraSessionsColumn("future_required TEXT NOT NULL"));
+    } finally {
+      newer.close();
+    }
+    const opened = openDatabase(formedByNewer);
+    try {
+      expect(() =>
+        new SessionsRepo(opened).insert({
+          sessionId: "s1",
+          projectId: "p1",
+          agentId: "a1",
+          provider: "custom",
+          modelId: "m1",
+          workspace: "/w",
+          approvalMode: "allow-all",
+          title: null,
+          createdAt: "2026-05-01T00:00:00.000Z",
+          lastActiveAt: "2026-05-01T00:00:00.000Z",
+        }),
+      ).toThrow(/NOT NULL constraint failed: sessions\.future_required/);
+    } finally {
+      opened.close();
+    }
+
+    // 2. A unique index over columns this build already writes. Nothing is added to any row,
+    //    yet rows this build creates today stop being insertable.
+    const withUniqueIndex = path.join(dir, "unique-index.db");
+    const newerIndexed = openDatabase(withUniqueIndex);
+    try {
+      newerIndexed.exec(
+        "CREATE UNIQUE INDEX idx_future_one_session_per_agent ON sessions(project_id, agent_id)",
+      );
+    } finally {
+      newerIndexed.close();
+    }
+    const reopenedIndexed = openDatabase(withUniqueIndex);
+    try {
+      const repo = new SessionsRepo(reopenedIndexed);
+      const row = {
+        projectId: "p1",
+        agentId: "a1",
+        provider: "custom",
+        modelId: "m1",
+        workspace: "/w",
+        approvalMode: "allow-all" as const,
+        title: null,
+        createdAt: "2026-05-01T00:00:00.000Z",
+        lastActiveAt: "2026-05-01T00:00:00.000Z",
+      };
+      repo.insert({ ...row, sessionId: "s1" });
+      expect(() => repo.insert({ ...row, sessionId: "s2" })).toThrow(/UNIQUE constraint failed/);
+    } finally {
+      reopenedIndexed.close();
+    }
   });
 });
