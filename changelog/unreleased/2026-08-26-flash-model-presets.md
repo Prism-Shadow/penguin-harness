@@ -3,6 +3,7 @@
 - **Date:** 2026-08-26
 - **Type:** feature
 - **Scope:** `model-catalog`, `core`, `docs`
+- **PR:** [#469](https://github.com/Prism-Shadow/penguin-harness/pull/469)
 
 [中文版](2026-08-26-flash-model-presets.zh.md)
 
