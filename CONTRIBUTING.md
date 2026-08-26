@@ -45,10 +45,18 @@ that only re-sync when the package's `build` script runs via pnpm
 cache — on the old build; if a running dev web app still serves stale core after a manual
 rebuild, delete `packages/web/node_modules/.vite` and restart.
 
-Dev entry points that touch data (`pnpm dev`, `pnpm dev:server`, `pnpm penguin`,
-`pnpm desktop`) default to a separate data root, `~/.penguin/dev-data`, kept apart from
-the installed CLI/server's `~/.penguin/data` — hacking on the repo never mixes state with
-your real agents. Need a different root? Pass `PENGUIN_HOME` inline, for the single
+Dev entry points that touch data default to separate data roots, kept apart from the
+installed CLI/server's `~/.penguin/data` — hacking on the repo never mixes state with
+your real agents. `pnpm dev`, `pnpm dev:server` and `pnpm desktop` share
+`~/.penguin/dev-data`; `pnpm penguin` takes its own `~/.penguin/dev-data-cli`, because a
+data root admits one server at a time (`<root>/server.lock`) and the dev CLI's
+`penguin web` is exactly the harness that then asks an Agent to run `pnpm dev` — on a
+shared root that `dev:server` would refuse to start against the harness's own lock (the
+same coexistence that already gives it port 7369, see
+`packages/core/src/internal/ports.ts`). To aim a dev CLI command at the `pnpm dev`
+dataset anyway, say so per command: `PENGUIN_HOME=~/.penguin/dev-data pnpm penguin
+config model list`, or `--root` where the subcommand takes it. Need a different root?
+Pass `PENGUIN_HOME` inline, for the single
 command that needs it (`PENGUIN_HOME=~/.penguin/dev-data-<topic> pnpm dev`) — never export
 it into your shell: those defaults apply only when the variable is unset or empty
 (`scripts/run-with-env.mjs`), so an exported value silently wins over all of them, and an

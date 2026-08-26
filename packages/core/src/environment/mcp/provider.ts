@@ -342,6 +342,11 @@ export class McpToolProvider {
         // Safe inherited defaults plus the entry's own env — and nothing else: the Agent
         // vault is deliberately NOT injected into MCP server processes (unlike command
         // subprocesses); a variable a server needs must be listed in the entry's env.
+        // The SDK defaults are an allowlist (HOME/PATH/SHELL-class names only), so the
+        // harness's own configuration — every PENGUIN_* variable, PORT/HOST and the rest —
+        // never reaches a server: the same outcome the command-session strip enforces,
+        // by the opposite mechanism. Widening this base (e.g. to process.env) would undo
+        // that; the "harness variables never reach a stdio server" test pins it.
         env: { ...getDefaultEnvironment(), ...t.env },
         ...(t.cwd !== undefined || this.workspaceDir !== undefined
           ? { cwd: t.cwd ?? this.workspaceDir }
