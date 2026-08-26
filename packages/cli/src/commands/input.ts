@@ -1,16 +1,20 @@
 /**
  * `penguin input` — send a message into an existing session, or poll its last answer.
  *
- *   penguin input <session_id> [-m <text>] [--timeout <duration>]
- *                 [--project-id <id>] [--json] [--server <url>]
+ *   penguin input [session_id] [-m <text>] [--timeout <duration>]
+ *                 [--project-id <id>] [--agent-id <id>] [--json] [--server <url>]
  *
- * `<session_id>` accepts a full id or a unique fragment (e.g. the 8-hex tail `penguin
- * ls` prints). With `-m`: a running session gets the text as steering (POST /steer,
- * delivered between turns); an idle one gets a new task (POST /tasks). The default
- * waits and renders the stream until the turn completes; `--timeout` bounds the wait
- * with soft-yield semantics — on expiry the command detaches (exit 0, the task keeps
- * running server-side) instead of erroring. `--timeout 0` is the degenerate window:
- * return immediately after delivery — the one timeout knob covers "don't wait" too.
+ * `[session_id]` accepts a full id or a unique fragment (e.g. the 8-hex tail `penguin
+ * ls` prints); omitted, it is the agent's most recent session (announced as a dim
+ * `[latest]` line on stderr — see resolveSessionTarget), which makes bare `penguin
+ * input` the answer to "what did my agent last say".
+ *
+ * With `-m`: a running session gets the text as steering (POST /steer, delivered between
+ * turns); an idle one gets a new task (POST /tasks). The default waits and renders the
+ * stream until the turn completes; `--timeout` bounds the wait with soft-yield
+ * semantics — on expiry the command detaches (exit 0, the task keeps running
+ * server-side) instead of erroring. `--timeout 0` is the degenerate window: return
+ * immediately after delivery — the one timeout knob covers "don't wait" too.
  *
  * Without `-m`: **poll** — print the session's most recent complete assistant text
  * (an idempotent last-answer snapshot from the messages tail; thinking and tool output
@@ -29,13 +33,13 @@ import { StreamRenderer, dim } from "../render.js";
 import { parseDurationMs } from "../duration.js";
 import { promptApproval } from "../approval.js";
 import {
+  resolveAgentId,
   resolveConnection,
   resolveProjectId,
-  resolveSessionRef,
   ServerClient,
   shortSessionId,
 } from "../client.js";
-import { getSessionInfo, getSessionMessages } from "../server-session.js";
+import { getSessionInfo, getSessionMessages, resolveSessionTarget } from "../server-session.js";
 import { SessionStream, watchTask } from "../server-task.js";
 import type { Messages } from "../i18n.js";
 
@@ -52,14 +56,15 @@ export function latestAssistantText(messages: OmniMessage[]): string | null {
 
 export function registerInputCommand(program: Command, t: Messages): void {
   program
-    .command("input <sessionId>")
+    .command("input [sessionId]")
     .description(t.input.desc)
     .option("-m, --message <text>", t.input.message)
     .option("--timeout <duration>", t.common.timeout)
     .option("--project-id <id>", t.common.projectId)
+    .option("--agent-id <id>", t.common.latestAgentId)
     .option("--json", t.common.json)
     .option("--server <url>", t.common.server)
-    .action(async (sessionRef: string, opts) => {
+    .action(async (sessionRef: string | undefined, opts) => {
       const json = opts.json === true;
       let timeoutMs: number | undefined;
       if (opts.timeout !== undefined) {
@@ -73,7 +78,12 @@ export function registerInputCommand(program: Command, t: Messages): void {
       }
       const client = new ServerClient(await resolveConnection({ server: opts.server }, t), t);
       const projectId = resolveProjectId(opts.projectId);
-      const sessionId = await resolveSessionRef(client, projectId, sessionRef, t);
+      const sessionId = await resolveSessionTarget(
+        client,
+        { ref: sessionRef, projectId, agentId: resolveAgentId(opts.agentId) },
+        t,
+      );
+      if (sessionId === null) return; // no session to act on; the hint is already printed
       const out = process.stdout;
 
       // —— Poll form (no -m): print the last answer, waiting out a running turn first ——

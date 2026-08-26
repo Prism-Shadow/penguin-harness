@@ -23,9 +23,11 @@ CLI 是服务端的瘦客户端：所有会话相关命令（`run`、`chat`、`l
 - 模型引用：模型身份始终是 `(provider, model_id)` 二元组。`--model-id` 填上游模型 id，`--provider` 填其所属分组；provider 绝不推断、绝不猜测、也没有缺省值。`run` / `chat` 上这对参数整体可选——两个都给即指定模型，两个都不给则使用 Project 默认模型——但只给其中一个是错误。
 - Project 与 Agent 缺省值：`--project-id` 依次回落到 `PENGUIN_PROJECT_ID`、`default_project`；`--agent-id` 依次回落到 `PENGUIN_AGENT_ID`、`default_agent`。在服务端驱动的会话内，这些环境变量即会话自身的坐标。
 - Session 引用：凡接受 session id 的地方（`input`、`logs`、`run --session`、`chat --resume`），完整 id 或任何唯一片段皆可——`penguin ls` 打印的末尾 8 位十六进制就是为此准备的简写。片段有歧义时报错并列出候选。
+- 最近会话缺省：凡 session id 可省的地方——`input [session_id]`、`logs [session_id]`、`chat --resume`——省略即指**当前 Agent 最近一次会话**（`--agent-id` 决定是哪个 Agent，回落规则同上）。`input` 与 `logs` 会在 stderr 打印一行暗色 `[latest]` 说明选中了哪个会话，目标因此从不含糊，stdout 上的 `--json` 也仍可解析。该 Agent 一个会话都没有时，打印一行指向 `penguin run` / `penguin chat` 的提示并以非零码退出。
 - `--json` 输出原始 JSON 而非渲染 / 表格形式；`--server <url>` 指定目标服务器（见上）。
 - 调用方上下文缺省值：在 harness Agent 内部（环境里存在 `PENGUIN_SESSION_ID`）时，`run` / `chat` 新建会话的每个**未指定**字段都缺省取调用方会话的实时值——Workspace、模型对、审批模式与思考等级——与 `run_subagent` 派生子会话的继承是同一条约定，两个入口因此读作一套规则。逐字段优先级为显式选项 > 调用方值 > 普通缺省；查询失败打印一行暗色警告并回落普通缺省；不在 Agent 内时一切不变。（`--project-id` / `--agent-id` 保持上文的环境变量缺省。）
 - `--timeout <duration>`（`run`、`input` 与 `logs -f` 上）以软让出语义限定等待——即 `exec_command` yield 窗口的模型应用在 CLI 的等待上：到时命令干净脱开并以 0 退出，任务继续在服务端运行，之后可用 `penguin input` / `penguin logs` 接续。接受形式：`30s`、`5m`、`2h`，或表示秒数的纯整数；其余形式一律拒绝。`--timeout 0` 是窗口的退化形式——送达后立即返回（`--json` 下为 `{sessionId, status: "running"}`）：一个旋钮同时覆盖「不等待」。不带该选项 = 无限等待。（`run --background` 仍是**新建任务**的惯用「发完即走」：它为脚本打印裸 session id，在创建时刻即脱开。）
+- 参数错误按界面语言呈现：缺少参数、缺少必填选项、未知选项或命令拼错时，打印一行本地化说明，附上该命令自身的用法与 `--help` 指引，并以非零码退出。
 - 数据根目录（仅 `config`）：`--root <dir>` 覆盖数据根目录，优先级为 `--root` > 环境变量 `PENGUIN_HOME` > `~/.penguin/data`。
 
 ## penguin run
@@ -109,7 +111,7 @@ penguin ls --json
 
 ## penguin input
 
-向既有会话发送消息——或在不带 `-m` 时轮询其最近回复。带 `-m` 时：运行中的会话按插话（steering）送达（随下一轮交给模型），空闲会话则发起新 Task；缺省等待并渲染直至本轮结束，`--timeout` 限定等待（软让出，见「全局约定」；`--timeout 0` 在送达后立即返回）。
+向会话发送消息——或在不带 `-m` 时轮询其最近回复。session id 可以省略：省略即取当前 Agent 最近一次会话（见「全局约定」），于是裸 `penguin input` 正好回答「我的 Agent 最后说了什么」。带 `-m` 时：运行中的会话按插话（steering）送达（随下一轮交给模型），空闲会话则发起新 Task；缺省等待并渲染直至本轮结束，`--timeout` 限定等待（软让出，见「全局约定」；`--timeout 0` 在送达后立即返回）。
 
 不带 `-m` 时是**轮询**，与 `input_subagent` 的空 prompt 语义互为镜像：打印该会话最近一条完整助手文本（取自历史尾部的幂等「最新答案」快照；跳过思考与工具输出），不排队也不插话。运行中的会话先静默等待——给出 `--timeout` 时以其为上限，`--timeout 0` 立即取快照——到时仍在运行则打印当前最新文本并附「仍在运行」提示（退出码 0）。
 
@@ -117,6 +119,7 @@ penguin ls --json
 penguin input 402a2e24 -m "顺便检查一下测试"
 penguin input 402a2e24 -m "排个队" --timeout 0    # 送达后立即返回
 penguin input 402a2e24                    # 轮询：打印最近一条助手回复
+penguin input                             # 轮询当前 Agent 最近一次会话
 penguin input 402a2e24 --timeout 5m       # 轮询，最多等运行中的一轮 5 分钟
 ```
 
@@ -125,13 +128,15 @@ penguin input 402a2e24 --timeout 5m       # 轮询，最多等运行中的一轮
 | `-m, --message <text>` | 消息文本；省略即改为轮询最近助手回复 |
 | `--timeout <duration>` | 软让出等待预算：带 `-m` 时到期脱开、行为同 `run`（`--json` 下为 `{sessionId, status: "running", text}`），`--timeout 0` 送达后立即返回（`{sessionId, status: "running"}`）；不带 `-m` 时到期取快照——`0` 即立即——并附仍在运行提示 |
 | `--project-id <id>` | 片段检索的作用域（完整 session id 不需要） |
+| `--agent-id <id>` | 省略 session id 时，取哪个 Agent 的最近一次会话 |
 | `--json` / `--server <url>` | 同各处约定；带 `-m` 的 `--json` 输出 `{sessionId, status, text}`（status 为 `completed` / `aborted` / `running`；`--timeout 0` 的形状不含 `text`），轮询形式输出 `{sessionId, status, text}`（status 为 `idle` / `running`，尚无回复时 text 为 `""`） |
 
 ## penguin logs
 
-用与 REPL 相同的渲染器渲染会话历史。
+用与 REPL 相同的渲染器渲染会话历史。session id 可以省略：省略即取当前 Agent 最近一次会话（见「全局约定」），裸 `penguin logs` 因此就是「刚才发生了什么」。
 
 ```bash
+penguin logs                    # 当前 Agent 最近一次会话
 penguin logs 402a2e24 --tail 20
 penguin logs 402a2e24 -f
 ```
@@ -142,6 +147,7 @@ penguin logs 402a2e24 -f
 | `-f, --follow` | 渲染历史后继续跟随实时输出流（只读；Ctrl-C 仅断开，不影响会话） |
 | `--timeout <duration>` | 跟随该时长后停止（软让出，退出码 0）；仅与 `-f` 搭配有意义 |
 | `--project-id <id>` | 片段检索的作用域 |
+| `--agent-id <id>` | 省略 session id 时，取哪个 Agent 的最近一次会话 |
 | `--json` / `--server <url>` | 同各处约定；`--json` 输出原始消息数组（`-f` 下按行追加到达的 JSON 消息） |
 
 ## penguin agent

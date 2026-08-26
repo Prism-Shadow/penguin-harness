@@ -1,7 +1,11 @@
 /**
  * `penguin logs` — render a session's history (and optionally follow it live).
  *
- *   penguin logs <session_id> [--tail <n>] [-f|--follow] [--json] [--server <url>]
+ *   penguin logs [session_id] [--tail <n>] [-f|--follow] [--json] [--server <url>]
+ *
+ * `[session_id]` is a full id or a unique fragment; omitted, it is the agent's most
+ * recent session (announced as a dim `[latest]` line on stderr — see
+ * resolveSessionTarget), so a bare `penguin logs` shows what just happened.
  *
  * History comes from GET /messages and renders through the same history renderer the
  * REPL's `--resume` uses; `--tail n` keeps the last n entries. `-f` keeps the command
@@ -13,28 +17,29 @@ import type { Command } from "commander";
 import { StreamRenderer, dim, renderHistory } from "../render.js";
 import { parseDurationMs } from "../duration.js";
 import {
+  resolveAgentId,
   resolveConnection,
   resolveProjectId,
-  resolveSessionRef,
   ServerClient,
   shortSessionId,
 } from "../client.js";
-import { getSessionMessages } from "../server-session.js";
+import { getSessionMessages, resolveSessionTarget } from "../server-session.js";
 import { SessionStream, nextFrameOrDeadline } from "../server-task.js";
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import type { Messages } from "../i18n.js";
 
 export function registerLogsCommand(program: Command, t: Messages): void {
   program
-    .command("logs <sessionId>")
+    .command("logs [sessionId]")
     .description(t.logs.desc)
     .option("--tail <n>", t.logs.tail)
     .option("-f, --follow", t.logs.follow)
     .option("--timeout <duration>", t.common.timeout)
     .option("--project-id <id>", t.common.projectId)
+    .option("--agent-id <id>", t.common.latestAgentId)
     .option("--json", t.common.json)
     .option("--server <url>", t.common.server)
-    .action(async (sessionRef: string, opts) => {
+    .action(async (sessionRef: string | undefined, opts) => {
       let tail: number | undefined;
       if (opts.tail !== undefined) {
         tail = Number(opts.tail);
@@ -62,7 +67,12 @@ export function registerLogsCommand(program: Command, t: Messages): void {
       }
       const client = new ServerClient(await resolveConnection({ server: opts.server }, t), t);
       const projectId = resolveProjectId(opts.projectId);
-      const sessionId = await resolveSessionRef(client, projectId, sessionRef, t);
+      const sessionId = await resolveSessionTarget(
+        client,
+        { ref: sessionRef, projectId, agentId: resolveAgentId(opts.agentId) },
+        t,
+      );
+      if (sessionId === null) return; // no session to show; the hint is already printed
 
       let messages = await getSessionMessages(client, sessionId);
       if (tail !== undefined) messages = messages.slice(-tail);

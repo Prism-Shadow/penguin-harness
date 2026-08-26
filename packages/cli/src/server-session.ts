@@ -14,7 +14,7 @@ import type {
   SessionsResponse,
 } from "@prismshadow/penguin-server/api";
 import type { OmniMessage } from "@prismshadow/penguin-core";
-import { ServerClient } from "./client.js";
+import { resolveSessionRef, ServerClient } from "./client.js";
 import { dim } from "./render.js";
 import type { Messages } from "./i18n.js";
 
@@ -99,6 +99,33 @@ export async function listAgentSessions(
     `/api/projects/${enc(projectId)}/agents/${enc(agentId)}/sessions`,
   );
   return res.sessions;
+}
+
+/**
+ * The session `logs` / `input` act on: an explicit reference (full id or unique
+ * fragment) resolves as everywhere else, and omitting it means the agent's most recent
+ * session — the same default `chat --resume` carries, off the same newest-first listing.
+ * The chosen id is announced on stderr as a dim `[latest]` line so the target is never
+ * ambiguous and `--json` on stdout stays parseable.
+ *
+ * Returns null when the agent has no sessions at all, after printing one line pointing
+ * at `penguin run` / `penguin chat` and setting a non-zero exit code.
+ */
+export async function resolveSessionTarget(
+  client: ServerClient,
+  args: { ref: string | undefined; projectId: string; agentId: string },
+  t: Messages,
+): Promise<string | null> {
+  const { ref, projectId, agentId } = args;
+  if (ref !== undefined) return await resolveSessionRef(client, projectId, ref, t);
+  const latest = (await listAgentSessions(client, projectId, agentId))[0];
+  if (latest === undefined) {
+    process.stderr.write(`${t.error(t.client.noSessionsYet(agentId, projectId))}\n`);
+    process.exitCode = 1;
+    return null;
+  }
+  process.stderr.write(`${dim(t.client.latestSession(latest.sessionId))}\n`);
+  return latest.sessionId;
 }
 
 /** GET /messages — full history messages (rendered through renderHistory). */

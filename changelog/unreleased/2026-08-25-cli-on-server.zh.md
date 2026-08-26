@@ -17,17 +17,19 @@
 
 ```
 penguin run -m <msg> [--project-id] [--agent-id] [--workspace] [--model-id --provider]
-            [--approve] [--thinking] [--session <id>] [--background] [--goal [budget]]
-            [--json] [--server <url>]
+            [--approve] [--thinking] [--session <id>] [--background] [--timeout <dur>]
+            [--goal [budget]] [--json] [--server <url>]
 penguin chat [--project-id] [--agent-id] [--workspace] [--model-id --provider] [--approve]
              [--thinking] [--resume [id]] [--verbose] [--server]
-penguin ls [--project-id] [--agent-id] [-a|--all] [--json] [--server]
-penguin input <session_id> -m <text> [--no-wait] [--json] [--server]
-penguin logs <session_id> [--tail <n>] [-f|--follow] [--json] [--server]
+penguin ls [--project-id] [--agent-id] [-a|--all] [--days <n>] [--json] [--server]
+penguin input [session_id] [-m <text>] [--timeout <dur>] [--project-id] [--agent-id]
+              [--json] [--server]
+penguin logs [session_id] [--tail <n>] [-f|--follow] [--timeout <dur>] [--project-id]
+             [--agent-id] [--json] [--server]
 penguin agent ls|create ...
 penguin project ls
 penguin cost [--days <n>] [--from --to] [--by date|agent|model|session] ...
-penguin schedule ls ...
+penguin schedule ls|add|update|rm ...
 ```
 
 - `run` 创建 Session（或以 `--session` 复用——接受完整 id 或任意唯一片段，如 `penguin ls`
@@ -85,6 +87,19 @@ getter：core 按各 Session 自身坐标绑定、逐次 spawn 重新求值；�
   步呈现。目标为 `--session-id` 与新建会话形式二选一（XOR）；`--start-at now` 即当前时刻。一
   处有意分歧：`add` 缺省启用（`--disabled` 关闭；原始文件的 enabled=false 缺省留给手编）；
   `update` 为读改写；`rm` 直接删除、不做确认。
+- **`input` 与 `logs` 的 session id 可省**：省略即指当前 Agent 最近一次会话——`chat --resume`
+  本就有的缺省，取自同一份最新在前的列表——并在 stderr 打印一行暗色 `[latest]` 说明选中了
+  哪个，目标因此从不含糊，stdout 上的 `--json` 也仍可解析。于是裸 `penguin logs` 就是「刚才
+  发生了什么」，裸 `penguin input` 就是「我的 Agent 最后说了什么」；`--agent-id` 决定是哪个
+  Agent。该 Agent 一个会话都没有时，打印一行指向 `penguin run` / `penguin chat` 的提示，并以
+  非零码退出。
+
+## 参数错误按界面语言呈现
+
+命令写错时打印一行本地化说明——缺少参数、缺少必填选项、未知选项、命令拼错——随后是该命令自身
+的用法与 `--help` 指引，取代 commander 的原始英文。退出码仍是 commander 的那一套。CLI 模块图
+加载时 Node 抛出的 `ExperimentalWarning: SQLite is an experimental feature` 在入口处被滤掉，
+发布二进制与开发态运行一视同仁；其余警告照常打印。
 
 ## 「显示 CLI 会话」开关退役
 

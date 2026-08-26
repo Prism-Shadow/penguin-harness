@@ -44,6 +44,23 @@ export interface Messages {
     server: string;
     /** --timeout: soft-yield wait budget on run/input/logs -f (30s / 5m / 2h / bare seconds). */
     timeout: string;
+    /** input/logs' --agent-id: whose most recent session the omitted session argument means. */
+    latestAgentId: string;
+  };
+  /** Commander's own parse failures, rebuilt in the user's language (see usage-error.ts). */
+  usage: {
+    /** A required positional argument was not given. */
+    missingArgument(name: string): string;
+    /** A required option (commander's requiredOption) was not given. */
+    missingOption(flags: string): string;
+    /** An option that takes a value was given none. */
+    optionMissingArgument(flags: string): string;
+    unknownOption(flag: string): string;
+    unknownCommand(name: string): string;
+    /** Everything else commander rejects: its own detail rides verbatim, so nothing is swallowed. */
+    other(detail: string): string;
+    /** Second line of a usage error: how the command is spelled, and where its full option list is. */
+    hint(command: string, usage: string): string;
   };
   config: {
     desc: string;
@@ -255,6 +272,10 @@ export interface Messages {
     stillRunning(shortId: string): string;
     /** Caller-context lookup failed (PENGUIN_SESSION_ID names a session this server cannot answer for): plain defaults apply. */
     callerDefaultsFailed(sessionId: string): string;
+    /** Dim stderr note naming the session a bare `logs` / `input` resolved to (the agent's most recent). */
+    latestSession(sessionId: string): string;
+    /** Bare `logs` / `input` when the agent has no session at all: what to run to get one. */
+    noSessionsYet(agentId: string, projectId: string): string;
   };
   /** `/thinking` display when the Session pins no level: the Agent's configured default applies. */
   chatThinkingConfigured(): string;
@@ -538,6 +559,17 @@ const en: Messages = {
       "Server URL to connect to (defaults to PENGUIN_API_URL, then the local running server, then auto-start)",
     timeout:
       "Wait at most this long (30s / 5m / 2h, or bare seconds), then detach and leave the task running (exit 0)",
+    latestAgentId: "Agent whose most recent session is used when no session id is given",
+  },
+  usage: {
+    missingArgument: (name) => `missing required argument <${name}>`,
+    missingOption: (flags) => `missing required option ${flags}`,
+    optionMissingArgument: (flags) => `option ${flags} needs a value`,
+    unknownOption: (flag) => `unknown option ${flag}`,
+    unknownCommand: (name) => `unknown command ${name}`,
+    other: (detail) => detail,
+    hint: (command, usage) =>
+      `Usage: ${command} ${usage}  (run \`${command} --help\` for every option)`,
   },
   config: {
     desc: "Manage Project configuration",
@@ -614,12 +646,12 @@ const en: Messages = {
     stateRunning: () => "running",
   },
   input: {
-    desc: "Send a message into an existing session (steering while it runs, a new task when idle); without -m, print its most recent assistant reply",
+    desc: "Send a message into a session (steering while it runs, a new task when idle); without -m, print its most recent assistant reply. The session defaults to the agent's most recent one",
     message: "Message text (omit to poll the session's last assistant reply instead)",
     noReplyYet: () => "(no assistant reply yet)",
   },
   logs: {
-    desc: "Render a session's history",
+    desc: "Render a session's history (defaults to the agent's most recent session)",
     tail: "Show only the last <n> entries",
     follow: "Keep following the live stream after the history",
     tailInvalid: (value) => `Invalid --tail value "${value}": expected a positive integer.`,
@@ -731,6 +763,9 @@ const en: Messages = {
       `[still running] session ${shortId} continues on the server — follow with \`penguin logs -f ${shortId}\` or poll with \`penguin input ${shortId}\``,
     callerDefaultsFailed: (sessionId) =>
       `[caller context] could not read calling session ${sessionId}; using the plain defaults`,
+    latestSession: (sessionId) => `[latest] session ${sessionId}`,
+    noSessionsYet: (agentId, projectId) =>
+      `Agent ${agentId} has no sessions in project ${projectId} yet: start one with \`penguin run -m "..."\` or \`penguin chat\`.`,
   },
   chatThinkingConfigured: () => "agent default",
   serve: {
@@ -1004,6 +1039,17 @@ const zh: Messages = {
     server: "要连接的服务器地址（缺省依次取 PENGUIN_API_URL、本机运行中的服务器、自动拉起）",
     timeout:
       "最长等待时长（30s / 5m / 2h，或纯数字秒数）；到时脱开、任务继续在服务端运行（退出码 0）",
+    latestAgentId: "省略 session id 时，取哪个 Agent 的最近一次会话",
+  },
+  usage: {
+    missingArgument: (name) => `缺少必填参数 <${name}>`,
+    missingOption: (flags) => `缺少必填选项 ${flags}`,
+    optionMissingArgument: (flags) => `选项 ${flags} 缺少取值`,
+    unknownOption: (flag) => `未知选项 ${flag}`,
+    unknownCommand: (name) => `未知命令 ${name}`,
+    other: (detail) => detail,
+    hint: (command, usage) =>
+      `用法：${command} ${usage}（运行 \`${command} --help\` 查看全部选项）`,
   },
   config: {
     desc: "管理 Project 配置",
@@ -1074,12 +1120,12 @@ const zh: Messages = {
     stateRunning: () => "运行中",
   },
   input: {
-    desc: "向既有会话发送消息（运行中即插话，空闲时发起新 Task）；不带 -m 时输出其最近一条助手回复",
+    desc: "向会话发送消息（运行中即插话，空闲时发起新 Task）；不带 -m 时输出其最近一条助手回复。省略 session id 即取当前 Agent 最近一次会话",
     message: "消息文本（省略时改为轮询该会话的最近助手回复）",
     noReplyYet: () => "（还没有助手回复）",
   },
   logs: {
-    desc: "渲染会话的历史消息",
+    desc: "渲染会话的历史消息（省略 session id 即取当前 Agent 最近一次会话）",
     tail: "只显示最后 <n> 条",
     follow: "渲染历史后继续跟随实时输出流",
     tailInvalid: (value) => `--tail 值「${value}」无效：应为正整数。`,
@@ -1186,6 +1232,9 @@ const zh: Messages = {
       `[仍在运行] 会话 ${shortId} 继续在服务端执行——可用 \`penguin logs -f ${shortId}\` 跟随，或 \`penguin input ${shortId}\` 轮询`,
     callerDefaultsFailed: (sessionId) =>
       `[调用方上下文] 无法读取调用方会话 ${sessionId}，改用普通缺省值`,
+    latestSession: (sessionId) => `[latest] 会话 ${sessionId}`,
+    noSessionsYet: (agentId, projectId) =>
+      `Agent ${agentId} 在 Project ${projectId} 下还没有任何会话：先用 \`penguin run -m "..."\` 或 \`penguin chat\` 开始一个。`,
   },
   chatThinkingConfigured: () => "Agent 配置值",
   serve: {

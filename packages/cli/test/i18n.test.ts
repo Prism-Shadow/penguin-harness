@@ -109,7 +109,30 @@ describe("getMessages", () => {
       ).toContain("daily");
       expect(m.schedule.written("daily", m.schedule.enabled(), undefined)).toContain("daily");
       expect(m.schedule.removed("daily")).toContain("daily");
+      // The latest-session default and its empty state.
+      expect(m.common.latestAgentId.length).toBeGreaterThan(0);
+      expect(m.client.latestSession("session-x")).toContain("session-x");
+      expect(m.client.noSessionsYet("ag", "proj-x")).toContain("ag");
+      expect(m.client.noSessionsYet("ag", "proj-x")).toContain("proj-x");
+      expect(m.client.noSessionsYet("ag", "proj-x")).toContain("penguin chat");
+      // Argument errors: each shape keeps the identifier commander quoted.
+      expect(m.usage.missingArgument("sessionId")).toContain("sessionId");
+      expect(m.usage.missingOption("--prompt <text>")).toContain("--prompt <text>");
+      expect(m.usage.optionMissingArgument("--tail <n>")).toContain("--tail <n>");
+      expect(m.usage.unknownOption("--nope")).toContain("--nope");
+      expect(m.usage.unknownCommand("nosuch")).toContain("nosuch");
+      expect(m.usage.other("too many arguments.")).toContain("too many arguments.");
+      const hint = m.usage.hint("penguin schedule add", "[options] <name>");
+      expect(hint).toContain("penguin schedule add [options] <name>");
+      expect(hint).toContain("penguin schedule add --help");
     }
+    // Argument errors really are translated, not the English text twice.
+    expect(getMessages("zh").usage.missingArgument("sessionId")).not.toBe(
+      getMessages("en").usage.missingArgument("sessionId"),
+    );
+    expect(getMessages("zh").client.noSessionsYet("ag", "p")).not.toBe(
+      getMessages("en").client.noSessionsYet("ag", "p"),
+    );
     // The dictionaries are genuinely two languages, not one copied twice.
     expect(getMessages("zh").ls.desc).not.toBe(getMessages("en").ls.desc);
     expect(getMessages("zh").client.noServer()).not.toBe(getMessages("en").client.noServer());

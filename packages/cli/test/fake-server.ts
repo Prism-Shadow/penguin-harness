@@ -261,9 +261,14 @@ export class FakeServer {
         return this.json({ session: this.sessionInfo(s) }, 201);
       }
       const agentId = decodeURIComponent(m[2]!);
+      // Newest first, session id breaking ties — the server's own
+      // `ORDER BY created_at DESC, session_id DESC`, which is what makes [0] "the latest".
       const sessions = [...this.sessions.values()]
         .filter((s) => s.agentId === agentId)
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .sort(
+          (a, b) =>
+            b.createdAt.localeCompare(a.createdAt) || b.sessionId.localeCompare(a.sessionId),
+        )
         .map((s) => this.sessionInfo(s));
       return this.json({ sessions });
     }

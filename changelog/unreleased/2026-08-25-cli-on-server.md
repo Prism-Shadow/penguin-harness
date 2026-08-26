@@ -18,17 +18,19 @@ costs and schedules. A CLI talking to the local machine's server needs no login.
 
 ```
 penguin run -m <msg> [--project-id] [--agent-id] [--workspace] [--model-id --provider]
-            [--approve] [--thinking] [--session <id>] [--background] [--goal [budget]]
-            [--json] [--server <url>]
+            [--approve] [--thinking] [--session <id>] [--background] [--timeout <dur>]
+            [--goal [budget]] [--json] [--server <url>]
 penguin chat [--project-id] [--agent-id] [--workspace] [--model-id --provider] [--approve]
              [--thinking] [--resume [id]] [--verbose] [--server]
-penguin ls [--project-id] [--agent-id] [-a|--all] [--json] [--server]
-penguin input <session_id> -m <text> [--no-wait] [--json] [--server]
-penguin logs <session_id> [--tail <n>] [-f|--follow] [--json] [--server]
+penguin ls [--project-id] [--agent-id] [-a|--all] [--days <n>] [--json] [--server]
+penguin input [session_id] [-m <text>] [--timeout <dur>] [--project-id] [--agent-id]
+              [--json] [--server]
+penguin logs [session_id] [--tail <n>] [-f|--follow] [--timeout <dur>] [--project-id]
+             [--agent-id] [--json] [--server]
 penguin agent ls|create ...
 penguin project ls
 penguin cost [--days <n>] [--from --to] [--by date|agent|model|session] ...
-penguin schedule ls ...
+penguin schedule ls|add|update|rm ...
 ```
 
 - `run` creates a session (or reuses `--session` — a full id or any unique fragment, such
@@ -99,6 +101,22 @@ SDK/CLI-direct embedding without the option injects nothing.
   the current instant. One deliberate divergence: `add` defaults to enabled (`--disabled`
   opts out; the raw file's enabled=false default stays for hand edits); `update` is
   read-modify-write; `rm` deletes without prompting.
+- **The session id is optional on `input` and `logs`**: omitted, it means the agent's
+  most recent session — the default `chat --resume` already carried, off the same
+  newest-first listing — announced as a dim `[latest]` line on stderr, so the target is
+  never ambiguous and `--json` on stdout stays parseable. Bare `penguin logs` is
+  therefore "what just happened" and bare `penguin input` is "what did my agent last
+  say"; `--agent-id` picks whose. An agent with no session at all gets one line pointing
+  at `penguin run` / `penguin chat`, and a non-zero exit.
+
+## Argument errors speak the interface language
+
+A command typed wrong prints one localized line — missing argument, missing required
+option, unknown option, mistyped command — followed by that command's own usage and a
+pointer at its `--help`, in place of commander's raw English. Exit codes stay commander's.
+The `ExperimentalWarning: SQLite is an experimental feature` that Node raises while the
+CLI's module graph loads is filtered at the entry point, on the packaged binary and the
+development run alike; every other warning still prints.
 
 ## The CLI-session toggle is retired
 

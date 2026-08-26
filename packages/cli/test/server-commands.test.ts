@@ -485,6 +485,90 @@ describe("penguin input (bare poll form)", () => {
   });
 });
 
+describe("logs / input without a session id (the agent's most recent)", () => {
+  /** Two sessions of the same agent, the second one newer. */
+  function twoSessions(): { older: string; newer: string } {
+    const older = "session-2026-08-24-09-00-00-1a7e0001";
+    const newer = "session-2026-08-25-10-00-00-1a7e0002";
+    server.addSession({ sessionId: older, createdAt: "2026-08-24T09:00:00.000Z" });
+    server.addSession({ sessionId: newer, createdAt: "2026-08-25T10:00:00.000Z" });
+    return { older, newer };
+  }
+
+  it("logs renders the newest session and names it in a dim stderr note", async () => {
+    server.history = [assistantText("what happened last")];
+    const { newer } = twoSessions();
+    const code = await cli(["logs"]);
+    expect(code).toBe(0);
+    expect(out()).toContain("what happened last");
+    // The note goes to stderr, so stdout stays exactly what the command renders.
+    expect(stderr.join("")).toContain(t.client.latestSession(newer));
+    expect(out()).not.toContain(newer);
+  });
+
+  it("bare input polls the newest session's last answer, queueing nothing", async () => {
+    server.history = [assistantText("the last thing I said")];
+    const { newer } = twoSessions();
+    const code = await cli(["input"]);
+    expect(code).toBe(0);
+    expect(out().trim()).toBe("the last thing I said");
+    expect(stderr.join("")).toContain(t.client.latestSession(newer));
+    const session = server.sessions.get(newer)!;
+    expect(session.tasks).toHaveLength(0);
+    expect(session.steers).toHaveLength(0);
+  });
+
+  it("--json stays parseable: the note never lands on stdout", async () => {
+    server.history = [assistantText("snapshot")];
+    const { newer } = twoSessions();
+    const code = await cli(["input", "--json"]);
+    expect(code).toBe(0);
+    expect(JSON.parse(out())).toMatchObject({ sessionId: newer, status: "idle" });
+  });
+
+  it("--agent-id picks whose most recent session it is", async () => {
+    twoSessions();
+    server.agents.push({
+      agentId: "helper",
+      name: "Helper",
+      description: "",
+      sessionCount: 0,
+      activeSessionCount: 0,
+      sessionActivity: [],
+    });
+    const helperSession = server.addSession({
+      sessionId: "session-2026-08-20-08-00-00-be1f0001",
+      agentId: "helper",
+      createdAt: "2026-08-20T08:00:00.000Z",
+    });
+    const code = await cli(["logs", "--agent-id", "helper"]);
+    expect(code).toBe(0);
+    expect(stderr.join("")).toContain(t.client.latestSession(helperSession.sessionId));
+  });
+
+  it("an explicit session id still wins over the default", async () => {
+    server.history = [assistantText("history")];
+    const { older } = twoSessions();
+    const code = await cli(["logs", "1a7e0001"]);
+    expect(code).toBe(0);
+    expect(stderr.join("")).not.toContain("[latest]");
+    expect(server.requests.some((r) => r.path === `/api/sessions/${older}/messages`)).toBe(true);
+  });
+
+  it("no sessions at all: one line pointing at run/chat, non-zero exit, no commander noise", async () => {
+    for (const argv of [["logs"], ["input"]]) {
+      stderr.length = 0;
+      const code = await cli(argv);
+      expect(code).toBe(1);
+      const errText = stderr.join("");
+      expect(errText).toContain(t.client.noSessionsYet("default_agent", "default_project"));
+      expect(errText).toContain("penguin chat");
+      expect(errText).not.toContain("missing required argument");
+      expect(errText).not.toContain("    at "); // no stack trace
+    }
+  });
+});
+
 describe("penguin ls --days", () => {
   it("keeps sessions last active within the trailing calendar window (today = day 1) and combines with -a", async () => {
     const now = new Date();
