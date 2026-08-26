@@ -3,6 +3,7 @@
 - **Date:** 2026-08-27
 - **Type:** process
 - **Scope:** `landing`, `docs`
+- **PR:** [#481](https://github.com/Prism-Shadow/penguin-harness/pull/481)
 
 [English](2026-08-27-landing-readme-stale-copy.md)
 
