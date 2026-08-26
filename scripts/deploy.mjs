@@ -28,6 +28,7 @@ import zlib from "node:zlib";
 import { fileURLToPath } from "node:url";
 import { unsafePlaintextTarget } from "./deploy-target-safety.mjs";
 import { buildGitDefine, checkoutFacts, originUrl } from "./build-git-stamp.mjs";
+import { ESM_CJS_BANNER } from "./esm-cjs-banner.mjs";
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -136,9 +137,9 @@ async function login() {
 }
 
 /**
- * Compiles one entry to a self-contained ESM file. The banner is load-bearing: several
- * bundled CJS deps call plain `require(...)` inside their own wrapper, and esbuild's ESM
- * output otherwise routes those to a shim that always throws.
+ * Compiles one entry to a self-contained ESM file. The banner is load-bearing: bundled CJS
+ * deps reference `require`, `__filename` and `__dirname` inside their own wrapper, and an
+ * ESM bundle supplies none of the three — see scripts/esm-cjs-banner.mjs.
  */
 async function compileEntry(entry, outfile) {
   if (!fs.existsSync(entry)) throw new Error(`compile entry missing: ${entry}`);
@@ -150,9 +151,7 @@ async function compileEntry(entry, outfile) {
     platform: "node",
     outfile,
     logLevel: "silent",
-    banner: {
-      js: 'import { createRequire as __penguinCreateRequire } from "node:module"; const require = __penguinCreateRequire(import.meta.url);',
-    },
+    banner: { js: ESM_CJS_BANNER },
     alias: {
       "@prismshadow/penguin-core/kernel": require.resolve("@prismshadow/penguin-core/kernel"),
     },
