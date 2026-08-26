@@ -220,12 +220,7 @@ export function DownloadPage() {
     "inline-flex items-center gap-1 text-brand-700 underline decoration-brand-300 underline-offset-2 transition-colors hover:text-brand-600 dark:text-brand-300 dark:decoration-brand-700";
 
   return (
-    <Section
-      eyebrow={S.download.eyebrow}
-      title={S.download.title}
-      subtitle={S.download.subtitle}
-      className="pt-14 sm:pt-20"
-    >
+    <Section eyebrow={S.download.eyebrow} title={S.download.title} className="pt-14 sm:pt-20">
       <div className="mx-auto grid max-w-5xl gap-4 sm:grid-cols-3">
         {PLATFORMS.map((platform) => {
           const PlatformIcon = PLATFORM_ICONS[platform];

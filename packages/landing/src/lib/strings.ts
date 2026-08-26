@@ -3,8 +3,8 @@
  * active dictionary `S`; the English dictionary lives in strings-en.ts (constrained to
  * the same shape by the `Strings` type). Locale switching is handled by state/locale.tsx,
  * which calls `setActiveStrings` and remounts the tree keyed by locale — keep `S.x`
- * reads inside components. Keep domain terms in standard English casing — Agent,
- * Workspace, Token, Task, Skill, Trace, etc.
+ * reads inside components. English marketing copy uses lowercase `agent`; preserve the
+ * established casing of Workspace, Token, Task, Skill, Trace, and other product terms.
  */
 export const zh = {
   siteName: "PenguinHarness",
@@ -61,6 +61,26 @@ export const zh = {
       { value: "100% 开源", label: "Apache 2.0 协议开源" },
       { value: "首个自进化 Harness", label: "Agent 自进化引擎" },
     ],
+    supportedModelsLabel: "支持模型",
+    supportedModels: [
+      "DeepSeek",
+      "GPT",
+      "Claude",
+      "Gemini",
+      "Qwen",
+      "Kimi",
+      "GLM",
+      "MiniMax",
+      "Grok",
+      "Nemotron",
+      "MiMo",
+      "Step",
+      "LongCat",
+      "Hy3",
+      "Inkling",
+      "Free Models",
+      "OpenRouter 1000+",
+    ],
   },
 
   /** Install-method switcher (quick start step 1): OS tabs, online/offline methods. */
@@ -85,8 +105,6 @@ export const zh = {
   download: {
     eyebrow: "下载",
     title: "下载桌面端",
-    subtitle:
-      "完整的 Web 体验打包为独立应用：内嵌服务端，打开即已登录——无需终端、无登录页；数据与 CLI 安装共用同一个 ~/.penguin/data 目录。",
     recommended: "当前系统",
     platforms: {
       mac: { name: "macOS", require: "macOS 11 及以上，dmg 安装镜像（按芯片选择）" },

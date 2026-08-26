@@ -138,6 +138,22 @@
   background-image: radial-gradient(rgb(138 180 248 / 0.16) 1px, transparent 1px);
 }
 
+/* Keep the positioning line and proof points on one line in English without widening the page. */
+.hero-positioning {
+  font-size: clamp(0.95rem, 4.3vw, 3rem);
+}
+:lang(en) .hero-positioning {
+  font-size: clamp(0.72rem, 3.3vw, 2.6rem);
+}
+:lang(en) .hero-stat-title {
+  font-size: clamp(0.72rem, 1.55vw, 1.25rem);
+  white-space: nowrap;
+}
+:lang(en) .hero-stat-label {
+  font-size: clamp(0.625rem, 1vw, 0.875rem);
+  white-space: nowrap;
+}
+
 /* ---------- Ambient neon backdrop: blurred glows wandering across the screen ----------
    Viewport-FIXED (the page background stays put while content scrolls over it) with a
    uniform page background behind every section, so nothing jumps at section boundaries.

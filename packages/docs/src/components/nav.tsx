@@ -94,7 +94,7 @@ export function Nav({
   const deskInactiveLinkCls = `${inactiveLinkCls} hover:text-gray-900 dark:hover:text-gray-100`;
   // Same class recipe as the landing nav's desktop links; here only "Docs" is ever active.
   const deskLinkCls = (active: boolean) =>
-    `relative z-10 rounded-md px-2.5 py-1.5 text-sm transition-colors ${active ? activeLinkCls : deskInactiveLinkCls}`;
+    `relative z-10 shrink-0 whitespace-nowrap rounded-md px-2 py-1.5 text-[13px] transition-colors ${active ? activeLinkCls : deskInactiveLinkCls}`;
 
   /**
    * The hover pill appears IN PLACE under the first link it lands on (position
@@ -153,7 +153,7 @@ export function Nav({
   return (
     <header className="sticky top-0 z-40 border-b border-gray-200 bg-white/85 backdrop-blur dark:border-gray-800 dark:bg-gray-950/85">
       <div className="mx-auto flex h-14 max-w-7xl items-center gap-2 px-4 sm:px-6">
-        <a href={SITE_URL} className="flex items-center gap-2">
+        <a href={SITE_URL} className="flex shrink-0 items-center gap-2">
           <img src={`${import.meta.env.BASE_URL}penguin-logo.svg`} alt="" className="h-7 w-7" />
           <span className="hidden text-[15px] font-semibold tracking-tight sm:inline">
             {S.siteName}

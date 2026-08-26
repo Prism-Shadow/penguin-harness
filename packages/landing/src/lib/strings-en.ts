@@ -1,7 +1,7 @@
 /**
  * English dictionary (constrained by the `Strings` type to the same shape as zh):
- * locale switching goes through state/locale.tsx. Keep domain term capitalization
- * consistent with zh — Agent, Workspace, Token, Task, Skill, Trace, etc.
+ * locale switching goes through state/locale.tsx. Marketing copy uses lowercase `agent`;
+ * preserve the established casing of Workspace, Token, Task, Skill, Trace, and other terms.
  */
 import type { Strings } from "./strings";
 
@@ -48,17 +48,37 @@ export const en: Strings = {
   },
 
   hero: {
-    platformLead: "The open-source, local-first Agent app ",
+    platformLead: "The open-source, local-first agent app ",
     platformAccent: "development",
     platformTail: " platform",
     automation: "Fully automated",
-    downloadCta: "Download the desktop app",
-    cliInstall: "Install from the command line",
+    downloadCta: "Download desktop",
+    cliInstall: "Command-line install",
     stats: [
       { value: "1000+ models", label: "Support for major providers" },
-      { value: "Cross-platform local deployment", label: "Linux, Windows, and macOS compatible" },
-      { value: "100% open source", label: "Open source under Apache 2.0" },
-      { value: "First self-evolving Harness", label: "Agent self-evolution engine" },
+      { value: "Local on every platform", label: "Linux · Windows · macOS" },
+      { value: "100% open source", label: "Apache 2.0 licensed" },
+      { value: "First self-evolving harness", label: "agent self-evolution engine" },
+    ],
+    supportedModelsLabel: "Supported models",
+    supportedModels: [
+      "DeepSeek",
+      "GPT",
+      "Claude",
+      "Gemini",
+      "Qwen",
+      "Kimi",
+      "GLM",
+      "MiniMax",
+      "Grok",
+      "Nemotron",
+      "MiMo",
+      "Step",
+      "LongCat",
+      "Hy3",
+      "Inkling",
+      "Free Models",
+      "OpenRouter 1000+",
     ],
   },
 
@@ -84,8 +104,6 @@ export const en: Strings = {
   download: {
     eyebrow: "Download",
     title: "Download the desktop app",
-    subtitle:
-      "The full Web experience as a standalone application: it embeds the server and opens already signed in — no terminal, no login page; data lives in the same ~/.penguin/data root as a CLI install.",
     recommended: "Your system",
     platforms: {
       mac: { name: "macOS", require: "macOS 11 or later, dmg disk image (pick your chip)" },
@@ -170,21 +188,21 @@ export const en: Strings = {
         desc: "A deliberately minimal toolset over clean low-level interfaces: fewer tool calls, fewer Tokens, complex tasks done efficiently.",
       },
       {
-        title: "Harness for Building Agents",
+        title: "Harness for building agents",
         tag: "",
-        desc: "With the PenguinHarness SDK, an Agent builds complete Agent applications for you — autonomously, from scratch.",
+        desc: "With the PenguinHarness SDK, an agent builds complete agent applications for you — autonomously, from scratch.",
       },
       {
         title: "Harness for Recursive Self-Improvement",
         tag: "",
-        desc: "With PenguinHarness Skills, an Agent evaluates and optimizes itself, improving recursively over time.",
+        desc: "With PenguinHarness Skills, an agent evaluates and optimizes itself, improving recursively over time.",
       },
     ],
   },
 
   compare: {
     eyebrow: "vs. LangChain",
-    title: "Building Agents with Agents",
+    title: "Building agents with agents",
     subtitle: [
       "With LangChain, you build agents by hand — at 1× speed.",
       "With PenguinHarness, agents build agents — at 100×.",
@@ -192,14 +210,14 @@ export const en: Strings = {
     langchain: {
       name: "LangChain",
       speed: "1×",
-      mode: "Agents built by hand",
+      mode: "agents built by hand",
       note: "Chains, tools and prompts written line by line — every app starts from zero.",
     },
     penguin: {
       name: "PenguinHarness",
       speed: "100×",
-      mode: "Agents built by agents",
-      note: "One sentence in — an Agent delivers scaffold, code and run instructions end to end.",
+      mode: "agents built by agents",
+      note: "One sentence in — an agent delivers scaffold, code and run instructions end to end.",
     },
   },
 
@@ -207,13 +225,13 @@ export const en: Strings = {
     eyebrow: "The self-improvement loop",
     title: "Multi-agent collaboration makes evolution automatic",
     subtitle:
-      "The Optimizer orchestrates multiple Evaluators to score the Target Agent in parallel, uses the scores and run traces to find where points were lost, and upgrades the Agent from version N to N+1 — with a snapshot before every round.",
+      "The Optimizer orchestrates multiple Evaluators to score the target agent in parallel, uses the scores and run traces to find where points were lost, and upgrades the agent from version N to N+1 — with a snapshot before every round.",
     videoLabel: "Self-improvement demo video",
     videoCaption:
       "The self-improvement loop end to end: run the benchmark, find the lost points, ship the next version.",
     nodeOptimizer: "Optimizer",
     nodeEvaluator: "Evaluator × N",
-    nodeTarget: "Target Agent",
+    nodeTarget: "target agent",
     badgeOld: "vN",
     badgeNew: "vN+1",
     edgeSpawn: "spawn parallel evaluations",
@@ -226,7 +244,7 @@ export const en: Strings = {
       { label: "Time", hint: "keeps shrinking" },
     ],
     diagramLabel:
-      "Self-improvement loop: the Optimizer orchestrates Evaluators to score, then upgrades the Target Agent from vN to vN+1 via scores and traces",
+      "Self-improvement loop: the Optimizer orchestrates Evaluators to score, then upgrades the target agent from vN to vN+1 via scores and traces",
   },
 
   quickstart: {
@@ -250,7 +268,7 @@ export const en: Strings = {
       steps: [
         "Download the installer for your system",
         "Open PenguinHarness and follow the model setup",
-        "Describe your first Agent app in one sentence",
+        "Describe your first agent app in one sentence",
       ],
     },
     install: {
@@ -273,7 +291,7 @@ export const en: Strings = {
       ],
     },
     cli: {
-      title: "Run an Agent directly from the terminal",
+      title: "Run an agent directly from the terminal",
       desc: "Start an interactive conversation or connect a one-off task to scripts and automated workflows.",
       command: `penguin chat
 
@@ -286,9 +304,9 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
 
   cases: {
     eyebrow: "Cases",
-    title: "Generate a runnable Agent app in one sentence",
+    title: "Generate a runnable agent app in one sentence",
     subtitle:
-      "Hand the requirement to an Agent and get a runnable result end to end — more cases are on the way.",
+      "Hand the requirement to an agent and get a runnable result end to end — more cases are on the way.",
     tabs: [
       {
         label: "RAG app",
@@ -333,15 +351,15 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     subtitle:
       "PenguinHarness treats this contract as the boundary and bedrock of evolution: capability may grow, the boundary never drifts.",
     intro:
-      "Evolution needs boundaries. The contract is the covenant between harness and Agent: capability grows within; the boundary holds without.",
+      "Evolution needs boundaries. The contract is the covenant between harness and agent: capability grows within; the boundary holds without.",
     items: [
       {
         term: "Working boundary",
-        text: "Every Agent runs on the same harness: Sessions are created under an Agent, Tasks run inside a Session; self-improvement happens only inside Workspace and Skills, while the harness kernel and its safety mechanisms never change.",
+        text: "Every agent runs on the same harness: Sessions are created under an agent, Tasks run inside a Session; self-improvement happens only inside Workspace and Skills, while the harness kernel and its safety mechanisms never change.",
       },
       {
         term: "Editable files",
-        text: "An Agent's prompts, Skills and configuration live as editable files on disk, never as constants baked into code. What you can see, the Agent can improve; what you can edit, it can learn.",
+        text: "An agent's prompts, Skills and configuration live as editable files on disk, never as constants baked into code. What you can see, the agent can improve; what you can edit, it can learn.",
       },
       {
         term: "Full tracing",
@@ -349,11 +367,11 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
       },
       {
         term: "Approvals & audit",
-        text: "Every tool call passes approval before it runs, and every decision leaves an audit record — what the Agent did is never a mystery.",
+        text: "Every tool call passes approval before it runs, and every decision leaves an audit record — what the agent did is never a mystery.",
       },
       {
         term: "Version control",
-        text: "Before each optimization, the Agent State is snapshotted. If a round fails or regresses, restore any historical version in one step.",
+        text: "Before each optimization, the agent state is snapshotted. If a round fails or regresses, restore any historical version in one step.",
       },
       {
         term: "Progressive loading",
@@ -369,14 +387,14 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
       },
       {
         term: "Model decoupling",
-        text: "Models are not bound to Agents: switch to a stronger or cheaper model at any time without rewriting the Agent.",
+        text: "Models are not bound to agents: switch to a stronger or cheaper model at any time without rewriting the agent.",
       },
       {
         term: "Recoverable trajectories",
         text: "Any Session can be fully restored from its Trace: restart the process or move machines without losing context.",
       },
     ],
-    outro: "The contract does not cap what an Agent can become — only how it gets there.",
+    outro: "The contract does not cap what an agent can become — only how it gets there.",
   },
 
   benchmark: {
@@ -414,19 +432,19 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     items: [
       {
         title: "Multi-session chat",
-        desc: "Any number of sessions per Agent — streaming output, tool approvals and image paste out of the box.",
+        desc: "Any number of sessions per agent — streaming output, tool approvals and image paste out of the box.",
       },
       {
-        title: "Agent hub",
-        desc: "Create and manage Agents in one click; names, descriptions and prompts stay editable.",
+        title: "agent hub",
+        desc: "Create and manage agents in one click; names, descriptions and prompts stay editable.",
       },
       {
         title: "Skill library",
-        desc: "Browse, install and quick-invoke Skills — Agents can write and optimize their own.",
+        desc: "Browse, install and quick-invoke Skills — agents can write and optimize their own.",
       },
       {
         title: "Scheduled tasks",
-        desc: "Cron-style schedules run Agents on time, fully traced, unattended.",
+        desc: "Cron-style schedules run agents on time, fully traced, unattended.",
       },
       {
         title: "Subagents",
@@ -441,8 +459,8 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
         desc: "Replay every request and tool call round by round, with Token breakdown and timing.",
       },
       {
-        title: "Agent evaluation",
-        desc: "Built-in Benchmark suites and scoreboards — scores keep climbing as Agents evolve.",
+        title: "agent evaluation",
+        desc: "Built-in Benchmark suites and scoreboards — scores keep climbing as agents evolve.",
       },
       {
         title: "Multi-user management",
@@ -454,7 +472,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
   skills: {
     eyebrow: "Built-in Skills",
     title: "The built-in Skill library at a glance",
-    subtitle: "Four Skill groups out of the box — Agents can write and optimize their own, too.",
+    subtitle: "Four Skill groups out of the box — agents can write and optimize their own, too.",
     groups: [
       { title: "Office Productivity", skills: ["data-analysis", "firecrawl"] },
       { title: "Software Development", skills: ["web-design", "software-engineering"] },
@@ -463,7 +481,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
         skills: ["penguin-sdk", "penguin-cli", "agenthub-models", "vllm", "ollama", "llamafactory"],
       },
       {
-        title: "Agent Tuning",
+        title: "agent tuning",
         skills: [
           "agent-initialization",
           "benchmark-design",
@@ -513,7 +531,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
   cta: {
     title: "Complex AI development, made ever simpler",
     subtitle:
-      "Through continuous evolution, PenguinHarness gives you a more efficient, more reliable, lower-hallucination and lower-cost Agent productivity engine.",
+      "Through continuous evolution, PenguinHarness gives you a more efficient, more reliable, lower-hallucination and lower-cost agent productivity engine.",
     download: "Download the desktop app",
     quickstart: "Get started",
     docs: "Read the docs",
