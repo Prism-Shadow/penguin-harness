@@ -13,7 +13,7 @@
  *     [header]              JSON: { schemaVersion, entries: [{ path, size, mode }] }
  *     [bytes]               each entry's contents, in header order
  *
- * The embedded remote installer (installer-script.ts) carries the reader; keep the two in step.
+ * The remote installer (./remote-installer.cjs) carries the reader; keep the two in step.
  */
 import fs from "node:fs";
 import path from "node:path";

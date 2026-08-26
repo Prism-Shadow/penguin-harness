@@ -10,7 +10,7 @@
  *
  * Nothing here assumes anything about the far side except an sshd and, for four commands, a
  * shell of some kind. The installer that does the real work is embedded as text
- * (installer-script.ts) and runs over there on a Node runtime that is either the remote's
+ * (./remote-installer.cjs) and runs over there on a Node runtime that is either the remote's
  * own (new enough) or fetched, verified and pushed alongside.
  *
  * The remote is left with exactly what a local install leaves: the program directory
@@ -22,6 +22,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import zlib from "node:zlib";
+import { fileURLToPath } from "node:url";
 import {
   cleanupCommand,
   extractRuntimeCommand,
@@ -34,7 +35,6 @@ import type { RemoteTarget } from "./commands.js";
 import { parseProbeOutput, POSIX_PROBE, WINDOWS_PROBE } from "./detect.js";
 import type { RemoteIdentity } from "./detect.js";
 import { looksLikeAuthFailure, run } from "./exec.js";
-import { readRemoteInstaller } from "./installer-script.js";
 import { packDirectory, packFiles } from "./pack.js";
 import type { PackFile } from "./pack.js";
 import { ensureRuntimeArchive, remoteNodeIsUsable } from "./runtime.js";
@@ -74,6 +74,9 @@ function versionOfManifest(manifestPath: string): string | null {
  * shim is the packaged `dist/penguin.js` bin (penguin.ts) in miniature: run cli(), report
  * the code.
  */
+/** The installer sent to the far side; the same name as the asset key deploy.mjs pushes. */
+const INSTALLER_FILE = "remote-installer.cjs";
+
 const CLI_BIN_SHIM = `// penguin bin shim (written by the machines image): the pushed CLI
 // bundle beside this file is a library exporting cli(); this file is the bin the
 // launchers exec.
@@ -359,11 +362,14 @@ export async function installOnRemote(opts: {
       };
     }
 
-    // The installer is a file on this side too (an asset beside the bundle, or the sibling
-    // in a packaged install); it is copied out only to ride scp.
-    const installerPath = path.join(localTmp, "remote-installer.cjs");
+    // ./remote-installer.cjs, copied out to ride scp. Where it sits follows from what this
+    // server is: a hot-pushed bundle has it among the assets published with that same version,
+    // anything else is a packaged install and it is beside this module (dist/ after a build,
+    // which is why packages/server/scripts/copy-machine-assets.mjs puts it there).
+    const installerPath = path.join(localTmp, INSTALLER_FILE);
+    const installerHome = opts.assets?.() ?? path.dirname(fileURLToPath(import.meta.url));
     try {
-      fs.writeFileSync(installerPath, readRemoteInstaller(opts.assets));
+      fs.copyFileSync(path.join(installerHome, INSTALLER_FILE), installerPath);
     } catch (err) {
       return {
         kind: "failed",
