@@ -52,6 +52,20 @@
 import type { ModelEntry, ModelPricing } from "./project-config.js";
 
 /** Model provider info (used for web grouping/logo and the "API key blank falls back to env var" hint). */
+/**
+ * A provider that mints API keys through an authorization page instead of a console visit.
+ * Present only on providers that publish such a flow; its absence is what makes the harness
+ * refuse to start one.
+ */
+export interface ModelProviderOAuth {
+  /** Authorization page the user is sent to; the flow's parameters ride on its query string. */
+  authorizeUrl: string;
+  /** Endpoint that trades an authorization code for a newly minted key. */
+  exchangeUrl: string;
+  /** Name recorded on the minted key, and the app name the authorization page displays. */
+  keyName: string;
+}
+
 export interface ModelProviderInfo {
   id: string;
   /** Display name (brand name, shared by Chinese and English UI). */
@@ -70,6 +84,11 @@ export interface ModelProviderInfo {
    * vendors and custom.
    */
   gatewayBaseUrl?: string;
+  /**
+   * Authorization flow that mints a key for the user (see ModelProviderOAuth); absent for
+   * every provider whose keys are only obtainable from its console.
+   */
+  oauth?: ModelProviderOAuth;
 }
 
 /** A single built-in model's catalog entry (`modelId` is the upstream id; paired with `provider` it forms the catalog's unique key). */
@@ -179,6 +198,12 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     apiKeyUrl: "https://tokendance.space/keys",
     modelsUrl: "https://tokendance.space/models",
     gatewayBaseUrl: TOKENDANCE_BASE_URL,
+    // https://tokendance.space/docs/api-key-oauth
+    oauth: {
+      authorizeUrl: "https://tokendance.space/auth",
+      exchangeUrl: "https://tokendance.space/portal/api/v1/auth/keys",
+      keyName: "PenguinHarness",
+    },
   },
   {
     id: "zhipu",
@@ -1594,8 +1619,12 @@ export function modelHomepageUrl(provider: string, modelId: string): string | un
 /**
  * App attribution: how the harness identifies itself to gateways that rank or report the apps
  * calling them. Both values describe PenguinHarness itself, never a model or an account.
+ *
+ * `APP_URL` is also the `app_url` a provider OAuth flow stamps onto the key it mints, which is
+ * why it is exported: a stable app URL is required there, and a second copy would let the two
+ * attributions drift apart.
  */
-const APP_URL = "https://penguin.ooo/";
+export const APP_URL = "https://penguin.ooo/";
 const APP_TITLE = "PenguinHarness";
 /**
  * OpenRouter marketplace categories, comma-separated. OpenRouter accepts at most **two per

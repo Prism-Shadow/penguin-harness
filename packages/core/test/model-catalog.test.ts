@@ -4,6 +4,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  APP_URL,
   MODEL_CATALOG,
   MODEL_PROVIDERS,
   canonicalClientType,
@@ -80,6 +81,23 @@ describe("model-catalog", () => {
       expect(p.envKey).toMatch(/_API_KEY$/);
       expect(p.envBaseUrlKey).toMatch(/_BASE_URL$/);
     }
+  });
+
+  it("TokenDance is the only group publishing a key-minting flow, and both its endpoints are https", () => {
+    const withOAuth = MODEL_PROVIDERS.filter((p) => p.oauth !== undefined).map((p) => p.id);
+    expect(withOAuth).toEqual(["tokendance"]);
+    const oauth = providerInfo("tokendance")!.oauth!;
+    expect(oauth.authorizeUrl).toBe("https://tokendance.space/auth");
+    expect(oauth.exchangeUrl).toBe("https://tokendance.space/portal/api/v1/auth/keys");
+    // The key's name is also the app name the authorization page shows.
+    expect(oauth.keyName).toBe("PenguinHarness");
+  });
+
+  it("the app URL a minted key is stamped with is the same one attribution headers carry", () => {
+    expect(APP_URL).toBe("https://penguin.ooo/");
+    expect(attributionHeaders("https://tokendance.space/gateway/v1")).toEqual({
+      "X-App-URL": APP_URL,
+    });
   });
 
   it("every entry has valid three-bucket pricing; context_window is a positive integer", () => {

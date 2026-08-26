@@ -1022,6 +1022,28 @@ export class ProjectConfigService {
     await this.writeRaw(projectId, next);
     return this.getModels(projectId);
   }
+
+  /**
+   * Writes one API key onto every model of a provider group — the credential half of the
+   * bulk group-key action, performing the same `api_key` + `created_at` write `updateModels`
+   * performs on the entries it rewrites. No other field is read or replaced, so a caller
+   * that never saw the rest of the table cannot flatten it.
+   *
+   * Returns how many entries were written; an empty group writes nothing and returns 0.
+   */
+  async setGroupApiKey(projectId: string, provider: string, apiKey: string): Promise<number> {
+    const raw = await this.readRaw(projectId);
+    const createdAt = new Date().toISOString();
+    let applied = 0;
+    const nextModels = asArray(raw.models).map((m) => {
+      if (m.provider !== provider) return m;
+      applied += 1;
+      return { ...m, api_key: apiKey, created_at: createdAt };
+    });
+    if (applied === 0) return 0;
+    await this.writeRaw(projectId, { ...raw, models: nextModels });
+    return applied;
+  }
 }
 
 /**
