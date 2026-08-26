@@ -2,10 +2,10 @@
 title: "PenguinHarness 0.2.5: two Flash models, a TokenDance gateway, and subagents you can talk to"
 date: 2026-08-27
 category: news
-excerpt: GLM-5.3 Flash and Qwen 3.8 Flash joined the built-in catalog, and GLM-5.3 Flash is listed three times over — once per route that sells it, at three different prices. A TokenDance gateway group arrived with an authorization flow that mints its own key. And a subagent stopped being fire-and-forget: the model can steer one mid-run, and so can you, from a composer inside the panel.
+excerpt: GLM-5.3 Flash and Qwen 3.8 Flash joined the built-in catalog, and GLM-5.3 Flash is listed three times over — once per route that sells it, at three different prices. A TokenDance gateway group arrived with an authorization flow that mints its own key. And an agent's reach grew three ways: a subagent can be steered mid-run, by the model and by you; the `penguin` CLI became a client of the running server, so an agent can drive the install hosting it; and a Session can be bound to a Feishu app or a Telegram bot and answered from the chat.
 ---
 
-PenguinHarness 0.2.5 is out. The model catalog gained two low-cost Flash models and a whole new gateway, and the subagents panel turned from a place you watch a child agent into a place you talk to one.
+PenguinHarness 0.2.5 is out. The model catalog gained two low-cost Flash models and a whole new gateway, and an agent's reach grew in three directions: the subagents panel turned from a place you watch a child agent into a place you talk to one, the `penguin` CLI became a client of the running server so an agent can drive the harness hosting it, and a Session can be bound to a Feishu app or a Telegram bot and answered from there.
 
 ## Two Flash models, one of them three times over
 
@@ -51,6 +51,38 @@ The last gap was approvals. A background child that hit a tool approval used to 
 
 One trade-off comes with it, and it is a real one. Since a subagent session is always resumable and never destroyed, the kill notion for subagents is gone: `kill_subagent` is **removed**, and `kill_command` is folded into `input_command` as `kill: true`. No compatibility is kept for the two removed names — a model calling one gets an unknown-tool failure. See [Upgrading](#upgrading).
 
+## An agent that can drive the harness
+
+`penguin run` and `penguin chat` used to execute a Task in-process against core: no server involved, and nothing the Web App could see. They are HTTP/SSE clients now — the CLI parses arguments and renders the stream, the server runs the Task — so a conversation started from a terminal shows up in the sidebar, and one started in the browser can be picked up from a terminal.
+
+That rebuild is what the rest of this rests on. Beside `run` and `chat` there is now a family for reading and moving an install — `ls`, `input`, `logs`, `agent`, `project`, `cost` and `schedule` — and every command an Agent runs is handed the coordinates to use them. `PENGUIN_API_URL`, `PENGUIN_API_TOKEN`, `PENGUIN_PROJECT_ID`, `PENGUIN_AGENT_ID` and `PENGUIN_SESSION_ID` go into every tool subprocess, so from inside a session a bare `penguin agent ls` reaches the very server running that session, with that Project and that Agent already the defaults. There is no login step anywhere on that path.
+
+![An Agent inside its own conversation running penguin agent create and penguin run --background, then penguin ls showing the session it just started](/blog-assets/penguinharness-0-2-5-orchestration-en.png)
+
+`penguin input` is where this meets the section above: the same verb, one level out. Sent at a **running** session it is absorbed as a course correction at the next step, exactly as a steering message is on a subagent; sent at an idle one it starts a new turn. Without `-m` it polls instead, printing that session's most recent complete assistant reply — an idempotent snapshot, the same semantics `input_subagent` has with an empty prompt. `--timeout` bounds any wait and expires as a soft yield: exit 0, a line naming the follow-up command, and the Task still running on the server.
+
+A session an Agent starts inherits the Agent's own. `run` fills each field left unspecified from the calling session's live values — Workspace, the model pair, approval mode, thinking level — field by field, the same inheritance `run_subagent` applies to children. So from inside an Agent, `penguin run -m "…"` on its own usually does the right thing, and flags are for diverging from it.
+
+Authorization is deliberately plain. The server mints an API token at every boot into `<data-root>/api-token`, mode 0600, and a CLI on the same machine reads it; that token is admin-equivalent, on the grounds that filesystem access to the data root already is admin authority. A remote `--server` gets no such shortcut and is refused without an explicit `PENGUIN_API_TOKEN`.
+
+The recipes ship as a Skill. **`penguin-orchestration`** joined the library's AI App Development group, with no preinstall marker, so a newly created Agent picks it up like the rest of the library. It carries the conventions — orient with the read-only listings before mutating anything, hand bulk material to a new session through a Workspace file rather than through `-m` — and the cautions, which are the real edges: one active Task per session, so a message at a busy session steers it rather than queueing a second; a spawned session inherits your approval mode, so an unattended `always-ask` run just hangs waiting for a human who is not watching; an Agent that can message Agents can build a loop that never terminates; and everything it starts bills the same Project.
+
+## A Session you can reach from Feishu or Telegram
+
+A conversation no longer has to be read in a browser tab. A Session can be bound to a self-built Feishu app or a Telegram bot: messages sent to the bot land in that Session as ordinary user input, and the assistant's replies come back into the chat.
+
+![The Messaging panel on Telegram: the channel selector, then the enable switch with its live status and the two probes, and only below them the Bot Token field with its stored-secret mask and clear checkbox](/blog-assets/penguinharness-0-2-5-messaging-en.png)
+
+Both channels sit behind one connector seam, and a Session keeps a saved config for each — Feishu takes an App ID, an App Secret and an API domain, Telegram a single Bot Token — but **at most one of them is enabled**, and the enabled one holds the live connection. Turning the second on is gated with the reason on screen, and refused by the server as well.
+
+Neither channel needs a public URL. Feishu's inbound events arrive over the SDK's WebSocket long connection, Telegram's over an offset-based `getUpdates` long poll — Telegram pushes nothing without a public webhook, so the connector pulls instead. A laptop behind NAT is enough: no tunnel, no webhook endpoint. On connect the poller discards whatever accumulated while nothing was listening rather than replaying a dark period as a flood of Tasks, which is also how Feishu behaves — missed events are simply gone.
+
+Replies arrive as they finish rather than in one block at the end. Each completed assistant message is relayed on its own the moment it completes, so a run that writes working notes between tool calls reaches the chat as that same sequence; the sends of one Session are serialised so they arrive in the order they completed, and chunked under the channels' text limits (Telegram's 4096-character cap is the tightest). In a group chat, the first thing a run sends is threaded onto the message that triggered it and everything after it — including that message's own continuation chunks — is a plain send, so a long answer does not bury the thread in quote blocks.
+
+Credentials follow the models page's interaction: the field always starts empty, a stored secret shows only as its mask, and a "clear stored …" checkbox drops it on save — refused while that channel's connection is enabled, so a live connection can never outrun the credential its store still has. Saving and enabling stay separate concerns, Save writing credentials and the switch connecting or terminating with what is stored. The controls lead the form and the credential fields trail them, which is deliberate: the two channels' field lists differ in length, so controls placed underneath would sit at a different height in each channel and jump on every switch.
+
+One form, two hosts — the session row's menu, and a **Messaging** panel in the conversation's dock beside the Trace panel. A Session holding a live connection carries a small paper plane on its sidebar row, the same mark for every channel, with the channel named in the tooltip and the screen-reader text rather than in the shape. What the model sees is nothing special: inbound text starts a Task as plain composer input, with no marker and no special sender, so it never learns the message came from a chat app. A pending tool approval sends a one-line notice pointing at the web UI, since approving is not something a chat message can do.
+
 ## Also in this release
 
 - **The context ring is a button now.** Clicking it breaks the current context into six parts — system prompt, tool definitions, user messages, model messages, tool requests, tool results — as one bar across the whole window, with a dashed mark where compaction will fire and a ranking of the five tools eating the most of it.
@@ -62,13 +94,15 @@ One trade-off comes with it, and it is a real one. Since a subagent session is a
 
 ## Upgrading
 
-Four changes in this release need a decision from you rather than just an update.
+Five changes in this release need a decision from you rather than just an update.
 
 **`kill_subagent` and `kill_command` are gone.** Stopping a subagent run is `input_subagent`'s `abort`; terminating a command is `input_command` with `kill: true`. Nothing translates the old names: an Agent whose stored tool configuration names them simply stops assembling those entries, and a model that calls one gets the standard unknown-tool failure. Update anything that pins either name by hand.
 
 **Editing one field of a settings tab freezes that whole tab.** The kernel update's unit is now a settings tab rather than a single config leaf. The upside is that a tab you have customized is never overwritten; the cost is that an Agent with one customized built-in tool stops receiving new built-in tools entirely. "Restore the default configuration" on that tab puts it back under kernel updates.
 
 **An Agent's commands no longer inherit the server's `PENGUIN_*` environment.** No `PENGUIN_*` variable — nor `PORT` or `HOST` — reaches a command an Agent runs, so a harness an Agent starts takes the default data root rather than the serving install's. Outbound proxy variables are the deliberate exception. If a command needs one of those variables, set it in that Agent's vault, which is applied after the host environment is stripped.
+
+**The CLI no longer runs a Task without a server.** `penguin run` and `penguin chat` go through the server API; where none is running they start one locally, and fully offline core-direct execution is no longer a CLI mode — the SDK keeps that capability for embedders. In the same rework the per-user "show CLI sessions" filter was retired and every session is always listed, so Sessions an older CLI left behind now appear in the sidebar on their own. Nothing on disk has to be migrated, and old binaries keep working against their own cores until they are updated.
 
 **New catalog rows are not automatic.** Presets are copied into `.project_config.toml` at Project creation and nothing rewrites them. Use **sync presets** on the models page to pick up GLM-5.3 Flash, Qwen 3.8 Flash and the TokenDance group. A Project older than that group has to sync once before the group — and its **Authorize key** action — appears at all.
 
