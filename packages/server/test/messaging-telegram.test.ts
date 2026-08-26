@@ -707,6 +707,22 @@ describe("telegram binding routes and connector loop", () => {
     expect(fake.lastClient().sawAbort).toBe(true);
   });
 
+  it("the same Telegram message delivered under two update ids starts one Task", async () => {
+    // What two pollers on one token do: each carries its own offset, so the same chat
+    // message reaches the bridge twice wrapped in different updates. The dedupe key is
+    // Telegram's own `chatId:message_id`, which is identical across both.
+    await bindEnabled(SID);
+    fake.push(privateText("deploy the build", 11));
+    await waitFor(() => runs.length === 1);
+    fake.push(privateText("deploy the build", 11));
+    await settle(80);
+    expect(runs).toHaveLength(1);
+    // A different message with the same text is a different message.
+    fake.push(privateText("deploy the build", 12));
+    await waitFor(() => runs.length === 2);
+    expect(runs.map((r) => r[0]!.text)).toEqual(["deploy the build", "deploy the build"]);
+  });
+
   it("two syncs racing leave exactly one live poller (a second one would 409 the first)", async () => {
     await api.put(BASE(SID), { botToken: TOKEN });
     t.deps.messagingRepo.setEnabled(SID, "telegram", true);

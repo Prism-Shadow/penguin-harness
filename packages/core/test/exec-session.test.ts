@@ -2,7 +2,7 @@
  * Behavior tests for long-running command sessions (exec_command yield + input_command).
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Environment, ManagedSession } from "../src/environment/index.js";
@@ -674,5 +674,49 @@ describe("controlEnv injects the host's harness-control variables into commands"
     } finally {
       controlled.dispose();
     }
+  });
+});
+
+describe("exec_command — a working directory that is not there", () => {
+  // Node reports an unusable `cwd` as `spawn <shell> ENOENT`: the error names the COMMAND,
+  // so a Workspace deleted under a live Session reads exactly like a missing shell. These
+  // pin the honest message — the one difference between "install bash" and "your Workspace
+  // is gone" for whoever reads the reply.
+
+  it("names the missing Workspace instead of blaming the shell", async () => {
+    // The Session is live and its Environment already built; the directory goes away
+    // underneath it, which is all it takes — the Workspace is validated when a Session
+    // loads and never again.
+    await rm(tmp, { recursive: true, force: true });
+    const res = await runTool(env, "exec_command", { cmd: "echo test" });
+    expect(res.output).toContain("working directory does not exist");
+    expect(res.output).toContain(tmp);
+    expect(res.output).not.toContain("ENOENT");
+    expect(res.output).not.toContain("spawn bash");
+    expect(res.stopReason).toBe("fatal");
+  });
+
+  it("names a workdir argument that does not resolve, rather than the shell", async () => {
+    const res = await runTool(env, "exec_command", {
+      cmd: "echo test",
+      workdir: "no/such/subdir",
+    });
+    expect(res.output).toContain("working directory does not exist");
+    expect(res.output).toContain(path.join(tmp, "no/such/subdir"));
+    expect(res.output).not.toContain("spawn bash");
+  });
+
+  it("names a workdir that is a file, not a directory", async () => {
+    const file = path.join(tmp, "notadir.txt");
+    await writeFile(file, "x");
+    const res = await runTool(env, "exec_command", { cmd: "echo test", workdir: "notadir.txt" });
+    expect(res.output).toContain("is not a directory");
+    expect(res.output).toContain(file);
+  });
+
+  it("still runs normally when the Workspace is there", async () => {
+    const res = await runTool(env, "exec_command", { cmd: "echo test" });
+    expect(res.output).toContain("test");
+    expect(res.stopReason).toBe("completed");
   });
 });

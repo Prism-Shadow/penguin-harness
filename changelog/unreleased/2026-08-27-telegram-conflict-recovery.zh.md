@@ -16,3 +16,4 @@
 - 每条连接在首次轮询前执行一次 `deleteWebhook`。Bot API 中 webhook 与 `getUpdates` 互斥，因此绑定之前被指向过 webhook 的机器人此前永远无法轮询。待处理更新予以保留，仍由连接器自己的积压清理决定哪些算作离线期。
 - Bot API 中两种可操作的 409 被改写为以行动开头——「another program is already polling this bot …」与「a webhook is set on this bot, which blocks polling …」——不再沿用把要点放在句尾的 Telegram 原文。
 - 连接状态行把失败信息移到开关下方独立一行，限高两行、悬停显示全文，不再与开关、标签、状态词挤在同一行里被截断。Telegram 绑定的常见问题折叠区新增一条，说明一个 Token 同一时刻只能被一个程序使用。
+- 轮询冲突是同一条入站消息两次到达桥接层的原因之一；该症状的另一端见[入站去重](2026-08-27-messaging-inbound-dedupe.zh.md)。

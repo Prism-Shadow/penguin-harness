@@ -7,7 +7,7 @@
 
 [中文版](2026-08-27-posix-shell-fallback.zh.md)
 
-`exec_command` answered `[spawn error: spawn bash ENOENT]` to every command on a POSIX machine whose `PATH` had no `bash`. The shell resolver gained the fallback chain the Windows branch already had.
+The shell resolver gained on POSIX the fallback chain the Windows branch already had. Without it, a machine whose `PATH` has no `bash` failed every command before it ran.
 
 ## Details
 

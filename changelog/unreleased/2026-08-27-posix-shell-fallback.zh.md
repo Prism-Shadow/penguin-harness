@@ -7,7 +7,7 @@
 
 [English](2026-08-27-posix-shell-fallback.md)
 
-在 `PATH` 中没有 `bash` 的 POSIX 机器上，`exec_command` 对每条命令都回答 `[spawn error: spawn bash ENOENT]`。Shell 解析器补上了 Windows 分支早已具备的回退链。
+Shell 解析器在 POSIX 上补齐了 Windows 分支早已具备的回退链。没有它时，`PATH` 中没有 `bash` 的机器上每条命令都会在真正执行前失败。
 
 ## 细节
 
