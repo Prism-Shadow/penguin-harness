@@ -4,7 +4,8 @@
  * Data verified as of 2026-07-10 (Qwen Token Plan entries: 2026-07-20; MiniMax: 2026-08-03;
  * DeepSeek, Gemini 3.7, GLM-5.3 and the whole OpenAI line-up (direct + OpenRouter):
  * 2026-08-18; the direct Anthropic group: 2026-08-20; the DeepSeek V4 Flash Vision Exp rows:
- * 2026-08-21; the TokenDance group: 2026-08-25, its glm-5.3-flash row: 2026-08-26 — per each
+ * 2026-08-21; the TokenDance group: 2026-08-25, its glm-5.3-flash row: 2026-08-26; the
+ * GLM-5.3 Flash rows (direct + OpenRouter) and qwen3.8-flash: 2026-08-26 — per each
  * provider's docs).
  * Docs: packages/docs/content/models.{zh,en}.md (site path /docs/models) documents the
  * provider groups and credential resolution described here.
@@ -20,8 +21,9 @@
  * single rate, so long-context usage will be underestimated).
  *
  * Scope: excludes deepseek-chat / deepseek-reasoner legacy aliases that AgentHub cannot
- * auto-route (deprecated 2026-07-24), glm-5v-turbo (image input unsupported by AgentHub's GLM
- * client), the OpenRouter z-ai/glm-5.1 and SiliconFlow Pro/zai-org/GLM-5.1 gateway listings
+ * auto-route (deprecated 2026-07-24), glm-5v-turbo (AgentHub's GLM client forwards images
+ * only for glm-5.3-flash, so a vision model cannot do the one thing it exists for), the
+ * OpenRouter z-ai/glm-5.1 and SiliconFlow Pro/zai-org/GLM-5.1 gateway listings
  * (delisted 2026-08-06; the Z.AI direct glm-5.1 remains), the OpenRouter
  * inclusionai/ling-3.0-flash:free listing (delisted from OpenRouter, removed 2026-08-18),
  * non-chat models (embedding / image generation / TTS), and Bedrock. Direct-vendor ids are
@@ -759,6 +761,21 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
+    // The gateway listing of the direct glm-5.3-flash row below, sitting on a 50%-off ZAI
+    // promotion through 2026-09-09 16:00 UTC (Z.AI's own price list names the same window as
+    // 24:00 on 2026-09-09, UTC+8). Stored at the discounted rate the gateway actually bills;
+    // when it lapses, restore 0.03 / 0.15 / 0.5. The listing takes text, images and video,
+    // and the generic openai-chat client it pins converts image_url parts.
+    modelId: "z-ai/glm-5.3-flash",
+    displayName: "GLM-5.3 Flash",
+    provider: "openrouter",
+    contextWindow: 1048576,
+    pricing: usd(0.015, 0.075, 0.25),
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
     modelId: "z-ai/glm-5.2",
     displayName: "GLM-5.2",
     provider: "openrouter",
@@ -1098,6 +1115,20 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: QWEN_PAYG_BASE_URL,
   },
   {
+    // Official CNY list price from www.qianwenai.com/models/qwen3.8-flash: CNY 1 input /
+    // CNY 0.1 cache hit / CNY 3 output per MTok, over a 1M-token input window with a 131K
+    // output cap. Its input modalities include images and video, and this group's
+    // openai-chat client converts image parts.
+    modelId: "qwen3.8-flash",
+    displayName: "Qwen 3.8 Flash",
+    provider: "qwen-pay-as-you-go",
+    contextWindow: 1000000,
+    pricing: cny(0.1, 1, 3),
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: QWEN_PAYG_BASE_URL,
+  },
+  {
     modelId: "qwen3.8-max",
     displayName: "Qwen 3.8 Max",
     provider: "qwen-pay-as-you-go",
@@ -1348,6 +1379,26 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.26, 1.4, 4.4),
     supportsVision: false,
+  },
+  {
+    // Z.AI's price list (docs.z.ai/guides/overview/pricing) publishes $0.15 input / $0.03
+    // cached input / $0.50 output; a 50% promotion halves all three through 24:00 on
+    // 2026-09-09 (UTC+8). Direct-vendor rows record the vendor's list price, so that is what
+    // is stored here — the OpenRouter z-ai/glm-5.3-flash row above carries the promotional
+    // rate it is actually billed at.
+    //
+    // The model is natively multimodal (docs.z.ai/guides/vlm/glm-5.3-flash: images, video
+    // and files), and it is the one GLM id whose images AgentHub's GLM client forwards — as
+    // image_url parts, in a prompt and in a tool result alike. Every other GLM id refuses
+    // one outright ("GLM <id> does not support image inputs."), which is why the rest of
+    // this group is vision-off. That forwarding is why core's dependency range floors
+    // @prismshadow/agenthub at 0.4.8.
+    modelId: "glm-5.3-flash",
+    displayName: "GLM-5.3 Flash",
+    provider: "zhipu",
+    contextWindow: 1000000,
+    pricing: usd(0.03, 0.15, 0.5),
+    supportsVision: true,
   },
   {
     modelId: "glm-5.2",

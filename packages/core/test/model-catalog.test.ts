@@ -224,6 +224,7 @@ describe("model-catalog", () => {
       "x-ai/grok-4.5",
       "xiaomi/mimo-v2.5",
       "z-ai/glm-5.3",
+      "z-ai/glm-5.3-flash",
       "z-ai/glm-5.2",
     ]);
     for (const m of or) {
@@ -325,6 +326,7 @@ describe("model-catalog", () => {
     expect(qpayg.map((m) => [m.modelId, m.supportsVision])).toEqual([
       ["deepseek-v4-flash-0731", false],
       ["kimi/kimi-k3", true],
+      ["qwen3.8-flash", true],
       ["qwen3.8-max", true],
       ["qwen3.7-plus", true],
       ["ZHIPU/GLM-5.2", false],
@@ -453,6 +455,7 @@ describe("model-catalog", () => {
     ]);
     expect(MODEL_CATALOG.filter((m) => m.provider === "zhipu").map((m) => m.modelId)).toEqual([
       "glm-5.3",
+      "glm-5.3-flash",
       "glm-5.2",
       "glm-5.1",
       "glm-5",
@@ -485,6 +488,46 @@ describe("model-catalog", () => {
     const glm53 = catalogEntryFor("zhipu", "glm-5.3")!;
     expect([glm53.contextWindow, glm53.supportsVision]).toEqual([1000000, false]);
     expect(glm53.pricing).toEqual(catalogEntryFor("zhipu", "glm-5.2")!.pricing);
+    // GLM-5.3 Flash is listed both directly and on OpenRouter, and the two rows deliberately
+    // disagree on price: the direct row keeps Z.AI's list price while the gateway row stores
+    // the 50%-off rate OpenRouter actually bills through 2026-09-09, so the gateway figures
+    // are exactly half the direct ones.
+    const glm53f = catalogEntryFor("zhipu", "glm-5.3-flash")!;
+    expect([glm53f.contextWindow, glm53f.supportsVision]).toEqual([1000000, true]);
+    expect([
+      glm53f.pricing!.cache_read,
+      glm53f.pricing!.cache_write,
+      glm53f.pricing!.output,
+    ]).toEqual([0.03, 0.15, 0.5]);
+    const glm53for = catalogEntryFor("openrouter", "z-ai/glm-5.3-flash")!;
+    expect([glm53for.contextWindow, glm53for.supportsVision]).toEqual([1048576, true]);
+    expect([
+      glm53for.pricing!.cache_read,
+      glm53for.pricing!.cache_write,
+      glm53for.pricing!.output,
+    ]).toEqual([0.015, 0.075, 0.25]);
+    // Vision agrees on both routes: the direct row's AgentHub GLM client forwards image_url
+    // parts for this one id, and the gateway row's generic openai-chat client carries them
+    // for any id. It is the only vision-capable row in the direct Z.AI group.
+    expect(glm53f.clientType).toBeUndefined();
+    expect(glm53for.clientType).toBe("openai-chat");
+    for (const m of MODEL_CATALOG.filter((m) => m.provider === "zhipu")) {
+      expect(m.supportsVision, m.modelId).toBe(m.modelId === "glm-5.3-flash");
+    }
+    // Both rows share one display name, as the other dual-listed models do.
+    expect(glm53f.displayName).toBe("GLM-5.3 Flash");
+    expect(glm53for.displayName).toBe("GLM-5.3 Flash");
+    // Qwen 3.8 Flash: official CNY list price (1 / 0.1 / 3 per MTok) at the catalog's 7:1
+    // display rate, 1M context, vision through the group's openai-chat client.
+    const q38f = catalogEntryFor("qwen-pay-as-you-go", "qwen3.8-flash")!;
+    expect([q38f.contextWindow, q38f.supportsVision, q38f.displayName]).toEqual([
+      1000000,
+      true,
+      "Qwen 3.8 Flash",
+    ]);
+    expect([q38f.pricing!.cache_read, q38f.pricing!.cache_write, q38f.pricing!.output]).toEqual([
+      0.014286, 0.142857, 0.428571,
+    ]);
     // Grok 4.6 keeps Grok 4.5's input/output rates with a raised cache-hit price.
     const grok46 = catalogEntryFor("openrouter", "x-ai/grok-4.6")!;
     expect([grok46.contextWindow, grok46.supportsVision]).toEqual([500000, true]);
@@ -695,6 +738,9 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing ru
     expect(resolveModelEnv("glm-5.2")?.envKey).toBe("ZAI_API_KEY");
     // glm-5.3 is served by agenthub 0.4.2's unified GLM client (same ZAI_* pair).
     expect(resolveModelEnv("glm-5.3")?.envKey).toBe("ZAI_API_KEY");
+    // glm-5.3-flash carries the glm-5 substring, so it reaches the same client and pair.
+    expect(resolveModelEnv("glm-5.3-flash")?.envKey).toBe("ZAI_API_KEY");
+    expect(resolveModelEnv("glm-5.3-flash")?.envBaseUrlKey).toBe("ZAI_BASE_URL");
     expect(resolveModelEnv("kimi-k2.6")?.envBaseUrlKey).toBe("MOONSHOT_BASE_URL");
     // agenthub 0.4.2 unified the Kimi clients; every spelling reads the same env pair
     // (kimi-k3 matches no k2.x substring, so it must resolve on its own).
