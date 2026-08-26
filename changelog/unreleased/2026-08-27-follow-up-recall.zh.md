@@ -3,6 +3,7 @@
 - **Date:** 2026-08-27
 - **Type:** fix
 - **Scope:** `server`, `web`, `docs`
+- **PR:** [#485](https://github.com/Prism-Shadow/penguin-harness/pull/485)
 
 [English](2026-08-27-follow-up-recall.md)
 
