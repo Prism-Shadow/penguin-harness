@@ -7,7 +7,7 @@
 
 [English](2026-08-25-tokendance-and-app-attribution.md)
 
-模型请求开始向读取应用归因请求头的网关声明 PenguinHarness，内置目录新增 TokenDance 分组及其六个预设。模型库的 Provider 分组顺序同时做了调整。
+模型请求开始向读取应用归因请求头的网关声明 PenguinHarness，内置目录新增 TokenDance 分组及其七个预设。模型库的 Provider 分组顺序同时做了调整。
 
 ## 应用归因
 
@@ -22,7 +22,7 @@
 
 ## TokenDance
 
-新增 `tokendance` 分组，经 Chat Completions（`client_type = "openai-chat"`）访问 `https://tokendance.space/gateway/v1`，凭证留空时回退到 `OPENAI_API_KEY`。随之上线六个预设——`deepseek-v4-flash-0731`、`deepseek-v4-flash-vision-exp`、`deepseek-v4-pro-0813`、`glm-5.3`、`kimi-k3` 与 `qwen3.8-max`——价格取该网关自己的 CNY 牌价，其中 `qwen3.8-max` 记录的是其进行中的八折促销价（牌价 1.5 / 12 / 36 CNY）。此前创建的 Project 不会自动获得该分组，需在模型库页执行「同步预设」追加。
+新增 `tokendance` 分组，经 Chat Completions（`client_type = "openai-chat"`）访问 `https://tokendance.space/gateway/v1`，凭证留空时回退到 `OPENAI_API_KEY`。随之上线七个预设——`deepseek-v4-flash-0731`、`deepseek-v4-flash-vision-exp`、`deepseek-v4-pro-0813`、`glm-5.3`、`glm-5.3-flash`、`kimi-k3` 与 `qwen3.8-max`——价格取该网关自己的 CNY 价格。其中两个正在促销，记录口径不同：`qwen3.8-max` 记其实际计费的八折价（牌价 1.5 / 12 / 36 CNY），`glm-5.3-flash` 在限时五折期间记牌价 0.23 / 0.8 / 2.8 CNY（缓存命中 / 输入 / 输出）。`glm-5.3-flash` 支持多模态输入，上下文窗口 1M，也是该分组中唯一只提供 Chat Completions 协议的模型。此前创建的 Project 不会自动获得这些预设，需在模型库页执行「同步预设」追加。
 
 ## Provider 顺序
 

@@ -7,7 +7,7 @@
 
 [中文版](2026-08-25-tokendance-and-app-attribution.zh.md)
 
-Model requests started naming PenguinHarness to the gateways that read an app-attribution header, and the built-in catalog gained a TokenDance provider group with six presets. The model library's provider groups were resequenced at the same time.
+Model requests started naming PenguinHarness to the gateways that read an app-attribution header, and the built-in catalog gained a TokenDance provider group with seven presets. The model library's provider groups were resequenced at the same time.
 
 ## App attribution
 
@@ -22,7 +22,7 @@ The headers are picked by the endpoint host of the entry's `base_url` rather tha
 
 ## TokenDance
 
-A `tokendance` group was added, reaching `https://tokendance.space/gateway/v1` over Chat Completions (`client_type = "openai-chat"`) with a blank credential falling back to `OPENAI_API_KEY`. Six presets shipped with it — `deepseek-v4-flash-0731`, `deepseek-v4-flash-vision-exp`, `deepseek-v4-pro-0813`, `glm-5.3`, `kimi-k3` and `qwen3.8-max` — priced at the gateway's own CNY rates, with `qwen3.8-max` recorded at its running 20%-off promotion (list 1.5 / 12 / 36 CNY). Projects created earlier do not pick the group up on their own; the models page's "sync presets" appends it.
+A `tokendance` group was added, reaching `https://tokendance.space/gateway/v1` over Chat Completions (`client_type = "openai-chat"`) with a blank credential falling back to `OPENAI_API_KEY`. Seven presets shipped with it — `deepseek-v4-flash-0731`, `deepseek-v4-flash-vision-exp`, `deepseek-v4-pro-0813`, `glm-5.3`, `glm-5.3-flash`, `kimi-k3` and `qwen3.8-max` — priced at the gateway's own CNY rates. Two of them carry a running promotion and are recorded differently: `qwen3.8-max` at the 20%-off rate it is billed (list 1.5 / 12 / 36 CNY), `glm-5.3-flash` at its list price of 0.23 / 0.8 / 2.8 CNY (cache hit / input / output) while a limited-time 50% off runs. `glm-5.3-flash` is multimodal with a 1M context window, and is the group's only model whose upstream serves Chat Completions alone. Projects created earlier do not pick these presets up on their own; the models page's "sync presets" appends them.
 
 ## Provider order
 

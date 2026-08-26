@@ -4,7 +4,8 @@
  * Data verified as of 2026-07-10 (Qwen Token Plan entries: 2026-07-20; MiniMax: 2026-08-03;
  * DeepSeek, Gemini 3.7, GLM-5.3 and the whole OpenAI line-up (direct + OpenRouter):
  * 2026-08-18; the direct Anthropic group: 2026-08-20; the DeepSeek V4 Flash Vision Exp rows:
- * 2026-08-21; the TokenDance group: 2026-08-25 — per each provider's docs).
+ * 2026-08-21; the TokenDance group: 2026-08-25, its glm-5.3-flash row: 2026-08-26 — per each
+ * provider's docs).
  * Docs: packages/docs/content/models.{zh,en}.md (site path /docs/models) documents the
  * provider groups and credential resolution described here.
  *
@@ -909,11 +910,13 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // re-read anonymously). TokenDance publishes an input price and a cache-hit price with no
   // separate cache-write fee, so cache_write carries the input price.
   //
-  // Discounts: like the OpenRouter rows — and unlike the two Qwen groups below, which store
-  // official list prices and leave promotions out — these rows store what TokenDance actually
-  // BILLS, so a running promotion is stored at its discounted rate — qwen3.8-max sits on a
-  // limited-time 20% off (list 1.5 / 12 / 36 CNY), and a lapse there silently raises the real
-  // cost 25% above what the catalog says. --
+  // Discounts: this group is mixed, so the rate a row stores is stated on the row itself.
+  // qwen3.8-max stores what TokenDance actually BILLS — a limited-time 20% off (list
+  // 1.5 / 12 / 36 CNY), the same convention the OpenRouter rows follow — so a lapse there
+  // silently raises the real cost 25% above what the catalog says. glm-5.3-flash stores the
+  // official LIST price while a limited-time 50% off runs, the convention of the two Qwen
+  // groups below, so it over-states the current cost 2x until that promotion ends. No other
+  // row has a promotion running, so list price and billed rate coincide for the rest. --
   {
     modelId: "deepseek-v4-flash-0731",
     displayName: "DeepSeek V4 Flash 0731",
@@ -951,6 +954,21 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: cny(2, 8, 28),
     supportsVision: false,
+    clientType: "openai-chat",
+    baseUrl: TOKENDANCE_BASE_URL,
+  },
+  {
+    // Natively multimodal per TokenDance's catalog entry, and this group's generic
+    // openai-chat client forwards image_url parts, so image input works on this path.
+    // Priced at TokenDance's official LIST rate (CNY 0.23 cache hit / 0.8 input / 2.8 output)
+    // while a limited-time 50% off runs. Its supported_protocols is openai:chat-completions
+    // alone, so the openai-chat pin is the only shape this id serves.
+    modelId: "glm-5.3-flash",
+    displayName: "GLM-5.3 Flash",
+    provider: "tokendance",
+    contextWindow: 1000000,
+    pricing: cny(0.23, 0.8, 2.8),
+    supportsVision: true,
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
   },
