@@ -1,21 +1,18 @@
 /**
  * Messaging-binding tests (Feishu is the only channel): the repo's two uniqueness rules,
- * the /api/sessions/:id/messaging/feishu routes (masking, secret keep-on-blank, 409s,
- * authz split, cascade on session delete), the project-level listing, and the bridge's
- * routing through a fake Feishu SDK — inbound text becomes an ordinary user task exactly
- * as if typed in the composer (no marker, no special sender; queueIfBusy), non-text gets
- * the bilingual text-only reply, a completed run mirrors its assistant text to the last
- * known chat (reply-to-message in groups), and an approval_request sends the one-line
- * notice. No test opens real network.
+ * the /api/sessions/:id/messaging/feishu routes (masking, secret keep-on-blank, the
+ * save/enable split — PUT persists credentials only, POST /state owns the connection —
+ * 409s, authz split, cascade on session delete), and the bridge's routing through a fake
+ * Feishu SDK — inbound text becomes an ordinary user task
+ * exactly as if typed in the composer (no marker, no special sender; queueIfBusy),
+ * non-text gets the bilingual text-only reply, a completed run mirrors its assistant text
+ * to the last known chat (reply-to-message in groups), and an approval_request sends the
+ * one-line notice. No test opens real network.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { assistantText, approvalDecision, toolCall } from "@prismshadow/penguin-core";
 import type { ApproveFn, OmniMessage, TextPayload } from "@prismshadow/penguin-core";
-import type {
-  FeishuBindingResponse,
-  FeishuTestResponse,
-  ProjectMessagingResponse,
-} from "../src/api/types.js";
+import type { FeishuBindingResponse, FeishuTestResponse } from "../src/api/types.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import {
@@ -189,6 +186,12 @@ describe("messaging binding routes and bridge", () => {
   let projectId: string;
   let runs: TextPayload[][];
 
+  /** Save credentials, then flip the toggle on — the two-step flow the flow tests need. */
+  const bindEnabled = async (sid: string, body: Record<string, unknown> = PUT_BODY) => {
+    expect((await api.put(BASE(sid), body)).status).toBe(200);
+    expect((await api.post(`${BASE(sid)}/state`, { enabled: true })).status).toBe(200);
+  };
+
   beforeEach(async () => {
     fake = new FakeSdk();
     t = await createTestApp({ feishuSdk: fake });
@@ -213,7 +216,7 @@ describe("messaging binding routes and bridge", () => {
     });
   });
 
-  it("PUT binds (masked secret, connected status), blank secret keeps the stored one", async () => {
+  it("PUT saves credentials only (masked, disabled, no connection); blank secret keeps the stored one", async () => {
     const res = await api.put(BASE(SID), PUT_BODY);
     expect(res.status).toBe(200);
     const body = (await res.json()) as FeishuBindingResponse;
@@ -222,20 +225,20 @@ describe("messaging binding routes and bridge", () => {
     expect(body.binding?.appSecretMasked).toBe("secr…3456");
     expect(JSON.stringify(body)).not.toContain(PUT_BODY.appSecret);
     expect(body.binding?.lastChatKnown).toBe(false);
-    expect(body.status.state).toBe("connected");
-    expect(fake.connections).toHaveLength(1);
-    expect(fake.connections[0]!.creds.appId).toBe(PUT_BODY.appId);
+    // Saving is not connecting: the binding starts disabled and nothing was opened.
+    expect(body.binding?.enabled).toBe(false);
+    expect(body.status.state).toBe("disconnected");
+    expect(fake.connections).toHaveLength(0);
     // The stored row carries the channel discriminator and the account identity.
     const stored = t.deps.messagingRepo.find(SID)!;
     expect(stored.channel).toBe("feishu");
     expect(stored.accountId).toBe(PUT_BODY.appId);
 
-    // Re-save with a blank secret: the stored one stays, and the save reconnects.
+    // Re-save with a blank secret: the stored one stays; still disabled, still dark.
     const resave = await api.put(BASE(SID), { appId: PUT_BODY.appId, appSecret: "" });
     expect(resave.status).toBe(200);
     expect(t.deps.messagingRepo.find(SID)?.config.appSecret).toBe(PUT_BODY.appSecret);
-    expect(fake.connections).toHaveLength(2);
-    expect(fake.connections[0]!.closed).toBe(true);
+    expect(fake.connections).toHaveLength(0);
 
     // First-time bind without a secret is refused.
     t.deps.messagingRepo.delete(SID);
@@ -244,6 +247,41 @@ describe("messaging binding routes and bridge", () => {
     expect(((await bare.json()) as { error: { code: string } }).error.code).toBe(
       "feishu_secret_required",
     );
+  });
+
+  it("POST /state owns the connection: enable connects with stored credentials, disable terminates", async () => {
+    // Unbound: nothing to toggle.
+    expect((await api.post(`${BASE(SID)}/state`, { enabled: true })).status).toBe(404);
+    await api.put(BASE(SID), PUT_BODY);
+
+    const on = await api.post(`${BASE(SID)}/state`, { enabled: true });
+    expect(on.status).toBe(200);
+    const onBody = (await on.json()) as FeishuBindingResponse;
+    expect(onBody.binding?.enabled).toBe(true);
+    expect(onBody.status.state).toBe("connected");
+    expect(fake.connections).toHaveLength(1);
+    // Connected with the STORED credentials — the toggle carries none of its own.
+    expect(fake.connections[0]!.creds.appId).toBe(PUT_BODY.appId);
+    expect(fake.connections[0]!.creds.appSecret).toBe(PUT_BODY.appSecret);
+
+    const off = await api.post(`${BASE(SID)}/state`, { enabled: false });
+    const offBody = (await off.json()) as FeishuBindingResponse;
+    expect(offBody.binding?.enabled).toBe(false);
+    expect(offBody.status.state).toBe("disconnected");
+    expect(fake.connections[0]!.closed).toBe(true);
+    expect((await api.post(`${BASE(SID)}/state`, { enabled: "yes" })).status).toBe(400);
+  });
+
+  it("saving new credentials while enabled restarts the connector with them (never-diverge rule)", async () => {
+    await bindEnabled(SID);
+    expect(fake.connections).toHaveLength(1);
+    const res = await api.put(BASE(SID), { ...PUT_BODY, appSecret: "rotated-secret-9999" });
+    expect(res.status).toBe(200);
+    // The old connection is torn down and a new one runs on the just-saved secret.
+    expect(fake.connections).toHaveLength(2);
+    expect(fake.connections[0]!.closed).toBe(true);
+    expect(fake.connections[1]!.creds.appSecret).toBe("rotated-secret-9999");
+    expect(((await res.json()) as FeishuBindingResponse).binding?.enabled).toBe(true);
   });
 
   it("one binding per app: a second Session on the same app_id gets 409 feishu_app_in_use", async () => {
@@ -258,18 +296,17 @@ describe("messaging binding routes and bridge", () => {
     expect(t.deps.messagingRepo.find(SID2)).toBeNull();
   });
 
-  it("authz: non-members get 404; a member reads but cannot write (owner-only)", async () => {
+  it("authz: non-members get 404; a member reads but cannot write or toggle (owner-only)", async () => {
     await api.put(BASE(SID), PUT_BODY);
     const outsider = apiClient(t.app, (await provisionUser(t.app, "outsider")).cookie);
     expect((await outsider.get(BASE(SID))).status).toBe(404);
-    expect((await outsider.get(`/api/projects/${projectId}/messaging`)).status).toBe(404);
 
     const mate = await provisionUser(t.app, "mate");
     await api.post(`/api/projects/${projectId}/members`, { userId: "mate" });
     const member = apiClient(t.app, mate.cookie);
     expect((await member.get(BASE(SID))).status).toBe(200);
-    expect((await member.get(`/api/projects/${projectId}/messaging`)).status).toBe(200);
     expect((await member.put(BASE(SID), PUT_BODY)).status).toBe(403);
+    expect((await member.post(`${BASE(SID)}/state`, { enabled: true })).status).toBe(403);
     expect((await member.delete(BASE(SID))).status).toBe(403);
   });
 
@@ -283,7 +320,7 @@ describe("messaging binding routes and bridge", () => {
     expect(((await draft.json()) as FeishuTestResponse).ok).toBe(true);
     expect(fake.clients.at(-1)?.creds.appId).toBe("cli_draft");
 
-    // Stored fallback: an empty body tests the saved binding.
+    // Stored fallback: an empty body tests the saved binding — enabling is not required.
     await api.put(BASE(SID), PUT_BODY);
     const stored = await api.post(`${BASE(SID)}/test`, {});
     expect(((await stored.json()) as FeishuTestResponse).ok).toBe(true);
@@ -306,7 +343,7 @@ describe("messaging binding routes and bridge", () => {
 
   it("POST /test-message: 404 unbound, 409 before a chat is known, sends after one", async () => {
     expect((await api.post(`${BASE(SID)}/test-message`, {})).status).toBe(404);
-    await api.put(BASE(SID), PUT_BODY);
+    await bindEnabled(SID);
     const early = await api.post(`${BASE(SID)}/test-message`, {});
     expect(early.status).toBe(409);
     expect(((await early.json()) as { error: { code: string } }).error.code).toBe("feishu_no_chat");
@@ -328,7 +365,7 @@ describe("messaging binding routes and bridge", () => {
   });
 
   it("inbound text starts an ordinary user task (no marker, no sender) and the reply mirrors back (direct chat)", async () => {
-    await api.put(BASE(SID), PUT_BODY);
+    await bindEnabled(SID);
     await fake.lastConnection().fire({
       chatId: "oc_chat_1",
       chatType: "p2p",
@@ -360,7 +397,7 @@ describe("messaging binding routes and bridge", () => {
   });
 
   it("group chats reply to the inbound message; web-initiated turns mirror too", async () => {
-    await api.put(BASE(SID), PUT_BODY);
+    await bindEnabled(SID);
     await fake.lastConnection().fire({
       chatId: "oc_group_9",
       chatType: "group",
@@ -390,7 +427,7 @@ describe("messaging binding routes and bridge", () => {
   });
 
   it("non-text messages get the bilingual text-only reply and start no task", async () => {
-    await api.put(BASE(SID), PUT_BODY);
+    await bindEnabled(SID);
     await fake.lastConnection().fire({
       chatId: "oc_chat_1",
       chatType: "p2p",
@@ -414,7 +451,7 @@ describe("messaging binding routes and bridge", () => {
     row2.approvalMode = "always-ask";
     t.deps.sessionsRepo.insert(row2);
     t.deps.manager.adopt(row2, parkingFakeSession(SID2));
-    await api.put(BASE(SID2), { ...PUT_BODY, appId: "cli_approver" });
+    await bindEnabled(SID2, { ...PUT_BODY, appId: "cli_approver" });
     await fake.lastConnection().fire({
       chatId: "oc_chat_2",
       chatType: "p2p",
@@ -430,37 +467,17 @@ describe("messaging binding routes and bridge", () => {
   });
 
   it("DELETE unbinds + disconnects, and deleting the Session cascades the binding away", async () => {
-    await api.put(BASE(SID), PUT_BODY);
+    await bindEnabled(SID);
     expect((await api.delete(BASE(SID))).status).toBe(204);
     expect(t.deps.messagingRepo.find(SID)).toBeNull();
     expect(fake.connections[0]!.closed).toBe(true);
     expect(t.deps.messaging.statusOf(SID).state).toBe("disconnected");
 
-    // Rebind, then delete the Session itself: the binding goes with it.
-    await api.put(BASE(SID), PUT_BODY);
+    // Rebind + enable, then delete the Session itself: the binding goes with it.
+    await bindEnabled(SID);
     expect((await api.delete(`/api/sessions/${SID}`)).status).toBe(204);
     expect(t.deps.messagingRepo.find(SID)).toBeNull();
     expect(fake.connections[1]!.closed).toBe(true);
-  });
-
-  it("the project-level listing reports secret-free summary rows for members", async () => {
-    await api.put(BASE(SID), PUT_BODY);
-    t.deps.sessionsRepo.insert(sessionRowOf(SID2, projectId)); // unbound: not listed
-    const res = await api.get(`/api/projects/${projectId}/messaging`);
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as ProjectMessagingResponse;
-    expect(body.bindings).toEqual([
-      {
-        sessionId: SID,
-        agentId: "default_agent",
-        channel: "feishu",
-        accountId: PUT_BODY.appId,
-        lastChatKnown: false,
-        status: { state: "connected", changedAt: expect.any(String) },
-      },
-    ]);
-    // Secret-free by construction: the whole response never carries the secret.
-    expect(JSON.stringify(body)).not.toContain(PUT_BODY.appSecret);
   });
 
   it("the session list marks bound rows with messagingBound", async () => {
@@ -480,12 +497,21 @@ describe("messaging binding routes and bridge", () => {
     expect("messagingBound" in list.sessions.find((s) => s.sessionId === SID2)!).toBe(false);
   });
 
-  it("start() connects stored bindings and reconciles away rows whose Session is gone", async () => {
+  it("start() connects only enabled bindings and reconciles away rows whose Session is gone", async () => {
     t.deps.messagingRepo.upsert({
       sessionId: SID,
       channel: "feishu",
       accountId: "cli_boot",
       config: { appId: "cli_boot", appSecret: "boot-secret", baseDomain: "https://open.feishu.cn" },
+    });
+    t.deps.messagingRepo.setEnabled(SID, true);
+    // A saved-but-disabled binding keeps its credentials and stays dark across restarts.
+    t.deps.sessionsRepo.insert(sessionRowOf(SID2, projectId));
+    t.deps.messagingRepo.upsert({
+      sessionId: SID2,
+      channel: "feishu",
+      accountId: "cli_dark",
+      config: { appId: "cli_dark", appSecret: "dark-secret", baseDomain: "https://open.feishu.cn" },
     });
     t.deps.messagingRepo.upsert({
       sessionId: "session-2026-08-25-10-00-02-dead0001",
@@ -500,6 +526,7 @@ describe("messaging binding routes and bridge", () => {
     await t.deps.messaging.start();
     expect(fake.connections.map((c) => c.creds.appId)).toEqual(["cli_boot"]);
     expect(t.deps.messagingRepo.find("session-2026-08-25-10-00-02-dead0001")).toBeNull();
+    expect(t.deps.messagingRepo.find(SID2)?.enabled).toBe(false);
     t.deps.messaging.stop();
     expect(fake.connections[0]!.closed).toBe(true);
   });

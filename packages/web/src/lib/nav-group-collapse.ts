@@ -20,14 +20,7 @@
  * unit tests) rather than duplicated. Traces is deliberately absent: reading a Trace
  * happens in the chat toolbar's panel switcher, which is the only place it happens.
  */
-export const NAV_GROUP_KEYS = [
-  "agents",
-  "skills",
-  "models",
-  "usage",
-  "messaging",
-  "benchmark",
-] as const;
+export const NAV_GROUP_KEYS = ["agents", "skills", "models", "usage", "benchmark"] as const;
 export type NavGroupKey = (typeof NAV_GROUP_KEYS)[number];
 
 /**

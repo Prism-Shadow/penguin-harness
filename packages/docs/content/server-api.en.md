@@ -257,19 +257,18 @@ The filename always rides along as `filename*=UTF-8''` with percent-encoding. `p
 
 ### Messaging Bindings (Feishu)
 
-A Session can be bound to a messaging bot — Feishu is the only channel today, and further channels slot in under `/messaging/<channel>`. Inbound messages to the bot start Tasks on the Session as ordinary user input, exactly as if typed into the web composer (no marker, queued as follow-ups while the Session is busy), and completed replies are relayed back to the chat. A stored binding is always active: saving connects, unbinding is how a connection stops. Session-level paths omit the `/api/sessions/:sessionId` prefix like the table above.
+A Session can be bound to a messaging bot — Feishu is the only channel today, and further channels slot in under `/messaging/<channel>`. Inbound messages to the bot start Tasks on the Session as ordinary user input, exactly as if typed into the web composer (no marker, queued as follow-ups while the Session is busy), and completed replies are relayed back to the chat. Saving and connecting are separate: PUT persists credentials only, and the explicit state endpoint owns the connection. Paths omit the `/api/sessions/:sessionId` prefix like the table above.
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | /messaging/feishu | The binding (App Secret masked) + event-connection runtime status + `lastChatKnown` |
-| PUT | /messaging/feishu | Bind or update: `{appId, appSecret?, baseDomain?}`. An omitted/blank `appSecret` keeps the stored one; `baseDomain` defaults to `https://open.feishu.cn`; saving (re)connects. 409 `feishu_app_in_use` when the app is bound to another Session |
+| GET | /messaging/feishu | The binding (App Secret masked, `enabled` intent) + event-connection runtime status + `lastChatKnown` |
+| PUT | /messaging/feishu | Bind or update credentials: `{appId, appSecret?, baseDomain?}`. An omitted/blank `appSecret` keeps the stored one; `baseDomain` defaults to `https://open.feishu.cn`. No connection side effect — except that an **enabled** binding's connector restarts with the new credentials, so stored config and live connection never diverge. 409 `feishu_app_in_use` when the app is bound to another Session |
+| POST | /messaging/feishu/state | The connection toggle: `{enabled}` — enabling connects with the STORED credentials, disabling terminates the connection. New bindings start disabled; server startup connects only enabled bindings |
 | DELETE | /messaging/feishu | Unbind: disconnects and deletes the stored binding (App Secret included) |
 | POST | /messaging/feishu/test | Credential probe with the request's draft values, each falling back to the stored binding → `{ok, latencyMs?, error?}` (a rejected credential is `ok: false`, not an HTTP error) |
 | POST | /messaging/feishu/test-message | Send a short fixed text to the last known chat; 409 `feishu_no_chat` until the bot has been messaged once in Feishu |
 
-Project level, for the Messaging page: `GET /api/projects/:projectId/messaging` lists every binding whose Session belongs to the Project — session id/title, agent, channel, account id and runtime status, deliberately secret-free.
-
-One messaging binding per Session (whatever the channel) and one per bot account per channel. Reads (the project listing included) and the two tests are open to any Project member; PUT and DELETE are owner-only (vault semantics — they carry the secret). The secret is masked in every response and never round-trips. Deleting the Session removes its binding, and inbound processing accepts text messages only (other types get a bilingual "text only" reply).
+One messaging binding per Session (whatever the channel) and one per bot account per channel. Reads and the two tests are open to any Project member; PUT, the state toggle and DELETE are owner-only (vault semantics — the binding writes carry or act on the secret). The secret is masked in every response and never round-trips. Deleting the Session removes its binding, and inbound processing accepts text messages only (other types get a bilingual "text only" reply).
 
 ### Preview on a separate origin
 

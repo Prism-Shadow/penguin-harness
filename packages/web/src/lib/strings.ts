@@ -20,7 +20,6 @@ export const zh = {
     models: "模型库",
     usage: "成本中心",
     traces: "轨迹观测",
-    messaging: "消息软件",
     benchmark: "评估中心",
     // Collapsed-rail tooltip (product-specified wording; new chat reuses chat.newSessionMenu, the other pages reuse the page names above).
     lastConversation: "最近一次对话",
@@ -1711,6 +1710,10 @@ Benchmark：
     appSecretKeepHint: "留空保持已保存的 App Secret 不变",
     baseDomain: "API 域名",
     baseDomainHint: "飞书为 https://open.feishu.cn，Lark 为 https://open.larksuite.com",
+    /** The connection toggle (flips immediately, using the stored credentials). */
+    enabled: "启用连接",
+    /** Why the toggle is gated while the form has unsaved edits. */
+    saveBeforeEnable: "先保存凭证，再启用连接",
     test: "测试连接",
     testing: "测试中…",
     testOk: (ms: number): string => `连接成功（${ms}ms）`,
@@ -1727,8 +1730,6 @@ Benchmark：
       connected: "已连接",
       error: "连接错误",
     },
-    /** Save persists AND (re)connects — a stored binding is always active. */
-    saveConnect: "保存并连接",
     /** External link to Feishu's echo-bot tutorial (open a self-built app + long connection). */
     tutorial: "前往教程",
     unbind: "解除绑定",
@@ -1739,21 +1740,9 @@ Benchmark：
     invalidDomain: "域名需为 http(s):// 地址",
   },
 
-  /** Messaging page (/messaging): every messaging binding of the current Project in one list. */
+  /** The Messaging dock panel (this conversation's messaging binding; the editor's strings live under `feishu`). */
   messaging: {
-    title: "消息软件",
-    description: "将会话绑定到消息软件机器人：发给机器人的消息进入会话，AI 的回复发回对应会话。",
-    emptyTitle: "还没有绑定",
-    /** Empty state doubles as the how-to: bindings are created from the session row's menu. */
-    empty: "在对话列表中右键任一会话（或悬停后点「更多」），选择「绑定到飞书…」即可开始。",
-    colSession: "会话",
-    colAgent: "智能体",
-    colChannel: "渠道",
-    colStatus: "连接状态",
-    /** Channel display names, keyed by the API's channel id. */
-    channelNames: { feishu: "飞书" } as Record<string, string>,
-    /** A binding row's session cell title (clicking opens the chat). */
-    openSession: "打开对话",
+    panelTitle: "消息软件",
   },
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */

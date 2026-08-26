@@ -2,9 +2,11 @@
  * Messaging bridge: a Web server runtime component connecting Sessions to external chat
  * platforms through channel connectors (Feishu is the only channel today — see
  * feishu-connector.ts). Started by the platform next to the Scheduler, stopped when the
- * App is disposed — a hot swap hard-stops it like the scheduler. Per stored binding it
- * holds one inbound event connection: a binding that exists is active — unbinding is how
- * a connection is stopped.
+ * App is disposed — a hot swap hard-stops it like the scheduler. Per ENABLED binding it
+ * holds one inbound event connection: `enabled` is stored intent the state toggle owns —
+ * saving credentials never opens or closes a connection (with one deliberate exception:
+ * re-saving an enabled binding restarts its connector with the new credentials, so the
+ * stored config and the live connection never diverge).
  *
  * Inbound (channel → Session): every inbound message first records its chat as the
  * binding's reply target; a text message then starts a Task on the bound Session as an
@@ -138,9 +140,10 @@ export class MessagingBridge {
   }
 
   /**
-   * Server startup: connect every stored binding. A binding whose Session no longer
-   * exists (deleted while this server was down, or by a bulk Agent/Project delete that
-   * bypassed the per-session cascade) is reconciled away instead of connected.
+   * Server startup: connect every ENABLED binding (disabled ones keep their credentials
+   * and stay dark). A binding whose Session no longer exists (deleted while this server
+   * was down, or by a bulk Agent/Project delete that bypassed the per-session cascade)
+   * is reconciled away instead of connected.
    */
   async start(): Promise<void> {
     for (const row of this.deps.repo.listAll()) {
@@ -148,7 +151,7 @@ export class MessagingBridge {
         this.deps.repo.delete(row.sessionId);
         continue;
       }
-      await this.connect(row);
+      if (row.enabled) await this.connect(row);
     }
   }
 
@@ -157,14 +160,18 @@ export class MessagingBridge {
     for (const sessionId of [...this.entries.keys()]) this.disconnect(sessionId);
   }
 
-  /** After a binding write: bring the connection in line with the stored row (save = connect). */
+  /**
+   * Align the live connection with the stored row: enabled → (re)connect with the
+   * CURRENT config, disabled or unbound → disconnect. The state toggle calls this after
+   * flipping intent, and a credential save calls it only while the binding is enabled —
+   * the restart that keeps stored config and live connection from diverging.
+   */
   async sync(sessionId: string): Promise<void> {
     const row = this.deps.repo.find(sessionId);
-    if (row === null) {
+    if (row === null || !row.enabled) {
       this.disconnect(sessionId);
       return;
     }
-    // Always reconnect on save: the credentials or domain may have changed.
     await this.connect(row);
   }
 

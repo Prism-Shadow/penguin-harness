@@ -1,10 +1,7 @@
 /**
- * Messaging-binding routes, two entry groups:
- *   - Session-level, per channel: /api/sessions/:sessionId/messaging/feishu[...] — the
- *     binding dialog's surface (Feishu is the only channel today; a future channel adds
- *     its own subtree with its own config shape);
- *   - Project-level: GET /api/projects/:projectId/messaging — every binding whose Session
- *     belongs to the Project, for the Messaging page's list (secret-free rows).
+ * Messaging-binding routes: /api/sessions/:sessionId/messaging/feishu[...] — the binding
+ * dialog's and the Messaging dock panel's shared surface (Feishu is the only channel
+ * today; a future channel adds its own subtree with its own config shape).
  *
  * Authorization mirrors the vault's split, through the sessions routes' resolveSession
  * pattern (404 never leaks a Session's existence): any Project member can read bindings
@@ -22,8 +19,7 @@ import type {
   FeishuBindingResponse,
   FeishuTestMessageResponse,
   FeishuTestResponse,
-  MessagingBindingSummary,
-  ProjectMessagingResponse,
+  MessagingBindingStateRequest,
 } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { MessagingBindingRow } from "../../db/repos/messaging-bindings.js";
@@ -61,6 +57,7 @@ function toBindingInfo(row: MessagingBindingRow): FeishuBindingInfo {
     appId: fields.appId,
     appSecretMasked: maskApiKey(fields.appSecret),
     baseDomain: fields.baseDomain,
+    enabled: row.enabled,
     lastChatKnown: row.lastChatId !== null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -153,7 +150,27 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
         "This Feishu app is already bound to another Session.",
       );
     }
-    // Save = connect: bring the event connection in line with the saved row.
+    // Save persists credentials only and never flips the connection — with one deliberate
+    // exception: an ENABLED binding's connector restarts with the new credentials, so the
+    // stored config and the live connection never diverge. A disabled binding stays dark.
+    if (result.row.enabled) await deps.messaging.sync(row.sessionId);
+    return c.json(bindingResponse(row.sessionId));
+  });
+
+  // The state toggle: enabling connects with the STORED credentials, disabling terminates
+  // the connection. Separate from PUT on purpose — saving and connecting are different
+  // intents, and the toggle must work without re-submitting any credential.
+  app.post("/:sessionId/messaging/feishu/state", async (c) => {
+    const row = resolveSession(c);
+    deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
+    const body = await readJson(c);
+    const enabled = (body as Partial<MessagingBindingStateRequest>).enabled;
+    if (typeof enabled !== "boolean") throw badRequest("enabled must be a boolean.");
+    const binding = deps.messagingRepo.find(row.sessionId);
+    if (!binding) {
+      throw new HttpError(404, "feishu_not_bound", "This Session has no Feishu binding.");
+    }
+    deps.messagingRepo.setEnabled(row.sessionId, enabled);
     await deps.messaging.sync(row.sessionId);
     return c.json(bindingResponse(row.sessionId));
   });
@@ -219,36 +236,6 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
       );
     }
     return c.json({ ok: true } satisfies FeishuTestMessageResponse);
-  });
-
-  return app;
-}
-
-/** Project-level entry: GET /api/projects/:projectId/messaging (the Messaging page's list). */
-export function projectMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
-  const app = new Hono<AppEnv>();
-
-  app.get("/", (c) => {
-    const projectId = requireValidId(c, "projectId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
-    const bindings: MessagingBindingSummary[] = [];
-    // Bindings are few (one per bound Session): filtering the full list through the
-    // sessions index beats adding a project column the session row already knows.
-    for (const row of deps.messagingRepo.listAll()) {
-      const session = deps.sessionsRepo.findById(row.sessionId);
-      if (!session || session.projectId !== projectId) continue;
-      if (row.channel !== "feishu") continue; // unknown channels have no DTO shape yet
-      bindings.push({
-        sessionId: row.sessionId,
-        ...(session.title !== null ? { sessionTitle: session.title } : {}),
-        agentId: session.agentId,
-        channel: row.channel,
-        accountId: row.accountId,
-        lastChatKnown: row.lastChatId !== null,
-        status: deps.messaging.statusOf(row.sessionId),
-      });
-    }
-    return c.json({ bindings } satisfies ProjectMessagingResponse);
   });
 
   return app;

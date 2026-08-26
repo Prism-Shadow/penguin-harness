@@ -20,6 +20,7 @@
 import type { MouseEvent as ReactMouseEvent } from "react";
 import type { AnchorRect } from "../../lib/context-menu";
 import { S } from "../../lib/strings";
+import { GlyphIcon } from "./glyph-icon";
 import { Icon } from "./group-list";
 
 /** Pushpin (lucide pin: head + body + stem), the group-header pin toggle / pinned indicator. */
@@ -36,8 +37,14 @@ export const TRASH_ICON =
   "M4 6h16M9 6V4.5A1.5 1.5 0 0 1 10.5 3h3A1.5 1.5 0 0 1 15 4.5V6M6 6v13a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V6M10 10.5v6M14 10.5v6";
 /** Paper plane (lucide send): the messaging-binding action and the bound row's indicator. */
 export const FEISHU_ICON = "M22 2 11 13M22 2l-7 20-4-9-9-4z";
-/** Three-dot ellipsis (round line caps render the zero-length strokes as dots): the hover "more" button. */
-export const ELLIPSIS_ICON = "M5 12h.01M12 12h.01M19 12h.01";
+/**
+ * Three-dot ellipsis, drawn as FILLED circles: the hover "more" button. Hairline-stroke
+ * dots vanish at row-glyph size, so this mark renders through GlyphIcon's `filled` mode —
+ * the stroke rides on top of the fill, landing the dots at the visual weight of the
+ * archive glyph beside it.
+ */
+export const ELLIPSIS_ICON =
+  "M4.5 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM12 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM19.5 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4z";
 
 /** Compact overflow-menu row (session row menu + workspace group menu): small text, leading thin-line glyph. */
 export const overflowMenuRowClass =
@@ -217,7 +224,7 @@ export function SessionRowHoverActions({
         onClick={openMore}
         className={`${hoverButtonClass} hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200`}
       >
-        <Icon d={ELLIPSIS_ICON} size={14} />
+        <GlyphIcon d={ELLIPSIS_ICON} size={14} filled />
       </button>
     </>
   );

@@ -15,6 +15,9 @@ import type { PanelKind } from "./dock-state";
 const MEMORY_ICON =
   "M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z";
 
+/** Chat bubble: the Messaging panel's mark (this conversation's messaging binding). */
+const MESSAGING_ICON = "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z";
+
 /** The subagents spawn-tree glyph is multi-element (circles + edges), so it is a component. */
 export function AgentsGlyph({ size = ICON_SIZE.iconButton }: { size?: number }) {
   return (
@@ -48,6 +51,8 @@ export function panelLabel(kind: PanelKind): string {
       return S.chat.memoryViewTitle;
     case "trace":
       return S.nav.traces;
+    case "messaging":
+      return S.messaging.panelTitle;
   }
 }
 
@@ -61,5 +66,7 @@ export function panelGlyph(kind: PanelKind, size: number = ICON_SIZE.iconButton)
       return <GlyphIcon d={MEMORY_ICON} size={size} />;
     case "trace":
       return <GlyphIcon d={NAV_ICONS.traces} size={size} />;
+    case "messaging":
+      return <GlyphIcon d={MESSAGING_ICON} size={size} />;
   }
 }

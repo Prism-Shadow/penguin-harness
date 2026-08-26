@@ -127,6 +127,7 @@ CREATE TABLE IF NOT EXISTS messaging_bindings ( -- Session ↔ messaging-channel
   channel          TEXT NOT NULL,              -- messaging channel discriminator ('feishu' is the only channel today)
   account_id       TEXT NOT NULL,              -- channel-scoped bot/app identity (feishu: app_id); one binding per account per channel (idx_messaging_account: one account has one event stream, two Sessions would race it)
   config_json      TEXT NOT NULL,              -- channel-specific credentials/config JSON (feishu: appId/appSecret/baseDomain); secrets plaintext at rest (same trade-off as the proxy address in server_settings), masked at every API surface
+  enabled          INTEGER NOT NULL DEFAULT 0, -- INTENT state (the connection's runtime status stays in memory): new bindings start disabled — saving credentials never opens a connection, the explicit state toggle does
   last_chat_id     TEXT,                       -- most recent inbound chat (NULL until the bot is messaged once; replies and test messages target it)
   last_chat_is_direct INTEGER NOT NULL DEFAULT 1, -- 1 = direct chat (reply by chat id), 0 = group chat (prefer reply-to-message)
   created_at       TEXT NOT NULL,

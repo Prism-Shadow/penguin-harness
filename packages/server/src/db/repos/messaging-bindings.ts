@@ -24,6 +24,12 @@ export interface MessagingBindingRow {
   accountId: string;
   /** Channel-specific config document (feishu: appId/appSecret/baseDomain). */
   config: Record<string, unknown>;
+  /**
+   * INTENT state: whether the binding should hold a live connection (the connection's
+   * runtime status stays in memory). Saving credentials never flips it — only the
+   * explicit state toggle does — and new bindings start disabled.
+   */
+  enabled: boolean;
   /** Most recent inbound chat (null until the bot is messaged once). */
   lastChatId: string | null;
   /** Whether that chat is a direct chat; group chats prefer reply-to-message. */
@@ -47,6 +53,7 @@ function mapRow(r: Record<string, unknown>): MessagingBindingRow {
     channel: r.channel as string,
     accountId: r.account_id as string,
     config,
+    enabled: Number(r.enabled) === 1,
     lastChatId: (r.last_chat_id as string | null) ?? null,
     lastChatIsDirect: Number(r.last_chat_is_direct) === 1,
     createdAt: r.created_at as string,
@@ -77,12 +84,14 @@ export class MessagingBindingsRepo {
   }
 
   /**
-   * Create or replace the Session's binding. Returns `account_in_use` (writing nothing)
-   * when the `(channel, accountId)` pair is already bound to a DIFFERENT Session;
-   * re-saving a Session's own binding keeps its last-chat memory, so a settings edit
-   * never loses the reply target — unless the account (or channel) changed, whose chats
-   * are unrelated: the remembered chat is dropped so replies can never land in the old
-   * bot's conversation.
+   * Create or replace the Session's binding — credentials/config only: `enabled` is
+   * intent state the state toggle owns, so an insert starts disabled and an update keeps
+   * the stored value. Returns `account_in_use` (writing nothing) when the
+   * `(channel, accountId)` pair is already bound to a DIFFERENT Session; re-saving a
+   * Session's own binding keeps its last-chat memory, so a settings edit never loses the
+   * reply target — unless the account (or channel) changed, whose chats are unrelated:
+   * the remembered chat is dropped so replies can never land in the old bot's
+   * conversation.
    */
   upsert(args: {
     sessionId: string;
@@ -129,6 +138,13 @@ export class MessagingBindingsRepo {
     const row = this.find(args.sessionId);
     if (!row) throw new Error("Failed to read back messaging_bindings after upsert");
     return { ok: true, row };
+  }
+
+  /** The state toggle's write: flip the connection intent (the bridge then aligns the live connection). */
+  setEnabled(sessionId: string, enabled: boolean): void {
+    this.db
+      .prepare("UPDATE messaging_bindings SET enabled = ?, updated_at = ? WHERE session_id = ?")
+      .run(enabled ? 1 : 0, new Date().toISOString(), sessionId);
   }
 
   /** Remember the most recent inbound chat (the reply and test-message target). */

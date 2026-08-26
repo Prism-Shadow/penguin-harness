@@ -1539,7 +1539,7 @@ export interface SessionProcessesResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Messaging bindings (/api/sessions/:sessionId/messaging/*, /api/projects/:p/messaging)
+// Messaging bindings (/api/sessions/:sessionId/messaging/*)
 // ---------------------------------------------------------------------------
 
 /** Messaging channels a Session can bind to (`feishu` is the only channel today). */
@@ -1556,27 +1556,6 @@ export interface MessagingRuntimeStatus {
   changedAt?: string;
 }
 
-/**
- * One binding row of GET /api/projects/:projectId/messaging (the Messaging page's list).
- * Deliberately secret-free: config details live behind the session-level channel routes.
- */
-export interface MessagingBindingSummary {
-  sessionId: string;
-  /** The Session's current title; absent while none was generated or set. */
-  sessionTitle?: string;
-  agentId: string;
-  channel: MessagingChannel;
-  /** Channel-scoped bot/app identity (feishu: the app_id); never secret. */
-  accountId: string;
-  /** Whether an inbound chat is known (the bot has been messaged at least once). */
-  lastChatKnown: boolean;
-  status: MessagingRuntimeStatus;
-}
-
-export interface ProjectMessagingResponse {
-  bindings: MessagingBindingSummary[];
-}
-
 /** The stored Feishu binding, secret masked (plaintext never leaves the server). */
 export interface FeishuBindingInfo {
   sessionId: string;
@@ -1584,6 +1563,8 @@ export interface FeishuBindingInfo {
   /** Masked app secret (site-wide mask rule: `***`, or `first4…last4` for long values). */
   appSecretMasked: string;
   baseDomain: string;
+  /** Connection INTENT (the state toggle's value); new bindings start disabled. */
+  enabled: boolean;
   /**
    * Whether an inbound Feishu chat is known (the bot has been messaged at least once).
    * Replies and test messages target that chat; until it exists nothing can be sent.
@@ -1599,13 +1580,22 @@ export interface FeishuBindingResponse {
   status: MessagingRuntimeStatus;
 }
 
-/** PUT …/messaging/feishu — saving (re)connects: a stored binding is always active. */
+/**
+ * PUT …/messaging/feishu — saves credentials/config ONLY, never flipping the connection
+ * (exception: an enabled binding's connector restarts with the new credentials so stored
+ * config and live connection never diverge). The connection toggle is POST …/state.
+ */
 export interface FeishuBindingPutRequest {
   appId: string;
   /** Omitted or blank keeps the stored secret (the masked value never round-trips). */
   appSecret?: string;
   /** Defaults to https://open.feishu.cn when omitted or blank. */
   baseDomain?: string;
+}
+
+/** POST …/messaging/feishu/state — enable connects with the STORED credentials, disable terminates. */
+export interface MessagingBindingStateRequest {
+  enabled: boolean;
 }
 
 /** POST …/messaging/feishu/test — draft values; each omitted field falls back to the stored binding. */

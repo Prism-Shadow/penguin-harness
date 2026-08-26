@@ -19,6 +19,7 @@ const STORED: FeishuBindingInfo = {
   appId: "cli_abc",
   appSecretMasked: "abcd…wxyz",
   baseDomain: "https://open.larksuite.com",
+  enabled: false,
   lastChatKnown: true,
   createdAt: "2026-08-25T00:00:00.000Z",
   updatedAt: "2026-08-25T00:00:00.000Z",

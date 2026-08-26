@@ -18,7 +18,6 @@ export const en: Strings = {
     models: "Models",
     usage: "Cost Center",
     traces: "Trajectories",
-    messaging: "Messaging",
     benchmark: "Evaluation Center",
     // Collapsed-rail tooltip (product-specified wording; new chat reuses chat.newSessionMenu, the other pages reuse the page names above).
     lastConversation: "Last conversation",
@@ -1755,6 +1754,10 @@ Scenarios:
     appSecretKeepHint: "Leave empty to keep the saved App Secret",
     baseDomain: "API domain",
     baseDomainHint: "https://open.feishu.cn for Feishu, https://open.larksuite.com for Lark",
+    /** The connection toggle (flips immediately, using the stored credentials). */
+    enabled: "Enable connection",
+    /** Why the toggle is gated while the form has unsaved edits. */
+    saveBeforeEnable: "Save the credentials first, then enable the connection",
     test: "Test connection",
     testing: "Testing…",
     testOk: (ms: number): string => `Connected (${ms}ms)`,
@@ -1771,8 +1774,6 @@ Scenarios:
       connected: "Connected",
       error: "Connection error",
     },
-    /** Save persists AND (re)connects — a stored binding is always active. */
-    saveConnect: "Save & connect",
     /** External link to Feishu's echo-bot tutorial (open a self-built app + long connection). */
     tutorial: "Open tutorial",
     unbind: "Unbind",
@@ -1784,23 +1785,9 @@ Scenarios:
     invalidDomain: "The domain must be an http(s) URL",
   },
 
-  /** Messaging page (/messaging): every messaging binding of the current Project in one list. */
+  /** The Messaging dock panel (this conversation's messaging binding; the editor's strings live under `feishu`). */
   messaging: {
-    title: "Messaging",
-    description:
-      "Bind Sessions to messaging bots: messages sent to a bot flow into its Session, and the AI's replies go back to the chat.",
-    emptyTitle: "No bindings yet",
-    /** Empty state doubles as the how-to: bindings are created from the session row's menu. */
-    empty:
-      'Right-click any conversation in the session list (or hover it and click "More") and choose "Bind to Feishu…" to get started.',
-    colSession: "Session",
-    colAgent: "Agent",
-    colChannel: "Channel",
-    colStatus: "Connection status",
-    /** Channel display names, keyed by the API's channel id. */
-    channelNames: { feishu: "Feishu" } as Record<string, string>,
-    /** A binding row's session cell title (clicking opens the chat). */
-    openSession: "Open conversation",
+    panelTitle: "Messaging",
   },
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */

@@ -181,8 +181,6 @@ export const NAV_ICONS = {
   models: "M7 7h10v10H7zM4 10h3m10 0h3M4 14h3m10 0h3M10 4v3m4-3v3m-4 10v3m4-3v3",
   usage: "M4 20V10m6 10V4m6 16v-7m4 7H2",
   traces: "M4 6h16M4 12h10M4 18h13",
-  /** Messaging page (a chat bubble: rounded speech balloon with a tail). */
-  messaging: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z",
   /** Benchmark center (a trophy: cup + two handles + base). */
   benchmark:
     "M7 4h10v5a5 5 0 0 1-10 0V4zM7 5H4v1a3 3 0 0 0 3 3m10-4h3v1a3 3 0 0 1-3 3M12 14v4m-4 0h8",
