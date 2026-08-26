@@ -57,10 +57,10 @@ export const en: Strings = {
     downloadCta: "Download desktop",
     cliInstall: "Command-line install",
     stats: [
-      { value: "1000+ models", label: "Support for major providers" },
-      { value: "Local on every platform", label: "Linux · Windows · macOS" },
-      { value: "100% open source", label: "Apache 2.0 licensed" },
-      { value: "First self-evolving harness", label: "native agent self-evolution engine" },
+      { value: "1000+ Models", label: "Support for Major Providers" },
+      { value: "Local on Every Platform", label: "Linux · Windows · macOS" },
+      { value: "100% Open Source", label: "Apache 2.0 Licensed" },
+      { value: "First Self-Evolving Harness", label: "Native Agent Self-Evolution Engine" },
     ],
     supportedModelsLabel: "Supported models",
     supportedModels: [
