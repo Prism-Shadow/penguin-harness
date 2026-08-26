@@ -2,7 +2,8 @@
 node_modules/
 dist/
 pnpm-lock.yaml
-# the desktop app dir + install image electron-builder packs (scripts/stage.mjs)
+# the assembled app directory some branches stage before packing (packages/desktop/.gitignore
+# ignores it there; prettier does not read .gitignore, so it needs saying again here)
 packages/desktop/stage/
 
 # desktop build output: the installers electron-builder writes, and the assets
@@ -13,7 +14,6 @@ packages/desktop/skills/
 # docs-only area (mostly Chinese; not machine-formatted)
 specs/
 *.md
-
 
 # Playwright e2e artifacts
 test-results/
