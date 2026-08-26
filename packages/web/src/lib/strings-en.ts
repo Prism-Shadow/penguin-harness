@@ -1705,6 +1705,8 @@ Scenarios:
     pinSession: "Pin",
     unpinSession: "Unpin",
     pinnedSession: "Pinned",
+    /** The hover ellipsis button that opens the row's full context menu. */
+    moreActions: "More",
     /** Sidebar group "reveal/load next page" row (display cap + server paging). */
     loadMore: "More",
     /** Per-group reveal row: n = conversations THIS group still hides (one click reveals/loads one page more). */
@@ -1758,6 +1760,114 @@ Scenarios:
       budget_limited: "budget exhausted",
       aborted: "interrupted",
     } as Record<string, string>,
+  },
+
+  /** Feishu-channel strings of the messaging binding editor (channel-neutral ones live under `messaging`). */
+  feishu: {
+    /** The what-binding-does FAQ fold's body (this channel's flavor). */
+    intro:
+      "Once bound, messages sent to the Feishu bot flow into this conversation, and the AI's replies are sent back to Feishu as plain text. You need a self-built Feishu app with the bot capability and the message-receive event subscribed in long-connection mode.",
+    appId: "App ID",
+    appSecret: "App Secret",
+    /** Shown while a saved secret exists: submitting an empty field keeps it. */
+    appSecretKeepHint: "Leave empty to keep the saved App Secret",
+    /** The stored-secret row's clear checkbox (the models-page clear idiom). */
+    clearSecret: "Clear stored App Secret",
+    baseDomain: "API domain",
+    baseDomainHint: "https://open.feishu.cn for Feishu, https://open.larksuite.com for Lark",
+    invalidDomain: "The domain must be an http(s) URL",
+    /** Why "send test message" is disabled before the bot has ever been messaged. */
+    testMessageNoChat: "Message the bot once in Feishu first, so it knows which chat to send to",
+    /** The setup FAQ fold's steps. */
+    setupSteps: [
+      "Create a self-built app in the Feishu developer console",
+      "Enable the bot capability for the app",
+      "Subscribe to the message-receive event, with the subscription mode set to long connection",
+      "Copy the App ID and App Secret from the credentials page into the form above",
+      "Publish an app version, get it approved, then message the bot once in Feishu",
+    ],
+  },
+
+  /** Telegram-channel strings of the messaging binding editor (channel-neutral ones live under `messaging`). */
+  telegram: {
+    /** The what-binding-does FAQ fold's body (this channel's flavor). */
+    intro:
+      "Once bound, messages sent to the Telegram bot flow into this conversation, and the AI's replies are sent back to Telegram as plain text. Create a bot with @BotFather and paste its Bot Token — no public URL is needed.",
+    botToken: "Bot Token",
+    /** Shown while a saved token exists: submitting an empty field keeps it. */
+    botTokenKeepHint: "Leave empty to keep the saved Bot Token",
+    /** The stored-token row's clear checkbox (the models-page clear idiom). */
+    clearToken: "Clear stored Bot Token",
+    invalidToken: "The Bot Token looks like <digits>:<secret>, as issued by @BotFather",
+    /** Why "send test message" is disabled before the bot has ever been messaged. */
+    testMessageNoChat: "Message the bot once in Telegram first, so it knows which chat to send to",
+    /** The setup FAQ fold's steps. */
+    setupSteps: [
+      "Open @BotFather in Telegram and send /newbot to create a bot",
+      "Name it as prompted, then copy the Bot Token @BotFather returns into the form above",
+      "Find the bot in Telegram and send it one message",
+    ],
+  },
+
+  /**
+   * Session ↔ messaging-bot binding: the dock panel, the row action + dialog, and the
+   * channel-neutral editor strings (per-channel fields live under `feishu` / `telegram`).
+   */
+  messaging: {
+    panelTitle: "Messaging",
+    /** Session-row context-menu action (the trailing ellipsis marks that a dialog follows). */
+    bindAction: "Messaging binding…",
+    dialogTitle: "Messaging binding",
+    /** The channel selector (always live: each channel's config is saved independently). */
+    channelLabel: "Channel",
+    channelName: {
+      feishu: "Feishu",
+      telegram: "Telegram",
+    },
+    /** Per-channel external links: the tutorial (in the setup FAQ fold) and the console (at the credential field's corner). */
+    tutorial: "Open tutorial",
+    console: "Open developer console",
+    /** The connection toggle (flips immediately, using the stored credentials). */
+    enabled: "Enable connection",
+    /** Why the toggle is gated while the form has unsaved edits. */
+    saveBeforeEnable: "Save the credentials first, then enable the connection",
+    test: "Test connection",
+    testing: "Testing…",
+    testOk: (ms: number): string => `Connected (${ms}ms)`,
+    /** Success feedback naming the account the credentials sign in as (Telegram: the bot's @username). */
+    testOkAs: (account: string, ms: number): string => `Connected as ${account} (${ms}ms)`,
+    testFail: (reason: string): string => `Connection failed: ${reason}`,
+    sendTestMessage: "Send test message",
+    sendingTestMessage: "Sending…",
+    testMessageSent: "Test message sent",
+    statusLabel: "Connection status",
+    status: {
+      disconnected: "Not connected",
+      connecting: "Connecting",
+      connected: "Connected",
+      error: "Connection error",
+    },
+    /** Why the enable switch is gated while the OTHER channel holds the connection. */
+    otherEnabledHint: (other: string): string =>
+      `Only one channel can be enabled per conversation: turn off the ${other} connection first`,
+    /** Why the enable switch is gated while the selected channel has no stored credential. */
+    credentialMissingHint: "Enter and save the credential first, then enable the connection",
+    /** Why the clear checkbox is gated while the channel's connection is enabled. */
+    disableBeforeClearHint: "Disable the connection before clearing the credential",
+    /** Enabled-row indicator's tooltip / sr text (the small per-channel glyph on the session row). */
+    enabledIndicator: {
+      feishu: "Feishu connection enabled",
+      telegram: "Telegram connection enabled",
+    },
+    /** The collapsed FAQ folds below the save area. */
+    faqSetupTitle: "Set up the bot",
+    faqWhatTitle: "What binding does",
+    faqTroubleTitle: "Troubleshooting",
+    /** Troubleshooting entries (bot must be messaged once; connection errors point at credentials). */
+    troubleNoChat:
+      "“Send test message” disabled? The bot must have received one message first, so it knows which chat to send to.",
+    troubleConnError:
+      "Connection status shows an error? Check the credentials; for Feishu also confirm the API domain and the long-connection event subscription.",
   },
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */
@@ -1980,6 +2090,24 @@ Scenarios:
       trace_not_found: "This Trace file no longer exists.",
       trace_session_exists:
         "This agent already has a Session with that id; a duplicate Trace cannot be imported.",
+      feishu_app_in_use:
+        "This Feishu app is already bound to another Session — unbind it there or use a different app.",
+      feishu_secret_required: "App Secret is required.",
+      feishu_not_bound: "This Session has no Feishu binding yet.",
+      feishu_no_chat: "No Feishu message received yet — message the bot once in Feishu first.",
+      feishu_send_failed: "Sending the Feishu message failed.",
+      telegram_bot_in_use:
+        "This Telegram bot is already bound to another Session — unbind it there or use a different bot.",
+      telegram_token_required: "Bot Token is required.",
+      telegram_token_invalid: "The Bot Token is malformed: it looks like <digits>:<secret>.",
+      telegram_not_bound: "This Session has no Telegram binding yet.",
+      telegram_no_chat:
+        "No Telegram message received yet — message the bot once in Telegram first.",
+      telegram_send_failed: "Sending the Telegram message failed.",
+      another_channel_enabled:
+        "Another channel's connection is enabled on this conversation: disable it first.",
+      messaging_disable_before_clear:
+        "Disable this channel's connection before clearing its credential.",
     },
   },
 };

@@ -18,6 +18,7 @@ import { agentsDir, createAgent, isSessionMeta } from "@prismshadow/penguin-core
 import type { ControlEnvContext, ProxyEnvPolicy } from "@prismshadow/penguin-core";
 import type {
   ApprovalMode,
+  MessagingChannel,
   SessionCategory,
   SessionCategoryCounts,
   SessionInfo,
@@ -65,6 +66,14 @@ export interface SessionServiceDeps {
    * agents can drive the harness back through the CLI/API.
    */
   controlEnv?: (ctx: ControlEnvContext) => Record<string, string>;
+  /**
+   * The channel of the Session's ENABLED messaging binding, or null when none is enabled
+   * (SessionInfo.messagingChannel, the sidebar row's per-channel indicator — saved-but-
+   * disabled configs stay off the row). A lookup lambda rather than the repo, so the
+   * service stays decoupled from the bindings table; absent (older assemblies/tests)
+   * means the field is never set.
+   */
+  messagingChannel?: (sessionId: string) => MessagingChannel | null;
 }
 
 export class SessionService {
@@ -78,6 +87,7 @@ export class SessionService {
    */
   async toInfo(row: SessionRow, hasTrace: boolean): Promise<SessionInfo> {
     const source = await this.sourceOf(row, hasTrace);
+    const messagingChannel = this.deps.messagingChannel?.(row.sessionId) ?? null;
     return {
       sessionId: row.sessionId,
       projectId: row.projectId,
@@ -96,6 +106,7 @@ export class SessionService {
       pendingFollowUpCount: this.deps.manager.pendingFollowUpCount(row.sessionId),
       hasTrace,
       archived: (row.archivedAt ?? null) !== null,
+      ...(messagingChannel !== null ? { messagingChannel } : {}),
     };
   }
 

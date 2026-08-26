@@ -276,6 +276,7 @@ function DockPicker({
         {row("workspace")}
         {row("memory")}
         {row("trace")}
+        {row("messaging")}
       </div>
     </div>
   );

@@ -1666,6 +1666,8 @@ Benchmark：
     pinSession: "置顶",
     unpinSession: "取消置顶",
     pinnedSession: "已置顶",
+    /** The hover ellipsis button that opens the row's full context menu. */
+    moreActions: "更多",
     /** Sidebar group "reveal/load next page" row (display cap + server paging). */
     loadMore: "更多",
     /** Per-group reveal row: n = conversations THIS group still hides (one click reveals/loads one page more). */
@@ -1720,6 +1722,112 @@ Benchmark：
       budget_limited: "预算耗尽",
       aborted: "已中断",
     } as Record<string, string>,
+  },
+
+  /** Feishu-channel strings of the messaging binding editor (channel-neutral ones live under `messaging`). */
+  feishu: {
+    /** The what-binding-does FAQ fold's body (this channel's flavor). */
+    intro:
+      "绑定后，发给飞书机器人的消息会进入本对话，AI 的回复会以纯文本发回飞书。需要一个开通了机器人能力、订阅了接收消息事件（长连接方式）的飞书自建应用。",
+    appId: "App ID",
+    appSecret: "App Secret",
+    /** Shown while a saved secret exists: submitting an empty field keeps it. */
+    appSecretKeepHint: "留空保持已保存的 App Secret 不变",
+    /** The stored-secret row's clear checkbox (the models-page clear idiom). */
+    clearSecret: "清除已存 App Secret",
+    baseDomain: "API 域名",
+    baseDomainHint: "飞书为 https://open.feishu.cn，Lark 为 https://open.larksuite.com",
+    invalidDomain: "域名需为 http(s):// 地址",
+    /** Why "send test message" is disabled before the bot has ever been messaged. */
+    testMessageNoChat: "先在飞书中给机器人发一条消息，机器人才知道要发到哪个会话",
+    /** The setup FAQ fold's steps. */
+    setupSteps: [
+      "在飞书开发者后台创建一个企业自建应用",
+      "为应用开通机器人能力",
+      "订阅「接收消息」事件，事件订阅方式选择「长连接」",
+      "在「凭证与基础信息」页取得 App ID 与 App Secret，填入上方表单",
+      "发布应用版本并通过审核，然后在飞书中给机器人发一条消息",
+    ],
+  },
+
+  /** Telegram-channel strings of the messaging binding editor (channel-neutral ones live under `messaging`). */
+  telegram: {
+    /** The what-binding-does FAQ fold's body (this channel's flavor). */
+    intro:
+      "绑定后，发给 Telegram 机器人的消息会进入本对话，AI 的回复会以纯文本发回 Telegram。用 @BotFather 创建机器人并粘贴其 Bot Token 即可，无需公网地址。",
+    botToken: "Bot Token",
+    /** Shown while a saved token exists: submitting an empty field keeps it. */
+    botTokenKeepHint: "留空保持已保存的 Bot Token 不变",
+    /** The stored-token row's clear checkbox (the models-page clear idiom). */
+    clearToken: "清除已存 Bot Token",
+    invalidToken: "Bot Token 形如「数字:密钥」，由 @BotFather 签发",
+    /** Why "send test message" is disabled before the bot has ever been messaged. */
+    testMessageNoChat: "先在 Telegram 中给机器人发一条消息，机器人才知道要发到哪个会话",
+    /** The setup FAQ fold's steps. */
+    setupSteps: [
+      "在 Telegram 中打开 @BotFather，发送 /newbot 创建机器人",
+      "按提示取名后，复制 @BotFather 返回的 Bot Token，填入上方表单",
+      "在 Telegram 中找到这个机器人，给它发一条消息",
+    ],
+  },
+
+  /**
+   * Session ↔ messaging-bot binding: the dock panel, the row action + dialog, and the
+   * channel-neutral editor strings (per-channel fields live under `feishu` / `telegram`).
+   */
+  messaging: {
+    panelTitle: "消息软件",
+    /** Session-row context-menu action (the trailing ellipsis marks that a dialog follows). */
+    bindAction: "消息软件绑定…",
+    dialogTitle: "消息软件绑定",
+    /** The channel selector (always live: each channel's config is saved independently). */
+    channelLabel: "渠道",
+    channelName: {
+      feishu: "飞书",
+      telegram: "Telegram",
+    },
+    /** Per-channel external links: the tutorial (in the setup FAQ fold) and the console (at the credential field's corner). */
+    tutorial: "前往教程",
+    console: "前往开发者后台",
+    /** The connection toggle (flips immediately, using the stored credentials). */
+    enabled: "启用连接",
+    /** Why the toggle is gated while the form has unsaved edits. */
+    saveBeforeEnable: "先保存凭证，再启用连接",
+    test: "测试连接",
+    testing: "测试中…",
+    testOk: (ms: number): string => `连接成功（${ms}ms）`,
+    /** Success feedback naming the account the credentials sign in as (Telegram: the bot's @username). */
+    testOkAs: (account: string, ms: number): string => `连接成功，机器人为 ${account}（${ms}ms）`,
+    testFail: (reason: string): string => `连接失败：${reason}`,
+    sendTestMessage: "发送测试消息",
+    sendingTestMessage: "发送中…",
+    testMessageSent: "测试消息已发送",
+    statusLabel: "连接状态",
+    status: {
+      disconnected: "未连接",
+      connecting: "连接中",
+      connected: "已连接",
+      error: "连接错误",
+    },
+    /** Why the enable switch is gated while the OTHER channel holds the connection. */
+    otherEnabledHint: (other: string): string => `同一会话只能启用一个渠道：先停用${other}连接`,
+    /** Why the enable switch is gated while the selected channel has no stored credential. */
+    credentialMissingHint: "先填写并保存凭证，再启用连接",
+    /** Why the clear checkbox is gated while the channel's connection is enabled. */
+    disableBeforeClearHint: "先停用连接，才能清除凭证",
+    /** Enabled-row indicator's tooltip / sr text (the small per-channel glyph on the session row). */
+    enabledIndicator: {
+      feishu: "飞书连接已启用",
+      telegram: "Telegram 连接已启用",
+    },
+    /** The collapsed FAQ folds below the save area. */
+    faqSetupTitle: "如何创建机器人",
+    faqWhatTitle: "绑定后会发生什么",
+    faqTroubleTitle: "常见问题",
+    /** Troubleshooting entries (bot must be messaged once; connection errors point at credentials). */
+    troubleNoChat: "「发送测试消息」不可用？机器人要先收到过一条消息，才知道要发到哪个会话。",
+    troubleConnError:
+      "连接状态显示错误？检查凭证是否正确；飞书还需确认 API 域名与事件订阅方式（长连接）。",
   },
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */
@@ -1942,6 +2050,19 @@ Benchmark：
       invalid_trace: "该文件不是有效的 Trace 文件。",
       trace_not_found: "该 Trace 文件已不存在。",
       trace_session_exists: "该 Agent 已存在同名 Session，无法导入重复的 Trace。",
+      feishu_app_in_use: "该飞书应用已绑定到其他 Session，请先解除或换一个应用。",
+      feishu_secret_required: "需要填写 App Secret。",
+      feishu_not_bound: "该 Session 尚未绑定飞书。",
+      feishu_no_chat: "尚未收到飞书消息：先在飞书中给机器人发一条消息。",
+      feishu_send_failed: "飞书消息发送失败。",
+      telegram_bot_in_use: "该 Telegram 机器人已绑定到其他 Session，请先解除或换一个机器人。",
+      telegram_token_required: "需要填写 Bot Token。",
+      telegram_token_invalid: "Bot Token 格式不正确：应形如「数字:密钥」。",
+      telegram_not_bound: "该 Session 尚未绑定 Telegram。",
+      telegram_no_chat: "尚未收到 Telegram 消息：先在 Telegram 中给机器人发一条消息。",
+      telegram_send_failed: "Telegram 消息发送失败。",
+      another_channel_enabled: "该会话已启用另一渠道的连接：先停用它，再启用当前渠道。",
+      messaging_disable_before_clear: "先停用该渠道的连接，才能清除其凭证。",
     },
   },
 };

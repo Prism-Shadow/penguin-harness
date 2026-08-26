@@ -53,6 +53,7 @@
   },
   "dependencies": {
     "@hono/node-server": "^2.0.5",
+    "@larksuiteoapi/node-sdk": "^1.73.0",
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-skills": "workspace:*",
     "@xterm/headless": "^5.5.0",
