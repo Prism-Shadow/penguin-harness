@@ -3,6 +3,7 @@
 - **Date:** 2026-08-27
 - **Type:** fix
 - **Scope:** `core`
+- **PR:** [#484](https://github.com/Prism-Shadow/penguin-harness/pull/484)
 
 [English](2026-08-27-posix-shell-fallback.md)
 
