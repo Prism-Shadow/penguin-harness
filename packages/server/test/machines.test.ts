@@ -286,25 +286,35 @@ describe("resolvePushPlan", () => {
     }
   });
 
-  it("desktop app: the staged payload names the base release", () => {
+  it("packaged desktop app: its own manifest names the release it shipped under", () => {
     const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-plan-"));
     try {
-      const serverDist = path.join(
-        work,
-        "resources",
-        "app",
-        "node_modules",
-        "@prismshadow",
-        "penguin-server",
-        "dist",
+      // What the app forks: <resources>/app/dist/server.js, one bundled file, asar off.
+      const appDir = path.join(work, "resources", "app");
+      fs.mkdirSync(path.join(appDir, "dist"), { recursive: true });
+      fs.writeFileSync(
+        path.join(appDir, "package.json"),
+        JSON.stringify({ name: "@prismshadow/penguin-desktop", version: "0.2.4" }),
       );
-      fs.mkdirSync(serverDist, { recursive: true });
-      const payload = path.join(work, "resources", "payload", "penguin", "lib");
-      fs.mkdirSync(payload, { recursive: true });
-      fs.writeFileSync(path.join(payload, "package.json"), manifest);
 
-      const plan = resolvePushPlan(null, path.join(serverDist, "index.js"));
+      const plan = resolvePushPlan(null, path.join(appDir, "dist", "server.js"));
       expect(plan).toMatchObject({ baseVersion: "0.2.4" });
+    } finally {
+      fs.rmSync(work, { recursive: true, force: true });
+    }
+  });
+
+  it("a desktop SOURCE run stands on no release: packages/desktop is not under resources/", () => {
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-plan-"));
+    try {
+      const pkgDir = path.join(work, "packages", "desktop");
+      fs.mkdirSync(path.join(pkgDir, "dist"), { recursive: true });
+      fs.writeFileSync(
+        path.join(pkgDir, "package.json"),
+        JSON.stringify({ name: "@prismshadow/penguin-desktop", version: "0.2.4" }),
+      );
+
+      expect(resolvePushPlan(null, path.join(pkgDir, "dist", "server.js"))).toBeNull();
     } finally {
       fs.rmSync(work, { recursive: true, force: true });
     }

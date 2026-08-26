@@ -37,6 +37,30 @@ check_shared_constant "the OSS switch ratio" "SPEED_PROBE_OSS_SWITCH_RATIO_PERCE
 check_shared_constant "the OSS switch ratio" '$SpeedProbeOssSwitchRatio = 1.5' install.ps1
 check_shared_constant "the OSS switch ratio" "SPEED_PROBE_OSS_SWITCH_RATIO = 1.5;" "$LANDING_RULE"
 
+# --- The launchers the release packages ship. scripts/write-launchers.mjs is the only spelling
+#     of the payload layout, so moving where web/ or node/ sits fails here rather than shipping a
+#     package whose `penguin` cannot find its own web assets. ---
+LAUNCHER_DIR="$WORK_DIR/launchers"
+mkdir -p "$LAUNCHER_DIR"
+node "$ROOT_DIR/scripts/write-launchers.mjs" "$LAUNCHER_DIR" posix >/dev/null
+[ -x "$LAUNCHER_DIR/bin/penguin" ] || fail_test "the POSIX launcher is missing or not executable"
+for marker in 'PENGUIN_WEB_DIST:-$DIR/web' '$DIR/node/bin/node' '$DIR/lib/dist/penguin.js'; do
+  grep -qF "$marker" "$LAUNCHER_DIR/bin/penguin" \
+    || fail_test "the POSIX launcher does not carry $marker"
+done
+[ ! -e "$LAUNCHER_DIR/bin/penguin.cmd" ] || fail_test "a POSIX package must not ship penguin.cmd"
+# The Windows form replaces the sh one rather than joining it: a bare `penguin` on PATH would be
+# picked up by Git Bash and run the wrong thing.
+node "$ROOT_DIR/scripts/write-launchers.mjs" "$LAUNCHER_DIR" windows >/dev/null
+[ ! -e "$LAUNCHER_DIR/bin/penguin" ] || fail_test "a Windows package must not ship the sh launcher"
+for marker in '%DIR%\web' '%DIR%\node\node.exe' '%DIR%\lib\dist\penguin.js'; do
+  grep -qF "$marker" "$LAUNCHER_DIR/bin/penguin.cmd" \
+    || fail_test "the Windows launcher does not carry $marker"
+done
+grep -q "$(printf '\r')" "$LAUNCHER_DIR/bin/penguin.cmd" \
+  || fail_test "the Windows launcher is not CRLF, which cmd.exe needs"
+rm -rf "$LAUNCHER_DIR"
+
 write_sha256() {
   file="$1"
   (cd "$(dirname "$file")" && sha256sum "$(basename "$file")" > "$(basename "$file").sha256")

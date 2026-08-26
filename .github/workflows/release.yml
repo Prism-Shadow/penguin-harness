@@ -199,8 +199,7 @@ jobs:
       # lib/: the CLI and its production deps (including workspace core/server/skills, all build outputs);
       # Use pnpm's current deploy implementation with injected workspace packages; the hoisted target layout
       # avoids deeply nested .pnpm/node_modules paths that exceed Windows PowerShell 5.1's legacy MAX_PATH limit.
-      # The launcher comes from packages/server/src/machines/launcher.cjs, which is also where the install
-      # image and the remote installer get theirs — one spelling of the payload layout, not three.
+      # The launcher comes from scripts/write-launchers.mjs, the one spelling of the payload layout.
       - name: Assemble penguin/ (lib + web + bin)
         run: |
           pnpm --config.node-linker=hoisted --filter @prismshadow/penguin-cli --prod deploy "$PWD/out/penguin/lib"
@@ -239,8 +238,8 @@ jobs:
 
       # Windows payload: same lib/ + web/ layout, but a .zip (the native format), the official
       # win-x64 Node runtime — whose zip has node.exe at the ARCHIVE ROOT, not bin/ — and
-      # penguin.cmd replacing the sh launcher (see packages/server/src/machines/launcher.cjs,
-      # including why there is deliberately no penguin.ps1).
+      # penguin.cmd replacing the sh launcher (see scripts/write-launchers.mjs, including why
+      # there is deliberately no penguin.ps1).
       #
       # It also bundles MinGit under git\, so exec_command has a POSIX shell even on a machine
       # with no Git for Windows: the shims advertise git\usr\bin\sh.exe as PENGUIN_BUNDLED_SHELL
