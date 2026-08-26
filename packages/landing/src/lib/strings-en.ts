@@ -12,7 +12,7 @@ export const en: Strings = {
     label: "Announcements",
     prev: "Previous announcement",
     next: "Next announcement",
-    k3AndFree: "Kimi K3 and free models like Ling 3.0 Flash are now available in PenguinHarness",
+    flashModels: "GLM-5.3 Flash and Qwen 3.8 Flash are now available in PenguinHarness",
     fireworks: "Claim $50 in Fireworks API credits with the AMD Developer Program",
   },
 
