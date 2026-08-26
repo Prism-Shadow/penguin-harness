@@ -308,13 +308,13 @@ describe("model-catalog", () => {
       expect(m.clientType).toBe("openai-chat");
       expect(m.baseUrl).toBe("https://tokendance.space/gateway/v1");
     }
-    // The gateway's own CNY rates, each promoted row stored per the note on its catalog entry:
-    // qwen3.8-max at the 20%-off rate it is billed (list 1.5 / 12 / 36 CNY), glm-5.3-flash at
-    // list price (0.23 / 0.8 / 2.8 CNY) while a 50% off runs; no other row carries a
-    // promotion, so list price and billed rate coincide for the rest.
+    // The gateway's own CNY LIST rates throughout, promotion or not: qwen3.8-max at
+    // 1.5 / 12 / 36 CNY while a 20% off runs, glm-5.3-flash at 0.23 / 0.8 / 2.8 CNY while a
+    // 50% off runs; no other row carries a promotion, so list price and billed rate coincide
+    // for the rest.
     const tdQwen = td.find((m) => m.modelId === "qwen3.8-max")!.pricing!;
     expect([tdQwen.cache_read, tdQwen.cache_write, tdQwen.output]).toEqual([
-      0.171429, 1.371429, 4.114286,
+      0.214286, 1.714286, 5.142857,
     ]);
     // cache_write carries the input price: TokenDance charges no separate cache-write fee.
     const tdFlash = td.find((m) => m.modelId === "glm-5.3-flash")!.pricing!;

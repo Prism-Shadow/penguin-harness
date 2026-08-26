@@ -22,7 +22,9 @@
 
 ## TokenDance
 
-新增 `tokendance` 分组，经 Chat Completions（`client_type = "openai-chat"`）访问 `https://tokendance.space/gateway/v1`，凭证留空时回退到 `OPENAI_API_KEY`。随之上线七个预设——`deepseek-v4-flash-0731`、`deepseek-v4-flash-vision-exp`、`deepseek-v4-pro-0813`、`glm-5.3`、`glm-5.3-flash`、`kimi-k3` 与 `qwen3.8-max`——价格取该网关自己的 CNY 价格。其中两个正在促销，记录口径不同：`qwen3.8-max` 记其实际计费的八折价（牌价 1.5 / 12 / 36 CNY），`glm-5.3-flash` 在限时五折期间记牌价 0.23 / 0.8 / 2.8 CNY（缓存命中 / 输入 / 输出）。`glm-5.3-flash` 支持多模态输入，上下文窗口 1M，也是该分组中唯一只提供 Chat Completions 协议的模型。此前创建的 Project 不会自动获得这些预设，需在模型库页执行「同步预设」追加。
+新增 `tokendance` 分组，经 Chat Completions（`client_type = "openai-chat"`）访问 `https://tokendance.space/gateway/v1`，凭证留空时回退到 `OPENAI_API_KEY`。随之上线七个预设——`deepseek-v4-flash-0731`、`deepseek-v4-flash-vision-exp`、`deepseek-v4-pro-0813`、`glm-5.3`、`glm-5.3-flash`、`kimi-k3` 与 `qwen3.8-max`——一律记该网关自己的 CNY **牌价**，与下方两个 Qwen 分组口径一致。其中两个正在促销，因此该分组当前高估了这两行的实际计费：`glm-5.3-flash`（0.23 / 0.8 / 2.8 CNY，缓存命中 / 输入 / 输出）正在限时两周五折，`qwen3.8-max`（1.5 / 12 / 36 CNY）正在限时八折。TokenDance 的公开模型目录 API 会把这两个促销标注在模型的 `description` 里，因此无需凭证即可复核促销是否仍在进行。`glm-5.3-flash` 支持多模态输入，上下文窗口 1M，也是该分组中唯一只提供 Chat Completions 协议的模型。
+
+此前创建的 Project 不会自动获得上述任何改动：预设是在 Project 创建时复制进 `.project_config.toml` 的，此后不会被改写。唯一的途径是模型库页的「同步预设」——它追加新预设，并更新已有条目上归目录所有的字段（如价格），既不删除任何内容，也不改动已存的默认模型。
 
 ## Provider 顺序
 
