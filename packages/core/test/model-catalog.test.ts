@@ -437,11 +437,11 @@ describe("model-catalog", () => {
     expect([glm53.contextWindow, glm53.supportsVision]).toEqual([1000000, false]);
     expect(glm53.pricing).toEqual(catalogEntryFor("zhipu", "glm-5.2")!.pricing);
     // GLM-5.3 Flash is listed both directly and on OpenRouter, and the two rows deliberately
-    // disagree on both price and vision. Price: the direct row keeps Z.AI's list price while
-    // the gateway row stores the 50%-off rate OpenRouter actually bills through
-    // 2026-09-09, so the gateway figures are exactly half the direct ones.
+    // disagree on price: the direct row keeps Z.AI's list price while the gateway row stores
+    // the 50%-off rate OpenRouter actually bills through 2026-09-09, so the gateway figures
+    // are exactly half the direct ones.
     const glm53f = catalogEntryFor("zhipu", "glm-5.3-flash")!;
-    expect([glm53f.contextWindow, glm53f.supportsVision]).toEqual([1000000, false]);
+    expect([glm53f.contextWindow, glm53f.supportsVision]).toEqual([1000000, true]);
     expect([
       glm53f.pricing!.cache_read,
       glm53f.pricing!.cache_write,
@@ -454,12 +454,14 @@ describe("model-catalog", () => {
       glm53for.pricing!.cache_write,
       glm53for.pricing!.output,
     ]).toEqual([0.015, 0.075, 0.25]);
-    // Vision: the model is natively multimodal, but the direct row goes through AgentHub's
-    // GLM client, which rejects image parts; the gateway row goes through the generic
-    // openai-chat client, which converts them. Same model, two different routes, two
-    // different answers.
+    // Vision agrees on both routes: the direct row's AgentHub GLM client forwards image_url
+    // parts for this one id, and the gateway row's generic openai-chat client carries them
+    // for any id. It is the only vision-capable row in the direct Z.AI group.
     expect(glm53f.clientType).toBeUndefined();
     expect(glm53for.clientType).toBe("openai-chat");
+    for (const m of MODEL_CATALOG.filter((m) => m.provider === "zhipu")) {
+      expect(m.supportsVision, m.modelId).toBe(m.modelId === "glm-5.3-flash");
+    }
     // Both rows share one display name, as the other dual-listed models do.
     expect(glm53f.displayName).toBe("GLM-5.3 Flash");
     expect(glm53for.displayName).toBe("GLM-5.3 Flash");

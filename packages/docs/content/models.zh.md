@@ -77,7 +77,7 @@ api_key = "sk-..."
 
 预置目录还收录了 OpenRouter 的免费档：`:free` 模型变体 `nvidia/nemotron-3-ultra-550b-a55b:free` 与统一路由 `openrouter/free`(Free Models Router)，零成本可用，但受 OpenRouter 免费档速率限制与数据政策约束。
 
-预置目录中的部分模型：deepseek-v4-pro / deepseek-v4-flash / deepseek-v4-flash-vision-exp(DeepSeek 分组中唯一支持图像输入的模型)、MiniMax-M3、gemini-3.7-flash、claude-opus-5 / claude-opus-4-8 / claude-sonnet-5、gpt-5.6 / gpt-5.5、glm-5.3 / glm-5.3-flash、kimi-k3、qwen3.8-max / qwen3.8-flash 等(非完整清单)。OpenAI 全系列都收录了两份——直连(用自己的 OpenAI Key，记牌价)与 OpenRouter 上的 `openai/<id>`(记网关实际计费价，会随其促销浮动)。DeepSeek 直连分组的价格记录官方低谷时段档(高峰时段——北京时间 9:00–12:00、14:00–18:00——按双倍计费)。`glm-5.3-flash` 收录了两份，且视觉标记不同：直连 zhipu 的条目为 text-only——AgentHub 的 GLM 客户端拒绝图像输入；而 OpenRouter 上的 `z-ai/glm-5.3-flash` 走通用 OpenAI 兼容客户端，可以接收图片。它的直连条目记 Z.AI 牌价，OpenRouter 条目记网关实际计费的折后价，因此促销期间两者不一致。
+预置目录中的部分模型：deepseek-v4-pro / deepseek-v4-flash / deepseek-v4-flash-vision-exp(DeepSeek 分组中唯一支持图像输入的模型)、MiniMax-M3、gemini-3.7-flash、claude-opus-5 / claude-opus-4-8 / claude-sonnet-5、gpt-5.6 / gpt-5.5、glm-5.3 / glm-5.3-flash、kimi-k3、qwen3.8-max / qwen3.8-flash 等(非完整清单)。OpenAI 全系列都收录了两份——直连(用自己的 OpenAI Key，记牌价)与 OpenRouter 上的 `openai/<id>`(记网关实际计费价，会随其促销浮动)。DeepSeek 直连分组的价格记录官方低谷时段档(高峰时段——北京时间 9:00–12:00、14:00–18:00——按双倍计费)。`glm-5.3-flash` 收录了两份，两条都支持图像输入：AgentHub 的 GLM 客户端只为这一个 GLM id 转发图像部件(其余 GLM id 一律拒绝)，而 OpenRouter 上的 `z-ai/glm-5.3-flash` 走通用 OpenAI 兼容客户端，对任何 id 都能携带图片。两条不一致的是价格——直连条目记 Z.AI 牌价，OpenRouter 条目记网关实际计费的折后价，因此促销期间两者不同。
 
 ## 本地 / 自建 OpenAI 兼容端点（如 vLLM）
 

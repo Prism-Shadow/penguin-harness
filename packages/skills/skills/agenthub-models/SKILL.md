@@ -3,7 +3,7 @@ name: agenthub-models
 description: Call model APIs through @prismshadow/agenthub — streaming text generation, image generation, speech synthesis, embeddings and the supported-model registry with one client.
 short_description: Call model APIs with one AgentHub client.
 short_description_zh: 用一个 AgentHub 客户端调用模型 API。
-version: 16
+version: 17
 updated: 2026-08-26T00:00:00Z
 ---
 
@@ -75,7 +75,7 @@ Use exact model ids. If an id is not in the table below and the user has not giv
 
 The image endpoint dropped its preview suffix: `gemini-3.1-flash-image-preview` is deprecated, use `gemini-3.1-flash-image`.
 
-`glm-5.3-flash` is natively multimodal, but the GLM client rejects image parts outright (`GLM-5 does not support image inputs.`), so the direct id is text-only in practice — the same limitation that keeps `glm-5v-turbo` unusable for images. To send that model an image, use the gateway variant `z-ai/glm-5.3-flash` with `clientType: "openai-chat"`, which converts `image_url` parts.
+`glm-5.3-flash` is the one GLM model that reads images (`@prismshadow/agenthub` >= 0.4.8). The GLM client sends an `image_url` item as an `image_url` part, in a prompt and in a tool result alike, and both an HTTP(S) URL and a base64 data URL pass through unchanged. The version match is case-insensitive, so the gateway spellings `z-ai/glm-5.3-flash` and `zai-org/GLM-5.3-Flash` are recognised too. Every other GLM id refuses an image rather than dropping it — `GLM <id> does not support image inputs.` in a prompt, `GLM <id> does not support images in tool results.` in a tool result — and that includes `glm-5v-turbo`.
 
 Gateway model lists can be queried online:
 

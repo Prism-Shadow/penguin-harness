@@ -20,8 +20,9 @@
  * single rate, so long-context usage will be underestimated).
  *
  * Scope: excludes deepseek-chat / deepseek-reasoner legacy aliases that AgentHub cannot
- * auto-route (deprecated 2026-07-24), glm-5v-turbo (image input unsupported by AgentHub's GLM
- * client), the OpenRouter z-ai/glm-5.1 and SiliconFlow Pro/zai-org/GLM-5.1 gateway listings
+ * auto-route (deprecated 2026-07-24), glm-5v-turbo (AgentHub's GLM client forwards images
+ * only for glm-5.3-flash, so a vision model cannot do the one thing it exists for), the
+ * OpenRouter z-ai/glm-5.1 and SiliconFlow Pro/zai-org/GLM-5.1 gateway listings
  * (delisted 2026-08-06; the Z.AI direct glm-5.1 remains), the OpenRouter
  * inclusionai/ling-3.0-flash:free listing (delisted from OpenRouter, removed 2026-08-18),
  * non-chat models (embedding / image generation / TTS), and Bedrock. Direct-vendor ids are
@@ -1256,18 +1257,18 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     // is stored here — the OpenRouter z-ai/glm-5.3-flash row above carries the promotional
     // rate it is actually billed at.
     //
-    // Vision stays off even though the model is natively multimodal (docs.z.ai/guides/vlm/
-    // glm-5.3-flash: images, video and files): AgentHub's GLM client rejects image parts
-    // outright — "GLM-5 does not support image inputs." — which is the same limitation that
-    // keeps glm-5v-turbo out of this catalog entirely. Flip this to true once the pinned
-    // @prismshadow/agenthub range resolves to a release whose glm5_3 client forwards
-    // image_url parts.
+    // The model is natively multimodal (docs.z.ai/guides/vlm/glm-5.3-flash: images, video
+    // and files), and it is the one GLM id whose images AgentHub's GLM client forwards — as
+    // image_url parts, in a prompt and in a tool result alike. Every other GLM id refuses
+    // one outright ("GLM <id> does not support image inputs."), which is why the rest of
+    // this group is vision-off. That forwarding is why core's dependency range floors
+    // @prismshadow/agenthub at 0.4.8.
     modelId: "glm-5.3-flash",
     displayName: "GLM-5.3 Flash",
     provider: "zhipu",
     contextWindow: 1000000,
     pricing: usd(0.03, 0.15, 0.5),
-    supportsVision: false,
+    supportsVision: true,
   },
   {
     modelId: "glm-5.2",
