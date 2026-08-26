@@ -26,12 +26,21 @@
  * costs a version tag in a request header and nothing more.
  */
 
-/** Single line on purpose: a banner shifts every source line the bundle's sourcemap maps. */
+/**
+ * Single line on purpose: a banner shifts every source line the bundle's sourcemap maps.
+ *
+ * `var`, not `const`: esbuild renames a bundled module's own top-level `require`, but it
+ * leaves `__filename` and `__dirname` alone, and the ESM boilerplate that derives them from
+ * `import.meta.url` is common enough to expect in the tree. A second lexical declaration of
+ * a name the banner already bound is `SyntaxError: Identifier '__filename' has already been
+ * declared` — the whole bundle fails to parse, which is worse than the crash being fixed.
+ * Two `var`s of one name are legal, and inside a bundle both spell the same path anyway.
+ */
 export const ESM_CJS_BANNER = [
   'import { createRequire as __penguinCreateRequire } from "node:module";',
   'import { fileURLToPath as __penguinFileURLToPath } from "node:url";',
   'import { dirname as __penguinDirname } from "node:path";',
-  "const require = __penguinCreateRequire(import.meta.url);",
-  "const __filename = __penguinFileURLToPath(import.meta.url);",
-  "const __dirname = __penguinDirname(__filename);",
+  "var require = __penguinCreateRequire(import.meta.url);",
+  "var __filename = __penguinFileURLToPath(import.meta.url);",
+  "var __dirname = __penguinDirname(__filename);",
 ].join(" ");

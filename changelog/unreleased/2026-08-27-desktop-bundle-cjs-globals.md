@@ -34,3 +34,8 @@ place, and one that must reach its own files cannot be bundled at all — which 
 ships as a real package directory next to the bundles instead. The Feishu SDK stays inside that
 limit: its version lookup already falls back to `unknown` when it finds nothing, so the wrong
 directory costs a version tag in a request header and nothing else.
+
+The three are declared with `var` rather than `const`, so that a bundled module deriving
+`__filename` and `__dirname` from `import.meta.url` itself — ordinary ESM boilerplate —
+redeclares the name instead of colliding with it. A second lexical declaration of a name the
+banner has already bound is a parse error that takes the whole bundle down at load.

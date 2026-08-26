@@ -6,8 +6,9 @@
  * has to find a declaration in the bundle's own top-level scope. The banner shipped only
  * `require` once, and `@larksuiteoapi/node-sdk`'s `__dirname` then failed the desktop app's
  * Feishu binding with `__dirname is not defined`. These tests pin all three: the banner's
- * own values, a real esbuild round-trip through a CJS dependency that reads them, and both
- * bundling sites sourcing the one banner rather than re-inlining a partial copy.
+ * own values, a real esbuild round-trip through a CJS dependency that reads them, the
+ * redeclaration a bundled ESM module brings with it, and both bundling sites sourcing the
+ * one banner rather than re-inlining a partial copy.
  *
  * Every module here is evaluated in a CHILD `node` process. Vitest runs test modules through
  * Vite's SSR runner, whose wrapper defines `__filename` and `__dirname` itself — importing
@@ -72,6 +73,20 @@ function caseDir(name: string): string {
   return dir;
 }
 
+/** Bundles `entry` to `outfile` the way both build sites do: ESM, node, banner attached. */
+async function bundleWithBanner(entry: string, outfile: string): Promise<void> {
+  const esbuild = await import("esbuild");
+  await esbuild.build({
+    entryPoints: [entry],
+    bundle: true,
+    format: "esm",
+    platform: "node",
+    outfile,
+    logLevel: "silent",
+    banner: { js: ESM_CJS_BANNER },
+  });
+}
+
 describe("ESM_CJS_BANNER", () => {
   it("declares require, __filename and __dirname with the values CJS would have given", () => {
     const file = path.join(caseDir("values"), "probe.mjs");
@@ -112,22 +127,36 @@ describe("ESM_CJS_BANNER", () => {
     );
 
     const outfile = path.join(dir, "out.mjs");
-    const esbuild = await import("esbuild");
-    await esbuild.build({
-      entryPoints: [path.join(dir, "entry.mjs")],
-      bundle: true,
-      format: "esm",
-      platform: "node",
-      outfile,
-      logLevel: "silent",
-      banner: { js: ESM_CJS_BANNER },
-    });
+    await bundleWithBanner(path.join(dir, "entry.mjs"), outfile);
 
     const probe = probeInNode(outfile);
     expect(probe.sep).toBe(path.sep);
     // The documented approximation: a bundled dependency sees the BUNDLE's location, not
     // the directory it was published in. Wrong for locating its own shipped files, but
     // defined — which is the whole difference between a wrong path and a hard crash.
+    expect(probe.file).toBe(outfile);
+    expect(probe.dir).toBe(dir);
+  });
+
+  it("survives a bundled module declaring __filename / __dirname of its own", async () => {
+    const dir = caseDir("redeclare");
+    // The boilerplate an ESM module writes to get the two names back. esbuild renames a
+    // bundled module's own top-level `require` but leaves these two spelled as written, so a
+    // `const` banner turns the whole bundle into a SyntaxError at load — a worse failure than
+    // the one the banner exists to prevent.
+    fs.writeFileSync(
+      path.join(dir, "dep.mjs"),
+      'import { fileURLToPath } from "node:url";\nimport { dirname } from "node:path";\n' +
+        "const __filename = fileURLToPath(import.meta.url);\n" +
+        "const __dirname = dirname(__filename);\n" +
+        "export const info = { dir: __dirname, file: __filename };\n",
+    );
+    fs.writeFileSync(path.join(dir, "entry.mjs"), 'export { info as probe } from "./dep.mjs";\n');
+
+    const outfile = path.join(dir, "out.mjs");
+    await bundleWithBanner(path.join(dir, "entry.mjs"), outfile);
+
+    const probe = probeInNode(outfile);
     expect(probe.file).toBe(outfile);
     expect(probe.dir).toBe(dir);
   });
