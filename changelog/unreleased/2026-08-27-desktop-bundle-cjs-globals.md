@@ -3,6 +3,7 @@
 - **Date:** 2026-08-27
 - **Type:** fix
 - **Scope:** `desktop`, `tooling`
+- **PR:** [#482](https://github.com/Prism-Shadow/penguin-harness/pull/482)
 
 [中文版](2026-08-27-desktop-bundle-cjs-globals.zh.md)
 
