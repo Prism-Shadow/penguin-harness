@@ -73,6 +73,7 @@
  * refused with a reason — see refuseMedia, which explains what QQ would require.
  */
 import { chunkMessagingText } from "./bridge.js";
+import { MessagingUnsupportedError } from "./media.js";
 import type {
   MessagingChannelConnector,
   MessagingClient,
@@ -162,11 +163,13 @@ interface QQOutboundFile {
  *
  * So the honest answer is a refusal that names the reason. The bridge records one error per
  * undeliverable file and the reply's text still arrives — quietly resolving would tell it a
- * picture reached a chat that never received one.
+ * picture reached a chat that never received one. It is a `MessagingUnsupportedError` rather
+ * than a bare one so that record is filed as expected: this refusal is the platform's shape,
+ * identical every time, and nothing an operator reads a dashboard to find (see error-kind.ts).
  */
 function refuseMedia(file: QQOutboundFile): Promise<never> {
   return Promise.reject(
-    new Error(
+    new MessagingUnsupportedError(
       `QQ cannot receive "${file.fileName}": sending a file to QQ requires a publicly reachable URL for it, which this server has no way to provide`,
     ),
   );

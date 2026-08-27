@@ -1185,6 +1185,9 @@ describe("messaging binding routes and bridge", () => {
       .prepare("SELECT code FROM error_records WHERE source = 'messaging'")
       .all() as Array<{ code: string }>;
     expect(errors).toEqual([{ code: "messaging_send_failed" }]);
+    // Unexpected on purpose: a refused send loses a line of the answer and says so to nobody,
+    // which is the opposite of a refusal the chat explains (see error-kind.ts).
+    expect(messagingErrorKinds()).toEqual([{ code: "messaging_send_failed", kind: "unexpected" }]);
   });
 
   it("paces the messages of a per-line reply instead of firing them back to back", async () => {
@@ -1565,9 +1568,34 @@ describe("messaging binding routes and bridge", () => {
       ),
     );
     // Still an error record: somebody has to grant it, and the dashboard is where that is
-    // noticed when nobody is watching the chat.
+    // noticed when nobody is watching the chat. Filed as EXPECTED, though — the one person
+    // who can fix it has just been handed the scope names and the console link, so nothing
+    // is pending for an operator, and the cost center's unexpected count stays a count of
+    // things that need looking at.
     expect(imageFetchErrors()).toHaveLength(1);
+    expect(messagingErrorKinds()).toEqual([
+      { code: "messaging_image_fetch_failed", kind: "expected" },
+    ]);
     expect(runs).toHaveLength(0);
+  });
+
+  it("files a download that simply failed as unexpected, unlike a refusal it explained", async () => {
+    await bindEnabled(SID);
+    // The contrast that makes the classification worth having: no scope to grant and no
+    // smaller file to send, just a transfer that did not happen. Nobody has been told how to
+    // fix it, because nobody knows — which is exactly what the dashboard is for.
+    fake.failImageFetchWith = new Error("socket hang up");
+    await fake.lastConnection().fire({
+      chatId: "oc_chat_1",
+      chatType: "p2p",
+      messageId: "om_img_broke",
+      messageType: "image",
+      content: JSON.stringify({ image_key: "img_v2_broke" }),
+    });
+    await waitFor(() => imageFetchErrors().length === 1);
+    expect(messagingErrorKinds()).toEqual([
+      { code: "messaging_image_fetch_failed", kind: "unexpected" },
+    ]);
   });
 
   it("bounds inbound imagery per binding, refusing the overflow with its own notice", async () => {
@@ -2121,6 +2149,12 @@ describe("messaging binding routes and bridge", () => {
       .prepare("SELECT message FROM error_records WHERE code = 'messaging_image_fetch_failed'")
       .all()
       .map((r) => r.message as string);
+
+  /** How the messaging failures recorded so far were classified, newest last (see error-kind.ts). */
+  const messagingErrorKinds = (): Array<{ code: string; kind: string }> =>
+    t.deps.db
+      .prepare("SELECT code, kind FROM error_records WHERE source = 'messaging' ORDER BY id")
+      .all() as Array<{ code: string; kind: string }>;
 
   let asks = 0;
   /** Message the bound Session from the chat, and wait for the run to start AND finish. */

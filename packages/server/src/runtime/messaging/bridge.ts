@@ -77,6 +77,7 @@ import type {
   MessagingInboundMessage,
   MessagingSendNote,
 } from "./connector.js";
+import { messagingErrorKind } from "./error-kind.js";
 import { MessagingMediaTooLargeError, MessagingPermissionError, isImageFileName } from "./media.js";
 import { replyFileMentions } from "./reply-files.js";
 
@@ -891,6 +892,10 @@ export class MessagingBridge {
       source: "messaging",
       err,
       code,
+      // Classified here rather than left to the recorder's default: its fallback for a
+      // non-HTTP source is `unexpected`, which files a scope the app was never granted and a
+      // file the platform cannot carry as defects (see error-kind.ts for the rule).
+      kind: messagingErrorKind(err),
       ctx: {
         sessionId,
         ...(row !== null ? { projectId: row.projectId, agentId: row.agentId } : {}),
