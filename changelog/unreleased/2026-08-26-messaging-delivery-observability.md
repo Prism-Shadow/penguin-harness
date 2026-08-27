@@ -54,5 +54,6 @@ group does not pick it up, and nothing else is polling the same token — and st
 
 The one-program-per-token entry now names the trap that costs the most time while diagnosing
 exactly this: **a `getUpdates` run by hand is that other program.** It has to be run with the
-connection disabled, and reading updates by hand confirms them, so the app will never see those
-messages and a retest needs a freshly sent one.
+connection disabled, and inspecting the backlog by hand can discard it — any call carrying an
+`offset` confirms everything before it, and the connector's own next connect drops the backlog —
+so a retest needs a freshly sent message.

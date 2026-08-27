@@ -1895,7 +1895,7 @@ Benchmark：
     troubleConnError:
       "连接状态显示错误？检查凭证是否正确；飞书还需确认 API 域名与事件订阅方式（长连接）。",
     troubleOnePoller:
-      "Telegram 提示已有其他程序在轮询？一个 Bot Token 同一时刻只能被一个程序使用——关闭正在占用它的另一个 PenguinHarness 服务端或机器人脚本，或为该会话单独建一个机器人。手动执行的 getUpdates（例如用 curl 查看 Telegram 那边积压了什么）同样算作「另一个程序」：跑它之前先在这里停用连接。而且手动读取会确认这些更新，应用此后再也看不到它们——所以复测必须重新发一条新消息。",
+      "Telegram 提示已有其他程序在轮询？一个 Bot Token 同一时刻只能被一个程序使用——关闭正在占用它的另一个 PenguinHarness 服务端或机器人脚本，或为该会话单独建一个机器人。手动执行的 getUpdates（例如用 curl 查看 Telegram 那边积压了什么）同样算作「另一个程序」：跑它之前先在这里停用连接。而且手动查看也可能把它们丢掉——任何带 offset 的调用都会确认它之前的全部更新，应用自己的下一次连接也会清空积压——所以复测请重新发一条新消息，而不是指望刚才看到的那几条。",
     troubleGroupPrivacy:
       "在 Telegram 群里发消息，机器人毫无反应？Telegram 的 Group Privacy 默认开启，此时不担任该群管理员的机器人只能收到明确指向它的命令（如 /start@your_bot）和对它自己消息的回复，普通群消息根本不会送达，连接本身也没有任何异常。把机器人设为该群的管理员即可单独解决，管理员始终收到全部消息。也可以到 @BotFather 用 /setprivacy 关闭 Group Privacy，然后把机器人移出该群再重新拉入——已在的群不会自动生效。",
     /** The QQ-only failure a user will otherwise read as "the bot is broken". */
