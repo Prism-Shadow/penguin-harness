@@ -12,6 +12,10 @@
  * The tables are Maps, not objects: the keys are file extensions and fence info strings, and a
  * plain object would resolve `constructor` or `__proto__` through Object.prototype to a function or
  * an object where a language id is expected (React throws when that reaches a text node).
+ *
+ * Extensions add languages on top of these tables at RUNTIME (see registerRuntimeLanguages): the
+ * bundled set is resolved by the bundler and cannot grow by installing anything, so a contributed
+ * grammar arrives from the server instead and is registered here before its first fence is met.
  */
 
 /** Shiki resolves these without a grammar. Unmapped file extensions land here to get the themed background. */
@@ -116,7 +120,8 @@ const LANGUAGE_BY_EXTENSION = new Map(
 export const PLAIN_TEXT_LANGUAGE = "text";
 
 export function languageForExtension(ext: string): string {
-  return LANGUAGE_BY_EXTENSION.get(ext.toLowerCase()) ?? PLAIN_TEXT_LANGUAGE;
+  const key = ext.toLowerCase();
+  return LANGUAGE_BY_EXTENSION.get(key) ?? RUNTIME_BY_EXTENSION.get(key) ?? PLAIN_TEXT_LANGUAGE;
 }
 
 /**
@@ -127,11 +132,90 @@ export function languageForExtension(ext: string): string {
 export function resolveLanguage(language: string): string | undefined {
   const id = language.trim().toLowerCase();
   if (!id || PLAIN_TEXT_IDS.has(id)) return PLAIN_TEXT_LANGUAGE;
-  const canonical = LANGUAGE_ALIASES.get(id) ?? id;
-  return LANGUAGE_LOADERS.has(canonical) ? canonical : undefined;
+  const canonical = LANGUAGE_ALIASES.get(id) ?? RUNTIME_ALIASES.get(id) ?? id;
+  if (LANGUAGE_LOADERS.has(canonical)) return canonical;
+  return RUNTIME_LANGUAGES.has(canonical) ? canonical : undefined;
 }
 
 /** True for ids Shiki highlights without loading a grammar. */
 export function isPlainTextLanguage(id: string): boolean {
   return PLAIN_TEXT_IDS.has(id);
+}
+
+// ---------------------------------------------------------------------------
+// Languages contributed by extensions
+// ---------------------------------------------------------------------------
+
+/** One language the server reported (GET /api/languages); the grammar is fetched per id. */
+export interface RuntimeLanguage {
+  id: string;
+  displayName: string;
+  aliases?: string[];
+  extensions?: string[];
+}
+
+/**
+ * Registered languages, by canonical id. A separate table from LANGUAGE_LOADERS rather than an
+ * insertion into it: the bundled entries are dynamic imports the bundler resolved, these are
+ * URLs the browser fetches, and highlighter.ts loads them by different means.
+ */
+const RUNTIME_LANGUAGES = new Map<string, RuntimeLanguage>();
+const RUNTIME_ALIASES = new Map<string, string>();
+const RUNTIME_BY_EXTENSION = new Map<string, string>();
+
+/** Bumped on every registration; CodeBlock subscribes so a block already on screen re-highlights. */
+let runtimeGeneration = 0;
+const listeners = new Set<() => void>();
+
+/**
+ * Adopt the languages the server reported. Replaces the previous set rather than merging: the
+ * listing is the whole truth about what this App offers, and an extension removed by a hot push
+ * has to stop being offered.
+ *
+ * A bundled id always wins a collision. The bundled grammar is the one whose chunk is already
+ * built and tested against this Shiki version; letting an extension shadow `typescript` would
+ * trade that for whatever it shipped, silently.
+ */
+export function registerRuntimeLanguages(languages: readonly RuntimeLanguage[]): void {
+  RUNTIME_LANGUAGES.clear();
+  RUNTIME_ALIASES.clear();
+  RUNTIME_BY_EXTENSION.clear();
+  for (const language of languages) {
+    const id = language.id.trim().toLowerCase();
+    if (id === "" || LANGUAGE_LOADERS.has(id) || PLAIN_TEXT_IDS.has(id)) continue;
+    RUNTIME_LANGUAGES.set(id, language);
+    for (const alias of language.aliases ?? []) {
+      const key = alias.trim().toLowerCase();
+      if (key !== "" && !LANGUAGE_ALIASES.has(key) && !LANGUAGE_LOADERS.has(key)) {
+        RUNTIME_ALIASES.set(key, id);
+      }
+    }
+    for (const ext of language.extensions ?? []) {
+      const key = ext.trim().toLowerCase().replace(/^\./, "");
+      if (key !== "" && !LANGUAGE_BY_EXTENSION.has(key)) RUNTIME_BY_EXTENSION.set(key, id);
+    }
+  }
+  runtimeGeneration += 1;
+  for (const listener of listeners) listener();
+}
+
+/** Subscribe to registrations (useSyncExternalStore's contract). Returns the unsubscribe. */
+export function subscribeToRuntimeLanguages(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+/** The current generation — the snapshot half of useSyncExternalStore. */
+export function runtimeLanguageGeneration(): number {
+  return runtimeGeneration;
+}
+
+/** True when `id` is one an extension contributed, so highlighter.ts fetches its grammar. */
+export function isRuntimeLanguage(id: string): boolean {
+  return RUNTIME_LANGUAGES.has(id);
+}
+
+/** Every registered language, for a picker or a test. */
+export function runtimeLanguages(): RuntimeLanguage[] {
+  return [...RUNTIME_LANGUAGES.values()];
 }

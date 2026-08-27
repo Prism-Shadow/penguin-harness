@@ -13,6 +13,7 @@
  * exactly the old behaviour and still correct, only blocking.
  */
 import type { HighlightRequest, HighlightResponse } from "./highlighter.worker";
+import { isRuntimeLanguage, resolveLanguage } from "./code-languages";
 
 /** undefined: not tried yet. null: unavailable here, use the main thread. */
 let worker: Worker | null | undefined;
@@ -62,16 +63,28 @@ export async function highlightToHtml(
   options?: { blockLines?: boolean },
 ): Promise<string | undefined> {
   const blockLines = options?.blockLines === true;
+  // An installed extension registers its languages on THIS thread (code-languages.ts); the
+  // worker's copy of that registry never hears of them. So the resolution is made here and an
+  // extension language travels with the request, for the engine to fetch its grammar.
+  const resolved = resolveLanguage(language);
+  const runtimeLanguage =
+    resolved !== undefined && isRuntimeLanguage(resolved) ? resolved : undefined;
   const w = getWorker();
   if (w === null) {
     // Imported here and not at the top: the engine is already in the worker's bundle, and a
     // static import would put a second copy of it on the main thread for every reader whose
     // worker works — which is all of them.
     const { highlight } = await import("./highlighter-core");
-    return highlight(code, language, blockLines);
+    return highlight(code, language, blockLines, runtimeLanguage);
   }
   const id = (nextId += 1);
-  const request: HighlightRequest = { id, code, language, blockLines };
+  const request: HighlightRequest = {
+    id,
+    code,
+    language,
+    blockLines,
+    ...(runtimeLanguage !== undefined ? { runtimeLanguage } : {}),
+  };
   const answer = await new Promise<HighlightResponse>((resolve) => {
     pending.set(id, resolve);
     w.postMessage(request);
