@@ -73,13 +73,16 @@ describe("navKeysFor", () => {
     // /api/machines is admin-gated server-side (it spawns ssh with the server account's
     // keys), so offering a member the row would only ever produce a 403.
     expect([...navKeysFor(false)]).toEqual(["agents", "skills", "models", "usage", "benchmark"]);
-    expect(navKeysFor(true)).toEqual(NAV_GROUP_KEYS);
+    // An admin sees the manifest minus what is built but not yet offered — `machines` today,
+    // which is why neither answer contains it and the two are equal for now.
+    expect([...navKeysFor(true)]).toEqual(["agents", "skills", "models", "usage", "benchmark"]);
+    expect(NAV_GROUP_KEYS as readonly string[]).toContain("machines");
   });
 });
 
 describe("visibleNavKeys", () => {
   it("expanded shows the whole group; collapsed leaves no entry visible or reachable (the sidebar renders the mounted rows inert at zero height)", () => {
-    expect(visibleNavKeys(false)).toEqual(NAV_GROUP_KEYS);
+    expect(visibleNavKeys(false)).toEqual(navKeysFor(true));
     expect(visibleNavKeys(true)).toEqual([]);
   });
 
@@ -120,7 +123,7 @@ describe("persisted collapse state (one global localStorage key)", () => {
     storeNavGroupCollapsed(false, s);
     expect(s.map.get(NAV_GROUP_COLLAPSED_KEY)).toBe("expanded");
     expect(initialNavGroupCollapsed(s)).toBe(false);
-    expect(visibleNavKeys(initialNavGroupCollapsed(s))).toEqual(NAV_GROUP_KEYS);
+    expect(visibleNavKeys(initialNavGroupCollapsed(s))).toEqual(navKeysFor(true));
   });
 
   it("unrecognized stored values fall back to expanded", () => {

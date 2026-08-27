@@ -40,9 +40,22 @@ export type NavGroupKey = (typeof NAV_GROUP_KEYS)[number];
  */
 const ADMIN_ONLY_NAV_KEYS: ReadonlySet<NavGroupKey> = new Set<NavGroupKey>(["machines"]);
 
+/**
+ * Entries built but not yet offered. They keep their place in the manifest — the page, its
+ * route and its server routes all still exist and are reachable from a test — and are simply
+ * not put in front of anyone, so releasing one is deleting its name from this set rather than
+ * restoring code.
+ *
+ * `machines` installs this build onto another host over ssh with the server account's keys.
+ * That is a capability worth shipping deliberately rather than as a row that happens to appear,
+ * so it waits for a release that means to introduce it.
+ */
+const UNRELEASED_NAV_KEYS: ReadonlySet<NavGroupKey> = new Set<NavGroupKey>(["machines"]);
+
 /** The manifest as this user sees it. */
 export function navKeysFor(isAdmin: boolean): readonly NavGroupKey[] {
-  return isAdmin ? NAV_GROUP_KEYS : NAV_GROUP_KEYS.filter((key) => !ADMIN_ONLY_NAV_KEYS.has(key));
+  const offered = NAV_GROUP_KEYS.filter((key) => !UNRELEASED_NAV_KEYS.has(key));
+  return isAdmin ? offered : offered.filter((key) => !ADMIN_ONLY_NAV_KEYS.has(key));
 }
 
 /**
