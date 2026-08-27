@@ -3,6 +3,7 @@
 - **Date:** 2026-08-27
 - **Type:** feature
 - **Scope:** `core`
+- **PR:** [#517](https://github.com/Prism-Shadow/penguin-harness/pull/517)
 
 [中文版](2026-08-27-catalog-tokendance-qwen38-flash.zh.md)
 
