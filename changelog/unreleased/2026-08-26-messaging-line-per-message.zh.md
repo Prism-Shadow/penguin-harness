@@ -3,6 +3,7 @@
 - **Date:** 2026-08-26
 - **Type:** feature
 - **Scope:** `server`, `web`, `docs`
+- **PR:** [#494](https://github.com/Prism-Shadow/penguin-harness/pull/494)
 
 [English](2026-08-26-messaging-line-per-message.md)
 

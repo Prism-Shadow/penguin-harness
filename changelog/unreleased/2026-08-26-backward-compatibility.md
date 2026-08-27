@@ -3,7 +3,7 @@
 - **Date:** 2026-08-26
 - **Type:** process
 - **Scope:** `server`
-- **PR:** [#490](https://github.com/Prism-Shadow/penguin-harness/pull/490)
+- **PR:** [#490](https://github.com/Prism-Shadow/penguin-harness/pull/490), [#494](https://github.com/Prism-Shadow/penguin-harness/pull/494)
 - **Breaking:** yes — one-way for the database: after two Sessions have saved the same bot account, a build from before this change can no longer open that `web.db`
 
 [中文版](2026-08-26-backward-compatibility.zh.md)
