@@ -4,7 +4,9 @@
  * Two independent trails end in two different controls, so they are two independent gates:
  * a *software* update, actionable in the sidebar user menu, and an *Agent kernel* update,
  * actionable on the Agent settings page. The outermost chrome (the mobile menu button) shows
- * one dot for either.
+ * one dot for either — and, since `todo-badges.ts` joined them, for the three dismissible
+ * trails as well; `badgeNote` at the bottom is what every anchor covering more than one of
+ * them speaks through.
  *
  * Every gate here is written as "is there a control the user can reach": a badge over a path
  * with nothing actionable at the end of it is worse than no badge. That is why the software
@@ -77,20 +79,32 @@ export function anyKernelOutdated(
 }
 
 /**
- * What an anchor covering BOTH trails says. `mixed` is the combined case: two different
- * things are updatable and the anchor leads to both, so it must not claim to be either.
+ * One thing a dot can stand for. The first two are the self-clearing trails above; the last
+ * three are the dismissible ones in `todo-badges.ts`, which carry a count because the anchors
+ * that name them have room to say how many.
+ */
+export type BadgeSource =
+  | SoftwareUpdate
+  | { kind: "kernel" }
+  | { kind: "skills"; count: number }
+  | { kind: "models"; count: number }
+  | { kind: "errors"; count: number };
+
+/**
+ * What an anchor says. A single source speaks for itself; several make it `mixed`, because an
+ * anchor leading to all of them must not claim to be one — naming one of five would point the
+ * user down the wrong trail.
+ *
+ * `updatesOnly` splits the two combined wordings apart. Four of the five sources ARE updates
+ * and can be summed up as "something can be updated"; unexpected errors are not an update by
+ * any reading, so a mix containing them needs the wider "something is waiting for you".
  */
 export type UpdateBadgeNote =
-  | { kind: "none" }
-  | { kind: "release"; version: string }
-  | { kind: "client"; version: string | null }
-  | { kind: "kernel" }
-  | { kind: "mixed" };
+  { kind: "none" } | BadgeSource | { kind: "mixed"; updatesOnly: boolean };
 
-/** Classifies what one anchor over both trails should say (see {@link UpdateBadgeNote}). */
-export function updateBadgeNote(software: SoftwareUpdate | null, kernel: boolean): UpdateBadgeNote {
-  if (software !== null && kernel) return { kind: "mixed" };
-  if (software !== null) return software;
-  if (kernel) return { kind: "kernel" };
-  return { kind: "none" };
+/** Classifies what one anchor over `sources` should say (see {@link UpdateBadgeNote}). */
+export function badgeNote(sources: readonly BadgeSource[]): UpdateBadgeNote {
+  if (sources.length === 0) return { kind: "none" };
+  if (sources.length === 1) return sources[0]!;
+  return { kind: "mixed", updatesOnly: sources.every((s) => s.kind !== "errors") };
 }

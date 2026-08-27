@@ -53,6 +53,8 @@ export interface ErrorFilter {
   from?: string;
   to?: string;
   agentId?: string;
+  /** One error category (`unexpected` / `expected`); absent counts both, which is what the panel shows. */
+  kind?: string;
   /** Whether to include unattributed errors (`project_id IS NULL`): admins only, defaults to false (see file header). */
   includeGlobal?: boolean;
 }
@@ -155,6 +157,10 @@ export class ErrorsRepo {
       // Filtering by Agent naturally leaves only that Agent's errors (HTTP / process-level errors have no agent_id).
       conds.push("agent_id = :agentId");
       params.agentId = f.agentId;
+    }
+    if (f.kind !== undefined) {
+      conds.push("kind = :kind");
+      params.kind = f.kind;
     }
     return { where: conds.join(" AND "), params };
   }

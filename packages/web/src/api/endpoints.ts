@@ -121,6 +121,7 @@ import type {
   UpdateCheckResponse,
   UpdateRunResponse,
   DesktopUpdateStatusResponse,
+  UsageErrorKind,
   UsageErrorsPage,
   UsageGranularity,
   UsageGroupBy,
@@ -819,7 +820,15 @@ export const importAgentTrace = (projectId: string, agentId: string, body: Trace
  */
 export const getUsageErrors = (
   projectId: string,
-  params: { offset: number; limit: number; from?: string; to?: string; agentId?: string },
+  params: {
+    offset: number;
+    limit: number;
+    from?: string;
+    to?: string;
+    agentId?: string;
+    /** Narrow to one category; the cost-center badge asks for `unexpected` with `limit: 1`. */
+    kind?: UsageErrorKind;
+  },
 ) =>
   apiFetch<UsageErrorsPage>(`/api/projects/${encodeURIComponent(projectId)}/usage/errors`, {
     query: {
@@ -828,6 +837,7 @@ export const getUsageErrors = (
       from: params.from,
       to: params.to,
       agentId: params.agentId,
+      kind: params.kind,
     },
   });
 

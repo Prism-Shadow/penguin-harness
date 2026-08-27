@@ -5,11 +5,11 @@
  * sets the time-series precision, defaulting to day; fromTs/toTs bound a
  * trailing window down to instants — required for minute — and must be given
  * together);
- * GET /api/projects/:p/usage/errors?offset&limit&from&to&agentId — one page of the error
+ * GET /api/projects/:p/usage/errors?offset&limit&from&to&agentId&kind — one page of the error
  * detail table, for paging back past the first page the dashboard already returns.
  */
 import { Hono } from "hono";
-import type { UsageGranularity, UsageGroupBy } from "../../api/types.js";
+import type { UsageErrorKind, UsageGranularity, UsageGroupBy } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { badRequest, optionalDateParam, paginationQuery, requireValidId } from "../validate.js";
 import type { AppDeps } from "../../app.js";
@@ -17,6 +17,9 @@ import type { AppDeps } from "../../app.js";
 const GROUP_BYS: readonly UsageGroupBy[] = ["date", "agent", "model", "session"];
 
 const GRANULARITIES: readonly UsageGranularity[] = ["minute", "hour", "day", "week", "month"];
+
+/** The two categories `error_records.kind` is ever written with (ErrorRecorder's own vocabulary). */
+const ERROR_KINDS: readonly UsageErrorKind[] = ["unexpected", "expected"];
 
 /**
  * Parse an optional ISO-8601 timestamp parameter, normalized to the UTC ISO
@@ -91,6 +94,17 @@ export function usageRoutes(deps: AppDeps): Hono<AppEnv> {
     const from = optionalDateParam(c.req.query("from"), "from");
     const to = optionalDateParam(c.req.query("to"), "to");
     const agentId = c.req.query("agentId");
+    const kindRaw = c.req.query("kind");
+    // `kind` narrows to one of the two categories the panel's stats already separate. It is
+    // validated against that closed set rather than passed through, so a typo asks for
+    // nothing instead of silently matching no rows and reading as "no errors".
+    if (
+      kindRaw !== undefined &&
+      kindRaw !== "" &&
+      !(ERROR_KINDS as readonly string[]).includes(kindRaw)
+    ) {
+      throw badRequest(`kind must be one of ${ERROR_KINDS.join(" / ")}.`);
+    }
     return c.json(
       deps.usageService.queryErrors(projectId, {
         offset,
@@ -101,6 +115,7 @@ export function usageRoutes(deps: AppDeps): Hono<AppEnv> {
         ...(from !== undefined ? { from } : {}),
         ...(to !== undefined ? { to } : {}),
         ...(agentId !== undefined && agentId !== "" ? { agentId } : {}),
+        ...(kindRaw !== undefined && kindRaw !== "" ? { kind: kindRaw } : {}),
       }),
     );
   });

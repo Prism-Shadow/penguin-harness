@@ -9,7 +9,7 @@ import { NavLink, Outlet, useMatch, useNavigate } from "react-router";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { latestConversation } from "../../lib/session-grouping";
-import { useUpdateBadges } from "../../lib/use-update-badges";
+import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
 import { useAuth } from "../../state/auth";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
@@ -50,9 +50,9 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
   const { sessions, loading } = useSessions();
   /**
    * Passive: the layout above owns the one fetch per session, so the rail only reads the
-   * shared caches — and gets pushed a result that lands while it is mounted. Two badges here:
-   * the avatar mirrors the pinned sidebar's software dot (the user menu behind it holds the
-   * update row), and the Agents entry leads to the outdated Agent's kernel action.
+   * shared caches — and gets pushed a result that lands while it is mounted. The avatar
+   * mirrors the pinned sidebar's software dot (the user menu behind it holds the update row);
+   * every other badge here rides on a page entry, which is where its trail continues.
    */
   const badges = useUpdateBadges();
   const activeSessionId = useMatch("/chat/:sessionId")?.params.sessionId ?? null;
@@ -134,10 +134,11 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
         </button>
         {/* 3-8. Page entries */}
         {pages.map((item) => {
-          /* Agents is the one entry on a badge trail: an outdated kernel is fixed on the
-             Agent settings page this entry leads to. The dot itself is decorative — the
-             tooltip and the accessible name say what is updatable. */
-          const note = item.to === "/agents" ? badges.kernelNote : null;
+          /* Four entries sit on a badge trail — Agents (an outdated kernel), Skills, Models and
+             the Cost Center. The dot itself is decorative: the tooltip and the accessible name
+             say what is waiting, and this rail's icons have no visible label, so they carry
+             both the entry's name and that sentence. */
+          const note = navNoteFor(badges, item.to);
           return (
             <NavLink
               key={item.to}

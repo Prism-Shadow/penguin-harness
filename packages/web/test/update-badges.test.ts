@@ -1,6 +1,6 @@
 /**
- * Update-badge gate unit tests: what raises a notification dot, and what an anchor over both
- * trails says. The rule every case here defends is that a dot must end in a control the user
+ * Update-badge gate unit tests: what raises a notification dot, and what an anchor over
+ * several trails says. The rule every case here defends is that a dot must end in a control the user
  * can actually reach — so the release gate is closed wherever the sidebar does not offer the
  * release row, a fail-soft check raises nothing, and a download still in flight is not a badge.
  */
@@ -8,9 +8,9 @@ import { describe, expect, it } from "vitest";
 import type { DesktopUpdateStatus, UpdateCheckResponse } from "@prismshadow/penguin-server/api";
 import {
   anyKernelOutdated,
+  badgeNote,
   releaseUpdate,
   softwareUpdate,
-  updateBadgeNote,
 } from "../src/lib/update-badges";
 
 function check(overrides: Partial<UpdateCheckResponse>): UpdateCheckResponse {
@@ -156,30 +156,41 @@ describe("anyKernelOutdated", () => {
   });
 });
 
-describe("updateBadgeNote", () => {
+describe("badgeNote", () => {
   const release = { kind: "release", version: "0.2.0" } as const;
+  const kernel = { kind: "kernel" } as const;
+  const errors = { kind: "errors", count: 2 } as const;
 
-  it("says nothing when nothing is updatable", () => {
-    expect(updateBadgeNote(null, false)).toEqual({ kind: "none" });
+  it("says nothing when nothing is waiting", () => {
+    expect(badgeNote([])).toEqual({ kind: "none" });
   });
 
   it("names the release when only software is updatable", () => {
-    expect(updateBadgeNote(release, false)).toEqual(release);
+    expect(badgeNote([release])).toEqual(release);
   });
 
   it("carries a client build's version through, null included", () => {
-    expect(updateBadgeNote({ kind: "client", version: null }, false)).toEqual({
+    expect(badgeNote([{ kind: "client", version: null }])).toEqual({
       kind: "client",
       version: null,
     });
   });
 
-  it("says kernel when only an Agent is behind", () => {
-    expect(updateBadgeNote(null, true)).toEqual({ kind: "kernel" });
+  it("names a single to-do trail, count included", () => {
+    expect(badgeNote([{ kind: "skills", count: 3 }])).toEqual({ kind: "skills", count: 3 });
   });
 
-  it("names neither when both trails have something", () => {
-    // The combined anchor leads to both; naming one of the two would point at the wrong trail.
-    expect(updateBadgeNote(release, true)).toEqual({ kind: "mixed" });
+  it("names none of them when several trails have something", () => {
+    // The combined anchor leads to all of them; naming one would point at the wrong trail.
+    expect(badgeNote([release, kernel])).toEqual({ kind: "mixed", updatesOnly: true });
+  });
+
+  it("keeps the combined case an update only while every source is one", () => {
+    expect(badgeNote([kernel, { kind: "models", count: 1 }])).toEqual({
+      kind: "mixed",
+      updatesOnly: true,
+    });
+    // An unexpected error is not an update by any reading, so the wider wording is required.
+    expect(badgeNote([kernel, errors])).toEqual({ kind: "mixed", updatesOnly: false });
   });
 });

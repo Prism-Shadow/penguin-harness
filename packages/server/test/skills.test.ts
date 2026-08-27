@@ -7,7 +7,8 @@
  * while a newly created plain Agent has none, Agent creation seeding the Skills picked in the
  * create dialog (unknown name = 404 with no Agent created), and the zip
  * archive install/export (layouts, zip-slip and limit rejections, 409
- * skill_exists + overwrite replace, byte-identical export round-trip).
+ * skill_exists + overwrite replace, byte-identical export round-trip), and the Agent list's
+ * `skillUpdates` — the Skill-library badge gate, which rides along on that list.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -17,6 +18,7 @@ import { skillsDir } from "@prismshadow/penguin-core";
 import { librarySkill, loadPreinstalledSkills } from "@prismshadow/penguin-skills";
 import type {
   AgentCreateResponse,
+  AgentsResponse,
   AgentSkillsResponse,
   ProjectCreateResponse,
   SkillLibraryResponse,
@@ -514,5 +516,70 @@ describe("skills api", () => {
     expect(plain.headers.get("content-disposition")).toBe(
       "attachment; filename*=UTF-8''nover-skill.zip",
     );
+  });
+
+  /**
+   * The Skill-library badge gate. It is computed from the files on disk against the bundled
+   * library, so the cases that matter are the three ways a directory can fail to be an update:
+   * already current, not in the library at all, and unreadable.
+   */
+  describe("skillUpdates on the Agent list", () => {
+    const listAgents = async (): Promise<AgentsResponse["agents"]> =>
+      ((await (await owner.get(`/api/projects/${projectId}/agents`)).json()) as AgentsResponse)
+        .agents;
+    /** Rewrites an installed SKILL.md's frontmatter version, which is what "behind" means. */
+    const setInstalledVersion = async (agentId: string, name: string, version: number) => {
+      const file = path.join(skillsDir(t.root, projectId, agentId), name, "SKILL.md");
+      const raw = await fs.readFile(file, "utf8");
+      await fs.writeFile(file, raw.replace(/^version:.*$/m, `version: ${version}`), "utf8");
+    };
+
+    it("is empty for a freshly installed Skill, and names the library version once it falls behind", async () => {
+      await createPlainAgent("bare_updates");
+      expect((await owner.post(base("bare_updates"), { names: ["penguin-sdk"] })).status).toBe(201);
+
+      const fresh = (await listAgents()).find((a) => a.agentId === "bare_updates")!;
+      expect(fresh.skillCount).toBe(1);
+      expect(fresh.skillUpdates).toEqual([]);
+
+      // Age the installed copy: the library now carries a higher version than the disk does.
+      await setInstalledVersion("bare_updates", "penguin-sdk", 0);
+      const behind = (await listAgents()).find((a) => a.agentId === "bare_updates")!;
+      expect(behind.skillUpdates).toEqual([
+        { name: "penguin-sdk", version: librarySkill("penguin-sdk")!.version },
+      ]);
+      // Reinstalling IS the update, so the badge clears with the same request the trail ends on.
+      expect((await owner.post(base("bare_updates"), { names: ["penguin-sdk"] })).status).toBe(201);
+      expect((await listAgents()).find((a) => a.agentId === "bare_updates")!.skillUpdates).toEqual(
+        [],
+      );
+    });
+
+    it("never lists a Skill the library does not carry, however old it looks", async () => {
+      await createPlainAgent("byo_updates");
+      const zip = zipSync({
+        "SKILL.md": strToU8(
+          "---\nname: byo-skill\ndescription: hand written\nversion: 1\n---\nbody\n",
+        ),
+      });
+      const res = await owner.post(`${base("byo_updates")}/archive`, {
+        dataBase64: Buffer.from(zip).toString("base64"),
+      });
+      expect(res.status).toBe(201);
+      const agent = (await listAgents()).find((a) => a.agentId === "byo_updates")!;
+      expect(agent.skillCount).toBe(1);
+      // Nothing to be behind: there is no library copy to reinstall over it.
+      expect(agent.skillUpdates).toEqual([]);
+    });
+
+    it("counts a directory with no readable SKILL.md as neither installed nor an update", async () => {
+      await createPlainAgent("broken_updates");
+      await fs.mkdir(path.join(skillsDir(t.root, projectId, "broken_updates"), "penguin-sdk"), {
+        recursive: true,
+      });
+      const agent = (await listAgents()).find((a) => a.agentId === "broken_updates")!;
+      expect(agent.skillCount).toBe(0);
+      expect(agent.skillUpdates).toEqual([]);
+    });
   });
 });

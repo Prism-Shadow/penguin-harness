@@ -271,6 +271,14 @@ export interface UiPrefs {
   /** The initial-password notice banner (app layout) was permanently dismissed by the user. */
   initialPasswordBannerDismissed?: boolean;
   /**
+   * "I have dealt with this" markers for the dismissible to-do badges, per Project id and then
+   * per trail (`skills` / `models` / `errors`). Each value is the SIGNATURE of what was waved
+   * away rather than a hidden flag, so anything new raises the dot again (web's
+   * `lib/todo-badges.ts`). Replaced whole on every write, like `draftShortcuts`: the merge is
+   * shallow, so this whole map is one field.
+   */
+  todoDismissed?: Record<string, Record<string, string>>;
+  /**
    * The draft screen's user-defined shortcuts, in display order. Replaced whole on every write
    * (the merge is shallow, so the array is one field like any other) and bounded on write by
    * services/draft-shortcuts.ts — count, title length and prompt length — because this is the one
@@ -806,6 +814,14 @@ export interface VaultUpdateRequest {
 // Agent and its config (system_config.yaml + AGENTS.md)
 // ---------------------------------------------------------------------------
 
+/** One installed Skill the library carries a higher version of (see {@link AgentSummary.skillUpdates}). */
+export interface SkillUpdateRef {
+  /** Skill directory name — the identity install / uninstall address it by. */
+  name: string;
+  /** The LIBRARY's version, i.e. what installing again would bring, not what is on disk. */
+  version: number;
+}
+
 export interface AgentSummary {
   agentId: string;
   name?: string;
@@ -831,6 +847,14 @@ export interface AgentSummary {
   scheduleCount: number;
   /** Installed Skill count (number of agent_state/skills/<name>/ directories with a SKILL.md). */
   skillCount: number;
+  /**
+   * Installed Skills the built-in library has moved past, each with the library version on
+   * offer — the Skill-library update gate, riding along on the Agent list so a badge over
+   * that page costs no request of its own. Empty when nothing is behind. Skills that are not
+   * in the library (installed from a zip or a picked directory) are never listed: there is no
+   * library version for them to be behind.
+   */
+  skillUpdates: SkillUpdateRef[];
   /** Memory count (topic files summed over the scope directories under agent_state/memory/, independent of the memory switch). */
   memoryCount: number;
 }
@@ -2578,6 +2602,13 @@ export interface UsageModelSeries extends UsageEntitySeriesCounts {
   modelId: string;
 }
 
+/**
+ * The two categories an error record is filed under: `unexpected` is a 500 or an unforeseen
+ * runtime exception, `expected` an HttpError / business 4xx. The panel separates them by
+ * colour, and `GET /usage/errors` takes one of them as its `kind` filter.
+ */
+export type UsageErrorKind = "unexpected" | "expected";
+
 /** Occurrence count of an error for a given source · code (the "most common" metric in the stats center's error panel). */
 export interface UsageErrorCount {
   source: string;
@@ -2617,7 +2648,10 @@ export interface UsageErrors {
  * GET /api/projects/:projectId/usage/errors — one page of the error detail table, newest
  * first. The dashboard response above already carries the first page; this exists so
  * "show me earlier ones" does not have to refetch the whole aggregate. It takes the same
- * date/agent filter as the dashboard, so a page never widens what the summary counted.
+ * date/agent filter as the dashboard, so a page never widens what the summary counted, plus
+ * an optional `kind` ({@link UsageErrorKind}) narrowing to one of the two categories — which
+ * is how the cost-center badge asks "are there unexpected errors, and how new is the newest"
+ * with `limit=1` instead of pulling the whole dashboard aggregate.
  */
 export interface UsageErrorsPage {
   items: UsageErrorItem[];

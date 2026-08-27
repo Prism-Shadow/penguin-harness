@@ -32,6 +32,9 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
+import { useUpdateBadges } from "../../lib/use-update-badges";
+import { dismissTodo } from "../../lib/todo-dismissals";
+import { TodoNotice } from "../../components/ui/todo-notice";
 import { formatMoney, humanizeTokens } from "../../lib/format";
 import { catalogEntryFor } from "@prismshadow/penguin-core/model-catalog";
 import { useProject } from "../../state/project";
@@ -132,6 +135,8 @@ export function UsagePage() {
   useDocumentTitle(S.usage.title);
   const { currency } = useTheme();
   const { currentProject } = useProject();
+  /** The Cost Center trail's raised badge, or undefined — the errors panel's notice clears it. */
+  const todo = useUpdateBadges().todos.errors;
   const projectId = currentProject?.projectId ?? null;
 
   // ?agentId= deep link (from the Agents page's "cost" entry point): the URL
@@ -330,6 +335,19 @@ export function UsagePage() {
             )}
           </div>
         </div>
+
+        {/* Last stop on the Cost Center trail, in the one shape all three dismissible trails
+            use: directly under the title, not down against the errors table. It counts the
+            probe's own trailing window (use-project-todos.ts), which is not the filters above
+            it, so it states what the badge is about rather than what any one panel is showing.
+            "Read", not "done" — nothing is being updated here, the user has simply looked. */}
+        {todo && (
+          <TodoNotice
+            text={S.todo.unexpectedErrors(todo.count)}
+            dismissLabel={S.todo.markRead}
+            onDismiss={() => dismissTodo(projectId, "errors", todo.signature)}
+          />
+        )}
 
         {/* Summary cards (today / last 7 days / cumulative) */}
         {data ? (

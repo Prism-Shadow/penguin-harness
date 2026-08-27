@@ -111,6 +111,11 @@ import {
 } from "./model-group-expansion";
 import { clearDraftModelRef } from "../chat/draft-cache";
 import { syncRowsWithCatalog } from "./catalog-sync";
+import { useUpdateBadges } from "../../lib/use-update-badges";
+import { dismissTodo } from "../../lib/todo-dismissals";
+import { refreshProjectTodos } from "../../lib/use-project-todos";
+import { UpdateDot } from "../../components/ui/update-dot";
+import { TodoNotice } from "../../components/ui/todo-notice";
 import { buildImportedRows } from "./group-import";
 import { tpsTone, ttftTone } from "./speed-test";
 import type { SpeedResult, SpeedTone } from "./speed-test";
@@ -529,6 +534,10 @@ export function ModelsPage() {
   const { currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
+  /** The Models trail's raised badge, or undefined — the header's two marks appear with it. */
+  const todo = useUpdateBadges().todos.models;
+  /** What the trail says, read at render time: `S` is a live binding swapped on locale change. */
+  const syncNote = todo ? S.todo.presetUpdates(todo.count) : "";
   const userId = useAuth().user?.userId ?? null;
   /** Per-model speed results (in-memory, reset on every project switch; "pending" while that model's turn is running). */
   const [speedResults, setSpeedResults] = useState<Map<string, SpeedResult | "pending">>(new Map());
@@ -697,6 +706,10 @@ export function ModelsPage() {
       visionModel,
       S.models.syncDone(merged.added, merged.updated),
     );
+    // The Models nav badge is gated on the SAVED table, which this page holds only as row
+    // state: re-probe it so the dot goes down on the server's answer rather than on the
+    // assumption that the write covered everything the catalog offered.
+    refreshProjectTodos(projectId);
   };
 
   /**
@@ -872,34 +885,66 @@ export function ModelsPage() {
   return (
     <div className="h-full overflow-y-auto p-4 md:p-6">
       <div className="mx-auto max-w-5xl">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-          <h1 className="flex items-center gap-1.5 text-xl font-semibold">
-            {S.models.title}
-            {!isOwner && <InfoPopover label={S.models.title}>{S.models.readOnlyHint}</InfoPopover>}
-          </h1>
-          {/* The header holds search plus the owner-only "sync presets" action (add-model
-              entry points live in each group header); on narrow screens (flex-wrap wraps it
-              to its own line) the search box shrinks flexibly, fixed width at >=sm. */}
-          <div className="flex min-w-0 max-w-full grow items-center gap-2 sm:grow-0">
-            <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
-              <Input
-                size="sm"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder={S.models.searchPlaceholder}
-              />
+        <div className="mb-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h1 className="flex items-center gap-1.5 text-xl font-semibold">
+              {S.models.title}
+              {!isOwner && (
+                <InfoPopover label={S.models.title}>{S.models.readOnlyHint}</InfoPopover>
+              )}
+            </h1>
+            {/* The header holds search plus the owner-only "sync presets" action (add-model
+                entry points live in each group header); on narrow screens (flex-wrap wraps it
+                to its own line) the search box shrinks flexibly, fixed width at >=sm. */}
+            <div className="flex min-w-0 max-w-full grow items-center gap-2 sm:grow-0">
+              <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
+                <Input
+                  size="sm"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder={S.models.searchPlaceholder}
+                />
+              </div>
+              {/* The dot stays on the control that ACTS, not on the notice below: it marks the
+                  button the trail ends at, and a mark that moved off it would point at nothing.
+                  Owner-only, like the button — the gate never raises this for a member. The dot
+                  straddles the button's top-right corner (update-dot.tsx's rule for a button)
+                  and is decorative: the sr-only sentence folds what is waiting into the button's
+                  accessible name, in the wording the trail carried down. */}
+              {isOwner && (
+                <Button
+                  size="sm"
+                  className="relative"
+                  onClick={() => void syncPresets()}
+                  disabled={busy || rows === null}
+                  title={
+                    todo ? `${S.models.syncCatalogHint} · ${syncNote}` : S.models.syncCatalogHint
+                  }
+                >
+                  {S.models.syncCatalog}
+                  {todo && (
+                    <>
+                      <UpdateDot
+                        size="inline"
+                        position="right-0.5 top-0.5 -translate-y-1/2 translate-x-1/2"
+                      />
+                      <span className="sr-only"> · {syncNote}</span>
+                    </>
+                  )}
+                </Button>
+              )}
             </div>
-            {isOwner && (
-              <Button
-                size="sm"
-                onClick={() => void syncPresets()}
-                disabled={busy || rows === null}
-                title={S.models.syncCatalogHint}
-              >
-                {S.models.syncCatalog}
-              </Button>
-            )}
           </div>
+          {/* Last stop on the Models trail, in the one shape all three dismissible trails use:
+              directly under the title, naming what is waiting and carrying the way down for
+              someone who has looked and decided to stay off the catalog. */}
+          {isOwner && todo && (
+            <TodoNotice
+              text={syncNote}
+              dismissLabel={S.todo.dismiss}
+              onDismiss={() => dismissTodo(projectId, "models", todo.signature)}
+            />
+          )}
         </div>
 
         {rows === null ? (
