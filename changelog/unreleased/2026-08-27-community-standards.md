@@ -3,6 +3,7 @@
 - **Date:** 2026-08-27
 - **Type:** process
 - **Scope:** `docs`, `tooling`
+- **PR:** [#514](https://github.com/Prism-Shadow/penguin-harness/pull/514)
 
 [中文版](2026-08-27-community-standards.zh.md)
 
