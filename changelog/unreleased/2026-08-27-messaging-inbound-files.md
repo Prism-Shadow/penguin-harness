@@ -3,6 +3,7 @@
 - **Date:** 2026-08-27
 - **Type:** feature
 - **Scope:** `server`, `docs`
+- **PR:** [#513](https://github.com/Prism-Shadow/penguin-harness/pull/513)
 
 [中文版](2026-08-27-messaging-inbound-files.zh.md)
 
