@@ -1157,6 +1157,67 @@ describe("messaging binding routes and bridge", () => {
     expect(seen.lastDeliveryError).toBeUndefined();
   });
 
+  it("starts the arrival record over on a re-enable: it belongs to the connection, not the server", async () => {
+    await bindEnabled(SID);
+    await fake.lastConnection().fire({
+      chatId: "oc_chat_1",
+      chatType: "p2p",
+      messageId: "om_before_toggle",
+      messageType: "text",
+      content: JSON.stringify({ text: "hello" }),
+    });
+    await waitFor(() => runs.length === 1);
+    expect((await statusOf(SID)).lastInboundAt).toBeDefined();
+
+    // The state toggle runs sync() -> connect(), which builds a fresh entry. So the empty
+    // line is "nothing since this connection opened", NOT "nothing ever" — and the panel's
+    // group-silence entry sends a user to remove the bot from a working group on the
+    // strength of that line, so the scope has to be the one the copy claims.
+    expect((await api.post(`${BASE(SID)}/state`, { enabled: false })).status).toBe(200);
+    expect((await api.post(`${BASE(SID)}/state`, { enabled: true })).status).toBe(200);
+    const reconnected = await statusOf(SID);
+    expect(reconnected.state).toBe("connected");
+    expect(reconnected.lastInboundAt).toBeUndefined();
+  });
+
+  it("starts it over on a credential save too — the same reset with no toggle to see", async () => {
+    await bindEnabled(SID);
+    await fake.lastConnection().fire({
+      chatId: "oc_chat_1",
+      chatType: "p2p",
+      messageId: "om_before_resave",
+      messageType: "text",
+      content: JSON.stringify({ text: "hello" }),
+    });
+    await waitFor(() => runs.length === 1);
+    expect((await statusOf(SID)).lastInboundAt).toBeDefined();
+
+    // A PUT on an enabled binding reconnects unconditionally (the never-diverge rule), so
+    // even re-saving the credentials unchanged opens a new connection and a new record.
+    expect((await api.put(BASE(SID), PUT_BODY)).status).toBe(200);
+    expect(fake.connections).toHaveLength(2);
+    expect((await statusOf(SID)).lastInboundAt).toBeUndefined();
+  });
+
+  it("stamps arrival for a message it cannot act on, because it did arrive", async () => {
+    await bindEnabled(SID);
+    await fake.lastConnection().fire({
+      chatId: "oc_chat_1",
+      chatType: "p2p",
+      messageId: "om_sticker",
+      messageType: "image",
+      content: JSON.stringify({ image_key: "img_1" }),
+    });
+    await waitFor(() => fake.allSends().some((x) => x.text === MESSAGING_TEXT_ONLY_NOTICE));
+    const status = await statusOf(SID);
+    // The question this line answers is whether the channel is delivering anything, and a
+    // sticker answers it. Stamping only what starts a Task would report a mute bot for a
+    // chatty one, which is the reading the whole feature exists to prevent.
+    expect(status.lastInboundAt).toBeDefined();
+    expect(status.lastDeliveryError).toBeUndefined();
+    expect(runs).toHaveLength(0);
+  });
+
   it("keeps the last connection failure after the connection recovers", async () => {
     await bindEnabled(SID);
     const conn = fake.lastConnection();
@@ -1172,6 +1233,27 @@ describe("messaging binding routes and bridge", () => {
     expect(recovered.lastError).toBeUndefined();
     expect(recovered.lastConnectionError?.detail).toContain("already polling this bot");
     expect(Number.isNaN(Date.parse(recovered.lastConnectionError!.at))).toBe(false);
+  });
+
+  it("ignores a connection failure from an attempt a newer connect already replaced", async () => {
+    await bindEnabled(SID);
+    const superseded = fake.lastConnection();
+    // A credential save reconnects an enabled binding, so the old connector's callbacks now
+    // belong to an attempt that has been abandoned. They can still fire: a parked poll or an
+    // in-flight request rejects whenever it rejects.
+    expect((await api.put(BASE(SID), PUT_BODY)).status).toBe(200);
+    expect(fake.connections).toHaveLength(2);
+
+    superseded.handlers.onError?.(new Error("stale poll failed"));
+    // Neither the live status nor the error table hears from it. The status was already
+    // guarded; the record was not, and filing one blames the binding as it now stands for a
+    // failure of a configuration it no longer has.
+    const live = t.deps.messaging.statusOf(SID, "feishu");
+    expect(live.state).toBe("connected");
+    expect(live.lastConnectionError).toBeUndefined();
+    expect(t.deps.errorsRepo.recent(projectId).map((r) => r.code)).not.toContain(
+      "messaging_connect_failed",
+    );
   });
 
   it("a reply that never went out is reported on the status and filed under the Project", async () => {
@@ -1199,6 +1281,41 @@ describe("messaging binding routes and bridge", () => {
     // project errors query serves unattributed records to admins only.
     const recorded = t.deps.errorsRepo.recent(projectId);
     expect(recorded.map((r) => r.code)).toContain("messaging_send_failed");
+  });
+
+  it("keeps a delivery failure on the status after a later message goes through", async () => {
+    await bindEnabled(SID);
+    fake.failSend = "Bad Request: have no rights to send a message";
+    await fake.lastConnection().fire({
+      chatId: "oc_chat_1",
+      chatType: "p2p",
+      messageId: "om_rights_revoked",
+      messageType: "text",
+      content: JSON.stringify({ text: "hello" }),
+    });
+    await waitFor(() => runs.length === 1);
+    await waitFor(() => t.deps.messaging.statusOf(SID, "feishu").lastDeliveryError !== undefined);
+    const recorded = t.deps.messaging.statusOf(SID, "feishu").lastDeliveryError;
+
+    // Rights restored, and the next reply really does reach the chat.
+    fake.failSend = null;
+    await fake.lastConnection().fire({
+      chatId: "oc_chat_1",
+      chatType: "p2p",
+      messageId: "om_rights_restored",
+      messageType: "text",
+      content: JSON.stringify({ text: "again" }),
+    });
+    await waitFor(() => runs.length === 2);
+    await waitFor(() => fake.allSends().some((x) => x.text === "Reply text"));
+
+    // The record stands, whole. Clearing it on success would erase every failure that comes
+    // and goes — a send right revoked for a minute, a rate limit — as soon as the next
+    // ordinary message worked, which is the blind spot lastConnectionError exists to close.
+    // `at` is what tells the reader the failure is old, so the panel states it.
+    const after = await statusOf(SID);
+    expect(after.lastDeliveryError).toEqual(recorded);
+    expect(after.lastInboundAt).toBeDefined();
   });
 
   // —— Group mentions ————————————————————————————————————————————————————————
@@ -1710,5 +1827,63 @@ describe("an inbound message whose Task cannot start", () => {
     expect(t.deps.errorsRepo.recent("birder-default_project").map((r) => r.code)).toContain(
       "messaging_inbound_failed",
     );
+  });
+});
+
+/**
+ * The arrival stamp is written on ACCEPTANCE — after the redelivery drop, one line below it —
+ * so a channel replaying a message it already delivered must not move it. Nothing else holds
+ * that ordering, and with the wall clock two writes inside the same millisecond are
+ * indistinguishable, so this suite drives the bridge's injected clock instead.
+ */
+describe("a redelivered inbound message", () => {
+  let t: TestApp;
+  let api: ReturnType<typeof apiClient>;
+  let fake: FakeSdk;
+  let runs: TextPayload[][];
+  let clock: number;
+
+  beforeEach(async () => {
+    fake = new FakeSdk();
+    clock = Date.parse("2026-08-26T09:00:00.000Z");
+    t = await createTestApp({ feishuSdk: fake, now: () => new Date(clock) });
+    const { cookie } = await provisionUser(t.app, "birder");
+    api = apiClient(t.app, cookie);
+    runs = [];
+    const row = sessionRowOf(SID, "birder-default_project");
+    t.deps.sessionsRepo.insert(row);
+    t.deps.manager.adopt(row, echoFakeSession(SID, runs));
+    expect((await api.put(BASE(SID), PUT_BODY)).status).toBe(200);
+    expect((await api.post(`${BASE(SID)}/state`, { enabled: true })).status).toBe(200);
+  });
+  afterEach(async () => {
+    await t.cleanup();
+  });
+
+  const fire = (messageId: string, text: string) =>
+    fake.lastConnection().fire({
+      chatId: "oc_chat_1",
+      chatType: "p2p",
+      messageId,
+      messageType: "text",
+      content: JSON.stringify({ text }),
+    });
+
+  it("leaves the arrival stamp where the first delivery put it", async () => {
+    await fire("om_replayed", "hello");
+    await waitFor(() => runs.length === 1);
+    expect(t.deps.messaging.statusOf(SID, "feishu").lastInboundAt).toBe("2026-08-26T09:00:00.000Z");
+
+    clock += 60_000;
+    await fire("om_replayed", "hello");
+    // The duplicate is a complete no-op, the stamp included: moving it would report traffic
+    // the channel never sent, on the one line a user reads to decide whether it is sending.
+    expect(runs).toHaveLength(1);
+    expect(t.deps.messaging.statusOf(SID, "feishu").lastInboundAt).toBe("2026-08-26T09:00:00.000Z");
+
+    // A genuinely new message does move it, so the assertion above is not vacuous.
+    await fire("om_fresh", "again");
+    await waitFor(() => runs.length === 2);
+    expect(t.deps.messaging.statusOf(SID, "feishu").lastInboundAt).toBe("2026-08-26T09:01:00.000Z");
   });
 });

@@ -1876,11 +1876,19 @@ Benchmark：
       telegram: "Telegram 连接已启用",
       qq: "QQ 连接已启用",
     },
-    /** Delivery observability under the toggle: has anything ever arrived, and did the last one get through. */
+    /**
+     * Delivery observability under the toggle: has anything arrived, and did the last one get
+     * through. Both readings belong to the LIVE CONNECTION and start over on a re-enable or a
+     * credential save, so the empty case names that scope instead of reading as "never".
+     * Each failure line carries its own time: nothing clears it on a later success, and a
+     * title= is unreachable on touch.
+     */
     inboundLastAt: (when: string) => `最近收到消息：${when}`,
-    inboundNone: "连接已就绪，但还没有收到过任何消息",
-    deliveryFailedInbound: (detail: string) => `消息已收到，但任务没有开始：${detail}`,
-    deliveryFailedSend: (detail: string) => `任务已完成，但回复没有发出：${detail}`,
+    inboundNone: "本次连接建立以来还没有收到过消息",
+    deliveryFailedInbound: (when: string, detail: string) =>
+      `${when} 收到过一条消息，但任务没有开始：${detail}`,
+    deliveryFailedSend: (when: string, detail: string) =>
+      `任务已完成，但回复于 ${when} 发送失败：${detail}`,
     /** A connection failure the connection has since recovered from (lastError is gone by then). */
     lastConnectionError: (when: string, detail: string) => `连接曾于 ${when} 中断：${detail}`,
     /** The collapsed FAQ folds below the save area. */
@@ -1902,7 +1910,7 @@ Benchmark：
     troubleQQPassive:
       "QQ 里收不到回复？QQ 只允许机器人回复你刚发出的消息：在网页端发起的对话不会同步过去，距离你上一条 QQ 消息过去几分钟后也发不出。在 QQ 里再发一条消息即可继续。",
     troubleNoGroupInbound:
-      "在群里发消息，面板却一直显示「连接已就绪，但还没有收到过任何消息」？那就是 Telegram 没有把它投递过来，本机再怎么查也无济于事：确认机器人确实还在这个群里；如果刚在 @BotFather 关掉 Group Privacy，必须把机器人移出该群再重新拉入，已有的群不会自动生效；并确认没有别的程序（包括你自己手动跑的 getUpdates，见上一条）在用同一个 Token 轮询。另外，Telegram 频道（channel）的贴文不受支持——本连接只处理群聊与私聊。",
+      "在群里发消息，面板却一直显示「本次连接建立以来还没有收到过消息」？这一行只能作为你读到它之后再发的那条消息的证据：它只覆盖当前这条连接，停用再启用连接、或者再保存一次凭证，都会开启一条新连接并把它清零。所以先重新发一条。如果这一行仍然显示没有收到过，那就是 Telegram 没有把它投递过来，本机再怎么查也无济于事：确认机器人确实还在这个群里；如果刚在 @BotFather 关掉 Group Privacy，必须把机器人移出该群再重新拉入，已有的群不会自动生效；并确认没有别的程序（包括你自己手动跑的 getUpdates，见上一条）在用同一个 Token 轮询。另外，Telegram 频道（channel）的贴文不受支持——本连接只处理群聊与私聊。",
   },
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */

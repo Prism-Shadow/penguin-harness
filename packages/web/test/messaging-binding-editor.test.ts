@@ -253,6 +253,7 @@ describe("MessagingBindingBody", () => {
     // The two post-arrival failures are the same silence in the chat and different actions
     // for the reader, so the line names the stage rather than only the message.
     const detail = "Bad Request: have no rights to send a message";
+    const at = "2026-08-26T09:31:00.000Z";
     const failed = render(
       stateOf("telegram", {
         telegram: {
@@ -262,15 +263,80 @@ describe("MessagingBindingBody", () => {
           status: {
             state: "connected",
             lastInboundAt: "2026-08-26T09:30:00.000Z",
-            lastDeliveryError: { at: "2026-08-26T09:31:00.000Z", stage: "send", detail },
+            lastDeliveryError: { at, stage: "send", detail },
           },
         },
       }),
     );
-    expect(failed).toContain(S.messaging.deliveryFailedSend(detail));
-    expect(failed).not.toContain(S.messaging.deliveryFailedInbound(detail));
+    expect(failed).toContain(S.messaging.deliveryFailedSend(formatDateTime(at), detail));
+    expect(failed).not.toContain(S.messaging.deliveryFailedInbound(formatDateTime(at), detail));
+    // The failure's own time is in the sentence, not parked in title=: nothing clears the
+    // record on a later success, so a rights problem fixed three days ago would otherwise
+    // read as live — and a hover-only title is unreachable on a touch screen.
+    expect(failed).toContain(`>${S.messaging.deliveryFailedSend(formatDateTime(at), detail)}</p>`);
+    expect(failed).toContain(`title="${detail}"`);
     // Arrival is still reported: a send failure is not a delivery failure.
     expect(failed).toContain(S.messaging.inboundLastAt(formatDateTime("2026-08-26T09:30:00.000Z")));
+  });
+
+  it("names the inbound stage when a message arrived and its task never started", () => {
+    // The stage is an instruction, not a wording: "it never started" sends the reader to the
+    // Session, "the reply never went out" sends them to the bot's rights in the chat. Only
+    // the send branch had ever been rendered here, so the other could break unseen.
+    // No apostrophe in the fixture: renderToStaticMarkup escapes one, and the assertion
+    // below matches the rendered text rather than the string the dictionary returned.
+    const detail = "The Workspace this Session runs in no longer exists";
+    const at = "2026-08-26T09:31:00.000Z";
+    const html = render(
+      stateOf("telegram", {
+        telegram: {
+          ...DARK,
+          secretConfigured: true,
+          enabled: true,
+          status: {
+            state: "connected",
+            lastInboundAt: "2026-08-26T09:30:00.000Z",
+            lastDeliveryError: { at, stage: "inbound", detail },
+          },
+        },
+      }),
+    );
+    expect(html).toContain(`>${S.messaging.deliveryFailedInbound(formatDateTime(at), detail)}</p>`);
+    expect(html).not.toContain(S.messaging.deliveryFailedSend(formatDateTime(at), detail));
+  });
+
+  it("reports arrival while connecting and while erroring: it is traffic, not the socket", () => {
+    const live: MessagingChannelFacts = { ...DARK, secretConfigured: true, enabled: true };
+    // Telegram's connect runs getMe, getWebhookInfo, a backlog drain and a first getUpdates
+    // before it reads as connected, and a token two programs are fighting over sits in
+    // `error` half the time. Gating this line on `connected` hid it in both — the flapping
+    // case being the one the panel was written for.
+    const connecting = render(
+      stateOf("telegram", { telegram: { ...live, status: { state: "connecting" } } }),
+    );
+    expect(connecting).toContain(S.messaging.inboundNone);
+
+    const erroring = render(
+      stateOf("telegram", {
+        telegram: {
+          ...live,
+          status: {
+            state: "error",
+            lastError: "another program is already polling this bot",
+            lastInboundAt: "2026-08-26T09:30:00.000Z",
+          },
+        },
+      }),
+    );
+    // In `error`, a bot that has been receiving fine and one that never has are different
+    // problems, and lastConnectionError is hidden there — this line is all that separates them.
+    expect(erroring).toContain(
+      S.messaging.inboundLastAt(formatDateTime("2026-08-26T09:30:00.000Z")),
+    );
+
+    // A binding with no connection has no such record and must not claim one.
+    const dark = render(stateOf("telegram", { telegram: { ...DARK, secretConfigured: true } }));
+    expect(dark).not.toContain(S.messaging.inboundNone);
   });
 
   it("leaves the last connection failure on screen after the connection recovers", () => {

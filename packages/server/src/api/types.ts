@@ -1649,13 +1649,22 @@ export interface MessagingRuntimeStatus {
   /**
    * When this binding last accepted an inbound message (ISO 8601).
    *
-   * In-process, so it starts empty on every server start: "connected, and nothing has
-   * arrived" is the answer to the one question a chat cannot answer for itself — whether the
-   * platform is delivering anything at all. A channel that withholds messages (Telegram's
-   * group privacy, a bot that is not a member) produces exactly that, with no error anywhere.
+   * "Connected, and nothing has arrived" is the answer to the one question a chat cannot
+   * answer for itself — whether the platform is delivering anything at all. A channel that
+   * withholds messages (Telegram's group privacy, a bot that is not a member) produces
+   * exactly that, with no error anywhere.
+   *
+   * In-process AND scoped to one connection: it starts empty on every (re)connect, and a
+   * re-enable or a credential save opens a new one. So an absent field means "nothing since
+   * this connection opened", never "nothing ever" — anything reporting it has to say which,
+   * or it sends a reader off to fix a channel that is working.
    */
   lastInboundAt?: string;
-  /** The most recent post-acceptance failure; absent when none has happened since this server started. */
+  /**
+   * The most recent post-acceptance failure; absent when none has happened since this
+   * connection opened, and never cleared by a later success — an intermittent failure would
+   * otherwise be erased by the next ordinary message. `at` is what says how stale it is.
+   */
   lastDeliveryError?: MessagingDeliveryError;
   /**
    * The most recent CONNECTION failure, kept after the connection recovers — unlike
@@ -1664,7 +1673,7 @@ export interface MessagingRuntimeStatus {
    * A connection that fails and recovers repeatedly (a second program polling the same bot
    * token takes turns with this one) reads as `connected` in any snapshot taken between
    * flaps, with nothing at all to show for the failures in between. This is what is left
-   * behind.
+   * behind — for the life of the connection, like the two above it.
    */
   lastConnectionError?: { at: string; detail: string };
 }

@@ -640,10 +640,16 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
         {/* What this connection has actually seen. "Connected" answers whether the socket is
             up, and nothing else on this panel could tell a user whether the platform is
             delivering anything — a Telegram bot muted by group privacy, or one that was never
-            really added to the group, is `connected` with no error, forever. The counts reset
-            with the server (they are the live connection's own observations), which is why
-            the empty case says so rather than reading as "never". */}
-        {facts.status.state === "connected" &&
+            really added to the group, is `connected` with no error, forever. It resets with
+            every (re)connect, a re-enable or a credential save included (it is the live
+            connection's own observation), which is why the empty case says "since this
+            connection opened" rather than reading as "never".
+
+            Shown outside `connected` too, and gated only on there being a connection at all:
+            it is a fact about traffic rather than about the socket, and `connecting` (a
+            Telegram bot is mid-handshake and backlog drain) and `error` (a flapping token) are
+            exactly where a reader needs to know whether this bot has been receiving at all. */}
+        {facts.status.state !== "disconnected" &&
           (facts.status.lastInboundAt !== undefined ? (
             <p className="text-xs text-gray-500 dark:text-gray-400">
               {S.messaging.inboundLastAt(formatDateTime(facts.status.lastInboundAt))}
@@ -653,15 +659,24 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
           ))}
         {/* A failure AFTER a message arrived. Both stages reach the chat as silence, so the
             line has to say which one it was: "it never started" sends the user to the Session,
-            "the reply never went out" sends them to the bot's permissions in the chat. */}
+            "the reply never went out" sends them to the bot's permissions in the chat. Nothing
+            clears it on a later success, so the time goes in the sentence like the connection
+            error's: a revoked send right restored a minute later otherwise reads for days as a
+            live fault, and a title= is hover-only and unreachable on touch. */}
         {facts.status.lastDeliveryError !== undefined && (
           <p
-            title={`${formatDateTime(facts.status.lastDeliveryError.at)} · ${facts.status.lastDeliveryError.detail}`}
+            title={facts.status.lastDeliveryError.detail}
             className="line-clamp-2 text-xs break-words text-gray-500 dark:text-gray-400"
           >
             {facts.status.lastDeliveryError.stage === "inbound"
-              ? S.messaging.deliveryFailedInbound(facts.status.lastDeliveryError.detail)
-              : S.messaging.deliveryFailedSend(facts.status.lastDeliveryError.detail)}
+              ? S.messaging.deliveryFailedInbound(
+                  formatDateTime(facts.status.lastDeliveryError.at),
+                  facts.status.lastDeliveryError.detail,
+                )
+              : S.messaging.deliveryFailedSend(
+                  formatDateTime(facts.status.lastDeliveryError.at),
+                  facts.status.lastDeliveryError.detail,
+                )}
           </p>
         )}
       </div>

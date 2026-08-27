@@ -276,6 +276,14 @@ interface BridgeEntry {
    * after one was accepted. Both are reported through statusOf rather than folded into
    * `status`, because `status` is rebuilt on every connection-state flip and these two
    * outlive it: they describe the traffic, not the socket.
+   *
+   * They live no longer than the entry, though, which is one CONNECTION and not one server
+   * run: `connect` builds a fresh entry, and `sync` calls it on the state toggle and on a
+   * credential save made while the binding is enabled. Everything reading them has to say
+   * "since this connection opened" — an empty `lastInboundAt` is not evidence that nothing
+   * ever arrived. `lastDeliveryError` is never cleared within an entry either: a failure
+   * that comes and goes would otherwise be wiped by the next ordinary message, so `at` is
+   * what tells the reader how stale it is.
    */
   lastInboundAt: string | null;
   lastDeliveryError: MessagingDeliveryError | null;
@@ -390,9 +398,10 @@ export class MessagingBridge {
 
   /**
    * One channel's runtime status (only the connected channel is ever anything but
-   * disconnected), plus what this connection has actually seen: when a message last arrived
-   * and what last failed after one did. A binding can be `connected` with nothing wrong and
-   * still never receive anything, and that combination is invisible without these two.
+   * disconnected), plus what this connection has actually seen: when a message last arrived,
+   * what last failed after one did, and the last connection failure even after it recovered.
+   * A binding can be `connected` with nothing wrong and still never receive anything, and
+   * that combination is invisible without them.
    */
   statusOf(sessionId: string, channel: string): MessagingRuntimeStatus {
     const entry = this.entries.get(sessionId);
@@ -476,7 +485,7 @@ export class MessagingBridge {
       channel: row.channel,
       connector,
       config: row.config,
-      status: { state: "connecting", changedAt: new Date(this.now()).toISOString() },
+      status: { state: "connecting", changedAt: this.nowIso() },
       connection: null,
       unsubscribe: null,
       client: null,
@@ -505,12 +514,7 @@ export class MessagingBridge {
       const connection = await connector.connect(row.config, {
         onMessage: (msg) => this.onInbound(entry, msg),
         onReady: () => this.setStatus(entry, { state: "connected" }),
-        onError: (err) => {
-          const detail = err instanceof Error ? err.message : String(err);
-          this.setStatus(entry, { state: "error", lastError: detail });
-          entry.lastConnectionError = { at: new Date(this.now()).toISOString(), detail };
-          this.recordError(entry.sessionId, err, "messaging_connect_failed");
-        },
+        onError: (err) => this.recordConnectionFailure(entry, err),
       });
       if (this.entries.get(row.sessionId) !== entry) {
         // A concurrent sync/unbind replaced this attempt while the channel was loading.
@@ -519,10 +523,7 @@ export class MessagingBridge {
       }
       entry.connection = connection;
     } catch (err) {
-      const detail = err instanceof Error ? err.message : String(err);
-      this.setStatus(entry, { state: "error", lastError: detail });
-      entry.lastConnectionError = { at: new Date(this.now()).toISOString(), detail };
-      this.recordError(row.sessionId, err, "messaging_connect_failed");
+      this.recordConnectionFailure(entry, err);
     }
   }
 
@@ -538,10 +539,33 @@ export class MessagingBridge {
     }
   }
 
+  /** Every timestamp this bridge writes comes from the injected clock, never from `Date` directly. */
+  private nowIso(): string {
+    return new Date(this.now()).toISOString();
+  }
+
   /** Status write, guarded against a stale entry (replaced by a newer connect). */
   private setStatus(entry: BridgeEntry, patch: Omit<MessagingRuntimeStatus, "changedAt">): void {
     if (this.entries.get(entry.sessionId) !== entry) return;
-    entry.status = { ...patch, changedAt: new Date(this.now()).toISOString() };
+    entry.status = { ...patch, changedAt: this.nowIso() };
+  }
+
+  /**
+   * A connection failure, put in the three places one belongs: the live `error` state, the
+   * copy kept across recovery, and the error table.
+   *
+   * Behind the same stale-entry guard `setStatus` uses, applied to all three — a connector
+   * callback firing after a newer connect replaced this entry is reporting an attempt that was
+   * already abandoned, and neither its status writes (which nothing reads) nor its record
+   * (which would be filed against a binding since reconfigured) belong to the binding as it
+   * now stands.
+   */
+  private recordConnectionFailure(entry: BridgeEntry, err: unknown): void {
+    if (this.entries.get(entry.sessionId) !== entry) return;
+    const detail = err instanceof Error ? err.message : String(err);
+    this.setStatus(entry, { state: "error", lastError: detail });
+    entry.lastConnectionError = { at: this.nowIso(), detail };
+    this.recordError(entry.sessionId, err, "messaging_connect_failed");
   }
 
   /**
@@ -571,6 +595,11 @@ export class MessagingBridge {
    * on the binding's runtime status so the panel can say it. The error table is a Project-wide
    * dashboard nobody visits to debug one bot; the binding's own panel is where the question
    * is asked.
+   *
+   * A later success does not clear it. An intermittent failure — a group admin who revokes
+   * send rights for a minute, a rate limit — would otherwise be erased by the next ordinary
+   * message and never be seen at all, which is the same blind spot `lastConnectionError`
+   * exists to close. The panel states `at` so a stale one reads as stale.
    */
   private recordDeliveryFailure(
     entry: BridgeEntry,
@@ -579,7 +608,7 @@ export class MessagingBridge {
     code: string,
   ): void {
     entry.lastDeliveryError = {
-      at: new Date(this.now()).toISOString(),
+      at: this.nowIso(),
       stage,
       detail: err instanceof Error ? err.message : String(err),
     };
@@ -633,7 +662,7 @@ export class MessagingBridge {
     if (this.isRedelivery(entry, msg)) return;
     // Stamped on acceptance, before anything can go wrong with it: the panel's question is
     // "did the channel deliver anything", which a later failure does not un-answer.
-    entry.lastInboundAt = new Date(this.now()).toISOString();
+    entry.lastInboundAt = this.nowIso();
     try {
       const isDirect = msg.chatKind === "direct";
       // The chat becomes the reply target BEFORE any processing: even a rejected message
@@ -823,7 +852,7 @@ export class MessagingBridge {
       const client = await this.clientFor(entry.sessionId, row);
       return { row, chatId: row.lastChatId, client };
     } catch (err) {
-      this.recordError(entry.sessionId, err, "messaging_send_failed");
+      this.recordDeliveryFailure(entry, err, "send", "messaging_send_failed");
       return null;
     }
   }

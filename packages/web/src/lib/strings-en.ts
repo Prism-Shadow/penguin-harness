@@ -1916,12 +1916,19 @@ Scenarios:
       telegram: "Telegram connection enabled",
       qq: "QQ connection enabled",
     },
-    /** Delivery observability under the toggle: has anything ever arrived, and did the last one get through. */
+    /**
+     * Delivery observability under the toggle: has anything arrived, and did the last one get
+     * through. Both readings belong to the LIVE CONNECTION and start over on a re-enable or a
+     * credential save, so the empty case names that scope instead of reading as "never".
+     * Each failure line carries its own time: nothing clears it on a later success, and a
+     * title= is unreachable on touch.
+     */
     inboundLastAt: (when: string) => `Last message received: ${when}`,
-    inboundNone: "Connected, but no message has arrived yet",
-    deliveryFailedInbound: (detail: string) =>
-      `A message arrived but its task never started: ${detail}`,
-    deliveryFailedSend: (detail: string) => `The task ran but its reply never went out: ${detail}`,
+    inboundNone: "No message has arrived since this connection opened",
+    deliveryFailedInbound: (when: string, detail: string) =>
+      `A message arrived at ${when} but its task never started: ${detail}`,
+    deliveryFailedSend: (when: string, detail: string) =>
+      `The task ran but its reply failed to go out at ${when}: ${detail}`,
     /** A connection failure the connection has since recovered from (lastError is gone by then). */
     lastConnectionError: (when: string, detail: string) =>
       `The connection dropped at ${when}: ${detail}`,
@@ -1945,7 +1952,7 @@ Scenarios:
     troubleQQPassive:
       "No replies arriving in QQ? QQ only lets a bot answer a message you just sent: a turn started in the web app is not mirrored there, and replies stop being deliverable a few minutes after your last QQ message. Send another message in QQ to continue.",
     troubleNoGroupInbound:
-      "Sending in a group but the panel still says no message has arrived? Then Telegram is not delivering it and nothing on this machine can change that: confirm the bot is still in that group; if you have just turned Group Privacy off in @BotFather, remove the bot from the group and add it back, because an existing group does not pick up the change; and confirm nothing else is polling the same token — including a getUpdates you ran yourself (see above). Telegram channel posts are not supported either — this connection handles groups and direct chats only.",
+      "Sending in a group but the panel still says no message has arrived? Read that line as evidence only about a message sent after it: it covers the current connection alone, and disabling and re-enabling the connection — or saving the credential again — opens a new one and starts it over. So send a fresh one now. If the line still reports nothing, Telegram is not delivering it and nothing on this machine can change that: confirm the bot is still in that group; if you have just turned Group Privacy off in @BotFather, remove the bot from the group and add it back, because an existing group does not pick up the change; and confirm nothing else is polling the same token — including a getUpdates you ran yourself (see above). Telegram channel posts are not supported either — this connection handles groups and direct chats only.",
   },
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */
