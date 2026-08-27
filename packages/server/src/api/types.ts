@@ -1773,9 +1773,14 @@ export interface QQBindingInfo {
    * Relay only the LAST completed assistant message of a run, delivered when the run ends,
    * instead of mirroring each completed message as it completes. Off by default; off is the
    * original every-message behaviour. Independent of `linePerMessage`, which then applies to
-   * that one final message. The approval notice is not a reply and is unaffected. On QQ it
-   * also spends the least of the platform's passive-reply budget a run can spend: one
-   * message where an every-message relay would spend one per completed message.
+   * that one final message. The approval notice is not a reply and is unaffected.
+   *
+   * On QQ it cuts both ways, which is worth knowing before setting it here. It spends the
+   * least of the platform's passive-reply budget a run can spend — one message, where an
+   * every-message relay spends one per completed message. But a passive reply is accepted
+   * only for a few minutes after the inbound message that funds it, and holding the reply
+   * to the run's end spends that window on the run: a run that outlives it delivers nothing
+   * at all, where the every-message relay would have sent whatever completed inside it.
    */
   finalReplyOnly: boolean;
   /**

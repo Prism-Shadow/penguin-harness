@@ -37,6 +37,11 @@ the previous behaviour.
   option on, that is the final message alone: a file named only in a held-back working note has
   nothing in the chat to say why it arrived, and the mention is the whole reason this feature
   knows which output was the point.
+- On QQ the option cuts both ways. It spends the least of that platform's passive-reply
+  budget a run can spend — one message — but a passive reply is accepted only for a few
+  minutes after the inbound message that funds it, and holding the reply until the run ends
+  spends that window on the run: a run that outlives it delivers nothing, where the
+  every-message relay would have sent whatever completed inside it.
 - The `approval_request` notice is not an assistant message and is unaffected — a run blocked on
   approval is exactly when the chat has to hear something. The other fixed notices and the test
   message are unaffected for the same reason, compaction output is still skipped before any of
