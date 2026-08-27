@@ -3,6 +3,7 @@
 - **Date:** 2026-08-26
 - **Type:** feature
 - **Scope:** `server`, `web`
+- **PR:** [#505](https://github.com/Prism-Shadow/penguin-harness/pull/505)
 
 [中文版](2026-08-26-messaging-delivery-observability.zh.md)
 
