@@ -114,7 +114,7 @@ import { syncRowsWithCatalog } from "./catalog-sync";
 import { useUpdateBadges } from "../../lib/use-update-badges";
 import { dismissTodo } from "../../lib/todo-dismissals";
 import { refreshProjectTodos } from "../../lib/use-project-todos";
-import { TodoNotice } from "../../components/ui/update-dot";
+import { UpdateDot } from "../../components/ui/update-dot";
 import { buildImportedRows } from "./group-import";
 import { tpsTone, ttftTone } from "./speed-test";
 import type { SpeedResult, SpeedTone } from "./speed-test";
@@ -533,8 +533,10 @@ export function ModelsPage() {
   const { currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
-  /** The Models trail's raised badge, or undefined — the notice under the header clears it. */
+  /** The Models trail's raised badge, or undefined — the header's two marks appear with it. */
   const todo = useUpdateBadges().todos.models;
+  /** What the trail says, read at render time: `S` is a live binding swapped on locale change. */
+  const syncNote = todo ? S.todo.presetUpdates(todo.count) : "";
   const userId = useAuth().user?.userId ?? null;
   /** Per-model speed results (in-memory, reset on every project switch; "pending" while that model's turn is running). */
   const [speedResults, setSpeedResults] = useState<Map<string, SpeedResult | "pending">>(new Map());
@@ -899,30 +901,51 @@ export function ModelsPage() {
                 placeholder={S.models.searchPlaceholder}
               />
             </div>
+            {/* Last stop on the Models trail. The dot rides the control that acts on it rather
+                than a notice line of its own: this header already holds the button, and what is
+                waiting fits in its tooltip — a whole row above the table would spend a band of
+                the page restating a control that is right here. Owner-only, like the button:
+                the gate never raises this for a member, so neither mark can appear without one.
+                The dot straddles the button's top-right corner (update-dot.tsx's rule for a
+                button) and is decorative — the sr-only sentence folds what is waiting into the
+                button's accessible name, in the wording the trail carried down. */}
             {isOwner && (
               <Button
                 size="sm"
+                className="relative"
                 onClick={() => void syncPresets()}
                 disabled={busy || rows === null}
-                title={S.models.syncCatalogHint}
+                title={
+                  todo ? `${S.models.syncCatalogHint} · ${syncNote}` : S.models.syncCatalogHint
+                }
               >
                 {S.models.syncCatalog}
+                {todo && (
+                  <>
+                    <UpdateDot
+                      size="inline"
+                      position="right-0.5 top-0.5 -translate-y-1/2 translate-x-1/2"
+                    />
+                    <span className="sr-only"> · {syncNote}</span>
+                  </>
+                )}
+              </Button>
+            )}
+            {/* The way down for someone who has looked and decided to stay off the catalog. It
+                sits in this row rather than under it, and only while the dot is up. */}
+            {isOwner && todo && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="shrink-0 text-gray-500 dark:text-gray-400"
+                aria-label={`${S.todo.dismiss} · ${syncNote}`}
+                onClick={() => dismissTodo(projectId, "models", todo.signature)}
+              >
+                {S.todo.dismiss}
               </Button>
             )}
           </div>
         </div>
-        {/* Last stop on the Models trail: what the sidebar's dot was pointing at, beside the
-            "sync presets" button that acts on it. Owner-only like that button — the gate never
-            raises this for a member, so the notice cannot appear without it. */}
-        {todo && (
-          <div className="mb-4">
-            <TodoNotice
-              text={S.todo.presetUpdates(todo.count)}
-              dismissLabel={S.todo.dismiss}
-              onDismiss={() => dismissTodo(projectId, "models", todo.signature)}
-            />
-          </div>
-        )}
 
         {rows === null ? (
           <SkeletonList rows={4} />

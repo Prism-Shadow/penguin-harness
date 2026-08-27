@@ -33,8 +33,15 @@ is not an update by any reading.
 
 Acting clears it: updating the Skills, syncing the presets. For the case where the user looks and
 decides not to act — a model table deliberately kept off the catalog, an error read and understood
-— each page carries a quiet line under its title naming what is waiting, with **Mark as done**
-(**Mark as read** in the cost center) beside it.
+— each page carries **Mark as done** (**Mark as read** in the cost center), placed where the trail
+ends rather than in a band of its own:
+
+- the Skill library puts a dot on each outdated card's update button and keeps one summary line
+  under the page title, since the Skills waiting are spread over the cards below it;
+- the model library puts the dot on the **sync presets** button itself, with the clearing control
+  beside it in the same header row — the button is right there, and a row above the table would
+  only restate it;
+- the cost center puts the line directly over the errors table, against the rows it counts.
 
 What a dismissal stores is not "hidden" but the **signature** of what was waved away: the Skill
 names with the library versions on offer, the model references that would change, the newest

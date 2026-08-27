@@ -41,7 +41,6 @@ import { useTheme } from "../../state/theme";
 import { Input } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import { Skeleton } from "../../components/ui/skeleton";
-import { TodoNotice } from "../../components/ui/update-dot";
 import { TrendChart } from "./trend-chart";
 import { RequestsChart, TokenBarChart, TokenLegend, type TokenLegendKey } from "./usage-charts";
 import {
@@ -135,7 +134,7 @@ export function UsagePage() {
   useDocumentTitle(S.usage.title);
   const { currency } = useTheme();
   const { currentProject } = useProject();
-  /** The Cost Center trail's raised badge, or undefined — the notice under the filters clears it. */
+  /** The Cost Center trail's raised badge, or undefined — the errors panel's notice clears it. */
   const todo = useUpdateBadges().todos.errors;
   const projectId = currentProject?.projectId ?? null;
 
@@ -336,19 +335,6 @@ export function UsagePage() {
           </div>
         </div>
 
-        {/* Last stop on the Cost Center trail. The errors themselves are four charts further
-            down, so what lands here is the count and the way to clear the dot — "read", not
-            "done": nothing is being updated, the user has simply looked. The probe behind it
-            counts the same trailing 7 days this page opens on (use-project-todos.ts), so the
-            table below always has the rows this line is talking about. */}
-        {todo && (
-          <TodoNotice
-            text={S.todo.unexpectedErrors(todo.count)}
-            dismissLabel={S.todo.markRead}
-            onDismiss={() => dismissTodo(projectId, "errors", todo.signature)}
-          />
-        )}
-
         {/* Summary cards (today / last 7 days / cumulative) */}
         {data ? (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -413,7 +399,26 @@ export function UsagePage() {
         {/* Errors (a single full-width panel: stats + a recent-errors table) */}
         {data && (
           <ChartCard title={S.usage.errors}>
-            <ErrorsPanel errors={data.errors} projectId={projectId} filters={errorFilters} />
+            {/* Last stop on the Cost Center trail. The notice is handed to the panel rather than
+                placed under the page title: it names rows, so it belongs against the table that
+                holds them, not four charts above it. "Read", not "done" — nothing is being
+                updated here, the user has simply looked. The probe behind it counts the same
+                trailing 7 days this page opens on (use-project-todos.ts), so the table under it
+                always holds the rows it is talking about. */}
+            <ErrorsPanel
+              errors={data.errors}
+              projectId={projectId}
+              filters={errorFilters}
+              {...(todo
+                ? {
+                    notice: {
+                      text: S.todo.unexpectedErrors(todo.count),
+                      dismissLabel: S.todo.markRead,
+                      onDismiss: () => dismissTodo(projectId, "errors", todo.signature),
+                    },
+                  }
+                : {})}
+            />
           </ChartCard>
         )}
 

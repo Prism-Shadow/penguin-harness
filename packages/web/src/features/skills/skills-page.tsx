@@ -54,7 +54,7 @@ import { Button } from "../../components/ui/button";
 import { Chevron } from "../../components/ui/chevron";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { Modal } from "../../components/ui/modal";
-import { TodoNotice } from "../../components/ui/update-dot";
+import { TodoNotice, UpdateDot } from "../../components/ui/update-dot";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Skeleton, SkeletonCard } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
@@ -476,17 +476,25 @@ function SkillCard({
       {/* Actions: equal-square light icon buttons in a single row, vertically centered at the
           card's right edge (copy goes into aria-label and title). */}
       <div className="flex shrink-0 items-center justify-center gap-1.5">
-        {/* Light (secondary): an update nudge, not the card's primary action. */}
+        {/* Light (secondary): an update nudge, not the card's primary action. The last stop on
+            the Skills trail, so it carries the dot itself — straddling the top-right corner of
+            the button's border, the anchoring rule update-dot.tsx states for a button. The mark
+            is decorative; what is waiting is already in this button's own title and accessible
+            name, which is why no sr-only sentence is added beside it. */}
         {outdated.length > 0 && (
           <Button
             size="sm"
             variant="secondary"
-            className="h-8 w-8 shrink-0 justify-center p-0"
+            className="relative h-8 w-8 shrink-0 justify-center p-0"
             aria-label={`${S.skills.updateOutdated(outdated.length)} ${skill.name}`}
             title={S.skills.updateOutdated(outdated.length)}
             onClick={() => setPendingUpdate(outdated)}
           >
             <GlyphIcon d={UPDATE_ICON} size={ICON_SIZE.iconButton} />
+            <UpdateDot
+              size="inline"
+              position="right-0.5 top-0.5 -translate-y-1/2 translate-x-1/2"
+            />
           </Button>
         )}
         <Button
