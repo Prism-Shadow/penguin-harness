@@ -9,7 +9,11 @@
  * (an omitted flag would mean "keep", leaving no way to turn the option back off).
  */
 import { describe, expect, it } from "vitest";
-import type { FeishuBindingInfo, TelegramBindingInfo } from "@prismshadow/penguin-server/api";
+import type {
+  FeishuBindingInfo,
+  QQBindingInfo,
+  TelegramBindingInfo,
+} from "@prismshadow/penguin-server/api";
 import {
   FEISHU_DEFAULT_DOMAIN,
   bindingsToForm,
@@ -46,6 +50,18 @@ const STORED_TELEGRAM: TelegramBindingInfo = {
   updatedAt: "2026-08-26T00:00:00.000Z",
 };
 
+const STORED_QQ: QQBindingInfo = {
+  channel: "qq",
+  sessionId: "session-1",
+  appId: "102000001",
+  appSecretMasked: "qq-a…1234",
+  enabled: false,
+  linePerMessage: false,
+  lastChatKnown: true,
+  createdAt: "2026-08-27T00:00:00.000Z",
+  updatedAt: "2026-08-27T00:00:00.000Z",
+};
+
 describe("emptyMessagingForm / bindingsToForm", () => {
   it("starts empty forms on Feishu with the default domain, both channels blank", () => {
     expect(emptyMessagingForm()).toEqual({
@@ -58,6 +74,7 @@ describe("emptyMessagingForm / bindingsToForm", () => {
         linePerMessage: false,
       },
       telegram: { botToken: "", clearToken: false, linePerMessage: false },
+      qq: { appId: "", appSecret: "", clearSecret: false, linePerMessage: false },
     });
   });
 
@@ -76,9 +93,17 @@ describe("emptyMessagingForm / bindingsToForm", () => {
       },
       // Each channel's delivery preference comes from its own stored config.
       telegram: { botToken: "", clearToken: false, linePerMessage: true },
+      // An unsaved channel keeps its empty sub-state, so switching to it shows a blank form.
+      qq: { appId: "", appSecret: "", clearSecret: false, linePerMessage: false },
     });
+    // All three coexist: every saved channel loads its own non-secret fields.
+    const all = bindingsToForm([STORED_FEISHU, STORED_TELEGRAM, STORED_QQ]);
+    expect(all.feishu.appId).toBe("cli_abc");
+    expect(all.qq.appId).toBe("102000001");
+    expect(all.qq.appSecret).toBe("");
     // No enabled channel: the first saved one is selected; nothing saved: Feishu.
     expect(bindingsToForm([STORED_FEISHU]).channel).toBe("feishu");
+    expect(bindingsToForm([STORED_QQ]).channel).toBe("qq");
     expect(bindingsToForm([]).channel).toBe("feishu");
   });
 });
@@ -313,5 +338,76 @@ describe("formDirty / formTestable", () => {
     const typed = emptyMessagingForm("telegram");
     typed.telegram.botToken = "7000000001:tok";
     expect(formTestable(typed, false)).toBe(true);
+  });
+});
+
+describe("the QQ channel", () => {
+  it("loads its non-secret field and leaves the secret empty, like the other channels", () => {
+    const form = bindingsToForm([STORED_QQ]);
+    // The selector lands on the only saved channel; the App ID loads, the secret never does.
+    expect(form.channel).toBe("qq");
+    expect(form.qq.appId).toBe("102000001");
+    expect(form.qq.appSecret).toBe("");
+    expect(form.qq.clearSecret).toBe(false);
+  });
+
+  it("submits the pair, omits a blank secret, and always sends the delivery flag", () => {
+    const form = bindingsToForm([STORED_QQ]);
+    const kept = formToPut(form, true);
+    expect(kept).toEqual({
+      ok: true,
+      channel: "qq",
+      // No `appSecret` key at all: an omitted secret is what tells the server to keep the
+      // stored one, and the masked value must never round-trip.
+      body: { appId: "102000001", linePerMessage: false },
+    });
+
+    form.qq.appSecret = "  fresh-secret  ";
+    expect(formToPut(form, true)).toEqual({
+      ok: true,
+      channel: "qq",
+      body: { appId: "102000001", appSecret: "fresh-secret", linePerMessage: false },
+    });
+  });
+
+  it("requires both halves on a first bind and honours the clear checkbox after one", () => {
+    const fresh = emptyMessagingForm("qq");
+    expect(formToPut(fresh, false)).toEqual({
+      ok: false,
+      errors: { appId: "required", appSecret: "required" },
+    });
+
+    const stored = bindingsToForm([STORED_QQ]);
+    stored.qq.clearSecret = true;
+    expect(formToPut(stored, true)).toEqual({
+      ok: true,
+      channel: "qq",
+      body: { appId: "102000001", clearAppSecret: true, linePerMessage: false },
+    });
+    // A typed secret wins over a stale clear checkbox (the models idiom).
+    stored.qq.appSecret = "typed";
+    expect(formToPut(stored, true)).toEqual({
+      ok: true,
+      channel: "qq",
+      body: { appId: "102000001", appSecret: "typed", linePerMessage: false },
+    });
+  });
+
+  it("routes its probe and its dirty/testable checks to its own fields", () => {
+    const form = bindingsToForm([STORED_QQ]);
+    expect(formToTest(form)).toEqual({ channel: "qq", body: { appId: "102000001" } });
+
+    const baseline = bindingsToForm([STORED_QQ]);
+    expect(formDirty(form, baseline)).toBe(false);
+    form.qq.linePerMessage = true;
+    expect(formDirty(form, baseline)).toBe(true);
+
+    // A stored secret is testable as-is; a draft needs both halves.
+    expect(formTestable(emptyMessagingForm("qq"), true)).toBe(true);
+    const half = emptyMessagingForm("qq");
+    half.qq.appId = "102000001";
+    expect(formTestable(half, false)).toBe(false);
+    half.qq.appSecret = "s";
+    expect(formTestable(half, false)).toBe(true);
   });
 });

@@ -4,15 +4,17 @@
  * place the Save action and the FAQ folds, so the state machine is a hook and the pieces
  * are body components; neither host forks the form).
  *
- * Channel model: a Session keeps at most one saved config PER channel — both may sit
- * saved side by side — and AT MOST ONE of them is enabled. The channel selector switches
- * freely between the two channel forms (each independently savable, each showing its own
- * configured/enabled state); enabling one channel while the other is enabled is gated
+ * Channel model: a Session keeps at most one saved config PER channel — all of them may
+ * sit saved side by side — and AT MOST ONE of them is enabled. The channel selector
+ * switches freely between the channel forms (each independently savable, each showing its
+ * own configured/enabled state); enabling one channel while another is enabled is gated
  * with a "turn that one off first" hint (the server refuses it too, 409).
  *
- * The form opens on the connection controls and the credential fields trail them: the two
+ * The form opens on the connection controls and the credential fields trail them: the
  * channels' field lists differ in length, so controls placed under the fields would sit at
- * a different height in each channel and move on every switch. The explanation lives in
+ * a different height in each channel and move on every switch. That is also why QQ's
+ * replies-only rule — the one piece of channel copy too load-bearing to leave in a
+ * collapsed fold — sits below its fields rather than above them. The explanation lives in
  * collapsed FAQ folds below the save area (`MessagingBindingHelp`), and the channel's
  * leading credential field — where the value starts being pasted — carries at its label's
  * top-right corner a link to wherever that channel issues the credential (the models-page
@@ -92,6 +94,17 @@ const CHANNEL_LINKS: Record<MessagingChannel, { tutorial: string; credentialSour
     // from @BotFather inside the app, and this link is the one that leads there.
     credentialSource: "https://t.me/BotFather",
   },
+  qq: {
+    // The wiki ROOT is the onboarding guide itself — "介绍与接入指南": registering a
+    // developer account, creating the bot, and the page its AppID and AppSecret are shown
+    // on. That is what a reader of the setup fold is after; the API reference one level
+    // down at /develop/api-v2/ answers a question they are not asking yet.
+    tutorial: "https://bot.q.qq.com/wiki/",
+    // The trailing slash is load-bearing and must not be tidied away: /qqbot/dashboard
+    // answers 404, while /qqbot/ alone serves a 700-byte shell that only lands anywhere
+    // because the retired hash-route app still redirects out of it.
+    credentialSource: "https://q.qq.com/qqbot/dashboard/",
+  },
 };
 
 const STATUS_TONE: Record<MessagingRuntimeStatus["state"], Tone> = {
@@ -145,7 +158,7 @@ function factsOf(
 }
 
 function factsFromList(res: MessagingBindingsResponse): ChannelFactsMap {
-  const map: ChannelFactsMap = { feishu: EMPTY_FACTS, telegram: EMPTY_FACTS };
+  const map: ChannelFactsMap = { feishu: EMPTY_FACTS, telegram: EMPTY_FACTS, qq: EMPTY_FACTS };
   for (const entry of res.bindings) {
     map[entry.binding.channel] = factsOf(entry.binding, entry.status);
   }
@@ -235,6 +248,7 @@ export function useMessagingBinding(
   const [channels, setChannels] = useState<ChannelFactsMap>({
     feishu: EMPTY_FACTS,
     telegram: EMPTY_FACTS,
+    qq: EMPTY_FACTS,
   });
   const [fieldErrors, setFieldErrors] = useState<MessagingFormErrors>({});
   const [busy, setBusy] = useState(false);
@@ -307,7 +321,9 @@ export function useMessagingBinding(
     ? "feishu"
     : channels.telegram.enabled
       ? "telegram"
-      : null;
+      : channels.qq.enabled
+        ? "qq"
+        : null;
   const otherEnabled = enabledChannel !== null && enabledChannel !== selected;
   const dirty = form !== null && baseline !== null && formDirty(form, baseline);
 
@@ -320,7 +336,12 @@ export function useMessagingBinding(
     setChannels((prev) => ({ ...prev, [channel]: factsOf(binding, status) }));
     if (binding !== null) {
       const fresh = bindingsToForm([binding]);
-      const sub = channel === "feishu" ? { feishu: fresh.feishu } : { telegram: fresh.telegram };
+      const sub =
+        channel === "feishu"
+          ? { feishu: fresh.feishu }
+          : channel === "qq"
+            ? { qq: fresh.qq }
+            : { telegram: fresh.telegram };
       setForm((prev) => (prev ? { ...prev, ...sub } : prev));
       setBaseline((prev) => (prev ? { ...prev, ...sub } : prev));
     }
@@ -338,6 +359,10 @@ export function useMessagingBinding(
           else if (notice.tone === "info") toastInfo(notice.text);
           else toastSuccess(notice.text);
         }
+      } else if (draft.channel === "qq") {
+        const res = await api.testQQBinding(sessionId, draft.body);
+        if (res.ok) toastSuccess(S.messaging.testOk(res.latencyMs ?? 0));
+        else toastError(S.messaging.testFail(res.error ?? S.common.unknownError));
       } else {
         const res = await api.testFeishuBinding(sessionId, draft.body);
         if (res.ok) toastSuccess(S.messaging.testOk(res.latencyMs ?? 0));
@@ -375,7 +400,9 @@ export function useMessagingBinding(
       const res =
         built.channel === "telegram"
           ? await api.putTelegramBinding(sessionId, built.body)
-          : await api.putFeishuBinding(sessionId, built.body);
+          : built.channel === "qq"
+            ? await api.putQQBinding(sessionId, built.body)
+            : await api.putFeishuBinding(sessionId, built.body);
       applyChannel(built.channel, res.binding, res.status);
       toastSuccess(S.common.saved);
     } catch (e) {
@@ -543,10 +570,11 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
           switches forms rather than locking (the mcp transport idiom). */}
       <div role="group" aria-label={S.messaging.channelLabel}>
         <Segmented
-          cols={2}
+          cols={3}
           options={[
             { value: "feishu" as MessagingChannel, label: S.messaging.channelName.feishu },
             { value: "telegram" as MessagingChannel, label: S.messaging.channelName.telegram },
+            { value: "qq" as MessagingChannel, label: S.messaging.channelName.qq },
           ]}
           value={channel}
           onChange={(v) => b.selectChannel(v)}
@@ -612,7 +640,9 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
                 title:
                   channel === "telegram"
                     ? S.telegram.testMessageNoChat
-                    : S.feishu.testMessageNoChat,
+                    : channel === "qq"
+                      ? S.qq.testMessageNoChat
+                      : S.feishu.testMessageNoChat,
               }
             : {})}
           onClick={() => void b.sendTestMessage()}
@@ -665,6 +695,53 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
               }
             />
           )}
+        </>
+      ) : channel === "qq" ? (
+        <>
+          <CornerLinkedField
+            label={S.qq.appId}
+            required
+            link={<ExternalLink href={links.credentialSource} label={S.messaging.console} />}
+          >
+            <Input
+              size="sm"
+              aria-label={S.qq.appId}
+              error={errorText(b.fieldErrors.appId)}
+              value={form.qq.appId}
+              onChange={(e) => b.patchForm({ qq: { ...form.qq, appId: e.target.value } })}
+              className="font-mono"
+              placeholder="102000000"
+              autoComplete="off"
+            />
+          </CornerLinkedField>
+          <PasswordInput
+            size="sm"
+            label={S.qq.appSecret}
+            {...(facts.secretConfigured
+              ? { placeholder: S.qq.appSecretKeepHint }
+              : { required: true })}
+            error={errorText(b.fieldErrors.appSecret)}
+            value={form.qq.appSecret}
+            onChange={(e) =>
+              b.patchForm({ qq: { ...form.qq, appSecret: e.target.value, clearSecret: false } })
+            }
+            autoComplete="off"
+          />
+          {facts.secretMasked !== null && form.qq.appSecret === "" && (
+            <StoredSecretRow
+              masked={facts.secretMasked}
+              clearLabel={S.qq.clearSecret}
+              checked={form.qq.clearSecret}
+              enabled={facts.enabled}
+              onChange={(checked) => b.patchForm({ qq: { ...form.qq, clearSecret: checked } })}
+            />
+          )}
+          {/* The one channel whose rule cannot wait for a collapsed fold: QQ delivers only
+              replies to messages sent from QQ, so a user who binds it and then types in the
+              web app sees nothing arrive and concludes the binding is broken. It sits under
+              this channel's fields rather than above them, which keeps the controls at the
+              same height across channels. */}
+          <p className="text-xs text-gray-500 dark:text-gray-400">{S.qq.repliesOnly}</p>
         </>
       ) : (
         <>
@@ -739,13 +816,19 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
         <Switch
           aria-label={S.messaging.linePerMessage}
           checked={
-            channel === "telegram" ? form.telegram.linePerMessage : form.feishu.linePerMessage
+            channel === "telegram"
+              ? form.telegram.linePerMessage
+              : channel === "qq"
+                ? form.qq.linePerMessage
+                : form.feishu.linePerMessage
           }
           onChange={(v) =>
             b.patchForm(
               channel === "telegram"
                 ? { telegram: { ...form.telegram, linePerMessage: v } }
-                : { feishu: { ...form.feishu, linePerMessage: v } },
+                : channel === "qq"
+                  ? { qq: { ...form.qq, linePerMessage: v } }
+                  : { feishu: { ...form.feishu, linePerMessage: v } },
             )
           }
         />
@@ -761,7 +844,7 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
  * form itself opening on the channel selector and the connection controls.
  */
 export function MessagingBindingHelp({ channel }: { channel: MessagingChannel }) {
-  const per = channel === "telegram" ? S.telegram : S.feishu;
+  const per = channel === "telegram" ? S.telegram : channel === "qq" ? S.qq : S.feishu;
   const links = CHANNEL_LINKS[channel];
   return (
     <div className="space-y-2 border-t border-gray-200 pt-3 dark:border-gray-800">
@@ -779,6 +862,9 @@ export function MessagingBindingHelp({ channel }: { channel: MessagingChannel })
         <p>{per.intro}</p>
         {/* The channel's own flavor first, then the channel-neutral rule that owns the
             question a reader actually arrives with: how the bot moves conversations. */}
+        {/* QQ's reply budget belongs to "what binding does" rather than troubleshooting:
+            it is not a fault, it is how the channel delivers a long answer. */}
+        {channel === "qq" && <p className="mt-1.5">{S.qq.replyBudget}</p>}
         <p className="mt-1.5">{S.messaging.faqWhatBinding}</p>
       </HelpFold>
       <HelpFold title={S.messaging.faqTroubleTitle}>
@@ -787,6 +873,7 @@ export function MessagingBindingHelp({ channel }: { channel: MessagingChannel })
           <li>{S.messaging.troubleConnError}</li>
           {channel === "telegram" && <li>{S.messaging.troubleOnePoller}</li>}
           {channel === "telegram" && <li>{S.messaging.troubleGroupPrivacy}</li>}
+          {channel === "qq" && <li>{S.messaging.troubleQQPassive}</li>}
         </ul>
       </HelpFold>
     </div>

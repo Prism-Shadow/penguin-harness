@@ -5,6 +5,9 @@
  * selector back and forth never loses what was typed; `channel` names the selected one,
  * and only its fields are validated or submitted.
  *
+ * QQ's sub-state mirrors Feishu's minus the domain field: the platform has one host, so
+ * there is nothing for a domain to switch between.
+ *
  * Not every field is a credential: `linePerMessage` is a per-binding delivery preference
  * (send a reply one message per non-blank line) that rides the same Save as the rest, which
  * is why it lives in the form state rather than behind a toggle of its own.
@@ -19,6 +22,8 @@ import type {
   FeishuTestRequest,
   MessagingBindingInfo,
   MessagingChannel,
+  QQBindingPutRequest,
+  QQTestRequest,
   TelegramBindingPutRequest,
   TelegramTestRequest,
 } from "@prismshadow/penguin-server/api";
@@ -40,6 +45,16 @@ export interface FeishuFormFields {
   linePerMessage: boolean;
 }
 
+export interface QQFormFields {
+  appId: string;
+  /** Always starts empty; a non-empty value replaces the stored secret on save. */
+  appSecret: string;
+  /** The stored-secret clear checkbox (models idiom): applied on save, a typed secret wins over it. */
+  clearSecret: boolean;
+  /** Deliver a reply as one message per non-blank line (saved, not a connection setting). */
+  linePerMessage: boolean;
+}
+
 export interface TelegramFormFields {
   /** Always starts empty; a non-empty value replaces the stored token on save. */
   botToken: string;
@@ -49,11 +64,12 @@ export interface TelegramFormFields {
   linePerMessage: boolean;
 }
 
-/** Editable state backing the binding editor: the selected channel plus both channels' fields. */
+/** Editable state backing the binding editor: the selected channel plus every channel's fields. */
 export interface MessagingFormState {
   channel: MessagingChannel;
   feishu: FeishuFormFields;
   telegram: TelegramFormFields;
+  qq: QQFormFields;
 }
 
 export type MessagingFormField = "appId" | "appSecret" | "baseDomain" | "botToken";
@@ -66,11 +82,13 @@ export type MessagingFormErrors = Partial<Record<MessagingFormField, MessagingFo
 export type MessagingFormResult =
   | { ok: true; channel: "feishu"; body: FeishuBindingPutRequest }
   | { ok: true; channel: "telegram"; body: TelegramBindingPutRequest }
+  | { ok: true; channel: "qq"; body: QQBindingPutRequest }
   | { ok: false; errors: MessagingFormErrors };
 
 export type MessagingTestRequestByChannel =
   | { channel: "feishu"; body: FeishuTestRequest }
-  | { channel: "telegram"; body: TelegramTestRequest };
+  | { channel: "telegram"; body: TelegramTestRequest }
+  | { channel: "qq"; body: QQTestRequest };
 
 export function emptyMessagingForm(channel: MessagingChannel = "feishu"): MessagingFormState {
   return {
@@ -83,6 +101,7 @@ export function emptyMessagingForm(channel: MessagingChannel = "feishu"): Messag
       linePerMessage: false,
     },
     telegram: { botToken: "", clearToken: false, linePerMessage: false },
+    qq: { appId: "", appSecret: "", clearSecret: false, linePerMessage: false },
   };
 }
 
@@ -101,6 +120,13 @@ export function bindingsToForm(bindings: MessagingBindingInfo[]): MessagingFormS
         appId: info.appId,
         appSecret: "",
         baseDomain: info.baseDomain,
+        clearSecret: false,
+        linePerMessage: info.linePerMessage,
+      };
+    } else if (info.channel === "qq") {
+      form.qq = {
+        appId: info.appId,
+        appSecret: "",
         clearSecret: false,
         linePerMessage: info.linePerMessage,
       };
@@ -153,6 +179,25 @@ export function formToPut(form: MessagingFormState, hasStoredSecret: boolean): M
       },
     };
   }
+  if (form.channel === "qq") {
+    const appId = form.qq.appId.trim();
+    if (appId === "") errors.appId = "required";
+    const appSecret = form.qq.appSecret.trim();
+    const clearing = appSecret === "" && form.qq.clearSecret && hasStoredSecret;
+    if (appSecret === "" && !hasStoredSecret) errors.appSecret = "required";
+    if (Object.keys(errors).length > 0) return { ok: false, errors };
+    return {
+      ok: true,
+      channel: "qq",
+      body: {
+        appId,
+        ...(appSecret !== "" ? { appSecret } : {}),
+        ...(clearing ? { clearAppSecret: true } : {}),
+        // Always sent, for the same reason as the other channels': an omitted flag means "keep".
+        linePerMessage: form.qq.linePerMessage,
+      },
+    };
+  }
   const appId = form.feishu.appId.trim();
   if (appId === "") errors.appId = "required";
   const appSecret = form.feishu.appSecret.trim();
@@ -185,6 +230,17 @@ export function formToTest(form: MessagingFormState): MessagingTestRequestByChan
     const botToken = form.telegram.botToken.trim();
     return { channel: "telegram", body: { ...(botToken !== "" ? { botToken } : {}) } };
   }
+  if (form.channel === "qq") {
+    const appId = form.qq.appId.trim();
+    const appSecret = form.qq.appSecret.trim();
+    return {
+      channel: "qq",
+      body: {
+        ...(appId !== "" ? { appId } : {}),
+        ...(appSecret !== "" ? { appSecret } : {}),
+      },
+    };
+  }
   const appId = form.feishu.appId.trim();
   const appSecret = form.feishu.appSecret.trim();
   const baseDomain = form.feishu.baseDomain.trim();
@@ -210,6 +266,14 @@ export function formDirty(form: MessagingFormState, baseline: MessagingFormState
       form.telegram.linePerMessage !== baseline.telegram.linePerMessage
     );
   }
+  if (form.channel === "qq") {
+    return (
+      form.qq.appId !== baseline.qq.appId ||
+      form.qq.appSecret.trim() !== "" ||
+      form.qq.clearSecret ||
+      form.qq.linePerMessage !== baseline.qq.linePerMessage
+    );
+  }
   return (
     form.feishu.appId !== baseline.feishu.appId ||
     form.feishu.baseDomain !== baseline.feishu.baseDomain ||
@@ -227,6 +291,9 @@ export function formDirty(form: MessagingFormState, baseline: MessagingFormState
 export function formTestable(form: MessagingFormState, secretConfigured: boolean): boolean {
   if (form.channel === "telegram") {
     return form.telegram.botToken.trim() !== "" || secretConfigured;
+  }
+  if (form.channel === "qq") {
+    return (form.qq.appId.trim() !== "" && form.qq.appSecret.trim() !== "") || secretConfigured;
   }
   return (
     (form.feishu.appId.trim() !== "" && form.feishu.appSecret.trim() !== "") || secretConfigured

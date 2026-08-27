@@ -78,6 +78,9 @@ import type { FeishuSdk } from "./runtime/messaging/feishu-sdk.js";
 import { TelegramConnector } from "./runtime/messaging/telegram-connector.js";
 import { createTelegramTransport } from "./runtime/messaging/telegram-api.js";
 import type { TelegramTransport } from "./runtime/messaging/telegram-api.js";
+import { QQConnector } from "./runtime/messaging/qq-connector.js";
+import { createQQTransport } from "./runtime/messaging/qq-api.js";
+import type { QQTransport } from "./runtime/messaging/qq-api.js";
 import { TitleGenerator, TitleNotifier } from "./runtime/title-generator.js";
 import { AdminService } from "./services/admin-service.js";
 import { DesktopService } from "./services/desktop-service.js";
@@ -213,6 +216,10 @@ export interface BuildDepsOverrides {
   telegramTransport?: TelegramTransport;
   /** Test hook: the Telegram connector's poll backoff (tests collapse it to zero). */
   telegramRetryDelayMs?: (failures: number) => number;
+  /** Test double: the QQ connector's OpenAPI + gateway transport (avoids real QQ network / a WebSocket). */
+  qqTransport?: QQTransport;
+  /** Test hook: how long the QQ connector withholds its coalesced tail (tests collapse it to zero). */
+  qqTailFlushMs?: number;
   /** Test hook: the bridge's pace between a per-line reply's messages (tests collapse it to zero). */
   messagingLineDelayMs?: number;
   /**
@@ -745,6 +752,10 @@ export function buildAppDeps(
         overrides.telegramTransport ?? createTelegramTransport(),
         overrides.telegramRetryDelayMs ? { retryDelayMs: overrides.telegramRetryDelayMs } : {},
       ),
+      new QQConnector(overrides.qqTransport ?? createQQTransport(), {
+        ...(overrides.qqTailFlushMs !== undefined ? { tailFlushMs: overrides.qqTailFlushMs } : {}),
+        ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}),
+      }),
     ],
     errors,
     log,
@@ -767,7 +778,8 @@ export function buildAppDeps(
     // stored channel reads as none (same defensive skip as the bridge and the routes).
     messagingChannel: (sessionId) => {
       const enabled = messagingRepo.findEnabled(sessionId);
-      return enabled !== null && (enabled.channel === "feishu" || enabled.channel === "telegram")
+      return enabled !== null &&
+        (enabled.channel === "feishu" || enabled.channel === "telegram" || enabled.channel === "qq")
         ? enabled.channel
         : null;
     },

@@ -1,9 +1,9 @@
 /**
  * Messaging-binding routes: /api/sessions/:sessionId/messaging[...] — the binding
  * editor's and the Messaging dock panel's shared surface. A Session keeps at most one
- * saved config PER channel (both may sit saved side by side); the channel-agnostic GET
- * returns them all, and each channel owns a subtree with its own config shape — /feishu
- * and /telegram carry the same verb set, and a further channel adds its own.
+ * saved config PER channel (all of them may sit saved side by side); the channel-agnostic
+ * GET returns them all, and each channel owns a subtree with its own config shape —
+ * /feishu, /telegram and /qq carry the same verb set, and a further channel adds its own.
  *
  * ENABLING the connection IS the binding, and disabling it is the unbind. Saving
  * credentials therefore never conflicts across Sessions — any number of Sessions may keep
@@ -25,7 +25,7 @@
  * applied on Save — omitted keeps the stored value — and it never touches the connection.
  *
  * Round-trip rule for secrets: GET only ever returns the masked value, and a PUT whose
- * secret (feishu `appSecret`, telegram `botToken`) is omitted or blank keeps the stored
+ * secret (feishu `appSecret`, telegram `botToken`, qq `appSecret`) is omitted or blank keeps the stored
  * one (the same never-round-trip-masked-keys convention as the models test endpoint), so
  * the plaintext exists only at first entry. Dropping a stored secret is the explicit
  * clear flag (the models-page idiom), refused while the binding is enabled — the cleared
@@ -43,6 +43,9 @@ import type {
   MessagingBindingStateRequest,
   MessagingChannelState,
   MessagingTestMessageResponse,
+  QQBindingInfo,
+  QQBindingResponse,
+  QQTestResponse,
   TelegramBindingInfo,
   TelegramBindingResponse,
   TelegramTestResponse,
@@ -83,6 +86,15 @@ function telegramFieldsOf(row: MessagingBindingRow): { botToken: string } {
   return { botToken: typeof botToken === "string" ? botToken : "" };
 }
 
+/** The stored qq config, tolerated loosely (a malformed document reads as blanks). */
+function qqFieldsOf(row: MessagingBindingRow): { appId: string; appSecret: string } {
+  const { appId, appSecret } = row.config;
+  return {
+    appId: typeof appId === "string" ? appId : row.accountId,
+    appSecret: typeof appSecret === "string" ? appSecret : "",
+  };
+}
+
 function toFeishuInfo(row: MessagingBindingRow): FeishuBindingInfo {
   const fields = feishuFieldsOf(row);
   return {
@@ -116,10 +128,26 @@ function toTelegramInfo(row: MessagingBindingRow): TelegramBindingInfo {
   };
 }
 
+function toQQInfo(row: MessagingBindingRow): QQBindingInfo {
+  const fields = qqFieldsOf(row);
+  return {
+    channel: "qq",
+    sessionId: row.sessionId,
+    appId: fields.appId,
+    ...(fields.appSecret !== "" ? { appSecretMasked: maskApiKey(fields.appSecret) } : {}),
+    enabled: row.enabled,
+    linePerMessage: row.linePerMessage,
+    lastChatKnown: row.lastChatId !== null,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
 /** Whatever channel the row is: its masked view, or null on an unknown discriminator (skipped defensively, like the bridge does). */
 function toBindingInfo(row: MessagingBindingRow): MessagingBindingInfo | null {
   if (row.channel === "feishu") return toFeishuInfo(row);
   if (row.channel === "telegram") return toTelegramInfo(row);
+  if (row.channel === "qq") return toQQInfo(row);
   return null;
 }
 
@@ -183,6 +211,14 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
     };
   };
 
+  const qqResponse = (sessionId: string): QQBindingResponse => {
+    const row = deps.messagingRepo.find(sessionId, "qq");
+    return {
+      binding: row ? toQQInfo(row) : null,
+      status: deps.messaging.statusOf(sessionId, "qq"),
+    };
+  };
+
   /**
    * The one-connection-per-account rule, on its own because two paths need it: the enable,
    * and a save that would carry an already-live connection onto a different account.
@@ -227,9 +263,18 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
     }
     guardAccountFree(sessionId, channel, row.accountId);
     const secret =
-      channel === "feishu" ? feishuFieldsOf(row).appSecret : telegramFieldsOf(row).botToken;
+      channel === "feishu"
+        ? feishuFieldsOf(row).appSecret
+        : channel === "qq"
+          ? qqFieldsOf(row).appSecret
+          : telegramFieldsOf(row).botToken;
     if (secret === "") {
-      const code = channel === "feishu" ? "feishu_secret_required" : "telegram_token_required";
+      const code =
+        channel === "feishu"
+          ? "feishu_secret_required"
+          : channel === "qq"
+            ? "qq_secret_required"
+            : "telegram_token_required";
       throw new HttpError(400, code, "The stored config has no credential: save one first.");
     }
   };
@@ -529,10 +574,138 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
     return c.json({ ok: true } satisfies MessagingTestMessageResponse);
   });
 
+  // —— QQ ————————————————————————————————————————————————————————————————————
+  //
+  // Same verb set and the same save/enable split as the two channels above; the config is
+  // the App ID / App Secret pair from the QQ developer console, and the App ID is the
+  // account identity (the QQ analogue of the Feishu app id: stable, non-secret, and
+  // unchanged by rotating the secret).
+
+  app.get("/:sessionId/messaging/qq", (c) => {
+    const row = resolveSession(c);
+    return c.json(qqResponse(row.sessionId));
+  });
+
+  app.put("/:sessionId/messaging/qq", async (c) => {
+    const row = resolveSession(c);
+    deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
+    const body = await readJson(c);
+    const appId = requireString(body, "appId", { minLen: 1, maxLen: 200 }).trim();
+    if (appId === "") throw badRequest("appId must not be blank.");
+    const secretInput = optionalString(body, "appSecret", { maxLen: 500 })?.trim();
+    const clearSecret = (body as { clearAppSecret?: unknown }).clearAppSecret === true;
+    const linePerMessage = optionalBoolean(body, "linePerMessage");
+    const existing = deps.messagingRepo.find(row.sessionId, "qq");
+    const typed = secretInput !== undefined && secretInput !== "" ? secretInput : undefined;
+    // The same ladder as the other two channels: typed wins, then the clear flag (disable
+    // first), then the stored secret; a first bind must carry one.
+    let appSecret: string;
+    if (typed !== undefined) appSecret = typed;
+    else if (clearSecret && existing !== null) {
+      if (existing.enabled) {
+        throw new HttpError(
+          409,
+          "messaging_disable_before_clear",
+          "Disable the connection before clearing its credential.",
+        );
+      }
+      appSecret = "";
+    } else {
+      const stored = existing !== null ? qqFieldsOf(existing).appSecret : "";
+      if (stored === "") {
+        throw new HttpError(400, "qq_secret_required", "appSecret is required to bind.");
+      }
+      appSecret = stored;
+    }
+    // Same reason as the Feishu and Telegram PUTs: an enabled binding re-pointed at another
+    // App ID keeps its connection and restarts it below, which would stand two Sessions on
+    // one bot's single gateway without either passing the enable gate.
+    if (existing !== null && existing.enabled) guardAccountFree(row.sessionId, "qq", appId);
+    const saved = deps.messagingRepo.upsert({
+      sessionId: row.sessionId,
+      channel: "qq",
+      accountId: appId,
+      config: { appId, appSecret },
+      ...(linePerMessage !== undefined ? { linePerMessage } : {}),
+    });
+    if (saved.enabled) await deps.messaging.sync(row.sessionId);
+    return c.json(qqResponse(row.sessionId));
+  });
+
+  app.post("/:sessionId/messaging/qq/state", async (c) => {
+    const row = resolveSession(c);
+    deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
+    const enabled = await readStateBody(c);
+    const binding = deps.messagingRepo.find(row.sessionId, "qq");
+    if (binding === null) {
+      throw new HttpError(404, "qq_not_bound", "This Session has no QQ binding.");
+    }
+    if (enabled) guardEnable(row.sessionId, "qq", binding);
+    deps.messagingRepo.setEnabled(row.sessionId, "qq", enabled);
+    await deps.messaging.sync(row.sessionId);
+    return c.json(qqResponse(row.sessionId));
+  });
+
+  app.delete("/:sessionId/messaging/qq", (c) => {
+    const row = resolveSession(c);
+    deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
+    deps.messaging.unbind(row.sessionId, "qq");
+    return c.body(null, 204);
+  });
+
+  // Credential probe: the access-token exchange, which is the only credential call the
+  // platform has. It names no account, so the response carries no label — unlike Telegram's.
+  app.post("/:sessionId/messaging/qq/test", async (c) => {
+    const row = resolveSession(c);
+    const body = await readJson(c);
+    const stored = deps.messagingRepo.find(row.sessionId, "qq");
+    const storedFields = stored !== null ? qqFieldsOf(stored) : null;
+    const appId = optionalString(body, "appId", { maxLen: 200 })?.trim() || storedFields?.appId;
+    const appSecret =
+      optionalString(body, "appSecret", { maxLen: 500 })?.trim() || storedFields?.appSecret;
+    if (appId === undefined || appId === "") {
+      throw badRequest("appId is required (no stored binding to fall back to).");
+    }
+    if (appSecret === undefined || appSecret === "") {
+      throw new HttpError(400, "qq_secret_required", "appSecret is required to test.");
+    }
+    const result = await deps.messaging.testCredentials("qq", { appId, appSecret });
+    return c.json({
+      ok: result.ok,
+      ...(result.latencyMs !== undefined ? { latencyMs: result.latencyMs } : {}),
+      ...(result.error !== undefined ? { error: result.error } : {}),
+    } satisfies QQTestResponse);
+  });
+
+  // The one test endpoint that means something different here. On Feishu and Telegram a
+  // known chat is enough to send into; on QQ a message may only be sent as a reply to one
+  // the user sent minutes ago, so the 409 below is the weaker of two gates and the send can
+  // still fail with 502 `qq_send_failed` naming the window. The message text says so.
+  app.post("/:sessionId/messaging/qq/test-message", async (c) => {
+    const row = resolveSession(c);
+    const binding = deps.messagingRepo.find(row.sessionId, "qq");
+    if (!binding) {
+      throw new HttpError(404, "qq_not_bound", "This Session has no QQ binding.");
+    }
+    if (binding.lastChatId === null) {
+      throw new HttpError(
+        409,
+        "qq_no_chat",
+        "No QQ chat is known yet: message the bot once in QQ first.",
+      );
+    }
+    try {
+      await deps.messaging.sendTestMessage(binding);
+    } catch (err) {
+      throw new HttpError(502, "qq_send_failed", err instanceof Error ? err.message : String(err));
+    }
+    return c.json({ ok: true } satisfies MessagingTestMessageResponse);
+  });
+
   return app;
 }
 
-/** The state toggle's `{enabled}` body, shared by both channels. */
+/** The state toggle's `{enabled}` body, shared by every channel. */
 async function readStateBody(c: Context<AppEnv>): Promise<boolean> {
   const body = await readJson(c);
   const enabled = (body as Partial<MessagingBindingStateRequest>).enabled;
