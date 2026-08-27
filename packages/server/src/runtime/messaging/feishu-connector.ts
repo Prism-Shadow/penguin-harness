@@ -51,16 +51,26 @@ function textOfContent(content: string): string | null {
   }
 }
 
+/** Escapes a mention key for embedding in a RegExp (keys are `@_user_N`, but keep this honest). */
+function escapeKey(key: string): string {
+  return key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 /**
- * Mention placeholders, longest key first.
+ * One alternation over every mention key, longest key first.
  *
- * Feishu numbers its placeholders `@_user_1`, `@_user_2`, … — so once a message mentions ten
- * people, `@_user_1` is a prefix of `@_user_10` and replacing in event order would corrupt
- * the longer key. Length order is the fix, and it is the only order that is safe for any
- * key set.
+ * Two things make it a single regex rather than a substitution per key. Feishu numbers its
+ * placeholders `@_user_1`, `@_user_2`, … — so once a message mentions ten people, `@_user_1`
+ * is a prefix of `@_user_10`, and an ordered alternation lets the longer key win wherever
+ * both could match. And one regex means ONE left-to-right pass over the original text: key
+ * by key, every later key re-scans what the earlier ones already wrote, so a mentioned
+ * party whose display name reads like a placeholder gets replaced a second time.
  */
-function mentionsByKeyLength(mentions: readonly FeishuMention[]): FeishuMention[] {
-  return [...mentions].sort((a, b) => b.key.length - a.key.length);
+function mentionKeyRegex(mentions: readonly FeishuMention[]): RegExp {
+  const keys = [...mentions]
+    .sort((a, b) => b.key.length - a.key.length)
+    .map((m) => escapeKey(m.key));
+  return new RegExp(keys.join("|"), "g");
 }
 
 /**
@@ -72,11 +82,17 @@ function mentionsByKeyLength(mentions: readonly FeishuMention[]): FeishuMention[
  * model spends its turn asking who `_user_1` is. Every placeholder therefore becomes the
  * mentioned party's name.
  *
- * This bot's OWN mention is dropped instead of named, when its open id is known: the bridge
- * feeds inbound text to the model exactly as if it had been typed into the web composer, and
- * a leading `@PenguinHarness` would announce the channel the message came through. An
- * unknown id (see FeishuApiClient.botOpenId) only means the bot's mention is named like
- * everyone else's — the confusion the placeholder caused is gone either way.
+ * A LEADING mention of this bot is dropped instead of named, when its open id is known: the
+ * bridge feeds inbound text to the model exactly as if it had been typed into the web
+ * composer, and a `@PenguinHarness` in front of the sentence would announce the channel the
+ * message came through. Only that addressing prefix goes — this bot named further in ("why
+ * did @PenguinHarness stop replying?") is a word the user chose, and it reads as itself like
+ * anyone else's. An unknown id (see FeishuApiClient.botOpenId) only means the prefix is named
+ * too — the confusion the placeholder caused is gone either way.
+ *
+ * Each key is substituted at its FIRST occurrence only: Feishu emits one placeholder per key,
+ * so anything further along that spells the same key is a token the user typed by hand, and
+ * it stays as typed.
  *
  * Returns `""` when the message carries nothing but mentions — someone `@`-ed the bot and
  * typed no words — because there is no message there to run a Task on. The emptiness is
@@ -88,16 +104,21 @@ export function resolveFeishuMentions(
   mentions: readonly FeishuMention[] | undefined,
   botOpenId: string | null,
 ): string {
-  if (mentions === undefined || mentions.length === 0) return text;
-  const ordered = mentionsByKeyLength(mentions);
-  let bare = text;
-  for (const m of ordered) bare = bare.split(m.key).join("");
-  if (bare.trim() === "") return "";
-  let out = text;
-  for (const m of ordered) {
-    const isThisBot = botOpenId !== null && m.openId === botOpenId;
-    out = out.split(m.key).join(isThisBot ? "" : `@${m.name}`);
-  }
+  // An empty key would match at every position: a malformed event does not get to shred the text.
+  const keyed = (mentions ?? []).filter((m) => m.key !== "");
+  if (keyed.length === 0) return text;
+  const re = mentionKeyRegex(keyed);
+  if (text.replace(re, "").trim() === "") return "";
+  const byKey = new Map(keyed.map((m) => [m.key, m]));
+  const substituted = new Set<string>();
+  const out = text.replace(re, (key: string, offset: number) => {
+    if (substituted.has(key)) return key;
+    substituted.add(key);
+    const mention = byKey.get(key)!;
+    const isThisBot = botOpenId !== null && mention.openId === botOpenId;
+    const isLeading = text.slice(0, offset).trim() === "";
+    return isThisBot && isLeading ? "" : `@${mention.name}`;
+  });
   return out.trim();
 }
 
@@ -120,12 +141,29 @@ export class FeishuConnector implements MessagingChannelConnector {
     handlers: MessagingConnectorHandlers,
   ): Promise<MessagingConnection> {
     const creds = this.credsOf(config);
-    // One lookup per connection, held for its lifetime: which mention in a group message is
-    // this bot's own never changes while the credentials do not, and every inbound message
-    // needs the answer. `botOpenId` resolves null instead of throwing (see its doc), so a
-    // bot that cannot report an identity still connects — mentions are then named rather
-    // than dropped.
-    const botOpenId = await (await this.sdk.createClient(creds)).botOpenId();
+    /**
+     * This bot's own open id: which mention in a group message is its own never changes while
+     * the credentials do not, so one lookup per connection serves every inbound message.
+     */
+    let botOpenId: string | null = null;
+    // Deliberately not awaited. connect() must resolve as soon as the connection is
+    // constructed (see MessagingChannelConnector.connect): the bridge walks every enabled
+    // binding on the server's boot path, so a lookup against an endpoint that accepts TCP and
+    // never answers would keep the HTTP listener from ever binding. Telegram learns its own
+    // identity the same way, from inside its poll loop. Until the answer lands, a mention of
+    // this bot is named rather than dropped — the same degraded mode an app that cannot report
+    // an identity at all already lives in.
+    void this.sdk
+      .createClient(creds)
+      .then((client) => client.botOpenId())
+      .then((id) => {
+        botOpenId = id;
+      })
+      .catch(() => {
+        // `botOpenId` resolves null rather than throwing (see its doc); building the client
+        // around it still can, and an unavailable identity is never a reason to refuse a
+        // connection.
+      });
     return this.sdk.connect(creds, {
       onMessage: (evt) => {
         // Only `text` messages carry text; every other message type normalizes to null

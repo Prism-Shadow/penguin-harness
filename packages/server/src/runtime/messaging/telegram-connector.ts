@@ -10,7 +10,7 @@
  * The poll loop's lifecycle: a `getMe` probe (a bad token surfaces immediately as the
  * connection error instead of an eternally failing poll — it runs again ahead of every
  * recovery attempt, so a token revoked mid-outage stops reading as a stale conflict, and
- * its answer is what lets a group message's mention of THIS bot be stripped — see
+ * its answer is what lets a group message's opening mention of THIS bot be stripped — see
  * stripBotMention), a
  * `getWebhookInfo` probe (a webhook and `getUpdates` are mutually exclusive on the Bot API,
  * so a bot pointed at one cannot be polled until the webhook goes — the probe names it and
@@ -132,24 +132,20 @@ function mentionsBot(text: string, entity: TelegramMessageEntity, me: TelegramBo
   return span.toLowerCase() === `@${me.username.toLowerCase()}`;
 }
 
-/** Removes one span, swallowing a single separating space so the cut leaves no gap behind. */
-function cutSpan(text: string, offset: number, length: number): string {
-  let end = offset + length;
-  if (text[end] === " ") end += 1;
-  return text.slice(0, offset) + text.slice(end);
-}
-
 /**
- * Strips the bot's own `@mention` out of a group message.
+ * Strips the bot's own `@mention` off the FRONT of a group message.
  *
  * Addressing a bot in a group means naming it, so nearly every message this connector sees
  * from a group opens with `@thisbot `. The bridge feeds inbound text to the model exactly as
  * if it had been typed into the web composer, and that prefix announces the channel the
- * message came through — a detail the model is deliberately not told. Everyone ELSE's
- * mentions stay: those are words the user chose, and they read as themselves.
+ * message came through — a detail the model is deliberately not told.
  *
- * Spans are cut back to front so each remaining offset still indexes the same character
- * (removing an earlier span would shift every later one).
+ * Only that addressing prefix goes. This bot named further in ("what is @thisbot's status?",
+ * "summarize what @thisbot said yesterday") is a word the user chose exactly like everyone
+ * else's mention, and cutting it would hand the model a sentence with a hole in it.
+ *
+ * Leading means nothing but whitespace ahead of the span, and the cut is followed by a trim,
+ * which is the same whitespace policy the Feishu side applies to its own placeholder.
  */
 function stripBotMention(
   text: string,
@@ -157,11 +153,11 @@ function stripBotMention(
   me: TelegramBotUser | null,
 ): string {
   if (entities === undefined || me === null) return text;
-  const own = entities.filter((e) => mentionsBot(text, e, me)).sort((a, b) => b.offset - a.offset);
-  if (own.length === 0) return text;
-  let out = text;
-  for (const e of own) out = cutSpan(out, e.offset, e.length);
-  return out.trim();
+  const lead = entities.find(
+    (e) => text.slice(0, e.offset).trim() === "" && mentionsBot(text, e, me),
+  );
+  if (lead === undefined) return text;
+  return (text.slice(0, lead.offset) + text.slice(lead.offset + lead.length)).trim();
 }
 
 /**

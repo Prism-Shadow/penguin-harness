@@ -72,6 +72,9 @@ class FakeClient implements FeishuApiClient {
     this.sends.push({ kind: "reply", target: messageId, text });
   }
   async botOpenId(): Promise<string | null> {
+    this.sdk.botIdentityLookups++;
+    // A stalled endpoint: the TCP connection is accepted and the answer never comes.
+    if (this.sdk.stallBotOpenId) return new Promise<never>(() => {});
     return this.sdk.botOpenId;
   }
 }
@@ -97,6 +100,10 @@ class FakeSdk implements FeishuSdk {
   failCheck: string | null = null;
   /** What `/open-apis/bot/v3/info` reports for this app; null = the identity is unavailable. */
   botOpenId: string | null = null;
+  /** Makes that lookup never answer, so a test can prove connect() does not wait on it. */
+  stallBotOpenId = false;
+  /** Lookups the connector has started (one per connection, off the connect path). */
+  botIdentityLookups = 0;
   async createClient(creds: FeishuCredentials): Promise<FeishuApiClient> {
     const client = new FakeClient(creds, this);
     this.clients.push(client);
@@ -725,9 +732,15 @@ describe("messaging binding routes and bridge", () => {
     })),
   });
 
-  it("resolves mention placeholders to names and drops this bot's own", async () => {
+  /** The identity lookup rides a background promise, so a test that needs its answer waits for it. */
+  const bindWithIdentity = async (sid: string) => {
     fake.botOpenId = "ou_this_bot";
-    await bindEnabled(SID);
+    await bindEnabled(sid);
+    await waitFor(() => fake.botIdentityLookups === 1);
+  };
+
+  it("resolves mention placeholders to names and drops this bot's own", async () => {
+    await bindWithIdentity(SID);
     await fake.lastConnection().fire(
       groupMention("@_user_1 @_user_2 check the build", [
         { key: "@_user_1", name: "PenguinHarness", id: { open_id: "ou_this_bot" } },
@@ -756,8 +769,7 @@ describe("messaging binding routes and bridge", () => {
   });
 
   it("replaces the longest placeholder first, so a tenth mention is not corrupted by the first", async () => {
-    fake.botOpenId = "ou_this_bot";
-    await bindEnabled(SID);
+    await bindWithIdentity(SID);
     // Feishu numbers placeholders from 1 up, so @_user_1 is a literal prefix of @_user_10.
     await fake.lastConnection().fire(
       groupMention("@_user_10 and @_user_1 ship it", [
@@ -770,8 +782,7 @@ describe("messaging binding routes and bridge", () => {
   });
 
   it("a message that is nothing but a mention starts no Task", async () => {
-    fake.botOpenId = "ou_this_bot";
-    await bindEnabled(SID);
+    await bindWithIdentity(SID);
     await fake
       .lastConnection()
       .fire(
@@ -799,6 +810,71 @@ describe("messaging binding routes and bridge", () => {
     // No mentions array means nothing to resolve: the text is whatever the user typed,
     // even when it happens to look like a placeholder.
     expect(runs[0]![0]!.text).toBe("@_user_1 is not a placeholder here");
+  });
+
+  it("names this bot's mention when it is not the addressing prefix", async () => {
+    await bindWithIdentity(SID);
+    await fake
+      .lastConnection()
+      .fire(
+        groupMention("why did @_user_1 stop replying?", [
+          { key: "@_user_1", name: "PenguinHarness", id: { open_id: "ou_this_bot" } },
+        ]),
+      );
+    await waitFor(() => runs.length === 1);
+    // Only the addressing prefix is dropped. Named mid-sentence, this bot is a word the user
+    // chose — cutting it would hand the model a sentence with a hole (and a double space) in it.
+    expect(runs[0]![0]!.text).toBe("why did @PenguinHarness stop replying?");
+  });
+
+  it("substitutes over the original text, never over its own output", async () => {
+    await bindWithIdentity(SID);
+    // A display name that reads like another key: substituting key by key would let the
+    // `@_user_10` round rewrite what the `@_user_1` round had just written.
+    await fake.lastConnection().fire(
+      groupMention("@_user_1 and @_user_10 ship it", [
+        { key: "@_user_1", name: "Alice", id: { open_id: "ou_alice" } },
+        { key: "@_user_10", name: "_user_1", id: { open_id: "ou_weird" } },
+      ]),
+    );
+    await waitFor(() => runs.length === 1);
+    expect(runs[0]![0]!.text).toBe("@Alice and @_user_1 ship it");
+  });
+
+  it("leaves a repeat of a key alone: Feishu emits each one once, so the rest is typed text", async () => {
+    await bindWithIdentity(SID);
+    await fake
+      .lastConnection()
+      .fire(
+        groupMention("@_user_1 why did you say @_user_1 to me?", [
+          { key: "@_user_1", name: "PenguinHarness", id: { open_id: "ou_this_bot" } },
+        ]),
+      );
+    await waitFor(() => runs.length === 1);
+    // The head placeholder is this bot's own mention; the second is eight characters the user
+    // typed by hand, and they reach the model as typed.
+    expect(runs[0]![0]!.text).toBe("why did you say @_user_1 to me?");
+  });
+
+  it("connects without waiting for the bot-identity lookup to answer", async () => {
+    // The lookup is an HTTP round trip with no timeout under it, and every enabled binding
+    // connects on the server's boot path: an endpoint that accepts TCP and then says nothing
+    // must not keep the HTTP listener from ever binding.
+    fake.stallBotOpenId = true;
+    fake.botOpenId = "ou_this_bot";
+    await bindEnabled(SID);
+    await waitFor(() => fake.botIdentityLookups === 1);
+    await fake
+      .lastConnection()
+      .fire(
+        groupMention("@_user_1 status?", [
+          { key: "@_user_1", name: "PenguinHarness", id: { open_id: "ou_this_bot" } },
+        ]),
+      );
+    await waitFor(() => runs.length === 1);
+    // The connection is live with the identity still outstanding, so this bot's mention is
+    // named like anyone else's — the degraded mode an app that cannot report one already has.
+    expect(runs[0]![0]!.text).toBe("@PenguinHarness status?");
   });
 
   // —— Inbound deduplication ————————————————————————————————————————————————
