@@ -25,7 +25,9 @@
  * moment it completes — a run that writes working notes between tool calls before its
  * answer reaches the chat as that same sequence of messages, so the chat follows the run
  * as it happens. Each is sent to the last known chat, chunked under the channel's
- * text-size limits, and the sends of one entry are serialised through a promise chain:
+ * text-size limits — or, when the binding's `linePerMessage` is set, split into one message
+ * per non-blank line first, each of those chunked and the resulting burst paced — and the
+ * outbound traffic of one entry is serialised through a promise chain:
  * several messages completing in quick succession must reach the chat in the order they
  * completed. In a group chat the run's FIRST outbound message threads onto the inbound
  * one and everything after it is a plain send — one reply-to anchors the exchange, where
@@ -36,7 +38,8 @@
  * events) is not a reply and is skipped, and
  * a connection joining mid-run relays nothing from that run rather than mirroring half a
  * reply. An `approval_request` additionally sends a one-line notice that a tool call is
- * waiting in the web UI.
+ * waiting in the web UI — on the same chain, so it lands between replies instead of inside
+ * one.
  */
 import { userText } from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
@@ -61,6 +64,35 @@ import type {
  * keeping replies in a handful of bubbles.
  */
 export const MESSAGING_TEXT_CHUNK_CHARS = 4000;
+
+/**
+ * How many messages one reply may become under a binding's `linePerMessage`, and why this
+ * particular number.
+ *
+ * The ceiling is a rate limit, not a size limit. Telegram's documented per-chat allowance is
+ * about one message a second, with a burst to a single group tolerated up to roughly 20 a
+ * minute before it starts answering 429; Feishu's IM send limit is counted per app and is far
+ * looser, so Telegram sets the number. 20 spends the tightest channel's burst allowance for
+ * one chat on a single reply — enough that an answer written as spoken lines arrives as spoken
+ * lines, low enough that one long reply cannot spend several minutes of budget at once.
+ *
+ * It bounds OUTBOUND MESSAGES, not lines: the budget is spent in chunks, so a line over the
+ * size cap costs as many messages as it chunks into (see splitReplyLines). Past it the
+ * remaining lines are COMBINED into one final body rather than dropped: silently losing the
+ * tail of a reply is the worst failure available here. The one reply that still exceeds the
+ * ceiling is one long enough to need more messages than this unchunked — which it would have
+ * needed with the option off too.
+ */
+export const MESSAGING_MAX_LINE_MESSAGES = 20;
+
+/**
+ * The wait between the messages of one per-line reply. The cap above bounds a single reply's
+ * burst; this paces it, because the tightest channel's per-chat allowance is about one message
+ * a second and 20 sends fired back to back is exactly the shape that draws a 429. Only a
+ * per-line reply is paced: with the option off a reply is one message (or the handful its size
+ * chunks into), which was never a burst.
+ */
+export const MESSAGING_LINE_DELAY_MS = 1000;
 
 // The three fixed outbound notices are user-facing chat content, deliberately bilingual
 // like the rest of the product's user-facing copy (the server has no locale for an
@@ -135,6 +167,47 @@ export function chunkMessagingText(text: string, max = MESSAGING_TEXT_CHUNK_CHAR
   return out;
 }
 
+/**
+ * Splits a relayed reply into one message per non-blank line, for a binding that asked for it.
+ *
+ * Deliberately literal: every non-blank line becomes its own message — inside a fenced code
+ * block included — with blank lines dropped. The whole value of the option is that its
+ * behaviour is predictable, which any "smart" grouping (holding a code fence together, merging
+ * short lines) would trade away. Only trailing whitespace goes (a CR from a CRLF reply with
+ * it); leading indentation is content, and a code block that arrives unindented does not run.
+ *
+ * `max` bounds the outbound MESSAGES, not the lines: each body returned still goes through
+ * chunkMessagingText, so the budget is spent in chunks — a line over the channel's cap costs
+ * as many messages as it chunks into. Splitting therefore stops while what is left still fits
+ * in the remaining budget, and everything from there rides one combined body (chunked like any
+ * other), so the reply reaches the chat entire either way.
+ */
+export function splitReplyLines(text: string, max = MESSAGING_MAX_LINE_MESSAGES): string[] {
+  const lines = text
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .filter((line) => line !== "");
+  const out: string[] = [];
+  let used = 0;
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i]!;
+    const lineCost = chunkMessagingText(line).length;
+    const rest = lines.slice(i + 1);
+    const restCost = rest.length === 0 ? 0 : chunkMessagingText(rest.join("\n")).length;
+    if (used + lineCost + restCost > max) {
+      // Splitting this line off would put the reply over the budget. The rest rides one
+      // combined body instead, keeping its own line breaks so the message reads as the lines
+      // it was made of. (The loop cannot run past `max` rounds: every emitted line spends at
+      // least one message.)
+      out.push(lines.slice(i).join("\n"));
+      return out;
+    }
+    out.push(line);
+    used += lineCost;
+  }
+  return out;
+}
+
 /** Dedupe scope: one binding, i.e. a Session's config for one channel. */
 function inboundKey(sessionId: string, channel: string): string {
   return `${sessionId}:${channel}`;
@@ -165,6 +238,8 @@ export interface MessagingBridgeDeps {
   errors: ErrorSink;
   log?: (line: string) => void;
   now?: () => number;
+  /** Test hook: the pace between a per-line reply's messages (default MESSAGING_LINE_DELAY_MS; tests collapse it to zero). */
+  lineDelayMs?: number;
 }
 
 /** One connected (or connecting/errored) binding's in-memory state. */
@@ -190,10 +265,11 @@ interface BridgeEntry {
   /** The run in progress already threaded its first outbound message onto the inbound one. */
   threadedThisRun: boolean;
   /**
-   * Tail of this entry's outbound sends. Each relayed message is appended rather than
-   * started on its own, so messages completing in quick succession cannot race each other
-   * into the chat out of order. It never rejects — deliverReply records its own failures —
-   * so one slow or failing send delays this Session's later messages and nothing else.
+   * Tail of this entry's outbound sends. Every relayed message AND every notice is appended
+   * rather than started on its own, so outbound traffic completing in quick succession cannot
+   * race into the chat out of order — an approval notice must not land between the messages of
+   * a reply. It never rejects — deliverReply and deliverNotice record their own failures — so
+   * one slow or failing send delays this Session's later messages and nothing else.
    */
   sendChain: Promise<void>;
 }
@@ -213,11 +289,13 @@ export class MessagingBridge {
   private readonly connectors: ReadonlyMap<string, MessagingChannelConnector>;
   private readonly now: () => number;
   private readonly log: (line: string) => void;
+  private readonly lineDelayMs: number;
 
   constructor(private readonly deps: MessagingBridgeDeps) {
     this.connectors = new Map(deps.connectors.map((c) => [c.channel, c]));
     this.now = deps.now ?? (() => Date.now());
     this.log = deps.log ?? (() => {});
+    this.lineDelayMs = deps.lineDelayMs ?? MESSAGING_LINE_DELAY_MS;
   }
 
   /**
@@ -488,7 +566,13 @@ export class MessagingBridge {
       if (event.type === "task_state" && typeof event.state === "string") {
         this.onTaskState(entry, event.state);
       } else if (event.type === "approval_request") {
-        void this.deliverNotice(entry, MESSAGING_APPROVAL_NOTICE);
+        // Queued behind whatever is already going out, like a reply: a reply the binding
+        // splits per line holds the client for many sequential sends, and a notice started
+        // beside that chain would land between two of its lines. deliverNotice never
+        // throws, so it cannot break the chain.
+        entry.sendChain = entry.sendChain.then(() =>
+          this.deliverNotice(entry, MESSAGING_APPROVAL_NOTICE),
+        );
       }
       return;
     }
@@ -536,42 +620,80 @@ export class MessagingBridge {
   /**
    * Sends one completed assistant message to the last known chat, in chunks under the
    * channel's cap; a send failure is recorded, never thrown, so the chain behind it keeps
-   * moving. In a group the run's first outbound chunk threads onto the inbound message and
+   * moving — and so do the messages behind it in THIS reply: one refused message (a 429 on
+   * the third line of twelve) must not abandon the rest, which would leave a reply stopping
+   * mid-sentence with nothing in the chat to say why. A binding with `linePerMessage` set
+   * sends one message per non-blank line instead of one per reply (see splitReplyLines),
+   * paced MESSAGING_LINE_DELAY_MS apart so the burst stays inside the channel's per-chat
+   * allowance — chunking, threading and ordering are identical either way, and with the flag
+   * off the send sequence is unchanged. In a group the run's
+   * first outbound chunk threads onto the inbound message and
    * everything after it is a plain send: the reply-to relation names which message is being
    * answered, and one of them says it — repeating it per message and per chunk stacks quote
    * headers over the whole conversation.
    */
   private async deliverReply(entry: BridgeEntry, text: string): Promise<void> {
-    try {
-      const row = this.deps.repo.find(entry.sessionId, entry.channel);
-      if (!row || row.lastChatId === null) return; // no chat known yet: nothing mirrors
-      const client = await this.clientFor(entry.sessionId, row);
-      for (const chunk of chunkMessagingText(text)) {
-        const threadOnto =
-          !row.lastChatIsDirect && entry.lastInboundMessageId !== null && !entry.threadedThisRun
-            ? entry.lastInboundMessageId
-            : null;
+    const target = await this.sendTarget(entry);
+    if (target === null) return;
+    const { row, chatId, client } = target;
+    // One body per outbound message: the whole reply, or one per non-blank line when the
+    // binding asked for that. Everything below is untouched by the choice.
+    const bodies = row.linePerMessage ? splitReplyLines(text) : [text];
+    const messages = bodies.flatMap((body) => chunkMessagingText(body));
+    for (const [i, chunk] of messages.entries()) {
+      // The messages of a per-line reply are a burst; the channel's per-chat allowance is
+      // about one a second, so they go out at that pace rather than back to back.
+      if (i > 0 && row.linePerMessage) await this.pace();
+      const threadOnto =
+        !row.lastChatIsDirect && entry.lastInboundMessageId !== null && !entry.threadedThisRun
+          ? entry.lastInboundMessageId
+          : null;
+      try {
         if (threadOnto !== null) {
           entry.threadedThisRun = true;
           await client.replyText(threadOnto, chunk);
         } else {
-          await client.sendText(row.lastChatId, chunk);
+          await client.sendText(chatId, chunk);
         }
+      } catch (err) {
+        this.recordError(entry.sessionId, err, "messaging_send_failed");
       }
-    } catch (err) {
-      this.recordError(entry.sessionId, err, "messaging_send_failed");
     }
   }
 
   /** One-line notice (approval waiting) to the last known chat; silent before one exists. */
   private async deliverNotice(entry: BridgeEntry, text: string): Promise<void> {
+    const target = await this.sendTarget(entry);
+    if (target === null) return;
     try {
-      const row = this.deps.repo.find(entry.sessionId, entry.channel);
-      if (!row || row.lastChatId === null) return;
-      const client = await this.clientFor(entry.sessionId, row);
-      await client.sendText(row.lastChatId, text);
+      await target.client.sendText(target.chatId, text);
     } catch (err) {
       this.recordError(entry.sessionId, err, "messaging_send_failed");
     }
+  }
+
+  /**
+   * Where this entry's outbound traffic goes, with a client for it: null when no chat is
+   * known yet (nothing mirrors before the first inbound message) and null when the binding
+   * or its client could not be read at all, which is recorded like the send it stands in for.
+   */
+  private async sendTarget(
+    entry: BridgeEntry,
+  ): Promise<{ row: MessagingBindingRow; chatId: string; client: MessagingClient } | null> {
+    try {
+      const row = this.deps.repo.find(entry.sessionId, entry.channel);
+      if (!row || row.lastChatId === null) return null;
+      const client = await this.clientFor(entry.sessionId, row);
+      return { row, chatId: row.lastChatId, client };
+    } catch (err) {
+      this.recordError(entry.sessionId, err, "messaging_send_failed");
+      return null;
+    }
+  }
+
+  /** The pace between a per-line reply's messages; zero (tests) waits for nothing. */
+  private pace(): Promise<void> {
+    if (this.lineDelayMs <= 0) return Promise.resolve();
+    return new Promise((resolve) => setTimeout(resolve, this.lineDelayMs));
   }
 }

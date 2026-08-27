@@ -1632,6 +1632,11 @@ export interface FeishuBindingInfo {
   /** Connection INTENT (the state toggle's value); new bindings start disabled, and at most one of a Session's channels is enabled. */
   enabled: boolean;
   /**
+   * Send each non-blank line of a relayed assistant reply as its own message instead of one
+   * message per reply. Off by default; off is the original one-message-per-reply behaviour.
+   */
+  linePerMessage: boolean;
+  /**
    * Whether an inbound Feishu chat is known (the bot has been messaged at least once).
    * Replies and test messages target that chat; until it exists nothing can be sent.
    */
@@ -1654,6 +1659,11 @@ export interface TelegramBindingInfo {
   botTokenMasked?: string;
   /** Connection INTENT (the state toggle's value); new bindings start disabled, and at most one of a Session's channels is enabled. */
   enabled: boolean;
+  /**
+   * Send each non-blank line of a relayed assistant reply as its own message instead of one
+   * message per reply. Off by default; off is the original one-message-per-reply behaviour.
+   */
+  linePerMessage: boolean;
   /**
    * Whether an inbound Telegram chat is known (the bot has been messaged at least once).
    * Replies and test messages target that chat; until it exists nothing can be sent.
@@ -1710,6 +1720,11 @@ export interface FeishuBindingPutRequest {
    * it). Refused with 409 `messaging_disable_before_clear` while the binding is enabled.
    */
   clearAppSecret?: boolean;
+  /**
+   * Delivery preference (see `FeishuBindingInfo.linePerMessage`). Omitted keeps the stored
+   * value; a binding created without it starts with it off.
+   */
+  linePerMessage?: boolean;
 }
 
 /**
@@ -1727,6 +1742,11 @@ export interface TelegramBindingPutRequest {
    * `messaging_disable_before_clear` while the binding is enabled.
    */
   clearBotToken?: boolean;
+  /**
+   * Delivery preference (see `TelegramBindingInfo.linePerMessage`). Omitted keeps the stored
+   * value; a binding created without it starts with it off.
+   */
+  linePerMessage?: boolean;
 }
 
 /**

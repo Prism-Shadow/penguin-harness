@@ -5,6 +5,10 @@
  * selector back and forth never loses what was typed; `channel` names the selected one,
  * and only its fields are validated or submitted.
  *
+ * Not every field is a credential: `linePerMessage` is a per-binding delivery preference
+ * (send a reply one message per non-blank line) that rides the same Save as the rest, which
+ * is why it lives in the form state rather than behind a toggle of its own.
+ *
  * Secrets never round-trip: `bindingToForm` always leaves the secret field empty (the
  * server only ever returns a masked value), and `formToPut` omits a blank one so the
  * server keeps the stored value. Validation errors come back as codes; the component maps
@@ -32,6 +36,8 @@ export interface FeishuFormFields {
   baseDomain: string;
   /** The stored-secret clear checkbox (models idiom): applied on save, a typed secret wins over it. */
   clearSecret: boolean;
+  /** Deliver a reply as one message per non-blank line (saved, not a connection setting). */
+  linePerMessage: boolean;
 }
 
 export interface TelegramFormFields {
@@ -39,6 +45,8 @@ export interface TelegramFormFields {
   botToken: string;
   /** The stored-token clear checkbox (models idiom): applied on save, a typed token wins over it. */
   clearToken: boolean;
+  /** Deliver a reply as one message per non-blank line (saved, not a connection setting). */
+  linePerMessage: boolean;
 }
 
 /** Editable state backing the binding editor: the selected channel plus both channels' fields. */
@@ -67,8 +75,14 @@ export type MessagingTestRequestByChannel =
 export function emptyMessagingForm(channel: MessagingChannel = "feishu"): MessagingFormState {
   return {
     channel,
-    feishu: { appId: "", appSecret: "", baseDomain: FEISHU_DEFAULT_DOMAIN, clearSecret: false },
-    telegram: { botToken: "", clearToken: false },
+    feishu: {
+      appId: "",
+      appSecret: "",
+      baseDomain: FEISHU_DEFAULT_DOMAIN,
+      clearSecret: false,
+      linePerMessage: false,
+    },
+    telegram: { botToken: "", clearToken: false, linePerMessage: false },
   };
 }
 
@@ -88,9 +102,13 @@ export function bindingsToForm(bindings: MessagingBindingInfo[]): MessagingFormS
         appSecret: "",
         baseDomain: info.baseDomain,
         clearSecret: false,
+        linePerMessage: info.linePerMessage,
       };
+    } else {
+      // Telegram's only credential field is the secret itself, so its sub-state loads empty
+      // apart from the delivery preference, which is not a credential.
+      form.telegram = { botToken: "", clearToken: false, linePerMessage: info.linePerMessage };
     }
-    // Telegram's one field is the secret itself, so its sub-state always loads empty.
   }
   return form;
 }
@@ -129,6 +147,9 @@ export function formToPut(form: MessagingFormState, hasStoredSecret: boolean): M
       body: {
         ...(botToken !== "" ? { botToken } : {}),
         ...(clearing ? { clearBotToken: true } : {}),
+        // Always sent, unlike the credential fields: an omitted flag means "keep", which
+        // would make turning the option back off impossible.
+        linePerMessage: form.telegram.linePerMessage,
       },
     };
   }
@@ -148,6 +169,8 @@ export function formToPut(form: MessagingFormState, hasStoredSecret: boolean): M
       ...(appSecret !== "" ? { appSecret } : {}),
       ...(clearing ? { clearAppSecret: true } : {}),
       baseDomain,
+      // Always sent, for the same reason as Telegram's: an omitted flag means "keep".
+      linePerMessage: form.feishu.linePerMessage,
     },
   };
 }
@@ -181,13 +204,18 @@ export function formToTest(form: MessagingFormState): MessagingTestRequestByChan
  */
 export function formDirty(form: MessagingFormState, baseline: MessagingFormState): boolean {
   if (form.channel === "telegram") {
-    return form.telegram.botToken.trim() !== "" || form.telegram.clearToken;
+    return (
+      form.telegram.botToken.trim() !== "" ||
+      form.telegram.clearToken ||
+      form.telegram.linePerMessage !== baseline.telegram.linePerMessage
+    );
   }
   return (
     form.feishu.appId !== baseline.feishu.appId ||
     form.feishu.baseDomain !== baseline.feishu.baseDomain ||
     form.feishu.appSecret.trim() !== "" ||
-    form.feishu.clearSecret
+    form.feishu.clearSecret ||
+    form.feishu.linePerMessage !== baseline.feishu.linePerMessage
   );
 }
 

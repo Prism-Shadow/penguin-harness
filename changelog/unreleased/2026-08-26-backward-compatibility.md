@@ -3,14 +3,16 @@
 - **Date:** 2026-08-26
 - **Type:** process
 - **Scope:** `server`
-- **PR:** [#490](https://github.com/Prism-Shadow/penguin-harness/pull/490)
+- **PR:** [#490](https://github.com/Prism-Shadow/penguin-harness/pull/490), [#494](https://github.com/Prism-Shadow/penguin-harness/pull/494)
 - **Breaking:** yes — one-way for the database: after two Sessions have saved the same bot account, a build from before this change can no longer open that `web.db`
 
 [中文版](2026-08-26-backward-compatibility.zh.md)
 
-This batch touches one piece of existing state: the `idx_messaging_account` unique index on
-`messaging_bindings`, carried by every `web.db` that has opened a build with messaging bindings in
-it (0.2.5 and later).
+This batch touches two things on an existing `web.db`, both on `messaging_bindings`: the
+`idx_messaging_account` unique index it carries (every database that has opened a build with
+messaging bindings in it — 0.2.5 and later), and one added column. Only the first needs a
+decision; the second is recorded so a reader looking here for "does my database need anything?"
+finds both answers in one place.
 
 ## The retired unique account index
 
@@ -46,6 +48,16 @@ still be opened by a current build — in practice indefinitely, at the cost of 
 per open. It is removed only in a release that is allowed to break existing `web.db` files, and it
 should be removed together with the `idx_usage_session` drop that sits beside it, since both are
 the same kind of debt.
+
+## The added `line_per_message` column
+
+[One message per line](2026-08-26-messaging-line-per-message.md) added
+`messaging_bindings.line_per_message INTEGER NOT NULL DEFAULT 0`, ALTERed in on open by the
+`ensureColumn` list that exists for exactly this. It is purely additive and needs no decision:
+the default reproduces the delivery every existing binding already had — one message per reply —
+so no binding changes behaviour, nothing is rewritten, and the user does nothing. The `ensureColumn`
+entry stays for as long as a `web.db` formed before this release can be opened, on the same terms
+as the rest of that list. An older build simply ignores a column it has never heard of.
 
 ## Compatibility
 

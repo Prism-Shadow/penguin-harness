@@ -20,6 +20,10 @@
  * and run the two tests; the secret-mutating writes — PUT, the state toggle and DELETE —
  * are Project-owner-only.
  *
+ * A PUT also carries `linePerMessage`, the one saved field that is not a credential: whether
+ * a relayed reply is delivered one message per non-blank line. It is an ordinary form field
+ * applied on Save — omitted keeps the stored value — and it never touches the connection.
+ *
  * Round-trip rule for secrets: GET only ever returns the masked value, and a PUT whose
  * secret (feishu `appSecret`, telegram `botToken`) is omitted or blank keeps the stored
  * one (the same never-round-trip-masked-keys convention as the models test endpoint), so
@@ -50,7 +54,13 @@ import { FEISHU_DEFAULT_DOMAIN, feishuConfigOf } from "../../runtime/messaging/f
 import { telegramBotIdOf } from "../../runtime/messaging/telegram-connector.js";
 import { maskApiKey } from "../../services/project-config-service.js";
 import { HttpError } from "../errors.js";
-import { badRequest, optionalString, readJson, requireString } from "../validate.js";
+import {
+  badRequest,
+  optionalBoolean,
+  optionalString,
+  readJson,
+  requireString,
+} from "../validate.js";
 import type { AppDeps } from "../../app.js";
 
 /** The stored feishu config, tolerated loosely (a malformed document reads as blanks). */
@@ -84,6 +94,7 @@ function toFeishuInfo(row: MessagingBindingRow): FeishuBindingInfo {
     ...(fields.appSecret !== "" ? { appSecretMasked: maskApiKey(fields.appSecret) } : {}),
     baseDomain: fields.baseDomain,
     enabled: row.enabled,
+    linePerMessage: row.linePerMessage,
     lastChatKnown: row.lastChatId !== null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -98,6 +109,7 @@ function toTelegramInfo(row: MessagingBindingRow): TelegramBindingInfo {
     botId: row.accountId,
     ...(botToken !== "" ? { botTokenMasked: maskApiKey(botToken) } : {}),
     enabled: row.enabled,
+    linePerMessage: row.linePerMessage,
     lastChatKnown: row.lastChatId !== null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -252,6 +264,7 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
     const secretInput = optionalString(body, "appSecret", { maxLen: 500 })?.trim();
     const clearSecret = (body as { clearAppSecret?: unknown }).clearAppSecret === true;
     const baseDomain = parseBaseDomain(optionalString(body, "baseDomain", { maxLen: 500 }));
+    const linePerMessage = optionalBoolean(body, "linePerMessage");
     const existing = deps.messagingRepo.find(row.sessionId, "feishu");
     const typed = secretInput !== undefined && secretInput !== "" ? secretInput : undefined;
     // Blank keeps the stored secret; the clear flag (models idiom — a typed secret wins
@@ -286,6 +299,7 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
       channel: "feishu",
       accountId: appId,
       config: { appId, appSecret, baseDomain },
+      ...(linePerMessage !== undefined ? { linePerMessage } : {}),
     });
     // Save persists credentials only and never flips the connection — with one deliberate
     // exception: an ENABLED binding's connector restarts with the new credentials, so the
@@ -390,6 +404,7 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
     const body = await readJson(c);
     const tokenInput = optionalString(body, "botToken", { maxLen: 200 })?.trim();
     const clearToken = (body as { clearBotToken?: unknown }).clearBotToken === true;
+    const linePerMessage = optionalBoolean(body, "linePerMessage");
     const existing = deps.messagingRepo.find(row.sessionId, "telegram");
     const typed = tokenInput !== undefined && tokenInput !== "" ? tokenInput : undefined;
     // Same ladder as the Feishu PUT: typed wins, then the clear flag (disable first),
@@ -434,6 +449,7 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
       channel: "telegram",
       accountId: botId,
       config: { botToken },
+      ...(linePerMessage !== undefined ? { linePerMessage } : {}),
     });
     // Same save/enable split as Feishu: only an enabled binding restarts its connector.
     if (saved.enabled) await deps.messaging.sync(row.sessionId);

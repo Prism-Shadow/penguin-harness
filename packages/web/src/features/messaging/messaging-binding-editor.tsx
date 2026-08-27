@@ -46,6 +46,7 @@ import { toneInk, type Tone } from "../../lib/tone";
 import { Button } from "../../components/ui/button";
 import { FieldLabel } from "../../components/ui/field";
 import { HelpFold } from "../../components/ui/help-fold";
+import { InfoPopover } from "../../components/ui/info-popover";
 import { Input } from "../../components/ui/input";
 import { PasswordInput } from "../../components/ui/password-input";
 import { Segmented } from "../../components/ui/segmented";
@@ -476,7 +477,8 @@ function StoredSecretRow({
  * The editor's body, top to bottom: the channel selector, the connection controls (enable
  * toggle + live status, then the two probes, then the hint naming what gates the switch),
  * then the selected channel's credential fields (console link at the credential field's
- * corner, models-style stored-secret row). Only the selector and the controls sit above the
+ * corner, models-style stored-secret row), and last the one saved field that is not a
+ * credential — the one-message-per-line delivery option, which Save persists like the rest. Only the selector and the controls sit above the
  * fields, and everything above the fields is channel-independent in height, so the toggle
  * and the probes hold one vertical position no matter which channel is selected. Hosts
  * place their own Save action after it and `MessagingBindingHelp` below that.
@@ -592,7 +594,9 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
               error={errorText(b.fieldErrors.botToken)}
               value={form.telegram.botToken}
               onChange={(e) =>
-                b.patchForm({ telegram: { botToken: e.target.value, clearToken: false } })
+                b.patchForm({
+                  telegram: { ...form.telegram, botToken: e.target.value, clearToken: false },
+                })
               }
               autoComplete="off"
             />
@@ -668,6 +672,31 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
           />
         </>
       )}
+      {/* The one saved field that is not a credential, so it closes the form rather than
+          sitting among them. Its explanation is semantics — what the option does to a
+          reply — and therefore rides the "?" beside its label instead of a line the reader
+          steps over on every later visit. */}
+      <div className="flex items-center justify-between gap-3">
+        <span className="flex items-center gap-1.5">
+          <FieldLabel block={false}>{S.messaging.linePerMessage}</FieldLabel>
+          <InfoPopover label={S.messaging.linePerMessage}>
+            {S.messaging.linePerMessageHelp}
+          </InfoPopover>
+        </span>
+        <Switch
+          aria-label={S.messaging.linePerMessage}
+          checked={
+            channel === "telegram" ? form.telegram.linePerMessage : form.feishu.linePerMessage
+          }
+          onChange={(v) =>
+            b.patchForm(
+              channel === "telegram"
+                ? { telegram: { ...form.telegram, linePerMessage: v } }
+                : { feishu: { ...form.feishu, linePerMessage: v } },
+            )
+          }
+        />
+      </div>
     </div>
   );
 }

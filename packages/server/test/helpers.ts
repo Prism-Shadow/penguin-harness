@@ -82,7 +82,14 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
   if (beforeSeed) await beforeSeed(root);
   const deps = await bootAppDeps(
     { ...testConfig(root), ...config },
-    { log: () => {}, passwordHashCost: TEST_PASSWORD_HASH_COST, ...overrides },
+    {
+      log: () => {},
+      passwordHashCost: TEST_PASSWORD_HASH_COST,
+      // The bridge's per-line pace is a real wait in production; every test but the one
+      // about the pacing itself collapses it to nothing.
+      messagingLineDelayMs: 0,
+      ...overrides,
+    },
   );
   // Consistent with the startup entrypoint: seed the built-in admin (owning default_project),
   // keeping the password it returns (only null if a beforeSeed hook ever pre-created users).

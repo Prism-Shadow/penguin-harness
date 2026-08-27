@@ -3,13 +3,14 @@
 - **Date:** 2026-08-26
 - **Type:** process
 - **Scope:** `server`
-- **PR:** [#490](https://github.com/Prism-Shadow/penguin-harness/pull/490)
+- **PR:** [#490](https://github.com/Prism-Shadow/penguin-harness/pull/490), [#494](https://github.com/Prism-Shadow/penguin-harness/pull/494)
 - **Breaking:** yes — 对数据库是单向的：一旦两个 Session 保存了同一个机器人账号，本次改动之前的构建就再也打不开那个 `web.db`
 
 [English](2026-08-26-backward-compatibility.md)
 
-本批改动触及一处存量状态：`messaging_bindings` 上的 `idx_messaging_account` 唯一索引——凡是打开
-过带消息绑定的构建（0.2.5 及以后）的 `web.db` 都带有它。
+本批改动在存量 `web.db` 上触及两处，都在 `messaging_bindings` 上：它携带的 `idx_messaging_account`
+唯一索引（凡是打开过带消息绑定的构建——0.2.5 及以后——的数据库都有），以及新增的一列。只有前者需要
+决策；后者记在这里，是为了让来这里查「我的数据库需要做什么吗」的读者在同一处拿到两个答案。
 
 ## 退役的账号唯一索引
 
@@ -39,6 +40,15 @@
 只要当前构建仍需打开 0.2.5 至 0.2.7 形成的 `web.db`，这条 `DROP INDEX` 就是必需的——实际上等于无
 限期保留，代价是每次打开多执行一条空操作语句。它只在允许破坏存量 `web.db` 的版本中移除，并且应
 当与紧挨着它的 `idx_usage_session` 删除语句一并清理，两者属于同一类债务。
+
+## 新增的 `line_per_message` 列
+
+[每行一条消息](2026-08-26-messaging-line-per-message.zh.md)新增了
+`messaging_bindings.line_per_message INTEGER NOT NULL DEFAULT 0`，由既有的 `ensureColumn` 列表在打
+开时 ALTER 进来——那份列表正是为此存在。它纯属新增，无需任何决策：默认值复现了每份存量绑定原本的送
+达方式——每条回复一条消息——因此没有任何绑定的行为改变，没有任何数据被改写，用户也无需做任何事。该
+`ensureColumn` 条目的保留期与「本次发布之前形成的 `web.db` 仍可被打开」等长，与该列表中其余条目同一
+口径。旧构建则直接忽略一个它从未听说过的列。
 
 ## 兼容性
 
