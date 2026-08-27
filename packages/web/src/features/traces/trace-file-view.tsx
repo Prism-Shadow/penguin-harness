@@ -174,6 +174,7 @@ export function TraceFileView({
   agentId,
   sessionId,
   index,
+  reloadSignal,
   highlight,
   onHighlight,
 }: {
@@ -181,6 +182,13 @@ export function TraceFileView({
   agentId: string;
   sessionId: string;
   index: number;
+  /**
+   * Bumped by the panel every time it re-lists (a re-show, or a turn settling while the panel
+   * is showing). Any change means "re-read this file": a Trace is APPENDED TO while the
+   * Session runs, so the same `index` at a larger size is the ordinary case and a load keyed
+   * on `index` alone would never re-run for it.
+   */
+  reloadSignal: number;
   highlight: TraceHighlight | null;
   onHighlight: (h: TraceHighlight | null) => void;
 }) {
@@ -205,12 +213,27 @@ export function TraceFileView({
     [],
   );
 
-  useEffect(() => {
+  // Switching to a DIFFERENT file clears the view — back to the skeleton, with the collapsed
+  // rounds and the pinned row forgotten because they name rounds this file does not have.
+  // Reset during render (React's documented "adjust state when a prop changes" pattern), which
+  // is what keeps it out of the load effect below: that effect also runs for a REFRESH of the
+  // file already on screen, and blanking there would flash a skeleton, drop the highlight and
+  // reopen every round card the user collapsed, several times per run.
+  const fileKey = `${projectId}/${agentId}/${sessionId}/${index}`;
+  const [renderedFileKey, setRenderedFileKey] = useState(fileKey);
+  if (renderedFileKey !== fileKey) {
+    setRenderedFileKey(fileKey);
     setAnalysis(null);
     setEvents([]);
     setError(null);
     setCollapsed(new Set());
     setPinnedRow(null);
+  }
+
+  // Load the file, and re-load it whenever the panel's signal moves. Results overwrite what is
+  // on screen in place — an in-flight refresh keeps the current content readable, and its
+  // outcome is what clears or sets the error, since nothing was cleared up front.
+  useEffect(() => {
     let cancelled = false;
     Promise.all([
       api.getAgentTraceAnalysis(projectId, agentId, sessionId, index),
@@ -223,7 +246,10 @@ export function TraceFileView({
         setEvents(e.events);
         setEventsOffset(e.offset);
         setTotal(e.total);
-        setModels(m);
+        // Pricing is optional and its fetch is allowed to fail; on a refresh, keep what the
+        // last successful load resolved instead of dropping the round cards' cost column.
+        setModels((prev) => m ?? prev);
+        setError(null);
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(apiErrorText(err));
@@ -231,7 +257,7 @@ export function TraceFileView({
     return () => {
       cancelled = true;
     };
-  }, [projectId, agentId, sessionId, index]);
+  }, [projectId, agentId, sessionId, index, reloadSignal]);
 
   // Pricing for the session's Model (main session only; sub-session Tokens
   // live in their own Trace and aren't part of this file): session_meta carries a paired
