@@ -3,6 +3,7 @@
 - **Date:** 2026-08-26
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#495](https://github.com/Prism-Shadow/penguin-harness/pull/495)
 
 [中文版](2026-08-26-portal-panel-scroll-dismiss.zh.md)
 
