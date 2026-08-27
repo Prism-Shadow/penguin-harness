@@ -141,20 +141,18 @@ export const en: Strings = {
     proxyAddress: "Proxy address",
     proxyAddressPlaceholder: "Empty = follow system proxy",
     /** Admin-only sub-page (server-global). */
-    uploadLimitsTitle: "Upload limits",
-    /** Its two number fields, both in whole MB. */
-    attachmentMaxMb: "Max attachment size (MB)",
-    attachmentTotalMb: "Max total per message (MB)",
-    /** Accepted range for each field: read while typing, so it stays under the field. */
-    attachmentMaxMbHint: (min: number, max: number): string => `${min}–${max} MB`,
-    attachmentTotalMbHint: (min: number, max: number): string =>
-      `${min}–${max} MB, and not below the per-file limit`,
-    /** What these two numbers do NOT govern — disclosed at the pane heading. */
-    uploadLimitsInfo: (count: number, imageMb: number): string =>
-      `A message may carry at most ${count} attachments. Images placed inline in the ` +
-      `conversation keep a separate ${imageMb}MB limit that this setting does not raise — an ` +
-      `inline image enters the conversation and the Trace, where its size is paid again on ` +
-      `every history page and resume.`,
+    uploadsTitle: "Uploads",
+    /** The compression switch and the size above which it applies. */
+    imageCompression: "Compress large images",
+    imageCompressionOverMb: "Compress images larger than (MB)",
+    /** Accepted range: read while typing, so it stays under the field. */
+    imageCompressionOverMbHint: (min: number, max: number): string => `${min}–${max} MB`,
+    /** What the page governs and what it does not — disclosed at the pane heading. */
+    uploadsInfo: (count: number): string =>
+      `An image over the threshold is resized and re-encoded in the browser before it is ` +
+      `uploaded, so it costs less on every history page and every session resume; a smaller ` +
+      `one, and any animated or vector image, is sent untouched. File attachments are never ` +
+      `altered and have no size limit — a message may carry ${count} of them.`,
     theme: "Theme",
     themeInfo: "Light or dark look of the app.",
     themeLight: "Light",
@@ -1781,8 +1779,6 @@ Scenarios:
     uploadFile: "Upload file",
     uploadFileDesc: "Saved to the session scratchpad; the model reads them by path",
     removeFile: "Remove file",
-    attachmentTooLarge: (name: string, limitMb: number): string =>
-      `${name} exceeds the ${limitMb}MB limit and was not attached.`,
     /** Overlay covering the chat area while files are dragged over it (drag-and-drop upload). */
     dropFilesTitle: "Drop files to attach",
     dropFilesDesc: "Images and files are added to the message draft",
@@ -2233,7 +2229,6 @@ Scenarios:
       file_too_large: "The file is too large.",
       too_many_files: "Too many files attached to one message.",
       payload_too_large: "The request is too large.",
-      image_too_large: "The image is too large to send inline.",
       dir_not_absolute: "The directory must be an absolute path.",
       dir_not_found: "That directory does not exist or is inaccessible.",
       not_a_dir: "That path is not a directory.",
@@ -2262,8 +2257,8 @@ Scenarios:
       invalid_title: "The title is invalid.",
       invalid_proxy_url:
         "Invalid proxy address — use an http(s):// or socks5:// proxy URL, or host[:port].",
-      invalid_attachment_limit:
-        "Invalid upload limit — use a whole number of MB inside the allowed range, with the total no lower than the per-file limit.",
+      invalid_image_compression:
+        "Invalid compression threshold — use a whole number of MB inside the allowed range.",
       invalid_trace: "This file is not a valid Trace file.",
       trace_not_found: "This Trace file no longer exists.",
       trace_session_exists:

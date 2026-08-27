@@ -63,12 +63,6 @@ import {
   removeAttachments,
 } from "../../services/task-attachments.js";
 import type { TaskAttachment } from "../../services/task-attachments.js";
-import {
-  INLINE_IMAGE_MAX_BYTES,
-  INLINE_IMAGE_MAX_MB,
-  toAttachmentLimits,
-} from "../../services/attachment-limits.js";
-import type { AttachmentLimits } from "../../services/attachment-limits.js";
 import type { RecallStore } from "../../runtime/session-manager.js";
 
 /** Max title length for manual renames: looser than the auto-generated 30-char limit, to accommodate users' own organizing conventions. */
@@ -214,38 +208,11 @@ const IMAGE_DATA_URL = /^data:[^;,]+;base64,[A-Za-z0-9+/=\s]+$/;
 function requireImageUrl(url: unknown, field: string): string {
   if (typeof url === "string") {
     if (url.startsWith("http://") || url.startsWith("https://")) return url;
-    if (IMAGE_DATA_URL.test(url)) {
-      // An inline image is not an attachment: it enters the conversation and is written verbatim
-      // into the Trace, which is read back whole — into one JS string — on every history page and
-      // every resume. So it gets its own fixed ceiling instead of following the (much larger,
-      // admin-settable) attachment cap up. Measured on the decoded length rather than the data
-      // URL's, so the number in the error is the number a person sees in a file manager.
-      const bytes = dataUrlByteLength(url);
-      if (bytes > INLINE_IMAGE_MAX_BYTES) {
-        throw new HttpError(
-          413,
-          "image_too_large",
-          `${field} exceeds the ${INLINE_IMAGE_MAX_MB}MB inline image limit.`,
-        );
-      }
-      return url;
-    }
+    if (IMAGE_DATA_URL.test(url)) return url;
   }
   throw badRequest(
     `${field} must be an http(s) URL or a base64 data: URL (data:<mime>;base64,<bytes>).`,
   );
-}
-
-/**
- * Decoded byte length of a base64 data URL, computed from the payload's length rather than by
- * decoding it: the point is to reject an oversize image *before* materializing it as a Buffer.
- * Whitespace and padding are discounted, so the result is the file's real size.
- */
-function dataUrlByteLength(dataUrl: string): number {
-  // Padding and whitespace carry no bytes; every 4 remaining characters carry 3. Same arithmetic
-  // the composer uses to size a recalled attachment's chip (chat-input.tsx dataUrlBytes).
-  const payload = dataUrl.slice(dataUrl.indexOf(",") + 1).replace(/[=\s]+/g, "");
-  return Math.floor((payload.length * 3) / 4);
 }
 
 /**
@@ -286,7 +253,7 @@ interface ParsedTaskInput {
 }
 
 /** Validate Prompt input parts: text, image (data: / http(s) URL), or an uploaded file. */
-function parseTaskInput(body: Record<string, unknown>, limits: AttachmentLimits): ParsedTaskInput {
+function parseTaskInput(body: Record<string, unknown>): ParsedTaskInput {
   const input = body.input;
   if (!Array.isArray(input) || input.length === 0) {
     throw badRequest("input must be an array with at least one item.");
@@ -317,10 +284,10 @@ function parseTaskInput(body: Record<string, unknown>, limits: AttachmentLimits)
     if (part.type === "file") {
       // Not an OmniMessage of its own: the file becomes an `[attached file: …]` line on the
       // text message once written to the scratchpad, so it carries no payload into the run.
-      attachments.push(parseAttachmentPart(part, i, limits));
-      // Per-request count / total-bytes caps, re-checked on every part so a hostile `input`
-      // is cut off at the item that crosses the line (see assertAttachmentBudget).
-      assertAttachmentBudget(attachments, limits);
+      attachments.push(parseAttachmentPart(part, i));
+      // Per-request file count, re-checked on every part so a hostile `input` is cut off at the
+      // item that crosses the line (see assertAttachmentBudget).
+      assertAttachmentBudget(attachments);
       return;
     }
     throw badRequest(`input[${i}].type must be one of text / image_url / file.`);
@@ -381,14 +348,11 @@ function parseSteerImages(body: Record<string, unknown>): string[] {
 }
 
 /**
- * Validate the optional `files` field of a steer request: the same shape and caps as a task
+ * Validate the optional `files` field of a steer request: the same shape and count as a task
  * input's `{type:"file"}` parts (parseAttachmentPart, budget re-checked per item), absent or
  * empty = no attachments.
  */
-function parseSteerFiles(
-  body: Record<string, unknown>,
-  limits: AttachmentLimits,
-): TaskAttachment[] {
+function parseSteerFiles(body: Record<string, unknown>): TaskAttachment[] {
   const files = body.files;
   if (files === undefined) return [];
   if (!Array.isArray(files)) throw badRequest("files must be an array.");
@@ -397,8 +361,8 @@ function parseSteerFiles(
     if (item === null || typeof item !== "object" || Array.isArray(item)) {
       throw badRequest(`files[${i}] must be an object.`);
     }
-    attachments.push(parseAttachmentPart(item as Record<string, unknown>, i, limits, "files"));
-    assertAttachmentBudget(attachments, limits);
+    attachments.push(parseAttachmentPart(item as Record<string, unknown>, i, "files"));
+    assertAttachmentBudget(attachments);
   });
   return attachments;
 }
@@ -891,9 +855,6 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     // the session's default. In goal mode it rides every round of the goal; a queued
     // follow-up keeps its level for its auto-start.
     const thinkingLevel = optionalEnum(body, "thinkingLevel", THINKING_LEVELS);
-    // Resolved per request from the admin settings, so a limit change applies to the very next
-    // upload rather than at the next restart.
-    const limits = toAttachmentLimits(deps.serverSettingsRepo.getAttachmentLimitsMb());
     if (goal) {
       // Goal mode: the input needs non-empty text, since its marker-stripped text becomes the
       // objective that every round re-injects and an image on its own doesn't say what the
@@ -901,7 +862,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       // inside the objective (whatever the model's vision) so they survive the rounds. File
       // attachments cannot: nothing folds them into the objective, so they are turned away
       // here, before any upload is written to disk.
-      const { messages, attachments } = parseTaskInput(body, limits);
+      const { messages, attachments } = parseTaskInput(body);
       const text = messages
         .filter((m) => (m.payload as { type?: string }).type === "text")
         .map((m) => (m.payload as { text: string }).text)
@@ -920,7 +881,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       });
       return c.json({ sessionId } satisfies TaskCreateResponse, 202);
     }
-    const parsed = parseTaskInput(body, limits);
+    const parsed = parseTaskInput(body);
     // Follow-up queue: with queueIfBusy, a busy session enqueues the input instead of 409
     // (auto-starts as an ordinary next task once idle; the response says which happened).
     const queueIfBusy = body.queueIfBusy === true;
@@ -970,10 +931,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     const body = await readJson(c);
     const text = typeof body.text === "string" ? body.text.trim() : "";
     const images = parseSteerImages(body);
-    const files = parseSteerFiles(
-      body,
-      toAttachmentLimits(deps.serverSettingsRepo.getAttachmentLimitsMb()),
-    );
+    const files = parseSteerFiles(body);
     // Any part can carry the message on its own: an image or a file with no caption is a
     // complete steering message, and so is plain text.
     if (!text && images.length === 0 && files.length === 0) {

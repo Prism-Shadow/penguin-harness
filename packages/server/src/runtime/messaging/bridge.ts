@@ -67,7 +67,6 @@ import type {
   MessagingBindingRow,
   MessagingBindingsRepo,
 } from "../../db/repos/messaging-bindings.js";
-import { INLINE_IMAGE_MAX_BYTES } from "../../services/attachment-limits.js";
 import type { ChannelEvent, ChannelHub } from "../channel.js";
 import type { ErrorSink } from "../error-recorder.js";
 import type {
@@ -124,6 +123,18 @@ export const MESSAGING_MAX_LINE_MESSAGES = 20;
  */
 export const MESSAGING_LINE_DELAY_MS = 1000;
 
+/**
+ * Per-image ceiling on what this bridge will DOWNLOAD from a chat channel.
+ *
+ * Not a composer limit and not a policy about picture quality: the bytes come from a remote
+ * chat over a binding anyone in that chat can post to, so the fetch needs a number it stops at.
+ * The image then rides the conversation and the Trace like a pasted one, where its size is paid
+ * again on every history page and every Session resume — 20MB is above anything the channels
+ * actually hand over (both re-encode a chat photo to a fraction of it) and far below the size
+ * that makes a Session slow to reopen.
+ */
+export const MESSAGING_INBOUND_IMAGE_MAX_BYTES = 20 * 1024 * 1024;
+
 // The fixed outbound notices are user-facing chat content, deliberately bilingual
 // like the rest of the product's user-facing copy (the server has no locale for an
 // external chat, so both languages ride each notice).
@@ -138,7 +149,7 @@ export const MESSAGING_TEXT_ONLY_NOTICE =
  * A message that names two causes names neither.
  */
 export function messagingImageTooLargeNotice(): string {
-  const mb = Math.floor(INLINE_IMAGE_MAX_BYTES / (1024 * 1024));
+  const mb = Math.floor(MESSAGING_INBOUND_IMAGE_MAX_BYTES / (1024 * 1024));
   return `That image is larger than the ${mb}MB limit, so it was not sent to the Agent. Try a smaller one. 该图片超过 ${mb}MB 上限，未发送给智能体，请改用更小的图片。`;
 }
 
@@ -309,7 +320,7 @@ export function messagingFilesSkippedNotice(skipped: number): string {
  * far below the pile that breaks a Session. Sustained abuse still costs the attacker time
  * they cannot compress.
  */
-export const MESSAGING_INBOUND_IMAGE_BUDGET_BYTES = 2 * INLINE_IMAGE_MAX_BYTES;
+export const MESSAGING_INBOUND_IMAGE_BUDGET_BYTES = 2 * MESSAGING_INBOUND_IMAGE_MAX_BYTES;
 const MESSAGING_INBOUND_IMAGE_WINDOW_MS = 10 * 60_000;
 
 /**
@@ -1087,7 +1098,7 @@ export class MessagingBridge {
       // The window's remainder rides into the fetch exactly as the ceiling does, so an
       // image that would overspend is refused at the byte that crosses rather than
       // buffered whole and measured afterwards.
-      const cap = Math.min(INLINE_IMAGE_MAX_BYTES, remaining);
+      const cap = Math.min(MESSAGING_INBOUND_IMAGE_MAX_BYTES, remaining);
       try {
         const { data, mimeType } = await image.fetch(cap);
         budget.spend(this.now(), data.length);
@@ -1100,7 +1111,7 @@ export class MessagingBridge {
           // fixed by sending a smaller picture, the window's budget only by waiting.
           return {
             notice:
-              cap < INLINE_IMAGE_MAX_BYTES
+              cap < MESSAGING_INBOUND_IMAGE_MAX_BYTES
                 ? messagingImageBudgetNotice()
                 : messagingImageTooLargeNotice(),
           };

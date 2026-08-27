@@ -21,9 +21,9 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { Hono } from "hono";
-import type { Context, MiddlewareHandler } from "hono";
+import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { bodyLimitBytes } from "./services/attachment-limits.js";
+import { BODY_MAX_BYTES } from "./services/attachment-limits.js";
 import type { DatabaseSync } from "node:sqlite";
 import type { ServerConfig } from "./config.js";
 import { applyProxySettings, mergedNoProxy } from "./net/proxy.js";
@@ -393,7 +393,8 @@ export function createRuntimeApp(deps: AppDeps): Hono<AppEnv> {
     });
   }
 
-  // API common defenses: request body size cap (20MB) and write-request Content-Type (one of the CSRF MVP defenses).
+  // API common defenses: request body size cap and write-request Content-Type (one of the CSRF
+  // MVP defenses).
   //
   // The cap has to be measured, not read: a chunked request carries no `content-length` at all,
   // so a header check alone passes a body of any size — the sinks behind it (task input images,
@@ -401,40 +402,29 @@ export function createRuntimeApp(deps: AppDeps): Hono<AppEnv> {
   // header fast path when the length is declared and otherwise counts bytes off the stream,
   // aborting the moment the total crosses the cap.
   //
-  // The cap is DERIVED from the admin-settable attachment budget rather than fixed, because the
-  // two must not disagree in either direction: a cap below the budget would reject a request whose
-  // every attachment was individually legal (and with a body-shaped error, not a size-shaped one),
-  // while a cap permanently sized for the largest budget an admin *could* set would keep accepting
-  // 300MB bodies on a server whose limits were left at 10MB. It is re-derived per request, so an
-  // admin's change takes effect immediately; the middleware itself is memoized on the resulting
-  // size so the steady state allocates nothing.
-  let capped: { size: number; mw: MiddlewareHandler } | null = null;
+  // The cap is a constant, not a setting: it marks where the transport stops working rather than
+  // a policy about what a user may send (see services/attachment-limits.ts), and a request that
+  // reaches it is one no configuration could have made succeed.
+  const bodyCap = bodyLimit({
+    maxSize: BODY_MAX_BYTES,
+    // Its default is a bare text/plain 413; throw the App's own error instead so the
+    // response stays the documented `payload_too_large` body that every client handles.
+    onError: () => {
+      throw new HttpError(
+        413,
+        "payload_too_large",
+        `Request body exceeds the ${Math.floor(BODY_MAX_BYTES / (1024 * 1024))}MB limit.`,
+      );
+    },
+  });
   app.use("/api/*", (c, next) => {
-    // /api/hmr carries its own cap instead (hmr/routes.ts). A hot-update push is a whole
-    // web dist plus the platform's native assets, which has nothing to do with what one
-    // chat message may attach — and tying the two together points the wrong way: an admin
-    // turning the attachment budget down would shrink the channel a broken installation is
-    // repaired through, and a 413 there is the failure class that locks an operator out.
+    // /api/hmr carries its own, tighter cap instead (hmr/routes.ts). A hot-update push is a
+    // gzip stream whose inflated size has to be bounded too, and it is the endpoint a broken
+    // installation gets repaired through — the one place a 413 locks an operator out rather
+    // than inconveniencing them, so it states its own number where the rest of its transport
+    // rules live.
     if (c.req.path.startsWith("/api/hmr")) return next();
-    const size = bodyLimitBytes(deps.serverSettingsRepo.getAttachmentLimitsMb());
-    if (capped === null || capped.size !== size) {
-      capped = {
-        size,
-        mw: bodyLimit({
-          maxSize: size,
-          // Its default is a bare text/plain 413; throw the App's own error instead so the
-          // response stays the documented `payload_too_large` body that every client handles.
-          onError: () => {
-            throw new HttpError(
-              413,
-              "payload_too_large",
-              `Request body exceeds the ${Math.floor(size / (1024 * 1024))}MB limit.`,
-            );
-          },
-        }),
-      };
-    }
-    return capped.mw(c, next);
+    return bodyCap(c, next);
   });
   app.use("/api/*", jsonOnlyWrites);
 

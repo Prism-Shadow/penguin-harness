@@ -125,7 +125,7 @@ import { PAPERCLIP_ICON } from "./attached-files-banner";
 import { FileDropZone } from "./drop-zone";
 import { ContextGauge } from "./context-gauge";
 import { splitDroppedFiles } from "../../lib/file-drop";
-import { splitBySize } from "../../lib/upload-limits";
+import { compressImage, shouldCompress } from "../../lib/image-compress";
 
 const APPROVAL_MODES: ApprovalMode[] = ["always-ask", "read-only", "allow-all", "deny-all"];
 
@@ -640,15 +640,6 @@ interface Attachment {
   dataUrl: string;
 }
 
-/**
- * The upload caps are no longer compiled in here: they are admin-settable and arrive on
- * `/api/me` (see state/auth uploadLimits), so this check and the server's cannot drift apart and
- * the toast can name the number actually in force. Enforcing it client-side at all is still
- * worth it — an oversize pick is refused before the file is read, instead of costing the user a
- * base64 encode, an upload 33% larger than the file, and a 413 to learn the same thing. The
- * partition itself lives in lib/upload-limits (splitBySize), shared with the image intake.
- */
-
 /** Reads one file as a base64 data URL; resolves to null on a read error rather than rejecting, so one unreadable file cannot drop the rest of the batch. */
 function readDataUrl(file: File): Promise<string | null> {
   return new Promise((resolve) => {
@@ -1003,7 +994,7 @@ export function ChatInput({
   const { locale } = useLocale();
   // Admin-settable, delivered on /api/me: the pre-flight checks below and the numbers in their
   // messages both come from here, so what the composer refuses is exactly what the server would.
-  const { uploadLimits } = useAuth();
+  const { uploadPolicy } = useAuth();
   const [text, setText] = useState(initialText ?? "");
   /** Live text mirror for slash-command run() closures (the commands memo deliberately doesn't depend on text). */
   const textRef = useRef(text);
@@ -1904,26 +1895,30 @@ export function ChatInput({
     }
   };
 
+  /**
+   * Pasted, picked or dropped images.
+   *
+   * A large one is re-encoded before it is read (lib/image-compress), not refused: an inline
+   * image rides the conversation and the Trace, where its size is paid again on every history
+   * page and every resume, and shrinking it keeps that cost down without keeping the picture
+   * out. The threshold and the switch are the server's (uploadPolicy); an image under the
+   * threshold, or of a type a canvas round trip would change, goes up byte-for-byte.
+   *
+   * The whole batch is compressed before any of it is staged, so the thumbnails — and therefore
+   * the order the images reach the message in — follow the order they were picked in, not the
+   * order the re-encodes happened to finish in.
+   */
   const addFiles = (files: Iterable<File>) => {
-    // Images had no size check at all: an oversize paste was read into a data URL, JSON'd and
-    // uploaded, freezing the tab on the way to a generic body-cap 413. They are capped well
-    // below file attachments on purpose — an inline image rides the conversation and the Trace,
-    // where its size is paid again on every history page and every resume.
     const imageFiles: File[] = [];
     for (const file of files) if (file.type.startsWith("image/")) imageFiles.push(file);
-    const { accepted, rejected } = splitBySize(imageFiles, uploadLimits.imageMaxMb);
-    for (const file of rejected) {
-      toastError(S.chat.attachmentTooLarge(file.name, uploadLimits.imageMaxMb));
-    }
-    for (const file of accepted) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === "string") {
-          setImages((prev) => [...prev, reader.result as string]);
-        }
-      };
-      reader.readAsDataURL(file);
-    }
+    if (imageFiles.length === 0) return;
+    void Promise.all(
+      imageFiles.map((file) => (shouldCompress(file, uploadPolicy) ? compressImage(file) : file)),
+    ).then(async (prepared) => {
+      const urls = await Promise.all(prepared.map(readDataUrl));
+      const staged = urls.filter((url) => url !== null);
+      if (staged.length > 0) setImages((prev) => [...prev, ...staged]);
+    });
   };
 
   const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
@@ -1953,9 +1948,9 @@ export function ChatInput({
    * transport images use — a draft has no Session to upload to yet. The name and size come
    * from the File itself and only feed the chip; the server decides the on-disk name.
    *
-   * Oversize files are rejected from `File.size` before anything is read, the same way trace
-   * import does it (traces-page.tsx): base64-encoding a rejected file in the tab first would
-   * cost the user a freeze and a 33%-larger upload to earn the same 413.
+   * No size check: the bytes go to the scratchpad and come back through the model's own file
+   * tools, so nothing downstream scales with them, and the only ceiling left is the request
+   * body's — which no ordinary pick reaches.
    *
    * The whole batch is read before any of it is staged, so the chips — and therefore the
    * `[attached file: …]` lines the message ends up with — follow the order the files were
@@ -1963,10 +1958,7 @@ export function ChatInput({
    */
   const addAttachments = (files: Iterable<File>) => {
     if (goalOn) return; // goal input is text-only, same rule as images
-    const { accepted: picked, rejected } = splitBySize(files, uploadLimits.attachmentMaxMb);
-    for (const file of rejected) {
-      toastError(S.chat.attachmentTooLarge(file.name, uploadLimits.attachmentMaxMb));
-    }
+    const picked = [...files];
     if (picked.length === 0) return;
     void Promise.all(picked.map(readDataUrl)).then((urls) => {
       const staged = picked.flatMap((file, i) =>
@@ -1984,8 +1976,7 @@ export function ChatInput({
   /**
    * Files dropped onto the chat area (see FileDropZone): one batch, routed into the SAME two
    * intakes the "+" menu and paste use — images join the pasted-image pipeline, everything
-   * else joins the file-attachment pipeline (each with its own cap and the same rejection toast,
-   * see uploadLimits). Goal mode takes
+   * else joins the file-attachment pipeline. Goal mode takes
    * images but not files (nothing folds a file into the re-injected objective — the "+" menu
    * grays its file entry out for the same reason); a drop has no disabled affordance to gray,
    * so the refusal is said out loud instead of silently swallowing the files.

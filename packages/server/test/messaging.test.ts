@@ -35,9 +35,9 @@ import type { ApproveFn, OmniMessage } from "@prismshadow/penguin-core";
 import type { FeishuBindingResponse, FeishuTestResponse } from "../src/api/types.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
-import { INLINE_IMAGE_MAX_BYTES } from "../src/services/attachment-limits.js";
 import {
   MESSAGING_APPROVAL_NOTICE,
+  MESSAGING_INBOUND_IMAGE_MAX_BYTES,
   MESSAGING_MAX_LINE_MESSAGES,
   MESSAGING_OUTBOUND_FILE_MAX_COUNT,
   MESSAGING_OUTBOUND_IMAGE_MAX_BYTES,
@@ -1487,7 +1487,7 @@ describe("messaging binding routes and bridge", () => {
     expect(part.image_url).toBe(`data:image/png;base64,${IMAGE_BYTES.toString("base64")}`);
     // Downloaded from the message that carried it, under the shared inline-image ceiling.
     expect(fake.allImageFetches()).toEqual([
-      { messageId: "om_img_1", fileKey: "img_v2_abc", maxBytes: INLINE_IMAGE_MAX_BYTES },
+      { messageId: "om_img_1", fileKey: "img_v2_abc", maxBytes: MESSAGING_INBOUND_IMAGE_MAX_BYTES },
     ]);
     // Nothing about the picture is announced back to the chat; the reply mirrors as usual.
     await waitFor(() => fake.allSends().length > 0);
@@ -1527,7 +1527,7 @@ describe("messaging binding routes and bridge", () => {
     await bindEnabled(SID);
     // One byte past the ceiling: the cap refuses it, and the user fixes that by sending
     // something smaller — a different notice from a failure, and nobody's fault.
-    fake.imageBytes = Buffer.alloc(INLINE_IMAGE_MAX_BYTES + 1, 0x41);
+    fake.imageBytes = Buffer.alloc(MESSAGING_INBOUND_IMAGE_MAX_BYTES + 1, 0x41);
     await fake.lastConnection().fire({
       chatId: "oc_chat_1",
       chatType: "p2p",

@@ -5,20 +5,18 @@
  * and rejection), and merge semantics (an omitted field keeps its current value; a
  * rejected PUT writes nothing).
  *
- * The upload limits ride the same route and are covered here too: their defaults, the bounded
- * range (the reason "100GB" is a clear refusal rather than an accepted number), the relation
- * between the two — the total may not sit below the per-file cap, checked against the EFFECTIVE
- * post-write pair so a one-field PUT cannot create an unsendable configuration — and the same
- * atomicity guarantee the proxy fields have.
+ * The upload policy rides the same route and is covered here too: the compression switch and its
+ * threshold, their defaults, the bounded range (the reason "100GB" is a clear refusal rather than
+ * an accepted number), and the same atomicity guarantee the proxy fields have.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ServerSettingsResponse } from "../src/api/types.js";
 import {
-  DEFAULT_ATTACHMENT_MAX_MB,
-  DEFAULT_ATTACHMENT_TOTAL_MB,
-  MAX_ATTACHMENT_MB,
-  MIN_ATTACHMENT_MB,
-} from "../src/services/attachment-limits.js";
+  DEFAULT_IMAGE_COMPRESSION,
+  DEFAULT_IMAGE_COMPRESSION_OVER_MB,
+  MAX_IMAGE_COMPRESSION_OVER_MB,
+  MIN_IMAGE_COMPRESSION_OVER_MB,
+} from "../src/services/image-compression.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -183,99 +181,84 @@ describe("admin server settings", () => {
     expect(settings.proxyUrl).toBe("http://proxy.corp.example:8080");
   });
 
-  it("upload limits: defaults with no rows, and a 403 for a non-admin on both verbs", async () => {
+  it("upload policy: defaults with no rows, and a 403 for a non-admin on both verbs", async () => {
     const { settings } = await getSettings();
-    expect(settings.attachmentMaxMb).toBe(DEFAULT_ATTACHMENT_MAX_MB);
-    expect(settings.attachmentTotalMb).toBe(DEFAULT_ATTACHMENT_TOTAL_MB);
+    expect(settings.imageCompression).toBe(DEFAULT_IMAGE_COMPRESSION);
+    expect(settings.imageCompressionOverMb).toBe(DEFAULT_IMAGE_COMPRESSION_OVER_MB);
     const { cookie } = await provisionUser(t.app, "limitless");
     const api = apiClient(t.app, cookie);
     expect((await api.get("/api/admin/settings")).status).toBe(403);
-    expect((await api.put("/api/admin/settings", { attachmentMaxMb: 1 })).status).toBe(403);
+    expect((await api.put("/api/admin/settings", { imageCompression: false })).status).toBe(403);
     // The refused PUT wrote nothing.
-    expect(t.deps.serverSettingsRepo.getAttachmentMaxMb()).toBe(DEFAULT_ATTACHMENT_MAX_MB);
+    expect(t.deps.serverSettingsRepo.getImageCompression()).toBe(DEFAULT_IMAGE_COMPRESSION);
   });
 
-  it("upload limits: a valid PUT persists, echoes, and needs no restart to take effect", async () => {
+  it("upload policy: a valid PUT persists, echoes, and needs no restart to take effect", async () => {
     const res = await admin.put("/api/admin/settings", {
-      attachmentMaxMb: 25,
-      attachmentTotalMb: 40,
+      imageCompression: false,
+      imageCompressionOverMb: 12,
     });
     expect(res.status).toBe(200);
     const echoed = ((await res.json()) as ServerSettingsResponse).settings;
-    expect(echoed.attachmentMaxMb).toBe(25);
-    expect(echoed.attachmentTotalMb).toBe(40);
-    // Round-trip through the repo, which is what the validators and the body cap read per
-    // request — the response echoing the right number would not prove the server uses it.
-    expect(t.deps.serverSettingsRepo.getAttachmentLimitsMb()).toEqual({
-      attachmentMaxMb: 25,
-      attachmentTotalMb: 40,
+    expect(echoed.imageCompression).toBe(false);
+    expect(echoed.imageCompressionOverMb).toBe(12);
+    // Round-trip through the repo, which is what /api/me reads per request — the response
+    // echoing the right number would not prove the server stored it.
+    expect(t.deps.serverSettingsRepo.getImageCompressionSettings()).toEqual({
+      imageCompression: false,
+      imageCompressionOverMb: 12,
     });
   });
 
-  it("upload limits: out-of-range values are refused with invalid_attachment_limit", async () => {
+  it("upload policy: the threshold reaches every composer through /api/me", async () => {
+    await admin.put("/api/admin/settings", { imageCompressionOverMb: 9 });
+    const { cookie } = await provisionUser(t.app, "composer");
+    const me = await apiClient(t.app, cookie).get("/api/me");
+    const policy = ((await me.json()) as { uploadPolicy: Record<string, unknown> }).uploadPolicy;
+    expect(policy.imageCompressionOverMb).toBe(9);
+    // The bounds ride along, so the admin form never compiles its own copy of the range.
+    expect(policy.imageCompressionMinMb).toBe(MIN_IMAGE_COMPRESSION_OVER_MB);
+    expect(policy.imageCompressionMaxMb).toBe(MAX_IMAGE_COMPRESSION_OVER_MB);
+  });
+
+  it("upload policy: out-of-range thresholds are refused with invalid_image_compression", async () => {
     // 102400 is "100GB" typed into a MB field — the case the bounds exist for. Zero, a negative,
     // a fraction and a string are the other ways a form can produce nonsense.
-    for (const bad of [102400, MAX_ATTACHMENT_MB + 1, 0, -5, 1.5, "100", null]) {
-      const res = await admin.put("/api/admin/settings", { attachmentMaxMb: bad });
+    for (const bad of [102400, MAX_IMAGE_COMPRESSION_OVER_MB + 1, 0, -5, 1.5, "100", null]) {
+      const res = await admin.put("/api/admin/settings", { imageCompressionOverMb: bad });
       expect(res.status, JSON.stringify(bad)).toBe(400);
       expect(((await res.json()) as { error: { code: string } }).error.code).toBe(
-        "invalid_attachment_limit",
+        "invalid_image_compression",
       );
     }
     // Nothing was written by any of them.
-    expect(t.deps.serverSettingsRepo.getAttachmentMaxMb()).toBe(DEFAULT_ATTACHMENT_MAX_MB);
+    expect(t.deps.serverSettingsRepo.getImageCompressionOverMb()).toBe(
+      DEFAULT_IMAGE_COMPRESSION_OVER_MB,
+    );
   });
 
-  it("upload limits: the extremes of the allowed range are accepted", async () => {
-    const res = await admin.put("/api/admin/settings", {
-      attachmentMaxMb: MIN_ATTACHMENT_MB,
-      attachmentTotalMb: MIN_ATTACHMENT_MB,
+  it("upload policy: the extremes of the allowed range are accepted", async () => {
+    const min = await admin.put("/api/admin/settings", {
+      imageCompressionOverMb: MIN_IMAGE_COMPRESSION_OVER_MB,
     });
-    expect(res.status).toBe(200);
+    expect(min.status).toBe(200);
     const max = await admin.put("/api/admin/settings", {
-      attachmentMaxMb: MAX_ATTACHMENT_MB,
-      attachmentTotalMb: MAX_ATTACHMENT_MB,
+      imageCompressionOverMb: MAX_IMAGE_COMPRESSION_OVER_MB,
     });
     expect(max.status).toBe(200);
-    expect(t.deps.serverSettingsRepo.getAttachmentMaxMb()).toBe(MAX_ATTACHMENT_MB);
-  });
-
-  it("upload limits: the total may not sit below the per-file cap", async () => {
-    const both = await admin.put("/api/admin/settings", {
-      attachmentMaxMb: 50,
-      attachmentTotalMb: 20,
-    });
-    expect(both.status).toBe(400);
-    expect(((await both.json()) as { error: { code: string } }).error.code).toBe(
-      "invalid_attachment_limit",
+    expect(t.deps.serverSettingsRepo.getImageCompressionOverMb()).toBe(
+      MAX_IMAGE_COMPRESSION_OVER_MB,
     );
-    expect(t.deps.serverSettingsRepo.getAttachmentMaxMb()).toBe(DEFAULT_ATTACHMENT_MAX_MB);
   });
 
-  it("upload limits: the relation is checked against the effective pair, not just the body", async () => {
-    await admin.put("/api/admin/settings", { attachmentMaxMb: 10, attachmentTotalMb: 12 });
-    // Raising ONLY the per-file cap past the stored total would leave a legal single attachment
-    // unsendable, so it is refused even though the body carries no total at all.
-    const raise = await admin.put("/api/admin/settings", { attachmentMaxMb: 100 });
-    expect(raise.status).toBe(400);
-    // Lowering ONLY the total below the stored per-file cap is the same fault from the other side.
-    const lower = await admin.put("/api/admin/settings", { attachmentTotalMb: 5 });
-    expect(lower.status).toBe(400);
-    // Neither attempt changed anything.
-    expect(t.deps.serverSettingsRepo.getAttachmentLimitsMb()).toEqual({
-      attachmentMaxMb: 10,
-      attachmentTotalMb: 12,
-    });
-  });
-
-  it("upload limits: a PUT mixing a good proxy field with a bad limit writes neither", async () => {
+  it("upload policy: a PUT mixing a good proxy field with a bad threshold writes neither", async () => {
     const res = await admin.put("/api/admin/settings", {
       proxyForApp: false,
-      attachmentMaxMb: 999999,
+      imageCompressionOverMb: 999999,
     });
     expect(res.status).toBe(400);
     const { settings } = await getSettings();
     expect(settings.proxyForApp).toBe(true);
-    expect(settings.attachmentMaxMb).toBe(DEFAULT_ATTACHMENT_MAX_MB);
+    expect(settings.imageCompressionOverMb).toBe(DEFAULT_IMAGE_COMPRESSION_OVER_MB);
   });
 });

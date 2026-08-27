@@ -5,10 +5,11 @@
  */
 import type { DatabaseSync } from "node:sqlite";
 import {
-  clampAttachmentMb,
-  DEFAULT_ATTACHMENT_MAX_MB,
-  DEFAULT_ATTACHMENT_TOTAL_MB,
-} from "../../services/attachment-limits.js";
+  clampImageCompressionOverMb,
+  DEFAULT_IMAGE_COMPRESSION,
+  DEFAULT_IMAGE_COMPRESSION_OVER_MB,
+} from "../../services/image-compression.js";
+import type { ImageCompressionSettings } from "../../services/image-compression.js";
 
 /** Key of the "application uses the proxy" switch (the server's own outbound dispatcher); default on. */
 const PROXY_FOR_APP_KEY = "proxy_for_app";
@@ -27,11 +28,11 @@ const LEGACY_USE_SYSTEM_PROXY_KEY = "use_system_proxy";
 /** Key of the explicit proxy address; absent/null = follow the proxy environment variables. */
 const PROXY_URL_KEY = "proxy_url";
 
-/** Key of the per-file composer attachment limit, in whole MB; default DEFAULT_ATTACHMENT_MAX_MB. */
-const ATTACHMENT_MAX_MB_KEY = "attachment_max_mb";
+/** Key of the "compress large images in the composer" switch; default DEFAULT_IMAGE_COMPRESSION. */
+const IMAGE_COMPRESSION_KEY = "image_compression";
 
-/** Key of the per-message total attachment limit, in whole MB; default DEFAULT_ATTACHMENT_TOTAL_MB. */
-const ATTACHMENT_TOTAL_MB_KEY = "attachment_total_mb";
+/** Key of the size above which an image is re-encoded, in whole MB; default DEFAULT_IMAGE_COMPRESSION_OVER_MB. */
+const IMAGE_COMPRESSION_OVER_MB_KEY = "image_compression_over_mb";
 
 export class ServerSettingsRepo {
   constructor(private readonly db: DatabaseSync) {}
@@ -96,51 +97,48 @@ export class ServerSettingsRepo {
     this.set(PROXY_URL_KEY, JSON.stringify(value));
   }
 
+  /** Whether the composer re-encodes images above the threshold before uploading them. */
+  getImageCompression(): boolean {
+    const raw = this.get(IMAGE_COMPRESSION_KEY);
+    if (raw === null) return DEFAULT_IMAGE_COMPRESSION;
+    return raw !== "false";
+  }
+
+  setImageCompression(value: boolean): void {
+    this.set(IMAGE_COMPRESSION_KEY, JSON.stringify(value));
+  }
+
   /**
-   * Shared read for the two attachment limits: the stored whole-MB number, clamped back into the
-   * legal range, or the built-in default when the row is absent or unreadable. Values only ever
-   * enter through the validated PUT, so the clamp is for a database that predates a change to the
-   * bounds (or was hand-edited) — using the nearest legal number is a better answer there than
-   * refusing to serve uploads at all.
+   * The size above which an image is re-encoded, in whole MB. Clamped on read: values only ever
+   * enter through the validated PUT, so this covers a database that predates a change to the
+   * bounds (or was hand-edited), where the nearest legal number beats refusing to serve.
    */
-  private getAttachmentMb(key: string, fallback: number): number {
-    const raw = this.get(key);
-    if (raw === null) return fallback;
+  getImageCompressionOverMb(): number {
+    const raw = this.get(IMAGE_COMPRESSION_OVER_MB_KEY);
+    if (raw === null) return DEFAULT_IMAGE_COMPRESSION_OVER_MB;
     try {
       const value: unknown = JSON.parse(raw);
-      return typeof value === "number" ? clampAttachmentMb(value, fallback) : fallback;
+      return typeof value === "number"
+        ? clampImageCompressionOverMb(value, DEFAULT_IMAGE_COMPRESSION_OVER_MB)
+        : DEFAULT_IMAGE_COMPRESSION_OVER_MB;
     } catch {
-      return fallback;
+      return DEFAULT_IMAGE_COMPRESSION_OVER_MB;
     }
   }
 
-  /** Per-file composer attachment cap, in whole MB. */
-  getAttachmentMaxMb(): number {
-    return this.getAttachmentMb(ATTACHMENT_MAX_MB_KEY, DEFAULT_ATTACHMENT_MAX_MB);
-  }
-
-  setAttachmentMaxMb(value: number): void {
-    this.set(ATTACHMENT_MAX_MB_KEY, JSON.stringify(value));
-  }
-
-  /** Per-message total attachment cap (decoded bytes), in whole MB. */
-  getAttachmentTotalMb(): number {
-    return this.getAttachmentMb(ATTACHMENT_TOTAL_MB_KEY, DEFAULT_ATTACHMENT_TOTAL_MB);
-  }
-
-  setAttachmentTotalMb(value: number): void {
-    this.set(ATTACHMENT_TOTAL_MB_KEY, JSON.stringify(value));
+  setImageCompressionOverMb(value: number): void {
+    this.set(IMAGE_COMPRESSION_OVER_MB_KEY, JSON.stringify(value));
   }
 
   /**
-   * The pair as one value — what the validators, the body cap and `/api/me` all read. Kept here
-   * so no caller has to remember that the two numbers are only meaningful together (the total is
-   * never below the per-file cap; the PUT enforces that against the effective post-write pair).
+   * The pair as one value — what `/api/me` and the settings form both read. The switch and the
+   * threshold are only meaningful together: a threshold is a statement about an inactive feature
+   * while the switch is off, and the form edits both in one PUT for that reason.
    */
-  getAttachmentLimitsMb(): { attachmentMaxMb: number; attachmentTotalMb: number } {
+  getImageCompressionSettings(): ImageCompressionSettings {
     return {
-      attachmentMaxMb: this.getAttachmentMaxMb(),
-      attachmentTotalMb: this.getAttachmentTotalMb(),
+      imageCompression: this.getImageCompression(),
+      imageCompressionOverMb: this.getImageCompressionOverMb(),
     };
   }
 }

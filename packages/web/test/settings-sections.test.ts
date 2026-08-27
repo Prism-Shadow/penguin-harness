@@ -62,7 +62,7 @@ describe("visibleSettingsSections", () => {
   });
 
   it("gives a non-admin their own pages and nothing server-global", () => {
-    // Not "fewer pages" — the exact list. Proxy, upload limits and user management are
+    // Not "fewer pages" — the exact list. Proxy, uploads and user management are
     // admin surfaces, and the whole point of dropping them is that a non-admin is never
     // told they exist. Updating is not among them either way: it lives in the sidebar user
     // menu, outside this dialog, for every account.

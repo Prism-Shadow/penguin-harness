@@ -15,12 +15,11 @@ import { readJson, requireString } from "../validate.js";
 import type { AppDeps } from "../../app.js";
 import { resolvePreviewTarget } from "../../services/preview-token.js";
 import { validateDraftShortcuts } from "../../services/draft-shortcuts.js";
+import { MAX_ATTACHMENT_COUNT } from "../../services/attachment-limits.js";
 import {
-  INLINE_IMAGE_MAX_MB,
-  MAX_ATTACHMENT_COUNT,
-  MAX_ATTACHMENT_MB,
-  MIN_ATTACHMENT_MB,
-} from "../../services/attachment-limits.js";
+  MAX_IMAGE_COMPRESSION_OVER_MB,
+  MIN_IMAGE_COMPRESSION_OVER_MB,
+} from "../../services/image-compression.js";
 
 export function meRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
@@ -35,21 +34,20 @@ export function meRoutes(deps: AppDeps): Hono<AppEnv> {
       deps.config.previewOrigin,
       deps.config,
     );
-    // Read per request, not captured once: an admin's change to the limits reaches an already
+    // Read per request, not captured once: an admin's change to the policy reaches an already
     // open tab on its next /api/me (a reload, or the settings dialog's own refresh) without a
-    // server restart, and a tab that never refetches simply keeps proposing the older number —
-    // the server re-validates every upload against the current one regardless.
+    // server restart. A tab that never refetches simply keeps applying the older threshold —
+    // the policy shapes what a client uploads, it does not gate what the server accepts.
     return c.json({
       user: toUserInfo(c.var.user),
       previewIsolated: target !== null,
       desktopMode: deps.desktop !== null,
       sessionVia: c.var.sessionVia,
-      uploadLimits: {
-        ...deps.serverSettingsRepo.getAttachmentLimitsMb(),
+      uploadPolicy: {
         attachmentMaxCount: MAX_ATTACHMENT_COUNT,
-        imageMaxMb: INLINE_IMAGE_MAX_MB,
-        attachmentLimitMinMb: MIN_ATTACHMENT_MB,
-        attachmentLimitMaxMb: MAX_ATTACHMENT_MB,
+        ...deps.serverSettingsRepo.getImageCompressionSettings(),
+        imageCompressionMinMb: MIN_IMAGE_COMPRESSION_OVER_MB,
+        imageCompressionMaxMb: MAX_IMAGE_COMPRESSION_OVER_MB,
       },
     } satisfies MeResponse);
   });

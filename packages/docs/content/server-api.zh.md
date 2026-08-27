@@ -10,7 +10,7 @@ PenguinHarness Server 提供一套同源 HTTP API，自带的 Web App 与其他 
 - 技术栈：Hono + @hono/node-server，要求 Node >= 24；
 - 存储：SQLite（内置 `node:sqlite`，WAL 模式）仅存放索引与聚合数据——用户、登录会话、Project 授权、Agent / Session 索引、用量、UI 偏好、错误记录与 Schedule 状态；Agent、Trace 与 Workspace 数据全部以文件形式存放在 `~/.penguin/data` 下，与 CLI / SDK 共享，见[配置参考](/configuration)；
 - 监听：默认 `127.0.0.1:7364`，可用环境变量 `PORT` / `HOST` 调整；
-- 请求体：写请求仅接受 JSON（Content-Type 校验，CSRF 防线之一），其上限**由附件预算推导**而非固定值——附件以 base64 `data:` URL 随请求送达（膨胀 4/3），故上限为 `base64(attachmentTotalMb) + 一张内嵌图片与 JSON 外壳的余量`，在默认 120MB 合计下约 190MB，管理员调低附件上限时随之回落。按读取到的字节数统计，未声明长度（分块传输）的请求同样受限；
+- 请求体：写请求仅接受 JSON（Content-Type 校验，CSRF 防线之一），上限 **384MB**。这不是一条关于「允许上传多大」的策略，而是传输本身失效的位置：请求体被整体缓冲并作为单个字符串 JSON 解析，而 V8 对字符串长度的上限约为 512MB。按读取到的字节数统计，未声明长度（分块传输）的请求同样受限。`/api/hmr` 是例外——热更新推送是一条 gzip 流，自带 256MB 上限，压缩体与解压后的体积同时受限；
 - 错误响应统一为：
 
 ```text
@@ -90,7 +90,7 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | /api/admin/settings | 服务端全局设置：`{settings: {proxyForApp, proxyForAgent, proxyUrl, attachmentMaxMb, attachmentTotalMb}}` |
+| GET | /api/admin/settings | 服务端全局设置：`{settings: {proxyForApp, proxyForAgent, proxyUrl, imageCompression, imageCompressionOverMb}}` |
 | PUT | /api/admin/settings | 更新设置（字段可省略，省略即保持现值），返回更新后的完整设置 |
 
 代理设置为两个独立开关共享一个可选的显式地址；修改即时生效（对新发起的连接与新派生的子进程），无需重启：
@@ -101,12 +101,11 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 任一开启状态下生效的 NO_PROXY 恒包含 `localhost,127.0.0.1,::1`（回环不代理）。
 
-上传限制是两个整数 MB，约束输入框的文件附件；二者均在下一次请求即生效、无需重启（校验与请求体上限都按请求读取）：
+上传策略是服务端关于「大图片该如何处理」的声明。上传本身没有体积限制：附件写入 Session scratchpad、由模型按路径读回，下游没有任何环节的开销随它增长，唯一的天花板是上面那条请求体上限。对话内嵌**图片**则不同——它进入对话、写入轨迹，并在每次翻阅历史、每次恢复会话时被重新读回——因此 Web App 不再拒绝它，而是在上传前先缩放并重新编码：
 
-- `attachmentMaxMb`（默认 100）为单个附件上限，超出返回 `413` `file_too_large`。
-- `attachmentTotalMb`（默认 120）为单条消息解码后的合计上限，超出返回 `413` `payload_too_large`。
-- PUT 校验：两者都必须是 1 到 200 之间的整数，且**生效后**的合计值（本次 PUT 给出的值，或本次不修改时的存量值）不得低于生效后的单个上限。其余一律 `400`，错误码 `invalid_attachment_limit`，且被拒绝的 PUT 不写入任何字段。
-- 不可配置项：单条消息的附件数量（20）与内嵌图片上限（20MB，超出返回 `413` `image_too_large`）。内嵌图片会写入轨迹，并在每次翻阅历史与恢复会话时被重新读取，因此刻意不随附件上限放宽；`GET /api/me` 会在 `uploadLimits` 下报告以上全部数值，客户端据此按当前生效的上限预先校验。
+- `imageCompression`（默认 `true`）是开关。
+- `imageCompressionOverMb`（默认 4）是触发重新编码的体积；小于它的图片按原样上传。PUT 校验：必须是 1 到 64 之间的整数，其余一律 `400`，错误码 `invalid_image_compression`，且被拒绝的 PUT 不写入任何字段。
+- `GET /api/me` 在 `uploadPolicy` 下报告二者，并附带取值范围与单条消息的附件数量上限（20，超出返回 `413` `too_many_files`）。该策略塑造客户端上传什么，而不是一道关卡：忽略它的 API 调用方不会被拒绝。
 
 ### 机器（仅管理员）
 
@@ -371,10 +370,9 @@ interface TaskCreateRequest {
 }
 type TaskInputPart =
   | { type: "text"; text: string }
-  | { type: "image_url"; imageUrl: string }    // 粘贴图片以 data URL 上送，≤20MB（超出返回 413 image_too_large）
-  // 文件附件：base64 data: URL，默认单个 ≤100MB（超出返回 413 file_too_large），单次请求最多 20 个、
-  // 解码后合计 ≤120MB（超出返回 413 too_many_files / payload_too_large；三项校验都在落盘前完成）。
-  // 两个尺寸均可由管理员调整（PUT /api/admin/settings），并由 GET /api/me 下发。
+  | { type: "image_url"; imageUrl: string }    // 粘贴图片以 data URL 上送（自身没有体积上限）
+  // 文件附件：base64 data: URL，单个没有体积上限，单次请求最多 20 个（超出返回 413
+  // too_many_files，校验都在落盘前完成）；整个请求仍须落在请求体上限之内。
   // 服务端将其写入该 Session 的 scratchpad，并在消息文本末尾追加一行
   // `[attached file: <path>]`——模型按路径读取该文件。`fileName` 不得含路径分隔符；落盘时保留
   // 原有词形（`报告 2026.pdf` → `报告-2026.pdf`：非 ASCII 字符原样保留，对 shell 不友好的
