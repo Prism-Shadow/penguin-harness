@@ -133,6 +133,8 @@ import { EventsRoutes } from "./http/routes/events.js";
 import { PluginRegistryRoutes, PluginRoutes } from "./http/routes/plugins.js";
 import { InstalledPluginRoutes } from "./http/routes/plugins-installed.js";
 import { SuggestIdRoutes } from "./http/routes/suggest-id.js";
+import { LanguageRoutes } from "./http/routes/languages.js";
+import { Languages, LanguagesModule } from "./languages/service.js";
 import { TerminalModule } from "./terminal/manager.js";
 import { SessionApiRoutes } from "./http/routes/sessions.js";
 import { Admin, Auth, AuthSessions, Users } from "./mechanisms/identity.js";
@@ -450,6 +452,8 @@ export class CompanyModule {}
     PluginRegistryRoutes,
     InstalledPluginRoutes,
     SuggestIdRoutes,
+    LanguagesModule,
+    LanguageRoutes,
   ],
   exports: [Http, WebShell, UpdateCheck],
 })

@@ -23,11 +23,19 @@
  *
  * The code's own look — the surface metrics, the gutter, the editor overlay — is in prose.css.
  */
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import type { CSSProperties, ReactElement, ReactNode } from "react";
 import { useUiStrings } from "../../../strings";
 import { CopyButton } from "../../actions/copy-button/copy-button";
 import type { CodeHighlighter } from "./highlight-options";
+import { runtimeLanguageGeneration, subscribeToRuntimeLanguages } from "./code-languages";
 import "../prose/prose.css";
 
 export type { CodeHighlighter, CodeMark, HighlightOptions } from "./highlight-options";
@@ -110,6 +118,14 @@ export function CodeSurface({
 }) {
   const highlighter = resolveHighlighter(highlight, useCodeHighlighter());
   const [highlighted, setHighlighted] = useState<{ code: string; html: string }>();
+  // An extension's languages arrive after the first paint, so a block rendered before them
+  // resolved to "no grammar" and would stay unhighlighted for the life of the page. The
+  // generation is part of the effect's deps, so a registration re-runs the highlight once.
+  const languageGeneration = useSyncExternalStore(
+    subscribeToRuntimeLanguages,
+    runtimeLanguageGeneration,
+    runtimeLanguageGeneration,
+  );
 
   useEffect(() => {
     if (highlighter === null) {
@@ -140,7 +156,7 @@ export function CodeSurface({
       alive = false;
       window.clearTimeout(timer);
     };
-  }, [code, language, highlighter, lineNumbers, settleMs]);
+  }, [code, language, highlighter, lineNumbers, settleMs, languageGeneration]);
 
   // Split once per code change, and only where a gutter needs it: the digit count sizes the
   // gutter, and the unhighlighted fallback renders the lines it returns.

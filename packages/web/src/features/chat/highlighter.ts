@@ -14,6 +14,8 @@
  */
 import type { HighlightOptions } from "@prismshadow/penguin-ui";
 import type { HighlightRequest, HighlightResponse } from "./highlighter.worker";
+import { isRuntimeLanguage, resolveLanguage } from "@prismshadow/penguin-ui";
+import type { RuntimeGrammar } from "@prismshadow/penguin-ui/highlighter";
 
 /** undefined: not tried yet. null: unavailable here, use the main thread. */
 let worker: Worker | null | undefined;
@@ -63,16 +65,30 @@ export async function highlightToHtml(
   language: string,
   options: HighlightOptions = {},
 ): Promise<string | undefined> {
+  // An installed extension registers its languages on THIS thread (code-languages.ts); the
+  // worker's copy of that registry never hears of them. So the resolution is made here and an
+  // extension language travels with the request, with the URL its grammar is served at.
+  const resolved = resolveLanguage(language);
+  const runtime: RuntimeGrammar | undefined =
+    resolved !== undefined && isRuntimeLanguage(resolved)
+      ? { id: resolved, grammarUrl: `/api/languages/${encodeURIComponent(resolved)}/grammar` }
+      : undefined;
   const w = getWorker();
   if (w === null) {
     // Imported here and not at the top: the engine is already in the worker's bundle, and a
     // static import would put a second copy of it on the main thread for every reader whose
     // worker works — which is all of them.
     const { highlight } = await import("@prismshadow/penguin-ui/highlighter");
-    return highlight(code, language, options);
+    return highlight(code, language, options, runtime);
   }
   const id = (nextId += 1);
-  const request: HighlightRequest = { id, code, language, options };
+  const request: HighlightRequest = {
+    id,
+    code,
+    language,
+    options,
+    ...(runtime !== undefined ? { runtime } : {}),
+  };
   const answer = await new Promise<HighlightResponse>((resolve) => {
     pending.set(id, resolve);
     w.postMessage(request);
