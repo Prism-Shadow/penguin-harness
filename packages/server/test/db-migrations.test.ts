@@ -9,10 +9,12 @@
 import { describe, expect, it } from "vitest";
 import type { DatabaseSync } from "node:sqlite";
 import {
+  IrreversibleMigrationError,
   LATEST_VERSION,
   MIGRATIONS,
   RestartRequiredError,
   migrate,
+  rollbackTo,
   schemaVersion,
 } from "../src/db/migrations.js";
 import { SCHEMA_SQL } from "../src/db/schema.js";
@@ -229,6 +231,118 @@ describe("0.2.4 → current", () => {
       );
       migrate(db);
       expect(db.prepare("SELECT user_id FROM users").all()).toEqual([{ user_id: "admin" }]);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+describe("rollbackTo", () => {
+  /** Every migration states an undo or states that it has none — never leaves it unsaid. */
+  it("every migration declares its down, one way or the other", () => {
+    for (const m of MIGRATIONS) {
+      expect(m, `${m.name} must declare down (a function or null)`).toHaveProperty("down");
+      expect(typeof m.down === "function" || m.down === null).toBe(true);
+    }
+  });
+
+  it("undoes a migration and moves the stamp back with it", () => {
+    const db = open024();
+    try {
+      migrate(db);
+      expect(schemaVersion(db)).toBe(LATEST_VERSION);
+
+      const r = rollbackTo(db, LATEST_VERSION - 1);
+      expect(r.from).toBe(LATEST_VERSION);
+      expect(r.to).toBe(LATEST_VERSION - 1);
+      expect(r.reverted).toEqual(["messaging-delivery-flags"]);
+      const cols = (
+        db.prepare("PRAGMA table_info(messaging_bindings)").all() as { name: string }[]
+      ).map((c) => c.name);
+      expect(cols).not.toContain("render_markdown");
+      expect(cols).not.toContain("final_reply_only");
+    } finally {
+      db.close();
+    }
+  });
+
+  /** The property that makes an undo an undo: up ∘ down ∘ up leaves the same schema as up. */
+  it("round-trips: up, down, up again lands on the same shape", () => {
+    const db = open024();
+    try {
+      migrate(db);
+      const afterUp = shape(db);
+
+      rollbackTo(db, 0);
+      expect(schemaVersion(db)).toBe(0);
+      expect(shape(db)).not.toBe(afterUp);
+
+      migrate(db);
+      expect(schemaVersion(db)).toBe(LATEST_VERSION);
+      expect(shape(db)).toBe(afterUp);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("reverts newest first, so a multi-step rollback is ordered", () => {
+    const db = open024();
+    try {
+      migrate(db);
+      const r = rollbackTo(db, 0);
+      expect(r.reverted).toEqual(["messaging-delivery-flags", "messaging-bindings"]);
+      expect(
+        db
+          .prepare(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'messaging_bindings'",
+          )
+          .get(),
+      ).toBeUndefined();
+    } finally {
+      db.close();
+    }
+  });
+
+  it("refuses whole when anything in range has no down, applying nothing", () => {
+    const db = open024();
+    try {
+      migrate(db);
+      const at = schemaVersion(db);
+      const before = shape(db);
+      const oneWay = {
+        version: LATEST_VERSION + 1,
+        name: "one-way",
+        swapSafe: true,
+        up(d: DatabaseSync) {
+          d.exec("CREATE TABLE one_way (x TEXT)");
+        },
+        down: null,
+      };
+      (MIGRATIONS as unknown as (typeof oneWay)[]).push(oneWay);
+      try {
+        migrate(db);
+        // Rolling back past the irreversible one is refused before anything is undone —
+        // including the reversible migrations sitting above it.
+        expect(() => rollbackTo(db, 0)).toThrow(IrreversibleMigrationError);
+        expect(schemaVersion(db)).toBe(at + 1);
+      } finally {
+        (MIGRATIONS as unknown as (typeof oneWay)[]).pop();
+        // Leave the fixture database as the other cases expect it.
+        db.exec("DROP TABLE IF EXISTS one_way");
+        db.exec(`PRAGMA user_version = ${at}`);
+        expect(shape(db)).toBe(before);
+      }
+    } finally {
+      db.close();
+    }
+  });
+
+  it("will not roll forward, and rejects a negative target", () => {
+    const db = open024();
+    try {
+      migrate(db);
+      expect(() => rollbackTo(db, LATEST_VERSION + 5)).toThrow(/already below/);
+      expect(() => rollbackTo(db, -1)).toThrow(/negative/);
     } finally {
       db.close();
     }
