@@ -95,8 +95,15 @@ const CHANNEL_LINKS: Record<MessagingChannel, { tutorial: string; credentialSour
     credentialSource: "https://t.me/BotFather",
   },
   qq: {
-    tutorial: "https://bot.q.qq.com/wiki/develop/api-v2/",
-    console: "https://q.qq.com/qqbot/#/developer/developer-setting",
+    // The wiki ROOT is the onboarding guide itself — "介绍与接入指南": registering a
+    // developer account, creating the bot, and the page its AppID and AppSecret are shown
+    // on. That is what a reader of the setup fold is after; the API reference one level
+    // down at /develop/api-v2/ answers a question they are not asking yet.
+    tutorial: "https://bot.q.qq.com/wiki/",
+    // The trailing slash is load-bearing and must not be tidied away: /qqbot/dashboard
+    // answers 404, while /qqbot/ alone serves a 700-byte shell that only lands anywhere
+    // because the retired hash-route app still redirects out of it.
+    credentialSource: "https://q.qq.com/qqbot/dashboard/",
   },
 };
 
@@ -694,7 +701,7 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
           <CornerLinkedField
             label={S.qq.appId}
             required
-            link={<ExternalLink href={links.console} label={S.messaging.console} />}
+            link={<ExternalLink href={links.credentialSource} label={S.messaging.console} />}
           >
             <Input
               size="sm"

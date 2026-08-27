@@ -88,6 +88,11 @@ describe("MessagingBindingBody", () => {
     const telegram = render(stateOf("telegram"));
     expect(telegram).toContain('href="https://t.me/BotFather"');
     expect(telegram).not.toContain("core.telegram.org/bots/api");
+    // QQ's trailing slash is load-bearing — https://q.qq.com/qqbot/dashboard answers 404 —
+    // so it is pinned here rather than left to be tidied away by someone normalizing URLs.
+    const qq = render(stateOf("qq"));
+    expect(qq).toContain('href="https://q.qq.com/qqbot/dashboard/"');
+    expect(qq).not.toContain('href="https://q.qq.com/qqbot/dashboard"');
   });
 
   it("labels that corner link with what it opens, never with a console Telegram has not got", () => {
@@ -105,6 +110,7 @@ describe("MessagingBindingBody", () => {
       expect(telegram).not.toContain(dict.messaging.console);
       // ...and the channels that do have a console keep it.
       expect(render(stateOf("feishu"))).toContain(dict.messaging.console);
+      expect(render(stateOf("qq"))).toContain(dict.messaging.console);
     }
   });
 
@@ -284,7 +290,9 @@ describe("MessagingBindingHelp", () => {
     const qq = renderToStaticMarkup(
       createElement(MessagingBindingHelp, { channel: "qq" as MessagingChannel }),
     );
-    expect(qq).toContain('href="https://bot.q.qq.com/wiki/develop/api-v2/"');
+    // The onboarding guide, not the API reference: this fold is read by someone creating a
+    // bot and looking for its credentials.
+    expect(qq).toContain('href="https://bot.q.qq.com/wiki/"');
     expect(qq).toContain(S.qq.setupSteps[0]);
     // The reply budget is how this channel delivers a long answer, not a fault: it rides the
     // "what binding does" fold, while the passive-reply failure rides troubleshooting.
