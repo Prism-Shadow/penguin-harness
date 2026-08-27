@@ -5,9 +5,15 @@
  * returns them all, and each channel owns a subtree with its own config shape — /feishu
  * and /telegram carry the same verb set, and a further channel adds its own.
  *
- * At most ONE of a Session's channels is enabled at a time: the state toggle refuses to
- * enable a channel while another is enabled (409 `another_channel_enabled` — turn that
- * one off first) and to enable a config whose secret is missing (its channel's 400).
+ * ENABLING the connection IS the binding, and disabling it is the unbind. Saving
+ * credentials therefore never conflicts across Sessions — any number of Sessions may keep
+ * the same Feishu app or Telegram bot saved, each with its own config and last-chat
+ * memory — and both exclusivity rules sit on the state toggle instead: it refuses to
+ * enable a channel while another channel of the SAME Session is enabled (409
+ * `another_channel_enabled`), and to enable an account ANOTHER Session already has
+ * enabled (409 `account_enabled_elsewhere` — one account has one event stream, so two
+ * live connections on it would race). A config whose secret is missing is refused with
+ * its channel's 400.
  *
  * Authorization mirrors the vault's split, through the sessions routes' resolveSession
  * pattern (404 never leaks a Session's existence): any Project member can read bindings
@@ -166,8 +172,14 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
   };
 
   /**
-   * The one-enabled-per-session rule plus the secret prerequisite, checked before an
-   * enable flips intent. Disabling is always allowed.
+   * Everything checked before an enable flips intent: the one-enabled-per-session rule,
+   * the one-connection-per-account rule across Sessions, and the secret prerequisite.
+   * Disabling is never gated — it is the unbind, the only way to release an account.
+   *
+   * The account conflict says nothing about who holds the connection, on purpose.
+   * Authorization here proved access to the CALLER's Session only; the holder may sit in a
+   * Project this user cannot see, so its title or id would be a leak — and the remedy,
+   * turning that connection off where it is on, does not depend on hearing it named.
    */
   const guardEnable = (sessionId: string, channel: string, row: MessagingBindingRow): void => {
     const enabledRow = deps.messagingRepo.findEnabled(sessionId);
@@ -176,6 +188,14 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
         409,
         "another_channel_enabled",
         "Another channel's connection is enabled on this Session: disable it first.",
+      );
+    }
+    const holder = deps.messagingRepo.findEnabledByAccount(channel, row.accountId);
+    if (holder !== null && holder.sessionId !== sessionId) {
+      throw new HttpError(
+        409,
+        "account_enabled_elsewhere",
+        "Another Session has this bot's connection enabled: turn it off there first.",
       );
     }
     const secret =
@@ -239,23 +259,17 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
       }
       appSecret = stored;
     }
-    const result = deps.messagingRepo.upsert({
+    const saved = deps.messagingRepo.upsert({
       sessionId: row.sessionId,
       channel: "feishu",
       accountId: appId,
       config: { appId, appSecret, baseDomain },
     });
-    if (!result.ok) {
-      throw new HttpError(
-        409,
-        "feishu_app_in_use",
-        "This Feishu app is already bound to another Session.",
-      );
-    }
     // Save persists credentials only and never flips the connection — with one deliberate
     // exception: an ENABLED binding's connector restarts with the new credentials, so the
-    // stored config and the live connection never diverge. A disabled binding stays dark.
-    if (result.row.enabled) await deps.messaging.sync(row.sessionId);
+    // stored config and the live connection never diverge. A disabled binding stays dark,
+    // whoever else has the same app saved or even connected: only the enable is exclusive.
+    if (saved.enabled) await deps.messaging.sync(row.sessionId);
     return c.json(feishuResponse(row.sessionId));
   });
 
@@ -390,21 +404,14 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
       botToken = stored;
       botId = existing.accountId;
     }
-    const result = deps.messagingRepo.upsert({
+    const saved = deps.messagingRepo.upsert({
       sessionId: row.sessionId,
       channel: "telegram",
       accountId: botId,
       config: { botToken },
     });
-    if (!result.ok) {
-      throw new HttpError(
-        409,
-        "telegram_bot_in_use",
-        "This Telegram bot is already bound to another Session.",
-      );
-    }
     // Same save/enable split as Feishu: only an enabled binding restarts its connector.
-    if (result.row.enabled) await deps.messaging.sync(row.sessionId);
+    if (saved.enabled) await deps.messaging.sync(row.sessionId);
     return c.json(telegramResponse(row.sessionId));
   });
 

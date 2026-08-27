@@ -1,0 +1,53 @@
+# 向后兼容
+
+- **Date:** 2026-08-26
+- **Type:** process
+- **Scope:** `server`
+- **Breaking:** yes — 对数据库是单向的：一旦两个 Session 保存了同一个机器人账号，本次改动之前的构建就再也打不开那个 `web.db`
+
+[English](2026-08-26-backward-compatibility.md)
+
+本批改动触及一处存量状态：`messaging_bindings` 上的 `idx_messaging_account` 唯一索引——凡是打开
+过带消息绑定的构建（0.2.5 及以后）的 `web.db` 都带有它。
+
+## 退役的账号唯一索引
+
+该索引让 `(channel, account_id)` 在全表唯一，这正是「一个机器人账号永久归属于一个 Session」的实
+现方式。改为[启用即绑定](2026-08-26-messaging-bind-by-enable.zh.md)之后，多个 Session 可以同时保
+存同一个账号，而该索引会拒绝第二次保存。若保留不动，新行为会在一次普通保存上变成 SQLite 的约束
+错误。
+
+选定方案：**打开时删除**，在 `openDatabase` 中既有的 `idx_usage_session` 删除语句旁加一条
+`DROP INDEX IF EXISTS idx_messaging_account`。同一次打开中 `SCHEMA_SQL` 会在同样的两列上创建
+`idx_messaging_by_account`，因此启用守卫所做的按账号查询仍然走索引，查询计划没有变化。删除是安
+全的，因为索引是派生物而非数据：每一行都原样保留；从未有过该索引的数据库不受影响（该语句是空
+操作）。
+
+用户无需做任何事：删除是自动的，在升级后第一次打开时执行，任何绑定、凭证与记住的会话都不改动。
+
+## 单向的那一半
+
+删除无法被旧构建撤销。本次改动之前的构建会在自己的 `SCHEMA_SQL` 中重新创建该唯一索引，而一旦出
+现重复的 `(channel, account_id)` 行——第二个 Session 保存同一个机器人时就会出现——该
+`CREATE UNIQUE INDEX` 会失败。`openDatabase` 在一切之前先执行 schema，因此失败发生在打开阶段：旧
+构建根本无法对该数据库启动。因此，在使用过新行为之后再降级，需要先删除重复的绑定行，每个账号只
+保留一个 Session 的那一行。从未把同一账号保存两次的数据库降级无需任何操作。
+
+## 这份兼容要留多久
+
+只要当前构建仍需打开 0.2.5 至 0.2.7 形成的 `web.db`，这条 `DROP INDEX` 就是必需的——实际上等于无
+限期保留，代价是每次打开多执行一条空操作语句。它只在允许破坏存量 `web.db` 的版本中移除，并且应
+当与紧挨着它的 `idx_usage_session` 删除语句一并清理，两者属于同一类债务。
+
+## 兼容性
+
+无需任何操作。升级后第一次打开即删除该索引；绑定、凭证与记住的会话都不受影响，从不把同一个机器
+人保存到两个 Session 的用户完全感觉不到差别。
+
+降级到本次改动之前的构建之前，若已有账号被保存在多个 Session 上，请先删除多余的行，否则旧服务端
+无法打开该数据库。可用以下语句检查：
+
+```sql
+SELECT channel, account_id, COUNT(*) FROM messaging_bindings
+GROUP BY channel, account_id HAVING COUNT(*) > 1;
+```

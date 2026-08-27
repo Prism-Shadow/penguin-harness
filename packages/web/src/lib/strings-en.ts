@@ -1829,6 +1829,9 @@ Scenarios:
     console: "Open developer console",
     /** The connection toggle (flips immediately, using the stored credentials). */
     enabled: "Enable connection",
+    /** The toggle's own tooltip: the switch IS the bind/unbind control, which a label reading "enable" does not say. */
+    bindByEnableHint:
+      "Enabling binds this bot to this conversation; turning it off releases it. The credentials stay saved either way.",
     /** Why the toggle is gated while the form has unsaved edits. */
     saveBeforeEnable: "Save the credentials first, then enable the connection",
     test: "Test connection",
@@ -1862,6 +1865,9 @@ Scenarios:
     /** The collapsed FAQ folds below the save area. */
     faqSetupTitle: "Set up the bot",
     faqWhatTitle: "What binding does",
+    /** The channel-neutral half of that fold: how the same bot moves between conversations. */
+    faqWhatBinding:
+      "The same bot can stay saved in several conversations, but only one of them may have its connection enabled at a time. To move it, turn the connection off where it is on and enable it here — no credential has to be deleted.",
     faqTroubleTitle: "Troubleshooting",
     /** Troubleshooting entries (bot must be messaged once; connection errors point at credentials; one poller per Telegram token). */
     troubleNoChat:
@@ -2093,14 +2099,10 @@ Scenarios:
       trace_not_found: "This Trace file no longer exists.",
       trace_session_exists:
         "This agent already has a Session with that id; a duplicate Trace cannot be imported.",
-      feishu_app_in_use:
-        "This Feishu app is already bound to another Session — unbind it there or use a different app.",
       feishu_secret_required: "App Secret is required.",
       feishu_not_bound: "This Session has no Feishu binding yet.",
       feishu_no_chat: "No Feishu message received yet — message the bot once in Feishu first.",
       feishu_send_failed: "Sending the Feishu message failed.",
-      telegram_bot_in_use:
-        "This Telegram bot is already bound to another Session — unbind it there or use a different bot.",
       telegram_token_required: "Bot Token is required.",
       telegram_token_invalid: "The Bot Token is malformed: it looks like <digits>:<secret>.",
       telegram_not_bound: "This Session has no Telegram binding yet.",
@@ -2109,6 +2111,10 @@ Scenarios:
       telegram_send_failed: "Sending the Telegram message failed.",
       another_channel_enabled:
         "Another channel's connection is enabled on this conversation: disable it first.",
+      // Deliberately names nothing about the other conversation: it may live in a Project
+      // this user cannot see, and the remedy does not depend on knowing which one it is.
+      account_enabled_elsewhere:
+        "This bot's connection is enabled on another conversation: turn it off there first.",
       messaging_disable_before_clear:
         "Disable this channel's connection before clearing its credential.",
     },

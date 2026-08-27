@@ -20,8 +20,13 @@
  * page's interaction: the field always starts empty, a stored secret shows as a masked
  * line under it with a "clear stored …" checkbox (typing unchecks it; applied on Save),
  * blank keeps the stored value — and clearing requires the channel's connection to be
- * disabled first. There is no unbind affordance: removing a credential IS the per-field
- * clear.
+ * disabled first. The connection switch IS the bind/unbind control — enabling binds the
+ * bot to this conversation, turning it off releases it, and the credentials stay saved
+ * through both, so several conversations may keep one bot saved and take turns holding it
+ * (the server refuses a second live one with 409 `account_enabled_elsewhere`, naming
+ * nothing about who holds it). That is semantics, so it is disclosed rather than parked on
+ * screen: the switch carries it as its tooltip and the "what binding does" fold states it
+ * in full. Deleting a stored credential remains a separate act — the per-field clear.
  *
  * The GET is re-polled while the host shows the editor (the hook's `poll` flag) so
  * connect/error flips show up live.
@@ -498,9 +503,14 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
         />
       </div>
       {/* The connection toggle + live status on one line: the Switch is the intent, the
-          tone-colored text is what the connection actually is right now. At most one
-          channel is enabled per Session — the hint under the probes names what gates the
-          switch. The error state's `lastError` gets its own line below rather than a track
+          tone-colored text is what the connection actually is right now. The switch's
+          title says the thing its label cannot — flipping it on is the bind, flipping it
+          off the unbind — as a tooltip rather than a line, because a permanent sentence
+          here would push everything below it down for a fact read once. At most one
+          channel is enabled per Session, and at most one conversation may hold a given
+          bot; the hint under the probes names what gates the switch, and only the
+          per-Session rule is knowable client-side — the cross-conversation one arrives as
+          the server's 409. The error state's `lastError` gets its own line below rather than a track
           on this one: the connection failures worth reporting name what to do about them
           ("another program is already polling this bot …"), and a share of a row that
           already carries a switch, a label and a status word truncates that to a couple of
@@ -508,7 +518,10 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
           the whole message on hover. */}
       <div className="space-y-1">
         <div className="flex flex-wrap items-center gap-2 text-xs">
-          <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+          <label
+            className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300"
+            title={S.messaging.bindByEnableHint}
+          >
             <Switch
               checked={facts.enabled}
               disabled={b.toggleBlocked}
@@ -682,6 +695,9 @@ export function MessagingBindingHelp({ channel }: { channel: MessagingChannel })
       </HelpFold>
       <HelpFold title={S.messaging.faqWhatTitle}>
         <p>{per.intro}</p>
+        {/* The channel's own flavor first, then the channel-neutral rule that owns the
+            question a reader actually arrives with: how the bot moves conversations. */}
+        <p className="mt-1.5">{S.messaging.faqWhatBinding}</p>
       </HelpFold>
       <HelpFold title={S.messaging.faqTroubleTitle}>
         <ul className="list-disc space-y-1 pl-4">

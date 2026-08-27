@@ -1,12 +1,14 @@
 /**
  * The messaging binding editor's rendered shape (src/features/messaging/messaging-binding-editor.tsx).
  *
- * Five rules this pins, all of which are invisible to a type checker: the form opens on its
+ * Six rules this pins, all of which are invisible to a type checker: the form opens on its
  * FIELDS (the explanation lives in the collapsed FAQ under the save area, not above the first
- * input), each channel's developer-console link rides the credential field's corner, a stored
- * secret is removed by the models-page clear checkbox rather than an unbind button — that
- * checkbox is gated, on screen, while the channel holds the connection — and a connection
- * error's detail reaches the reader whole rather than as a few words of a shared row.
+ * input), each channel's developer-console link rides the credential field's corner, the
+ * connection switch — which IS the bind/unbind — carries that sentence as its own tooltip
+ * rather than as a line the form would have to make room for, a stored secret is removed by
+ * the models-page clear checkbox and that checkbox is gated, on screen, while the channel
+ * holds the connection, and a connection error's detail reaches the reader whole rather than
+ * as a few words of a shared row.
  */
 import { describe, expect, it } from "vitest";
 import { createElement } from "react";
@@ -101,6 +103,15 @@ describe("MessagingBindingBody", () => {
     expect(live).toContain(S.messaging.disableBeforeClearHint);
   });
 
+  it("carries the bind/unbind sentence on the switch itself, as a tooltip rather than a line", () => {
+    // Enabling the connection is what binds the bot to this conversation, which a label
+    // reading "enable connection" does not say. It is semantics, so it is disclosed: on the
+    // control, where nothing below has to move to make room for it.
+    const html = render(stateOf("feishu"));
+    expect(html).toContain(`title="${S.messaging.bindByEnableHint}"`);
+    expect(html).not.toContain(`>${S.messaging.bindByEnableHint}<`);
+  });
+
   it("gives a connection error its own line, whole, instead of a share of the status row", () => {
     // The connection failures worth reporting name the action in the sentence — a share of
     // a row that already carries a switch, a label and a status word cut this one to
@@ -158,6 +169,9 @@ describe("MessagingBindingHelp", () => {
     // The panels stay in the DOM while folded (aria-controls has to resolve), so the text is
     // present — hidden, not absent.
     expect(html).toContain(S.feishu.intro);
+    // The channel-neutral half of that fold: how one bot moves between conversations, which
+    // is the question the enable-time 409 sends a reader here with.
+    expect(html).toContain(S.messaging.faqWhatBinding);
     expect(html).toContain(S.messaging.troubleNoChat);
     expect(html).toContain(S.feishu.setupSteps[0]);
   });

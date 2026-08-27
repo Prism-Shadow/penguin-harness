@@ -1791,6 +1791,8 @@ Benchmark：
     console: "前往开发者后台",
     /** The connection toggle (flips immediately, using the stored credentials). */
     enabled: "启用连接",
+    /** The toggle's own tooltip: the switch IS the bind/unbind control, which a label reading "enable" does not say. */
+    bindByEnableHint: "启用即把该机器人绑定到本对话，停用即解除绑定；凭证在两种状态下都保留。",
     /** Why the toggle is gated while the form has unsaved edits. */
     saveBeforeEnable: "先保存凭证，再启用连接",
     test: "测试连接",
@@ -1823,6 +1825,9 @@ Benchmark：
     /** The collapsed FAQ folds below the save area. */
     faqSetupTitle: "如何创建机器人",
     faqWhatTitle: "绑定后会发生什么",
+    /** The channel-neutral half of that fold: how the same bot moves between conversations. */
+    faqWhatBinding:
+      "同一个机器人可以同时保存在多个对话里，但同一时刻只能有一个对话启用它的连接。要换一个对话使用，先在原对话停用连接，再在这里启用——凭证不必删除。",
     faqTroubleTitle: "常见问题",
     /** Troubleshooting entries (bot must be messaged once; connection errors point at credentials; one poller per Telegram token). */
     troubleNoChat: "「发送测试消息」不可用？机器人要先收到过一条消息，才知道要发到哪个会话。",
@@ -2053,18 +2058,19 @@ Benchmark：
       invalid_trace: "该文件不是有效的 Trace 文件。",
       trace_not_found: "该 Trace 文件已不存在。",
       trace_session_exists: "该 Agent 已存在同名 Session，无法导入重复的 Trace。",
-      feishu_app_in_use: "该飞书应用已绑定到其他 Session，请先解除或换一个应用。",
       feishu_secret_required: "需要填写 App Secret。",
       feishu_not_bound: "该 Session 尚未绑定飞书。",
       feishu_no_chat: "尚未收到飞书消息：先在飞书中给机器人发一条消息。",
       feishu_send_failed: "飞书消息发送失败。",
-      telegram_bot_in_use: "该 Telegram 机器人已绑定到其他 Session，请先解除或换一个机器人。",
       telegram_token_required: "需要填写 Bot Token。",
       telegram_token_invalid: "Bot Token 格式不正确：应形如「数字:密钥」。",
       telegram_not_bound: "该 Session 尚未绑定 Telegram。",
       telegram_no_chat: "尚未收到 Telegram 消息：先在 Telegram 中给机器人发一条消息。",
       telegram_send_failed: "Telegram 消息发送失败。",
       another_channel_enabled: "该会话已启用另一渠道的连接：先停用它，再启用当前渠道。",
+      // Deliberately names nothing about the other conversation: it may live in a Project
+      // this user cannot see, and the remedy does not depend on knowing which one it is.
+      account_enabled_elsewhere: "该机器人的连接已在另一个会话中启用：先在那边停用，再在此启用。",
       messaging_disable_before_clear: "先停用该渠道的连接，才能清除其凭证。",
     },
   },

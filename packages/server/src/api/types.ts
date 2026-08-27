@@ -1715,7 +1715,8 @@ export interface FeishuBindingPutRequest {
 /**
  * PUT …/messaging/telegram — saves the credential ONLY, same contract as the Feishu PUT
  * (an enabled binding's connector restarts with the new token; the connection toggle is
- * POST …/state). 409 `telegram_bot_in_use` when the token's bot id is bound elsewhere.
+ * POST …/state). Saving never conflicts across Sessions: the same bot may sit saved on
+ * several, and only enabling it is exclusive.
  */
 export interface TelegramBindingPutRequest {
   /** Omitted or blank keeps the stored token (the masked value never round-trips). */
@@ -1730,9 +1731,11 @@ export interface TelegramBindingPutRequest {
 
 /**
  * POST …/messaging/<channel>/state — enable connects with the STORED credentials,
- * disable terminates. Enabling is mutually exclusive per Session: while another channel
- * is enabled it answers 409 `another_channel_enabled` (turn that one off first), and a
- * config whose secret is missing answers its channel's 400 `*_required`.
+ * disable terminates. Enabling is what binds the bot account to this Session, and it is
+ * mutually exclusive twice over: while another channel of the same Session is enabled it
+ * answers 409 `another_channel_enabled`, and while another SESSION has the same account
+ * enabled it answers 409 `account_enabled_elsewhere` (both say: turn that one off first).
+ * A config whose secret is missing answers its channel's 400 `*_required`.
  */
 export interface MessagingBindingStateRequest {
   enabled: boolean;

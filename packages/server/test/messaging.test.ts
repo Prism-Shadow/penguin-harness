@@ -1,6 +1,7 @@
 /**
  * Messaging-binding tests, Feishu side (the Telegram connector's mirror suite is
- * messaging-telegram.test.ts): the repo's two uniqueness rules, the
+ * messaging-telegram.test.ts): the bind-by-enable model (saving is never exclusive,
+ * enabling is), the
  * /api/sessions/:id/messaging/feishu routes (masking, secret keep-on-blank, the
  * save/enable split — PUT persists credentials only, POST /state owns the connection —
  * 409s, authz split, cascade on session delete), and the bridge's routing through a fake
@@ -376,16 +377,45 @@ describe("messaging binding routes and bridge", () => {
     expect(((await res.json()) as FeishuBindingResponse).binding?.enabled).toBe(true);
   });
 
-  it("one binding per app: a second Session on the same app_id gets 409 feishu_app_in_use", async () => {
-    await api.put(BASE(SID), PUT_BODY);
-    const row2 = sessionRowOf(SID2, projectId);
-    t.deps.sessionsRepo.insert(row2);
-    const res = await api.put(BASE(SID2), PUT_BODY);
-    expect(res.status).toBe(409);
-    expect(((await res.json()) as { error: { code: string } }).error.code).toBe(
-      "feishu_app_in_use",
-    );
-    expect(t.deps.messagingRepo.find(SID2, "feishu")).toBeNull();
+  it("enabling is the binding: two Sessions may save one app, only one may have it enabled", async () => {
+    t.deps.sessionsRepo.insert(sessionRowOf(SID2, projectId));
+    // Saving the same app on a second Session is not a conflict at all — each keeps its own
+    // stored config, and neither of them is connected by a save.
+    expect((await api.put(BASE(SID), PUT_BODY)).status).toBe(200);
+    expect((await api.put(BASE(SID2), PUT_BODY)).status).toBe(200);
+    expect(t.deps.messagingRepo.find(SID2, "feishu")?.accountId).toBe(PUT_BODY.appId);
+    expect(fake.connections).toHaveLength(0);
+
+    // The first enable takes the app; the second is refused while it holds it.
+    expect((await api.post(`${BASE(SID)}/state`, { enabled: true })).status).toBe(200);
+    const blocked = await api.post(`${BASE(SID2)}/state`, { enabled: true });
+    expect(blocked.status).toBe(409);
+    const refusal = (await blocked.json()) as { error: { code: string; message: string } };
+    expect(refusal.error.code).toBe("account_enabled_elsewhere");
+    // The refusal identifies nothing about the holder: it may sit in a Project this caller
+    // cannot see, so its id must not travel in the message.
+    expect(refusal.error.message).not.toContain(SID);
+    // Refused means nothing moved: the second stays dark, the first keeps its connection.
+    expect(t.deps.messagingRepo.find(SID2, "feishu")?.enabled).toBe(false);
+    expect(fake.connections).toHaveLength(1);
+
+    // And a save on the dark Session is still just a save, connection or no connection
+    // elsewhere: only the enabled binding's own connector ever restarts.
+    const resave = await api.put(BASE(SID2), { ...PUT_BODY, appSecret: "second-secret-7777" });
+    expect(resave.status).toBe(200);
+    expect(fake.connections).toHaveLength(1);
+    expect(t.deps.messaging.statusOf(SID, "feishu").state).toBe("connected");
+
+    // Turning the first one off releases the app, and the second takes it.
+    expect((await api.post(`${BASE(SID)}/state`, { enabled: false })).status).toBe(200);
+    const moved = await api.post(`${BASE(SID2)}/state`, { enabled: true });
+    expect(moved.status).toBe(200);
+    expect(((await moved.json()) as FeishuBindingResponse).binding?.enabled).toBe(true);
+    expect(fake.connections).toHaveLength(2);
+    expect(fake.connections[0]!.closed).toBe(true);
+    // Disabling released the account without touching the credentials: the first Session
+    // keeps its saved config, ready to take the app back.
+    expect(t.deps.messagingRepo.find(SID, "feishu")?.config.appSecret).toBe(PUT_BODY.appSecret);
   });
 
   it("authz: non-members get 404; a member reads but cannot write or toggle (owner-only)", async () => {

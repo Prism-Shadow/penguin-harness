@@ -527,7 +527,7 @@ export const putTelegramBinding = (sessionId: string, body: TelegramBindingPutRe
     { method: "PUT", body },
   );
 
-/** The connection toggle: enable connects with the STORED credentials (409 `another_channel_enabled` while the other channel is enabled), disable terminates. */
+/** The connection toggle, which is also the bind/unbind: enable connects with the STORED credentials (409 `another_channel_enabled` while the other channel is enabled, 409 `account_enabled_elsewhere` while another conversation has this bot enabled), disable releases the account. */
 export const setMessagingBindingState = (
   sessionId: string,
   channel: MessagingChannel,
