@@ -17,6 +17,8 @@ export interface HighlightRequest {
   code: string;
   language: string;
   blockLines: boolean;
+  /** An extension language the main thread resolved (its registry lives there); the engine fetches its grammar. */
+  runtimeLanguage?: string;
 }
 
 export interface HighlightResponse {
@@ -27,8 +29,8 @@ export interface HighlightResponse {
 }
 
 self.onmessage = (event: MessageEvent<HighlightRequest>) => {
-  const { id, code, language, blockLines } = event.data;
-  highlight(code, language, blockLines).then(
+  const { id, code, language, blockLines, runtimeLanguage } = event.data;
+  highlight(code, language, blockLines, runtimeLanguage).then(
     (html) => {
       const done: HighlightResponse = html === undefined ? { id } : { id, html };
       self.postMessage(done);
