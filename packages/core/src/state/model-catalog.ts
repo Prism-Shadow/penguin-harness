@@ -5,9 +5,8 @@
  * DeepSeek, Gemini 3.7, GLM-5.3 and the whole OpenAI line-up (direct + OpenRouter):
  * 2026-08-18; the direct Anthropic group: 2026-08-20; the DeepSeek V4 Flash Vision Exp rows:
  * 2026-08-21; the TokenDance group: 2026-08-25, its glm-5.3-flash row: 2026-08-26 and its
- * qwen3.8-flash row: 2026-08-27; the
- * GLM-5.3 Flash rows (direct + OpenRouter) and qwen3.8-flash: 2026-08-26 — per each
- * provider's docs).
+ * qwen3.8-flash row: 2026-08-27; the GLM-5.3 Flash rows (direct + OpenRouter) and the
+ * direct qwen3.8-flash: 2026-08-26 — per each provider's docs).
  * Docs: packages/docs/content/models.{zh,en}.md (site path /docs/models) documents the
  * provider groups and credential resolution described here.
  *
