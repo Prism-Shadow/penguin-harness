@@ -26,10 +26,10 @@ export function updateSupport(opts: {
 }
 
 /**
- * Optional feed override (`PENGUIN_UPDATE_FEED_URL`), the seed of the documented
- * auto | oss | github source switch and what makes an end-to-end update test possible
- * against a local server. Returns null when unset or unparseable — an unusable override
- * must not silently redirect updates, so the caller keeps the default GitHub feed.
+ * Optional feed override (`PENGUIN_UPDATE_FEED_URL`), what makes an end-to-end update
+ * test possible against a local server. Returns null when unset or unparseable — an
+ * unusable override must not silently redirect updates, so the caller keeps the default
+ * GitHub feed.
  */
 export function feedUrlOverride(env: NodeJS.ProcessEnv): string | null {
   const raw = env.PENGUIN_UPDATE_FEED_URL?.trim();
@@ -41,4 +41,47 @@ export function feedUrlOverride(env: NodeJS.ProcessEnv): string | null {
   } catch {
     return null;
   }
+}
+
+export type UpdateSource = "auto" | "oss" | "github";
+
+/**
+ * Desktop update source switches. The names are deliberately separate from the installer's
+ * PENGUIN_DOWNLOAD_* variables so a CLI-install setting never leaks into the app's
+ * background updater.
+ */
+export interface UpdateSourceConfig {
+  source: UpdateSource;
+  probe: boolean;
+  /** PENGUIN_UPDATE_SOURCE was set but not one of auto | oss | github. */
+  invalidSource: boolean;
+  /** PENGUIN_UPDATE_SPEED_PROBE was set but not 0 or 1. */
+  invalidProbe: boolean;
+}
+
+export function updateSourceConfig(env: NodeJS.ProcessEnv): UpdateSourceConfig {
+  const rawSource = env.PENGUIN_UPDATE_SOURCE?.trim() ?? "";
+  let source: UpdateSource = "auto";
+  let invalidSource = false;
+  if (rawSource !== "") {
+    if (rawSource === "auto" || rawSource === "oss" || rawSource === "github") {
+      source = rawSource;
+    } else {
+      invalidSource = true;
+    }
+  }
+
+  const rawProbe = env.PENGUIN_UPDATE_SPEED_PROBE?.trim() ?? "";
+  let probe = true;
+  let invalidProbe = false;
+  if (rawProbe !== "") {
+    if (rawProbe === "0") {
+      probe = false;
+    } else if (rawProbe === "1") {
+      probe = true;
+    } else {
+      invalidProbe = true;
+    }
+  }
+  return { source, probe, invalidSource, invalidProbe };
 }

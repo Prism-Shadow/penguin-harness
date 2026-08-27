@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { feedUrlOverride, updateSupport } from "../src/update-support.js";
+import { feedUrlOverride, updateSourceConfig, updateSupport } from "../src/update-support.js";
 
 describe("updateSupport", () => {
   it("supports packaged macOS and Windows builds", () => {
@@ -42,5 +42,45 @@ describe("feedUrlOverride", () => {
     expect(feedUrlOverride({ PENGUIN_UPDATE_FEED_URL: "   " })).toBeNull();
     expect(feedUrlOverride({ PENGUIN_UPDATE_FEED_URL: "file:///etc/passwd" })).toBeNull();
     expect(feedUrlOverride({ PENGUIN_UPDATE_FEED_URL: "not a url" })).toBeNull();
+  });
+});
+
+describe("updateSourceConfig", () => {
+  it("defaults to auto with the speed probe on", () => {
+    expect(updateSourceConfig({})).toEqual({
+      source: "auto",
+      probe: true,
+      invalidSource: false,
+      invalidProbe: false,
+    });
+  });
+
+  it("accepts every source and the probe switch, trimming whitespace", () => {
+    expect(updateSourceConfig({ PENGUIN_UPDATE_SOURCE: " oss " })).toMatchObject({
+      source: "oss",
+      invalidSource: false,
+    });
+    expect(updateSourceConfig({ PENGUIN_UPDATE_SOURCE: "github" })).toMatchObject({
+      source: "github",
+      invalidSource: false,
+    });
+    expect(updateSourceConfig({ PENGUIN_UPDATE_SOURCE: "auto" })).toMatchObject({
+      source: "auto",
+      invalidSource: false,
+    });
+    expect(updateSourceConfig({ PENGUIN_UPDATE_SPEED_PROBE: "1" })).toMatchObject({
+      probe: true,
+      invalidProbe: false,
+    });
+    expect(updateSourceConfig({ PENGUIN_UPDATE_SPEED_PROBE: " 0 " })).toMatchObject({
+      probe: false,
+      invalidProbe: false,
+    });
+  });
+
+  it("treats unsupported values as defaults and flags them", () => {
+    expect(
+      updateSourceConfig({ PENGUIN_UPDATE_SOURCE: "mirror", PENGUIN_UPDATE_SPEED_PROBE: "2" }),
+    ).toEqual({ source: "auto", probe: true, invalidSource: true, invalidProbe: true });
   });
 });
