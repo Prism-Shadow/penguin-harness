@@ -320,11 +320,19 @@ export const DEFAULT_SKILLS_PROMPT = LEGACY_SKILLS_SECTION;
 /**
  * Built-in default Schedules Prompt: what `{{SCHEDULES}}` expands to — teaches the model to
  * manage scheduled tasks as TOML files with its ordinary file tools (there is no dedicated
- * tool), in template-example form like DEFAULT_MEMORY_PROMPT: the directory as a literal
- * angle-bracket pattern resolvable from the Environment section, a fenced example, the field
- * rules schedule-file.ts enforces, the hygiene rules, then the current roster via
- * `{{SCHEDULE_LIST}}`. Stored per-Agent in `system_config.yaml` and editable on the Web App's
- * Schedules tab.
+ * tool), in template-example form like DEFAULT_MEMORY_PROMPT: the directory and the target
+ * Session as literal angle-bracket patterns resolvable from the Environment section, a fenced
+ * example, the field rules schedule-file.ts enforces, the hygiene rules, then the current
+ * roster via `{{SCHEDULE_LIST}}`. Stored per-Agent in `system_config.yaml` and editable on the
+ * Web App's Schedules tab.
+ *
+ * The target guidance is deliberate: `session_id` set to the Environment section's Session ID
+ * makes a task the user arranged in conversation report back into that same conversation
+ * rather than into a fresh Session nobody is watching. It is guidance only — schedule-file.ts
+ * still opens a new Session for a file carrying no `session_id`, so the format's own default
+ * is untouched. It does make the self-directed loop the ordinary shape, which is what the
+ * `end_at` / one-shot / small-work hygiene line pays for: a periodic task firing into its own
+ * Session grows that Session's context on every trigger and ends only when someone ends it.
  */
 export const DEFAULT_SCHEDULES_PROMPT = `# Scheduled Tasks
 Prompts delivered to this agent on a timer: TOML files you manage with the file tools, in \`<app_data_dir>/agents/<agent_id>/agent_state/schedule/\` (create the directory if it does not exist). One task per file; the file name minus \`.toml\` is the task's name (letters, digits, \`_\` and \`-\` only). The server re-reads the directory within about 30 seconds — creating, editing or deleting a file is all it takes, there is nothing to register.
@@ -334,9 +342,13 @@ prompt = "Check yesterday's build results and summarize the failures"
 enabled = true
 start_at = 2026-08-01T09:00:00Z
 period = "12h"
+end_at = 2026-09-01T09:00:00Z
+session_id = "<session_id>"
 \`\`\`
 
-Field rules: \`prompt\` (required) is the message sent when the task fires. \`enabled\` defaults to false — set it to true explicitly or the task never runs. \`start_at\` (required) is the first trigger time, an ISO 8601 instant. \`period\` is a fixed interval like \`30m\` / \`12h\` / \`7d\` (5 minutes minimum); omit it for a one-shot task. \`end_at\` (optional) must be later than start_at; a periodic task stops after it. Each trigger starts a new Session by default: \`workspace\` (optional) picks its working directory, and \`provider\` + \`model_id\` pick its model — always both or neither; omit both to use the Project's default model. Setting \`session_id\` instead sends the prompt into an existing Session, and cannot be combined with workspace / provider / model_id.
+Field rules: \`prompt\` (required) is the message sent when the task fires. \`enabled\` defaults to false — set it to true explicitly or the task never runs. \`start_at\` (required) is the first trigger time, an ISO 8601 instant. \`period\` is a fixed interval like \`30m\` / \`12h\` / \`7d\` (5 minutes minimum); omit it for a one-shot task. \`end_at\` (optional) must be later than start_at; a periodic task stops after it. \`session_id\` picks where the prompt is delivered, and by default it is this Session: write the id from the Environment section's Session ID line, so every trigger arrives in the conversation you are in now, with its context intact. Omit it when the user asks for a separate Session, or when the task is better off starting clean — a nightly report that should not inherit this conversation's history. Each trigger then opens a new Session, in which \`workspace\` (optional) picks the working directory and \`provider\` + \`model_id\` pick the model — always both or neither; omit both to use the Project's default model. \`session_id\` cannot be combined with workspace / provider / model_id.
+
+A repeating task aimed at this Session grows its context on every trigger and nothing ends it on its own: bound it with \`end_at\`, use a one-shot task for a one-time reminder, and keep the work each trigger asks for small.
 
 Check the current tasks below before creating one so you never duplicate an existing task; change a task by editing its file in place; delete the file when a task is obsolete.
 
