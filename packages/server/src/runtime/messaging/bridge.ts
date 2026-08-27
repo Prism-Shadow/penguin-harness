@@ -12,13 +12,15 @@
  * stored config and the live connection never diverge).
  *
  * Inbound (channel → Session): a message the binding has already processed is dropped
- * first (see MESSAGING_INBOUND_DEDUPE_*) — channels redeliver, and nothing downstream of
- * here is idempotent. Then every inbound message records its chat as the
- * binding's reply target; a text message then starts a Task on the bound Session as an
- * ordinary user input — exactly as if typed into the web composer, no marker block and no
- * special sender (the model deliberately does not learn where the message came from) —
- * with `queueIfBusy`: a busy Session queues it as a follow-up, never 409. Any non-text
- * message gets a polite bilingual "text only" reply.
+ * first (see RecentInboundIds, seeded from the binding row so a restart does not forget) —
+ * channels redeliver, and nothing downstream of here is idempotent. Then every inbound
+ * message records its chat as the binding's reply target; a text message then starts a
+ * Task on the bound Session as an ordinary user input — exactly as if typed into the web
+ * composer, no marker block and no special sender (the model deliberately does not learn
+ * where the message came from) — with `queueIfBusy`: a busy Session queues it as a
+ * follow-up, never 409. Any non-text message gets a polite bilingual "text only" reply.
+ * Only once that work is done is the binding row's watermark advanced, so a process that
+ * dies mid-message has the channel replay it rather than find it already marked.
  *
  * Outbound (Session → channel): the bridge subscribes to the Session's in-process channel
  * and relays each of the main conversation's completed assistant messages on its own, the
@@ -105,45 +107,50 @@ export const MESSAGING_TEST_MESSAGE =
   "PenguinHarness test message: this Session's messaging binding works. 测试消息：该会话的消息绑定工作正常。";
 
 /**
- * How many recently processed inbound message ids one binding remembers, and for how long.
+ * How many recently processed inbound message ids one binding remembers.
  *
- * A redelivery arrives seconds after the original — a Feishu long connection replaying
- * across a reconnect, or any connector resuming a stream whose acknowledgement never
- * landed — so a short window over the last few messages catches every realistic one. The
- * bound is the point: an unbounded set on a server that runs for months is a leak.
+ * Count is the only bound. An unbounded set on a server that runs for months is a leak,
+ * so the ring has to end somewhere — but nothing expires by age, because neither channel
+ * ever reuses a message id (Feishu's `om_*` are globally unique; Telegram's key is
+ * `chatId:message_id`, and that counter only climbs). With no reuse to guard against, an
+ * age bound could only forget a redelivery still owed to us, and a channel resuming a
+ * stream after a long outage replays whatever it never saw acknowledged — which can
+ * arrive a great deal later than the message it repeats.
  */
 const MESSAGING_INBOUND_DEDUPE_SIZE = 64;
-const MESSAGING_INBOUND_DEDUPE_WINDOW_MS = 10 * 60_000;
 
 /**
- * The ids one binding has already processed, bounded by both count and age.
+ * The ids one binding has already processed, bounded by count.
  *
  * Identity is the channel's own message id (Feishu's `message_id`, Telegram's
  * `chatId:message_id`), never the text: a user genuinely does send "status?" twice, and
  * swallowing the second one is a worse failure than the duplicate it would prevent.
  *
- * A `Map` iterates in insertion order, which is the ring: the oldest key is the first one
- * `keys()` yields, so eviction is a `delete` of that.
+ * A `Set` iterates in insertion order, which is the ring: the oldest id is the first one
+ * `values()` yields, so eviction is a `delete` of that. Re-adding an id already present
+ * leaves that order alone, which is what makes re-seeding on every reconnect free.
  */
 class RecentInboundIds {
-  private readonly seen = new Map<string, number>();
+  private readonly seen = new Set<string>();
 
-  /** True when this id was already processed inside the window; records it otherwise. */
-  check(messageId: string, now: number): boolean {
-    const firstSeen = this.seen.get(messageId);
-    if (firstSeen !== undefined && now - firstSeen <= MESSAGING_INBOUND_DEDUPE_WINDOW_MS) {
-      return true;
-    }
-    // An id past the window is treated as new and re-dated, so a message id a channel
-    // reuses after long enough is not silently dropped forever.
-    this.seen.delete(messageId);
-    this.seen.set(messageId, now);
+  /** True when this id was already processed; records it otherwise. */
+  check(messageId: string): boolean {
+    if (this.seen.has(messageId)) return true;
+    this.remember(messageId);
+    return false;
+  }
+
+  /**
+   * Records an id as processed without asking about it: how the binding row's persisted
+   * watermark re-enters this memory when a connection opens (see MessagingBridge.connect).
+   */
+  remember(messageId: string): void {
+    this.seen.add(messageId);
     while (this.seen.size > MESSAGING_INBOUND_DEDUPE_SIZE) {
-      const oldest = this.seen.keys().next();
+      const oldest = this.seen.values().next();
       if (oldest.done === true) break;
       this.seen.delete(oldest.value);
     }
-    return false;
   }
 }
 
@@ -279,11 +286,19 @@ export class MessagingBridge {
   /**
    * Processed inbound ids per BINDING (`sessionId:channel`), deliberately not per
    * connection: re-saving an enabled binding restarts its connector, and a message
-   * already turned into a Task must not run again because the connector is new. In memory
-   * only — a server restart forgets, so a redelivery that survives a restart still
-   * duplicates. Accepted: a channel replays within seconds of its own reconnect, and
-   * persisting this would put a write on every inbound message to close a window the
-   * restart itself has almost always already closed.
+   * already turned into a Task must not run again because the connector is new.
+   *
+   * This map dies with the process; `messaging_bindings.last_inbound_message_id` is the
+   * half that does not, and `connect` folds it back in here so the two are one memory
+   * rather than two guards. The row holds ONE id — the last message the bridge finished
+   * with — which is what Feishu's WebSocket resume needs and all it needs: that stream
+   * replays events it never saw acknowledged, and the SDK acknowledges each one only
+   * after our handler returns, so at most the one in flight when the process ended is
+   * still owed. Telegram redelivers nothing across a restart — its poller advances
+   * `offset` past an update before handing it over, and a fresh connection drains with
+   * `getUpdates({offset: -1})`, discarding whatever was sent while nobody was connected —
+   * so on that channel the row is still written and still seeded, and simply never has a
+   * replay to catch.
    */
   private readonly recentInbound = new Map<string, RecentInboundIds>();
   private readonly connectors: ReadonlyMap<string, MessagingChannelConnector>;
@@ -428,6 +443,13 @@ export class MessagingBridge {
       sendChain: Promise.resolve(),
     };
     this.entries.set(row.sessionId, entry);
+    // Before the stream can hand over its first event: the binding row's watermark is the
+    // only thing that outlived the previous process, and a channel opening a connection is
+    // exactly when it replays what it never saw acknowledged. Without this, the first
+    // message of a re-enabled binding can be one the last server already ran.
+    if (row.lastInboundMessageId !== null) {
+      this.inboundMemoryOf(row.sessionId, row.channel).remember(row.lastInboundMessageId);
+    }
     entry.unsubscribe = this.deps.channels
       .get(row.sessionId)
       .subscribe((evt) => this.observe(entry, evt));
@@ -502,15 +524,20 @@ export class MessagingBridge {
    */
   private isRedelivery(entry: BridgeEntry, msg: MessagingInboundMessage): boolean {
     if (msg.messageId === "") return false;
-    const key = inboundKey(entry.sessionId, entry.channel);
+    if (!this.inboundMemoryOf(entry.sessionId, entry.channel).check(msg.messageId)) return false;
+    this.log(`[messaging] ${entry.channel} redelivered message ${msg.messageId}, ignored`);
+    return true;
+  }
+
+  /** Get-or-create one binding's processed-id memory (see recentInbound). */
+  private inboundMemoryOf(sessionId: string, channel: string): RecentInboundIds {
+    const key = inboundKey(sessionId, channel);
     let recent = this.recentInbound.get(key);
     if (recent === undefined) {
       recent = new RecentInboundIds();
       this.recentInbound.set(key, recent);
     }
-    if (!recent.check(msg.messageId, this.now())) return false;
-    this.log(`[messaging] ${entry.channel} redelivered message ${msg.messageId}, ignored`);
-    return true;
+    return recent;
   }
 
   private async onInbound(entry: BridgeEntry, msg: MessagingInboundMessage): Promise<void> {
@@ -519,19 +546,33 @@ export class MessagingBridge {
     try {
       const isDirect = msg.chatKind === "direct";
       // The chat becomes the reply target BEFORE any processing: even a rejected message
-      // type teaches the bridge where the user is.
+      // type teaches the bridge where the user is, and the run started below can emit its
+      // first assistant message before this returns — the outbound relay reads the chat
+      // off the row.
       this.deps.repo.recordChat(entry.sessionId, entry.channel, msg.chatId, isDirect);
       entry.lastInboundMessageId = isDirect ? null : msg.messageId;
       if (msg.text === null || msg.text.trim() === "") {
         await this.replyInbound(entry, msg, MESSAGING_TEXT_ONLY_NOTICE);
-        return;
+      } else {
+        // An ordinary user input, exactly as if typed into the web composer: no marker
+        // block, no special sender — the model deliberately does not learn the message
+        // arrived through a messaging channel.
+        await this.deps.runner.startTask(entry.sessionId, [userText(msg.text)], {
+          queueIfBusy: true,
+        });
       }
-      // An ordinary user input, exactly as if typed into the web composer: no marker
-      // block, no special sender — the model deliberately does not learn the message
-      // arrived through a messaging channel.
-      await this.deps.runner.startTask(entry.sessionId, [userText(msg.text)], {
-        queueIfBusy: true,
-      });
+      // The durable watermark goes LAST, and its own UPDATE is the price of that. What it
+      // marks is a message this process finished with: the follow-up a busy Session queues
+      // lives in memory only, so a watermark written first would — for a process that died
+      // in between — outlive the work it claims, and `connect`'s seeding would then make
+      // the channel's replay of that message a complete no-op. Written here, a throw above
+      // skips it and the replay runs the message instead: at-least-once rather than a
+      // silent swallow.
+      this.deps.repo.recordInboundWatermark(
+        entry.sessionId,
+        entry.channel,
+        msg.messageId === "" ? null : msg.messageId,
+      );
     } catch (err) {
       this.recordError(entry.sessionId, err, "messaging_inbound_failed");
     }

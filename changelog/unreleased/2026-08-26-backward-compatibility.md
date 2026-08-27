@@ -3,16 +3,17 @@
 - **Date:** 2026-08-26
 - **Type:** process
 - **Scope:** `server`
-- **PR:** [#490](https://github.com/Prism-Shadow/penguin-harness/pull/490), [#494](https://github.com/Prism-Shadow/penguin-harness/pull/494)
+- **PR:** [#490](https://github.com/Prism-Shadow/penguin-harness/pull/490), [#493](https://github.com/Prism-Shadow/penguin-harness/pull/493), [#494](https://github.com/Prism-Shadow/penguin-harness/pull/494)
 - **Breaking:** yes — one-way for the database: after two Sessions have saved the same bot account, a build from before this change can no longer open that `web.db`
 
 [中文版](2026-08-26-backward-compatibility.zh.md)
 
-This batch touches two things on an existing `web.db`, both on `messaging_bindings`: the
-`idx_messaging_account` unique index it carries (every database that has opened a build with
-messaging bindings in it — 0.2.5 and later), and one added column. Only the first needs a
-decision; the second is recorded so a reader looking here for "does my database need anything?"
-finds both answers in one place.
+This batch touches three things on an existing `web.db`, all on `messaging_bindings` and all
+carried by every database that has opened a build with messaging bindings in it (0.2.5 and
+later): the `idx_messaging_account` unique index, and the absence of two added columns,
+`last_inbound_message_id` and `line_per_message`. Only the index needs a decision; the two
+columns are recorded so a reader looking here for "does my database need anything?" finds every
+answer in one place.
 
 ## The retired unique account index
 
@@ -30,6 +31,27 @@ is a no-op).
 
 Nothing is asked of the user: the drop is automatic, runs on the first open of an updated build,
 and no binding, credential or remembered chat is altered.
+
+## The added inbound watermark column
+
+[The persisted redelivery watermark](2026-08-26-messaging-inbound-watermark.md) adds
+`last_inbound_message_id` to `messaging_bindings`. A `web.db` formed by 0.2.7 or earlier has the
+table but not the column, and `CREATE TABLE IF NOT EXISTS` never alters a table that already
+exists.
+
+Chosen: **ALTER it in on open**, one `ensureColumn(db, "messaging_bindings",
+"last_inbound_message_id", "TEXT")` in the list `openDatabase` already keeps for exactly this. The
+column is nullable with no default, so every existing binding grandfathers in as `NULL` — the
+honest value for a binding whose earlier messages this build never recorded an id for. The first
+inbound message after the upgrade fills it, and the duplicate guard covers that binding from then
+on.
+
+Nothing is asked of the user, and nothing else about a binding is read or rewritten: credentials,
+intent and the remembered chat are untouched.
+
+This half downgrades cleanly. An older build's `SELECT *` simply carries a column it does not map,
+and its own writes leave the value where it stood; the duplicate guard reverts to being
+process-local, which is what that build always did.
 
 ## The one-way half
 
@@ -49,6 +71,10 @@ per open. It is removed only in a release that is allowed to break existing `web
 should be removed together with the `idx_usage_session` drop that sits beside it, since both are
 the same kind of debt.
 
+The `ensureColumn` line for `last_inbound_message_id` has the same lifetime and the same removal
+condition as every other entry in that list — it is the standing convention for an added column,
+not a tolerance of its own.
+
 ## The added `line_per_message` column
 
 [One message per line](2026-08-26-messaging-line-per-message.md) added
@@ -65,7 +91,8 @@ No action is required. The first open of an updated build drops the index; bindi
 and remembered chats are untouched, and a user who never saves one bot on two Sessions cannot tell
 the difference.
 
-Before downgrading to a build from before this change, remove the extra rows if any account is now
+Before downgrading to a build from before this change, neither added column needs attention —
+but remove the extra rows if any account is now
 saved on more than one Session — otherwise the older server fails to open the database. Check with:
 
 ```sql

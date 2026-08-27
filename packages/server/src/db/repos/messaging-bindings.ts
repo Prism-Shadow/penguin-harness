@@ -55,6 +55,13 @@ export interface MessagingBindingRow {
   lastChatId: string | null;
   /** Whether that chat is a direct chat; group chats prefer reply-to-message. */
   lastChatIsDirect: boolean;
+  /**
+   * Channel id of the most recently processed inbound message (null until one arrives).
+   * The bridge's redelivery guard is in memory and dies with the process; this is the one
+   * fact that survives it, so a channel replaying an already-processed event across a
+   * restart is recognized rather than run again (see MessagingBridge's recentInbound).
+   */
+  lastInboundMessageId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -78,6 +85,7 @@ function mapRow(r: Record<string, unknown>): MessagingBindingRow {
     linePerMessage: Number(r.line_per_message) === 1,
     lastChatId: (r.last_chat_id as string | null) ?? null,
     lastChatIsDirect: Number(r.last_chat_is_direct) === 1,
+    lastInboundMessageId: (r.last_inbound_message_id as string | null) ?? null,
     createdAt: r.created_at as string,
     updatedAt: r.updated_at as string,
   };
@@ -179,6 +187,7 @@ export class MessagingBindingsRepo {
                  line_per_message = COALESCE(?, line_per_message),
                  last_chat_id = CASE WHEN ? THEN last_chat_id ELSE NULL END,
                  last_chat_is_direct = CASE WHEN ? THEN last_chat_is_direct ELSE 1 END,
+                 last_inbound_message_id = CASE WHEN ? THEN last_inbound_message_id ELSE NULL END,
                  updated_at = ?
            WHERE session_id = ? AND channel = ?`,
         )
@@ -187,6 +196,7 @@ export class MessagingBindingsRepo {
           configJson,
           // NULL = the caller said nothing about it, and COALESCE keeps what is stored.
           args.linePerMessage === undefined ? null : args.linePerMessage ? 1 : 0,
+          keepChat ? 1 : 0,
           keepChat ? 1 : 0,
           keepChat ? 1 : 0,
           now,
@@ -218,6 +228,27 @@ export class MessagingBindingsRepo {
          WHERE session_id = ? AND channel = ?`,
       )
       .run(chatId, isDirect ? 1 : 0, new Date().toISOString(), sessionId, channel);
+  }
+
+  /**
+   * Advance the bridge's durable redelivery watermark to a message it has FINISHED with.
+   * Deliberately its own statement, issued after the work rather than folded into
+   * recordChat: a watermark written first would, if the process died before the Task
+   * existed, mark as processed a message nothing ever ran — and the seeding in
+   * MessagingBridge.connect would then swallow the channel's replay of it.
+   *
+   * A null `messageId` (a channel that mints no message identity) leaves the column
+   * alone rather than clearing it: such a message opts out of the dedupe entirely, so it
+   * has nothing to say about the last message that did carry one.
+   */
+  recordInboundWatermark(sessionId: string, channel: string, messageId: string | null): void {
+    this.db
+      .prepare(
+        `UPDATE messaging_bindings
+           SET last_inbound_message_id = COALESCE(?, last_inbound_message_id), updated_at = ?
+         WHERE session_id = ? AND channel = ?`,
+      )
+      .run(messageId, new Date().toISOString(), sessionId, channel);
   }
 
   /** Drop one channel's config. */

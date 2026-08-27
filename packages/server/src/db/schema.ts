@@ -131,6 +131,7 @@ CREATE TABLE IF NOT EXISTS messaging_bindings ( -- Session ↔ messaging-channel
   line_per_message INTEGER NOT NULL DEFAULT 0, -- delivery preference: 1 = every non-blank line of a relayed assistant reply is sent as its own message (a reply written as spoken lines arrives as spoken lines), 0 = one message per reply. Channel-agnostic, so it lives here rather than in config_json, which each connector owns
   last_chat_id     TEXT,                       -- most recent inbound chat (NULL until the bot is messaged once; replies and test messages target it)
   last_chat_is_direct INTEGER NOT NULL DEFAULT 1, -- 1 = direct chat (reply by chat id), 0 = group chat (prefer reply-to-message)
+  last_inbound_message_id TEXT,                 -- channel id of the most recently PROCESSED inbound message (NULL until one arrives); the durable half of the bridge's redelivery guard, so a channel replaying an event this server already turned into a Task after a restart does not run it twice
   created_at       TEXT NOT NULL,
   updated_at       TEXT NOT NULL,
   PRIMARY KEY (session_id, channel)
