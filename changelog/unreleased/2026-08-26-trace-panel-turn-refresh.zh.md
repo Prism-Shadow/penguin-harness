@@ -3,6 +3,7 @@
 - **Date:** 2026-08-26
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#492](https://github.com/Prism-Shadow/penguin-harness/pull/492)
 
 [English](2026-08-26-trace-panel-turn-refresh.md)
 
