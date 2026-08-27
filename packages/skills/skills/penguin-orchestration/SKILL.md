@@ -3,8 +3,8 @@ name: penguin-orchestration
 description: Drive PenguinHarness itself from a shell — list and create agents and sessions, send and steer messages mid-flight, and query costs and scheduled tasks via the penguin CLI over the local server.
 short_description: Orchestrate agents, sessions, costs and schedules with the penguin CLI.
 short_description_zh: 用 penguin CLI 编排智能体、会话、成本与定时任务。
-version: 2
-updated: 2026-08-26T18:46:22Z
+version: 3
+updated: 2026-08-27T09:40:00Z
 ---
 
 # Penguin Orchestration
@@ -121,14 +121,17 @@ penguin run -m "Summarize this per-agent cost report and flag anomalies: <the JS
 ### Set up a scheduled task for the current agent
 
 ```bash
+penguin schedule add build-watch --prompt "Check the build results and report the failures" \
+  --start-at now --period 12h --session-id "$PENGUIN_SESSION_ID" \
+  --end-at <ISO instant>                             # only when the request has a horizon
 penguin schedule add daily-report --prompt "Summarize yesterday's conversations" \
-  --start-at now --period 1d
+  --start-at now --period 1d                         # no target: a fresh session per firing
 penguin schedule ls                                  # verify
 penguin schedule update daily-report --period 12h    # adjust; --enable/--disable to toggle
 penguin schedule rm daily-report                     # remove — no confirmation prompt
 ```
 
-- `--agent-id` defaults to yourself from the caller env, so this schedules the current agent. `--start-at` takes ISO 8601 or `now`; `--period` is at least 5m (`30m`/`12h`/`1d`/`7d`), omit it for a one-shot; `--end-at` bounds recurrence. Target flags are optional: `--session-id <id>` fires into that existing session, `--workspace <path>` (optionally with the `--model-id` + `--provider` pair) pins the new-session form.
+- `--agent-id` defaults to yourself from the caller env, so this schedules the current agent. `--start-at` takes ISO 8601 or `now`; `--period` is at least 5m (`30m`/`12h`/`1d`/`7d`), omit it for a one-shot; `--end-at` bounds recurrence. Target the session you are in — `--session-id "$PENGUIN_SESSION_ID"` — unless the user asked for somewhere else: the prompt then arrives in this conversation, with its context. Leave the target off when the user wants a separate session, or when the task is better off starting clean (a nightly report that should not inherit this conversation); each firing then opens a new session, which `--workspace <path>` and the `--model-id` + `--provider` pair configure.
 - `add` creates the schedule **enabled** (`--disabled` stages it off) — deliberately diverging from the raw file, where `enabled` defaults to false. `update` is read-modify-write: unspecified fields keep their stored values, and switching the target form clears the other one.
 - In `schedule ls`, read: the AGENT column (without `--agent-id` the listing spans agents), `enabled` (a disabled entry never fires), `startAt` (first firing), `period` (absent means one-shot), the target — an existing session versus a new session per firing — and `lastFiredAt`.
 - The CLI writes through the schedules API, so mistakes are rejected synchronously. The TOML file stays the single source of truth — `<app_data_dir>/agents/<agent_id>/agent_state/schedule/<name>.toml`, fields mirroring the flags (`prompt`, `enabled` — false by default in the file, `start_at`, `period`, `end_at`, `session_id` / `workspace`+`provider`+`model_id`) — and remains editable with file tools; your system prompt's schedule roster lists yours. A hand edit is only validated by the periodic reconcile (roughly every 30s), with errors landing in error records rather than your terminal — prefer the CLI.
@@ -157,6 +160,6 @@ Prefer (a) when you stay around for the result — the completion report comes t
 
 - **One active task per session.** `penguin input` at a busy session steers the running task rather than starting a second one; a new task sent at a busy session waits its turn. For parallel work, start parallel sessions.
 - **Unattended sessions must not need a human.** A spawned session inherits your approval mode (`allow-all` when there is no caller to inherit from); if you yourself run under `always-ask`, pass `--approve allow-all` (trusted work) or `--approve read-only` explicitly — an unattended `always-ask` session hangs waiting for approval in the web UI.
-- **No runaway loops.** An agent that messages itself — directly, through a chain of agents, or through a schedule aimed back at its own session — keeps spending until someone stops it. Make every automated conversation terminate.
+- **No runaway loops.** An agent that messages itself — directly, through a chain of agents, or through a schedule aimed back at its own session — keeps spending until someone stops it. Make every automated conversation terminate: a recurring schedule pointed at your own session takes an `--end-at` whenever the request has a natural horizon (or no `--period` at all, for a one-time reminder), and a prompt whose per-firing work stays small — that session's context grows with every firing. When the user wants it open-ended, leave `--end-at` off and tell them it runs until they remove it.
 - **Spawned work bills the project.** Everything you start lands in the same project's usage (`penguin cost` shows it); a fan-out of sessions multiplies spend.
 - **Configuration stays CLI-managed.** Never read or hand-edit `.project_config.toml` or `agent_state/.vault.toml` — models and secrets go through `penguin config` (see the penguin-cli skill).

@@ -22,7 +22,7 @@ import { createHash } from "node:crypto";
  * change without it moving. (The reverse — moving it with no default change — is inert rather
  * than an error: nothing is keyed by version, so there is no table to fall out of sync with.)
  */
-export const KERNEL_VERSION = "2026-08-24";
+export const KERNEL_VERSION = "2026-08-26";
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -175,10 +175,16 @@ export function isKernelOutdated(kernelVersion: string | null | undefined): bool
  *   `kill_command` / `kill_subagent` tools joined the set, moving the tools tab; alongside
  *   them the memory prompt was reworded to name when a fact is worth saving (PR #397), moving
  *   the memory tab.
- * - `2026-08-24` (current) — the kill notion left: `kill_command` folded into `input_command`
- *   as its `kill` parameter, `kill_subagent` was removed outright (a subagent session is never
+ * - `2026-08-24` — the kill notion left: `kill_command` folded into `input_command` as its
+ *   `kill` parameter, `kill_subagent` was removed outright (a subagent session is never
  *   destroyed — `input_subagent` resumes a released id), and `input_subagent` gained `abort`
  *   and now returns the subagent's latest reply: the tools tab moved.
+ * - `2026-08-26` (current) — the schedules prompt's default target became the Session the
+ *   model is already in (`session_id` taken from the Environment section) instead of a fresh
+ *   Session per trigger, alongside the hygiene line that bounds a self-directed recurring task
+ *   and the carve-outs from the new default (an open-ended reminder keeps no `end_at`, work
+ *   that must outlive the conversation takes the new-Session form, and a subagent omits the
+ *   field): the schedules tab moved.
  */
 export const KERNEL_DEFAULT_TAB_HASHES: Readonly<Record<KernelTab, string>> = {
   prompt: "048198c37b8d7840352c225fdfcb15baf2679973c6eab4bf400d492daf6ce254",
@@ -187,7 +193,7 @@ export const KERNEL_DEFAULT_TAB_HASHES: Readonly<Record<KernelTab, string>> = {
   skills: "7e343aa692e5eaeadfc8add6bb375fb50ac33ef81ebe460490fc219b0f3d707f",
   memory: "53d190390829cc0132bb12e468a6891f2e0576ec0c4022a9b4a5d9233666900d",
   vault: "19bd36a6d4ab442b66583c423450602b817990a9a79bafa21c9b6137fb6b47d8",
-  schedules: "79123643abd445c8540696c3e4395d9582cfa662bed2e5f879dd859fa09715f2",
+  schedules: "c722922eca13a83400d92924e4d1aa8b09964b4081261be81e5149f0eae1119d",
 };
 
 /**
@@ -216,6 +222,8 @@ export const KERNEL_SUPERSEDED_TAB_HASHES: KernelSupersededTabHashes = {
   ],
   // The memory prompt's wording before #397 named when a fact is worth saving.
   memory: ["c28acdda755552967cd0c99ba4ced407eddfa843b3dce228a965da4674676dc7"],
+  // The schedules prompt before a scheduled task defaulted to the current Session.
+  schedules: ["79123643abd445c8540696c3e4395d9582cfa662bed2e5f879dd859fa09715f2"],
 };
 
 /**
