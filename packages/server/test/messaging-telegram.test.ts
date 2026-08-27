@@ -1093,6 +1093,59 @@ describe("telegram binding routes and connector loop", () => {
     expect(t.deps.messagingRepo.find(SID, "telegram")?.lastChatId).toBe(`${FORUM_CHAT}:77`);
   });
 
+  it("a held reply answers into the topic its run was ASKED in, not the one the chat moved to", async () => {
+    // `finalReplyOnly` delivers at the run's END, which is long after the chat can move: a
+    // second person writing in another topic meanwhile takes over both `last_chat_id` and the
+    // reply anchor. Addressed at delivery time, the WHOLE answer to the first question would
+    // land in their topic, quoted onto their message — the every-message relay can misplace
+    // the tail of a reply that way, never the entire thing.
+    const row = sessionRowOf(SID2, projectId);
+    t.deps.sessionsRepo.insert(row);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    t.deps.manager.adopt(row, multiMessageFakeSession(SID2, ["working on it", "the answer"], gate));
+    expect((await api.put(BASE(SID2), { botToken: TOKEN, finalReplyOnly: true })).status).toBe(200);
+    expect((await api.post(`${BASE(SID2)}/state`, { enabled: true })).status).toBe(200);
+    await waitFor(() => t.deps.messaging.statusOf(SID2, "telegram").state === "connected");
+
+    // The bridge subscribed to this channel before this listener did, so a message seen here
+    // is one it has already handled — and the run's `running` edge came before it.
+    let seen = 0;
+    const off = t.deps.channels.get(SID2).subscribe((evt) => {
+      const msg = JSON.parse(evt.data) as { type?: string; payload?: { role?: string } };
+      if (msg.type === "model_msg" && msg.payload?.role === "assistant") seen += 1;
+    });
+    fake.push(forumText("what is it?", 201, TOPIC));
+    await waitFor(() => seen === 1);
+    off();
+
+    // Bob, in another topic, while the run is parked on its last message. A sticker rather
+    // than text so nothing queues behind the run: what matters is only that the chat moved.
+    fake.push({
+      message_id: 202,
+      chat: { id: FORUM_CHAT, type: "supergroup", is_forum: true },
+      message_thread_id: 77,
+      is_topic_message: true,
+      from: { first_name: "Bob" },
+    });
+    await waitFor(() => fake.allSends().length === 1);
+    expect(t.deps.messagingRepo.find(SID2, "telegram")?.lastChatId).toBe(`${FORUM_CHAT}:77`);
+
+    release();
+    await waitFor(() => fake.allSends().length === 2);
+    const sends = fake.allTexts();
+    // Bob's message got its notice where Bob wrote it — the live target is right for that.
+    expect(sends[0]).toMatchObject({
+      text: MESSAGING_TEXT_ONLY_NOTICE,
+      threadId: 77,
+      replyTo: 202,
+    });
+    // ...and the answer went back to the topic that asked, quoting the message that asked it.
+    expect(sends[1]).toMatchObject({ text: "the answer", threadId: TOPIC, replyTo: 201 });
+  });
+
   it("sends the approval notice and the test message into the remembered topic", async () => {
     const row = sessionRowOf(SID2, projectId);
     // The approval only becomes an event when something is actually asked.

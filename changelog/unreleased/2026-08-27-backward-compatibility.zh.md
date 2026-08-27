@@ -3,17 +3,19 @@
 - **Date:** 2026-08-27
 - **Type:** process
 - **Scope:** `server`, `web`
-- **PR:** [#507](https://github.com/Prism-Shadow/penguin-harness/pull/507), [#508](https://github.com/Prism-Shadow/penguin-harness/pull/508)
+- **PR:** [#507](https://github.com/Prism-Shadow/penguin-harness/pull/507), [#508](https://github.com/Prism-Shadow/penguin-harness/pull/508), [#512](https://github.com/Prism-Shadow/penguin-harness/pull/512)
 - **Breaking:** yes — 仅在降级时：最后一条消息写在论坛话题里的 Telegram 绑定，在此改动之前的构建上会一直发不出消息，直到下一条入站消息到来
 
 [English](2026-08-27-backward-compatibility.md)
 
-本批改动动到了三样会跨越版本存活的东西。[把浏览器持久化的 UI 状态按数据根划定作用域](2026-08-26-install-scoped-local-state.zh.md)
+本批改动动到了四样会跨越版本存活的东西。[把浏览器持久化的 UI 状态按数据根划定作用域](2026-08-26-install-scoped-local-state.zh.md)
 新增了数据根里的文件 `<root>/install-id` 与 `localStorage` 条目 `penguin.installId`；
 [让 Telegram 的回复带上提问所在的论坛话题](2026-08-26-telegram-forum-topics.zh.md)则改变了存量
-`web.db` 上 `messaging_bindings.last_chat_id` 的含义——不增删任何列，也不重写任何行。需要做决定的
-只有浏览器一侧与这一列；那个文件和那个键也一并记在这里，方便有人来查「我这套安装需要做什么吗？」时，
-在同一处找到全部答案。
+`web.db` 上 `messaging_bindings.last_chat_id` 的含义——不增删任何列，也不重写任何行；
+[只转发一次运行的最终回复](2026-08-27-messaging-final-reply-only.zh.md)新增了一列
+`messaging_bindings.final_reply_only`。需要做决定的只有浏览器一侧与 `last_chat_id` 的含义变化；那个
+文件、那个键和这个新列也一并记在这里，方便有人来查「我这套安装需要做什么吗？」时，在同一处找到全部
+答案。
 
 
 ## 有键、但从未记录过 id 的浏览器
@@ -69,6 +71,18 @@
 话」唯一的编码，每个私聊、每个普通群、每个论坛的 General 话题，每条消息写的都是它。两种形式的解析
 本身就是这个格式，所以裸形式永远会继续被写入，读取它的代码也永远不会被删除。
 `telegram-connector.ts` 里的 `chatRefOf` 写有同样的说明。
+
+## 新增的 `final_reply_only` 列
+
+[只转发一次运行的最终回复](2026-08-27-messaging-final-reply-only.zh.md)新增了
+`messaging_bindings.final_reply_only INTEGER NOT NULL DEFAULT 0`，由既有的 `ensureColumn` 清单在打
+开时 ALTER 补上——那份清单正是为此存在，形状与上一批的 `line_per_message` 完全相同。它纯属新增，无需
+任何决策：默认值复现了每份存量绑定原本的送达方式——一次运行中每条完成的助手消息在完成时逐条转发——因
+此没有任何绑定的行为改变，没有任何数据被改写，用户也无需做任何事。该 `ensureColumn` 条目的保留期与
+「本次发布之前形成的 `web.db` 仍可被打开」等长，与该清单中其余条目同一口径。
+
+降级在两个方向上都看不出来。这一列的效果由 bridge 实现，因此旧构建会忽略一个它从未听说过的列，重新
+逐条转发；设置本身仍留在磁盘上，再升级回来时无需用户重新保存即可继续生效。
 
 ## 兼容性
 

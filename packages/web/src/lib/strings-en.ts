@@ -1829,10 +1829,8 @@ Scenarios:
     /** Why "send test message" is disabled before the bot has ever been messaged. */
     testMessageNoChat: "Message the bot once in QQ first, so it knows which chat to send to",
     /**
-     * The rule that shapes this whole channel, disclosed under "what does binding do" beside
-     * the reply budget: neither is a fault, both are how QQ delivers. The troubleshooting
-     * fold answers the same rule from the other end, for a reader who arrives already
-     * wondering why nothing came back.
+     * The rule that shapes this whole channel, stated where it is first needed rather than
+     * left for the user to infer from a reply that never arrives.
      */
     repliesOnly:
       "QQ only lets a bot reply to a message you just sent it — it cannot start one. So a turn you begin in the web app is not mirrored to QQ, and once a few minutes have passed since your last QQ message, replies can no longer be delivered either. Send the bot another message in QQ to continue.",
@@ -1943,11 +1941,13 @@ Scenarios:
     finalReplyOnlyHelp:
       "Only the last thing the assistant says in a run is sent, when the run ends. The notes it writes between tool calls stay in the web app instead of arriving as their own messages, so the chat receives the answer rather than the work — at the cost of hearing nothing while a long run is under way. The approval reminder is not a reply and still arrives immediately. With one message per line also on, that final reply is the one that is split.",
     /**
-     * Appended for QQ only. Not a nuance of the same trade but a different outcome: QQ can
-     * only send a passive reply anchored to an inbound message, and that anchor expires. On
-     * the other two channels the cost of holding the reply is silence; here a run that
-     * outlasts the window delivers nothing at all, which the channel-neutral sentence above
-     * would leave the user to discover from an empty chat.
+     * QQ only, and said twice there: appended to the option's explanation for the reader
+     * deciding, and stood under the row as a warning strip while the switch is on. Not a
+     * nuance of the same trade but a different outcome: QQ can only send a passive reply
+     * anchored to an inbound message, and that anchor expires. On the other two channels the
+     * cost of holding the reply is silence; here a run that outlasts the window delivers
+     * nothing at all — too much to rest on a "?" the user need never open, which would leave
+     * them to discover it from an empty chat.
      */
     finalReplyOnlyQQWarning:
       "On QQ this needs a second thought: QQ only accepts a passive reply anchored to an inbound message, and that anchor expires after about five minutes. Holding the reply until the run ends means a run that outlasts the window delivers nothing at all — with this off, at least whatever finished inside the window arrives.",

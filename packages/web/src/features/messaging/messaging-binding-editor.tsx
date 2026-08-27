@@ -50,7 +50,7 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
-import { toneInk, type Tone } from "../../lib/tone";
+import { toneInk, toneStrip, type Tone } from "../../lib/tone";
 import { Button } from "../../components/ui/button";
 import { FieldLabel } from "../../components/ui/field";
 import { HelpFold } from "../../components/ui/help-fold";
@@ -868,6 +868,12 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
               onChange={(checked) => b.patchForm({ qq: { ...form.qq, clearSecret: checked } })}
             />
           )}
+          {/* The one channel whose rule cannot wait for a collapsed fold: QQ delivers only
+              replies to messages sent from QQ, so a user who binds it and then types in the
+              web app sees nothing arrive and concludes the binding is broken. It sits under
+              this channel's fields rather than above them, which keeps the controls at the
+              same height across channels. */}
+          <p className="text-xs text-gray-500 dark:text-gray-400">{S.qq.repliesOnly}</p>
         </>
       ) : (
         <>
@@ -937,9 +943,10 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
           is a passive reply anchored to an inbound message, and that anchor expires, so
           holding the reply to the run's end loses a long run's output entirely instead of
           merely delaying it. That is a different outcome, not a nuance of the same one, so it
-          is appended to the explanation rather than left to the docs — the alternative is the
-          user learning it from an empty chat. `linePerMessage` needs nothing similar: QQ
-          clamps the split to its own budget and the reply still arrives. */}
+          is said twice — appended to the explanation, for the reader deciding, and stood on
+          screen under the row while the switch is on, for the one who already has. Left to
+          the "?" alone, the user learns it from an empty chat. `linePerMessage` needs nothing
+          similar: QQ clamps the split to its own budget and the reply still arrives. */}
       <DeliveryOptionRow
         label={S.messaging.finalReplyOnly}
         help={
@@ -955,6 +962,16 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
         checked={delivery.finalReplyOnly}
         onChange={(v) => patchDelivery({ finalReplyOnly: v })}
       />
+      {/* Rendered by the state it describes, so it is on screen exactly while the loss it
+          names is possible and nowhere else. */}
+      {channel === "qq" && delivery.finalReplyOnly && (
+        <p
+          role="alert"
+          className={`rounded-md border px-2.5 py-1.5 text-xs ${toneStrip.attention}`}
+        >
+          {S.messaging.finalReplyOnlyQQWarning}
+        </p>
+      )}
       <DeliveryOptionRow
         label={S.messaging.linePerMessage}
         help={S.messaging.linePerMessageHelp}
@@ -994,14 +1011,8 @@ export function MessagingBindingHelp({ channel }: { channel: MessagingChannel })
         <p>{per.intro}</p>
         {/* The channel's own flavor first, then the channel-neutral rule that owns the
             question a reader actually arrives with: how the bot moves conversations. */}
-        {/* QQ's two caveats belong to "what binding does" rather than troubleshooting:
-            neither is a fault, both are how the channel delivers. The replies-only rule
-            comes first because it decides whether a reply arrives at all, and the budget
-            after it because it only shapes one that does. They are disclosed here rather
-            than standing under the fields — a rule that is true of the channel forever is
-            read once, and a permanent paragraph on one channel is read past on every later
-            visit while making that channel's form the odd one out. */}
-        {channel === "qq" && <p className="mt-1.5">{S.qq.repliesOnly}</p>}
+        {/* QQ's reply budget belongs to "what binding does" rather than troubleshooting:
+            it is not a fault, it is how the channel delivers a long answer. */}
         {channel === "qq" && <p className="mt-1.5">{S.qq.replyBudget}</p>}
         <p className="mt-1.5">{S.messaging.faqWhatBinding}</p>
       </HelpFold>

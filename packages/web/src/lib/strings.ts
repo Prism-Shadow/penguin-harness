@@ -1791,10 +1791,8 @@ Benchmark：
     /** Why "send test message" is disabled before the bot has ever been messaged. */
     testMessageNoChat: "先在 QQ 中给机器人发一条消息，机器人才知道要发到哪个会话",
     /**
-     * The rule that shapes this whole channel, disclosed under "what does binding do" beside
-     * the reply budget: neither is a fault, both are how QQ delivers. The troubleshooting
-     * fold answers the same rule from the other end, for a reader who arrives already
-     * wondering why nothing came back.
+     * The rule that shapes this whole channel, stated where it is first needed rather than
+     * left for the user to infer from a reply that never arrives.
      */
     repliesOnly:
       "QQ 只允许机器人回复你刚发出的消息，不允许主动发消息。因此：在网页端发起的对话不会同步到 QQ；距离你上一条 QQ 消息过去几分钟后，回复也发不出去。想继续对话，在 QQ 里再发一条消息即可。",
@@ -1898,11 +1896,13 @@ Benchmark：
     finalReplyOnlyHelp:
       "开启后，一次运行中只有助手最后说的那段话会发出，且在运行结束时发送。它在工具调用之间写下的过程记录留在网页端，不再各自作为一条消息到达——聊天里收到的是结论而非过程，代价是长时间运行期间聊天中一片安静。审批提醒不属于回复，仍会立即到达。若同时开启「每行一条消息」，被拆分的就是这条最终回复。",
     /**
-     * Appended for QQ only. Not a nuance of the same trade but a different outcome: QQ can
-     * only send a passive reply anchored to an inbound message, and that anchor expires. On
-     * the other two channels the cost of holding the reply is silence; here a run that
-     * outlasts the window delivers nothing at all, which the channel-neutral sentence above
-     * would leave the user to discover from an empty chat.
+     * QQ only, and said twice there: appended to the option's explanation for the reader
+     * deciding, and stood under the row as a warning strip while the switch is on. Not a
+     * nuance of the same trade but a different outcome: QQ can only send a passive reply
+     * anchored to an inbound message, and that anchor expires. On the other two channels the
+     * cost of holding the reply is silence; here a run that outlasts the window delivers
+     * nothing at all — too much to rest on a "?" the user need never open, which would leave
+     * them to discover it from an empty chat.
      */
     finalReplyOnlyQQWarning:
       "在 QQ 上要多想一步：QQ 只接受锚定在某条入站消息上的被动回复，且该锚点约五分钟后失效。把回复押到运行结束，意味着运行超过这个窗口时一条也发不出去——关闭本开关时，至少窗口内完成的那几条能送达。",
