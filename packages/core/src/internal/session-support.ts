@@ -51,8 +51,8 @@ export function sessionEnvironment(
     modelId: ids.modelId,
     platform: process.platform,
     osVersion: getOsVersion(),
-    // The shell exec_command actually runs (bash on POSIX; resolved on Windows): the model
-    // must know whether to write bash or PowerShell syntax.
+    // The shell exec_command actually runs, resolved once per process on every platform: the
+    // model must know whether to write bash, PowerShell or plain POSIX syntax.
     shell: sessionShell().name,
     date: formatLocalDate(date),
   };

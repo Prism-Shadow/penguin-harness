@@ -631,17 +631,22 @@ export async function listScheduleNames(
 }
 
 /**
- * Windows compatibility fallback for pre-`{{SHELL}}` system prompt templates.
+ * Compatibility fallback for pre-`{{SHELL}}` system prompt templates.
  *
  * `system_config.yaml` is baked at Agent creation and never auto-upgraded, so an Agent created
  * before the `{{SHELL}}` placeholder existed never tells its model which shell `exec_command`
- * speaks — and on Windows (where the shell may be PowerShell, not bash) the model then keeps
- * emitting bash syntax into the wrong shell. When the platform is win32 and the template carries
- * no `{{SHELL}}` placeholder, inject a `- Shell: <shell>` line into the assembled prompt at
- * render time: right after the Environment section heading when one exists, else appended as a
- * minimal final line. In-memory only — the stored template is never rewritten. On POSIX the
- * assembled prompt stays byte-identical (bash was always implied there), and a prompt that
- * already carries the exact line is left untouched (idempotent).
+ * speaks. Such a template was written when bash was the only shell commands ever ran in, so the
+ * model keeps emitting bash syntax into whatever the session actually resolved — PowerShell on
+ * Windows, and zsh / dash / sh on a POSIX box that has no bash. When the resolved shell is not
+ * bash and the template carries no `{{SHELL}}` placeholder, inject a `- Shell: <shell>` line
+ * into the assembled prompt at render time: right after the Environment section heading when
+ * one exists, else appended as a minimal final line. In-memory only — the stored template is
+ * never rewritten, and a prompt that already carries a `- Shell:` line is left untouched
+ * (idempotent).
+ *
+ * The gate is the resolved shell, not the platform: wherever bash resolved — the overwhelmingly
+ * common case on every platform — the assembled prompt stays byte-identical, because bash is
+ * precisely what these templates already imply.
  *
  * Retirement condition: remove this fallback once pre-`{{SHELL}}` Agent configs (created before
  * the placeholder shipped in PR #79) are no longer expected in the wild.
@@ -651,8 +656,9 @@ function withShellLineFallback(
   template: string,
   sessionEnvironment?: SessionEnvironmentValues,
 ): string {
-  if (sessionEnvironment?.platform !== "win32") return assembled;
-  if (!sessionEnvironment.shell) return assembled;
+  if (!sessionEnvironment?.shell) return assembled;
+  // Bash is what a pre-`{{SHELL}}` template already implies; only a different shell needs saying.
+  if (sessionEnvironment.shell === "bash") return assembled;
   if (template.includes(SHELL_PLACEHOLDER)) return assembled; // The template already renders the line itself.
   // Any existing `- Shell:` line means the model is already told a shell — including a custom
   // template hardcoding a different value on purpose; never add a second, contradicting line.
@@ -678,8 +684,9 @@ const SECTION_PLACEHOLDER_PATTERN = /\{\{(?:MEMORY|VAULT|SKILLS|SCHEDULES)\}\}/g
  * template, and the # Vault / # Skills / # Memory / # Scheduled Tasks statements live in the
  * editable `vault.prompt` / `skills.prompt` / `memory.prompt` / `schedules.prompt` config (the
  * Prompt is fully transparent and editable via `system_config.yaml`). Other files in Agent
- * State / Workspace are never auto-injected. Sole exception: on win32 a template without
- * `{{SHELL}}` gets a `- Shell:` line injected at render time (see `withShellLineFallback`).
+ * State / Workspace are never auto-injected. Sole exception: a template without `{{SHELL}}`
+ * gets a `- Shell:` line injected at render time when the resolved shell is not bash (see
+ * `withShellLineFallback`).
  *
  * `{{VAULT}}` expands to the rendered `vault.prompt` (its `{{VAULT_KEYS}}` carrying the
  * key-name list — names only, values never enter the context), `{{SKILLS}}` to `skills.prompt`
