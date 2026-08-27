@@ -2,7 +2,8 @@
  * Telegram messaging connector — the second implementation of the
  * MessagingChannelConnector seam, and the proof the seam is channel-neutral. It owns
  * everything Telegram-specific: the config document's shape (a single bot token), the
- * Bot API transport behind it (injectable for tests — see telegram-api.ts), and the
+ * Bot API transport behind it (injectable for tests — see telegram-api.ts), the forum-topic
+ * routing it packs into the bridge's opaque chat and reply refs (see chatRefOf), and the
  * inbound side as a `getUpdates` long-poll loop — Telegram pushes nothing without a
  * public webhook URL, so the connector pulls, which keeps local deployments working
  * exactly like the Feishu long connection does.
@@ -41,15 +42,18 @@ import type {
   MessagingConnection,
   MessagingConnectorHandlers,
   MessagingInboundMessage,
+  MessagingSendNote,
 } from "./connector.js";
 import type {
   TelegramBotClient,
   TelegramBotUser,
   TelegramCredentials,
+  TelegramMessage,
   TelegramMessageEntity,
   TelegramTransport,
   TelegramUpdate,
 } from "./telegram-api.js";
+import { TelegramApiError } from "./telegram-api.js";
 
 /** The Telegram binding's stored config document (`messaging_bindings.config_json`). */
 export interface TelegramBindingConfig extends Record<string, unknown> {
@@ -91,18 +95,63 @@ export interface TelegramConnectorOpts {
   retryDelayMs?: (failures: number) => number;
 }
 
-/** Reply refs pack the chat id in with the message id: Telegram message ids are only unique per chat. */
-function replyRefOf(chatId: number, messageId: number): string {
-  return `${chatId}:${messageId}`;
+/**
+ * Chat and reply refs pack this channel's routing context into the two opaque strings the
+ * bridge already carries for it (MessagingInboundMessage's `chatId` and `messageId`): the
+ * connector mints them and the connector consumes them, so nothing between the two has to
+ * learn what a forum topic is — and the chat ref reaches `sendText` through the stored
+ * `messaging_bindings.last_chat_id`, which is what makes the remembered topic survive a
+ * restart with no column of its own.
+ *
+ * `:` is the separator because a Telegram chat id is a bare integer and a message id and a
+ * thread id both are too, so no component can ever contain one.
+ *
+ * A missing trailing component means "no forum topic", which covers every chat a topic
+ * cannot be sent to (see topicIdOf) as well as a forum's General topic — and it is also what
+ * every chat id stored before this existed looks like, so old rows parse as themselves. That
+ * is not compatibility code with a removal date: the bare form is the only encoding a chat
+ * with no topic has, so nothing ever stops writing it and nothing ever stops reading it.
+ */
+function chatRefOf(chatId: number, threadId: number | undefined): string {
+  return threadId === undefined ? `${chatId}` : `${chatId}:${threadId}`;
 }
 
-function parseReplyRef(ref: string): { chatId: string; messageId: number } {
+function parseChatRef(ref: string): { chatId: string; threadId?: number } {
   const i = ref.indexOf(":");
-  const messageId = i >= 0 ? Number(ref.slice(i + 1)) : NaN;
-  if (i <= 0 || !Number.isSafeInteger(messageId)) {
+  if (i < 0) return { chatId: ref };
+  const threadId = Number(ref.slice(i + 1));
+  if (i === 0 || !Number.isSafeInteger(threadId)) {
+    throw new Error(`malformed telegram chat ref "${ref}"`);
+  }
+  return { chatId: ref.slice(0, i), threadId };
+}
+
+/** Reply refs pack the chat id in with the message id: Telegram message ids are only unique per chat. */
+function replyRefOf(chatId: number, messageId: number, threadId: number | undefined): string {
+  const base = `${chatId}:${messageId}`;
+  return threadId === undefined ? base : `${base}:${threadId}`;
+}
+
+function parseReplyRef(ref: string): { chatId: string; messageId: number; threadId?: number } {
+  const [chatId, rawMessageId, rawThreadId, ...rest] = ref.split(":");
+  const messageId = Number(rawMessageId);
+  if (
+    chatId === undefined ||
+    chatId === "" ||
+    rawMessageId === undefined ||
+    !Number.isSafeInteger(messageId) ||
+    rest.length > 0
+  ) {
     throw new Error(`malformed telegram reply ref "${ref}"`);
   }
-  return { chatId: ref.slice(0, i), messageId };
+  // The thread half is optional: refs minted before it existed have two components, and so
+  // does every message written outside a forum topic (see topicIdOf).
+  if (rawThreadId === undefined) return { chatId, messageId };
+  const threadId = Number(rawThreadId);
+  if (!Number.isSafeInteger(threadId)) {
+    throw new Error(`malformed telegram reply ref "${ref}"`);
+  }
+  return { chatId, messageId, threadId };
 }
 
 /** Abortable sleep (the backoff must not outlive a closed connection). */
@@ -120,6 +169,43 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
     }
     signal.addEventListener("abort", done);
   });
+}
+
+/** The note `sendWithThreadFallback` resolves when the topic had to be dropped to deliver. */
+const THREAD_DROPPED_NOTE = "forum topic gone, the reply went to General instead";
+
+/**
+ * One send, with the forum topic when there is one, degrading to a send without it if
+ * Telegram rejects the topic.
+ *
+ * A topic can be deleted or closed under a conversation that was happily using it, and the
+ * Bot API offers no `allow_sending_without_thread` to match the reply flag — the call simply
+ * fails with `Bad Request: message thread not found`. Retrying without the topic puts the
+ * message in General rather than losing a reply the model has already produced.
+ *
+ * Only a 400 is retried, and only when a thread was attached. Every other shape must reach
+ * the caller on its first attempt: a 429 flood-wait would be made worse by an immediate
+ * second request, and a transport failure — a timeout, a reset — may well have delivered the
+ * message already, so re-sending it would duplicate it in the chat. Those failures surface
+ * as `messaging_send_failed` instead, like any other.
+ */
+async function sendWithThreadFallback(
+  bot: TelegramBotClient,
+  args: { chatId: string; text: string; replyToMessageId?: number },
+  threadId: number | undefined,
+): Promise<MessagingSendNote | void> {
+  if (threadId === undefined) {
+    await bot.sendMessage(args);
+    return;
+  }
+  try {
+    await bot.sendMessage({ ...args, messageThreadId: threadId });
+    return;
+  } catch (err) {
+    if (!(err instanceof TelegramApiError) || err.errorCode !== 400) throw err;
+  }
+  await bot.sendMessage(args);
+  return THREAD_DROPPED_NOTE;
 }
 
 /** Whether this entity is a mention OF the bot itself, by either of the two shapes Telegram uses. */
@@ -161,6 +247,23 @@ function stripBotMention(
 }
 
 /**
+ * The forum topic this message was written in, or undefined when it was written anywhere a
+ * topic cannot be sent back to.
+ *
+ * `message_thread_id` alone does not mean "forum topic": Telegram also sets it on an
+ * ordinary reply chain, in a private chat and in a supergroup that is no forum, while
+ * `sendMessage`'s `message_thread_id` is accepted for forum topics only. Echoing one back
+ * anywhere else fails every outbound message of that binding with `Bad Request: message
+ * thread not found` — permanently, since the value is what gets persisted. Both flags are
+ * therefore required before a value is minted into a ref.
+ */
+function topicIdOf(msg: TelegramMessage): number | undefined {
+  return msg.chat.is_forum === true && msg.is_topic_message === true
+    ? msg.message_thread_id
+    : undefined;
+}
+
+/**
  * One update reduced to the bridge's normalized shape; null for updates that are not chat
  * messages. `me` is this bot's own account (null before the first `getMe` of a connection
  * has answered), used only to recognize its own mention.
@@ -172,10 +275,14 @@ function normalizeUpdate(
   const msg = update.message;
   if (msg === undefined) return null;
   const senderName = msg.from?.first_name ?? msg.from?.username;
+  const topicId = topicIdOf(msg);
   return {
-    chatId: String(msg.chat.id),
+    // The topic rides the chat id so the binding remembers the LAST one written in, the same
+    // way it already remembers the last chat: a user who moves to a new topic gets the
+    // replies there.
+    chatId: chatRefOf(msg.chat.id, topicId),
     chatKind: msg.chat.type === "private" ? "direct" : "group",
-    messageId: replyRefOf(msg.chat.id, msg.message_id),
+    messageId: replyRefOf(msg.chat.id, msg.message_id, topicId),
     // Only text messages carry `text`; every other message type normalizes to null (the
     // bridge answers those with the text-only notice).
     text: typeof msg.text === "string" ? stripBotMention(msg.text, msg.entities, me) : null,
@@ -213,12 +320,17 @@ export class TelegramConnector implements MessagingChannelConnector {
             : {}),
         };
       },
-      async sendText(chatId, text) {
-        await bot.sendMessage({ chatId, text });
+      sendText(chatRef, text) {
+        const { chatId, threadId } = parseChatRef(chatRef);
+        return sendWithThreadFallback(bot, { chatId, text }, threadId);
       },
-      async replyText(messageRef, text) {
-        const { chatId, messageId } = parseReplyRef(messageRef);
-        await bot.sendMessage({ chatId, text, replyToMessageId: messageId });
+      replyText(messageRef, text) {
+        const { chatId, messageId, threadId } = parseReplyRef(messageRef);
+        // The thread rides along even though a reply normally inherits its target's topic:
+        // `allow_sending_without_reply` degrades a vanished target to a plain send, and a
+        // plain send with no thread lands in General — losing the topic exactly when the
+        // conversation is least able to spare it.
+        return sendWithThreadFallback(bot, { chatId, text, replyToMessageId: messageId }, threadId);
       },
     };
   }

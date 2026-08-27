@@ -140,7 +140,18 @@ class FakeSdk implements FeishuSdk {
   botIdentityLookups = 0;
   /** Non-null makes every outbound sendText throw with this message. */
   failSend: string | null = null;
+  /**
+   * Non-null holds every createClient until it resolves, which is what makes the bridge's
+   * one await between reading the binding row and its first send observable to a test.
+   */
+  createClientGate: Promise<void> | null = null;
+  /** How many createClient calls the gate has held. */
+  gated = 0;
   async createClient(creds: FeishuCredentials): Promise<FeishuApiClient> {
+    if (this.createClientGate !== null) {
+      this.gated++;
+      await this.createClientGate;
+    }
     const client = new FakeClient(creds, this);
     this.clients.push(client);
     return client;
@@ -801,6 +812,49 @@ describe("messaging binding routes and bridge", () => {
       { kind: "reply", target: "om_group_7", text: "first" },
       { kind: "send", target: "oc_group_7", text: "second" },
       { kind: "send", target: "oc_group_7", text: "third" },
+    ]);
+  });
+
+  it("delivers every chunk of one reply to the chat the row named when the delivery began", async () => {
+    // A reply long enough to chunk, so the first chunk (which threads onto the inbound
+    // message) and the rest (plain sends to the stored chat) can disagree at all.
+    const long = `${"a".repeat(3000)}\n${"b".repeat(3000)}`;
+    const row2 = sessionRowOf(SID2, projectId);
+    t.deps.sessionsRepo.insert(row2);
+    t.deps.manager.adopt(row2, echoFakeSession(SID2, [], long));
+    await bindEnabled(SID2, { ...PUT_BODY, appId: "cli_snapshot" });
+
+    let release!: () => void;
+    fake.createClientGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await fake.lastConnection().fire({
+      chatId: "oc_group_a",
+      chatType: "group",
+      messageId: "om_a",
+      messageType: "text",
+      content: JSON.stringify({ text: "ask in one place" }),
+    });
+    // The delivery is now parked inside the bridge's client lookup, holding a row that names
+    // chat A — the one window in which the two halves of the reply target can move apart.
+    await waitFor(() => fake.gated === 1);
+
+    // A second message lands in another chat mid-delivery. Between messages this is the
+    // documented "answer wherever the user last wrote"; inside one delivery it would split a
+    // single reply across two places (on Telegram, two forum topics).
+    await fake.lastConnection().fire({
+      chatId: "oc_group_b",
+      chatType: "group",
+      messageId: "om_b",
+      messageType: "text",
+      content: JSON.stringify({ text: "and now over here" }),
+    });
+    release();
+
+    await waitFor(() => fake.allSends().length >= 2);
+    expect(fake.allSends().slice(0, 2)).toEqual([
+      { kind: "reply", target: "om_a", text: "a".repeat(3000) },
+      { kind: "send", target: "oc_group_a", text: "b".repeat(3000) },
     ]);
   });
 

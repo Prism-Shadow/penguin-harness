@@ -1,21 +1,23 @@
-# Backward compatibility: install-scoped browser state
+# Backward compatibility
 
 - **Date:** 2026-08-27
 - **Type:** process
 - **Scope:** `server`, `web`
-- **PR:** [#508](https://github.com/Prism-Shadow/penguin-harness/pull/508)
+- **PR:** [#507](https://github.com/Prism-Shadow/penguin-harness/pull/507), [#508](https://github.com/Prism-Shadow/penguin-harness/pull/508)
+- **Breaking:** yes — on downgrade only: a Telegram binding whose last message was written in a forum topic sends nothing on a build from before this change until its next inbound message
 
 [中文版](2026-08-27-backward-compatibility.zh.md)
 
+This batch touched three things that outlive a release.
 [Scoping browser-persisted UI state to its data root](2026-08-26-install-scoped-local-state.md)
-touched two things that outlive a release: a new file in the data root, `<root>/install-id`,
-and a new `localStorage` entry, `penguin.installId`. Only the browser side needed a decision;
-the file and the key are recorded here too, so a reader looking for "does my install need
-anything?" finds every answer in one place.
+added a file in the data root, `<root>/install-id`, and a `localStorage` entry,
+`penguin.installId`; and
+[a Telegram reply carrying the forum topic it was asked in](2026-08-26-telegram-forum-topics.md)
+changed what `messaging_bindings.last_chat_id` means on an existing `web.db`, without adding or
+dropping a column or rewriting a row. Only the browser side and the column needed a decision; the
+file and the key are recorded here too, so a reader looking for "does my install need anything?"
+finds every answer in one place.
 
-(The batch dated 2026-08-26 has its own
-[backward compatibility](2026-08-26-backward-compatibility.md) entry, about `web.db` and the
-messaging bindings. The two are unrelated.)
 
 ## The browser that has keys but no recorded id
 
@@ -69,7 +71,41 @@ no identity at all, and an unknown identity sweeps nothing.
 key the sweep never removes: it is what the comparison reads. Builds from before this change
 do not know the key and leave it alone, so a downgrade is invisible in both directions.
 
+## The `last_chat_id` column
+
+The column held a bare chat id, which every channel handed to its own API as-is. It now holds a
+string only the channel's connector may read: the Telegram connector writes `<chat id>:<topic id>`
+for a message written in a forum topic, and the bare chat id for every other message.
+
+Chosen: **permanent dual-format tolerance.** A row written before this change parses as itself —
+no separator means no topic — so nothing has to be migrated, converted or reset, and a binding
+that has never seen a forum topic is byte-identical to what it was.
+
+Calling that tolerance and asking how long it stays would be the wrong question. The bare form is
+not a legacy encoding: it is the only encoding a chat with no topic has, and every direct chat,
+every ordinary group and every forum's General topic writes one on every message. The two-form
+parse is the format, so nothing ever stops writing the bare form and nothing ever removes the code
+that reads it. `chatRefOf` in `telegram-connector.ts` carries the same note.
+
 ## Compatibility
 
 No action is required on upgrade or on downgrade. The single manual step, for a user who wiped
 a data root before this release, is above.
+
+Upgrading asks nothing of the user. The first message after the upgrade rewrites the column as
+usual, and until then the stored bare id keeps working exactly as it did.
+
+Downgrading is the leg that shows. A user who upgrades, chats in a forum topic and then rolls back
+has `last_chat_id` holding something like `-1004475424385:91`; a build from before this change
+passes that to Telegram as the chat id, `Number("-1004475424385:91")` is `NaN`, and the string
+goes on the wire, so every reply and every test message fails with `Bad Request: chat not found`.
+It repairs itself: the next inbound message on that binding overwrites the column with a bare id.
+Sending the bot one message is the whole fix, and clearing the column by hand does the same:
+
+```sql
+UPDATE messaging_bindings SET last_chat_id = NULL
+WHERE channel = 'telegram' AND last_chat_id LIKE '%:%';
+```
+
+No other channel is affected: Feishu chat ids are opaque strings the connector has always passed
+through untouched.

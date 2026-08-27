@@ -16,7 +16,13 @@ export type MessagingChannel = "feishu" | "telegram" | "qq";
 
 /** One inbound chat message, normalized across channels. */
 export interface MessagingInboundMessage {
-  /** Channel-scoped chat id (the reply target for direct chats). */
+  /**
+   * Channel-scoped chat id, and the reply target for direct chats. Opaque to the bridge, for
+   * the same reason `messageId` is: the connector both mints it here and consumes it in
+   * `sendText`, so a channel whose replies need more routing context than a chat identity
+   * encodes it (Telegram appends the forum topic). It is stored verbatim as the binding's
+   * last known chat, so whatever is encoded here is what survives a restart.
+   */
   chatId: string;
   /** Direct chat with the bot, or a group chat (groups prefer reply-to-message). */
   chatKind: "direct" | "group";
@@ -79,14 +85,24 @@ export interface MessagingAccountInfo {
   readsGroupMessages?: boolean;
 }
 
+/**
+ * What a send had to give up in order to land, as a short readable phrase. The message DID
+ * arrive — a send that did not throws — so this is not a failure: it says the message is
+ * somewhere less right than it was addressed to, which is otherwise invisible from the
+ * outside. A channel that always delivers as addressed returns nothing at all; Telegram is
+ * the one that reports, a forum topic deleted under a live conversation sending the reply to
+ * General instead.
+ */
+export type MessagingSendNote = string;
+
 /** Outbound half of one bound account. Every method throws on failure with a readable reason. */
 export interface MessagingClient {
   /** Credential check (used by the test endpoint); resolving means the config signs in. */
   checkCredentials(): Promise<MessagingAccountInfo | null>;
-  /** Sends a text message into a chat by chat id. */
-  sendText(chatId: string, text: string): Promise<void>;
+  /** Sends a text message into a chat by chat id; resolves a MessagingSendNote when it degraded. */
+  sendText(chatId: string, text: string): Promise<MessagingSendNote | void>;
   /** Replies a text message to a specific inbound message (threads correctly in group chats). */
-  replyText(messageId: string, text: string): Promise<void>;
+  replyText(messageId: string, text: string): Promise<MessagingSendNote | void>;
 }
 
 export interface MessagingChannelConnector {

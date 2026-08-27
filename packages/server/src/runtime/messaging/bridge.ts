@@ -56,6 +56,7 @@ import type {
   MessagingChannelConnector,
   MessagingClient,
   MessagingInboundMessage,
+  MessagingSendNote,
 } from "./connector.js";
 
 /**
@@ -288,6 +289,13 @@ interface BridgeEntry {
   lastInboundAt: string | null;
   lastDeliveryError: MessagingDeliveryError | null;
   /**
+   * The degradation the last outbound send reported (see MessagingSendNote), so a standing
+   * one is logged once per episode: a deleted forum topic degrades every chunk of every
+   * message, and a line per send would bury the fact that it started. Cleared by the first
+   * send that lands as addressed, so a later episode says so again.
+   */
+  lastSendNote: MessagingSendNote | null;
+  /**
    * The last connection failure, kept across recovery. `status.lastError` is wiped by the
    * next successful connect, which is exactly the case worth reporting: a connector that
    * flaps — a second program taking turns with this one on the same bot token — reads as
@@ -492,6 +500,7 @@ export class MessagingBridge {
       lastInboundMessageId: null,
       lastInboundAt: null,
       lastDeliveryError: null,
+      lastSendNote: null,
       lastConnectionError: null,
       active: runState,
       armed: runState === "idle",
@@ -615,6 +624,18 @@ export class MessagingBridge {
     this.recordError(entry.sessionId, err, code);
   }
 
+  /**
+   * A send that landed somewhere less right than it was addressed to. Not a failure — the
+   * message arrived — so it stays out of `lastDeliveryError` and off the panel, and goes to
+   * the log, which is where "the replies moved to General a while ago" is answerable at all.
+   */
+  private noteSend(entry: BridgeEntry, note: MessagingSendNote | void): void {
+    const seen = typeof note === "string" ? note : null;
+    if (seen === entry.lastSendNote) return;
+    entry.lastSendNote = seen;
+    if (seen !== null) this.log(`[messaging] ${entry.channel} delivered degraded: ${seen}`);
+  }
+
   private async clientFor(sessionId: string, row: MessagingBindingRow): Promise<MessagingClient> {
     // The cached client belongs to the CONNECTED channel; another channel's caller (a
     // test message on a saved-but-dark binding) gets a fresh client instead.
@@ -709,8 +730,12 @@ export class MessagingBridge {
     const row = this.deps.repo.find(entry.sessionId, entry.channel);
     if (!row) return;
     const client = await this.clientFor(entry.sessionId, row);
-    if (msg.chatKind === "direct") await client.sendText(msg.chatId, text);
-    else await client.replyText(msg.messageId, text);
+    this.noteSend(
+      entry,
+      msg.chatKind === "direct"
+        ? await client.sendText(msg.chatId, text)
+        : await client.replyText(msg.messageId, text),
+    );
   }
 
   // —— Outbound ——————————————————————————————————————————————————————————————
@@ -797,6 +822,13 @@ export class MessagingBridge {
    * headers over the whole conversation.
    */
   private async deliverReply(entry: BridgeEntry, text: string): Promise<void> {
+    // Both halves of the target are snapshotted together, ahead of every await: this line runs
+    // before sendTarget, which reads the chat ref off the row synchronously before its own.
+    // An inbound message arriving mid-delivery moves them independently, and a reply whose
+    // first chunk threaded onto the new message while the rest went to the chat the row
+    // still named would be split across two places — two forum topics, on a channel that
+    // packs one into the chat ref.
+    const inboundMessageId = entry.lastInboundMessageId;
     const target = await this.sendTarget(entry);
     if (target === null) return;
     const { row, chatId, client } = target;
@@ -811,15 +843,15 @@ export class MessagingBridge {
       // about one a second, so they go out at that pace rather than back to back.
       if (i > 0 && row.linePerMessage) await this.pace();
       const threadOnto =
-        !row.lastChatIsDirect && entry.lastInboundMessageId !== null && !entry.threadedThisRun
-          ? entry.lastInboundMessageId
+        !row.lastChatIsDirect && inboundMessageId !== null && !entry.threadedThisRun
+          ? inboundMessageId
           : null;
       try {
         if (threadOnto !== null) {
           entry.threadedThisRun = true;
-          await client.replyText(threadOnto, chunk);
+          this.noteSend(entry, await client.replyText(threadOnto, chunk));
         } else {
-          await client.sendText(chatId, chunk);
+          this.noteSend(entry, await client.sendText(chatId, chunk));
         }
       } catch (err) {
         this.recordDeliveryFailure(entry, err, "send", "messaging_send_failed");
@@ -832,7 +864,7 @@ export class MessagingBridge {
     const target = await this.sendTarget(entry);
     if (target === null) return;
     try {
-      await target.client.sendText(target.chatId, text);
+      this.noteSend(entry, await target.client.sendText(target.chatId, text));
     } catch (err) {
       this.recordDeliveryFailure(entry, err, "send", "messaging_send_failed");
     }
