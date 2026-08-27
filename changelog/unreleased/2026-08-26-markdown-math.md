@@ -3,6 +3,7 @@
 - **Date:** 2026-08-26
 - **Type:** feature
 - **Scope:** `web`
+- **PR:** [#503](https://github.com/Prism-Shadow/penguin-harness/pull/503)
 
 [中文版](2026-08-26-markdown-math.zh.md)
 
