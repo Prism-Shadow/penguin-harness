@@ -42,6 +42,7 @@ import {
 } from "./hmr/capabilities.js";
 import type { ProxyControl } from "./hmr/capabilities.js";
 import { openDatabase } from "./db/database.js";
+import { migrate } from "./db/migrations.js";
 import { ErrorsRepo } from "./db/repos/errors.js";
 import { MessagingBindingsRepo } from "./db/repos/messaging-bindings.js";
 import { GoalsRepo } from "./db/repos/goals.js";
@@ -668,6 +669,12 @@ export function buildAppDeps(
 ): AppDeps {
   const { config, db, authState, channels, hmr } = caps;
   const log = overrides.log ?? ((line: string) => console.log(line));
+
+  // A pushed platform carries its own migrations, which is the only way the tables its
+  // business needs can reach a runtime older than they are — that runtime will never grow
+  // them by restarting, because it does not have them. swapPath: this boot can be rolled
+  // back, so a restart-only migration is refused here instead of being left behind.
+  migrate(db, { swapPath: true });
 
   const usersRepo = new UsersRepo(db);
   const projectsRepo = new ProjectsRepo(db);

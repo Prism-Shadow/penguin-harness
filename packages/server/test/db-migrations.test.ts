@@ -1,0 +1,209 @@
+/**
+ * The ordered-migration mechanism, and the 0.2.4 → 0.2.7 migration that is its first entry.
+ *
+ * Two properties carry everything else: a real 0.2.4 database reaches exactly the shape a
+ * fresh one is created with (so a runtime older than the platform pushed onto it becomes
+ * usable), and the version stamp commits with the migration (so an interrupted run is never
+ * half-applied). The swapPath suite pins the rule that keeps a hot push honest.
+ */
+import { describe, expect, it } from "vitest";
+import type { DatabaseSync } from "node:sqlite";
+import {
+  LATEST_VERSION,
+  MIGRATIONS,
+  RestartRequiredError,
+  migrate,
+  schemaVersion,
+} from "../src/db/migrations.js";
+import { SCHEMA_SQL } from "../src/db/schema.js";
+
+const sqlite = process.getBuiltinModule("node:sqlite");
+
+/**
+ * The v0.2.4 schema, as a frozen excerpt: today's declaration minus exactly what 0.2.4
+ * lacked. Derived by removing, not by hand-copying 15 tables that would fork from reality.
+ */
+function open024(): DatabaseSync {
+  const db = new sqlite.DatabaseSync(":memory:");
+  db.exec(SCHEMA_SQL);
+  db.exec("DROP TABLE messaging_bindings");
+  db.exec("DROP INDEX IF EXISTS idx_auth_sessions_expires");
+  db.exec("DROP INDEX IF EXISTS idx_auth_sessions_user");
+  return db;
+}
+
+/** Every schema object, in a form two databases can be compared by. */
+function shape(db: DatabaseSync): string {
+  const objs = db
+    .prepare(
+      "SELECT type, name, tbl_name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name",
+    )
+    .all() as { type: string; name: string; tbl_name: string }[];
+  return JSON.stringify(
+    objs.map((o) => ({
+      ...o,
+      detail:
+        o.type === "table"
+          ? db.prepare(`PRAGMA table_info(${o.name})`).all()
+          : db.prepare(`PRAGMA index_info(${o.name})`).all(),
+      unique:
+        o.type === "index"
+          ? (
+              db.prepare(`PRAGMA index_list(${o.tbl_name})`).all() as {
+                name: string;
+                unique: number;
+              }[]
+            ).find((i) => i.name === o.name)?.unique
+          : undefined,
+    })),
+  );
+}
+
+describe("migration mechanism", () => {
+  it("versions are contiguous from 1, so a stamp names an unambiguous state", () => {
+    expect(MIGRATIONS.map((m) => m.version)).toEqual(MIGRATIONS.map((_, i) => i + 1));
+    expect(LATEST_VERSION).toBe(MIGRATIONS.length);
+  });
+
+  it("stamps the database with how far it has come", () => {
+    const db = open024();
+    try {
+      expect(schemaVersion(db)).toBe(0);
+      const r = migrate(db);
+      expect(r.from).toBe(0);
+      expect(r.to).toBe(LATEST_VERSION);
+      expect(r.applied).toEqual(["messaging-bindings"]);
+      expect(schemaVersion(db)).toBe(LATEST_VERSION);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("runs once: an already-current database does no work", () => {
+    const db = open024();
+    try {
+      migrate(db);
+      const before = shape(db);
+      const again = migrate(db);
+      expect(again.applied).toEqual([]);
+      expect(again.from).toBe(LATEST_VERSION);
+      expect(shape(db)).toBe(before);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("a failing migration leaves the version untouched, never half-applied", () => {
+    const db = open024();
+    try {
+      const boom = {
+        version: LATEST_VERSION + 1,
+        name: "explodes",
+        swapSafe: true,
+        up(d: DatabaseSync) {
+          d.exec("CREATE TABLE scratch_marker (x TEXT)");
+          throw new Error("boom");
+        },
+      };
+      migrate(db);
+      const at = schemaVersion(db);
+      const shapeBefore = shape(db);
+      (MIGRATIONS as unknown as (typeof boom)[]).push(boom);
+      try {
+        expect(() => migrate(db)).toThrow(/explodes.*failed/s);
+        expect(schemaVersion(db)).toBe(at);
+        // The table its `up` created is gone with the rolled-back transaction.
+        expect(shape(db)).toBe(shapeBefore);
+      } finally {
+        (MIGRATIONS as unknown as (typeof boom)[]).pop();
+      }
+    } finally {
+      db.close();
+    }
+  });
+});
+
+describe("the swap path refuses what a rollback could not survive", () => {
+  it("applies swap-safe migrations while a pushed platform boots", () => {
+    const db = open024();
+    try {
+      expect(migrate(db, { swapPath: true }).applied).toEqual(["messaging-bindings"]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("refuses a restart-only migration whole, applying nothing", () => {
+    const db = open024();
+    try {
+      const narrowing = {
+        version: LATEST_VERSION + 1,
+        name: "narrows-something",
+        swapSafe: false,
+        up(d: DatabaseSync) {
+          d.exec("CREATE TABLE should_not_exist (x TEXT)");
+        },
+      };
+      (MIGRATIONS as unknown as (typeof narrowing)[]).push(narrowing);
+      try {
+        const before = shape(db);
+        expect(() => migrate(db, { swapPath: true })).toThrow(RestartRequiredError);
+        // Not even the swap-safe migration ahead of it ran: the push is refused whole.
+        expect(shape(db)).toBe(before);
+        expect(schemaVersion(db)).toBe(0);
+        // The runtime's own open, which owns the process, may apply it.
+        expect(migrate(db).applied).toEqual(["messaging-bindings", "narrows-something"]);
+      } finally {
+        (MIGRATIONS as unknown as (typeof narrowing)[]).pop();
+      }
+    } finally {
+      db.close();
+    }
+  });
+});
+
+describe("0.2.4 → 0.2.7", () => {
+  /** The whole point: an older runtime's database becomes what a current build creates. */
+  it("brings a 0.2.4 database to the shape a fresh one is created with", () => {
+    const old = open024();
+    const fresh = new sqlite.DatabaseSync(":memory:");
+    try {
+      fresh.exec(SCHEMA_SQL);
+      expect(shape(old)).not.toBe(shape(fresh));
+
+      migrate(old);
+
+      expect(shape(old)).toBe(shape(fresh));
+    } finally {
+      old.close();
+      fresh.close();
+    }
+  });
+
+  it("the messaging table it creates is writable, which is what the boot needed", () => {
+    const db = open024();
+    try {
+      migrate(db);
+      db.exec(
+        "INSERT INTO messaging_bindings (session_id, channel, account_id, config_json, created_at, updated_at)" +
+          " VALUES ('s1', 'telegram', 'a1', '{}', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+      );
+      expect(db.prepare("SELECT COUNT(*) AS n FROM messaging_bindings").get()).toEqual({ n: 1 });
+    } finally {
+      db.close();
+    }
+  });
+
+  it("leaves existing rows alone", () => {
+    const db = open024();
+    try {
+      db.exec(
+        "INSERT INTO users (user_id, password_hash, is_admin, created_at) VALUES ('admin', 'h', 1, '2026-01-01T00:00:00Z')",
+      );
+      migrate(db);
+      expect(db.prepare("SELECT user_id FROM users").all()).toEqual([{ user_id: "admin" }]);
+    } finally {
+      db.close();
+    }
+  });
+});
