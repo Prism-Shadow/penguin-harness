@@ -164,7 +164,7 @@ import { UpdateDialog } from "../account/update-dialog";
 import { offersClientUpdate } from "../../lib/desktop-update";
 import { requestClientInstall, useDesktopUpdate } from "../../lib/use-desktop-update";
 import { forceUpdateCheck, updateCheckOutcome, useVersionInfo } from "../../lib/use-version-info";
-import { useUpdateBadges } from "../../lib/use-update-badges";
+import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
 import { releaseUpdate } from "../../lib/update-badges";
 import { SettingsDialog } from "../../features/settings/settings-dialog";
 import { ICON_SIZE } from "../../lib/icon-scale";
@@ -1621,12 +1621,13 @@ export function Sidebar({
                 }`}
               >
                 {navItems.map((item) => {
-                  /* Agents is the one nav entry on a badge trail: an outdated kernel is fixed
-                     on the Agent settings page two clicks down. The dot is anchored to the row,
-                     not to the label text (where it would float over whatever follows the word):
-                     at the row's right edge, on the same inset as its horizontal padding, and
-                     vertically centred on the row rather than on the line of text. */
-                  const note = item.to === "/agents" ? badges.kernelNote : null;
+                  /* Four nav entries sit on a badge trail — Agents (an outdated kernel, fixed on
+                     the Agent settings page two clicks down), Skills, Models and the Cost Center
+                     (each cleared on the page itself). The dot is anchored to the row, not to the
+                     label text (where it would float over whatever follows the word): at the
+                     row's right edge, on the same inset as its horizontal padding, and vertically
+                     centred on the row rather than on the line of text. */
+                  const note = navNoteFor(badges, item.to);
                   return (
                     <NavLink
                       key={item.to}

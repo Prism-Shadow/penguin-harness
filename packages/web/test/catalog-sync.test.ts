@@ -1,11 +1,19 @@
 /**
  * catalog-sync.ts unit tests: the "sync presets" merge — union of the local model table and
  * the built-in catalog, catalog winning on differing preset entries, local additions and
- * credentials untouched.
+ * credentials untouched — plus `catalogDelta`, the same question asked of a saved table so the
+ * Models nav badge can answer it before the page has loaded any rows.
+ *
+ * The last block is the one that matters most: the badge and the button must never disagree
+ * about whether there is anything to do, so every case above is replayed through both.
  */
 import { describe, expect, it } from "vitest";
-import { syncRowsWithCatalog } from "../src/features/models/catalog-sync";
+import type { ModelsResponse } from "@prismshadow/penguin-server/api";
+import { catalogDelta, syncRowsWithCatalog } from "../src/features/models/catalog-sync";
+import { toRow } from "../src/features/models/models-page";
 import type { RowState } from "../src/features/models/models-page";
+
+type ModelDto = ModelsResponse["models"][number];
 
 type PresetEntry = Parameters<typeof syncRowsWithCatalog>[1] extends (infer E)[] | undefined
   ? E
@@ -167,5 +175,93 @@ describe("syncRowsWithCatalog", () => {
     expect(updated).toBe(0);
     // No merged row ever carries a key input: credentials are structurally untouched.
     expect(rows.every((r) => r.apiKeyInput === "" && !r.clearApiKey)).toBe(true);
+  });
+});
+
+/** A saved entry, in the shape the models endpoint sends. */
+function makeDto(partial: Partial<ModelDto> & Pick<ModelDto, "provider" | "modelId">): ModelDto {
+  return { ...partial } as ModelDto;
+}
+
+describe("catalogDelta", () => {
+  it("reports nothing when the saved table already matches the catalog", () => {
+    const saved = PRESET.map((p) =>
+      makeDto({
+        provider: p.provider,
+        modelId: p.model_id,
+        vision: p.vision !== false,
+        ...(p.context_window !== undefined ? { contextWindow: p.context_window } : {}),
+        ...(p.client_type !== undefined ? { clientType: p.client_type } : {}),
+        ...(p.pricing
+          ? {
+              pricing: {
+                cacheRead: p.pricing.cache_read,
+                cacheWrite: p.pricing.cache_write,
+                output: p.pricing.output,
+              } as ModelDto["pricing"],
+            }
+          : {}),
+        ...(p.base_url !== undefined
+          ? { credential: { baseUrl: p.base_url } as ModelDto["credential"] }
+          : {}),
+      }),
+    );
+    expect(catalogDelta(saved, PRESET)).toEqual({ added: 0, updated: 0, refs: [] });
+  });
+
+  it("names every entry it would add or rewrite, in catalog order", () => {
+    const stale = makeDto({ provider: "deepseek", modelId: "deepseek-v4-pro", vision: true });
+    expect(catalogDelta([stale], PRESET)).toEqual({
+      added: 2,
+      updated: 1,
+      refs: [
+        "deepseek/deepseek-v4-pro",
+        "qwen-token-plan/glm-5.2",
+        "qwen-token-plan/qwen3.8-max-preview",
+      ],
+    });
+  });
+
+  it("ignores locally added models, exactly as the merge does", () => {
+    const local = makeDto({ provider: "custom", modelId: "my-own" });
+    expect(catalogDelta([local], PRESET).refs).not.toContain("custom/my-own");
+  });
+
+  /**
+   * The badge reads a saved table; the button reads row state. They are two conversions of the
+   * same data, so this pins them together: whatever `toRow` does to a DTO, `catalogDelta` must
+   * read the same way, or a dot would lead to a button answering "already up to date".
+   */
+  it("agrees with the sync merge on every table shape, against the real catalog", () => {
+    const tables: ModelDto[][] = [
+      [],
+      [makeDto({ provider: "deepseek", modelId: "deepseek-v4-pro" })],
+      [makeDto({ provider: "deepseek", modelId: "deepseek-v4-pro", contextWindow: 1000000 })],
+      [
+        makeDto({
+          provider: "qwen-token-plan",
+          modelId: "glm-5.2",
+          clientType: "openai-chat",
+          credential: { baseUrl: "http://my-proxy" } as ModelDto["credential"],
+        }),
+      ],
+      [makeDto({ provider: "custom", modelId: "my-own", contextWindow: 8192 })],
+    ];
+    for (const table of tables) {
+      const merged = syncRowsWithCatalog(table.map(toRow), PRESET);
+      const delta = catalogDelta(table, PRESET);
+      expect([delta.added, delta.updated], JSON.stringify(table)).toEqual([
+        merged.added,
+        merged.updated,
+      ]);
+      expect(delta.refs.length).toBe(merged.added + merged.updated);
+    }
+  });
+
+  it("agrees with the merge on an empty table against the shipped catalog", () => {
+    const merged = syncRowsWithCatalog([]);
+    const delta = catalogDelta([]);
+    expect([delta.added, delta.updated]).toEqual([merged.added, merged.updated]);
+    expect(delta.refs.length).toBeGreaterThan(30);
   });
 });

@@ -44,6 +44,8 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatRelativeDate } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
+import { useUpdateBadges } from "../../lib/use-update-badges";
+import { dismissTodo } from "../../lib/todo-dismissals";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
@@ -52,6 +54,7 @@ import { Button } from "../../components/ui/button";
 import { Chevron } from "../../components/ui/chevron";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { Modal } from "../../components/ui/modal";
+import { TodoNotice } from "../../components/ui/update-dot";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Skeleton, SkeletonCard } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
@@ -96,8 +99,11 @@ export function SkillsPage() {
   const navigate = useNavigate();
   const { locale } = useLocale();
   const userId = useAuth().user?.userId ?? null;
-  const { currentProject, agents, currentAgent, setCurrentAgentId } = useProject();
+  const { currentProject, agents, currentAgent, setCurrentAgentId, reloadAgents } = useProject();
   const projectId = currentProject?.projectId ?? null;
+
+  /** The Skills trail's raised badge, or undefined — the notice under the title clears it. */
+  const todo = useUpdateBadges().todos.skills;
 
   const [groups, setGroups] = useState<SkillGroupItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -222,6 +228,10 @@ export function SkillsPage() {
     const failed = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
     if (!failed) toastSuccess(S.skills.updatedToast(name, agentIds.length));
     else toastError(apiErrorText(failed.reason));
+    // The Skills nav badge is gated on `AgentSummary.skillUpdates`, which this page's own
+    // install map does not feed: without reloading the Agent list the dot would survive the
+    // very update it led the user to. Runs after a partial failure too — some Agent moved.
+    void reloadAgents();
   };
 
   /**
@@ -262,6 +272,18 @@ export function SkillsPage() {
           {S.skills.pageTitle}
           <InfoPopover label={S.skills.pageTitle}>{S.skills.pageDesc}</InfoPopover>
         </h1>
+        {/* Last stop on the Skills trail: what the sidebar's dot was pointing at, in its own
+            wording, plus the way to clear it for someone who has looked and decided to stay on
+            the installed copies. The per-card update buttons below are the action itself. */}
+        {todo && (
+          <div className="mt-3">
+            <TodoNotice
+              text={S.todo.skillUpdates(todo.count)}
+              dismissLabel={S.todo.dismiss}
+              onDismiss={() => dismissTodo(projectId, "skills", todo.signature)}
+            />
+          </div>
+        )}
 
         {error ? (
           <div className="mt-6 flex items-center gap-3">

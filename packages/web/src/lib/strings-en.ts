@@ -220,6 +220,24 @@ export const en: Strings = {
       "Only the AppImage build updates itself on Linux — update a package install through your package manager",
   },
 
+  /**
+   * The three DISMISSIBLE badge trails (Skill library / model library / cost center) and the
+   * controls that clear them. One sentence per trail, carried unchanged from the dot's tooltip
+   * down to the notice on the page it leads to — the same discipline the kernel trail keeps.
+   */
+  todo: {
+    skillUpdates: (n: number) => (n === 1 ? "1 skill update" : `${n} skill updates`),
+    presetUpdates: (n: number) =>
+      n === 1 ? "1 preset model to sync" : `${n} preset models to sync`,
+    unexpectedErrors: (n: number) => (n === 1 ? "1 unexpected error" : `${n} unexpected errors`),
+    /** Combined anchor whose trails are not all updates — an unexpected error is not one. */
+    pending: "Something needs attention",
+    /** Clears an update the user has decided not to take now (a later one raises the badge again). */
+    dismiss: "Mark as done",
+    /** The cost center's wording: nothing is being updated there, the errors are simply read. */
+    markRead: "Mark as read",
+  },
+
   /** Desktop task-completion notifications (window unfocused; desktop-shell sessions only). */
   notify: {
     taskCompleteTitle: "Task completed",

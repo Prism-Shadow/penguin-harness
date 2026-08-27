@@ -1124,6 +1124,50 @@ describe("HTTP onError persistence (integration)", () => {
     expect((await api.get(`/api/projects/${projectId}/usage/errors?from=2026-13-01`)).status).toBe(
       400,
     );
+    // A `kind` outside the two categories is a bad request, not a silently empty page: the
+    // cost-center badge reads `total` as "is anything waiting", and a typo answering 0 would
+    // read as "nothing is".
+    expect((await api.get(`/api/projects/${projectId}/usage/errors?kind=oops`)).status).toBe(400);
+  });
+
+  it("the paged error route narrows to one category on request, counting only that one", async () => {
+    // What the cost-center badge asks: one row of `unexpected`, for the count and the newest
+    // timestamp its dismissal is stamped against. Seeded directly, so the interleaving is exact.
+    const repo = new ErrorsRepo(t.deps.db);
+    const seed = (kind: string, code: string, ts: string) =>
+      repo.insert({
+        ts,
+        date: ts.slice(0, 10),
+        projectId,
+        agentId: "a1",
+        sessionId: "s1",
+        source: "http",
+        kind,
+        code,
+        status: kind === "unexpected" ? 500 : 404,
+        message: code,
+      });
+    seed("expected", "expected_0", "2026-07-27T00:00:00.000Z");
+    seed("unexpected", "unexpected_0", "2026-07-27T01:00:00.000Z");
+    seed("expected", "expected_1", "2026-07-27T02:00:00.000Z");
+    seed("unexpected", "unexpected_1", "2026-07-27T03:00:00.000Z");
+
+    const probe = (await (
+      await api.get(`/api/projects/${projectId}/usage/errors?offset=0&limit=1&kind=unexpected`)
+    ).json()) as UsageErrorsPage;
+    expect(probe.total).toBe(2); // only the unexpected ones are counted
+    expect(probe.items.map((e) => e.code)).toEqual(["unexpected_1"]); // newest first, one row
+
+    const expectedOnly = (await (
+      await api.get(`/api/projects/${projectId}/usage/errors?offset=0&limit=20&kind=expected`)
+    ).json()) as UsageErrorsPage;
+    expect(expectedOnly.items.map((e) => e.code)).toEqual(["expected_1", "expected_0"]);
+
+    // No `kind` still counts both, so the panel the badge leads to is unchanged.
+    const all = (await (
+      await api.get(`/api/projects/${projectId}/usage/errors?offset=0&limit=20`)
+    ).json()) as UsageErrorsPage;
+    expect(all.total).toBe(4);
   });
 
   it("Project deletion cascade-cleans that Project's error records", async () => {

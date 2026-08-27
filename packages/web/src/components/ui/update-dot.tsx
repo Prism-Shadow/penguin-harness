@@ -30,6 +30,8 @@
  *
  * Layout-neutral: absolutely positioned, so a caller only has to be `relative`, and no row
  * changes height for carrying one. `pointer-events-none` keeps it out of its anchor's hit area.
+ * (`TodoNotice` at the bottom is the one mark here that is NOT positioned: it is a line of page
+ * content, and it lives in this module so every red on an update trail stays written once.)
  *
  * Anchoring rule, owner-specified: a dot marks its control's **full box** — the whole row, tab or
  * button — never the label glyphs, where it would track the text's width, float over whatever
@@ -96,9 +98,16 @@ export function UpdateDot({
  *
  * A tinted capsule, not the dot's flat fill: this one has an interior, so its label owes WCAG
  * 1.4.3's 4.5 : 1 against its own background, and a surface pale enough to belong beside the
- * dots can only pay that with a dark ink. Measured red-800 on red-100 6.85 : 1 in light and
- * red-300 on red-950 8.42 : 1 in dark, with the hover fills (red-200 / red-900) still at
- * 5.75 : 1 and 5.22 : 1 under the same ink. Tint against card rather than ink against card is
+ * dots can only pay that with a dark ink.
+ *
+ * **How pale is set by the capsule beside it, not by taste.** The fill is measured against the
+ * card it sits on — white in light, gray-900 (`#0d0d0d` here) in dark — and aimed at the plain
+ * gray `Badge` sharing the row, which shows at 1.10 : 1 in light and 1.18 : 1 in dark. red-50
+ * lands at 1.09 : 1 and red-950/70 at 1.11 : 1, so the capsule now reads as red without
+ * reading as an alarm; the earlier red-100 / red-950 pair sat a fifth louder than its
+ * neighbour, which is what made it shout. The ink is unchanged and keeps a wide margin:
+ * red-800 on red-50 7.67 : 1 (hover red-100 6.86 : 1) in light, red-300 on red-950/70
+ * 9.13 : 1 (hover red-950 8.40 : 1) in dark. Tint against card rather than ink against card is
  * what the neighbouring gray `Badge` also runs on: the capsule is found by its text.
  * The badge colours stay in this module, with the dot's, for the reason the header gives — an
  * update mark is not a `tone.ts` status.
@@ -108,9 +117,54 @@ export function UpdatePill({ onClick, children }: { onClick: () => void; childre
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-800 transition-colors duration-150 hover:bg-red-200 dark:bg-red-950 dark:text-red-300 dark:hover:bg-red-900"
+      className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-800 transition-colors duration-150 hover:bg-red-100 dark:bg-red-950/70 dark:text-red-300 dark:hover:bg-red-950"
     >
       {children}
     </button>
+  );
+}
+
+/**
+ * The last stop on each of the three DISMISSIBLE trails: a quiet line under the page title
+ * saying what is waiting, plus the control that clears the dot.
+ *
+ * It exists because those trails, unlike the software and kernel ones, can end in a decision
+ * NOT to act — a model table kept off the catalog, an error read and understood — and a dot
+ * with no way down is a dot that stops meaning anything. What the trail was already saying in
+ * every tooltip above is repeated here verbatim, so arriving confirms rather than re-explains.
+ *
+ * Deliberately not a tinted strip: `toneStrip` is for a notice that owns its row by being a
+ * warning, and nothing here has gone wrong. The only colour is the same 6px dot the user
+ * followed to get here, which makes the line read as "this is that dot" and keeps the page's
+ * chrome flat. It carries no margin of its own — three pages with three different headers place
+ * it, and a built-in one would be wrong on two of them.
+ *
+ * The dot is decorative: the sentence beside it is the carrier, and the button folds that
+ * sentence into its own accessible name, keeping its visible label as the prefix.
+ */
+export function TodoNotice({
+  text,
+  dismissLabel,
+  onDismiss,
+}: {
+  /** What is waiting — the trail's own sentence, unchanged from the dot's tooltip. */
+  text: string;
+  /** The clearing action's wording; "mark as read" where nothing is being updated. */
+  dismissLabel: string;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-sm">
+      <span aria-hidden className={`shrink-0 rounded-full bg-red-400 ${DOT_SIZE.inline}`} />
+      <span className="min-w-0 text-gray-700 dark:text-gray-300">{text}</span>
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label={`${dismissLabel} · ${text}`}
+        className="shrink-0 rounded-md px-1.5 py-0.5 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+      >
+        {dismissLabel}
+      </button>
+    </div>
   );
 }

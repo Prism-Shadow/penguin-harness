@@ -96,6 +96,8 @@ export interface UsageErrorsQuery {
   from?: string;
   to?: string;
   agentId?: string;
+  /** Narrow to one category — `unexpected` (500s / runtime exceptions) or `expected`; absent counts both. */
+  kind?: string;
   /** Admin only: include errors with no Project attribution (see the ErrorsRepo file header). */
   includeGlobalErrors?: boolean;
 }
@@ -266,6 +268,7 @@ export class UsageService {
       ...(q.agentId !== undefined ? { agentId: q.agentId } : {}),
       ...(q.from !== undefined ? { from: q.from } : {}),
       ...(q.to !== undefined ? { to: q.to } : {}),
+      ...(q.kind !== undefined ? { kind: q.kind } : {}),
       ...(q.includeGlobalErrors === true ? { includeGlobal: true } : {}),
     };
     return {

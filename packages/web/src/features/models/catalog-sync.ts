@@ -8,9 +8,16 @@
  * PUT keeps the stored key) and existing rows keep their credential display state.
  */
 import { presetModelEntries } from "@prismshadow/penguin-core/model-catalog";
+import type { ModelsResponse } from "@prismshadow/penguin-server/api";
 import type { RowState } from "./models-page";
 
 type PresetEntry = ReturnType<typeof presetModelEntries>[number];
+
+/** One saved model entry, as the models endpoint sends it. */
+type ModelDto = ModelsResponse["models"][number];
+
+/** The catalog-owned fields, in the string-typed form both sides are compared in. */
+type CatalogFields = ReturnType<typeof presetFields>;
 
 /** The catalog-owned fields of a row, in RowState's string-typed form (mirrors toRow). */
 function presetFields(p: PresetEntry) {
@@ -41,6 +48,67 @@ function presetToRow(p: PresetEntry): RowState {
     apiKeyInput: "",
     clearApiKey: false,
   };
+}
+
+/**
+ * The saved entry's form of those same fields, straight from the DTO. It mirrors the subset of
+ * `models-page.tsx`'s `toRow` the catalog owns — deliberately, so the badge below can read a
+ * model table the page has not loaded into row state. `test/catalog-sync.test.ts` pins the two
+ * together: whatever `toRow` does to a DTO, this must do to the same DTO, or the badge and the
+ * sync button would disagree about whether anything is out of date.
+ */
+function savedFields(m: ModelDto): CatalogFields {
+  return {
+    vision: m.vision !== false,
+    contextWindow: m.contextWindow !== undefined ? String(m.contextWindow) : "",
+    clientType: m.clientType ?? "",
+    cacheRead: m.pricing ? String(m.pricing.cacheRead) : "",
+    cacheWrite: m.pricing ? String(m.pricing.cacheWrite) : "",
+    output: m.pricing ? String(m.pricing.output) : "",
+    baseUrl: m.credential?.baseUrl ?? "",
+  };
+}
+
+/** What syncing would change, and which entries it would touch (see {@link catalogDelta}). */
+export interface CatalogDelta {
+  added: number;
+  updated: number;
+  /** `provider/modelId` of every entry that would be added or rewritten, in catalog order. */
+  refs: string[];
+}
+
+/**
+ * What "sync presets" would change if it ran right now, read off a **saved** model table rather
+ * than the page's row state — the gate behind the Models nav badge, which has to answer before
+ * anyone opens the page.
+ *
+ * The same union `syncRowsWithCatalog` applies, so the two cannot disagree about whether there
+ * is anything to do: catalog entries the table does not carry are additions, entries it does
+ * carry whose catalog-owned fields differ are updates, and locally added models are invisible
+ * to both. `refs` is what a dismissal is stamped against, so a later catalog release touching a
+ * different model raises the badge again (see `lib/todo-badges.ts`).
+ */
+export function catalogDelta(
+  models: readonly ModelDto[],
+  preset: PresetEntry[] = presetModelEntries(),
+): CatalogDelta {
+  const saved = new Map(models.map((m) => [`${m.provider}\0${m.modelId}`, m]));
+  const delta: CatalogDelta = { added: 0, updated: 0, refs: [] };
+  for (const p of preset) {
+    const entry = saved.get(`${p.provider}\0${p.model_id}`);
+    if (entry === undefined) {
+      delta.added += 1;
+      delta.refs.push(`${p.provider}/${p.model_id}`);
+      continue;
+    }
+    const fields = savedFields(entry);
+    const target = presetFields(p);
+    if ((Object.keys(target) as (keyof CatalogFields)[]).some((k) => fields[k] !== target[k])) {
+      delta.updated += 1;
+      delta.refs.push(`${p.provider}/${p.model_id}`);
+    }
+  }
+  return delta;
 }
 
 /**

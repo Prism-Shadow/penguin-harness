@@ -27,11 +27,13 @@ import {
   skillsDir,
   systemConfigPath,
 } from "@prismshadow/penguin-core";
+import { librarySkill, parseSkillFrontmatter } from "@prismshadow/penguin-skills";
 import type { AgentsRepo } from "../db/repos/agents.js";
 import { SEMANTIC_ID_PATTERN, SEMANTIC_ID_RULE } from "./ids.js";
 import type { AgentConfigService } from "./agent-config-service.js";
 import type { SnapshotService } from "./snapshot-service.js";
 import { isTopicFileName } from "./memory-service.js";
+import type { SkillUpdateRef } from "../api/types.js";
 import { resolveLibrarySkills } from "./skill-library.js";
 import { resolveDirectorySkills } from "./directory-skills.js";
 
@@ -54,6 +56,8 @@ export interface AgentListItem {
   scheduleCount: number;
   /** Number of installed Skills (count of skills/<name>/ directories that contain a SKILL.md). */
   skillCount: number;
+  /** Installed Skills the library has a newer version of, each carrying that library version. */
+  skillUpdates: SkillUpdateRef[];
   /** Number of memory topic files across every scope directory under memory/ (independent of the memory switch, like skillCount). */
   memoryCount: number;
 }
@@ -102,13 +106,13 @@ export class AgentService {
     );
     return Promise.all(
       sorted.map(async (row) => {
-        const [meta, updatedAt, vaultKeyCount, scheduleCount, skillCount, memoryCount] =
+        const [meta, updatedAt, vaultKeyCount, scheduleCount, skills, memoryCount] =
           await Promise.all([
             this.agentConfig.readCardMeta(projectId, row.agentId),
             this.configUpdatedAt(projectId, row.agentId),
             this.vaultKeyCount(projectId, row.agentId),
             this.scheduleCount(projectId, row.agentId),
-            this.skillCount(projectId, row.agentId),
+            this.installedSkills(projectId, row.agentId),
             this.memoryCount(projectId, row.agentId),
           ]);
         return {
@@ -118,7 +122,8 @@ export class AgentService {
           ...(updatedAt !== undefined ? { updatedAt } : {}),
           vaultKeyCount,
           scheduleCount,
-          skillCount,
+          skillCount: skills.count,
+          skillUpdates: skills.updates,
           memoryCount,
         };
       }),
@@ -144,29 +149,56 @@ export class AgentService {
     }
   }
 
-  /** Number of installed Skills: count of skills/<name>/ directories containing a SKILL.md (0 if the directory doesn't exist). */
-  private async skillCount(projectId: string, agentId: string): Promise<number> {
+  /**
+   * One pass over `skills/`, answering both card questions: how many Skills are installed
+   * (directories containing a SKILL.md) and which of them the library has moved past.
+   *
+   * The two are read together because the second needs what the first was already opening:
+   * counting only asked whether SKILL.md exists, and the version lives in its frontmatter, so
+   * the `access` becomes a `readFile` of a file measured in kilobytes and nothing else changes
+   * shape. Splitting them into two passes would walk the same directories twice.
+   *
+   * The directory name is the Skill's identity (core's `listInstalledSkills` says so, and
+   * install/uninstall address by it), so that — not the frontmatter's `name` — is what the
+   * library is looked up by. A Skill the library does not carry (installed from a zip or from a
+   * picked directory) has no library version to be behind and is never an update; an
+   * unparseable or version-less SKILL.md reads as version 1, the same fallback the parser
+   * applies everywhere else. Every failure degrades to "not installed" / "no update": a card
+   * hint must not be the thing that makes the Agent list fail.
+   */
+  private async installedSkills(
+    projectId: string,
+    agentId: string,
+  ): Promise<{ count: number; updates: SkillUpdateRef[] }> {
     const base = skillsDir(this.root, projectId, agentId);
     let dirents: Dirent[];
     try {
       dirents = await fs.readdir(base, { withFileTypes: true });
     } catch {
-      return 0;
+      return { count: 0, updates: [] };
     }
-    const present = await Promise.all(
+    const installed = await Promise.all(
       dirents
         // Dot-prefixed directories are install staging, never a Skill (a Skill name has no dot).
         .filter((d) => d.isDirectory() && !d.name.startsWith("."))
         .map(async (d) => {
           try {
-            await fs.access(path.join(base, d.name, "SKILL.md"));
-            return true;
+            const raw = await fs.readFile(path.join(base, d.name, "SKILL.md"), "utf8");
+            return { name: d.name, version: parseSkillFrontmatter(raw)?.version ?? 1 };
           } catch {
-            return false;
+            return null;
           }
         }),
     );
-    return present.filter(Boolean).length;
+    const updates: SkillUpdateRef[] = [];
+    for (const skill of installed) {
+      if (skill === null) continue;
+      const version = librarySkill(skill.name)?.version;
+      if (version !== undefined && version > skill.version) {
+        updates.push({ name: skill.name, version });
+      }
+    }
+    return { count: installed.filter((s) => s !== null).length, updates };
   }
 
   /** Number of memory topic files: regular `*.md` files (minus each scope's MEMORY.md index) summed over the scope directories under memory/ (0 if the directory doesn't exist). */
@@ -335,6 +367,7 @@ export class AgentService {
     const meta = await this.agentConfig.readCardMeta(projectId, agentId);
     const cardName = archive !== undefined ? (meta.name ?? agentId) : displayName;
     const cardDescription = archive !== undefined ? meta.description : description;
+    const skills = await this.installedSkills(projectId, agentId);
     return {
       agentId,
       name: cardName,
@@ -348,7 +381,8 @@ export class AgentService {
       // are real reads because a package may carry any of them.
       vaultKeyCount: 0,
       scheduleCount: await this.scheduleCount(projectId, agentId),
-      skillCount: await this.skillCount(projectId, agentId),
+      skillCount: skills.count,
+      skillUpdates: skills.updates,
       memoryCount: await this.memoryCount(projectId, agentId),
     };
   }

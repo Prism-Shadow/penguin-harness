@@ -111,6 +111,10 @@ import {
 } from "./model-group-expansion";
 import { clearDraftModelRef } from "../chat/draft-cache";
 import { syncRowsWithCatalog } from "./catalog-sync";
+import { useUpdateBadges } from "../../lib/use-update-badges";
+import { dismissTodo } from "../../lib/todo-dismissals";
+import { refreshProjectTodos } from "../../lib/use-project-todos";
+import { TodoNotice } from "../../components/ui/update-dot";
 import { buildImportedRows } from "./group-import";
 import { tpsTone, ttftTone } from "./speed-test";
 import type { SpeedResult, SpeedTone } from "./speed-test";
@@ -529,6 +533,8 @@ export function ModelsPage() {
   const { currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
+  /** The Models trail's raised badge, or undefined — the notice under the header clears it. */
+  const todo = useUpdateBadges().todos.models;
   const userId = useAuth().user?.userId ?? null;
   /** Per-model speed results (in-memory, reset on every project switch; "pending" while that model's turn is running). */
   const [speedResults, setSpeedResults] = useState<Map<string, SpeedResult | "pending">>(new Map());
@@ -697,6 +703,10 @@ export function ModelsPage() {
       visionModel,
       S.models.syncDone(merged.added, merged.updated),
     );
+    // The Models nav badge is gated on the SAVED table, which this page holds only as row
+    // state: re-probe it so the dot goes down on the server's answer rather than on the
+    // assumption that the write covered everything the catalog offered.
+    refreshProjectTodos(projectId);
   };
 
   /**
@@ -901,6 +911,18 @@ export function ModelsPage() {
             )}
           </div>
         </div>
+        {/* Last stop on the Models trail: what the sidebar's dot was pointing at, beside the
+            "sync presets" button that acts on it. Owner-only like that button — the gate never
+            raises this for a member, so the notice cannot appear without it. */}
+        {todo && (
+          <div className="mb-4">
+            <TodoNotice
+              text={S.todo.presetUpdates(todo.count)}
+              dismissLabel={S.todo.dismiss}
+              onDismiss={() => dismissTodo(projectId, "models", todo.signature)}
+            />
+          </div>
+        )}
 
         {rows === null ? (
           <SkeletonList rows={4} />

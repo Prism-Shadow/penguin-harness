@@ -224,6 +224,23 @@ export const zh = {
     clientUnsupportedNonAppImage: "Linux 上只有 AppImage 版本支持自更新——包安装请通过包管理器更新",
   },
 
+  /**
+   * The three DISMISSIBLE badge trails (Skill library / model library / cost center) and the
+   * controls that clear them. One sentence per trail, carried unchanged from the dot's tooltip
+   * down to the notice on the page it leads to — the same discipline the kernel trail keeps.
+   */
+  todo: {
+    skillUpdates: (n: number) => `${n} 个技能有更新`,
+    presetUpdates: (n: number) => `${n} 个预置模型可同步`,
+    unexpectedErrors: (n: number) => `${n} 条未预期错误`,
+    /** Combined anchor whose trails are not all updates — an unexpected error is not one. */
+    pending: "有待处理事项",
+    /** Clears an update the user has decided not to take now (a later one raises the badge again). */
+    dismiss: "标记为已处理",
+    /** The cost center's wording: nothing is being updated there, the errors are simply read. */
+    markRead: "标记为已读",
+  },
+
   /** Desktop task-completion notifications (window unfocused; desktop-shell sessions only). */
   notify: {
     taskCompleteTitle: "任务完成",
