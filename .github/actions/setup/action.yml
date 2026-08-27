@@ -1,0 +1,51 @@
+# Shared prologue for every CI job: pnpm on PATH, Node 24, dependencies installed.
+#
+# pnpm comes from corepack rather than pnpm/action-setup. The version is the one
+# `packageManager` pins either way, but the action was the single most expensive
+# step on the Windows runners — 21s typical and 63s at its worst against ~5s on
+# ubuntu — while `corepack enable` is a shim install with no download of its own.
+# It has to run before setup-node, whose `cache: pnpm` resolves the store path by
+# executing pnpm.
+name: Set up pnpm, Node and dependencies
+description: Enables pnpm via corepack, installs Node 24 with a warm pnpm store, and runs a frozen install.
+
+inputs:
+  build:
+    description: >-
+      pnpm --filter arguments naming what to build, comma separated (e.g.
+      "@prismshadow/penguin-core..."). Empty builds nothing — a job that only reads
+      sources, such as the Prettier gate, needs no dist at all.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Enable pnpm (corepack)
+      shell: bash
+      run: corepack enable
+
+    - uses: actions/setup-node@v5
+      with:
+        node-version: 24
+        cache: pnpm
+
+    - name: Install dependencies
+      shell: bash
+      run: pnpm install --frozen-lockfile
+
+    # Only the requested packages and their dependencies. A shard that tests core
+    # alone does not pay for the desktop bundle, which is the slowest target here.
+    # verify-deps-before-run is off because it wants a TTY it does not have on a runner.
+    - name: Build (tsup)
+      if: inputs.build != ''
+      shell: bash
+      run: |
+        args=""
+        IFS=','
+        for f in ${{ inputs.build }}; do
+          args="$args --filter $f"
+        done
+        unset IFS
+        echo "pnpm$args build"
+        pnpm --config.verify-deps-before-run=false $args build
