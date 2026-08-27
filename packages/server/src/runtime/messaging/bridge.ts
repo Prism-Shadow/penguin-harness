@@ -45,7 +45,7 @@
  */
 import { userText } from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
-import type { MessagingRuntimeStatus } from "../../api/types.js";
+import type { MessagingDeliveryError, MessagingRuntimeStatus } from "../../api/types.js";
 import type {
   MessagingBindingRow,
   MessagingBindingsRepo,
@@ -235,9 +235,12 @@ export interface MessagingTaskRunner {
   ): Promise<{ sessionId: string; queued: boolean }>;
 }
 
-/** Minimal dependency on the sessions index (existence checks for reconcile/cascade). */
+/**
+ * Minimal dependency on the sessions index: existence checks for reconcile/cascade, and the
+ * Session's Project/Agent so a messaging failure can be filed under them (see recordError).
+ */
 export interface MessagingSessionIndex {
-  findById(sessionId: string): object | null;
+  findById(sessionId: string): { projectId: string; agentId: string } | null;
 }
 
 export interface MessagingBridgeDeps {
@@ -268,6 +271,21 @@ interface BridgeEntry {
   client: MessagingClient | null;
   /** Inbound group message to thread replies onto (memory only; direct chats clear it). */
   lastInboundMessageId: string | null;
+  /**
+   * When this entry last ACCEPTED an inbound message, and the last failure that happened
+   * after one was accepted. Both are reported through statusOf rather than folded into
+   * `status`, because `status` is rebuilt on every connection-state flip and these two
+   * outlive it: they describe the traffic, not the socket.
+   */
+  lastInboundAt: string | null;
+  lastDeliveryError: MessagingDeliveryError | null;
+  /**
+   * The last connection failure, kept across recovery. `status.lastError` is wiped by the
+   * next successful connect, which is exactly the case worth reporting: a connector that
+   * flaps — a second program taking turns with this one on the same bot token — reads as
+   * healthy in every snapshot taken between its failures.
+   */
+  lastConnectionError: { at: string; detail: string } | null;
   /** Last observed run state on the Session channel. */
   active: string;
   /** False while joined mid-run: that run's partial tail must not mirror as half a reply. */
@@ -370,11 +388,23 @@ export class MessagingBridge {
     this.deps.repo.deleteSession(sessionId);
   }
 
-  /** One channel's runtime status (only the connected channel is ever anything but disconnected). */
+  /**
+   * One channel's runtime status (only the connected channel is ever anything but
+   * disconnected), plus what this connection has actually seen: when a message last arrived
+   * and what last failed after one did. A binding can be `connected` with nothing wrong and
+   * still never receive anything, and that combination is invisible without these two.
+   */
   statusOf(sessionId: string, channel: string): MessagingRuntimeStatus {
     const entry = this.entries.get(sessionId);
     if (!entry || entry.channel !== channel) return { state: "disconnected" };
-    return entry.status;
+    return {
+      ...entry.status,
+      ...(entry.lastInboundAt !== null ? { lastInboundAt: entry.lastInboundAt } : {}),
+      ...(entry.lastDeliveryError !== null ? { lastDeliveryError: entry.lastDeliveryError } : {}),
+      ...(entry.lastConnectionError !== null
+        ? { lastConnectionError: entry.lastConnectionError }
+        : {}),
+    };
   }
 
   /**
@@ -451,6 +481,9 @@ export class MessagingBridge {
       unsubscribe: null,
       client: null,
       lastInboundMessageId: null,
+      lastInboundAt: null,
+      lastDeliveryError: null,
+      lastConnectionError: null,
       active: runState,
       armed: runState === "idle",
       inCompaction: false,
@@ -475,6 +508,7 @@ export class MessagingBridge {
         onError: (err) => {
           const detail = err instanceof Error ? err.message : String(err);
           this.setStatus(entry, { state: "error", lastError: detail });
+          entry.lastConnectionError = { at: new Date(this.now()).toISOString(), detail };
           this.recordError(entry.sessionId, err, "messaging_connect_failed");
         },
       });
@@ -487,6 +521,7 @@ export class MessagingBridge {
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
       this.setStatus(entry, { state: "error", lastError: detail });
+      entry.lastConnectionError = { at: new Date(this.now()).toISOString(), detail };
       this.recordError(row.sessionId, err, "messaging_connect_failed");
     }
   }
@@ -509,8 +544,46 @@ export class MessagingBridge {
     entry.status = { ...patch, changedAt: new Date(this.now()).toISOString() };
   }
 
+  /**
+   * One error record for a messaging failure, filed under the Session's Project and Agent.
+   *
+   * The attribution is load-bearing, not decoration: `GET /api/projects/:id/usage/errors`
+   * selects by project, and a record with none is "unattributed" — served only to admins
+   * (`includeGlobalErrors`), so an ordinary member could never see a failure of their own
+   * binding anywhere. The lookup uses the sessions index the bridge already holds; a row
+   * deleted since leaves the record unattributed rather than dropping it.
+   */
   private recordError(sessionId: string, err: unknown, code: string): void {
-    this.deps.errors.record({ source: "messaging", err, code, ctx: { sessionId } });
+    const row = this.deps.sessions.findById(sessionId);
+    this.deps.errors.record({
+      source: "messaging",
+      err,
+      code,
+      ctx: {
+        sessionId,
+        ...(row !== null ? { projectId: row.projectId, agentId: row.agentId } : {}),
+      },
+    });
+  }
+
+  /**
+   * A failure AFTER an inbound message was accepted: recorded like any other, and also put
+   * on the binding's runtime status so the panel can say it. The error table is a Project-wide
+   * dashboard nobody visits to debug one bot; the binding's own panel is where the question
+   * is asked.
+   */
+  private recordDeliveryFailure(
+    entry: BridgeEntry,
+    err: unknown,
+    stage: MessagingDeliveryError["stage"],
+    code: string,
+  ): void {
+    entry.lastDeliveryError = {
+      at: new Date(this.now()).toISOString(),
+      stage,
+      detail: err instanceof Error ? err.message : String(err),
+    };
+    this.recordError(entry.sessionId, err, code);
   }
 
   private async clientFor(sessionId: string, row: MessagingBindingRow): Promise<MessagingClient> {
@@ -558,6 +631,9 @@ export class MessagingBridge {
   private async onInbound(entry: BridgeEntry, msg: MessagingInboundMessage): Promise<void> {
     if (this.entries.get(entry.sessionId) !== entry) return; // stale connection
     if (this.isRedelivery(entry, msg)) return;
+    // Stamped on acceptance, before anything can go wrong with it: the panel's question is
+    // "did the channel deliver anything", which a later failure does not un-answer.
+    entry.lastInboundAt = new Date(this.now()).toISOString();
     try {
       const isDirect = msg.chatKind === "direct";
       // The chat becomes the reply target BEFORE any processing: even a rejected message
@@ -589,7 +665,9 @@ export class MessagingBridge {
         msg.messageId === "" ? null : msg.messageId,
       );
     } catch (err) {
-      this.recordError(entry.sessionId, err, "messaging_inbound_failed");
+      // The chat hears nothing when this fires — a Session that cannot load, a Workspace that
+      // is gone — so the status line is the only place the user can find out it happened.
+      this.recordDeliveryFailure(entry, err, "inbound", "messaging_inbound_failed");
     }
   }
 
@@ -715,7 +793,7 @@ export class MessagingBridge {
           await client.sendText(chatId, chunk);
         }
       } catch (err) {
-        this.recordError(entry.sessionId, err, "messaging_send_failed");
+        this.recordDeliveryFailure(entry, err, "send", "messaging_send_failed");
       }
     }
   }
@@ -727,7 +805,7 @@ export class MessagingBridge {
     try {
       await target.client.sendText(target.chatId, text);
     } catch (err) {
-      this.recordError(entry.sessionId, err, "messaging_send_failed");
+      this.recordDeliveryFailure(entry, err, "send", "messaging_send_failed");
     }
   }
 

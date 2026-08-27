@@ -1916,6 +1916,15 @@ Scenarios:
       telegram: "Telegram connection enabled",
       qq: "QQ connection enabled",
     },
+    /** Delivery observability under the toggle: has anything ever arrived, and did the last one get through. */
+    inboundLastAt: (when: string) => `Last message received: ${when}`,
+    inboundNone: "Connected, but no message has arrived yet",
+    deliveryFailedInbound: (detail: string) =>
+      `A message arrived but its task never started: ${detail}`,
+    deliveryFailedSend: (detail: string) => `The task ran but its reply never went out: ${detail}`,
+    /** A connection failure the connection has since recovered from (lastError is gone by then). */
+    lastConnectionError: (when: string, detail: string) =>
+      `The connection dropped at ${when}: ${detail}`,
     /** The collapsed FAQ folds below the save area. */
     faqSetupTitle: "Set up the bot",
     faqWhatTitle: "What binding does",
@@ -1929,12 +1938,14 @@ Scenarios:
     troubleConnError:
       "Connection status shows an error? Check the credentials; for Feishu also confirm the API domain and the long-connection event subscription.",
     troubleOnePoller:
-      "Telegram reports that another program is polling? A Bot Token serves exactly one program at a time — close the other PenguinHarness server or bot script using it, or give this conversation a bot of its own.",
+      "Telegram reports that another program is polling? A Bot Token serves exactly one program at a time — close the other PenguinHarness server or bot script using it, or give this conversation a bot of its own. A getUpdates you run by hand (a curl to see what Telegram has queued) is that other program too: disable the connection here before running one. Reading updates by hand also confirms them, so the app will never see those messages — retest with a freshly sent one.",
     troubleGroupPrivacy:
       "The bot ignores everything you say in a Telegram group? Telegram's Group Privacy is on by default, and under it a bot that is not an administrator of the group receives only commands addressed to it (such as /start@your_bot) and replies to its own messages — ordinary group messages are never delivered at all, and the connection itself looks perfectly healthy. Making the bot an administrator of that group fixes it on its own, since administrators always receive every message. Otherwise turn Group Privacy off with /setprivacy in @BotFather, then remove the bot from the group and add it back — a group it is already in does not pick up the change.",
     /** The QQ-only failure a user will otherwise read as "the bot is broken". */
     troubleQQPassive:
       "No replies arriving in QQ? QQ only lets a bot answer a message you just sent: a turn started in the web app is not mirrored there, and replies stop being deliverable a few minutes after your last QQ message. Send another message in QQ to continue.",
+    troubleNoGroupInbound:
+      "Sending in a group but the panel still says no message has arrived? Then Telegram is not delivering it and nothing on this machine can change that: confirm the bot is still in that group; if you have just turned Group Privacy off in @BotFather, remove the bot from the group and add it back, because an existing group does not pick up the change; and confirm nothing else is polling the same token — including a getUpdates you ran yourself (see above). Telegram channel posts are not supported either — this connection handles groups and direct chats only.",
   },
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */

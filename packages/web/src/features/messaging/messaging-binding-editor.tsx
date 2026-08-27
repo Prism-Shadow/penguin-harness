@@ -45,6 +45,7 @@ import type {
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
+import { formatDateTime } from "../../lib/format";
 import { toneInk, type Tone } from "../../lib/tone";
 import { Button } from "../../components/ui/button";
 import { FieldLabel } from "../../components/ui/field";
@@ -620,6 +621,49 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
             {facts.status.lastError}
           </p>
         )}
+        {/* A failure the connection has already recovered from. `lastError` belongs to the
+            error state and is wiped the moment the state leaves it, so a connector that flaps
+            — which is what a second program polling the same bot token produces — shows a
+            clean `connected` in every snapshot taken between its failures, and the reader is
+            left with the symptom and no trace of the cause. */}
+        {facts.status.state !== "error" && facts.status.lastConnectionError !== undefined && (
+          <p
+            title={facts.status.lastConnectionError.detail}
+            className="line-clamp-2 text-xs break-words text-gray-500 dark:text-gray-400"
+          >
+            {S.messaging.lastConnectionError(
+              formatDateTime(facts.status.lastConnectionError.at),
+              facts.status.lastConnectionError.detail,
+            )}
+          </p>
+        )}
+        {/* What this connection has actually seen. "Connected" answers whether the socket is
+            up, and nothing else on this panel could tell a user whether the platform is
+            delivering anything — a Telegram bot muted by group privacy, or one that was never
+            really added to the group, is `connected` with no error, forever. The counts reset
+            with the server (they are the live connection's own observations), which is why
+            the empty case says so rather than reading as "never". */}
+        {facts.status.state === "connected" &&
+          (facts.status.lastInboundAt !== undefined ? (
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {S.messaging.inboundLastAt(formatDateTime(facts.status.lastInboundAt))}
+            </p>
+          ) : (
+            <p className="text-xs text-gray-500 dark:text-gray-400">{S.messaging.inboundNone}</p>
+          ))}
+        {/* A failure AFTER a message arrived. Both stages reach the chat as silence, so the
+            line has to say which one it was: "it never started" sends the user to the Session,
+            "the reply never went out" sends them to the bot's permissions in the chat. */}
+        {facts.status.lastDeliveryError !== undefined && (
+          <p
+            title={`${formatDateTime(facts.status.lastDeliveryError.at)} · ${facts.status.lastDeliveryError.detail}`}
+            className="line-clamp-2 text-xs break-words text-gray-500 dark:text-gray-400"
+          >
+            {facts.status.lastDeliveryError.stage === "inbound"
+              ? S.messaging.deliveryFailedInbound(facts.status.lastDeliveryError.detail)
+              : S.messaging.deliveryFailedSend(facts.status.lastDeliveryError.detail)}
+          </p>
+        )}
       </div>
       {/* Entry-level probes — the MCP dialog idiom: standalone buttons, results as toasts. */}
       <div className="flex flex-wrap items-center gap-2">
@@ -874,6 +918,7 @@ export function MessagingBindingHelp({ channel }: { channel: MessagingChannel })
           {channel === "telegram" && <li>{S.messaging.troubleOnePoller}</li>}
           {channel === "telegram" && <li>{S.messaging.troubleGroupPrivacy}</li>}
           {channel === "qq" && <li>{S.messaging.troubleQQPassive}</li>}
+          {channel === "telegram" && <li>{S.messaging.troubleNoGroupInbound}</li>}
         </ul>
       </HelpFold>
     </div>

@@ -27,6 +27,7 @@ import {
 import { emptyMessagingForm } from "../src/features/messaging/messaging-binding-form";
 import { S, setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
+import { formatDateTime } from "../src/lib/format";
 
 afterEach(() => setActiveStrings(zh));
 
@@ -218,6 +219,101 @@ describe("MessagingBindingBody", () => {
       expect(html).toContain(`>${name}</button>`);
     }
     expect(html).toContain("grid-cols-3");
+  });
+
+  it("says whether anything has arrived, and which end failed when something did", () => {
+    // A bot Telegram is withholding messages from is `connected` with no error, forever.
+    // Without this line the panel has nothing to distinguish it from a healthy binding
+    // nobody has written to.
+    const quiet = render(
+      stateOf("telegram", {
+        telegram: {
+          ...DARK,
+          secretConfigured: true,
+          enabled: true,
+          status: { state: "connected" },
+        },
+      }),
+    );
+    expect(quiet).toContain(S.messaging.inboundNone);
+
+    const seen = render(
+      stateOf("telegram", {
+        telegram: {
+          ...DARK,
+          secretConfigured: true,
+          enabled: true,
+          status: { state: "connected", lastInboundAt: "2026-08-26T09:30:00.000Z" },
+        },
+      }),
+    );
+    expect(seen).toContain(S.messaging.inboundLastAt(formatDateTime("2026-08-26T09:30:00.000Z")));
+    expect(seen).not.toContain(S.messaging.inboundNone);
+
+    // The two post-arrival failures are the same silence in the chat and different actions
+    // for the reader, so the line names the stage rather than only the message.
+    const detail = "Bad Request: have no rights to send a message";
+    const failed = render(
+      stateOf("telegram", {
+        telegram: {
+          ...DARK,
+          secretConfigured: true,
+          enabled: true,
+          status: {
+            state: "connected",
+            lastInboundAt: "2026-08-26T09:30:00.000Z",
+            lastDeliveryError: { at: "2026-08-26T09:31:00.000Z", stage: "send", detail },
+          },
+        },
+      }),
+    );
+    expect(failed).toContain(S.messaging.deliveryFailedSend(detail));
+    expect(failed).not.toContain(S.messaging.deliveryFailedInbound(detail));
+    // Arrival is still reported: a send failure is not a delivery failure.
+    expect(failed).toContain(S.messaging.inboundLastAt(formatDateTime("2026-08-26T09:30:00.000Z")));
+  });
+
+  it("leaves the last connection failure on screen after the connection recovers", () => {
+    const detail = "another program is already polling this bot";
+    const html = render(
+      stateOf("telegram", {
+        telegram: {
+          ...DARK,
+          secretConfigured: true,
+          enabled: true,
+          status: {
+            state: "connected",
+            lastConnectionError: { at: "2026-08-26T09:00:00.000Z", detail },
+          },
+        },
+      }),
+    );
+    // A flapping connector is `connected` in every snapshot between its failures, so without
+    // this the reader sees a healthy binding and no trace of the cause.
+    expect(html).toContain(
+      S.messaging.lastConnectionError(formatDateTime("2026-08-26T09:00:00.000Z"), detail),
+    );
+
+    // While the connection is actually down, `lastError` is the live one and this must not
+    // double up beside it.
+    const down = render(
+      stateOf("telegram", {
+        telegram: {
+          ...DARK,
+          secretConfigured: true,
+          enabled: true,
+          status: {
+            state: "error",
+            lastError: detail,
+            lastConnectionError: { at: "2026-08-26T09:00:00.000Z", detail },
+          },
+        },
+      }),
+    );
+    expect(down).toContain(`>${detail}</p>`);
+    expect(down).not.toContain(
+      S.messaging.lastConnectionError(formatDateTime("2026-08-26T09:00:00.000Z"), detail),
+    );
   });
 
   it("shows the switch's gating reason when the other channel holds the connection", () => {

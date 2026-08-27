@@ -1876,6 +1876,13 @@ Benchmark：
       telegram: "Telegram 连接已启用",
       qq: "QQ 连接已启用",
     },
+    /** Delivery observability under the toggle: has anything ever arrived, and did the last one get through. */
+    inboundLastAt: (when: string) => `最近收到消息：${when}`,
+    inboundNone: "连接已就绪，但还没有收到过任何消息",
+    deliveryFailedInbound: (detail: string) => `消息已收到，但任务没有开始：${detail}`,
+    deliveryFailedSend: (detail: string) => `任务已完成，但回复没有发出：${detail}`,
+    /** A connection failure the connection has since recovered from (lastError is gone by then). */
+    lastConnectionError: (when: string, detail: string) => `连接曾于 ${when} 中断：${detail}`,
     /** The collapsed FAQ folds below the save area. */
     faqSetupTitle: "如何创建机器人",
     faqWhatTitle: "绑定后会发生什么",
@@ -1888,12 +1895,14 @@ Benchmark：
     troubleConnError:
       "连接状态显示错误？检查凭证是否正确；飞书还需确认 API 域名与事件订阅方式（长连接）。",
     troubleOnePoller:
-      "Telegram 提示已有其他程序在轮询？一个 Bot Token 同一时刻只能被一个程序使用——关闭正在占用它的另一个 PenguinHarness 服务端或机器人脚本，或为该会话单独建一个机器人。",
+      "Telegram 提示已有其他程序在轮询？一个 Bot Token 同一时刻只能被一个程序使用——关闭正在占用它的另一个 PenguinHarness 服务端或机器人脚本，或为该会话单独建一个机器人。手动执行的 getUpdates（例如用 curl 查看 Telegram 那边积压了什么）同样算作「另一个程序」：跑它之前先在这里停用连接。而且手动读取会确认这些更新，应用此后再也看不到它们——所以复测必须重新发一条新消息。",
     troubleGroupPrivacy:
       "在 Telegram 群里发消息，机器人毫无反应？Telegram 的 Group Privacy 默认开启，此时不担任该群管理员的机器人只能收到明确指向它的命令（如 /start@your_bot）和对它自己消息的回复，普通群消息根本不会送达，连接本身也没有任何异常。把机器人设为该群的管理员即可单独解决，管理员始终收到全部消息。也可以到 @BotFather 用 /setprivacy 关闭 Group Privacy，然后把机器人移出该群再重新拉入——已在的群不会自动生效。",
     /** The QQ-only failure a user will otherwise read as "the bot is broken". */
     troubleQQPassive:
       "QQ 里收不到回复？QQ 只允许机器人回复你刚发出的消息：在网页端发起的对话不会同步过去，距离你上一条 QQ 消息过去几分钟后也发不出。在 QQ 里再发一条消息即可继续。",
+    troubleNoGroupInbound:
+      "在群里发消息，面板却一直显示「连接已就绪，但还没有收到过任何消息」？那就是 Telegram 没有把它投递过来，本机再怎么查也无济于事：确认机器人确实还在这个群里；如果刚在 @BotFather 关掉 Group Privacy，必须把机器人移出该群再重新拉入，已有的群不会自动生效；并确认没有别的程序（包括你自己手动跑的 getUpdates，见上一条）在用同一个 Token 轮询。另外，Telegram 频道（channel）的贴文不受支持——本连接只处理群聊与私聊。",
   },
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */
