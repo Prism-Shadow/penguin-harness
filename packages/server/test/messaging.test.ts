@@ -49,7 +49,7 @@ import {
   messagingFileFailedNotice,
   messagingFilePermissionNotice,
   messagingFileTooLargeNotice,
-  messagingFilesMissingNotice,
+  messagingFilesMissingLog,
   messagingFilesSkippedNotice,
   messagingImageBudgetNotice,
   messagingImageFailedNotice,
@@ -138,6 +138,7 @@ class FakeClient implements FeishuApiClient {
     return null;
   }
   async sendText(chatId: string, text: string): Promise<void> {
+    if (this.sdk.failSendWith !== null) throw this.sdk.failSendWith;
     if (this.sdk.failSend !== null) throw new Error(this.sdk.failSend);
     this.sdk.noteSend();
     this.record({ kind: "send", target: chatId, text });
@@ -229,6 +230,8 @@ class FakeSdk implements FeishuSdk {
   botIdentityLookups = 0;
   /** Non-null makes every outbound sendText throw with this message. */
   failSend: string | null = null;
+  /** Non-null makes every outbound sendText throw THIS — for the failure shapes that carry data. */
+  failSendWith: Error | null = null;
   /**
    * Non-null holds every createClient until it resolves, which is what makes the bridge's
    * one await between reading the binding row and its first send observable to a test.
@@ -1565,8 +1568,14 @@ describe("messaging binding routes and bridge", () => {
       ),
     );
     // Still an error record: somebody has to grant it, and the dashboard is where that is
-    // noticed when nobody is watching the chat.
+    // noticed when nobody is watching the chat. Filed as EXPECTED, though — the one person
+    // who can fix it has just been handed the scope names and the console link, so nothing
+    // is pending for an operator, and the cost center's unexpected count stays a count of
+    // things that need looking at.
     expect(imageFetchErrors()).toHaveLength(1);
+    expect(messagingErrorKinds()).toEqual([
+      { code: "messaging_image_fetch_failed", kind: "expected" },
+    ]);
     expect(runs).toHaveLength(0);
   });
 
@@ -1842,7 +1851,13 @@ describe("messaging binding routes and bridge", () => {
 
   it("a reply that never went out is reported on the status and filed under the Project", async () => {
     await bindEnabled(SID);
-    fake.failSend = "Bad Request: have no rights to send a message";
+    // The half-configured first run: an app granted the receive scopes but never
+    // `im:message:send_as_bot`. Typed, because the type is what the classification below reads.
+    fake.failSendWith = new MessagingPermissionError(
+      ["im:message:send_as_bot"],
+      "https://open.feishu.cn/app/cli_x/auth?q=im:message:send_as_bot",
+      "Access denied. One of the following scopes is required: [im:message:send_as_bot] (code 99991672)",
+    );
     await fake.lastConnection().fire({
       chatId: "oc_chat_1",
       chatType: "p2p",
@@ -1859,12 +1874,18 @@ describe("messaging binding routes and bridge", () => {
     // says which end failed, because the two send the user to different places.
     expect(failed.lastInboundAt).toBeDefined();
     expect(failed.lastDeliveryError?.stage).toBe("send");
-    expect(failed.lastDeliveryError?.detail).toContain("have no rights to send a message");
+    expect(failed.lastDeliveryError?.detail).toContain("im:message:send_as_bot");
 
     // And the error record is attributed, which is what makes it reachable at all: the
     // project errors query serves unattributed records to admins only.
     const recorded = t.deps.errorsRepo.recent(projectId);
     expect(recorded.map((r) => r.code)).toContain("messaging_send_failed");
+    // UNEXPECTED, even though the same refusal on the image download is expected: there the
+    // chat is handed the scope names and the console link, here it is handed nothing — the
+    // message that would carry them is the one being refused. A bot that receives every
+    // question and answers none of them is the worst state this feature has, and this record
+    // is the only place it shows (see error-kind.ts).
+    expect(messagingErrorKinds()).toEqual([{ code: "messaging_send_failed", kind: "unexpected" }]);
   });
 
   it("keeps a delivery failure on the status after a later message goes through", async () => {
@@ -2122,6 +2143,12 @@ describe("messaging binding routes and bridge", () => {
       .all()
       .map((r) => r.message as string);
 
+  /** How the messaging failures recorded so far were classified, newest last (see error-kind.ts). */
+  const messagingErrorKinds = (): Array<{ code: string; kind: string }> =>
+    t.deps.db
+      .prepare("SELECT code, kind FROM error_records WHERE source = 'messaging' ORDER BY id")
+      .all() as Array<{ code: string; kind: string }>;
+
   let asks = 0;
   /** Message the bound Session from the chat, and wait for the run to start AND finish. */
   const askAndSettle = async (): Promise<void> => {
@@ -2196,20 +2223,19 @@ describe("messaging binding routes and bridge", () => {
     ]);
   });
 
-  it("names a mentioned path that does not exist rather than dropping it in silence", async () => {
+  it("says nothing in the chat about a mentioned path that matches no file", async () => {
     await bindWithWorkspace(
       await makeWorkspace(),
       "I would have written `out/missing.png`, but the run failed.",
       "cli_ghost",
     );
     await askAndSettle();
-    await waitFor(() => fake.allSends().length === 2);
     await settle(80);
-    // Existence is still the rule and nothing exists, so no file goes. What changed is
-    // that the chat is told: a name in the reply that never arrives, with nothing anywhere
-    // to say why, is how this feature reads as broken.
-    expect(fake.allSends().map((s) => s.kind)).toEqual(["send", "send"]);
-    expect(fake.allTexts().at(-1)!.text).toBe(messagingFilesMissingNotice(["out/missing.png"]));
+    // The reply, and nothing after it. A name in a reply is not a promise of a file: the rule
+    // reads prose, so a path the model merely described would otherwise put an error-shaped
+    // line under a correct answer. The fact is logged instead — messagingFilesMissingLog.
+    expect(fake.allSends().map((s) => s.kind)).toEqual(["send"]);
+    expect(messagingFilesMissingLog(["out/missing.png"])).toContain("out/missing.png");
   });
 
   it("says nothing at all about a reply that named no file", async () => {
@@ -2267,16 +2293,17 @@ describe("messaging binding routes and bridge", () => {
       "cli_escape",
     );
     await askAndSettle();
-    await waitFor(() => fake.allSends().length === 2);
     await settle(80);
-    // Nothing leaves the Workspace; the escapes are reported as what they are here — paths
-    // with no file behind them — in the reply's own spelling, never a normalization of it.
-    expect(fake.allSends().map((s) => s.kind)).toEqual(["send", "send"]);
-    // Both escapes are named, in the reply's own spelling: the lexical one, which never
-    // resolves, and the symlink, which resolves to a name the file service then refuses.
-    // (`/etc/hostname` carries no extension, so it is never a candidate in the first place.)
-    expect(fake.allTexts().at(-1)!.text).toContain("../outside.txt");
-    expect(fake.allTexts().at(-1)!.text).toContain("linked.txt");
+    // The property under test: nothing leaves the Workspace. The reply goes out and NO file
+    // follows it — not the lexical escape, which never resolves, and not the symlink, which
+    // resolves to a name the file service then refuses. (`/etc/hostname` carries no
+    // extension, so it is never a candidate in the first place.)
+    expect(fake.allSends().map((s) => s.kind)).toEqual(["send"]);
+    // Both escapes reach the log in the reply's own spelling, never a normalization of it —
+    // a normalized path in a log line about containment would hide which name was tried.
+    const logged = messagingFilesMissingLog(["../outside.txt", "linked.txt"]);
+    expect(logged).toContain("../outside.txt");
+    expect(logged).toContain("linked.txt");
   });
 
   it("classifies by the file the read reached, not by the name the reply spelled", async () => {

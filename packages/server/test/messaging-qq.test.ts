@@ -32,6 +32,7 @@ import {
   MESSAGING_TEXT_ONLY_NOTICE,
 } from "../src/runtime/messaging/bridge.js";
 import type { MessagingClient } from "../src/runtime/messaging/connector.js";
+import { MessagingUnsupportedError } from "../src/runtime/messaging/media.js";
 import type {
   QQBotClient,
   QQCredentials,
@@ -698,6 +699,11 @@ describe("the QQ client's media half", () => {
     );
     await expect(media.sendFile(qqChatIdOf("c2c", USER_OPENID), file)).rejects.toThrow(
       /publicly reachable URL/,
+    );
+    // Typed, not bare: the bridge files a refusal the platform will repeat identically as an
+    // expected error rather than a defect (see error-kind.ts), and the type is what says so.
+    await expect(media.sendImage(qqChatIdOf("c2c", USER_OPENID), file)).rejects.toBeInstanceOf(
+      MessagingUnsupportedError,
     );
   });
 
