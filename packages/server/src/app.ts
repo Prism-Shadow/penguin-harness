@@ -83,6 +83,8 @@ import type { TelegramTransport } from "./runtime/messaging/telegram-api.js";
 import { QQConnector } from "./runtime/messaging/qq-connector.js";
 import { createQQTransport } from "./runtime/messaging/qq-api.js";
 import type { QQTransport } from "./runtime/messaging/qq-api.js";
+import { QQScanService, createQQScanTransport } from "./runtime/messaging/qq-scan.js";
+import type { QQScanTransport } from "./runtime/messaging/qq-scan.js";
 import { TitleGenerator, TitleNotifier } from "./runtime/title-generator.js";
 import { AdminService } from "./services/admin-service.js";
 import { DesktopService } from "./services/desktop-service.js";
@@ -183,6 +185,8 @@ export interface AppDeps {
   messagingRepo: MessagingBindingsRepo;
   /** Messaging bridge — channel connectors + event connections (started by the platform next to the scheduler). */
   messaging: MessagingBridge;
+  /** QQ scan-to-connect: the in-flight bind tasks and the AES keys that never leave the server. */
+  qqScan: QQScanService;
   scheduler: Scheduler;
   channels: ChannelHub;
   manager: SessionManager;
@@ -224,6 +228,8 @@ export interface BuildDepsOverrides {
   qqTailFlushMs?: number;
   /** Test hook: the bridge's pace between a per-line reply's messages (tests collapse it to zero). */
   messagingLineDelayMs?: number;
+  /** Test double: the QQ scan-to-connect transport (avoids real q.qq.com requests). */
+  qqScanTransport?: QQScanTransport;
   /**
    * Test double: scrypt work factor for password hashes written through this app.
    * Omitted in production, where the KDF runs at full strength.
@@ -774,6 +780,11 @@ export function buildAppDeps(
       ? { lineDelayMs: overrides.messagingLineDelayMs }
       : {}),
   });
+  // Scan-to-connect holds one AES key per in-flight bind task, in memory only: it decrypts
+  // an App Secret, and a task lives for the couple of minutes a person spends scanning.
+  const qqScan = new QQScanService(overrides.qqScanTransport ?? createQQScanTransport(), {
+    ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}),
+  });
   const sessionService = new SessionService({
     root: config.root,
     sessions: sessionsRepo,
@@ -838,6 +849,7 @@ export function buildAppDeps(
     goalsRepo,
     errorsRepo,
     messagingRepo,
+    qqScan,
     messaging,
     scheduler,
     channels,

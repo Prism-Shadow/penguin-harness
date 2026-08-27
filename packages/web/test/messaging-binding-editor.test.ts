@@ -46,6 +46,7 @@ function stateOf(
 ): MessagingBindingEditorState {
   const noop = async () => {};
   return {
+    sessionId: "session-under-test",
     form: emptyMessagingForm(channel),
     patchForm: () => {},
     selectChannel: () => {},
@@ -59,6 +60,7 @@ function stateOf(
     testable: false,
     toggleBlocked: false,
     toggleHint: null,
+    adoptBinding: () => {},
     save: noop,
     toggleEnabled: noop,
     testConnection: noop,

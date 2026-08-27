@@ -99,6 +99,8 @@ import type {
   SkillLibraryResponse,
   QQBindingPutRequest,
   QQBindingResponse,
+  QQScanPollResponse,
+  QQScanStartResponse,
   QQTestRequest,
   QQTestResponse,
   RecalledMessageResponse,
@@ -569,6 +571,33 @@ export const testTelegramBinding = (sessionId: string, body: TelegramTestRequest
     `/api/sessions/${encodeURIComponent(sessionId)}/messaging/telegram/test`,
     { method: "POST", body },
   );
+
+/**
+ * Starts a QQ scan-to-connect flow. The response carries the URL to render as a QR code and
+ * a task handle — never the AES key that decrypts the App Secret, which stays on the server.
+ */
+export const startQQScan = (sessionId: string) =>
+  apiFetch<QQScanStartResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/messaging/qq/scan`,
+    {
+      method: "POST",
+      body: {},
+    },
+  );
+
+/** One poll of a scan. `completed` means the server already decrypted and SAVED the credentials. */
+export const pollQQScan = (sessionId: string, taskId: string) =>
+  apiFetch<QQScanPollResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/messaging/qq/scan/poll`,
+    { method: "POST", body: { taskId } },
+  );
+
+/** Drops a scan the user walked away from, so its key is forgotten rather than left to expire. */
+export const cancelQQScan = (sessionId: string, taskId: string) =>
+  apiFetch<void>(`/api/sessions/${encodeURIComponent(sessionId)}/messaging/qq/scan/cancel`, {
+    method: "POST",
+    body: { taskId },
+  });
 
 /** QQ credential probe (the access-token exchange); the platform names no account, so success carries no label. */
 export const testQQBinding = (sessionId: string, body: QQTestRequest) =>
