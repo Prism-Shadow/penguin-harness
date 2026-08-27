@@ -15,6 +15,7 @@ import { AgentSettingsPage } from "./features/agents/agent-settings-page";
 import { PluginsPage } from "./features/plugins/plugins-page";
 import { ModelsPage } from "./features/models/models-page";
 import { ExtensionsPage } from "./features/extensions/extensions-page";
+import { ExtensionDetailPage } from "./features/extensions/extension-detail-page";
 import { UsagePage } from "./features/usage/usage-page";
 import { BenchmarkPage } from "./features/benchmark/benchmark-page";
 import { BenchmarkDetailPage } from "./features/benchmark/benchmark-detail-page";
@@ -34,6 +35,7 @@ const BUILTIN_PAGES: Record<string, React.ComponentType> = {
   PluginsPage,
   ModelsPage,
   ExtensionsPage,
+  ExtensionDetailPage,
   MachinesPage,
   UsagePage,
   BenchmarkPage,
