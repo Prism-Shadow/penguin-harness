@@ -1,0 +1,32 @@
+name: Feature request
+description: Propose something PenguinHarness should be able to do.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please search the open issues first — and note that questions and usage help belong on [Discord](https://discord.gg/eFHKqqcU3D) or in the WeChat group rather than here.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you were trying to do, and where PenguinHarness got in the way. Describe the situation rather than the fix — a concrete case is worth more than a feature name.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like it to do
+      description: The behavior you want, and where it would live — the Web App, the CLI, the SDK, a Skill, the model catalog.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you do instead today
+      description: The workaround you are using, or why none of the existing surfaces covers it.
+    validations:
+      required: false

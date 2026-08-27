@@ -1,7 +1,13 @@
 # Contributing to PenguinHarness
 
+[中文版](CONTRIBUTING.zh.md)
+
 Thanks for helping build PenguinHarness! This guide covers the workspace setup, daily
 commands, quality gates, and the repo's working rules.
+
+Participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md). A security
+problem does not go in a public issue — the [security policy](SECURITY.md) says where to
+send it instead.
 
 ## Prerequisites
 
@@ -87,15 +93,15 @@ Copy `.env.example` to `.env` for model credentials in development.
 A pnpm monorepo (TypeScript, Node >= 24). One install ships four layers that share a
 single data directory (`~/.penguin/data`) and a single message protocol (OmniMessage):
 
-| Package                              | Name                          | Role                                                                                                    |
-| ------------------------------------ | ----------------------------- | ------------------------------------------------------------------------------------------------------- |
-| [`packages/core`](packages/core)     | `@prismshadow/penguin-core`   | SDK & engine: ReAct loop, OmniMessage protocol, LLM/Environment interface contracts, Agent State, Trace |
-| [`packages/cli`](packages/cli)       | `@prismshadow/penguin-cli`    | The `penguin` command: REPL, one-shot runs, model & vault config, service launcher                      |
-| [`packages/server`](packages/server) | `@prismshadow/penguin-server` | Web backend: HTTP API + SSE streaming, multi-user auth, Project authorization, usage stats              |
-| [`packages/web`](packages/web)       | `@prismshadow/penguin-web`    | Web App: multi-session chat, Agent/skill/model management, Trace observability, evaluation center       |
-| [`packages/skills`](packages/skills) | `@prismshadow/penguin-skills` | Built-in skill library (agent creation, benchmarking, evaluation, optimization, …)                      |
-| [`packages/landing`](packages/landing) | —                           | Product landing page (this repo's website)                                                              |
-| [`packages/docs`](packages/docs)     | —                             | Documentation site (bilingual, deployed under `/docs/`)                                                 |
+| Package                                   | Name                          | Role                                                                                                    |
+| ----------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------- |
+| [`packages/core`](../packages/core)       | `@prismshadow/penguin-core`   | SDK & engine: ReAct loop, OmniMessage protocol, LLM/Environment interface contracts, Agent State, Trace |
+| [`packages/cli`](../packages/cli)         | `@prismshadow/penguin-cli`    | The `penguin` command: REPL, one-shot runs, model & vault config, service launcher                      |
+| [`packages/server`](../packages/server)   | `@prismshadow/penguin-server` | Web backend: HTTP API + SSE streaming, multi-user auth, Project authorization, usage stats              |
+| [`packages/web`](../packages/web)         | `@prismshadow/penguin-web`    | Web App: multi-session chat, Agent/skill/model management, Trace observability, evaluation center       |
+| [`packages/skills`](../packages/skills)   | `@prismshadow/penguin-skills` | Built-in skill library (agent creation, benchmarking, evaluation, optimization, …)                      |
+| [`packages/landing`](../packages/landing) | —                             | Product landing page (this repo's website)                                                              |
+| [`packages/docs`](../packages/docs)       | —                             | Documentation site (bilingual, deployed under `/docs/`)                                                 |
 
 Responsibilities split by source of truth: the **SDK** owns protocol and execution
 (message parsing, the agent loop, tools), the **Server** owns the multi-user runtime
@@ -113,7 +119,7 @@ pnpm typecheck
 pnpm test           # unit suites for every package
 ```
 
-Working on this repo with a coding agent: [`.agents/skills/penguin-harness-dev/`](.agents/skills/penguin-harness-dev/SKILL.md)
+Working on this repo with a coding agent: [`.agents/skills/penguin-harness-dev/`](../.agents/skills/penguin-harness-dev/SKILL.md)
 collects the conventions that are easy to get wrong from the outside — the two-repo symlink
 layout, the CI-parity chain, the record-and-ship contract, the model catalog's pricing rules,
 and the seams that are intentional. `.claude` is a symlink to `.agents`, so a Claude Code
@@ -139,7 +145,7 @@ pnpm test:e2e                                        # core live-model e2e, need
   (released versions' folders are frozen) — an H1 title, the `Date` / `Type` / `Scope` /
   `PR` / `Issue` / `Breaking` metadata block, the counterpart link, then a lead paragraph
   and bespoke sections. There is no index file to update. The format is documented in
-  [`changelog/README.md`](changelog/README.md). Related changes may share one entry
+  [`changelog/README.md`](../changelog/README.md). Related changes may share one entry
   file (extending its sections) instead of opening a new file per small change.
 - **A release ships its own announcement**: `changelog/<version>/RELEASE.md` is published
   verbatim as the GitHub Release body. Write it during release preparation and **commit it
@@ -157,6 +163,19 @@ pnpm test:e2e                                        # core live-model e2e, need
   `node packages/landing/scripts/capture-readme-demo.mjs` (build first; needs Playwright
   chromium). Regenerate rather than hand-editing.
 
+## Reporting a bug or proposing a feature
+
+Open an issue from the [issue forms](https://github.com/Prism-Shadow/penguin-harness/issues/new/choose).
+A bug report is worth far more with the version (`penguin version`), how PenguinHarness
+was installed, the OS, and whether the problem survives a fresh data root
+(`PENGUIN_HOME=/tmp/penguin-check penguin ...`) — that last one separates a code defect
+from a state left behind by an earlier version. Never paste an API key, a bot token,
+`system_config.yaml`, or a `.env` into an issue: the data root holds provider credentials
+in plain text, and an issue is public and permanent.
+
+Questions and usage help belong on [Discord](https://discord.gg/eFHKqqcU3D) or in the
+WeChat group, not in the issue tracker.
+
 ## Pull requests
 
 - Branch from `main`; keep PRs focused on one topic.
@@ -164,3 +183,8 @@ pnpm test:e2e                                        # core live-model e2e, need
   changes in the PR body.
 - New user-facing behavior should come with tests, and with docs updates when it changes
   documented behavior (README, docs site).
+- Write the title and body in English, and list what you actually ran under a
+  `## Verification` heading. The [pull request template](PULL_REQUEST_TEMPLATE.md) is
+  filled in for you when you open the PR.
+- Pull requests are squash-merged, so one PR lands on `main` as one commit. Merging needs
+  one approving review and every review thread resolved.

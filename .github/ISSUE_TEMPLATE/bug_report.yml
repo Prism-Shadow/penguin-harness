@@ -1,0 +1,80 @@
+name: Bug report
+description: Something in PenguinHarness does not do what it says it does.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please search the open issues first, and check whether the newest release already fixes it — PenguinHarness has no maintenance branches, so a fix only ever arrives in a later version.
+
+        **Never paste credentials.** A data root holds provider API keys, messaging bot tokens and Vault entries in readable form, so `system_config.yaml`, `.env`, a Trace and a full log are all likely to carry a secret. Quote the few lines that matter. If the bug *is* a leak or another security problem, do not file it here — follow the [security policy](https://github.com/Prism-Shadow/penguin-harness/blob/main/.github/SECURITY.md).
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The shortest sequence that shows the problem. A prompt, a command, or a few clicks is enough — say which Agent, model and approval mode were in play if they matter.
+      placeholder: |
+        1. …
+        2. …
+        3. …
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `penguin version`, or the version the app shows in System settings.
+      placeholder: v0.2.7, or v0.2.7-14-g9e8f7d6-dirty for a source build
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: How it is installed
+      options:
+        - Desktop app
+        - CLI (penguin, from npm or an installer bundle)
+        - Server (penguin server / penguin web)
+        - From a source checkout (pnpm dev)
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: macOS 15.4 (Apple silicon) / Windows 11 / Ubuntu 24.04
+    validations:
+      required: true
+
+  - type: dropdown
+    id: fresh-root
+    attributes:
+      label: Does it reproduce on a fresh data root?
+      description: Run it once against an empty root — `PENGUIN_HOME=/tmp/penguin-check penguin ...`, or `--root` where the subcommand takes it. That separates a defect in the code from state an earlier version left behind, and it is the single most useful thing a report can say.
+      options:
+        - Yes — an empty data root still shows it
+        - No — only my existing data root shows it
+        - Not tested
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Relevant output
+      description: Error messages, the failing part of a log, or a screenshot. Redact keys and tokens before pasting.
+      render: text
+    validations:
+      required: false

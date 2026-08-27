@@ -36,7 +36,7 @@ pnpm --filter @prismshadow/penguin-web test                                     
 
 | Changed | Run |
 | --- | --- |
-| Markdown only — changelog, `CONTRIBUTING.md`, `.agents/`, README | `pnpm format:check` |
+| Markdown only — changelog, `.github/CONTRIBUTING.md`, `.agents/`, README | `pnpm format:check` |
 | `packages/docs/content/**`, blog posts under `packages/landing/content/**` | `format:check` + the `docs` and `landing` package tests (search index, blog fixtures) |
 | `packages/skills/skills/**` | the `skills` package test + `docs`'s `skills-sync.test.ts` |
 | The model catalog | core `model-catalog.test.ts`, web `model-grouping.test.ts` and `protocol-path.test.ts`, server `models.test.ts` |

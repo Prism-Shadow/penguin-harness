@@ -144,7 +144,7 @@ jobs:
           if [ -f package.json ]; then
             PKG_V="$(node -p 'require("./package.json").version')"
             if [ "$PKG_V" != "$V" ]; then
-              MSG="tag $TAG does not match the repo version $PKG_V; bump root + packages/*/package.json and core VERSION during release prep, then re-tag (see CONTRIBUTING.md)."
+              MSG="tag $TAG does not match the repo version $PKG_V; bump root + packages/*/package.json and core VERSION during release prep, then re-tag (see .github/CONTRIBUTING.md)."
               if [ "${EVENT_NAME:-}" = "push" ]; then
                 echo "error: $MSG" >&2
                 exit 1
@@ -593,7 +593,7 @@ jobs:
           if [ -f package.json ]; then
             PKG_V="$(node -p 'require("./package.json").version')"
             if [ "$PKG_V" != "$V" ]; then
-              MSG="tag $TAG does not match the repo version $PKG_V; bump root + packages/*/package.json and core VERSION during release prep, then re-tag (see CONTRIBUTING.md)."
+              MSG="tag $TAG does not match the repo version $PKG_V; bump root + packages/*/package.json and core VERSION during release prep, then re-tag (see .github/CONTRIBUTING.md)."
               if [ "${EVENT_NAME:-}" = "push" ]; then
                 echo "error: $MSG" >&2
                 exit 1
