@@ -18,6 +18,13 @@ English conversation could come back with a Chinese title.
   `<assistant>` inside it, and declared to be data: not to be replied to, not to be acted on,
   and not a source of instructions. The last point also keeps a conversation from steering a
   request that runs with no system prompt of its own.
+- Both elements stay present even on a first turn, where there is no assistant text: the
+  `<assistant>` element then holds `(the assistant has not replied yet)`, and a rule shipped
+  alongside it says the line records a turn that has not happened, that the user's request is
+  to be titled alone, and that the absence is never itself the title. A lone user utterance
+  inside the fence has the shape of a question put to the reader, which is the shape the rest
+  of the prompt is arranged against. The marker is in the prompt's instruction language, so it
+  cannot pull the title away from the language of the user's text.
 - The demand now follows the material, and the prompt ends on a bare `Title:` lead-in whose
   only sensible continuation is a title. The empty `<think></think>` block that closes a
   reasoning model's thinking phase sits directly above that lead-in.

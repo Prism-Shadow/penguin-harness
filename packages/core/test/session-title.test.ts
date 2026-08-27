@@ -120,6 +120,47 @@ describe("session-title", () => {
     expect(injected.match(/<\/conversation>/g)).toHaveLength(1);
   });
 
+  it("buildTitlePrompt: an unanswered turn keeps its <assistant> element, holding a marker the rules explain", () => {
+    const first = buildTitlePrompt("你好", "");
+    // Both elements present: the material reads as a transcript with a turn that has not
+    // happened, not as a lone utterance addressed to whoever is reading it.
+    expect(first).toContain(
+      "<conversation>\n<user>\n你好\n</user>\n<assistant>\n(the assistant has not replied yet)\n</assistant>\n</conversation>",
+    );
+    // The marker is in the instruction language, so it cannot pull the title off the user's.
+    expect(first).toContain("(the assistant has not replied yet)");
+    expect(first).not.toMatch(/<assistant>\n[^\n]*[一-鿿]/);
+    // Its meaning is stated rather than left to be inferred, including that it is not material.
+    expect(first).toContain("records a turn that has not happened");
+    expect(first).toContain("title the user's request alone");
+    expect(first).toContain("never make the absence itself the title");
+    // The greeting still has a title of its own to reach for, and the lead-in still closes.
+    expect(first).toContain('"你好" → 打招呼');
+    expect(first.endsWith("\n<think></think>\nTitle:")).toBe(true);
+
+    // Real assistant material displaces the marker, and the rule explaining it goes with it.
+    const answered = buildTitlePrompt("你好", "你好！有什么可以帮你的吗？");
+    expect(answered).toContain("<assistant>\n你好！有什么可以帮你的吗？\n</assistant>");
+    expect(answered).not.toContain("(the assistant has not replied yet)");
+    expect(answered).not.toContain("records a turn that has not happened");
+  });
+
+  it("a 你好-shaped first turn is titled, not answered: the material is a transcript and the model's title survives sanitizing", async () => {
+    const seen: string[] = [];
+    const result = await generateTitleWithLLM(
+      fakeLLM([assistantText("打招呼")], { status: "completed" }, seen),
+      { userText: "你好", assistantText: "" },
+    );
+    expect(result.title).toBe("打招呼");
+    expect(seen[0]).toBe(buildTitlePrompt("你好", ""));
+    // Nothing in the request is shaped like a question to answer: the user text sits inside a
+    // fence that is declared to be data, its unanswered counterpart is recorded, and the last
+    // thing read is the lead-in.
+    expect(seen[0]).toContain("do not reply to it");
+    expect(seen[0]).toContain("<assistant>\n(the assistant has not replied yet)\n</assistant>");
+    expect(seen[0]!.endsWith("Title:")).toBe(true);
+  });
+
   it("sends no request when material is empty; title is null when the outcome is not completed (usage kept)", async () => {
     const seen: string[] = [];
     const empty = await generateTitleWithLLM(fakeLLM([], { status: "completed" }, seen), {
@@ -143,7 +184,7 @@ describe("session-title", () => {
     expect(failed.usage?.total).toBe(1);
   });
 
-  it("still generates with empty assistant material (tool-only turn): uses only the user request, prompt omits the assistant section", async () => {
+  it("still generates with empty assistant material (tool-only turn): uses only the user request, assistant section marked as not yet answered", async () => {
     const seen: string[] = [];
     const result = await generateTitleWithLLM(
       fakeLLM([assistantText("Configure the Tailwind theme")], { status: "completed" }, seen),
@@ -151,7 +192,7 @@ describe("session-title", () => {
     );
     expect(result.title).toBe("Configure the Tailwind theme");
     expect(seen[0]).toBe(buildTitlePrompt("help me configure @theme", ""));
-    expect(seen[0]).not.toContain("<assistant>");
+    expect(seen[0]).toContain("<assistant>\n(the assistant has not replied yet)\n</assistant>");
   });
 
   it("sanitizeTitle: strips quotes/punctuation to a fixed point, collapses whitespace, truncates overlong input, returns null for empty", () => {
