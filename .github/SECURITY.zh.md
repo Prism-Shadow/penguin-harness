@@ -21,8 +21,9 @@ PenguinHarness 尚未发布 1.0，代码从 `main` 出货。项目没有维护�
 ["Report a vulnerability"](https://github.com/Prism-Shadow/penguin-harness/security/advisories/new)
 表单私下报告。它会创建一份只有维护者可见的 advisory 草稿，讨论、修复与最终披露都挂在同一处。
 
-如果你无法使用该表单，请发邮件至 <hiyouga@buaa.edu.cn>。不要为安全问题开公开 issue、discussion 或
-Pull Request，也不要发到 Discord 或微信群——那些都是公开场合。
+如果你无法使用该表单，可以在 [Discord](https://discord.gg/eFHKqqcU3D) 上说明你有一份安全报告——
+但不要写任何细节——维护者会与你建立私密渠道。不要为安全问题开公开 issue、discussion 或 Pull
+Request，也不要把细节发到 Discord 或微信群——那些都是公开场合。
 
 一份报告最有用的内容是：受影响的版本、PenguinHarness 的安装方式（桌面应用、CLI，还是自行运行的
 server）、操作系统，以及能复现问题的最短步骤。**发送前请先剔除凭据。** 数据根目录中的 Provider API

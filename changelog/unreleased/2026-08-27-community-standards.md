@@ -21,12 +21,12 @@ new file was added at the repository root.
   `## Verification` section and the template. The four references to it — in `README.md`,
   `README.zh.md`, `.github/workflows/release.yml` and the `penguin-harness-dev` skill —
   were repointed at the new path.
-- `.github/CODE_OF_CONDUCT.md` was added as the Contributor Covenant 2.1 verbatim, with
-  <hiyouga@buaa.edu.cn> filled in as the enforcement contact, and its Chinese counterpart
-  took the Covenant's own zh-cn translation. Neither file was written as a paraphrase, so a
-  later version bump stays a clean diff against upstream.
+- `.github/CODE_OF_CONDUCT.md` was added as the Contributor Covenant 2.1 verbatim, with a
+  direct message to a maintainer on Discord filled in as the enforcement contact, and its
+  Chinese counterpart took the Covenant's own zh-cn translation. Neither file was written
+  as a paraphrase, so a later version bump stays a clean diff against upstream.
 - `.github/SECURITY.md` was written to route reports to GitHub's private "Report a
-  vulnerability" form, with the maintainer's address as the fallback, and to state that
+  vulnerability" form, with a details-free Discord ping as the fallback, and to state that
   only the most recent release is supported — the project is pre-1.0, ships from `main`,
   and backports nothing. It also drew the scope line the product needs: an approval
   bypass, a `[command_policy]` evasion, a credential reaching a log or a Trace, and a

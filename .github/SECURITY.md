@@ -23,9 +23,11 @@ Report privately, through GitHub's
 form. It opens a draft advisory only the maintainers can see, and it keeps the discussion,
 the fix and the eventual disclosure attached to one another.
 
-If that form is unavailable to you, mail <hiyouga@buaa.edu.cn>. Do not open a public issue,
-a discussion, or a pull request for a security problem, and do not post it to Discord or the
-WeChat group — those are public.
+If that form is unavailable to you, say on [Discord](https://discord.gg/eFHKqqcU3D) that
+you have a security report — with none of the details — and a maintainer will open a
+private channel with you. Do not open a public issue, a discussion, or a pull request for
+a security problem, and do not post the details to Discord or the WeChat group — those are
+public.
 
 A report is most useful with the affected version, how PenguinHarness was installed
 (desktop app, CLI, or a server run), the operating system, and the smallest sequence of
