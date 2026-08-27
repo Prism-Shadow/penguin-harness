@@ -1815,9 +1815,42 @@ Scenarios:
     ],
   },
 
+  /** QQ-channel strings of the messaging binding editor (channel-neutral ones live under `messaging`). */
+  qq: {
+    /** The what-binding-does FAQ fold's body (this channel's flavor). */
+    intro:
+      "Once bound, messages sent to the bot in QQ flow into this conversation, and the AI's replies are sent back to QQ. Create a bot on the QQ open platform and set its event subscription to WebSocket — no public URL is needed.",
+    appId: "App ID",
+    appSecret: "App Secret",
+    /** Shown while a saved secret exists: submitting an empty field keeps it. */
+    appSecretKeepHint: "Leave empty to keep the saved App Secret",
+    /** The stored-secret row's clear checkbox (the models-page clear idiom). */
+    clearSecret: "Clear stored App Secret",
+    /** Why "send test message" is disabled before the bot has ever been messaged. */
+    testMessageNoChat: "Message the bot once in QQ first, so it knows which chat to send to",
+    /**
+     * The rule that shapes this whole channel, stated where it is first needed rather than
+     * left for the user to infer from a reply that never arrives.
+     */
+    repliesOnly:
+      "QQ only lets a bot reply to a message you just sent it — it cannot start one. So a turn you begin in the web app is not mirrored to QQ, and once a few minutes have passed since your last QQ message, replies can no longer be delivered either. Send the bot another message in QQ to continue.",
+    /** The passive-reply budget, in the terms a user experiences it. */
+    replyBudget:
+      "One QQ message can receive at most 4 replies (5 in a group). When a run produces more than that, the last one carries the rest combined — nothing is lost, it just arrives as a single message.",
+    /** The setup FAQ fold's steps. */
+    setupSteps: [
+      "Register as a developer on the QQ open platform and create a bot",
+      "Copy the App ID and App Secret from the development settings page into the form above",
+      "Set the event subscription mode to WebSocket — leave the callback URL empty",
+      "Add your own QQ account or a test group to the sandbox allowlist",
+      "Find the bot in QQ and send it one message",
+    ],
+  },
+
   /**
    * Session ↔ messaging-bot binding: the dock panel, the row action + dialog, and the
-   * channel-neutral editor strings (per-channel fields live under `feishu` / `telegram`).
+   * channel-neutral editor strings (per-channel fields live under `feishu` / `telegram` /
+   * `qq`).
    */
   messaging: {
     panelTitle: "Messaging",
@@ -1829,6 +1862,7 @@ Scenarios:
     channelName: {
       feishu: "Feishu",
       telegram: "Telegram",
+      qq: "QQ",
     },
     /**
      * Shared link labels: the tutorial (in the setup FAQ fold) and, at the credential field's
@@ -1880,6 +1914,7 @@ Scenarios:
     enabledIndicator: {
       feishu: "Feishu connection enabled",
       telegram: "Telegram connection enabled",
+      qq: "QQ connection enabled",
     },
     /** The collapsed FAQ folds below the save area. */
     faqSetupTitle: "Set up the bot",
@@ -1888,7 +1923,7 @@ Scenarios:
     faqWhatBinding:
       "The same bot can stay saved in several conversations, but only one of them may have its connection enabled at a time. To move it, turn the connection off where it is on and enable it here — no credential has to be deleted.",
     faqTroubleTitle: "Troubleshooting",
-    /** Troubleshooting entries (bot must be messaged once; connection errors point at credentials; one poller per Telegram token; Telegram Group Privacy withholds group messages from a non-admin bot). */
+    /** Troubleshooting entries (bot must be messaged once; connection errors point at credentials; one poller per Telegram token; Telegram Group Privacy withholds group messages from a non-admin bot; QQ answers only a message just sent). */
     troubleNoChat:
       "“Send test message” disabled? The bot must have received one message first, so it knows which chat to send to.",
     troubleConnError:
@@ -1897,6 +1932,9 @@ Scenarios:
       "Telegram reports that another program is polling? A Bot Token serves exactly one program at a time — close the other PenguinHarness server or bot script using it, or give this conversation a bot of its own.",
     troubleGroupPrivacy:
       "The bot ignores everything you say in a Telegram group? Telegram's Group Privacy is on by default, and under it a bot that is not an administrator of the group receives only commands addressed to it (such as /start@your_bot) and replies to its own messages — ordinary group messages are never delivered at all, and the connection itself looks perfectly healthy. Making the bot an administrator of that group fixes it on its own, since administrators always receive every message. Otherwise turn Group Privacy off with /setprivacy in @BotFather, then remove the bot from the group and add it back — a group it is already in does not pick up the change.",
+    /** The QQ-only failure a user will otherwise read as "the bot is broken". */
+    troubleQQPassive:
+      "No replies arriving in QQ? QQ only lets a bot answer a message you just sent: a turn started in the web app is not mirrored there, and replies stop being deliverable a few minutes after your last QQ message. Send another message in QQ to continue.",
   },
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */

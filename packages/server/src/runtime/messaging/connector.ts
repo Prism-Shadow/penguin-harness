@@ -1,7 +1,7 @@
 /**
  * The messaging-channel connector seam: what the MessagingBridge needs from one chat
- * platform (Feishu and Telegram today; further channels implement the same interface and
- * register in app assembly). A connector owns everything channel-specific — credential
+ * platform (Feishu, Telegram and QQ today; further channels implement the same interface
+ * and register in app assembly). A connector owns everything channel-specific — credential
  * shape, wire protocol, event normalization — and hands the bridge a channel-neutral
  * view: a client for outbound sends and credential checks, and a long-lived event
  * connection delivering normalized inbound messages.
@@ -12,7 +12,7 @@
  */
 
 /** Known messaging channels (the DB stores the discriminator as text; unknown values are skipped defensively). */
-export type MessagingChannel = "feishu" | "telegram";
+export type MessagingChannel = "feishu" | "telegram" | "qq";
 
 /** One inbound chat message, normalized across channels. */
 export interface MessagingInboundMessage {
@@ -91,6 +91,17 @@ export interface MessagingClient {
 
 export interface MessagingChannelConnector {
   readonly channel: MessagingChannel;
+  /**
+   * How many outbound messages this channel will accept in answer to ONE inbound message,
+   * or undefined where no such limit exists (Feishu and Telegram both send freely).
+   *
+   * A channel that declares one enforces it itself — the connector is the only place that
+   * knows what the platform rejects and how to combine messages so nothing is lost. What
+   * the bridge does with the number is narrower: it caps the one-message-per-line split at
+   * it, because that option's own ceiling is sized for a channel with no such budget and
+   * would otherwise ask for more messages than the channel can ever deliver.
+   */
+  readonly replyBudget?: number;
   /** Builds the outbound client for one stored config (throws on a malformed document). */
   createClient(config: Record<string, unknown>): Promise<MessagingClient>;
   /**

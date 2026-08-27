@@ -49,7 +49,7 @@ function stateOf(
     form: emptyMessagingForm(channel),
     patchForm: () => {},
     selectChannel: () => {},
-    channels: { feishu: DARK, telegram: DARK, ...facts },
+    channels: { feishu: DARK, telegram: DARK, qq: DARK, ...facts },
     fieldErrors: {},
     dirty: false,
     busy: false,
@@ -169,7 +169,7 @@ describe("MessagingBindingBody", () => {
   });
 
   it('closes the form with the delivery option, its explanation behind the label\'s "?"', () => {
-    for (const channel of ["feishu", "telegram"] as MessagingChannel[]) {
+    for (const channel of ["feishu", "telegram", "qq"] as MessagingChannel[]) {
       const html = render(stateOf(channel));
       // Both channels carry it: it is a delivery preference, not a credential.
       expect(html).toContain(S.messaging.linePerMessage);
@@ -177,10 +177,41 @@ describe("MessagingBindingBody", () => {
       expect(html).toContain(S.common.moreInfoAbout(S.messaging.linePerMessage));
       expect(html).not.toContain(S.messaging.linePerMessageHelp);
       // After the credential fields, not among them.
-      const fieldAt = html.indexOf(channel === "telegram" ? S.telegram.botToken : S.feishu.appId);
+      const fieldAt = html.indexOf(
+        channel === "telegram"
+          ? S.telegram.botToken
+          : channel === "qq"
+            ? S.qq.appId
+            : S.feishu.appId,
+      );
       expect(fieldAt).toBeGreaterThanOrEqual(0);
       expect(html.indexOf(S.messaging.linePerMessage)).toBeGreaterThan(fieldAt);
     }
+  });
+
+  it("states QQ's replies-only rule on screen, not in a collapsed fold", () => {
+    // The one piece of channel copy that cannot wait to be unfolded. QQ delivers only
+    // replies to messages sent from QQ, so a user who binds it and then works in the web app
+    // sees nothing arrive and concludes the binding is broken. Every other channel's
+    // explanation stays in the FAQ; this one is a line under the fields.
+    const html = render(stateOf("qq"));
+    expect(html).toContain(S.qq.repliesOnly);
+    // Under the credential fields, so the controls above hold one height across channels.
+    expect(html.indexOf(S.qq.repliesOnly)).toBeGreaterThan(html.indexOf(S.qq.appSecret));
+    // ...and it belongs to QQ alone.
+    expect(render(stateOf("feishu"))).not.toContain(S.qq.repliesOnly);
+  });
+
+  it("offers all three channels in the selector", () => {
+    const html = render(stateOf("qq"));
+    for (const name of [
+      S.messaging.channelName.feishu,
+      S.messaging.channelName.telegram,
+      S.messaging.channelName.qq,
+    ]) {
+      expect(html).toContain(`>${name}</button>`);
+    }
+    expect(html).toContain("grid-cols-3");
   });
 
   it("shows the switch's gating reason when the other channel holds the connection", () => {
@@ -250,6 +281,16 @@ describe("MessagingBindingHelp", () => {
     // creating a bot to paste a token from, not writing one.
     expect(telegram).toContain('href="https://core.telegram.org/bots/features#botfather"');
     expect(telegram).toContain(S.telegram.setupSteps[0]);
+    const qq = renderToStaticMarkup(
+      createElement(MessagingBindingHelp, { channel: "qq" as MessagingChannel }),
+    );
+    expect(qq).toContain('href="https://bot.q.qq.com/wiki/develop/api-v2/"');
+    expect(qq).toContain(S.qq.setupSteps[0]);
+    // The reply budget is how this channel delivers a long answer, not a fault: it rides the
+    // "what binding does" fold, while the passive-reply failure rides troubleshooting.
+    expect(qq).toContain(S.qq.replyBudget);
+    expect(qq).toContain(S.messaging.troubleQQPassive);
+    expect(telegram).not.toContain(S.messaging.troubleQQPassive);
   });
 });
 

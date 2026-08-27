@@ -1,7 +1,7 @@
 /**
  * Messaging bridge: a Web server runtime component connecting Sessions to external chat
- * platforms through channel connectors (Feishu and Telegram today — see
- * feishu-connector.ts / telegram-connector.ts). Started by the platform next to the
+ * platforms through channel connectors (Feishu, Telegram and QQ today — see
+ * feishu-connector.ts / telegram-connector.ts / qq-connector.ts). Started by the platform next to the
  * Scheduler, stopped when the
  * App is disposed — a hot swap hard-stops it like the scheduler. A Session may keep a
  * saved config per channel, but AT MOST ONE of them is enabled (the state route enforces
@@ -84,6 +84,11 @@ export const MESSAGING_TEXT_CHUNK_CHARS = 4000;
  * tail of a reply is the worst failure available here. The one reply that still exceeds the
  * ceiling is one long enough to need more messages than this unchunked — which it would have
  * needed with the option off too.
+ *
+ * A channel that declares its own `replyBudget` (QQ, whose platform accepts only a handful
+ * of replies per inbound message) caps the split at that instead: 20 is sized for a channel
+ * whose only limit is a rate, and asking a budgeted channel for more messages than it can
+ * ever deliver would just move the combining downstream.
  */
 export const MESSAGING_MAX_LINE_MESSAGES = 20;
 
@@ -674,8 +679,9 @@ export class MessagingBridge {
    * moving — and so do the messages behind it in THIS reply: one refused message (a 429 on
    * the third line of twelve) must not abandon the rest, which would leave a reply stopping
    * mid-sentence with nothing in the chat to say why. A binding with `linePerMessage` set
-   * sends one message per non-blank line instead of one per reply (see splitReplyLines),
-   * paced MESSAGING_LINE_DELAY_MS apart so the burst stays inside the channel's per-chat
+   * sends one message per non-blank line instead of one per reply (see splitReplyLines,
+   * capped at the channel's own `replyBudget` where it declares one), paced
+   * MESSAGING_LINE_DELAY_MS apart so the burst stays inside the channel's per-chat
    * allowance — chunking, threading and ordering are identical either way, and with the flag
    * off the send sequence is unchanged. In a group the run's
    * first outbound chunk threads onto the inbound message and
@@ -689,7 +695,9 @@ export class MessagingBridge {
     const { row, chatId, client } = target;
     // One body per outbound message: the whole reply, or one per non-blank line when the
     // binding asked for that. Everything below is untouched by the choice.
-    const bodies = row.linePerMessage ? splitReplyLines(text) : [text];
+    const bodies = row.linePerMessage
+      ? splitReplyLines(text, entry.connector.replyBudget ?? MESSAGING_MAX_LINE_MESSAGES)
+      : [text];
     const messages = bodies.flatMap((body) => chunkMessagingText(body));
     for (const [i, chunk] of messages.entries()) {
       // The messages of a per-line reply are a burst; the channel's per-chat allowance is

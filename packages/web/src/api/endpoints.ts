@@ -96,6 +96,10 @@ import type {
   SkillArchiveInstallRequest,
   SkillInstallRequest,
   SkillLibraryResponse,
+  QQBindingPutRequest,
+  QQBindingResponse,
+  QQTestRequest,
+  QQTestResponse,
   RecalledMessageResponse,
   RetryNowResponse,
   SteerRequest,
@@ -527,13 +531,20 @@ export const putTelegramBinding = (sessionId: string, body: TelegramBindingPutRe
     { method: "PUT", body },
   );
 
+/** Saves the QQ App ID / App Secret pair only — the same save/enable split as the Feishu PUT. */
+export const putQQBinding = (sessionId: string, body: QQBindingPutRequest) =>
+  apiFetch<QQBindingResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/messaging/qq`, {
+    method: "PUT",
+    body,
+  });
+
 /** The connection toggle, which is also the bind/unbind: enable connects with the STORED credentials (409 `another_channel_enabled` while the other channel is enabled, 409 `account_enabled_elsewhere` while another conversation has this bot enabled), disable releases the account. */
 export const setMessagingBindingState = (
   sessionId: string,
   channel: MessagingChannel,
   enabled: boolean,
 ) =>
-  apiFetch<FeishuBindingResponse | TelegramBindingResponse>(
+  apiFetch<FeishuBindingResponse | TelegramBindingResponse | QQBindingResponse>(
     `/api/sessions/${encodeURIComponent(sessionId)}/messaging/${channel}/state`,
     { method: "POST", body: { enabled } },
   );
@@ -552,7 +563,14 @@ export const testTelegramBinding = (sessionId: string, body: TelegramTestRequest
     { method: "POST", body },
   );
 
-/** Short fixed text to the binding's last known chat (409 `feishu_no_chat` / `telegram_no_chat` before one exists). */
+/** QQ credential probe (the access-token exchange); the platform names no account, so success carries no label. */
+export const testQQBinding = (sessionId: string, body: QQTestRequest) =>
+  apiFetch<QQTestResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/messaging/qq/test`, {
+    method: "POST",
+    body,
+  });
+
+/** Short fixed text to the binding's last known chat (409 `feishu_no_chat` / `telegram_no_chat` / `qq_no_chat` before one exists; on QQ the send can still fail with 502 when no recent QQ message can be replied to). */
 export const sendMessagingTestMessage = (sessionId: string, channel: MessagingChannel) =>
   apiFetch<MessagingTestMessageResponse>(
     `/api/sessions/${encodeURIComponent(sessionId)}/messaging/${channel}/test-message`,

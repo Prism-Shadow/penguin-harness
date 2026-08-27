@@ -1604,7 +1604,7 @@ export interface SessionProcessesResponse {
 // ---------------------------------------------------------------------------
 
 /** Messaging channels a Session can bind to. */
-export type MessagingChannel = "feishu" | "telegram";
+export type MessagingChannel = "feishu" | "telegram" | "qq";
 
 /** Event-connection runtime state of one binding (kept in memory, not persisted). */
 export type MessagingRuntimeState = "disconnected" | "connecting" | "connected" | "error";
@@ -1673,8 +1673,39 @@ export interface TelegramBindingInfo {
   updatedAt: string;
 }
 
+/** The stored QQ config, secret masked (plaintext never leaves the server). */
+export interface QQBindingInfo {
+  channel: "qq";
+  sessionId: string;
+  /** The bot's App ID — the channel-scoped account identity, never secret. */
+  appId: string;
+  /**
+   * Masked App Secret (site-wide mask rule: `***`, or `first4…last4` for long values);
+   * absent when no secret is stored (never entered, or cleared) — the binding cannot be
+   * enabled until one is saved.
+   */
+  appSecretMasked?: string;
+  /** Connection INTENT (the state toggle's value); new bindings start disabled, and at most one of a Session's channels is enabled. */
+  enabled: boolean;
+  /**
+   * Send each non-blank line of a relayed assistant reply as its own message instead of one
+   * message per reply. Off by default. On QQ the split is additionally capped at the
+   * platform's passive-reply budget rather than the channel-neutral ceiling, so it yields
+   * far fewer messages here than on the other channels.
+   */
+  linePerMessage: boolean;
+  /**
+   * Whether an inbound QQ chat is known (the bot has been messaged at least once).
+   * Weaker than it looks on this channel: QQ accepts only replies to a recent message, so a
+   * known chat is necessary but not sufficient for anything to be deliverable right now.
+   */
+  lastChatKnown: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 /** A Session's saved config for one messaging channel (`channel` is the discriminant). */
-export type MessagingBindingInfo = FeishuBindingInfo | TelegramBindingInfo;
+export type MessagingBindingInfo = FeishuBindingInfo | TelegramBindingInfo | QQBindingInfo;
 
 /** One saved channel config with its event-connection runtime status. */
 export interface MessagingChannelState {
@@ -1701,6 +1732,12 @@ export interface FeishuBindingResponse {
 /** GET / PUT …/messaging/telegram response (the Telegram narrowing of the same envelope). */
 export interface TelegramBindingResponse {
   binding: TelegramBindingInfo | null;
+  status: MessagingRuntimeStatus;
+}
+
+/** GET / PUT …/messaging/qq response (the QQ narrowing of the same envelope). */
+export interface QQBindingResponse {
+  binding: QQBindingInfo | null;
   status: MessagingRuntimeStatus;
 }
 
@@ -1744,6 +1781,28 @@ export interface TelegramBindingPutRequest {
   clearBotToken?: boolean;
   /**
    * Delivery preference (see `TelegramBindingInfo.linePerMessage`). Omitted keeps the stored
+   * value; a binding created without it starts with it off.
+   */
+  linePerMessage?: boolean;
+}
+
+/**
+ * PUT …/messaging/qq — saves the credential pair ONLY, same contract as the Feishu PUT
+ * (an enabled binding's connector restarts with the new credentials; the connection toggle
+ * is POST …/state). The App ID is the account identity, so changing it rebinds the row to
+ * a different bot and drops the remembered chat.
+ */
+export interface QQBindingPutRequest {
+  appId: string;
+  /** Omitted or blank keeps the stored secret (the masked value never round-trips). */
+  appSecret?: string;
+  /**
+   * Drops the STORED secret (the models-page clear idiom; a typed `appSecret` wins over
+   * it). Refused with 409 `messaging_disable_before_clear` while the binding is enabled.
+   */
+  clearAppSecret?: boolean;
+  /**
+   * Delivery preference (see `QQBindingInfo.linePerMessage`). Omitted keeps the stored
    * value; a binding created without it starts with it off.
    */
   linePerMessage?: boolean;
@@ -1799,9 +1858,28 @@ export interface TelegramTestResponse {
   error?: string;
 }
 
+/** POST …/messaging/qq/test — draft values; each omitted field falls back to the stored binding. */
+export interface QQTestRequest {
+  appId?: string;
+  appSecret?: string;
+}
+
+/**
+ * QQ credential-test outcome. There is no account label: the platform's only credential
+ * call is the access-token exchange, which identifies nothing beyond the App ID that was
+ * sent to it.
+ */
+export interface QQTestResponse {
+  ok: boolean;
+  latencyMs?: number;
+  error?: string;
+}
+
 /**
  * POST …/messaging/<channel>/test-message — sent to the last known chat (409
- * `feishu_no_chat` / `telegram_no_chat` before one exists).
+ * `feishu_no_chat` / `telegram_no_chat` / `qq_no_chat` before one exists). On QQ this can
+ * still fail with 502 afterwards: the platform accepts only replies to a message sent from
+ * QQ minutes earlier, so a known chat does not mean a deliverable one.
  */
 export interface MessagingTestMessageResponse {
   ok: true;

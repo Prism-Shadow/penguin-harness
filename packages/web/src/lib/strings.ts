@@ -1777,9 +1777,42 @@ Benchmark：
     ],
   },
 
+  /** QQ-channel strings of the messaging binding editor (channel-neutral ones live under `messaging`). */
+  qq: {
+    /** The what-binding-does FAQ fold's body (this channel's flavor). */
+    intro:
+      "绑定后，在 QQ 中发给机器人的消息会进入本对话，AI 的回复会发回 QQ。需要在 QQ 开放平台创建一个机器人，事件订阅方式选择 WebSocket，无需公网地址。",
+    appId: "App ID",
+    appSecret: "App Secret",
+    /** Shown while a saved secret exists: submitting an empty field keeps it. */
+    appSecretKeepHint: "留空保持已保存的 App Secret 不变",
+    /** The stored-secret row's clear checkbox (the models-page clear idiom). */
+    clearSecret: "清除已存 App Secret",
+    /** Why "send test message" is disabled before the bot has ever been messaged. */
+    testMessageNoChat: "先在 QQ 中给机器人发一条消息，机器人才知道要发到哪个会话",
+    /**
+     * The rule that shapes this whole channel, stated where it is first needed rather than
+     * left for the user to infer from a reply that never arrives.
+     */
+    repliesOnly:
+      "QQ 只允许机器人回复你刚发出的消息，不允许主动发消息。因此：在网页端发起的对话不会同步到 QQ；距离你上一条 QQ 消息过去几分钟后，回复也发不出去。想继续对话，在 QQ 里再发一条消息即可。",
+    /** The passive-reply budget, in the terms a user experiences it. */
+    replyBudget:
+      "同一条 QQ 消息最多能收到 4 条回复（群聊 5 条）。一次运行产生的消息更多时，最后一条会把余下内容合并发出——内容不会丢失，只是合并成一条。",
+    /** The setup FAQ fold's steps. */
+    setupSteps: [
+      "在 QQ 开放平台注册开发者，创建一个机器人",
+      "在「开发设置」页取得 App ID 与 App Secret，填入上方表单",
+      "在「开发配置」中把事件订阅方式设为 WebSocket，无需填写回调地址",
+      "在沙箱配置中把自己的 QQ 号或测试群加入白名单",
+      "在 QQ 中找到这个机器人，给它发一条消息",
+    ],
+  },
+
   /**
    * Session ↔ messaging-bot binding: the dock panel, the row action + dialog, and the
-   * channel-neutral editor strings (per-channel fields live under `feishu` / `telegram`).
+   * channel-neutral editor strings (per-channel fields live under `feishu` / `telegram` /
+   * `qq`).
    */
   messaging: {
     panelTitle: "消息软件",
@@ -1791,6 +1824,7 @@ Benchmark：
     channelName: {
       feishu: "飞书",
       telegram: "Telegram",
+      qq: "QQ",
     },
     /**
      * Shared link labels: the tutorial (in the setup FAQ fold) and, at the credential field's
@@ -1840,6 +1874,7 @@ Benchmark：
     enabledIndicator: {
       feishu: "飞书连接已启用",
       telegram: "Telegram 连接已启用",
+      qq: "QQ 连接已启用",
     },
     /** The collapsed FAQ folds below the save area. */
     faqSetupTitle: "如何创建机器人",
@@ -1848,7 +1883,7 @@ Benchmark：
     faqWhatBinding:
       "同一个机器人可以同时保存在多个对话里，但同一时刻只能有一个对话启用它的连接。要换一个对话使用，先在原对话停用连接，再在这里启用——凭证不必删除。",
     faqTroubleTitle: "常见问题",
-    /** Troubleshooting entries (bot must be messaged once; connection errors point at credentials; one poller per Telegram token; Telegram Group Privacy withholds group messages from a non-admin bot). */
+    /** Troubleshooting entries (bot must be messaged once; connection errors point at credentials; one poller per Telegram token; Telegram Group Privacy withholds group messages from a non-admin bot; QQ answers only a message just sent). */
     troubleNoChat: "「发送测试消息」不可用？机器人要先收到过一条消息，才知道要发到哪个会话。",
     troubleConnError:
       "连接状态显示错误？检查凭证是否正确；飞书还需确认 API 域名与事件订阅方式（长连接）。",
@@ -1856,6 +1891,9 @@ Benchmark：
       "Telegram 提示已有其他程序在轮询？一个 Bot Token 同一时刻只能被一个程序使用——关闭正在占用它的另一个 PenguinHarness 服务端或机器人脚本，或为该会话单独建一个机器人。",
     troubleGroupPrivacy:
       "在 Telegram 群里发消息，机器人毫无反应？Telegram 的 Group Privacy 默认开启，此时不担任该群管理员的机器人只能收到明确指向它的命令（如 /start@your_bot）和对它自己消息的回复，普通群消息根本不会送达，连接本身也没有任何异常。把机器人设为该群的管理员即可单独解决，管理员始终收到全部消息。也可以到 @BotFather 用 /setprivacy 关闭 Group Privacy，然后把机器人移出该群再重新拉入——已在的群不会自动生效。",
+    /** The QQ-only failure a user will otherwise read as "the bot is broken". */
+    troubleQQPassive:
+      "QQ 里收不到回复？QQ 只允许机器人回复你刚发出的消息：在网页端发起的对话不会同步过去，距离你上一条 QQ 消息过去几分钟后也发不出。在 QQ 里再发一条消息即可继续。",
   },
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */

@@ -288,9 +288,9 @@ Workspace 文件可能由 Agent 生成，`GET /files/content` 一律按不可信
 
 文件名始终以 `filename*=UTF-8''` 形式携带（百分号编码）。`preview=1` 是预览跳转在没有独立预览源时的回退目标：文档保留真实类型，可以正常渲染并执行脚本，但沙箱刻意不含 `allow-same-origin`，因此它落在一个不透明源里，既拿不到本源的 Cookie，也调不动 API。这份隔离也正是那里 `localStorage`、`document.cookie` 与第三方 embed 全都不可用的原因。
 
-### 消息绑定（飞书、Telegram）
+### 消息绑定（飞书、Telegram、QQ）
 
-Session 可以接入消息软件机器人——目前的渠道是飞书与 Telegram，各自挂在 `/messaging/<channel>` 之下。一个 Session **每个渠道至多保存一份配置**（两份可同时保存），其中**至多一个渠道处于启用状态**——启用的渠道持有在线连接。启用即把机器人账号绑定到该 Session，停用即解除绑定，因此同一个应用或机器人可以同时保存在任意多个 Session 上，只有启用是互斥的。发给机器人的消息以普通用户输入在该 Session 上发起 Task——与在网页输入框里输入完全一致（无标记块；忙碌时排入 follow-up 队列）——完成的回复再转发回对应会话，并按渠道文本上限分段（Telegram 硬上限 4096 字符）。飞书经 SDK 的 WebSocket 长连接接收事件；Telegram 用 `getUpdates` 长轮询——两者都无需公网回调地址。保存与连接是两件事：PUT 只保存凭据，连接由独立的 state 接口开关。路径同上表，省略 `/api/sessions/:sessionId` 前缀。
+Session 可以接入消息软件机器人——目前的渠道是飞书、Telegram 与 QQ，各自挂在 `/messaging/<channel>` 之下。一个 Session **每个渠道至多保存一份配置**（多份可同时保存），其中**至多一个渠道处于启用状态**——启用的渠道持有在线连接。启用即把机器人账号绑定到该 Session，停用即解除绑定，因此同一个应用或机器人可以同时保存在任意多个 Session 上，只有启用是互斥的。发给机器人的消息以普通用户输入在该 Session 上发起 Task——与在网页输入框里输入完全一致（无标记块；忙碌时排入 follow-up 队列）——完成的回复再转发回对应会话，并按渠道文本上限分段（Telegram 硬上限 4096 字符）。飞书经 SDK 的 WebSocket 长连接接收事件，Telegram 用 `getUpdates` 长轮询，QQ 以 `GROUP_AND_C2C_EVENT` intent 保持平台的 WebSocket 网关连接——三者都无需公网回调地址。保存与连接是两件事：PUT 只保存凭据，连接由独立的 state 接口开关。路径同上表，省略 `/api/sessions/:sessionId` 前缀。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
@@ -307,8 +307,16 @@ Session 可以接入消息软件机器人——目前的渠道是飞书与 Teleg
 | DELETE | /messaging/telegram | 整体删除该渠道的配置（含 Bot Token）。仅为 API 完整性保留 |
 | POST | /messaging/telegram/test | 凭据探测（`getMe`），草稿 Token 缺省回落到已存值 → `{ok, latencyMs?, botUsername?, groupPrivacy?, error?}`——成功时报出 Token 登录到的机器人；当 @BotFather 的 Group Privacy 处于开启状态（默认如此，此时机器人在它不担任管理员的群里收不到任何普通消息）时报出 `groupPrivacy: true` |
 | POST | /messaging/telegram/test-message | 向最近一次收到消息的会话发送一条固定测试文本；在 Telegram 里给机器人发过消息之前返回 409 `telegram_no_chat` |
+| GET | /messaging/qq | 同一形态下的 QQ 配置（`appId`、`appSecretMasked`） |
+| PUT | /messaging/qq | 保存凭据对：`{appId, appSecret?, clearAppSecret?, linePerMessage?}`——QQ 开放平台「开发设置」页的 App ID 与 App Secret。留空保持、清除标记、保存与启用分离都与飞书 PUT 同口径；没有域名字段，因为 API v2 只有一个接口域名 |
+| POST | /messaging/qq/state | 与其他开关同一契约（无已存密钥时返回 400 `qq_secret_required`） |
+| DELETE | /messaging/qq | 整体删除该渠道的配置（含 App Secret）。仅为 API 完整性保留 |
+| POST | /messaging/qq/test | 凭据探测（换取 app access token）→ `{ok, latencyMs?, error?}`。不报出账号名：平台没有能识别机器人身份的接口 |
+| POST | /messaging/qq/test-message | 向最近一次收到消息的会话发送一条固定测试文本；在 QQ 里给机器人发过消息之前返回 409 `qq_no_chat`；没有可回复的近期消息时返回 502 `qq_send_failed`（见下） |
 
 没有已存密钥的配置（被清除过的）不返回掩码字段，也无法启用。`linePerMessage` 是唯一一个不属于凭据的已存字段：开启后，转发的助手回复中每个非空行各自作为一条消息发出（空行忽略，单行仍按长度上限分段，超出每条回复的消息条数上限的部分合并为最后一条）；默认为 false，PUT 省略该字段则保持已存值，且它不作用于通知与测试消息。唯一的跨 Session 规则按渠道内机器人账号计，且只作用于连接：一个账号只有一条事件流，因此至多一个 Session 能将其启用。飞书的账号身份是 `app_id`，Telegram 是 Token 冒号前的数字机器人 id（换发 Token 也不会改变）。读取与两个测试接口对任意 Project 成员开放；PUT、state 开关与 DELETE 仅限所有者（与 Vault 同口径——绑定写操作携带或作用于密钥）。密钥永不回传。删除 Session 会连带删除其全部渠道配置；入站仅处理文本消息（其他类型收到双语的“仅支持文本”回复）。Telegram 建立连接时先清空积压：无连接期间发来的消息会被跳过，与飞书“错过的事件即消失”同口径。
+
+**QQ 是只能被动回复的渠道，这改变了「送达」的含义。** 平台不提供本产品可用的主动推送：每一条外发消息都是携带入站 `msg_id` 的*被动回复*，有效期只有几分钟，且单聊对同一条消息最多 4 条回复（群聊 5 条）。由此有三点在 API 上可见。一次运行完成的助手消息超过该额度时会被**合并**——前 `budget - 1` 条随完成即时发出，其余合并为最后一条送达，内容不丢。`linePerMessage` 的拆分上限**收敛到该额度**，而不是渠道无关的 20。而没有可回复对象的发送——在网页端发起的对话，或窗口关闭之后的回复——会被**拒绝而非主动推送**：测试接口上表现为 502 `qq_send_failed`，转发回复则记为一条 `messaging_send_failed` 错误记录。QQ 的账号身份是 App ID。该渠道拒绝外发文件：平台的富媒体接口要求为文件提供公网可达地址。
 
 ### 独立源预览
 
