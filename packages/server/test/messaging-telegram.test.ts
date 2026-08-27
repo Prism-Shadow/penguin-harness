@@ -1,7 +1,8 @@
 /**
  * Telegram messaging tests — the mirror of messaging.test.ts for the second channel, and
  * the proof the connector seam holds: the /api/sessions/:id/messaging/telegram routes
- * (token masking + keep-on-blank, bot-id identity 409, the save/enable split, the getMe
+ * (token masking + keep-on-blank, the bot id as the account identity and the enable-time
+ * 409 it collides on, the save/enable split, the getMe
  * probe surfacing the bot username), the channel-agnostic GET the channel-aware editor
  * reads, and the connector's long-poll loop through a fake Bot API transport — offset
  * advancement, the connect-time backlog drain, inbound routing as plain user input,
@@ -400,16 +401,60 @@ describe("telegram binding routes and connector loop", () => {
     expect(fake.lastClient().creds.botToken).toBe(rotated);
   });
 
-  it("one binding per bot: the same numeric id under a rotated secret still 409s", async () => {
-    await api.put(BASE(SID), { botToken: TOKEN });
+  it("a token swap cannot re-point an ENABLED binding at a bot another Session has enabled", async () => {
     t.deps.sessionsRepo.insert(sessionRowOf(SID2, projectId));
-    // Different secret half, same id half: the identity is the id, not the whole token.
-    const res = await api.put(BASE(SID2), { botToken: "7000000001:other-secret-CCCC" });
-    expect(res.status).toBe(409);
-    expect(((await res.json()) as { error: { code: string } }).error.code).toBe(
-      "telegram_bot_in_use",
+    // Two Sessions, each polling its own bot.
+    await bindEnabled(SID);
+    await bindEnabled(SID2, "7000000002:test-secret-BBBB-2222");
+    await waitFor(() => t.deps.messaging.statusOf(SID2, "telegram").state === "connected");
+
+    // Saving the first Session's token here would carry this live poll onto its bot, which
+    // is the enable gate bypassed by a different door: two getUpdates loops on one token.
+    const stolen = await api.put(BASE(SID2), { botToken: TOKEN });
+    expect(stolen.status).toBe(409);
+    const refusal = (await stolen.json()) as { error: { code: string; message: string } };
+    expect(refusal.error.code).toBe("account_enabled_elsewhere");
+    expect(refusal.error.message).not.toContain(SID);
+
+    // Refused means nothing moved: the row keeps its own bot id and its own connection.
+    expect(t.deps.messagingRepo.find(SID2, "telegram")?.accountId).toBe("7000000002");
+    expect(t.deps.messagingRepo.findEnabledByAccount("telegram", "7000000001")?.sessionId).toBe(
+      SID,
     );
-    expect(t.deps.messagingRepo.find(SID2, "telegram")).toBeNull();
+    expect(t.deps.messaging.statusOf(SID2, "telegram").state).toBe("connected");
+
+    // Disabled first, the same save is allowed again — only the enable is exclusive.
+    expect((await api.post(`${BASE(SID2)}/state`, { enabled: false })).status).toBe(200);
+    expect((await api.put(BASE(SID2), { botToken: TOKEN })).status).toBe(200);
+    expect((await api.post(`${BASE(SID2)}/state`, { enabled: true })).status).toBe(409);
+  });
+
+  it("the account is the bot id: a rotated secret saves freely and collides only on enable", async () => {
+    t.deps.sessionsRepo.insert(sessionRowOf(SID2, projectId));
+    await bindEnabled(SID);
+    // Different secret half, same id half: the identity is the id, not the whole token. It
+    // saves without a murmur — saving is never exclusive across Sessions...
+    const rotated = "7000000001:other-secret-CCCC";
+    expect((await api.put(BASE(SID2), { botToken: rotated })).status).toBe(200);
+    expect(t.deps.messagingRepo.find(SID2, "telegram")?.accountId).toBe("7000000001");
+
+    // ...and is refused only when it asks for the connection the first Session is holding.
+    const blocked = await api.post(`${BASE(SID2)}/state`, { enabled: true });
+    expect(blocked.status).toBe(409);
+    const refusal = (await blocked.json()) as { error: { code: string; message: string } };
+    expect(refusal.error.code).toBe("account_enabled_elsewhere");
+    // Nothing about the holder travels in the refusal (it may sit in an invisible Project).
+    expect(refusal.error.message).not.toContain(SID);
+    expect(t.deps.messaging.statusOf(SID, "telegram").state).toBe("connected");
+
+    // Disabling the first is the unbind: the second then polls on its own token.
+    expect((await api.post(`${BASE(SID)}/state`, { enabled: false })).status).toBe(200);
+    expect((await api.post(`${BASE(SID2)}/state`, { enabled: true })).status).toBe(200);
+    await waitFor(() => t.deps.messaging.statusOf(SID2, "telegram").state === "connected");
+    expect(fake.lastClient().creds.botToken).toBe(rotated);
+    expect(t.deps.messaging.statusOf(SID, "telegram").state).toBe("disconnected");
+    // The released Session kept its token: the switch unbinds, it does not delete.
+    expect(t.deps.messagingRepo.find(SID, "telegram")?.config.botToken).toBe(TOKEN);
   });
 
   it("GET /messaging lists every saved channel config; both channels sit saved side by side", async () => {

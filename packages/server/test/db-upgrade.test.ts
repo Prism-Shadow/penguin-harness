@@ -5,11 +5,12 @@
  * pre-existing database.
  *
  * The last two suites cover the other two directions a released build meets on disk: a table
- * that did not exist when the database was formed, and a database written by a *newer* build
- * than the one opening it (a user who updates, dislikes it, and reinstalls the previous
- * release). Nothing records a schema version, so both properties rest on every schema change
- * staying additive — and the downgrade one on more than that, which the last suite pins next to
- * the tolerance rather than leaving it implied.
+ * that did not exist when the database was formed (and, in the same suite, an index that has
+ * since been retired — the one shape openDatabase removes rather than adds), and a database
+ * written by a *newer* build than the one opening it (a user who updates, dislikes it, and
+ * reinstalls the previous release). Nothing records a schema version, so both properties rest
+ * on every schema change staying additive — and the downgrade one on more than that, which the
+ * last suite pins next to the tolerance rather than leaving it implied.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -297,7 +298,7 @@ describe("SessionsRepo last_active_at writes", () => {
  * that were already on disk are untouched. `messaging_bindings` is the real instance: it
  * shipped in 0.2.5, so every database formed by 0.2.4 or earlier meets this path.
  */
-describe("openDatabase table upgrade", () => {
+describe("openDatabase table and index upgrades", () => {
   /**
    * Seeds a database in the shape it had **before** messaging_bindings existed, derived from
    * the real SCHEMA_SQL rather than a hand-copied DDL replica: create today's schema, then
@@ -341,12 +342,12 @@ describe("openDatabase table upgrade", () => {
 
     const db = openDatabase(dbPath);
     try {
-      // The table and the account uniqueness index both arrive; the pre-existing Session is
+      // The table and its by-account lookup index both arrive; the pre-existing Session is
       // still there, which is what makes this an upgrade rather than a reset.
       expect(
         db
           .prepare(
-            "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_messaging_account'",
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_messaging_by_account'",
           )
           .all(),
       ).toHaveLength(1);
@@ -354,37 +355,139 @@ describe("openDatabase table upgrade", () => {
       // And it is immediately writable — a newly created table with no rows would look
       // identical to one the upgrade forgot to create until something tries to use it.
       const repo = new MessagingBindingsRepo(db);
-      const saved = repo.upsert({
-        sessionId: "session-pre-messaging",
-        channel: "telegram",
-        accountId: "12345",
-        config: { botToken: "t" },
-      });
-      expect(saved.ok).toBe(true);
-      expect(repo.find("session-pre-messaging", "telegram")?.accountId).toBe("12345");
-      // A second Session claiming the same account is refused...
       expect(
         repo.upsert({
-          sessionId: "other-session",
+          sessionId: "session-pre-messaging",
           channel: "telegram",
           accountId: "12345",
           config: { botToken: "t" },
-        }),
-      ).toEqual({ ok: false, reason: "account_in_use" });
-      // ...but that refusal comes from the repo's own findByAccount pre-check, which answers
-      // identically over a non-unique index — so it says nothing about what the upgrade
-      // created. Only a write that goes around the pre-check reaches the index, so the
-      // uniqueness is asserted on the raw INSERT. (The row differs in session_id, so the
-      // (session_id, channel) primary key cannot be what rejects it.)
-      expect(() =>
+        }).accountId,
+      ).toBe("12345");
+      expect(repo.find("session-pre-messaging", "telegram")?.accountId).toBe("12345");
+    } finally {
+      db.close();
+    }
+  });
+
+  /**
+   * Seeds a database in the shape it had while a bot account belonged to ONE Session forever:
+   * today's schema with the by-account index swapped back to the UNIQUE one it used to be.
+   * Same derivation rule as the helper above — a hand-copied DDL replica forks silently from
+   * the schema it is imitating.
+   */
+  function seedUniqueAccountIndexDb(dbPath: string, seed: (db: DatabaseSync) => void): void {
+    const db = new sqlite.DatabaseSync(dbPath);
+    try {
+      db.exec(SCHEMA_SQL);
+      db.exec("DROP INDEX idx_messaging_by_account");
+      db.exec(
+        "CREATE UNIQUE INDEX idx_messaging_account ON messaging_bindings(channel, account_id)",
+      );
+      seed(db);
+    } finally {
+      db.close();
+    }
+  }
+
+  it("drops the retired unique account index, so one bot account fits on two Sessions", () => {
+    const dbPath = path.join(dir, "web.db");
+    const ts = "2026-01-01T00:00:00.000Z";
+    seedUniqueAccountIndexDb(dbPath, (old) => {
+      old
+        .prepare(
+          `INSERT INTO messaging_bindings
+             (session_id, channel, account_id, config_json, created_at, updated_at)
+           VALUES ('session-a', 'telegram', '12345', '{"botToken":"t"}', ?, ?)`,
+        )
+        .run(ts, ts);
+    });
+    // Read the pre-state and close before asserting on it, for the same reason the sibling
+    // test does: a failed expect between open and close leaks the handle.
+    const before = new sqlite.DatabaseSync(dbPath);
+    let indexBefore: unknown[];
+    try {
+      indexBefore = before
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_messaging_account'",
+        )
+        .all();
+    } finally {
+      before.close();
+    }
+    expect(indexBefore).toHaveLength(1);
+
+    const db = openDatabase(dbPath);
+    try {
+      // The unique index is gone and the plain lookup index over the same columns is there.
+      expect(
         db
           .prepare(
-            `INSERT INTO messaging_bindings
-               (session_id, channel, account_id, config_json, created_at, updated_at)
-             VALUES ('other-session', 'telegram', '12345', '{}', ?, ?)`,
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_messaging_account'",
           )
-          .run("2026-01-01T00:00:00.000Z", "2026-01-01T00:00:00.000Z"),
+          .all(),
+      ).toEqual([]);
+      expect(
+        db
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_messaging_by_account'",
+          )
+          .all(),
+      ).toHaveLength(1);
+      // The row written under the old rule survived, and a second Session may now keep the
+      // same account saved beside it — the write the unique index used to reject.
+      const repo = new MessagingBindingsRepo(db);
+      expect(repo.find("session-a", "telegram")?.accountId).toBe("12345");
+      expect(
+        repo.upsert({
+          sessionId: "session-b",
+          channel: "telegram",
+          accountId: "12345",
+          config: { botToken: "t2" },
+        }).sessionId,
+      ).toBe("session-b");
+      expect(
+        db
+          .prepare(
+            "SELECT COUNT(*) AS n FROM messaging_bindings WHERE channel = 'telegram' AND account_id = '12345'",
+          )
+          .get(),
+      ).toEqual({ n: 2 });
+      // Neither row is enabled, so the lookup the enable guard reads still finds nobody:
+      // saving is not binding, and only an enabled row can hold the account.
+      expect(repo.findEnabledByAccount("telegram", "12345")).toBeNull();
+      // The drop is ONE-WAY, which is the cost of it: an older build recreates the unique
+      // index on open, and over these two rows that statement — its own SCHEMA_SQL, verbatim
+      // — fails, so the older build cannot open this database at all.
+      expect(() =>
+        db.exec(
+          "CREATE UNIQUE INDEX IF NOT EXISTS idx_messaging_account ON messaging_bindings(channel, account_id)",
+        ),
       ).toThrow(/UNIQUE constraint failed/);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("an already-enabled binding survives the upgrade and still holds its account", () => {
+    const dbPath = path.join(dir, "web.db");
+    const ts = "2026-01-01T00:00:00.000Z";
+    // The upgrade that actually happens to a user: not a dormant row, but a live connection
+    // they left switched on. It must come back enabled, and it must still be the holder the
+    // enable guard refuses a second Session against.
+    seedUniqueAccountIndexDb(dbPath, (old) => {
+      old
+        .prepare(
+          `INSERT INTO messaging_bindings
+             (session_id, channel, account_id, config_json, enabled, created_at, updated_at)
+           VALUES ('session-a', 'telegram', '99999', '{"botToken":"t"}', 1, ?, ?)`,
+        )
+        .run(ts, ts);
+    });
+    const db = openDatabase(dbPath);
+    try {
+      const repo = new MessagingBindingsRepo(db);
+      expect(repo.find("session-a", "telegram")?.enabled).toBe(true);
+      expect(repo.findEnabledByAccount("telegram", "99999")?.sessionId).toBe("session-a");
     } finally {
       db.close();
     }

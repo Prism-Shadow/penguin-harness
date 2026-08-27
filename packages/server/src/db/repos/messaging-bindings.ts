@@ -7,11 +7,13 @@
  * one-enabled-per-session invariant is enforced by the state route (409
  * `another_channel_enabled`), not here — the repo stays a dumb store.
  *
- * Cross-session uniqueness is per bot account: the unique index on
- * `(channel, account_id)` — one account has one event stream, and two Sessions racing it
- * is meaningless. `upsert` reports that conflict as a result value rather than throwing,
- * so a route can answer its channel's 409 (`feishu_app_in_use` / `telegram_bot_in_use`)
- * without parsing SQLite errors.
+ * Saving is NOT exclusive across Sessions: any number of Sessions may keep the same bot
+ * account saved side by side, each with its own config document and its own last-chat
+ * memory, so `upsert` has no failure mode at all. The one cross-session rule sits on the
+ * connection instead — enabling a binding whose account is already enabled on another
+ * Session is refused by the state route (409 `account_enabled_elsewhere`), which reads
+ * `findEnabledByAccount` to see it. One account has one event stream, so two live
+ * connections on it are meaningless; two saved configs are not.
  *
  * `config` is the channel-specific credential/config document, stored as JSON. Secrets
  * inside it are plaintext at rest (same trade-off as the proxy address in
@@ -33,8 +35,10 @@ export interface MessagingBindingRow {
   /**
    * INTENT state: whether the binding should hold a live connection (the connection's
    * runtime status stays in memory). Saving credentials never flips it — only the
-   * explicit state toggle does — and new bindings start disabled. At most one of a
-   * Session's rows is enabled (route-enforced).
+   * explicit state toggle does — and new bindings start disabled. Flipping it on is what
+   * binds the account to this Session: at most one of a Session's rows is enabled, and at
+   * most one row per `(channel, accountId)` is enabled across all Sessions (both
+   * route-enforced).
    */
   enabled: boolean;
   /** Most recent inbound chat (null until the bot is messaged once). */
@@ -95,9 +99,18 @@ export class MessagingBindingsRepo {
     return rows.map((r) => mapRow(r as Record<string, unknown>));
   }
 
-  findByAccount(channel: string, accountId: string): MessagingBindingRow | null {
+  /**
+   * Whichever binding currently holds this account's connection — null while every Session
+   * that saved the account keeps it dark. At most one row can match, for the same reason
+   * `findEnabled` is at-most-one: the state route refuses the second enable, and its
+   * guard-then-flip runs in one synchronous block, so two requests cannot interleave
+   * between the check and the write.
+   */
+  findEnabledByAccount(channel: string, accountId: string): MessagingBindingRow | null {
     const r = this.db
-      .prepare("SELECT * FROM messaging_bindings WHERE channel = ? AND account_id = ?")
+      .prepare(
+        "SELECT * FROM messaging_bindings WHERE channel = ? AND account_id = ? AND enabled = 1",
+      )
       .get(channel, accountId);
     return r ? mapRow(r as Record<string, unknown>) : null;
   }
@@ -112,22 +125,18 @@ export class MessagingBindingsRepo {
   /**
    * Create or replace the Session's config for one channel — credentials/config only:
    * `enabled` is intent state the state toggle owns, so an insert starts disabled and an
-   * update keeps the stored value. Returns `account_in_use` (writing nothing) when the
-   * `(channel, accountId)` pair is already bound to a DIFFERENT Session; re-saving a
-   * Session's own binding keeps its last-chat memory, so a settings edit never loses the
-   * reply target — unless the account changed, whose chats are unrelated: the remembered
-   * chat is dropped so replies can never land in the old bot's conversation.
+   * update keeps the stored value. It cannot fail on another Session: the same account
+   * saved elsewhere is none of this write's business, since only enabling is exclusive.
+   * Re-saving a Session's own binding keeps its last-chat memory, so a settings edit never
+   * loses the reply target — unless the account changed, whose chats are unrelated: the
+   * remembered chat is dropped so replies can never land in the old bot's conversation.
    */
   upsert(args: {
     sessionId: string;
     channel: string;
     accountId: string;
     config: Record<string, unknown>;
-  }): { ok: true; row: MessagingBindingRow } | { ok: false; reason: "account_in_use" } {
-    const holder = this.findByAccount(args.channel, args.accountId);
-    if (holder !== null && holder.sessionId !== args.sessionId) {
-      return { ok: false, reason: "account_in_use" };
-    }
+  }): MessagingBindingRow {
     const now = new Date().toISOString();
     const configJson = JSON.stringify(args.config);
     const existing = this.find(args.sessionId, args.channel);
@@ -162,7 +171,7 @@ export class MessagingBindingsRepo {
     }
     const row = this.find(args.sessionId, args.channel);
     if (!row) throw new Error("Failed to read back messaging_bindings after upsert");
-    return { ok: true, row };
+    return row;
   }
 
   /** The state toggle's write: flip one channel's connection intent (the bridge then aligns the live connection). */

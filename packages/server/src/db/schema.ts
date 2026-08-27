@@ -123,9 +123,9 @@ CREATE TABLE IF NOT EXISTS goal_state (        -- goal-mode runtime state (GOAL.
 );
 CREATE INDEX IF NOT EXISTS idx_goal_session ON goal_state(session_id);
 CREATE TABLE IF NOT EXISTS messaging_bindings ( -- Session ↔ messaging-channel bot bindings (runtime/messaging/ holds the long connections)
-  session_id       TEXT NOT NULL,              -- a Session keeps at most one saved config PER channel (composite PK below); at most ONE of them is enabled at a time (route-enforced, 409 another_channel_enabled)
+  session_id       TEXT NOT NULL,              -- a Session keeps at most one saved config PER channel (composite PK below); at most ONE of them is enabled at a time (route-enforced, 409 another_channel_enabled), and enabling is what binds the account to this Session
   channel          TEXT NOT NULL,              -- messaging channel discriminator ('feishu' | 'telegram')
-  account_id       TEXT NOT NULL,              -- channel-scoped bot/app identity (feishu: app_id; telegram: the bot token's numeric id); one binding per account per channel (idx_messaging_account: one account has one event stream, two Sessions would race it)
+  account_id       TEXT NOT NULL,              -- channel-scoped bot/app identity (feishu: app_id; telegram: the bot token's numeric id); NOT unique — any number of Sessions may keep the same account saved side by side, each with its own config and last-chat memory; only ENABLING is exclusive (route-enforced, 409 account_enabled_elsewhere: one account has one event stream, two live connections on it would race)
   config_json      TEXT NOT NULL,              -- channel-specific credentials/config JSON (feishu: appId/appSecret/baseDomain; telegram: botToken); secrets plaintext at rest (same trade-off as the proxy address in server_settings), masked at every API surface; a cleared secret is stored as "" (the row and its account identity stay)
   enabled          INTEGER NOT NULL DEFAULT 0, -- INTENT state (the connection's runtime status stays in memory): new bindings start disabled — saving credentials never opens a connection, the explicit state toggle does
   last_chat_id     TEXT,                       -- most recent inbound chat (NULL until the bot is messaged once; replies and test messages target it)
@@ -134,7 +134,7 @@ CREATE TABLE IF NOT EXISTS messaging_bindings ( -- Session ↔ messaging-channel
   updated_at       TEXT NOT NULL,
   PRIMARY KEY (session_id, channel)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS idx_messaging_account ON messaging_bindings(channel, account_id);
+CREATE INDEX IF NOT EXISTS idx_messaging_by_account ON messaging_bindings(channel, account_id);  -- serves the enable guard's by-account lookup; deliberately NOT unique, unlike its predecessor idx_messaging_account (dropped on open) which made an account exclusive to one Session forever
 CREATE TABLE IF NOT EXISTS ui_prefs (
   user_id    TEXT PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
   prefs_json TEXT NOT NULL                    -- {theme?, lastProjectId?, ...} free-form JSON
