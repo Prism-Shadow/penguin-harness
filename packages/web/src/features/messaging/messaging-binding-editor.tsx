@@ -879,6 +879,10 @@ export function MessagingBindingHelp({ channel }: { channel: MessagingChannel })
             <li key={step}>{step}</li>
           ))}
         </ol>
+        {/* What the QR button spares the reader: the last two steps of the list above.
+            Disclosed here rather than parked beside the button, which is a control and so
+            cannot be the title a standing sentence would need. */}
+        {channel === "qq" && <p className="mt-1.5">{S.qq.scanHint}</p>}
         <p className="mt-1.5">
           <ExternalLink href={links.tutorial} label={S.messaging.tutorial} />
         </p>

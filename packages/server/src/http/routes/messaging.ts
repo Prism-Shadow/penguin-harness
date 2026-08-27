@@ -678,6 +678,16 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
   app.post("/:sessionId/messaging/qq/scan", async (c) => {
     const row = resolveSession(c);
     deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
+    // Disable-first is a server rule, not just a greyed-out button: a scan rewrites BOTH
+    // halves of the credential and would point a live connector at whatever account was
+    // scanned, which the PUT's account guard exists to prevent it doing silently.
+    if (deps.messagingRepo.find(row.sessionId, "qq")?.enabled === true) {
+      throw new HttpError(
+        409,
+        "messaging_disable_before_scan",
+        "Disable the connection before rebinding it by scan.",
+      );
+    }
     let started: { taskId: string; qrUrl: string; pollMs: number };
     try {
       started = await deps.qqScan.start(row.sessionId);
@@ -698,7 +708,8 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
     } catch (err) {
       throw new HttpError(502, "qq_scan_failed", err instanceof Error ? err.message : String(err));
     }
-    // Unknown, another Session's, or already resolved — a replayed poll must not re-authorize.
+    // Unknown, another Session's, already resolved, or claimed by a poll still in flight —
+    // neither a replay nor an overlapping poll may re-authorize.
     if (result === null) {
       throw new HttpError(
         404,
@@ -712,6 +723,13 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
     // The scan landed: store it exactly as the PUT would, including the never-diverge
     // restart of an enabled connector. It stores only — enabling stays the separate act it
     // is on every channel, because enabling is what binds the account and is exclusive.
+    //
+    // The start refused an enabled binding, so this only fires when the connection was
+    // switched on WHILE the scan was in flight. Same guard as the PUT then: an enabled
+    // binding re-pointed at an account another Session holds would stand two connections on
+    // one bot's single gateway without either passing the enable gate.
+    const bound = deps.messagingRepo.find(row.sessionId, "qq");
+    if (bound !== null && bound.enabled) guardAccountFree(row.sessionId, "qq", result.bot.appId);
     const saved = deps.messagingRepo.upsert({
       sessionId: row.sessionId,
       channel: "qq",

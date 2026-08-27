@@ -313,7 +313,7 @@ Session 可以接入消息软件机器人——目前的渠道是飞书、Telegr
 | POST | /messaging/qq/state | 与其他开关同一契约（无已存密钥时返回 400 `qq_secret_required`） |
 | DELETE | /messaging/qq | 整体删除该渠道的配置（含 App Secret）。仅为 API 完整性保留 |
 | POST | /messaging/qq/test | 凭据探测（换取 app access token）→ `{ok, latencyMs?, error?}`。不报出账号名：平台没有能识别机器人身份的接口 |
-| POST | /messaging/qq/scan | 发起扫码连接：服务端用新生成、且不外传的 AES 密钥注册一个绑定任务 → `{taskId, qrUrl, pollMs}`。把 `qrUrl` 渲染成二维码；它由 QQ 客户端打开，浏览器不会请求它。平台拒绝时返回 502 `qq_scan_failed` |
+| POST | /messaging/qq/scan | 发起扫码连接：服务端用新生成、且不外传的 AES 密钥注册一个绑定任务 → `{taskId, qrUrl, pollMs}`。把 `qrUrl` 渲染成二维码；它由 QQ 客户端打开，浏览器不会请求它。该 Session 的 QQ 连接处于启用状态时返回 409 `messaging_disable_before_scan`——扫码会在在线连接器底下换掉整对凭据；平台拒绝时返回 502 `qq_scan_failed` |
 | POST | /messaging/qq/scan/poll | `{taskId}` → `{status, appId?, binding?}`。`completed` 表示服务端已解密 App Secret 并**保存**了绑定（启用仍是独立动作）；`expired` 表示需重新建任务。未知、属于其他 Session 或已完成的任务返回 404 `qq_scan_task_unknown` |
 | POST | /messaging/qq/scan/cancel | `{taskId}`——用户中途离开时丢弃该任务，立即忘记其密钥，而不是等待过期清扫 |
 | POST | /messaging/qq/test-message | 向最近一次收到消息的会话发送一条固定测试文本；在 QQ 里给机器人发过消息之前返回 409 `qq_no_chat`；没有可回复的近期消息时返回 502 `qq_send_failed`（见下） |
@@ -322,7 +322,7 @@ Session 可以接入消息软件机器人——目前的渠道是飞书、Telegr
 
 **QQ 是只能被动回复的渠道，这改变了「送达」的含义。** 平台不提供本产品可用的主动推送：每一条外发消息都是携带入站 `msg_id` 的*被动回复*，有效期只有几分钟，且单聊对同一条消息最多 4 条回复（群聊 5 条）。由此有三点在 API 上可见。一次运行完成的助手消息超过该额度时会被**合并**——前 `budget - 1` 条随完成即时发出，其余合并为最后一条送达，内容不丢。`linePerMessage` 的拆分上限**收敛到该额度**，而不是渠道无关的 20。而没有可回复对象的发送——在网页端发起的对话，或窗口关闭之后的回复——会被**拒绝而非主动推送**：测试接口上表现为 502 `qq_send_failed`，转发回复则记为一条 `messaging_send_failed` 错误记录。QQ 的账号身份是 App ID。该渠道拒绝外发文件：平台的富媒体接口要求为文件提供公网可达地址。
 
-**扫码连接不会把密钥交给浏览器。** 解密 App Secret 的 AES 密钥在服务端生成、持有、使用并丢弃；客户端只拿到任务句柄、待绘制的 URL 与状态。任务只存在于内存，归属发起它的 Session，并被「解决它的那一次轮询」消费掉，因此重放得到的是 404 而不是第二次绑定。所有扫码路由都仅限 Project 所有者——无论调用方实际输入了多少内容，这个流程的终点都是一份存下来的凭据。
+**扫码连接不会把密钥交给浏览器。** 解密 App Secret 的 AES 密钥在服务端生成、持有、使用并丢弃；客户端只拿到任务句柄、待绘制的 URL 与状态。任务只存在于内存，归属发起它的 Session，按 Session 单独限量（一个调用方的扫码任务挤不掉另一个调用方的），并被「解决它的那一次轮询」认领掉，因此重放与对同一任务的并发轮询得到的都是 404，而不是第二次绑定。所有扫码路由都仅限 Project 所有者——无论调用方实际输入了多少内容，这个流程的终点都是一份存下来的凭据。
 
 ### 独立源预览
 

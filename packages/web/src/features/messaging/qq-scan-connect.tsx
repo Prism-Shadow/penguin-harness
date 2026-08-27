@@ -20,7 +20,11 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { encode } from "uqr";
-import type { MessagingBindingInfo } from "@prismshadow/penguin-server/api";
+import type {
+  MessagingBindingInfo,
+  QQBindingInfo,
+  QQScanPollResponse,
+} from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
@@ -64,6 +68,75 @@ export function QrCode({ value, label }: { value: string; label: string }) {
   );
 }
 
+/**
+ * Consecutive poll failures ridden out before the code comes down. The interval fires
+ * whether or not the previous request came back, so a single 502 from a busy platform must
+ * not take the QR off the screen while the user is still walking to their phone — their
+ * scan would then bind nothing and they would never learn why.
+ */
+const POLL_FAILURES_TOLERATED = 3;
+
+/** How many lapsed codes are replaced automatically before the panel stops asking for another. */
+const AUTO_REFRESH_LIMIT = 3;
+
+/** One poll attempt's outcome, as the loop hands it to the classifier. */
+export type QQScanAttempt = { ok: true; res: QQScanPollResponse } | { ok: false; error: unknown };
+
+/** What the loop has seen so far, NOT counting the attempt being classified. */
+export interface QQScanTally {
+  /** Consecutive attempts that failed; any attempt that came back resets it. */
+  failures: number;
+  /** Codes already replaced automatically after the platform reported one expired. */
+  refreshes: number;
+}
+
+/** What one attempt tells the panel to do next. */
+export type QQScanStep =
+  | { kind: "wait" }
+  | { kind: "refresh" }
+  | { kind: "bound"; appId: string; binding: QQBindingInfo | undefined }
+  | {
+      kind: "stop";
+      notice: string;
+      /**
+       * The task is still the server's to forget: true when the panel gave up on a task
+       * nothing has resolved, false when the platform already reported it expired and the
+       * server consumed it on that poll.
+       */
+      releaseTask: boolean;
+    };
+
+/**
+ * Classifies one poll attempt — the `updateCheckOutcome` idiom: the decision is a pure
+ * function, and the loop around it only carries the tally and performs the effects.
+ *
+ * Two of the four answers are why this is a function at all. A failed attempt is `wait`
+ * until it has failed several times running, so a transient error does not abandon a scan
+ * mid-flight. And `refresh` is capped: a platform answering `expired` to tasks it has just
+ * created — clock skew, throttling, an outage returning one fixed code — would otherwise
+ * loop create/poll for as long as the panel stays open, two requests every couple of
+ * seconds, against both this server and QQ.
+ */
+export function qqScanStep(attempt: QQScanAttempt, tally: QQScanTally): QQScanStep {
+  if (!attempt.ok) {
+    return tally.failures + 1 < POLL_FAILURES_TOLERATED
+      ? { kind: "wait" }
+      : {
+          kind: "stop",
+          notice: S.qq.scanFailed(apiErrorText(attempt.error)),
+          releaseTask: true,
+        };
+  }
+  const { res } = attempt;
+  if (res.status === "completed") {
+    return { kind: "bound", appId: res.appId ?? "", binding: res.binding };
+  }
+  if (res.status !== "expired") return { kind: "wait" };
+  return tally.refreshes + 1 > AUTO_REFRESH_LIMIT
+    ? { kind: "stop", notice: S.qq.scanExpiredRepeatedly, releaseTask: false }
+    : { kind: "refresh" };
+}
+
 /** Where the flow stands, as the panel shows it. */
 type ScanPhase =
   | { kind: "idle" }
@@ -86,10 +159,15 @@ export function QQScanConnect({
   const taskRef = useRef<string | null>(null);
   /** Set once the component is going away, so an in-flight poll stops writing state. */
   const goneRef = useRef(false);
+  /** What `qqScanStep` classifies each attempt against; lives outside React state, like taskRef. */
+  const tallyRef = useRef<QQScanTally>({ failures: 0, refreshes: 0 });
 
   const start = useCallback(
     async (refreshed: boolean) => {
       setPhase({ kind: "starting" });
+      // A new task starts a fresh failure count; only a scan the USER asked for starts a
+      // fresh refresh count, or the cap on automatic replacement would never be reached.
+      tallyRef.current = { failures: 0, refreshes: refreshed ? tallyRef.current.refreshes : 0 };
       try {
         const res = await api.startQQScan(sessionId);
         if (goneRef.current) {
@@ -123,9 +201,10 @@ export function QQScanConnect({
     if (taskId !== null) void api.cancelQQScan(sessionId, taskId).catch(() => {});
   }, [sessionId]);
 
-  // The poll loop. Restarted whenever the task changes and torn down with it; an expired
-  // task starts a new one rather than stranding the user in front of a dead code, which is
-  // what the protocol asks for.
+  // The poll loop. Restarted whenever the task changes and torn down with it; what each
+  // answer means is `qqScanStep`'s, so this only carries the tally and does the effects —
+  // an expired code is replaced rather than stranding the user in front of a dead one, and
+  // giving up releases the task instead of leaving the server holding its key.
   useEffect(() => {
     if (phase.kind !== "waiting") return;
     const { taskId, pollMs } = phase;
@@ -133,25 +212,36 @@ export function QQScanConnect({
     const timer = setInterval(() => {
       void (async () => {
         if (cancelled) return;
+        let attempt: QQScanAttempt;
         try {
-          const res = await api.pollQQScan(sessionId, taskId);
-          if (cancelled) return;
-          if (res.status === "expired") {
-            taskRef.current = null;
-            void start(true);
-            return;
-          }
-          if (res.status !== "completed") return;
-          taskRef.current = null;
-          setPhase({ kind: "idle" });
-          toastSuccess(S.qq.scanDone(res.appId ?? ""));
-          if (res.binding !== undefined) onBound(res.binding);
-        } catch (e) {
-          if (cancelled) return;
-          taskRef.current = null;
-          setPhase({ kind: "idle" });
-          toastError(S.qq.scanFailed(apiErrorText(e)));
+          attempt = { ok: true, res: await api.pollQQScan(sessionId, taskId) };
+        } catch (error) {
+          attempt = { ok: false, error };
         }
+        if (cancelled) return;
+        const step = qqScanStep(attempt, tallyRef.current);
+        tallyRef.current = {
+          failures: attempt.ok ? 0 : tallyRef.current.failures + 1,
+          refreshes: tallyRef.current.refreshes,
+        };
+        if (step.kind === "wait") return;
+        taskRef.current = null;
+        if (step.kind === "refresh") {
+          tallyRef.current = { failures: 0, refreshes: tallyRef.current.refreshes + 1 };
+          void start(true);
+          return;
+        }
+        setPhase({ kind: "idle" });
+        if (step.kind === "bound") {
+          toastSuccess(S.qq.scanDone(step.appId));
+          if (step.binding !== undefined) onBound(step.binding);
+          return;
+        }
+        // A run of failed polls says nothing about the server, so the task may well still be
+        // live: it is released here the way cancel and unmount release one, rather than left
+        // holding its key until the sweep.
+        if (step.releaseTask) void api.cancelQQScan(sessionId, taskId).catch(() => {});
+        toastError(step.notice);
       })();
     }, pollMs);
     return () => {
@@ -176,8 +266,11 @@ export function QQScanConnect({
   }, [sessionId]);
 
   if (phase.kind !== "waiting") {
+    // Just the control. What scanning is and what it spares the user is semantics — read
+    // once, then in the way forever — so it is disclosed in the setup fold rather than
+    // standing beside the button: a control is not a title for a sentence.
     return (
-      <div className="flex flex-wrap items-center gap-2">
+      <div>
         <Button
           size="sm"
           disabled={phase.kind === "starting" || enabled}
@@ -186,7 +279,6 @@ export function QQScanConnect({
         >
           {phase.kind === "starting" ? S.qq.scanStarting : S.qq.scanStart}
         </Button>
-        <span className="text-xs text-gray-500 dark:text-gray-400">{S.qq.scanHint}</span>
       </div>
     );
   }

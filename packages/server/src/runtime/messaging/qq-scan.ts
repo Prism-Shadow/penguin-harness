@@ -250,11 +250,22 @@ export function decryptQQBotSecret(keyBase64: string, encryptedBase64: string): 
 export const QQ_SCAN_TASK_TTL_MS = 10 * 60_000;
 
 /**
- * Ceiling on remembered tasks. Starting a scan is owner-only and each one is a single
- * request, so this is a backstop rather than a rate limit; past it the oldest tasks go
- * first, which is also the order they expire in.
+ * How many bind tasks ONE Session may keep in flight. This is the ceiling that binds, and
+ * it is per-Session rather than process-wide on purpose: starting a scan is reachable by
+ * anyone who owns a Project, which is every signed-up user, so a table bounded only across
+ * all callers lets one of them in a loop evict everybody else's code. Eviction here can
+ * only ever drop the caller's OWN oldest task. Four covers a person with a couple of tabs
+ * open who reloads a few times.
  */
-const QQ_SCAN_MAX_TASKS = 64;
+const QQ_SCAN_MAX_TASKS_PER_SESSION = 4;
+
+/**
+ * Absolute bound on remembered tasks across every Session — a memory backstop, not the
+ * ceiling a caller runs into. It sits far above any real deployment's concurrent scans
+ * precisely because reaching it evicts across tenants, which the per-Session ceiling exists
+ * to keep from happening.
+ */
+const QQ_SCAN_MAX_TASKS = 4096;
 
 /** One in-flight bind task. The key is the reason this table exists at all. */
 interface QQScanTask {
@@ -263,6 +274,8 @@ interface QQScanTask {
   /** The Session that started the scan; another Session's poll is not this task's business. */
   sessionId: string;
   createdAt: number;
+  /** A poll is in flight and holds the right to resolve this task (see `poll`). */
+  claimed: boolean;
 }
 
 /** What a poll tells the caller: where the scan stands, and the credentials once it landed. */
@@ -286,10 +299,14 @@ export interface QQScanServiceOpts {
  *
  * A task is consumed by the poll that resolves it: completed or expired, it is gone, so a
  * replayed poll of the same task id reads as unknown rather than re-authorizing anything.
+ * "Consumed" is claimed before the upstream request rather than deleted after it, because
+ * the client's poll interval fires whether or not the previous request came back.
  */
 export class QQScanService {
   private readonly tasks = new Map<string, QQScanTask>();
   private readonly now: () => number;
+  /** The self-re-arming sweep, alive only while a task is remembered (see `armSweep`). */
+  private sweepTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private readonly transport: QQScanTransport,
@@ -303,39 +320,56 @@ export class QQScanService {
     this.sweep();
     const key = newQQScanKey();
     const taskId = await this.transport.createBindTask(key);
-    this.tasks.set(taskId, { key, sessionId, createdAt: this.now() });
+    // Evicted after the create rather than before it: a create that failed must not have
+    // cost the caller a live code.
+    this.evictOwn(sessionId);
+    this.tasks.set(taskId, { key, sessionId, createdAt: this.now(), claimed: false });
+    this.armSweep();
     return { taskId, qrUrl: qqScanQrUrl(taskId), pollMs: QQ_SCAN_POLL_MS };
   }
 
   /**
    * Polls one task. Returns null when the task id is not one this Session started (an
-   * unknown id, another Session's, or one already consumed) — the caller answers 404,
-   * which is also what a replay gets.
+   * unknown id, another Session's, one already consumed, or one another poll is resolving
+   * right now) — the caller answers 404, which is also what a replay gets.
    */
   async poll(sessionId: string, taskId: string): Promise<QQScanPoll | null> {
     const task = this.tasks.get(taskId);
-    if (task === undefined || task.sessionId !== sessionId) return null;
+    if (task === undefined || task.sessionId !== sessionId || task.claimed) return null;
+    // CLAIMED before the await, not deleted after it. The client polls on a fixed interval
+    // that fires whether or not the previous request came back, so a slow platform leaves
+    // several polls of one task overlapping; without the claim every one of them decrypts
+    // the secret and binds again. The claim is released below while the task is unresolved.
+    task.claimed = true;
     if (this.now() - task.createdAt > QQ_SCAN_TASK_TTL_MS) {
       this.tasks.delete(taskId);
       return { status: "expired" };
     }
-    const result = await this.transport.pollBindResult(taskId);
+    let result: QQBindPollResult;
+    try {
+      result = await this.transport.pollBindResult(taskId);
+    } catch (err) {
+      // A request that failed resolved nothing: the task stays pollable, which is what lets
+      // the client ride out a transient platform error without dropping the user's code.
+      task.claimed = false;
+      throw err;
+    }
     if (result.status === "expired") {
       this.tasks.delete(taskId);
       return { status: "expired" };
     }
-    if (result.status !== "completed") return { status: result.status };
+    if (result.status !== "completed") {
+      task.claimed = false;
+      return { status: result.status };
+    }
+    // Past here the task is spent whatever happens. Completed with nothing to store, and a
+    // payload that will not decrypt, are both states polling again cannot recover from.
+    this.tasks.delete(taskId);
     const bot = result.bots[0];
     if (bot === undefined) {
-      // Completed with nothing to store is not a state this can recover from by polling
-      // again; the task is spent either way.
-      this.tasks.delete(taskId);
       throw new Error("QQ reported the scan complete but returned no bot");
     }
-    // Decrypt BEFORE forgetting the task: a throw here must not leave a task whose key is
-    // gone but whose id still looks pollable.
     const appSecret = decryptQQBotSecret(task.key, bot.encryptedSecret);
-    this.tasks.delete(taskId);
     return { status: "completed", bot: { appId: bot.appId, appSecret } };
   }
 
@@ -351,17 +385,50 @@ export class QQScanService {
     }
   }
 
-  /** Drops expired tasks, then the oldest ones if the table is still over its ceiling. */
+  /**
+   * Drops this Session's oldest tasks until one more fits under its own ceiling. Scoped to
+   * the caller: the whole point of the per-Session ceiling is that filling it takes a code
+   * away from nobody else.
+   */
+  private evictOwn(sessionId: string): void {
+    const own = [...this.tasks].filter(([, task]) => task.sessionId === sessionId);
+    if (own.length < QQ_SCAN_MAX_TASKS_PER_SESSION) return;
+    own.sort((a, b) => a[1].createdAt - b[1].createdAt);
+    for (const [taskId] of own.slice(0, own.length - QQ_SCAN_MAX_TASKS_PER_SESSION + 1)) {
+      this.tasks.delete(taskId);
+    }
+  }
+
+  /** Drops expired tasks, then the oldest ones if the table is still over its backstop. */
   private sweep(): void {
     const cutoff = this.now() - QQ_SCAN_TASK_TTL_MS;
     for (const [taskId, task] of this.tasks) {
       if (task.createdAt <= cutoff) this.tasks.delete(taskId);
     }
-    // A Map iterates in insertion order, which is oldest-first.
-    while (this.tasks.size >= QQ_SCAN_MAX_TASKS) {
-      const oldest = this.tasks.keys().next();
-      if (oldest.done === true) break;
-      this.tasks.delete(oldest.value);
+    if (this.tasks.size < QQ_SCAN_MAX_TASKS) return;
+    // Age comes from createdAt rather than from the Map's insertion order, so the backstop
+    // keeps picking the oldest however a task came to sit where it does in the table.
+    const byAge = [...this.tasks].sort((a, b) => a[1].createdAt - b[1].createdAt);
+    for (const [taskId] of byAge.slice(0, this.tasks.size - QQ_SCAN_MAX_TASKS + 1)) {
+      this.tasks.delete(taskId);
     }
+  }
+
+  /**
+   * Keeps one unref'd timer alive while any task is remembered, so a scan the user walked
+   * away from stops holding its key roughly at the TTL instead of at whenever somebody
+   * happens to start the next scan — which may be never, and a key at rest is the one
+   * outcome this module is shaped to avoid. It re-arms only while the table is non-empty,
+   * and unref'd it is never the reason a process stays alive.
+   */
+  private armSweep(): void {
+    if (this.sweepTimer !== null || this.tasks.size === 0) return;
+    const timer = setTimeout(() => {
+      this.sweepTimer = null;
+      this.sweep();
+      this.armSweep();
+    }, QQ_SCAN_TASK_TTL_MS);
+    timer.unref();
+    this.sweepTimer = timer;
   }
 }

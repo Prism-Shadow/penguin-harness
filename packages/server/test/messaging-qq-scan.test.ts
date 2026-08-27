@@ -11,7 +11,7 @@
  * The second thing pinned throughout: the AES key never leaves the server. Every route
  * assertion checks the whole response body for it.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createCipheriv, randomBytes } from "node:crypto";
 import type {
   QQBindingResponse,
@@ -20,6 +20,7 @@ import type {
 } from "../src/api/types.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import {
+  QQ_SCAN_TASK_TTL_MS,
   QQScanService,
   createQQScanTransport,
   decryptQQBotSecret,
@@ -33,6 +34,7 @@ import type { TestApp } from "./helpers.js";
 const SID = "session-2026-08-27-11-00-00-q9100001";
 const SID2 = "session-2026-08-27-11-00-01-q9100002";
 const SCAN = (sid: string) => `/api/sessions/${sid}/messaging/qq/scan`;
+const PROJECT = "birder-default_project";
 const APP_ID = "102000042";
 const APP_SECRET = "scanned-app-secret-XYZ";
 
@@ -59,6 +61,8 @@ class FakeScanTransport implements QQScanTransport {
   pollCalls = 0;
   /** Non-null makes createBindTask throw with this message. */
   failCreate: string | null = null;
+  /** Held open for this long, so a test can have two polls of one task in flight at once. */
+  pollDelayMs = 0;
   private next = 1;
 
   async createBindTask(key: string): Promise<string> {
@@ -71,6 +75,9 @@ class FakeScanTransport implements QQScanTransport {
 
   async pollBindResult(taskId: string): Promise<QQBindPollResult> {
     this.pollCalls++;
+    if (this.pollDelayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, this.pollDelayMs));
+    }
     return this.results.get(taskId) ?? { status: "pending", bots: [] };
   }
 
@@ -248,6 +255,73 @@ describe("QQScanService", () => {
     expect(await service.poll(SID, live.taskId)).toBeNull();
   });
 
+  it("hands one of two concurrent polls the result and the other nothing", async () => {
+    const transport = new FakeScanTransport();
+    const service = new QQScanService(transport);
+    const started = await service.start(SID);
+    transport.complete(started.taskId);
+    // The client polls on a fixed interval that fires whether or not the previous request
+    // came back, so a slow platform leaves several polls of one task overlapping. Exactly
+    // one of them may decrypt the secret and bind; the rest read as unknown.
+    transport.pollDelayMs = 30;
+    const [a, b] = await Promise.all([
+      service.poll(SID, started.taskId),
+      service.poll(SID, started.taskId),
+    ]);
+    expect([a, b].filter((r) => r?.status === "completed")).toHaveLength(1);
+    expect([a, b].filter((r) => r === null)).toHaveLength(1);
+    // And the loser did not cost a request either.
+    expect(transport.pollCalls).toBe(1);
+  });
+
+  it("puts a task back when the platform request itself failed", async () => {
+    const transport = new FakeScanTransport();
+    const service = new QQScanService(transport);
+    const started = await service.start(SID);
+    transport.results.set(started.taskId, { status: "pending", bots: [] });
+    // A failed request resolved nothing, so the code on screen stays pollable — which is
+    // what lets the panel ride out a transient platform error.
+    const boom = new Error("bad gateway");
+    transport.pollBindResult = async () => {
+      throw boom;
+    };
+    await expect(service.poll(SID, started.taskId)).rejects.toThrow(boom);
+    transport.pollBindResult = async () => ({ status: "pending", bots: [] });
+    expect(await service.poll(SID, started.taskId)).toEqual({ status: "pending" });
+  });
+
+  it("bounds tasks per Session, so one caller cannot evict another's code", async () => {
+    const transport = new FakeScanTransport();
+    const service = new QQScanService(transport);
+    const victim = await service.start(SID);
+    // A caller in a loop on its own Session. Whatever the ceiling is, it is reached here.
+    const attacker: string[] = [];
+    for (let i = 0; i < 40; i += 1) attacker.push((await service.start(SID2)).taskId);
+
+    // The eviction stayed inside the attacker's own tasks: its oldest is gone, its newest
+    // is not, and the other Session's single code is untouched.
+    expect(await service.poll(SID2, attacker[0]!)).toBeNull();
+    expect(await service.poll(SID2, attacker.at(-1)!)).toEqual({ status: "pending" });
+    expect(await service.poll(SID, victim.taskId)).toEqual({ status: "pending" });
+  });
+
+  it("sweeps a task nobody came back for without waiting for the next scan", async () => {
+    vi.useFakeTimers();
+    try {
+      let now = 1_000_000;
+      const service = new QQScanService(new FakeScanTransport(), { now: () => now });
+      const abandoned = await service.start(SID);
+      now += QQ_SCAN_TASK_TTL_MS + 1;
+      await vi.advanceTimersByTimeAsync(QQ_SCAN_TASK_TTL_MS + 1);
+      // Gone, not merely lapsed: a task still in the table answers "expired" when polled,
+      // and only one the sweep already dropped reads as unknown. Nothing else ran — no
+      // second scan, no other poll — which is the whole point of the timer.
+      expect(await service.poll(SID, abandoned.taskId)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("cancelling forgets the key immediately rather than waiting for the sweep", async () => {
     const service = new QQScanService(new FakeScanTransport());
     const started = await service.start(SID);
@@ -273,7 +347,7 @@ describe("qq scan routes", () => {
     t = await createTestApp({ qqScanTransport: transport });
     const { cookie } = await provisionUser(t.app, "birder");
     api = apiClient(t.app, cookie);
-    t.deps.sessionsRepo.insert(sessionRowOf(SID, "birder-default_project"));
+    t.deps.sessionsRepo.insert(sessionRowOf(SID, PROJECT));
   });
   afterEach(async () => {
     await t.cleanup();
@@ -343,16 +417,94 @@ describe("qq scan routes", () => {
     expect(body.error.message).toContain("service temporarily unavailable");
   });
 
-  it("cancelling drops the task, and every scan route is owner-only", async () => {
+  it("cancelling drops the task, and a task is not pollable through another Session", async () => {
     const start = (await (await api.post(SCAN(SID), {})).json()) as QQScanStartResponse;
     expect((await api.post(`${SCAN(SID)}/cancel`, { taskId: start.taskId })).status).toBe(204);
     expect((await api.post(`${SCAN(SID)}/poll`, { taskId: start.taskId })).status).toBe(404);
 
+    // The task id is not the authorization, and it is not a bearer handle either: the same
+    // owner polling their OWN second Session with it gets nothing.
+    t.deps.sessionsRepo.insert(sessionRowOf(SID2, PROJECT));
+    const mine = (await (await api.post(SCAN(SID), {})).json()) as QQScanStartResponse;
+    const crossed = await api.post(`${SCAN(SID2)}/poll`, { taskId: mine.taskId });
+    expect(crossed.status).toBe(404);
+    // ...and it is still the first Session's to resolve.
+    expect((await api.post(`${SCAN(SID)}/poll`, { taskId: mine.taskId })).status).toBe(200);
+  });
+
+  it("every scan route is owner-only: a Project member is refused, an outsider sees nothing", async () => {
+    const start = (await (await api.post(SCAN(SID), {})).json()) as QQScanStartResponse;
+
     // A Project member who is not its owner may read bindings and run the probes, but the
     // scan ends in a stored credential, so it sits on the owner-only side like PUT does.
     const { cookie: member } = await provisionUser(t.app, "guest");
+    expect((await api.post(`/api/projects/${PROJECT}/members`, { userId: "guest" })).status).toBe(
+      201,
+    );
     const memberApi = apiClient(t.app, member);
-    // A different user's Session is not even visible: 404 without leaking its existence.
-    expect((await memberApi.post(SCAN(SID), {})).status).toBe(404);
+    for (const res of [
+      await memberApi.post(SCAN(SID), {}),
+      await memberApi.post(`${SCAN(SID)}/poll`, { taskId: start.taskId }),
+      await memberApi.post(`${SCAN(SID)}/cancel`, { taskId: start.taskId }),
+    ]) {
+      expect(res.status).toBe(403);
+      expect(((await res.json()) as { error: { code: string } }).error.code).toBe("owner_required");
+    }
+
+    // A user with no access at all: 404, without leaking that the Session exists.
+    const outsider = apiClient(t.app, (await provisionUser(t.app, "stranger")).cookie);
+    expect((await outsider.post(SCAN(SID), {})).status).toBe(404);
+  });
+
+  it("refuses to start a scan while this Session's QQ connection is enabled", async () => {
+    // Enabled straight in the repo: flipping it through the route would stand up a live
+    // connector, and what is under test is the scan route's own refusal.
+    t.deps.messagingRepo.upsert({
+      sessionId: SID,
+      channel: "qq",
+      accountId: "102000777",
+      config: { appId: "102000777", appSecret: "typed-secret" },
+    });
+    t.deps.messagingRepo.setEnabled(SID, "qq", true);
+
+    const res = await api.post(SCAN(SID), {});
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe(
+      "messaging_disable_before_scan",
+    );
+    // Refused before the platform was asked for anything.
+    expect(transport.createCalls).toBe(0);
+  });
+
+  it("a scan completing onto a connection enabled meanwhile runs the account guard", async () => {
+    const start = (await (await api.post(SCAN(SID), {})).json()) as QQScanStartResponse;
+
+    // Another Session holds the very account this scan is about to land on...
+    t.deps.sessionsRepo.insert(sessionRowOf(SID2, PROJECT));
+    t.deps.messagingRepo.upsert({
+      sessionId: SID2,
+      channel: "qq",
+      accountId: APP_ID,
+      config: { appId: APP_ID, appSecret: "held-elsewhere" },
+    });
+    t.deps.messagingRepo.setEnabled(SID2, "qq", true);
+    // ...and this Session's own connection was switched on while the user was scanning,
+    // which is the only way past the refusal on start.
+    t.deps.messagingRepo.upsert({
+      sessionId: SID,
+      channel: "qq",
+      accountId: "102000888",
+      config: { appId: "102000888", appSecret: "typed-secret" },
+    });
+    t.deps.messagingRepo.setEnabled(SID, "qq", true);
+
+    transport.complete(start.taskId);
+    const res = await api.post(`${SCAN(SID)}/poll`, { taskId: start.taskId });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe(
+      "account_enabled_elsewhere",
+    );
+    // Nothing was stored: the live connector still points where it did.
+    expect(t.deps.messagingRepo.find(SID, "qq")?.accountId).toBe("102000888");
   });
 });

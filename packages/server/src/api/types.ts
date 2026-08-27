@@ -1909,8 +1909,10 @@ export interface QQScanStartResponse {
  * `expired` means start a new task and show a new QR, and `completed` means the server has
  * already decrypted the App Secret and SAVED the binding: `appId` names the bot that landed.
  * Saving is all it does — enabling the connection stays the separate, exclusive act it is on
- * every channel. A task id that is unknown, belongs to another Session, or was already
- * resolved answers 404 `qq_scan_task_unknown`.
+ * every channel. A task id that is unknown, belongs to another Session, was already
+ * resolved, or is being resolved by a poll still in flight answers 404
+ * `qq_scan_task_unknown`: the task is claimed by one poll, so a client whose interval fires
+ * before the previous request came back binds once rather than once per overlapping poll.
  */
 export interface QQScanPollResponse {
   status: "none" | "pending" | "completed" | "expired";

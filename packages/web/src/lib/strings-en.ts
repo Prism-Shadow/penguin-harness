@@ -1840,8 +1840,9 @@ Scenarios:
     /** Scan-to-connect: the button, and the states it moves through. */
     scanStart: "Connect by QR",
     scanStarting: "Generating code…",
-    /** Beside the button: what scanning saves the user, in one line. */
-    scanHint: "Authorize by scanning in QQ — no App ID or App Secret to copy by hand",
+    /** In the setup fold: what scanning saves the user, in one line. */
+    scanHint:
+      "Or connect by QR: authorize in QQ by scanning, with no App ID or App Secret to copy by hand.",
     scanQrLabel: "QQ bot authorization QR code",
     scanWaiting: "Waiting to be scanned in QQ…",
     scanSteps:
@@ -1854,6 +1855,9 @@ Scenarios:
     scanDone: (appId: string): string =>
       `Saved the credentials for bot ${appId} — the connection can be enabled now`,
     scanFailed: (reason: string): string => `Scan-to-connect failed: ${reason}`,
+    /** Shown when replacing lapsed codes stopped being worth another round trip. */
+    scanExpiredRepeatedly:
+      "The code kept expiring before it could be scanned. Try starting a new scan in a moment.",
     /** Why the scan button is gated while this channel holds the connection. */
     scanDisableFirst: "Disable the connection before rebinding by scan",
     /** Separates the scan path from the manual one; the fields below are the fallback, not the default. */
@@ -2197,6 +2201,8 @@ Scenarios:
         "This bot's connection is enabled on another conversation: turn it off there first.",
       messaging_disable_before_clear:
         "Disable this channel's connection before clearing its credential.",
+      messaging_disable_before_scan:
+        "Disable this channel's connection before rebinding it by scan.",
     },
   },
 };

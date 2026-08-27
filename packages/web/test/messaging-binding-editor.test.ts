@@ -296,6 +296,9 @@ describe("MessagingBindingHelp", () => {
     // bot and looking for its credentials.
     expect(qq).toContain('href="https://bot.q.qq.com/wiki/"');
     expect(qq).toContain(S.qq.setupSteps[0]);
+    // What the QR button spares the reader belongs beside those steps, not beside the
+    // button: it is semantics, and a control is not a title for a standing sentence.
+    expect(qq).toContain(S.qq.scanHint);
     // The reply budget is how this channel delivers a long answer, not a fault: it rides the
     // "what binding does" fold, while the passive-reply failure rides troubleshooting.
     expect(qq).toContain(S.qq.replyBudget);
