@@ -233,7 +233,7 @@ export const en: Strings = {
     /** Combined anchor whose trails are not all updates — an unexpected error is not one. */
     pending: "Something needs attention",
     /** Clears an update the user has decided not to take now (a later one raises the badge again). */
-    dismiss: "Mark as done",
+    dismiss: "Mark as handled",
     /** The cost center's wording: nothing is being updated there, the errors are simply read. */
     markRead: "Mark as read",
   },

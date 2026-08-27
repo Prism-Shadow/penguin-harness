@@ -34,6 +34,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useUpdateBadges } from "../../lib/use-update-badges";
 import { dismissTodo } from "../../lib/todo-dismissals";
+import { TodoNotice } from "../../components/ui/todo-notice";
 import { formatMoney, humanizeTokens } from "../../lib/format";
 import { catalogEntryFor } from "@prismshadow/penguin-core/model-catalog";
 import { useProject } from "../../state/project";
@@ -335,6 +336,19 @@ export function UsagePage() {
           </div>
         </div>
 
+        {/* Last stop on the Cost Center trail, in the one shape all three dismissible trails
+            use: directly under the title, not down against the errors table. It counts the
+            probe's own trailing window (use-project-todos.ts), which is not the filters above
+            it, so it states what the badge is about rather than what any one panel is showing.
+            "Read", not "done" — nothing is being updated here, the user has simply looked. */}
+        {todo && (
+          <TodoNotice
+            text={S.todo.unexpectedErrors(todo.count)}
+            dismissLabel={S.todo.markRead}
+            onDismiss={() => dismissTodo(projectId, "errors", todo.signature)}
+          />
+        )}
+
         {/* Summary cards (today / last 7 days / cumulative) */}
         {data ? (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -399,26 +413,7 @@ export function UsagePage() {
         {/* Errors (a single full-width panel: stats + a recent-errors table) */}
         {data && (
           <ChartCard title={S.usage.errors}>
-            {/* Last stop on the Cost Center trail. The notice is handed to the panel rather than
-                placed under the page title: it names rows, so it belongs against the table that
-                holds them, not four charts above it. "Read", not "done" — nothing is being
-                updated here, the user has simply looked. The probe behind it counts the same
-                trailing 7 days this page opens on (use-project-todos.ts), so the table under it
-                always holds the rows it is talking about. */}
-            <ErrorsPanel
-              errors={data.errors}
-              projectId={projectId}
-              filters={errorFilters}
-              {...(todo
-                ? {
-                    notice: {
-                      text: S.todo.unexpectedErrors(todo.count),
-                      dismissLabel: S.todo.markRead,
-                      onDismiss: () => dismissTodo(projectId, "errors", todo.signature),
-                    },
-                  }
-                : {})}
-            />
+            <ErrorsPanel errors={data.errors} projectId={projectId} filters={errorFilters} />
           </ChartCard>
         )}
 

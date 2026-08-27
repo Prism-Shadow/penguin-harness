@@ -2,138 +2,125 @@
  * "I have dealt with this" markers for the three dismissible badge trails, per Project.
  *
  * What is stored is not a hidden flag but the SIGNATURE the trail carried when it was
- * dismissed (`todo-badges.ts` explains why): the badge stays down only while what is waiting
- * is still exactly what the user waved away, and anything new raises it again.
+ * dismissed (`todo-badges.ts` explains why): the badge stays down while what is waiting is
+ * still contained in what the user waved away, and anything new raises it again.
  *
- * The server has no notion of a read receipt — there is no notifications table, and nothing in
- * `AgentSummary`, the models response or the errors page models "the user has seen this" — so
- * a server-side marker would need schema and API changes. This follows the precedent
- * `session-seen.ts` and `pinned-sessions.ts` already set for a per-user flag the API does not
- * model: persist it per Project in `localStorage` under the `penguin.…` key naming, with
- * injectable storage (vitest runs in Node, no localStorage), behind the same module store so
- * one write on a page re-renders the sidebar and the collapsed rail with it. The consequences
- * are the ones those files already accept and state — per BROWSER rather than per account, and
- * no cross-tab sync — and they are mild here: the cost of a lost marker is one red dot to clear
- * again, never lost work. The key is install-scoped in `install-scope.ts`: every signature
- * names Skills, models or errors belonging to one data root.
+ * **Per account, not per browser.** A marker says what one PERSON has already looked at, so
+ * `localStorage` would be wrong in both directions: on a shared workstation the owner's
+ * dismissal would put the dots down for a member who was never shown what was waiting, and the
+ * same user on a second device would keep clearing a dot they had already cleared. The markers
+ * therefore live in `ui_prefs` under `todoDismissed`, following the precedent
+ * `initialPasswordBannerDismissed` set (app-layout.tsx) — the store is free-form JSON, so this
+ * needs no schema or API change — and reloading any tab picks up what another one dismissed.
+ *
+ * `PUT /me/prefs` merges only at the TOP level, which is why the store holds every Project's
+ * markers and writes the whole map: sending one Project's slice would drop the others.
+ *
+ * Until that read lands the map is `null` and every trail reads as down. That is the same
+ * fail-soft direction the probes take (`use-project-todos.ts`) — an unreachable read leaves
+ * the gate closed and says nothing — and it also keeps a dot from appearing on load only to
+ * disappear a moment later.
  */
+import { useEffect } from "react";
 import { createStore } from "zustand/vanilla";
 import { useStore } from "zustand/react";
+import * as api from "../api/endpoints";
 import type { TodoKey } from "./todo-badges";
 
-/** Storage key of one Project's markers (sidebar key-naming convention, `penguin.sessionSeen.<projectId>` &c.). */
-export const todoDismissKey = (projectId: string): string => `penguin.todoDismissed.${projectId}`;
-
-/** Minimal storage interface (the subset of localStorage used here); tests inject an in-memory implementation. */
-export interface TodoDismissStorage {
-  getItem(key: string): string | null;
-  setItem(key: string, value: string): void;
-}
+/** The `ui_prefs` key the whole map is stored under. */
+export const TODO_PREFS_KEY = "todoDismissed";
 
 /** One Project's markers: the dismissed signature per trail, absent where nothing was dismissed. */
 export type TodoDismissals = Partial<Record<TodoKey, string>>;
+
+/** Every Project's markers, keyed by Project id — the shape held under {@link TODO_PREFS_KEY}. */
+export type TodoDismissMap = Record<string, TodoDismissals>;
 
 /** The three keys, listed once so parsing cannot drift from the union. */
 const TODO_KEYS: readonly TodoKey[] = ["skills", "models", "errors"];
 
 const EMPTY: TodoDismissals = {};
 
-function storageOf(injected?: TodoDismissStorage): TodoDismissStorage | null {
-  if (injected) return injected;
-  try {
-    // localStorage is resolved INSIDE the try, never as a default parameter: merely touching it
-    // throws a SecurityError when site data is blocked (or in a partitioned iframe).
-    return localStorage;
-  } catch {
-    return null; // No storage at all (privacy mode edge): a dismissal simply does not persist.
-  }
-}
-
 /**
- * Parses one Project's stored blob. Anything malformed degrades to "nothing dismissed", which
- * shows a dot the user can clear again — the failure direction that loses no information.
- * Non-string values are dropped per key rather than failing the whole record: a signature is
- * always a string, and one bad key must not resurrect the other two trails' dots.
+ * Reads the markers out of the free-form prefs blob. Anything malformed degrades to "nothing
+ * dismissed", which shows a dot the user can clear again — the failure direction that loses no
+ * information. Non-string values are dropped per key rather than failing the whole record: a
+ * signature is always a string, and one bad key must not resurrect the other two trails' dots.
  */
-export function parseTodoDismissals(raw: string | null): TodoDismissals {
-  if (raw === null) return EMPTY;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return EMPTY;
-  }
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return EMPTY;
-  const out: TodoDismissals = {};
-  for (const key of TODO_KEYS) {
-    const value = (parsed as Record<string, unknown>)[key];
-    if (typeof value === "string") out[key] = value;
+export function parseTodoDismissMap(raw: unknown): TodoDismissMap {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return {};
+  const out: TodoDismissMap = {};
+  for (const [projectId, value] of Object.entries(raw)) {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) continue;
+    const record: TodoDismissals = {};
+    for (const key of TODO_KEYS) {
+      const signature = (value as Record<string, unknown>)[key];
+      if (typeof signature === "string") record[key] = signature;
+    }
+    out[projectId] = record;
   }
   return out;
 }
 
-/** The markers after dismissing one trail at `signature` (pure; the caller persists the result). */
+/** The whole map after dismissing one Project's trail at `signature` (pure; the caller persists it). */
 export function withDismissal(
-  current: TodoDismissals,
+  map: TodoDismissMap,
+  projectId: string,
   key: TodoKey,
   signature: string,
-): TodoDismissals {
-  return { ...current, [key]: signature };
+): TodoDismissMap {
+  return { ...map, [projectId]: { ...(map[projectId] ?? EMPTY), [key]: signature } };
 }
 
-// —— Module-level store: storage key → markers, every subscriber re-renders on change ——
+// —— Module-level store: one read per browser session, every subscriber re-renders on change ——
 
-// The Map doubles as the lazy parse cache: read() seeds a missing key IN PLACE (no new
-// reference, no notification — it runs inside a render via useTodoDismissals's selector),
-// while write() swaps in a new Map so subscribers are notified. Same shape as session-seen.ts.
-const dismissStore = createStore<{ cache: Map<string, TodoDismissals> }>(() => ({
-  cache: new Map(),
-}));
+/** `null` until the stored markers arrive; every trail reads as down while it is. */
+const dismissStore = createStore<{ map: TodoDismissMap | null }>(() => ({ map: null }));
 
-function read(key: string, storage?: TodoDismissStorage): TodoDismissals {
-  const { cache } = dismissStore.getState();
-  const hit = cache.get(key);
-  if (hit) return hit;
-  const s = storageOf(storage);
-  let state = EMPTY;
-  if (s) {
-    try {
-      state = parseTodoDismissals(s.getItem(key));
-    } catch {
-      state = EMPTY;
-    }
-  }
-  cache.set(key, state);
-  return state;
+let hydrating = false;
+
+function hydrate(): void {
+  if (hydrating || dismissStore.getState().map !== null) return;
+  hydrating = true;
+  void api
+    .getPrefs()
+    .then(({ prefs }) => {
+      dismissStore.setState({ map: parseTodoDismissMap(prefs[TODO_PREFS_KEY]) });
+    })
+    .catch(() => {
+      // Left unhydrated on purpose, so a later mount retries: writing an empty map here would
+      // both raise every dot and let the next dismissal overwrite the Projects it never read.
+      hydrating = false;
+    });
 }
 
-function write(key: string, state: TodoDismissals, storage?: TodoDismissStorage): void {
-  const s = storageOf(storage);
-  if (s) {
-    try {
-      s.setItem(key, JSON.stringify(state));
-    } catch {
-      // Quota / private mode: the in-memory copy still serves this tab.
-    }
-  }
-  dismissStore.setState((prev) => ({ cache: new Map(prev.cache).set(key, state) }));
-}
-
-/** Reactive read of one Project's markers (the EMPTY constant when no Project is selected). */
-export function useTodoDismissals(projectId: string | null): TodoDismissals {
-  return useStore(dismissStore, () => (projectId ? read(todoDismissKey(projectId)) : EMPTY));
+/**
+ * Reactive read of one Project's markers, or `null` while they are unknown.
+ *
+ * `eager` marks the single owner that actually reads them — `AppLayout`, through
+ * `use-update-badges.ts`, the same owner that activates the probes. Every other anchor passes
+ * false and is pushed the result when it lands.
+ */
+export function useTodoDismissals(projectId: string | null, eager = false): TodoDismissals | null {
+  useEffect(() => {
+    if (eager) hydrate();
+  }, [eager]);
+  return useStore(dismissStore, (s) =>
+    s.map === null || projectId === null ? null : (s.map[projectId] ?? EMPTY),
+  );
 }
 
 /** Dismisses one trail at the signature it is showing right now, and persists it (best-effort). */
-export function dismissTodo(
-  projectId: string | null,
-  key: TodoKey,
-  signature: string,
-  storage?: TodoDismissStorage,
-): void {
+export function dismissTodo(projectId: string | null, key: TodoKey, signature: string): void {
   if (projectId === null) return;
-  const storeKey = todoDismissKey(projectId);
-  const current = read(storeKey, storage);
-  if (current[key] === signature) return; // No-op: skip the write and the re-render.
-  write(storeKey, withDismissal(current, key, signature), storage);
+  const { map } = dismissStore.getState();
+  // No markers means no dot was raised, so there is nothing to wave away — and writing now
+  // would persist a map missing every Project this session never read.
+  if (map === null) return;
+  if (map[projectId]?.[key] === signature) return; // No-op: skip the write and the re-render.
+  const next = withDismissal(map, projectId, key, signature);
+  dismissStore.setState({ map: next });
+  // Fire-and-forget, the initial-password banner's pattern: a lost write only costs
+  // persistence, the dot is already down in this tab.
+  void api.putPrefs({ [TODO_PREFS_KEY]: next }).catch(() => undefined);
 }

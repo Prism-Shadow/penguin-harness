@@ -115,6 +115,7 @@ import { useUpdateBadges } from "../../lib/use-update-badges";
 import { dismissTodo } from "../../lib/todo-dismissals";
 import { refreshProjectTodos } from "../../lib/use-project-todos";
 import { UpdateDot } from "../../components/ui/update-dot";
+import { TodoNotice } from "../../components/ui/todo-notice";
 import { buildImportedRows } from "./group-import";
 import { tpsTone, ttftTone } from "./speed-test";
 import type { SpeedResult, SpeedTone } from "./speed-test";
@@ -884,67 +885,66 @@ export function ModelsPage() {
   return (
     <div className="h-full overflow-y-auto p-4 md:p-6">
       <div className="mx-auto max-w-5xl">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-          <h1 className="flex items-center gap-1.5 text-xl font-semibold">
-            {S.models.title}
-            {!isOwner && <InfoPopover label={S.models.title}>{S.models.readOnlyHint}</InfoPopover>}
-          </h1>
-          {/* The header holds search plus the owner-only "sync presets" action (add-model
-              entry points live in each group header); on narrow screens (flex-wrap wraps it
-              to its own line) the search box shrinks flexibly, fixed width at >=sm. */}
-          <div className="flex min-w-0 max-w-full grow items-center gap-2 sm:grow-0">
-            <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
-              <Input
-                size="sm"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder={S.models.searchPlaceholder}
-              />
+        <div className="mb-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h1 className="flex items-center gap-1.5 text-xl font-semibold">
+              {S.models.title}
+              {!isOwner && (
+                <InfoPopover label={S.models.title}>{S.models.readOnlyHint}</InfoPopover>
+              )}
+            </h1>
+            {/* The header holds search plus the owner-only "sync presets" action (add-model
+                entry points live in each group header); on narrow screens (flex-wrap wraps it
+                to its own line) the search box shrinks flexibly, fixed width at >=sm. */}
+            <div className="flex min-w-0 max-w-full grow items-center gap-2 sm:grow-0">
+              <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
+                <Input
+                  size="sm"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder={S.models.searchPlaceholder}
+                />
+              </div>
+              {/* The dot stays on the control that ACTS, not on the notice below: it marks the
+                  button the trail ends at, and a mark that moved off it would point at nothing.
+                  Owner-only, like the button — the gate never raises this for a member. The dot
+                  straddles the button's top-right corner (update-dot.tsx's rule for a button)
+                  and is decorative: the sr-only sentence folds what is waiting into the button's
+                  accessible name, in the wording the trail carried down. */}
+              {isOwner && (
+                <Button
+                  size="sm"
+                  className="relative"
+                  onClick={() => void syncPresets()}
+                  disabled={busy || rows === null}
+                  title={
+                    todo ? `${S.models.syncCatalogHint} · ${syncNote}` : S.models.syncCatalogHint
+                  }
+                >
+                  {S.models.syncCatalog}
+                  {todo && (
+                    <>
+                      <UpdateDot
+                        size="inline"
+                        position="right-0.5 top-0.5 -translate-y-1/2 translate-x-1/2"
+                      />
+                      <span className="sr-only"> · {syncNote}</span>
+                    </>
+                  )}
+                </Button>
+              )}
             </div>
-            {/* Last stop on the Models trail. The dot rides the control that acts on it rather
-                than a notice line of its own: this header already holds the button, and what is
-                waiting fits in its tooltip — a whole row above the table would spend a band of
-                the page restating a control that is right here. Owner-only, like the button:
-                the gate never raises this for a member, so neither mark can appear without one.
-                The dot straddles the button's top-right corner (update-dot.tsx's rule for a
-                button) and is decorative — the sr-only sentence folds what is waiting into the
-                button's accessible name, in the wording the trail carried down. */}
-            {isOwner && (
-              <Button
-                size="sm"
-                className="relative"
-                onClick={() => void syncPresets()}
-                disabled={busy || rows === null}
-                title={
-                  todo ? `${S.models.syncCatalogHint} · ${syncNote}` : S.models.syncCatalogHint
-                }
-              >
-                {S.models.syncCatalog}
-                {todo && (
-                  <>
-                    <UpdateDot
-                      size="inline"
-                      position="right-0.5 top-0.5 -translate-y-1/2 translate-x-1/2"
-                    />
-                    <span className="sr-only"> · {syncNote}</span>
-                  </>
-                )}
-              </Button>
-            )}
-            {/* The way down for someone who has looked and decided to stay off the catalog. It
-                sits in this row rather than under it, and only while the dot is up. */}
-            {isOwner && todo && (
-              <Button
-                size="sm"
-                variant="ghost"
-                className="shrink-0 text-gray-500 dark:text-gray-400"
-                aria-label={`${S.todo.dismiss} · ${syncNote}`}
-                onClick={() => dismissTodo(projectId, "models", todo.signature)}
-              >
-                {S.todo.dismiss}
-              </Button>
-            )}
           </div>
+          {/* Last stop on the Models trail, in the one shape all three dismissible trails use:
+              directly under the title, naming what is waiting and carrying the way down for
+              someone who has looked and decided to stay off the catalog. */}
+          {isOwner && todo && (
+            <TodoNotice
+              text={syncNote}
+              dismissLabel={S.todo.dismiss}
+              onDismiss={() => dismissTodo(projectId, "models", todo.signature)}
+            />
+          )}
         </div>
 
         {rows === null ? (

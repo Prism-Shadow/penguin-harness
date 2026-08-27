@@ -5,10 +5,11 @@
  *
  * One owner activates the fetches. `AppLayout` calls this with `eager` on, which is what makes
  * a badge appear on a fresh load at all — the anchors below it stay passive and read the shared
- * caches (`use-version-info.ts`, `use-desktop-update.ts`, `use-project-todos.ts`), which push
- * every consumer when a result lands. All three are module level, so "eager" still costs one
- * request per browser session per Project, and all three are fail-soft: an unreachable check
- * leaves every gate closed and says nothing.
+ * caches (`use-version-info.ts`, `use-desktop-update.ts`, `use-project-todos.ts`, and the
+ * dismissal markers in `todo-dismissals.ts`), which push every consumer when a result lands.
+ * All of them are module level, so "eager" still costs one request per browser session per
+ * Project, and all of them are fail-soft: an unreachable check leaves every gate closed and
+ * says nothing.
  *
  * The gates themselves are pure and unit tested in `update-badges.ts` and `todo-badges.ts`;
  * this file only wires them to the stores and turns each into localized copy. Two rules it
@@ -66,7 +67,7 @@ export function useUpdateBadges(eager = false): UpdateBadges {
     if (eager && clientRowOffered) refreshDesktopUpdate();
   }, [eager, clientRowOffered]);
   const probes = useProjectTodos(projectId, eager, ownsProject);
-  const dismissed = useTodoDismissals(projectId);
+  const dismissed = useTodoDismissals(projectId, eager);
 
   const software = softwareUpdate({
     releaseRowOffered: !desktopMode,
@@ -75,17 +76,21 @@ export function useUpdateBadges(eager = false): UpdateBadges {
     clientStatus: status,
   });
   const kernel = anyKernelOutdated(agents);
-  const skills = raisedTodo(skillUpdateTodo(agents), dismissed.skills ?? null);
   // Memoized on the cached response's identity: this walks the whole built-in catalog, and the
   // hook re-runs on every render of the pages that read it (a keystroke in the model search box).
   const presetTodo = useMemo(
     () => (probes.models === null ? null : presetUpdateTodo(catalogDelta(probes.models.models))),
     [probes.models],
   );
-  const models = raisedTodo(presetTodo, dismissed.models ?? null);
-  const errors = raisedTodo(
+  // Markers still in flight (`null`) close every gate: raising a dot and putting it down a
+  // moment later, on a trail the user had already dealt with, is worse than a late dot.
+  const raise = (todo: Todo | null, key: TodoKey): Todo | null =>
+    dismissed === null ? null : raisedTodo(todo, dismissed[key] ?? null);
+  const skills = raise(skillUpdateTodo(agents), "skills");
+  const models = raise(presetTodo, "models");
+  const errors = raise(
     probes.errors === null ? null : unexpectedErrorTodo(probes.errors),
-    dismissed.errors ?? null,
+    "errors",
   );
 
   // Every raised source, in the order the trails appear in the nav. `badgeNote` reads the list;

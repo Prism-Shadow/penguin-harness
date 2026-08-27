@@ -54,7 +54,8 @@ import { Button } from "../../components/ui/button";
 import { Chevron } from "../../components/ui/chevron";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { Modal } from "../../components/ui/modal";
-import { TodoNotice, UpdateDot } from "../../components/ui/update-dot";
+import { TodoNotice } from "../../components/ui/todo-notice";
+import { UpdateDot } from "../../components/ui/update-dot";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Skeleton, SkeletonCard } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
@@ -276,13 +277,11 @@ export function SkillsPage() {
             wording, plus the way to clear it for someone who has looked and decided to stay on
             the installed copies. The per-card update buttons below are the action itself. */}
         {todo && (
-          <div className="mt-3">
-            <TodoNotice
-              text={S.todo.skillUpdates(todo.count)}
-              dismissLabel={S.todo.dismiss}
-              onDismiss={() => dismissTodo(projectId, "skills", todo.signature)}
-            />
-          </div>
+          <TodoNotice
+            text={S.todo.skillUpdates(todo.count)}
+            dismissLabel={S.todo.dismiss}
+            onDismiss={() => dismissTodo(projectId, "skills", todo.signature)}
+          />
         )}
 
         {error ? (

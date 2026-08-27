@@ -16,7 +16,6 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { Badge } from "../../components/ui/badge";
-import { TodoNotice } from "../../components/ui/update-dot";
 import { Empty } from "./usage-charts";
 import { toneInk } from "../../lib/tone";
 
@@ -90,16 +89,9 @@ export function ErrorsPanel({
   errors,
   projectId,
   filters,
-  notice,
 }: {
   errors: UsageErrors;
   projectId: string;
-  /**
-   * The Cost Center to-do badge's line, when one is raised — passed in rather than derived here:
-   * what raises it, what its dismissal is stamped against and which range it counted are the
-   * page's business (see lib/todo-badges.ts), and this panel only owns where it sits.
-   */
-  notice?: { text: string; dismissLabel: string; onDismiss: () => void };
   /**
    * The dashboard's own date/agent filter — a page must never widen what the summary counted.
    * Memoize it at the call site: the fetch effect depends on the object's identity.
@@ -193,20 +185,6 @@ export function ErrorsPanel({
           />
         )}
       </div>
-
-      {/* The Cost Center badge's own line, when one is raised: what is waiting and the way to put
-          it down, directly over the rows it counts. Below the stats rather than above them — the
-          stats line already answers "how many", and this one answers "and what do I do about it",
-          which is the question the reader carries into the detail underneath. */}
-      {notice && (
-        <div className="mt-2.5">
-          <TodoNotice
-            text={notice.text}
-            dismissLabel={notice.dismissLabel}
-            onDismiss={notice.onDismiss}
-          />
-        </div>
-      )}
 
       {/* Recent-errors table */}
       {items.length === 0 ? (

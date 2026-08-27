@@ -22,7 +22,9 @@
  * known", clear the shared promise so a later activation retries, and surface nothing: an
  * unreachable probe leaves the gate closed and says nothing, exactly like the update check.
  * `refreshProjectTodos` is the acting user: after a sync or a Skill update the answer has
- * changed, and the badge must not wait for a reload to notice.
+ * changed, and the badge must not wait for a reload to notice. It bumps a per-Project
+ * generation so an in-flight probe from before the action cannot land on top of the answer
+ * from after it.
  */
 import { useEffect, useState } from "react";
 import type { ModelsResponse, UsageErrorsPage } from "@prismshadow/penguin-server/api";
@@ -50,6 +52,14 @@ const errorsPromise = new Map<string, Promise<UsageErrorsPage>>();
  * keystroke in the model page's search box. Dropped whenever either half moves.
  */
 const snapshotCache = new Map<string, ProjectTodoData>();
+/**
+ * Refresh generation per Project, bumped by {@link refreshProjectTodos}. A fetch captures the
+ * generation it started under and drops its result if a refresh has happened since: without
+ * that, a first probe resolving after the post-sync one would reinstate the pre-sync answer and
+ * raise a dot over a button that then reports "already up to date" — the case this whole module
+ * exists to prevent.
+ */
+const generation = new Map<string, number>();
 
 /**
  * Mounted hooks subscribe here so any refresh of the module cache reaches every consumer at
@@ -77,31 +87,46 @@ function snapshot(projectId: string | null): ProjectTodoData {
   return composed;
 }
 
+/** Whether a fetch started at `at` still owns its Project's answer (see {@link generation}). */
+function current(projectId: string, at: number): boolean {
+  return (generation.get(projectId) ?? 0) === at;
+}
+
 function fetchModels(projectId: string): void {
   if (modelsPromise.has(projectId)) return;
+  const at = generation.get(projectId) ?? 0;
   const promise = api.getModels(projectId).then((res) => {
+    if (!current(projectId, at)) return res;
     modelsCache.set(projectId, res);
     snapshotCache.delete(projectId);
     notifyAll();
     return res;
   });
   modelsPromise.set(projectId, promise);
-  promise.catch(() => modelsPromise.delete(projectId));
+  // Guarded too: a superseded fetch's rejection would otherwise clear the promise the refresh
+  // put in its place, and the next mount would fetch a third time.
+  promise.catch(() => {
+    if (current(projectId, at)) modelsPromise.delete(projectId);
+  });
 }
 
 function fetchErrors(projectId: string): void {
   if (errorsPromise.has(projectId)) return;
+  const at = generation.get(projectId) ?? 0;
   const range = presetRange(ERROR_RANGE_PRESET, new Date());
   const promise = api
     .getUsageErrors(projectId, { offset: 0, limit: 1, kind: "unexpected", ...range })
     .then((res) => {
+      if (!current(projectId, at)) return res;
       errorsCache.set(projectId, res);
       snapshotCache.delete(projectId);
       notifyAll();
       return res;
     });
   errorsPromise.set(projectId, promise);
-  promise.catch(() => errorsPromise.delete(projectId));
+  promise.catch(() => {
+    if (current(projectId, at)) errorsPromise.delete(projectId);
+  });
 }
 
 /**
@@ -149,6 +174,7 @@ export function refreshProjectTodos(projectId: string | null): void {
   if (projectId === null) return;
   const hadModels = modelsPromise.has(projectId);
   const hadErrors = errorsPromise.has(projectId);
+  generation.set(projectId, (generation.get(projectId) ?? 0) + 1);
   modelsPromise.delete(projectId);
   errorsPromise.delete(projectId);
   modelsCache.delete(projectId);

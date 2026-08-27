@@ -56,7 +56,6 @@ function populated(): ReturnType<typeof memStorage> {
     "penguin.pinnedSessions.default_project": '["session-1"]',
     "penguin.sessionOrder.default_project.workspace": '["session-1"]',
     "penguin.sessionSeen.default_project": '{"session-1":"2026-08-26T00:00:00Z"}',
-    "penguin.todoDismissed.default_project": '{"errors":"2026-08-26T00:00:00.000Z"}',
     "penguin.groupOrder.default_project.workspace": '["/srv/app"]',
     "penguin.sidebarCollapsedGroups.default_project": '["/srv/app"]',
     "penguin.sidebarPinnedGroups.default_project": '["/srv/app"]',

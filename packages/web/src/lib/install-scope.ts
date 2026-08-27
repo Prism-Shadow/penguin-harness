@@ -201,12 +201,6 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "family",
-    key: "penguin.todoDismissed.",
-    scope: "install",
-    why: "Dismissed to-do signatures naming this root's Skills, preset models and error timestamps.",
-  },
-  {
-    kind: "family",
     key: "penguin.groupOrder.",
     scope: "install",
     why: "Manual group order — group keys are Agent ids and Workspace paths.",

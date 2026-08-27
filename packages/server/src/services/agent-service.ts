@@ -37,6 +37,28 @@ import type { SkillUpdateRef } from "../api/types.js";
 import { resolveLibrarySkills } from "./skill-library.js";
 import { resolveDirectorySkills } from "./directory-skills.js";
 
+/**
+ * How much of a SKILL.md is read to answer "which version is installed" (see `installedSkills`).
+ * Generous against the largest frontmatter block the library ships (under 1 KB) and still a
+ * bounded read of a file whose body can be tens of kilobytes.
+ */
+const SKILL_HEAD_BYTES = 4096;
+
+/**
+ * The first `bytes` of a file as UTF-8. A truncation can split a multi-byte character at the
+ * tail, which is harmless for every caller here: what is parsed out of the head is ASCII.
+ */
+async function readHead(file: string, bytes: number): Promise<string> {
+  const handle = await fs.open(file, "r");
+  try {
+    const buffer = Buffer.alloc(bytes);
+    const { bytesRead } = await handle.read(buffer, 0, bytes, 0);
+    return buffer.toString("utf8", 0, bytesRead);
+  } finally {
+    await handle.close();
+  }
+}
+
 export interface AgentListItem {
   agentId: string;
   name?: string;
@@ -154,9 +176,17 @@ export class AgentService {
    * (directories containing a SKILL.md) and which of them the library has moved past.
    *
    * The two are read together because the second needs what the first was already opening:
-   * counting only asked whether SKILL.md exists, and the version lives in its frontmatter, so
-   * the `access` becomes a `readFile` of a file measured in kilobytes and nothing else changes
-   * shape. Splitting them into two passes would walk the same directories twice.
+   * counting only asked whether SKILL.md exists, and the version lives in its frontmatter.
+   * Splitting them into two passes would walk the same directories twice.
+   *
+   * Only the HEAD of each SKILL.md is read, and that bound is load-bearing rather than a
+   * micro-optimization: a preinstalled library is ~180 KB of SKILL.md across seventeen files
+   * per Agent, so a Project of ten Agents would move ~2 MB through every `GET /agents` — and
+   * the Skills page reloads that list after each update. The frontmatter block is at the head
+   * by definition (the parser's regex is anchored there) and the largest one in the library is
+   * under 1 KB, so {@link SKILL_HEAD_BYTES} covers it many times over; a block that somehow
+   * overran it would be truncated, fail to parse, and read as version 1 — the same fallback an
+   * unparseable file already takes.
    *
    * The directory name is the Skill's identity (core's `listInstalledSkills` says so, and
    * install/uninstall address by it), so that — not the frontmatter's `name` — is what the
@@ -183,8 +213,8 @@ export class AgentService {
         .filter((d) => d.isDirectory() && !d.name.startsWith("."))
         .map(async (d) => {
           try {
-            const raw = await fs.readFile(path.join(base, d.name, "SKILL.md"), "utf8");
-            return { name: d.name, version: parseSkillFrontmatter(raw)?.version ?? 1 };
+            const head = await readHead(path.join(base, d.name, "SKILL.md"), SKILL_HEAD_BYTES);
+            return { name: d.name, version: parseSkillFrontmatter(head)?.version ?? 1 };
           } catch {
             return null;
           }

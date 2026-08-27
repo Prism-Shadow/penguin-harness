@@ -270,6 +270,14 @@ export interface UiPrefs {
   /** The initial-password notice banner (app layout) was permanently dismissed by the user. */
   initialPasswordBannerDismissed?: boolean;
   /**
+   * "I have dealt with this" markers for the dismissible to-do badges, per Project id and then
+   * per trail (`skills` / `models` / `errors`). Each value is the SIGNATURE of what was waved
+   * away rather than a hidden flag, so anything new raises the dot again (web's
+   * `lib/todo-badges.ts`). Replaced whole on every write, like `draftShortcuts`: the merge is
+   * shallow, so this whole map is one field.
+   */
+  todoDismissed?: Record<string, Record<string, string>>;
+  /**
    * The draft screen's user-defined shortcuts, in display order. Replaced whole on every write
    * (the merge is shallow, so the array is one field like any other) and bounded on write by
    * services/draft-shortcuts.ts — count, title length and prompt length — because this is the one

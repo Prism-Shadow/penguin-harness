@@ -9,6 +9,10 @@
  * says is "there is something new further down this path", a category `tone.ts` explicitly
  * keeps out of scope. So the badge colour lives here instead, written once, and every dot on
  * an update trail renders through this component rather than spelling a palette class inline.
+ * The carve-out is about the MARK. The block one of these dots sits inside on a page
+ * (`todo-notice.tsx`) is an ordinary `toneStrip.attention` notice: a bordered strip with a
+ * ground of its own is a shape `tone.ts` does own, and what it says there — unfinished, waiting
+ * on the user — is one of its five meanings.
  *
  * Red, because that is what a notification badge is everywhere else a user has seen one, and
  * `red-400`, the pale rung, so the mark reads as news rather than as an alarm. WCAG 2.x contrast
@@ -30,8 +34,6 @@
  *
  * Layout-neutral: absolutely positioned, so a caller only has to be `relative`, and no row
  * changes height for carrying one. `pointer-events-none` keeps it out of its anchor's hit area.
- * (`TodoNotice` at the bottom is the one mark here that is NOT positioned: it is a line of page
- * content, and it lives in this module so every red on an update trail stays written once.)
  *
  * Anchoring rule, owner-specified: a dot marks its control's **full box** — the whole row, tab or
  * button — never the label glyphs, where it would track the text's width, float over whatever
@@ -66,6 +68,13 @@ const DOT_SIZE = {
 } as const;
 
 export type UpdateDotSize = keyof typeof DOT_SIZE;
+
+/**
+ * The dot's fill and inline size without the positioning — for the one mark on an update trail
+ * that sits in normal flow rather than over an anchor (`todo-notice.tsx`). Exported so the red
+ * stays written once, here, for the reason the header gives.
+ */
+export const UPDATE_DOT_INLINE = `rounded-full bg-red-400 ${DOT_SIZE.inline}`;
 
 export function UpdateDot({
   size = "chrome",
@@ -121,50 +130,5 @@ export function UpdatePill({ onClick, children }: { onClick: () => void; childre
     >
       {children}
     </button>
-  );
-}
-
-/**
- * The last stop on each of the three DISMISSIBLE trails: a quiet line under the page title
- * saying what is waiting, plus the control that clears the dot.
- *
- * It exists because those trails, unlike the software and kernel ones, can end in a decision
- * NOT to act — a model table kept off the catalog, an error read and understood — and a dot
- * with no way down is a dot that stops meaning anything. What the trail was already saying in
- * every tooltip above is repeated here verbatim, so arriving confirms rather than re-explains.
- *
- * Deliberately not a tinted strip: `toneStrip` is for a notice that owns its row by being a
- * warning, and nothing here has gone wrong. The only colour is the same 6px dot the user
- * followed to get here, which makes the line read as "this is that dot" and keeps the page's
- * chrome flat. It carries no margin of its own — three pages with three different headers place
- * it, and a built-in one would be wrong on two of them.
- *
- * The dot is decorative: the sentence beside it is the carrier, and the button folds that
- * sentence into its own accessible name, keeping its visible label as the prefix.
- */
-export function TodoNotice({
-  text,
-  dismissLabel,
-  onDismiss,
-}: {
-  /** What is waiting — the trail's own sentence, unchanged from the dot's tooltip. */
-  text: string;
-  /** The clearing action's wording; "mark as read" where nothing is being updated. */
-  dismissLabel: string;
-  onDismiss: () => void;
-}) {
-  return (
-    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-sm">
-      <span aria-hidden className={`shrink-0 rounded-full bg-red-400 ${DOT_SIZE.inline}`} />
-      <span className="min-w-0 text-gray-700 dark:text-gray-300">{text}</span>
-      <button
-        type="button"
-        onClick={onDismiss}
-        aria-label={`${dismissLabel} · ${text}`}
-        className="shrink-0 rounded-md px-1.5 py-0.5 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-      >
-        {dismissLabel}
-      </button>
-    </div>
   );
 }
