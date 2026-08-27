@@ -97,6 +97,7 @@ import type {
   SessionResponse,
   SessionProcessesResponse,
   ExtensionIndexResponse,
+  ExtensionReadmeResponse,
   SessionsResponse,
   SessionTracesResponse,
   SkillArchiveInstallRequest,
@@ -1083,6 +1084,9 @@ export const installAgentPlugins = (projectId: string, agentId: string, names: s
 
 /** Extension index (available to any logged-in user): the merged index of every configured registry. */
 export const getExtensionIndex = () => apiFetch<ExtensionIndexResponse>("/api/extensions");
+
+export const getExtensionReadme = (name: string) =>
+  apiFetch<ExtensionReadmeResponse>(`/api/extensions/readme?name=${encodeURIComponent(name)}`);
 
 export const getAgentSkills = (projectId: string, agentId: string) =>
   apiFetch<AgentSkillsResponse>(
