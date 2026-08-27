@@ -7,7 +7,10 @@
  * reads, and the connector's long-poll loop through a fake Bot API transport — offset
  * advancement, the connect-time backlog drain, inbound routing as plain user input,
  * an inbound photo (largest variant, caption as the message text, a failed download
- * degrading to a notice), per-message mirroring with one reply thread per run in groups,
+ * degrading to a notice), an inbound `document` (the one media field the file seam takes —
+ * scratchpad attachment, caption as the message text, and Telegram's own 20MB bot download
+ * ceiling reported as a size refusal rather than an unexplained failure),
+ * per-message mirroring with one reply thread per run in groups,
  * mentioned files leaving as a photo or a document, 4096-safe chunking,
  * non-text notices, poll-failure status flips, and the conflict path a second poller
  * produces (the 409 backoff, the connect-time webhook clear, and the actionable text the
@@ -16,7 +19,13 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { approvalDecision, assistantText, toolCall } from "@prismshadow/penguin-core";
+import {
+  approvalDecision,
+  assistantText,
+  matchAttachedFileLine,
+  scratchpadDir,
+  toolCall,
+} from "@prismshadow/penguin-core";
 import type { ApproveFn, OmniMessage } from "@prismshadow/penguin-core";
 import type {
   FeishuBindingResponse,
@@ -29,11 +38,13 @@ import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import { INLINE_IMAGE_MAX_BYTES } from "../src/services/attachment-limits.js";
 import {
   MESSAGING_APPROVAL_NOTICE,
-  MESSAGING_TEXT_ONLY_NOTICE,
+  MESSAGING_UNSUPPORTED_NOTICE,
   MESSAGING_TEST_MESSAGE,
   messagingImageFailedNotice,
+  messagingInboundFileFailedNotice,
+  messagingInboundFileTooLargeNotice,
 } from "../src/runtime/messaging/bridge.js";
-import { collectUnderCap } from "../src/runtime/messaging/media.js";
+import { MessagingMediaTooLargeError, collectUnderCap } from "../src/runtime/messaging/media.js";
 import type {
   TelegramBotClient,
   TelegramBotUser,
@@ -45,6 +56,7 @@ import type {
   TelegramWebhookInfo,
 } from "../src/runtime/messaging/telegram-api.js";
 import {
+  TELEGRAM_MAX_DOWNLOAD_BYTES,
   TelegramApiError,
   createTelegramTransport,
 } from "../src/runtime/messaging/telegram-api.js";
@@ -94,6 +106,7 @@ type Sent = SentMessage | SentMedia;
 interface FileFetch {
   fileId: string;
   maxBytes: number;
+  what?: string;
 }
 
 /** The bytes as a stream, so the fake reads them through the real capped reader. */
@@ -189,10 +202,20 @@ class FakeBotClient implements TelegramBotClient {
   async getFileBytes(args: FileFetch): Promise<TelegramFileBytes> {
     this.fileFetches.push(args);
     if (this.t.failFileFetch !== null) throw new Error(this.t.failFileFetch);
+    // The declared size refuses an oversized transfer before it starts, exactly as the real
+    // transport does off `getFile`'s answer — which is what makes a document past
+    // Telegram's own download ceiling a SIZE refusal rather than an unexplained failure.
+    if (this.t.declaredFileSize !== null && this.t.declaredFileSize > args.maxBytes) {
+      throw new MessagingMediaTooLargeError(args.what ?? "The file", args.maxBytes);
+    }
     // The cap is enforced through the REAL machinery the transport uses, not a hand-written
     // imitation of it (see the Feishu suite's note: an imitation is free to disagree with
     // production about which failure this is).
-    const data = await collectUnderCap(oneChunk(this.t.fileBytes), args.maxBytes, "The image");
+    const data = await collectUnderCap(
+      oneChunk(this.t.fileBytes),
+      args.maxBytes,
+      args.what ?? "The file",
+    );
     return { data, filePath: this.t.filePath };
   }
 
@@ -265,6 +288,8 @@ class FakeTelegramTransport {
   failMediaSend: string | null = null;
   /** What a file download resolves to; oversize bytes exercise the cap. */
   fileBytes: Buffer = PHOTO_BYTES;
+  /** `getFile`'s claimed size, refused before the transfer starts; null leaves the claim absent. */
+  declaredFileSize: number | null = null;
   /** The path the Bot API served the bytes from — its extension names the type. */
   filePath = "photos/file_7.jpg";
   /** The webhook registered on the bot; the empty string means none, as the Bot API encodes it. */
@@ -342,6 +367,9 @@ class FakeFeishuSdk implements FeishuSdk {
       async fetchMessageImage(): Promise<never> {
         throw new Error("the feishu side of these tests never carries an image");
       },
+      async fetchMessageFile(): Promise<never> {
+        throw new Error("the feishu side of these tests never carries a file");
+      },
       async sendImage() {},
       async sendFile() {},
     };
@@ -379,6 +407,29 @@ function privatePhoto(caption?: string, messageId = 1): TelegramUpdate["message"
     from: { first_name: "Ada" },
   };
 }
+
+/**
+ * A private-chat document message — a file the sender chose to send AS a file, which is the
+ * one media field the connector takes into the file seam. `caption` carries whatever the
+ * user typed with it, exactly as a photo's does.
+ */
+function privateDocument(args: {
+  messageId: number;
+  fileName?: string | null;
+  caption?: string;
+}): TelegramUpdate["message"] {
+  const fileName = args.fileName === undefined ? "report.pdf" : args.fileName;
+  return {
+    message_id: args.messageId,
+    chat: { id: 42424242, type: "private" },
+    document: { file_id: "doc-1", ...(fileName === null ? {} : { file_name: fileName }) },
+    ...(args.caption !== undefined ? { caption: args.caption } : {}),
+    from: { first_name: "Ada" },
+  };
+}
+
+/** An inbound document's contents — text, so a failed write shows up as the wrong bytes on disk. */
+const DOCUMENT_BYTES = Buffer.from("quarterly revenue: 42\n", "utf8");
 
 /**
  * One input part as the fake Sessions record it. Deliberately a loose shape rather than
@@ -1341,7 +1392,7 @@ describe("telegram binding routes and connector loop", () => {
       from: { first_name: "Ada" },
     });
     await waitFor(() => fake.allSends().length > 0);
-    expect(fake.allTexts()[0]!.text).toBe(MESSAGING_TEXT_ONLY_NOTICE);
+    expect(fake.allTexts()[0]!.text).toBe(MESSAGING_UNSUPPORTED_NOTICE);
     expect(runs).toHaveLength(0);
   });
 
@@ -1357,31 +1408,11 @@ describe("telegram binding routes and connector loop", () => {
     await waitFor(() => fake.allSends().length > 0);
     expect(fake.allSends()).toContainEqual({
       chatId: "42424242",
-      text: MESSAGING_TEXT_ONLY_NOTICE,
+      text: MESSAGING_UNSUPPORTED_NOTICE,
     });
     expect(runs).toHaveLength(0);
     // Even a rejected type teaches the bridge where the user is.
     expect(t.deps.messagingRepo.find(SID, "telegram")?.lastChatId).toBe("42424242");
-  });
-
-  it("a captioned document still gets the not-supported notice and starts no task", async () => {
-    await bindEnabled(SID);
-    // The common shape of this: a picture dragged into Telegram uncompressed arrives as a
-    // `document`, caption and all, with no `photo` array. The caption is not this message
-    // on its own — the file it describes is never downloaded — so falling back to it would
-    // run the model on "summarize this for me" with nothing attached.
-    fake.push({
-      message_id: 22,
-      chat: { id: 42424242, type: "private" },
-      caption: "summarize this for me",
-      from: { first_name: "Ada" },
-    });
-    await waitFor(() => fake.allSends().length > 0);
-    expect(fake.allSends()).toContainEqual({
-      chatId: "42424242",
-      text: MESSAGING_TEXT_ONLY_NOTICE,
-    });
-    expect(runs).toHaveLength(0);
   });
 
   it("an inbound photo becomes an image_url part, downloaded at its largest size", async () => {
@@ -1396,7 +1427,7 @@ describe("telegram binding routes and connector loop", () => {
     // The largest variant, not the thumbnails the Bot API lists first, and under the
     // shared inline-image ceiling (which is also Telegram's own bot download ceiling).
     expect(fake.allFileFetches()).toEqual([
-      { fileId: "full-1280", maxBytes: INLINE_IMAGE_MAX_BYTES },
+      { fileId: "full-1280", maxBytes: INLINE_IMAGE_MAX_BYTES, what: "The image" },
     ]);
   });
 
@@ -1441,6 +1472,137 @@ describe("telegram binding routes and connector loop", () => {
     // The caption does NOT run on its own: a question about a picture the model never
     // received would be answered confidently about nothing.
     expect(runs).toHaveLength(0);
+  });
+
+  // —— Inbound documents ————————————————————————————————————————————————————
+  // `document` is the one media field a Telegram update carries that the file seam takes:
+  // a file the sender chose to send AS a file, and the only one that carries their own
+  // name. It reaches the Agent the way a composer upload does — written into the Session
+  // scratchpad, named on the message text as an `[attached file: <path>]` line.
+
+  it("an inbound document lands in the Session scratchpad and rides as a path line", async () => {
+    await bindEnabled(SID);
+    fake.fileBytes = DOCUMENT_BYTES;
+    fake.push(privateDocument({ messageId: 41 }));
+    await waitFor(() => runs.length === 1);
+    // No caption: the file is the whole message, so the path line is the whole text.
+    expect(runs[0]).toHaveLength(1);
+    expect(runs[0]![0]!.type).toBe("text");
+    const written = matchAttachedFileLine(runs[0]![0]!.text!.trim());
+    expect(written).not.toBeNull();
+    expect(path.basename(written!)).toBe("report.pdf");
+    expect(path.dirname(written!)).toBe(
+      path.join(scratchpadDir(t.root, projectId, "default_agent"), SID),
+    );
+    expect((await fs.readFile(written!)).equals(DOCUMENT_BYTES)).toBe(true);
+    // Downloaded under Telegram's own 20MB bot ceiling, which is tighter than the server's
+    // per-file attachment cap and therefore the number that bites.
+    expect(fake.allFileFetches()).toEqual([
+      { fileId: "doc-1", maxBytes: TELEGRAM_MAX_DOWNLOAD_BYTES, what: "The file" },
+    ]);
+  });
+
+  it("a document's caption rides along as the message's text, ahead of its path line", async () => {
+    await bindEnabled(SID);
+    fake.push(privateDocument({ messageId: 42, caption: "summarize this for me" }));
+    await waitFor(() => runs.length === 1);
+    const text = runs[0]![0]!.text!;
+    expect(text.startsWith("summarize this for me\n\n[attached file: ")).toBe(true);
+    expect(runs[0]![0]!.role).toBe("user");
+    expect("sender" in runs[0]![0]!).toBe(false);
+  });
+
+  it("strips this bot's own @mention off a document's caption, as it does off a photo's", async () => {
+    await bindEnabled(SID);
+    fake.push({
+      message_id: 43,
+      chat: { id: -1002233445566, type: "supergroup" },
+      document: { file_id: "doc-1", file_name: "report.pdf" },
+      caption: "@penguin_test_bot what is in this?",
+      caption_entities: [{ type: "mention", offset: 0, length: 17 }],
+      from: { first_name: "Ada" },
+    });
+    await waitFor(() => runs.length === 1);
+    expect(runs[0]![0]!.text!.startsWith("what is in this?\n\n[attached file: ")).toBe(true);
+  });
+
+  it("refuses a document past Telegram's own download ceiling as a size problem", async () => {
+    await bindEnabled(SID);
+    // The Bot API serves a bot nothing over 20MB through `getFile`, whatever the sender was
+    // allowed to upload, and past it answers a 400 whose only signal is prose. Capping the
+    // transfer at that number instead is what makes this a refusal the sender can act on
+    // rather than an unexplained download failure.
+    fake.declaredFileSize = 45 * 1024 * 1024;
+    fake.push(privateDocument({ messageId: 44, fileName: "raw-footage.mp4" }));
+    await waitFor(() => fake.allSends().length > 0);
+    expect(fake.allTexts()[0]!.text).toBe(
+      messagingInboundFileTooLargeNotice("raw-footage.mp4", TELEGRAM_MAX_DOWNLOAD_BYTES),
+    );
+    expect(fake.allTexts()[0]!.text).toContain("20MB");
+    expect(runs).toHaveLength(0);
+  });
+
+  it("a document that cannot be downloaded degrades to a notice, caption and all", async () => {
+    await bindEnabled(SID);
+    fake.failFileFetch = "getFile failed: file is temporarily unavailable";
+    fake.push(privateDocument({ messageId: 45, caption: "have a look" }));
+    await waitFor(() => fake.allSends().length > 0);
+    expect(fake.allSends()).toContainEqual({
+      chatId: "42424242",
+      text: messagingInboundFileFailedNotice(
+        "report.pdf",
+        "getFile failed: file is temporarily unavailable",
+      ),
+    });
+    // The caption does NOT run on its own: a question about a file the model never received
+    // would be answered confidently about nothing.
+    expect(runs).toHaveLength(0);
+  });
+
+  it("a document with no name of its own attaches under an obvious placeholder", async () => {
+    await bindEnabled(SID);
+    fake.push({
+      message_id: 46,
+      chat: { id: 42424242, type: "private" },
+      document: { file_id: "doc-noname" },
+      from: { first_name: "Ada" },
+    });
+    await waitFor(() => runs.length === 1);
+    // Not a name derived from the served path, whose extension Telegram picks: a guess that
+    // reads as the sender's own name is worse than a placeholder that reads as one.
+    expect(path.basename(matchAttachedFileLine(runs[0]![0]!.text!.trim())!)).toBe("document");
+  });
+
+  it("a redelivered document is dropped before anything is downloaded", async () => {
+    await bindEnabled(SID);
+    fake.push(privateDocument({ messageId: 47 }));
+    await waitFor(() => runs.length === 1);
+    // The dedupe key is Telegram's own `chatId:message_id`, identical across both.
+    fake.push(privateDocument({ messageId: 47 }));
+    await settle(80);
+    expect(fake.allFileFetches()).toHaveLength(1);
+    expect(runs).toHaveLength(1);
+  });
+
+  it("video, audio and voice keep the not-supported notice, caption and all", async () => {
+    await bindEnabled(SID);
+    // Deliberately out of the file seam: those are streams Telegram re-encodes for playback
+    // (a `voice` is a nameless opus blob), and handing one over as an `[attached file: …]`
+    // path would offer a capability that is not there. A sender who wants one delivered
+    // attaches it as a file, which arrives as a `document`.
+    fake.push({
+      message_id: 48,
+      chat: { id: 42424242, type: "private" },
+      caption: "transcribe this",
+      from: { first_name: "Ada" },
+    });
+    await waitFor(() => fake.allSends().length > 0);
+    expect(fake.allSends()).toContainEqual({
+      chatId: "42424242",
+      text: MESSAGING_UNSUPPORTED_NOTICE,
+    });
+    expect(runs).toHaveLength(0);
+    expect(fake.allFileFetches()).toHaveLength(0);
   });
 
   it("sends the files the reply mentions as a photo and a document, after its text", async () => {

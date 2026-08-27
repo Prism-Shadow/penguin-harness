@@ -45,7 +45,10 @@ export interface FeishuInboundEvent {
   /** `p2p` for a direct chat with the bot, `group` for a group chat. */
   chatType: string;
   messageId: string;
-  /** Feishu message type (`text`, `image`, `sticker`, …); only `text` is processed. */
+  /**
+   * Feishu message type (`text`, `image`, `file`, `sticker`, …). The connector reads the
+   * three it delivers and normalizes everything else to a message with no content.
+   */
   messageType: string;
   /** Raw message content JSON (for `text`: `{"text":"..."}`). */
   content: string;
@@ -111,6 +114,18 @@ export interface FeishuApiClient {
     fileKey: string;
     maxBytes: number;
   }): Promise<FeishuImageData>;
+  /**
+   * Downloads a non-image file carried by an inbound message (`file_key` is the content
+   * JSON's own). The same endpoint the image download uses, asked for a different resource
+   * `type` — which is the whole of the difference on the wire, and the reason both live
+   * behind one adapter — and permissioned by the same scope, so an app refused one is
+   * refused the other. Throws the same two shapes: `MessagingMediaTooLargeError` past
+   * `maxBytes`, a plain Error carrying the API's own reason otherwise.
+   *
+   * Bytes only, no media type: the bytes go to disk under the sender's file name, and it is
+   * the name's extension that says what they are (see MessagingInboundFile).
+   */
+  fetchMessageFile(args: { messageId: string; fileKey: string; maxBytes: number }): Promise<Buffer>;
   /** Uploads a picture (`im.v1.image.create`) and sends the resulting key as an `image` message. */
   sendImage(chatId: string, file: FeishuOutboundFile): Promise<void>;
   /** Uploads a file (`im.v1.file.create`) and sends the resulting key as a `file` message. */
@@ -506,6 +521,33 @@ export function createLarkSdk(opts: LarkSdkOpts = {}): FeishuSdk {
       /** Every call this client makes goes out under the deadline — see withDeadline. */
       const deadline = <T>(call: Promise<T>, what: string): Promise<T> =>
         withDeadline(call, timeoutMs, what);
+      /**
+       * One `im.v1.messageResource.get`, shared by both inbound downloads: the resource
+       * `type` differs, nothing else does. The stream is handed back UNREAD so the caller
+       * applies its own cap while the bytes arrive — reading here would put the whole file
+       * in memory before anyone could refuse it.
+       *
+       * The endpoint is scoped to the message, so a bot can only read resources from
+       * conversations it is in; there is no key-only fetch to abuse.
+       */
+      const fetchResource = async (args: {
+        messageId: string;
+        fileKey: string;
+        type: "image" | "file";
+        what: string;
+      }): Promise<LarkStreamResponse> => {
+        try {
+          return await deadline(
+            client.im.v1.messageResource.get({
+              path: { message_id: args.messageId, file_key: args.fileKey },
+              params: { type: args.type },
+            }),
+            args.what,
+          );
+        } catch (err) {
+          throw larkFailure(await larkStreamErrorEnvelope(err), err);
+        }
+      };
       /** One `im.v1.message.create`, shared by every message kind: the content JSON differs, nothing else does. */
       const sendContent = async (
         chatId: string,
@@ -577,18 +619,12 @@ export function createLarkSdk(opts: LarkSdkOpts = {}): FeishuSdk {
           }
         },
         async fetchMessageImage({ messageId, fileKey, maxBytes }): Promise<FeishuImageData> {
-          let res: LarkStreamResponse;
-          try {
-            res = await deadline(
-              client.im.v1.messageResource.get({
-                path: { message_id: messageId, file_key: fileKey },
-                params: { type: "image" },
-              }),
-              "Image download",
-            );
-          } catch (err) {
-            throw larkFailure(await larkStreamErrorEnvelope(err), err);
-          }
+          const res = await fetchResource({
+            messageId,
+            fileKey,
+            type: "image",
+            what: "Image download",
+          });
           const data = await collectUnderCap(res.getReadableStream(), maxBytes, "The image");
           // The response header states what the SENDER uploaded, which is a claim; the
           // magic bytes are the file. PNG is the last resort — a data URL needs some type,
@@ -599,6 +635,15 @@ export function createLarkSdk(opts: LarkSdkOpts = {}): FeishuSdk {
               ? declared.split(";")[0]!.trim()
               : null;
           return { data, mimeType: sniffImageMime(data) ?? headerType ?? "image/png" };
+        },
+        async fetchMessageFile({ messageId, fileKey, maxBytes }): Promise<Buffer> {
+          const res = await fetchResource({
+            messageId,
+            fileKey,
+            type: "file",
+            what: "File download",
+          });
+          return collectUnderCap(res.getReadableStream(), maxBytes, "The file");
         },
         async sendImage(chatId: string, file: FeishuOutboundFile): Promise<void> {
           // Two steps, as Feishu requires: the bytes are uploaded on their own and the

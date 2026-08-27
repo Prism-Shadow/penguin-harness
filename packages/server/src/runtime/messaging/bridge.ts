@@ -21,10 +21,15 @@
  * follow-up, never 409. A message carrying images becomes that same composer input with
  * the pictures attached: the caption's text (when there is one) plus one `image_url` part
  * per image, as a base64 `data:` URL, which is byte for byte the shape the web composer
- * submits. Anything else (sticker, voice, video, file) gets a polite bilingual "not
- * supported" reply. Only once that work is done is the binding row's watermark advanced,
- * so a process that dies mid-message has the channel replay it rather than find it already
- * marked.
+ * submits. A message carrying FILES becomes the composer's other attachment shape: each
+ * one is written into the Session scratchpad and named on the message text as an
+ * `[attached file: <path>]` line, so the model opens it with its ordinary file tools and
+ * the bytes never enter the conversation (see services/task-attachments.ts, which owns
+ * that path and its caps for the web composer too). The three combine — text, images and
+ * files in one message compose one input — and a message with none of them (sticker,
+ * voice, video) gets a polite bilingual "not supported" reply. Only once that work is done
+ * is the binding row's watermark advanced, so a process that dies mid-message has the
+ * channel replay it rather than find it already marked.
  *
  * Outbound (Session → channel): the bridge subscribes to the Session's in-process channel
  * and relays the main conversation's completed assistant messages — by default each of them
@@ -60,7 +65,7 @@
  * is a bad place to receive a directory. What the caps drop is named in the chat rather
  * than dropped quietly.
  */
-import { imageUrlMessage, userText } from "@prismshadow/penguin-core";
+import { imageUrlMessage, scratchpadDir, userText } from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import type { MessagingDeliveryError, MessagingRuntimeStatus } from "../../api/types.js";
 import type {
@@ -68,11 +73,15 @@ import type {
   MessagingBindingsRepo,
 } from "../../db/repos/messaging-bindings.js";
 import { INLINE_IMAGE_MAX_BYTES } from "../../services/attachment-limits.js";
+import type { AttachmentLimits } from "../../services/attachment-limits.js";
+import { attachFilesToInput, removeAttachments } from "../../services/task-attachments.js";
+import type { AttachedFiles, TaskAttachment } from "../../services/task-attachments.js";
 import type { ChannelEvent, ChannelHub } from "../channel.js";
 import type { ErrorSink } from "../error-recorder.js";
 import type {
   MessagingChannelConnector,
   MessagingClient,
+  MessagingInboundFile,
   MessagingInboundImage,
   MessagingInboundMessage,
   MessagingSendNote,
@@ -127,8 +136,8 @@ export const MESSAGING_LINE_DELAY_MS = 1000;
 // The fixed outbound notices are user-facing chat content, deliberately bilingual
 // like the rest of the product's user-facing copy (the server has no locale for an
 // external chat, so both languages ride each notice).
-export const MESSAGING_TEXT_ONLY_NOTICE =
-  "Only text and image messages are supported for now. 目前仅支持文本和图片消息。";
+export const MESSAGING_UNSUPPORTED_NOTICE =
+  "Only text, image and file messages are supported for now. 目前仅支持文本、图片和文件消息。";
 /**
  * The two ways an inbound image does not arrive, deliberately worded as two notices.
  *
@@ -200,6 +209,51 @@ export function messagingImageFailedNotice(reason: string): string {
 export function messagingImageBudgetNotice(): string {
   return "Too many images from this chat just now, so this one was not sent to the Agent. Try again in a few minutes. 该会话短时间内发来的图片过多，本张未发送给智能体，请过几分钟再试。";
 }
+
+/**
+ * The four ways an inbound FILE does not arrive, deliberately worded as four notices, for
+ * the reason the image pair above states: a message that names two causes names neither.
+ * They are their own functions rather than the image ones reused because a file has a NAME
+ * — a message can carry several, and "that file" would leave the user guessing which — and
+ * because "try a smaller picture" is not advice about a spreadsheet.
+ *
+ * `maxBytes` is the ceiling that actually refused the transfer (see
+ * MessagingMediaTooLargeError.maxBytes), not the server's per-file cap: a channel with a
+ * tighter download limit of its own is the one the user has to fit under.
+ */
+export function messagingInboundFileTooLargeNotice(fileName: string, maxBytes: number): string {
+  const mb = Math.floor(maxBytes / (1024 * 1024));
+  return `"${fileName}" is larger than the ${mb}MB limit, so it was not sent to the Agent. 文件“${fileName}”超过 ${mb}MB 上限，未发送给智能体。`;
+}
+
+/**
+ * The files of one message together past the per-message total. Its own notice rather than
+ * the per-file one because no single file is at fault, so naming one would send the user to
+ * shrink a file that was never too big — what has to go is one of the others.
+ */
+export function messagingInboundFilesTooLargeNotice(totalBytes: number): string {
+  const mb = Math.floor(totalBytes / (1024 * 1024));
+  return `The files in that message add up to more than the ${mb}MB one message may carry, so none of them was sent to the Agent. 该消息中的文件总大小超过单条消息 ${mb}MB 的上限，均未发送给智能体。`;
+}
+
+/**
+ * An inbound file this bot's app is not permitted to download — the same ten-second fix the
+ * image version describes, and on Feishu the same scope: receiving a message and reading the
+ * resources in it are separate permissions.
+ */
+export function messagingInboundFilePermissionNotice(
+  fileName: string,
+  scopes: readonly string[],
+  grantUrl: string | null,
+): string {
+  return `"${fileName}" could not be downloaded: this bot's app is missing a permission. Grant it, then send the file again. 无法下载文件“${fileName}”：机器人应用缺少所需权限，开通后重新发送即可。\n${permissionDetail(scopes, grantUrl)}`;
+}
+
+/** A file the channel would not hand over, carrying the channel's OWN reason (see the image version). */
+export function messagingInboundFileFailedNotice(fileName: string, reason: string): string {
+  return `"${fileName}" could not be downloaded from the chat, so nothing was sent to the Agent. 无法从会话中下载文件“${fileName}”，未发送给智能体。(${noticeReason(reason)})`;
+}
+
 export const MESSAGING_APPROVAL_NOTICE =
   "A tool call is waiting for your approval in the PenguinHarness web UI. 有工具调用正在等待你在网页端审批。";
 export const MESSAGING_TEST_MESSAGE =
@@ -500,6 +554,19 @@ export interface MessagingBridgeDeps {
   repo: MessagingBindingsRepo;
   sessions: MessagingSessionIndex;
   files: MessagingWorkspaceFiles;
+  /**
+   * The data root, so an inbound file can be written into the Session scratchpad the web
+   * composer's uploads land in (`scratchpadDir(root, projectId, agentId)/<sessionId>`,
+   * deleted with the Session). The bridge holds the root rather than a pre-resolved
+   * directory because the Project and Agent are per Session, not per binding.
+   */
+  root: string;
+  /**
+   * The attachment limits in force right now. A function, not a snapshot: the per-file and
+   * per-message ceilings are admin-settable and read fresh per request everywhere else, so
+   * a change has to reach the next inbound message without a restart.
+   */
+  attachmentLimits: () => AttachmentLimits;
   channels: ChannelHub;
   runner: MessagingTaskRunner;
   /** One connector per channel; a stored binding whose channel has no connector is skipped with an error record. */
@@ -1009,12 +1076,13 @@ export class MessagingBridge {
       // off the row.
       this.deps.repo.recordChat(entry.sessionId, entry.channel, msg.chatId, isDirect);
       entry.lastInboundMessageId = isDirect ? null : msg.messageId;
-      // A caption is this message's text; an image with none carries no text at all.
+      // A caption is this message's text; an attachment sent with none carries no text at all.
       const text = msg.text !== null && msg.text.trim() !== "" ? msg.text : null;
       const images = msg.images ?? [];
-      if (images.length === 0) {
+      const files = msg.files ?? [];
+      if (images.length === 0 && files.length === 0) {
         if (text === null) {
-          await this.replyInbound(entry, msg, MESSAGING_TEXT_ONLY_NOTICE);
+          await this.replyInbound(entry, msg, MESSAGING_UNSUPPORTED_NOTICE);
         } else {
           // An ordinary user input, exactly as if typed into the web composer: no marker
           // block, no special sender — the model deliberately does not learn the message
@@ -1024,21 +1092,11 @@ export class MessagingBridge {
           });
         }
       } else {
-        const result = await this.inboundImageParts(entry, images);
-        if ("notice" in result) {
-          // The whole message stops here rather than running on the caption alone: a model
-          // asked "what is wrong with this?" about a picture it never received answers
-          // confidently about nothing, which is worse than a notice saying so.
-          await this.replyInbound(entry, msg, result.notice);
-        } else {
-          // Text first, then the images — the same order and the same parts the web composer
-          // submits, so a chat message with a picture is indistinguishable from a pasted one.
-          await this.deps.runner.startTask(
-            entry.sessionId,
-            [...(text === null ? [] : [userText(text)]), ...result.parts],
-            { queueIfBusy: true },
-          );
-        }
+        const notice = await this.startAttachedTask(entry, text, images, files);
+        // The whole message stops on a notice rather than running on the caption alone: a
+        // model asked "what is wrong with this?" about a picture it never received answers
+        // confidently about nothing, which is worse than a notice saying so.
+        if (notice !== null) await this.replyInbound(entry, msg, notice);
       }
       // The durable watermark goes LAST, and its own UPDATE is the price of that. What it
       // marks is a message this process finished with: the follow-up a busy Session queues
@@ -1060,15 +1118,156 @@ export class MessagingBridge {
   }
 
   /**
+   * Turns a message carrying attachments into one Task, or resolves the notice to answer
+   * the chat with when it could not be made whole.
+   *
+   * All-or-nothing across BOTH kinds, and in this order: the images are downloaded first,
+   * then the files, and only then is anything written to disk. A refusal on either side
+   * stops the message — a message is one thing the user sent, and half of it reaching the
+   * Agent is not a partial success but a misleading one — and refusing before the write
+   * means a rejected message leaves nothing behind in the scratchpad to clean up.
+   */
+  private async startAttachedTask(
+    entry: BridgeEntry,
+    text: string | null,
+    images: readonly MessagingInboundImage[],
+    files: readonly MessagingInboundFile[],
+  ): Promise<string | null> {
+    const parts = await this.inboundImageParts(entry, images);
+    if ("notice" in parts) return parts.notice;
+    const attachments = await this.inboundFileAttachments(entry, files);
+    if ("notice" in attachments) return attachments.notice;
+    // Text first, then the images — the same order and the same parts the web composer
+    // submits, so a chat message with a picture is indistinguishable from a pasted one. The
+    // files' `[attached file: …]` lines are appended by core's shared placement rule, which
+    // puts them after the last user text message exactly as a composer upload's are.
+    const input = [...(text === null ? [] : [userText(text)]), ...parts.parts];
+    const { input: withFiles, written } = await this.writeInboundFiles(
+      entry,
+      input,
+      attachments.attachments,
+    );
+    try {
+      await this.deps.runner.startTask(entry.sessionId, withFiles, { queueIfBusy: true });
+    } catch (err) {
+      // Nothing references these files and nothing will ever clean them up: the Task never
+      // started, so the message they belong to does not exist. The route path owns the same
+      // half of attachFilesToInput's all-or-nothing contract.
+      await removeAttachments(written);
+      throw err;
+    }
+    return null;
+  }
+
+  /**
+   * Lands this message's files in the Session scratchpad and folds their path lines into the
+   * input. Returns the input untouched when there are none, so a message with no files
+   * creates no directory.
+   *
+   * A failure here is NOT answered in the chat, unlike a refused download: a write that
+   * fails is a fault of this server (a full disk, a scratchpad that is not writable), the
+   * same class as a Session that cannot load, and it reaches the user through
+   * recordDeliveryFailure and the binding's status line. The chat is told about the things
+   * the person in it can act on.
+   */
+  private async writeInboundFiles(
+    entry: BridgeEntry,
+    input: OmniMessage[],
+    attachments: readonly TaskAttachment[],
+  ): Promise<AttachedFiles> {
+    if (attachments.length === 0) return { input, written: [] };
+    const row = this.deps.sessions.findById(entry.sessionId);
+    if (row === null) throw new Error(`session ${entry.sessionId} no longer exists`);
+    return attachFilesToInput(
+      input,
+      [...attachments],
+      scratchpadDir(this.deps.root, row.projectId, row.agentId),
+      entry.sessionId,
+    );
+  }
+
+  /**
+   * Downloads the message's files into composer attachments, or the notice to answer with
+   * when one of them could not be delivered.
+   *
+   * The caps are the server's attachment limits — the very numbers an authenticated
+   * composer upload answers to — because these files land in exactly the same place, the
+   * Session scratchpad, and are read back the same way, through the model's bounded file
+   * tools. Both byte budgets apply:
+   *
+   * - the per-file ceiling rides into each `fetch`, so an oversized attachment is refused at
+   *   the byte that crosses it and is never resident in this process;
+   * - the per-message total is spent as the batch is collected, each later file's cap
+   *   shrinking to what is left, so a message carrying several cannot add up past it either.
+   *
+   * The per-message file COUNT is deliberately not enforced: attachment-limits.ts calls it a
+   * composer-usability bound rather than a resource one, the byte budgets being what actually
+   * bound memory and disk — and a chat message carries one file today on both channels.
+   *
+   * There is no rolling per-binding budget like the image one, because the cost it exists to
+   * prevent is not paid here: an inline image is written into the Trace and re-read whole on
+   * every history page and every resume, while a file is bytes on disk that nothing re-reads
+   * and that are deleted with the Session.
+   *
+   * A refusal for size is the user's to fix and is not an error record — they sent something
+   * too big and the chat says so. A failure is somebody's fault (a scope the bot was never
+   * granted, most likely) and lands in the error log with the channel's reason, so it is
+   * diagnosable from the dashboard and not only from a chat bubble.
+   */
+  private async inboundFileAttachments(
+    entry: BridgeEntry,
+    files: readonly MessagingInboundFile[],
+  ): Promise<{ attachments: TaskAttachment[] } | { notice: string }> {
+    if (files.length === 0) return { attachments: [] };
+    const limits = this.deps.attachmentLimits();
+    const attachments: TaskAttachment[] = [];
+    let spent = 0;
+    for (const file of files) {
+      const remaining = limits.totalBytes - spent;
+      if (remaining <= 0) return { notice: messagingInboundFilesTooLargeNotice(limits.totalBytes) };
+      const cap = Math.min(limits.maxBytes, remaining);
+      try {
+        const data = await file.fetch(cap);
+        spent += data.length;
+        // `mime` is what a queued message's recall re-encodes its data URL from; a messaging
+        // input stores no recall payload (see MessagingTaskRunner.startTask), so nothing
+        // reads it back and an empty media type is the honest value rather than a guess.
+        attachments.push({ fileName: file.fileName, bytes: data, mime: "" });
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        this.log(`[messaging] ${entry.channel} file fetch failed: ${reason}`);
+        if (err instanceof MessagingMediaTooLargeError) {
+          // Which ceiling stopped it decides what the chat is told: one file over the
+          // per-file cap is that file's problem, while a batch over the message total is
+          // nobody's in particular — naming a file there would send the user to shrink one
+          // that was never too big.
+          return {
+            notice:
+              cap < limits.maxBytes
+                ? messagingInboundFilesTooLargeNotice(limits.totalBytes)
+                : messagingInboundFileTooLargeNotice(file.fileName, err.maxBytes),
+          };
+        }
+        this.recordError(entry.sessionId, err, "messaging_file_fetch_failed");
+        return {
+          notice:
+            err instanceof MessagingPermissionError
+              ? messagingInboundFilePermissionNotice(file.fileName, err.scopes, err.grantUrl)
+              : messagingInboundFileFailedNotice(file.fileName, reason),
+        };
+      }
+    }
+    return { attachments };
+  }
+
+  /**
    * Downloads the message's images into `image_url` input parts, or the notice to answer
    * with when one of them could not be delivered.
    *
-   * All-or-nothing on purpose: a message is one thing the user sent, and half of it
-   * reaching the Agent is not a partial success but a misleading one. The cap is the
-   * server's inline-image ceiling — the same number the web composer's uploads answer to,
-   * because these images land in exactly the same place (the conversation, and from there
-   * the Trace, which is read back whole on every resume). It happens to match Telegram's
-   * own 20MB download ceiling for bots.
+   * The cap is the server's inline-image ceiling — the same number the web composer's
+   * uploads answer to, because these images land in exactly the same place (the
+   * conversation, and from there the Trace, which is read back whole on every resume). It
+   * happens to match Telegram's own 20MB download ceiling for bots.
    *
    * A refusal for size is the user's to fix and is not an error record — they sent
    * something too big and the chat says so. A failure is somebody's fault (a scope the bot

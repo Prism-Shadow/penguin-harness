@@ -29,7 +29,7 @@ import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import {
   MESSAGING_APPROVAL_NOTICE,
   MESSAGING_TEST_MESSAGE,
-  MESSAGING_TEXT_ONLY_NOTICE,
+  MESSAGING_UNSUPPORTED_NOTICE,
 } from "../src/runtime/messaging/bridge.js";
 import type { MessagingClient } from "../src/runtime/messaging/connector.js";
 import { MessagingUnsupportedError } from "../src/runtime/messaging/media.js";
@@ -542,7 +542,7 @@ describe("qq binding routes and the passive reply budget", () => {
       .fire({ kind: "c2c", openid: USER_OPENID, messageId: "msg_img", content: "" });
     await waitFor(() => fake.allSends().length === 1);
     expect(fake.allSends()[0]).toMatchObject({
-      content: MESSAGING_TEXT_ONLY_NOTICE,
+      content: MESSAGING_UNSUPPORTED_NOTICE,
       msgId: "msg_img",
       msgSeq: 1,
     });

@@ -144,6 +144,70 @@ describe("feishu adapter against the SDK's HTTP boundary", () => {
     expect(call.params).toEqual({ type: "image" });
   });
 
+  it("downloads a message file from the same endpoint, asked for as a `file` resource", async () => {
+    // The `type` param is the whole of the difference on the wire between an inbound image
+    // and an inbound file — and it is a query parameter the SDK serializes, which is
+    // exactly the layer a fake of our own seam stubs out along with the wire.
+    const DOC = Buffer.from("quarterly revenue: 42\n", "utf8");
+    const { http, calls } = larkHttp((url) =>
+      url.includes("tenant_access_token") ? TOKEN_ANSWER : { stream: DOC },
+    );
+    const client = await createLarkSdk({ httpInstance: http }).createClient(CREDS);
+    const out = await client.fetchMessageFile({
+      messageId: "om_wire_file",
+      fileKey: "file_v3_wire",
+      maxBytes: 20 * 1024 * 1024,
+    });
+    expect(out.equals(DOC)).toBe(true);
+    const call = calls.at(-1)!;
+    expect(call.url).toBe(
+      "https://open.feishu.cn/open-apis/im/v1/messages/om_wire_file/resources/file_v3_wire",
+    );
+    expect(call.params).toEqual({ type: "file" });
+  });
+
+  it("carries a file download's own refusal reason and grant link, as the image path does", async () => {
+    // Feishu permissions resources per SCOPE, so the app refused an inbound image is
+    // refused an inbound file by the same denial — arriving, like that one, as a STREAM the
+    // adapter has to drain before there is anything to report.
+    const denial = {
+      code: 99991672,
+      msg:
+        "Access denied. One of the following scopes is required: [im:resource]. " +
+        "https://open.feishu.cn/app/cli_wire/auth?q=im:resource",
+    };
+    const { http } = larkHttp((url) =>
+      url.includes("tenant_access_token")
+        ? TOKEN_ANSWER
+        : { status: 403, streamError: Readable.from([Buffer.from(JSON.stringify(denial))]) },
+    );
+    const client = await createLarkSdk({ httpInstance: http }).createClient(CREDS);
+    const err = await client
+      .fetchMessageFile({ messageId: "om_x", fileKey: "file_x", maxBytes: 1024 })
+      .then(() => null)
+      .catch((e: Error) => e);
+    expect(err).toBeInstanceOf(MessagingPermissionError);
+    expect((err as MessagingPermissionError).scopes).toEqual(["im:resource"]);
+    expect((err as MessagingPermissionError).grantUrl).toBe(
+      "https://open.feishu.cn/app/cli_wire/auth?q=im:resource",
+    );
+  });
+
+  it("refuses a file download past the cap as a size error carrying the ceiling that bit", async () => {
+    const { http } = larkHttp((url) =>
+      url.includes("tenant_access_token") ? TOKEN_ANSWER : { stream: Buffer.alloc(4096) },
+    );
+    const client = await createLarkSdk({ httpInstance: http }).createClient(CREDS);
+    const err = await client
+      .fetchMessageFile({ messageId: "om_x", fileKey: "file_x", maxBytes: 1024 })
+      .then(() => null)
+      .catch((e: Error) => e);
+    expect(err).toBeInstanceOf(MessagingMediaTooLargeError);
+    // The number rides on the error so the chat notice can name the ceiling that actually
+    // refused, which is not always the one the bridge asked for.
+    expect((err as MessagingMediaTooLargeError).maxBytes).toBe(1024);
+  });
+
   it("reports the API's own refusal reason, which arrives as a STREAM (the shipped bug)", async () => {
     // A Feishu app that receives messages happily is still refused here until the resource
     // read scope is granted. Because the request asks for a stream, the ERROR body is a

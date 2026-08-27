@@ -8,8 +8,12 @@
  * Feishu SDK — inbound text becomes an ordinary user task
  * exactly as if typed in the composer (no marker, no special sender; queueIfBusy), an
  * inbound image becomes the composer's `image_url` part (and a download that fails or
- * exceeds the inline-image cap degrades to a notice instead of a half-message),
- * anything else gets the bilingual not-supported reply, each completed assistant message
+ * exceeds the inline-image cap degrades to a notice instead of a half-message), an inbound
+ * FILE becomes the composer's other attachment shape — written into the Session scratchpad
+ * and named on the message text as an `[attached file: …]` line, under the server's own
+ * attachment caps, with a size refusal, a permission refusal and a transfer failure each
+ * answered by its own notice — anything else gets the bilingual not-supported reply,
+ * each completed assistant message
  * mirrors on
  * its own to the last known chat as soon as it completes (the run's first one threaded onto
  * the inbound message in groups), the files the reply MENTIONED follow it (existing ones
@@ -29,13 +33,15 @@ import {
   approvalDecision,
   compactionBegin,
   compactionEnd,
+  matchAttachedFileLine,
+  scratchpadDir,
   toolCall,
 } from "@prismshadow/penguin-core";
 import type { ApproveFn, OmniMessage } from "@prismshadow/penguin-core";
 import type { FeishuBindingResponse, FeishuTestResponse } from "../src/api/types.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
-import { INLINE_IMAGE_MAX_BYTES } from "../src/services/attachment-limits.js";
+import { INLINE_IMAGE_MAX_BYTES, toAttachmentLimits } from "../src/services/attachment-limits.js";
 import {
   MESSAGING_APPROVAL_NOTICE,
   MESSAGING_MAX_LINE_MESSAGES,
@@ -43,7 +49,7 @@ import {
   MESSAGING_OUTBOUND_IMAGE_MAX_BYTES,
   MESSAGING_TEST_MESSAGE,
   MESSAGING_TEXT_CHUNK_CHARS,
-  MESSAGING_TEXT_ONLY_NOTICE,
+  MESSAGING_UNSUPPORTED_NOTICE,
   MessagingBridge,
   chunkMessagingText,
   messagingFileFailedNotice,
@@ -55,9 +61,19 @@ import {
   messagingImageFailedNotice,
   messagingImagePermissionNotice,
   messagingImageTooLargeNotice,
+  messagingInboundFileFailedNotice,
+  messagingInboundFilePermissionNotice,
+  messagingInboundFileTooLargeNotice,
+  messagingInboundFilesTooLargeNotice,
   splitReplyLines,
 } from "../src/runtime/messaging/bridge.js";
 import type { MessagingTaskRunner } from "../src/runtime/messaging/bridge.js";
+import type {
+  MessagingChannelConnector,
+  MessagingInboundFile,
+  MessagingInboundImage,
+  MessagingInboundMessage,
+} from "../src/runtime/messaging/connector.js";
 import { FeishuConnector } from "../src/runtime/messaging/feishu-connector.js";
 import {
   MessagingPermissionError,
@@ -107,7 +123,7 @@ interface SentMedia {
 /** Everything one client sent, in order — the ordering of text against media is the point. */
 type Sent = SentText | SentMedia;
 
-/** One image download the bridge asked for, cap included (the fake stands in for the SDK adapter). */
+/** One resource download the bridge asked for, cap included (the fake stands in for the SDK adapter). */
 interface ImageFetch {
   messageId: string;
   fileKey: string;
@@ -122,11 +138,15 @@ async function* oneChunk(bytes: Buffer): AsyncGenerator<Uint8Array> {
 /** A PNG's magic bytes plus a little payload: enough for a data URL to be asserted verbatim. */
 const IMAGE_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x01, 0x02, 0x03]);
 
+/** An inbound file's contents — text, so a failed write shows up as the wrong bytes on disk. */
+const FILE_BYTES = Buffer.from("quarterly revenue: 42\n", "utf8");
+
 class FakeClient implements FeishuApiClient {
   readonly sends: Sent[] = [];
   /** When each send was recorded, parallel to `sends`: what the pacing test measures. */
   readonly sentAt: number[] = [];
   readonly imageFetches: ImageFetch[] = [];
+  readonly fileFetches: ImageFetch[] = [];
   checks = 0;
   constructor(
     readonly creds: FeishuCredentials,
@@ -168,6 +188,13 @@ class FakeClient implements FeishuApiClient {
     // with production about which failure this is (it did, once).
     const data = await collectUnderCap(oneChunk(this.sdk.imageBytes), args.maxBytes, "The image");
     return { data, mimeType: "image/png" };
+  }
+  async fetchMessageFile(args: ImageFetch): Promise<Buffer> {
+    this.fileFetches.push(args);
+    if (this.sdk.failFileFetchWith !== null) throw this.sdk.failFileFetchWith;
+    if (this.sdk.failFileFetch !== null) throw new Error(this.sdk.failFileFetch);
+    // Through the REAL capped reader, for the reason fetchMessageImage gives.
+    return collectUnderCap(oneChunk(this.sdk.fileBytes), args.maxBytes, "The file");
   }
   async sendImage(chatId: string, file: { fileName: string; data: Buffer }): Promise<void> {
     this.sdk.failMediaSendOnce();
@@ -245,6 +272,12 @@ class FakeSdk implements FeishuSdk {
   failImageFetchWith: Error | null = null;
   /** What an image download resolves to; oversize bytes exercise the cap. */
   imageBytes: Buffer = IMAGE_BYTES;
+  /** Non-null makes fetchMessageFile throw with this message (a dead file_key, a network fault). */
+  failFileFetch: string | null = null;
+  /** Non-null makes it throw THIS — for the failure shapes that carry data, not just text. */
+  failFileFetchWith: Error | null = null;
+  /** What a file download resolves to; oversize bytes exercise the cap. */
+  fileBytes: Buffer = FILE_BYTES;
   /** Fails this many upcoming outbound image/file sends (the channel refusing an upload). */
   failMediaSends = 0;
   /** Non-null makes EVERY media send throw this — for the failure shapes that carry data. */
@@ -287,6 +320,10 @@ class FakeSdk implements FeishuSdk {
   /** Every image download asked of any client, in order. */
   allImageFetches(): ImageFetch[] {
     return this.clients.flatMap((c) => c.imageFetches);
+  }
+  /** Every file download asked of any client, in order. */
+  allFileFetches(): ImageFetch[] {
+    return this.clients.flatMap((c) => c.fileFetches);
   }
   lastConnection(): FakeConnection {
     const conn = this.connections.at(-1);
@@ -635,6 +672,8 @@ describe("messaging binding routes and bridge", () => {
       repo: t.deps.messagingRepo,
       sessions: t.deps.sessionsRepo,
       files: t.deps.workspaceFiles,
+      root: t.root,
+      attachmentLimits: () => toAttachmentLimits(t.deps.serverSettingsRepo.getAttachmentLimitsMb()),
       channels: t.deps.channels,
       runner,
       connectors: [new FeishuConnector(fake)],
@@ -1253,9 +1292,9 @@ describe("messaging binding routes and bridge", () => {
     // One send carrying the notice whole. The notices are single-line by construction, so
     // this is asserted from both ends: the text has no line break to split on, and it
     // arrives as one message — a notice routed through the reply path would break the pair.
-    expect(MESSAGING_TEXT_ONLY_NOTICE).not.toContain("\n");
+    expect(MESSAGING_UNSUPPORTED_NOTICE).not.toContain("\n");
     expect(fake.allSends()).toEqual([
-      { kind: "send", target: "oc_notice", text: MESSAGING_TEXT_ONLY_NOTICE },
+      { kind: "send", target: "oc_notice", text: MESSAGING_UNSUPPORTED_NOTICE },
     ]);
     // And the test message, sent through its own path, is one message too.
     const sent = fake.allSends().length;
@@ -1442,24 +1481,26 @@ describe("messaging binding routes and bridge", () => {
     expect(fake.allTexts().map((s) => s.text)).toEqual(["the actual answer"]);
   });
 
-  it("a message that is neither text nor image gets the bilingual notice and starts no task", async () => {
+  it("a message that is neither text, image nor file gets the bilingual notice and starts no task", async () => {
     await bindEnabled(SID);
-    // A file: inbound documents are deliberately out of scope, so they keep answering with
-    // the notice — as do stickers, voice and video.
+    // A sticker: it carries a `file_key` like a file message does, and is still not one —
+    // as are `audio` (a voice recording) and `media` (a video), which the connector
+    // deliberately leaves out of the file seam.
     await fake.lastConnection().fire({
       chatId: "oc_chat_1",
       chatType: "p2p",
       messageId: "om_2",
-      messageType: "file",
-      content: JSON.stringify({ file_key: "file_1", file_name: "notes.pdf" }),
+      messageType: "sticker",
+      content: JSON.stringify({ file_key: "sticker_1" }),
     });
     await waitFor(() => fake.allSends().length > 0);
     expect(fake.allSends()).toContainEqual({
       kind: "send",
       target: "oc_chat_1",
-      text: MESSAGING_TEXT_ONLY_NOTICE,
+      text: MESSAGING_UNSUPPORTED_NOTICE,
     });
     expect(runs).toHaveLength(0);
+    expect(fake.allFileFetches()).toHaveLength(0);
     // Even a rejected type teaches the bridge where the user is.
     expect(t.deps.messagingRepo.find(SID, "feishu")?.lastChatId).toBe("oc_chat_1");
   });
@@ -1628,6 +1669,168 @@ describe("messaging binding routes and bridge", () => {
     // The whole point of a lazy handle: the replay costs no image transfer at all.
     expect(fake.allImageFetches()).toHaveLength(1);
     expect(runs).toHaveLength(1);
+  });
+
+  // —— Inbound files ————————————————————————————————————————————————————————
+  // A document sent to the bot has to reach the model the way the web composer's uploads
+  // do: written into the Session scratchpad and named on the message text as an
+  // `[attached file: <path>]` line, so the bytes never enter the conversation. The download
+  // is lazy for the same reason an image's is (a redelivery is dropped before it happens)
+  // and capped by the server's per-file attachment limit.
+
+  /** The absolute path an `[attached file: …]` line names, or null when the text is not one. */
+  const attachedFilePath = (part: InputPayload | undefined): string | null =>
+    matchAttachedFileLine((part?.text ?? "").trim());
+
+  it("an inbound file lands in the Session scratchpad and rides as a path line", async () => {
+    await bindEnabled(SID);
+    await fake.lastConnection().fire({
+      chatId: "oc_chat_1",
+      chatType: "p2p",
+      messageId: "om_file_1",
+      messageType: "file",
+      content: JSON.stringify({ file_key: "file_v3_abc", file_name: "notes.pdf" }),
+    });
+    await waitFor(() => runs.length === 1);
+    // File only: a Feishu file message carries no caption, so the path line IS the message
+    // (core's shared placement rule turns attachments-only input into a line-only text
+    // message) — and the bytes are on disk, not in the conversation.
+    expect(runs[0]).toHaveLength(1);
+    expect(runs[0]![0]!.type).toBe("text");
+    expect(runs[0]![0]!.role).toBe("user");
+    const written = attachedFilePath(runs[0]![0]);
+    expect(written).not.toBeNull();
+    expect(path.basename(written!)).toBe("notes.pdf");
+    // Under this Session's own scratchpad, which is deleted along with the Session.
+    expect(path.dirname(written!)).toBe(
+      path.join(scratchpadDir(t.root, projectId, "default_agent"), SID),
+    );
+    expect((await fs.readFile(written!)).equals(FILE_BYTES)).toBe(true);
+    // Downloaded from the message that carried it, under the server's per-file attachment
+    // cap — the same number an authenticated composer upload answers to.
+    expect(fake.allFileFetches()).toEqual([
+      {
+        messageId: "om_file_1",
+        fileKey: "file_v3_abc",
+        maxBytes: toAttachmentLimits(t.deps.serverSettingsRepo.getAttachmentLimitsMb()).maxBytes,
+      },
+    ]);
+    // Nothing about the file is announced back to the chat; the reply mirrors as usual.
+    await waitFor(() => fake.allSends().length > 0);
+    expect(fake.allTexts().map((s) => s.text)).toEqual(["Reply text"]);
+  });
+
+  it("a file over the per-file cap says so by name, with the limit, and is not an error record", async () => {
+    await bindEnabled(SID);
+    const limits = toAttachmentLimits(t.deps.serverSettingsRepo.getAttachmentLimitsMb());
+    fake.fileBytes = Buffer.alloc(limits.maxBytes + 1, 0x41);
+    await fake.lastConnection().fire({
+      chatId: "oc_chat_1",
+      chatType: "p2p",
+      messageId: "om_file_big",
+      messageType: "file",
+      content: JSON.stringify({ file_key: "file_v3_huge", file_name: "dump.bin" }),
+    });
+    await waitFor(() => fake.allSends().length > 0);
+    expect(fake.allTexts().at(-1)!.text).toBe(
+      messagingInboundFileTooLargeNotice("dump.bin", limits.maxBytes),
+    );
+    // The name is in the notice: a message may carry several, and "that file" leaves the
+    // sender guessing which one to shrink.
+    expect(fake.allTexts().at(-1)!.text).toContain("dump.bin");
+    // Nobody's fault: the chat notice is the whole report, and the error log stays clean.
+    expect(fileFetchErrors()).toHaveLength(0);
+    expect(runs).toHaveLength(0);
+  });
+
+  it("a file the channel will not hand over reports the channel's OWN reason", async () => {
+    await bindEnabled(SID);
+    fake.failFileFetch = "Access denied. app has no permission to access resource (code 99991672)";
+    await fake.lastConnection().fire({
+      chatId: "oc_chat_1",
+      chatType: "p2p",
+      messageId: "om_file_gone",
+      messageType: "file",
+      content: JSON.stringify({ file_key: "file_v3_gone", file_name: "notes.pdf" }),
+    });
+    await waitFor(() => fake.allSends().length > 0);
+    expect(fake.allTexts().at(-1)!.text).toBe(
+      messagingInboundFileFailedNotice(
+        "notes.pdf",
+        "Access denied. app has no permission to access resource (code 99991672)",
+      ),
+    );
+    // A failure is somebody's fault and belongs in the error log too, with the channel's
+    // reason, so it is diagnosable from the dashboard and not only from a chat bubble.
+    const recorded = fileFetchErrors();
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0]).toContain("no permission to access resource");
+    expect(runs).toHaveLength(0);
+  });
+
+  it("a file the app has no permission to download says which scope to grant, and where", async () => {
+    await bindEnabled(SID);
+    // Feishu permissions resources per SCOPE, not per resource type, so the app refused an
+    // inbound image is refused an inbound file by the same denial — and the fix is the same
+    // console link.
+    fake.failFileFetchWith = new MessagingPermissionError(
+      ["im:resource"],
+      "https://open.feishu.cn/app/cli_x/auth?q=im:resource",
+      "Access denied (code 99991672)",
+    );
+    await fake.lastConnection().fire({
+      chatId: "oc_chat_1",
+      chatType: "p2p",
+      messageId: "om_file_scope",
+      messageType: "file",
+      content: JSON.stringify({ file_key: "file_v3_denied", file_name: "report.xlsx" }),
+    });
+    await waitFor(() => fake.allSends().length > 0);
+    expect(fake.allTexts().at(-1)!.text).toBe(
+      messagingInboundFilePermissionNotice(
+        "report.xlsx",
+        ["im:resource"],
+        "https://open.feishu.cn/app/cli_x/auth?q=im:resource",
+      ),
+    );
+    expect(fileFetchErrors()).toHaveLength(1);
+    expect(runs).toHaveLength(0);
+  });
+
+  it("a redelivered file is dropped before anything is downloaded", async () => {
+    await bindEnabled(SID);
+    const file = {
+      chatId: "oc_chat_1",
+      chatType: "p2p",
+      messageId: "om_file_replay",
+      messageType: "file",
+      content: JSON.stringify({ file_key: "file_v3_replay", file_name: "notes.pdf" }),
+    };
+    await fake.lastConnection().fire(file);
+    await waitFor(() => runs.length === 1);
+    await fake.lastConnection().fire(file);
+    await settle(80);
+    // The whole point of a lazy handle: the replay costs no transfer, and writes no second
+    // copy into the scratchpad.
+    expect(fake.allFileFetches()).toHaveLength(1);
+    expect(runs).toHaveLength(1);
+    const dir = path.join(scratchpadDir(t.root, projectId, "default_agent"), SID);
+    expect(await fs.readdir(dir)).toEqual(["notes.pdf"]);
+  });
+
+  it("an event whose file has no name still attaches, under an obvious placeholder", async () => {
+    await bindEnabled(SID);
+    // Feishu names the file in the event; an event that carries none gets a placeholder
+    // rather than an invented extension, which would tell the model it is something it is not.
+    await fake.lastConnection().fire({
+      chatId: "oc_chat_1",
+      chatType: "p2p",
+      messageId: "om_file_noname",
+      messageType: "file",
+      content: JSON.stringify({ file_key: "file_v3_noname" }),
+    });
+    await waitFor(() => runs.length === 1);
+    expect(path.basename(attachedFilePath(runs[0]![0])!)).toBe("file");
   });
 
   it("an approval_request sends the waiting-for-approval notice", async () => {
@@ -1801,7 +2004,7 @@ describe("messaging binding routes and bridge", () => {
       messageType: "sticker",
       content: JSON.stringify({}),
     });
-    await waitFor(() => fake.allTexts().some((x) => x.text === MESSAGING_TEXT_ONLY_NOTICE));
+    await waitFor(() => fake.allTexts().some((x) => x.text === MESSAGING_UNSUPPORTED_NOTICE));
     const status = await statusOf(SID);
     // The question this line answers is whether the channel is delivering anything, and a
     // sticker answers it. Stamping only what starts a Task would report a mute bot for a
@@ -2010,7 +2213,7 @@ describe("messaging binding routes and bridge", () => {
     await waitFor(() => runs.length === 1);
     expect(runs[0]![0]!.text).toBe("帮我看看 build 好了没 🚀");
     // The run's own reply mirrors back; what must NOT appear is the no-words notice.
-    expect(fake.allTexts().some((x) => x.text === MESSAGING_TEXT_ONLY_NOTICE)).toBe(false);
+    expect(fake.allTexts().some((x) => x.text === MESSAGING_UNSUPPORTED_NOTICE)).toBe(false);
   });
 
   it("a message that is nothing but a mention starts no Task", async () => {
@@ -2025,7 +2228,7 @@ describe("messaging binding routes and bridge", () => {
     // Nothing but the mention: no words to run a Task on, so it takes the same branch a
     // sticker does rather than spending a turn on a bare placeholder.
     await waitFor(() => fake.allSends().length === 1);
-    expect(fake.allTexts()[0]!.text).toBe(MESSAGING_TEXT_ONLY_NOTICE);
+    expect(fake.allTexts()[0]!.text).toBe(MESSAGING_UNSUPPORTED_NOTICE);
     expect(runs).toHaveLength(0);
   });
 
@@ -2140,6 +2343,13 @@ describe("messaging binding routes and bridge", () => {
   const imageFetchErrors = (): string[] =>
     t.deps.db
       .prepare("SELECT message FROM error_records WHERE code = 'messaging_image_fetch_failed'")
+      .all()
+      .map((r) => r.message as string);
+
+  /** The same, for the file-download failures (a distinct code, so the two are separable). */
+  const fileFetchErrors = (): string[] =>
+    t.deps.db
+      .prepare("SELECT message FROM error_records WHERE code = 'messaging_file_fetch_failed'")
       .all()
       .map((r) => r.message as string);
 
@@ -2515,7 +2725,7 @@ describe("messaging binding routes and bridge", () => {
     await waitFor(() => fake.allSends().length === 1);
     await fake.lastConnection().fire(sticker);
     await settle(80);
-    expect(fake.allTexts().filter((x) => x.text === MESSAGING_TEXT_ONLY_NOTICE)).toHaveLength(1);
+    expect(fake.allTexts().filter((x) => x.text === MESSAGING_UNSUPPORTED_NOTICE)).toHaveLength(1);
   });
 
   it("bounds what it remembers: an id far enough back is forgotten rather than kept forever", async () => {
@@ -2625,11 +2835,13 @@ describe("messaging binding routes and bridge", () => {
       await successor.start();
       await fake.lastConnection().fire(sticker);
       await settle(80);
-      expect(fake.allTexts().filter((x) => x.text === MESSAGING_TEXT_ONLY_NOTICE)).toHaveLength(1);
+      expect(fake.allTexts().filter((x) => x.text === MESSAGING_UNSUPPORTED_NOTICE)).toHaveLength(
+        1,
+      );
       // Control: a sticker the binding has never seen still gets its notice.
       await fake.lastConnection().fire({ ...sticker, messageId: "om_sticker_after_restart" });
       await waitFor(
-        () => fake.allTexts().filter((x) => x.text === MESSAGING_TEXT_ONLY_NOTICE).length === 2,
+        () => fake.allTexts().filter((x) => x.text === MESSAGING_UNSUPPORTED_NOTICE).length === 2,
       );
     } finally {
       successor.stop();
@@ -2839,5 +3051,197 @@ describe("a redelivered inbound message", () => {
     await fire("om_fresh", "again");
     await waitFor(() => runs.length === 2);
     expect(t.deps.messaging.statusOf(SID, "feishu").lastInboundAt).toBe("2026-08-26T09:01:00.000Z");
+  });
+});
+
+/**
+ * The bridge's own loop over a message's file list, driven by a connector that hands it
+ * exactly the message a test constructs.
+ *
+ * It is a fake at the bridge's seam rather than at a wire, deliberately and narrowly:
+ * neither channel here delivers two files in ONE message — a Feishu `file` message carries
+ * one `file_key`, and a Telegram media group arrives as one update per document — while the
+ * seam carries a LIST, because the image seam does and a batching channel is the obvious
+ * next one. What no wire can produce is therefore what this drives: the order several
+ * attachments reach the Agent in, how they compose with a caption and an image, and the
+ * per-message byte budget spent across them. Everything a real wire CAN produce is tested
+ * against the real wire, in the two channel suites.
+ */
+describe("a message carrying several files", () => {
+  let t: TestApp;
+  let api: ReturnType<typeof apiClient>;
+  let bridge: MessagingBridge;
+  let runs: InputPayload[][];
+  let fired: ((msg: MessagingInboundMessage) => Promise<void>) | null;
+  /** Every cap the bridge asked a file handle to download under, in order. */
+  let caps: number[];
+  /** Every notice the scripted client was asked to send, in order. */
+  let notices: string[];
+
+  /** Small enough to overrun with a few bytes: the real defaults are 100MB and 120MB. */
+  const LIMITS = { maxBytes: 40, totalBytes: 60, maxCount: 20 };
+
+  /** One file handle over fixed bytes, recording the cap it was offered. */
+  const fileOf = (fileName: string, bytes: Buffer): MessagingInboundFile => ({
+    fileName,
+    fetch: async (maxBytes) => {
+      caps.push(maxBytes);
+      return collectUnderCap(oneChunk(bytes), maxBytes, "The file");
+    },
+  });
+
+  const imageOf = (bytes: Buffer): MessagingInboundImage => ({
+    fetch: async (maxBytes) => ({
+      data: await collectUnderCap(oneChunk(bytes), maxBytes, "The image"),
+      mimeType: "image/png",
+    }),
+  });
+
+  /** The scripted connector: `fired` is how a test delivers one inbound message. */
+  const connector: MessagingChannelConnector = {
+    channel: "feishu",
+    createClient: () =>
+      Promise.resolve({
+        checkCredentials: () => Promise.resolve(null),
+        sendText: (_chatId: string, text: string) => {
+          notices.push(text);
+          return Promise.resolve();
+        },
+        replyText: (_messageId: string, text: string) => {
+          notices.push(text);
+          return Promise.resolve();
+        },
+        sendImage: () => Promise.resolve(),
+        sendFile: () => Promise.resolve(),
+      }),
+    connect: (_config, handlers) => {
+      fired = async (msg) => {
+        await handlers.onMessage(msg);
+      };
+      handlers.onReady?.();
+      return Promise.resolve({ close: () => {} });
+    },
+  };
+
+  /** Deliver one inbound message, with whatever mix of text, images and files it carries. */
+  const fire = (msg: Partial<MessagingInboundMessage> & { messageId: string }) =>
+    fired!({ chatId: "oc_scripted", chatKind: "direct", text: null, ...msg });
+
+  beforeEach(async () => {
+    caps = [];
+    notices = [];
+    fired = null;
+    runs = [];
+    t = await createTestApp({ feishuSdk: new FakeSdk() });
+    const { cookie } = await provisionUser(t.app, "birder");
+    api = apiClient(t.app, cookie);
+    const row = sessionRowOf(SID, "birder-default_project");
+    t.deps.sessionsRepo.insert(row);
+    t.deps.manager.adopt(row, echoFakeSession(SID, runs));
+    expect((await api.put(BASE(SID), PUT_BODY)).status).toBe(200);
+    expect((await api.post(`${BASE(SID)}/state`, { enabled: true })).status).toBe(200);
+    // The app's own bridge holds the same binding through the real connector; only one of
+    // the two may own it.
+    t.deps.messaging.stop();
+    bridge = new MessagingBridge({
+      repo: t.deps.messagingRepo,
+      sessions: t.deps.sessionsRepo,
+      files: t.deps.workspaceFiles,
+      root: t.root,
+      attachmentLimits: () => LIMITS,
+      channels: t.deps.channels,
+      runner: t.deps.manager,
+      connectors: [connector],
+      errors: t.deps.errors,
+    });
+    await bridge.start();
+  });
+  afterEach(async () => {
+    bridge.stop();
+    await t.cleanup();
+  });
+
+  /** The one text part of a run's input (the path lines ride it). */
+  const textOf = (run: InputPayload[]): string => run.find((p) => p.type === "text")!.text!;
+
+  it("attaches every file of one message, in the order they were sent", async () => {
+    await fire({
+      messageId: "om_many",
+      files: [
+        fileOf("first.txt", Buffer.from("a")),
+        fileOf("second.txt", Buffer.from("bb")),
+        fileOf("third.txt", Buffer.from("ccc")),
+      ],
+    });
+    await waitFor(() => runs.length === 1);
+    // One line per file, in the order the user sees them, as one trailing block on a
+    // message that had no text of its own.
+    const lines = textOf(runs[0]!).split("\n");
+    expect(lines.map((line) => path.basename(matchAttachedFileLine(line)!))).toEqual([
+      "first.txt",
+      "second.txt",
+      "third.txt",
+    ]);
+    for (const [i, bytes] of ["a", "bb", "ccc"].entries()) {
+      expect((await fs.readFile(matchAttachedFileLine(lines[i]!)!)).toString()).toBe(bytes);
+    }
+    // Each file rides in under the per-file ceiling while the message's remaining budget is
+    // still above it (60, then 59, then 57 bytes left against a 40-byte cap) — the shrink
+    // only bites once the batch approaches the total, which the overrun test drives.
+    expect(caps).toEqual([40, 40, 40]);
+  });
+
+  it("puts the caption first and the files' path lines behind it", async () => {
+    await fire({
+      messageId: "om_caption",
+      text: "have a look at these",
+      files: [fileOf("a.csv", Buffer.from("x")), fileOf("b.csv", Buffer.from("y"))],
+    });
+    await waitFor(() => runs.length === 1);
+    const [caption, blank, ...lines] = textOf(runs[0]!).split("\n");
+    expect(caption).toBe("have a look at these");
+    expect(blank).toBe("");
+    expect(lines.map((line) => path.basename(matchAttachedFileLine(line)!))).toEqual([
+      "a.csv",
+      "b.csv",
+    ]);
+  });
+
+  it("composes text, an image and a file into the one input the composer submits", async () => {
+    await fire({
+      messageId: "om_mixed",
+      text: "what is in these?",
+      images: [imageOf(IMAGE_BYTES)],
+      files: [fileOf("notes.txt", Buffer.from("n"))],
+    });
+    await waitFor(() => runs.length === 1);
+    // Text first, then the image part — and the file's line on the text, where core's
+    // shared placement rule puts a composer upload's.
+    expect(runs[0]!.map((p) => p.type)).toEqual(["text", "image_url"]);
+    expect(textOf(runs[0]!).startsWith("what is in these?\n\n[attached file: ")).toBe(true);
+    expect(runs[0]![1]!.image_url).toBe(`data:image/png;base64,${IMAGE_BYTES.toString("base64")}`);
+  });
+
+  it("refuses a batch that adds up past the per-message total, naming no file", async () => {
+    await fire({
+      messageId: "om_overrun",
+      files: [
+        fileOf("big.bin", Buffer.alloc(35, 0x41)),
+        fileOf("also-big.bin", Buffer.alloc(35, 0x42)),
+      ],
+    });
+    await waitFor(() => notices.length > 0);
+    // The second file crosses what is left of the message's budget, so the batch is
+    // refused as a batch: no single file is at fault, and naming one would send the sender
+    // to shrink a file that was never too big.
+    expect(notices).toEqual([messagingInboundFilesTooLargeNotice(LIMITS.totalBytes)]);
+    expect(notices[0]).not.toContain("also-big.bin");
+    // Refused at the byte that crossed, under the remaining budget rather than the
+    // per-file cap — the transfer is never completed and measured afterwards.
+    expect(caps).toEqual([40, 25]);
+    // All-or-nothing: the file that did arrive starts no Task and leaves nothing behind.
+    expect(runs).toHaveLength(0);
+    const dir = path.join(scratchpadDir(t.root, "birder-default_project", "default_agent"), SID);
+    await expect(fs.readdir(dir)).rejects.toThrow();
   });
 });
