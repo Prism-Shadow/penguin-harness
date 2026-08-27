@@ -228,6 +228,12 @@ export function PluginsPage() {
   const [deployment, setDeployment] = useState<InstalledPluginsResponse | null>(null);
   /** The registry: every module plugin this deployment could ask for. */
   const [index, setIndex] = useState<PluginIndexEntry[] | null>(null);
+  /**
+   * Sources that answered with nothing. A published index that is down shortens the list
+   * instead of emptying it (the server merges tolerantly), so the page has to say so — a
+   * silently shorter list reads as "that plugin does not exist".
+   */
+  const [indexFailures, setIndexFailures] = useState<{ source: string; error: string }[]>([]);
   /** The specifier whose install or removal is running: the list is written one verb at a time. */
   const [pendingSpecifier, setPendingSpecifier] = useState<string | null>(null);
   const isAdmin = user?.isAdmin === true;
@@ -302,7 +308,9 @@ export function PluginsPage() {
     let cancelled = false;
     api.getPluginIndex().then(
       (res) => {
-        if (!cancelled) setIndex(res.plugins);
+        if (cancelled) return;
+        setIndex(res.plugins);
+        setIndexFailures(res.failures ?? []);
       },
       () => {
         if (!cancelled) setIndex([]);
@@ -648,6 +656,11 @@ export function PluginsPage() {
               dismissLabel={S.todo.dismiss}
               onDismiss={() => dismissTodo(projectId, "plugins", todo.signature)}
             />
+          )}
+          {indexFailures.length > 0 && (
+            <Notice tone="attention" className="mt-4">
+              {S.pluginRegistry.sourceUnavailable(indexFailures.length)}
+            </Notice>
           )}
           {remote !== null && "error" in remote && remote.machineId === viewMachine && (
             <Notice tone="attention" className="mt-4">
