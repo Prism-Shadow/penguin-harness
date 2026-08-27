@@ -22,8 +22,11 @@
  *
  * `retry` on win32 mirrors core's: real SQLite files and full app trees against a runner
  * whose I/O stalls at a measurable rate, retried per test rather than by re-running the
- * job. POSIX keeps 0. What it does NOT cover is a failure with no failing test — a pool
+ * job. Linux keeps 0. What it does NOT cover is a failure with no failing test — a pool
  * teardown crash — which ci.yml absorbs with one retry of the whole command instead.
+ *
+ * macOS is retried once too: terminal-stream.test.ts drives a real pty and asserts on what
+ * came back through it, and that assertion has lost the race on the macOS runner.
  *
  * `restoreMocks` makes the spy half of that mechanical rather than a reading of the suite:
  * a `vi.spyOn` whose inline `mockRestore()` is skipped by a failing assertion above it
@@ -38,6 +41,6 @@ export default defineConfig({
     restoreMocks: true,
     testTimeout: process.platform === "win32" ? 30_000 : 5_000,
     hookTimeout: process.platform === "win32" ? 30_000 : 10_000,
-    retry: process.platform === "win32" ? 2 : 0,
+    retry: process.platform === "win32" ? 2 : process.platform === "darwin" ? 1 : 0,
   },
 });

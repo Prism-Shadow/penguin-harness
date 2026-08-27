@@ -76,13 +76,13 @@ jobs:
             build: "@prismshadow/penguin-core..."
             tests: pnpm --filter @prismshadow/penguin-core test
           - shard: server
-            build: "@prismshadow/penguin-server..."
+            build: "@prismshadow/penguin-core..."
             tests: pnpm --filter @prismshadow/penguin-server test
           - shard: web-cli
-            build: "@prismshadow/penguin-web...,@prismshadow/penguin-cli..."
+            build: "@prismshadow/penguin-core...,@prismshadow/penguin-web..."
             tests: pnpm --filter @prismshadow/penguin-web --filter @prismshadow/penguin-cli test
           - shard: rest
-            build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-landing...,@prismshadow/penguin-docs...,@prismshadow/penguin-skills..."
+            build: "@prismshadow/penguin-desktop..."
             tests: >-
               pnpm --filter @prismshadow/penguin-desktop --filter @prismshadow/penguin-landing
               --filter @prismshadow/penguin-docs --filter @prismshadow/penguin-skills test
@@ -137,11 +137,11 @@ jobs:
             tests: pnpm --filter @prismshadow/penguin-core test
             smoke: false
           - shard: server
-            build: "@prismshadow/penguin-server..."
+            build: "@prismshadow/penguin-core..."
             tests: pnpm --filter @prismshadow/penguin-server test
             smoke: false
           - shard: rest
-            build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-landing...,@prismshadow/penguin-docs...,@prismshadow/penguin-skills...,@prismshadow/penguin-web...,@prismshadow/penguin-cli..."
+            build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-cli..."
             tests: >-
               pnpm -r --filter '!@prismshadow/penguin-core' --filter '!@prismshadow/penguin-server' test
             smoke: true
@@ -177,20 +177,19 @@ jobs:
           - shard: core
             build: "@prismshadow/penguin-core..."
             tests: pnpm --filter @prismshadow/penguin-core test
-            installer: false
           - shard: server-1
-            build: "@prismshadow/penguin-server..."
-            tests: pnpm --filter @prismshadow/penguin-server exec vitest run --shard=1/2
-            installer: false
+            build: "@prismshadow/penguin-core..."
+            tests: pnpm --filter @prismshadow/penguin-server exec vitest run --shard=1/3
           - shard: server-2
-            build: "@prismshadow/penguin-server..."
-            tests: pnpm --filter @prismshadow/penguin-server exec vitest run --shard=2/2
-            installer: true
+            build: "@prismshadow/penguin-core..."
+            tests: pnpm --filter @prismshadow/penguin-server exec vitest run --shard=2/3
+          - shard: server-3
+            build: "@prismshadow/penguin-core..."
+            tests: pnpm --filter @prismshadow/penguin-server exec vitest run --shard=3/3
           - shard: rest
-            build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-landing...,@prismshadow/penguin-docs...,@prismshadow/penguin-skills...,@prismshadow/penguin-web...,@prismshadow/penguin-cli..."
+            build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-cli..."
             tests: >-
               pnpm -r --filter '!@prismshadow/penguin-core' --filter '!@prismshadow/penguin-server' test
-            installer: false
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
@@ -209,10 +208,20 @@ jobs:
           echo "::warning::vitest failed on Windows; retrying once (see the pool-teardown note in ci.yml)"
           ${{ matrix.tests }}
 
+  # The Windows installer checks, in their own job rather than riding a test shard: they add
+  # ~20s and have nothing to do with the suite they were attached to, which happened to be
+  # the longest one in the run.
+  installer-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+        with:
+          build: "@prismshadow/penguin-cli..."
+
       # The Linux job cannot validate PowerShell syntax; parse (never execute) the installer
       # scripts with the real PowerShell parser so a broken install.ps1 cannot ship.
       - name: Parse installer scripts (PowerShell)
-        if: matrix.installer
         shell: pwsh
         run: |
           $failed = $false
@@ -232,7 +241,6 @@ jobs:
           if ($failed) { exit 1 }
 
       - name: Windows installer tests
-        if: matrix.installer
         shell: pwsh
         run: ./scripts/test-installer.ps1
 
@@ -296,7 +304,8 @@ jobs:
   # names do not. `if: always()` so it still runs (and fails) when something upstream did.
   ci:
     if: always()
-    needs: [style, typecheck, test, installer-e2e, test-macos, test-windows, runtime]
+    needs:
+      [style, typecheck, test, installer-e2e, test-macos, test-windows, installer-windows, runtime]
     runs-on: ubuntu-latest
     steps:
       - name: Every gate passed
