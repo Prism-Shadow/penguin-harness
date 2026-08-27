@@ -29,6 +29,7 @@ import {
   RUNTIME_DB_RESOURCE_ID,
   RUNTIME_HMR_RESOURCE_ID,
   RUNTIME_PROXY_RESOURCE_ID,
+  RUNTIME_AUTH_STATE_RESOURCE_ID,
   claimRuntimeCapabilities,
 } from "../src/hmr/capabilities.js";
 
@@ -373,7 +374,26 @@ describe("runtime capability handshake", () => {
     const claim = claimRuntimeCapabilities(r);
     expect(claim).toMatchObject({ kind: "claimed" });
     if (claim.kind !== "claimed") return;
-    expect(claim.caps.authState).toEqual({ firstLoginToken: null });
+    expect(claim.caps.authState).toEqual({ firstLoginToken: null, apiToken: null });
+  });
+
+  it("fills the fields an older runtime's auth state lacks, in place", () => {
+    // A runtime one build behind published a holder without `apiToken`. The platform fills
+    // it rather than substituting a fresh bag: the runtime keeps a reference to THIS object,
+    // so a copy would strand the first-login link the App writes into it.
+    const r = new HotResources();
+    stubCaps(r);
+    r.register(RUNTIME_INTERFACES_RESOURCE_ID, RUNTIME_INTERFACES);
+    const published = { firstLoginToken: "printed-by-the-old-runtime" };
+    r.register(RUNTIME_AUTH_STATE_RESOURCE_ID, published);
+    const claim = claimRuntimeCapabilities(r);
+    expect(claim).toMatchObject({ kind: "claimed" });
+    if (claim.kind !== "claimed") return;
+    expect(claim.caps.authState).toBe(published);
+    expect(claim.caps.authState).toEqual({
+      firstLoginToken: "printed-by-the-old-runtime",
+      apiToken: null,
+    });
   });
 
   it("declines a different family outright — the names are not comparable", () => {

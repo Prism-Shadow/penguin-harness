@@ -48,10 +48,13 @@ export { Session } from "./session.js";
 export type { GoalRunOptions, SessionConfig, SessionRunOptions } from "./session.js";
 // Session-title generation lives in internal/ (an assembly detail of Session.generateTitle);
 // only its narrow public surface is re-exported: the result type (part of
-// Session.generateTitle's signature) and sanitizeTitle. The prompt/request internals
-// (buildTitlePrompt / generateTitleWithLLM) are deliberately not public; marker stripping
-// (stripConversationMarkers) is exported from the markers module via the omnimessage barrel.
-export { sanitizeTitle } from "./internal/session-title.js";
+// Session.generateTitle's signature) and the two cleaners, sanitizeTitle and truncateTitle,
+// which a host also runs over the fallback title it derives from the user's first line — one
+// implementation, so a title is cut the same way whichever path produced it. The
+// prompt/request internals (buildTitlePrompt / generateTitleWithLLM) are deliberately not
+// public; marker stripping (stripConversationMarkers) is exported from the markers module
+// via the omnimessage barrel.
+export { sanitizeTitle, truncateTitle } from "./internal/session-title.js";
 export type { SessionTitleResult } from "./internal/session-title.js";
 // Session assembly likewise stays internal; only the attachment-line placement rule is
 // re-exported, because the server appends `[attached file: …]` lines for the composer's
@@ -66,10 +69,15 @@ export { modelVisiblePath } from "./internal/model-visible-path.js";
 export { atomicWriteFile } from "./internal/atomic-write.js";
 export type { AtomicWriteOptions } from "./internal/atomic-write.js";
 export { Agent, createAgent } from "./agent.js";
-export type { CreateAgentOptions, CreateSessionOptions, ResumeSessionOptions } from "./agent.js";
+export type {
+  ControlEnvContext,
+  CreateAgentOptions,
+  CreateSessionOptions,
+  ResumeSessionOptions,
+} from "./agent.js";
 
 /** SDK version number. */
-export const VERSION = "0.2.4";
+export const VERSION = "0.2.7";
 /** Release build date (UTC yyyy-mm-dd), stamped by the release workflow next to VERSION; null in a dev/source build. */
 export const BUILD_DATE: string | null = null;
 /** Full commit sha the release was built from, stamped by the release workflow next to VERSION; null in a dev/source build. */

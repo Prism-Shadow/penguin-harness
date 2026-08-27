@@ -120,7 +120,7 @@ import {
 } from "../ui/session-row-menu";
 import type { SessionRowAction } from "../ui/session-row-menu";
 import { AgentAvatar } from "../ui/agent-avatar";
-import { CheckIcon, ChevronDown, GEAR_ICON, NAV_ICONS } from "../ui/icons";
+import { CheckIcon, ChevronDown, GEAR_ICON, MESSAGING_RELAY_ICON, NAV_ICONS } from "../ui/icons";
 import {
   FOLDER_ICON,
   FOLDER_OPEN_ICON,
@@ -145,7 +145,9 @@ import { ConfirmModal } from "../ui/confirm-modal";
 import { Button } from "../ui/button";
 import { Input, noAutofill } from "../ui/input";
 import { SkeletonList } from "../ui/skeleton";
+import { UpdateDot } from "../ui/update-dot";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
+import { MessagingBindingModal } from "../../features/messaging/messaging-binding-modal";
 import { WorkspaceSelect } from "../../features/chat/workspace-select";
 import { clearDraft, sessionDraftKey } from "../../features/chat/draft-cache";
 import {
@@ -162,6 +164,8 @@ import { UpdateDialog } from "../account/update-dialog";
 import { offersClientUpdate } from "../../lib/desktop-update";
 import { requestClientInstall, useDesktopUpdate } from "../../lib/use-desktop-update";
 import { forceUpdateCheck, updateCheckOutcome, useVersionInfo } from "../../lib/use-version-info";
+import { useUpdateBadges } from "../../lib/use-update-badges";
+import { releaseUpdate } from "../../lib/update-badges";
 import { SettingsDialog } from "../../features/settings/settings-dialog";
 import { ICON_SIZE } from "../../lib/icon-scale";
 
@@ -352,16 +356,23 @@ export function Sidebar({
   const clientUpdate = useDesktopUpdate(clientUpdateOffered, userOpen);
   /** Install confirmation (restarting interrupts running tasks — same consent as the shell's native prompt). */
   const [clientInstallOpen, setClientInstallOpen] = useState(false);
-  // Server update: nothing is fetched until the dropdown first opens.
+  // Server update: the app layout already ran the one check per session; keeping the dropdown
+  // as an activation only costs a retry after a failed one.
   const { version, update } = useVersionInfo(userOpen);
-  const updateAvailable = update?.updateAvailable === true;
+  /**
+   * The two update badges (use-update-badges.ts). Not the same gate as `newVersion` below,
+   * which drives the ROW: a badge only appears where the trail ends in a control this mode
+   * actually offers, so in the shell's own window the avatar marks the client build waiting
+   * to install rather than a server release the menu never shows here.
+   */
+  const badges = useUpdateBadges();
   /**
    * The newer release's version string, or null while none is known — the single update row's
    * whole state machine. A resolved version is required, not just the boolean: the row's label
    * names it, so a would-be "available but unnamed" result stays on the check action rather
    * than rendering a versionless reminder.
    */
-  const newVersion = updateAvailable ? (update?.latestVersion ?? null) : null;
+  const newVersion = releaseUpdate(update);
   /** Release announcement + admin self-update, opened from the update row once a release is known. */
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
   /**
@@ -477,6 +488,8 @@ export function Sidebar({
   const [renameText, setRenameText] = useState("");
   const [renameBusy, setRenameBusy] = useState(false);
   const [renameError, setRenameError] = useState<string | null>(null);
+  /** Session whose messaging-binding dialog is open (null = none). */
+  const [messagingSession, setMessagingSession] = useState<SessionInfo | null>(null);
 
   const setGroupMode = (mode: GroupMode) => {
     storeGroupMode(mode);
@@ -1248,6 +1261,7 @@ export function Sidebar({
               setRenameText(x.title ?? "");
               setRenamingSession(x);
             }}
+            onMessaging={(x) => setMessagingSession(x)}
             onDelete={(x) => setDeletingSession(x)}
             onToggleArchive={(x) => void toggleArchive(x)}
           />
@@ -1606,25 +1620,46 @@ export function Sidebar({
                   navCollapsed ? "opacity-0" : "opacity-100"
                 }`}
               >
-                {navItems.map((item) => (
-                  <NavLink
-                    key={item.to}
-                    to={item.to}
-                    onClick={() => onNavigate?.()}
-                    className={({ isActive }) =>
-                      `flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors duration-150 ${
-                        isActive
-                          ? "bg-gray-200/70 font-medium text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-                          : "text-gray-600 hover:bg-gray-200/50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800/70 dark:hover:text-gray-200"
-                      }`
-                    }
-                  >
-                    <span className="text-gray-500 dark:text-gray-400">
-                      <Icon d={item.icon} />
-                    </span>
-                    {item.label}
-                  </NavLink>
-                ))}
+                {navItems.map((item) => {
+                  /* Agents is the one nav entry on a badge trail: an outdated kernel is fixed
+                     on the Agent settings page two clicks down. The dot is anchored to the row,
+                     not to the label text (where it would float over whatever follows the word):
+                     at the row's right edge, on the same inset as its horizontal padding, and
+                     vertically centred on the row rather than on the line of text. */
+                  const note = item.to === "/agents" ? badges.kernelNote : null;
+                  return (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      onClick={() => onNavigate?.()}
+                      {...(note !== null
+                        ? {
+                            // The row's own label is visible, so the tooltip only adds what
+                            // the dot means; the accessible name keeps that label as its
+                            // prefix. (The collapsed rail's icon-only twin has no visible
+                            // label, so its tooltip carries both.)
+                            title: note,
+                            "aria-label": `${item.label} · ${note}`,
+                          }
+                        : {})}
+                      className={({ isActive }) =>
+                        `relative flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors duration-150 ${
+                          isActive
+                            ? "bg-gray-200/70 font-medium text-gray-900 dark:bg-gray-800 dark:text-gray-100"
+                            : "text-gray-600 hover:bg-gray-200/50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800/70 dark:hover:text-gray-200"
+                        }`
+                      }
+                    >
+                      <span className="text-gray-500 dark:text-gray-400">
+                        <Icon d={item.icon} />
+                      </span>
+                      {item.label}
+                      {note !== null && (
+                        <UpdateDot size="inline" position="right-2.5 top-1/2 -translate-y-1/2" />
+                      )}
+                    </NavLink>
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -2126,28 +2161,21 @@ export function Sidebar({
             <button
               type="button"
               onClick={() => setUserOpen(!userOpen)}
-              {...(newVersion !== null
+              {...(badges.softwareNote !== null
                 ? {
-                    // The dot alone is mysterious: name the release on the trigger (hover
-                    // tooltip + accessible name), in the update row's exact wording.
-                    title: S.update.newVersion(newVersion),
-                    "aria-label": `${user?.userId ?? ""} · ${S.update.newVersion(newVersion)}`,
+                    // The dot alone is mysterious: name what is waiting on the trigger (hover
+                    // tooltip + accessible name), in the update row's own wording.
+                    title: badges.softwareNote,
+                    "aria-label": `${user?.userId ?? ""} · ${badges.softwareNote}`,
                   }
                 : {})}
               className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors duration-150 hover:bg-gray-200/70 dark:hover:bg-gray-800"
             >
               <span className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-900 text-xs font-bold text-white dark:bg-gray-200 dark:text-gray-900">
                 {(user?.userId ?? "?").slice(0, 1).toUpperCase()}
-                {/* Update reminder dot: only once the lazy check has actually run and found a
-                    newer release (the trigger button's tooltip/label above explains it). The
-                    border (sidebar background color) separates it from the avatar for every
-                    accent — the neutral accent matches the avatar fill. */}
-                {updateAvailable && (
-                  <span
-                    aria-hidden
-                    className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-gray-50 bg-[var(--accent-bg)] dark:border-gray-900"
-                  />
-                )}
+                {/* Update reminder: the menu behind this trigger holds the row that acts on
+                    it, and the trigger's tooltip/label above say what it is. */}
+                {badges.software !== null && <UpdateDot />}
               </span>
               <span className="min-w-0 flex-1 truncate text-sm font-medium">{user?.userId}</span>
               {user?.isAdmin && (
@@ -2308,6 +2336,23 @@ export function Sidebar({
           }}
         />
       </Modal>
+
+      {/* Messaging binding dialog (row menu "Messaging binding…"): the row indicator
+          updates in place from the dialog's own save/unbind outcome. */}
+      {messagingSession && (
+        <MessagingBindingModal
+          sessionId={messagingSession.sessionId}
+          onClose={() => setMessagingSession(null)}
+          onChanged={(sessionId, channel) => {
+            const current = sessions.find((x) => x.sessionId === sessionId);
+            if (!current) return;
+            const updated = { ...current };
+            if (channel !== null) updated.messagingChannel = channel;
+            else delete updated.messagingChannel;
+            replace(updated);
+          }}
+        />
+      )}
 
       {/* Rename workspace (alias edit, same Modal + Input idiom as rename chat): the alias
           replaces the directory basename as the group label; leaving it blank reverts to
@@ -2549,6 +2594,7 @@ function SessionRow({
   onOpen,
   onTogglePin,
   onRename,
+  onMessaging,
   onDelete,
   onToggleArchive,
 }: {
@@ -2576,6 +2622,7 @@ function SessionRow({
   onOpen: (s: SessionInfo) => void;
   onTogglePin: (s: SessionInfo) => void;
   onRename: (s: SessionInfo) => void;
+  onMessaging: (s: SessionInfo) => void;
   onDelete: (s: SessionInfo) => void;
   onToggleArchive: (s: SessionInfo) => void;
 }) {
@@ -2586,6 +2633,7 @@ function SessionRow({
     const handler: Record<SessionRowAction, (x: SessionInfo) => void> = {
       pin: onTogglePin,
       rename: onRename,
+      messaging: onMessaging,
       archive: onToggleArchive,
       delete: onDelete,
     };
@@ -2681,6 +2729,18 @@ function SessionRow({
               <span className="sr-only">{S.chat.pinnedSession}</span>
             </span>
           )}
+          {/* Enabled-messaging indicator: one glyph for every channel, the channel named in
+              the tooltip and sr text. Same dim treatment as the pin (saved-but-disabled
+              configs stay off the row; the binding dialog lives in the row menu). */}
+          {s.messagingChannel !== undefined && (
+            <span
+              title={S.messaging.enabledIndicator[s.messagingChannel]}
+              className="shrink-0 text-gray-400 dark:text-gray-500"
+            >
+              <Icon d={MESSAGING_RELAY_ICON} size={12} />
+              <span className="sr-only">{S.messaging.enabledIndicator[s.messagingChannel]}</span>
+            </span>
+          )}
           {/* No per-row source tag: subagent / scheduled Sessions live in their own labelled, collapsed folders, so a badge on the title would just repeat the folder. */}
           <StatusGlyph activity={activity} />
           {s.pendingApprovalCount > 0 && (
@@ -2703,7 +2763,12 @@ function SessionRow({
           {/* No hover pill on these (a fill as wide as the date read ugly); feedback is
               the glyph color deepening — red for delete. */}
           <div className="peer absolute right-0 top-1/2 flex -translate-y-1/2 items-center">
-            <SessionRowHoverActions actions={HOVER_ROW_ACTIONS} state={rowState} onRun={run} />
+            <SessionRowHoverActions
+              actions={HOVER_ROW_ACTIONS}
+              state={rowState}
+              onRun={run}
+              onMore={ctx.openAt}
+            />
           </div>
           {lastActive !== "" && (
             <span
@@ -2723,6 +2788,7 @@ function SessionRow({
           setOpen={ctx.setOpen}
           portal={{ direction: "down", align: "left" }}
           anchorRect={ctx.anchor}
+          anchorOwner={ctx.anchorOwner}
           returnFocus={ctx.returnFocus}
           className="contents"
           menuClass="w-36"

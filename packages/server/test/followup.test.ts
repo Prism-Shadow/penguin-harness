@@ -3,11 +3,12 @@
  * `queueIfBusy`):
  *   - busy session → 202 `{queued: true}`, input held server-side, auto-started as an
  *     ordinary task once the current run finishes;
- *   - idle session → the flag is a no-op (`queued: false`, task starts directly).
+ *   - idle session → the flag is a no-op (`queued: false`, task starts directly);
+ *   - one queued input starts exactly one task, and recall works whichever path queued it.
  * (The queued count on task_state events is covered by the session-manager unit tests.)
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { approvalDecision, assistantText, toolCall } from "@prismshadow/penguin-core";
+import { approvalDecision, assistantText, toolCall, userText } from "@prismshadow/penguin-core";
 import type { ApproveFn, OmniMessage } from "@prismshadow/penguin-core";
 import type { TaskCreateResponse } from "../src/api/types.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
@@ -139,10 +140,13 @@ describe("follow-up queue route", () => {
     await waitFor(() => runs.length === 2);
     expect(runs[1]).toEqual(["follow-up 2"]);
 
-    // Gone (recalled or auto-started) → 409 not_pending.
+    // Gone (recalled or auto-started) → 409 follow_up_started, steering's not_pending being
+    // a different sentence to the user.
     const again = await api.delete(`/api/sessions/${SID}/follow-ups/${pending[0]!.id}`);
     expect(again.status).toBe(409);
-    expect(((await again.json()) as { error: { code: string } }).error.code).toBe("not_pending");
+    expect(((await again.json()) as { error: { code: string } }).error.code).toBe(
+      "follow_up_started",
+    );
 
     await waitFor(() => t.deps.manager.pendingApprovalCount(SID) === 1);
     t.deps.manager.decideApproval(SID, "tc-fu", "allow");
@@ -231,5 +235,76 @@ describe("follow-up queue route", () => {
     // What another tab sees: the recall's own task_state broadcast already reports the
     // emptied queue, so the entry disappears there without a reload.
     expect(lastQueued).toBe(0);
+  });
+
+  it("one queued follow-up starts exactly one task, whether the run completes or is aborted", async () => {
+    // The whole point of the queue: a message posted while a Task runs is delivered once.
+    // drive's finally is the only drain trigger and it shifts under the session lock, so a
+    // run's end can never launch the same queued input twice — pin that for both ways a run
+    // can end, each with something actually queued behind it (a queued follow-up
+    // deliberately survives an abort of the run under way).
+    await api.post(`/api/sessions/${SID}/tasks`, { input: [{ type: "text", text: "task 1" }] });
+    await waitFor(() => t.deps.manager.pendingApprovalCount(SID) === 1);
+    await api.post(`/api/sessions/${SID}/tasks`, {
+      input: [{ type: "text", text: "after a finish" }],
+      queueIfBusy: true,
+    });
+    expect(t.deps.manager.pendingFollowUpCount(SID)).toBe(1);
+
+    // Run 1 completes: the follow-up becomes run 2 and the queue empties.
+    t.deps.manager.decideApproval(SID, "tc-fu", "allow");
+    await waitFor(() => runs.length === 2);
+    expect(t.deps.manager.pendingFollowUpCount(SID)).toBe(0);
+
+    // Queue behind run 2, then abort it rather than letting it finish — the other exit from
+    // drive's finally, this time with a queue to drain. The abort discards the run under
+    // way, never the tasks queued behind it, so exactly one third run starts.
+    await waitFor(() => t.deps.manager.pendingApprovalCount(SID) === 1);
+    await api.post(`/api/sessions/${SID}/tasks`, {
+      input: [{ type: "text", text: "after an abort" }],
+      queueIfBusy: true,
+    });
+    expect(t.deps.manager.pendingFollowUpCount(SID)).toBe(1);
+    await api.post(`/api/sessions/${SID}/abort`, {});
+    await waitFor(() => runs.length === 3);
+    // Settle window: a second launch rides the same lock chain and would land well inside it.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(runs).toEqual([["task 1"], ["after a finish"], ["after an abort"]]);
+    expect(t.deps.manager.pendingFollowUpCount(SID)).toBe(0);
+
+    // Settle the last run so teardown does not race it.
+    await waitFor(() => t.deps.manager.pendingApprovalCount(SID) === 1);
+    t.deps.manager.decideApproval(SID, "tc-fu", "allow");
+    await waitFor(() => t.deps.manager.statusOf(SID) === "idle");
+  });
+
+  it("recall (#287) works on a follow-up queued straight through the manager (the messaging bridge's path)", async () => {
+    await api.post(`/api/sessions/${SID}/tasks`, { input: [{ type: "text", text: "task 1" }] });
+    await waitFor(() => t.deps.manager.pendingApprovalCount(SID) === 1);
+
+    // What the messaging bridge does with a Feishu/Telegram message on a busy Session: the
+    // manager API directly, with no recall store of its own (only the HTTP route knows the
+    // parts of one the input does not carry). The queued entry must still show its content
+    // and still be recallable — a queued message's recallability cannot depend on which
+    // door it came through.
+    const queued = await t.deps.manager.startTask(SID, [userText("from the chat channel")], {
+      queueIfBusy: true,
+    });
+    expect(queued.queued).toBe(true);
+    const pending = t.deps.manager.pendingFollowUpsOf(SID);
+    expect(pending).toEqual([
+      { id: expect.any(String), text: "from the chat channel", images: 0, files: 0 },
+    ]);
+
+    const res = await api.delete(`/api/sessions/${SID}/follow-ups/${pending[0]!.id}`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ text: "from the chat channel", images: [], files: [] });
+    expect(t.deps.manager.pendingFollowUpCount(SID)).toBe(0);
+
+    // Recalled means never started: run 1 stays the only run.
+    t.deps.manager.decideApproval(SID, "tc-fu", "allow");
+    await waitFor(() => t.deps.manager.statusOf(SID) === "idle");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(runs).toEqual([["task 1"]]);
   });
 });

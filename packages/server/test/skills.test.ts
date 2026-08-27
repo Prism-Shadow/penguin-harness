@@ -90,6 +90,7 @@ describe("skills api", () => {
     expect(body.groups[2]!.skills.map((s) => s.name)).toEqual([
       "penguin-sdk",
       "penguin-cli",
+      "penguin-orchestration",
       "agenthub-models",
       "vllm",
       "ollama",

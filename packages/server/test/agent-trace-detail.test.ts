@@ -103,20 +103,12 @@ describe("agent-trace-detail", () => {
     expect(legacy.sessions).toBeUndefined();
     expect(legacy.totalSessions).toBeUndefined();
 
-    // Default paged request: the unmanaged Session is CLI-origin (no web sessions-table
-    // row, not subagent/schedule), so the "show CLI sessions" OFF default excludes it
-    // from the listing AND the counts.
-    const hidden = (await (await owner.get(`${base()}?limit=10`)).json()) as AgentTracesResponse;
-    expect(hidden.sessions).toEqual([]);
-    expect(hidden.totalSessions).toBe(0);
-    expect(hidden.counts).toEqual({ active: 0, subagent: 0, schedule: 0, archived: 0 });
-
-    // cli=1: visible, with title derived from the first user prompt and category /
-    // workspace from the registration-time facts (the index head-read the earliest
-    // shard once when the file was first seen — exact on the FIRST request).
-    const paged = (await (
-      await owner.get(`${base()}?limit=10&cli=1`)
-    ).json()) as AgentTracesResponse;
+    // Paged request: every Session is listed whichever client created it — the unmanaged
+    // (legacy CLI-direct) Session is visible with title derived from the first user
+    // prompt and category / workspace from the registration-time facts (the index
+    // head-read the earliest shard once when the file was first seen — exact on the
+    // FIRST request).
+    const paged = (await (await owner.get(`${base()}?limit=10`)).json()) as AgentTracesResponse;
     expect(paged.totalSessions).toBe(1);
     expect(paged.sessions!.map((s) => s.sessionId)).toEqual([UNMANAGED]);
     expect(paged.sessions![0]!.title).toBe("child session input");
@@ -147,34 +139,28 @@ describe("agent-trace-detail", () => {
       createdAt: "2026-07-06T09:00:00.000Z",
       lastActiveAt: "2026-07-06T09:00:00.000Z",
     });
-    const titled = (await (
-      await owner.get(`${base()}?limit=10&cli=1`)
-    ).json()) as AgentTracesResponse;
+    const titled = (await (await owner.get(`${base()}?limit=10`)).json()) as AgentTracesResponse;
     expect(titled.sessions![0]!.title).toBe("已生成的标题");
-    // The adopted row carries client='cli': it stays behind the preference by default.
-    const stillHidden = (await (
-      await owner.get(`${base()}?limit=10`)
-    ).json()) as AgentTracesResponse;
-    expect(stillHidden.sessions).toEqual([]);
+    // The adopted row carries client='cli' as provenance; it is listed like any other.
+    expect(t.deps.sessionsRepo.findById(UNMANAGED)!.client).toBe("cli");
 
     // offset pages past the only group; offset without limit is a client error.
     const empty = (await (
-      await owner.get(`${base()}?limit=10&offset=10&cli=1`)
+      await owner.get(`${base()}?limit=10&offset=10`)
     ).json()) as AgentTracesResponse;
     expect(empty.sessions).toEqual([]);
     expect(empty.totalSessions).toBe(1);
     expect((await owner.get(`${base()}?offset=1`)).status).toBe(400);
 
     // Category filter: pages within one bucket (totalSessions = the bucket's count);
-    // unknown values, category-without-limit, and a bad cli value are client errors.
+    // unknown values and category-without-limit are client errors.
     const filtered = (await (
-      await owner.get(`${base()}?limit=10&category=subagent&cli=1`)
+      await owner.get(`${base()}?limit=10&category=subagent`)
     ).json()) as AgentTracesResponse;
     expect(filtered.sessions).toEqual([]);
     expect(filtered.totalSessions).toBe(0);
     expect((await owner.get(`${base()}?limit=10&category=bogus`)).status).toBe(400);
     expect((await owner.get(`${base()}?category=active`)).status).toBe(400);
-    expect((await owner.get(`${base()}?limit=10&cli=2`)).status).toBe(400);
   });
 
   it("user without access → 404 (requireProjectAccess)", async () => {

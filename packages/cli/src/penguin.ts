@@ -1,4 +1,7 @@
 /** `penguin`: the CLI built into this binary. */
+// First import on purpose: it installs the node:sqlite warning filter, and the graph
+// below reaches that builtin while it loads (see warnings.ts).
+import "./warnings.js";
 import "dotenv/config";
 import { cli } from "./index.js";
 

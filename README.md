@@ -4,15 +4,18 @@
 
 <h1 align="center">PenguinHarness</h1>
 
-<p align="center"><b>Your Automated Agent Builder, Right on Your Desktop / Server</b><br />Create Self-Evolving Agents in One Click</p>
-
-<h3 align="center"><a href="https://penguin.ooo/download/">⬇️ Click to Download</a></h3>
-
-<p align="center">macOS · Windows · Linux</p>
+<p align="center"><strong>Open-source, local-first multi-agent app development platform</strong><br />Fully automate <strong>building</strong> · <strong>optimizing</strong> · <strong>deploying</strong> AI applications</p>
 
 <p align="center">
-  <a href="https://www.producthunt.com/products/penguinharness?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-penguinharness" target="_blank" rel="noopener noreferrer"><img alt="PenguinHarness - Let Agents Autonomously Build Better Agents for $0.02 | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1202577&amp;theme=light&amp;t=1784804711946" /></a>
+  <a href="https://penguin.ooo/download">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="assets/readme/download-en-dark.svg" />
+      <img src="assets/readme/download-en-light.svg" alt="Download App" height="44" />
+    </picture>
+  </a>
 </p>
+
+<p align="center">1000+ Models · Multi-Platform · Apache 2.0 · Agent Self-Evolution</p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@prismshadow/penguin-core"><img src="https://img.shields.io/npm/v/@prismshadow/penguin-core" alt="npm version" /></a>
@@ -34,13 +37,17 @@
   <a href="https://github.com/Prism-Shadow/penguin-harness-community/blob/main/wechat/group.jpg"><img src="https://img.shields.io/badge/WeChat-user%20group-07C160?logo=wechat&logoColor=white" alt="WeChat" /></a>
 </p>
 
+<p align="center">
+  <a href="https://www.producthunt.com/products/penguinharness?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-penguinharness" target="_blank" rel="noopener noreferrer"><img alt="PenguinHarness - Let Agents Autonomously Build Better Agents for $0.02 | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1202577&amp;theme=light&amp;t=1784804711946" /></a>
+</p>
+
 <p align="center">English | <a href="README.zh.md">简体中文</a></p>
 
 ## Why PenguinHarness
 
 > With LangChain, you build agents by hand — at 1× speed.<br />With PenguinHarness, agents build agents — at 100×.
 
-Three reasons, in deliberate order — from task quality, to how agents get built, to how they keep improving.
+PenguinHarness runs on your computer or server and automates the agent app lifecycle from creation and evaluation to optimization and deployment. Three reasons define the platform:
 
 ### 1. 🏆 Outstanding results at tens of times less cost
 
@@ -55,9 +62,9 @@ A deliberately minimal toolset over clean low-level interfaces: fewer tool calls
 
 **Best accuracy on data analysis — at 1/70 of Claude Code's cost.**
 
-### 2. ⚡ One sentence, and an agent builds your agent app
+### 2. ⚡ One sentence generates a runnable agent app
 
-Type one sentence, and an agent builds the complete agent application for you — scaffold, code, and run instructions, end to end:
+Describe what you need in one sentence. PenguinHarness builds the complete agent application — scaffold, code, and run instructions, end to end:
 
 ```text
 Collect the docs from https://github.com/ericbuess/claude-code-docs and build a RAG app that answers Claude Code questions as a configuration expert, citing its sources.
@@ -69,9 +76,9 @@ https://github.com/user-attachments/assets/9b7033e8-f08a-4c3f-bd33-547896664e6e
 
 **And generating this entire RAG app burned just $0.02 (¥0.2) of tokens — on DeepSeek V4 Pro.**
 
-### 3. 🧬 Self-evolution: it gets stronger with use
+### 3. 🧬 Native agent self-evolution engine
 
-With PenguinHarness Skills, an agent evaluates and optimizes itself: run the benchmark, find the lost points, ship version N+1 — with a snapshot before every round, and every request observable in the Trace view.
+With PenguinHarness Skills, an agent evaluates and optimizes itself: run the benchmark, find the lost points, ship version N+1 — with a snapshot before every round and every request observable in the Trace view.
 
 https://github.com/user-attachments/assets/922d13a6-5ffc-4685-9a39-352f02f9afc0
 
@@ -79,26 +86,26 @@ https://github.com/user-attachments/assets/922d13a6-5ffc-4685-9a39-352f02f9afc0
 
 Four Skill groups ship in the box ([docs](https://penguin.ooo/docs/skills)); agents can also write and optimize their own:
 
-| Group                | Skills                                                                            |
-| -------------------- | --------------------------------------------------------------------------------- |
-| Office Productivity  | `data-analysis`, `firecrawl`                                                      |
-| Software Development | `web-design`, `software-engineering`                                              |
-| AI App Development   | `penguin-sdk`, `penguin-cli`, `agenthub-models`, `vllm`, `ollama`, `llamafactory` |
-| Agent Tuning         | `agent-initialization`, `benchmark-design`, `agent-evaluation`, `agent-optimization`    |
+| Group                | Skills                                                                                                                      |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Office Productivity  | `data-analysis`, `firecrawl`, `bento-slides`, `humanizer`                                                                   |
+| Software Development | `web-design`, `software-engineering`, `remote-claude-code`                                                                  |
+| AI App Development   | `penguin-sdk`, `penguin-cli`, `penguin-orchestration`, `agenthub-models`, `vllm`, `ollama`, `llamafactory`, `skill-porting` |
+| Agent Tuning         | `agent-initialization`, `benchmark-design`, `agent-evaluation`, `agent-optimization`                                        |
 
 ## Supported Models
 
-| Model            | Providers                                                                        |
-| ---------------- | -------------------------------------------------------------------------------- |
-| DeepSeek V4      | DeepSeek, OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan, Qwen Pay-As-You-Go |
-| Kimi K3          | Moonshot AI, OpenRouter, Qwen Pay-As-You-Go                                      |
-| GLM 5.2          | Z.AI, OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan, Qwen Pay-As-You-Go |
-| Hunyuan 3        | OpenRouter                                                                       |
-| Qwen 3.8 Max     | Qwen Token Plan, Qwen Pay-As-You-Go, OpenRouter                                  |
-| GPT 5.6          | OpenRouter                                                                       |
-| Gemini 3.6 Flash | Google Gemini, OpenRouter                                                        |
-| Claude 5         | Anthropic, OpenRouter                                                            |
-| Inkling          | OpenRouter, Fireworks AI                                                         |
+| Model            | Providers                                                                                        |
+| ---------------- | ------------------------------------------------------------------------------------------------ |
+| DeepSeek V4      | DeepSeek, OpenRouter, Fireworks AI, SiliconFlow, TokenDance, Qwen Token Plan, Qwen Pay-As-You-Go |
+| Kimi K3          | Moonshot AI, OpenRouter, Fireworks AI, TokenDance, Qwen Pay-As-You-Go                            |
+| GLM 5.3          | Z.AI, OpenRouter, TokenDance                                                                     |
+| Hunyuan 3        | OpenRouter                                                                                       |
+| Qwen 3.8 Max     | Qwen Token Plan, Qwen Pay-As-You-Go, OpenRouter, TokenDance                                      |
+| GPT 5.6          | OpenAI, OpenRouter                                                                               |
+| Gemini 3.7 Flash | Google Gemini, OpenRouter                                                                        |
+| Claude 5         | Anthropic, OpenRouter                                                                            |
+| Inkling          | OpenRouter, Fireworks AI                                                                         |
 
 Each family's latest generation only — the app's **Models** page lists every built-in preset, and any OpenAI-protocol endpoint works too: pick a preset, or point a custom endpoint at any of the 1000+ online and local models.
 
@@ -113,7 +120,7 @@ Each family's latest generation only — the app's **Models** page lists every b
 
 ## Installation
 
-Two ways in — both work on the same `~/.penguin/data` root, so a desktop install and a CLI install can be mixed freely:
+Start with the desktop app, or install the command line on a workstation or server. Both use the same `~/.penguin/data` root and can be mixed freely:
 
 - **🖥️ Desktop app** — a double-click install: it embeds the server and opens already signed in, no terminal involved.
 - **⌨️ CLI** — a one-line installer (or npm / offline package) puts the `penguin` command on the machine; `penguin web` then serves the full Web experience in your browser at `http://127.0.0.1:7364` (multi-session chat, agent / skill / model management, usage stats, Trace observability, evaluation center). The online installers bundle their own Node runtime — unpack and run; upgrades and reinstalls never touch your data.
@@ -125,7 +132,7 @@ Two ways in — both work on the same `~/.penguin/data` root, so a desktop insta
 
 The full Web experience as a standalone application: it embeds the server and opens already signed in — no terminal, no login page, no initial password to copy. It works on the same `~/.penguin/data` root as a CLI install, so the two can be used interchangeably (a data root only ever runs one server; if a CLI-started instance is already up, the app attaches to it).
 
-**[⬇️ Get it from the download page](https://penguin.ooo/download)** — the page serves the OSS-accelerated mirror when it is reachable, and every installer is also attached to each [GitHub Release](https://github.com/Prism-Shadow/penguin-harness/releases).
+Download the desktop app from the [download page](https://penguin.ooo/download). The page serves the OSS-accelerated mirror when it is reachable, and every installer is also attached to each [GitHub Release](https://github.com/Prism-Shadow/penguin-harness/releases).
 
 | Platform    | Installers                  |
 | ----------- | --------------------------- |
@@ -133,31 +140,7 @@ The full Web experience as a standalone application: it embeds the server and op
 | Windows 10+ | installer (.exe, x64)       |
 | Linux (x64) | AppImage / deb              |
 
-Current builds are unsigned, so the system may block the very first launch. Expand your platform for the one-time fix:
-
-<details>
-<summary><b>🍎 macOS says “PenguinHarness” is damaged and can’t be opened</b></summary>
-
-macOS quarantines files downloaded from the internet, and the missing signature makes that flag surface as a false “damaged” alert. Deleting the flag clears it:
-
-1. Open the downloaded dmg and drag `PenguinHarness.app` into the **Applications** folder.
-2. Open **Terminal** (Launchpad → Other → Terminal).
-3. Paste this command into Terminal and press Enter, then type your login password (nothing shows while you type; press Enter when done):
-
-   ```bash
-   sudo xattr -rd com.apple.quarantine /Applications/PenguinHarness.app
-   ```
-
-4. Once it finishes, double-click the app — it now opens normally.
-
-</details>
-
-<details>
-<summary><b>🪟 Windows SmartScreen says “Windows protected your PC”</b></summary>
-
-The installer is not signed yet, so SmartScreen holds the first run: click **More info**, then **Run anyway** to continue installing — first run only.
-
-</details>
+The macOS builds are Developer ID signed and notarized, and the Windows installers are Authenticode signed, so neither platform needs a first-launch unblock. Linux is the one exception:
 
 <details>
 <summary><b>🐧 Linux: double-clicking the AppImage does nothing</b></summary>

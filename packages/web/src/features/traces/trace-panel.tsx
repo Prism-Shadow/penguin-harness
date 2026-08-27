@@ -8,8 +8,10 @@
  * settings, beside the CLI-sessions filter.
  *
  * Loading is gated on `active` (the dock keeps inactive tabs mounted): the listing is
- * fetched on the first show and re-fetched on every re-show, so a Task that finished while
- * the tab was hidden appears on return without a manual refresh.
+ * fetched on the first show, re-fetched on every re-show, and re-fetched again whenever a
+ * turn settles while the tab IS showing. So the Trace grows under the eye watching it, and a
+ * Task that finished while the tab was hidden still appears on return without a manual
+ * refresh — while a hidden tab fetches nothing. trace-refresh.ts states the rule exactly.
  */
 import { useEffect, useRef, useState } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
@@ -21,7 +23,14 @@ import { DownloadIcon } from "../../components/ui/icons";
 import { EmptyState } from "../../components/ui/empty-state";
 import { Skeleton } from "../../components/ui/skeleton";
 import { ICON_SIZE } from "../../lib/icon-scale";
+import { toneStrip } from "../../lib/tone";
 import { TraceFileView } from "./trace-file-view";
+import {
+  activeTraceFile,
+  advanceTraceRefresh,
+  createTraceRefresh,
+  sortTraceFiles,
+} from "./trace-refresh";
 import type { TraceHighlight } from "./timeline-chart";
 
 /** File pills rendered before the "+N" overflow control expands them (a long Session can hold dozens of compaction shards). */
@@ -33,26 +42,44 @@ interface FileRef {
   sizeBytes: number;
 }
 
-export function TracePanel({ session, active }: { session: SessionInfo; active: boolean }) {
+export function TracePanel({
+  session,
+  active,
+  reloadSignal,
+}: {
+  session: SessionInfo;
+  /** Whether the dock tab is showing; a hidden tab stays mounted and fetches nothing. */
+  active: boolean;
+  /**
+   * The chat page's settled-turn counter, the same one the Files panel reads: bumped every time
+   * a Task settles on this Session. A bump while the panel is showing re-lists the files and
+   * re-reads the selected one — a Trace file GROWS during a run, so the ordinary refresh is the
+   * same file at a larger size, not a new file appearing.
+   */
+  reloadSignal: number;
+}) {
   const [files, setFiles] = useState<FileRef[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [fileIndex, setFileIndex] = useState<number | null>(null);
   const [showAllFiles, setShowAllFiles] = useState(false);
   const [highlight, setHighlight] = useState<TraceHighlight | null>(null);
 
-  // Fetch on show: the first activation loads, later re-activations re-list (a Task may
-  // have written a new file while the tab was hidden). Split into a rising-edge tick and
-  // a fetch effect keyed on it — a single edge-detecting fetch effect would lose the
-  // FIRST load under StrictMode's dev-mode double-invoke (the ref flips on the first run,
-  // whose fetch the cleanup cancels; the second run then sees no edge and never refetches,
-  // leaving the skeleton up forever). The selected pill survives a re-list while its file
-  // still exists; a vanished selection falls back to the newest file.
+  // Fetch on show, and again on every settled turn while showing (trace-refresh.ts owns the
+  // rule; a signal arriving while hidden is dropped and the re-show edge covers it). Split
+  // into an edge tracker that bumps a tick and a fetch effect keyed on that tick — a single
+  // edge-detecting fetch effect would lose the FIRST load under StrictMode's dev-mode
+  // double-invoke (the tracker advances on the first run, whose fetch the cleanup cancels;
+  // the second run then sees no edge and never refetches, leaving the skeleton up forever).
+  // The selected pill survives a re-list while its file still exists; a vanished selection
+  // falls back to the newest file, and the default is pinned to a real index as soon as the
+  // first listing arrives rather than left to that fallback.
   const [listTick, setListTick] = useState(0);
-  const prevActive = useRef(active);
+  const refresh = useRef(createTraceRefresh({ active, signal: reloadSignal }));
   useEffect(() => {
-    if (active && !prevActive.current) setListTick((t) => t + 1);
-    prevActive.current = active;
-  }, [active]);
+    if (advanceTraceRefresh(refresh.current, { active, signal: reloadSignal })) {
+      setListTick((t) => t + 1);
+    }
+  }, [active, reloadSignal]);
   useEffect(() => {
     if (!active) return;
     let cancelled = false;
@@ -60,24 +87,37 @@ export function TracePanel({ session, active }: { session: SessionInfo; active: 
       .getSessionTraces(session.sessionId)
       .then((res) => {
         if (cancelled) return;
-        // Newest first: the pill row and the default selection both read left-to-right
-        // from the most recent context.
-        setFiles([...res.files].sort((a, b) => b.index - a.index));
+        const sorted = sortTraceFiles(res.files);
+        setFiles(sorted);
+        // Pin the default the first time a listing arrives. Left as null the selection is
+        // "whatever activeTraceFile falls back to" — the newest file, re-resolved on every
+        // re-list — so a compaction shard appearing mid-run would move a reader who never
+        // clicked a pill onto the new file, remounting the view below onto a different index
+        // and taking its collapsed rounds, pinned row and scroll position with it. Pinned,
+        // only a pill click moves the selection.
+        setFileIndex((cur) => cur ?? sorted[0]?.index ?? null);
         setError(null);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        setFiles([]);
+        // The listing already on screen is kept: this fires on every settled turn now, so a
+        // blip mid-read must not unmount the pills and the view below it. Only a first load
+        // (files still null) has nothing to fall back to.
         setError(apiErrorText(err));
       });
     return () => {
       cancelled = true;
     };
-    // listTick re-runs the fetch on every re-show; `active` alone would only load once.
+    // listTick re-runs the fetch on every re-show and on every settled turn while showing;
+    // `active` alone would only load once.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, listTick, session.sessionId]);
 
+  // The failure owns the whole panel only where there is nothing to keep: no listing yet
+  // (here), or a listing with no file in it (below). With a file on screen it is a strip
+  // above it instead.
   if (files === null) {
+    if (error !== null) return <EmptyState title={S.tracePanel.loadFailed} description={error} />;
     return (
       <div className="space-y-3 p-4">
         <Skeleton className="h-5 w-2/3" />
@@ -86,20 +126,26 @@ export function TracePanel({ session, active }: { session: SessionInfo; active: 
     );
   }
 
-  if (error !== null) {
-    return <EmptyState title={S.tracePanel.loadFailed} description={error} />;
-  }
-
-  if (files.length === 0) {
+  // null only when the Session has produced no Trace at all: a re-list that dropped the
+  // selected file falls back to the newest one rather than emptying the panel.
+  const activeFile = activeTraceFile(files, fileIndex);
+  if (activeFile === null) {
+    if (error !== null) return <EmptyState title={S.tracePanel.loadFailed} description={error} />;
     return <EmptyState title={S.tracePanel.empty} description={S.tracePanel.emptyHint} />;
   }
 
-  const activeFile = files.find((f) => f.index === fileIndex) ?? files[0]!;
   const visibleFiles = showAllFiles ? files : files.slice(0, FILE_PILL_CAP);
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto p-3">
       <div className="space-y-3">
+        {/* A re-list that failed keeps everything below it and says so here; the listing on
+            screen is the last one that arrived, so it may be a turn or two behind. */}
+        {error !== null && (
+          <p className={`rounded-md border px-2.5 py-1.5 text-xs ${toneStrip.danger}`}>
+            {S.tracePanel.loadFailed} · {error}
+          </p>
+        )}
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="mr-1 text-xs text-gray-400">{S.traces.filesTitle}</span>
           {visibleFiles.map((f) => (
@@ -149,11 +195,15 @@ export function TracePanel({ session, active }: { session: SessionInfo; active: 
           </a>
         </div>
 
+        {/* The listing tick doubles as the view's re-read signal: every edge that re-lists
+            (a re-show, a settled turn while showing) also re-reads the selected file, since
+            the usual change is this same file having grown rather than a new one appearing. */}
         <TraceFileView
           projectId={session.projectId}
           agentId={session.agentId}
           sessionId={session.sessionId}
           index={activeFile.index}
+          reloadSignal={listTick}
           highlight={highlight}
           onHighlight={setHighlight}
         />

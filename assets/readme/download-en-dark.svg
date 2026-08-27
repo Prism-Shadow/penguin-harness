@@ -1,0 +1,6 @@
+<svg width="160" height="44" viewBox="0 0 160 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>Download App</title>
+  <rect x="0.5" y="0.5" width="159" height="43" rx="8" fill="#F9FAFB" stroke="#9CA3AF"/>
+  <path d="M28 13.5V24.5M28 24.5L23.5 20M28 24.5L32.5 20M22 28.5H34" stroke="#111827" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="43" y="27" fill="#111827" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="600">Download App</text>
+</svg>

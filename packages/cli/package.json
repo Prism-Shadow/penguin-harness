@@ -1,6 +1,6 @@
 {
   "name": "@prismshadow/penguin-cli",
-  "version": "0.2.4",
+  "version": "0.2.7",
   "type": "module",
   "description": "PenguinHarness CLI: interactive REPL and single-task runner over @prismshadow/penguin-core.",
   "license": "Apache-2.0",
@@ -20,11 +20,11 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
     "build": "tsup",
-    "penguin": "node ../../scripts/run-with-env.mjs PENGUIN_HOME=~/.penguin/dev-data PORT=7369 -- tsx src/penguin.ts"
+    "penguin": "node ../../scripts/run-with-env.mjs PENGUIN_HOME=~/.penguin/dev-data-cli PORT=7369 -- tsx src/penguin.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/client": "^2.0.0",
-    "@prismshadow/agenthub": "^0.4.6",
+    "@prismshadow/agenthub": "^0.4.8",
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-server": "workspace:*",
     "@prismshadow/penguin-skills": "workspace:*",

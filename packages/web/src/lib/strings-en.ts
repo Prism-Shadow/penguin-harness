@@ -87,11 +87,7 @@ export const en: Strings = {
     generalTitle: "General",
     appearanceTitle: "Appearance",
     accountTitle: "Account",
-    /** Sidebar Session list: also show CLI-created Sessions (default off — the list then never scans the Trace directories). */
-    showCliSessions: "Show CLI sessions",
-    showCliSessionsInfo:
-      "Off, the conversation list holds only Sessions created in the Web App and is served straight from the database. On, the Trace directories are scanned too and CLI-created Sessions are listed alongside them. Applies to this account only.",
-    /** Trace import (below the CLI-sessions filter): the two pickers' accessible names, the pick-a-file action, and its outcomes. */
+    /** Trace import: the two pickers' accessible names, the pick-a-file action, and its outcomes. */
     importTrace: "Import Trace",
     importTraceInfo:
       "Upload a .jsonl Trace exported from another install and it becomes a conversation of the chosen Agent. Both halves of the destination are picked here: the endpoint is per-Agent — a Trace file's own session_meta cannot name a local Agent, since its agent_state path belongs to the machine that exported it — and the Project is asked for because this dialog does not show which one is open, which also means a Trace can go to a Project other than the open one. Exporting happens in a conversation's Trace panel.",
@@ -162,6 +158,7 @@ export const en: Strings = {
     /** Superscript badge on the version lines when the update check found a newer release. */
     newVersionBadge: "New version available",
     newVersion: (v: string) => `New version v${v} available`,
+    updatesAvailable: "Updates available",
     /**
      * The sidebar user menu's SINGLE update row: it reads "Check for updates" until a newer
      * release is known and runs the manual check; once one is known it reads newVersion() and
@@ -606,6 +603,7 @@ export const en: Strings = {
     kernelTitle: "Kernel",
     kernelLegacy: "predates kernel versioning",
     kernelOutdatedHint: "Kernel update available",
+    kernelUpdateNeeded: "Kernel update needed",
     kernelUpToDate: "Up to date",
     kernelUpdateTitle: "Update kernel",
     kernelCurrent: "current",
@@ -769,13 +767,36 @@ export const en: Strings = {
     confirmDeleteTitle: "Delete model",
     confirmDelete: (name: string): string =>
       `Delete "${name}"? Its configuration and API key will be removed.`,
-    groupApiKey: "Set API key for group",
+    groupApiKey: "Set key",
     groupApiKeyTitle: (label: string): string => `Set the API key for ${label}`,
     groupApiKeyHint: (n: number): string =>
       `Applies to all ${n} models in this group; leave empty to keep them unchanged.`,
-    getApiKey: "Get API key",
+    getApiKey: "Manage keys",
     getModelIds: "Get model IDs",
     groupKeyApplied: (n: number): string => `API key set for ${n} models`,
+    oauthKey: "Authorize key",
+    oauthTitle: (label: string): string => `Authorize a new ${label} API key`,
+    oauthIntro: (label: string, n: number): string =>
+      `A new API key will be created on your ${label} account and written to all ${n} models in this group, replacing the key they use now.`,
+    oauthAuthorize: "Open authorization page",
+    oauthWaiting: "Waiting for the authorization to finish in the other tab…",
+    oauthApplied: (n: number): string => `New API key set for ${n} models`,
+    oauthManualSwitch: "Page can't redirect back? Enter the code by hand",
+    oauthCallbackSwitch: "Go back to the automatic redirect",
+    oauthManualHint: "Open the authorization page, then paste the one-time code it shows you here.",
+    oauthCodeLabel: "Authorization code",
+    oauthSubmitCode: "Submit code",
+    oauthTimedOut: "The authorization never came back. Enter the code by hand, or start again.",
+    oauthRetry: "Start again",
+    oauthErrors: {
+      invalid_request: "The authorization request was rejected. Start again.",
+      code_rejected:
+        "That authorization is no longer valid: it expired or was already used. Start again.",
+      upstream_failed: "The provider returned no usable key. Start again.",
+      unreachable: "The provider could not be reached. Check the network and start again.",
+      apply_failed:
+        "A key was created but could not be saved. Authorize again, then delete the unused key in the provider's console.",
+    },
     providerEnvNotes: {
       zhipu:
         "Defaults to the Z.AI global endpoint (api.z.ai); keys from bigmodel.cn need base URL https://open.bigmodel.cn/api/paas/v4",
@@ -1684,6 +1705,8 @@ Scenarios:
     pinSession: "Pin",
     unpinSession: "Unpin",
     pinnedSession: "Pinned",
+    /** The hover ellipsis button that opens the row's full context menu. */
+    moreActions: "More",
     /** Sidebar group "reveal/load next page" row (display cap + server paging). */
     loadMore: "More",
     /** Per-group reveal row: n = conversations THIS group still hides (one click reveals/loads one page more). */
@@ -1737,6 +1760,224 @@ Scenarios:
       budget_limited: "budget exhausted",
       aborted: "interrupted",
     } as Record<string, string>,
+  },
+
+  /** Feishu-channel strings of the messaging binding editor (channel-neutral ones live under `messaging`). */
+  feishu: {
+    /** The what-binding-does FAQ fold's body (this channel's flavor). */
+    intro:
+      "Once bound, messages sent to the Feishu bot flow into this conversation, and the AI's replies are sent back to Feishu as plain text. You need a self-built Feishu app with the bot capability and the message-receive event subscribed in long-connection mode.",
+    appId: "App ID",
+    appSecret: "App Secret",
+    /** Shown while a saved secret exists: submitting an empty field keeps it. */
+    appSecretKeepHint: "Leave empty to keep the saved App Secret",
+    /** The stored-secret row's clear checkbox (the models-page clear idiom). */
+    clearSecret: "Clear stored App Secret",
+    baseDomain: "API domain",
+    baseDomainHint: "https://open.feishu.cn for Feishu, https://open.larksuite.com for Lark",
+    invalidDomain: "The domain must be an http(s) URL",
+    /** Why "send test message" is disabled before the bot has ever been messaged. */
+    testMessageNoChat: "Message the bot once in Feishu first, so it knows which chat to send to",
+    /** The setup FAQ fold's steps. */
+    setupSteps: [
+      "Create a self-built app in the Feishu developer console",
+      "Enable the bot capability for the app",
+      "Subscribe to the message-receive event, with the subscription mode set to long connection",
+      "Copy the App ID and App Secret from the credentials page into the form above",
+      "Publish an app version, get it approved, then message the bot once in Feishu",
+    ],
+  },
+
+  /** Telegram-channel strings of the messaging binding editor (channel-neutral ones live under `messaging`). */
+  telegram: {
+    /** The what-binding-does FAQ fold's body (this channel's flavor). */
+    intro:
+      "Once bound, messages sent to the Telegram bot flow into this conversation, and the AI's replies are sent back to Telegram as plain text. Create a bot with @BotFather and paste its Bot Token — no public URL is needed.",
+    botToken: "Bot Token",
+    /** Shown while a saved token exists: submitting an empty field keeps it. */
+    botTokenKeepHint: "Leave empty to keep the saved Bot Token",
+    /** The stored-token row's clear checkbox (the models-page clear idiom). */
+    clearToken: "Clear stored Bot Token",
+    /**
+     * The Bot Token field's corner link. Telegram has no developer console — the token is
+     * issued by @BotFather inside the app — so this channel names the destination instead
+     * of borrowing the shared "open developer console" label.
+     */
+    openBotFather: "Open @BotFather",
+    invalidToken: "The Bot Token looks like <digits>:<secret>, as issued by @BotFather",
+    /** Why "send test message" is disabled before the bot has ever been messaged. */
+    testMessageNoChat: "Message the bot once in Telegram first, so it knows which chat to send to",
+    /** The setup FAQ fold's steps. */
+    setupSteps: [
+      "Open @BotFather in Telegram and send /newbot to create a bot",
+      "Name it as prompted, then copy the Bot Token @BotFather returns into the form above",
+      "Find the bot in Telegram and send it one message",
+    ],
+  },
+
+  /** QQ-channel strings of the messaging binding editor (channel-neutral ones live under `messaging`). */
+  qq: {
+    /** The what-binding-does FAQ fold's body (this channel's flavor). */
+    intro:
+      "Once bound, messages sent to the bot in QQ flow into this conversation, and the AI's replies are sent back to QQ. Create a bot on the QQ open platform and set its event subscription to WebSocket — no public URL is needed.",
+    appId: "App ID",
+    appSecret: "App Secret",
+    /** Shown while a saved secret exists: submitting an empty field keeps it. */
+    appSecretKeepHint: "Leave empty to keep the saved App Secret",
+    /** The stored-secret row's clear checkbox (the models-page clear idiom). */
+    clearSecret: "Clear stored App Secret",
+    /** Why "send test message" is disabled before the bot has ever been messaged. */
+    testMessageNoChat: "Message the bot once in QQ first, so it knows which chat to send to",
+    /**
+     * The rule that shapes this whole channel, stated where it is first needed rather than
+     * left for the user to infer from a reply that never arrives.
+     */
+    repliesOnly:
+      "QQ only lets a bot reply to a message you just sent it — it cannot start one. So a turn you begin in the web app is not mirrored to QQ, and once a few minutes have passed since your last QQ message, replies can no longer be delivered either. Send the bot another message in QQ to continue.",
+    /** The passive-reply budget, in the terms a user experiences it. */
+    replyBudget:
+      "One QQ message can receive at most 4 replies (5 in a group). When a run produces more than that, the last one carries the rest combined — nothing is lost, it just arrives as a single message.",
+    /** Scan-to-connect: the button, and the states it moves through. */
+    scanStart: "Connect by QR",
+    scanStarting: "Generating code…",
+    /** In the setup fold: what scanning saves the user, in one line. */
+    scanHint:
+      "Or connect by QR: authorize in QQ by scanning, with no App ID or App Secret to copy by hand.",
+    scanQrLabel: "QQ bot authorization QR code",
+    scanWaiting: "Waiting to be scanned in QQ…",
+    scanSteps:
+      "Scan the code with QQ on your phone, then pick the bot to authorize on the page it opens and confirm.",
+    /** Shown only after a code has actually lapsed and been replaced. */
+    scanRefreshed: "The previous code expired; this is a new one.",
+    /** Why the secret is safe to obtain this way — the question a careful user will ask. */
+    scanPrivacy:
+      "The credentials are received and stored by the server; the decryption key never reaches this browser.",
+    scanDone: (appId: string): string =>
+      `Saved the credentials for bot ${appId} — the connection can be enabled now`,
+    scanFailed: (reason: string): string => `Scan-to-connect failed: ${reason}`,
+    /** Shown when replacing lapsed codes stopped being worth another round trip. */
+    scanExpiredRepeatedly:
+      "The code kept expiring before it could be scanned. Try starting a new scan in a moment.",
+    /** Why the scan button is gated while this channel holds the connection. */
+    scanDisableFirst: "Disable the connection before rebinding by scan",
+    /** Separates the scan path from the manual one; the fields below are the fallback, not the default. */
+    scanOrManual: "Or enter them by hand",
+    /** The setup FAQ fold's steps. */
+    setupSteps: [
+      "Register as a developer on the QQ open platform and create a bot",
+      "Copy the App ID and App Secret from the development settings page into the form above",
+      "Set the event subscription mode to WebSocket — leave the callback URL empty",
+      "Add your own QQ account or a test group to the sandbox allowlist",
+      "Find the bot in QQ and send it one message",
+    ],
+  },
+
+  /**
+   * Session ↔ messaging-bot binding: the dock panel, the row action + dialog, and the
+   * channel-neutral editor strings (per-channel fields live under `feishu` / `telegram` /
+   * `qq`).
+   */
+  messaging: {
+    panelTitle: "Messaging",
+    /** Session-row context-menu action (the trailing ellipsis marks that a dialog follows). */
+    bindAction: "Messaging binding…",
+    dialogTitle: "Messaging binding",
+    /** The channel selector (always live: each channel's config is saved independently). */
+    channelLabel: "Channel",
+    channelName: {
+      feishu: "Feishu",
+      telegram: "Telegram",
+      qq: "QQ",
+    },
+    /**
+     * Shared link labels: the tutorial (in the setup FAQ fold) and, at the credential field's
+     * corner, the developer console — the latter only for the channels that have one. A
+     * channel whose credential is issued elsewhere names that destination itself (Telegram's
+     * `telegram.openBotFather`).
+     */
+    tutorial: "Open tutorial",
+    console: "Open developer console",
+    /** The connection toggle (flips immediately, using the stored credentials). */
+    enabled: "Enable connection",
+    /** The toggle's own tooltip: the switch IS the bind/unbind control, which a label reading "enable" does not say. */
+    bindByEnableHint:
+      "Enabling binds this bot to this conversation; turning it off releases it. The credentials stay saved either way.",
+    /** Why the toggle is gated while the form has unsaved edits. */
+    saveBeforeEnable: "Save the credentials first, then enable the connection",
+    test: "Test connection",
+    testing: "Testing…",
+    testOk: (ms: number): string => `Connected (${ms}ms)`,
+    /** Success feedback naming the account the credentials sign in as (Telegram: the bot's @username). */
+    testOkAs: (account: string, ms: number): string => `Connected as ${account} (${ms}ms)`,
+    testFail: (reason: string): string => `Connection failed: ${reason}`,
+    /** Second line on a successful Telegram test whose bot still has Group Privacy on; the remedies live in the troubleshooting fold, which outlasts a toast. */
+    testPrivacyOn:
+      "Group Privacy is on for this bot: it receives no ordinary messages in any group where it is not an administrator. See Troubleshooting below.",
+    sendTestMessage: "Send test message",
+    sendingTestMessage: "Sending…",
+    testMessageSent: "Test message sent",
+    statusLabel: "Connection status",
+    status: {
+      disconnected: "Not connected",
+      connecting: "Connecting",
+      connected: "Connected",
+      error: "Connection error",
+    },
+    /** Why the enable switch is gated while the OTHER channel holds the connection. */
+    otherEnabledHint: (other: string): string =>
+      `Only one channel can be enabled per conversation: turn off the ${other} connection first`,
+    /** Why the enable switch is gated while the selected channel has no stored credential. */
+    credentialMissingHint: "Enter and save the credential first, then enable the connection",
+    /** Why the clear checkbox is gated while the channel's connection is enabled. */
+    disableBeforeClearHint: "Disable the connection before clearing the credential",
+    /** The saved delivery option: one message per non-blank line of a reply. */
+    linePerMessage: "One message per line",
+    /** Its disclosure, beside the label: what the option does to a reply, and its two edges. */
+    linePerMessageHelp:
+      "Each non-blank line of a reply is sent as its own message and blank lines are dropped, so an answer written as several spoken lines arrives as several messages. Past a per-reply limit the remaining lines are combined into one last message rather than dropped, and a line longer than the channel allows is still split. The messages go out about a second apart, the pace a chat platform allows.",
+    /** Enabled-row indicator's tooltip / sr text (the small per-channel glyph on the session row). */
+    enabledIndicator: {
+      feishu: "Feishu connection enabled",
+      telegram: "Telegram connection enabled",
+      qq: "QQ connection enabled",
+    },
+    /**
+     * Delivery observability under the toggle: has anything arrived, and did the last one get
+     * through. Both readings belong to the LIVE CONNECTION and start over on a re-enable or a
+     * credential save, so the empty case names that scope instead of reading as "never".
+     * Each failure line carries its own time: nothing clears it on a later success, and a
+     * title= is unreachable on touch.
+     */
+    inboundLastAt: (when: string) => `Last message received: ${when}`,
+    inboundNone: "No message has arrived since this connection opened",
+    deliveryFailedInbound: (when: string, detail: string) =>
+      `A message arrived at ${when} but its task never started: ${detail}`,
+    deliveryFailedSend: (when: string, detail: string) =>
+      `The task ran but its reply failed to go out at ${when}: ${detail}`,
+    /** A connection failure the connection has since recovered from (lastError is gone by then). */
+    lastConnectionError: (when: string, detail: string) =>
+      `The connection dropped at ${when}: ${detail}`,
+    /** The collapsed FAQ folds below the save area. */
+    faqSetupTitle: "Set up the bot",
+    faqWhatTitle: "What binding does",
+    /** The channel-neutral half of that fold: how the same bot moves between conversations. */
+    faqWhatBinding:
+      "The same bot can stay saved in several conversations, but only one of them may have its connection enabled at a time. To move it, turn the connection off where it is on and enable it here — no credential has to be deleted.",
+    faqTroubleTitle: "Troubleshooting",
+    /** Troubleshooting entries (bot must be messaged once; connection errors point at credentials; one poller per Telegram token; Telegram Group Privacy withholds group messages from a non-admin bot; QQ answers only a message just sent). */
+    troubleNoChat:
+      "“Send test message” disabled? The bot must have received one message first, so it knows which chat to send to.",
+    troubleConnError:
+      "Connection status shows an error? Check the credentials; for Feishu also confirm the API domain and the long-connection event subscription.",
+    troubleOnePoller:
+      "Telegram reports that another program is polling? A Bot Token serves exactly one program at a time — close the other PenguinHarness server or bot script using it, or give this conversation a bot of its own. A getUpdates you run by hand (a curl to see what Telegram has queued) is that other program too: disable the connection here before running one. Inspecting them by hand can also discard them — any call you pass an offset to confirms everything before it, and the app's own next connect drops the backlog — so retest with a freshly sent message rather than the ones you just looked at.",
+    troubleGroupPrivacy:
+      "The bot ignores everything you say in a Telegram group? Telegram's Group Privacy is on by default, and under it a bot that is not an administrator of the group receives only commands addressed to it (such as /start@your_bot) and replies to its own messages — ordinary group messages are never delivered at all, and the connection itself looks perfectly healthy. Making the bot an administrator of that group fixes it on its own, since administrators always receive every message. Otherwise turn Group Privacy off with /setprivacy in @BotFather, then remove the bot from the group and add it back — a group it is already in does not pick up the change.",
+    /** The QQ-only failure a user will otherwise read as "the bot is broken". */
+    troubleQQPassive:
+      "No replies arriving in QQ? QQ only lets a bot answer a message you just sent: a turn started in the web app is not mirrored there, and replies stop being deliverable a few minutes after your last QQ message. Send another message in QQ to continue.",
+    troubleNoGroupInbound:
+      "Sending in a group but the panel still says no message has arrived? Read that line as evidence only about a message sent after it: it covers the current connection alone, and disabling and re-enabling the connection — or saving the credential again — opens a new one and starts it over. So send a fresh one now. If the line still reports nothing, Telegram is not delivering it and nothing on this machine can change that: confirm the bot is still in that group; if you have just turned Group Privacy off in @BotFather, remove the bot from the group and add it back, because an existing group does not pick up the change; and confirm nothing else is polling the same token — including a getUpdates you ran yourself (see above). Telegram channel posts are not supported either — this connection handles groups and direct chats only.",
   },
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */
@@ -1920,7 +2161,8 @@ Scenarios:
       unknown_skill: "This skill is not in the library.",
       skill_too_large: "This skill directory exceeds the import limits.",
       file_not_found: "This file no longer exists.",
-      not_pending: "This message already went out and can no longer be recalled.",
+      not_pending: "This steering message already reached the model and can no longer be recalled.",
+      follow_up_started: "This follow-up already started and can no longer be recalled.",
       file_too_large: "The file is too large.",
       too_many_files: "Too many files attached to one message.",
       payload_too_large: "The request is too large.",
@@ -1959,6 +2201,26 @@ Scenarios:
       trace_not_found: "This Trace file no longer exists.",
       trace_session_exists:
         "This agent already has a Session with that id; a duplicate Trace cannot be imported.",
+      feishu_secret_required: "App Secret is required.",
+      feishu_not_bound: "This Session has no Feishu binding yet.",
+      feishu_no_chat: "No Feishu message received yet — message the bot once in Feishu first.",
+      feishu_send_failed: "Sending the Feishu message failed.",
+      telegram_token_required: "Bot Token is required.",
+      telegram_token_invalid: "The Bot Token is malformed: it looks like <digits>:<secret>.",
+      telegram_not_bound: "This Session has no Telegram binding yet.",
+      telegram_no_chat:
+        "No Telegram message received yet — message the bot once in Telegram first.",
+      telegram_send_failed: "Sending the Telegram message failed.",
+      another_channel_enabled:
+        "Another channel's connection is enabled on this conversation: disable it first.",
+      // Deliberately names nothing about the other conversation: it may live in a Project
+      // this user cannot see, and the remedy does not depend on knowing which one it is.
+      account_enabled_elsewhere:
+        "This bot's connection is enabled on another conversation: turn it off there first.",
+      messaging_disable_before_clear:
+        "Disable this channel's connection before clearing its credential.",
+      messaging_disable_before_scan:
+        "Disable this channel's connection before rebinding it by scan.",
     },
   },
 };

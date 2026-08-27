@@ -58,6 +58,8 @@ penguin run -m "创建 hello.txt，内容为 Hello, Penguin"
 
 Workspace 默认为当前目录，可用 `--workspace /path` 指定；目标目录必须已存在。
 
+`run`、`chat` 与其余会话命令都是服务端的瘦客户端：本机有服务器运行时直接附着，没有时静默拉起一个（连接本机无需登录——连接规则见 [CLI 参考](/cli)）。它们创建的一切同样出现在 Web App 里，也可以在终端用 `penguin ls` / `penguin logs` / `penguin input` 继续操作这些会话。
+
 ## 交互式对话
 
 ```bash

@@ -1,57 +1,52 @@
 /**
- * `penguin chat` — interactive REPL.
+ * `penguin chat` — interactive REPL over the server.
  *
- *   penguin chat [--model-id <id> --provider <group>] [--project-id <id>] [--agent-id <id>]
- *                [--workspace <path>] [--approve <allow-all|deny-all|read-only|always-ask>]
- *                [--thinking <low|medium|high|xhigh|max>] [--verbose]
+ *   penguin chat [--project-id <id>] [--agent-id <id>] [--workspace <path>]
+ *                [--model-id <id> --provider <group>] [--approve <mode>]
+ *                [--thinking <level>] [--resume [sessionId]] [--verbose] [--server <url>]
  *
- * Each line of input starts one conversation turn; `/goal[:<budget>] <objective>` runs
- * goal mode (looping until the goal reaches a terminal state);
- * `/compact` proactively compacts the context (reason=manual); `/clear` starts a fresh
- * blank Session in place (the old Session's Trace stays on disk, resumable);
- * `/thinking [<level>]` shows or overrides the thinking level for subsequent turns
- * (see thinking-command.ts for the flag/command semantics); `/verbose` toggles
- * tool-output collapsing (long outputs render head/tail + an elision marker by default —
- * display only, the Trace keeps the full text; see output-collapse.ts); `/exit` or
- * `/quit` exits.
- * Uses the current directory when no Workspace is specified. A model reference is always an
- * explicit `(provider, model_id)` pair, so `--model-id` and `--provider` must be given
- * together; giving neither uses the Project's default model.
+ * The REPL machinery (persistent readline, bracketed paste, the Ctrl-C state machine)
+ * is unchanged; the transport is the server: each turn POSTs a task and consumes the
+ * Session's SSE stream (subscribe first, POST second) through the shared watcher.
+ * `/goal[:<budget>] <objective>` runs goal mode; `/compact` POSTs a compaction and
+ * renders its progress; `/clear` creates a fresh server Session in place; `/thinking`
+ * shows or overrides the per-turn thinking level; `/verbose` toggles tool-output
+ * collapsing (display only); `/exit` or `/quit` exits. Typing while a turn runs POSTs
+ * a steering message (delivered between turns); Ctrl-C during a run POSTs /abort.
  *
- * Multi-line input: trailing `\` continues the line; when the terminal supports bracketed
- * paste, a multi-line paste is treated as a single message (sent on Enter).
- *
- * Ctrl-C behavior (state-dependent): buffer has content -> clear it;
- * awaiting approval -> deny; running -> abort the current turn and return to input;
- * empty buffer -> show a y/N exit confirmation.
- *
- * Implementation notes: on a TTY, stdin is put into raw mode with bracketed paste enabled;
- * stdin is piped through PasteFilter into a readline created with `terminal: true` — Ctrl-C
- * is captured in-process by readline as 'SIGINT' (it never escapes as an OS signal killing
- * the process group), and pasted content is held whole by PasteFilter (not split into
- * multiple submits by embedded newlines).
+ * `--resume` reuses an existing Session (full id or unique fragment; omitted = the
+ * agent's most recent Session) and first renders its history from GET /messages.
+ * Ctrl-C behavior (state-dependent): buffer has content -> clear it; awaiting approval
+ * -> deny; running -> abort the current turn; empty buffer -> y/N exit confirmation.
  * Docs: /docs/cli § "penguin chat".
  */
 import { createInterface, type Interface } from "node:readline";
 import type { Command } from "commander";
-import { createAgent, userText, VERSION } from "@prismshadow/penguin-core";
-import type {
-  ApprovalDecision,
-  DefaultChatThinkingLevel,
-  OmniMessage,
-  Session,
-  ToolCallPayload,
-} from "@prismshadow/penguin-core";
+import { VERSION } from "@prismshadow/penguin-core";
+import type { ApprovalDecision, OmniMessage, ToolCallPayload } from "@prismshadow/penguin-core";
+import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { StreamRenderer, dim, renderHistory } from "../render.js";
-import { runTask } from "../task-loop.js";
 import { parseGoalCommand } from "../goal-command.js";
-import {
-  configuredThinkingLevel,
-  parseThinkingCommand,
-  resolveThinkingLevel,
-} from "../thinking-command.js";
+import { parseThinkingCommand, resolveThinkingLevel } from "../thinking-command.js";
 import { parseApprovalAnswer, resolveApprovalMode } from "../approval.js";
 import { LineComposer, PasteFilter } from "../input.js";
+import {
+  ApiError,
+  resolveAgentId,
+  resolveConnection,
+  resolveProjectId,
+  resolveSessionRef,
+  ServerClient,
+} from "../client.js";
+import {
+  callerSessionContext,
+  createServerSession,
+  getSessionInfo,
+  getSessionMessages,
+  listAgentSessions,
+  resolveWorkspace,
+} from "../server-session.js";
+import { SessionStream, watchTask } from "../server-task.js";
 import type { Messages } from "../i18n.js";
 
 export type ChatState = "idle" | "running" | "approving" | "confirming-exit";
@@ -79,24 +74,28 @@ export function registerChatCommand(program: Command, t: Messages): void {
   program
     .command("chat")
     .description(t.chat.desc)
-    .option("--model-id <id>", t.common.modelId)
-    .option("--provider <group>", t.common.provider)
     .option("--project-id <id>", t.common.projectId)
     .option("--agent-id <id>", t.common.agentId)
     .option("--workspace <path>", t.common.workspace)
+    .option("--model-id <id>", t.common.modelId)
+    .option("--provider <group>", t.common.provider)
     .option("--approve <mode>", t.common.approve)
     .option("--thinking <level>", t.common.thinking)
-    .option("--verbose", t.chat.verbose)
     .option("--resume [sessionId]", t.chat.resume)
+    .option("--verbose", t.chat.verbose)
+    .option("--server <url>", t.common.server)
     .action(async (opts) => {
-      // The model reference is a pair: commander can only require each option on its own,
-      // so the "both or neither" rule is enforced here. Giving neither is the normal case
-      // and falls back to the Project's default model. Skipped under --resume, which
-      // rejects both options outright further down with a more specific message.
-      // Usage errors go to stderr (as in `run` and `config model add`), unlike this file's
-      // informational messages, which the REPL writes to stdout.
+      // The model reference is a pair; both-or-neither (skipped under --resume, which
+      // rejects both outright below). Usage errors go to stderr, REPL info to stdout.
       if (opts.resume === undefined && Boolean(opts.modelId) !== Boolean(opts.provider)) {
         process.stderr.write(`${t.error(t.modelRefIncomplete())}\n`);
+        process.exitCode = 1;
+        return;
+      }
+      // --resume excludes --workspace and the model pair (neither can change once the
+      // Session exists); checked before any connection is made.
+      if (opts.resume !== undefined && (opts.workspace || opts.modelId || opts.provider)) {
+        process.stdout.write(`${t.error(t.resumeNoOverride())}\n`);
         process.exitCode = 1;
         return;
       }
@@ -107,66 +106,87 @@ export function registerChatCommand(program: Command, t: Messages): void {
       let verbose = opts.verbose === true;
       const out = process.stdout;
 
-      const agent = await createAgent({
-        ...(opts.agentId ? { agentId: opts.agentId } : {}),
-        ...(opts.projectId ? { projectId: opts.projectId } : {}),
-      });
+      const client = new ServerClient(await resolveConnection({ server: opts.server }, t), t);
+      const projectId = resolveProjectId(opts.projectId);
+      const agentId = resolveAgentId(opts.agentId);
 
-      // --resume: resumes an existing Session. Workspace and
-      // Model follow the original Session and cannot be overridden; when omitted, resumes
-      // the current Agent's most recent Session. Annotated (not inferred) because /clear
-      // reassigns it mid-REPL, after the closures below have captured it.
-      let session: Session;
+      // --resume reuses an existing Session (workspace/model fixed at creation); a new
+      // chat creates one on this cwd. `session` is reassigned by /clear after the
+      // closures below capture it, so it stays a let.
+      let session: SessionInfo;
+      let resumedMessages: OmniMessage[] | null = null;
       if (opts.resume !== undefined) {
-        if (opts.workspace || opts.modelId || opts.provider) {
-          out.write(`${t.error(t.resumeNoOverride())}\n`);
-          process.exitCode = 1;
-          return;
+        let sessionId: string | undefined;
+        if (typeof opts.resume === "string") {
+          sessionId = await resolveSessionRef(client, projectId, opts.resume, t);
+        } else {
+          // Most recent Session of the agent (the list is newest-first).
+          sessionId = (await listAgentSessions(client, projectId, agentId))[0]?.sessionId;
         }
-        const sessionId =
-          typeof opts.resume === "string" ? opts.resume : await agent.latestSessionId();
         if (!sessionId) {
           out.write(`${t.error(t.resumeNoSession())}\n`);
           process.exitCode = 1;
           return;
         }
-        session = await agent.resumeSession({ sessionId });
+        session = await getSessionInfo(client, sessionId);
+        resumedMessages = await getSessionMessages(client, sessionId);
+        if (opts.approve !== undefined) {
+          await client.request("PATCH", `/api/sessions/${session.sessionId}`, {
+            approvalMode: mode,
+          });
+        }
       } else {
-        session = await agent.createSession({
-          workspaceDir: opts.workspace ?? process.cwd(),
-          ...(opts.modelId ? { modelId: opts.modelId } : {}),
-          ...(opts.provider ? { provider: opts.provider } : {}),
-          ...(flagThinking ? { thinkingLevel: flagThinking } : {}),
+        // Inside a harness agent, unspecified fields default to the CALLING session's
+        // values — the run_subagent inheritance, applied to the CLI surface. Per field:
+        // explicit flag > caller value > the plain fallback.
+        const caller = await callerSessionContext(client, t);
+        session = await createServerSession(client, {
+          projectId,
+          agentId,
+          workspace: resolveWorkspace(opts.workspace, caller?.workspace),
+          ...(opts.modelId
+            ? { modelId: opts.modelId, provider: opts.provider }
+            : caller
+              ? { modelId: caller.modelId, provider: caller.provider }
+              : {}),
+          ...(opts.approve !== undefined
+            ? { approvalMode: mode }
+            : caller
+              ? { approvalMode: caller.approvalMode }
+              : {}),
         });
+        // `--thinking` on a new chat pins the Session default (sticky server-side, so
+        // spawned subagent sessions follow it — the same effect creation-time pinning
+        // had); with no flag, the caller's level pins the same way.
+        const pin = flagThinking ?? caller?.thinkingLevel;
+        if (pin) {
+          await client.request("PATCH", `/api/sessions/${session.sessionId}`, {
+            thinkingLevel: pin,
+          });
+          session = { ...session, thinkingLevel: pin };
+        }
       }
 
-      // Thinking level shown/changed by `/thinking` (a per-turn run parameter, so it CAN
-      // change mid-session — unlike workspace/model):
-      // - `--thinking` on a new chat pins the Session default at creation (above), so
-      //   subagent sessions follow it; under `--resume` the Session already exists and the
-      //   flag becomes the initial per-turn override instead.
-      // - `/thinking <level>` sets the override; unset turns omit the parameter so core's
-      //   construction-time default applies (`sessionThinkingDefault` mirrors it for display).
-      let thinkingOverride: DefaultChatThinkingLevel | undefined =
-        opts.resume !== undefined ? flagThinking : undefined;
+      // Thinking level shown/changed by `/thinking` (a per-turn run parameter):
+      // - a new chat's `--thinking` pinned the Session default above; under `--resume`
+      //   the Session already exists and the flag becomes the initial per-turn override.
+      // - `/thinking <level>` sets the override; unset turns omit the parameter so the
+      //   Session's pinned level (else the Agent config) applies.
+      let thinkingOverride = opts.resume !== undefined ? flagThinking : undefined;
       const sessionThinkingDefault = (): string =>
-        opts.resume === undefined && flagThinking ? flagThinking : configuredThinkingLevel(agent);
+        session.thinkingLevel ?? t.chatThinkingConfigured();
 
       let renderer = new StreamRenderer(out, t, { collapseToolOutput: !verbose });
-      // Tool schemas (each tool's call-line preview path) arrive on the stream as the
-      // first run's tool_list_ready event — the toolset isn't known before then (MCP
-      // servers connect lazily); the renderer registers them as they flow by.
 
       out.write(
-        `${t.header("chat", VERSION, agent.state.agentId, session.workspaceDir, session.modelId)}\n` +
+        `${t.header("chat", VERSION, session.agentId, session.workspace, session.modelId)}\n` +
           `${t.chatHints()}\n`,
       );
-      // On resume, first render the history messages of the current context per Trace
-      // (full messages, including interrupted turns and their markers), then proceed to
-      // regular input.
-      if (session.resumedHistory) {
-        out.write(`${t.resumedBanner(session.sessionId, session.resumedHistory.length)}\n`);
-        renderHistory(session.resumedHistory, out, t, { collapseToolOutput: !verbose });
+      // On resume, first render the history messages of the current context (full
+      // messages, same endpoint the Web history uses), then proceed to regular input.
+      if (resumedMessages !== null) {
+        out.write(`${t.resumedBanner(session.sessionId, resumedMessages.length)}\n`);
+        renderHistory(resumedMessages, out, t, { collapseToolOutput: !verbose });
       }
 
       // TTY: raw mode + bracketed paste + PasteFilter; non-TTY (pipe/test): read stdin directly.
@@ -189,12 +209,9 @@ export function registerChatCommand(program: Command, t: Messages): void {
       const rli = rl as unknown as RlInternals;
       const composer = new LineComposer();
 
-      // Typing lock (owner directive): while the user is composing a line mid-run, streamed
-      // output must not scribble over it — the renderer holds (queues) output while the input
-      // buffer is non-empty and flushes once the line is submitted or cleared. Synced after
-      // readline has processed each chunk (setImmediate: listener order is not guaranteed);
-      // TTY only — non-TTY input (pipe/tests) has no echoed line to protect. The approval
-      // prompt has its own lock (beginUserPrompt), so the hold applies to "running" only.
+      // Typing lock: while the user is composing a line mid-run, streamed output must not
+      // scribble over it — the renderer holds output while the input buffer is non-empty
+      // and flushes once the line is submitted or cleared. TTY only.
       const syncInputHold = (): void => {
         renderer.setInputHold(state === "running" && rli.line.length > 0);
       };
@@ -204,7 +221,8 @@ export function registerChatCommand(program: Command, t: Messages): void {
 
       let state: ChatState = "idle";
       let closed = false;
-      let taskAbort: AbortController | null = null;
+      /** Set while a turn runs; SIGINT posts /abort through it exactly once per turn. */
+      let abortTurn: (() => void) | null = null;
       let pendingLine: ((line: string | null) => void) | null = null;
       let pendingApproval: ((decision: ApprovalDecision) => void) | null = null;
       /** A line typed in the running->idle race window (steer refused): becomes the next prompt instead of being dropped. */
@@ -246,6 +264,26 @@ export function registerChatCommand(program: Command, t: Messages): void {
         });
       }
 
+      // Mid-run steering over the API: POST /steer; a 409 (the task just finished — the
+      // running->idle race) must not drop the line, so it becomes the next prompt — fed
+      // straight to a waiting askLine, else stashed for the next one.
+      const steer = (text: string): void => {
+        void client
+          .request("POST", `/api/sessions/${session.sessionId}/steer`, { text })
+          .then(() => {
+            renderer.printLine(dim(t.steerQueued(text)));
+          })
+          .catch(() => {
+            if (pendingLine) {
+              const resolve = pendingLine;
+              pendingLine = null;
+              resolve(text);
+            } else {
+              queuedPrompt = text;
+            }
+          });
+      };
+
       rl.on("line", (line) => {
         if (state === "confirming-exit") {
           if (parseApprovalAnswer(line) === "allow") {
@@ -279,21 +317,11 @@ export function registerChatCommand(program: Command, t: Messages): void {
           resolve(parseApprovalAnswer(line, "allow"));
           return;
         }
-        // running: a non-empty line becomes a steering message for the running Task — core
-        // delivers it between turns as a standalone [user_steering] user message, so the
-        // model sees it without the loop being interrupted. Empty lines are still ignored.
-        // steer() returning false (race: the task just finished) must not drop the line:
-        // it is stashed and becomes the next normal prompt as soon as the loop asks again.
+        // running: a non-empty line becomes a steering message for the running Task.
         if (state === "running") {
           const text = line.trim();
           if (text.length === 0) return;
-          if (session.steer([userText(text)])) {
-            // Printed via the renderer while the typing hold is still engaged, so the ack
-            // lands before the held stream output flushes underneath it.
-            renderer.printLine(dim(t.steerQueued(text)));
-          } else {
-            queuedPrompt = text;
-          }
+          steer(text);
         }
       });
 
@@ -308,9 +336,10 @@ export function registerChatCommand(program: Command, t: Messages): void {
             resolve("deny");
           }
         } else if (action === "abort") {
-          if (taskAbort && !taskAbort.signal.aborted) {
+          if (abortTurn) {
             out.write(`\n${t.taskInterrupted()}\n`);
-            taskAbort.abort();
+            abortTurn();
+            abortTurn = null;
           }
         } else if (action === "clear") {
           composer.reset();
@@ -363,9 +392,8 @@ export function registerChatCommand(program: Command, t: Messages): void {
           rl.prompt();
         });
 
-      // Interactive approval prompt: reuses the persistent readline, prompt text is
-      // localized; the tool call is already rendered above via streaming, so it is not
-      // re-rendered here.
+      // Interactive approval prompt: reuses the persistent readline; the tool call is
+      // already rendered above via streaming, so it is not re-rendered here.
       const interactivePrompt = (_tc: OmniMessage<ToolCallPayload>): Promise<ApprovalDecision> =>
         new Promise((resolve) => {
           state = "approving";
@@ -377,15 +405,46 @@ export function registerChatCommand(program: Command, t: Messages): void {
           rl.prompt();
         });
 
-      // Whether this Session already has a resumable Trace record: a resumed Session
-      // naturally has one; a new Session gets one starting from its first Task / compact
-      // (session_meta is written along with it). This decides whether to print the resume
-      // command example on exit.
+      /**
+       * One server-driven turn: subscribe, POST via `post`, watch to idle. Returns once
+       * the turn (or compaction/goal) has fully settled. Wires this turn's Ctrl-C to
+       * POST /abort exactly once.
+       */
+      const runTurn = async (
+        post: () => Promise<unknown>,
+        watch: { goal?: boolean } = {},
+      ): Promise<void> => {
+        const stream = new SessionStream(client, session.sessionId, t);
+        let aborted = false;
+        abortTurn = () => {
+          if (aborted) return;
+          aborted = true;
+          void client
+            .request("POST", `/api/sessions/${session.sessionId}/abort`)
+            .catch(() => undefined);
+        };
+        try {
+          await stream.waitReady();
+          await post();
+          await watchTask(stream, {
+            client,
+            sessionId: session.sessionId,
+            t,
+            renderer,
+            approvalPrompt: interactivePrompt,
+            ...(watch.goal ? { goal: { out } } : {}),
+          });
+        } finally {
+          abortTurn = null;
+          stream.close();
+        }
+      };
+
+      // Whether this Session already has (or gained) history worth a resume hint.
       let resumable = opts.resume !== undefined;
 
       // The copy-pastable resume command for one Session: includes this run's Project /
-      // Agent options so it works as-is. Printed on exit, and by /clear for the Session
-      // it retires.
+      // Agent options so it works as-is.
       const resumeCommand = (sessionId: string): string =>
         `penguin chat --resume ${sessionId}` +
         (opts.projectId ? ` --project-id ${opts.projectId}` : "") +
@@ -399,16 +458,13 @@ export function registerChatCommand(program: Command, t: Messages): void {
           if (text === "/exit" || text === "/quit") break;
           if (text.length === 0) continue;
 
-          // Instant local commands (no Task runs, state stays idle). Like every slash
-          // command they are recognized at the prompt only — typed mid-run they are
-          // steering text.
+          // Instant local commands (no Task runs, state stays idle). Typed mid-run they
+          // are steering text.
           if (text === "/thinking" || text.startsWith("/thinking ")) {
             const parsed = parseThinkingCommand(text);
             if (!parsed.ok) {
               out.write(`${t.error(t.thinkingInvalid(parsed.value))}\n`);
             } else if (parsed.level === null) {
-              // Name the source, not just the level: an override applies to this chat's turns
-              // only, while the Session default is also what spawned subagents inherit.
               const sessionDefault = sessionThinkingDefault();
               out.write(
                 `${
@@ -431,54 +487,55 @@ export function registerChatCommand(program: Command, t: Messages): void {
           }
 
           state = "running";
-          taskAbort = new AbortController();
           try {
             if (text === "/compact") {
-              // Proactive context compaction (Task boundary, reason=manual): the renderer
-              // prints compaction progress; Ctrl-C aborts the compaction via signal
-              // (preserving the original context). When there's nothing to compact (session
-              // just started / two consecutive /compact calls), the engine silently returns
-              // and we add one line of feedback here. Afterwards, settle the renderer's
-              // counters (endCompact) — compaction usage is already shown on the completion
-              // line and must not be counted again toward the next task's stats delta.
+              // Proactive context compaction: POST /compact and render its paired events
+              // from the stream; a 409 (nothing to compact / just compacted) prints one
+              // line of feedback. endCompact settles the renderer's counters afterwards.
               const startedAt = Date.now();
-              let sawMessage = false;
               try {
-                for await (const msg of session.compact({
-                  signal: taskAbort.signal,
-                })) {
-                  sawMessage = true;
-                  resumable = true;
-                  renderer.handle(msg);
+                await runTurn(() =>
+                  client.request("POST", `/api/sessions/${session.sessionId}/compact`),
+                );
+                resumable = true;
+              } catch (err) {
+                if (err instanceof ApiError && err.status === 409) {
+                  out.write(`${t.compactNothing()}\n`);
+                } else {
+                  throw err;
                 }
               } finally {
                 renderer.endCompact(Date.now() - startedAt);
               }
-              if (!sawMessage) out.write(`${t.compactNothing()}\n`);
             } else if (text === "/clear") {
-              // Start over with a brand-new blank Session on the same Workspace and model
-              // (pinned from the current Session, so a --resume'd chat clears to the same
-              // settings). The old Session is only disposed — its persisted Trace stays on
-              // disk and resumable — so its resume command is printed first (same shape as
-              // the exit hint). The new Session is created before the old one is dropped:
-              // a failure keeps the current conversation intact. A fresh renderer starts
-              // the Session-cumulative stats from zero; the new Session has no Trace
-              // record yet, so `resumable` resets until its first Task / compact.
-              const next = await agent.createSession({
-                workspaceDir: session.workspaceDir,
+              // Start over with a brand-new blank Session on the same Workspace and model.
+              // The old Session stays on the server (resumable), so its resume command is
+              // printed first. The new Session is created before the old one is dropped: a
+              // failure keeps the current conversation intact.
+              const next = await createServerSession(client, {
+                projectId,
+                agentId,
+                workspace: session.workspace,
                 modelId: session.modelId,
                 provider: session.provider,
-                ...(flagThinking ? { thinkingLevel: flagThinking } : {}),
+                approvalMode: session.approvalMode,
               });
+              // Carry the current session's pinned thinking level over (whether it came
+              // from --thinking or from the calling session's context).
+              const pin = session.thinkingLevel;
+              if (pin) {
+                await client.request("PATCH", `/api/sessions/${next.sessionId}`, {
+                  thinkingLevel: pin,
+                });
+              }
               if (resumable) out.write(`${dim(t.resumeHint(resumeCommand(session.sessionId)))}\n`);
-              session.dispose();
-              session = next;
+              session = pin ? { ...next, thinkingLevel: pin } : next;
               renderer = new StreamRenderer(out, t, { collapseToolOutput: !verbose });
               resumable = false;
               out.write(`${t.clearDone()}\n`);
             } else if (text === "/goal" || text.startsWith("/goal:") || text.startsWith("/goal ")) {
-              // Goal mode: one command drives the whole loop; Ctrl-C aborts the entire
-              // goal (a single signal spans every round), never just the current round.
+              // Goal mode: one POST drives the whole loop server-side; Ctrl-C aborts the
+              // entire goal.
               const parsed = parseGoalCommand(text);
               if (!parsed.ok) {
                 const message =
@@ -486,41 +543,37 @@ export function registerChatCommand(program: Command, t: Messages): void {
                 out.write(`${t.error(message)}\n`);
               } else {
                 resumable = true;
-                await runTask(session, [userText(parsed.objective)], {
-                  mode,
-                  signal: taskAbort.signal,
-                  ...(thinkingOverride ? { thinkingLevel: thinkingOverride } : {}),
-                  renderer,
-                  interactivePrompt,
-                  t,
-                  goal: { budget: parsed.budget, out },
-                });
+                await runTurn(
+                  () =>
+                    client.request("POST", `/api/sessions/${session.sessionId}/tasks`, {
+                      input: [{ type: "text", text: parsed.objective }],
+                      ...(thinkingOverride ? { thinkingLevel: thinkingOverride } : {}),
+                      goal: { budget: parsed.budget },
+                    }),
+                  { goal: true },
+                );
               }
             } else {
               resumable = true;
-              await runTask(session, [userText(text)], {
-                mode,
-                signal: taskAbort.signal,
-                ...(thinkingOverride ? { thinkingLevel: thinkingOverride } : {}),
-                renderer,
-                interactivePrompt,
-                t,
-              });
+              await runTurn(() =>
+                client.request("POST", `/api/sessions/${session.sessionId}/tasks`, {
+                  input: [{ type: "text", text }],
+                  ...(thinkingOverride ? { thinkingLevel: thinkingOverride } : {}),
+                }),
+              );
             }
           } catch (err) {
             out.write(`\n${t.error(err instanceof Error ? err.message : String(err))}\n`);
           } finally {
-            taskAbort = null;
             state = "idle";
           }
         }
       } finally {
         rl.close();
         cleanup();
-        session.dispose(); // tear down managed long-running command sessions to avoid leaking background processes
         process.removeListener("exit", cleanup);
         // On exit, print a dimmed resume command example; skipped when the Session has
-        // no Trace record yet (nothing to resume).
+        // no history yet (nothing to resume). The Session itself lives on the server.
         if (resumable) {
           out.write(`${dim(t.resumeHint(resumeCommand(session.sessionId)))}\n`);
         }

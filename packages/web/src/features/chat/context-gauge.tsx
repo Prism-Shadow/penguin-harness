@@ -31,8 +31,9 @@
  *
  * The panel is portaled to document.body and positioned against viewport coordinates by
  * usePortalPanel, so the composer's own overflow cannot clip it, and it closes on outside click /
- * Esc / scroll / resize. It opens upward on its own: the composer sits at the bottom of the page,
- * so there is never room below.
+ * Esc / a scroll that moves the ring itself / resize — the message list scrolling under a
+ * streaming reply leaves it open. It opens upward on its own: the composer sits at the bottom of
+ * the page, so there is never room below.
  */
 import { useEffect, useId, useState } from "react";
 import { createPortal } from "react-dom";
@@ -193,7 +194,9 @@ function ContextPanel({
   unknown: boolean;
 }) {
   // A snapshot taken when the panel opens (it only mounts while open), not a live counter: the
-  // endpoint re-reads a whole Trace shard, and the panel closes on any scroll anyway.
+  // endpoint re-reads a whole Trace shard, so polling it through a streaming run is not free.
+  // The figures in the header above stay live — they come from the ring's own props — so what
+  // holds still is the composition breakdown, for as long as the panel is left open.
   const [state, setState] = useState<PanelState>({ status: "loading" });
   // Row id under the pointer — a part key, or `tool:<name>` for the ranking below. One piece of
   // state for both lists, so a hovered tool row cannot also dim the bar it has no segment in.

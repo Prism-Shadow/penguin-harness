@@ -1,6 +1,17 @@
 /**
- * Auth middleware: session cookie -> auth_sessions row -> user on c.var; 401 when absent.
+ * Auth middleware: `Authorization: Bearer <local API token>` -> the built-in admin, or
+ * session cookie -> auth_sessions row -> user; either way the user is injected into c.var.
+ *
+ * The Bearer path authenticates the boot's local API token (`<root>/api-token`, see
+ * auth/api-token.ts) as the admin — the CLI's and agents' machine-local credential; it
+ * applies to every route behind this middleware, SSE endpoints included (the CLI
+ * consumes SSE via fetch with headers). A Bearer header that does not match fails the
+ * request rather than falling back to the cookie: silently downgrading a wrong explicit
+ * credential would mask misconfiguration.
+ *
+ * Accessing a protected API while logged out -> 401 `{error:{code:"unauthorized"}}`.
  * CSRF: SameSite=Lax plus a Content-Type an HTML form cannot forge (see jsonOnlyWrites).
+ * That guard stays for Bearer requests too — the CLI always sends application/json.
  */
 import type { MiddlewareHandler } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
@@ -53,6 +64,19 @@ export function currentUser(c: { var: { user: UserRow } }): UserRow {
 
 export function authMiddleware(auth: AuthService, trustProxy: boolean): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
+    // Bearer first: an explicit credential on the request outranks ambient cookies, and
+    // a wrong one is an error, never a silent fallback (see the module doc).
+    const bearer = bearerToken(c.req.header("authorization"));
+    if (bearer !== null) {
+      const viaToken = auth.authenticateApiToken(bearer);
+      if (!viaToken) {
+        throw new HttpError(401, "unauthorized", "Invalid API token.");
+      }
+      c.set("user", viaToken.user);
+      c.set("sessionVia", viaToken.via);
+      await next();
+      return;
+    }
     const token = getCookie(c, SESSION_COOKIE);
     const authed = token ? auth.authenticateWithMeta(token) : null;
     if (!authed) {
@@ -67,6 +91,13 @@ export function authMiddleware(auth: AuthService, trustProxy: boolean): Middlewa
     c.set("sessionVia", authed.via);
     await next();
   };
+}
+
+/** The token of an `Authorization: Bearer <token>` header (scheme matched case-insensitively); null for any other shape. */
+export function bearerToken(header: string | undefined): string | null {
+  if (header === undefined) return null;
+  const m = /^Bearer\s+(.+)$/i.exec(header.trim());
+  return m === null ? null : m[1]!.trim();
 }
 
 const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);

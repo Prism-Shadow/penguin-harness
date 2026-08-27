@@ -281,9 +281,14 @@ export function claimRuntimeCapabilities(resources: Resources): RuntimeClaim {
   const desktop = resources.claim<DesktopService | null>(RUNTIME_DESKTOP_RESOURCE_ID) ?? null;
   const overrides = resources.claim<BuildDepsOverrides>(RUNTIME_OVERRIDES_RESOURCE_ID) ?? {};
   // Optional by design (see the resource's own note): an older runtime published no such
-  // holder, and a fresh one is a correct, slightly forgetful substitute.
+  // holder, and a fresh one is a correct, slightly forgetful substitute. A runtime older
+  // than this platform may also publish a holder missing the fields added since; they are
+  // filled IN PLACE, never by copying — the bag is shared with the runtime by identity, and
+  // a copy would strand every write the App makes to it.
   const authState =
     resources.claim<AuthRuntimeState>(RUNTIME_AUTH_STATE_RESOURCE_ID) ?? newAuthRuntimeState();
+  authState.firstLoginToken ??= null;
+  authState.apiToken ??= null;
   // …then the objects themselves. A descriptor is a claim about what is there; this is
   // the part that checks it, so an honest-but-wrong runtime is caught here rather than at
   // the first call site. `desktop` is exempt when null — that is a value, not a shortfall.

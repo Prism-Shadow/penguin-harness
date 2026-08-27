@@ -101,7 +101,7 @@ describe("the sidebar user menu", () => {
     // with the admin ones.
     expect(source).toContain("setSettingsOpen(true)");
     expect(source).not.toContain("offersChangePassword");
-    expect(source).not.toContain("S.settings.showCliSessions");
+    expect(source).not.toContain("S.settings.language");
     expect(source).not.toContain("S.settings.theme");
     expect(source).not.toContain('go("/settings")');
     expect(source).not.toContain('go("/admin/users")');

@@ -263,6 +263,33 @@ describe("MCP over stdio — per-server budgets and interruption", () => {
     }
   });
 
+  it("the host's harness variables never reach a stdio server", async () => {
+    // The stdio child env is the MCP SDK's safe-inherited allowlist plus the entry's own
+    // env — assembled in provider.ts, apart from the command-session strip — so the
+    // serving process's PENGUIN_HOME/PORT must be invisible here even though no strip
+    // runs on this path. Pinned locally because only the allowlist guarantees it: a
+    // widened inherited base (say, spreading process.env) would leak silently otherwise.
+    // The child env is captured when the server connects, i.e. at the first tool call of
+    // this fresh Environment, so the pollution below is what that capture sees.
+    const saved = { PENGUIN_HOME: process.env.PENGUIN_HOME, PORT: process.env.PORT };
+    process.env.PENGUIN_HOME = "leak-check-root";
+    process.env.PORT = "7364";
+    const env = makeEnv({ env: { FIXTURE_SECRET: "still-arrives" } });
+    try {
+      const final = finalPayload(await runTool(env, "mcp__fx__probe", {}));
+      const [secret, , penguinHome, port] = (final.output ?? "").split("|");
+      expect(secret).toBe("still-arrives");
+      expect(penguinHome).toBe("");
+      expect(port).toBe("");
+    } finally {
+      env.dispose();
+      for (const [k, v] of Object.entries(saved)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  });
+
   it("skips an unreachable server with a warning instead of failing", async () => {
     const warn = vi.fn();
     const provider = new McpToolProvider(

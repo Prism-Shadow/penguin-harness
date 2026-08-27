@@ -70,7 +70,7 @@ export function Scenarios() {
                     loading="lazy"
                     className="aspect-[16/9] w-full object-cover md:aspect-auto md:w-[48%]"
                   />
-                  <figcaption className="p-7 md:flex md:flex-1 md:flex-col md:justify-center md:p-12">
+                  <figcaption className="p-5 sm:p-7 md:flex md:flex-1 md:flex-col md:justify-center md:p-12">
                     <h3 className="text-xl font-semibold sm:text-2xl">{c.title}</h3>
                     <p className="mt-4 text-[15px] leading-7 text-gray-600 dark:text-gray-400">
                       {c.body}

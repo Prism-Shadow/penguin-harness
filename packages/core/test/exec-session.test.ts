@@ -2,7 +2,7 @@
  * Behavior tests for long-running command sessions (exec_command yield + input_command).
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Environment, ManagedSession } from "../src/environment/index.js";
@@ -463,6 +463,31 @@ describe("harness environment variables never reach a spawned command", () => {
       vaultEnv.dispose();
     }
   });
+
+  it("an explicit injection layered after the strip wins, for any PENGUIN_* name", async () => {
+    // The strip governs inheritance only — it runs while the host env is copied and never
+    // re-applies to entries spread in after it. That seam is what every injection layer
+    // relies on (the vault stands in for all of them here): the host's copy of the name is
+    // set to a different value to prove the child's value came from the injection, not
+    // through inheritance.
+    const savedInherited = process.env.PENGUIN_API_URL;
+    process.env.PENGUIN_API_URL = "http://inherited.invalid";
+    const vaultEnv = new Environment({
+      workspaceDir: tmp,
+      toolConfig: sessionConfig(),
+      vault: { PENGUIN_API_URL: "http://injected.example" },
+    });
+    try {
+      const res = await runTool(vaultEnv, "exec_command", {
+        cmd: `node -e "console.log('A=[' + (process.env.PENGUIN_API_URL ?? '') + ']')"`,
+      });
+      expect(res.output).toContain("A=[http://injected.example]");
+    } finally {
+      vaultEnv.dispose();
+      if (savedInherited === undefined) delete process.env.PENGUIN_API_URL;
+      else process.env.PENGUIN_API_URL = savedInherited;
+    }
+  });
 });
 
 describe("proxyEnv policy governs the proxy variables commands inherit", () => {
@@ -582,5 +607,116 @@ describe("proxyEnv policy governs the proxy variables commands inherit", () => {
       cmd: `node -e "console.log('H=[' + (process.env.HTTP_PROXY ?? '') + ']')"`,
     });
     expect(res.output).toContain("H=[http://proxy.corp.example:8080]");
+  });
+});
+
+describe("controlEnv injects the host's harness-control variables into commands", () => {
+  // The hosting server threads a controlEnv getter through Environment ->
+  // CommandSessionManager so commands the Agent runs can drive the harness back through
+  // the CLI/API (PENGUIN_API_URL / PENGUIN_API_TOKEN / the Session coordinates).
+
+  it("injected PENGUIN_* variables reach the child even though inherited ones are stripped", async () => {
+    // The host process's own PENGUIN_API_URL must NOT leak through inheritance; the same
+    // name from controlEnv must arrive — injection happens after the prefix strip.
+    process.env.PENGUIN_API_URL = "http://inherited.example:1";
+    const controlled = new Environment({
+      workspaceDir: tmp,
+      toolConfig: sessionConfig(),
+      controlEnv: () => ({
+        PENGUIN_API_URL: "http://localhost:7364",
+        PENGUIN_SESSION_ID: "session-x",
+      }),
+    });
+    try {
+      const res = await runTool(controlled, "exec_command", {
+        cmd: `node -e "console.log('U=[' + (process.env.PENGUIN_API_URL ?? '') + '] S=[' + (process.env.PENGUIN_SESSION_ID ?? '') + ']')"`,
+      });
+      expect(res.output).toContain("U=[http://localhost:7364] S=[session-x]");
+    } finally {
+      controlled.dispose();
+      delete process.env.PENGUIN_API_URL;
+    }
+  });
+
+  it("controlEnv overrides a vault entry of the same name (sanctioned host wiring wins)", async () => {
+    const controlled = new Environment({
+      workspaceDir: tmp,
+      toolConfig: sessionConfig(),
+      vault: { PENGUIN_API_TOKEN: "vault-token", KEEP_ME: "vault-kept" },
+      controlEnv: () => ({ PENGUIN_API_TOKEN: "boot-token" }),
+    });
+    try {
+      const res = await runTool(controlled, "exec_command", {
+        cmd: `node -e "console.log('T=[' + (process.env.PENGUIN_API_TOKEN ?? '') + '] K=[' + (process.env.KEEP_ME ?? '') + ']')"`,
+      });
+      expect(res.output).toContain("T=[boot-token] K=[vault-kept]");
+    } finally {
+      controlled.dispose();
+    }
+  });
+
+  it("the getter is re-read at every spawn, so a rotated token reaches running Sessions", async () => {
+    let token = "first";
+    const controlled = new Environment({
+      workspaceDir: tmp,
+      toolConfig: sessionConfig(),
+      controlEnv: () => ({ PENGUIN_API_TOKEN: token }),
+    });
+    try {
+      const read = `node -e "console.log('T=[' + (process.env.PENGUIN_API_TOKEN ?? '') + ']')"`;
+      expect((await runTool(controlled, "exec_command", { cmd: read })).output).toContain(
+        "T=[first]",
+      );
+      token = "second";
+      expect((await runTool(controlled, "exec_command", { cmd: read })).output).toContain(
+        "T=[second]",
+      );
+    } finally {
+      controlled.dispose();
+    }
+  });
+});
+
+describe("exec_command — a working directory that is not there", () => {
+  // Node reports an unusable `cwd` as `spawn <shell> ENOENT`: the error names the COMMAND,
+  // so a Workspace deleted under a live Session reads exactly like a missing shell. These
+  // pin the honest message — the one difference between "install bash" and "your Workspace
+  // is gone" for whoever reads the reply.
+
+  it("names the missing Workspace instead of blaming the shell", async () => {
+    // The Session is live and its Environment already built; the directory goes away
+    // underneath it, which is all it takes — the Workspace is validated when a Session
+    // loads and never again.
+    await rm(tmp, { recursive: true, force: true });
+    const res = await runTool(env, "exec_command", { cmd: "echo test" });
+    expect(res.output).toContain("working directory does not exist");
+    expect(res.output).toContain(tmp);
+    expect(res.output).not.toContain("ENOENT");
+    expect(res.output).not.toContain("spawn bash");
+    expect(res.stopReason).toBe("fatal");
+  });
+
+  it("names a workdir argument that does not resolve, rather than the shell", async () => {
+    const res = await runTool(env, "exec_command", {
+      cmd: "echo test",
+      workdir: "no/such/subdir",
+    });
+    expect(res.output).toContain("working directory does not exist");
+    expect(res.output).toContain(path.join(tmp, "no/such/subdir"));
+    expect(res.output).not.toContain("spawn bash");
+  });
+
+  it("names a workdir that is a file, not a directory", async () => {
+    const file = path.join(tmp, "notadir.txt");
+    await writeFile(file, "x");
+    const res = await runTool(env, "exec_command", { cmd: "echo test", workdir: "notadir.txt" });
+    expect(res.output).toContain("is not a directory");
+    expect(res.output).toContain(file);
+  });
+
+  it("still runs normally when the Workspace is there", async () => {
+    const res = await runTool(env, "exec_command", { cmd: "echo test" });
+    expect(res.output).toContain("test");
+    expect(res.stopReason).toBe("completed");
   });
 });

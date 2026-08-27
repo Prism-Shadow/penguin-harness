@@ -68,6 +68,7 @@ Skill 库以 npm 包 `@prismshadow/penguin-skills` 发布，tarball 直接携带
 | | `remote-claude-code` | 通过 SSH 在远程主机上驱动 Claude Code：expect 持久会话、headless `-p` 的 stdin 修正、tmux 驱动的交互 TUI（逐个按键并截屏确认，用户消息原样转发）与多轮续接（不预装，按需从技能库安装） |
 | AI 应用开发 | `penguin-sdk` | 基于 SDK 构建智能体应用、AI 与 RAG 应用（写应用代码，而非配置 Agent State）：createSession/run 流式循环、以 CLI 形式接入用户已有工具，外加带可溯源引用的完整检索配方 |
 | | `penguin-cli` | 用 penguin CLI 管理模型 API Key、默认模型与各 Agent 的 Vault 密钥 |
+| | `penguin-orchestration` | 从 shell 驱动 PenguinHarness 自身：用 penguin CLI 列出与创建 Agent 和会话、发送并中途改向消息、查询成本与定时任务 |
 | | `agenthub-models` | 经 `@prismshadow/agenthub` 调用模型 API：流式文本、图像生成、语音合成与 Embedding |
 | | `vllm` | 用 vLLM 部署与服务 LLM，提供 OpenAI 兼容端点，并为 Agent 负载启用工具调用 |
 | | `ollama` | 用 Ollama 部署与运行本地模型，把 OpenAI 兼容端点接入应用与 Agent |

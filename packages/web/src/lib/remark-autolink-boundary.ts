@@ -16,8 +16,6 @@
  * the RFC and browsers only accept it by encoding it for you; the same link pasted in its encoded
  * form is untouched. Explicit `[text](url)` links are never touched at all.
  */
-import remarkGfm from "remark-gfm";
-
 /**
  * The mdast shapes this touches, declared structurally rather than pulling `@types/mdast` in as a
  * dependency for three of them. Anything else on a node passes through untouched.
@@ -79,10 +77,3 @@ function walk(parent: Parent): void {
 export function remarkAutolinkBoundary() {
   return (tree: Parent): void => walk(tree);
 }
-
-/**
- * The remark plugin list every Markdown surface uses. Shared so the five renderers cannot drift:
- * a bare URL has to end at the same place in a chat message, a Trace event, a benchmark case and
- * a workspace file preview.
- */
-export const REMARK_PLUGINS = [remarkGfm, remarkAutolinkBoundary];

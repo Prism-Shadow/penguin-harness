@@ -6,11 +6,13 @@
  * admin. Sessions are rows in auth_sessions (cookie holds the token, the row its sha256), so
  * they outlive a restart and renew in place.
  */
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { randomBytes } from "node:crypto";
+import { tokensEqual } from "./api-token.js";
 import type { UserInfo } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import type { UserRow, UsersRepo } from "../db/repos/users.js";
 import { sessionTokenHash } from "../db/repos/auth-sessions.js";
+import type { SessionViaValue } from "../db/repos/auth-sessions.js";
 import type { AuthRuntimeState } from "./runtime-state.js";
 import type { AuthSessionsRepo } from "../db/repos/auth-sessions.js";
 import { SCRYPT_COST, hashPassword, verifyPassword } from "./password.js";
@@ -44,18 +46,12 @@ export function generateInitialAdminPassword(): string {
   return randomBytes(SEED_PASSWORD_CHARS).toString("base64url").slice(0, SEED_PASSWORD_CHARS);
 }
 
-/** Constant-time string equality, so redeemFirstLogin cannot be timed into the printed token. */
-function constantTimeEqual(a: string, b: string): boolean {
-  const ab = Buffer.from(a);
-  const bb = Buffer.from(b);
-  return ab.byteLength === bb.byteLength && timingSafeEqual(ab, bb);
-}
-
 /**
  * "desktop" and "setup" may set a password without the old one (theirs is random and was never
- * shown); desktop-only routes open to "desktop" alone. Anything else reads as "password".
+ * shown); desktop-only routes open to "desktop" alone. "token" is the local API token's Bearer
+ * header — per request, never a stored row. Anything else reads as "password".
  */
-export type SessionVia = "password" | "desktop" | "setup";
+export type SessionVia = "password" | "desktop" | "setup" | "token";
 
 export function toUserInfo(row: UserRow): UserInfo {
   return {
@@ -164,7 +160,7 @@ export class AuthService {
    */
   redeemFirstLogin(given: string): string | null {
     const expected = this.deps.state.firstLoginToken;
-    if (expected === null || given === "" || !constantTimeEqual(given, expected)) return null;
+    if (expected === null || given === "" || !tokensEqual(given, expected)) return null;
     return this.authenticateWithMeta(expected) === null ? null : expected;
   }
 
@@ -271,9 +267,34 @@ export class AuthService {
   }
 
   /**
-   * Sliding renewal tops the expiry up IN PLACE, so the cookie value never changes and there
-   * is no second identity to revoke. Only a session whose own span reaches the renewal window
-   * slides — a one-hour minted token must expire at its hour, not stretch by being used.
+   * The current boot's local API token (what control-env injection hands to tool
+   * subprocesses); null when none was minted. It lives on the runtime state, not on this
+   * service: the token was written to `<root>/api-token` by the process, so it must
+   * outlive the App a push replaces (auth/runtime-state.ts).
+   */
+  localApiToken(): string | null {
+    return this.deps.state.apiToken;
+  }
+
+  /**
+   * Validates a Bearer token against the boot's local API token (constant-time compare):
+   * a match authenticates as the built-in admin — holding the token proves filesystem
+   * access to the data root, which is admin authority (see auth/api-token.ts). Returns
+   * null on mismatch, when no token was minted, or when the admin row is missing.
+   */
+  authenticateApiToken(token: string): { user: UserRow; via: SessionVia } | null {
+    const apiToken = this.deps.state.apiToken;
+    if (apiToken === null || token.length === 0) return null;
+    if (!tokensEqual(token, apiToken)) return null;
+    const user = this.deps.users.findById(ADMIN_USER_ID);
+    return user === null ? null : { user, via: "token" };
+  }
+
+  /**
+   * Validates the cookie token. Sliding renewal tops the expiry up IN PLACE, so the cookie
+   * value never changes and there is no second identity to revoke. Only a session whose own
+   * span reaches the renewal window slides — a one-hour minted token must expire at its hour,
+   * not stretch by being used.
    */
   authenticateWithMeta(token: string): { user: UserRow; via: SessionVia; renewed: boolean } | null {
     const tokenHash = sessionTokenHash(token);
@@ -301,7 +322,7 @@ export class AuthService {
     return { user, via, renewed };
   }
 
-  private issueSession(userId: string, via: SessionVia): string {
+  private issueSession(userId: string, via: SessionViaValue): string {
     return this.deps.authSessions.issue({
       userId,
       via,

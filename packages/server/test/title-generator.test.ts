@@ -293,6 +293,13 @@ describe("title-generator", () => {
       );
     });
 
+    it("keeps a Title: line the user wrote themselves", () => {
+      // The label strip belongs to the LLM prompt, whose lead-in provokes it; this line is the
+      // user's own first message, where `Title:` is part of what they asked for.
+      expect(fallbackTitle("Title: Chapter One draft")).toBe("Title: Chapter One draft");
+      expect(fallbackTitle("标题：项目计划书初稿")).toBe("标题：项目计划书初稿");
+    });
+
     it("never cuts between the halves of a surrogate pair", () => {
       // The emoji straddles the 30-char boundary: a plain slice would leave its high half
       // alone, which SQLite and the SSE frame both render as U+FFFD.

@@ -5,8 +5,9 @@
  * SSE, so whichever client AgentHub routes to gets a valid stream) -> start the Web
  * server against a temp data root serving the built web dist -> drive a genuine
  * "build an Agent app" conversation (tools actually execute in the workspace) ->
- * screenshot chat / trace view / evaluation center, per UI language (zh / en, each
- * with its own user so sidebars stay monolingual) and per theme (light / dark), into
+ * screenshot the chat page, its Trace panel and the evaluation center, per UI language
+ * (zh / en, each with its own user so sidebars stay monolingual) and per theme
+ * (light / dark), into
  * src/assets/shots/ as <page>-<lang>-<theme>.webp (12 files, re-encoded to WebP
  * inside Chromium to keep the repo small).
  *
@@ -26,7 +27,9 @@ const ROOT = path.resolve(HERE, "../../..");
 const OUT_DIR = path.resolve(HERE, "../src/assets/shots");
 const MOCK_PORT = 8941;
 const SRV_PORT = 8940;
-const BASE = `http://127.0.0.1:${SRV_PORT}`;
+// `localhost`, not `127.0.0.1`: that literal address is reserved as the Workspace-preview
+// host, and the API answers 401 on it.
+const BASE = `http://localhost:${SRV_PORT}`;
 // Pins the otherwise-random seeded admin password (PENGUIN_SEED_ADMIN_PASSWORD below).
 const ADMIN_PASSWORD = "penguin-0000";
 const MOCK = `http://127.0.0.1:${MOCK_PORT}`;
@@ -488,6 +491,9 @@ async function provisionUser(adminCookie, lang) {
       {
         provider: "deepseek",
         modelId: "deepseek-v4-pro",
+        // The mock speaks Anthropic Messages and OpenAI Chat Completions; pinning the
+        // protocol keeps it off the Responses path AgentHub would otherwise pick.
+        clientType: "openai-chat",
         apiKey: "sk-demo",
         baseUrl: MOCK,
         contextWindow: 1000000,
@@ -605,6 +611,12 @@ try {
         ([t, l]) => {
           localStorage.setItem("penguin.theme", t);
           localStorage.setItem("penguin.lang", l);
+          // Both docks start closed (no scopes), so the chat shot is unaffected; the
+          // ratio only decides how tall the bottom dock is once the Trace tab opens it.
+          localStorage.setItem(
+            "penguin.dock.layout",
+            JSON.stringify({ scopes: {}, bottomRatio: 0.62 }),
+          );
         },
         [theme, lang],
       );
@@ -628,14 +640,21 @@ try {
       await page.waitForTimeout(2000);
       await saveWebp(await page.screenshot(), `chat-${lang}-${theme}.webp`);
 
-      // Trace view: the product's canonical deep link carries BOTH agentId and
-      // sessionId (?sessionId= alone is ignored by TracesPage's focus wiring), and
-      // auto-selects the Session once its trace list loads. Waiting for the
-      // execution timeline's exec_command lanes guarantees every language captures
-      // the same opened trace — stats + a timeline with tool calls — never the
-      // empty "select a Session" state.
-      await page.goto(`${BASE}/traces?agentId=default_agent&sessionId=${sessionId}`);
-      await page.getByText("exec_command").first().waitFor({ timeout: 20000 });
+      // Trace view: a Trace is read in its own conversation's Trace panel, opened as a
+      // tab in the bottom dock (the toolbar pulls the empty dock open, the picker puts
+      // the tab in it). Waiting for a timeline segment titled after the conversation's
+      // exec_command call guarantees every language captures the same opened Trace —
+      // stats plus a timeline with tool calls — never a still-loading skeleton.
+      await page.getByTestId("dock-toggle-bottom").click();
+      const bottomDock = page.locator("[data-testid='dock'][data-position='bottom']");
+      await bottomDock.getByTestId("dock-pick-trace").click();
+      await bottomDock
+        .locator('[data-tab-id="trace"][data-active="true"]')
+        .waitFor({ timeout: 20000 });
+      await bottomDock
+        .getByTitle(/exec_command/)
+        .first()
+        .waitFor({ timeout: 30000 });
       await page.waitForTimeout(2000);
       await saveWebp(await page.screenshot(), `traces-${lang}-${theme}.webp`);
 

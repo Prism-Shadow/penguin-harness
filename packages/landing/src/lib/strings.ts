@@ -3,8 +3,8 @@
  * active dictionary `S`; the English dictionary lives in strings-en.ts (constrained to
  * the same shape by the `Strings` type). Locale switching is handled by state/locale.tsx,
  * which calls `setActiveStrings` and remounts the tree keyed by locale — keep `S.x`
- * reads inside components. Keep domain terms in standard English casing — Agent,
- * Workspace, Token, Task, Skill, Trace, etc.
+ * reads inside components. English marketing copy uses lowercase `agent`; preserve the
+ * established casing of Workspace, Token, Task, Skill, Trace, and other product terms.
  */
 export const zh = {
   siteName: "PenguinHarness",
@@ -13,12 +13,13 @@ export const zh = {
     label: "公告",
     prev: "上一条公告",
     next: "下一条公告",
-    k3AndFree: "Kimi K3 与 Ling 3.0 Flash 等免费模型现已在 PenguinHarness 可用",
+    flashModels: "GLM-5.3 Flash 与 Qwen 3.8 Flash 现已在 PenguinHarness 可用",
     fireworks: "携手 AMD 开发者计划：$50 Fireworks API 额度免费领取中",
   },
 
   nav: {
     highlights: "特色",
+    selfImprove: "自进化",
     quickstart: "快速开始",
     cases: "案例",
     scenarios: "应用场景",
@@ -48,31 +49,32 @@ export const zh = {
   },
 
   hero: {
-    /**
-     * Headline: {titlePrefix}<nowrap>{titleNoWrap}{word}{titleSuffix}</nowrap>, the word
-     * rotating through titleWords (桌面/服务器 — where the builder runs; the README
-     * writes the pair as "桌面 / 服务器"). The nowrap span pins the wrap point in front
-     * of it, so a break never splits "Agent Builder" / "Right on Your Desktop" mid-phrase.
-     */
-    titlePrefix: "全自动 Agent 构建平台，",
-    titleNoWrap: "运行在你的",
-    titleWords: ["桌面", "服务器"],
-    titleSuffix: "上",
-    subtitle: "一键创建自进化 Agent",
-    /** Primary CTA: base label, and the platform-aware variant once the OS is detected. */
+    platformLead: "开源、本地的多 Agent 应用",
+    platformAccent: "自动开发",
+    platformTail: "平台",
+    automationLead: "全自动",
+    automationActions: ["创建", "优化", "部署"],
+    automationTail: "AI 应用",
     downloadCta: "下载桌面版",
-    downloadCtaFor: (platform: string) => `下载桌面版（${platform}）`,
-    ctaQuickstart: "快速开始",
-    ctaGithub: "GitHub",
-    /** Line under the CTAs: all installers on /download, CLI / self-hosted below the fold. */
-    downloadAll: "全部平台下载（macOS / Windows / Linux）",
-    cliAlt: "命令行与自托管安装 ↓",
+    cliInstall: "命令行安装",
     stats: [
-      { value: "1000+", label: "支持模型数量" },
-      { value: "1×CPU", label: "最低运行配置" },
-      { value: "100%", label: "开源，可本地部署" },
-      { value: "首个原生", label: "递归自我进化 Harness" },
+      { value: "1000+ 模型", label: "支持主流供应商" },
+      { value: "跨平台本地部署", label: "Linux，Windows，macOS 多系统兼容" },
+      { value: "100% 开源", label: "Apache 2.0 协议" },
+      { value: "首个自进化 Harness", label: "原生 Agent 自进化引擎" },
     ],
+    supportedModelsLabel: "支持模型",
+    supportedModels: [
+      "OpenAI",
+      "Anthropic",
+      "Gemini",
+      "DeepSeek",
+      "Zai",
+      "MoonShot",
+      "Qwen",
+      "Openrouter",
+    ],
+    supportedModelsMore: "+992 more",
   },
 
   /** Install-method switcher (quick start step 1): OS tabs, online/offline methods. */
@@ -97,13 +99,26 @@ export const zh = {
   download: {
     eyebrow: "下载",
     title: "下载桌面端",
-    subtitle:
-      "完整的 Web 体验打包为独立应用：内嵌服务端，打开即已登录——无需终端、无登录页；数据与 CLI 安装共用同一个 ~/.penguin/data 目录。",
     recommended: "当前系统",
     platforms: {
       mac: { name: "macOS", require: "macOS 11 及以上，dmg 安装镜像（按芯片选择）" },
       windows: { name: "Windows", require: "Windows 10 及以上（x64），NSIS 安装程序" },
       linux: { name: "Linux", require: "x64，AppImage 免安装运行，或 deb 交给包管理器" },
+    },
+    speed: {
+      title: "智能选择最快下载源",
+      subtitle: "页面会先确认连通性，再在后台测速；下载按钮无需等待完整测速即可使用。",
+      github: "GitHub Releases",
+      githubHint: "全球源",
+      oss: "OSS 国内镜像",
+      ossHint: "中国大陆优化",
+      testing: "测速中",
+      skipped: "未测速",
+      unreachable: "暂不可达",
+      belowFloor: "速度过低",
+      selected: "当前下载线路",
+      automatic: "自动选择",
+      manual: "手动选择",
     },
     statusProbing: "正在为你确认可用的下载源……",
     statusRefining: "仍在比较两个源的速度，更快的一个会自动生效。",
@@ -112,25 +127,17 @@ export const zh = {
     altGithub: "改从 GitHub 下载",
     altOss: "改用 OSS 镜像下载",
     checksums: "校验和（SHA256SUMS.desktop）",
-    allReleases: "全部版本",
-    /** First-launch FAQ: one collapsible item per platform, the visitor's own pre-expanded. */
+    allReleases: "打开 GitHub 发布页",
+    /**
+     * First-launch FAQ. The macOS builds are Developer ID signed and notarized and the
+     * Windows installers are Authenticode signed, so those two platforms have nothing to
+     * unblock; the Linux AppImage's execute bit is the one item left, pre-expanded for a
+     * Linux visitor.
+     */
     faq: {
       title: "首次启动常见问题",
-      intro: "当前构建暂未签名，系统可能拦截首次启动——按对应系统的步骤解除即可，只需操作一次。",
-      mac: {
-        question: "macOS 提示「PenguinHarness」已损坏，无法打开？",
-        why: "macOS 会给从网络下载的文件加上隔离标记，应用未签名时会因此被误报「已损坏」。删除该标记即可解除：",
-        stepDrag: "打开下载的 dmg，把 PenguinHarness 拖入「应用程序（Applications）」文件夹。",
-        stepTerminal: "打开终端：「启动台 → 其他 → 终端」。",
-        stepPaste:
-          "在终端粘贴这条命令并回车，然后输入开机密码（输入时屏幕不显示字符，输完回车即可）：",
-        stepOpen: "执行完成后，双击即可正常打开应用。",
-      },
-      windows: {
-        question: "Windows SmartScreen 提示「Windows 已保护你的电脑」？",
-        answer:
-          "安装程序暂未签名，SmartScreen 会拦截首次运行：点「更多信息」，再点「仍要运行」即可继续安装，仅首次运行需要。",
-      },
+      intro:
+        "macOS 安装包已由 Developer ID 签名并公证，Windows 安装程序已 Authenticode 签名，两个平台首次启动都无需额外放行；只有 Linux 是例外。",
       linux: {
         question: "Linux 双击 AppImage 没有反应？",
         answer:
@@ -221,50 +228,57 @@ export const zh = {
 
   quickstart: {
     eyebrow: "快速开始",
-    title: "三步跑通第一个任务",
-    subtitle:
-      "一行命令安装，打开桌面级界面即可让 Agent 开始工作；数据全部保存在本地 ~/.penguin/data 目录。",
-    step1: "安装",
-    step1Desc:
-      "选择你的系统与安装方式：在线一行命令，或离线安装包；产物内嵌 Node 运行时，解压即用，升级与重装不触碰数据。",
-    tabWeb: "Web 界面",
-    tabCli: "命令行",
-    webStep2: "启动 Web 界面",
-    webStep2Desc:
-      "penguin web 启动本地服务并打开浏览器；终端会打印一条首次登录链接，打开即可认领内置管理员 admin 并设置密码。",
-    webCmd: "penguin web   # 打开 http://127.0.0.1:7364",
-    webStep3: "在界面里配置模型，开始对话",
-    webStep3Desc:
-      "进入「模型库」页，在 DeepSeek 或 OpenRouter 分组里粘贴 API key 并设为默认；回到对话页把第一个任务交给 Agent，例如「分析 data.csv，输出各季度销售额汇总」。",
-    getKeyPrefix: "获取 API key：",
-    getDeepseekKey: "DeepSeek 控制台",
-    getOpenrouterKey: "OpenRouter 控制台",
-    cliStep2: "配置模型",
-    cliStep2Desc: "以 DeepSeek 官方 API 或 OpenRouter 网关为例，一条命令完成配置并设为默认。",
-    tabDeepseek: "DeepSeek",
-    tabOpenrouter: "OpenRouter",
-    deepseekCmd: `penguin config model add \\
-  --provider deepseek \\
-  --model-id deepseek-v4-pro \\
-  --api-key sk-your-deepseek-key \\
-  --set-default`,
-    deepseekNote:
-      "模型引用始终是 (provider, model_id) 二元组，--provider 必填；省略 --api-key 时回退环境变量 DEEPSEEK_API_KEY。",
-    openrouterCmd: `penguin config model add \\
-  --provider openrouter \\
-  --model-id deepseek/deepseek-v4-pro \\
-  --api-key sk-or-your-key \\
-  --set-default`,
-    openrouterNote: "网关分组自动预填 OpenAI 兼容协议与 base URL，一个 key 即可访问上千种模型。",
-    cliStep3: "运行",
-    cliStep3Desc: "penguin run 直接执行单个任务；penguin chat 进入交互式 REPL。",
-    runCmd: `penguin run --approve allow-all \\
-  --message "分析 data.csv，输出各季度销售额汇总"`,
+    title: "分两步开始使用 PenguinHarness",
+    subtitle: "先选择安装方式；使用命令行安装时，再选择 Web UI 或 CLI 启动。",
+    stepOne: "第一步",
+    chooseInstall: "选择安装方式",
+    stepTwo: "第二步",
+    chooseLaunch: "选择启动方式",
+    tabs: {
+      desktop: "桌面端",
+      install: "命令行安装",
+      web: "启动 Web UI",
+      cli: "启动 CLI",
+    },
+    desktop: {
+      title: "桌面端优先，打开就能用",
+      desc: "内置本地服务与完整 Web 界面，无需先配置运行环境，也无需在终端里保持进程。",
+      cta: "选择系统并下载",
+      steps: [
+        "下载适合当前系统的安装包",
+        "打开 PenguinHarness，按引导配置模型",
+        "输入一句话，创建第一个 Agent 应用",
+      ],
+    },
+    install: {
+      title: "一行命令安装 PenguinHarness",
+      desc: "适合开发机、服务器和私有化环境。安装包自带运行时，不依赖系统里的 Node.js。",
+      osLabel: "选择操作系统",
+      onlineTitle: "在线安装",
+      offlineTitle: "离线安装包",
+      offlineDesc: "在有网机器下载目标系统的安装包，再拷贝到离线机器完成安装。",
+      offlineCommand: "展开离线安装命令",
+    },
+    web: {
+      title: "在浏览器里使用完整界面",
+      desc: "命令会启动本地服务并自动打开 Web UI，适合服务器部署和远程访问。",
+      command: "penguin web   # 打开 http://127.0.0.1:7364",
+      steps: ["先完成命令行安装", "运行 penguin web", "按终端提示登录并配置模型"],
+    },
+    cli: {
+      title: "直接从终端运行 Agent",
+      desc: "进入交互式对话，或把单次任务接入脚本和自动化工作流。",
+      command: `penguin chat
+
+# 或执行单次任务
+penguin run --message "分析 data.csv，输出季度销售额"`,
+    },
+    localNote: "桌面端、Web UI 与 CLI 共用 ~/.penguin/data；切换入口不会迁移或复制数据。",
   },
 
   cases: {
     eyebrow: "案例",
-    title: "从一句话到可运行的应用",
+    title: "一句话生成可运行的 Agent 应用",
     subtitle: "把需求交给 Agent，端到端拿到可运行的结果；更多案例陆续加入。",
     tabs: [
       {
@@ -286,17 +300,17 @@ export const zh = {
   scenarios: {
     eyebrow: "应用场景",
     title: "从体检中心到工厂车间",
-    subtitle: "都是已经上线的真实部署，不是概念演示。",
+    subtitle: "企业使用 PenguinHarness 自动开发 Agent，并部署到生产环境的真实案例。",
     items: [
       {
         title: "体检报告质控",
         alt: "体检中心的 CT 检查室",
-        body: "一家体检机构把报告质控交给了 Agent，跑在本地部署的 Qwen3 14B 上，数据不出机房。过去一轮人工复核要 30 分钟，现在一分钟自动过 30 份，核查结论与医学专家基本一致，审核产能提升数倍。",
+        body: "一家体检机构使用 PenguinHarness 自动开发了报告质控 Agent，并将它部署到院内生产环境，接入本地 Qwen3 14B，数据不出机房。过去一轮人工复核要 30 分钟，现在每分钟自动核查 30 份报告，结论与医学专家基本一致，审核产能提升数倍。",
       },
       {
         title: "产线设备巡检",
         alt: "自动化半导体生产线",
-        body: "一家制造企业在各条流水线上部署巡检 Agent，全天候盯着设备状态，异常时先尝试自动恢复。停机时间减少 65%，产出提升约 2 倍。",
+        body: "一家制造企业使用 PenguinHarness 自动开发了产线巡检 Agent，并将它部署到多条流水线的生产环境。Agent 全天候监测设备状态，发现异常后优先尝试自动恢复；上线后停机时间减少 65%，产出提升约 2 倍。",
       },
     ],
   },
@@ -381,7 +395,7 @@ export const zh = {
   features: {
     eyebrow: "主要功能",
     title: "桌面级界面里的完整能力",
-    subtitle: "与 Web 界面的菜单一一对应，装好即用。",
+    subtitle: "每一项都在 Web 界面里，装好即用。",
     more: "以及更多……",
     items: [
       {
@@ -428,11 +442,23 @@ export const zh = {
     title: "内置 Skill 库一览",
     subtitle: "四组 Skill 开箱即用，Agent 也能编写并优化自己的 Skill。",
     groups: [
-      { title: "办公效率", skills: ["data-analysis", "firecrawl"] },
-      { title: "软件开发", skills: ["web-design", "software-engineering"] },
+      { title: "办公效率", skills: ["data-analysis", "firecrawl", "bento-slides", "humanizer"] },
+      {
+        title: "软件开发",
+        skills: ["web-design", "software-engineering", "remote-claude-code"],
+      },
       {
         title: "AI 应用开发",
-        skills: ["penguin-sdk", "penguin-cli", "agenthub-models", "vllm", "ollama", "llamafactory"],
+        skills: [
+          "penguin-sdk",
+          "penguin-cli",
+          "penguin-orchestration",
+          "agenthub-models",
+          "vllm",
+          "ollama",
+          "llamafactory",
+          "skill-porting",
+        ],
       },
       {
         title: "Agent 调优",
@@ -497,7 +523,8 @@ export const zh = {
     resources: "资源",
     quickstart: "快速开始",
     features: "功能",
-    benchmark: "评测",
+    selfImprove: "自进化引擎",
+    cases: "案例",
     blog: "博客",
     repo: "GitHub 仓库",
     docs: "文档",

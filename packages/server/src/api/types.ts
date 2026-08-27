@@ -67,6 +67,20 @@ export interface AuthResponse {
   user: UserInfo;
 }
 
+/**
+ * GET /api/install — the identity of the data root this server is serving (install-id.ts),
+ * read by the web app before it mounts so state persisted against a DIFFERENT root can be
+ * swept. Public, like the login route it sits next to.
+ */
+export interface InstallResponse {
+  /**
+   * Opaque per-data-root id, or null when the server could not establish one (an
+   * unreadable or unwritable root). Null means "unknown", and a client must change
+   * nothing on it — never treat it as a new install.
+   */
+  installId: string | null;
+}
+
 export interface MeResponse {
   user: UserInfo;
   /**
@@ -91,9 +105,10 @@ export interface MeResponse {
    * "desktop" is the shell's own window (one-shot token); "setup" was claimed through the
    * first-login link on a server whose admin password has never been set. Both may set a
    * password without the old one (it is random and was never shown); only "desktop" opens
-   * desktop-only routes.
+   * desktop-only routes. "token" marks a request authenticated by the local API token's
+   * Bearer header (the CLI and agent-driven calls) — no stored session at all.
    */
-  sessionVia: "password" | "desktop" | "setup";
+  sessionVia: "password" | "desktop" | "setup" | "token";
   /**
    * The upload limits currently in force, so the composer can refuse an oversize pick before
    * reading it and can name the real number in the message. They are admin-settable and ride
@@ -253,12 +268,6 @@ export interface UiPrefs {
   lastProjectId?: string;
   /** Whether the "no API key configured" guide has already been shown: once ever (on first visit to the chat page). */
   credentialGuideSeen?: boolean;
-  /**
-   * Also list CLI-created Sessions in the sidebar (`cli=1` on the sessions list). Default
-   * off: the list then serves web rows straight from the DB, with no Trace-directory
-   * scanning (#139).
-   */
-  showCliSessions?: boolean;
   /** The initial-password notice banner (app layout) was permanently dismissed by the user. */
   initialPasswordBannerDismissed?: boolean;
   /**
@@ -642,6 +651,65 @@ export interface DefaultModelUpdateRequest {
 /** Response mirrors what GET models reports as `defaultModel`. */
 export interface DefaultModelResponse {
   defaultModel: ModelRefDto;
+}
+
+// ---------------------------------------------------------------------------
+// Provider key-minting flows (/api/projects/:p/model-oauth, owner)
+// ---------------------------------------------------------------------------
+
+/**
+ * How the authorization code travels back. `callback` sends the browser to a harness URL
+ * the provider redirects to; `manual` asks the provider for a one-time code the user copies
+ * back by hand, for the case where that redirect cannot reach the harness.
+ */
+export type ModelOAuthMode = "callback" | "manual";
+
+/**
+ * POST /api/projects/:p/model-oauth/start (owner): opens a flow for one provider group.
+ * The group must declare an authorization flow in the built-in catalog — the endpoints it
+ * uses come from there, never from this request.
+ */
+export interface ModelOAuthStartRequest {
+  /** Provider group id (must be a catalog group that publishes a key-minting flow). */
+  provider: string;
+  /** Defaults to `callback`. */
+  mode?: ModelOAuthMode;
+}
+
+/** The opaque flow handle plus the page to send the user to. No secret of the flow's is included. */
+export interface ModelOAuthStartResponse {
+  flowId: string;
+  authorizeUrl: string;
+}
+
+/** Why a flow failed, as a code the frontend phrases; never carries a code, a verifier or a key. */
+export type ModelOAuthErrorCode =
+  "invalid_request" | "code_rejected" | "upstream_failed" | "unreachable" | "apply_failed";
+
+/**
+ * GET /api/projects/:p/model-oauth/:flowId (owner): where a flow stands. Unknown, expired,
+ * and other users' flows are all 404 alike.
+ */
+export interface ModelOAuthStatusResponse {
+  status: "pending" | "done" | "error";
+  /** The provider group the flow mints a key for. */
+  provider: string;
+  error?: ModelOAuthErrorCode;
+}
+
+/**
+ * POST /api/projects/:p/model-oauth/:flowId/code (owner): redeems a code the user pasted,
+ * the manual counterpart of the redirect callback. A flow is single-use either way.
+ */
+export interface ModelOAuthCodeRequest {
+  code: string;
+}
+
+/** Redemption outcome; `applied` counts the models the minted key was written to. */
+export interface ModelOAuthCodeResponse {
+  ok: boolean;
+  applied?: number;
+  error?: ModelOAuthErrorCode;
 }
 
 // ---------------------------------------------------------------------------
@@ -1127,6 +1195,8 @@ export interface SessionInfo {
    * history itself when it needs it.
    */
   tracePath?: string;
+  /** Present when the Session has an ENABLED messaging binding: its channel (the sidebar row's per-channel indicator). */
+  messagingChannel?: MessagingChannel;
 }
 
 /**
@@ -1193,6 +1263,12 @@ export interface SessionCreateRequest {
   workspace?: string;
   /** Defaults to allow-all. */
   approvalMode?: ApprovalMode;
+  /**
+   * Creating-client hint stored on the Session row: "cli" when the CLI creates the
+   * Session through the API; defaults to "web". Informational provenance only — lists
+   * serve every row regardless of client.
+   */
+  client?: "web" | "cli";
 }
 
 export interface SessionCreateResponse {
@@ -1488,9 +1564,10 @@ export interface SubagentMessageResponse {
  * DELETE /api/sessions/:id/follow-ups/:followUpId: the withdrawn message's original content,
  * for the composer to restore into the input box for editing and resending (#287). File
  * attachments are read back from the Session scratchpad (then deleted from it); one that
- * disappeared meanwhile is omitted rather than failing the recall. 409 `not_pending` when
- * the entry is no longer queued — steering already delivered to the model, or a follow-up
- * already auto-started (or unknown id either way).
+ * disappeared meanwhile is omitted rather than failing the recall. 409 when the entry is no
+ * longer queued, with a code per endpoint because the reasons read differently to the user:
+ * `not_pending` — the steering message already reached the model; `follow_up_started` — the
+ * follow-up already auto-started as a task of its own (unknown ids land on the same code).
  */
 export interface RecalledMessageResponse {
   text: string;
@@ -1535,6 +1612,372 @@ export interface SessionProcessInfo {
 
 export interface SessionProcessesResponse {
   processes: SessionProcessInfo[];
+}
+
+// ---------------------------------------------------------------------------
+// Messaging bindings (/api/sessions/:sessionId/messaging/*)
+// ---------------------------------------------------------------------------
+
+/** Messaging channels a Session can bind to. */
+export type MessagingChannel = "feishu" | "telegram" | "qq";
+
+/** Event-connection runtime state of one binding (kept in memory, not persisted). */
+export type MessagingRuntimeState = "disconnected" | "connecting" | "connected" | "error";
+
+/**
+ * A failure that happened AFTER an inbound message was accepted — as opposed to a
+ * connection failure, which `MessagingRuntimeStatus.lastError` reports.
+ *
+ * The two stages fail in completely different places and lead to different actions, and
+ * from the chat they are indistinguishable (both produce silence), which is why the stage
+ * is stated rather than folded into one message.
+ */
+export interface MessagingDeliveryError {
+  /** ISO 8601 timestamp of the failure. */
+  at: string;
+  /** `inbound` — the message arrived and its Task never started; `send` — a reply never reached the chat. */
+  stage: "inbound" | "send";
+  /** The failure's own message, as the channel or the Session reported it. */
+  detail: string;
+}
+
+export interface MessagingRuntimeStatus {
+  state: MessagingRuntimeState;
+  /** Failure detail; present only in the `error` state. */
+  lastError?: string;
+  /** When the state last changed (ISO 8601); absent for a binding that never connected. */
+  changedAt?: string;
+  /**
+   * When this binding last accepted an inbound message (ISO 8601).
+   *
+   * "Connected, and nothing has arrived" is the answer to the one question a chat cannot
+   * answer for itself — whether the platform is delivering anything at all. A channel that
+   * withholds messages (Telegram's group privacy, a bot that is not a member) produces
+   * exactly that, with no error anywhere.
+   *
+   * In-process AND scoped to one connection: it starts empty on every (re)connect, and a
+   * re-enable or a credential save opens a new one. So an absent field means "nothing since
+   * this connection opened", never "nothing ever" — anything reporting it has to say which,
+   * or it sends a reader off to fix a channel that is working.
+   */
+  lastInboundAt?: string;
+  /**
+   * The most recent post-acceptance failure; absent when none has happened since this
+   * connection opened, and never cleared by a later success — an intermittent failure would
+   * otherwise be erased by the next ordinary message. `at` is what says how stale it is.
+   */
+  lastDeliveryError?: MessagingDeliveryError;
+  /**
+   * The most recent CONNECTION failure, kept after the connection recovers — unlike
+   * `lastError`, which belongs to the `error` state and is gone the moment the state leaves it.
+   *
+   * A connection that fails and recovers repeatedly (a second program polling the same bot
+   * token takes turns with this one) reads as `connected` in any snapshot taken between
+   * flaps, with nothing at all to show for the failures in between. This is what is left
+   * behind — for the life of the connection, like the two above it.
+   */
+  lastConnectionError?: { at: string; detail: string };
+}
+
+/** The stored Feishu config, secret masked (plaintext never leaves the server). */
+export interface FeishuBindingInfo {
+  channel: "feishu";
+  sessionId: string;
+  appId: string;
+  /**
+   * Masked app secret (site-wide mask rule: `***`, or `first4…last4` for long values);
+   * absent when no secret is stored (never entered, or cleared) — the binding cannot be
+   * enabled until one is saved.
+   */
+  appSecretMasked?: string;
+  baseDomain: string;
+  /** Connection INTENT (the state toggle's value); new bindings start disabled, and at most one of a Session's channels is enabled. */
+  enabled: boolean;
+  /**
+   * Send each non-blank line of a relayed assistant reply as its own message instead of one
+   * message per reply. Off by default; off is the original one-message-per-reply behaviour.
+   */
+  linePerMessage: boolean;
+  /**
+   * Whether an inbound Feishu chat is known (the bot has been messaged at least once).
+   * Replies and test messages target that chat; until it exists nothing can be sent.
+   */
+  lastChatKnown: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** The stored Telegram config, token masked (plaintext never leaves the server). */
+export interface TelegramBindingInfo {
+  channel: "telegram";
+  sessionId: string;
+  /** The numeric bot id (the token's half before the colon) — the channel-scoped account identity, never secret. */
+  botId: string;
+  /**
+   * Masked bot token (site-wide mask rule: `***`, or `first4…last4` for long values);
+   * absent when no token is stored (cleared) — the binding cannot be enabled until one
+   * is saved.
+   */
+  botTokenMasked?: string;
+  /** Connection INTENT (the state toggle's value); new bindings start disabled, and at most one of a Session's channels is enabled. */
+  enabled: boolean;
+  /**
+   * Send each non-blank line of a relayed assistant reply as its own message instead of one
+   * message per reply. Off by default; off is the original one-message-per-reply behaviour.
+   */
+  linePerMessage: boolean;
+  /**
+   * Whether an inbound Telegram chat is known (the bot has been messaged at least once).
+   * Replies and test messages target that chat; until it exists nothing can be sent.
+   */
+  lastChatKnown: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** The stored QQ config, secret masked (plaintext never leaves the server). */
+export interface QQBindingInfo {
+  channel: "qq";
+  sessionId: string;
+  /** The bot's App ID — the channel-scoped account identity, never secret. */
+  appId: string;
+  /**
+   * Masked App Secret (site-wide mask rule: `***`, or `first4…last4` for long values);
+   * absent when no secret is stored (never entered, or cleared) — the binding cannot be
+   * enabled until one is saved.
+   */
+  appSecretMasked?: string;
+  /** Connection INTENT (the state toggle's value); new bindings start disabled, and at most one of a Session's channels is enabled. */
+  enabled: boolean;
+  /**
+   * Send each non-blank line of a relayed assistant reply as its own message instead of one
+   * message per reply. Off by default. On QQ the split is additionally capped at the
+   * platform's passive-reply budget rather than the channel-neutral ceiling, so it yields
+   * far fewer messages here than on the other channels.
+   */
+  linePerMessage: boolean;
+  /**
+   * Whether an inbound QQ chat is known (the bot has been messaged at least once).
+   * Weaker than it looks on this channel: QQ accepts only replies to a recent message, so a
+   * known chat is necessary but not sufficient for anything to be deliverable right now.
+   */
+  lastChatKnown: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A Session's saved config for one messaging channel (`channel` is the discriminant). */
+export type MessagingBindingInfo = FeishuBindingInfo | TelegramBindingInfo | QQBindingInfo;
+
+/** One saved channel config with its event-connection runtime status. */
+export interface MessagingChannelState {
+  binding: MessagingBindingInfo;
+  /** Only the enabled channel's connection is ever anything but disconnected. */
+  status: MessagingRuntimeStatus;
+}
+
+/**
+ * GET …/messaging response — the channel-agnostic read the channel-aware binding editor
+ * loads: EVERY saved channel config (masked) with its runtime status. A Session may keep
+ * both channels saved; at most one of them is enabled.
+ */
+export interface MessagingBindingsResponse {
+  bindings: MessagingChannelState[];
+}
+
+/** GET / PUT …/messaging/feishu response: the Feishu config (null = not saved) plus its runtime status. */
+export interface FeishuBindingResponse {
+  binding: FeishuBindingInfo | null;
+  status: MessagingRuntimeStatus;
+}
+
+/** GET / PUT …/messaging/telegram response (the Telegram narrowing of the same envelope). */
+export interface TelegramBindingResponse {
+  binding: TelegramBindingInfo | null;
+  status: MessagingRuntimeStatus;
+}
+
+/** GET / PUT …/messaging/qq response (the QQ narrowing of the same envelope). */
+export interface QQBindingResponse {
+  binding: QQBindingInfo | null;
+  status: MessagingRuntimeStatus;
+}
+
+/**
+ * PUT …/messaging/feishu — saves credentials/config ONLY, never flipping the connection
+ * (exception: an enabled binding's connector restarts with the new credentials so stored
+ * config and live connection never diverge). The connection toggle is POST …/state.
+ */
+export interface FeishuBindingPutRequest {
+  appId: string;
+  /** Omitted or blank keeps the stored secret (the masked value never round-trips). */
+  appSecret?: string;
+  /** Defaults to https://open.feishu.cn when omitted or blank. */
+  baseDomain?: string;
+  /**
+   * Drops the STORED secret (the models-page clear idiom; a typed `appSecret` wins over
+   * it). Refused with 409 `messaging_disable_before_clear` while the binding is enabled.
+   */
+  clearAppSecret?: boolean;
+  /**
+   * Delivery preference (see `FeishuBindingInfo.linePerMessage`). Omitted keeps the stored
+   * value; a binding created without it starts with it off.
+   */
+  linePerMessage?: boolean;
+}
+
+/**
+ * PUT …/messaging/telegram — saves the credential ONLY, same contract as the Feishu PUT
+ * (an enabled binding's connector restarts with the new token; the connection toggle is
+ * POST …/state). Saving never conflicts across Sessions: the same bot may sit saved on
+ * several, and only enabling it is exclusive.
+ */
+export interface TelegramBindingPutRequest {
+  /** Omitted or blank keeps the stored token (the masked value never round-trips). */
+  botToken?: string;
+  /**
+   * Drops the STORED token (the models-page clear idiom; a typed `botToken` wins over
+   * it — and the row keeps its bot identity). Refused with 409
+   * `messaging_disable_before_clear` while the binding is enabled.
+   */
+  clearBotToken?: boolean;
+  /**
+   * Delivery preference (see `TelegramBindingInfo.linePerMessage`). Omitted keeps the stored
+   * value; a binding created without it starts with it off.
+   */
+  linePerMessage?: boolean;
+}
+
+/**
+ * PUT …/messaging/qq — saves the credential pair ONLY, same contract as the Feishu PUT
+ * (an enabled binding's connector restarts with the new credentials; the connection toggle
+ * is POST …/state). The App ID is the account identity, so changing it rebinds the row to
+ * a different bot and drops the remembered chat.
+ */
+export interface QQBindingPutRequest {
+  appId: string;
+  /** Omitted or blank keeps the stored secret (the masked value never round-trips). */
+  appSecret?: string;
+  /**
+   * Drops the STORED secret (the models-page clear idiom; a typed `appSecret` wins over
+   * it). Refused with 409 `messaging_disable_before_clear` while the binding is enabled.
+   */
+  clearAppSecret?: boolean;
+  /**
+   * Delivery preference (see `QQBindingInfo.linePerMessage`). Omitted keeps the stored
+   * value; a binding created without it starts with it off.
+   */
+  linePerMessage?: boolean;
+}
+
+/**
+ * POST …/messaging/<channel>/state — enable connects with the STORED credentials,
+ * disable terminates. Enabling is what binds the bot account to this Session, and it is
+ * mutually exclusive twice over: while another channel of the same Session is enabled it
+ * answers 409 `another_channel_enabled`, and while another SESSION has the same account
+ * enabled it answers 409 `account_enabled_elsewhere` (both say: turn that one off first).
+ * A config whose secret is missing answers its channel's 400 `*_required`.
+ */
+export interface MessagingBindingStateRequest {
+  enabled: boolean;
+}
+
+/** POST …/messaging/feishu/test — draft values; each omitted field falls back to the stored binding. */
+export interface FeishuTestRequest {
+  appId?: string;
+  appSecret?: string;
+  baseDomain?: string;
+}
+
+/** Credential-test outcome (an unreachable/rejected credential is `ok:false`, not an HTTP error). */
+export interface FeishuTestResponse {
+  ok: boolean;
+  latencyMs?: number;
+  error?: string;
+}
+
+/** POST …/messaging/telegram/test — a draft token, falling back to the stored binding when omitted. */
+export interface TelegramTestRequest {
+  botToken?: string;
+}
+
+/** Telegram credential-test outcome: success additionally names the bot the token signs in as. */
+export interface TelegramTestResponse {
+  ok: boolean;
+  latencyMs?: number;
+  /** The bot's `@username`, when the API reports one. */
+  botUsername?: string;
+  /**
+   * True when @BotFather's **Group Privacy** is ON for this bot, which is the default. In
+   * every group where the bot is not an administrator it then receives only a command
+   * addressed to it or a reply to one of its own messages — an ordinary sentence is never
+   * delivered, so a binding that answers fine in a direct chat stays silent there. The
+   * setting is account-wide and Telegram overrides it for a group the bot administers, so
+   * this reports the setting and never the outcome in any particular group. Absent when the
+   * API did not report the setting; never inferred.
+   */
+  groupPrivacy?: boolean;
+  error?: string;
+}
+
+/** POST …/messaging/qq/test — draft values; each omitted field falls back to the stored binding. */
+export interface QQTestRequest {
+  appId?: string;
+  appSecret?: string;
+}
+
+/**
+ * QQ credential-test outcome. There is no account label: the platform's only credential
+ * call is the access-token exchange, which identifies nothing beyond the App ID that was
+ * sent to it.
+ */
+export interface QQTestResponse {
+  ok: boolean;
+  latencyMs?: number;
+  error?: string;
+}
+
+/**
+ * POST …/messaging/qq/scan — starts a scan-to-connect flow: the server registers a bind
+ * task under a fresh AES key it keeps to itself, and answers with what the browser may
+ * know. The key is absent from this type on purpose — it decrypts the App Secret, so it
+ * never leaves the server (the same rule that keeps a stored secret from round-tripping).
+ */
+export interface QQScanStartResponse {
+  /** Opaque bind-task handle, passed back to the poll endpoint. */
+  taskId: string;
+  /** The URL to ENCODE into a QR code. It is opened by the QQ app, never fetched by the browser. */
+  qrUrl: string;
+  /** How often to poll, in milliseconds (the interval the protocol is designed around). */
+  pollMs: number;
+}
+
+/**
+ * POST …/messaging/qq/scan/poll — one step of the scan. `pending` means keep polling,
+ * `expired` means start a new task and show a new QR, and `completed` means the server has
+ * already decrypted the App Secret and SAVED the binding: `appId` names the bot that landed.
+ * Saving is all it does — enabling the connection stays the separate, exclusive act it is on
+ * every channel. A task id that is unknown, belongs to another Session, was already
+ * resolved, or is being resolved by a poll still in flight answers 404
+ * `qq_scan_task_unknown`: the task is claimed by one poll, so a client whose interval fires
+ * before the previous request came back binds once rather than once per overlapping poll.
+ */
+export interface QQScanPollResponse {
+  status: "none" | "pending" | "completed" | "expired";
+  /** The bound bot's App ID; present only on `completed`. Never the secret. */
+  appId?: string;
+  /** The saved binding, present on `completed` so the editor refreshes without a second GET. */
+  binding?: QQBindingInfo;
+}
+
+/**
+ * POST …/messaging/<channel>/test-message — sent to the last known chat (409
+ * `feishu_no_chat` / `telegram_no_chat` / `qq_no_chat` before one exists). On QQ this can
+ * still fail with 502 afterwards: the platform accepts only replies to a message sent from
+ * QQ minutes earlier, so a known chat does not mean a deliverable one.
+ */
+export interface MessagingTestMessageResponse {
+  ok: true;
 }
 
 // ---------------------------------------------------------------------------

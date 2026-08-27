@@ -61,6 +61,20 @@ function withConfig(state: AgentState, patch: Partial<SystemConfig>): AgentState
 
 const DEMO_SKILL = { name: "demo", description: "Demo skill.", version: 1, updated: "2026-08-01" };
 
+/** A complete Environment section, so the rendered prompt carries every `- Label: value` line. */
+const SESSION_ENVIRONMENT = {
+  sessionId: "session-2026-08-01-00-00-00-0000abcd",
+  cwd: "/tmp/workspace",
+  agentId: DEFAULT_AGENT_ID,
+  projectDir: "/tmp/penguin",
+  provider: "anthropic",
+  modelId: "claude-sonnet-4-5",
+  platform: "linux",
+  osVersion: "6.1.0",
+  shell: "bash",
+  date: "2026-08-01",
+};
+
 describe("{{VAULT}} rendering", () => {
   it("renders the default vault section with the key-name list", async () => {
     const prompt = assembleSystemPrompt(await agentState(), undefined, ["KEY_A", "KEY_B"]);
@@ -177,6 +191,48 @@ describe("{{SCHEDULES}} rendering", () => {
     const prompt = assembleSystemPrompt(state, undefined, undefined, undefined, null, ["daily"]);
     expect(prompt).not.toContain("# Scheduled Tasks");
     expect(prompt).not.toContain("- daily");
+  });
+
+  // The section tells the model to target this Session by writing the id off the Environment
+  // section's Session ID line. That instruction is only resolvable while both halves render
+  // into the same prompt under the same label, so both are pinned to one literal here: rename
+  // the Environment line and this fails until the section is re-pointed.
+  it("points session_id at the Environment section's Session ID line, which renders with it", async () => {
+    const sessionId = "session-2026-08-26-09-00-00-abcd1234";
+    const prompt = assembleSystemPrompt(
+      await agentState(),
+      { ...SESSION_ENVIRONMENT, sessionId },
+      undefined,
+      undefined,
+      null,
+      ["daily-report"],
+    );
+    const label = "Session ID";
+    expect(prompt).toContain(`- ${label}: ${sessionId}`);
+    expect(prompt).toContain(`write the id from the Environment section's ${label} line`);
+    // The fresh-Session form stays available, and the two targets stay mutually exclusive
+    // (schedule-file.ts rejects a file that mixes them).
+    expect(prompt).toContain("Each trigger then opens a new Session");
+    expect(prompt).toContain(
+      "`session_id` cannot be combined with workspace / provider / model_id",
+    );
+    // The example writes the target as `<session_id>`, which the model can only resolve because
+    // the system prompt's File system section declares angle-bracket names substitutable and
+    // names this one. That section lives in the `prompt` kernel tab, a different tab from
+    // `schedules` — so pin the pair, or one tab can advance out from under the other.
+    expect(prompt).toContain('session_id = "<session_id>"');
+    expect(prompt).toContain(
+      "Angle-bracket names such as `<app_data_dir>` and `<session_id>` are placeholders",
+    );
+    // Defaulting to this Session makes the self-directed loop ordinary, so the section carries
+    // the bound that ends one — conditioned on the request having a horizon, so an open-ended
+    // reminder is not silently given an expiry date.
+    expect(prompt).toContain("give it an `end_at` when the request has a natural horizon");
+    expect(prompt).toContain("leave `end_at` off and say in your reply");
+    // A subagent renders this same section against its own short-lived Session.
+    expect(prompt).toContain("If `run_subagent` is not in your tool list, you are the subagent");
+    // A Session is not the durable identity of a conversation, and the section says so.
+    expect(prompt).toContain("this Session is not permanent");
   });
 
   it("falls back to the built-in prompt for a config that predates the schedules section", async () => {

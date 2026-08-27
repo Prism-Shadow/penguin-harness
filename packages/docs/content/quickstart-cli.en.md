@@ -58,6 +58,8 @@ penguin run -m "Create hello.txt containing Hello, Penguin"
 
 The Workspace defaults to the current directory; pass `--workspace /path` to change it. The target directory must already exist.
 
+`run`, `chat` and the other session commands are thin clients of the server: they attach to the local server when one is running and quietly start one when none is (no login needed on the local machine — see the [CLI Reference](/cli) for the connection rules). Everything they create shows up in the Web App too, and `penguin ls` / `penguin logs` / `penguin input` address those sessions from the terminal.
+
 ## Interactive chat
 
 ```bash

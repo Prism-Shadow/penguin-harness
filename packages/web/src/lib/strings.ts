@@ -95,11 +95,7 @@ export const zh = {
     generalTitle: "通用",
     appearanceTitle: "外观",
     accountTitle: "账户",
-    /** Sidebar Session list: also show CLI-created Sessions (default off — the list then never scans the Trace directories). */
-    showCliSessions: "显示 CLI 会话",
-    showCliSessionsInfo:
-      "关闭时会话列表只列出在 Web 端创建的会话，直接由数据库返回；开启后会额外扫描轨迹目录，把 CLI 创建的会话一并列出。仅影响当前账号。",
-    /** Trace import (below the CLI-sessions filter): the two pickers' accessible names, the pick-a-file action, and its outcomes. */
+    /** Trace import: the two pickers' accessible names, the pick-a-file action, and its outcomes. */
     importTrace: "导入 Trace",
     importTraceInfo:
       "上传从其他部署导出的 .jsonl 轨迹文件，它会成为所选 Agent 的一个会话。目的地的两个部分都在这里选择：导入接口按 Agent 划分——轨迹文件自带的 session_meta 无法指认本机的 Agent，其中的 agent_state 路径属于导出它的那台机器——而 Project 需要明确指定，因为本对话框不显示当前是哪一个，也因此可以导入到当前打开之外的 Project。导出在对话的 Trace 面板中进行。",
@@ -167,6 +163,12 @@ export const zh = {
     /** Superscript badge on the version lines when the update check found a newer release (owner-specified wording). */
     newVersionBadge: "有新版本可用",
     newVersion: (v: string) => `新版本 v${v} 可用`,
+    /**
+     * The combined wording for an anchor that leads to BOTH update trails at once (the
+     * mobile menu button): something is updatable, without claiming which — naming one of
+     * two would send the user down the wrong one.
+     */
+    updatesAvailable: "有可用更新",
     /**
      * The sidebar user menu's SINGLE update row: it reads checkNow until a newer release
      * is known and runs the manual check; once one is known it reads newVersion() and
@@ -568,6 +570,8 @@ export const zh = {
     kernelTitle: "内核",
     kernelLegacy: "早于内核版本机制",
     kernelOutdatedHint: "内核有更新",
+    /** The Agents-list card's dark-red capsule on an outdated Agent — a control, not a label: it opens the settings overview where the update runs. */
+    kernelUpdateNeeded: "内核需要更新",
     kernelUpToDate: "已是最新",
     kernelUpdateTitle: "更新内核",
     /** Inline labels around the outdated line's two generation values (the values themselves render dark and semibold). */
@@ -587,7 +591,7 @@ export const zh = {
   models: {
     title: "模型配置",
     addCustom: "添加自定义模型",
-    addToGroup: "新增模型",
+    addToGroup: "添加模型",
     editTitle: "模型配置",
     addTitle: "新增模型（OpenAI 协议）",
     addTitleVendor: "新增模型",
@@ -617,7 +621,7 @@ export const zh = {
     groupNameHint: "小写字母 / 数字开头，可含 - 与 _",
     groupNameInvalid: "分组名只能用小写字母、数字、- 与 _（首字符为字母或数字），长度不超过 32",
     groupNameExists: "该分组名已被内置分组或既有条目占用",
-    groupEmptyHint: "该分组暂无模型，点「新增模型」添加",
+    groupEmptyHint: "该分组暂无模型，点「添加模型」创建",
     deleteGroup: "删除分组",
     deleteGroupTitle: "删除分组",
     deleteGroupConfirm: (label: string, n: number): string =>
@@ -741,12 +745,35 @@ export const zh = {
     confirmDeleteTitle: "删除模型",
     confirmDelete: (name: string): string =>
       `确定删除「${name}」？该模型的配置与 API key 将一并移除。`,
-    groupApiKey: "统一配置 API key",
+    groupApiKey: "手动设置密钥",
     groupApiKeyTitle: (label: string): string => `为「${label}」统一配置 API key`,
     groupApiKeyHint: (n: number): string => `将写入该分组下全部 ${n} 个模型；留空不改动。`,
-    getApiKey: "获取 API key",
+    getApiKey: "前往密钥管理",
     getModelIds: "获取模型 id",
     groupKeyApplied: (n: number): string => `已为 ${n} 个模型配置 API key`,
+    // 供应商授权取 key（模型分组头部动作）：整个 PKCE 流程都在服务端跑，前端只拿到一个
+    // 不透明的 flow id 和状态。
+    oauthKey: "自动获取密钥",
+    oauthTitle: (label: string): string => `从「${label}」授权新建 API key`,
+    oauthIntro: (label: string, n: number): string =>
+      `将在你的 ${label} 账户下新建一个 API key，并写入该分组下全部 ${n} 个模型，覆盖它们当前的 key。`,
+    oauthAuthorize: "打开授权页",
+    oauthWaiting: "等待在新标签页中完成授权…",
+    oauthApplied: (n: number): string => `已为 ${n} 个模型配置新的 API key`,
+    oauthManualSwitch: "授权页跳不回来？改为手动填写授权码",
+    oauthCallbackSwitch: "改回自动跳转",
+    oauthManualHint: "先打开授权页，再把页面上显示的一次性授权码粘贴到这里。",
+    oauthCodeLabel: "授权码",
+    oauthSubmitCode: "提交授权码",
+    oauthTimedOut: "没有等到授权结果。可以改为手动填写授权码，或重新开始。",
+    oauthRetry: "重新开始",
+    oauthErrors: {
+      invalid_request: "授权请求被拒绝，请重新开始。",
+      code_rejected: "该授权已失效：可能已过期或被用过，请重新开始。",
+      upstream_failed: "供应商没有返回可用的 key，请重新开始。",
+      unreachable: "连不上供应商，请检查网络后重新开始。",
+      apply_failed: "key 已创建但未能保存。请重新授权，并到供应商控制台删掉那个没用上的 key。",
+    },
     // Providers with separate domestic / international endpoints: note on the default
     // endpoint used when left blank via env var (the other side's key needs an explicit
     // base URL). Written to match AgentHub's actual behavior; rendered wherever the env fallback hint appears.
@@ -1639,6 +1666,8 @@ Benchmark：
     pinSession: "置顶",
     unpinSession: "取消置顶",
     pinnedSession: "已置顶",
+    /** The hover ellipsis button that opens the row's full context menu. */
+    moreActions: "更多",
     /** Sidebar group "reveal/load next page" row (display cap + server paging). */
     loadMore: "更多",
     /** Per-group reveal row: n = conversations THIS group still hides (one click reveals/loads one page more). */
@@ -1693,6 +1722,215 @@ Benchmark：
       budget_limited: "预算耗尽",
       aborted: "已中断",
     } as Record<string, string>,
+  },
+
+  /** Feishu-channel strings of the messaging binding editor (channel-neutral ones live under `messaging`). */
+  feishu: {
+    /** The what-binding-does FAQ fold's body (this channel's flavor). */
+    intro:
+      "绑定后，发给飞书机器人的消息会进入本对话，AI 的回复会以纯文本发回飞书。需要一个开通了机器人能力、订阅了接收消息事件（长连接方式）的飞书自建应用。",
+    appId: "App ID",
+    appSecret: "App Secret",
+    /** Shown while a saved secret exists: submitting an empty field keeps it. */
+    appSecretKeepHint: "留空保持已保存的 App Secret 不变",
+    /** The stored-secret row's clear checkbox (the models-page clear idiom). */
+    clearSecret: "清除已存 App Secret",
+    baseDomain: "API 域名",
+    baseDomainHint: "飞书为 https://open.feishu.cn，Lark 为 https://open.larksuite.com",
+    invalidDomain: "域名需为 http(s):// 地址",
+    /** Why "send test message" is disabled before the bot has ever been messaged. */
+    testMessageNoChat: "先在飞书中给机器人发一条消息，机器人才知道要发到哪个会话",
+    /** The setup FAQ fold's steps. */
+    setupSteps: [
+      "在飞书开发者后台创建一个企业自建应用",
+      "为应用开通机器人能力",
+      "订阅「接收消息」事件，事件订阅方式选择「长连接」",
+      "在「凭证与基础信息」页取得 App ID 与 App Secret，填入上方表单",
+      "发布应用版本并通过审核，然后在飞书中给机器人发一条消息",
+    ],
+  },
+
+  /** Telegram-channel strings of the messaging binding editor (channel-neutral ones live under `messaging`). */
+  telegram: {
+    /** The what-binding-does FAQ fold's body (this channel's flavor). */
+    intro:
+      "绑定后，发给 Telegram 机器人的消息会进入本对话，AI 的回复会以纯文本发回 Telegram。用 @BotFather 创建机器人并粘贴其 Bot Token 即可，无需公网地址。",
+    botToken: "Bot Token",
+    /** Shown while a saved token exists: submitting an empty field keeps it. */
+    botTokenKeepHint: "留空保持已保存的 Bot Token 不变",
+    /** The stored-token row's clear checkbox (the models-page clear idiom). */
+    clearToken: "清除已存 Bot Token",
+    /**
+     * The Bot Token field's corner link. Telegram has no developer console — the token is
+     * issued by @BotFather inside the app — so this channel names the destination instead
+     * of borrowing the shared "open developer console" label.
+     */
+    openBotFather: "打开 @BotFather",
+    invalidToken: "Bot Token 形如「数字:密钥」，由 @BotFather 签发",
+    /** Why "send test message" is disabled before the bot has ever been messaged. */
+    testMessageNoChat: "先在 Telegram 中给机器人发一条消息，机器人才知道要发到哪个会话",
+    /** The setup FAQ fold's steps. */
+    setupSteps: [
+      "在 Telegram 中打开 @BotFather，发送 /newbot 创建机器人",
+      "按提示取名后，复制 @BotFather 返回的 Bot Token，填入上方表单",
+      "在 Telegram 中找到这个机器人，给它发一条消息",
+    ],
+  },
+
+  /** QQ-channel strings of the messaging binding editor (channel-neutral ones live under `messaging`). */
+  qq: {
+    /** The what-binding-does FAQ fold's body (this channel's flavor). */
+    intro:
+      "绑定后，在 QQ 中发给机器人的消息会进入本对话，AI 的回复会发回 QQ。需要在 QQ 开放平台创建一个机器人，事件订阅方式选择 WebSocket，无需公网地址。",
+    appId: "App ID",
+    appSecret: "App Secret",
+    /** Shown while a saved secret exists: submitting an empty field keeps it. */
+    appSecretKeepHint: "留空保持已保存的 App Secret 不变",
+    /** The stored-secret row's clear checkbox (the models-page clear idiom). */
+    clearSecret: "清除已存 App Secret",
+    /** Why "send test message" is disabled before the bot has ever been messaged. */
+    testMessageNoChat: "先在 QQ 中给机器人发一条消息，机器人才知道要发到哪个会话",
+    /**
+     * The rule that shapes this whole channel, stated where it is first needed rather than
+     * left for the user to infer from a reply that never arrives.
+     */
+    repliesOnly:
+      "QQ 只允许机器人回复你刚发出的消息，不允许主动发消息。因此：在网页端发起的对话不会同步到 QQ；距离你上一条 QQ 消息过去几分钟后，回复也发不出去。想继续对话，在 QQ 里再发一条消息即可。",
+    /** The passive-reply budget, in the terms a user experiences it. */
+    replyBudget:
+      "同一条 QQ 消息最多能收到 4 条回复（群聊 5 条）。一次运行产生的消息更多时，最后一条会把余下内容合并发出——内容不会丢失，只是合并成一条。",
+    /** Scan-to-connect: the button, and the states it moves through. */
+    scanStart: "扫码连接",
+    scanStarting: "生成二维码…",
+    /** In the setup fold: what scanning saves the user, in one line. */
+    scanHint: "也可以扫码连接：用 QQ 扫码授权，无需手动填写 App ID 与 App Secret。",
+    scanQrLabel: "QQ 机器人授权二维码",
+    scanWaiting: "等待在 QQ 中扫码…",
+    scanSteps: "用手机 QQ 扫描二维码，在打开的页面里选择要授权的机器人并确认。",
+    /** Shown only after a code has actually lapsed and been replaced. */
+    scanRefreshed: "上一个二维码已过期，这是新的。",
+    /** Why the secret is safe to obtain this way — the question a careful user will ask. */
+    scanPrivacy: "凭据由服务端直接接收并保存，解密密钥不会进入浏览器。",
+    scanDone: (appId: string): string => `已保存机器人 ${appId} 的凭据，可以启用连接了`,
+    scanFailed: (reason: string): string => `扫码连接失败：${reason}`,
+    /** Shown when replacing lapsed codes stopped being worth another round trip. */
+    scanExpiredRepeatedly: "二维码多次在扫描前就已过期。请稍后重新发起扫码。",
+    /** Why the scan button is gated while this channel holds the connection. */
+    scanDisableFirst: "先停用连接，再重新扫码绑定",
+    /** Separates the scan path from the manual one; the fields below are the fallback, not the default. */
+    scanOrManual: "或手动填写",
+    /** The setup FAQ fold's steps. */
+    setupSteps: [
+      "在 QQ 开放平台注册开发者，创建一个机器人",
+      "在「开发设置」页取得 App ID 与 App Secret，填入上方表单",
+      "在「开发配置」中把事件订阅方式设为 WebSocket，无需填写回调地址",
+      "在沙箱配置中把自己的 QQ 号或测试群加入白名单",
+      "在 QQ 中找到这个机器人，给它发一条消息",
+    ],
+  },
+
+  /**
+   * Session ↔ messaging-bot binding: the dock panel, the row action + dialog, and the
+   * channel-neutral editor strings (per-channel fields live under `feishu` / `telegram` /
+   * `qq`).
+   */
+  messaging: {
+    panelTitle: "消息软件",
+    /** Session-row context-menu action (the trailing ellipsis marks that a dialog follows). */
+    bindAction: "消息软件绑定…",
+    dialogTitle: "消息软件绑定",
+    /** The channel selector (always live: each channel's config is saved independently). */
+    channelLabel: "渠道",
+    channelName: {
+      feishu: "飞书",
+      telegram: "Telegram",
+      qq: "QQ",
+    },
+    /**
+     * Shared link labels: the tutorial (in the setup FAQ fold) and, at the credential field's
+     * corner, the developer console — the latter only for the channels that have one. A
+     * channel whose credential is issued elsewhere names that destination itself (Telegram's
+     * `telegram.openBotFather`).
+     */
+    tutorial: "前往教程",
+    console: "前往开发者后台",
+    /** The connection toggle (flips immediately, using the stored credentials). */
+    enabled: "启用连接",
+    /** The toggle's own tooltip: the switch IS the bind/unbind control, which a label reading "enable" does not say. */
+    bindByEnableHint: "启用即把该机器人绑定到本对话，停用即解除绑定；凭证在两种状态下都保留。",
+    /** Why the toggle is gated while the form has unsaved edits. */
+    saveBeforeEnable: "先保存凭证，再启用连接",
+    test: "测试连接",
+    testing: "测试中…",
+    testOk: (ms: number): string => `连接成功（${ms}ms）`,
+    /** Success feedback naming the account the credentials sign in as (Telegram: the bot's @username). */
+    testOkAs: (account: string, ms: number): string => `连接成功，机器人为 ${account}（${ms}ms）`,
+    testFail: (reason: string): string => `连接失败：${reason}`,
+    /** Second line on a successful Telegram test whose bot still has Group Privacy on; the remedies live in the troubleshooting fold, which outlasts a toast. */
+    testPrivacyOn:
+      "该机器人的 Group Privacy 处于开启状态：在它不担任管理员的群里，它收不到普通消息。修复办法见下方「常见问题」。",
+    sendTestMessage: "发送测试消息",
+    sendingTestMessage: "发送中…",
+    testMessageSent: "测试消息已发送",
+    statusLabel: "连接状态",
+    status: {
+      disconnected: "未连接",
+      connecting: "连接中",
+      connected: "已连接",
+      error: "连接错误",
+    },
+    /** Why the enable switch is gated while the OTHER channel holds the connection. */
+    otherEnabledHint: (other: string): string => `同一会话只能启用一个渠道：先停用${other}连接`,
+    /** Why the enable switch is gated while the selected channel has no stored credential. */
+    credentialMissingHint: "先填写并保存凭证，再启用连接",
+    /** Why the clear checkbox is gated while the channel's connection is enabled. */
+    disableBeforeClearHint: "先停用连接，才能清除凭证",
+    /** The saved delivery option: one message per non-blank line of a reply. */
+    linePerMessage: "每行一条消息",
+    /** Its disclosure, beside the label: what the option does to a reply, and its two edges. */
+    linePerMessageHelp:
+      "开启后，回复中的每个非空行各自作为一条消息发出，空行忽略——写成多句台词的回复就按台词逐条到达。行数超过每条回复的上限时，余下的行合并为最后一条，内容不会丢失；过长的单行仍按渠道长度上限分段。多条消息之间相隔约一秒发出，这是聊天平台允许的速率。",
+    /** Enabled-row indicator's tooltip / sr text (the small per-channel glyph on the session row). */
+    enabledIndicator: {
+      feishu: "飞书连接已启用",
+      telegram: "Telegram 连接已启用",
+      qq: "QQ 连接已启用",
+    },
+    /**
+     * Delivery observability under the toggle: has anything arrived, and did the last one get
+     * through. Both readings belong to the LIVE CONNECTION and start over on a re-enable or a
+     * credential save, so the empty case names that scope instead of reading as "never".
+     * Each failure line carries its own time: nothing clears it on a later success, and a
+     * title= is unreachable on touch.
+     */
+    inboundLastAt: (when: string) => `最近收到消息：${when}`,
+    inboundNone: "本次连接建立以来还没有收到过消息",
+    deliveryFailedInbound: (when: string, detail: string) =>
+      `${when} 收到过一条消息，但任务没有开始：${detail}`,
+    deliveryFailedSend: (when: string, detail: string) =>
+      `任务已完成，但回复于 ${when} 发送失败：${detail}`,
+    /** A connection failure the connection has since recovered from (lastError is gone by then). */
+    lastConnectionError: (when: string, detail: string) => `连接曾于 ${when} 中断：${detail}`,
+    /** The collapsed FAQ folds below the save area. */
+    faqSetupTitle: "如何创建机器人",
+    faqWhatTitle: "绑定后会发生什么",
+    /** The channel-neutral half of that fold: how the same bot moves between conversations. */
+    faqWhatBinding:
+      "同一个机器人可以同时保存在多个对话里，但同一时刻只能有一个对话启用它的连接。要换一个对话使用，先在原对话停用连接，再在这里启用——凭证不必删除。",
+    faqTroubleTitle: "常见问题",
+    /** Troubleshooting entries (bot must be messaged once; connection errors point at credentials; one poller per Telegram token; Telegram Group Privacy withholds group messages from a non-admin bot; QQ answers only a message just sent). */
+    troubleNoChat: "「发送测试消息」不可用？机器人要先收到过一条消息，才知道要发到哪个会话。",
+    troubleConnError:
+      "连接状态显示错误？检查凭证是否正确；飞书还需确认 API 域名与事件订阅方式（长连接）。",
+    troubleOnePoller:
+      "Telegram 提示已有其他程序在轮询？一个 Bot Token 同一时刻只能被一个程序使用——关闭正在占用它的另一个 PenguinHarness 服务端或机器人脚本，或为该会话单独建一个机器人。手动执行的 getUpdates（例如用 curl 查看 Telegram 那边积压了什么）同样算作「另一个程序」：跑它之前先在这里停用连接。而且手动查看也可能把它们丢掉——任何带 offset 的调用都会确认它之前的全部更新，应用自己的下一次连接也会清空积压——所以复测请重新发一条新消息，而不是指望刚才看到的那几条。",
+    troubleGroupPrivacy:
+      "在 Telegram 群里发消息，机器人毫无反应？Telegram 的 Group Privacy 默认开启，此时不担任该群管理员的机器人只能收到明确指向它的命令（如 /start@your_bot）和对它自己消息的回复，普通群消息根本不会送达，连接本身也没有任何异常。把机器人设为该群的管理员即可单独解决，管理员始终收到全部消息。也可以到 @BotFather 用 /setprivacy 关闭 Group Privacy，然后把机器人移出该群再重新拉入——已在的群不会自动生效。",
+    /** The QQ-only failure a user will otherwise read as "the bot is broken". */
+    troubleQQPassive:
+      "QQ 里收不到回复？QQ 只允许机器人回复你刚发出的消息：在网页端发起的对话不会同步过去，距离你上一条 QQ 消息过去几分钟后也发不出。在 QQ 里再发一条消息即可继续。",
+    troubleNoGroupInbound:
+      "在群里发消息，面板却一直显示「本次连接建立以来还没有收到过消息」？这一行只能作为你读到它之后再发的那条消息的证据：它只覆盖当前这条连接，停用再启用连接、或者再保存一次凭证，都会开启一条新连接并把它清零。所以先重新发一条。如果这一行仍然显示没有收到过，那就是 Telegram 没有把它投递过来，本机再怎么查也无济于事：确认机器人确实还在这个群里；如果刚在 @BotFather 关掉 Group Privacy，必须把机器人移出该群再重新拉入，已有的群不会自动生效；并确认没有别的程序（包括你自己手动跑的 getUpdates，见上一条）在用同一个 Token 轮询。另外，Telegram 频道（channel）的贴文不受支持——本连接只处理群聊与私聊。",
   },
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */
@@ -1881,7 +2119,8 @@ Benchmark：
       unknown_skill: "该技能不在技能库中。",
       skill_too_large: "该技能目录过大，超出了导入限制。",
       file_not_found: "该文件已不存在。",
-      not_pending: "该消息已发出，无法撤回。",
+      not_pending: "该插话已随本轮送达模型，无法撤回。",
+      follow_up_started: "该跟进消息已开始发送，无法撤回。",
       file_too_large: "文件过大。",
       too_many_files: "一条消息附加的文件过多。",
       payload_too_large: "请求体过大。",
@@ -1915,6 +2154,21 @@ Benchmark：
       invalid_trace: "该文件不是有效的 Trace 文件。",
       trace_not_found: "该 Trace 文件已不存在。",
       trace_session_exists: "该 Agent 已存在同名 Session，无法导入重复的 Trace。",
+      feishu_secret_required: "需要填写 App Secret。",
+      feishu_not_bound: "该 Session 尚未绑定飞书。",
+      feishu_no_chat: "尚未收到飞书消息：先在飞书中给机器人发一条消息。",
+      feishu_send_failed: "飞书消息发送失败。",
+      telegram_token_required: "需要填写 Bot Token。",
+      telegram_token_invalid: "Bot Token 格式不正确：应形如「数字:密钥」。",
+      telegram_not_bound: "该 Session 尚未绑定 Telegram。",
+      telegram_no_chat: "尚未收到 Telegram 消息：先在 Telegram 中给机器人发一条消息。",
+      telegram_send_failed: "Telegram 消息发送失败。",
+      another_channel_enabled: "该会话已启用另一渠道的连接：先停用它，再启用当前渠道。",
+      // Deliberately names nothing about the other conversation: it may live in a Project
+      // this user cannot see, and the remedy does not depend on knowing which one it is.
+      account_enabled_elsewhere: "该机器人的连接已在另一个会话中启用：先在那边停用，再在此启用。",
+      messaging_disable_before_clear: "先停用该渠道的连接，才能清除其凭证。",
+      messaging_disable_before_scan: "先停用该渠道的连接，才能重新扫码绑定。",
     },
   },
 };

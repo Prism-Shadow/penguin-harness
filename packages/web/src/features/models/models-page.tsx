@@ -30,6 +30,7 @@
  * means keep the existing value); only the owner can edit.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { DragEvent as ReactDragEvent } from "react";
 import type {
   CredentialInfo,
   ModelProtocolDetectRequest,
@@ -76,12 +77,18 @@ import {
 } from "@prismshadow/penguin-core/model-catalog";
 import type { FastModeProtocol, ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
 import {
+  allGroupKeys,
   groupModelRows,
   hasConfiguredKey,
   isFreeModel,
   sameModelRef,
   userProviderInfo,
 } from "./model-grouping";
+import {
+  commitModelGroupOrder,
+  loadModelGroupOrder,
+  saveModelGroupOrder,
+} from "./model-group-order";
 import { protocolPathForModel } from "./protocol-path";
 import { ProtocolSuffixMenu } from "./protocol-suffix";
 import {
@@ -159,6 +166,8 @@ const KEY_ICON =
   "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4";
 const EXTERNAL_LINK_ICON =
   "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3";
+/** Arrow entering a door: authorize with the provider and come back with a key. */
+const SIGN_IN_ICON = "M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3";
 
 /** Speed-test glyphs (24x24 line paths): gauge for the group action, clock = TTFT, zap = TPS. */
 const GAUGE_ICON = "M12 14l3.5-3.5M20.49 17A10 10 0 1 0 3.5 17";
@@ -495,6 +504,26 @@ export function rowToEntry(row: RowState): ModelUpdateEntry {
   return entry;
 }
 
+/**
+ * Private drag payload type of a provider-group reorder. Deliberately NOT the sidebar's
+ * group MIME: the sidebar renders alongside this page, so one shared type would let a
+ * group dragged out of the conversation list paint a drop line here (and vice versa) —
+ * two unrelated orders that happen to be dragged the same way.
+ */
+const MODEL_GROUP_DRAG_MIME = "application/x-penguin-model-group";
+
+/**
+ * Is the drag in flight one of our group reorders? `types` is readable during dragover
+ * (unlike getData), so the payload authorizes the drop rather than React state alone:
+ * without it, a `dragGroup` left behind by a header that unmounted mid-drag would make the
+ * page swallow an unrelated drag, paint a phantom line, and commit on release.
+ */
+const isModelGroupDrag = (e: ReactDragEvent): boolean =>
+  e.dataTransfer.types.includes(MODEL_GROUP_DRAG_MIME);
+
+/** Dragging a group needs a pointer that can drag — HTML5 drag-and-drop never fires from touch (the sidebar's query). */
+const DRAG_POINTER_QUERY = "(hover: hover) and (pointer: fine)";
+
 export function ModelsPage() {
   useDocumentTitle(S.models.title);
   const { currentProject } = useProject();
@@ -529,8 +558,35 @@ export function ModelsPage() {
   useEffect(() => {
     setExpanded(loadExpandedProviders(projectId));
   }, [projectId]);
+  /**
+   * This Project's manual group order (empty = the catalog's own sequence). Hydrated and
+   * re-hydrated exactly like the expansion set above, and written back on every drop.
+   */
+  const [groupOrder, setGroupOrder] = useState<readonly string[]>(() =>
+    loadModelGroupOrder(projectId),
+  );
+  useEffect(() => {
+    setGroupOrder(loadModelGroupOrder(projectId));
+  }, [projectId]);
+  /**
+   * Whether the reorder gesture is offered at all. A stored order still APPLIES without
+   * it: the arrangement is per Project and implicit, so there is nothing to degrade —
+   * a phone renders what its owner arranged at a desk.
+   */
+  const [canDrag, setCanDrag] = useState(() => window.matchMedia(DRAG_POINTER_QUERY).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(DRAG_POINTER_QUERY);
+    const onChange = (e: MediaQueryListEvent) => setCanDrag(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+  /** Group header being dragged (its provider id) and the live drop hint (target group + which edge). */
+  const [dragGroup, setDragGroup] = useState<string | null>(null);
+  const [groupDropHint, setGroupDropHint] = useState<{ key: string; after: boolean } | null>(null);
   /** Vendor group (provider id) currently having its API key configured in bulk. */
   const [groupKeyFor, setGroupKeyFor] = useState<string | null>(null);
+  /** Vendor group (provider id) whose authorization dialog is open (groups that publish a key-minting flow only). */
+  const [oauthFor, setOauthFor] = useState<string | null>(null);
   /** User-defined group (provider id) whose delete confirmation is open (built-in groups never offer this). */
   const [deleteGroupFor, setDeleteGroupFor] = useState<string | null>(null);
   /** "Add group" popup (user-defined group): create-only hands off to that group's add-model dialog, import mode fills the group from its endpoint (see AddGroupDialog). */
@@ -608,7 +664,16 @@ export function ModelsPage() {
     }
   };
 
-  const groups = useMemo(() => (rows ? groupModelRows(rows, query) : []), [rows, query]);
+  const groups = useMemo(
+    () => (rows ? groupModelRows(rows, query, groupOrder) : []),
+    [rows, query, groupOrder],
+  );
+  /**
+   * Every group the library could show, empty built-ins included — the sequence a drop is
+   * committed against, so a provider currently holding no models keeps its catalog place
+   * rather than arriving as a newcomer the day one is added to it.
+   */
+  const allKeys = useMemo(() => allGroupKeys(rows ?? []), [rows]);
   /** Env-fallback variables the server reported a value for: the only ones a key hint may promise. */
   const envKeysDetected = useMemo(() => detectedEnvKeys(rows ?? []), [rows]);
   /** Non-empty search query: groups are filtered to matches and force-opened while it lasts. */
@@ -724,6 +789,86 @@ export function ModelsPage() {
     saveExpandedProviders(projectId, next);
   };
 
+  /**
+   * Drag-reorder wiring of one group header. Returns the props the header row spreads and
+   * the edge a drop would land on, or nothing at all when the gesture is not offered:
+   * without a drag-capable pointer, and while a search query is active — the query filters
+   * the list to matches, so a drop there would commit an arrangement made against a subset
+   * the user is about to dismiss.
+   */
+  const groupDragProps = (key: string) => {
+    if (!canDrag || searching) {
+      return { header: {}, dropEdge: null as "above" | "below" | null };
+    }
+    const dragging = dragGroup;
+    /** Which half of the header the pointer is in — the edge the drop would land on. */
+    const edgeOf = (e: ReactDragEvent) => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      return e.clientY - rect.top > rect.height / 2;
+    };
+    const acceptsDrop = dragging !== null && dragging !== key;
+    return {
+      header: {
+        draggable: true,
+        onDragStart: (e: ReactDragEvent) => {
+          // dragstart fires AT the source node, so target === currentTarget exactly when
+          // the header row itself is what the browser picked up. The row also carries the
+          // provider's external key link, which is natively draggable: a drag begun there
+          // is a link drag, and claiming it would overwrite the link's payload and effect
+          // and turn a release over any other header into a silent reorder.
+          if (e.target !== e.currentTarget) return;
+          e.dataTransfer.setData(MODEL_GROUP_DRAG_MIME, key);
+          e.dataTransfer.effectAllowed = "move" as const;
+          setDragGroup(key);
+        },
+        onDragEnd: () => {
+          setDragGroup(null);
+          setGroupDropHint(null);
+        },
+        onDragOver: (e: ReactDragEvent) => {
+          if (!acceptsDrop || !isModelGroupDrag(e)) return;
+          e.preventDefault();
+          // preventDefault alone only says "a drop may land here"; the effect still has to
+          // be one effectAllowed permits, or a modifier held during the drag resolves it to
+          // "none" and the drop event never fires.
+          e.dataTransfer.dropEffect = "move";
+          const after = edgeOf(e);
+          setGroupDropHint((prev) =>
+            prev?.key === key && prev.after === after ? prev : { key, after },
+          );
+        },
+        // dragleave also fires when the pointer merely crosses onto one of the header's OWN
+        // children — the collapse button spans most of the row, and up to five actions
+        // follow it — so clearing unconditionally strobes the indicator. relatedTarget is
+        // where the drag is going: still inside means nothing changed.
+        onDragLeave: (e: ReactDragEvent) => {
+          const to = e.relatedTarget;
+          if (to instanceof Node && e.currentTarget.contains(to)) return;
+          setGroupDropHint((prev) => (prev?.key === key ? null : prev));
+        },
+        onDrop: (e: ReactDragEvent) => {
+          if (!acceptsDrop || dragging === null || !isModelGroupDrag(e)) return;
+          e.preventDefault();
+          const next = commitModelGroupOrder(groupOrder, allKeys, dragging, key, edgeOf(e));
+          // commitModelGroupOrder hands back its input for a drop that moves nothing: no state
+          // update, and no freshly allocated identical array written to storage.
+          if (next !== groupOrder) {
+            setGroupOrder(next);
+            saveModelGroupOrder(projectId, next);
+          }
+          setDragGroup(null);
+          setGroupDropHint(null);
+        },
+      },
+      dropEdge:
+        acceptsDrop && groupDropHint?.key === key
+          ? groupDropHint.after
+            ? ("below" as const)
+            : ("above" as const)
+          : null,
+    };
+  };
+
   return (
     <div className="h-full overflow-y-auto p-4 md:p-6">
       <div className="mx-auto max-w-5xl">
@@ -772,176 +917,213 @@ export function ModelsPage() {
           <div className="space-y-3">
             {groups.map((group) => {
               const open = isGroupExpanded(expanded, group.provider.id, searching);
+              const drag = groupDragProps(group.provider.id);
               return (
-                <section
-                  key={group.provider.id}
-                  className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"
-                >
-                  {/* Group header: collapse button (logo + vendor name + count) + group-level
+                // The drop indicator is drawn against the WHOLE group, so "below" reads as
+                // after this group and its model cards rather than between the header and
+                // its own first card. It needs this wrapper to live in: the section clips
+                // its children (overflow-hidden carries the expand/collapse transition).
+                // Absolutely positioned, so it costs no layout width and cannot push the
+                // header's up-to-five actions out of a narrow page.
+                <div key={group.provider.id} className="relative">
+                  {drag.dropEdge !== null && (
+                    <div
+                      aria-hidden
+                      className={`pointer-events-none absolute inset-x-0 z-10 h-0.5 rounded-full bg-[var(--accent-bg)] ${
+                        drag.dropEdge === "above" ? "-top-1.5" : "-bottom-1.5"
+                      }`}
+                    />
+                  )}
+                  <section className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+                    {/* Group header: collapse button (logo + vendor name + count) + group-level
                       actions on the right. Actions are separate elements because buttons can't
                       nest. The row is a size container: the sidebar can narrow it while the
                       viewport remains desktop-sized, so action labels must respond to this
                       row's actual width rather than viewport breakpoints. Narrow rows never
                       hide an action — each one keeps its icon (with aria-label + title) and
-                      only sheds its text label. */}
-                  <div className="@container flex items-center gap-2 bg-gray-50 pr-2 transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-800/60">
-                    <button
-                      type="button"
-                      aria-expanded={open}
-                      onClick={() => toggleGroup(group.provider.id)}
-                      className="flex min-w-0 flex-1 items-center gap-2.5 px-3 py-2.5 text-left"
+                      only sheds its text label. The row is also the drag handle for
+                      reordering the group (groupDragProps). */}
+                    <div
+                      {...drag.header}
+                      className={`@container flex items-center gap-2 bg-gray-50 pr-2 transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-800/60${canDrag && !searching ? " cursor-grab" : ""}`}
                     >
-                      <ProviderLogo
-                        provider={group.provider.id}
-                        className="h-5 w-5 shrink-0 text-gray-700 dark:text-gray-300"
-                      />
-                      {/* Vendor name can truncate (min-w-0): the actions on the right must not
+                      <button
+                        type="button"
+                        aria-expanded={open}
+                        onClick={() => toggleGroup(group.provider.id)}
+                        className="flex min-w-0 flex-1 items-center gap-2.5 px-3 py-2.5 text-left"
+                      >
+                        <ProviderLogo
+                          provider={group.provider.id}
+                          className="h-5 w-5 shrink-0 text-gray-700 dark:text-gray-300"
+                        />
+                        {/* Vendor name can truncate (min-w-0): the actions on the right must not
                           shrink, otherwise on narrow screens it would get pushed out of the
                           button box and overlap the action text. */}
-                      <span className="min-w-0 truncate text-sm font-semibold">
-                        {group.provider.label}
-                      </span>
-                      <span className="shrink-0 whitespace-nowrap font-mono text-xs text-gray-400">
-                        {S.models.modelCount(group.rows.length)}
-                      </span>
-                    </button>
-                    {isOwner && (
-                      // Add-model entry point: present on every group header (including
-                      // custom), new models belong to that group. Narrow rows never hide a
-                      // group action — they drop its label and keep the icon (same pattern
-                      // for every action in this row), so the button stays reachable.
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="shrink-0"
-                        disabled={busy}
-                        aria-label={`${S.models.addToGroup} ${group.provider.label}`}
-                        title={S.models.addToGroup}
-                        onClick={() => setAddingTo(group.provider.id)}
-                      >
-                        <GlyphIcon d={PLUS_ICON} size={13} />
-                        <span className="hidden @3xl:inline">{S.models.addToGroup}</span>
-                      </Button>
-                    )}
-                    {isOwner && group.provider.id !== "custom" && (
-                      // Bulk key action: icon-only while this row is narrow, labeled from
-                      // @3xl up. The button itself never disappears — aria-label + title
-                      // carry the name while the visible label is dropped.
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="shrink-0"
-                        disabled={busy}
-                        aria-label={`${S.models.groupApiKey} ${group.provider.label}`}
-                        title={S.models.groupApiKey}
-                        onClick={() => setGroupKeyFor(group.provider.id)}
-                      >
-                        <GlyphIcon d={KEY_ICON} size={13} />
-                        <span className="hidden @3xl:inline">{S.models.groupApiKey}</span>
-                      </Button>
-                    )}
-                    {isOwner && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="shrink-0"
-                        disabled={busy || speedRunning !== null}
-                        aria-label={`${S.models.speedTest} ${group.provider.label}`}
-                        title={
-                          speedRunning === group.provider.id
-                            ? S.models.speedPending
-                            : S.models.speedTest
-                        }
-                        onClick={() => setSpeedFor(group.provider.id)}
-                      >
-                        <GlyphIcon d={GAUGE_ICON} size={13} />
-                        {/* Compact rows keep this accessible action icon-only. */}
-                        <span className="hidden @3xl:inline">
-                          {speedRunning === group.provider.id
-                            ? S.models.speedPending
-                            : S.models.speedTest}
+                        <span className="min-w-0 truncate text-sm font-semibold">
+                          {group.provider.label}
                         </span>
-                      </Button>
-                    )}
-                    {isOwner && !MODEL_PROVIDERS.some((p) => p.id === group.provider.id) && (
-                      // Whole-group delete, user-defined groups only: a built-in group is
-                      // catalog identity (its rows delete one by one), a user-defined group
-                      // exists solely through its rows and can go as a unit.
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="shrink-0"
-                        disabled={busy}
-                        aria-label={`${S.models.deleteGroup} ${group.provider.label}`}
-                        title={S.models.deleteGroup}
-                        onClick={() => setDeleteGroupFor(group.provider.id)}
+                        <span className="shrink-0 whitespace-nowrap font-mono text-xs text-gray-400">
+                          {S.models.modelCount(group.rows.length)}
+                        </span>
+                      </button>
+                      {isOwner && (
+                        // Add-model entry point: present on every group header (including
+                        // custom), new models belong to that group. Narrow rows never hide a
+                        // group action — they drop its label and keep the icon (same pattern
+                        // for every action in this row), so the button stays reachable.
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="shrink-0"
+                          disabled={busy}
+                          aria-label={`${S.models.addToGroup} ${group.provider.label}`}
+                          title={S.models.addToGroup}
+                          onClick={() => setAddingTo(group.provider.id)}
+                        >
+                          <GlyphIcon d={PLUS_ICON} size={13} />
+                          <span className="hidden @3xl:inline">{S.models.addToGroup}</span>
+                        </Button>
+                      )}
+                      {isOwner && group.provider.oauth && (
+                        // Authorize-a-key action: rendered off the group's own catalog
+                        // descriptor, so a provider gains this button by publishing a flow
+                        // rather than by being named here. Same narrow-row rule as its
+                        // neighbours — the label goes, the icon and its names stay. It leads the
+                        // manual key action: where a group can mint a key, that is the shorter path.
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="shrink-0"
+                          disabled={busy}
+                          aria-label={`${S.models.oauthKey} ${group.provider.label}`}
+                          title={S.models.oauthKey}
+                          onClick={() => setOauthFor(group.provider.id)}
+                        >
+                          <GlyphIcon d={SIGN_IN_ICON} size={13} />
+                          <span className="hidden @3xl:inline">{S.models.oauthKey}</span>
+                        </Button>
+                      )}
+                      {isOwner && group.provider.id !== "custom" && (
+                        // Bulk key action: icon-only while this row is narrow, labeled from
+                        // @3xl up. The button itself never disappears — aria-label + title
+                        // carry the name while the visible label is dropped.
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="shrink-0"
+                          disabled={busy}
+                          aria-label={`${S.models.groupApiKey} ${group.provider.label}`}
+                          title={S.models.groupApiKey}
+                          onClick={() => setGroupKeyFor(group.provider.id)}
+                        >
+                          <GlyphIcon d={KEY_ICON} size={13} />
+                          <span className="hidden @3xl:inline">{S.models.groupApiKey}</span>
+                        </Button>
+                      )}
+                      {isOwner && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="shrink-0"
+                          disabled={busy || speedRunning !== null}
+                          aria-label={`${S.models.speedTest} ${group.provider.label}`}
+                          title={
+                            speedRunning === group.provider.id
+                              ? S.models.speedPending
+                              : S.models.speedTest
+                          }
+                          onClick={() => setSpeedFor(group.provider.id)}
+                        >
+                          <GlyphIcon d={GAUGE_ICON} size={13} />
+                          {/* Compact rows keep this accessible action icon-only. */}
+                          <span className="hidden @3xl:inline">
+                            {speedRunning === group.provider.id
+                              ? S.models.speedPending
+                              : S.models.speedTest}
+                          </span>
+                        </Button>
+                      )}
+                      {isOwner && !MODEL_PROVIDERS.some((p) => p.id === group.provider.id) && (
+                        // Whole-group delete, user-defined groups only: a built-in group is
+                        // catalog identity (its rows delete one by one), a user-defined group
+                        // exists solely through its rows and can go as a unit.
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="shrink-0"
+                          disabled={busy}
+                          aria-label={`${S.models.deleteGroup} ${group.provider.label}`}
+                          title={S.models.deleteGroup}
+                          onClick={() => setDeleteGroupFor(group.provider.id)}
+                        >
+                          <GlyphIcon d={TRASH_ICON} size={13} />
+                          <span className="hidden @3xl:inline">{S.models.deleteGroup}</span>
+                        </Button>
+                      )}
+                      {group.provider.apiKeyUrl && (
+                        // External link: its label is the last one admitted as space grows
+                        // (@4xl); below that it collapses to the external-link glyph with a
+                        // small padding bump for a usable touch target.
+                        <a
+                          href={group.provider.apiKeyUrl}
+                          target="_blank"
+                          rel="noreferrer noopener"
+                          aria-label={`${S.models.getApiKey} ${group.provider.label}`}
+                          title={S.models.getApiKey}
+                          className="inline-flex shrink-0 items-center whitespace-nowrap p-1 text-xs text-brand-600 underline-offset-2 hover:underline @4xl:p-0 dark:text-brand-300"
+                        >
+                          <GlyphIcon d={EXTERNAL_LINK_ICON} size={13} className="@4xl:hidden" />
+                          <span className="hidden @4xl:inline">{S.models.getApiKey} ↗</span>
+                        </a>
+                      )}
+                      {/* Collapse arrow sits at the far right of the header (after group actions); it too can be clicked to collapse. */}
+                      <button
+                        type="button"
+                        aria-expanded={open}
+                        aria-label={group.provider.label}
+                        onClick={() => toggleGroup(group.provider.id)}
+                        className="shrink-0 p-1.5"
                       >
-                        <GlyphIcon d={TRASH_ICON} size={13} />
-                        <span className="hidden @3xl:inline">{S.models.deleteGroup}</span>
-                      </Button>
-                    )}
-                    {group.provider.apiKeyUrl && (
-                      // External link: its label is the last one admitted as space grows
-                      // (@4xl); below that it collapses to the external-link glyph with a
-                      // small padding bump for a usable touch target.
-                      <a
-                        href={group.provider.apiKeyUrl}
-                        target="_blank"
-                        rel="noreferrer noopener"
-                        aria-label={`${S.models.getApiKey} ${group.provider.label}`}
-                        title={S.models.getApiKey}
-                        className="inline-flex shrink-0 items-center whitespace-nowrap p-1 text-xs text-brand-600 underline-offset-2 hover:underline @4xl:p-0 dark:text-brand-300"
-                      >
-                        <GlyphIcon d={EXTERNAL_LINK_ICON} size={13} className="@4xl:hidden" />
-                        <span className="hidden @4xl:inline">{S.models.getApiKey} ↗</span>
-                      </a>
-                    )}
-                    {/* Collapse arrow sits at the far right of the header (after group actions); it too can be clicked to collapse. */}
-                    <button
-                      type="button"
-                      aria-expanded={open}
-                      aria-label={group.provider.label}
-                      onClick={() => toggleGroup(group.provider.id)}
-                      className="shrink-0 p-1.5"
-                    >
-                      <Chevron open={open} className="text-gray-400" />
-                    </button>
-                  </div>
+                        <Chevron open={open} className="text-gray-400" />
+                      </button>
+                    </div>
 
-                  {/* Expand/collapse height transition: grid-template-rows tweens between
+                    {/* Expand/collapse height transition: grid-template-rows tweens between
                       0fr and 1fr, with the inner overflow-hidden handling clipping — pure
                       CSS, no need to measure content height. Content stays in the DOM while
                       collapsed (height is 0), so both directions animate. */}
-                  <div
-                    className={`grid transition-[grid-template-rows] duration-200 ease-out ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
-                  >
-                    {/* inert while collapsed: a card with zero height shouldn't still be Tab-focusable or clickable. */}
-                    <div className="overflow-hidden" inert={!open}>
-                      <div
-                        className={`grid grid-cols-1 gap-2 border-t border-gray-200 p-2.5 transition-opacity duration-200 sm:grid-cols-2 lg:grid-cols-3 dark:border-gray-800 ${open ? "opacity-100" : "opacity-0"}`}
-                      >
-                        {group.rows.length === 0 ? (
-                          // An empty group only ever occurs for custom (always shown when there's no search query, to host the add entry point).
-                          <p className="col-span-full py-1 text-center text-xs text-gray-400 dark:text-gray-500">
-                            {S.models.groupEmptyHint}
-                          </p>
-                        ) : (
-                          group.rows.map((row) => (
-                            <ModelCard
-                              key={`${row.provider}:${row.modelId}`}
-                              row={row}
-                              currency={currency}
-                              isDefault={sameModelRef(rowRef(row), defaultModel)}
-                              isVisionModel={sameModelRef(rowRef(row), visionModel)}
-                              speed={speedResults.get(speedKey(row.provider, row.modelId))}
-                              onOpen={() => setEditing(rowRef(row))}
-                            />
-                          ))
-                        )}
+                    <div
+                      className={`grid transition-[grid-template-rows] duration-200 ease-out ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
+                    >
+                      {/* inert while collapsed: a card with zero height shouldn't still be Tab-focusable or clickable. */}
+                      <div className="overflow-hidden" inert={!open}>
+                        <div
+                          className={`grid grid-cols-1 gap-2 border-t border-gray-200 p-2.5 transition-opacity duration-200 sm:grid-cols-2 lg:grid-cols-3 dark:border-gray-800 ${open ? "opacity-100" : "opacity-0"}`}
+                        >
+                          {group.rows.length === 0 ? (
+                            // An empty group only ever occurs for custom (always shown when there's no search query, to host the add entry point).
+                            <p className="col-span-full py-1 text-center text-xs text-gray-400 dark:text-gray-500">
+                              {S.models.groupEmptyHint}
+                            </p>
+                          ) : (
+                            group.rows.map((row) => (
+                              <ModelCard
+                                key={`${row.provider}:${row.modelId}`}
+                                row={row}
+                                currency={currency}
+                                isDefault={sameModelRef(rowRef(row), defaultModel)}
+                                isVisionModel={sameModelRef(rowRef(row), visionModel)}
+                                speed={speedResults.get(speedKey(row.provider, row.modelId))}
+                                onOpen={() => setEditing(rowRef(row))}
+                              />
+                            ))
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </section>
+                  </section>
+                </div>
               );
             })}
             {isOwner && query.trim() === "" && (
@@ -986,6 +1168,22 @@ export function ModelsPage() {
               visionModel,
               S.models.groupKeyApplied(affected.length),
             );
+          }}
+        />
+      )}
+
+      {rows && projectId && oauthFor !== null && (
+        <ModelOAuthDialog
+          projectId={projectId}
+          provider={MODEL_PROVIDERS.find((p) => p.id === oauthFor) ?? userProviderInfo(oauthFor)}
+          count={rows.filter((r) => r.provider === oauthFor).length}
+          onClose={() => setOauthFor(null)}
+          onApplied={(applied) => {
+            setOauthFor(null);
+            toastSuccess(S.models.oauthApplied(applied));
+            // The key was written server-side, so the table in hand is stale in exactly one
+            // place: reload rather than patch, and the masked key comes back with it.
+            void load();
           }}
         />
       )}
@@ -2814,6 +3012,204 @@ function GroupKeyDialog({
             {S.models.getApiKey} ↗
           </a>
         )}
+      </div>
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Authorize a new API key for a provider group
+// ---------------------------------------------------------------------------
+
+/** Where the dialog is: opening a flow, holding one, waiting on an outcome, or reporting a failure. */
+type OAuthPhase = "starting" | "ready" | "waiting" | "failed";
+
+/** How often the redirect flow's outcome is asked for while the user is in the other tab. */
+const OAUTH_POLL_MS = 2000;
+
+/**
+ * Mint a fresh API key for a whole provider group by authorizing in the browser.
+ *
+ * The dialog never handles the key, and never handles the PKCE verifier either: it opens a
+ * flow, sends the user to the provider's page, and asks the server how that flow ended. Two
+ * routes back — the provider redirects to the server (polled here), or, when that redirect
+ * cannot reach the harness, the user carries a one-time code across by hand.
+ */
+function ModelOAuthDialog({
+  projectId,
+  provider,
+  count,
+  onClose,
+  onApplied,
+}: {
+  projectId: string;
+  provider: ModelProviderInfo;
+  /** Models in the group; every one of them gets the new key. */
+  count: number;
+  onClose: () => void;
+  onApplied: (applied: number) => void;
+}) {
+  const [manual, setManual] = useState(false);
+  const [phase, setPhase] = useState<OAuthPhase>("starting");
+  const [flow, setFlow] = useState<{ flowId: string; authorizeUrl: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [code, setCode] = useState("");
+  /** Bumped to reopen a flow after a failure; switching modes reopens one too (the URL differs). */
+  const [attempt, setAttempt] = useState(0);
+  // Latest-callback ref: the parent passes an inline arrow, and depending on its identity
+  // would tear down and restart the poll interval on every render.
+  const onAppliedRef = useRef(onApplied);
+  onAppliedRef.current = onApplied;
+
+  // A flow is opened as soon as the dialog shows, so the authorize URL is already in hand
+  // when the button is pressed — window.open then runs inside that click's own user
+  // activation, which is what keeps a popup blocker out of the way.
+  useEffect(() => {
+    let cancelled = false;
+    setPhase("starting");
+    setFlow(null);
+    setError(null);
+    setCode("");
+    void (async () => {
+      try {
+        const res = await api.startModelOAuth(projectId, {
+          provider: provider.id,
+          mode: manual ? "manual" : "callback",
+        });
+        if (cancelled) return;
+        setFlow(res);
+        setPhase("ready");
+      } catch (e) {
+        if (cancelled) return;
+        setError(apiErrorText(e));
+        setPhase("failed");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, provider.id, manual, attempt]);
+
+  // Redirect mode: the outcome lands on the server, so this tab only learns of it by asking.
+  // A flow that has expired answers 404, which reads the same as never coming back.
+  useEffect(() => {
+    if (phase !== "waiting" || manual || flow === null) return;
+    let stopped = false;
+    const tick = async (): Promise<void> => {
+      try {
+        const res = await api.getModelOAuthStatus(projectId, flow.flowId);
+        if (stopped) return;
+        if (res.status === "done") {
+          onAppliedRef.current(count);
+          return;
+        }
+        if (res.status === "error") {
+          setError(res.error ? S.models.oauthErrors[res.error] : S.models.oauthTimedOut);
+          setPhase("failed");
+        }
+      } catch {
+        if (stopped) return;
+        setError(S.models.oauthTimedOut);
+        setPhase("failed");
+      }
+    };
+    const timer = window.setInterval(() => void tick(), OAUTH_POLL_MS);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, [phase, manual, flow, projectId, count]);
+
+  const openAuthorizePage = (): void => {
+    if (flow === null) return;
+    window.open(flow.authorizeUrl, "_blank", "noopener,noreferrer");
+    if (!manual) setPhase("waiting");
+  };
+
+  const submitCode = async (): Promise<void> => {
+    if (flow === null) return;
+    setPhase("waiting");
+    setError(null);
+    try {
+      const res = await api.submitModelOAuthCode(projectId, flow.flowId, code.trim());
+      if (res.ok) {
+        onAppliedRef.current(res.applied ?? count);
+        return;
+      }
+      setError(res.error ? S.models.oauthErrors[res.error] : S.models.oauthTimedOut);
+      setPhase("failed");
+    } catch (e) {
+      setError(apiErrorText(e));
+      setPhase("failed");
+    }
+  };
+
+  const primary =
+    phase === "failed" ? (
+      <Button variant="primary" onClick={() => setAttempt((n) => n + 1)}>
+        {S.models.oauthRetry}
+      </Button>
+    ) : manual ? (
+      <Button
+        variant="primary"
+        disabled={flow === null || phase === "waiting" || !code.trim()}
+        onClick={() => void submitCode()}
+      >
+        {S.models.oauthSubmitCode}
+      </Button>
+    ) : (
+      <Button variant="primary" disabled={flow === null} onClick={openAuthorizePage}>
+        {S.models.oauthAuthorize}
+      </Button>
+    );
+
+  return (
+    <Modal
+      open
+      title={S.models.oauthTitle(provider.label)}
+      onClose={onClose}
+      footer={
+        <>
+          <Button onClick={onClose}>{S.common.cancel}</Button>
+          {primary}
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <p className="text-sm text-gray-700 dark:text-gray-300">
+          {S.models.oauthIntro(provider.label, count)}
+        </p>
+        {manual && (
+          <>
+            <Button variant="ghost" disabled={flow === null} onClick={openAuthorizePage}>
+              <GlyphIcon d={SIGN_IN_ICON} size={13} />
+              {S.models.oauthAuthorize}
+            </Button>
+            <Input
+              size="sm"
+              label={S.models.oauthCodeLabel}
+              hint={S.models.oauthManualHint}
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              className="font-mono"
+              autoComplete="off"
+            />
+          </>
+        )}
+        {phase === "waiting" && !manual && (
+          <p className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+            <span className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent" />
+            {S.models.oauthWaiting}
+          </p>
+        )}
+        {error !== null && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+        <button
+          type="button"
+          onClick={() => setManual((v) => !v)}
+          className="text-xs text-brand-600 underline-offset-2 hover:underline dark:text-brand-300"
+        >
+          {manual ? S.models.oauthCallbackSwitch : S.models.oauthManualSwitch}
+        </button>
       </div>
     </Modal>
   );

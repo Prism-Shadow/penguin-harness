@@ -1,8 +1,13 @@
 /**
  * Unit tests for the command-session shell resolver (pure function; platform, env and the
- * PATH probe are injected — no real shells are spawned here).
+ * existence/PATH probes are injected) plus one real spawn proving the POSIX fallback
+ * chain resolves to something that actually runs a command.
  */
 import { describe, expect, it } from "vitest";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, mkdirSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { resolveShell } from "../src/environment/tools/command/shell.js";
 
 const POWERSHELL_ARGS = ["-NoLogo", "-NoProfile", "-Command"];
@@ -12,25 +17,150 @@ function which(table: Record<string, string[]>): (cmd: string) => string[] {
   return (cmd) => table[cmd] ?? [];
 }
 
+/** An exists stub answering true for exactly the listed absolute paths. */
+function has(...paths: string[]): (filePath: string) => boolean {
+  const set = new Set(paths);
+  return (filePath) => set.has(filePath);
+}
+
 describe("resolveShell — POSIX", () => {
   it("uses bash -lc on linux without probing (today's behavior, unchanged)", () => {
     let probed = false;
     const shell = resolveShell({
       platform: "linux",
-      env: {},
+      env: { PATH: "/usr/local/bin:/usr/bin:/bin" },
+      exists: has("/usr/bin/bash"),
       whichAll: () => {
         probed = true;
         return [];
       },
     });
+    // A bare name, not the resolved path: the child resolves it against its own PATH.
     expect(shell).toEqual({ command: "bash", args: ["-lc"], name: "bash" });
+    // The POSIX branch must never cost a subprocess — it walks PATH itself.
     expect(probed).toBe(false);
   });
 
   it("uses bash -lc on darwin", () => {
-    const shell = resolveShell({ platform: "darwin", env: {} });
+    const shell = resolveShell({
+      platform: "darwin",
+      env: { PATH: "/usr/bin:/bin" },
+      exists: has("/bin/bash"),
+    });
     expect(shell).toEqual({ command: "bash", args: ["-lc"], name: "bash" });
   });
+
+  // A GUI-launched desktop app inherits the session's PATH, not a login shell's. When
+  // that PATH omits bash, spawn("bash") dies with ENOENT before the command runs — every
+  // exec_command on that machine, from every surface. The chain below is what stops it.
+  it("falls back to an absolute bash when PATH omits it (the GUI-launch PATH)", () => {
+    const shell = resolveShell({
+      platform: "linux",
+      env: { PATH: "/usr/games:/snap/bin" },
+      exists: has("/bin/bash", "/bin/sh"),
+    });
+    expect(shell).toEqual({ command: "/bin/bash", args: ["-lc"], name: "bash" });
+  });
+
+  it("finds a Homebrew bash on a macOS PATH that has none", () => {
+    const shell = resolveShell({
+      platform: "darwin",
+      env: { PATH: "/usr/sbin:/sbin" },
+      exists: has("/opt/homebrew/bin/bash"),
+    });
+    expect(shell).toEqual({ command: "/opt/homebrew/bin/bash", args: ["-lc"], name: "bash" });
+  });
+
+  it("uses the user's own login shell when no bash exists anywhere", () => {
+    const shell = resolveShell({
+      platform: "linux",
+      env: { PATH: "/usr/bin:/bin", SHELL: "/usr/bin/zsh" },
+      exists: has("/usr/bin/zsh", "/bin/sh"),
+    });
+    // Named honestly: the model is told zsh, because that is the syntax it must write.
+    expect(shell).toEqual({ command: "/usr/bin/zsh", args: ["-lc"], name: "zsh" });
+  });
+
+  it("skips a $SHELL that is not a shell at all", () => {
+    // A service account's login shell field is routinely /usr/sbin/nologin or /bin/false.
+    // Both exist; neither runs a command, and `-lc` would make every command exit silently.
+    for (const login of ["/usr/sbin/nologin", "/bin/false"]) {
+      const shell = resolveShell({
+        platform: "linux",
+        env: { PATH: "/usr/games", SHELL: login },
+        exists: has(login, "/bin/sh"),
+      });
+      expect(shell).toEqual({ command: "/bin/sh", args: ["-lc"], name: "sh" });
+    }
+  });
+
+  it("falls back to sh when there is neither a bash nor a usable $SHELL", () => {
+    const shell = resolveShell({
+      platform: "linux",
+      env: { PATH: "/usr/games" },
+      exists: has("/bin/sh"),
+    });
+    expect(shell).toEqual({ command: "/bin/sh", args: ["-lc"], name: "sh" });
+  });
+
+  it("prefers an sh on PATH over the absolute one", () => {
+    const shell = resolveShell({
+      platform: "linux",
+      env: { PATH: "/busybox/bin" },
+      exists: has("/busybox/bin/sh", "/bin/sh"),
+    });
+    expect(shell).toEqual({ command: "sh", args: ["-lc"], name: "sh" });
+  });
+
+  it("keeps the historical bash invocation when nothing at all resolves", () => {
+    const shell = resolveShell({
+      platform: "linux",
+      env: { PATH: "/nowhere" },
+      exists: () => false,
+    });
+    expect(shell).toEqual({ command: "bash", args: ["-lc"], name: "bash" });
+  });
+
+  it("PENGUIN_SHELL still wins over the whole POSIX chain", () => {
+    const shell = resolveShell({
+      platform: "linux",
+      env: { PENGUIN_SHELL: "/usr/bin/fish", PATH: "/bin" },
+      exists: has("/bin/bash"),
+    });
+    expect(shell).toEqual({ command: "/usr/bin/fish", args: ["-lc"], name: "fish" });
+  });
+});
+
+describe("resolveShell — POSIX, real spawn", () => {
+  /** A PATH directory carrying a POSIX sh and a few coreutils, but deliberately no bash. */
+  function bashlessBin(): string {
+    const bin = path.join(mkdtempSync(path.join(tmpdir(), "penguin-nobash-")), "bin");
+    mkdirSync(bin);
+    for (const tool of ["sh", "env", "cat", "echo", "printf"]) {
+      try {
+        symlinkSync(`/bin/${tool}`, path.join(bin, tool));
+      } catch {
+        // A tool this box does not have; the shell itself is what matters.
+      }
+    }
+    return bin;
+  }
+
+  it.skipIf(process.platform === "win32")(
+    "resolves to a shell that really runs a command when PATH has no bash",
+    () => {
+      const bin = bashlessBin();
+      const shell = resolveShell({ platform: process.platform, env: { PATH: bin } });
+      const res = spawnSync(shell.command, [...shell.args, "echo test"], {
+        env: { PATH: bin },
+        encoding: "utf8",
+      });
+      // Before the fallback chain this was spawn("bash") against a bashless PATH:
+      // res.error was `spawn bash ENOENT` and the command never ran.
+      expect(res.error).toBeUndefined();
+      expect(res.stdout).toContain("test");
+    },
+  );
 });
 
 describe("resolveShell — win32 probing", () => {
@@ -106,7 +236,11 @@ describe("resolveShell — PENGUIN_SHELL override", () => {
   });
 
   it("ignores a blank PENGUIN_SHELL", () => {
-    const shell = resolveShell({ platform: "linux", env: { PENGUIN_SHELL: "  " } });
+    const shell = resolveShell({
+      platform: "linux",
+      env: { PENGUIN_SHELL: "  ", PATH: "/usr/bin:/bin" },
+      exists: has("/bin/bash"),
+    });
     expect(shell).toEqual({ command: "bash", args: ["-lc"], name: "bash" });
   });
 });

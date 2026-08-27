@@ -1345,16 +1345,15 @@ export class TraceService {
    * drill-down (newest first: Agent -> date -> Session -> Trace files; sizes are the
    * index's last observed values). With `paging`: session-group-centric — Sessions
    * ordered by id descending (ids embed a timestamp, so that is reverse chronological),
-   * optionally filtered to one sidebar `category`, CLI-origin Sessions excluded unless
-   * `includeCli` (the "show CLI sessions" preference; the legacy shape is never
-   * filtered — back-compat), and only the returned slice gets per-file `fs.stat` for
+   * optionally filtered to one sidebar `category` — every Session is listed whichever
+   * client created it — and only the returned slice gets per-file `fs.stat` for
    * fresh sizes (written back to the index).
    */
   async agentTraces(
     projectId: string,
     agentId: string,
     paging?: { offset: number; limit: number } | null,
-    opts: { category?: SessionCategory; includeCli?: boolean } = {},
+    opts: { category?: SessionCategory } = {},
   ): Promise<AgentTracesResponse> {
     await this.deps.index.reconcileAgent(projectId, agentId);
     const files = this.deps.index.repo.listFilesByAgent(projectId, agentId);
@@ -1415,7 +1414,7 @@ export class TraceService {
     agentId: string,
     files: TraceFileRow[],
     paging: { offset: number; limit: number },
-    opts: { category?: SessionCategory; includeCli?: boolean },
+    opts: { category?: SessionCategory },
   ): Promise<AgentTracesResponse> {
     const bySession = new Map<string, TraceFileRow[]>();
     for (const f of files) {
@@ -1424,39 +1423,23 @@ export class TraceService {
       bySession.set(f.sessionId, list);
     }
     // One indexed query per source: the Agent's DB rows (title / archived / workspace /
-    // client — CLI rows included) and the registration-time facts.
+    // client) and the registration-time facts.
     const rows = new Map(
       (this.deps.sessions?.listByAgent(projectId, agentId) ?? []).map((r) => [r.sessionId, r]),
     );
     const factsBySession = new Map(
       this.deps.index.repo.listSessionsByAgent(projectId, agentId).map((r) => [r.sessionId, r]),
     );
-    /**
-     * CLI-origin = no web-created DB row AND not a subagent/schedule Session. Server-created
-     * Sessions always have a row (creation / subagent registration insert one), so rowless =
-     * external CLI; adopted CLI rows carry client='cli'. The default listing excludes these —
-     * the same "show CLI sessions" preference the sidebar applies — while subagent/schedule
-     * Sessions stay in their folders regardless of which process ran them.
-     */
-    const cliOrigin = (sessionId: string, facts: TraceSessionFacts): boolean => {
-      if (facts.category === "subagent" || facts.category === "schedule") return false;
-      const row = rows.get(sessionId);
-      return !(
-        row !== undefined &&
-        (row.client === null || row.client === undefined || row.client === "web")
-      );
-    };
     const ids = [...bySession.keys()].sort((a, b) => b.localeCompare(a));
-    // Classify every group once; the same result drives the CLI/category filters, the
+    // Classify every group once; the same result drives the category filter, the
     // counts AND the returned fields, so a row can never appear in a bucket its own
-    // `category` denies. Hidden CLI-origin groups are excluded from counts too.
+    // `category` denies. Every Session is listed whichever client created it.
     const counts: SessionCategoryCounts = { active: 0, subagent: 0, schedule: 0, archived: 0 };
     const workspaceCounts: Record<string, SessionCategoryCounts> = {};
     const factsById = new Map<string, TraceSessionFacts>();
     const visible: string[] = [];
     for (const id of ids) {
       const facts = this.classify(id, rows.get(id), factsBySession.get(id));
-      if (opts.includeCli !== true && cliOrigin(id, facts)) continue;
       factsById.set(id, facts);
       visible.push(id);
       counts[facts.category] += 1;

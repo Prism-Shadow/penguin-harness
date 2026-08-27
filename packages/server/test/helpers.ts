@@ -84,6 +84,9 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
   const deps = await bootAppDeps(finalConfig, {
     log: () => {},
     passwordHashCost: TEST_PASSWORD_HASH_COST,
+    // The bridge's per-line pace is a real wait in production; every test but the one
+    // about the pacing itself collapses it to nothing.
+    messagingLineDelayMs: 0,
     ...overrides,
   });
   // Consistent with the startup entrypoint: seed the built-in admin (owning default_project).

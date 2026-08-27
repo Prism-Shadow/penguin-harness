@@ -174,6 +174,7 @@ export function TraceFileView({
   agentId,
   sessionId,
   index,
+  reloadSignal,
   highlight,
   onHighlight,
 }: {
@@ -181,6 +182,13 @@ export function TraceFileView({
   agentId: string;
   sessionId: string;
   index: number;
+  /**
+   * Bumped by the panel every time it re-lists (a re-show, or a turn settling while the panel
+   * is showing). Any change means "re-read this file": a Trace is APPENDED TO while the
+   * Session runs, so the same `index` at a larger size is the ordinary case and a load keyed
+   * on `index` alone would never re-run for it.
+   */
+  reloadSignal: number;
   highlight: TraceHighlight | null;
   onHighlight: (h: TraceHighlight | null) => void;
 }) {
@@ -205,25 +213,39 @@ export function TraceFileView({
     [],
   );
 
-  useEffect(() => {
+  // Switching to a DIFFERENT file clears the view — back to the skeleton, with the collapsed
+  // rounds and the pinned row forgotten because they name rounds this file does not have.
+  // Reset during render (React's documented "adjust state when a prop changes" pattern), which
+  // is what keeps it out of the load effect below: that effect also runs for a REFRESH of the
+  // file already on screen, and blanking there would flash a skeleton, drop the highlight and
+  // reopen every round card the user collapsed, several times per run.
+  const fileKey = `${projectId}/${agentId}/${sessionId}/${index}`;
+  const [renderedFileKey, setRenderedFileKey] = useState(fileKey);
+  if (renderedFileKey !== fileKey) {
+    setRenderedFileKey(fileKey);
     setAnalysis(null);
     setEvents([]);
     setError(null);
     setCollapsed(new Set());
     setPinnedRow(null);
+  }
+
+  // Load the file, and re-load it whenever the panel's signal moves. Results overwrite what is
+  // on screen in place — an in-flight refresh keeps the current content readable, and its
+  // outcome is what clears or sets the error, since nothing was cleared up front.
+  useEffect(() => {
     let cancelled = false;
     Promise.all([
       api.getAgentTraceAnalysis(projectId, agentId, sessionId, index),
       api.getAgentTraceEvents(projectId, agentId, sessionId, index, 0, 1000),
-      api.getModels(projectId).catch(() => null),
     ])
-      .then(([a, e, m]) => {
+      .then(([a, e]) => {
         if (cancelled) return;
         setAnalysis(a);
         setEvents(e.events);
         setEventsOffset(e.offset);
         setTotal(e.total);
-        setModels(m);
+        setError(null);
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(apiErrorText(err));
@@ -231,7 +253,24 @@ export function TraceFileView({
     return () => {
       cancelled = true;
     };
-  }, [projectId, agentId, sessionId, index]);
+  }, [projectId, agentId, sessionId, index, reloadSignal]);
+
+  // Pricing is a PROJECT-level catalog, so it is fetched per project and deliberately left out
+  // of the load above: no turn changes it, and riding along there would refetch the whole
+  // catalog on every settled turn. It is optional and allowed to fail — a project whose models
+  // cannot be listed simply shows no cost column, and that is not the view's error.
+  useEffect(() => {
+    let cancelled = false;
+    void api
+      .getModels(projectId)
+      .then((m) => {
+        if (!cancelled) setModels(m);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
 
   // Pricing for the session's Model (main session only; sub-session Tokens
   // live in their own Trace and aren't part of this file): session_meta carries a paired
@@ -364,7 +403,11 @@ export function TraceFileView({
     return { tasks, global: g, statsByTask, globalLlmMs: gLlm };
   }, [analysis, events, eventsOffset]);
 
-  if (error) return <p className="text-xs text-red-600 dark:text-red-400">{error}</p>;
+  // The error takes the whole view only while there is nothing to take it from: this re-reads
+  // on every settled turn now, so a blip mid-read would otherwise blank a file the user is in
+  // the middle of. With a file already rendered the failure is a line above it (below).
+  if (error !== null && analysis === null)
+    return <p className="text-xs text-red-600 dark:text-red-400">{error}</p>;
   if (!analysis) return <Skeleton className="h-40" />;
 
   // Duration is likewise "the sum across rounds" computed by the server over
@@ -412,6 +455,9 @@ export function TraceFileView({
 
   return (
     <div ref={rootRef} className="space-y-4">
+      {/* A re-read that failed: what follows is the last read that succeeded, so it may be a
+          turn or two behind. */}
+      {error !== null && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
       {/* Global summary: split into three groups by nature (count / Token
           usage / duration·cost·TPS), separated by vertical rules — a dozen
           metrics laid out in one row would read as a blur of digits; grouping lets you spot the kind you want at a glance. */}
