@@ -26,6 +26,18 @@
  * is `swapSafe: false` and must be refused on the swap path rather than half-applied
  * (see `migrate`'s `swapPath` option).
  *
+ * DOWN, AND WHO DOES NOT CALL IT. Every migration declares an undo — or declares `null`
+ * to say it has none, which is a decision the author has to make rather than omit. What
+ * `down` is NOT is the hot-update rollback mechanism. When a pushed platform fails to boot
+ * the runtime reverts to its PREDECESSOR and the schema stays where the migration left it:
+ * undoing DDL inside a process whose boot just failed would run destructive statements
+ * against a half-known state, and `swapSafe` exists precisely so that not undoing is safe —
+ * the predecessor does not know the new table or column, so it never touches it. `down` is
+ * an operator's tool, called deliberately (`rollbackTo`), never by the swap.
+ *
+ * It is also LOSSY by nature: undoing "add a table" drops that table with its rows in it.
+ * Each `down` below names what its rows were.
+ *
  * ADOPTION. Databases created before this file existed are all stamped 0 while sitting in
  * genuinely different shapes, so a migration must tolerate finding its work already done.
  * That is not only a version-1 concern: `schema.ts` still DECLARES the current shape in
@@ -51,6 +63,15 @@ export interface Migration {
   swapSafe: boolean;
   /** Applied inside a transaction; throw to abort and leave the version unchanged. */
   up: (db: DatabaseSync) => void;
+  /**
+   * Undoes `up`, or null when this migration cannot be undone — required, not optional, so
+   * "there is no undo" is something the author states rather than forgets.
+   *
+   * Never called by the swap path (see the module doc): a failed boot reverts the platform,
+   * not the schema. Reached only through `rollbackTo`, and destructive by nature — dropping
+   * a table takes its rows with it.
+   */
+  down: ((db: DatabaseSync) => void) | null;
 }
 
 export const MIGRATIONS: readonly Migration[] = [
@@ -85,6 +106,17 @@ export const MIGRATIONS: readonly Migration[] = [
         CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id);
       `);
     },
+    // LOSES every messaging binding: the channel credentials, the enabled flag and the
+    // last-chat memory all live in the table this drops. The auth_sessions indexes are
+    // derived and cost nothing to lose.
+    down(db) {
+      db.exec(`
+        DROP INDEX IF EXISTS idx_auth_sessions_user;
+        DROP INDEX IF EXISTS idx_auth_sessions_expires;
+        DROP INDEX IF EXISTS idx_messaging_by_account;
+        DROP TABLE IF EXISTS messaging_bindings;
+      `);
+    },
   },
   {
     version: 2,
@@ -98,6 +130,13 @@ export const MIGRATIONS: readonly Migration[] = [
       ensureColumn(db, "messaging_bindings", "final_reply_only", "INTEGER NOT NULL DEFAULT 0");
       ensureColumn(db, "messaging_bindings", "render_markdown", "INTEGER NOT NULL DEFAULT 1");
     },
+    // LOSES both delivery preferences on every binding; the bindings themselves survive.
+    // Dropped in reverse order for symmetry with `up`. Neither column is indexed, which is
+    // what lets SQLite drop them at all.
+    down(db) {
+      db.exec("ALTER TABLE messaging_bindings DROP COLUMN render_markdown");
+      db.exec("ALTER TABLE messaging_bindings DROP COLUMN final_reply_only");
+    },
   },
 ];
 
@@ -108,6 +147,16 @@ export const LATEST_VERSION: number = MIGRATIONS.reduce((n, m) => Math.max(n, m.
 export function schemaVersion(db: DatabaseSync): number {
   const row = db.prepare("PRAGMA user_version").get() as { user_version: number } | undefined;
   return row?.user_version ?? 0;
+}
+
+export class IrreversibleMigrationError extends Error {
+  constructor(readonly migration: Migration) {
+    super(
+      `migration ${migration.version} (${migration.name}) declares no down and cannot be rolled back. ` +
+        `Restore the database from a backup taken before it was applied.`,
+    );
+    this.name = "IrreversibleMigrationError";
+  }
 }
 
 export class RestartRequiredError extends Error {
@@ -159,4 +208,49 @@ export function migrate(
     applied.push(m.name);
   }
   return { from, to: schemaVersion(db), applied };
+}
+
+/**
+ * Reverts the database DOWN to `targetVersion`, newest migration first.
+ *
+ * An operator's tool, and a destructive one — see each migration's `down` for what its rows
+ * were. Deliberately not reachable from the swap path: a failed platform boot reverts the
+ * PLATFORM, never the schema (module doc).
+ *
+ * Refused whole, before anything runs, if any migration in range declares no `down`: a
+ * partial rollback would leave the database at a version whose meaning nobody wrote down.
+ * Each `down` commits with its version stamp, so an interrupted run stops at a real version.
+ */
+export function rollbackTo(
+  db: DatabaseSync,
+  targetVersion: number,
+): { from: number; to: number; reverted: readonly string[] } {
+  const from = schemaVersion(db);
+  if (targetVersion < 0) throw new Error(`target version ${targetVersion} is negative`);
+  if (targetVersion > from) {
+    throw new Error(`database is at version ${from}, which is already below ${targetVersion}`);
+  }
+  const toRevert = [...MIGRATIONS]
+    .filter((m) => m.version > targetVersion && m.version <= from)
+    .sort((a, b) => b.version - a.version);
+  const blocked = toRevert.find((m) => m.down === null);
+  if (blocked) throw new IrreversibleMigrationError(blocked);
+
+  const reverted: string[] = [];
+  for (const m of toRevert) {
+    db.exec("BEGIN");
+    try {
+      m.down!(db);
+      // Versions are contiguous, so the predecessor of `m` is exactly m.version - 1.
+      db.exec(`PRAGMA user_version = ${m.version - 1}`);
+      db.exec("COMMIT");
+    } catch (err) {
+      db.exec("ROLLBACK");
+      throw new Error(`rollback of migration ${m.version} (${m.name}) failed: ${String(err)}`, {
+        cause: err,
+      });
+    }
+    reverted.push(m.name);
+  }
+  return { from, to: schemaVersion(db), reverted };
 }
