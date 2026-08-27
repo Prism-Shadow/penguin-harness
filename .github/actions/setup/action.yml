@@ -1,0 +1,78 @@
+# Shared prologue for every CI job: pnpm on PATH, Node 24, dependencies installed.
+#
+# pnpm comes from corepack rather than pnpm/action-setup. The version is the one
+# `packageManager` pins either way, but the action was the single most expensive
+# step on the Windows runners — 21s typical and 63s at its worst against ~5s on
+# ubuntu — while `corepack enable` is a shim install with no download of its own.
+# It has to run before setup-node, whose `cache: pnpm` resolves the store path by
+# executing pnpm.
+name: Set up pnpm, Node and dependencies
+description: Enables pnpm via corepack, installs Node 24 with a warm pnpm store, and runs a frozen install.
+
+inputs:
+  build:
+    description: >-
+      pnpm --filter arguments naming what to build, comma separated (e.g.
+      "@prismshadow/penguin-core..."). Empty builds nothing — a job that only reads
+      sources, such as the Prettier gate, needs no dist at all.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    # corepack fetches the pinned pnpm tarball on first use -- ~20s on the Windows runner,
+    # which is most of what replacing pnpm/action-setup was meant to save. Cache what it
+    # unpacks, keyed on the packageManager pin, and the fetch happens once per pin per OS.
+    - name: Cache corepack's pnpm
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/node/corepack
+          ~/AppData/Local/node/corepack
+        key: corepack-${{ runner.os }}-${{ hashFiles('package.json') }}
+
+    - name: Enable pnpm (corepack)
+      shell: bash
+      env:
+        COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+      run: |
+        corepack enable
+        # Materialise the pinned version now so the cache above has something to save, and
+        # so a download failure surfaces here rather than inside an unrelated step.
+        pnpm --version
+
+    - uses: actions/setup-node@v5
+      with:
+        node-version: 24
+        cache: pnpm
+
+    - name: Install dependencies
+      shell: bash
+      run: pnpm install --frozen-lockfile
+
+    # Only the requested packages and their dependencies. A shard that tests core
+    # alone does not pay for the desktop bundle, which is the slowest target here.
+    # verify-deps-before-run is off because it wants a TTY it does not have on a runner.
+    #
+    # The empty check is in the script, not a step-level `if`. A composite step whose `if`
+    # reads `inputs` silently evaluated false here, so every job skipped its build and only
+    # the shards that never import a built package stayed green -- a failure that looks like
+    # a broken test, not a broken workflow. The echo makes the decision visible in the log.
+    - name: Build (tsup)
+      shell: bash
+      env:
+        BUILD_FILTERS: ${{ inputs.build }}
+      run: |
+        if [ -z "$BUILD_FILTERS" ]; then
+          echo "No build requested for this job."
+          exit 0
+        fi
+        args=""
+        IFS=','
+        for f in $BUILD_FILTERS; do
+          args="$args --filter $f"
+        done
+        unset IFS
+        echo "pnpm$args build"
+        pnpm --config.verify-deps-before-run=false $args build

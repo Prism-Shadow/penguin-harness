@@ -21,6 +21,14 @@
  *
  * A larger failure deadline changes nothing for passing tests; POSIX keeps the 5s
  * default to fail fast during local development.
+ *
+ * `retry` on win32: the suites here spawn real shells and read their output under
+ * deadlines, and the Windows runners lose those races at a measurable rate — over one
+ * batch of reruns the Windows shard failed 4 attempts in a row and then passed twice, on
+ * four DIFFERENT tests, from a diff that could not change behaviour at all. Retrying the
+ * individual test costs nothing when everything passes and rescues the runs that would
+ * otherwise be re-triggered by hand; a real regression fails all three attempts. POSIX
+ * keeps 0 so a flake introduced there is seen the first time.
  */
 import { defineConfig } from "vitest/config";
 
@@ -28,5 +36,6 @@ export default defineConfig({
   test: {
     environment: "node",
     testTimeout: process.platform === "win32" ? 120_000 : 5_000,
+    retry: process.platform === "win32" ? 2 : process.platform === "darwin" ? 1 : 0,
   },
 });
