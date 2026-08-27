@@ -12,10 +12,12 @@
  * straight into the Project's model config and is never echoed to a caller, a URL, or a
  * log line. What the Web App holds is an opaque flow id and a status.
  *
- * That flow id is also a capability, and `complete` treats it as one: 32 random bytes bound
- * here to a user, a Project, a provider and a verifier, valid for ten minutes and spendable
- * once. The loopback redirect receiver leans on exactly that, because the browser the
- * provider redirects cannot be assumed to hold a session — see the route module.
+ * That flow id is also a capability, and the flow store treats it as one: 32 random bytes
+ * bound here to a user, a Project, a provider and a verifier, valid for ten minutes and
+ * spendable once. The loopback redirect receiver leans on exactly that, because the browser
+ * the provider redirects cannot be assumed to hold a session — see the route module. What
+ * that receiver may do with the id is only `deposit`: the exchange itself runs on the
+ * owner's own poll, so no key is ever written for a Project without its owner asking.
  *
  * Flows are in-memory and per-App: a restart or a platform push drops the pending ones,
  * which costs the user a re-authorization and nothing else (the upstream code expires in
@@ -52,9 +54,18 @@ interface Flow {
   projectId: string;
   userId: string;
   provider: string;
+  /** How the code travels back; only a `callback` flow has a redirect receiver to serve. */
+  mode: ModelOAuthMode;
   exchangeUrl: string;
-  /** PKCE verifier; dropped the moment the flow reaches a terminal state. */
+  /** PKCE verifier; dropped the moment the flow is spent. */
   verifier: string | null;
+  /**
+   * The authorization code a redirect deposited, waiting for the owner's next poll to
+   * redeem it. Null until the redirect arrives and null again the instant the exchange
+   * claims it, so it can never be redeemed twice; the flow's TTL bounds how long it may sit
+   * here unspent.
+   */
+  code: string | null;
   createdAt: number;
   expiresAt: number;
   status: ModelOAuthStatus;
@@ -246,8 +257,10 @@ export class ModelOAuthService {
       projectId: input.projectId,
       userId: input.userId,
       provider: input.provider,
+      mode: input.mode,
       exchangeUrl: oauth.exchangeUrl,
       verifier,
+      code: null,
       createdAt,
       expiresAt: createdAt + FLOW_TTL_MS,
       status: "pending",
@@ -263,59 +276,113 @@ export class ModelOAuthService {
   }
 
   /**
-   * A flow's current state for its owner. 404 for anything the caller may not see —
-   * unknown, expired, or belonging to another user or Project — so a flow id is never a
-   * probe for what exists.
+   * Record the authorization code a redirect carried back — the whole power of the loopback
+   * receiver, which answers without a session because the browser the provider redirects
+   * cannot be assumed to hold one (on the desktop it is the *system* browser; see the route
+   * module).
+   *
+   * Depositing reaches no provider and writes no credential. The exchange runs later, in
+   * `poll`, under the flow owner's own session, so a caller who learned a flow id can at
+   * most put a code in front of that poll — and only by beating the provider's own redirect
+   * to the flow's single deposit slot, after which what they left there stays inert unless
+   * the owner's own session polls the flow.
+   *
+   * Refused for anything the depositor may not act on: an unknown, foreign or expired flow
+   * (404, the same answer to each, so a flow id stays useless as a probe for what exists), a
+   * flow opened in manual mode — which was handed no callback URL and therefore has no
+   * redirect to receive — and a flow already carrying a code or already spent (409). The
+   * check and the write are one synchronous step, so two redirects arriving together cannot
+   * both deposit.
    */
-  status(input: { flowId: string; userId: string; projectId: string }): {
+  deposit(input: { flowId: string; projectId: string; code: string }): void {
+    const flow = this.require({ ...input, userId: null });
+    if (flow.mode !== "callback") {
+      throw new HttpError(
+        404,
+        "model_oauth_flow_not_found",
+        "This authorization has expired or does not exist. Start a new one.",
+      );
+    }
+    if (flow.status !== "pending" || flow.verifier === null || flow.code !== null) {
+      throw new HttpError(
+        409,
+        "model_oauth_flow_used",
+        "This authorization has already been used. Start a new one in PenguinHarness.",
+      );
+    }
+    flow.code = input.code;
+  }
+
+  /**
+   * A flow's current state for its owner, redeeming a deposited code on the way. 404 for
+   * anything the caller may not see — unknown, expired, or belonging to another user or
+   * Project — so a flow id is never a probe for what exists.
+   *
+   * The redirect flow's exchange happens here rather than in the receiver, which is what
+   * keeps writing a key into a Project behind that Project owner's session. `applied` is set
+   * only on the call that actually redeemed, and is how the route knows to publish the
+   * credential change; a deposited code nobody polls for is dropped with the flow at its TTL.
+   */
+  async poll(input: { flowId: string; userId: string; projectId: string }): Promise<{
     status: ModelOAuthStatus;
     provider: string;
     error?: ModelOAuthErrorCode;
-  } {
+    applied?: number;
+  }> {
     const flow = this.require(input);
+    // Reading the code and claiming it inside `redeem` is one synchronous stretch, so two
+    // overlapping polls cannot both reach the exchange: the second finds nothing deposited
+    // and reports the flow still pending, and the tick after that reports the outcome.
+    const result = flow.code !== null ? await this.redeem(flow, flow.code) : null;
     return {
       status: flow.status,
       provider: flow.provider,
       ...(flow.errorCode !== undefined ? { error: flow.errorCode } : {}),
+      ...(result?.ok === true ? { applied: result.applied } : {}),
     };
   }
 
   /**
-   * Redeem a code against a pending flow and write the minted key onto the group.
-   *
-   * `userId` is the signed-in caller, or `null` when the flow id itself is the credential.
-   * `null` is for the loopback redirect receiver only: whichever browser the provider
-   * redirected arrives there, and on the desktop that is the system browser, which holds no
-   * session cookie for the App's origin. Waiving the user check is what makes that path work
-   * at all; nothing else about the flow is waived with it — the Project in the request must
-   * still be the flow's own, the TTL must not have passed, and the flow must still be
-   * pending.
-   *
-   * One shot: the flow leaves `pending` before the exchange runs, so a replayed callback
-   * cannot spend the same verifier twice, and the verifier is dropped from memory as soon
-   * as it has been used. A key that arrives but cannot be stored is reported as
-   * `apply_failed` — the user has to authorize again and delete the orphan, and saying so
-   * is the only honest answer, since the provider reveals a key exactly once.
+   * Redeem a code the owner pasted — manual mode's counterpart to the redirect, and the
+   * only redemption a caller asks for directly. The flow must be this user's, in the named
+   * Project, inside its TTL and unspent.
    */
   async complete(input: {
     flowId: string;
-    userId: string | null;
+    userId: string;
     projectId: string;
     code: string;
   }): Promise<{ ok: true; applied: number } | { ok: false; error: ModelOAuthErrorCode }> {
-    const flow = this.require(input);
-    if (flow.status !== "pending" || flow.verifier === null) {
+    return this.redeem(this.require(input), input.code);
+  }
+
+  /**
+   * Spend a flow: redeem one code against its verifier and write the minted key onto the
+   * group. Refuses a flow that is not still pending with a verifier in hand.
+   *
+   * One shot: everything that marks the flow as spent happens before the first await, so
+   * two callers arriving together cannot both reach the exchange, and the verifier and the
+   * deposited code leave memory as they are used. A key that arrives but cannot be stored is
+   * reported as `apply_failed` — the user has to authorize again and delete the orphan, and
+   * saying so is the only honest answer, since the provider reveals a key exactly once.
+   */
+  private async redeem(
+    flow: Flow,
+    code: string,
+  ): Promise<{ ok: true; applied: number } | { ok: false; error: ModelOAuthErrorCode }> {
+    const verifier = flow.verifier;
+    if (flow.status !== "pending" || verifier === null) {
       throw new HttpError(
         409,
         "model_oauth_flow_used",
         "This authorization has already been completed. Start a new one.",
       );
     }
-    const verifier = flow.verifier;
     flow.verifier = null;
+    flow.code = null;
     const result = await exchangeCode({
       exchangeUrl: flow.exchangeUrl,
-      code: input.code,
+      code,
       verifier,
       fetchImpl: this.fetchImpl,
     });
@@ -336,17 +403,12 @@ export class ModelOAuthService {
     return { ok: true, applied };
   }
 
-  /** The provider group a flow belongs to (the route needs it before it can complete one). */
-  providerOf(input: { flowId: string; userId: string; projectId: string }): string {
-    return this.require(input).provider;
-  }
-
   /**
    * The flow a caller may act on. 404 for anything they may not see — unknown, expired, or
    * belonging to another user or another Project — so a flow id is never a probe for what
    * exists.
    *
-   * A `null` userId waives the user check and nothing else, and only `complete` passes it
+   * A `null` userId waives the user check and nothing else, and only `deposit` passes it
    * (see there): the flow id is then the credential. The Project and the TTL are checked
    * either way.
    */

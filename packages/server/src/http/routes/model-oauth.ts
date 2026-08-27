@@ -7,7 +7,8 @@
  *
  * Owner only, like every other route that spends or rewrites a Project's credentials — with
  * one deliberate exception, `GET /callback`, which is mounted ahead of the global auth
- * middleware (see `modelOAuthCallbackRoutes` below and its mount in app.ts).
+ * middleware and only deposits the code it was redirected with (see
+ * `modelOAuthCallbackRoutes` below and its mount in app.ts).
  *
  * The whole exchange runs here: the PKCE verifier is generated server-side and never leaves
  * this process, and the minted key goes straight into the Project's model config without
@@ -104,19 +105,6 @@ p { margin: 0; color: #4b5563; }
 `;
 }
 
-/** One sentence per failure reason, phrased for the redirect page (the Web App localizes its own). */
-const FAILURE_TEXT: Record<string, string> = {
-  invalid_request:
-    "TokenDance rejected the authorization request. Start a new one in PenguinHarness.",
-  code_rejected:
-    "The authorization is no longer valid — it may have expired or already been used. Start a new one in PenguinHarness.",
-  upstream_failed: "The provider did not return a usable key. Start a new one in PenguinHarness.",
-  unreachable:
-    "The provider could not be reached. Check the network and start a new one in PenguinHarness.",
-  apply_failed:
-    "A key was created but could not be saved. Authorize again, then delete the unused key in the provider's console.",
-};
-
 /** Credential change: same follow-up the models PUT performs, so live Sessions pick the key up. */
 function credentialsChanged(deps: AppDeps, projectId: string): void {
   deps.manager.invalidateProjectRuntimes(projectId);
@@ -135,26 +123,37 @@ function credentialsChanged(deps: AppDeps, projectId: string): void {
  * authorization therefore ended on a bare 401 while the same flow completed in the browser,
  * where the popup is a tab of the session that opened it.
  *
- * So authorization here is the flow id, which is already a capability rather than a name:
- * 32 random bytes minted server-side, bound in ModelOAuthService to a user, a Project, a
- * provider and a PKCE verifier that never leaves this process, valid for ten minutes and
- * spendable once. The Project in the path must be the flow's own, so a flow id cannot be
- * redirected at a Project it does not belong to. A caller who already knows a pending flow
- * id can complete that flow with a code of their own — see the service's `complete`; the
- * trade is 256 bits of unguessable, single-use, ten-minute secret against a desktop flow
- * that otherwise cannot work at all.
+ * What it does without a session is deliberately less than finishing the flow: it deposits
+ * the code on the flow and says so. The exchange that redeems that code and writes the key
+ * runs on the owner's next poll of `GET /:flowId`, which is behind the gate — so this route
+ * has no authority of its own to write a credential into a Project. A caller who learned a
+ * flow id can put a code in front of that poll — but only by beating the provider's own
+ * redirect to the flow's single deposit slot, and what they deposit stays inert unless the
+ * owner's own session goes on to poll that flow.
+ *
+ * The flow id it authorizes on is a capability rather than a name: 32 random bytes minted
+ * server-side, bound in ModelOAuthService to a user, a Project, a provider and a PKCE
+ * verifier that never leaves this process, valid for ten minutes and depositable once. The
+ * Project in the path must be the flow's own, so a flow id cannot be redirected at a Project
+ * it does not belong to, and a flow opened in manual mode is refused outright — it was
+ * handed no callback URL, so it has no redirect to receive.
  *
  * Mounted separately (not inside `modelOAuthRoutes`) because the exemption has to be exactly
- * this literal path and this method: it is registered ahead of the auth middleware in app.ts,
- * where a whole-group mount would have exempted /start, /:flowId/code and the status route
- * with it. Those stay owner-only, unchanged.
+ * this literal path: it is registered ahead of the auth middleware in app.ts, where a
+ * whole-group mount would have exempted /start, /:flowId/code and the status route with it.
+ * Those stay owner-only, unchanged. Only GET is served — the handler refuses the HEAD that
+ * Hono re-dispatches into it rather than let a safe method spend the deposit.
  *
  * Answers HTML throughout — a person is looking at this tab, not a client parsing JSON.
  */
 export function modelOAuthCallbackRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
-  app.get("/", async (c) => {
+  app.get("/", (c) => {
+    // Hono re-dispatches a HEAD as a GET before routing and returns the result bodiless, so
+    // without this a HEAD would run the handler below and spend the flow's one deposit. The
+    // re-dispatch carries the original Request, so the method still reads as HEAD here.
+    if (c.req.method === "HEAD") return c.body(null, 405);
     const projectId = requireValidId(c, "projectId");
     const flowId = c.req.query("flow") ?? "";
     // The provider appends `code=` to the callback URL it was given, preserving its path and
@@ -169,30 +168,23 @@ export function modelOAuthCallbackRoutes(deps: AppDeps): Hono<AppEnv> {
         400,
       );
     }
-    let result: Awaited<ReturnType<typeof deps.modelOAuth.complete>>;
     try {
-      result = await deps.modelOAuth.complete({
-        flowId,
-        // The flow id is the credential here; there is no session to read a user from.
-        userId: null,
-        projectId,
-        code,
-      });
+      // The flow id is the credential here; there is no session to read a user from — and
+      // depositing is all this route may do with it.
+      deps.modelOAuth.deposit({ flowId, projectId, code });
     } catch (err) {
       const message =
         err instanceof HttpError
           ? err.message
           : "Something went wrong. Return to PenguinHarness and start a new authorization.";
+      // A refusal is a page, not an API error: every one of them answers 400, and the
+      // service's own sentence is what tells the person what to do about it.
       return c.html(resultPage("Authorization failed", message), 400);
     }
-    if (!result.ok) {
-      return c.html(resultPage("Authorization failed", FAILURE_TEXT[result.error]!), 400);
-    }
-    credentialsChanged(deps, projectId);
     return c.html(
       resultPage(
-        "API key created",
-        "The new key has been saved to this Project's models. You can close this tab and return to PenguinHarness.",
+        "Authorization received",
+        "Return to PenguinHarness — it finishes the authorization and reports the outcome there. You can close this tab.",
       ),
     );
   });
@@ -263,8 +255,10 @@ export function modelOAuthRoutes(deps: AppDeps): Hono<AppEnv> {
     return c.json({ ok: true, applied: result.applied } satisfies ModelOAuthCodeResponse);
   });
 
-  // Poll target while the user is authorizing in the other tab.
-  app.get("/:flowId", (c) => {
+  // Poll target while the user is authorizing in the other tab, and where a redirect flow's
+  // exchange actually runs: the receiver only deposits the code, so the key is minted and
+  // written under the owner's own session (see the service's `deposit` and `poll`).
+  app.get("/:flowId", async (c) => {
     const projectId = requireValidId(c, "projectId");
     deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
     const flowId = c.req.param("flowId") ?? "";
@@ -275,8 +269,15 @@ export function modelOAuthRoutes(deps: AppDeps): Hono<AppEnv> {
         "This authorization has expired or does not exist. Start a new one.",
       );
     }
-    const state = deps.modelOAuth.status({ flowId, userId: c.var.user.userId, projectId });
-    return c.json(state satisfies ModelOAuthStatusResponse);
+    const state = await deps.modelOAuth.poll({ flowId, userId: c.var.user.userId, projectId });
+    // Set only on the poll that redeemed, so the follow-up fires once, exactly as it does on
+    // the pasted-code route.
+    if (state.applied !== undefined) credentialsChanged(deps, projectId);
+    return c.json({
+      status: state.status,
+      provider: state.provider,
+      ...(state.error !== undefined ? { error: state.error } : {}),
+    } satisfies ModelOAuthStatusResponse);
   });
 
   return app;

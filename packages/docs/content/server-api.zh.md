@@ -146,20 +146,22 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 #### 授权新建 API key
 
-仅限 Owner，但供应商跳回的 `GET /callback` 例外——它无需会话即可应答，详见下文。若某个供应商分组在内置目录中声明了授权流程，用户可以在浏览器里授权并**新建**一个 API key，不必再去控制台复制。
+仅限 Owner，但供应商跳回的 `GET /callback` 例外——它无需会话即可应答，且只能把跳回时带来的授权码存到流程上，详见下文。若某个供应商分组在内置目录中声明了授权流程，用户可以在浏览器里授权并**新建**一个 API key，不必再去控制台复制。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | POST | /api/projects/:projectId/model-oauth/start | 开启一次流程：`{provider, mode?: callback\|manual}` → `{flowId, authorizeUrl}` |
-| GET | /api/projects/:projectId/model-oauth/callback | 供应商跳回的地址（`?flow=&code=`）：兑换、写入 key，并返回一个 HTML 页面 |
-| GET | /api/projects/:projectId/model-oauth/:flowId | 轮询流程状态：`{status: pending\|done\|error, provider, error?}` |
+| GET | /api/projects/:projectId/model-oauth/callback | 供应商跳回的地址（`?flow=&code=`）：把授权码存到流程上，并返回一个 HTML 页面；`HEAD` 返回 405 |
+| GET | /api/projects/:projectId/model-oauth/:flowId | 轮询流程状态，并顺带兑换已存下的授权码、写入 key：`{status: pending\|done\|error, provider, error?}` |
 | POST | /api/projects/:projectId/model-oauth/:flowId/code | 兑换用户粘贴的授权码：`{code}` → `{ok, applied?, error?}` |
 
 PKCE 的 verifier 在服务端生成、只在内存中保留十分钟，绝不下发到客户端；新建出的 key 直接写入该分组的模型，不回传、不记录日志、也不出现在 URL 中。一次流程只属于某个 Project 下的某个用户且只能用一次：第二次兑换会被拒绝，`/start`、`/:flowId`、`/:flowId/code` 也拒绝该 Owner 以外的任何人。
 
-`GET /callback` 是唯一的例外，且只能如此。环回地址上的 OAuth 跳转由供应商所跳转的那个浏览器送达，而它未必就是发起流程的那一个——桌面端 shell 会把授权页交给**系统**浏览器打开，系统浏览器并不持有该应用来源的 Cookie。因此这一条路径挂载在会话校验之外，改以 flow id 作为凭据：32 字节随机数，十分钟有效，只能用一次，且只对开启该流程的那个 Project 生效。周边的一切都不在豁免之内——更长的路径、其它请求方法，以及另外三条同级路由，仍然都需要会话。
+`GET /callback` 是唯一的例外，且只能如此。环回地址上的 OAuth 跳转由供应商所跳转的那个浏览器送达，而它未必就是发起流程的那一个——桌面端 shell 会把授权页交给**系统**浏览器打开，系统浏览器并不持有该应用来源的 Cookie。因此这一条路径挂载在会话校验之外，改以 flow id 作为凭据：32 字节随机数，十分钟有效，只能存入一次，只对开启该流程的那个 Project 生效，且只服务于确实要了跳回地址的流程（`manual` 流程会被拒绝，它压根没拿到过跳回地址）。
 
-`mode: manual` 不传回调地址，授权页改为显示一次性授权码供用户手动带回，适用于跳转回不来的部署。流程完成后同样会使缓存的运行时失效并发布 `credentials_updated`，与 `PUT /models` 一致。
+这条路由能做的事还有第二重边界：它只把授权码存到流程上，此外什么都不做。与供应商的兑换、以及写入该 Project 模型的动作，都发生在 `GET /:flowId`——Owner 自己的轮询，仍在会话校验之内。因此没有 Owner 主动查询流程状态，就不会有 key 落进任何 Project；兑换失败也在那里以 `{status: error, error}` 报出，而不是显示在跳回页面上。周边的一切同样不在豁免之内：更长的路径、其它任何请求方法（该字面路径上的 `HEAD` 返回 405），以及另外三条同级路由，仍然都需要会话。
+
+`mode: manual` 不传回调地址，授权页改为显示一次性授权码供用户手动带回，适用于跳转回不来的部署。无论由哪条路由完成兑换，流程完成后同样会使缓存的运行时失效并发布 `credentials_updated`，与 `PUT /models` 一致。
 
 ### Agent
 
