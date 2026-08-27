@@ -1175,7 +1175,6 @@ export const zh = {
 
   extensions: {
     pageTitle: "扩展市场",
-    pageDesc: "扩展索引：部署可安装的扩展包（在数据目录的 extensions.json 中配置）。",
     empty: "暂无扩展",
     /** Card metadata: the entry's package specifier doubles as the install string. */
     specifierHint: "写入 extensions.json 的包名",
