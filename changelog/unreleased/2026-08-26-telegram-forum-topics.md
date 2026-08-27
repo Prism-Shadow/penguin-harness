@@ -3,6 +3,7 @@
 - **Date:** 2026-08-26
 - **Type:** fix
 - **Scope:** `server`
+- **PR:** [#507](https://github.com/Prism-Shadow/penguin-harness/pull/507)
 
 [中文版](2026-08-26-telegram-forum-topics.zh.md)
 
