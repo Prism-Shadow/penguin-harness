@@ -133,6 +133,48 @@ describe("openDatabase column upgrade", () => {
     }
   });
 
+  it("adds last_inbound_message_id to a messaging_bindings table formed before it existed", () => {
+    const dbPath = path.join(dir, "web.db");
+    // A database formed by 0.2.7 or earlier: messaging_bindings exists (it shipped in 0.2.5)
+    // but has no redelivery watermark. Derived from the real SCHEMA_SQL, then the one column
+    // this change adds is dropped back off, so the fixture cannot fork from the schema.
+    const old = new sqlite.DatabaseSync(dbPath);
+    try {
+      old.exec(SCHEMA_SQL);
+      old.exec("ALTER TABLE messaging_bindings DROP COLUMN last_inbound_message_id");
+      old
+        .prepare(
+          `INSERT INTO messaging_bindings
+             (session_id, channel, account_id, config_json, enabled, last_chat_id,
+              last_chat_is_direct, created_at, updated_at)
+           VALUES ('session-legacy-binding', 'feishu', 'cli_app', '{}', 1, 'oc_old', 1, ?, ?)`,
+        )
+        .run("2026-01-01T00:00:00.000Z", "2026-01-01T00:00:00.000Z");
+    } finally {
+      old.close();
+    }
+
+    const db = openDatabase(dbPath);
+    try {
+      const repo = new MessagingBindingsRepo(db);
+      // The pre-existing binding survives with its credentials, its intent and its reply
+      // target; only the watermark is new, and it grandfathers in as null — the honest value
+      // for a binding whose past messages this build never saw an id for.
+      const legacy = repo.find("session-legacy-binding", "feishu");
+      expect(legacy?.lastChatId).toBe("oc_old");
+      expect(legacy?.enabled).toBe(true);
+      expect(legacy?.lastInboundMessageId).toBeNull();
+      // And the upgraded table takes the new write, which is the half a created-but-unused
+      // column would pass silently.
+      repo.recordChat("session-legacy-binding", "feishu", "oc_new", true, "om_first_after_upgrade");
+      expect(repo.find("session-legacy-binding", "feishu")?.lastInboundMessageId).toBe(
+        "om_first_after_upgrade",
+      );
+    } finally {
+      db.close();
+    }
+  });
+
   it("is idempotent: reopening an already-upgraded database changes nothing", () => {
     const dbPath = path.join(dir, "web.db");
     openDatabase(dbPath).close();

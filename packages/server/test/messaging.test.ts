@@ -32,9 +32,11 @@ import {
   MESSAGING_TEST_MESSAGE,
   MESSAGING_TEXT_CHUNK_CHARS,
   MESSAGING_TEXT_ONLY_NOTICE,
+  MessagingBridge,
   chunkMessagingText,
   splitReplyLines,
 } from "../src/runtime/messaging/bridge.js";
+import { FeishuConnector } from "../src/runtime/messaging/feishu-connector.js";
 import type {
   FeishuApiClient,
   FeishuCredentials,
@@ -1350,6 +1352,46 @@ describe("messaging binding routes and bridge", () => {
     await fire("om_bound_64");
     await settle(80);
     expect(runs).toHaveLength(66);
+  });
+
+  it("remembers across a SERVER restart: the binding row's watermark survives the process", async () => {
+    await bindEnabled(SID);
+    const evt = {
+      chatId: "oc_chat_1",
+      chatType: "p2p",
+      messageId: "om_across_restart_process",
+      messageType: "text",
+      content: JSON.stringify({ text: "deploy the build" }),
+    };
+    await fake.lastConnection().fire(evt);
+    await waitFor(() => runs.length === 1);
+    // The id of the message just processed is on the row, written by the same statement
+    // that recorded its chat.
+    expect(t.deps.messagingRepo.find(SID, "feishu")?.lastInboundMessageId).toBe(
+      "om_across_restart_process",
+    );
+
+    // What a desktop-app relaunch (or a runtime hot swap — hmr/platform.ts stops the
+    // bridge and its successor starts a fresh one) does: a NEW bridge over the SAME
+    // database, with an empty in-memory ring. Feishu then replays, on the connection it
+    // has just opened, the event it never saw acknowledged.
+    t.deps.messaging.stop();
+    const successor = new MessagingBridge({
+      repo: t.deps.messagingRepo,
+      sessions: t.deps.sessionsRepo,
+      channels: t.deps.channels,
+      runner: t.deps.manager,
+      connectors: [new FeishuConnector(fake)],
+      errors: t.deps.errors,
+    });
+    try {
+      await successor.start();
+      await fake.lastConnection().fire(evt);
+      await settle(80);
+      expect(runs).toHaveLength(1);
+    } finally {
+      successor.stop();
+    }
   });
 
   it("remembers across a connector restart, so a re-enable does not replay a message", async () => {
