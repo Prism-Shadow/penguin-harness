@@ -161,10 +161,11 @@ jobs:
   # on top of the per-package split. core runs alone rather than beside anything else:
   # its exec_command suites spawn real shells and read their output under timeouts, races
   # they lose when oversubscribed. Every package's tests still run exactly once across the
-  # four shards. The runner ships Git-Bash on PATH, so core's exec_command tests exercise
+  # shards. The runner ships Git-Bash on PATH, so core's exec_command tests exercise
   # the shell resolver's bash pick; genuinely POSIX-only tests skip themselves via
   # process.platform guards rather than CI filters, so a local Windows dev sees the same
-  # behaviour. Line endings come from .gitattributes (LF working tree), keeping build
+  # behaviour. Every package's tests still run exactly once across the shards. Line
+  # endings come from .gitattributes (LF working tree), keeping build
   # outputs and fixtures byte-identical. No format:check, no typecheck, no e2e — see the
   # macOS note above.
   test-windows:
@@ -174,18 +175,24 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - shard: core
+          - shard: core-1
             build: "@prismshadow/penguin-core..."
-            tests: pnpm --filter @prismshadow/penguin-core test
+            tests: pnpm --filter @prismshadow/penguin-core exec vitest run --shard=1/2
+          - shard: core-2
+            build: "@prismshadow/penguin-core..."
+            tests: pnpm --filter @prismshadow/penguin-core exec vitest run --shard=2/2
           - shard: server-1
             build: "@prismshadow/penguin-core..."
-            tests: pnpm --filter @prismshadow/penguin-server exec vitest run --shard=1/3
+            tests: pnpm --filter @prismshadow/penguin-server exec vitest run --shard=1/4
           - shard: server-2
             build: "@prismshadow/penguin-core..."
-            tests: pnpm --filter @prismshadow/penguin-server exec vitest run --shard=2/3
+            tests: pnpm --filter @prismshadow/penguin-server exec vitest run --shard=2/4
           - shard: server-3
             build: "@prismshadow/penguin-core..."
-            tests: pnpm --filter @prismshadow/penguin-server exec vitest run --shard=3/3
+            tests: pnpm --filter @prismshadow/penguin-server exec vitest run --shard=3/4
+          - shard: server-4
+            build: "@prismshadow/penguin-core..."
+            tests: pnpm --filter @prismshadow/penguin-server exec vitest run --shard=4/4
           - shard: rest
             build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-cli..."
             tests: >-
