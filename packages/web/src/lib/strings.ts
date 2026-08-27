@@ -1179,6 +1179,17 @@ export const zh = {
     empty: "暂无扩展",
     /** Card metadata: the entry's package specifier doubles as the install string. */
     specifierHint: "写入 extensions.json 的包名",
+    back: "返回扩展市场",
+    readme: "说明文档",
+    noReadme: "该扩展暂无说明文档。",
+    notFound: "找不到这个扩展。",
+    repository: "源码仓库",
+    homepage: "主页",
+    authors: "作者",
+    license: "许可证",
+    copySpecifier: "复制包名",
+    copied: "已复制",
+    installHint: "安装方式：把包名写入数据目录下的 extensions.json。",
   },
 
   skills: {

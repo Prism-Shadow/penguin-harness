@@ -1209,6 +1209,17 @@ export const en: Strings = {
       "Extension index: packages a deployment can install (configured in extensions.json under the data root).",
     empty: "No extensions yet",
     specifierHint: "Package specifier for extensions.json",
+    back: "Back to Extensions",
+    readme: "Documentation",
+    noReadme: "This extension has no documentation yet.",
+    notFound: "No such extension.",
+    repository: "Repository",
+    homepage: "Homepage",
+    authors: "Authors",
+    license: "License",
+    copySpecifier: "Copy specifier",
+    copied: "Copied",
+    installHint: "To install, add the specifier to extensions.json under the data root.",
   },
 
   skills: {

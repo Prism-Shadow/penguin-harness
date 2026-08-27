@@ -16,11 +16,19 @@
  */
 import type { ExtensionIndexEntry } from "../api/types.js";
 import builtinIndex from "./builtin-index.json" with { type: "json" };
+import { BUILTIN_READMES } from "./builtin-readmes.js";
 
 /** One source of extension index entries; `source` identifies it for display and errors. */
 export interface ExtensionRegistry {
   readonly source: string;
   index(): Promise<ExtensionIndexEntry[]>;
+  /**
+   * Long-form documentation for one entry, or null when this source has none for it.
+   *
+   * Separate from `index` because the shapes differ: the index is a listing sent in full
+   * on every page load, a readme is large and wanted only for the entry someone opened.
+   */
+  readme(name: string): Promise<string | null>;
 }
 
 function isStringArray(value: unknown): value is string[] {
@@ -78,6 +86,7 @@ export function builtinExtensionRegistry(): ExtensionRegistry {
     // Validated like any other source: a broken embedded index should fail loudly
     // in tests rather than serve garbage.
     index: () => Promise.resolve(parseExtensionIndex(builtinIndex, BUILTIN_REGISTRY_SOURCE)),
+    readme: (name) => Promise.resolve(BUILTIN_READMES[name] ?? null),
   };
 }
 
@@ -103,5 +112,9 @@ export function httpExtensionRegistry(
       }
       return parseExtensionIndex(data, indexUrl);
     },
+    // The shared index format carries no readme location, so a remote source has none to
+    // offer yet. Null rather than a guessed URL: inventing one would have the Web App
+    // render whatever answered it.
+    readme: () => Promise.resolve(null),
   };
 }
