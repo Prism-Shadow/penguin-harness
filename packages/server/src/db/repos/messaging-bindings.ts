@@ -51,7 +51,12 @@ export interface MessagingBindingRow {
    * original behaviour exactly. Ordinary saved state — the PUT owns it, like the config.
    */
   linePerMessage: boolean;
-  /** Most recent inbound chat (null until the bot is messaged once). */
+  /**
+   * Most recent inbound chat (null until the bot is messaged once). The channel's connector
+   * mints this string and is the only thing that may read it: Telegram encodes the forum
+   * topic into it, so it is not always a bare chat id. Pass it to `MessagingClient.sendText`,
+   * never to a channel API directly.
+   */
   lastChatId: string | null;
   /** Whether that chat is a direct chat; group chats prefer reply-to-message. */
   lastChatIsDirect: boolean;

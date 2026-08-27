@@ -16,7 +16,13 @@ export type MessagingChannel = "feishu" | "telegram" | "qq";
 
 /** One inbound chat message, normalized across channels. */
 export interface MessagingInboundMessage {
-  /** Channel-scoped chat id (the reply target for direct chats). */
+  /**
+   * Channel-scoped chat id, and the reply target for direct chats. Opaque to the bridge, for
+   * the same reason `messageId` is: the connector both mints it here and consumes it in
+   * `sendText`, so a channel whose replies need more routing context than a chat identity
+   * encodes it (Telegram appends the forum topic). It is stored verbatim as the binding's
+   * last known chat, so whatever is encoded here is what survives a restart.
+   */
   chatId: string;
   /** Direct chat with the bot, or a group chat (groups prefer reply-to-message). */
   chatKind: "direct" | "group";

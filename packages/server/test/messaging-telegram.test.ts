@@ -12,8 +12,8 @@
  * transport maps a 409 to). No test opens real network.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { assistantText } from "@prismshadow/penguin-core";
-import type { OmniMessage, TextPayload } from "@prismshadow/penguin-core";
+import { approvalDecision, assistantText, toolCall } from "@prismshadow/penguin-core";
+import type { ApproveFn, OmniMessage, TextPayload } from "@prismshadow/penguin-core";
 import type {
   FeishuBindingResponse,
   MessagingBindingsResponse,
@@ -23,6 +23,7 @@ import type {
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import {
+  MESSAGING_APPROVAL_NOTICE,
   MESSAGING_TEXT_ONLY_NOTICE,
   MESSAGING_TEST_MESSAGE,
 } from "../src/runtime/messaging/bridge.js";
@@ -59,6 +60,7 @@ interface SentMessage {
   chatId: string;
   text: string;
   replyTo?: number;
+  threadId?: number;
 }
 
 class FakeBotClient implements TelegramBotClient {
@@ -97,12 +99,19 @@ class FakeBotClient implements TelegramBotClient {
     chatId: string;
     text: string;
     replyToMessageId?: number;
+    messageThreadId?: number;
   }): Promise<void> {
     if (this.t.failSend !== null) throw new Error(this.t.failSend);
+    // A topic deleted or closed under a live conversation: the threaded call fails and the
+    // same call without a thread succeeds, which is the shape the fallback has to survive.
+    if (args.messageThreadId !== undefined && this.t.failThreadedSend !== null) {
+      throw new Error(this.t.failThreadedSend);
+    }
     this.sends.push({
       chatId: args.chatId,
       text: args.text,
       ...(args.replyToMessageId !== undefined ? { replyTo: args.replyToMessageId } : {}),
+      ...(args.messageThreadId !== undefined ? { threadId: args.messageThreadId } : {}),
     });
   }
 
@@ -161,6 +170,8 @@ class FakeTelegramTransport {
   failGetMe: string | null = null;
   /** Non-null makes sendMessage throw with this message. */
   failSend: string | null = null;
+  /** Non-null makes only the sends that carry a forum topic throw (a deleted/closed topic). */
+  failThreadedSend: string | null = null;
   /** Fails this many upcoming getUpdates calls. */
   failPolls = 0;
   /** The webhook registered on the bot; the empty string means none, as the Bot API encodes it. */
@@ -280,6 +291,26 @@ function multiMessageFakeSession(
         if (gate !== undefined && i === texts.length - 1) await gate;
         yield assistantText(texts[i]!);
       }
+    },
+    async *compact() {},
+  };
+}
+
+/** Fake Session that parks on one approval per run (drives an approval_request event). */
+function parkingFakeSession(sessionId: string): RuntimeSession {
+  return {
+    sessionId,
+    toolPermission: () => "rw",
+    generateTitle: async () => ({ title: null, usage: null }),
+    compactability: () => "ok" as const,
+    steer: () => false,
+    skipReconnectWait: () => false,
+    async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
+      const tc = toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-forum" });
+      yield tc;
+      const decision = await opts.approve(tc);
+      yield approvalDecision(decision, "tc-forum");
+      yield assistantText("after approval");
     },
     async *compact() {},
   };
@@ -839,6 +870,131 @@ describe("telegram binding routes and connector loop", () => {
       text: "Reply text",
       replyTo: 4,
     });
+  });
+
+  // —— Forum supergroup topics ————————————————————————————————————————————————
+  // A forum supergroup splits one chat into topics, and a message carries the topic it was
+  // written in. A send that omits it lands in General — so the run's first reply threaded
+  // correctly (Telegram infers a reply's topic from its target) while every message after
+  // it, and the approval notice, walked out of the conversation.
+
+  const FORUM_CHAT = -1004475424385;
+  const TOPIC = 91;
+
+  /** A message in a forum topic, as Telegram sends it; `null` is a chat with no topic at all. */
+  const forumText = (text: string, messageId = 200, threadId: number | null = TOPIC) => ({
+    message_id: messageId,
+    chat: { id: FORUM_CHAT, type: "supergroup" },
+    ...(threadId !== null ? { message_thread_id: threadId } : {}),
+    text,
+    from: { first_name: "Ada" },
+  });
+
+  it("remembers the topic, and every later message of the run reaches it", async () => {
+    // Three completed messages in ONE run: the first threads onto the inbound message, the
+    // two after it are plain sends — which is precisely where the topic used to be lost.
+    const row = sessionRowOf(SID2, projectId);
+    t.deps.sessionsRepo.insert(row);
+    t.deps.manager.adopt(row, multiMessageFakeSession(SID2, ["first", "second", "third"]));
+    await bindEnabled(SID2);
+
+    fake.push(forumText("status?"));
+    await waitFor(() => fake.allSends().length === 3, 5000);
+    const sends = fake.allSends();
+    // Every one of them, not just the threaded first.
+    expect(sends.map((x) => x.threadId)).toEqual([TOPIC, TOPIC, TOPIC]);
+    expect(sends.map((x) => x.text)).toEqual(["first", "second", "third"]);
+    // The first still quotes the inbound message; the rest are plain sends, as before.
+    expect(sends[0]!.replyTo).toBe(200);
+    expect(sends[1]!.replyTo).toBeUndefined();
+    // The topic is on the stored chat, which is what carries it across a restart.
+    expect(t.deps.messagingRepo.find(SID2, "telegram")?.lastChatId).toBe(`${FORUM_CHAT}:${TOPIC}`);
+  });
+
+  it("moves to the newest topic the user writes in, like the chat it already remembers", async () => {
+    await bindEnabled(SID);
+    fake.push(forumText("in the first topic", 201, TOPIC));
+    await waitFor(() => runs.length === 1);
+    await waitFor(() => fake.allSends().length === 1);
+    expect(fake.allSends()[0]!.threadId).toBe(TOPIC);
+
+    fake.push(forumText("now over here", 202, 77));
+    await waitFor(() => runs.length === 2);
+    await waitFor(() => fake.allSends().length === 2);
+    expect(fake.allSends()[1]!.threadId).toBe(77);
+    expect(t.deps.messagingRepo.find(SID, "telegram")?.lastChatId).toBe(`${FORUM_CHAT}:77`);
+  });
+
+  it("sends the approval notice and the test message into the remembered topic", async () => {
+    const row = sessionRowOf(SID2, projectId);
+    // The approval only becomes an event when something is actually asked.
+    row.approvalMode = "always-ask";
+    t.deps.sessionsRepo.insert(row);
+    t.deps.manager.adopt(row, parkingFakeSession(SID2));
+    await bindEnabled(SID2);
+
+    fake.push(forumText("do the thing", 203));
+    // The notice is a bare send with no inbound message to thread onto — the shape that had
+    // nothing at all to put it back in the topic.
+    await waitFor(() => fake.allSends().some((x) => x.text === MESSAGING_APPROVAL_NOTICE), 5000);
+    const notice = fake.allSends().find((x) => x.text === MESSAGING_APPROVAL_NOTICE)!;
+    expect(notice.threadId).toBe(TOPIC);
+    expect(notice.replyTo).toBeUndefined();
+
+    // The test message reads the stored chat straight off the row, so it is the path that
+    // would hand an encoded string to the API if the connector were not the one parsing it.
+    expect((await api.post(`${BASE(SID2)}/test-message`, {})).status).toBe(200);
+    const test = fake.allSends().find((x) => x.text === MESSAGING_TEST_MESSAGE)!;
+    expect(test.chatId).toBe(String(FORUM_CHAT));
+    expect(test.threadId).toBe(TOPIC);
+
+    t.deps.manager.decideApproval(SID2, "tc-forum", "allow");
+    await waitFor(() => t.deps.manager.statusOf(SID2) === "idle");
+  });
+
+  it("a topic that has been deleted degrades to a plain send instead of losing the reply", async () => {
+    await bindEnabled(SID);
+    // No `allow_sending_without_thread` exists to match the reply flag, so the call simply
+    // fails. Landing in General is worse than the right topic and far better than dropping a
+    // reply the model has already produced.
+    fake.failThreadedSend = "sendMessage failed: Bad Request: message thread not found (code 400)";
+    fake.push(forumText("still there?", 204));
+    await waitFor(() => runs.length === 1);
+    await waitFor(() => fake.allSends().length === 1);
+    const sent = fake.allSends()[0]!;
+    expect(sent.text).toBe("Reply text");
+    expect(sent.threadId).toBeUndefined();
+    expect(sent.chatId).toBe(String(FORUM_CHAT));
+  });
+
+  it("an ordinary group is byte-identical: no topic minted, none sent", async () => {
+    await bindEnabled(SID);
+    // No `message_thread_id` on the way in means none on the way out — a plain group and a
+    // forum's General topic are the same thing here, and both predate this encoding.
+    fake.push(forumText("plain group message", 205, null));
+    await waitFor(() => runs.length === 1);
+    await waitFor(() => fake.allSends().length === 1);
+    expect(fake.allSends()[0]!.threadId).toBeUndefined();
+    // The stored chat is the bare id every row written before this feature already holds, so
+    // an existing row and a new one are the same string.
+    expect(t.deps.messagingRepo.find(SID, "telegram")?.lastChatId).toBe(String(FORUM_CHAT));
+  });
+
+  it("keeps sending to a chat id stored before topics existed", async () => {
+    await bindEnabled(SID);
+    // Every row on disk holds a bare chat id. The parse has to read it as "no topic" rather
+    // than reject it, or a working binding breaks on upgrade. Written straight to the column
+    // an older build would have written, rather than through the repo, so the fixture states
+    // the stored shape and does not track the repo's current signature.
+    t.deps.db
+      .prepare(
+        "UPDATE messaging_bindings SET last_chat_id = ? WHERE session_id = ? AND channel = ?",
+      )
+      .run(String(FORUM_CHAT), SID, "telegram");
+    expect((await api.post(`${BASE(SID)}/test-message`, {})).status).toBe(200);
+    const sent = fake.allSends().find((x) => x.text === MESSAGING_TEST_MESSAGE)!;
+    expect(sent.chatId).toBe(String(FORUM_CHAT));
+    expect(sent.threadId).toBeUndefined();
   });
 
   it("a group message that is nothing but the bot's mention starts no task", async () => {

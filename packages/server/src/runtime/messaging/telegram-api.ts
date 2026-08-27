@@ -68,6 +68,13 @@ export interface TelegramMessage {
    * `caption_entities` instead — the day this connector reads captions, it reads that.
    */
   entities?: TelegramMessageEntity[];
+  /**
+   * "Unique identifier of a message thread or forum topic to which the message belongs; for
+   * supergroups and private chats only." Absent in an ordinary group, and in a forum
+   * supergroup's General topic — which is why absence has to mean "send without a thread"
+   * rather than "send to General by id".
+   */
+  message_thread_id?: number;
   from?: {
     first_name?: string;
     username?: string;
@@ -101,8 +108,17 @@ export interface TelegramBotClient {
    * reports the URL and leaves the bot alone.
    */
   getWebhookInfo(): Promise<TelegramWebhookInfo>;
-  /** Sends a text message into a chat; `replyToMessageId` threads it under an inbound message. */
-  sendMessage(args: { chatId: string; text: string; replyToMessageId?: number }): Promise<void>;
+  /**
+   * Sends a text message into a chat; `replyToMessageId` threads it under an inbound message,
+   * and `messageThreadId` puts it in a forum topic. Without the latter a send lands in a forum
+   * supergroup's General topic, wherever the conversation actually is.
+   */
+  sendMessage(args: {
+    chatId: string;
+    text: string;
+    replyToMessageId?: number;
+    messageThreadId?: number;
+  }): Promise<void>;
   /**
    * Long-poll for updates: blocks up to `timeoutSec` (0 = return immediately) and resolves
    * the pending updates at or after `offset` (confirming everything before it; -1 means
@@ -213,10 +229,11 @@ export function createTelegramTransport(): TelegramTransport {
       return {
         getMe: () => call<TelegramBotUser>("getMe", {}),
         getWebhookInfo: () => call<TelegramWebhookInfo>("getWebhookInfo", {}),
-        async sendMessage({ chatId, text, replyToMessageId }): Promise<void> {
+        async sendMessage({ chatId, text, replyToMessageId, messageThreadId }): Promise<void> {
           await call("sendMessage", {
             chat_id: wireChatId(chatId),
             text,
+            ...(messageThreadId !== undefined ? { message_thread_id: messageThreadId } : {}),
             // Degrade to a plain send when the replied-to message is gone, rather than fail.
             ...(replyToMessageId !== undefined
               ? {
