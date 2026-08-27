@@ -74,8 +74,17 @@ const CHANNEL_LINKS: Record<MessagingChannel, { tutorial: string; console: strin
     console: "https://open.feishu.cn/app",
   },
   telegram: {
-    tutorial: "https://core.telegram.org/bots/tutorial",
-    console: "https://core.telegram.org/bots/api",
+    // The BotFather section of the bot-features page: "a detailed guide to using
+    // @BotFather", opening on /newbot and the token it returns — which is this fold's
+    // steps, one level deeper. NOT /bots/tutorial: that one is "From BotFather to 'Hello
+    // World'", and past its token section it is about downloading an IDE and picking a
+    // framework, i.e. about WRITING a bot. Nobody here is writing one — PenguinHarness is
+    // the bot. The fragment is a plain document anchor present in the served HTML, so it
+    // lands where it says (unlike a hash route, which the server never sees).
+    tutorial: "https://core.telegram.org/bots/features#botfather",
+    // Where the credential is actually issued. Telegram has no web console: the token comes
+    // from @BotFather inside the app, and this link is the one that leads there.
+    console: "https://t.me/BotFather",
   },
 };
 
@@ -585,7 +594,12 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
           <CornerLinkedField
             label={S.telegram.botToken}
             required={!facts.secretConfigured}
-            link={<ExternalLink href={links.console} label={S.messaging.console} />}
+            // Not the shared "developer console" label: this one opens @BotFather in the
+            // Telegram app, and a corner link promising a console that does not exist sends
+            // the reader looking for a web page Telegram has never had. The label names the
+            // thing the click actually reaches — Telegram's own page for it is titled
+            // "Launch @BotFather".
+            link={<ExternalLink href={links.console} label={S.telegram.openBotFather} />}
           >
             <PasswordInput
               size="sm"
