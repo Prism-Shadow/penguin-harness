@@ -43,6 +43,7 @@ import type {
   FilesStatRequest,
   FilesStatResponse,
   GoalResponse,
+  InstallResponse,
   McpServerTestResponse,
   MeResponse,
   MemberAddRequest,
@@ -136,6 +137,12 @@ export const login = (body: AuthLoginRequest) =>
   apiFetch<AuthResponse>("/api/auth/login", { method: "POST", body });
 
 export const logout = () => apiFetch<void>("/api/auth/logout", { method: "POST", body: {} });
+
+/**
+ * The data root's install identity (public — no session needed, which is the point: the web
+ * app asks before it knows whether anyone is signed in). See lib/install-scope.ts.
+ */
+export const getInstall = () => apiFetch<InstallResponse>("/api/install");
 
 export const getMe = () => apiFetch<MeResponse>("/api/me");
 
