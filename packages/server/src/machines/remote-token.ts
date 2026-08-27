@@ -66,7 +66,17 @@ export async function mintTokenOnRemote(
   runOn: (target: RemoteTarget, command: string) => Promise<ExecResult>,
   ttlSeconds = 3600,
 ): Promise<RemoteTokenOutcome> {
-  const result = await runOn(target, authTokenCommand(ttlSeconds));
+  // `runOn` rides the machine's shared ssh connection, which can be gone by the time this
+  // asks — and it REJECTS rather than answering when it is. Every other way of not getting a
+  // token is a returned outcome, and the caller reads outcomes: letting this one throw skips
+  // the password fallback below it entirely and reaches the route as a 500, so a machine
+  // whose connection dropped answers "internal error" instead of "could not sign in there".
+  let result: ExecResult;
+  try {
+    result = await runOn(target, authTokenCommand(ttlSeconds));
+  } catch (err) {
+    return { kind: "failed", detail: err instanceof Error ? err.message : String(err) };
+  }
   const token = parseToken(result.stdout);
   if (token !== null) return { kind: "minted", token };
   if (result.timedOut) {

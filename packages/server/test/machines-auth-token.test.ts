@@ -57,4 +57,15 @@ describe("mintTokenOnRemote", () => {
     }));
     expect(outcome.kind).toBe("failed");
   });
+
+  it("answers when the connection is gone, rather than throwing through its caller", async () => {
+    // The shared ssh connection REJECTS once it is dead. Every other way of not getting a
+    // token is a returned outcome, and signInOn reads outcomes to decide whether to fall back
+    // to the password path — a throw skips that fallback and surfaces as a 500 on a machine
+    // that merely lost its tunnel.
+    const outcome = await mintTokenOnRemote({ alias: "nas", user: "me" }, () => {
+      throw new Error("write after end");
+    });
+    expect(outcome).toEqual({ kind: "failed", detail: "write after end" });
+  });
 });
