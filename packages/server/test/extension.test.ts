@@ -10,7 +10,12 @@ import { HotResources } from "../src/hmr/resources.js";
 import { packagedPlatform } from "../src/hmr/platform.js";
 import { PENGUIN_FAMILY, RUNTIME_INTERFACES_RESOURCE_ID } from "../src/hmr/capabilities.js";
 import { EXTENSIONS_RESOURCE_ID, ExtensionHost, extensionHostFrom } from "../src/extension/host.js";
-import type { PenguinContext, PenguinInterface, WorkflowFactory } from "../src/extension/index.js";
+import type {
+  HarnessContext,
+  PenguinContext,
+  PenguinInterface,
+  WorkflowFactory,
+} from "../src/extension/index.js";
 import { instantiateWorkflows, WorkflowFactories } from "../src/extension/workflow.js";
 
 function emptyIface(): PenguinInterface {
@@ -319,8 +324,9 @@ describe("extension seam on the real platform", () => {
       const ctx = contexts[0]!;
       // The sandbox config surface rides the same context (see ../src/sandbox/).
       expect(ctx.sandbox.settings()).toEqual({ mode: "danger-full-access" });
-      // context.* flatten: the platform's own member is directly on the context.
-      expect(typeof ctx.terminals.handleIds).toBe("function");
+      // `terminals` is NOT on the closed contract: it is this harness's own, so reaching it
+      // is an explicit cast — the same one an extension depending on this embedder writes.
+      expect(typeof (ctx as HarnessContext).terminals.handleIds).toBe("function");
       // …and the workflow this extension registered is instantiated and callable.
       expect(ctx.workflows.names()).toContain("probe-1");
       expect(ctx.workflows.run("probe-1", 42)).toEqual({ echoed: 42 });
