@@ -3,6 +3,7 @@
 - **Date:** 2026-08-27
 - **Type:** fix
 - **Scope:** `server`
+- **PR:** [#511](https://github.com/Prism-Shadow/penguin-harness/pull/511)
 
 [中文版](2026-08-27-messaging-error-kinds.zh.md)
 
