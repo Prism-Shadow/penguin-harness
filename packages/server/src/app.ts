@@ -213,6 +213,8 @@ export interface BuildDepsOverrides {
   telegramTransport?: TelegramTransport;
   /** Test hook: the Telegram connector's poll backoff (tests collapse it to zero). */
   telegramRetryDelayMs?: (failures: number) => number;
+  /** Test hook: the bridge's pace between a per-line reply's messages (tests collapse it to zero). */
+  messagingLineDelayMs?: number;
   /**
    * Test double: scrypt work factor for password hashes written through this app.
    * Omitted in production, where the KDF runs at full strength.
@@ -747,6 +749,9 @@ export function buildAppDeps(
     errors,
     log,
     ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}),
+    ...(overrides.messagingLineDelayMs !== undefined
+      ? { lineDelayMs: overrides.messagingLineDelayMs }
+      : {}),
   });
   const sessionService = new SessionService({
     root: config.root,

@@ -1821,7 +1821,7 @@ Benchmark：
     linePerMessage: "每行一条消息",
     /** Its disclosure, beside the label: what the option does to a reply, and its two edges. */
     linePerMessageHelp:
-      "开启后，回复中的每个非空行各自作为一条消息发出，空行忽略——写成多句台词的回复就按台词逐条到达。行数超过每条回复的上限时，余下的行合并为最后一条，内容不会丢失；过长的单行仍按渠道长度上限分段。",
+      "开启后，回复中的每个非空行各自作为一条消息发出，空行忽略——写成多句台词的回复就按台词逐条到达。行数超过每条回复的上限时，余下的行合并为最后一条，内容不会丢失；过长的单行仍按渠道长度上限分段。多条消息之间相隔约一秒发出，这是聊天平台允许的速率。",
     /** Enabled-row indicator's tooltip / sr text (the small per-channel glyph on the session row). */
     enabledIndicator: {
       feishu: "飞书连接已启用",

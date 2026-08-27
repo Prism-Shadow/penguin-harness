@@ -1861,7 +1861,7 @@ Scenarios:
     linePerMessage: "One message per line",
     /** Its disclosure, beside the label: what the option does to a reply, and its two edges. */
     linePerMessageHelp:
-      "Each non-blank line of a reply is sent as its own message and blank lines are dropped, so an answer written as several spoken lines arrives as several messages. Past a per-reply limit the remaining lines are combined into one last message rather than dropped, and a line longer than the channel allows is still split.",
+      "Each non-blank line of a reply is sent as its own message and blank lines are dropped, so an answer written as several spoken lines arrives as several messages. Past a per-reply limit the remaining lines are combined into one last message rather than dropped, and a line longer than the channel allows is still split. The messages go out about a second apart, the pace a chat platform allows.",
     /** Enabled-row indicator's tooltip / sr text (the small per-channel glyph on the session row). */
     enabledIndicator: {
       feishu: "Feishu connection enabled",

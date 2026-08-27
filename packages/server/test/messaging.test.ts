@@ -9,9 +9,10 @@
  * exactly as if typed in the composer (no marker, no special sender; queueIfBusy),
  * non-text gets the bilingual text-only reply, each completed assistant message mirrors on
  * its own to the last known chat as soon as it completes (the run's first one threaded onto
- * the inbound message in groups), an approval_request sends the one-line notice, and a
- * binding with `linePerMessage` set delivers a reply one message per non-blank line while an
- * unset one is byte-for-byte the original single message. No test opens real network.
+ * the inbound message in groups), an approval_request sends the one-line notice behind
+ * whatever is already going out, and a binding with `linePerMessage` set delivers a reply one
+ * message per non-blank line — paced, and with a refused message costing only itself — while
+ * an unset one is byte-for-byte the original single message. No test opens real network.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -42,7 +43,7 @@ import type {
   FeishuSdk,
 } from "../src/runtime/messaging/feishu-sdk.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
-import type { TestApp } from "./helpers.js";
+import type { TestApp, TestAppOptions } from "./helpers.js";
 
 const SID = "session-2026-08-25-10-00-00-fe15aa01";
 const SID2 = "session-2026-08-25-10-00-01-fe15aa02";
@@ -60,6 +61,8 @@ interface SentText {
 
 class FakeClient implements FeishuApiClient {
   readonly sends: SentText[] = [];
+  /** When each send was recorded, parallel to `sends`: what the pacing test measures. */
+  readonly sentAt: number[] = [];
   checks = 0;
   constructor(
     readonly creds: FeishuCredentials,
@@ -71,10 +74,18 @@ class FakeClient implements FeishuApiClient {
     return null;
   }
   async sendText(chatId: string, text: string): Promise<void> {
-    this.sends.push({ kind: "send", target: chatId, text });
+    this.sdk.noteSend();
+    this.record({ kind: "send", target: chatId, text });
+    await this.sdk.hold();
   }
   async replyText(messageId: string, text: string): Promise<void> {
-    this.sends.push({ kind: "reply", target: messageId, text });
+    this.sdk.noteSend();
+    this.record({ kind: "reply", target: messageId, text });
+    await this.sdk.hold();
+  }
+  private record(sent: SentText): void {
+    this.sends.push(sent);
+    this.sentAt.push(Date.now());
   }
   async botOpenId(): Promise<string | null> {
     this.sdk.botIdentityLookups++;
@@ -103,6 +114,20 @@ class FakeSdk implements FeishuSdk {
   readonly connections: FakeConnection[] = [];
   /** Non-null makes checkCredentials throw with this message. */
   failCheck: string | null = null;
+  /** Non-null makes the send with this 1-based number (counted across clients) throw. */
+  failSendAt: number | null = null;
+  /** Non-null parks every send on this promise, holding the bridge's send chain open. */
+  heldSends: Promise<void> | null = null;
+  private sendCount = 0;
+  /** Every send passes here first: it counts, and throws for the one a test marked. */
+  noteSend(): void {
+    this.sendCount += 1;
+    if (this.sendCount === this.failSendAt) throw new Error("Too Many Requests: retry after 5");
+  }
+  /** Awaited after each send: instant unless a test is holding sends open. */
+  hold(): Promise<void> {
+    return this.heldSends ?? Promise.resolve();
+  }
   /** What `/open-apis/bot/v3/info` reports for this app; null = the identity is unavailable. */
   botOpenId: string | null = null;
   /** Makes that lookup never answer, so a test can prove connect() does not wait on it. */
@@ -123,6 +148,10 @@ class FakeSdk implements FeishuSdk {
   /** All texts sent through any client, in order. */
   allSends(): SentText[] {
     return this.clients.flatMap((c) => c.sends);
+  }
+  /** Their timestamps, in the same order. */
+  allSentAt(): number[] {
+    return this.clients.flatMap((c) => c.sentAt);
   }
   lastConnection(): FakeConnection {
     const conn = this.connections.at(-1);
@@ -199,6 +228,28 @@ function multiMessageFakeSession(
   };
 }
 
+/**
+ * Fake Session that completes one assistant message and then parks on an approval: the
+ * window in which a notice could overtake the reply's still-unsent messages.
+ */
+function replyThenApprovalFakeSession(sessionId: string, text: string): RuntimeSession {
+  return {
+    sessionId,
+    toolPermission: () => "rw",
+    generateTitle: async () => ({ title: null, usage: null }),
+    compactability: () => "ok" as const,
+    steer: () => false,
+    skipReconnectWait: () => false,
+    async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
+      yield assistantText(text);
+      const tc = toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-lines" });
+      yield tc;
+      yield approvalDecision(await opts.approve(tc), "tc-lines");
+    },
+    async *compact() {},
+  };
+}
+
 /** Fake Session that streams a compaction summary mid-run, then the actual answer. */
 function compactingFakeSession(sessionId: string): RuntimeSession {
   const bounds = { reason: "context", mode: "summarize" } as const;
@@ -253,12 +304,27 @@ describe("chunkMessagingText", () => {
 });
 
 describe("splitReplyLines", () => {
-  it("makes one message per non-blank line, trimmed, and leaves a single line alone", () => {
-    expect(splitReplyLines("one\n\n  two  \nthree")).toEqual(["one", "two", "three"]);
+  it("makes one message per non-blank line and leaves a single line alone", () => {
+    // Trailing whitespace goes with the line break it followed; the indentation in front of
+    // a line is content the reader asked for.
+    expect(splitReplyLines("one\n\n  two  \nthree")).toEqual(["one", "  two", "three"]);
     expect(splitReplyLines("just one line")).toEqual(["just one line"]);
     // Literal on purpose, fenced code included: the option is worth having because a reader
     // can predict what arrives, and any "smart" grouping would trade that away.
     expect(splitReplyLines("```\ncode()\n```")).toEqual(["```", "code()", "```"]);
+  });
+
+  it("keeps the indentation inside a code block and reads a CRLF reply", () => {
+    // Stripping the indent would hand the chat Python that does not run — the split is a
+    // split, not an edit.
+    expect(splitReplyLines("```python\ndef f():\n    return 1  \n```")).toEqual([
+      "```python",
+      "def f():",
+      "    return 1",
+      "```",
+    ]);
+    // A CRLF reply: the CR is trailing whitespace, and a CRLF blank line is still blank.
+    expect(splitReplyLines("a\r\n\r\nb\r\n")).toEqual(["a", "b"]);
   });
 
   it("combines the tail past the cap rather than dropping it", () => {
@@ -278,6 +344,18 @@ describe("splitReplyLines", () => {
     const lines = Array.from({ length: MESSAGING_MAX_LINE_MESSAGES + 5 }, (_, i) => `l${i}`);
     expect(splitReplyLines(lines.join("\n"))).toHaveLength(MESSAGING_MAX_LINE_MESSAGES);
   });
+
+  it("spends the cap on outbound MESSAGES, chunking included", () => {
+    // An ordinary long answer: every line sits well under the size cap, but the combined
+    // tail does not, so counting bodies would promise 20 messages and send 25 — past the
+    // rate limit the cap exists to hold.
+    const lines = Array.from({ length: 60 }, (_, i) => `${i}`.padEnd(500, "x"));
+    const bodies = splitReplyLines(lines.join("\n"));
+    const messages = bodies.flatMap((body) => chunkMessagingText(body));
+    expect(messages.length).toBeLessThanOrEqual(MESSAGING_MAX_LINE_MESSAGES);
+    // And still the whole reply: the budget is spent by combining, never by dropping.
+    expect(messages.join("\n")).toBe(lines.join("\n"));
+  });
 });
 
 describe("messaging binding routes and bridge", () => {
@@ -293,9 +371,10 @@ describe("messaging binding routes and bridge", () => {
     expect((await api.post(`${BASE(sid)}/state`, { enabled: true })).status).toBe(200);
   };
 
-  beforeEach(async () => {
+  /** The suite's app, rebuildable: the pacing test needs one whose per-line wait is not zero. */
+  const boot = async (opts: TestAppOptions = {}) => {
     fake = new FakeSdk();
-    t = await createTestApp({ feishuSdk: fake });
+    t = await createTestApp({ feishuSdk: fake, ...opts });
     const { cookie } = await provisionUser(t.app, "birder");
     api = apiClient(t.app, cookie);
     projectId = "birder-default_project";
@@ -303,7 +382,9 @@ describe("messaging binding routes and bridge", () => {
     const row = sessionRowOf(SID, projectId);
     t.deps.sessionsRepo.insert(row);
     t.deps.manager.adopt(row, echoFakeSession(SID, runs));
-  });
+  };
+
+  beforeEach(() => boot());
   afterEach(async () => {
     await t.cleanup();
   });
@@ -704,7 +785,11 @@ describe("messaging binding routes and bridge", () => {
 
   // —— linePerMessage: the per-binding delivery option ————————————————————————
 
-  /** A reply written as spoken lines: a blank line between the first two, untrimmed edges. */
+  /**
+   * A reply written as spoken lines: a blank line between the first two, and a middle line
+   * both indented and trailing-padded — the split keeps the indent and drops the padding, so
+   * every expectation below spells the middle line with its two leading spaces.
+   */
   const SPOKEN = "Line one.\n\n  Line two.  \nLine three.";
 
   /** SID2 replying with one fixed text, bound and connected, ready to be messaged. */
@@ -744,7 +829,7 @@ describe("messaging binding routes and bridge", () => {
     // three messages arriving out of order would be a different bug with the same members.
     expect(fake.allSends()).toEqual([
       { kind: "send", target: "oc_on", text: "Line one." },
-      { kind: "send", target: "oc_on", text: "Line two." },
+      { kind: "send", target: "oc_on", text: "  Line two." },
       { kind: "send", target: "oc_on", text: "Line three." },
     ]);
   });
@@ -773,6 +858,72 @@ describe("messaging binding routes and bridge", () => {
     // The tail rides the last message: the reply reaches the chat entire either way.
     expect(texts.at(-1)).toBe(lines.slice(MESSAGING_MAX_LINE_MESSAGES - 1).join("\n"));
     expect(texts.join("\n")).toBe(lines.join("\n"));
+  });
+
+  it("a refused message costs only itself: the rest of the reply still arrives", async () => {
+    const lines = Array.from({ length: 6 }, (_, i) => `l${i}`);
+    await bindReplying(lines.join("\n"), { appId: "cli_lines_429", linePerMessage: true });
+    // What a 429 looks like from here. The reply used to stop at the first one, leaving the
+    // chat with an answer cut off mid-sentence and nothing saying why.
+    fake.failSendAt = 3;
+    await messageBot("oc_429");
+    await waitFor(() => fake.allSends().length === 5);
+    expect(fake.allSends().map((s) => s.text)).toEqual(["l0", "l1", "l3", "l4", "l5"]);
+    // The loss is recorded rather than swallowed (one row: the recorder dedupes a repeat of
+    // the same code within its window).
+    const errors = t.deps.db
+      .prepare("SELECT code FROM error_records WHERE source = 'messaging'")
+      .all() as Array<{ code: string }>;
+    expect(errors).toEqual([{ code: "messaging_send_failed" }]);
+  });
+
+  it("paces the messages of a per-line reply instead of firing them back to back", async () => {
+    // The pace is a real wait, so this one test runs on an app with a short one; the rest of
+    // the suite collapses it to zero.
+    await t.cleanup();
+    await boot({ messagingLineDelayMs: 40 });
+    await bindReplying(SPOKEN, { appId: "cli_lines_paced", linePerMessage: true });
+    await messageBot("oc_paced");
+    await waitFor(() => fake.allSends().length === 3);
+    // Two waits between three messages. The burst is what draws the channel's 429, so the
+    // reply is spread over the per-chat allowance instead of spending it at once.
+    const at = fake.allSentAt();
+    expect(at[2]! - at[0]!).toBeGreaterThanOrEqual(60);
+  });
+
+  it("the approval notice waits behind the reply rather than landing between its lines", async () => {
+    const row2 = sessionRowOf(SID2, projectId);
+    row2.approvalMode = "always-ask";
+    t.deps.sessionsRepo.insert(row2);
+    t.deps.manager.adopt(row2, replyThenApprovalFakeSession(SID2, SPOKEN));
+    await bindEnabled(SID2, { ...PUT_BODY, appId: "cli_lines_approve", linePerMessage: true });
+    // Hold every send open: the whole reply is then still in flight when the approval fires.
+    let release = () => {};
+    fake.heldSends = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let requested = false;
+    const off = t.deps.channels.get(SID2).subscribe((evt) => {
+      const data = JSON.parse(evt.data) as { type?: string };
+      if (evt.event === "server_event" && data.type === "approval_request") requested = true;
+    });
+    await messageBot("oc_approve");
+    // The bridge subscribed to this channel first, so once this listener has seen the
+    // request the bridge has already handled it; the timer then drains the microtasks a
+    // notice sent beside the chain would have taken.
+    await waitFor(() => requested);
+    off();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    release();
+    await waitFor(() => fake.allSends().length === 4);
+    expect(fake.allSends().map((s) => s.text)).toEqual([
+      "Line one.",
+      "  Line two.",
+      "Line three.",
+      MESSAGING_APPROVAL_NOTICE,
+    ]);
+    t.deps.manager.decideApproval(SID2, "tc-lines", "allow");
+    await waitFor(() => t.deps.manager.statusOf(SID2) === "idle");
   });
 
   it("the notices are not replies: linePerMessage never reaches them", async () => {
@@ -810,7 +961,7 @@ describe("messaging binding routes and bridge", () => {
     // lines must not become many quote headers.
     expect(fake.allSends()).toEqual([
       { kind: "reply", target: "om_oc_lines_group", text: "Line one." },
-      { kind: "send", target: "oc_lines_group", text: "Line two." },
+      { kind: "send", target: "oc_lines_group", text: "  Line two." },
       { kind: "send", target: "oc_lines_group", text: "Line three." },
     ]);
   });
