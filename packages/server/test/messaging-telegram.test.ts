@@ -810,6 +810,37 @@ describe("telegram binding routes and connector loop", () => {
     expect(runs[0]![0]!.text).toBe("deploy");
   });
 
+  it("handles a real supergroup id end to end: routing, reply ref, and the mention strip", async () => {
+    await bindEnabled(SID);
+    // The shapes every fixture in this file used to avoid: a real supergroup chat id is
+    // NEGATIVE and 14 digits, so it rides the reply ref in front of the `:` the parser splits
+    // on, and it has to survive the string→number round trip the Bot API needs.
+    const chatId = -1004475424385;
+    fake.push({
+      message_id: 4,
+      chat: { id: chatId, type: "supergroup" },
+      text: "@penguin_test_bot hi",
+      entities: [{ type: "mention", offset: 0, length: 17 }],
+      from: { first_name: "hiyouga", username: "hiyouga" },
+    });
+    await waitFor(() => runs.length === 1);
+    // The handle is stripped and a real word remains, so this is a Task and not the
+    // no-words branch — a one-word message is the shortest thing that could have been
+    // emptied by mistake.
+    expect(runs[0]![0]!.text).toBe("hi");
+    const row = t.deps.messagingRepo.find(SID, "telegram")!;
+    expect(row.lastChatId).toBe(String(chatId));
+    expect(row.lastChatIsDirect).toBe(false);
+    // The reply threads onto message 4 IN that chat: the ref packs both, and the leading
+    // minus sign must not be mistaken for the separator.
+    await waitFor(() => fake.allSends().length > 0);
+    expect(fake.allSends()).toContainEqual({
+      chatId: String(chatId),
+      text: "Reply text",
+      replyTo: 4,
+    });
+  });
+
   it("a group message that is nothing but the bot's mention starts no task", async () => {
     await bindEnabled(SID);
     fake.push({

@@ -1623,12 +1623,59 @@ export type MessagingChannel = "feishu" | "telegram" | "qq";
 /** Event-connection runtime state of one binding (kept in memory, not persisted). */
 export type MessagingRuntimeState = "disconnected" | "connecting" | "connected" | "error";
 
+/**
+ * A failure that happened AFTER an inbound message was accepted — as opposed to a
+ * connection failure, which `MessagingRuntimeStatus.lastError` reports.
+ *
+ * The two stages fail in completely different places and lead to different actions, and
+ * from the chat they are indistinguishable (both produce silence), which is why the stage
+ * is stated rather than folded into one message.
+ */
+export interface MessagingDeliveryError {
+  /** ISO 8601 timestamp of the failure. */
+  at: string;
+  /** `inbound` — the message arrived and its Task never started; `send` — a reply never reached the chat. */
+  stage: "inbound" | "send";
+  /** The failure's own message, as the channel or the Session reported it. */
+  detail: string;
+}
+
 export interface MessagingRuntimeStatus {
   state: MessagingRuntimeState;
   /** Failure detail; present only in the `error` state. */
   lastError?: string;
   /** When the state last changed (ISO 8601); absent for a binding that never connected. */
   changedAt?: string;
+  /**
+   * When this binding last accepted an inbound message (ISO 8601).
+   *
+   * "Connected, and nothing has arrived" is the answer to the one question a chat cannot
+   * answer for itself — whether the platform is delivering anything at all. A channel that
+   * withholds messages (Telegram's group privacy, a bot that is not a member) produces
+   * exactly that, with no error anywhere.
+   *
+   * In-process AND scoped to one connection: it starts empty on every (re)connect, and a
+   * re-enable or a credential save opens a new one. So an absent field means "nothing since
+   * this connection opened", never "nothing ever" — anything reporting it has to say which,
+   * or it sends a reader off to fix a channel that is working.
+   */
+  lastInboundAt?: string;
+  /**
+   * The most recent post-acceptance failure; absent when none has happened since this
+   * connection opened, and never cleared by a later success — an intermittent failure would
+   * otherwise be erased by the next ordinary message. `at` is what says how stale it is.
+   */
+  lastDeliveryError?: MessagingDeliveryError;
+  /**
+   * The most recent CONNECTION failure, kept after the connection recovers — unlike
+   * `lastError`, which belongs to the `error` state and is gone the moment the state leaves it.
+   *
+   * A connection that fails and recovers repeatedly (a second program polling the same bot
+   * token takes turns with this one) reads as `connected` in any snapshot taken between
+   * flaps, with nothing at all to show for the failures in between. This is what is left
+   * behind — for the life of the connection, like the two above it.
+   */
+  lastConnectionError?: { at: string; detail: string };
 }
 
 /** The stored Feishu config, secret masked (plaintext never leaves the server). */

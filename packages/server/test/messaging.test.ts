@@ -77,6 +77,7 @@ class FakeClient implements FeishuApiClient {
     return null;
   }
   async sendText(chatId: string, text: string): Promise<void> {
+    if (this.sdk.failSend !== null) throw new Error(this.sdk.failSend);
     this.sdk.noteSend();
     this.record({ kind: "send", target: chatId, text });
     await this.sdk.hold();
@@ -137,6 +138,8 @@ class FakeSdk implements FeishuSdk {
   stallBotOpenId = false;
   /** Lookups the connector has started (one per connection, off the connect path). */
   botIdentityLookups = 0;
+  /** Non-null makes every outbound sendText throw with this message. */
+  failSend: string | null = null;
   async createClient(creds: FeishuCredentials): Promise<FeishuApiClient> {
     const client = new FakeClient(creds, this);
     this.clients.push(client);
@@ -1119,6 +1122,202 @@ describe("messaging binding routes and bridge", () => {
     expect(fake.connections[0]!.closed).toBe(true);
   });
 
+  // —— Delivery observability ————————————————————————————————————————————————
+  // "Nothing happens" has three completely different causes — the channel never delivered
+  // the message, it arrived and the Task could not start, or the Task ran and the reply
+  // could not go out — and from the chat they are identical silence. The runtime status is
+  // where they are told apart; the error table is Project-wide and nobody opens it to debug
+  // one bot.
+
+  const statusOf = async (sid: string) => {
+    const res = await api.get(BASE(sid));
+    return ((await res.json()) as FeishuBindingResponse).status;
+  };
+
+  it("reports when a message last arrived, and says plainly that none has", async () => {
+    await bindEnabled(SID);
+    // Connected with nothing wrong and nothing received: the exact shape a channel that
+    // withholds messages produces, and the one thing the panel could not previously say.
+    const quiet = await statusOf(SID);
+    expect(quiet.state).toBe("connected");
+    expect(quiet.lastInboundAt).toBeUndefined();
+    expect(quiet.lastDeliveryError).toBeUndefined();
+
+    await fake.lastConnection().fire({
+      chatId: "oc_chat_1",
+      chatType: "p2p",
+      messageId: "om_seen",
+      messageType: "text",
+      content: JSON.stringify({ text: "hello" }),
+    });
+    await waitFor(() => runs.length === 1);
+    const seen = await statusOf(SID);
+    expect(typeof seen.lastInboundAt).toBe("string");
+    expect(Number.isNaN(Date.parse(seen.lastInboundAt!))).toBe(false);
+    expect(seen.lastDeliveryError).toBeUndefined();
+  });
+
+  it("starts the arrival record over on a re-enable: it belongs to the connection, not the server", async () => {
+    await bindEnabled(SID);
+    await fake.lastConnection().fire({
+      chatId: "oc_chat_1",
+      chatType: "p2p",
+      messageId: "om_before_toggle",
+      messageType: "text",
+      content: JSON.stringify({ text: "hello" }),
+    });
+    await waitFor(() => runs.length === 1);
+    expect((await statusOf(SID)).lastInboundAt).toBeDefined();
+
+    // The state toggle runs sync() -> connect(), which builds a fresh entry. So the empty
+    // line is "nothing since this connection opened", NOT "nothing ever" — and the panel's
+    // group-silence entry sends a user to remove the bot from a working group on the
+    // strength of that line, so the scope has to be the one the copy claims.
+    expect((await api.post(`${BASE(SID)}/state`, { enabled: false })).status).toBe(200);
+    expect((await api.post(`${BASE(SID)}/state`, { enabled: true })).status).toBe(200);
+    const reconnected = await statusOf(SID);
+    expect(reconnected.state).toBe("connected");
+    expect(reconnected.lastInboundAt).toBeUndefined();
+  });
+
+  it("starts it over on a credential save too — the same reset with no toggle to see", async () => {
+    await bindEnabled(SID);
+    await fake.lastConnection().fire({
+      chatId: "oc_chat_1",
+      chatType: "p2p",
+      messageId: "om_before_resave",
+      messageType: "text",
+      content: JSON.stringify({ text: "hello" }),
+    });
+    await waitFor(() => runs.length === 1);
+    expect((await statusOf(SID)).lastInboundAt).toBeDefined();
+
+    // A PUT on an enabled binding reconnects unconditionally (the never-diverge rule), so
+    // even re-saving the credentials unchanged opens a new connection and a new record.
+    expect((await api.put(BASE(SID), PUT_BODY)).status).toBe(200);
+    expect(fake.connections).toHaveLength(2);
+    expect((await statusOf(SID)).lastInboundAt).toBeUndefined();
+  });
+
+  it("stamps arrival for a message it cannot act on, because it did arrive", async () => {
+    await bindEnabled(SID);
+    await fake.lastConnection().fire({
+      chatId: "oc_chat_1",
+      chatType: "p2p",
+      messageId: "om_sticker",
+      messageType: "image",
+      content: JSON.stringify({ image_key: "img_1" }),
+    });
+    await waitFor(() => fake.allSends().some((x) => x.text === MESSAGING_TEXT_ONLY_NOTICE));
+    const status = await statusOf(SID);
+    // The question this line answers is whether the channel is delivering anything, and a
+    // sticker answers it. Stamping only what starts a Task would report a mute bot for a
+    // chatty one, which is the reading the whole feature exists to prevent.
+    expect(status.lastInboundAt).toBeDefined();
+    expect(status.lastDeliveryError).toBeUndefined();
+    expect(runs).toHaveLength(0);
+  });
+
+  it("keeps the last connection failure after the connection recovers", async () => {
+    await bindEnabled(SID);
+    const conn = fake.lastConnection();
+    // A connector that fails and recovers — two programs taking turns on one bot token do
+    // exactly this. `lastError` belongs to the error state and is gone the moment the state
+    // leaves it, so between flaps the panel would otherwise show a clean `connected` and the
+    // reader would be left with a symptom and no cause.
+    conn.handlers.onError?.(new Error("another program is already polling this bot"));
+    expect(t.deps.messaging.statusOf(SID, "feishu").state).toBe("error");
+    conn.handlers.onReady?.();
+    const recovered = t.deps.messaging.statusOf(SID, "feishu");
+    expect(recovered.state).toBe("connected");
+    expect(recovered.lastError).toBeUndefined();
+    expect(recovered.lastConnectionError?.detail).toContain("already polling this bot");
+    expect(Number.isNaN(Date.parse(recovered.lastConnectionError!.at))).toBe(false);
+  });
+
+  it("ignores a connection failure from an attempt a newer connect already replaced", async () => {
+    await bindEnabled(SID);
+    const superseded = fake.lastConnection();
+    // A credential save reconnects an enabled binding, so the old connector's callbacks now
+    // belong to an attempt that has been abandoned. They can still fire: a parked poll or an
+    // in-flight request rejects whenever it rejects.
+    expect((await api.put(BASE(SID), PUT_BODY)).status).toBe(200);
+    expect(fake.connections).toHaveLength(2);
+
+    superseded.handlers.onError?.(new Error("stale poll failed"));
+    // Neither the live status nor the error table hears from it. The status was already
+    // guarded; the record was not, and filing one blames the binding as it now stands for a
+    // failure of a configuration it no longer has.
+    const live = t.deps.messaging.statusOf(SID, "feishu");
+    expect(live.state).toBe("connected");
+    expect(live.lastConnectionError).toBeUndefined();
+    expect(t.deps.errorsRepo.recent(projectId).map((r) => r.code)).not.toContain(
+      "messaging_connect_failed",
+    );
+  });
+
+  it("a reply that never went out is reported on the status and filed under the Project", async () => {
+    await bindEnabled(SID);
+    fake.failSend = "Bad Request: have no rights to send a message";
+    await fake.lastConnection().fire({
+      chatId: "oc_chat_1",
+      chatType: "p2p",
+      messageId: "om_send_fails",
+      messageType: "text",
+      content: JSON.stringify({ text: "hello" }),
+    });
+    await waitFor(() => runs.length === 1);
+    // The relay rides the entry's send chain, so poll the in-process status (synchronous)
+    // and then assert on the shape the API actually serves.
+    await waitFor(() => t.deps.messaging.statusOf(SID, "feishu").lastDeliveryError !== undefined);
+    const failed = await statusOf(SID);
+    // The message DID arrive — that half must not read as a delivery problem — and the stage
+    // says which end failed, because the two send the user to different places.
+    expect(failed.lastInboundAt).toBeDefined();
+    expect(failed.lastDeliveryError?.stage).toBe("send");
+    expect(failed.lastDeliveryError?.detail).toContain("have no rights to send a message");
+
+    // And the error record is attributed, which is what makes it reachable at all: the
+    // project errors query serves unattributed records to admins only.
+    const recorded = t.deps.errorsRepo.recent(projectId);
+    expect(recorded.map((r) => r.code)).toContain("messaging_send_failed");
+  });
+
+  it("keeps a delivery failure on the status after a later message goes through", async () => {
+    await bindEnabled(SID);
+    fake.failSend = "Bad Request: have no rights to send a message";
+    await fake.lastConnection().fire({
+      chatId: "oc_chat_1",
+      chatType: "p2p",
+      messageId: "om_rights_revoked",
+      messageType: "text",
+      content: JSON.stringify({ text: "hello" }),
+    });
+    await waitFor(() => runs.length === 1);
+    await waitFor(() => t.deps.messaging.statusOf(SID, "feishu").lastDeliveryError !== undefined);
+    const recorded = t.deps.messaging.statusOf(SID, "feishu").lastDeliveryError;
+
+    // Rights restored, and the next reply really does reach the chat.
+    fake.failSend = null;
+    await fake.lastConnection().fire({
+      chatId: "oc_chat_1",
+      chatType: "p2p",
+      messageId: "om_rights_restored",
+      messageType: "text",
+      content: JSON.stringify({ text: "again" }),
+    });
+    await waitFor(() => runs.length === 2);
+    await waitFor(() => fake.allSends().some((x) => x.text === "Reply text"));
+
+    // The record stands, whole. Clearing it on success would erase every failure that comes
+    // and goes — a send right revoked for a minute, a rate limit — as soon as the next
+    // ordinary message worked, which is the blind spot lastConnectionError exists to close.
+    // `at` is what tells the reader the failure is old, so the panel states it.
+    const after = await statusOf(SID);
+    expect(after.lastDeliveryError).toEqual(recorded);
+    expect(after.lastInboundAt).toBeDefined();
+  });
+
   // —— Group mentions ————————————————————————————————————————————————————————
   // Feishu never puts a mention in the message text: it writes a placeholder (`@_user_1`)
   // and carries who it refers to alongside. Handed over raw, the model gets a token nothing
@@ -1189,6 +1388,24 @@ describe("messaging binding routes and bridge", () => {
     );
     await waitFor(() => runs.length === 1);
     expect(runs[0]![0]!.text).toBe("@Jules and @Alice ship it");
+  });
+
+  it("keeps a real group message whole: a mention plus words is never emptied", async () => {
+    fake.botOpenId = "ou_this_bot";
+    await bindEnabled(SID);
+    // The emptiness rule strips EVERY placeholder to decide whether any words remain, so it
+    // has to leave a message that does have words completely alone.
+    await fake
+      .lastConnection()
+      .fire(
+        groupMention("@_user_1 帮我看看 build 好了没 🚀", [
+          { key: "@_user_1", name: "PenguinHarness", id: { open_id: "ou_this_bot" } },
+        ]),
+      );
+    await waitFor(() => runs.length === 1);
+    expect(runs[0]![0]!.text).toBe("帮我看看 build 好了没 🚀");
+    // The run's own reply mirrors back; what must NOT appear is the no-words notice.
+    expect(fake.allSends().some((x) => x.text === MESSAGING_TEXT_ONLY_NOTICE)).toBe(false);
   });
 
   it("a message that is nothing but a mention starts no Task", async () => {
@@ -1554,3 +1771,119 @@ describe("messaging binding routes and bridge", () => {
 });
 
 const settle = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * The failure #484 named and left open: an inbound message arrives, `startTask` throws, the
+ * bridge swallows it into an error record and the chat hears nothing at all. It is one of the
+ * three ways "nothing happens" happens, and the only way to tell it from the other two is for
+ * the binding to say so.
+ */
+describe("an inbound message whose Task cannot start", () => {
+  let t: TestApp;
+  let api: ReturnType<typeof apiClient>;
+  let fake: FakeSdk;
+
+  beforeEach(async () => {
+    fake = new FakeSdk();
+    t = await createTestApp({
+      feishuSdk: fake,
+      // Not adopted, so the first task loads through here — a Workspace that has been
+      // deleted under a live Session reaches startTask exactly like this.
+      loader: {
+        load: async () => {
+          throw new Error("The original Session's Workspace no longer exists");
+        },
+      },
+    });
+    const { cookie } = await provisionUser(t.app, "birder");
+    api = apiClient(t.app, cookie);
+    t.deps.sessionsRepo.insert(sessionRowOf(SID, "birder-default_project"));
+  });
+  afterEach(async () => {
+    await t.cleanup();
+  });
+
+  it("is reported on the binding's status instead of being silent everywhere", async () => {
+    expect((await api.put(BASE(SID), PUT_BODY)).status).toBe(200);
+    expect((await api.post(`${BASE(SID)}/state`, { enabled: true })).status).toBe(200);
+    await fake.lastConnection().fire({
+      chatId: "oc_chat_1",
+      chatType: "p2p",
+      messageId: "om_cannot_start",
+      messageType: "text",
+      content: JSON.stringify({ text: "deploy the build" }),
+    });
+    await waitFor(() => t.deps.messaging.statusOf(SID, "feishu").lastDeliveryError !== undefined);
+    const status = t.deps.messaging.statusOf(SID, "feishu");
+    // Arrived, then failed: reporting only the failure would send the user hunting for a
+    // delivery problem that does not exist.
+    expect(status.state).toBe("connected");
+    expect(status.lastInboundAt).toBeDefined();
+    expect(status.lastDeliveryError?.stage).toBe("inbound");
+    expect(status.lastDeliveryError?.detail).toContain("Workspace no longer exists");
+    // Nothing was said in the chat — which is exactly why the status has to say it.
+    expect(fake.allSends()).toHaveLength(0);
+    // Filed under the Project, so the errors table can serve it to an ordinary member.
+    expect(t.deps.errorsRepo.recent("birder-default_project").map((r) => r.code)).toContain(
+      "messaging_inbound_failed",
+    );
+  });
+});
+
+/**
+ * The arrival stamp is written on ACCEPTANCE — after the redelivery drop, one line below it —
+ * so a channel replaying a message it already delivered must not move it. Nothing else holds
+ * that ordering, and with the wall clock two writes inside the same millisecond are
+ * indistinguishable, so this suite drives the bridge's injected clock instead.
+ */
+describe("a redelivered inbound message", () => {
+  let t: TestApp;
+  let api: ReturnType<typeof apiClient>;
+  let fake: FakeSdk;
+  let runs: TextPayload[][];
+  let clock: number;
+
+  beforeEach(async () => {
+    fake = new FakeSdk();
+    clock = Date.parse("2026-08-26T09:00:00.000Z");
+    t = await createTestApp({ feishuSdk: fake, now: () => new Date(clock) });
+    const { cookie } = await provisionUser(t.app, "birder");
+    api = apiClient(t.app, cookie);
+    runs = [];
+    const row = sessionRowOf(SID, "birder-default_project");
+    t.deps.sessionsRepo.insert(row);
+    t.deps.manager.adopt(row, echoFakeSession(SID, runs));
+    expect((await api.put(BASE(SID), PUT_BODY)).status).toBe(200);
+    expect((await api.post(`${BASE(SID)}/state`, { enabled: true })).status).toBe(200);
+  });
+  afterEach(async () => {
+    await t.cleanup();
+  });
+
+  const fire = (messageId: string, text: string) =>
+    fake.lastConnection().fire({
+      chatId: "oc_chat_1",
+      chatType: "p2p",
+      messageId,
+      messageType: "text",
+      content: JSON.stringify({ text }),
+    });
+
+  it("leaves the arrival stamp where the first delivery put it", async () => {
+    await fire("om_replayed", "hello");
+    await waitFor(() => runs.length === 1);
+    expect(t.deps.messaging.statusOf(SID, "feishu").lastInboundAt).toBe("2026-08-26T09:00:00.000Z");
+
+    clock += 60_000;
+    await fire("om_replayed", "hello");
+    // The duplicate is a complete no-op, the stamp included: moving it would report traffic
+    // the channel never sent, on the one line a user reads to decide whether it is sending.
+    expect(runs).toHaveLength(1);
+    expect(t.deps.messaging.statusOf(SID, "feishu").lastInboundAt).toBe("2026-08-26T09:00:00.000Z");
+
+    // A genuinely new message does move it, so the assertion above is not vacuous.
+    await fire("om_fresh", "again");
+    await waitFor(() => runs.length === 2);
+    expect(t.deps.messaging.statusOf(SID, "feishu").lastInboundAt).toBe("2026-08-26T09:01:00.000Z");
+  });
+});
