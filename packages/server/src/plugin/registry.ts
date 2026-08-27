@@ -120,7 +120,7 @@ export function httpPluginRegistry(
 }
 
 /**
- * Where the published extension index lives.
+ * Where the published plugin index lives.
  *
  * A release asset, not the GitHub API and not a Pages URL. The API would cost this server two
  * requests against an unauthenticated 60/hour budget shared by every deployment behind one NAT,
