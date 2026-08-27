@@ -1,7 +1,8 @@
 /**
  * The Telegram Bot API seam: the methods the Telegram connector uses (`getMe`,
- * `getWebhookInfo`, `sendMessage`, `getUpdates`, and the file download behind an inbound
- * photo), behind an injectable transport so unit
+ * `getWebhookInfo`, `sendMessage`, `getUpdates`, the file download behind an inbound photo,
+ * and the `sendPhoto` / `sendDocument` uploads behind an outbound one),
+ * behind an injectable transport so unit
  * tests substitute a fake and never open real network. Telegram needs no SDK — the Bot API is plain HTTPS
  * POSTs against https://api.telegram.org — so the production transport is a thin fetch
  * wrapper.
