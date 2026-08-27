@@ -67,6 +67,20 @@ export interface AuthResponse {
   user: UserInfo;
 }
 
+/**
+ * GET /api/install — the identity of the data root this server is serving (install-id.ts),
+ * read by the web app before it mounts so state persisted against a DIFFERENT root can be
+ * swept. Public, like the login route it sits next to.
+ */
+export interface InstallResponse {
+  /**
+   * Opaque per-data-root id, or null when the server could not establish one (an
+   * unreadable or unwritable root). Null means "unknown", and a client must change
+   * nothing on it — never treat it as a new install.
+   */
+  installId: string | null;
+}
+
 export interface MeResponse {
   user: UserInfo;
   /**

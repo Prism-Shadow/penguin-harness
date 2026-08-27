@@ -59,9 +59,11 @@ import type { TerminalManager } from "./terminal/manager.js";
 import type { AppEnv } from "./auth/middleware.js";
 import { ADMIN_USER_ID, AuthService } from "./auth/service.js";
 import { clearInitialAdminPassword } from "./initial-password.js";
+import { ensureInstallId } from "./install-id.js";
 import { handleError, HttpError, errorBody } from "./http/errors.js";
 import { attributedProjectId } from "./http/attribution.js";
 import { authRoutes } from "./http/routes/auth.js";
+import { installRoutes } from "./http/routes/install.js";
 import { ChannelHub } from "./runtime/channel.js";
 import { ErrorRecorder } from "./runtime/error-recorder.js";
 import {
@@ -284,6 +286,14 @@ export async function bootAppDeps(
   storeApiToken(config.root, apiToken);
   authService.setLocalApiToken(apiToken);
 
+  // Install identity: minted here so a root gets its name the first time it is used rather
+  // than on the first browser request, which keeps `<root>/install-id` alongside the other
+  // files a boot creates and makes the id observable to the CLI and to tests. The return
+  // value is deliberately unused — GET /api/install re-reads the file per request (see
+  // http/routes/install.ts); this call exists for the minting side effect. Nothing fails
+  // when it cannot be persisted: the browser then simply never sweeps.
+  ensureInstallId(config.root);
+
   // The capability set buildAppDeps claims (see hmr/capabilities.ts) — every
   // entry must be in place before ensure() below performs the first boot. The interface
   // descriptor leads: it is what a bundle's handshake reads before trusting any of the rest.
@@ -409,6 +419,10 @@ export function createRuntimeApp(deps: AppDeps): Hono<AppEnv> {
 
   // Public routes (no login required).
   app.route("/api/auth", authRoutes(deps));
+  // The data root's install identity. Public because the web app reads it before it mounts
+  // — before it knows whether anyone is signed in, and a just-wiped root has nobody signed
+  // in at all. See http/routes/install.ts.
+  app.route("/api/install", installRoutes(deps));
   // Desktop shutdown authenticates with the shell's Bearer token, not the cookie
   // session, so it mounts outside authMiddleware (and only in desktop mode).
   if (deps.desktop) {
