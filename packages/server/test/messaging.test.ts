@@ -418,6 +418,58 @@ describe("messaging binding routes and bridge", () => {
     expect(t.deps.messagingRepo.find(SID, "feishu")?.config.appSecret).toBe(PUT_BODY.appSecret);
   });
 
+  it("a save cannot re-point an ENABLED binding at an app another Session has enabled", async () => {
+    t.deps.sessionsRepo.insert(sessionRowOf(SID2, projectId));
+    // Two Sessions, each connected to its own app. Exclusivity holds so far.
+    await bindEnabled(SID);
+    await bindEnabled(SID2, { appId: "cli_app_second", appSecret: PUT_BODY.appSecret });
+    expect(fake.connections).toHaveLength(2);
+
+    // The save path is the way around the enable gate: this binding is already enabled, so
+    // the write would carry its live connection onto the first Session's app and leave two
+    // rows enabled on one account — the state the whole model rests on being unreachable.
+    const stolen = await api.put(BASE(SID2), {
+      appId: PUT_BODY.appId,
+      appSecret: PUT_BODY.appSecret,
+    });
+    expect(stolen.status).toBe(409);
+    const refusal = (await stolen.json()) as { error: { code: string; message: string } };
+    expect(refusal.error.code).toBe("account_enabled_elsewhere");
+    expect(refusal.error.message).not.toContain(SID);
+
+    // Refused means nothing moved: no third connection, and the row keeps its own app.
+    expect(fake.connections).toHaveLength(2);
+    expect(t.deps.messagingRepo.find(SID2, "feishu")?.accountId).toBe("cli_app_second");
+    expect(t.deps.messagingRepo.findEnabledByAccount("feishu", PUT_BODY.appId)?.sessionId).toBe(
+      SID,
+    );
+
+    // A DISABLED binding is still free to save the same app — that is what "enabling is the
+    // binding" means, and its own enable is still gated.
+    expect((await api.post(`${BASE(SID2)}/state`, { enabled: false })).status).toBe(200);
+    expect((await api.put(BASE(SID2), PUT_BODY)).status).toBe(200);
+    expect((await api.post(`${BASE(SID2)}/state`, { enabled: true })).status).toBe(409);
+  });
+
+  it("an enabled binding whose Session is gone releases its app to the next enable", async () => {
+    t.deps.sessionsRepo.insert(sessionRowOf(SID2, projectId));
+    await bindEnabled(SID);
+    // Deleting a Project or an Agent removes its Sessions without sweeping their bindings,
+    // so the row stays behind holding the app. Until boot reconciles it, the refusal it
+    // produces names no Session — by design — and points at a connection nobody can reach.
+    t.deps.sessionsRepo.deleteById(SID);
+
+    expect((await api.put(BASE(SID2), PUT_BODY)).status).toBe(200);
+    const taken = await api.post(`${BASE(SID2)}/state`, { enabled: true });
+    expect(taken.status).toBe(200);
+    expect(((await taken.json()) as FeishuBindingResponse).binding?.enabled).toBe(true);
+    // The orphan is gone rather than merely stepped over.
+    expect(t.deps.messagingRepo.find(SID, "feishu")).toBeNull();
+    expect(t.deps.messagingRepo.findEnabledByAccount("feishu", PUT_BODY.appId)?.sessionId).toBe(
+      SID2,
+    );
+  });
+
   it("authz: non-members get 404; a member reads but cannot write or toggle (owner-only)", async () => {
     await api.put(BASE(SID), PUT_BODY);
     const outsider = apiClient(t.app, (await provisionUser(t.app, "outsider")).cookie);

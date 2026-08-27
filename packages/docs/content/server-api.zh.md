@@ -290,13 +290,13 @@ Session 可以接入消息软件机器人——目前的渠道是飞书与 Teleg
 | --- | --- | --- |
 | GET | /messaging | 渠道无关读取：该 Session **每一份**已保存的渠道配置（`channel` 判别字段、密钥掩码、逐行 `enabled` 意图 + 连接运行状态 + `lastChatKnown`）。渠道感知的绑定编辑器只加载这一个 |
 | GET | /messaging/feishu | `{binding, status}` 形态下的飞书配置（未保存时为 null） |
-| PUT | /messaging/feishu | 保存凭据：`{appId, appSecret?, baseDomain?, clearAppSecret?}`。`appSecret` 省略或留空则保持已存值；`clearAppSecret: true` 清除已存密钥（新输入的密钥优先于清除标记；启用中返回 409 `messaging_disable_before_clear`——清除后配置行与非密钥字段保留）；`baseDomain` 默认 `https://open.feishu.cn`。不带连接副作用——唯一例外：**已启用**绑定的连接器会用新凭据重启，保证存储配置与在线连接永不背离。保存不会与其他 Session 冲突 |
+| PUT | /messaging/feishu | 保存凭据：`{appId, appSecret?, baseDomain?, clearAppSecret?}`。`appSecret` 省略或留空则保持已存值；`clearAppSecret: true` 清除已存密钥（新输入的密钥优先于清除标记；启用中返回 409 `messaging_disable_before_clear`——清除后配置行与非密钥字段保留）；`baseDomain` 默认 `https://open.feishu.cn`。不带连接副作用——唯一例外：**已启用**绑定的连接器会用新凭据重启，保证存储配置与在线连接永不背离。保存不会与其他 Session 冲突，唯一例外正源于这次重启：把**已启用**的绑定改指到另一个 Session 已启用的账号上，返回 409 `account_enabled_elsewhere`，否则那次重启就会绕过启用闸门、把第二条在线连接接到同一账号上 |
 | POST | /messaging/feishu/state | 连接开关：`{enabled}`——启用即用**已存凭据**建立连接，停用即断开。该 Session 另一渠道已启用时返回 409 `another_channel_enabled`，同一账号已在**其他 Session** 上启用时返回 409 `account_enabled_elsewhere`（两者都是「先停用那一个」——后者不透露持有方的任何信息，它可能位于调用方看不到的 Project）；已存配置没有密钥时返回 400 `feishu_secret_required`。新配置默认停用；服务端启动只连接已启用的配置 |
 | DELETE | /messaging/feishu | 整体删除该渠道的配置（含 App Secret；另一渠道不受影响）。仅为 API 完整性保留——Web 界面的移除入口是清除标记 |
 | POST | /messaging/feishu/test | 用请求携带的草稿值做凭据探测，缺省字段回落到已存配置 → `{ok, latencyMs?, error?}`（凭据被拒是 `ok: false`，不是 HTTP 错误） |
 | POST | /messaging/feishu/test-message | 向最近一次收到消息的会话发送一条固定测试文本；在飞书里给机器人发过消息之前返回 409 `feishu_no_chat` |
 | GET | /messaging/telegram | 同一形态下的 Telegram 配置（`botId`、`botTokenMasked`） |
-| PUT | /messaging/telegram | 保存凭据：`{botToken?, clearBotToken?}`——整份凭据就是 @BotFather 签发的一条 `<机器人 id>:<密钥>` Token（省略或留空则保持已存值；读不出数字 id 时返回 400 `telegram_token_invalid`；清除标记与飞书同口径，清除后配置保留其机器人身份）。保存与启用的分离一致，同样不存在跨 Session 的保存冲突 |
+| PUT | /messaging/telegram | 保存凭据：`{botToken?, clearBotToken?}`——整份凭据就是 @BotFather 签发的一条 `<机器人 id>:<密钥>` Token（省略或留空则保持已存值；读不出数字 id 时返回 400 `telegram_token_invalid`；清除标记与飞书同口径，清除后配置保留其机器人身份）。保存与启用的分离一致；把已启用绑定的 Token 换成另一个 Session 已启用的机器人时，同样返回 409 `account_enabled_elsewhere`，其余情况不存在跨 Session 的保存冲突 |
 | POST | /messaging/telegram/state | 与飞书开关同一契约（无已存 Token 时返回 400 `telegram_token_required`） |
 | DELETE | /messaging/telegram | 整体删除该渠道的配置（含 Bot Token）。仅为 API 完整性保留 |
 | POST | /messaging/telegram/test | 凭据探测（`getMe`），草稿 Token 缺省回落到已存值 → `{ok, latencyMs?, botUsername?, error?}`——成功时报出 Token 登录到的机器人 |

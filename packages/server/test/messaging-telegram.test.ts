@@ -401,6 +401,34 @@ describe("telegram binding routes and connector loop", () => {
     expect(fake.lastClient().creds.botToken).toBe(rotated);
   });
 
+  it("a token swap cannot re-point an ENABLED binding at a bot another Session has enabled", async () => {
+    t.deps.sessionsRepo.insert(sessionRowOf(SID2, projectId));
+    // Two Sessions, each polling its own bot.
+    await bindEnabled(SID);
+    await bindEnabled(SID2, "7000000002:test-secret-BBBB-2222");
+    await waitFor(() => t.deps.messaging.statusOf(SID2, "telegram").state === "connected");
+
+    // Saving the first Session's token here would carry this live poll onto its bot, which
+    // is the enable gate bypassed by a different door: two getUpdates loops on one token.
+    const stolen = await api.put(BASE(SID2), { botToken: TOKEN });
+    expect(stolen.status).toBe(409);
+    const refusal = (await stolen.json()) as { error: { code: string; message: string } };
+    expect(refusal.error.code).toBe("account_enabled_elsewhere");
+    expect(refusal.error.message).not.toContain(SID);
+
+    // Refused means nothing moved: the row keeps its own bot id and its own connection.
+    expect(t.deps.messagingRepo.find(SID2, "telegram")?.accountId).toBe("7000000002");
+    expect(t.deps.messagingRepo.findEnabledByAccount("telegram", "7000000001")?.sessionId).toBe(
+      SID,
+    );
+    expect(t.deps.messaging.statusOf(SID2, "telegram").state).toBe("connected");
+
+    // Disabled first, the same save is allowed again — only the enable is exclusive.
+    expect((await api.post(`${BASE(SID2)}/state`, { enabled: false })).status).toBe(200);
+    expect((await api.put(BASE(SID2), { botToken: TOKEN })).status).toBe(200);
+    expect((await api.post(`${BASE(SID2)}/state`, { enabled: true })).status).toBe(409);
+  });
+
   it("the account is the bot id: a rotated secret saves freely and collides only on enable", async () => {
     t.deps.sessionsRepo.insert(sessionRowOf(SID2, projectId));
     await bindEnabled(SID);

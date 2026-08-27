@@ -172,14 +172,37 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
   };
 
   /**
+   * The one-connection-per-account rule, on its own because two paths need it: the enable,
+   * and a save that would carry an already-live connection onto a different account.
+   *
+   * The refusal says nothing about who holds the connection, on purpose. Authorization
+   * here proved access to the CALLER's Session only; the holder may sit in a Project this
+   * user cannot see, so its title or id would be a leak — and the remedy, turning that
+   * connection off where it is on, does not depend on hearing it named.
+   */
+  const guardAccountFree = (sessionId: string, channel: string, accountId: string): void => {
+    const holder = deps.messagingRepo.findEnabledByAccount(channel, accountId);
+    if (holder === null || holder.sessionId === sessionId) return;
+    // A holder whose Session is gone — deleted with its Project or its Agent, neither of
+    // which sweeps bindings — would make this refusal a dead end: it names no Session by
+    // design, and the remedy it offers is to turn off a connection that no longer exists.
+    // Reconcile it here the way start() does on boot, so the account is released now
+    // rather than at the next restart.
+    if (deps.sessionsRepo.findById(holder.sessionId) === null) {
+      deps.messagingRepo.delete(holder.sessionId, channel);
+      return;
+    }
+    throw new HttpError(
+      409,
+      "account_enabled_elsewhere",
+      "Another Session has this bot's connection enabled: turn it off there first.",
+    );
+  };
+
+  /**
    * Everything checked before an enable flips intent: the one-enabled-per-session rule,
    * the one-connection-per-account rule across Sessions, and the secret prerequisite.
    * Disabling is never gated — it is the unbind, the only way to release an account.
-   *
-   * The account conflict says nothing about who holds the connection, on purpose.
-   * Authorization here proved access to the CALLER's Session only; the holder may sit in a
-   * Project this user cannot see, so its title or id would be a leak — and the remedy,
-   * turning that connection off where it is on, does not depend on hearing it named.
    */
   const guardEnable = (sessionId: string, channel: string, row: MessagingBindingRow): void => {
     const enabledRow = deps.messagingRepo.findEnabled(sessionId);
@@ -190,14 +213,7 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
         "Another channel's connection is enabled on this Session: disable it first.",
       );
     }
-    const holder = deps.messagingRepo.findEnabledByAccount(channel, row.accountId);
-    if (holder !== null && holder.sessionId !== sessionId) {
-      throw new HttpError(
-        409,
-        "account_enabled_elsewhere",
-        "Another Session has this bot's connection enabled: turn it off there first.",
-      );
-    }
+    guardAccountFree(sessionId, channel, row.accountId);
     const secret =
       channel === "feishu" ? feishuFieldsOf(row).appSecret : telegramFieldsOf(row).botToken;
     if (secret === "") {
@@ -259,6 +275,12 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
       }
       appSecret = stored;
     }
+    // A save never enables — but an ENABLED binding re-pointed at another app keeps its
+    // connection and restarts it below, which would stand two Sessions on one app without
+    // ever passing the enable gate. Exclusivity is therefore asked here too, of the app
+    // this write would land on. A disabled binding stays exempt: that is the whole point
+    // of enabling being the binding, and its own enable is still gated.
+    if (existing !== null && existing.enabled) guardAccountFree(row.sessionId, "feishu", appId);
     const saved = deps.messagingRepo.upsert({
       sessionId: row.sessionId,
       channel: "feishu",
@@ -404,6 +426,9 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
       botToken = stored;
       botId = existing.accountId;
     }
+    // Same reason as the Feishu PUT: a token swap on an enabled binding would carry the
+    // live connection onto another bot without passing the enable gate.
+    if (existing !== null && existing.enabled) guardAccountFree(row.sessionId, "telegram", botId);
     const saved = deps.messagingRepo.upsert({
       sessionId: row.sessionId,
       channel: "telegram",

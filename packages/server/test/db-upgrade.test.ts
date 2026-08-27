@@ -467,6 +467,31 @@ describe("openDatabase table and index upgrades", () => {
       db.close();
     }
   });
+
+  it("an already-enabled binding survives the upgrade and still holds its account", () => {
+    const dbPath = path.join(dir, "web.db");
+    const ts = "2026-01-01T00:00:00.000Z";
+    // The upgrade that actually happens to a user: not a dormant row, but a live connection
+    // they left switched on. It must come back enabled, and it must still be the holder the
+    // enable guard refuses a second Session against.
+    seedUniqueAccountIndexDb(dbPath, (old) => {
+      old
+        .prepare(
+          `INSERT INTO messaging_bindings
+             (session_id, channel, account_id, config_json, enabled, created_at, updated_at)
+           VALUES ('session-a', 'telegram', '99999', '{"botToken":"t"}', 1, ?, ?)`,
+        )
+        .run(ts, ts);
+    });
+    const db = openDatabase(dbPath);
+    try {
+      const repo = new MessagingBindingsRepo(db);
+      expect(repo.find("session-a", "telegram")?.enabled).toBe(true);
+      expect(repo.findEnabledByAccount("telegram", "99999")?.sessionId).toBe("session-a");
+    } finally {
+      db.close();
+    }
+  });
 });
 
 /**

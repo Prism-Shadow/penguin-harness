@@ -17,8 +17,17 @@ what binds the account to a conversation, and turning that switch off releases i
 
 - Saving credentials no longer conflicts across Sessions. Any number of Sessions may keep the same
   Feishu app or Telegram bot saved side by side, each with its own stored config and its own
-  remembered chat. Both PUTs lost their 409 and `MessagingBindingsRepo.upsert` lost its failure
-  mode.
+  remembered chat. Both PUTs lost their `_in_use` 409 and `MessagingBindingsRepo.upsert` lost its
+  failure mode.
+- One save is still refused, because it is an enable in disguise: an **enabled** binding
+  re-pointed at an account another Session has enabled answers the same 409
+  `account_enabled_elsewhere`. Such a save restarts the connector on the new credentials, so
+  without the check two Sessions would end up connected to one account having never passed the
+  enable gate. A disabled binding is exempt, which is the whole point of the model.
+- An enabled binding whose Session no longer exists — deleted with its Project or its Agent,
+  neither of which sweeps bindings — is now reconciled when the next enable asks for its account,
+  rather than holding it until the next server start. The refusal names no Session, so an orphan
+  would otherwise point at a connection nobody could reach.
 - Enabling a channel is refused while **another Session has a binding on the same
   `(channel, account_id)` enabled**: 409 `account_enabled_elsewhere` — turn that one off first.
   One account has one event stream, so that is the only exclusivity that remains.
