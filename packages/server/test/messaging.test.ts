@@ -49,7 +49,7 @@ import {
   messagingFileFailedNotice,
   messagingFilePermissionNotice,
   messagingFileTooLargeNotice,
-  messagingFilesMissingNotice,
+  messagingFilesMissingLog,
   messagingFilesSkippedNotice,
   messagingImageBudgetNotice,
   messagingImageFailedNotice,
@@ -2230,20 +2230,19 @@ describe("messaging binding routes and bridge", () => {
     ]);
   });
 
-  it("names a mentioned path that does not exist rather than dropping it in silence", async () => {
+  it("says nothing in the chat about a mentioned path that matches no file", async () => {
     await bindWithWorkspace(
       await makeWorkspace(),
       "I would have written `out/missing.png`, but the run failed.",
       "cli_ghost",
     );
     await askAndSettle();
-    await waitFor(() => fake.allSends().length === 2);
     await settle(80);
-    // Existence is still the rule and nothing exists, so no file goes. What changed is
-    // that the chat is told: a name in the reply that never arrives, with nothing anywhere
-    // to say why, is how this feature reads as broken.
-    expect(fake.allSends().map((s) => s.kind)).toEqual(["send", "send"]);
-    expect(fake.allTexts().at(-1)!.text).toBe(messagingFilesMissingNotice(["out/missing.png"]));
+    // The reply, and nothing after it. A name in a reply is not a promise of a file: the rule
+    // reads prose, so a path the model merely described would otherwise put an error-shaped
+    // line under a correct answer. The fact is logged instead — messagingFilesMissingLog.
+    expect(fake.allSends().map((s) => s.kind)).toEqual(["send"]);
+    expect(messagingFilesMissingLog(["out/missing.png"])).toContain("out/missing.png");
   });
 
   it("says nothing at all about a reply that named no file", async () => {
@@ -2301,16 +2300,17 @@ describe("messaging binding routes and bridge", () => {
       "cli_escape",
     );
     await askAndSettle();
-    await waitFor(() => fake.allSends().length === 2);
     await settle(80);
-    // Nothing leaves the Workspace; the escapes are reported as what they are here — paths
-    // with no file behind them — in the reply's own spelling, never a normalization of it.
-    expect(fake.allSends().map((s) => s.kind)).toEqual(["send", "send"]);
-    // Both escapes are named, in the reply's own spelling: the lexical one, which never
-    // resolves, and the symlink, which resolves to a name the file service then refuses.
-    // (`/etc/hostname` carries no extension, so it is never a candidate in the first place.)
-    expect(fake.allTexts().at(-1)!.text).toContain("../outside.txt");
-    expect(fake.allTexts().at(-1)!.text).toContain("linked.txt");
+    // The property under test: nothing leaves the Workspace. The reply goes out and NO file
+    // follows it — not the lexical escape, which never resolves, and not the symlink, which
+    // resolves to a name the file service then refuses. (`/etc/hostname` carries no
+    // extension, so it is never a candidate in the first place.)
+    expect(fake.allSends().map((s) => s.kind)).toEqual(["send"]);
+    // Both escapes reach the log in the reply's own spelling, never a normalization of it —
+    // a normalized path in a log line about containment would hide which name was tried.
+    const logged = messagingFilesMissingLog(["../outside.txt", "linked.txt"]);
+    expect(logged).toContain("../outside.txt");
+    expect(logged).toContain("linked.txt");
   });
 
   it("classifies by the file the read reached, not by the name the reply spelled", async () => {

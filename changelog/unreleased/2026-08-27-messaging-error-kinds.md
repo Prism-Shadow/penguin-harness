@@ -37,6 +37,22 @@ there is no fix to apply.
 - The records themselves are unchanged in every other respect, including still being recorded at
   all: a scope nobody grants is still worth finding on the dashboard, it is simply not a defect.
 
+## A mention that names no file is no longer announced in the chat
+
+The reply-file feature scans a reply's prose for path-like tokens and sends the ones that
+resolve inside the Workspace. Names that resolve to nothing were announced — *"Named in the
+reply but not sent — no such file inside this Session's Workspace: hello-world.md"* — on the
+reasoning that a promised file which never arrives, with nothing to say why, reads as broken.
+
+That reasoning holds only when something was promised. The rule reads prose, and prose names
+files for reasons that have nothing to do with delivery: a model describing a `hello-world.md`
+it went on not to write, or quoting a path out of a document it read. Announcing those puts an
+error-shaped line under replies that were entirely correct, and leaves the reader no move to
+make. They are logged now instead.
+
+A file that EXISTS and whose upload failed is still named in the chat: there the reply promised
+something that then did not arrive, which is the one case where silence reads as broken.
+
 ## Compatibility
 
 Error records already written keep the classification they were written with — nothing rewrites

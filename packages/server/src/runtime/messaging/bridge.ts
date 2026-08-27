@@ -264,17 +264,27 @@ export function messagingFilePermissionNotice(
 const MESSAGING_NOTICE_NAMES_MAX = 5;
 
 /**
- * Files the reply named that the Workspace has nothing to send for — a path that resolves
- * outside it, a `~` path, or one that simply is not there.
+ * The LOG line for files the reply named that the Workspace has nothing to send for — a path
+ * resolving outside it, a `~` path, or one that simply is not there.
  *
- * One notice for the batch, quoting the reply's own spelling. The two causes share a
- * sentence because they share the user's next move (look at the path) and share one true
- * statement: there is no such file in this Session's Workspace.
+ * **Deliberately not a chat notice.** The mention rule is a heuristic over prose, and prose
+ * names files for reasons that have nothing to do with delivery: a model writes
+ * `hello-world.md` while describing what it would do, quotes a path out of a document it read,
+ * or names a file the run decided in the end not to write. None of those is a delivery that
+ * failed, and announcing them puts an error-shaped line under replies that were entirely
+ * correct — with no move for the reader to make, because nothing was ever going to arrive.
+ *
+ * Contrast `noteFileFailure`, which does reach the chat: there the file exists and its upload
+ * failed, so something the reply promised is genuinely missing and silence would read as the
+ * feature being broken.
+ *
+ * Still recorded, because "it mentioned a file and I never got it" is a real question someone
+ * will ask, and the server log answers it without charging every other reader for it.
  */
-export function messagingFilesMissingNotice(names: readonly string[]): string {
+export function messagingFilesMissingLog(names: readonly string[]): string {
   const shown = names.slice(0, MESSAGING_NOTICE_NAMES_MAX);
   const list = shown.join(", ") + (names.length > shown.length ? ", …" : "");
-  return `Named in the reply but not sent — no such file inside this Session's Workspace: ${list}. 回复中提及但未发送——该会话 Workspace 内没有这些文件：${list}。`;
+  return `[messaging] reply named files the Workspace does not have, nothing sent: ${list}`;
 }
 
 /** The tail of a batch the count cap cut off. */
@@ -1383,10 +1393,12 @@ export class MessagingBridge {
    * declined to paste it. Containment (the Workspace and nothing narrower) lives in the
    * file service either way — see MessagingWorkspaceFiles.
    *
-   * A file the run did not write is dropped SILENTLY: a reply that mentions the config it
-   * read is the ordinary case, and announcing every one of those would bury the notices
-   * that matter. A file that could not be delivered at all is named, because a mention the
-   * chat never receives with nothing to say why is how this feature reads as broken.
+   * A file the run did not write is dropped SILENTLY, and so is a name matching no file at
+   * all: the rule reads prose, so a reply that mentions the config it read — or describes a
+   * `hello-world.md` it never wrote — is the ordinary case, and announcing those puts an
+   * error-shaped line under correct answers. Both are logged instead. What IS named in the
+   * chat is a file that exists and whose upload failed: there the reply promised something
+   * that then did not arrive, which is the one case where silence reads as broken.
    *
    * Always plain sends, never a threaded reply: a run that mentions a file has by
    * definition already sent the text that mentions it, and that message took the group's
@@ -1433,9 +1445,9 @@ export class MessagingBridge {
       if (skipped > 0) {
         await client.sendText(chatId, messagingFilesSkippedNotice(skipped));
       }
-      if (missing.length > 0) {
-        await client.sendText(chatId, messagingFilesMissingNotice(missing));
-      }
+      // Logged, never sent: a name in a reply is not a promise of a file (see
+      // messagingFilesMissingLog).
+      if (missing.length > 0) this.log(messagingFilesMissingLog(missing));
     } catch (err) {
       this.recordError(entry.sessionId, err, "messaging_send_failed");
     }
