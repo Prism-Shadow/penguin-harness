@@ -31,6 +31,7 @@ import {
   MESSAGING_TEST_MESSAGE,
   MESSAGING_TEXT_ONLY_NOTICE,
 } from "../src/runtime/messaging/bridge.js";
+import type { MessagingClient } from "../src/runtime/messaging/connector.js";
 import type {
   QQBotClient,
   QQCredentials,
@@ -742,7 +743,7 @@ describe("the passive-reply ledger's lifetime", () => {
   }
 
   /** Spends every immediate slot of a single chat's budget, leaving only the reserved one. */
-  async function spendImmediate(client: { sendText(chatId: string, text: string): Promise<void> }) {
+  async function spendImmediate(client: Pick<MessagingClient, "sendText">) {
     for (const text of ["a", "b", "c"]) await client.sendText(CHAT, text);
   }
 

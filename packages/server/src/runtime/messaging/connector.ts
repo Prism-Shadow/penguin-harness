@@ -85,14 +85,24 @@ export interface MessagingAccountInfo {
   readsGroupMessages?: boolean;
 }
 
+/**
+ * What a send had to give up in order to land, as a short readable phrase. The message DID
+ * arrive — a send that did not throws — so this is not a failure: it says the message is
+ * somewhere less right than it was addressed to, which is otherwise invisible from the
+ * outside. A channel that always delivers as addressed returns nothing at all; Telegram is
+ * the one that reports, a forum topic deleted under a live conversation sending the reply to
+ * General instead.
+ */
+export type MessagingSendNote = string;
+
 /** Outbound half of one bound account. Every method throws on failure with a readable reason. */
 export interface MessagingClient {
   /** Credential check (used by the test endpoint); resolving means the config signs in. */
   checkCredentials(): Promise<MessagingAccountInfo | null>;
-  /** Sends a text message into a chat by chat id. */
-  sendText(chatId: string, text: string): Promise<void>;
+  /** Sends a text message into a chat by chat id; resolves a MessagingSendNote when it degraded. */
+  sendText(chatId: string, text: string): Promise<MessagingSendNote | void>;
   /** Replies a text message to a specific inbound message (threads correctly in group chats). */
-  replyText(messageId: string, text: string): Promise<void>;
+  replyText(messageId: string, text: string): Promise<MessagingSendNote | void>;
 }
 
 export interface MessagingChannelConnector {

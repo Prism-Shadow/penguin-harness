@@ -1,19 +1,20 @@
-# 向后兼容：按数据根划定作用域的浏览器状态
+# 向后兼容
 
 - **Date:** 2026-08-27
 - **Type:** process
 - **Scope:** `server`, `web`
-- **PR:** [#508](https://github.com/Prism-Shadow/penguin-harness/pull/508)
+- **PR:** [#507](https://github.com/Prism-Shadow/penguin-harness/pull/507), [#508](https://github.com/Prism-Shadow/penguin-harness/pull/508)
+- **Breaking:** yes — 仅在降级时：最后一条消息写在论坛话题里的 Telegram 绑定，在此改动之前的构建上会一直发不出消息，直到下一条入站消息到来
 
 [English](2026-08-27-backward-compatibility.md)
 
-[把浏览器持久化的 UI 状态按数据根划定作用域](2026-08-26-install-scoped-local-state.zh.md)动到了两样
-会跨越版本存活的东西：数据根里新增的文件 `<root>/install-id`，以及新增的 `localStorage` 条目
-`penguin.installId`。需要做决定的只有浏览器一侧；这个文件和这个键也一并记在这里，方便有人来查
-「我这套安装需要做什么吗？」时，在同一处找到全部答案。
+本批改动动到了三样会跨越版本存活的东西。[把浏览器持久化的 UI 状态按数据根划定作用域](2026-08-26-install-scoped-local-state.zh.md)
+新增了数据根里的文件 `<root>/install-id` 与 `localStorage` 条目 `penguin.installId`；
+[让 Telegram 的回复带上提问所在的论坛话题](2026-08-26-telegram-forum-topics.zh.md)则改变了存量
+`web.db` 上 `messaging_bindings.last_chat_id` 的含义——不增删任何列，也不重写任何行。需要做决定的
+只有浏览器一侧与这一列；那个文件和那个键也一并记在这里，方便有人来查「我这套安装需要做什么吗？」时，
+在同一处找到全部答案。
 
-（2026-08-26 那一批有它自己的[向后兼容](2026-08-26-backward-compatibility.zh.md)条目，讲的是
-`web.db` 与消息绑定。两者互不相干。）
 
 ## 有键、但从未记录过 id 的浏览器
 
@@ -56,6 +57,34 @@
 `penguin.installId` 是在 Web App 原有那些键之外新增的一条，也是清扫唯一从不删除的键：它正是比较时
 读取的那一个。本次改动之前的构建不认识这个键，会原样放着，因此降级在两个方向上都不可察觉。
 
+## `last_chat_id` 列
+
+该列此前存的是裸 chat id，各渠道原样交给自己的 API。现在它存的是只有该渠道的连接器才可以解读的字符
+串：Telegram 连接器为写在论坛话题里的消息写入 `<chat id>:<话题 id>`，其余消息仍写裸 chat id。
+
+选择：**永久容忍两种形式。**此前写入的行按其本身解析——没有分隔符即没有话题——因此无需迁移、转换或
+重置；从未遇到过论坛话题的绑定与从前逐字节相同。
+
+把这称作「兼容代码」并追问它保留多久，问的就不是对的问题。裸形式不是遗留编码：它是「没有话题的会
+话」唯一的编码，每个私聊、每个普通群、每个论坛的 General 话题，每条消息写的都是它。两种形式的解析
+本身就是这个格式，所以裸形式永远会继续被写入，读取它的代码也永远不会被删除。
+`telegram-connector.ts` 里的 `chatRefOf` 写有同样的说明。
+
 ## 兼容性
 
 升级与降级都不需要做任何操作。对在本版本之前清空过数据根的用户而言，唯一需要手动执行的一步在上文。
+
+升级对用户没有任何要求。升级后的第一条消息会照常重写该列，在那之前存着的裸 id 与从前一样可用。
+
+会显现出来的是降级这条腿。用户升级后在论坛话题里聊过，再回滚，此时 `last_chat_id` 里存的是
+`-1004475424385:91` 这样的值；此改动之前的构建会把它当作 chat id 交给 Telegram，
+`Number("-1004475424385:91")` 是 `NaN`，于是该字符串直接上了线，所有回复与测试消息都会以
+`Bad Request: chat not found` 失败。它会自愈：该绑定的下一条入站消息就会把这一列改回裸 id。给机器
+人发一条消息就是全部修法，手工清空该列也一样：
+
+```sql
+UPDATE messaging_bindings SET last_chat_id = NULL
+WHERE channel = 'telegram' AND last_chat_id LIKE '%:%';
+```
+
+其他渠道不受影响：飞书的 chat id 一直是连接器原样透传的不透明字符串。

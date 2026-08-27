@@ -59,6 +59,8 @@ export interface TelegramMessage {
     id: number;
     /** `private` for a direct chat with the bot; `group` / `supergroup` / `channel` otherwise. */
     type: string;
+    /** "True, if the supergroup chat is a forum" — i.e. it is split into topics at all. */
+    is_forum?: boolean;
   };
   /** Present only for text messages; anything else (photo, sticker, voice, …) omits it. */
   text?: string;
@@ -70,11 +72,24 @@ export interface TelegramMessage {
   entities?: TelegramMessageEntity[];
   /**
    * "Unique identifier of a message thread or forum topic to which the message belongs; for
-   * supergroups and private chats only." Absent in an ordinary group, and in a forum
-   * supergroup's General topic — which is why absence has to mean "send without a thread"
-   * rather than "send to General by id".
+   * supergroups and private chats only."
+   *
+   * Inbound and outbound are NOT symmetric, and the difference is the whole reason
+   * `is_topic_message` is read below. This field is also set on an ordinary reply chain — in
+   * a private chat, and in a supergroup that is no forum — while `sendMessage`'s
+   * `message_thread_id` is "for forum supergroups only" and answers anything else with
+   * `Bad Request: message thread not found`. So a value seen here may only be sent back once
+   * `chat.is_forum` and `is_topic_message` both say it names a forum topic.
+   *
+   * Absent in a forum supergroup's General topic — which is why absence has to mean "send
+   * without a thread" rather than "send to General by id".
    */
   message_thread_id?: number;
+  /**
+   * "True, if the message is sent to a forum topic." Absent for a forum's General topic and
+   * for the reply-chain `message_thread_id` above, which is exactly what tells the two apart.
+   */
+  is_topic_message?: boolean;
   from?: {
     first_name?: string;
     username?: string;
@@ -111,7 +126,8 @@ export interface TelegramBotClient {
   /**
    * Sends a text message into a chat; `replyToMessageId` threads it under an inbound message,
    * and `messageThreadId` puts it in a forum topic. Without the latter a send lands in a forum
-   * supergroup's General topic, wherever the conversation actually is.
+   * supergroup's General topic, wherever the conversation actually is — and with it anywhere
+   * that is not a forum topic the call fails, the parameter being "for forum supergroups only".
    */
   sendMessage(args: {
     chatId: string;
@@ -150,6 +166,26 @@ interface TelegramEnvelope<T> {
   result?: T;
   description?: string;
   error_code?: number;
+}
+
+/**
+ * A Bot API call the server answered with `ok: false`, carrying Telegram's own `error_code`.
+ *
+ * The code is the only part of the envelope a caller may branch on: `description` is prose
+ * Telegram rewords without notice, so a retry keyed on its wording breaks silently. A
+ * transport failure — a timeout, a reset, an unparseable body — has no code and stays a
+ * plain Error, which keeps "the request never completed" distinguishable from "Telegram
+ * refused it"; nothing may retry the former, because the message may well have been
+ * delivered.
+ */
+export class TelegramApiError extends Error {
+  constructor(
+    message: string,
+    readonly errorCode: number | undefined,
+  ) {
+    super(message);
+    this.name = "TelegramApiError";
+  }
 }
 
 /**
@@ -214,7 +250,7 @@ export function createTelegramTransport(): TelegramTransport {
             described ??
             `HTTP ${res.status}`;
           const code = body?.error_code !== undefined ? ` (code ${body.error_code})` : "";
-          throw new Error(`${method} failed: ${detail}${code}`);
+          throw new TelegramApiError(`${method} failed: ${detail}${code}`, body?.error_code);
         }
         return body.result as T;
       };
