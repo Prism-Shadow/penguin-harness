@@ -50,7 +50,7 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
-import { toneInk, toneStrip, type Tone } from "../../lib/tone";
+import { toneInk, type Tone } from "../../lib/tone";
 import { Button } from "../../components/ui/button";
 import { FieldLabel } from "../../components/ui/field";
 import { HelpFold } from "../../components/ui/help-fold";
@@ -943,10 +943,11 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
           is a passive reply anchored to an inbound message, and that anchor expires, so
           holding the reply to the run's end loses a long run's output entirely instead of
           merely delaying it. That is a different outcome, not a nuance of the same one, so it
-          is said twice — appended to the explanation, for the reader deciding, and stood on
-          screen under the row while the switch is on, for the one who already has. Left to
-          the "?" alone, the user learns it from an empty chat. `linePerMessage` needs nothing
-          similar: QQ clamps the split to its own budget and the reply still arrives. */}
+          is appended to this option's explanation — and only there. A standing strip under the
+          row would be the third thing on this form permanently explaining a channel to someone
+          who has already read it once; what belongs on screen is the switch, and what belongs
+          behind the "?" is why you might not want it. `linePerMessage` needs nothing similar:
+          QQ clamps the split to its own budget and the reply still arrives. */}
       <DeliveryOptionRow
         label={S.messaging.finalReplyOnly}
         help={
@@ -962,16 +963,6 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
         checked={delivery.finalReplyOnly}
         onChange={(v) => patchDelivery({ finalReplyOnly: v })}
       />
-      {/* Rendered by the state it describes, so it is on screen exactly while the loss it
-          names is possible and nowhere else. */}
-      {channel === "qq" && delivery.finalReplyOnly && (
-        <p
-          role="alert"
-          className={`rounded-md border px-2.5 py-1.5 text-xs ${toneStrip.attention}`}
-        >
-          {S.messaging.finalReplyOnlyQQWarning}
-        </p>
-      )}
       <DeliveryOptionRow
         label={S.messaging.linePerMessage}
         help={S.messaging.linePerMessageHelp}

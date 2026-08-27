@@ -50,9 +50,11 @@ the previous behaviour.
   spends that window on the run: a run that outlives it delivers nothing, where the
   every-message relay would have sent whatever completed inside it. That is a different
   outcome rather than a shade of the same one — silence on the other two channels, lost
-  output here — so on QQ it is said twice rather than left to these notes: appended to the
-  option's explanation, for the reader deciding, and stood under the row as a warning strip
-  while the switch is actually on. `linePerMessage` needs no such warning: QQ clamps the split
+  output here — so on QQ it is appended to the option's own explanation rather than left to
+  these notes. Only there: a standing strip under the row would be one more line permanently
+  explaining a channel to someone who has already read it once, where what belongs on screen is
+  the switch and what belongs behind the "?" is why you might not want it.
+  `linePerMessage` needs no such warning: QQ clamps the split
   to its own budget and the reply still arrives.
 - The `approval_request` notice is not an assistant message and is unaffected — a run blocked on
   approval is exactly when the chat has to hear something. The other fixed notices and the test
