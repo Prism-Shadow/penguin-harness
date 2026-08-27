@@ -23,7 +23,7 @@ import path from "node:path";
 import { Hono } from "hono";
 import type { Context, MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { bodyLimitBytes } from "./services/attachment-limits.js";
+import { bodyLimitBytes, toAttachmentLimits } from "./services/attachment-limits.js";
 import type { DatabaseSync } from "node:sqlite";
 import type { ServerConfig } from "./config.js";
 import { applyProxySettings, mergedNoProxy } from "./net/proxy.js";
@@ -847,6 +847,10 @@ export function buildAppDeps(
     // The same service the Files panel reads through: mirroring a file the reply mentions
     // must obey exactly the containment rules browsing it does, not a second copy of them.
     files: workspaceFiles,
+    root: config.root,
+    // Read through per message, not snapshotted: these are admin-settable, and every other
+    // caller resolves them per request so a change applies without a restart.
+    attachmentLimits: () => toAttachmentLimits(serverSettingsRepo.getAttachmentLimitsMb()),
     channels,
     runner: manager,
     connectors: [

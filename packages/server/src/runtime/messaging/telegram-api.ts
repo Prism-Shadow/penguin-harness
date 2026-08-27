@@ -1,7 +1,7 @@
 /**
  * The Telegram Bot API seam: the methods the Telegram connector uses (`getMe`,
- * `getWebhookInfo`, `sendMessage`, `getUpdates`, the file download behind an inbound photo,
- * and the `sendPhoto` / `sendDocument` uploads behind an outbound one),
+ * `getWebhookInfo`, `sendMessage`, `getUpdates`, the file download behind an inbound photo
+ * or document, and the `sendPhoto` / `sendDocument` uploads behind an outbound one),
  * behind an injectable transport so unit
  * tests substitute a fake and never open real network. Telegram needs no SDK — the Bot API is plain HTTPS
  * POSTs against https://api.telegram.org — so the production transport is a thin fetch
@@ -15,6 +15,15 @@ import { MessagingMediaTooLargeError, collectUnderCap } from "./media.js";
 
 /** Telegram Bot API host. Deliberately not configurable: bindings carry only the token. */
 export const TELEGRAM_API_BASE = "https://api.telegram.org";
+
+/**
+ * The largest file the Bot API will serve a BOT through `getFile`, whatever the sender was
+ * allowed to upload. Past it the call is refused with a 400 whose only signal is prose
+ * Telegram is free to reword, so the connector caps its own transfers here instead: a size
+ * refusal the user can act on ("send something smaller") must not reach them as an
+ * unexplained download failure.
+ */
+export const TELEGRAM_MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024;
 
 /** One credential set (a binding's stored token, or a test request's draft). */
 export interface TelegramCredentials {
@@ -69,6 +78,19 @@ export interface TelegramPhotoSize {
   file_size?: number;
 }
 
+/**
+ * An inbound `document` — a file the sender chose to send AS a file. The Bot API models it
+ * separately from `audio` / `video` / `voice` precisely because those are media it re-encodes
+ * for playback, and this is the only one of them that carries the sender's own name.
+ */
+export interface TelegramDocument {
+  file_id: string;
+  /** The sender's file name. Optional on the wire; a client that sends none leaves it absent. */
+  file_name?: string;
+  /** The Bot API marks it optional, so it can only refuse a transfer early, never authorize one. */
+  file_size?: number;
+}
+
 /** The slice of a Bot API `Message` the connector consumes. */
 export interface TelegramMessage {
   message_id: number;
@@ -105,6 +127,8 @@ export interface TelegramMessage {
   is_topic_message?: boolean;
   /** Size variants of an inbound photo, smallest first; absent for every other message kind. */
   photo?: TelegramPhotoSize[];
+  /** An inbound file sent as a file; absent for every other message kind. */
+  document?: TelegramDocument;
   /** The text sent WITH a photo (or another media message) — a text message carries `text` instead. */
   caption?: string;
   /**
@@ -190,10 +214,17 @@ export interface TelegramBotClient {
    * endpoint serves the bytes. That second URL is not the method endpoint — it is
    * `/file/bot<token>/<file_path>` — and it embeds the bot token, so no failure here may
    * ever echo it (see fetchErrorText). Throws when the transfer fails or exceeds
-   * `maxBytes`; the Bot API itself refuses to serve a bot anything over 20MB this way, so
-   * whichever ceiling is lower is the one that bites.
+   * `maxBytes`; the Bot API itself refuses to serve a bot anything over 20MB this way
+   * (TELEGRAM_MAX_DOWNLOAD_BYTES), so whichever ceiling is lower is the one that bites.
+   *
+   * `what` names the transfer in a size error, so the chat and the log say which kind of
+   * thing was refused. It never carries the URL, which embeds the token.
    */
-  getFileBytes(args: { fileId: string; maxBytes: number }): Promise<TelegramFileBytes>;
+  getFileBytes(args: {
+    fileId: string;
+    maxBytes: number;
+    what?: string;
+  }): Promise<TelegramFileBytes>;
   /**
    * Sends a picture into a chat as a photo, so it renders inline. Multipart upload from
    * bytes rather than by URL — the file lives in a Workspace this server can read and
@@ -421,7 +452,7 @@ export function createTelegramTransport(opts: TelegramTransportOpts = {}): Teleg
             // The overall deadline must outlive the server-side long poll.
             { signal, timeoutMs: (timeoutSec + 15) * 1000 },
           ),
-        async getFileBytes({ fileId, maxBytes }): Promise<TelegramFileBytes> {
+        async getFileBytes({ fileId, maxBytes, what = "The file" }): Promise<TelegramFileBytes> {
           const file = await call<TelegramFile>("getFile", { file_id: fileId });
           if (file.file_path === undefined || file.file_path === "") {
             throw new Error("getFile failed: this file cannot be downloaded");
@@ -429,7 +460,7 @@ export function createTelegramTransport(opts: TelegramTransportOpts = {}): Teleg
           // The declared size refuses an oversized transfer before it starts; the capped
           // read below is what actually holds, since the claim can be absent or wrong.
           if (file.file_size !== undefined && file.file_size > maxBytes) {
-            throw new MessagingMediaTooLargeError("The image", maxBytes);
+            throw new MessagingMediaTooLargeError(what, maxBytes);
           }
           let res: Awaited<ReturnType<TelegramFetch>>;
           try {
@@ -446,7 +477,7 @@ export function createTelegramTransport(opts: TelegramTransportOpts = {}): Teleg
           if (!res.ok || res.body === null) {
             throw new Error(`file download failed: HTTP ${res.status}`);
           }
-          const data = await collectUnderCap(bodyChunks(res.body), maxBytes, "The image");
+          const data = await collectUnderCap(bodyChunks(res.body), maxBytes, what);
           return { data, filePath: file.file_path };
         },
         async sendPhoto({ chatId, fileName, data }): Promise<void> {

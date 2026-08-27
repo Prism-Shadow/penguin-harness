@@ -82,9 +82,19 @@ export function sniffImageMime(bytes: Uint8Array): string | null {
  * too large or the download failed".
  */
 export class MessagingMediaTooLargeError extends Error {
+  /**
+   * The ceiling that actually refused this transfer, which is not necessarily the one the
+   * caller asked for: a connector may narrow it further because its own platform does (the
+   * Bot API serves a bot no file over 20MB, whatever the server would accept). The notice
+   * has to name the number that bit, or it sends the user to shrink a file against a limit
+   * that was never the one in the way.
+   */
+  readonly maxBytes: number;
+
   constructor(what: string, maxBytes: number) {
     super(`${what} is larger than the ${Math.floor(maxBytes / (1024 * 1024))}MB limit`);
     this.name = "MessagingMediaTooLargeError";
+    this.maxBytes = maxBytes;
   }
 }
 

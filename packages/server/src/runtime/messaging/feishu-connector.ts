@@ -5,14 +5,15 @@
  * (injectable for tests — see feishu-sdk.ts), and the reduction of
  * `im.message.receive_v1` events to the bridge's normalized inbound shape (text extracted
  * from the content JSON and its mention placeholders resolved — see resolveFeishuMentions,
- * an `image` message's `image_key` turned into a lazy download handle; anything else
- * reads as neither text nor image).
+ * an `image` message's `image_key` and a `file` message's `file_key` each turned into a
+ * lazy download handle; anything else reads as neither text, image nor file).
  */
 import type {
   MessagingChannelConnector,
   MessagingClient,
   MessagingConnection,
   MessagingConnectorHandlers,
+  MessagingInboundFile,
   MessagingInboundImage,
 } from "./connector.js";
 import type { FeishuApiClient, FeishuCredentials, FeishuMention, FeishuSdk } from "./feishu-sdk.js";
@@ -136,6 +137,27 @@ function imageKeyOfContent(content: string): string | null {
   }
 }
 
+/**
+ * The key and display name of a `file` message's content JSON (null when unparseable or
+ * keyless — a message whose file cannot be addressed is not a file message as far as this
+ * connector is concerned).
+ *
+ * Feishu names the file in the event itself, so the sender's own name reaches the model
+ * without a second call. `file` is the fallback for an event that carries none: an
+ * invented extension would tell the model the bytes are something they are not.
+ */
+function fileOfContent(content: string): { fileKey: string; fileName: string } | null {
+  try {
+    const parsed = JSON.parse(content) as { file_key?: unknown; file_name?: unknown };
+    if (typeof parsed.file_key !== "string" || parsed.file_key === "") return null;
+    const fileName =
+      typeof parsed.file_name === "string" && parsed.file_name !== "" ? parsed.file_name : "file";
+    return { fileKey: parsed.file_key, fileName };
+  } catch {
+    return null;
+  }
+}
+
 export class FeishuConnector implements MessagingChannelConnector {
   readonly channel = "feishu" as const;
 
@@ -202,12 +224,34 @@ export class FeishuConnector implements MessagingChannelConnector {
                     }),
                 },
               ];
+        // `file` only, of the several types that carry a `file_key`. `audio` (a voice
+        // recording) and `media` (a video) are re-encoded for playback and named by nothing
+        // the sender chose — handing them over as `[attached file: …]` paths would offer a
+        // capability that is not there, since nothing downstream decodes or transcribes
+        // them. A recording the user genuinely wants the Agent to have arrives as a `file`
+        // the moment they send it as one, which is a menu item away.
+        const file = evt.messageType === "file" ? fileOfContent(evt.content) : null;
+        const files: MessagingInboundFile[] =
+          file === null
+            ? []
+            : [
+                {
+                  fileName: file.fileName,
+                  fetch: async (maxBytes) =>
+                    (await api()).fetchMessageFile({
+                      messageId: evt.messageId,
+                      fileKey: file.fileKey,
+                      maxBytes,
+                    }),
+                },
+              ];
         return handlers.onMessage({
           chatId: evt.chatId,
           chatKind: evt.chatType === "p2p" ? "direct" : "group",
           messageId: evt.messageId,
           text: raw === null ? null : resolveFeishuMentions(raw, evt.mentions, botOpenId),
           ...(images.length > 0 ? { images } : {}),
+          ...(files.length > 0 ? { files } : {}),
           ...(evt.senderName !== undefined ? { senderName: evt.senderName } : {}),
         });
       },

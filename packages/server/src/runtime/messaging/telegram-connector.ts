@@ -41,6 +41,7 @@ import type {
   MessagingClient,
   MessagingConnection,
   MessagingConnectorHandlers,
+  MessagingInboundFile,
   MessagingInboundImage,
   MessagingInboundMessage,
   MessagingSendNote,
@@ -56,7 +57,7 @@ import type {
   TelegramTransport,
   TelegramUpdate,
 } from "./telegram-api.js";
-import { TelegramApiError } from "./telegram-api.js";
+import { TELEGRAM_MAX_DOWNLOAD_BYTES, TelegramApiError } from "./telegram-api.js";
 
 /** The Telegram binding's stored config document (`messaging_bindings.config_json`). */
 export interface TelegramBindingConfig extends Record<string, unknown> {
@@ -288,10 +289,24 @@ function largestPhoto(sizes: readonly TelegramPhotoSize[]): TelegramPhotoSize | 
 }
 
 /**
+ * The ceiling one inbound transfer actually runs under: the caller's, or Telegram's own
+ * download limit where that is tighter.
+ *
+ * Applied here rather than left to the Bot API because of what the API does past it — a 400
+ * whose only signal is prose, which would reach the chat as an unexplained download failure
+ * when the truth is a size the sender can act on. For a photo the two numbers happen to be
+ * equal (the server's inline-image ceiling is also 20MB); for a document the server's
+ * per-file attachment cap is far larger, so this is the number that bites.
+ */
+function downloadCap(maxBytes: number): number {
+  return Math.min(maxBytes, TELEGRAM_MAX_DOWNLOAD_BYTES);
+}
+
+/**
  * One update reduced to the bridge's normalized shape; null for updates that are not chat
- * messages. `bot` is captured by an inbound photo's `fetch`, so the bytes are pulled only
- * if the bridge asks for them. `me` is this bot's own account (null before the first `getMe`
- * of a connection has answered), used only to recognize its own mention.
+ * messages. `bot` is captured by an inbound photo's or document's `fetch`, so the bytes are
+ * pulled only if the bridge asks for them. `me` is this bot's own account (null before the
+ * first `getMe` of a connection has answered), used only to recognize its own mention.
  */
 function normalizeUpdate(
   update: TelegramUpdate,
@@ -311,11 +326,44 @@ function normalizeUpdate(
             fetch: async (maxBytes) => {
               const { data, filePath } = await bot.getFileBytes({
                 fileId: photo.file_id,
-                maxBytes,
+                maxBytes: downloadCap(maxBytes),
+                what: "The image",
               });
               // Telegram re-encodes what it serves as a photo, so the served path's
               // extension is the type; JPEG is what that re-encoding almost always yields.
               return { data, mimeType: imageMimeOfName(filePath) ?? "image/jpeg" };
+            },
+          },
+        ];
+  // `document` only, of the media fields an update can carry. A document is a file the
+  // sender chose to send AS a file, and the only one of them that carries the sender's own
+  // name; `audio`, `video`, `voice` and `video_note` are streams Telegram re-encodes for
+  // playback (a `voice` is a nameless opus blob), and handing one to the Agent as an
+  // `[attached file: …]` path would offer a capability that is not there — nothing
+  // downstream decodes or transcribes it. What a sender actually wants delivered arrives
+  // here the moment they attach it as a file, which is one menu item away; anything else
+  // keeps the not-supported notice, which at least says so.
+  //
+  // A picture dragged in uncompressed is a `document` too, and lands as an attachment
+  // rather than as an inline image: the sender asked for the original bytes to arrive, and
+  // the model opens the path with `read_image` like any other file.
+  const doc = msg.document ?? null;
+  const files: MessagingInboundFile[] =
+    doc === null
+      ? []
+      : [
+          {
+            // Absent for a client that sent none. `document` is the fallback rather than a
+            // name derived from the served path, whose extension Telegram picks: a guess
+            // that reads as the sender's own name is worse than an obvious placeholder.
+            fileName: doc.file_name ?? "document",
+            fetch: async (maxBytes) => {
+              const { data } = await bot.getFileBytes({
+                fileId: doc.file_id,
+                maxBytes: downloadCap(maxBytes),
+                what: "The file",
+              });
+              return data;
             },
           },
         ];
@@ -326,19 +374,19 @@ function normalizeUpdate(
     chatId: chatRefOf(msg.chat.id, topicId),
     chatKind: msg.chat.type === "private" ? "direct" : "group",
     messageId: replyRefOf(msg.chat.id, msg.message_id, topicId),
-    // A text message carries `text`; a PHOTO carries its words in `caption` instead, which
-    // is that message's text as far as the bridge is concerned. Every other media kind
-    // (document, video, audio, voice, …) normalizes to null EVEN WHEN it has a caption:
-    // its bytes are not delivered, so running the model on the caption alone would answer
-    // confidently about a file it never received. A picture dragged in uncompressed
-    // arrives as a document, which makes that the common case rather than a corner one.
+    // A text message carries `text`; a photo or a document carries its words in `caption`
+    // instead, which is that message's text as far as the bridge is concerned. A caption on
+    // any OTHER media kind (video, audio, voice, …) normalizes to null: those bytes are not
+    // delivered, so running the model on the caption alone would answer confidently about a
+    // file it never received.
     text:
       typeof msg.text === "string"
         ? stripBotMention(msg.text, msg.entities, me)
-        : photo !== null && typeof msg.caption === "string"
+        : (photo !== null || doc !== null) && typeof msg.caption === "string"
           ? stripBotMention(msg.caption, msg.caption_entities, me)
           : null,
     ...(images.length > 0 ? { images } : {}),
+    ...(files.length > 0 ? { files } : {}),
     ...(senderName !== undefined ? { senderName } : {}),
   };
 }

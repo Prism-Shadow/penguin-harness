@@ -37,14 +37,16 @@ import {
 /**
  * The capture points that put the refusal in front of the person in the chat.
  *
- * `messaging_image_fetch_failed` answers the sender in the chat it came from (see
- * messagingImagePermissionNotice and its siblings), and `messaging_file_send_failed` names the
- * file that did not make it and why (see noteFileFailure). Every other code fails with the chat
- * hearing nothing at all — a reply that never went out, an inbound message whose Task never
- * started, a connection that will not come up — so the dashboard is where it has to be noticed.
+ * `messaging_image_fetch_failed` and `messaging_file_fetch_failed` answer the sender in the
+ * chat it came from (see messagingImagePermissionNotice and its siblings), and
+ * `messaging_file_send_failed` names the file that did not make it and why (see
+ * noteFileFailure). Every other code fails with the chat hearing nothing at all — a reply that
+ * never went out, an inbound message whose Task never started, a connection that will not come
+ * up — so the dashboard is where it has to be noticed.
  */
 const CODES_EXPLAINED_IN_CHAT = new Set([
   "messaging_image_fetch_failed",
+  "messaging_file_fetch_failed",
   "messaging_file_send_failed",
 ]);
 

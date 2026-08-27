@@ -4,7 +4,8 @@
  * and register in app assembly). A connector owns everything channel-specific — credential
  * shape, wire protocol, event normalization — and hands the bridge a channel-neutral
  * view: a client for outbound sends and credential checks, and a long-lived event
- * connection delivering normalized inbound messages.
+ * connection delivering normalized inbound messages (text, images and files, each as far as
+ * the channel actually carries them).
  *
  * Config documents are the repo's stored per-channel JSON (`MessagingBindingRow.config`);
  * every connector method validates its own shape and throws a readable error on a
@@ -44,6 +45,33 @@ export interface MessagingInboundImage {
   fetch(maxBytes: number): Promise<MessagingInboundImageData>;
 }
 
+/**
+ * A non-image file attached to an inbound message: a handle, not the bytes, for exactly the
+ * reasons MessagingInboundImage is one — a redelivery is dropped before anything is
+ * transferred, and the cap rides into `fetch` so an oversized attachment is refused at the
+ * byte that crosses it rather than buffered whole and measured afterwards. A file's ceiling
+ * is the server's per-file attachment limit, which is far larger than an image's, so the
+ * difference between refusing during and after the transfer is correspondingly larger.
+ *
+ * There is no MIME type on this seam. An image needs one because its bytes become a `data:`
+ * URL inside the conversation; a file's bytes go to the Session scratchpad and reach the
+ * model as a PATH, so the name's extension is the whole of what says what it is — and a
+ * channel's declared media type is the sender's claim about a file nothing here parses.
+ */
+export interface MessagingInboundFile {
+  /**
+   * The sender's own file name, extension included — what the model sees at the end of the
+   * `[attached file: …]` path, and what a refusal notice names. Channel text, so it is
+   * neither trusted nor pre-sanitized here: the attachment writer maps it onto a name that
+   * is safe on disk (see services/task-attachments.ts). A channel with no name for a file
+   * says so with a plain fallback rather than inventing one, since a made-up extension
+   * would tell the model the file is something it is not.
+   */
+  fileName: string;
+  /** Downloads the file; the same two failure shapes MessagingInboundImage.fetch documents. */
+  fetch(maxBytes: number): Promise<Buffer>;
+}
+
 /** One inbound chat message, normalized across channels. */
 export interface MessagingInboundMessage {
   /**
@@ -68,10 +96,12 @@ export interface MessagingInboundMessage {
    */
   messageId: string;
   /**
-   * The message's plain text; null for anything that carries none (stickers, voice,
-   * files, …) — a message with neither text nor images gets the not-supported notice.
-   * An image sent with a caption puts the caption here: the caption IS that message's
-   * text, so a channel needs no second field for it and the bridge no second rule.
+   * The message's plain text; null for anything that carries none (stickers, voice, …) — a
+   * message with no text, no image and no file gets the not-supported notice. An image or a
+   * file sent with a caption puts the caption here: the caption IS that message's text, so
+   * a channel needs no second field for it and the bridge no second rule. A channel that
+   * carries a caption on media it does NOT deliver must still report null, or the model
+   * answers a question about an attachment it never received.
    */
   text: string | null;
   /**
@@ -80,6 +110,16 @@ export interface MessagingInboundMessage {
    * message lists them in the order the user sees them.
    */
   images?: readonly MessagingInboundImage[];
+  /**
+   * Non-image files attached to this message, in the order the user sees them (absent or
+   * empty when there are none) — see MessagingInboundFile.
+   *
+   * Optional, like `images`, so a channel that delivers no files simply never populates it
+   * rather than carrying an empty list through its whole normalizer. A message may carry
+   * text, images and files together; the bridge composes one composer input out of whatever
+   * is there.
+   */
+  files?: readonly MessagingInboundFile[];
   /** Sender display name when the channel's event carries one. */
   senderName?: string;
 }

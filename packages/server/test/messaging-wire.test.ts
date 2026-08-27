@@ -144,6 +144,28 @@ describe("feishu adapter against the SDK's HTTP boundary", () => {
     expect(call.params).toEqual({ type: "image" });
   });
 
+  it("downloads a message file from the same endpoint, asked for as a `file` resource", async () => {
+    // The `type` param is the whole of the difference on the wire between an inbound image
+    // and an inbound file — and it is a query parameter the SDK serializes, which is
+    // exactly the layer a fake of our own seam stubs out along with the wire.
+    const DOC = Buffer.from("quarterly revenue: 42\n", "utf8");
+    const { http, calls } = larkHttp((url) =>
+      url.includes("tenant_access_token") ? TOKEN_ANSWER : { stream: DOC },
+    );
+    const client = await createLarkSdk({ httpInstance: http }).createClient(CREDS);
+    const out = await client.fetchMessageFile({
+      messageId: "om_wire_file",
+      fileKey: "file_v3_wire",
+      maxBytes: 20 * 1024 * 1024,
+    });
+    expect(out.equals(DOC)).toBe(true);
+    const call = calls.at(-1)!;
+    expect(call.url).toBe(
+      "https://open.feishu.cn/open-apis/im/v1/messages/om_wire_file/resources/file_v3_wire",
+    );
+    expect(call.params).toEqual({ type: "file" });
+  });
+
   it("reports the API's own refusal reason, which arrives as a STREAM (the shipped bug)", async () => {
     // A Feishu app that receives messages happily is still refused here until the resource
     // read scope is granted. Because the request asks for a stream, the ERROR body is a
