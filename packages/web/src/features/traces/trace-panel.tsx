@@ -23,6 +23,7 @@ import { DownloadIcon } from "../../components/ui/icons";
 import { EmptyState } from "../../components/ui/empty-state";
 import { Skeleton } from "../../components/ui/skeleton";
 import { ICON_SIZE } from "../../lib/icon-scale";
+import { toneStrip } from "../../lib/tone";
 import { TraceFileView } from "./trace-file-view";
 import {
   activeTraceFile,
@@ -70,7 +71,8 @@ export function TracePanel({
   // double-invoke (the tracker advances on the first run, whose fetch the cleanup cancels;
   // the second run then sees no edge and never refetches, leaving the skeleton up forever).
   // The selected pill survives a re-list while its file still exists; a vanished selection
-  // falls back to the newest file.
+  // falls back to the newest file, and the default is pinned to a real index as soon as the
+  // first listing arrives rather than left to that fallback.
   const [listTick, setListTick] = useState(0);
   const refresh = useRef(createTraceRefresh({ active, signal: reloadSignal }));
   useEffect(() => {
@@ -85,12 +87,22 @@ export function TracePanel({
       .getSessionTraces(session.sessionId)
       .then((res) => {
         if (cancelled) return;
-        setFiles(sortTraceFiles(res.files));
+        const sorted = sortTraceFiles(res.files);
+        setFiles(sorted);
+        // Pin the default the first time a listing arrives. Left as null the selection is
+        // "whatever activeTraceFile falls back to" — the newest file, re-resolved on every
+        // re-list — so a compaction shard appearing mid-run would move a reader who never
+        // clicked a pill onto the new file, remounting the view below onto a different index
+        // and taking its collapsed rounds, pinned row and scroll position with it. Pinned,
+        // only a pill click moves the selection.
+        setFileIndex((cur) => cur ?? sorted[0]?.index ?? null);
         setError(null);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        setFiles([]);
+        // The listing already on screen is kept: this fires on every settled turn now, so a
+        // blip mid-read must not unmount the pills and the view below it. Only a first load
+        // (files still null) has nothing to fall back to.
         setError(apiErrorText(err));
       });
     return () => {
@@ -101,7 +113,11 @@ export function TracePanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, listTick, session.sessionId]);
 
+  // The failure owns the whole panel only where there is nothing to keep: no listing yet
+  // (here), or a listing with no file in it (below). With a file on screen it is a strip
+  // above it instead.
   if (files === null) {
+    if (error !== null) return <EmptyState title={S.tracePanel.loadFailed} description={error} />;
     return (
       <div className="space-y-3 p-4">
         <Skeleton className="h-5 w-2/3" />
@@ -110,14 +126,11 @@ export function TracePanel({
     );
   }
 
-  if (error !== null) {
-    return <EmptyState title={S.tracePanel.loadFailed} description={error} />;
-  }
-
   // null only when the Session has produced no Trace at all: a re-list that dropped the
   // selected file falls back to the newest one rather than emptying the panel.
   const activeFile = activeTraceFile(files, fileIndex);
   if (activeFile === null) {
+    if (error !== null) return <EmptyState title={S.tracePanel.loadFailed} description={error} />;
     return <EmptyState title={S.tracePanel.empty} description={S.tracePanel.emptyHint} />;
   }
 
@@ -126,6 +139,13 @@ export function TracePanel({
   return (
     <div className="min-h-0 flex-1 overflow-y-auto p-3">
       <div className="space-y-3">
+        {/* A re-list that failed keeps everything below it and says so here; the listing on
+            screen is the last one that arrived, so it may be a turn or two behind. */}
+        {error !== null && (
+          <p className={`rounded-md border px-2.5 py-1.5 text-xs ${toneStrip.danger}`}>
+            {S.tracePanel.loadFailed} · {error}
+          </p>
+        )}
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="mr-1 text-xs text-gray-400">{S.traces.filesTitle}</span>
           {visibleFiles.map((f) => (

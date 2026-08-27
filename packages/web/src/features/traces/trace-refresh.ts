@@ -74,6 +74,11 @@ export function sortTraceFiles<T extends { index: number }>(files: readonly T[])
  * by index rather than by the listed object, so a re-list — which returns fresh objects, and
  * usually the SAME file at a larger size — leaves the pick where the user put it; a pick that
  * vanished (a Trace deleted out from under the panel) falls back instead of blanking the view.
+ *
+ * A null `selected` is only ever the state BEFORE the first listing arrives: the panel pins the
+ * newest file as the default the moment one does. The fallback re-resolves on every re-list, so
+ * leaving it unpinned would walk a reader who never clicked a pill onto a freshly rotated
+ * compaction shard the instant one appeared.
  */
 export function activeTraceFile<T extends { index: number }>(
   files: readonly T[],
