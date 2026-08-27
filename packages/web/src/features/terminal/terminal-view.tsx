@@ -17,6 +17,7 @@ import "@xterm/xterm/css/xterm.css";
 import type { ITheme, Terminal as XTerminal } from "@xterm/xterm";
 import { TerminalOpcode, decodeFrame, encodeFrame, encodeResize } from "./terminal-frames";
 import { LinkClickTracker, openTerminalLink, positionFromPointer } from "./terminal-links";
+import { writeClipboard } from "../../lib/clipboard";
 import { useTheme } from "../../state/theme";
 import { currentPlatform } from "../../lib/shortcuts/platform";
 import { keymap } from "../../lib/shortcuts/store";
@@ -370,7 +371,7 @@ export function TerminalView({
       const copySelection = (): void => {
         const selection = term.getSelection();
         if (!selection) return;
-        void navigator.clipboard?.writeText(selection).catch(() => {});
+        void writeClipboard(selection);
         term.clearSelection();
       };
       /** Async-clipboard paste (the paths where no native paste event exists). */
