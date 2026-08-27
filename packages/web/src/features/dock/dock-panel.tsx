@@ -749,7 +749,11 @@ export function DockPanel({
       onConfirm={killConfirmed}
       confirmLabel={S.terminal.killShell}
     >
-      {confirmKill !== null && <p>{S.dock.killConfirmBody(confirmKill.label)}</p>}
+      {confirmKill !== null && (
+        <p className="break-words text-sm text-gray-600 dark:text-gray-300">
+          {S.dock.killConfirmBody(confirmKill.label)}
+        </p>
+      )}
     </ConfirmModal>
   );
 
