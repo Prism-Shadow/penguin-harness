@@ -3192,6 +3192,30 @@ export interface PluginReadmeResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Plugin-contributed languages
+// ---------------------------------------------------------------------------
+
+/**
+ * One language a plugin contributes, as the listing reports it. The grammar itself is not
+ * here: it is tens to hundreds of kilobytes, and only the languages a conversation actually
+ * shows are worth fetching (`GET /api/languages/:id/grammar`).
+ */
+export interface LanguageSummary {
+  /** Canonical id: the fence info string, and the id both endpoints address. */
+  id: string;
+  displayName: string;
+  /** Alternative fence info strings, needed BEFORE the grammar loads (it is what decides to load it). */
+  aliases?: string[];
+  /** File plugins without the dot, for the Workspace file viewer. */
+  plugins?: string[];
+}
+
+/** GET /api/languages: every language this App's plugins contributed, by id. */
+export interface LanguageIndexResponse {
+  languages: LanguageSummary[];
+}
+
+// ---------------------------------------------------------------------------
 // Version and self-update
 // ---------------------------------------------------------------------------
 
