@@ -26,6 +26,7 @@ import {
   sanitizeTitle,
   stripConversationMarkers,
   tokenUsage,
+  truncateTitle,
 } from "@prismshadow/penguin-core";
 import type { ServerEvent } from "../api/types.js";
 import type { SessionsRepo } from "../db/repos/sessions.js";
@@ -207,15 +208,16 @@ export class TitleGenerator implements TitleNotifier {
   }
 }
 
-/** Cap on the fallback title's length (same bound the LLM path's sanitizeTitle enforces). */
-const FALLBACK_MAX_CHARS = 30;
-
 /**
  * Fallback title: take the material's first non-empty line, truncate it to the first few
  * words, and sanitize; if sanitizing empties it out (pure punctuation, etc.) fall back to
  * the truncated line itself; returns null if all-whitespace. Exported for the Trace
  * listing's title fallback (trace-service derives a title from the first user prompt of
  * Sessions the DB has no title for) so both fallbacks stay one algorithm.
+ *
+ * The cut and the sanitizing are core's (`truncateTitle` / `sanitizeTitle`), the same pair the
+ * LLM path runs over the model's output: this line is the user's own text, so it keeps
+ * anything the model output would have had stripped as prompt residue.
  */
 export function fallbackTitle(text: string): string | null {
   // Strip machine markers first: a skill invocation prepends a `[use_skills]` block, so the
@@ -231,7 +233,7 @@ export function fallbackTitle(text: string): string | null {
     /^["'“”‘’「」『』《》〈〉【】()（）。.．!！?？;；,，、:：\s]+/,
     "",
   );
-  const cut = truncateAtWord(lead || collapsed);
+  const cut = truncateTitle(lead || collapsed);
   // sanitizeTitle strips a pure-punctuation line down to empty — in that case keep the truncated line, guaranteeing "a title is always obtained".
   return sanitizeTitle(cut) ?? cut;
 }
@@ -245,35 +247,4 @@ export function fallbackTitle(text: string): string | null {
  */
 function isAttachmentLine(line: string): boolean {
   return matchAttachedImageLine(line) !== null || matchAttachedFileLine(line) !== null;
-}
-
-/**
- * Truncates to `FALLBACK_MAX_CHARS`, avoiding a mid-word cut: when the boundary splits an
- * ASCII word the cut backs up to the last space instead. CJK text has no spaces and every
- * character stands alone, so a plain character cut is already a word cut there.
- *
- * A character outside the BMP (an emoji, a rare CJK ideograph) is two UTF-16 units, and a cut
- * between them leaves a lone surrogate, which has no UTF-8 encoding: SQLite stores U+FFFD in
- * its place and the SSE frame carries the same replacement. The boundary therefore steps back
- * one unit rather than splitting the pair.
- */
-function truncateAtWord(text: string): string {
-  if (text.length <= FALLBACK_MAX_CHARS) return text;
-  const end = splitsSurrogatePair(text, FALLBACK_MAX_CHARS)
-    ? FALLBACK_MAX_CHARS - 1
-    : FALLBACK_MAX_CHARS;
-  const cut = text.slice(0, end);
-  const wordChar = /[A-Za-z0-9'’_-]/;
-  if (wordChar.test(text[end]!) && wordChar.test(cut[cut.length - 1]!)) {
-    const lastSpace = cut.lastIndexOf(" ");
-    if (lastSpace > 0) return cut.slice(0, lastSpace).trimEnd();
-  }
-  return cut.trimEnd();
-}
-
-/** True when index `i` falls between the high and low halves of one surrogate pair. */
-function splitsSurrogatePair(text: string, i: number): boolean {
-  const high = text.charCodeAt(i - 1);
-  const low = text.charCodeAt(i);
-  return high >= 0xd800 && high <= 0xdbff && low >= 0xdc00 && low <= 0xdfff;
 }

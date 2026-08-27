@@ -98,13 +98,17 @@ describe("session-title", () => {
     expect(prompt).toContain("use the language of the <user> text, and never translate it");
     expect(prompt).toContain("English user text gets an English title");
     expect(prompt).toContain("Chinese user text gets a Chinese title");
-    // Material with no topic has an answer available, so conversing is not the only move left.
-    expect(prompt).toContain('"hi" → Greeting');
-    expect(prompt).toContain("打招呼");
+    // Material with no topic has an answer available, so conversing is not the only move left;
+    // its examples close the bullet, so nothing is punctuated onto either exemplar — a
+    // `Greeting;` demonstrates precisely the trailing punctuation the next rule forbids.
+    expect(prompt).toContain('name the act, as in "hi" → Greeting and "你好" → 打招呼\n');
     // Constraints carried over unchanged.
     expect(prompt).toContain("at most 6 words");
     expect(prompt).toContain("no quotes, no trailing punctuation");
-    expect(prompt).toContain("do not think aloud");
+    // The last rule read before the lead-in asks for the title, not for an answer — "answer"
+    // being the verb every rule above it is spent suppressing.
+    expect(prompt).toContain("- Respond with the title immediately — do not think aloud");
+    expect(prompt).not.toMatch(/^- Answer\b/m);
   });
 
   it("buildTitlePrompt: clips each excerpt, and a delimiter written inside the material cannot close the fence", () => {
@@ -145,7 +149,7 @@ describe("session-title", () => {
     expect(answered).not.toContain("records a turn that has not happened");
   });
 
-  it("a 你好-shaped first turn is titled, not answered: the material is a transcript and the model's title survives sanitizing", async () => {
+  it("a 你好-shaped first turn is sent as a transcript: fenced material, a recorded absence, and the lead-in last", async () => {
     const seen: string[] = [];
     const result = await generateTitleWithLLM(
       fakeLLM([assistantText("打招呼")], { status: "completed" }, seen),
@@ -195,22 +199,67 @@ describe("session-title", () => {
     expect(seen[0]).toContain("<assistant>\n(the assistant has not replied yet)\n</assistant>");
   });
 
-  it("sanitizeTitle: strips quotes/punctuation to a fixed point, collapses whitespace, truncates overlong input, returns null for empty", () => {
+  it("generateTitleWithLLM: drops a Title: label the model restated, however it is decorated", async () => {
+    const titled = async (output: string) =>
+      (
+        await generateTitleWithLLM(fakeLLM([assistantText(output)]), {
+          userText: "u",
+          assistantText: "",
+        })
+      ).title;
+    expect(await titled("Title: Greeting")).toBe("Greeting");
+    // A chat-tuned model asked to continue `Title:` answers with the label in bold at least as
+    // often as bare; the markdown must not shield it from the anchor.
+    expect(await titled("**Title:** Greeting")).toBe("Greeting");
+    expect(await titled("## Title: Greeting")).toBe("Greeting");
+    expect(await titled('"Title: Build config notes"')).toBe("Build config notes");
+    expect(await titled("标题：打招呼")).toBe("打招呼");
+    // The label with nothing after it is not a title.
+    expect(await titled("Title:")).toBeNull();
+    // A leaked marker block sits between the start of the output and the label.
+    expect(await titled("[use_skills]\nskills: web-design\n[/use_skills]\nTitle: Greeting")).toBe(
+      "Greeting",
+    );
+    // A word that merely starts with "Title" is not a label and is left alone.
+    expect(await titled("Titles of the chapters")).toBe("Titles of the chapters");
+  });
+
+  it("sanitizeTitle: strips quotes/markdown/punctuation to a fixed point, collapses whitespace, returns null for empty", () => {
     expect(sanitizeTitle("“ Build config notes 。”")).toBe("Build config notes");
     expect(sanitizeTitle("『Title』！")).toBe("Title");
     expect(sanitizeTitle("  \n ")).toBeNull();
-    expect(sanitizeTitle("x".repeat(50))).toHaveLength(30);
-    // The prompt's `Title:` lead-in restated by the model is dropped, however it is decorated.
-    expect(sanitizeTitle("Title: Greeting")).toBe("Greeting");
-    expect(sanitizeTitle('"Title: Build config notes"')).toBe("Build config notes");
-    expect(sanitizeTitle("标题：打招呼")).toBe("打招呼");
-    expect(sanitizeTitle("Title:")).toBeNull();
-    // A word that merely starts with "Title" is not a label and is left alone.
-    expect(sanitizeTitle("Titles of the chapters")).toBe("Titles of the chapters");
+    // Markdown decoration comes off both ends, and the fixed point sees what it uncovers.
+    expect(sanitizeTitle("**Greeting**")).toBe("Greeting");
+    expect(sanitizeTitle("### Greeting")).toBe("Greeting");
+    expect(sanitizeTitle("- `Greeting`")).toBe("Greeting");
+    expect(sanitizeTitle("~~“Greeting”~~")).toBe("Greeting");
+    // Only the leading class drops `#`: a title can legitimately end in one.
+    expect(sanitizeTitle("# Learning C#")).toBe("Learning C#");
+    // Prompt-agnostic: the host runs this over the user's own first line, where a `Title:` is
+    // the user's words. Only the LLM path drops the label its own lead-in provokes.
+    expect(sanitizeTitle("Title: Chapter One draft")).toBe("Title: Chapter One draft");
+    expect(sanitizeTitle("标题：项目计划书初稿")).toBe("标题：项目计划书初稿");
     // A leaked [use_skills] block is stripped from the model output.
     expect(
       sanitizeTitle("[use_skills]\nskills: web-design\n[/use_skills]\nBuild a landing page"),
     ).toBe("Build a landing page");
+  });
+
+  it("sanitizeTitle: caps length without splitting a surrogate pair or ending on a space", () => {
+    expect(sanitizeTitle("x".repeat(50))).toHaveLength(30);
+    // The emoji straddles the boundary: a plain slice would leave its high half alone, which
+    // has no UTF-8 encoding — SQLite and the SSE frame both carry U+FFFD in its place.
+    const emoji = sanitizeTitle(`${"a".repeat(29)}🎉x`)!;
+    expect(emoji).toBe("a".repeat(29));
+    expect(emoji).not.toMatch(/[\uD800-\uDFFF]/);
+    // The 6-word rule routinely produces titles past the cap; the cut backs off the word it
+    // lands in, and never leaves the space in front of it behind.
+    expect(sanitizeTitle("Debugging the Telegram poller conflict")).toBe(
+      "Debugging the Telegram poller",
+    );
+    // CJK has no spaces and every character stands alone, so the cap is a plain character cut.
+    const cjk = "帮我修复数据库连接超时的问题然后写一个测试用例覆盖它再检查一下配置文件";
+    expect(sanitizeTitle(cjk)).toBe(cjk.slice(0, 30));
   });
 
   it("Session.generateTitle: sends via createBareLLM; returns null when no factory is provided", async () => {

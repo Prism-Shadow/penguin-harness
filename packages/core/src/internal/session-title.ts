@@ -9,9 +9,11 @@
  * responsible for the prompt format, driving the one-off request, and sanitizing the result —
  * when to generate a title and where to store it is decided by the host (Web server / CLI).
  * The narrow public surface — `SessionTitleResult` (part of `Session.generateTitle`'s
- * signature) and `sanitizeTitle` — is re-exported by the barrel; the prompt/request
- * internals are not. Marker stripping (`stripConversationMarkers`) lives with the markers
- * module, keeping every tag's producer, parser and stripper in one place.
+ * signature), `sanitizeTitle` and `truncateTitle` — is re-exported by the barrel; the
+ * prompt/request internals are not. The two cleaners are public because a host derives a
+ * fallback title from the user's own first line and has to cut it the same way. Marker
+ * stripping (`stripConversationMarkers`) lives with the markers module, keeping every tag's
+ * producer, parser and stripper in one place.
  */
 import { userText } from "../omnimessage/index.js";
 import { stripConversationMarkers } from "../omnimessage/markers/index.js";
@@ -25,8 +27,15 @@ import type { LLMInterface } from "../interfaces/index.js";
 
 /** Cap on conversation text spliced into the title request (user/model each truncated separately, to control cost). */
 const EXCERPT_MAX_CHARS = 2000;
-/** Cap on title length (fallback truncation for when the model occasionally ignores the constraint). */
+/** Cap on title length (fallback truncation for when the model occasionally ignores the constraint, and the bound a host's own fallback title is cut to). */
 const TITLE_MAX_CHARS = 30;
+
+/**
+ * Quoting, bracketing and markdown a model wraps a title in, stripped from the front of one —
+ * and from in front of a restated label, which is otherwise unreachable behind it: a chat-tuned
+ * model asked to continue `Title:` very commonly answers `**Title:** …`.
+ */
+const LEADING_DECORATION_RE = /^["'“”‘’「」『』《》〈〉【】()（）*#`~\-\s]+/;
 
 /**
  * The tags that delimit the material inside the title Prompt. The excerpts are text a user —
@@ -109,9 +118,13 @@ export function buildTitlePrompt(userExcerpt: string, assistantExcerpt: string):
       : []),
     "- Language: use the language of the <user> text, and never translate it — English user text gets an English title, Chinese user text gets a Chinese title. The assistant's language does not decide this.",
     "- Length: at most 6 words, or about 16 characters for CJK.",
-    '- Material with no topic — a greeting, an "ok", a lone emoji — still gets a title: name the act. "hi" → Greeting; "你好" → 打招呼.',
+    // The examples close the bullet, and no punctuation abuts either one: a `Greeting;` shown
+    // as an exemplar is a demonstration of the trailing punctuation the next rule forbids.
+    '- Material with no topic — a greeting, an "ok", a lone emoji — still gets a title: name the act, as in "hi" → Greeting and "你好" → 打招呼',
     "- Output the title alone: no quotes, no trailing punctuation, no explanation, no preamble.",
-    "- Answer immediately — do not think aloud or produce chain-of-thought.",
+    // "Answer" is the verb the rules above spend their length suppressing, and this is the last
+    // one read before the lead-in; the demand is named as the title it wants instead.
+    "- Respond with the title immediately — do not think aloud or produce chain-of-thought.",
     "",
     // The empty think block makes many reasoning models treat their thinking phase as already
     // closed, so the one-off request spends its budget on the title itself. It sits just above
@@ -123,24 +136,62 @@ export function buildTitlePrompt(userExcerpt: string, assistantExcerpt: string):
   return lines.join("\n");
 }
 
-/** Sanitizes model output into a title: strips any leaked marker blocks, a re-stated `Title:` label, and leading/trailing quotes/brackets and trailing punctuation (until stable), collapses whitespace, and truncates if too long; returns null for an empty result. */
+/**
+ * Sanitizes a title: strips any leaked marker blocks, then leading/trailing quotes, brackets and
+ * markdown decoration plus trailing punctuation (until stable), collapses whitespace, and
+ * truncates if too long; returns null for an empty result.
+ *
+ * Nothing here is specific to the title Prompt — a host runs it over the user's own first line
+ * too — so a rule that only exists because of something this module asks the model to do (the
+ * restated `Title:` label) stays out of it and lives with the request instead.
+ */
 export function sanitizeTitle(raw: string): string | null {
   let t = stripConversationMarkers(raw).replace(/\s+/g, " ").trim();
   // Stripping quotes can expose more punctuation underneath (or vice versa), so strip repeatedly until stable.
   for (let prev = ""; prev !== t;) {
     prev = t;
     t = t
-      .replace(/^["'“”‘’「」『』《》〈〉【】()（）\s]+/, "")
-      // The Prompt ends on a `Title:` lead-in, and a model that restates the label before its
-      // answer would otherwise put it in the session list. Dropping a label is deterministic;
-      // deciding whether an output is a reply rather than a title is not, and is not attempted.
-      .replace(/^(?:title|标题)\s*[:：]\s*/i, "")
-      .replace(/["'“”‘’「」『』《》〈〉【】()（）\s]+$/, "")
+      .replace(LEADING_DECORATION_RE, "")
+      // The trailing class omits `#`: a title can legitimately end in one (`Learning C#`),
+      // while the closing `#` of an ATX heading is not something a chat model writes.
+      .replace(/["'“”‘’「」『』《》〈〉【】()（）*`~\-\s]+$/, "")
       .replace(/[。.．!！?？;；,，、:：]+$/, "")
       .trim();
   }
   if (!t) return null;
-  return t.length > TITLE_MAX_CHARS ? t.slice(0, TITLE_MAX_CHARS) : t;
+  return truncateTitle(t);
+}
+
+/**
+ * Truncates a title to `TITLE_MAX_CHARS`, avoiding a mid-word cut: when the boundary splits an
+ * ASCII word the cut backs up to the last space instead. CJK text has no spaces and every
+ * character stands alone, so a plain character cut is already a word cut there.
+ *
+ * A character outside the BMP (an emoji, a rare CJK ideograph) is two UTF-16 units, and a cut
+ * between them leaves a lone surrogate, which has no UTF-8 encoding: SQLite stores U+FFFD in
+ * its place and the SSE frame carries the same replacement. The boundary therefore steps back
+ * one unit rather than splitting the pair.
+ *
+ * Both titles a Session can end up with are cut here — the model's own output, and the host's
+ * fallback taken from the user's first line — so neither can be the one that gets it wrong.
+ */
+export function truncateTitle(text: string): string {
+  if (text.length <= TITLE_MAX_CHARS) return text;
+  const end = splitsSurrogatePair(text, TITLE_MAX_CHARS) ? TITLE_MAX_CHARS - 1 : TITLE_MAX_CHARS;
+  const cut = text.slice(0, end);
+  const wordChar = /[A-Za-z0-9'’_-]/;
+  if (wordChar.test(text[end]!) && wordChar.test(cut[cut.length - 1]!)) {
+    const lastSpace = cut.lastIndexOf(" ");
+    if (lastSpace > 0) return cut.slice(0, lastSpace).trimEnd();
+  }
+  return cut.trimEnd();
+}
+
+/** True when index `i` falls between the high and low halves of one surrogate pair. */
+function splitsSurrogatePair(text: string, i: number): boolean {
+  const high = text.charCodeAt(i - 1);
+  const low = text.charCodeAt(i);
+  return high >= 0xd800 && high <= 0xdbff && low >= 0xdc00 && low <= 0xdfff;
 }
 
 /**
@@ -188,7 +239,23 @@ export async function generateTitleWithLLM(
         : { ...r };
     }
   }
-  return { title: sanitizeTitle(collected), usage };
+  return { title: sanitizeTitle(dropRestatedLabel(collected)), usage };
+}
+
+/**
+ * Drops a `Title:` / `标题：` label the model restated before its answer, along with whatever it
+ * decorated the label with. The Prompt ends on a bare `Title:` lead-in, so a model that writes
+ * the label out again would otherwise put it in the session list — but the rule exists only
+ * because of that lead-in, which is why it sits here and not in `sanitizeTitle`, whose other
+ * caller cleans the user's own first line, where `Title: Chapter One draft` is the title.
+ * Marker blocks come off first: a leaked one would sit between the start of the output and the
+ * label. Dropping a label is deterministic; deciding whether an output is a reply rather than a
+ * title is not, and is not attempted.
+ */
+function dropRestatedLabel(raw: string): string {
+  return stripConversationMarkers(raw)
+    .replace(LEADING_DECORATION_RE, "")
+    .replace(/^(?:title|标题)\s*[:：]\s*/i, "");
 }
 
 function isAssistantText(msg: OmniMessage): msg is OmniMessage<TextPayload> {
