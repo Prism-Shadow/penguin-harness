@@ -46,7 +46,7 @@ penguin config model add --provider deepseek --model-id deepseek-v4-flash --api-
 penguin web
 ```
 
-服务运行在 http://127.0.0.1:7364 并自动打开浏览器（`--no-open` 跳过）。首次登录使用 `admin`，初始密码（形如 `penguin-1234`）在改掉之前每次启动服务端都会以边框提示打印，请立即修改密码。`penguin server` 启动同一进程的 headless 版本。
+服务运行在 http://127.0.0.1:7364 并自动打开浏览器（`--no-open` 跳过）。账号是 `admin`，此时它还没有密码：服务端会以边框提示打印一条首次登录链接，打开即以登录态进入，随后设置密码即可。在密码被设置之前该链接一直有效（上限 30 天，重启会打印新的），可以重复打开。`penguin server` 启动同一进程的 headless 版本。
 
 界面的完整说明见 [Web App 指南](/web-app)。
 

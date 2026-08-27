@@ -1,6 +1,6 @@
 /**
  * Auth middleware: `Authorization: Bearer <local API token>` -> the built-in admin, or
- * cookie -> auth_session -> user; either way the user is injected into c.var.
+ * session cookie -> auth_sessions row -> user; either way the user is injected into c.var.
  *
  * The Bearer path authenticates the boot's local API token (`<root>/api-token`, see
  * auth/api-token.ts) as the admin — the CLI's and agents' machine-local credential; it
@@ -10,13 +10,11 @@
  * credential would mask misconfiguration.
  *
  * Accessing a protected API while logged out -> 401 `{error:{code:"unauthorized"}}`.
- * CSRF (MVP): SameSite=Lax cookie + write requests only accept
- * `Content-Type: application/json` (an HTML form can't forge that Content-Type),
- * see the README security notes. The Content-Type guard stays for Bearer requests too —
- * the CLI always sends application/json.
+ * CSRF: SameSite=Lax plus a Content-Type an HTML form cannot forge (see jsonOnlyWrites).
+ * That guard stays for Bearer requests too — the CLI always sends application/json.
  */
 import type { MiddlewareHandler } from "hono";
-import { getCookie } from "hono/cookie";
+import { getCookie, setCookie } from "hono/cookie";
 import { HttpError } from "../http/errors.js";
 import type { UserRow } from "../db/repos/users.js";
 import type { AuthService, SessionVia } from "./service.js";
@@ -24,11 +22,37 @@ import type { AuthService, SessionVia } from "./service.js";
 /** Session cookie name. */
 export const SESSION_COOKIE = "penguin_session";
 
+/**
+ * Session cookie attributes, shared by every path that sets one. `maxAge` comes from the
+ * service that issues the sessions, never written here: the ROW carries the authoritative
+ * expiry, and a cookie that expired first would log someone out mid-session.
+ */
+export function cookieOptions(
+  c: { req: { url: string; header(name: string): string | undefined } },
+  ttlMs: number,
+  trustProxy: boolean,
+) {
+  // `x-forwarded-proto` is caller-supplied and untrusted unless the deployment opts in
+  // (config.trustProxy — the same gate hmr/routes.ts uses, and for the same reason). Trusting
+  // it on a plain-HTTP bind would let anyone reaching the port get a Secure cookie back, which
+  // the browser then refuses to send over that connection: a sign-in that never takes.
+  const proto = trustProxy
+    ? (c.req.header("x-forwarded-proto") ?? new URL(c.req.url).protocol.replace(":", ""))
+    : new URL(c.req.url).protocol.replace(":", "");
+  return {
+    httpOnly: true,
+    sameSite: "Lax" as const,
+    path: "/",
+    maxAge: Math.floor(ttlMs / 1000),
+    ...(proto === "https" ? { secure: true } : {}),
+  };
+}
+
 /** Hono env: variables injected by the auth middleware. */
 export type AppEnv = {
   Variables: {
     user: UserRow;
-    /** How the current session was established ("password" | "desktop"); legacy rows read as "password". */
+    /** How the current session was established — see {@link SessionVia}. */
     sessionVia: SessionVia;
   };
 };
@@ -38,7 +62,7 @@ export function currentUser(c: { var: { user: UserRow } }): UserRow {
   return c.var.user;
 }
 
-export function authMiddleware(auth: AuthService): MiddlewareHandler<AppEnv> {
+export function authMiddleware(auth: AuthService, trustProxy: boolean): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
     // Bearer first: an explicit credential on the request outranks ambient cookies, and
     // a wrong one is an error, never a silent fallback (see the module doc).
@@ -58,6 +82,11 @@ export function authMiddleware(auth: AuthService): MiddlewareHandler<AppEnv> {
     if (!authed) {
       throw new HttpError(401, "unauthorized", "Not signed in or the sign-in has expired.");
     }
+    // Sliding renewal: the session's expiry was topped up in place, so refresh the cookie's
+    // own max-age to match. The token value is unchanged — same session, longer life.
+    if (authed.renewed && token) {
+      setCookie(c, SESSION_COOKIE, token, cookieOptions(c, auth.sessionTtlMs, trustProxy));
+    }
     c.set("user", authed.user);
     c.set("sessionVia", authed.via);
     await next();
@@ -74,12 +103,11 @@ export function bearerToken(header: string | undefined): string | null {
 const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 /**
- * Content-Types write requests may carry. application/json is the default
- * for the whole API; application/gzip and application/octet-stream are the
- * hot-update web push's binary artifact transport (packages/server/src/hmr) —
- * like application/json, neither is one of the three Content-Types an HTML
- * form can forge (application/x-www-form-urlencoded, multipart/form-data,
- * text/plain), so allowing them here does not reopen the CSRF gap below.
+ * CSRF defense: a write must carry one of these Content-Types, none of which an HTML form can
+ * forge (a form is limited to x-www-form-urlencoded, multipart/form-data, text/plain). json is
+ * the API default; gzip and octet-stream are the hot-update web push's artifact transport
+ * (src/hmr). A write with NO Content-Type and an empty body is let through — a form always
+ * sends a form-type one.
  */
 const ALLOWED_WRITE_CONTENT_TYPES = [
   "application/json",
@@ -87,12 +115,6 @@ const ALLOWED_WRITE_CONTENT_TYPES = [
   "application/octet-stream",
 ];
 
-/**
- * Content-Type defense for write requests: a write request with a Content-Type
- * other than one of ALLOWED_WRITE_CONTENT_TYPES is rejected (a request with no
- * Content-Type and an empty body is let through — an HTML form always carries
- * a form-type Content-Type).
- */
 export const jsonOnlyWrites: MiddlewareHandler = async (c, next) => {
   if (WRITE_METHODS.has(c.req.method)) {
     const contentType = c.req.header("content-type")?.toLowerCase();

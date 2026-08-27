@@ -67,9 +67,11 @@ describe("auth", () => {
     await expect(
       fs.access(path.join(t.root, "default_project", "agents", "default_agent", "agent_state")),
     ).resolves.toBeUndefined();
-    // Seeding is idempotent: re-seeding returns null and does not create a duplicate account.
-    expect(await t.deps.authService.seedAdmin()).toBeNull();
+    // Seeding is idempotent: re-seeding neither duplicates the account nor rerolls its
+    // password — the original still signs in.
+    await t.deps.authService.seedAdmin();
     expect(t.deps.db.prepare("SELECT COUNT(*) AS n FROM users").get()?.n).toBe(1);
+    await loginAdmin(t.app);
   });
 
   it("admin-created: default Project is <userId>-default_project, name defaults", async () => {
@@ -150,6 +152,33 @@ describe("auth", () => {
     await loginUser(t.app, "dave", "new-password-1");
   });
 
+  it("ignores x-forwarded-proto for the Secure flag unless the proxy is trusted", async () => {
+    // Caller-supplied, and untrusted by default (the stance hmr/routes.ts states). Trusting
+    // it would let anyone who can reach a plain-HTTP port make the server hand out a Secure
+    // cookie the browser then refuses to send back over that same connection.
+    const login = await t.app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-proto": "https" },
+      body: JSON.stringify({ userId: "admin", password: TEST_ADMIN_PASSWORD }),
+    });
+    expect(login.status).toBe(200);
+    expect(login.headers.get("set-cookie")).not.toContain("Secure");
+
+    // With the deployment opting in, the same header is honored.
+    const trusting = await createTestApp({ config: { trustProxy: true } });
+    try {
+      const res = await trusting.app.request("/api/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-forwarded-proto": "https" },
+        body: JSON.stringify({ userId: "admin", password: TEST_ADMIN_PASSWORD }),
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers.get("set-cookie")).toContain("Secure");
+    } finally {
+      await trusting.cleanup();
+    }
+  });
+
   it("write requests reject non-JSON Content-Type (CSRF defense)", async () => {
     const res = await t.app.request("/api/auth/login", {
       method: "POST",
@@ -169,30 +198,6 @@ describe("auth", () => {
       prefs: { theme: string };
     };
     expect(got.prefs.theme).toBe("dark");
-  });
-
-  it("seedAdmin without an injected password generates penguin-<4 digits> and returns it", async () => {
-    // Bypass the fixed test password: null matches the production default (random generation).
-    const fresh = await createTestApp({ config: { seedAdminPassword: null } });
-    try {
-      expect(fresh.adminPassword).toMatch(/^penguin-\d{4}$/);
-      // The returned password is the one that actually logs in.
-      await loginUser(fresh.app, "admin", fresh.adminPassword);
-      // Users exist now: re-seeding reports that nothing was seeded.
-      expect(await fresh.deps.authService.seedAdmin()).toBeNull();
-    } finally {
-      await fresh.cleanup();
-    }
-  });
-
-  it("seedAdmin honors the injected seedAdminPassword", async () => {
-    const fresh = await createTestApp({ config: { seedAdminPassword: "penguin-7777" } });
-    try {
-      expect(fresh.adminPassword).toBe("penguin-7777");
-      await loginUser(fresh.app, "admin", "penguin-7777");
-    } finally {
-      await fresh.cleanup();
-    }
   });
 
   it("seedAdmin rejects an override below the password policy before creating the account", async () => {
@@ -260,10 +265,23 @@ describe("auth", () => {
     }
   });
 
-  it("generateInitialAdminPassword matches penguin-<4 digits>", () => {
-    for (let i = 0; i < 32; i++) {
-      expect(generateInitialAdminPassword()).toMatch(/^penguin-\d{4}$/);
+  it("adminPasswordIs verifies the pin against the hash, not the config", async () => {
+    // Sole consumer is the startup notice gate: a pinned seed normally silences the
+    // first-login link, but an offline reset makes the pin stale — the gate must notice.
+    expect(await t.deps.authService.adminPasswordIs(TEST_ADMIN_PASSWORD)).toBe(true);
+    expect(await t.deps.authService.adminPasswordIs("not-the-password")).toBe(false);
+  });
+
+  it("generateInitialAdminPassword is 24 base64url characters, and never repeats", () => {
+    const seen = new Set<string>();
+    for (let i = 0; i < 64; i++) {
+      const password = generateInitialAdminPassword();
+      expect(password).toMatch(/^[A-Za-z0-9_-]{24}$/);
+      seen.add(password);
     }
+    // Drawn from randomBytes, not from a small printable space that a login endpoint could
+    // be walked through.
+    expect(seen.size).toBe(64);
   });
 
   it("PUT prefs shallow-merges without clobbering other writers' fields", async () => {

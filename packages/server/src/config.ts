@@ -9,7 +9,6 @@
  * detected to exist.
  * Docs: /docs/configuration § "Environment variables".
  */
-import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -41,20 +40,23 @@ export interface ServerConfig {
   previewOrigin: string | null;
   /**
    * Fixed initial password for the seeded built-in admin (PENGUIN_SEED_ADMIN_PASSWORD),
-   * used by automated tests and e2e; null (the norm) makes the seed generate a random
-   * `penguin-<4 digits>` password, printed once to the server console. In desktop mode
-   * an unpinned value resolves to a FULLY random password instead (never printed):
-   * sign-in there goes through the shell's one-shot token, so nobody needs to read the
-   * seed.
+   * used by automated tests and e2e. Null is the norm: the seed then generates a random
+   * password that is hashed and discarded unseen, and the account is claimed through the
+   * first-login link instead.
    */
   seedAdminPassword: string | null;
-  /** Login session validity period (7 days). */
+  /** Login session validity period (30 days). */
   authSessionTtlMs: number;
-  /** Sliding renewal threshold: if the remaining validity is below this value when validation succeeds, it's renewed to the full TTL (renews under 6 days). */
+  /**
+   * Sliding renewal threshold: a session validated with less than this much left is renewed to
+   * the full TTL. Set one day below the TTL, so any session used at least a day after it was
+   * issued renews — in practice a session in regular use never expires, and the TTL is the
+   * idle timeout.
+   */
   authSessionRenewMs: number;
   /**
    * Desktop mode (PENGUIN_DESKTOP_TOKEN): the per-launch token minted by the desktop
-   * shell. Non-null enables the one-shot desktop-login and Bearer-token shutdown
+   * shell. Non-null enables the one-shot claim link and the Bearer-token shutdown
    * endpoints and requires a loopback HOST — desktop mode passes the token through a
    * URL, which must never leave the machine.
    */
@@ -69,8 +71,11 @@ export interface ServerConfig {
    * Trust `x-forwarded-proto` from the request (PENGUIN_TRUST_PROXY=1). Off by default:
    * the header is caller-supplied, so on a non-loopback bind an untrusted caller could
    * set it to `https` to walk through the hot-update network gate (hmr/routes.ts) while
-   * actually speaking plaintext. Enable this only behind a reverse proxy that terminates
-   * TLS and either sets or strips the header itself before it reaches this process.
+   * actually speaking plaintext — or get session cookies stamped `Secure` over plain HTTP,
+   * which the browser then never sends back (a sign-in that never takes). Enable this only
+   * behind a reverse proxy that terminates TLS and either sets or strips the header itself
+   * before it reaches this process; an HTTPS deployment that leaves it off issues session
+   * cookies WITHOUT the `Secure` flag (auth/middleware.ts cookieOptions).
    */
   trustProxy: boolean;
 }
@@ -133,15 +138,10 @@ export function resolveServerConfig(env: NodeJS.ProcessEnv = process.env): Serve
     dbPath: env.PENGUIN_WEB_DB ?? path.join(root, "web.db"),
     webDist: env.PENGUIN_WEB_DIST ?? defaultWebDist(),
     previewOrigin: normalizePreviewOrigin(env.PENGUIN_PREVIEW_ORIGIN),
-    // An empty/whitespace value is treated as unset (→ random seed password). Desktop
-    // mode without a pinned value seeds a FULLY random password rather than the
-    // printable penguin-<4 digits>: desktop sign-in goes through the shell's token, so
-    // the seed never needs to be read — and index.ts deliberately does not print it.
-    seedAdminPassword:
-      env.PENGUIN_SEED_ADMIN_PASSWORD?.trim() ||
-      (desktopToken !== null ? randomBytes(24).toString("base64url") : null),
-    authSessionTtlMs: 7 * DAY_MS,
-    authSessionRenewMs: 6 * DAY_MS,
+    // An empty/whitespace value is treated as unset, which leaves the seed to generate one.
+    seedAdminPassword: env.PENGUIN_SEED_ADMIN_PASSWORD?.trim() || null,
+    authSessionTtlMs: 30 * DAY_MS,
+    authSessionRenewMs: 29 * DAY_MS,
     desktopToken,
     portFile: env.PENGUIN_PORT_FILE?.trim() || null,
     trustProxy: env.PENGUIN_TRUST_PROXY === "1",

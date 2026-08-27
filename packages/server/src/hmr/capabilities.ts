@@ -23,7 +23,8 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { Resources } from "@prismshadow/penguin-core/kernel";
 import type { ServerConfig } from "../config.js";
-import type { AuthService } from "../auth/service.js";
+import type { AuthRuntimeState } from "../auth/runtime-state.js";
+import { newAuthRuntimeState } from "../auth/runtime-state.js";
 import type { ChannelHub } from "../runtime/channel.js";
 import type { ProxySettings } from "../net/proxy.js";
 import type { BuildDepsOverrides } from "../app.js";
@@ -85,7 +86,6 @@ interface RuntimeInterfaces extends Interfaces {
   family: string;
   config: MembersOf<ServerConfig>;
   db: MembersOf<DatabaseSync>;
-  auth: MembersOf<AuthService>;
   channels: MembersOf<ChannelHub>;
   proxy: MembersOf<ProxyControl>;
   hmr: MembersOf<HmrHost>;
@@ -109,17 +109,6 @@ export const RUNTIME_INTERFACES: RuntimeInterfaces = {
     "trustProxy",
   ],
   db: ["prepare", "exec", "close"],
-  auth: [
-    "authenticateWithMeta",
-    "seedAdmin",
-    "adminPasswordIsInitial",
-    "login",
-    "logout",
-    "changePassword",
-    "loginDesktop",
-    "setPasswordDesktop",
-    "setProvisioner",
-  ],
   channels: ["get", "peek", "broadcast", "dispose", "setActivityProbe"],
   proxy: [],
   hmr: ["resources", "ensure", "resolveWebSource", "assetsDir", "dispose"],
@@ -177,7 +166,14 @@ export function lacksMembers(value: unknown, need: readonly string[]): string[] 
 
 export const RUNTIME_CONFIG_RESOURCE_ID = "runtime:config";
 export const RUNTIME_DB_RESOURCE_ID = "runtime:db";
-export const RUNTIME_AUTH_RESOURCE_ID = "runtime:auth-service";
+/**
+ * Process-scoped auth STATE (auth/runtime-state.ts), not an auth service: authentication is
+ * business behaviour the platform builds for itself, so it ships by push. Only the values that
+ * must ride across a swap and die at a restart live here. Claimed optionally — a runtime older
+ * than this resource simply gives the platform a fresh holder, which costs one reprint of the
+ * first-login link and nothing else.
+ */
+export const RUNTIME_AUTH_STATE_RESOURCE_ID = "runtime:auth-state";
 export const RUNTIME_CHANNELS_RESOURCE_ID = "runtime:channels";
 export const RUNTIME_PROXY_RESOURCE_ID = "runtime:proxy-control";
 export const RUNTIME_HMR_RESOURCE_ID = "runtime:hmr-host";
@@ -210,7 +206,7 @@ export const RESOURCE_IFACES_RESOURCE_ID = "resource-interfaces";
  * the current App — it is `hmr.ensure()`'s instance — and everything it needs from the
  * business side is an in-process member on that instance's api (`business()`,
  * `shutdown()`, `drained()`) or a hook the App installs over a claimed capability
- * (ChannelHub.setActivityProbe, AuthService.setProvisioner). A "current App" pointer in
+ * (ChannelHub.setActivityProbe). A "current App" pointer in
  * the registry was a duplicate of the host's own instance field, and the registry should
  * carry only what has no other channel: resources, capabilities, and the contract
  * declarations about them.
@@ -223,7 +219,8 @@ export type ProxyControl = (settings: ProxySettings) => void;
 export interface RuntimeCapabilities {
   config: ServerConfig;
   db: DatabaseSync;
-  authService: AuthService;
+  /** Process-scoped auth values; the AuthService itself is built per App (see buildAppDeps). */
+  authState: AuthRuntimeState;
   channels: ChannelHub;
   proxyControl: ProxyControl;
   hmr: HmrHost;
@@ -274,23 +271,30 @@ export function claimRuntimeCapabilities(resources: Resources): RuntimeClaim {
   if (mismatch !== null) return { kind: "refused", reason: mismatch };
   const config = resources.claim<ServerConfig>(RUNTIME_CONFIG_RESOURCE_ID);
   const db = resources.claim<DatabaseSync>(RUNTIME_DB_RESOURCE_ID);
-  const authService = resources.claim<AuthService>(RUNTIME_AUTH_RESOURCE_ID);
   const channels = resources.claim<ChannelHub>(RUNTIME_CHANNELS_RESOURCE_ID);
   const proxyControl = resources.claim<ProxyControl>(RUNTIME_PROXY_RESOURCE_ID);
   const hmr = resources.claim<HmrHost>(RUNTIME_HMR_RESOURCE_ID);
-  if (!config || !db || !authService || !channels || !proxyControl || !hmr) {
+  if (!config || !db || !channels || !proxyControl || !hmr) {
     return { kind: "refused", reason: "a declared capability was not actually published" };
   }
   // Desktop is nullable by meaning, so it sits outside the all-present check.
   const desktop = resources.claim<DesktopService | null>(RUNTIME_DESKTOP_RESOURCE_ID) ?? null;
   const overrides = resources.claim<BuildDepsOverrides>(RUNTIME_OVERRIDES_RESOURCE_ID) ?? {};
+  // Optional by design (see the resource's own note): an older runtime published no such
+  // holder, and a fresh one is a correct, slightly forgetful substitute. A runtime older
+  // than this platform may also publish a holder missing the fields added since; they are
+  // filled IN PLACE, never by copying — the bag is shared with the runtime by identity, and
+  // a copy would strand every write the App makes to it.
+  const authState =
+    resources.claim<AuthRuntimeState>(RUNTIME_AUTH_STATE_RESOURCE_ID) ?? newAuthRuntimeState();
+  authState.firstLoginToken ??= null;
+  authState.apiToken ??= null;
   // …then the objects themselves. A descriptor is a claim about what is there; this is
   // the part that checks it, so an honest-but-wrong runtime is caught here rather than at
   // the first call site. `desktop` is exempt when null — that is a value, not a shortfall.
   const live: Array<[string, unknown]> = [
     ["config", config],
     ["db", db],
-    ["auth", authService],
     ["channels", channels],
     ["proxy", proxyControl],
     ["hmr", hmr],
@@ -306,6 +310,6 @@ export function claimRuntimeCapabilities(resources: Resources): RuntimeClaim {
   }
   return {
     kind: "claimed",
-    caps: { config, db, authService, channels, proxyControl, hmr, desktop, overrides },
+    caps: { config, db, authState, channels, proxyControl, hmr, desktop, overrides },
   };
 }

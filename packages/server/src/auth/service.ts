@@ -1,23 +1,20 @@
 /**
- * Auth service: built-in admin seeding /
- * login / logout / password change / session validation.
+ * Auth service: admin seeding / login / logout / password change / session validation.
  *
- * - No open registration: on startup, if there are no users at all, the built-in
- *   admin `admin` is seeded with a random `penguin-<4 digits>` initial password
- *   (printed once by the startup entrypoint; PENGUIN_SEED_ADMIN_PASSWORD injects
- *   a fixed one for tests/e2e), and it adopts `default_project`; all other users
- *   are created by an admin via the user backend (admin-service).
- * - An initial password (whether seeded or set by an admin) is flagged with
- *   password_is_initial, which the frontend uses to prompt for a password change soon.
- * - Sessions: a 32-byte random token, with only its sha256 hash stored in the DB;
- *   valid for 7 days, with sliding renewal once less than 6 days remain.
+ * No open registration: an empty users table seeds `admin` with a random password hashed and
+ * discarded unseen, claimed through the first-login link; every other user is created by an
+ * admin. Sessions are rows in auth_sessions (cookie holds the token, the row its sha256), so
+ * they outlive a restart and renew in place.
  */
-import { createHash, randomBytes, randomInt } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { tokensEqual } from "./api-token.js";
 import type { UserInfo } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
-import type { AuthSessionsRepo } from "../db/repos/auth-sessions.js";
 import type { UserRow, UsersRepo } from "../db/repos/users.js";
+import { sessionTokenHash } from "../db/repos/auth-sessions.js";
+import type { SessionViaValue } from "../db/repos/auth-sessions.js";
+import type { AuthRuntimeState } from "./runtime-state.js";
+import type { AuthSessionsRepo } from "../db/repos/auth-sessions.js";
 import { SCRYPT_COST, hashPassword, verifyPassword } from "./password.js";
 
 export const MIN_PASSWORD_LENGTH = 8;
@@ -26,18 +23,11 @@ export const MIN_PASSWORD_LENGTH = 8;
 export const ADMIN_USER_ID = "admin";
 
 /**
- * Login throttling (per userId): the seeded initial password is `penguin-<4 digits>` —
- * 10,000 combinations — so unthrottled guessing would enumerate it in minutes. After
- * LOGIN_FREE_ATTEMPTS consecutive failures, the next attempt is admitted only after an
- * exponentially growing delay from the last failure (1s, 2s, … capped at 60s; attempts
- * inside the window are 429 `too_many_attempts` and do not extend it). Beyond ~40
- * failures that is one guess per minute, so the 10k space stops being enumerable, while
- * a legitimate user who mistyped a few times never waits more than the cap. A successful
- * login clears the counter. Counters are process memory (a restart clears them —
- * restarting is slower than waiting out the cap) and are kept for nonexistent userIds
- * too, so throttling is not an account-existence oracle. Known limit: a concurrent burst
- * can slip in before its first failure is recorded; the steady-state backoff still
- * dominates the search space.
+ * Login throttling, per userId. After LOGIN_FREE_ATTEMPTS failures each attempt waits an
+ * exponentially growing delay (1s doubling to a 60s cap), settling at a guess per minute.
+ * Kept for nonexistent userIds too, so it is not an account-existence oracle. Deliberately NOT
+ * covered: a concurrent burst before the first failure lands, and guesses spread across many
+ * accounts.
  */
 const LOGIN_FREE_ATTEMPTS = 5;
 const LOGIN_BACKOFF_START_MS = 1000;
@@ -45,27 +35,23 @@ const LOGIN_BACKOFF_CAP_MS = 60_000;
 /** Failure entries idle longer than this are swept (bounds the map; far above the cap). */
 const LOGIN_FAILURE_IDLE_MS = 15 * 60_000;
 
+/** Characters of base64url in a seeded password — 18 random bytes, 144 bits. */
+const SEED_PASSWORD_CHARS = 24;
+
 /**
- * Random initial password for the seeded admin: `penguin-<4 digits>` — brand-related and
- * easy to type, shown once in the server startup output (the README, docs and login-page
- * hint all describe this form).
+ * Never read or typed — hashed at once and discarded — which is what lets it be long enough
+ * that the login endpoint, reachable the moment the account exists, has no search space.
  */
 export function generateInitialAdminPassword(): string {
-  return "penguin-" + String(randomInt(0, 10000)).padStart(4, "0");
-}
-
-function sha256Hex(value: string): string {
-  return createHash("sha256").update(value).digest("hex");
+  return randomBytes(SEED_PASSWORD_CHARS).toString("base64url").slice(0, SEED_PASSWORD_CHARS);
 }
 
 /**
- * How a session was established: "password" via the login form, "desktop" via the
- * desktop shell's one-shot token, "token" via the local API token's Bearer header (no
- * stored session — the value is per request). Persisted per session (Bearer excepted) so
- * desktop-specific allowances (password change without the old password) apply only to
- * sessions the shell itself opened. Legacy rows (NULL) read as "password".
+ * "desktop" and "setup" may set a password without the old one (theirs is random and was never
+ * shown); desktop-only routes open to "desktop" alone. "token" is the local API token's Bearer
+ * header — per request, never a stored row. Anything else reads as "password".
  */
-export type SessionVia = "password" | "desktop" | "token";
+export type SessionVia = "password" | "desktop" | "setup" | "token";
 
 export function toUserInfo(row: UserRow): UserInfo {
   return {
@@ -79,60 +65,73 @@ export function toUserInfo(row: UserRow): UserInfo {
 export interface AuthServiceDeps {
   users: UsersRepo;
   authSessions: AuthSessionsRepo;
+  /**
+   * Process-scoped auth values (runtime-state.ts). Held by the RUNTIME so the link a boot
+   * printed survives a platform push; everything else about auth is rebuilt with the App.
+   */
+  state: AuthRuntimeState;
   /** Provisions the initial Project at signup (injected by project-service, to avoid a circular dependency). */
   provisionInitialProject: (user: UserRow, isAdmin: boolean) => Promise<void>;
   /** Fixed initial password for the seeded admin (config.seedAdminPassword); null generates a random one at seed time. */
   seedAdminPassword: string | null;
-  /**
-   * Fired after any successful password update (self change / desktop set). The server
-   * wires it to drop the stored initial-password plaintext once it goes stale (see
-   * initial-password.ts); standalone/test constructions may omit it.
-   */
-  onPasswordChanged?: (userId: string) => void;
   sessionTtlMs: number;
   sessionRenewMs: number;
-  /**
-   * Test double: scrypt work factor for hashes this service writes. Omitted in
-   * production, where {@link SCRYPT_COST} applies.
-   */
+  /** Test double: scrypt work factor for hashes this service writes (SCRYPT_COST in production). */
   passwordHashCost?: number;
   now?: () => Date;
 }
 
 export class AuthService {
-  /**
-   * What a fresh user is provisioned with is business policy, answered by the CURRENT
-   * App: the platform installs its answer at create over the claimed auth capability
-   * (ordinary capability use, not a registry entry), and each swap's successor overwrites
-   * it. Starts as the constructor-supplied fallback so standalone/test constructions
-   * keep working unchanged.
-   */
-  private provisioner: (user: UserRow, isAdmin: boolean) => Promise<void>;
-
   private readonly now: () => Date;
   private readonly hashCost: number;
+  /** Session lifetime, for the cookie that must expire WITH the session, not before it. */
+  get sessionTtlMs(): number {
+    return this.deps.sessionTtlMs;
+  }
 
   constructor(private readonly deps: AuthServiceDeps) {
-    this.provisioner = deps.provisionInitialProject;
     this.now = deps.now ?? (() => new Date());
     this.hashCost = deps.passwordHashCost ?? SCRYPT_COST;
+    this.deps.authSessions.deleteExpired(this.now().toISOString());
   }
 
   /**
-   * Startup seeding (idempotent): creates the built-in admin and adopts
-   * default_project when the users table is empty; if the initial Project fails,
-   * the user row is rolled back and the server retries on next startup.
-   * Returns the initial password when it actually seeded — the caller prints it,
-   * the only place a generated password is ever shown — and null when users
-   * already exist.
+   * Null once the server is claimed, so the only setup session that exists is a printed one.
+   * On demand rather than in the constructor: seedAdmin() runs after it, so "claimed?" has no
+   * answer there. A cached link whose row is gone is re-minted, not handed out dead.
    */
-  async seedAdmin(): Promise<string | null> {
-    if (this.deps.users.count() > 0) return null;
+  mintFirstLogin(): string | null {
+    if (!this.adminPasswordIsInitial()) return null;
+    if (
+      this.deps.state.firstLoginToken !== null &&
+      this.authenticateWithMeta(this.deps.state.firstLoginToken) === null
+    ) {
+      this.deps.state.firstLoginToken = null;
+    }
+    this.deps.state.firstLoginToken ??= this.issueSession(ADMIN_USER_ID, "setup");
+    return this.deps.state.firstLoginToken;
+  }
+
+  /**
+   * For the startup notice's pinned-seed gate (index.ts): a pin usually means the operator
+   * knows the password, but an offline reset makes it stale, and the gate must see through
+   * that or the rescue link stays suppressed.
+   */
+  async adminPasswordIs(password: string): Promise<boolean> {
+    const row = this.deps.users.findById(ADMIN_USER_ID);
+    return row !== null && (await verifyPassword(password, row.passwordHash));
+  }
+
+  /**
+   * Startup seeding (idempotent): creates the built-in admin and adopts default_project when
+   * the users table is empty; if the initial Project fails, the user row is rolled back and
+   * the server retries on next startup.
+   */
+  async seedAdmin(): Promise<void> {
+    if (this.deps.users.count() > 0) return;
     const password = this.deps.seedAdminPassword ?? generateInitialAdminPassword();
-    // The override (PENGUIN_SEED_ADMIN_PASSWORD) must meet the same policy as every
-    // other initial/reset password; rejecting it here, before any insert, keeps a
-    // configuration typo from creating a trivially weak privileged account. Generated
-    // passwords are always 12 characters and never trip this.
+    // A pinned override must meet the same policy as every other password — rejected before
+    // any insert, so a configuration typo cannot create a trivially weak privileged account.
     if (password.length < MIN_PASSWORD_LENGTH) {
       throw new Error(
         `PENGUIN_SEED_ADMIN_PASSWORD must be at least ${MIN_PASSWORD_LENGTH} characters.`,
@@ -147,20 +146,25 @@ export class AuthService {
     };
     this.deps.users.insert(user);
     try {
-      await this.provisioner(user, true);
+      await this.deps.provisionInitialProject(user, true);
     } catch (err) {
       this.deps.users.delete(user.userId);
       throw err;
     }
-    return password;
   }
 
-  /** Installs the current App's provisioning policy (see the `provisioner` field). */
-  setProvisioner(provision: (user: UserRow, isAdmin: boolean) => Promise<void>): void {
-    this.provisioner = provision;
+  /**
+   * Compared against the printed value, not merely verified: a cookie made out of ANY valid
+   * token would let one person hand another a link into the sender's account. Not single-use,
+   * because a prefetching browser would burn it before its reader clicked.
+   */
+  redeemFirstLogin(given: string): string | null {
+    const expected = this.deps.state.firstLoginToken;
+    if (expected === null || given === "" || !tokensEqual(given, expected)) return null;
+    return this.authenticateWithMeta(expected) === null ? null : expected;
   }
 
-  /** Whether the built-in admin still runs on its initial password (drives the startup reminder notice). */
+  /** Whether the built-in admin still runs on its initial password (gates the first-login link). */
   adminPasswordIsInitial(): boolean {
     return this.deps.users.findById(ADMIN_USER_ID)?.passwordIsInitial === true;
   }
@@ -206,114 +210,124 @@ export class AuthService {
   }
 
   /**
-   * Desktop-mode sign-in: issues an admin session WITHOUT a password check — the caller
-   * (the desktop-login route) has already redeemed the shell's one-shot token, which is
-   * the credential here. Throws if the admin has not been seeded yet (desktop-login runs
-   * after startup seeding, so this only trips on a broken deployment).
+   * Desktop-mode sign-in: an admin session with no password check — the claim route already
+   * redeemed the shell's one-shot token, which is the credential here. Throws only on a
+   * broken deployment (seeding runs before the route exists).
    */
   loginDesktop(): { user: UserInfo; token: string } {
     const row = this.deps.users.findById(ADMIN_USER_ID);
     if (!row) {
       throw new HttpError(500, "internal", "Built-in admin has not been seeded.");
     }
-    this.deps.authSessions.deleteExpired(this.now().toISOString());
     return { user: toUserInfo(row), token: this.issueSession(row.userId, "desktop") };
   }
 
-  /** Self password change (user settings): validates the old password, and on success clears the initial-password flag; the current session remains valid. */
+  /** Self password change (user settings): validates the old password first; the current session stays valid. */
   async changePassword(userId: string, oldPassword: string, newPassword: string): Promise<void> {
     const row = this.deps.users.findById(userId);
     if (!row || !(await verifyPassword(oldPassword, row.passwordHash))) {
       throw new HttpError(400, "password_mismatch", "Current password is incorrect.");
     }
-    if (newPassword.length < MIN_PASSWORD_LENGTH) {
-      throw new HttpError(400, "invalid_password", "Password must be at least 8 characters.");
-    }
-    this.deps.users.updatePassword(userId, await hashPassword(newPassword, this.hashCost), false);
-    this.deps.onPasswordChanged?.(userId);
+    await this.setPassword(userId, newPassword);
+  }
+
+  /** No old-password check; the me route gates which sessions may call this. */
+  async setInitialPassword(userId: string, newPassword: string): Promise<void> {
+    await this.setPassword(userId, newPassword);
   }
 
   /**
-   * Desktop-session password set: no old-password check. Only reachable for sessions
-   * established via desktop-login (the me route gates on sessionVia) — the seed password
-   * of a desktop-created root is random and never shown, so its holder has nothing to
-   * type into an old-password field; the shell's token already proved machine ownership.
+   * Validation comes FIRST, so a rejected password leaves the first-login link alive: burning
+   * it on a typo would strand the claimer until a restart.
    */
-  async setPasswordDesktop(userId: string, newPassword: string): Promise<void> {
+  private async setPassword(userId: string, newPassword: string): Promise<void> {
     if (newPassword.length < MIN_PASSWORD_LENGTH) {
       throw new HttpError(400, "invalid_password", "Password must be at least 8 characters.");
     }
     this.deps.users.updatePassword(userId, await hashPassword(newPassword, this.hashCost), false);
-    this.deps.onPasswordChanged?.(userId);
+    // A successful set proves at least what the successful login that resets the counter
+    // proves (the old password, or a desktop/setup session), so it resets it too. Without
+    // this, anyone spamming the login endpoint holds the backoff window open, and the sign-in
+    // that follows a first-login claim (routes/me.ts) would 429 AFTER the password committed —
+    // reporting failure for a change that took, with the claimer's setup session already gone.
+    this.loginFailures.delete(userId);
+    // EVERY first-login session for this account, not just the link this process printed: an
+    // earlier boot's link can still be live in a terminal scrollback, and a `setup` session is
+    // allowed to change the password without knowing the old one — so one left behind is an
+    // account takeover waiting to happen.
+    if (userId === ADMIN_USER_ID) {
+      this.deps.authSessions.deleteByUserAndVia(userId, "setup");
+      this.deps.state.firstLoginToken = null;
+    }
   }
 
+  /** Ends a session: the row is the session, so logout deletes it. Unknown token is a no-op. */
   logout(token: string): void {
-    this.deps.authSessions.delete(sha256Hex(token));
+    this.deps.authSessions.delete(sessionTokenHash(token));
   }
 
   /**
-   * The boot-scoped local API token (`<root>/api-token`, see auth/api-token.ts): held in
-   * memory by the process that minted it. Null until the startup assembly installs it
-   * (standalone/test constructions without one simply never authenticate a Bearer
-   * header).
+   * The current boot's local API token (what control-env injection hands to tool
+   * subprocesses); null when none was minted. It lives on the runtime state, not on this
+   * service: the token was written to `<root>/api-token` by the process, so it must
+   * outlive the App a push replaces (auth/runtime-state.ts).
    */
-  private apiToken: string | null = null;
-
-  /** Installs the boot's local API token (called once by the startup assembly). */
-  setLocalApiToken(token: string): void {
-    this.apiToken = token;
-  }
-
-  /** The current boot's local API token (what control-env injection hands to tool subprocesses); null when none was installed. */
   localApiToken(): string | null {
-    return this.apiToken;
+    return this.deps.state.apiToken;
   }
 
   /**
    * Validates a Bearer token against the boot's local API token (constant-time compare):
    * a match authenticates as the built-in admin — holding the token proves filesystem
    * access to the data root, which is admin authority (see auth/api-token.ts). Returns
-   * null on mismatch, when no token is installed, or when the admin row is missing.
+   * null on mismatch, when no token was minted, or when the admin row is missing.
    */
   authenticateApiToken(token: string): { user: UserRow; via: SessionVia } | null {
-    if (this.apiToken === null || token.length === 0) return null;
-    if (!tokensEqual(token, this.apiToken)) return null;
+    const apiToken = this.deps.state.apiToken;
+    if (apiToken === null || token.length === 0) return null;
+    if (!tokensEqual(token, apiToken)) return null;
     const user = this.deps.users.findById(ADMIN_USER_ID);
     return user === null ? null : { user, via: "token" };
   }
 
-  /** Validates the cookie token: returns null if expired/unknown; sliding renewal once less than 6 days remain. */
-  authenticateWithMeta(token: string): { user: UserRow; via: SessionVia } | null {
-    const tokenHash = sha256Hex(token);
+  /**
+   * Validates the cookie token. Sliding renewal tops the expiry up IN PLACE, so the cookie
+   * value never changes and there is no second identity to revoke. Only a session whose own
+   * span reaches the renewal window slides — a one-hour minted token must expire at its hour,
+   * not stretch by being used.
+   */
+  authenticateWithMeta(token: string): { user: UserRow; via: SessionVia; renewed: boolean } | null {
+    const tokenHash = sessionTokenHash(token);
     const session = this.deps.authSessions.findByTokenHash(tokenHash);
     if (!session) return null;
     const now = this.now();
     const expiresAt = Date.parse(session.expiresAt);
-    if (!(expiresAt > now.getTime())) {
+    if (expiresAt <= now.getTime()) {
       this.deps.authSessions.delete(tokenHash);
       return null;
     }
-    if (expiresAt - now.getTime() < this.deps.sessionRenewMs) {
+    const user = this.deps.users.findById(session.userId);
+    if (!user) return null;
+    const renewable = expiresAt - Date.parse(session.createdAt) >= this.deps.sessionRenewMs;
+    let renewed = false;
+    if (renewable && expiresAt - now.getTime() < this.deps.sessionRenewMs) {
       this.deps.authSessions.touch(
         tokenHash,
         new Date(now.getTime() + this.deps.sessionTtlMs).toISOString(),
       );
+      renewed = true;
     }
-    const user = this.deps.users.findById(session.userId);
-    if (!user) return null;
-    return { user, via: session.via === "desktop" ? "desktop" : "password" };
+    const via: SessionVia =
+      session.via === "desktop" ? "desktop" : session.via === "setup" ? "setup" : "password";
+    return { user, via, renewed };
   }
 
-  private issueSession(userId: string, via: SessionVia): string {
-    const token = randomBytes(32).toString("base64url");
-    const now = this.now();
-    this.deps.authSessions.insert({
-      tokenHash: sha256Hex(token),
+  private issueSession(userId: string, via: SessionViaValue): string {
+    return this.deps.authSessions.issue({
       userId,
-      createdAt: now.toISOString(),
-      expiresAt: new Date(now.getTime() + this.deps.sessionTtlMs).toISOString(),
       via,
-    });
-    return token;
+      now: this.now(),
+      ttlMs: this.deps.sessionTtlMs,
+    }).token;
   }
 }

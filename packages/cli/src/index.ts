@@ -8,6 +8,7 @@
  */
 import { Command, CommanderError } from "commander";
 import { buildInfo } from "@prismshadow/penguin-core";
+import { registerAuthCommand } from "./commands/auth.js";
 import { registerConfigCommand } from "./commands/config.js";
 import { registerRunCommand } from "./commands/run.js";
 import { registerChatCommand } from "./commands/chat.js";
@@ -46,6 +47,7 @@ export async function cli(argv: string[]): Promise<number> {
     // are copied down (commander's copyInheritedSettings).
     .configureOutput({ outputError: () => {} });
 
+  registerAuthCommand(program, t);
   registerConfigCommand(program, t);
   registerRunCommand(program, t);
   registerChatCommand(program, t);

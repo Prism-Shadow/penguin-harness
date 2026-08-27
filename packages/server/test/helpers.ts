@@ -52,8 +52,8 @@ export function testConfig(root: string): ServerConfig {
     webDist: path.join(root, "__no_web_dist__"),
     // Fixed seed password so loginAdmin needs no seed-time capture.
     seedAdminPassword: TEST_ADMIN_PASSWORD,
-    authSessionTtlMs: 7 * DAY_MS,
-    authSessionRenewMs: 6 * DAY_MS,
+    authSessionTtlMs: 30 * DAY_MS,
+    authSessionRenewMs: 29 * DAY_MS,
     desktopToken: null,
     portFile: null,
     trustProxy: false,
@@ -80,20 +80,20 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
   const { beforeSeed, config, ...overrides } = options;
   const root = await makeTempRoot();
   if (beforeSeed) await beforeSeed(root);
-  const deps = await bootAppDeps(
-    { ...testConfig(root), ...config },
-    {
-      log: () => {},
-      passwordHashCost: TEST_PASSWORD_HASH_COST,
-      // The bridge's per-line pace is a real wait in production; every test but the one
-      // about the pacing itself collapses it to nothing.
-      messagingLineDelayMs: 0,
-      ...overrides,
-    },
-  );
-  // Consistent with the startup entrypoint: seed the built-in admin (owning default_project),
-  // keeping the password it returns (only null if a beforeSeed hook ever pre-created users).
-  const adminPassword = (await deps.authService.seedAdmin()) ?? TEST_ADMIN_PASSWORD;
+  const finalConfig = { ...testConfig(root), ...config };
+  const deps = await bootAppDeps(finalConfig, {
+    log: () => {},
+    passwordHashCost: TEST_PASSWORD_HASH_COST,
+    // The bridge's per-line pace is a real wait in production; every test but the one
+    // about the pacing itself collapses it to nothing.
+    messagingLineDelayMs: 0,
+    ...overrides,
+  });
+  // Consistent with the startup entrypoint: seed the built-in admin (owning default_project).
+  await deps.authService.seedAdmin();
+  // The seed hashes and discards; tests know the password only because the config injects it.
+  // With a null override there is nothing to know, and such tests never password-login.
+  const adminPassword = finalConfig.seedAdminPassword ?? TEST_ADMIN_PASSWORD;
   const app = createRuntimeApp(deps);
   return {
     app,
@@ -123,9 +123,9 @@ export function createDesktopApp(): Promise<TestApp> {
   return createTestApp({ config: { desktopToken: TEST_DESKTOP_TOKEN } });
 }
 
-/** Redeems the one-shot desktop-login for a `sessionVia: "desktop"` cookie. */
+/** Redeems the shell's one-shot token for a `sessionVia: "desktop"` cookie. */
 export async function desktopLoginCookie(app: Hono<AppEnv>): Promise<string> {
-  const res = await app.request(`/api/auth/desktop-login?token=${TEST_DESKTOP_TOKEN}`);
+  const res = await app.request(`/api/auth/claim?token=${TEST_DESKTOP_TOKEN}`);
   if (res.status !== 302) {
     throw new Error(`Desktop login failed: ${res.status} ${await res.text()}`);
   }
@@ -157,6 +157,11 @@ export async function loginUser(
 /** Logs in as the seeded admin (every test app seeds with TEST_ADMIN_PASSWORD). */
 export function loginAdmin(app: Hono<AppEnv>): Promise<{ cookie: string; user: UserInfo }> {
   return loginUser(app, ADMIN_USER_ID, TEST_ADMIN_PASSWORD);
+}
+
+/** The `name=value` cookie pair from a response's Set-Cookie (the shape apiClient wants). */
+export function cookieFrom(res: Response): string {
+  return (res.headers.get("set-cookie") ?? "").split(";")[0]!;
 }
 
 /** Admin creates the account and logs in as that user (the only way to create test users while registration is closed). */

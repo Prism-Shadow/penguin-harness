@@ -20,13 +20,21 @@ CREATE TABLE IF NOT EXISTS users (
   password_is_initial INTEGER NOT NULL DEFAULT 0,  -- 1=initial password (seeded/admin-set); cleared once the user changes it
   created_at          TEXT NOT NULL
 );
+-- Server-side sessions backing the HttpOnly cookie: the cookie carries a 32-byte random
+-- token, the row stores only its sha256. A session outlives a restart (it is on disk), which
+-- is why the model is a row and not a signed statement.
 CREATE TABLE IF NOT EXISTS auth_sessions (
   token_hash TEXT PRIMARY KEY,               -- sha256(token) hex; the cookie stores only the raw token
   user_id    TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
   created_at TEXT NOT NULL,
-  expires_at TEXT NOT NULL,                  -- 7-day sliding renewal (topped up when <6 days remain)
-  via        TEXT                            -- 'password' | 'desktop'; NULL = legacy row (password)
+  expires_at TEXT NOT NULL,                  -- 30-day sliding renewal, topped up in place when <29 days remain
+  via        TEXT                            -- 'password'|'desktop'|'setup'|'cli'; NULL = legacy (password)
 );
+-- deleteExpired runs on every login and mint, deleteByUser on every admin reset; without
+-- these both scan the whole table.
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires ON auth_sessions(expires_at);
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id);
+
 CREATE TABLE IF NOT EXISTS projects (
   project_id    TEXT PRIMARY KEY,            -- directory name doubles as id; display name lives in project_config.toml
   owner_user_id TEXT NOT NULL REFERENCES users(user_id),

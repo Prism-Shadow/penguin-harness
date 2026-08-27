@@ -54,13 +54,9 @@ import {
   setVisionModel,
 } from "@prismshadow/penguin-core";
 import { parseApprovalAnswer } from "../approval.js";
+import { resolveRootOption } from "../root-option.js";
 import { getMessages, maskApiKey, type Messages } from "../i18n.js";
 import { applyLanguageToRc, restartShell } from "../lang-config.js";
-
-/** Data root directory: the `--root` option takes priority (relative paths resolved against cwd), then PENGUIN_HOME / ~/.penguin/data. */
-function resolveRootOption(root: string | undefined): string {
-  return root !== undefined ? path.resolve(root) : resolveRoot();
-}
 
 /**
  * Renders the model list as column-aligned lines (the default model is marked with `*`;

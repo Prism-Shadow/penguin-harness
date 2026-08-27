@@ -12,10 +12,10 @@
  */
 import type { UserInfo } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
-import { MIN_PASSWORD_LENGTH, toUserInfo } from "../auth/service.js";
+import { ADMIN_USER_ID, MIN_PASSWORD_LENGTH, toUserInfo } from "../auth/service.js";
 import { SCRYPT_COST, hashPassword } from "../auth/password.js";
-import type { AuthSessionsRepo } from "../db/repos/auth-sessions.js";
 import type { ProjectsRepo } from "../db/repos/projects.js";
+import type { AuthSessionsRepo } from "../db/repos/auth-sessions.js";
 import type { UserRow, UsersRepo } from "../db/repos/users.js";
 import { SEMANTIC_ID_RULE, USERNAME_PATTERN } from "./ids.js";
 import type { ProjectService } from "./project-service.js";
@@ -25,13 +25,6 @@ export interface AdminServiceDeps {
   authSessions: AuthSessionsRepo;
   projects: ProjectsRepo;
   projectService: ProjectService;
-  /**
-   * Fired after a password reset. The server wires it to drop the stored
-   * initial-password plaintext once it goes stale (a reset re-arms the initial FLAG,
-   * but with an admin-chosen value the stored seed no longer matches — see
-   * initial-password.ts); test constructions may omit it.
-   */
-  onPasswordChanged?: (userId: string) => void;
   /**
    * Test double: scrypt work factor for hashes this service writes. Omitted in
    * production, where {@link SCRYPT_COST} applies.
@@ -85,7 +78,13 @@ export class AdminService {
     return toUserInfo(user);
   }
 
-  /** Reset another user's password: flags it as initial and clears all their sessions (prompts a password change on next login). */
+  /**
+   * Reset a user's password and clear all their sessions (prompts a password change on next
+   * login). Only an admin reaches this route, so `userId === admin` is the admin resetting
+   * ITSELF: it chose a KNOWN password, which is a claimed state — not the unclaimed one the
+   * first-login link exists for — so the initial flag stays off and no link is re-opened.
+   * Every other user gets the flag, to be prompted to change the password their admin picked.
+   */
   async resetPassword(userId: string, password: string): Promise<void> {
     if (!this.deps.users.findById(userId)) {
       throw new HttpError(404, "user_not_found", `User does not exist: ${userId}.`);
@@ -93,9 +92,14 @@ export class AdminService {
     if (password.length < MIN_PASSWORD_LENGTH) {
       throw new HttpError(400, "invalid_password", "Password must be at least 8 characters.");
     }
-    this.deps.users.updatePassword(userId, await hashPassword(password, this.hashCost), true);
+    const isSelfAdminReset = userId === ADMIN_USER_ID;
+    this.deps.users.updatePassword(
+      userId,
+      await hashPassword(password, this.hashCost),
+      !isSelfAdminReset,
+    );
+    // Force re-login: delete every session row for this user.
     this.deps.authSessions.deleteByUser(userId);
-    this.deps.onPasswordChanged?.(userId);
   }
 
   /** Delete user: the built-in admin cannot be deleted; owned Projects (including data directories) are deleted along with it. */
@@ -110,6 +114,6 @@ export class AdminService {
     for (const project of this.deps.projects.listByOwner(userId)) {
       await this.deps.projectService.destroyProject(project.projectId);
     }
-    this.deps.users.delete(userId); // auth_sessions / project_members / ui_prefs cascade-deleted
+    this.deps.users.delete(userId); // project_members / ui_prefs cascade-deleted
   }
 }

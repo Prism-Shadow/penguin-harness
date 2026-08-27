@@ -1,33 +1,19 @@
 /**
- * Offline admin-password reset — the rescue path when the Web admin password is
- * forgotten (`penguin server reset-admin-password`).
- *
- * The admin can reset every OTHER user from the user-management page, but nobody can
- * reset the admin itself once its password is lost: the plaintext file in the data root
- * only survives while the password is still the initial one. This module closes that
- * gap from the machine that owns the data root: it re-arms the whole initial-password
- * machinery — a fresh `penguin-<4 digits>` password flagged password_is_initial, the
- * plaintext stored via initial-password.ts so every server start re-prints the framed
- * reminder until the password is changed, and all of the admin's login sessions
- * cleared (matching an admin-initiated reset).
- *
- * web.db is single-process / single-writer (see db/database.ts and lock.ts), so the
- * reset refuses while a live server owns the root: the caller tells the user to stop it
- * first. Requiring local filesystem access is the authorization model — whoever can run
- * this already owns the SQLite database sitting next to the file it writes.
- *
- * Published as `@prismshadow/penguin-server/reset-admin-password` (side-effect-free,
- * like ./lock) so the CLI can run the reset without importing the package entry, which
- * starts listening.
+ * Offline rescue for a forgotten admin password — nobody can reset the admin from the web UI,
+ * so this does it from the machine that owns the data root (local filesystem access IS the
+ * authorization). The account goes back to unclaimed and the next start prints a first-login
+ * link, so no plaintext is produced for anyone to write down. Refuses while a server is live,
+ * web.db being single-writer. Exported as `@prismshadow/penguin-server/reset-admin-password`
+ * so the CLI need not import the package entry, which starts listening.
  */
 import fs from "node:fs";
 import path from "node:path";
 import { hashPassword } from "./auth/password.js";
 import { ADMIN_USER_ID, generateInitialAdminPassword } from "./auth/service.js";
 import { openDatabase } from "./db/database.js";
-import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
 import { UsersRepo } from "./db/repos/users.js";
-import { storeInitialAdminPassword } from "./initial-password.js";
+import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
+import { clearInitialAdminPassword } from "./initial-password.js";
 import { liveServerLock } from "./lock.js";
 import type { ServerLock } from "./lock.js";
 
@@ -38,13 +24,10 @@ export type ResetAdminPasswordResult =
   | { outcome: "no_database"; dbPath: string }
   /** Nothing to reset: the database exists but the admin was never seeded. */
   | { outcome: "no_admin" }
-  | { outcome: "reset"; password: string };
+  /** Returned to the unclaimed state: start the server and open the first-login link it prints. */
+  | { outcome: "reset" };
 
-/**
- * Resets the built-in admin to a fresh initial password. `dbPath` defaults to the
- * root's `web.db`; callers honoring PENGUIN_WEB_DB pass the resolved path (the
- * plaintext reminder file always lives in `root`, matching the server's own layout).
- */
+/** `dbPath` may be elsewhere (PENGUIN_WEB_DB); `root` stays the root, which the sweep needs. */
 export async function resetAdminPassword(
   root: string,
   dbPath: string = path.join(root, "web.db"),
@@ -58,11 +41,12 @@ export async function resetAdminPassword(
   try {
     const users = new UsersRepo(db);
     if (users.findById(ADMIN_USER_ID) === null) return { outcome: "no_admin" };
+    // Discarded unread: a value nobody holds cannot be typed, phished, or left in a buffer.
     const password = generateInitialAdminPassword();
     users.updatePassword(ADMIN_USER_ID, await hashPassword(password), true);
     new AuthSessionsRepo(db).deleteByUser(ADMIN_USER_ID);
-    storeInitialAdminPassword(root, password);
-    return { outcome: "reset", password };
+    clearInitialAdminPassword(root);
+    return { outcome: "reset" };
   } finally {
     db.close();
   }

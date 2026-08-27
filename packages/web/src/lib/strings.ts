@@ -276,7 +276,7 @@ export const zh = {
     logout: "登出",
     admin: "管理员",
     defaultAdminNote:
-      "首次使用请以内置管理员 admin 登录，初始密码在服务端首次启动时打印（形如 penguin-1234），登录后请尽快修改密码",
+      "首次使用请打开服务端启动输出中的首次登录链接，认领内置管理员 admin 并设置密码。这里没有可输入的初始密码",
     /** Login footer line 2: the offline rescue for a forgotten admin password (other users ask the admin instead). */
     forgotAdminNote:
       "忘记管理员密码时，停止服务后执行 penguin server reset-admin-password 重置为新的初始密码",
@@ -285,7 +285,7 @@ export const zh = {
   account: {
     changePassword: "修改密码",
     oldPassword: "当前密码",
-    oldPasswordHint: "内置管理员的初始密码在服务端首次启动时打印（形如 penguin-1234）",
+    oldPasswordHint: "当前账号登录所用的密码——先校验它，新密码才会生效",
     newPassword: "新密码",
     confirmPassword: "确认新密码",
     passwordMismatch: "两次输入的新密码不一致",

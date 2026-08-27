@@ -6,8 +6,10 @@
  * carrying user-authored text is validated and capped on the way in (draftShortcuts).
  */
 import { Hono } from "hono";
+import { setCookie } from "hono/cookie";
 import type { MeResponse, PrefsResponse, UiPrefs } from "../../api/types.js";
 import { toUserInfo } from "../../auth/service.js";
+import { SESSION_COOKIE, cookieOptions } from "../../auth/middleware.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { readJson, requireString } from "../validate.js";
 import type { AppDeps } from "../../app.js";
@@ -53,15 +55,28 @@ export function meRoutes(deps: AppDeps): Hono<AppEnv> {
   });
 
   // Self-service password change (user settings): validates the old password; on success, the initial-password prompt disappears from GET /api/me.
-  // Desktop sessions may omit oldPassword: the seed password of a desktop-created root is
-  // random and never shown, so its holder has nothing to type — the shell's redeemed
-  // token already proved machine ownership.
+  // Two kinds of session may omit oldPassword, because for them there is no old password to
+  // know — the account's current one is random and was never shown: the desktop shell's own
+  // window, and a session claimed through this boot's first-login link.
   app.put("/password", async (c) => {
     const body = await readJson(c);
     const newPassword = requireString(body, "newPassword", { label: "newPassword" });
     const desktopSession = deps.desktop !== null && c.var.sessionVia === "desktop";
-    if (desktopSession && body.oldPassword === undefined) {
-      await deps.authService.setPasswordDesktop(c.var.user.userId, newPassword);
+    const setupSession = c.var.sessionVia === "setup";
+    if ((desktopSession || setupSession) && body.oldPassword === undefined) {
+      await deps.authService.setInitialPassword(c.var.user.userId, newPassword);
+      // Claiming deletes every first-login session, this request's included, so without a
+      // replacement the next call 401s and a brand-new user lands back on the login page.
+      // Signed in with the password just set: an ordinary login, not a session given on trust.
+      if (setupSession) {
+        const { token } = await deps.authService.login(c.var.user.userId, newPassword);
+        setCookie(
+          c,
+          SESSION_COOKIE,
+          token,
+          cookieOptions(c, deps.authService.sessionTtlMs, deps.config.trustProxy),
+        );
+      }
     } else {
       const oldPassword = requireString(body, "oldPassword", { label: "oldPassword" });
       await deps.authService.changePassword(c.var.user.userId, oldPassword, newPassword);

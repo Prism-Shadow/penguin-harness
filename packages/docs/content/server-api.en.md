@@ -33,16 +33,16 @@ packages/server/src
 
 ## Authentication
 
-- Cookie session: `penguin_session` (HttpOnly, SameSite=Lax), valid for 7 days with sliding renewal;
-- Passwords are stored as scrypt hashes; the server keeps only the sha256 of the session token, never the plaintext;
-- No open registration: the built-in admin `admin` is seeded at startup with a random initial password (of the form `penguin-1234`) — kept in `<root>/initial-admin-password` and re-printed to the server console on every start until it is changed; `PENGUIN_SEED_ADMIN_PASSWORD` pins it for automation — and all other accounts are created by an admin;
+- Cookie session: `penguin_session` (HttpOnly, SameSite=Lax), valid for 30 days with sliding renewal;
+- Passwords are stored as scrypt hashes. A session is a row in `auth_sessions` keyed by the sha256 of a random cookie token (the raw token is never stored); it survives a restart, renews in place, and logout deletes the row;
+- No open registration: the built-in admin `admin` is seeded at startup with a random password that is hashed and discarded unseen. Until a password is actually set, every start prints a first-login link that claims the account (`PENGUIN_SEED_ADMIN_PASSWORD` pins a known password instead, for automation). All other accounts are created by an admin;
 - Same-origin only — no CORS middleware is enabled.
 
 ```bash
-# Use the initial password printed at first start (or your changed one).
+# Use the password you set when claiming the account from the first-login link.
 curl -c cookies.txt -H "Content-Type: application/json" \
-  -d '{"userId":"admin","password":"penguin-1234"}' \
-  http://127.0.0.1:7364/api/auth/login
+  -d '{"userId":"admin","password":"<your password>"}' \
+  http://localhost:7364/api/auth/login
 ```
 
 ### Local API token (Bearer)
@@ -68,9 +68,10 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 | --- | --- | --- |
 | POST | /api/auth/login | Log in: `{userId, password}` → `{user}` |
 | POST | /api/auth/logout | Log out, returns 204 |
+| GET | /api/auth/claim?token=… | Redeem a sign-in link (first-login, or the desktop shell's one-shot token): sets the cookie, redirects to `/` |
 | GET | /api/install | Public: `{installId}` — an opaque id identifying the data root being served (`<root>/install-id`), minted the first time the root is used. The Web App compares it against the one it stored and clears the browser-side UI state that references server entities when it differs, so replacing the data root no longer leaves the old Workspace, drafts and pins in place. `null` means the server could not establish one; clients must then change nothing. |
 | GET | /api/me | Current user info |
-| PUT | /api/me/password | Change password: `{oldPassword, newPassword}` |
+| PUT | /api/me/password | Change password: `{oldPassword, newPassword}`; a desktop or first-login session may omit `oldPassword` — its current password is random and was never shown |
 | GET | /api/me/prefs | Read UI preferences |
 | PUT | /api/me/prefs | Write UI preferences (shallow merge) |
 

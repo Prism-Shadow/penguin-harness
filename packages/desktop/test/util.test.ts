@@ -26,7 +26,7 @@ describe("app origin and login URL", () => {
   it("builds the localhost origin and the one-shot login URL", () => {
     expect(appOriginFor(7364)).toBe("http://localhost:7364");
     expect(desktopLoginUrl("http://localhost:7364", "a b/c")).toBe(
-      "http://localhost:7364/api/auth/desktop-login?token=a%20b%2Fc",
+      "http://localhost:7364/api/auth/claim?token=a%20b%2Fc",
     );
   });
 });

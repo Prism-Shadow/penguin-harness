@@ -96,18 +96,19 @@ export interface MeResponse {
   /**
    * Whether this server runs in desktop mode (spawned by the desktop shell with
    * PENGUIN_DESKTOP_TOKEN). The web app then hides the logout entry, the
-   * initial-password banner and the self-update entry, and omits the old-password
-   * field when changing the password.
+   * initial-password banner and the self-update entry.
    */
   desktopMode: boolean;
   /**
-   * How THIS session was established. Distinct from desktopMode: a browser signed into a
-   * desktop-mode server holds a "password" session and must still provide the old
-   * password when changing it — only "desktop" sessions (opened by the shell's one-shot
-   * token) may omit it. "token" marks a request authenticated by the local API token's
-   * Bearer header (the CLI and agent-driven calls).
+   * How THIS session was established — distinct from desktopMode, which describes the
+   * server: a browser signed into a desktop-mode server holds a "password" session.
+   * "desktop" is the shell's own window (one-shot token); "setup" was claimed through the
+   * first-login link on a server whose admin password has never been set. Both may set a
+   * password without the old one (it is random and was never shown); only "desktop" opens
+   * desktop-only routes. "token" marks a request authenticated by the local API token's
+   * Bearer header (the CLI and agent-driven calls) — no stored session at all.
    */
-  sessionVia: "password" | "desktop" | "token";
+  sessionVia: "password" | "desktop" | "setup" | "token";
   /**
    * The upload limits currently in force, so the composer can refuse an oversize pick before
    * reading it and can name the real number in the message. They are admin-settable and ride
@@ -144,7 +145,7 @@ export interface UploadLimits {
 }
 
 export interface PasswordChangeRequest {
-  /** Omitted only by desktop-established sessions (desktop mode); required otherwise. */
+  /** Omitted only by a "desktop" or "setup" session (see {@link MeResponse.sessionVia}); required otherwise. */
   oldPassword?: string;
   /** At least 8 characters. */
   newPassword: string;

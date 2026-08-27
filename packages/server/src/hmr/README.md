@@ -1,7 +1,7 @@
 # The runtime layer — mechanism only
 
-This directory is the heart of the **runtime**: the layer that boots, transports, authenticates
-and hot-swaps everything else. Read this before changing anything here (or in
+This directory is the heart of the **runtime**: the layer that boots, transports and hot-swaps
+everything else. Read this before changing anything here (or in
 `packages/desktop/`, or in core's environment tooling — the other runtime homes).
 
 ## The four layers
@@ -18,8 +18,15 @@ and hot-swaps everything else. Read this before changing anything here (or in
 **The runtime carries mechanism. It must not carry policy.**
 
 Mechanism is the machinery that is the same no matter what the product does: HTTP transport,
-SSE channels, authentication and the network gate, the kernel's park → migrate → boot swap,
-the resource registry, artifact storage and the atomic `harness.json` commit.
+SSE channels, the network gate, the kernel's park → migrate → boot swap, the resource registry,
+artifact storage and the atomic `harness.json` commit.
+
+Authentication is NOT on that list, and used to be. Who may set a password, how long a session
+lasts, how logins are throttled — that is policy, and a runtime that owned it made every auth
+fix wait for a full reinstall: a platform naming a member an older runtime's AuthService lacked
+was refused at the handshake. The App builds its own AuthService now (app.ts's buildAppDeps).
+What the runtime still publishes is `runtime:auth-state`, the process-scoped values a push must
+not forget — the state layer, not a capability.
 
 Policy is everything a deployment might reasonably want to change: business APIs, what an agent
 sees, what a command does, how a capability behaves. Policy belongs in the **platform**, which is

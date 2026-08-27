@@ -32,14 +32,12 @@ describe("resolveServerConfig: PORT parsing", () => {
 });
 
 describe("resolveServerConfig: desktop-mode seed password", () => {
-  it("desktop mode without a pinned value generates a fully random seed password", () => {
-    const a = resolveServerConfig({ ...base, PENGUIN_DESKTOP_TOKEN: "tok" }).seedAdminPassword;
-    const b = resolveServerConfig({ ...base, PENGUIN_DESKTOP_TOKEN: "tok" }).seedAdminPassword;
-    expect(a).not.toBeNull();
-    // base64url of 24 random bytes: far beyond the printable penguin-<4 digits> space.
-    expect(a!.length).toBeGreaterThanOrEqual(24);
-    expect(a).not.toMatch(/^penguin-\d{4}$/);
-    expect(a).not.toBe(b);
+  it("desktop mode leaves the seed unpinned, exactly like every other mode", () => {
+    // Nothing pins it: the password the seed generates on its own is already unguessable, so
+    // supplying one here would just be a second way to say the same thing.
+    expect(
+      resolveServerConfig({ ...base, PENGUIN_DESKTOP_TOKEN: "tok" }).seedAdminPassword,
+    ).toBeNull();
   });
 
   it("an explicit PENGUIN_SEED_ADMIN_PASSWORD still wins in desktop mode", () => {
@@ -52,7 +50,7 @@ describe("resolveServerConfig: desktop-mode seed password", () => {
     ).toBe("penguin-2026");
   });
 
-  it("outside desktop mode the unpinned value stays null (random penguin-<4 digits> at seed time)", () => {
+  it("outside desktop mode the unpinned value stays null (the seed generates one)", () => {
     expect(resolveServerConfig({ ...base }).seedAdminPassword).toBeNull();
   });
 });

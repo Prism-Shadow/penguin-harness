@@ -1,28 +1,19 @@
 /**
- * Auth routes: POST /api/auth/login | logout, GET /api/auth/desktop-login (desktop mode).
+ * Auth routes: POST /api/auth/login | logout, GET /api/auth/claim.
  * No self-registration: users are created by an admin in the user backend (/api/admin/users).
- * Login issues a cookie session; logout deletes the server-side session and clears the cookie.
+ * Login issues a cookie session; logout deletes its row and clears the cookie.
+ *
+ * `claim` is the one password-free entry, and answers a browser with no session yet: only the
+ * server can set an HttpOnly cookie, hence a GET that redirects rather than a call.
  */
 import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import type { AuthResponse } from "../../api/types.js";
 import { HttpError } from "../errors.js";
-import { SESSION_COOKIE } from "../../auth/middleware.js";
+import { SESSION_COOKIE, cookieOptions } from "../../auth/middleware.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { readJson, requireString } from "../validate.js";
 import type { AppDeps } from "../../app.js";
-
-/** Session cookie attributes: HttpOnly, SameSite=Lax, 7 days. */
-function cookieOptions(c: { req: { header(name: string): string | undefined } }) {
-  return {
-    httpOnly: true,
-    sameSite: "Lax" as const,
-    path: "/",
-    maxAge: 7 * 24 * 60 * 60,
-    // Add Secure when the reverse proxy declares https.
-    ...(c.req.header("x-forwarded-proto") === "https" ? { secure: true } : {}),
-  };
-}
 
 export function authRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
@@ -32,7 +23,12 @@ export function authRoutes(deps: AppDeps): Hono<AppEnv> {
     const userId = requireString(body, "userId", { label: "userId" });
     const password = requireString(body, "password", { label: "password" });
     const { user, token } = await deps.authService.login(userId, password);
-    setCookie(c, SESSION_COOKIE, token, cookieOptions(c));
+    setCookie(
+      c,
+      SESSION_COOKIE,
+      token,
+      cookieOptions(c, deps.authService.sessionTtlMs, deps.config.trustProxy),
+    );
     return c.json({ user } satisfies AuthResponse);
   });
 
@@ -43,20 +39,29 @@ export function authRoutes(deps: AppDeps): Hono<AppEnv> {
     return c.body(null, 204);
   });
 
-  // Desktop-mode sign-in: the window's FIRST navigation redeems the shell's one-shot
-  // token for a standard admin cookie session and lands on the app — the desktop user
-  // never sees the login page. 404 outside desktop mode (the route "doesn't exist");
-  // a wrong or already-used token is a plain 401 with no distinction, so a leaked URL
-  // reveals nothing and cannot be replayed.
-  app.get("/desktop-login", (c) => {
-    const desktop = deps.desktop;
-    if (!desktop) throw new HttpError(404, "not_found", "Desktop mode is not enabled.");
+  /**
+   * Two proofs, expiring differently: the desktop shell's token is spent on first use, while
+   * the first-login link keeps working until a password exists — a link a mail client may
+   * prefetch cannot afford to be one-shot, and until then the account protects nothing.
+   * Both fail with the same 401, so a caller learns nothing about which it got wrong.
+   */
+  app.get("/claim", (c) => {
     const token = c.req.query("token") ?? "";
-    if (token === "" || !desktop.redeemLoginToken(token)) {
-      throw new HttpError(401, "unauthorized", "Invalid or already-used desktop token.");
+    // Desktop first, and only it consumes on success: a first-login value handed to the
+    // shell's redeemer is simply not its token, so nothing is spent looking.
+    const session =
+      token !== "" && deps.desktop?.redeemLoginToken(token) === true
+        ? deps.authService.loginDesktop().token
+        : deps.authService.redeemFirstLogin(token);
+    if (session === null) {
+      throw new HttpError(401, "unauthorized", "Invalid or already-used sign-in link.");
     }
-    const { token: session } = deps.authService.loginDesktop();
-    setCookie(c, SESSION_COOKIE, session, cookieOptions(c));
+    setCookie(
+      c,
+      SESSION_COOKIE,
+      session,
+      cookieOptions(c, deps.authService.sessionTtlMs, deps.config.trustProxy),
+    );
     return c.redirect("/", 302);
   });
 

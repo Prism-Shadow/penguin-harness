@@ -29,7 +29,7 @@ import { applyProxySettings, mergedNoProxy } from "./net/proxy.js";
 import {
   RUNTIME_INTERFACES,
   RUNTIME_INTERFACES_RESOURCE_ID,
-  RUNTIME_AUTH_RESOURCE_ID,
+  RUNTIME_AUTH_STATE_RESOURCE_ID,
   RUNTIME_CHANNELS_RESOURCE_ID,
   RUNTIME_CONFIG_RESOURCE_ID,
   RUNTIME_DB_RESOURCE_ID,
@@ -41,7 +41,6 @@ import {
 } from "./hmr/capabilities.js";
 import type { ProxyControl } from "./hmr/capabilities.js";
 import { openDatabase } from "./db/database.js";
-import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
 import { ErrorsRepo } from "./db/repos/errors.js";
 import { MessagingBindingsRepo } from "./db/repos/messaging-bindings.js";
 import { GoalsRepo } from "./db/repos/goals.js";
@@ -58,8 +57,9 @@ import { terminalRoutes } from "./terminal/routes.js";
 import type { TerminalManager } from "./terminal/manager.js";
 import { EXTENSIONS_RESOURCE_ID, type ExtensionHost } from "./extension/host.js";
 import type { AppEnv } from "./auth/middleware.js";
-import { ADMIN_USER_ID, AuthService } from "./auth/service.js";
-import { clearInitialAdminPassword } from "./initial-password.js";
+import { AuthService } from "./auth/service.js";
+import { newAuthRuntimeState } from "./auth/runtime-state.js";
+import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
 import { ensureInstallId } from "./install-id.js";
 import { handleError, HttpError, errorBody } from "./http/errors.js";
 import { attributedProjectId } from "./http/attribution.js";
@@ -260,7 +260,6 @@ export async function bootAppDeps(
   const db = openDatabase(config.dbPath);
 
   const usersRepo = new UsersRepo(db);
-  const authSessionsRepo = new AuthSessionsRepo(db);
 
   // Hoisted above the services so its registry can be populated before anything boots
   // against it.
@@ -272,41 +271,18 @@ export async function bootAppDeps(
   // by each generation. Until the first App boots, nothing is active.
   const channels = new ChannelHub();
 
-  // Any password update for the built-in admin makes the persisted initial-password
-  // plaintext stale (either the password is no longer initial, or a reset replaced it
-  // with an admin-chosen value that is never persisted): drop the file so later startups
-  // stop re-printing a credential that no longer signs in.
-  const onPasswordChanged = (userId: string): void => {
-    if (userId === ADMIN_USER_ID) clearInitialAdminPassword(config.root);
-  };
-  const authService = new AuthService({
-    users: usersRepo,
-    authSessions: authSessionsRepo,
-    // Auth is runtime mechanism, but WHAT a fresh user is provisioned with is business
-    // policy: the App installs the real provisioner via setProvisioner at every create
-    // (see hmr/platform.ts). This constructor fallback only answers before the first
-    // boot, which the startup order below makes unreachable in practice.
-    provisionInitialProject: () => {
-      throw new Error("no business platform is running to provision the initial Project");
-    },
-    seedAdminPassword: config.seedAdminPassword,
-    onPasswordChanged,
-    sessionTtlMs: config.authSessionTtlMs,
-    sessionRenewMs: config.authSessionRenewMs,
-    ...(overrides.passwordHashCost !== undefined
-      ? { passwordHashCost: overrides.passwordHashCost }
-      : {}),
-    ...(overrides.now ? { now: overrides.now } : {}),
-  });
+  // Authentication itself is business behaviour and is built per App (buildAppDeps), so a
+  // change to it ships by push. Only the values that must survive a push live out here.
+  const authState = newAuthRuntimeState();
 
-  // Local API token: minted per boot, persisted at <root>/api-token (0600) and installed
-  // on the runtime auth service, so authMiddleware accepts it as the admin for this
-  // process's whole life — across hot swaps too (the auth service is a runtime
-  // singleton). Local filesystem access to the data root is admin authority (the
-  // reset-admin-password rule); see auth/api-token.ts.
+  // Local API token: minted per boot, persisted at <root>/api-token (0600) and published on
+  // the runtime auth state, so authMiddleware accepts it as the admin for this process's
+  // whole life — across hot swaps too, since the App that verifies it is rebuilt but the
+  // file on disk is not rewritten. Local filesystem access to the data root is admin
+  // authority (the reset-admin-password rule); see auth/api-token.ts.
   const apiToken = mintApiToken();
   storeApiToken(config.root, apiToken);
-  authService.setLocalApiToken(apiToken);
+  authState.apiToken = apiToken;
 
   // Install identity: minted here so a root gets its name the first time it is used rather
   // than on the first browser request, which keeps `<root>/install-id` alongside the other
@@ -322,7 +298,7 @@ export async function bootAppDeps(
   hmr.resources.register(RUNTIME_INTERFACES_RESOURCE_ID, RUNTIME_INTERFACES);
   hmr.resources.register(RUNTIME_CONFIG_RESOURCE_ID, config);
   hmr.resources.register(RUNTIME_DB_RESOURCE_ID, db);
-  hmr.resources.register(RUNTIME_AUTH_RESOURCE_ID, authService);
+  hmr.resources.register(RUNTIME_AUTH_STATE_RESOURCE_ID, authState);
   hmr.resources.register(RUNTIME_CHANNELS_RESOURCE_ID, channels);
   hmr.resources.register(RUNTIME_PROXY_RESOURCE_ID, applyProxySettings);
   hmr.resources.register(RUNTIME_HMR_RESOURCE_ID, hmr);
@@ -457,8 +433,8 @@ export function createRuntimeApp(deps: AppDeps): Hono<AppEnv> {
     // check/install back. Cookie-authed, unlike the Bearer-token shutdown above, so it
     // carries the auth middleware on its own subtree — the routes then gate on
     // `sessionVia === "desktop"`, i.e. the shell's own window.
-    app.use("/api/desktop/update", authMiddleware(deps.authService));
-    app.use("/api/desktop/update/*", authMiddleware(deps.authService));
+    app.use("/api/desktop/update", authMiddleware(deps.authService, deps.config.trustProxy));
+    app.use("/api/desktop/update/*", authMiddleware(deps.authService, deps.config.trustProxy));
     app.route("/api/desktop/update", desktopUpdateRoutes(deps));
   }
   // Hot platform APIs authenticate themselves (local-agent Bearer token OR
@@ -592,12 +568,30 @@ export function buildAppDeps(
   caps: RuntimeCapabilities,
   overrides: BuildDepsOverrides = {},
 ): AppDeps {
-  const { config, db, authService, channels, hmr } = caps;
+  const { config, db, authState, channels, hmr } = caps;
   const log = overrides.log ?? ((line: string) => console.log(line));
 
   const usersRepo = new UsersRepo(db);
   const projectsRepo = new ProjectsRepo(db);
   const membersRepo = new MembersRepo(db);
+  // Auth is built HERE, with the App, so every rule it carries ships by push. The runtime
+  // publishes only `authState` — the values a push must not forget (auth/runtime-state.ts).
+  // `provisionInitialProject` closes over the projectService created below: seeding runs long
+  // after this returns, so the cycle costs a closure rather than an install-it-later hook.
+  const authService = new AuthService({
+    users: usersRepo,
+    authSessions: new AuthSessionsRepo(db),
+    state: authState,
+    provisionInitialProject: (user, isAdmin) =>
+      projectService.provisionInitialProject(user, isAdmin),
+    seedAdminPassword: config.seedAdminPassword,
+    sessionTtlMs: config.authSessionTtlMs,
+    sessionRenewMs: config.authSessionRenewMs,
+    ...(overrides.passwordHashCost !== undefined
+      ? { passwordHashCost: overrides.passwordHashCost }
+      : {}),
+    ...(overrides.now ? { now: overrides.now } : {}),
+  });
   const agentsRepo = new AgentsRepo(db);
   const sessionsRepo = new SessionsRepo(db);
   const usageRepo = new UsageRepo(db);
@@ -749,20 +743,11 @@ export function buildAppDeps(
     manager,
     traceIndex,
   });
-  // Any password update for the built-in admin makes the persisted initial-password
-  // plaintext stale (either the password is no longer initial, or a reset replaced it
-  // with an admin-chosen value that is never persisted): drop the file so later startups
-  // stop re-printing a credential that no longer signs in. (The runtime's AuthService
-  // carries the same rule for the self-service path; this one covers admin resets.)
-  const onPasswordChanged = (userId: string): void => {
-    if (userId === ADMIN_USER_ID) clearInitialAdminPassword(config.root);
-  };
   const adminService = new AdminService({
     users: usersRepo,
     authSessions: new AuthSessionsRepo(db),
     projects: projectsRepo,
     projectService,
-    onPasswordChanged,
     ...(overrides.passwordHashCost !== undefined
       ? { passwordHashCost: overrides.passwordHashCost }
       : {}),
@@ -969,7 +954,7 @@ export function createApp(
   app.route("/api/install", installRoutes(deps));
 
   // Protected routes: cookie -> auth_session -> user, over the runtime's auth service.
-  app.use("/api/*", authMiddleware(deps.authService));
+  app.use("/api/*", authMiddleware(deps.authService, deps.config.trustProxy));
   app.route("/api/me", meRoutes(deps));
   app.route("/api/version", versionRoutes(deps));
   app.route("/api/admin/users", adminUsersRoutes(deps));
