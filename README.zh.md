@@ -248,7 +248,7 @@ pnpm install && pnpm build   # 先构建：core 的导出指向 dist/
 pnpm dev                     # 服务端 + Web 一起启动（带前缀日志，依赖只构建一次）
 ```
 
-完整工作区指南见 [CONTRIBUTING.md](CONTRIBUTING.md)：开发命令、质量门禁、仓库结构与 changelog 规则。
+完整工作区指南见 [CONTRIBUTING.zh.md](.github/CONTRIBUTING.zh.md)：开发命令、质量门禁、仓库结构与 changelog 规则。
 
 ## 贡献者
 

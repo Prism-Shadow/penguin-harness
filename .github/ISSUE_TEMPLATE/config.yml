@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and usage help
+    url: https://discord.gg/eFHKqqcU3D
+    about: Ask on Discord — the issue tracker is for defects and proposals.
+  - name: Documentation
+    url: https://penguin.ooo/docs/
+    about: Installation, configuration, the CLI reference, and the architecture.
+  - name: Security vulnerability
+    url: https://github.com/Prism-Shadow/penguin-harness/security/advisories/new
+    about: Report privately. Never in a public issue.
