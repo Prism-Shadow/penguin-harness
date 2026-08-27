@@ -31,6 +31,10 @@ describe("messagingErrorKind", () => {
     // and the outbound upload names the file that did not make it: both have already handed
     // the fix to the only person who can apply it, so a dashboard adds nothing.
     expect(messagingErrorKind(scopeDenial(), "messaging_image_fetch_failed")).toBe("expected");
+    // An inbound FILE download is the same capture point in every way that matters here: on
+    // Feishu it is the very same scope denial, answered into the chat with the same scope
+    // names and console link (see messagingInboundFilePermissionNotice).
+    expect(messagingErrorKind(scopeDenial(), "messaging_file_fetch_failed")).toBe("expected");
     expect(
       messagingErrorKind(
         new MessagingUnsupportedError('QQ cannot receive "chart.png": requires a public URL'),
