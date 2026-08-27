@@ -19,12 +19,13 @@ Pull Request 模板。五项全部补齐，且凡是 GitHub 能从 `.github/` �
   指向它的四处引用——`README.md`、`README.zh.md`、`.github/workflows/release.yml` 与
   `penguin-harness-dev` skill——都已改指新路径。
 - 新增 `.github/CODE_OF_CONDUCT.md`，采用 Contributor Covenant 2.1 原文，执行联系方式填为
-  <hiyouga@buaa.edu.cn>；其中文对应文件采用了该公约官方的 zh-cn 译本。两份文件都不是转述，日后升级
+  在 Discord 上私信维护者；其中文对应文件采用了该公约官方的 zh-cn 译本。两份文件都不是转述，日后升级
   版本时也就是一份干净的上游 diff。
-- 新增 `.github/SECURITY.md`，把报告导向 GitHub 私密的 "Report a vulnerability" 表单，并以维护者邮箱
-  作为兜底；同时说明只有最新发布版本受支持——项目尚未 1.0，代码从 `main` 出货，不做任何回移植。它还
-  划出了这个产品需要的范围线：绕过审批、规避 `[command_policy]`、凭据落入日志或 Trace、以及 server
-  多用户边界被击穿属于范围内，而 Agent 在已批准的工具调用允许范围内所做的事属于既定设计。
+- 新增 `.github/SECURITY.md`，把报告导向 GitHub 私密的 "Report a vulnerability" 表单，并以一次
+  不含细节的 Discord 私信作为兜底；同时说明只有最新发布版本受支持——项目尚未 1.0，代码从 `main`
+  出货，不做任何回移植。它还划出了这个产品需要的范围线：绕过审批、规避 `[command_policy]`、凭据
+  落入日志或 Trace、以及 server 多用户边界被击穿属于范围内，而 Agent 在已批准的工具调用允许范围
+  内所做的事属于既定设计。
 - `.github/ISSUE_TEMPLATE/` 新增了 `bug_report.yml` 与 `feature_request.yml` 两份表单 schema，外加
   一份 `config.yml`：关闭空白 issue，并链接 Discord、文档站与安全 advisory 表单。缺陷表单会索取版本
   （`penguin version`）、安装形态、操作系统，以及问题是否在全新数据根目录上依然出现；两份表单与贡献
