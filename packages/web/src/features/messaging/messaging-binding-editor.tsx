@@ -30,6 +30,10 @@
  * screen: the switch carries it as its tooltip and the "what binding does" fold states it
  * in full. Deleting a stored credential remains a separate act — the per-field clear.
  *
+ * QQ additionally leads its section with scan-to-connect (`qq-scan-connect.tsx`): a QR code
+ * scanned in the QQ app, after which the server holds the credentials without them ever
+ * passing through this browser. The typed fields stay below it as the fallback.
+ *
  * The GET is re-polled while the host shows the editor (the hook's `poll` flag) so
  * connect/error flips show up live.
  */
@@ -56,6 +60,7 @@ import { PasswordInput } from "../../components/ui/password-input";
 import { Segmented } from "../../components/ui/segmented";
 import { Switch } from "../../components/ui/switch";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
+import { QQScanConnect } from "./qq-scan-connect";
 import {
   bindingsToForm,
   emptyMessagingForm,
@@ -168,6 +173,8 @@ function factsFromList(res: MessagingBindingsResponse): ChannelFactsMap {
 
 /** Everything a host renders the editor from: state + handlers, one instance per session. */
 export interface MessagingBindingEditorState {
+  /** The Session being edited (flows that talk to the API from inside the body need it). */
+  sessionId: string;
   /** null until the stored bindings have been loaded (hosts show nothing until then). */
   form: MessagingFormState | null;
   patchForm(patch: Partial<MessagingFormState>): void;
@@ -188,6 +195,12 @@ export interface MessagingBindingEditorState {
   toggleBlocked: boolean;
   /** Why the switch is gated, when a reason is worth showing (null otherwise). */
   toggleHint: string | null;
+  /**
+   * A flow OUTSIDE the form saved this channel's binding — QQ's scan-to-connect, whose
+   * credentials never pass through the browser. Folds the result into that channel's facts
+   * and the form baseline, exactly as a Save would.
+   */
+  adoptBinding(binding: MessagingBindingInfo): void;
   save(): Promise<void>;
   toggleEnabled(next: boolean): Promise<void>;
   testConnection(): Promise<void>;
@@ -440,6 +453,7 @@ export function useMessagingBinding(
           : null;
 
   return {
+    sessionId,
     form,
     patchForm,
     selectChannel,
@@ -453,6 +467,8 @@ export function useMessagingBinding(
     testable: form !== null && formTestable(form, facts.secretConfigured),
     toggleBlocked: enableBlocked || toggling || busy,
     toggleHint,
+    adoptBinding: (binding) =>
+      applyChannel(binding.channel, binding, channels[binding.channel].status),
     save,
     toggleEnabled,
     testConnection,
@@ -757,6 +773,15 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
         </>
       ) : channel === "qq" ? (
         <>
+          {/* The easy path leads: scanning is what most people will do, and the fields below
+              are the fallback for a bot the scan cannot reach. Both are inside this channel's
+              branch, so nothing above the fields moves when the QR opens. */}
+          <QQScanConnect
+            sessionId={b.sessionId}
+            enabled={facts.enabled}
+            onBound={(binding) => b.adoptBinding(binding)}
+          />
+          <p className="text-xs text-gray-400 dark:text-gray-500">{S.qq.scanOrManual}</p>
           <CornerLinkedField
             label={S.qq.appId}
             required
@@ -913,6 +938,10 @@ export function MessagingBindingHelp({ channel }: { channel: MessagingChannel })
             <li key={step}>{step}</li>
           ))}
         </ol>
+        {/* What the QR button spares the reader: the last two steps of the list above.
+            Disclosed here rather than parked beside the button, which is a control and so
+            cannot be the title a standing sentence would need. */}
+        {channel === "qq" && <p className="mt-1.5">{S.qq.scanHint}</p>}
         <p className="mt-1.5">
           <ExternalLink href={links.tutorial} label={S.messaging.tutorial} />
         </p>

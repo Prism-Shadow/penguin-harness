@@ -1837,6 +1837,31 @@ Scenarios:
     /** The passive-reply budget, in the terms a user experiences it. */
     replyBudget:
       "One QQ message can receive at most 4 replies (5 in a group). When a run produces more than that, the last one carries the rest combined — nothing is lost, it just arrives as a single message.",
+    /** Scan-to-connect: the button, and the states it moves through. */
+    scanStart: "Connect by QR",
+    scanStarting: "Generating code…",
+    /** In the setup fold: what scanning saves the user, in one line. */
+    scanHint:
+      "Or connect by QR: authorize in QQ by scanning, with no App ID or App Secret to copy by hand.",
+    scanQrLabel: "QQ bot authorization QR code",
+    scanWaiting: "Waiting to be scanned in QQ…",
+    scanSteps:
+      "Scan the code with QQ on your phone, then pick the bot to authorize on the page it opens and confirm.",
+    /** Shown only after a code has actually lapsed and been replaced. */
+    scanRefreshed: "The previous code expired; this is a new one.",
+    /** Why the secret is safe to obtain this way — the question a careful user will ask. */
+    scanPrivacy:
+      "The credentials are received and stored by the server; the decryption key never reaches this browser.",
+    scanDone: (appId: string): string =>
+      `Saved the credentials for bot ${appId} — the connection can be enabled now`,
+    scanFailed: (reason: string): string => `Scan-to-connect failed: ${reason}`,
+    /** Shown when replacing lapsed codes stopped being worth another round trip. */
+    scanExpiredRepeatedly:
+      "The code kept expiring before it could be scanned. Try starting a new scan in a moment.",
+    /** Why the scan button is gated while this channel holds the connection. */
+    scanDisableFirst: "Disable the connection before rebinding by scan",
+    /** Separates the scan path from the manual one; the fields below are the fallback, not the default. */
+    scanOrManual: "Or enter them by hand",
     /** The setup FAQ fold's steps. */
     setupSteps: [
       "Register as a developer on the QQ open platform and create a bot",
@@ -2194,6 +2219,8 @@ Scenarios:
         "This bot's connection is enabled on another conversation: turn it off there first.",
       messaging_disable_before_clear:
         "Disable this channel's connection before clearing its credential.",
+      messaging_disable_before_scan:
+        "Disable this channel's connection before rebinding it by scan.",
     },
   },
 };

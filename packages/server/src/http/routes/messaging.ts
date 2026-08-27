@@ -20,6 +20,12 @@
  * and run the two tests; the secret-mutating writes — PUT, the state toggle and DELETE —
  * are Project-owner-only.
  *
+ * QQ additionally offers a scan-to-connect flow (`/qq/scan…`): the server holds the bind
+ * task and the AES key that decrypts the App Secret, polls on the browser's behalf, and
+ * stores the result. The browser only ever learns the task handle, the URL to render as a QR
+ * code, and the App ID that came back — the same never-round-trip-the-secret rule the PUT
+ * handlers follow, applied to a secret that arrives from outside instead of from the user.
+ *
  * A PUT also carries `linePerMessage`, the one saved field that is not a credential: whether
  * a relayed reply is delivered one message per non-blank line. It is an ordinary form field
  * applied on Save — omitted keeps the stored value — and it never touches the connection.
@@ -45,6 +51,8 @@ import type {
   MessagingTestMessageResponse,
   QQBindingInfo,
   QQBindingResponse,
+  QQScanPollResponse,
+  QQScanStartResponse,
   QQTestResponse,
   TelegramBindingInfo,
   TelegramBindingResponse,
@@ -650,6 +658,97 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
     const row = resolveSession(c);
     deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
     deps.messaging.unbind(row.sessionId, "qq");
+    // A scan still in flight would land on a config that has just been removed.
+    deps.qqScan.cancelSession(row.sessionId);
+    return c.body(null, 204);
+  });
+
+  // —— QQ scan-to-connect ————————————————————————————————————————————————————
+  //
+  // The alternative to typing an App ID and an App Secret: the server registers a bind task
+  // under a fresh AES key, the browser renders the returned URL as a QR code, the user scans
+  // it in QQ, and the completed poll hands back the App Secret encrypted under that key.
+  //
+  // The key never leaves the server, which is what these three routes are shaped around: the
+  // browser is given a task handle, a URL and a status, and the credentials it produces go
+  // straight into storage without passing back through it. Owner-only throughout, like every
+  // other write here — the flow ends in a stored secret, so it is a credential write however
+  // little of it the caller types.
+
+  app.post("/:sessionId/messaging/qq/scan", async (c) => {
+    const row = resolveSession(c);
+    deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
+    // Disable-first is a server rule, not just a greyed-out button: a scan rewrites BOTH
+    // halves of the credential and would point a live connector at whatever account was
+    // scanned, which the PUT's account guard exists to prevent it doing silently.
+    if (deps.messagingRepo.find(row.sessionId, "qq")?.enabled === true) {
+      throw new HttpError(
+        409,
+        "messaging_disable_before_scan",
+        "Disable the connection before rebinding it by scan.",
+      );
+    }
+    let started: { taskId: string; qrUrl: string; pollMs: number };
+    try {
+      started = await deps.qqScan.start(row.sessionId);
+    } catch (err) {
+      throw new HttpError(502, "qq_scan_failed", err instanceof Error ? err.message : String(err));
+    }
+    return c.json(started satisfies QQScanStartResponse);
+  });
+
+  app.post("/:sessionId/messaging/qq/scan/poll", async (c) => {
+    const row = resolveSession(c);
+    deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
+    const body = await readJson(c);
+    const taskId = requireString(body, "taskId", { minLen: 1, maxLen: 500 });
+    let result: Awaited<ReturnType<typeof deps.qqScan.poll>>;
+    try {
+      result = await deps.qqScan.poll(row.sessionId, taskId);
+    } catch (err) {
+      throw new HttpError(502, "qq_scan_failed", err instanceof Error ? err.message : String(err));
+    }
+    // Unknown, another Session's, already resolved, or claimed by a poll still in flight —
+    // neither a replay nor an overlapping poll may re-authorize.
+    if (result === null) {
+      throw new HttpError(
+        404,
+        "qq_scan_task_unknown",
+        "This scan is no longer in progress: start a new one.",
+      );
+    }
+    if (result.status !== "completed" || result.bot === undefined) {
+      return c.json({ status: result.status } satisfies QQScanPollResponse);
+    }
+    // The scan landed: store it exactly as the PUT would, including the never-diverge
+    // restart of an enabled connector. It stores only — enabling stays the separate act it
+    // is on every channel, because enabling is what binds the account and is exclusive.
+    //
+    // The start refused an enabled binding, so this only fires when the connection was
+    // switched on WHILE the scan was in flight. Same guard as the PUT then: an enabled
+    // binding re-pointed at an account another Session holds would stand two connections on
+    // one bot's single gateway without either passing the enable gate.
+    const bound = deps.messagingRepo.find(row.sessionId, "qq");
+    if (bound !== null && bound.enabled) guardAccountFree(row.sessionId, "qq", result.bot.appId);
+    const saved = deps.messagingRepo.upsert({
+      sessionId: row.sessionId,
+      channel: "qq",
+      accountId: result.bot.appId,
+      config: { appId: result.bot.appId, appSecret: result.bot.appSecret },
+    });
+    if (saved.enabled) await deps.messaging.sync(row.sessionId);
+    return c.json({
+      status: "completed",
+      appId: result.bot.appId,
+      binding: toQQInfo(saved),
+    } satisfies QQScanPollResponse);
+  });
+
+  app.post("/:sessionId/messaging/qq/scan/cancel", async (c) => {
+    const row = resolveSession(c);
+    deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
+    const body = await readJson(c);
+    deps.qqScan.cancel(row.sessionId, requireString(body, "taskId", { minLen: 1, maxLen: 500 }));
     return c.body(null, 204);
   });
 

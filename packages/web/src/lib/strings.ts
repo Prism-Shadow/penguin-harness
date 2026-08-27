@@ -1799,6 +1799,26 @@ Benchmark：
     /** The passive-reply budget, in the terms a user experiences it. */
     replyBudget:
       "同一条 QQ 消息最多能收到 4 条回复（群聊 5 条）。一次运行产生的消息更多时，最后一条会把余下内容合并发出——内容不会丢失，只是合并成一条。",
+    /** Scan-to-connect: the button, and the states it moves through. */
+    scanStart: "扫码连接",
+    scanStarting: "生成二维码…",
+    /** In the setup fold: what scanning saves the user, in one line. */
+    scanHint: "也可以扫码连接：用 QQ 扫码授权，无需手动填写 App ID 与 App Secret。",
+    scanQrLabel: "QQ 机器人授权二维码",
+    scanWaiting: "等待在 QQ 中扫码…",
+    scanSteps: "用手机 QQ 扫描二维码，在打开的页面里选择要授权的机器人并确认。",
+    /** Shown only after a code has actually lapsed and been replaced. */
+    scanRefreshed: "上一个二维码已过期，这是新的。",
+    /** Why the secret is safe to obtain this way — the question a careful user will ask. */
+    scanPrivacy: "凭据由服务端直接接收并保存，解密密钥不会进入浏览器。",
+    scanDone: (appId: string): string => `已保存机器人 ${appId} 的凭据，可以启用连接了`,
+    scanFailed: (reason: string): string => `扫码连接失败：${reason}`,
+    /** Shown when replacing lapsed codes stopped being worth another round trip. */
+    scanExpiredRepeatedly: "二维码多次在扫描前就已过期。请稍后重新发起扫码。",
+    /** Why the scan button is gated while this channel holds the connection. */
+    scanDisableFirst: "先停用连接，再重新扫码绑定",
+    /** Separates the scan path from the manual one; the fields below are the fallback, not the default. */
+    scanOrManual: "或手动填写",
     /** The setup FAQ fold's steps. */
     setupSteps: [
       "在 QQ 开放平台注册开发者，创建一个机器人",
@@ -2148,6 +2168,7 @@ Benchmark：
       // this user cannot see, and the remedy does not depend on knowing which one it is.
       account_enabled_elsewhere: "该机器人的连接已在另一个会话中启用：先在那边停用，再在此启用。",
       messaging_disable_before_clear: "先停用该渠道的连接，才能清除其凭证。",
+      messaging_disable_before_scan: "先停用该渠道的连接，才能重新扫码绑定。",
     },
   },
 };

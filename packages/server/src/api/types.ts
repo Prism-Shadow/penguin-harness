@@ -1937,6 +1937,39 @@ export interface QQTestResponse {
 }
 
 /**
+ * POST …/messaging/qq/scan — starts a scan-to-connect flow: the server registers a bind
+ * task under a fresh AES key it keeps to itself, and answers with what the browser may
+ * know. The key is absent from this type on purpose — it decrypts the App Secret, so it
+ * never leaves the server (the same rule that keeps a stored secret from round-tripping).
+ */
+export interface QQScanStartResponse {
+  /** Opaque bind-task handle, passed back to the poll endpoint. */
+  taskId: string;
+  /** The URL to ENCODE into a QR code. It is opened by the QQ app, never fetched by the browser. */
+  qrUrl: string;
+  /** How often to poll, in milliseconds (the interval the protocol is designed around). */
+  pollMs: number;
+}
+
+/**
+ * POST …/messaging/qq/scan/poll — one step of the scan. `pending` means keep polling,
+ * `expired` means start a new task and show a new QR, and `completed` means the server has
+ * already decrypted the App Secret and SAVED the binding: `appId` names the bot that landed.
+ * Saving is all it does — enabling the connection stays the separate, exclusive act it is on
+ * every channel. A task id that is unknown, belongs to another Session, was already
+ * resolved, or is being resolved by a poll still in flight answers 404
+ * `qq_scan_task_unknown`: the task is claimed by one poll, so a client whose interval fires
+ * before the previous request came back binds once rather than once per overlapping poll.
+ */
+export interface QQScanPollResponse {
+  status: "none" | "pending" | "completed" | "expired";
+  /** The bound bot's App ID; present only on `completed`. Never the secret. */
+  appId?: string;
+  /** The saved binding, present on `completed` so the editor refreshes without a second GET. */
+  binding?: QQBindingInfo;
+}
+
+/**
  * POST …/messaging/<channel>/test-message — sent to the last known chat (409
  * `feishu_no_chat` / `telegram_no_chat` / `qq_no_chat` before one exists). On QQ this can
  * still fail with 502 afterwards: the platform accepts only replies to a message sent from
