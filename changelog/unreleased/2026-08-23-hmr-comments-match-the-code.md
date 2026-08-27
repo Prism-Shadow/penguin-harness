@@ -20,8 +20,11 @@ sent that reader the wrong way.
   is why the terminal WebSocket handshake reaches the App through in-process members. Both
   passages now say that.
 - `app.ts` described the hot APIs as authenticating with "a local-agent Bearer token OR admin
-  cookie session", pointing at `hot/routes.ts`. That token was removed for being a plaintext
-  admin-equivalent secret on disk, and the path named no file.
+  cookie session", pointing at `hot/routes.ts` — a path that names no file, and a token that
+  had been removed for being a plaintext admin-equivalent secret on disk. The gate is the
+  network check, then the ordinary auth middleware with an admin check on top; the Bearer
+  credential it accepts today is the boot's local API token at `<root>/api-token`, which
+  reinstated that equivalence deliberately, not the per-boot token the old comment meant.
 - Three JSDoc blocks documented the declaration below their neighbour rather than their own:
   `UpgradeAllTarget`'s sat above `UpgradeAssets`, `persistVersion`'s above
   `materializeAssets`, and `isSafeRelPath`'s above `sameFileContent` — leaving three

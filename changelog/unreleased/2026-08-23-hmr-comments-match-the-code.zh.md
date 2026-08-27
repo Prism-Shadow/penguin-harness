@@ -17,8 +17,10 @@
   真正带不了的是活的 socket，因为没有 `Response` 可以为它返回，这也正是终端 WebSocket 握手要通过
   进程内成员去够到 App 的原因。现在两处文字说的都是这件事。
 - `app.ts` 把热更新 API 的鉴权描述成「local-agent Bearer token 或管理员 cookie 会话」，并指向
-  `hot/routes.ts`。那个 token 因为是磁盘上一份等同管理员权限的明文密钥而被移除，那个路径也不指向
-  任何文件。
+  `hot/routes.ts`——那个路径不指向任何文件，而它说的那个 token 也早已因为是磁盘上一份等同管理员
+  权限的明文密钥而被移除。这道门实际是：先过网络闸门，再走普通的 auth 中间件并额外要求管理员。
+  它今天接受的 Bearer 凭据是本次启动的本机 API token（`<root>/api-token`）——那份等价关系是后来
+  被有意重新确立的，与旧注释指的那个 per-boot token 不是一回事。
 - 三处 JSDoc 记录的是它邻居下面的那个声明，而不是自己下面的：`UpgradeAllTarget` 的挂在
   `UpgradeAssets` 上、`persistVersion` 的挂在 `materializeAssets` 上、`isSafeRelPath` 的挂在
   `sameFileContent` 上——于是三个声明没有文档，另外三个各顶着两块。每一块都回到了它描述的声明上。

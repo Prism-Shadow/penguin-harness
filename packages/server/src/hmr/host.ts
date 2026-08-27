@@ -643,10 +643,10 @@ export class HmrHost {
 
   /**
    * Store GC: keep the STORE_KEEP most recently written of each artifact, plus the one
-   * harness.json references, which is kept whether or not recency would have. Best-effort; ordered after the manifest flip so
-   * nothing referenced can be pruned. `platform`, `cli`, and `web` are three
-   * independent subtrees now (no shared file to piggyback a sweep on), so each
-   * gets its own pass.
+   * harness.json references, which is kept whether or not recency would have. Best-effort;
+   * ordered after the manifest flip so nothing referenced can be pruned. `platform`, `cli`,
+   * `web` and the assets directories are independent subtrees (no shared file to piggyback a
+   * sweep on), so each gets its own pass.
    */
   private async pruneStore(manifest: Manifest): Promise<void> {
     const keepNewest = async (
