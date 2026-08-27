@@ -34,6 +34,7 @@ import {
   compactionBegin,
   compactionEnd,
   matchAttachedFileLine,
+  modelVisiblePath,
   scratchpadDir,
   toolCall,
 } from "@prismshadow/penguin-core";
@@ -1702,9 +1703,18 @@ describe("messaging binding routes and bridge", () => {
     expect(written).not.toBeNull();
     expect(path.basename(written!)).toBe("notes.pdf");
     // Under this Session's own scratchpad, which is deleted along with the Session.
+    // The line carries the MODEL-VISIBLE spelling of the path, not the native one: core runs
+    // every path it composes for the model through `modelVisiblePath`, which on Windows swaps
+    // the separators for forward slashes (they survive JSON escaping into tool arguments, Git
+    // Bash runs them, and Node's fs accepts them). The expected side therefore has to go
+    // through the same transform — a bare `path.join` matches everywhere except Windows,
+    // where the two differ by nothing but the separator.
     expect(path.dirname(written!)).toBe(
-      path.join(scratchpadDir(t.root, projectId, "default_agent"), SID),
+      modelVisiblePath(path.join(scratchpadDir(t.root, projectId, "default_agent"), SID)),
     );
+    // And the shape itself, which is the whole point of the transform: nothing in the line a
+    // model would have to escape. Vacuous on POSIX, load-bearing on Windows.
+    expect(written).not.toContain("\\");
     expect((await fs.readFile(written!)).equals(FILE_BYTES)).toBe(true);
     // Downloaded from the message that carried it, under the server's per-file attachment
     // cap — the same number an authenticated composer upload answers to.

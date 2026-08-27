@@ -23,6 +23,7 @@ import {
   approvalDecision,
   assistantText,
   matchAttachedFileLine,
+  modelVisiblePath,
   scratchpadDir,
   toolCall,
 } from "@prismshadow/penguin-core";
@@ -1189,7 +1190,7 @@ describe("telegram binding routes and connector loop", () => {
     const sends = fake.allTexts();
     // Bob's message got its notice where Bob wrote it — the live target is right for that.
     expect(sends[0]).toMatchObject({
-      text: MESSAGING_TEXT_ONLY_NOTICE,
+      text: MESSAGING_UNSUPPORTED_NOTICE,
       threadId: 77,
       replyTo: 202,
     });
@@ -1491,9 +1492,18 @@ describe("telegram binding routes and connector loop", () => {
     const written = matchAttachedFileLine(runs[0]![0]!.text!.trim());
     expect(written).not.toBeNull();
     expect(path.basename(written!)).toBe("report.pdf");
+    // The line carries the MODEL-VISIBLE spelling of the path, not the native one: core runs
+    // every path it composes for the model through `modelVisiblePath`, which on Windows swaps
+    // the separators for forward slashes (they survive JSON escaping into tool arguments, Git
+    // Bash runs them, and Node's fs accepts them). The expected side therefore has to go
+    // through the same transform — a bare `path.join` matches everywhere except Windows,
+    // where the two differ by nothing but the separator.
     expect(path.dirname(written!)).toBe(
-      path.join(scratchpadDir(t.root, projectId, "default_agent"), SID),
+      modelVisiblePath(path.join(scratchpadDir(t.root, projectId, "default_agent"), SID)),
     );
+    // And the shape itself, which is the whole point of the transform: nothing in the line a
+    // model would have to escape. Vacuous on POSIX, load-bearing on Windows.
+    expect(written).not.toContain("\\");
     expect((await fs.readFile(written!)).equals(DOCUMENT_BYTES)).toBe(true);
     // Downloaded under Telegram's own 20MB bot ceiling, which is tighter than the server's
     // per-file attachment cap and therefore the number that bites.
