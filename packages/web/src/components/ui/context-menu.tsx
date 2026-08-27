@@ -7,8 +7,8 @@
  * context menu inherits — rather than re-implements — that primitive's dismiss stack
  * (Escape through the shared esc-layer, outside click, scroll), its focus handling
  * (opening focuses the first item, Escape hands focus back), and its viewport clamping
- * and flip. The only thing the Dropdown cannot know is where the pointer was, which is
- * what the anchor this hook produces supplies.
+ * and flip. What the Dropdown cannot know is where the pointer was, and which element that
+ * point sat in — the anchor and its owner, both produced here.
  *
  * Native-menu suppression is scoped by construction: `preventDefault` is called inside
  * the row's own `onContextMenu`, so it only ever runs for events that originated in that
@@ -57,6 +57,13 @@ export interface RowContextMenu {
   setOpen: (v: boolean) => void;
   /** Viewport box to place the panel against; null while closed. */
   anchor: AnchorRect | null;
+  /**
+   * The row the anchor was measured against, for the panel's scroll dismissal: only a
+   * scroll that moved this row moved the point the menu hangs off, and the panel hears
+   * scrolls from every container on the page. An accessor rather than the node, so the
+   * list's frequent re-renders do not re-register those listeners.
+   */
+  anchorOwner: () => HTMLElement | null;
   /** Focus target when Escape closes the panel — the row's own button. */
   returnFocus: () => HTMLElement | null;
   /**
@@ -192,6 +199,7 @@ export function useRowContextMenu(): RowContextMenu {
       dispatch({ kind: "dismiss", at: Date.now() });
     },
     anchor,
+    anchorOwner: () => row.current,
     returnFocus: () => row.current?.querySelector<HTMLElement>("button") ?? null,
     consumeLongPressClick: () => dispatch({ kind: "click" }).swallow,
     openAt: setAnchor,
