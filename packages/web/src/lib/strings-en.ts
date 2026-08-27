@@ -1940,6 +1940,15 @@ Scenarios:
     /** Its disclosure, beside the label: what the option changes, and what it costs. */
     finalReplyOnlyHelp:
       "Only the last thing the assistant says in a run is sent, when the run ends. The notes it writes between tool calls stay in the web app instead of arriving as their own messages, so the chat receives the answer rather than the work — at the cost of hearing nothing while a long run is under way. The approval reminder is not a reply and still arrives immediately. With one message per line also on, that final reply is the one that is split.",
+    /**
+     * Appended for QQ only. Not a nuance of the same trade but a different outcome: QQ can
+     * only send a passive reply anchored to an inbound message, and that anchor expires. On
+     * the other two channels the cost of holding the reply is silence; here a run that
+     * outlasts the window delivers nothing at all, which the channel-neutral sentence above
+     * would leave the user to discover from an empty chat.
+     */
+    finalReplyOnlyQQWarning:
+      "On QQ this needs a second thought: QQ only accepts a passive reply anchored to an inbound message, and that anchor expires after about five minutes. Holding the reply until the run ends means a run that outlasts the window delivers nothing at all — with this off, at least whatever finished inside the window arrives.",
     /** Enabled-row indicator's tooltip / sr text (the small per-channel glyph on the session row). */
     enabledIndicator: {
       feishu: "Feishu connection enabled",

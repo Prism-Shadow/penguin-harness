@@ -41,7 +41,11 @@ the previous behaviour.
   budget a run can spend — one message — but a passive reply is accepted only for a few
   minutes after the inbound message that funds it, and holding the reply until the run ends
   spends that window on the run: a run that outlives it delivers nothing, where the
-  every-message relay would have sent whatever completed inside it.
+  every-message relay would have sent whatever completed inside it. That is a different
+  outcome rather than a shade of the same one — silence on the other two channels, lost
+  output here — so the option's explanation says it on QQ instead of leaving it to these
+  notes. `linePerMessage` needs no such warning: QQ clamps the split to its own budget and
+  the reply still arrives.
 - The `approval_request` notice is not an assistant message and is unaffected — a run blocked on
   approval is exactly when the chat has to hear something. The other fixed notices and the test
   message are unaffected for the same reason, compaction output is still skipped before any of

@@ -579,7 +579,12 @@ function DeliveryOptionRow({
   onChange,
 }: {
   label: string;
-  help: string;
+  /**
+   * The semantics behind the "?". A node rather than a string because one channel's answer
+   * needs a second paragraph, and the popover's panel does not preserve newlines — a `\n\n`
+   * inside a string would collapse to a space and read as one run-on sentence.
+   */
+  help: ReactNode;
   checked: boolean;
   onChange: (checked: boolean) => void;
 }) {
@@ -930,13 +935,29 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
         </>
       )}
       {/* The saved fields that are not credentials, so they close the form rather than
-          sitting among them. What each does to a reply is one channel-neutral question, so
-          both rows are identical on every channel — see DeliveryOptionRow for where their
-          explanations sit. Order is the order they take effect in: which messages are sent,
-          then how each one is split. */}
+          sitting among them. Both rows are offered on every channel, and their explanations
+          sit behind the label's "?" — see DeliveryOptionRow. Order is the order they take
+          effect in: which messages are sent, then how each one is split.
+
+          The one place a channel changes the answer rather than shading it: on QQ every send
+          is a passive reply anchored to an inbound message, and that anchor expires, so
+          holding the reply to the run's end loses a long run's output entirely instead of
+          merely delaying it. That is a different outcome, not a nuance of the same one, so it
+          is appended to the explanation rather than left to the docs — the alternative is the
+          user learning it from an empty chat. `linePerMessage` needs nothing similar: QQ
+          clamps the split to its own budget and the reply still arrives. */}
       <DeliveryOptionRow
         label={S.messaging.finalReplyOnly}
-        help={S.messaging.finalReplyOnlyHelp}
+        help={
+          channel === "qq" ? (
+            <>
+              <p>{S.messaging.finalReplyOnlyHelp}</p>
+              <p className="mt-2">{S.messaging.finalReplyOnlyQQWarning}</p>
+            </>
+          ) : (
+            S.messaging.finalReplyOnlyHelp
+          )
+        }
         checked={delivery.finalReplyOnly}
         onChange={(v) => patchDelivery({ finalReplyOnly: v })}
       />
