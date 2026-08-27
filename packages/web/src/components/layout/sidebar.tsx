@@ -2788,6 +2788,7 @@ function SessionRow({
           setOpen={ctx.setOpen}
           portal={{ direction: "down", align: "left" }}
           anchorRect={ctx.anchor}
+          anchorOwner={ctx.anchorOwner}
           returnFocus={ctx.returnFocus}
           className="contents"
           menuClass="w-36"
