@@ -2,8 +2,9 @@
  * Copy-to-clipboard button and the hook behind it — the single place the app's "copy"
  * affordance and its feedback live, so every copy control behaves the same:
  *
- *   - the write is optimistic (an insecure context or denied permission must not leave the
- *     control stuck), matching the clipboard convention used across the chat views;
+ *   - the feedback follows the WRITE: the check appears only once the text has actually
+ *     reached the clipboard (writeClipboard reports that), so a copy the browser refused
+ *     never reads as one that succeeded;
  *   - the feedback is ALWAYS shown AT THE BUTTON, and it is the icon alone: copy swaps to
  *     the check for COPIED_MS and the tooltip flips to "已复制" (#312 — no transient
  *     "已复制" text is rendered, and the feedback never replaces an unrelated label/title
@@ -13,6 +14,7 @@
  *     region beside itself — that is the screen-reader half of the same feedback.
  */
 import { useEffect, useRef, useState } from "react";
+import { writeClipboard } from "../../lib/clipboard";
 import { S } from "../../lib/strings";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { GlyphIcon } from "./glyph-icon";
@@ -20,15 +22,10 @@ import { GlyphIcon } from "./glyph-icon";
 /** How long the copied state (check icon + flipped tooltip) stays after a click. */
 const COPIED_MS = 1500;
 
-/** Best-effort clipboard write (never throws; no-op where the API is unavailable). */
-export function writeClipboard(text: string): void {
-  void navigator.clipboard?.writeText(text);
-}
-
 /**
- * Transient "just copied" flag: `flash()` writes the text and turns `copied` on for
- * COPIED_MS. Exposed for the caller whose copy trigger is not a plain CopyButton
- * (e.g. a text button rendering CopyCheckGlyph next to its label); most callers
+ * Transient "just copied" flag: `flash()` writes the text and, if the write landed, turns
+ * `copied` on for COPIED_MS. Exposed for the caller whose copy trigger is not a plain
+ * CopyButton (e.g. a text button rendering CopyCheckGlyph next to its label); most callers
  * should use CopyButton directly.
  */
 export function useCopied(): { copied: boolean; flash: (text: string) => void } {
@@ -47,13 +44,17 @@ export function useCopied(): { copied: boolean; flash: (text: string) => void } 
     [],
   );
   const flash = (text: string) => {
-    writeClipboard(text);
-    setCopied(true);
-    if (resetTimer.current !== null) clearTimeout(resetTimer.current);
-    resetTimer.current = setTimeout(() => {
-      resetTimer.current = null;
-      setCopied(false);
-    }, COPIED_MS);
+    void writeClipboard(text).then((ok) => {
+      // A refused write shows nothing rather than a check: the control returns to idle, so
+      // the copy can simply be retried — there is no state to be stuck in.
+      if (!ok) return;
+      setCopied(true);
+      if (resetTimer.current !== null) clearTimeout(resetTimer.current);
+      resetTimer.current = setTimeout(() => {
+        resetTimer.current = null;
+        setCopied(false);
+      }, COPIED_MS);
+    });
   };
   return { copied, flash };
 }
