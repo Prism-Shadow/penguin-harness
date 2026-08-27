@@ -665,8 +665,11 @@ export function ChatPage() {
     id: selectedSessionId,
     state: "idle",
   });
-  /** Settled-turn counter handed to the Files panel; every bump means "re-read". */
-  const [filesReloadSignal, setFilesReloadSignal] = useState(0);
+  /**
+   * Settled-turn counter handed to the dock panels that read what the Session produced — the
+   * Files browser and the Trace panel; every bump means "re-read".
+   */
+  const [settledTurnSignal, setSettledTurnSignal] = useState(0);
   useEffect(() => {
     const prev = prevTaskRef.current;
     const sameSession = prev.id === selectedSessionId;
@@ -680,9 +683,10 @@ export function ChatPage() {
       void reloadAgents();
       // The turn that just ended is when the Agent's file writes landed: the Files panel's
       // listing and whatever it has open are stale from this moment on (see the browser's
-      // reloadSignal). Same edge, same guard — a phantom "idle" from a detaching stream
-      // never reaches here.
-      setFilesReloadSignal((n) => n + 1);
+      // reloadSignal), and so are the Trace panel's file list and the file it is showing —
+      // the turn appended its own record to it. Same edge, same guard — a phantom "idle"
+      // from a detaching stream never reaches here.
+      setSettledTurnSignal((n) => n + 1);
     }
   }, [stream.taskState, selectedSessionId, reloadSessions, reloadAgents]);
 
@@ -1494,7 +1498,7 @@ export function ChatPage() {
             session={selected}
             openRequest={fileOpenRequest}
             active={active}
-            reloadSignal={filesReloadSignal}
+            reloadSignal={settledTurnSignal}
           />
         );
       case "memory":
@@ -1512,7 +1516,14 @@ export function ChatPage() {
           />
         );
       case "trace":
-        return <TracePanel key={selected.sessionId} session={selected} active={active} />;
+        return (
+          <TracePanel
+            key={selected.sessionId}
+            session={selected}
+            active={active}
+            reloadSignal={settledTurnSignal}
+          />
+        );
       case "messaging":
         return (
           <MessagingPanel key={selected.sessionId} sessionId={selected.sessionId} active={active} />
