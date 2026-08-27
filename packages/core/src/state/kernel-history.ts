@@ -181,8 +181,10 @@ export function isKernelOutdated(kernelVersion: string | null | undefined): bool
  *   and now returns the subagent's latest reply: the tools tab moved.
  * - `2026-08-26` (current) — the schedules prompt's default target became the Session the
  *   model is already in (`session_id` taken from the Environment section) instead of a fresh
- *   Session per trigger, with the hygiene line that bounds a self-directed recurring task
- *   alongside it: the schedules tab moved.
+ *   Session per trigger, alongside the hygiene line that bounds a self-directed recurring task
+ *   and the carve-outs from the new default (an open-ended reminder keeps no `end_at`, work
+ *   that must outlive the conversation takes the new-Session form, and a subagent omits the
+ *   field): the schedules tab moved.
  */
 export const KERNEL_DEFAULT_TAB_HASHES: Readonly<Record<KernelTab, string>> = {
   prompt: "048198c37b8d7840352c225fdfcb15baf2679973c6eab4bf400d492daf6ce254",
@@ -191,7 +193,7 @@ export const KERNEL_DEFAULT_TAB_HASHES: Readonly<Record<KernelTab, string>> = {
   skills: "7e343aa692e5eaeadfc8add6bb375fb50ac33ef81ebe460490fc219b0f3d707f",
   memory: "53d190390829cc0132bb12e468a6891f2e0576ec0c4022a9b4a5d9233666900d",
   vault: "19bd36a6d4ab442b66583c423450602b817990a9a79bafa21c9b6137fb6b47d8",
-  schedules: "4b8e9372eb839577cd4c4e20f48ff3bd668bd94b21b0065513d62dcb91a54c04",
+  schedules: "c722922eca13a83400d92924e4d1aa8b09964b4081261be81e5149f0eae1119d",
 };
 
 /**

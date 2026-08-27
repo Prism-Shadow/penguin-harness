@@ -4,7 +4,7 @@ description: Drive PenguinHarness itself from a shell — list and create agents
 short_description: Orchestrate agents, sessions, costs and schedules with the penguin CLI.
 short_description_zh: 用 penguin CLI 编排智能体、会话、成本与定时任务。
 version: 3
-updated: 2026-08-27T01:55:00Z
+updated: 2026-08-27T09:40:00Z
 ---
 
 # Penguin Orchestration
@@ -122,7 +122,8 @@ penguin run -m "Summarize this per-agent cost report and flag anomalies: <the JS
 
 ```bash
 penguin schedule add build-watch --prompt "Check the build results and report the failures" \
-  --start-at now --period 12h --end-at 2026-09-01T09:00:00Z --session-id "$PENGUIN_SESSION_ID"
+  --start-at now --period 12h --session-id "$PENGUIN_SESSION_ID" \
+  --end-at <ISO instant>                             # only when the request has a horizon
 penguin schedule add daily-report --prompt "Summarize yesterday's conversations" \
   --start-at now --period 1d                         # no target: a fresh session per firing
 penguin schedule ls                                  # verify
@@ -159,6 +160,6 @@ Prefer (a) when you stay around for the result — the completion report comes t
 
 - **One active task per session.** `penguin input` at a busy session steers the running task rather than starting a second one; a new task sent at a busy session waits its turn. For parallel work, start parallel sessions.
 - **Unattended sessions must not need a human.** A spawned session inherits your approval mode (`allow-all` when there is no caller to inherit from); if you yourself run under `always-ask`, pass `--approve allow-all` (trusted work) or `--approve read-only` explicitly — an unattended `always-ask` session hangs waiting for approval in the web UI.
-- **No runaway loops.** An agent that messages itself — directly, through a chain of agents, or through a schedule aimed back at its own session — keeps spending until someone stops it. Make every automated conversation terminate: a recurring schedule pointed at your own session needs an `--end-at` (or no `--period` at all, for a one-time reminder), and a prompt whose per-firing work stays small — that session's context grows with every firing.
+- **No runaway loops.** An agent that messages itself — directly, through a chain of agents, or through a schedule aimed back at its own session — keeps spending until someone stops it. Make every automated conversation terminate: a recurring schedule pointed at your own session takes an `--end-at` whenever the request has a natural horizon (or no `--period` at all, for a one-time reminder), and a prompt whose per-firing work stays small — that session's context grows with every firing. When the user wants it open-ended, leave `--end-at` off and tell them it runs until they remove it.
 - **Spawned work bills the project.** Everything you start lands in the same project's usage (`penguin cost` shows it); a fan-out of sessions multiplies spend.
 - **Configuration stays CLI-managed.** Never read or hand-edit `.project_config.toml` or `agent_state/.vault.toml` — models and secrets go through `penguin config` (see the penguin-cli skill).

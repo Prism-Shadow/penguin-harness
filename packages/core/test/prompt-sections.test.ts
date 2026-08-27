@@ -216,9 +216,23 @@ describe("{{SCHEDULES}} rendering", () => {
     expect(prompt).toContain(
       "`session_id` cannot be combined with workspace / provider / model_id",
     );
+    // The example writes the target as `<session_id>`, which the model can only resolve because
+    // the system prompt's File system section declares angle-bracket names substitutable and
+    // names this one. That section lives in the `prompt` kernel tab, a different tab from
+    // `schedules` — so pin the pair, or one tab can advance out from under the other.
+    expect(prompt).toContain('session_id = "<session_id>"');
+    expect(prompt).toContain(
+      "Angle-bracket names such as `<app_data_dir>` and `<session_id>` are placeholders",
+    );
     // Defaulting to this Session makes the self-directed loop ordinary, so the section carries
-    // the bound that ends one.
-    expect(prompt).toContain("bound it with `end_at`");
+    // the bound that ends one — conditioned on the request having a horizon, so an open-ended
+    // reminder is not silently given an expiry date.
+    expect(prompt).toContain("give it an `end_at` when the request has a natural horizon");
+    expect(prompt).toContain("leave `end_at` off and say in your reply");
+    // A subagent renders this same section against its own short-lived Session.
+    expect(prompt).toContain("If `run_subagent` is not in your tool list, you are the subagent");
+    // A Session is not the durable identity of a conversation, and the section says so.
+    expect(prompt).toContain("this Session is not permanent");
   });
 
   it("falls back to the built-in prompt for a config that predates the schedules section", async () => {

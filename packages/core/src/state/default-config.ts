@@ -333,6 +333,17 @@ export const DEFAULT_SKILLS_PROMPT = LEGACY_SKILLS_SECTION;
  * is untouched. It does make the self-directed loop the ordinary shape, which is what the
  * `end_at` / one-shot / small-work hygiene line pays for: a periodic task firing into its own
  * Session grows that Session's context on every trigger and ends only when someone ends it.
+ * The `end_at` half of that line is conditional on purpose: an open-ended reminder bounded by
+ * an invented date stops on that date with no event and no error record, so the section asks
+ * for a bound only when the request has a horizon, and for the reply to say so otherwise.
+ *
+ * The section also spells out where this Session is the wrong target. A Session is not the
+ * durable identity of a conversation — switching model or agent opens a new one, and deleting
+ * the conversation stops a task bound to it (the next fire records a missing-session error and
+ * marks the task invalid) — so work meant to outlive the conversation belongs in the
+ * new-Session form. And a subagent renders this same section against its own short-lived
+ * Session, so it is told to omit the field (the `run_subagent` self-test the system prompt
+ * already uses).
  */
 export const DEFAULT_SCHEDULES_PROMPT = `# Scheduled Tasks
 Prompts delivered to this agent on a timer: TOML files you manage with the file tools, in \`<app_data_dir>/agents/<agent_id>/agent_state/schedule/\` (create the directory if it does not exist). One task per file; the file name minus \`.toml\` is the task's name (letters, digits, \`_\` and \`-\` only). The server re-reads the directory within about 30 seconds — creating, editing or deleting a file is all it takes, there is nothing to register.
@@ -346,9 +357,9 @@ end_at = 2026-09-01T09:00:00Z
 session_id = "<session_id>"
 \`\`\`
 
-Field rules: \`prompt\` (required) is the message sent when the task fires. \`enabled\` defaults to false — set it to true explicitly or the task never runs. \`start_at\` (required) is the first trigger time, an ISO 8601 instant. \`period\` is a fixed interval like \`30m\` / \`12h\` / \`7d\` (5 minutes minimum); omit it for a one-shot task. \`end_at\` (optional) must be later than start_at; a periodic task stops after it. \`session_id\` picks where the prompt is delivered, and by default it is this Session: write the id from the Environment section's Session ID line, so every trigger arrives in the conversation you are in now, with its context intact. Omit it when the user asks for a separate Session, or when the task is better off starting clean — a nightly report that should not inherit this conversation's history. Each trigger then opens a new Session, in which \`workspace\` (optional) picks the working directory and \`provider\` + \`model_id\` pick the model — always both or neither; omit both to use the Project's default model. \`session_id\` cannot be combined with workspace / provider / model_id.
+Field rules: \`prompt\` (required) is the message sent when the task fires. \`enabled\` defaults to false — set it to true explicitly or the task never runs. \`start_at\` (required) is the first trigger time, an ISO 8601 instant. \`period\` is a fixed interval like \`30m\` / \`12h\` / \`7d\` (5 minutes minimum); omit it for a one-shot task. \`end_at\` (optional) must be later than start_at; a periodic task stops after it. \`session_id\` picks where the prompt is delivered, and by default it is this Session: write the id from the Environment section's Session ID line, so every trigger arrives in the conversation you are in now, with its context intact. If \`run_subagent\` is not in your tool list, you are the subagent: nobody is watching your Session, so omit \`session_id\` unless your caller gave you an id to target. Omit it when the user asks for a separate Session, or when the task is better off starting clean — a nightly report that should not inherit this conversation's history. Omit it as well for anything that has to outlive this conversation: this Session is not permanent — switching the model or the agent opens a new one, and deleting the conversation strands a task bound to it, which then stops firing. Each trigger then opens a new Session, in which \`workspace\` (optional) picks the working directory and \`provider\` + \`model_id\` pick the model — always both or neither; omit both to use the Project's default model. \`session_id\` cannot be combined with workspace / provider / model_id.
 
-A repeating task aimed at this Session grows its context on every trigger and nothing ends it on its own: bound it with \`end_at\`, use a one-shot task for a one-time reminder, and keep the work each trigger asks for small.
+A repeating task aimed at this Session grows its context on every trigger and nothing ends it on its own: give it an \`end_at\` when the request has a natural horizon; when the user wants it open-ended, leave \`end_at\` off and say in your reply that it will run until they remove it. Use a one-shot task for a one-time reminder, and keep the work each trigger asks for small.
 
 Check the current tasks below before creating one so you never duplicate an existing task; change a task by editing its file in place; delete the file when a task is obsolete.
 
