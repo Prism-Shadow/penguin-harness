@@ -70,7 +70,7 @@ userData 目录随其名称一并搬家，Chromium 配置文件也跟着走，�
 桌面外壳仍会共用它，第二次启动会聚焦到第一个窗口而不是自己开一个——换一个 `PENGUIN_HOME` 也改变不了
 这一点，因为它移动的是数据根目录，不是标识。
 
-开发时的模型凭据，把 `.env.example` 复制为 `.env`。
+开发环境下的模型凭据：把 `.env.example` 复制为 `.env`。
 
 ## 仓库结构
 
@@ -102,7 +102,7 @@ pnpm typecheck
 pnpm test           # 每个包的单元测试
 ```
 
-用编码 Agent 在本仓库上工作：[`.agents/skills/penguin-harness-dev/`](../.agents/skills/penguin-harness-dev/SKILL.md)
+用编码 Agent 在本仓库上开发：[`.agents/skills/penguin-harness-dev/`](../.agents/skills/penguin-harness-dev/SKILL.md)
 收集了那些从外部看最容易搞错的约定——双仓库软链接布局、CI 同链路验证、record-and-ship 契约、模型目录的
 定价规则，以及那些有意为之的接缝。`.claude` 是指向 `.agents` 的软链接，因此 Claude Code 会话与其他任何
 Agent 读到的是同一个目录。

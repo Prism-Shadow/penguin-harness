@@ -19,7 +19,7 @@ body:
     id: proposal
     attributes:
       label: What you would like it to do
-      description: The behaviour you want, and where it would live — the Web App, the CLI, the SDK, a Skill, the model catalog.
+      description: The behavior you want, and where it would live — the Web App, the CLI, the SDK, a Skill, the model catalog.
     validations:
       required: true
 

@@ -17,5 +17,5 @@ this change; the full chain CI runs is `pnpm -r build`, `pnpm typecheck`, `pnpm 
 ## Checklist
 
 - [ ] Changelog entry pair under `changelog/unreleased/` — `YYYY-MM-DD-<slug>.md` and its `.zh.md` counterpart, in the format [changelog/README.md](https://github.com/Prism-Shadow/penguin-harness/blob/main/changelog/README.md) describes.
-- [ ] Docs updated where this changes documented behaviour (README, `packages/docs/content/`).
+- [ ] Docs updated where this changes documented behavior (README, `packages/docs/content/`).
 - [ ] No API key, bot token or other credential in the diff, the logs, or the screenshots.
