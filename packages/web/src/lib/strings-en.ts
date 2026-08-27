@@ -1205,8 +1205,6 @@ export const en: Strings = {
 
   extensions: {
     pageTitle: "Extensions",
-    pageDesc:
-      "Extension index: packages a deployment can install (configured in extensions.json under the data root).",
     empty: "No extensions yet",
     specifierHint: "Package specifier for extensions.json",
     back: "Back to Extensions",
