@@ -73,6 +73,17 @@
         }
       },
       {
+        "id": "web.pages.extension-detail",
+        "key": "extension-detail",
+        "path": "/extensions/*",
+        "nav": "none",
+        "admin": false,
+        "released": true,
+        "renderer": {
+          "builtin": "ExtensionDetailPage"
+        }
+      },
+      {
         "id": "web.machines",
         "key": "machines",
         "path": "/machines",

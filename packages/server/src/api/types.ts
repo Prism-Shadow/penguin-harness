@@ -3178,6 +3178,13 @@ export interface ExtensionIndexResponse {
   extensions: ExtensionIndexEntry[];
 }
 
+/** GET /api/extensions/readme — long-form docs for one entry; `readme` is null when none exists. */
+export interface ExtensionReadmeResponse {
+  name: string;
+  /** Markdown, rendered by the Web App. Null when this entry has no readme. */
+  readme: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // Version and self-update
 // ---------------------------------------------------------------------------
