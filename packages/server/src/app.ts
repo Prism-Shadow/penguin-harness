@@ -419,10 +419,6 @@ export function createRuntimeApp(deps: AppDeps): Hono<AppEnv> {
 
   // Public routes (no login required).
   app.route("/api/auth", authRoutes(deps));
-  // The data root's install identity. Public because the web app reads it before it mounts
-  // — before it knows whether anyone is signed in, and a just-wiped root has nobody signed
-  // in at all. See http/routes/install.ts.
-  app.route("/api/install", installRoutes(deps));
   // Desktop shutdown authenticates with the shell's Bearer token, not the cookie
   // session, so it mounts outside authMiddleware (and only in desktop mode).
   if (deps.desktop) {
@@ -913,6 +909,19 @@ export function createApp(
   // and because this registration comes first, `:flowId` can never swallow "callback". Only
   // GET is served, and the handler refuses the HEAD that Hono re-dispatches into it.
   app.route("/api/projects/:projectId/model-oauth/callback", modelOAuthCallbackRoutes(deps));
+
+  // The data root's install identity, public: the web app compares it against what it holds
+  // in `localStorage` before React mounts, which is before it knows whether anyone is signed
+  // in — and a just-wiped root, the case the whole mechanism exists for, has nobody signed in
+  // at all. See http/routes/install.ts.
+  //
+  // Mounted in the PLATFORM rather than the runtime because a hot push carries platform + cli
+  // + web dist as ONE version and never the runtime (hmr/host.ts): the bundle that calls this
+  // route and the route itself then always move together, whereas a runtime mount would let a
+  // pushed web dist arrive on an installation whose runtime does not serve what it asks for.
+  // For that reason /api/install is deliberately absent from RUNTIME_PREFIXES above — the
+  // platform must serve it, not decline it.
+  app.route("/api/install", installRoutes(deps));
 
   // Protected routes: cookie -> auth_session -> user, over the runtime's auth service.
   app.use("/api/*", authMiddleware(deps.authService));

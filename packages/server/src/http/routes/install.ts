@@ -7,9 +7,12 @@
  * for, a wiped data root, is precisely the case where nobody is. See install-id.ts for why
  * publishing the id discloses nothing.
  *
- * Mounted in the RUNTIME shell, above the platform seam, because the data root belongs to
- * the runtime: a hot-pushed platform of any version answers this the same way, and cannot
- * take the answer over.
+ * Mounted in the PLATFORM, above its auth gate (app.ts's createApp). A hot push carries
+ * platform + cli + web dist as one version and never the runtime, so putting the route where
+ * the platform is puts it where the web bundle that calls it is: the two can never arrive on
+ * an installation separately. The data root is still the runtime's — `deps.config.root` comes
+ * from the claimed capabilities either way — so ownership of the FILE and ownership of the
+ * route are simply different questions.
  *
  * The id is read per request rather than captured at boot. It is one small file and the
  * request happens once per page load, and reading it live is what makes the answer follow

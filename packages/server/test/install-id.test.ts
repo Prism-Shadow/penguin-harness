@@ -13,7 +13,11 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { InstallResponse } from "../src/api/types.js";
+import { createApp } from "../src/app.js";
+import { HotResources } from "../src/hmr/resources.js";
 import { ensureInstallId, installIdPath, readInstallId } from "../src/install-id.js";
+import { TerminalManager } from "../src/terminal/manager.js";
+import { identityFrom } from "../src/terminal/identity.js";
 import { createTestApp, loginAdmin, makeTempRoot } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -130,6 +134,40 @@ describe("GET /api/install", () => {
     expect(((await authed.json()) as InstallResponse).installId).toBe(
       ((await anonymous.json()) as InstallResponse).installId,
     );
+  });
+
+  it("mounts in the PLATFORM, so a pushed web bundle can never outrun the route it calls", async () => {
+    // A hot push carries platform + cli + web dist as ONE version and never the runtime
+    // (hmr/host.ts), so the route the pushed bundle asks for has to travel with the platform.
+    // Mounted in the runtime it would be missing from exactly the installations that received
+    // the new web dist by push, and the platform's own auth gate would 401 a public route.
+    const platform = createApp(
+      t.deps,
+      new TerminalManager(new HotResources()),
+      identityFrom(t.deps.authService),
+    );
+
+    const res = await platform.request("/api/install");
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as InstallResponse).installId).toBe(readInstallId(t.root));
+  });
+
+  it("hands overlapping callers on a fresh root the same id", async () => {
+    // Both requests are in flight before either resolves. A second, different id here would
+    // sweep the browser's UI state on a page load that changed nothing. Two SERVER PROCESSES
+    // cannot reach this: the root is locked (lock.ts) before either would mint.
+    fs.rmSync(installIdPath(t.root), { force: true });
+
+    const [first, second] = await Promise.all([
+      t.app.request("/api/install"),
+      t.app.request("/api/install"),
+    ]);
+    const idA = ((await first.json()) as InstallResponse).installId;
+    const idB = ((await second.json()) as InstallResponse).installId;
+
+    expect(idA).not.toBeNull();
+    expect(idB).toBe(idA);
+    expect(readInstallId(t.root)).toBe(idA);
   });
 
   it("follows the file: a root deleted under a running server reports a new id", async () => {

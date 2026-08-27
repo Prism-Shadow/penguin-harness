@@ -23,6 +23,13 @@
  *   - the classification below stays readable as a table instead of being spread across
  *     twenty call sites.
  *
+ * TWO THINGS THE SWEEP ALONE DOES NOT COVER, both of them a live copy of state the store no
+ * longer holds:
+ *   - modules evaluated before the sweep ran (the whole static import graph finishes before
+ *     main.tsx's first statement) — a swept boot RELOADS rather than renders, see
+ *     bootInstallScope;
+ *   - other tabs, still open against the root that is gone — see watchInstallScope.
+ *
  * FIRST SIGHT (a browser with keys but no stored id — every user upgrading into this
  * release) is indistinguishable from a wiped root, so it ADOPTS the current id and sweeps
  * nothing. Destroying legitimate state on upgrade would be a far worse bug than the one
@@ -69,7 +76,9 @@ export interface KeyRule {
  *
  * ADDING A KEY: add it here too. An unclassified key is left alone by the sweep (never
  * deleting something we do not understand is the safe default), so a forgotten
- * install-scoped key silently reintroduces the bug this module fixes.
+ * install-scoped key silently reintroduces the bug this module fixes. That is enforced
+ * rather than asked for: install-scope.test.ts scans `packages/web/src` for key literals and
+ * fails on any this table does not cover.
  *
  * Two `penguin.*` strings in the source are NOT here on purpose:
  *   - `penguin.chatRouteApplied.<field>` (features/chat/draft-view.tsx) is `sessionStorage`,
@@ -288,9 +297,14 @@ export interface InstallScopeStorage {
  * - `adopted` — this browser had no id recorded. First sight; the id is stored and nothing
  *   is swept.
  * - `unchanged` — same root as last time. The ordinary case, including every restart.
- * - `swept` — a different root. Install-scoped keys removed, preferences kept.
+ * - `swept` — a different root. Install-scoped keys removed, preferences kept, and the new
+ *   id recorded, so the next load is an ordinary `unchanged` one.
+ * - `swept-unrecorded` — the same removal, except the new id could not be written back
+ *   (quota, blocked site data), so the next load compares and sweeps again. Split from
+ *   `swept` for one reason: `swept` reloads the page (bootInstallScope) and this one must
+ *   not, or every pass would sweep, fail to record, and reload again.
  */
-export type InstallScopeResult = "unknown" | "adopted" | "unchanged" | "swept";
+export type InstallScopeResult = "unknown" | "adopted" | "unchanged" | "swept" | "swept-unrecorded";
 
 /** Reads one key, treating a throwing store as empty (blocked site data, partitioned iframe). */
 function read(storage: InstallScopeStorage, key: string): string | null {
@@ -346,14 +360,17 @@ export function reconcileInstallScope(
   const stored = read(storage, INSTALL_ID_KEY);
   if (stored === installId) return "unchanged";
 
-  const result: InstallScopeResult = stored === null ? "adopted" : "swept";
-  if (result === "swept") sweep(storage);
+  const swept = stored !== null;
+  if (swept) sweep(storage);
   try {
     storage.setItem(INSTALL_ID_KEY, installId);
   } catch {
     /* best-effort: unrecorded means the next load compares again, which is harmless */
   }
-  return result;
+  if (!swept) return "adopted";
+  // Read the marker BACK rather than trust the write: a swept boot reloads, and a sweep
+  // whose marker did not stick would sweep, fail to record and reload again on every pass.
+  return read(storage, INSTALL_ID_KEY) === installId ? "swept" : "swept-unrecorded";
 }
 
 /** How long to wait for the identity before rendering anyway — see syncInstallScope. */
@@ -390,4 +407,81 @@ export async function syncInstallScope(storage?: InstallScopeStorage): Promise<I
   } catch {
     return "unknown";
   }
+}
+
+/** What the boot does with the page once this browser's state has been reconciled. */
+export type BootAction = "mount" | "reload";
+
+/**
+ * The whole pre-mount step as one call: ask the server for the data root's identity,
+ * reconcile this browser's stored state against it, and say whether the page may render or
+ * has to start over.
+ *
+ * A RECORDED SWEEP RELOADS. ES module evaluation of the entire static import graph finishes
+ * before main.tsx's first statement runs, so a module that reads `localStorage` at module
+ * scope — features/dock/dock-state.ts parses `penguin.dock.layout` into module state there —
+ * is already holding a copy of keys the sweep then deletes, and its first write puts the
+ * whole map back. The id matches by then, so nothing ever sweeps it again and the
+ * resurrection is permanent. A reload re-evaluates every module against the cleaned store
+ * and the second pass reconciles to `unchanged`. Making that one module lazy would fix that
+ * one module and leave the class open for the next one; this holds however the import graph
+ * grows, and it costs one extra load only when the data root was actually replaced.
+ *
+ * `swept-unrecorded` deliberately mounts: reloading on a sweep whose marker did not stick
+ * would sweep, fail to record and reload again, forever.
+ */
+export async function bootInstallScope(storage?: InstallScopeStorage): Promise<BootAction> {
+  return (await syncInstallScope(storage)) === "swept" ? "reload" : "mount";
+}
+
+/** The `storage` event fields the cross-tab decision needs (tests pass a plain object). */
+export interface InstallIdChange {
+  key: string | null;
+  oldValue: string | null;
+  newValue: string | null;
+}
+
+/**
+ * What another tab's `storage` event means here, and whether this tab must reload.
+ *
+ * The sweep runs once per page load, so a tab that was ALREADY open when a second tab
+ * recognised the new root still holds the old root's state in module and component memory
+ * and writes it back on the next pin, reorder or draft keystroke — restoring keys the other
+ * tab removed, under an id that now matches and will never be swept again. A `storage` event
+ * fires in every OTHER tab of this origin, which is exactly the set that has to hear about
+ * it: sweep whatever this tab has already put back, and report that it must reload, so no
+ * live copy survives to write it a second time.
+ *
+ * Only an id REPLACED by a different id is a root that was wiped. A first recording
+ * (`oldValue` null) is that tab's adoption, which swept nothing; a removal (`newValue` null)
+ * is site data being cleared, which the next load adopts from scratch. Neither concerns the
+ * state held here.
+ */
+export function reactToInstallIdChange(
+  change: InstallIdChange,
+  storage: InstallScopeStorage,
+): boolean {
+  if (change.key !== INSTALL_ID_KEY) return false;
+  if (change.oldValue === null || change.newValue === null) return false;
+  if (change.oldValue === change.newValue) return false;
+  sweep(storage);
+  return true;
+}
+
+/**
+ * Wires reactToInstallIdChange to this browser's cross-tab `storage` events for the life of
+ * the page. A no-op where there is no window (tests, prerendering).
+ */
+export function watchInstallScope(storage?: InstallScopeStorage): void {
+  if (typeof window === "undefined") return;
+  window.addEventListener("storage", (event) => {
+    let stale = false;
+    try {
+      // `localStorage` is resolved INSIDE the try for the same reason syncInstallScope does.
+      stale = reactToInstallIdChange(event, storage ?? localStorage);
+    } catch {
+      return; // blocked site data: there was nothing readable to restore either
+    }
+    if (stale) location.reload();
+  });
 }
