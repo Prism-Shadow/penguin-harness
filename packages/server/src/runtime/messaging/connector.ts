@@ -14,6 +14,33 @@
 /** Known messaging channels (the DB stores the discriminator as text; unknown values are skipped defensively). */
 export type MessagingChannel = "feishu" | "telegram" | "qq";
 
+/** One inbound image's bytes, once fetched, with the MIME type the bridge needs for its data URL. */
+export interface MessagingInboundImageData {
+  data: Buffer;
+  /** e.g. `image/png` — the connector's best answer, from the channel's own type or the bytes. */
+  mimeType: string;
+}
+
+/**
+ * An image attached to an inbound message: a handle, not the bytes.
+ *
+ * The bytes are deliberately NOT eagerly downloaded by the connector. Most of what makes
+ * an inbound message uninteresting is decided after the event is normalized — a
+ * redelivery is dropped before anything else happens — and a channel that downloaded
+ * first would pay a full image transfer for every replay. Fetching lazily also puts the
+ * cap where the transfer is: `fetch` refuses anything over `maxBytes` rather than handing
+ * the bridge something it would only discard, which is what keeps a 100MB attachment from
+ * ever being resident in this process.
+ */
+export interface MessagingInboundImage {
+  /**
+   * Downloads the image, throwing when it is larger than `maxBytes` or the transfer fails.
+   * Both outcomes read the same to the bridge, which answers either with one notice — the
+   * user's next move ("send a smaller one") is the same in both cases.
+   */
+  fetch(maxBytes: number): Promise<MessagingInboundImageData>;
+}
+
 /** One inbound chat message, normalized across channels. */
 export interface MessagingInboundMessage {
   /**
@@ -38,10 +65,18 @@ export interface MessagingInboundMessage {
    */
   messageId: string;
   /**
-   * The message's plain text; null for anything that is not a text message (stickers,
-   * images, …) — the bridge answers those with the text-only notice.
+   * The message's plain text; null for anything that carries none (stickers, voice,
+   * files, …) — a message with neither text nor images gets the not-supported notice.
+   * An image sent with a caption puts the caption here: the caption IS that message's
+   * text, so a channel needs no second field for it and the bridge no second rule.
    */
   text: string | null;
+  /**
+   * Images attached to this message (absent or empty when there are none). Handles rather
+   * than bytes — see MessagingInboundImage. A channel that carries several images in one
+   * message lists them in the order the user sees them.
+   */
+  images?: readonly MessagingInboundImage[];
   /** Sender display name when the channel's event carries one. */
   senderName?: string;
 }

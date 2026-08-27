@@ -9,6 +9,7 @@
  * which would tax every typecheck for the handful of calls made here; the local interfaces
  * below are the contract, and the adapter casts the loaded module once.
  */
+import { collectUnderCap, sniffImageMime } from "./media.js";
 
 /** One credential set (a binding's stored values, or a test request's draft). */
 export interface FeishuCredentials {
@@ -49,7 +50,13 @@ export interface FeishuInboundEvent {
   mentions?: FeishuMention[];
 }
 
-/** OpenAPI half of the seam: credential probe + text sends. Every method throws on failure. */
+/** The bytes of one downloaded resource, with the MIME type the caller needs for a data URL. */
+export interface FeishuImageData {
+  data: Buffer;
+  mimeType: string;
+}
+
+/** OpenAPI half of the seam: credential probe + text sends + image download. Every method throws on failure. */
 export interface FeishuApiClient {
   /**
    * Credential check: obtains a tenant access token (no scopes needed); throws with a
@@ -71,6 +78,17 @@ export interface FeishuApiClient {
    * connection. A null answer degrades mention handling, it does not break it.
    */
   botOpenId(): Promise<string | null>;
+  /**
+   * Downloads an image carried by an inbound message (`file_key` is the content JSON's
+   * `image_key`), throwing when the transfer fails or exceeds `maxBytes`. The resource
+   * endpoint is scoped to the message, so a bot can only read images from conversations it
+   * is in — there is no key-only fetch to abuse.
+   */
+  fetchMessageImage(args: {
+    messageId: string;
+    fileKey: string;
+    maxBytes: number;
+  }): Promise<FeishuImageData>;
 }
 
 export interface FeishuEventHandlers {
@@ -129,6 +147,17 @@ interface LarkResponse {
   msg?: string;
 }
 
+/**
+ * The binary-download shape (`im.v1.messageResource.get`): the SDK hands back a stream
+ * wrapper, not a `{code,msg}` envelope, because the endpoint answers with the file itself.
+ * Typed as an async iterable of chunks rather than as node:stream's `Readable` — that is
+ * all the adapter consumes, and it keeps the capped read (collectUnderCap) channel-neutral.
+ */
+interface LarkStreamResponse {
+  getReadableStream(): AsyncIterable<Uint8Array>;
+  headers?: Record<string, unknown>;
+}
+
 interface LarkClient {
   /**
    * The SDK's generic call, for endpoints its typed surface does not cover. Used for
@@ -157,6 +186,12 @@ interface LarkClient {
           path: { message_id: string };
           data: { content: string; msg_type: "text" };
         }): Promise<LarkResponse>;
+      };
+      messageResource: {
+        get(payload: {
+          path: { message_id: string; file_key: string };
+          params: { type: string };
+        }): Promise<LarkStreamResponse>;
       };
     };
   };
@@ -269,6 +304,27 @@ export function createLarkSdk(): FeishuSdk {
           } catch {
             return null;
           }
+        },
+        async fetchMessageImage({ messageId, fileKey, maxBytes }): Promise<FeishuImageData> {
+          let res: LarkStreamResponse;
+          try {
+            res = await client.im.v1.messageResource.get({
+              path: { message_id: messageId, file_key: fileKey },
+              params: { type: "image" },
+            });
+          } catch (err) {
+            throw new Error(larkErrorText(err));
+          }
+          const data = await collectUnderCap(res.getReadableStream(), maxBytes, "The image");
+          // The response header states what the SENDER uploaded, which is a claim; the
+          // magic bytes are the file. PNG is the last resort — a data URL needs some type,
+          // and every provider that takes images at all takes that one.
+          const declared = res.headers?.["content-type"];
+          const headerType =
+            typeof declared === "string" && declared.startsWith("image/")
+              ? declared.split(";")[0]!.trim()
+              : null;
+          return { data, mimeType: sniffImageMime(data) ?? headerType ?? "image/png" };
         },
       };
     },

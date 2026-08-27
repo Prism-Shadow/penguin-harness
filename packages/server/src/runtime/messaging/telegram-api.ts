@@ -1,6 +1,7 @@
 /**
- * The Telegram Bot API seam: the four methods the Telegram connector uses (`getMe`,
- * `getWebhookInfo`, `sendMessage`, `getUpdates`), behind an injectable transport so unit
+ * The Telegram Bot API seam: the methods the Telegram connector uses (`getMe`,
+ * `getWebhookInfo`, `sendMessage`, `getUpdates`, and the file download behind an inbound
+ * photo), behind an injectable transport so unit
  * tests substitute a fake and never open real network. Telegram needs no SDK — the Bot API is plain HTTPS
  * POSTs against https://api.telegram.org — so the production transport is a thin fetch
  * wrapper.
@@ -8,6 +9,7 @@
  * Wire types below mirror the Bot API JSON verbatim (snake_case): the transport does not
  * reshape payloads, so a test fake constructs exactly what the real API returns.
  */
+import { collectUnderCap } from "./media.js";
 
 /** Telegram Bot API host. Deliberately not configurable: bindings carry only the token. */
 export const TELEGRAM_API_BASE = "https://api.telegram.org";
@@ -52,6 +54,19 @@ export interface TelegramMessageEntity {
   user?: { id: number };
 }
 
+/**
+ * One size variant of an inbound photo. The Bot API sends a photo as an ARRAY of these —
+ * the same picture re-encoded at several resolutions — and the connector picks the largest,
+ * which is the one the user actually sent.
+ */
+export interface TelegramPhotoSize {
+  file_id: string;
+  width: number;
+  height: number;
+  /** The Bot API marks it optional, so the size comparison cannot rely on it alone. */
+  file_size?: number;
+}
+
 /** The slice of a Bot API `Message` the connector consumes. */
 export interface TelegramMessage {
   message_id: number;
@@ -90,10 +105,30 @@ export interface TelegramMessage {
    * for the reply-chain `message_thread_id` above, which is exactly what tells the two apart.
    */
   is_topic_message?: boolean;
+  /** Size variants of an inbound photo, smallest first; absent for every other message kind. */
+  photo?: TelegramPhotoSize[];
+  /** The text sent WITH a photo (or another media message) — a text message carries `text` instead. */
+  caption?: string;
   from?: {
     first_name?: string;
     username?: string;
   };
+}
+
+/** The slice of `getFile`'s result the connector consumes. */
+export interface TelegramFile {
+  /**
+   * Path to pass to the file endpoint (valid at least an hour). Optional on the wire: a
+   * file the bot may not download resolves without one.
+   */
+  file_path?: string;
+  file_size?: number;
+}
+
+/** A downloaded file: the bytes, plus the path they came from (its extension names the type). */
+export interface TelegramFileBytes {
+  data: Buffer;
+  filePath: string;
 }
 
 /**
@@ -146,6 +181,15 @@ export interface TelegramBotClient {
     timeoutSec: number;
     signal: AbortSignal;
   }): Promise<TelegramUpdate[]>;
+  /**
+   * Downloads a file the bot can see, in two hops: `getFile` resolves a path, and the FILE
+   * endpoint serves the bytes. That second URL is not the method endpoint — it is
+   * `/file/bot<token>/<file_path>` — and it embeds the bot token, so no failure here may
+   * ever echo it (see fetchErrorText). Throws when the transfer fails or exceeds
+   * `maxBytes`; the Bot API itself refuses to serve a bot anything over 20MB this way, so
+   * whichever ceiling is lower is the one that bites.
+   */
+  getFileBytes(args: { fileId: string; maxBytes: number }): Promise<TelegramFileBytes>;
 }
 
 /** Factory the Telegram connector is built over: the production fetch adapter, or a test fake. */
@@ -159,6 +203,13 @@ export interface TelegramTransport {
 
 /** Overall per-request deadline for the short calls (getMe / sendMessage / the drain). */
 const CALL_TIMEOUT_MS = 15_000;
+
+/**
+ * Deadline for a file transfer. Far longer than a method call: this one moves megabytes
+ * over whatever link the server has, and a 15s ceiling would fail an image that was on its
+ * way in perfectly well.
+ */
+const DOWNLOAD_TIMEOUT_MS = 60_000;
 
 /** The `{ok, result, description, error_code}` envelope every Bot API response carries. */
 interface TelegramEnvelope<T> {
@@ -218,6 +269,25 @@ function fetchErrorText(err: unknown): string {
     return err.message;
   }
   return String(err);
+}
+
+/**
+ * A response body as chunks. `Response.body` is a web ReadableStream, which is only
+ * async-iterable under some lib configurations; reading it through its reader works under
+ * all of them. Cancelling on the way out matters for the capped read — a transfer aborted
+ * over the ceiling must not leave the socket draining the rest of the file.
+ */
+async function* bodyChunks(body: ReadableStream<Uint8Array>): AsyncGenerator<Uint8Array> {
+  const reader = body.getReader();
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) return;
+      if (value !== undefined) yield value;
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
 }
 
 /** The production factory: plain HTTPS against the Bot API. */
@@ -292,6 +362,33 @@ export function createTelegramTransport(): TelegramTransport {
             // The overall deadline must outlive the server-side long poll.
             { signal, timeoutMs: (timeoutSec + 15) * 1000 },
           ),
+        async getFileBytes({ fileId, maxBytes }): Promise<TelegramFileBytes> {
+          const file = await call<TelegramFile>("getFile", { file_id: fileId });
+          if (file.file_path === undefined || file.file_path === "") {
+            throw new Error("getFile failed: this file cannot be downloaded");
+          }
+          // The declared size refuses an oversized transfer before it starts; the capped
+          // read below is what actually holds, since the claim can be absent or wrong.
+          if (file.file_size !== undefined && file.file_size > maxBytes) {
+            throw new Error(
+              `The image is larger than the ${Math.floor(maxBytes / (1024 * 1024))}MB limit`,
+            );
+          }
+          let res: Response;
+          try {
+            res = await fetch(`${TELEGRAM_API_BASE}/file/bot${creds.botToken}/${file.file_path}`, {
+              signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+            });
+          } catch (err) {
+            throw new Error(`file download failed: ${fetchErrorText(err)}`);
+          }
+          // The URL carries the token, so a failure names the status and nothing else.
+          if (!res.ok || res.body === null) {
+            throw new Error(`file download failed: HTTP ${res.status}`);
+          }
+          const data = await collectUnderCap(bodyChunks(res.body), maxBytes, "The image");
+          return { data, filePath: file.file_path };
+        },
       };
     },
   };

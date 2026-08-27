@@ -18,9 +18,13 @@
  * Task on the bound Session as an ordinary user input — exactly as if typed into the web
  * composer, no marker block and no special sender (the model deliberately does not learn
  * where the message came from) — with `queueIfBusy`: a busy Session queues it as a
- * follow-up, never 409. Any non-text message gets a polite bilingual "text only" reply.
- * Only once that work is done is the binding row's watermark advanced, so a process that
- * dies mid-message has the channel replay it rather than find it already marked.
+ * follow-up, never 409. A message carrying images becomes that same composer input with
+ * the pictures attached: the caption's text (when there is one) plus one `image_url` part
+ * per image, as a base64 `data:` URL, which is byte for byte the shape the web composer
+ * submits. Anything else (sticker, voice, video, file) gets a polite bilingual "not
+ * supported" reply. Only once that work is done is the binding row's watermark advanced,
+ * so a process that dies mid-message has the channel replay it rather than find it already
+ * marked.
  *
  * Outbound (Session → channel): the bridge subscribes to the Session's in-process channel
  * and relays each of the main conversation's completed assistant messages on its own, the
@@ -43,18 +47,20 @@
  * waiting in the web UI — on the same chain, so it lands between replies instead of inside
  * one.
  */
-import { userText } from "@prismshadow/penguin-core";
+import { imageUrlMessage, userText } from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import type { MessagingDeliveryError, MessagingRuntimeStatus } from "../../api/types.js";
 import type {
   MessagingBindingRow,
   MessagingBindingsRepo,
 } from "../../db/repos/messaging-bindings.js";
+import { INLINE_IMAGE_MAX_BYTES } from "../../services/attachment-limits.js";
 import type { ChannelEvent, ChannelHub } from "../channel.js";
 import type { ErrorSink } from "../error-recorder.js";
 import type {
   MessagingChannelConnector,
   MessagingClient,
+  MessagingInboundImage,
   MessagingInboundMessage,
   MessagingSendNote,
 } from "./connector.js";
@@ -102,11 +108,18 @@ export const MESSAGING_MAX_LINE_MESSAGES = 20;
  */
 export const MESSAGING_LINE_DELAY_MS = 1000;
 
-// The three fixed outbound notices are user-facing chat content, deliberately bilingual
+// The fixed outbound notices are user-facing chat content, deliberately bilingual
 // like the rest of the product's user-facing copy (the server has no locale for an
 // external chat, so both languages ride each notice).
 export const MESSAGING_TEXT_ONLY_NOTICE =
-  "Only text messages are supported for now. 目前仅支持文本消息。";
+  "Only text and image messages are supported for now. 目前仅支持文本和图片消息。";
+/**
+ * One image that never reached the Agent. Oversize and failed-download deliberately share
+ * a notice: the user's next move is the same either way, and "the download failed" tells
+ * someone typing into a chat window nothing they can act on.
+ */
+export const MESSAGING_IMAGE_FAILED_NOTICE =
+  "That image could not be delivered to the Agent (too large, or the download failed), so nothing was sent. 该图片无法发送给智能体（体积过大或下载失败），本条消息未处理。";
 export const MESSAGING_APPROVAL_NOTICE =
   "A tool call is waiting for your approval in the PenguinHarness web UI. 有工具调用正在等待你在网页端审批。";
 export const MESSAGING_TEST_MESSAGE =
@@ -692,15 +705,36 @@ export class MessagingBridge {
       // off the row.
       this.deps.repo.recordChat(entry.sessionId, entry.channel, msg.chatId, isDirect);
       entry.lastInboundMessageId = isDirect ? null : msg.messageId;
-      if (msg.text === null || msg.text.trim() === "") {
-        await this.replyInbound(entry, msg, MESSAGING_TEXT_ONLY_NOTICE);
+      // A caption is this message's text; an image with none carries no text at all.
+      const text = msg.text !== null && msg.text.trim() !== "" ? msg.text : null;
+      const images = msg.images ?? [];
+      if (images.length === 0) {
+        if (text === null) {
+          await this.replyInbound(entry, msg, MESSAGING_TEXT_ONLY_NOTICE);
+        } else {
+          // An ordinary user input, exactly as if typed into the web composer: no marker
+          // block, no special sender — the model deliberately does not learn the message
+          // arrived through a messaging channel.
+          await this.deps.runner.startTask(entry.sessionId, [userText(text)], {
+            queueIfBusy: true,
+          });
+        }
       } else {
-        // An ordinary user input, exactly as if typed into the web composer: no marker
-        // block, no special sender — the model deliberately does not learn the message
-        // arrived through a messaging channel.
-        await this.deps.runner.startTask(entry.sessionId, [userText(msg.text)], {
-          queueIfBusy: true,
-        });
+        const parts = await this.inboundImageParts(entry, images);
+        if (parts === null) {
+          // The whole message stops here rather than running on the caption alone: a model
+          // asked "what is wrong with this?" about a picture it never received answers
+          // confidently about nothing, which is worse than a notice saying so.
+          await this.replyInbound(entry, msg, MESSAGING_IMAGE_FAILED_NOTICE);
+        } else {
+          // Text first, then the images — the same order and the same parts the web composer
+          // submits, so a chat message with a picture is indistinguishable from a pasted one.
+          await this.deps.runner.startTask(
+            entry.sessionId,
+            [...(text === null ? [] : [userText(text)]), ...parts],
+            { queueIfBusy: true },
+          );
+        }
       }
       // The durable watermark goes LAST, and its own UPDATE is the price of that. What it
       // marks is a message this process finished with: the follow-up a busy Session queues
@@ -719,6 +753,37 @@ export class MessagingBridge {
       // is gone — so the status line is the only place the user can find out it happened.
       this.recordDeliveryFailure(entry, err, "inbound", "messaging_inbound_failed");
     }
+  }
+
+  /**
+   * Downloads the message's images into `image_url` input parts, or null when any one of
+   * them could not be delivered.
+   *
+   * All-or-nothing on purpose: a message is one thing the user sent, and half of it
+   * reaching the Agent is not a partial success but a misleading one. The cap is the
+   * server's inline-image ceiling — the same number the web composer's uploads answer to,
+   * because these images land in exactly the same place (the conversation, and from there
+   * the Trace, which is read back whole on every resume). It happens to match Telegram's
+   * own 20MB download ceiling for bots.
+   */
+  private async inboundImageParts(
+    entry: BridgeEntry,
+    images: readonly MessagingInboundImage[],
+  ): Promise<OmniMessage[] | null> {
+    const parts: OmniMessage[] = [];
+    for (const image of images) {
+      try {
+        const { data, mimeType } = await image.fetch(INLINE_IMAGE_MAX_BYTES);
+        parts.push(imageUrlMessage(`data:${mimeType};base64,${data.toString("base64")}`));
+      } catch (err) {
+        this.log(
+          `[messaging] ${entry.channel} image fetch failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        this.recordError(entry.sessionId, err, "messaging_image_fetch_failed");
+        return null;
+      }
+    }
+    return parts;
   }
 
   /** Reply to the inbound message itself: threaded reply in groups, plain send in direct chats. */

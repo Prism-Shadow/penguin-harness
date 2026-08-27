@@ -13,7 +13,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { approvalDecision, assistantText, toolCall } from "@prismshadow/penguin-core";
-import type { ApproveFn, OmniMessage, TextPayload } from "@prismshadow/penguin-core";
+import type { ApproveFn, OmniMessage } from "@prismshadow/penguin-core";
 import type {
   FeishuBindingResponse,
   MessagingBindingsResponse,
@@ -22,8 +22,10 @@ import type {
 } from "../src/api/types.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
+import { INLINE_IMAGE_MAX_BYTES } from "../src/services/attachment-limits.js";
 import {
   MESSAGING_APPROVAL_NOTICE,
+  MESSAGING_IMAGE_FAILED_NOTICE,
   MESSAGING_TEXT_ONLY_NOTICE,
   MESSAGING_TEST_MESSAGE,
 } from "../src/runtime/messaging/bridge.js";
@@ -31,6 +33,7 @@ import type {
   TelegramBotClient,
   TelegramBotUser,
   TelegramCredentials,
+  TelegramFileBytes,
   TelegramTransport,
   TelegramUpdate,
   TelegramWebhookInfo,
@@ -66,8 +69,18 @@ interface SentMessage {
   threadId?: number;
 }
 
+/** One file download the bridge asked for, cap included. */
+interface FileFetch {
+  fileId: string;
+  maxBytes: number;
+}
+
+/** A JPEG's magic bytes plus a little payload: enough for a data URL to be asserted verbatim. */
+const PHOTO_BYTES = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x11, 0x22, 0x33]);
+
 class FakeBotClient implements TelegramBotClient {
   readonly sends: SentMessage[] = [];
+  readonly fileFetches: FileFetch[] = [];
   /** Every sendMessage ATTEMPT, failures included — `sends` records only what got through. */
   sendCalls = 0;
   getMeCalls = 0;
@@ -125,6 +138,17 @@ class FakeBotClient implements TelegramBotClient {
       ...(args.replyToMessageId !== undefined ? { replyTo: args.replyToMessageId } : {}),
       ...(args.messageThreadId !== undefined ? { threadId: args.messageThreadId } : {}),
     });
+  }
+
+  async getFileBytes(args: FileFetch): Promise<TelegramFileBytes> {
+    this.fileFetches.push(args);
+    if (this.t.failFileFetch !== null) throw new Error(this.t.failFileFetch);
+    // The real transport refuses the transfer at the byte that crosses the cap; the fake
+    // reproduces that outcome from bytes it already holds.
+    if (this.t.fileBytes.length > args.maxBytes) {
+      throw new Error("The image is larger than the 20MB limit");
+    }
+    return { data: this.t.fileBytes, filePath: this.t.filePath };
   }
 
   getUpdates(args: {
@@ -190,6 +214,12 @@ class FakeTelegramTransport {
   failThreadedSendCode = 400;
   /** Fails this many upcoming getUpdates calls. */
   failPolls = 0;
+  /** Non-null makes getFileBytes throw with this message (an expired file_id, a network fault). */
+  failFileFetch: string | null = null;
+  /** What a file download resolves to; oversize bytes exercise the cap. */
+  fileBytes: Buffer = PHOTO_BYTES;
+  /** The path the Bot API served the bytes from — its extension names the type. */
+  filePath = "photos/file_7.jpg";
   /** The webhook registered on the bot; the empty string means none, as the Bot API encodes it. */
   webhookUrl = "";
   /** getMe's `can_read_all_group_messages` (true = privacy mode OFF); undefined = the field is absent. */
@@ -234,6 +264,11 @@ class FakeTelegramTransport {
   allSendCalls(): number {
     return this.clients.reduce((n, c) => n + c.sendCalls, 0);
   }
+
+  /** Every file download asked of any client, in order. */
+  allFileFetches(): FileFetch[] {
+    return this.clients.flatMap((c) => c.fileFetches);
+  }
 }
 
 /**
@@ -250,6 +285,9 @@ class FakeFeishuSdk implements FeishuSdk {
       async replyText() {},
       async botOpenId() {
         return null;
+      },
+      async fetchMessageImage(): Promise<never> {
+        throw new Error("the feishu side of these tests never carries an image");
       },
     };
   }
@@ -269,10 +307,40 @@ function privateText(text: string, messageId = 1): TelegramUpdate["message"] {
   };
 }
 
+/**
+ * A private-chat photo message: the Bot API sends the same picture as several size
+ * variants, thumbnails first, and `caption` carries whatever the user typed with it.
+ */
+function privatePhoto(caption?: string, messageId = 1): TelegramUpdate["message"] {
+  return {
+    message_id: messageId,
+    chat: { id: 42424242, type: "private" },
+    photo: [
+      { file_id: "thumb-90", width: 90, height: 67, file_size: 1_200 },
+      { file_id: "mid-320", width: 320, height: 240, file_size: 9_800 },
+      { file_id: "full-1280", width: 1280, height: 960, file_size: 120_400 },
+    ],
+    ...(caption !== undefined ? { caption } : {}),
+    from: { first_name: "Ada" },
+  };
+}
+
+/**
+ * One input part as the fake Sessions record it. Deliberately a loose shape rather than
+ * core's payload union: a run's input mixes composer text with `image_url` parts, and the
+ * assertions read one field of whichever arrived.
+ */
+interface InputPayload {
+  type?: string;
+  role?: string;
+  text?: string;
+  image_url?: string;
+}
+
 /** Fake Session: records each run's input payloads and replies with a fixed assistant text. */
 function echoFakeSession(
   sessionId: string,
-  runs: TextPayload[][],
+  runs: InputPayload[][],
   reply = "Reply text",
 ): RuntimeSession {
   return {
@@ -283,7 +351,7 @@ function echoFakeSession(
     steer: () => false,
     skipReconnectWait: () => false,
     async *run(input: OmniMessage[]) {
-      runs.push(input.map((m) => m.payload as TextPayload));
+      runs.push(input.map((m) => m.payload as InputPayload));
       yield assistantText(reply);
     },
     async *compact() {},
@@ -366,7 +434,7 @@ describe("telegram binding routes and connector loop", () => {
   let api: ReturnType<typeof apiClient>;
   let fake: FakeTelegramTransport;
   let projectId: string;
-  let runs: TextPayload[][];
+  let runs: InputPayload[][];
   /** The server log, so a delivery that succeeded only in a degraded form is observable. */
   let logLines: string[];
 
@@ -1153,9 +1221,10 @@ describe("telegram binding routes and connector loop", () => {
     expect(runs).toHaveLength(0);
   });
 
-  it("non-text messages get the bilingual text-only reply and start no task", async () => {
+  it("a message that is neither text nor photo gets the bilingual notice and starts no task", async () => {
     await bindEnabled(SID);
-    // A photo message: a `message` update with no `text` field.
+    // A sticker (or voice, or a document — inbound files stay out of scope): a `message`
+    // update with neither `text` nor `photo`.
     fake.push({
       message_id: 21,
       chat: { id: 42424242, type: "private" },
@@ -1169,6 +1238,48 @@ describe("telegram binding routes and connector loop", () => {
     expect(runs).toHaveLength(0);
     // Even a rejected type teaches the bridge where the user is.
     expect(t.deps.messagingRepo.find(SID, "telegram")?.lastChatId).toBe("42424242");
+  });
+
+  it("an inbound photo becomes an image_url part, downloaded at its largest size", async () => {
+    await bindEnabled(SID);
+    fake.push(privatePhoto(undefined, 31));
+    await waitFor(() => runs.length === 1);
+    // No caption: the picture is the whole message, and no text is invented around it.
+    expect(runs[0]).toHaveLength(1);
+    const part = runs[0]![0]!;
+    expect(part.type).toBe("image_url");
+    expect(part.image_url).toBe(`data:image/jpeg;base64,${PHOTO_BYTES.toString("base64")}`);
+    // The largest variant, not the thumbnails the Bot API lists first, and under the
+    // shared inline-image ceiling (which is also Telegram's own bot download ceiling).
+    expect(fake.allFileFetches()).toEqual([
+      { fileId: "full-1280", maxBytes: INLINE_IMAGE_MAX_BYTES },
+    ]);
+  });
+
+  it("a photo's caption rides along as the message's text, ahead of the image", async () => {
+    await bindEnabled(SID);
+    fake.push(privatePhoto("what is wrong with this chart?", 32));
+    await waitFor(() => runs.length === 1);
+    // Text first, then the image — the web composer's order for a message with an attachment.
+    expect(runs[0]!.map((p) => p.type)).toEqual(["text", "image_url"]);
+    expect(runs[0]![0]!.text).toBe("what is wrong with this chart?");
+    expect(runs[0]![0]!.role).toBe("user");
+    expect("sender" in runs[0]![0]!).toBe(false);
+    expect(runs[0]![1]!.image_url).toBe(`data:image/jpeg;base64,${PHOTO_BYTES.toString("base64")}`);
+  });
+
+  it("a photo that cannot be downloaded degrades to a notice, caption and all", async () => {
+    await bindEnabled(SID);
+    fake.failFileFetch = "getFile failed: file is temporarily unavailable";
+    fake.push(privatePhoto("have a look", 33));
+    await waitFor(() => fake.allSends().length > 0);
+    expect(fake.allSends()).toContainEqual({
+      chatId: "42424242",
+      text: MESSAGING_IMAGE_FAILED_NOTICE,
+    });
+    // The caption does NOT run on its own: a question about a picture the model never
+    // received would be answered confidently about nothing.
+    expect(runs).toHaveLength(0);
   });
 
   it("relays each completed assistant message separately, in order, as it completes", async () => {
@@ -1351,6 +1462,9 @@ class ConflictBotClient implements TelegramBotClient {
     return { url: this.t.webhookUrl };
   }
   async sendMessage(): Promise<void> {}
+  getFileBytes(): Promise<TelegramFileBytes> {
+    throw new Error("this outage suite never downloads a file");
+  }
   getUpdates(args: {
     offset?: number;
     timeoutSec: number;

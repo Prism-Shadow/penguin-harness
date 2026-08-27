@@ -4,16 +4,18 @@
  * everything Feishu-specific: the config document's shape, the SDK adapter behind it
  * (injectable for tests — see feishu-sdk.ts), and the reduction of
  * `im.message.receive_v1` events to the bridge's normalized inbound shape (text extracted
- * from the content JSON and its mention placeholders resolved — see resolveFeishuMentions;
- * anything non-text reads as `text: null`).
+ * from the content JSON and its mention placeholders resolved — see resolveFeishuMentions,
+ * an `image` message's `image_key` turned into a lazy download handle; anything else
+ * reads as neither text nor image).
  */
 import type {
   MessagingChannelConnector,
   MessagingClient,
   MessagingConnection,
   MessagingConnectorHandlers,
+  MessagingInboundImage,
 } from "./connector.js";
-import type { FeishuCredentials, FeishuMention, FeishuSdk } from "./feishu-sdk.js";
+import type { FeishuApiClient, FeishuCredentials, FeishuMention, FeishuSdk } from "./feishu-sdk.js";
 
 /** Default Feishu open-platform domain (Lark tenants override it in the form). */
 export const FEISHU_DEFAULT_DOMAIN = "https://open.feishu.cn";
@@ -122,6 +124,18 @@ export function resolveFeishuMentions(
   return out.trim();
 }
 
+/** The `image_key` of an image message's content JSON (null when unparseable). */
+function imageKeyOfContent(content: string): string | null {
+  try {
+    const parsed = JSON.parse(content) as { image_key?: unknown };
+    return typeof parsed.image_key === "string" && parsed.image_key !== ""
+      ? parsed.image_key
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export class FeishuConnector implements MessagingChannelConnector {
   readonly channel = "feishu" as const;
 
@@ -141,6 +155,11 @@ export class FeishuConnector implements MessagingChannelConnector {
     handlers: MessagingConnectorHandlers,
   ): Promise<MessagingConnection> {
     const creds = this.credsOf(config);
+    // One OpenAPI client per connection, shared by the identity lookup below and by every
+    // inbound image's download — the event stream itself uses neither. It is built lazily so
+    // that loading the SDK stays off the paths that never need it.
+    let apiClient: Promise<FeishuApiClient> | null = null;
+    const api = (): Promise<FeishuApiClient> => (apiClient ??= this.sdk.createClient(creds));
     /**
      * This bot's own open id: which mention in a group message is its own never changes while
      * the credentials do not, so one lookup per connection serves every inbound message.
@@ -153,8 +172,7 @@ export class FeishuConnector implements MessagingChannelConnector {
     // identity the same way, from inside its poll loop. Until the answer lands, a mention of
     // this bot is named rather than dropped — the same degraded mode an app that cannot report
     // an identity at all already lives in.
-    void this.sdk
-      .createClient(creds)
+    void api()
       .then((client) => client.botOpenId())
       .then((id) => {
         botOpenId = id;
@@ -166,14 +184,30 @@ export class FeishuConnector implements MessagingChannelConnector {
       });
     return this.sdk.connect(creds, {
       onMessage: (evt) => {
-        // Only `text` messages carry text; every other message type normalizes to null
-        // (the bridge answers those with the text-only notice).
+        // Only `text` messages carry text — a Feishu image message has no caption field of
+        // its own; every other message type normalizes to null (the bridge answers those
+        // with the not-supported notice).
         const raw = evt.messageType === "text" ? textOfContent(evt.content) : null;
+        const imageKey = evt.messageType === "image" ? imageKeyOfContent(evt.content) : null;
+        const images: MessagingInboundImage[] =
+          imageKey === null
+            ? []
+            : [
+                {
+                  fetch: async (maxBytes) =>
+                    (await api()).fetchMessageImage({
+                      messageId: evt.messageId,
+                      fileKey: imageKey,
+                      maxBytes,
+                    }),
+                },
+              ];
         return handlers.onMessage({
           chatId: evt.chatId,
           chatKind: evt.chatType === "p2p" ? "direct" : "group",
           messageId: evt.messageId,
           text: raw === null ? null : resolveFeishuMentions(raw, evt.mentions, botOpenId),
+          ...(images.length > 0 ? { images } : {}),
           ...(evt.senderName !== undefined ? { senderName: evt.senderName } : {}),
         });
       },
