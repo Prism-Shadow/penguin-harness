@@ -49,6 +49,7 @@ function log(line: string): void {
 
 let manualCheckInFlight = false;
 let downloadedVersion: string | null = null;
+let downloadInFlight = false;
 
 type FeedState =
   { phase: "pending" } | { phase: "unavailable" } | { phase: "ready"; fallbackUrl: string | null };
@@ -67,6 +68,20 @@ function setGenericFeed(url: string, fallbackUrl: string | null): void {
   otherGenericUrl = fallbackUrl;
   feedState = { phase: "ready", fallbackUrl };
   autoUpdater.setFeedURL({ provider: "generic", url });
+}
+
+function switchToFallbackFeed(reason: string): boolean {
+  if (downloadedVersion !== null || feedState.phase !== "ready" || feedState.fallbackUrl === null) {
+    return false;
+  }
+  const previous = activeGenericUrl;
+  const next = feedState.fallbackUrl;
+  activeGenericUrl = next;
+  otherGenericUrl = previous;
+  feedState = { phase: "ready", fallbackUrl: null };
+  autoUpdater.setFeedURL({ provider: "generic", url: next });
+  log(`${feedLabel(previous ?? next)} update ${reason}; retrying ${feedLabel(next)}`);
+  return true;
 }
 
 function scheduleChecks(): void {
@@ -94,6 +109,25 @@ function emitStatus(ev: UpdaterEvent): void {
 function reannounceStatus(): void {
   status = { ...status, seq: ++statusSeq };
   for (const listener of statusListeners) listener(status);
+}
+
+function reportUpdaterError(err: Error): void {
+  emitStatus({ kind: "error", message: err.message });
+  if (manualCheckInFlight) {
+    manualCheckInFlight = false;
+    void dialog
+      .showMessageBox({
+        type: "error",
+        message: "Could not check for updates.",
+        detail: `${err.message}\n\nYou can always download the latest release manually.`,
+        buttons: ["Open Releases", "OK"],
+        defaultId: 1,
+        cancelId: 1,
+      })
+      .then((r) => {
+        if (r.response === 0) void shell.openExternal(RELEASES_URL);
+      });
+  }
 }
 
 /** Current snapshot, for the initial push after a server (re)start. */
@@ -176,10 +210,10 @@ export function initUpdater(getWindow: () => BrowserWindow | null): void {
     return;
   }
 
-  // Background downloads, explicit install: the user decides when to restart. Quitting
-  // normally must NOT swap the app underneath a running server, so install happens only
-  // through the dialog's own path.
-  autoUpdater.autoDownload = true;
+  // Background downloads, explicit install: the user decides when to restart. The
+  // download is still started immediately after update-available; keeping the trigger
+  // here lets a failed package download retry the same tag on the fallback feed.
+  autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = false;
   autoUpdater.logger = null;
 
@@ -203,6 +237,7 @@ export function initUpdater(getWindow: () => BrowserWindow | null): void {
   autoUpdater.on("update-available", (info: { version: string }) => {
     log(`update available: ${info.version} (downloading)`);
     emitStatus({ kind: "available", version: info.version });
+    void downloadUpdateWithFallback();
     if (manualCheckInFlight) {
       manualCheckInFlight = false;
       void dialog.showMessageBox({
@@ -226,42 +261,16 @@ export function initUpdater(getWindow: () => BrowserWindow | null): void {
   });
   autoUpdater.on("error", (err: Error) => {
     log(`error: ${err.message}`);
-    if (
-      downloadedVersion === null &&
-      status.state !== "downloading" &&
-      feedState.phase === "ready" &&
-      feedState.fallbackUrl !== null
-    ) {
-      const previous = activeGenericUrl;
-      const next = feedState.fallbackUrl;
-      // Metadata/check failure only: once a download starts, electron-updater owns
-      // the transfer and any checksum failure should stay visible.
-      activeGenericUrl = next;
-      otherGenericUrl = previous;
-      feedState = { phase: "ready", fallbackUrl: null };
-      autoUpdater.setFeedURL({ provider: "generic", url: next });
-      log(`${feedLabel(previous ?? next)} update feed unavailable; retrying ${feedLabel(next)}`);
+    if (downloadInFlight) {
+      return;
+    }
+    if (switchToFallbackFeed("feed unavailable")) {
       void autoUpdater.checkForUpdates().catch((retryErr: Error) => {
         log(`check failed: ${retryErr.message}`);
       });
       return;
     }
-    emitStatus({ kind: "error", message: err.message });
-    if (manualCheckInFlight) {
-      manualCheckInFlight = false;
-      void dialog
-        .showMessageBox({
-          type: "error",
-          message: "Could not check for updates.",
-          detail: `${err.message}\n\nYou can always download the latest release manually.`,
-          buttons: ["Open Releases", "OK"],
-          defaultId: 1,
-          cancelId: 1,
-        })
-        .then((r) => {
-          if (r.response === 0) void shell.openExternal(RELEASES_URL);
-        });
-    }
+    reportUpdaterError(err);
   });
 
   const override = feedUrlOverride(process.env);
@@ -344,11 +353,10 @@ async function check(): Promise<void> {
     );
     return;
   }
-  // A waiting build ends the checking: a re-check with autoDownload on would start
-  // fetching any newer release and invalidate the downloaded package on disk while
-  // the UI still points its install action at it. The user installs what they were
-  // offered; the next launch checks again. A running download likewise finishes
-  // undisturbed.
+  // A waiting build ends the checking: a re-check that finds a newer release would
+  // start fetching it and invalidate the downloaded package on disk while the UI still
+  // points its install action at it. The user installs what they were offered; the next
+  // launch checks again. A running download likewise finishes undisturbed.
   if (downloadedVersion !== null || status.state === "downloading") return;
   // Each fresh cycle gets its one-shot switch back (the retry path bypasses check()).
   feedState = { phase: "ready", fallbackUrl: otherGenericUrl };
@@ -358,6 +366,36 @@ async function check(): Promise<void> {
     // The error event already reported it; this catch only keeps the rejection from
     // reaching the process-level handler.
     log(`check failed: ${(err as Error).message}`);
+  }
+}
+
+async function downloadUpdateWithFallback(): Promise<void> {
+  if (downloadedVersion !== null || downloadInFlight) return;
+  downloadInFlight = true;
+  let delegatedToRetryCheck = false;
+  try {
+    await autoUpdater.downloadUpdate();
+  } catch (err) {
+    const error = err as Error;
+    if (downloadedVersion !== null) return;
+    downloadInFlight = false;
+    if (switchToFallbackFeed("download failed")) {
+      delegatedToRetryCheck = true;
+      try {
+        const retryResult = await autoUpdater.checkForUpdates();
+        if (retryResult === null || !retryResult.isUpdateAvailable) {
+          const message = "The fallback update source did not offer a downloadable update.";
+          log(message);
+          emitStatus({ kind: "error", message });
+        }
+      } catch (retryErr) {
+        log(`check failed: ${(retryErr as Error).message}`);
+      }
+      return;
+    }
+    reportUpdaterError(error);
+  } finally {
+    if (!delegatedToRetryCheck) downloadInFlight = false;
   }
 }
 
