@@ -78,6 +78,8 @@ import { attachFilesToInput, removeAttachments } from "../../services/task-attac
 import type { AttachedFiles, TaskAttachment } from "../../services/task-attachments.js";
 import type { ChannelEvent, ChannelHub } from "../channel.js";
 import type { ErrorSink } from "../error-recorder.js";
+import { recallStoreOf } from "../session-manager.js";
+import type { RecallStore } from "../session-manager.js";
 import type {
   MessagingChannelConnector,
   MessagingClient,
@@ -506,13 +508,45 @@ function inboundKey(sessionId: string, channel: string): string {
   return `${sessionId}:${channel}`;
 }
 
+/**
+ * The recall store of an inbound message that wrote file attachments — what the Web App
+ * hands back to the composer when the user withdraws the follow-up it was queued as.
+ *
+ * `input` is the message BEFORE the `[attached file: …]` lines were folded into it, so the
+ * text and images come back the way they were sent; `written` is where the bytes actually
+ * landed, which is the half no derivation from the input can recover. Without it a
+ * withdrawn message loses its files silently, its text comes back carrying a raw scratchpad
+ * path, and the on-disk copies stay behind — the recall route deletes exactly the files
+ * this store names.
+ */
+function inboundRecallStore(
+  input: OmniMessage[],
+  attachments: readonly TaskAttachment[],
+  written: readonly string[],
+): RecallStore {
+  return {
+    ...recallStoreOf(input),
+    files: written.map((filePath, i) => ({
+      fileName: attachments[i]!.fileName,
+      path: filePath,
+      mime: attachments[i]!.mime,
+    })),
+  };
+}
+
 /** Minimal dependency on SessionManager (eases test doubles; mirrors ScheduleTaskRunner). */
 export interface MessagingTaskRunner {
   statusOf(sessionId: string): string;
   startTask(
     sessionId: string,
     input: OmniMessage[],
-    opts: { queueIfBusy: boolean },
+    /**
+     * `recall` is what a queued follow-up hands back when the user withdraws it in the Web
+     * App. It is optional because the manager derives one from the input for every caller
+     * that has nothing to add; the inbound path supplies its own only when it wrote file
+     * attachments, whose on-disk paths the input does not carry (see inboundRecallStore).
+     */
+    opts: { queueIfBusy: boolean; recall?: RecallStore },
   ): Promise<{ sessionId: string; queued: boolean }>;
 }
 
@@ -1148,7 +1182,15 @@ export class MessagingBridge {
       attachments.attachments,
     );
     try {
-      await this.deps.runner.startTask(entry.sessionId, withFiles, { queueIfBusy: true });
+      await this.deps.runner.startTask(entry.sessionId, withFiles, {
+        queueIfBusy: true,
+        // Only when files were written: for everything else the manager derives an
+        // equivalent store from the input itself, and a caller that adds nothing should not
+        // carry a second copy of that derivation.
+        ...(written.length > 0
+          ? { recall: inboundRecallStore(input, attachments.attachments, written) }
+          : {}),
+      });
     } catch (err) {
       // Nothing references these files and nothing will ever clean them up: the Task never
       // started, so the message they belong to does not exist. The route path owns the same
@@ -1229,23 +1271,27 @@ export class MessagingBridge {
       try {
         const data = await file.fetch(cap);
         spent += data.length;
-        // `mime` is what a queued message's recall re-encodes its data URL from; a messaging
-        // input stores no recall payload (see MessagingTaskRunner.startTask), so nothing
-        // reads it back and an empty media type is the honest value rather than a guess.
+        // `mime` is what a queued message's recall re-encodes its data URL from. A channel
+        // states a media type about a file nothing here parses, so an empty one is the honest
+        // value rather than a guess — readRecalledFiles substitutes the generic type.
         attachments.push({ fileName: file.fileName, bytes: data, mime: "" });
       } catch (err) {
         const reason = err instanceof Error ? err.message : String(err);
         this.log(`[messaging] ${entry.channel} file fetch failed: ${reason}`);
         if (err instanceof MessagingMediaTooLargeError) {
-          // Which ceiling stopped it decides what the chat is told: one file over the
-          // per-file cap is that file's problem, while a batch over the message total is
-          // nobody's in particular — naming a file there would send the user to shrink one
-          // that was never too big.
+          // Which ceiling stopped it decides what the chat is told: one file over a per-file
+          // ceiling is that file's problem, while a batch over the message total is nobody's
+          // in particular — naming a file there would send the user to shrink one that was
+          // never too big. What decides is the ceiling the transfer REPORTS refusing at, not
+          // the one it was offered: a connector may narrow the cap further to its own
+          // platform's limit (Telegram serves a bot no file over 20MB), and that refusal is
+          // still about this one file even on a later file whose cap the message's remaining
+          // budget had already shrunk.
+          const spentTheMessage = err.maxBytes === remaining && remaining < limits.maxBytes;
           return {
-            notice:
-              cap < limits.maxBytes
-                ? messagingInboundFilesTooLargeNotice(limits.totalBytes)
-                : messagingInboundFileTooLargeNotice(file.fileName, err.maxBytes),
+            notice: spentTheMessage
+              ? messagingInboundFilesTooLargeNotice(limits.totalBytes)
+              : messagingInboundFileTooLargeNotice(file.fileName, err.maxBytes),
           };
         }
         this.recordError(entry.sessionId, err, "messaging_file_fetch_failed");

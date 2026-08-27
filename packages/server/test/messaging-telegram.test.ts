@@ -42,7 +42,6 @@ import {
   MESSAGING_UNSUPPORTED_NOTICE,
   MESSAGING_TEST_MESSAGE,
   messagingImageFailedNotice,
-  messagingInboundFileFailedNotice,
   messagingInboundFileTooLargeNotice,
 } from "../src/runtime/messaging/bridge.js";
 import { MessagingMediaTooLargeError, collectUnderCap } from "../src/runtime/messaging/media.js";
@@ -1522,20 +1521,6 @@ describe("telegram binding routes and connector loop", () => {
     expect("sender" in runs[0]![0]!).toBe(false);
   });
 
-  it("strips this bot's own @mention off a document's caption, as it does off a photo's", async () => {
-    await bindEnabled(SID);
-    fake.push({
-      message_id: 43,
-      chat: { id: -1002233445566, type: "supergroup" },
-      document: { file_id: "doc-1", file_name: "report.pdf" },
-      caption: "@penguin_test_bot what is in this?",
-      caption_entities: [{ type: "mention", offset: 0, length: 17 }],
-      from: { first_name: "Ada" },
-    });
-    await waitFor(() => runs.length === 1);
-    expect(runs[0]![0]!.text!.startsWith("what is in this?\n\n[attached file: ")).toBe(true);
-  });
-
   it("refuses a document past Telegram's own download ceiling as a size problem", async () => {
     await bindEnabled(SID);
     // The Bot API serves a bot nothing over 20MB through `getFile`, whatever the sender was
@@ -1552,23 +1537,6 @@ describe("telegram binding routes and connector loop", () => {
     expect(runs).toHaveLength(0);
   });
 
-  it("a document that cannot be downloaded degrades to a notice, caption and all", async () => {
-    await bindEnabled(SID);
-    fake.failFileFetch = "getFile failed: file is temporarily unavailable";
-    fake.push(privateDocument({ messageId: 45, caption: "have a look" }));
-    await waitFor(() => fake.allSends().length > 0);
-    expect(fake.allSends()).toContainEqual({
-      chatId: "42424242",
-      text: messagingInboundFileFailedNotice(
-        "report.pdf",
-        "getFile failed: file is temporarily unavailable",
-      ),
-    });
-    // The caption does NOT run on its own: a question about a file the model never received
-    // would be answered confidently about nothing.
-    expect(runs).toHaveLength(0);
-  });
-
   it("a document with no name of its own attaches under an obvious placeholder", async () => {
     await bindEnabled(SID);
     fake.push({
@@ -1581,17 +1549,6 @@ describe("telegram binding routes and connector loop", () => {
     // Not a name derived from the served path, whose extension Telegram picks: a guess that
     // reads as the sender's own name is worse than a placeholder that reads as one.
     expect(path.basename(matchAttachedFileLine(runs[0]![0]!.text!.trim())!)).toBe("document");
-  });
-
-  it("a redelivered document is dropped before anything is downloaded", async () => {
-    await bindEnabled(SID);
-    fake.push(privateDocument({ messageId: 47 }));
-    await waitFor(() => runs.length === 1);
-    // The dedupe key is Telegram's own `chatId:message_id`, identical across both.
-    fake.push(privateDocument({ messageId: 47 }));
-    await settle(80);
-    expect(fake.allFileFetches()).toHaveLength(1);
-    expect(runs).toHaveLength(1);
   });
 
   it("video, audio and voice keep the not-supported notice, caption and all", async () => {

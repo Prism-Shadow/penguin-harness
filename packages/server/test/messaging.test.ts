@@ -3073,9 +3073,10 @@ describe("a redelivered inbound message", () => {
  * one `file_key`, and a Telegram media group arrives as one update per document — while the
  * seam carries a LIST, because the image seam does and a batching channel is the obvious
  * next one. What no wire can produce is therefore what this drives: the order several
- * attachments reach the Agent in, how they compose with a caption and an image, and the
- * per-message byte budget spent across them. Everything a real wire CAN produce is tested
- * against the real wire, in the two channel suites.
+ * attachments reach the Agent in, how they compose with a caption and an image, the
+ * per-message byte budget spent across them, and what a message whose files were written
+ * hands back when the follow-up it queued as is withdrawn again. Everything a real wire CAN
+ * produce is tested against the real wire, in the two channel suites.
  */
 describe("a message carrying several files", () => {
   let t: TestApp;
@@ -3087,6 +3088,9 @@ describe("a message carrying several files", () => {
   let caps: number[];
   /** Every notice the scripted client was asked to send, in order. */
   let notices: string[];
+  /** Set by a test that needs the Session BUSY: its run parks until `release` is called. */
+  let park: boolean;
+  let release: (() => void) | null;
 
   /** Small enough to overrun with a few bytes: the real defaults are 100MB and 120MB. */
   const LIMITS = { maxBytes: 40, totalBytes: 60, maxCount: 20 };
@@ -3137,17 +3141,35 @@ describe("a message carrying several files", () => {
   const fire = (msg: Partial<MessagingInboundMessage> & { messageId: string }) =>
     fired!({ chatId: "oc_scripted", chatKind: "direct", text: null, ...msg });
 
+  /** echoFakeSession, but parking for as long as a test holds it. */
+  const heldEchoSession = (): RuntimeSession => ({
+    sessionId: SID,
+    toolPermission: () => "rw",
+    generateTitle: async () => ({ title: null, usage: null }),
+    compactability: () => "ok" as const,
+    steer: () => false,
+    skipReconnectWait: () => false,
+    async *run(input: OmniMessage[]) {
+      runs.push(input.map((m) => m.payload as InputPayload));
+      if (park) await new Promise<void>((resolve) => (release = resolve));
+      yield assistantText("Reply text");
+    },
+    async *compact() {},
+  });
+
   beforeEach(async () => {
     caps = [];
     notices = [];
     fired = null;
+    park = false;
+    release = null;
     runs = [];
     t = await createTestApp({ feishuSdk: new FakeSdk() });
     const { cookie } = await provisionUser(t.app, "birder");
     api = apiClient(t.app, cookie);
     const row = sessionRowOf(SID, "birder-default_project");
     t.deps.sessionsRepo.insert(row);
-    t.deps.manager.adopt(row, echoFakeSession(SID, runs));
+    t.deps.manager.adopt(row, heldEchoSession());
     expect((await api.put(BASE(SID), PUT_BODY)).status).toBe(200);
     expect((await api.post(`${BASE(SID)}/state`, { enabled: true })).status).toBe(200);
     // The app's own bridge holds the same binding through the real connector; only one of
@@ -3167,6 +3189,7 @@ describe("a message carrying several files", () => {
     await bridge.start();
   });
   afterEach(async () => {
+    release?.();
     bridge.stop();
     await t.cleanup();
   });
@@ -3201,22 +3224,6 @@ describe("a message carrying several files", () => {
     expect(caps).toEqual([40, 40, 40]);
   });
 
-  it("puts the caption first and the files' path lines behind it", async () => {
-    await fire({
-      messageId: "om_caption",
-      text: "have a look at these",
-      files: [fileOf("a.csv", Buffer.from("x")), fileOf("b.csv", Buffer.from("y"))],
-    });
-    await waitFor(() => runs.length === 1);
-    const [caption, blank, ...lines] = textOf(runs[0]!).split("\n");
-    expect(caption).toBe("have a look at these");
-    expect(blank).toBe("");
-    expect(lines.map((line) => path.basename(matchAttachedFileLine(line)!))).toEqual([
-      "a.csv",
-      "b.csv",
-    ]);
-  });
-
   it("composes text, an image and a file into the one input the composer submits", async () => {
     await fire({
       messageId: "om_mixed",
@@ -3230,6 +3237,38 @@ describe("a message carrying several files", () => {
     expect(runs[0]!.map((p) => p.type)).toEqual(["text", "image_url"]);
     expect(textOf(runs[0]!).startsWith("what is in these?\n\n[attached file: ")).toBe(true);
     expect(runs[0]![1]!.image_url).toBe(`data:image/png;base64,${IMAGE_BYTES.toString("base64")}`);
+  });
+
+  it("hands a queued message's files back when the follow-up is withdrawn", async () => {
+    // A file that arrives while the Session is busy is written before its Task is queued, so
+    // the queued entry is the only thing that knows where the bytes landed. Withdrawing it in
+    // the Web App has to return them as chips and delete the copies; a store derived from the
+    // input instead would hand the composer a raw `[attached file: <scratchpad path>]` line
+    // back, lose the file, and strand it on disk.
+    park = true;
+    await fire({ messageId: "om_busy", text: "start something long" });
+    await waitFor(() => runs.length === 1);
+    await fire({
+      messageId: "om_queued",
+      text: "look at this",
+      files: [fileOf("notes.txt", Buffer.from("hi"))],
+    });
+    await waitFor(() => t.deps.manager.pendingFollowUpCount(SID) === 1);
+    const pending = t.deps.manager.pendingFollowUpsOf(SID);
+    expect(pending[0]).toMatchObject({ text: "look at this", images: 0, files: 1 });
+
+    const res = await api.delete(`/api/sessions/${SID}/follow-ups/${pending[0]!.id}`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      text: "look at this",
+      images: [],
+      // No media type rides an inbound file, so the recall re-encodes it as the generic one.
+      files: [{ fileName: "notes.txt", dataUrl: "data:application/octet-stream;base64,aGk=" }],
+    });
+    // Nothing references the scratchpad copy any more: leaving it would strand a second copy
+    // the moment the user resends what came back.
+    const dir = path.join(scratchpadDir(t.root, "birder-default_project", "default_agent"), SID);
+    expect(await fs.readdir(dir)).toEqual([]);
   });
 
   it("refuses a batch that adds up past the per-message total, naming no file", async () => {

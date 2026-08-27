@@ -282,11 +282,12 @@ describe("follow-up queue route", () => {
     await api.post(`/api/sessions/${SID}/tasks`, { input: [{ type: "text", text: "task 1" }] });
     await waitFor(() => t.deps.manager.pendingApprovalCount(SID) === 1);
 
-    // What the messaging bridge does with a Feishu/Telegram message on a busy Session: the
-    // manager API directly, with no recall store of its own (only the HTTP route knows the
-    // parts of one the input does not carry). The queued entry must still show its content
-    // and still be recallable — a queued message's recallability cannot depend on which
-    // door it came through.
+    // What the messaging bridge does with a text-only Feishu/Telegram message on a busy
+    // Session: the manager API directly, with no recall store of its own (a message that
+    // wrote file attachments supplies one, because their on-disk paths are the half the
+    // input does not carry). The queued entry must still show its content and still be
+    // recallable — a queued message's recallability cannot depend on which door it came
+    // through.
     const queued = await t.deps.manager.startTask(SID, [userText("from the chat channel")], {
       queueIfBusy: true,
     });
