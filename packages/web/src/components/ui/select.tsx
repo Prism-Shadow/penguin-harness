@@ -4,7 +4,7 @@
  * `value` / `onChange(e.target.value)` convention. The menu is rendered via
  * portal to body (fixed positioning from the shared usePortalPanel hook), so it
  * is never clipped by a Modal or scroll container; it closes on outside click,
- * Esc, scroll, or resize. Styling matches Input.
+ * Esc, a scroll that moves the trigger, or resize. Styling matches Input.
  */
 import { Children, isValidElement, useId, useState } from "react";
 import type { ChangeEvent, ReactNode, SelectHTMLAttributes } from "react";
