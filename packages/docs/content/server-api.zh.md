@@ -288,21 +288,21 @@ Session 可以接入消息软件机器人——目前的渠道是飞书与 Teleg
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | /messaging | 渠道无关读取：该 Session **每一份**已保存的渠道配置（`channel` 判别字段、密钥掩码、逐行 `enabled` 意图 + 连接运行状态 + `lastChatKnown`）。渠道感知的绑定编辑器只加载这一个 |
+| GET | /messaging | 渠道无关读取：该 Session **每一份**已保存的渠道配置（`channel` 判别字段、密钥掩码、逐行 `enabled` 意图 + `linePerMessage` + 连接运行状态 + `lastChatKnown`）。渠道感知的绑定编辑器只加载这一个 |
 | GET | /messaging/feishu | `{binding, status}` 形态下的飞书配置（未保存时为 null） |
-| PUT | /messaging/feishu | 保存凭据：`{appId, appSecret?, baseDomain?, clearAppSecret?}`。`appSecret` 省略或留空则保持已存值；`clearAppSecret: true` 清除已存密钥（新输入的密钥优先于清除标记；启用中返回 409 `messaging_disable_before_clear`——清除后配置行与非密钥字段保留）；`baseDomain` 默认 `https://open.feishu.cn`。不带连接副作用——唯一例外：**已启用**绑定的连接器会用新凭据重启，保证存储配置与在线连接永不背离。保存不会与其他 Session 冲突，唯一例外正源于这次重启：把**已启用**的绑定改指到另一个 Session 已启用的账号上，返回 409 `account_enabled_elsewhere`，否则那次重启就会绕过启用闸门、把第二条在线连接接到同一账号上 |
+| PUT | /messaging/feishu | 保存凭据：`{appId, appSecret?, baseDomain?, clearAppSecret?, linePerMessage?}`。`appSecret` 省略或留空则保持已存值；`clearAppSecret: true` 清除已存密钥（新输入的密钥优先于清除标记；启用中返回 409 `messaging_disable_before_clear`——清除后配置行与非密钥字段保留）；`baseDomain` 默认 `https://open.feishu.cn`。不带连接副作用——唯一例外：**已启用**绑定的连接器会用新凭据重启，保证存储配置与在线连接永不背离。保存不会与其他 Session 冲突，唯一例外正源于这次重启：把**已启用**的绑定改指到另一个 Session 已启用的账号上，返回 409 `account_enabled_elsewhere`，否则那次重启就会绕过启用闸门、把第二条在线连接接到同一账号上 |
 | POST | /messaging/feishu/state | 连接开关：`{enabled}`——启用即用**已存凭据**建立连接，停用即断开。该 Session 另一渠道已启用时返回 409 `another_channel_enabled`，同一账号已在**其他 Session** 上启用时返回 409 `account_enabled_elsewhere`（两者都是「先停用那一个」——后者不透露持有方的任何信息，它可能位于调用方看不到的 Project）；已存配置没有密钥时返回 400 `feishu_secret_required`。新配置默认停用；服务端启动只连接已启用的配置 |
 | DELETE | /messaging/feishu | 整体删除该渠道的配置（含 App Secret；另一渠道不受影响）。仅为 API 完整性保留——Web 界面的移除入口是清除标记 |
 | POST | /messaging/feishu/test | 用请求携带的草稿值做凭据探测，缺省字段回落到已存配置 → `{ok, latencyMs?, error?}`（凭据被拒是 `ok: false`，不是 HTTP 错误） |
 | POST | /messaging/feishu/test-message | 向最近一次收到消息的会话发送一条固定测试文本；在飞书里给机器人发过消息之前返回 409 `feishu_no_chat` |
 | GET | /messaging/telegram | 同一形态下的 Telegram 配置（`botId`、`botTokenMasked`） |
-| PUT | /messaging/telegram | 保存凭据：`{botToken?, clearBotToken?}`——整份凭据就是 @BotFather 签发的一条 `<机器人 id>:<密钥>` Token（省略或留空则保持已存值；读不出数字 id 时返回 400 `telegram_token_invalid`；清除标记与飞书同口径，清除后配置保留其机器人身份）。保存与启用的分离一致；把已启用绑定的 Token 换成另一个 Session 已启用的机器人时，同样返回 409 `account_enabled_elsewhere`，其余情况不存在跨 Session 的保存冲突 |
+| PUT | /messaging/telegram | 保存凭据：`{botToken?, clearBotToken?, linePerMessage?}`——整份凭据就是 @BotFather 签发的一条 `<机器人 id>:<密钥>` Token（省略或留空则保持已存值；读不出数字 id 时返回 400 `telegram_token_invalid`；清除标记与飞书同口径，清除后配置保留其机器人身份）。保存与启用的分离一致；把已启用绑定的 Token 换成另一个 Session 已启用的机器人时，同样返回 409 `account_enabled_elsewhere`，其余情况不存在跨 Session 的保存冲突 |
 | POST | /messaging/telegram/state | 与飞书开关同一契约（无已存 Token 时返回 400 `telegram_token_required`） |
 | DELETE | /messaging/telegram | 整体删除该渠道的配置（含 Bot Token）。仅为 API 完整性保留 |
 | POST | /messaging/telegram/test | 凭据探测（`getMe`），草稿 Token 缺省回落到已存值 → `{ok, latencyMs?, botUsername?, error?}`——成功时报出 Token 登录到的机器人 |
 | POST | /messaging/telegram/test-message | 向最近一次收到消息的会话发送一条固定测试文本；在 Telegram 里给机器人发过消息之前返回 409 `telegram_no_chat` |
 
-没有已存密钥的配置（被清除过的）不返回掩码字段，也无法启用。唯一的跨 Session 规则按渠道内机器人账号计，且只作用于连接：一个账号只有一条事件流，因此至多一个 Session 能将其启用。飞书的账号身份是 `app_id`，Telegram 是 Token 冒号前的数字机器人 id（换发 Token 也不会改变）。读取与两个测试接口对任意 Project 成员开放；PUT、state 开关与 DELETE 仅限所有者（与 Vault 同口径——绑定写操作携带或作用于密钥）。密钥永不回传。删除 Session 会连带删除其全部渠道配置；入站仅处理文本消息（其他类型收到双语的“仅支持文本”回复）。Telegram 建立连接时先清空积压：无连接期间发来的消息会被跳过，与飞书“错过的事件即消失”同口径。
+没有已存密钥的配置（被清除过的）不返回掩码字段，也无法启用。`linePerMessage` 是唯一一个不属于凭据的已存字段：开启后，转发的助手回复中每个非空行各自作为一条消息发出（空行忽略，单行仍按长度上限分段，超出每条回复的消息条数上限的部分合并为最后一条）；默认为 false，PUT 省略该字段则保持已存值，且它不作用于通知与测试消息。唯一的跨 Session 规则按渠道内机器人账号计，且只作用于连接：一个账号只有一条事件流，因此至多一个 Session 能将其启用。飞书的账号身份是 `app_id`，Telegram 是 Token 冒号前的数字机器人 id（换发 Token 也不会改变）。读取与两个测试接口对任意 Project 成员开放；PUT、state 开关与 DELETE 仅限所有者（与 Vault 同口径——绑定写操作携带或作用于密钥）。密钥永不回传。删除 Session 会连带删除其全部渠道配置；入站仅处理文本消息（其他类型收到双语的“仅支持文本”回复）。Telegram 建立连接时先清空积压：无连接期间发来的消息会被跳过，与飞书“错过的事件即消失”同口径。
 
 ### 独立源预览
 

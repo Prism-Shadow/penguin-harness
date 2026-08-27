@@ -25,7 +25,9 @@
  * moment it completes — a run that writes working notes between tool calls before its
  * answer reaches the chat as that same sequence of messages, so the chat follows the run
  * as it happens. Each is sent to the last known chat, chunked under the channel's
- * text-size limits, and the sends of one entry are serialised through a promise chain:
+ * text-size limits — or, when the binding's `linePerMessage` is set, split into one message
+ * per non-blank line first and each of those chunked — and the sends of one entry are
+ * serialised through a promise chain:
  * several messages completing in quick succession must reach the chat in the order they
  * completed. In a group chat the run's FIRST outbound message threads onto the inbound
  * one and everything after it is a plain send — one reply-to anchors the exchange, where
@@ -61,6 +63,22 @@ import type {
  * keeping replies in a handful of bubbles.
  */
 export const MESSAGING_TEXT_CHUNK_CHARS = 4000;
+
+/**
+ * How many messages one reply may become under a binding's `linePerMessage`, and why this
+ * particular number.
+ *
+ * The ceiling is a rate limit, not a size limit. Telegram's documented per-chat allowance is
+ * about one message a second, with a burst to a single group tolerated up to roughly 20 a
+ * minute before it starts answering 429; Feishu's IM send limit is counted per app and is far
+ * looser, so Telegram sets the number. 20 spends the tightest channel's burst allowance for
+ * one chat on a single reply — enough that an answer written as spoken lines arrives as spoken
+ * lines, low enough that one long reply cannot spend several minutes of budget at once.
+ *
+ * Past it the remaining lines are COMBINED into one final message rather than dropped:
+ * silently losing the tail of a reply is the worst failure available here.
+ */
+export const MESSAGING_MAX_LINE_MESSAGES = 20;
 
 // The three fixed outbound notices are user-facing chat content, deliberately bilingual
 // like the rest of the product's user-facing copy (the server has no locale for an
@@ -133,6 +151,26 @@ export function chunkMessagingText(text: string, max = MESSAGING_TEXT_CHUNK_CHAR
   }
   if (rest.length > 0) out.push(rest);
   return out;
+}
+
+/**
+ * Splits a relayed reply into one message per non-blank line, for a binding that asked for it.
+ *
+ * Deliberately literal: every non-blank line becomes its own message — inside a fenced code
+ * block included — and blank lines are dropped. The whole value of the option is that its
+ * behaviour is predictable, which any "smart" grouping (holding a code fence together, merging
+ * short lines) would trade away. Each body it returns still goes through chunkMessagingText, so
+ * a single line over the channel's cap is chunked rather than rejected.
+ */
+export function splitReplyLines(text: string, max = MESSAGING_MAX_LINE_MESSAGES): string[] {
+  const lines = text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "");
+  if (lines.length <= max) return lines;
+  // The tail rides the last message instead of vanishing; it keeps its own line breaks so the
+  // combined message reads as the lines it was made of.
+  return [...lines.slice(0, max - 1), lines.slice(max - 1).join("\n")];
 }
 
 /** Dedupe scope: one binding, i.e. a Session's config for one channel. */
@@ -536,7 +574,10 @@ export class MessagingBridge {
   /**
    * Sends one completed assistant message to the last known chat, in chunks under the
    * channel's cap; a send failure is recorded, never thrown, so the chain behind it keeps
-   * moving. In a group the run's first outbound chunk threads onto the inbound message and
+   * moving. A binding with `linePerMessage` set sends one message per non-blank line instead
+   * of one per reply (see splitReplyLines) — chunking, threading and ordering are identical
+   * either way, and with the flag off the send sequence is unchanged. In a group the run's
+   * first outbound chunk threads onto the inbound message and
    * everything after it is a plain send: the reply-to relation names which message is being
    * answered, and one of them says it — repeating it per message and per chunk stacks quote
    * headers over the whole conversation.
@@ -546,16 +587,21 @@ export class MessagingBridge {
       const row = this.deps.repo.find(entry.sessionId, entry.channel);
       if (!row || row.lastChatId === null) return; // no chat known yet: nothing mirrors
       const client = await this.clientFor(entry.sessionId, row);
-      for (const chunk of chunkMessagingText(text)) {
-        const threadOnto =
-          !row.lastChatIsDirect && entry.lastInboundMessageId !== null && !entry.threadedThisRun
-            ? entry.lastInboundMessageId
-            : null;
-        if (threadOnto !== null) {
-          entry.threadedThisRun = true;
-          await client.replyText(threadOnto, chunk);
-        } else {
-          await client.sendText(row.lastChatId, chunk);
+      // One body per outbound message: the whole reply, or one per non-blank line when the
+      // binding asked for that. Everything below is untouched by the choice.
+      const bodies = row.linePerMessage ? splitReplyLines(text) : [text];
+      for (const body of bodies) {
+        for (const chunk of chunkMessagingText(body)) {
+          const threadOnto =
+            !row.lastChatIsDirect && entry.lastInboundMessageId !== null && !entry.threadedThisRun
+              ? entry.lastInboundMessageId
+              : null;
+          if (threadOnto !== null) {
+            entry.threadedThisRun = true;
+            await client.replyText(threadOnto, chunk);
+          } else {
+            await client.sendText(row.lastChatId, chunk);
+          }
         }
       }
     } catch (err) {

@@ -1817,6 +1817,11 @@ Benchmark：
     credentialMissingHint: "先填写并保存凭证，再启用连接",
     /** Why the clear checkbox is gated while the channel's connection is enabled. */
     disableBeforeClearHint: "先停用连接，才能清除凭证",
+    /** The saved delivery option: one message per non-blank line of a reply. */
+    linePerMessage: "每行一条消息",
+    /** Its disclosure, beside the label: what the option does to a reply, and its two edges. */
+    linePerMessageHelp:
+      "开启后，回复中的每个非空行各自作为一条消息发出，空行忽略——写成多句台词的回复就按台词逐条到达。行数超过每条回复的上限时，余下的行合并为最后一条，内容不会丢失；过长的单行仍按渠道长度上限分段。",
     /** Enabled-row indicator's tooltip / sr text (the small per-channel glyph on the session row). */
     enabledIndicator: {
       feishu: "飞书连接已启用",

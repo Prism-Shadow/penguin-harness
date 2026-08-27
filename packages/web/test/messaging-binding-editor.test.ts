@@ -139,6 +139,21 @@ describe("MessagingBindingBody", () => {
     expect(html).toContain(`title="${lastError}"`);
   });
 
+  it('closes the form with the delivery option, its explanation behind the label\'s "?"', () => {
+    for (const channel of ["feishu", "telegram"] as MessagingChannel[]) {
+      const html = render(stateOf(channel));
+      // Both channels carry it: it is a delivery preference, not a credential.
+      expect(html).toContain(S.messaging.linePerMessage);
+      // Semantics disclose — the sentence is in the popover panel, which renders collapsed.
+      expect(html).toContain(S.common.moreInfoAbout(S.messaging.linePerMessage));
+      expect(html).not.toContain(S.messaging.linePerMessageHelp);
+      // After the credential fields, not among them.
+      const fieldAt = html.indexOf(channel === "telegram" ? S.telegram.botToken : S.feishu.appId);
+      expect(fieldAt).toBeGreaterThanOrEqual(0);
+      expect(html.indexOf(S.messaging.linePerMessage)).toBeGreaterThan(fieldAt);
+    }
+  });
+
   it("shows the switch's gating reason when the other channel holds the connection", () => {
     const hint = S.messaging.otherEnabledHint(S.messaging.channelName.feishu);
     const html = render(

@@ -9,8 +9,9 @@
  * exactly as if typed in the composer (no marker, no special sender; queueIfBusy),
  * non-text gets the bilingual text-only reply, each completed assistant message mirrors on
  * its own to the last known chat as soon as it completes (the run's first one threaded onto
- * the inbound message in groups), and an approval_request sends the one-line notice. No
- * test opens real network.
+ * the inbound message in groups), an approval_request sends the one-line notice, and a
+ * binding with `linePerMessage` set delivers a reply one message per non-blank line while an
+ * unset one is byte-for-byte the original single message. No test opens real network.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -26,9 +27,12 @@ import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import {
   MESSAGING_APPROVAL_NOTICE,
+  MESSAGING_MAX_LINE_MESSAGES,
   MESSAGING_TEST_MESSAGE,
+  MESSAGING_TEXT_CHUNK_CHARS,
   MESSAGING_TEXT_ONLY_NOTICE,
   chunkMessagingText,
+  splitReplyLines,
 } from "../src/runtime/messaging/bridge.js";
 import type {
   FeishuApiClient,
@@ -245,6 +249,34 @@ describe("chunkMessagingText", () => {
     const hard = chunkMessagingText("x".repeat(90), 40);
     expect(hard.map((c) => c.length)).toEqual([40, 40, 10]);
     expect(hard.join("")).toBe("x".repeat(90));
+  });
+});
+
+describe("splitReplyLines", () => {
+  it("makes one message per non-blank line, trimmed, and leaves a single line alone", () => {
+    expect(splitReplyLines("one\n\n  two  \nthree")).toEqual(["one", "two", "three"]);
+    expect(splitReplyLines("just one line")).toEqual(["just one line"]);
+    // Literal on purpose, fenced code included: the option is worth having because a reader
+    // can predict what arrives, and any "smart" grouping would trade that away.
+    expect(splitReplyLines("```\ncode()\n```")).toEqual(["```", "code()", "```"]);
+  });
+
+  it("combines the tail past the cap rather than dropping it", () => {
+    const lines = Array.from({ length: 25 }, (_, i) => `l${i}`);
+    const out = splitReplyLines(lines.join("\n"), 5);
+    expect(out).toHaveLength(5);
+    expect(out.slice(0, 4)).toEqual(["l0", "l1", "l2", "l3"]);
+    // Everything from the cap on rides the last message, keeping its own line breaks — so
+    // nothing is lost, which is the point of combining instead of truncating.
+    expect(out[4]).toBe(lines.slice(4).join("\n"));
+    expect(out.join("\n")).toBe(lines.join("\n"));
+    // Exactly at the cap nothing is combined.
+    expect(splitReplyLines(lines.slice(0, 5).join("\n"), 5)).toEqual(lines.slice(0, 5));
+  });
+
+  it("defaults to the documented per-reply message cap", () => {
+    const lines = Array.from({ length: MESSAGING_MAX_LINE_MESSAGES + 5 }, (_, i) => `l${i}`);
+    expect(splitReplyLines(lines.join("\n"))).toHaveLength(MESSAGING_MAX_LINE_MESSAGES);
   });
 });
 
@@ -668,6 +700,133 @@ describe("messaging binding routes and bridge", () => {
       { kind: "send", target: "oc_group_7", text: "second" },
       { kind: "send", target: "oc_group_7", text: "third" },
     ]);
+  });
+
+  // —— linePerMessage: the per-binding delivery option ————————————————————————
+
+  /** A reply written as spoken lines: a blank line between the first two, untrimmed edges. */
+  const SPOKEN = "Line one.\n\n  Line two.  \nLine three.";
+
+  /** SID2 replying with one fixed text, bound and connected, ready to be messaged. */
+  const bindReplying = async (text: string, put: Record<string, unknown>) => {
+    const row2 = sessionRowOf(SID2, projectId);
+    t.deps.sessionsRepo.insert(row2);
+    t.deps.manager.adopt(row2, multiMessageFakeSession(SID2, [text]));
+    await bindEnabled(SID2, { ...PUT_BODY, ...put });
+  };
+
+  /** One inbound text into a direct chat, which becomes the reply target. */
+  const messageBot = async (chatId: string, chatType: "p2p" | "group" = "p2p") =>
+    fake.lastConnection().fire({
+      chatId,
+      chatType,
+      messageId: `om_${chatId}`,
+      messageType: "text",
+      content: JSON.stringify({ text: "ping" }),
+    });
+
+  it("linePerMessage off (the default) delivers a multi-line reply as ONE message", async () => {
+    await bindReplying(SPOKEN, { appId: "cli_lines_off" });
+    // The default is off, on a binding whose PUT never mentioned the field.
+    expect(t.deps.messagingRepo.find(SID2, "feishu")?.linePerMessage).toBe(false);
+    await messageBot("oc_off");
+    await waitFor(() => fake.allSends().length > 0);
+    // Byte for byte what the bridge sent before the option existed: the trimmed reply, whole.
+    expect(fake.allSends()).toEqual([{ kind: "send", target: "oc_off", text: SPOKEN.trim() }]);
+  });
+
+  it("linePerMessage on delivers one message per non-blank line, in order", async () => {
+    await bindReplying(SPOKEN, { appId: "cli_lines_on", linePerMessage: true });
+    expect(t.deps.messagingRepo.find(SID2, "feishu")?.linePerMessage).toBe(true);
+    await messageBot("oc_on");
+    await waitFor(() => fake.allSends().length === 3);
+    // Order is the send chain's guarantee, so the whole array is asserted, not its contents:
+    // three messages arriving out of order would be a different bug with the same members.
+    expect(fake.allSends()).toEqual([
+      { kind: "send", target: "oc_on", text: "Line one." },
+      { kind: "send", target: "oc_on", text: "Line two." },
+      { kind: "send", target: "oc_on", text: "Line three." },
+    ]);
+  });
+
+  it("a line over the channel's size cap is still chunked rather than rejected", async () => {
+    const long = "x".repeat(MESSAGING_TEXT_CHUNK_CHARS + 500);
+    await bindReplying(`head\n${long}`, { appId: "cli_lines_long", linePerMessage: true });
+    await messageBot("oc_long");
+    await waitFor(() => fake.allSends().length === 3);
+    // Splitting happens first, chunking after: the long line becomes two messages, and the
+    // pieces reassemble into exactly the line that was sent.
+    expect(fake.allSends().map((s) => s.text)).toEqual([
+      "head",
+      long.slice(0, MESSAGING_TEXT_CHUNK_CHARS),
+      long.slice(MESSAGING_TEXT_CHUNK_CHARS),
+    ]);
+  });
+
+  it("past the cap the remaining lines arrive combined, not dropped", async () => {
+    const lines = Array.from({ length: MESSAGING_MAX_LINE_MESSAGES + 4 }, (_, i) => `l${i}`);
+    await bindReplying(lines.join("\n"), { appId: "cli_lines_cap", linePerMessage: true });
+    await messageBot("oc_cap");
+    await waitFor(() => fake.allSends().length === MESSAGING_MAX_LINE_MESSAGES);
+    const texts = fake.allSends().map((s) => s.text);
+    expect(texts.slice(0, -1)).toEqual(lines.slice(0, MESSAGING_MAX_LINE_MESSAGES - 1));
+    // The tail rides the last message: the reply reaches the chat entire either way.
+    expect(texts.at(-1)).toBe(lines.slice(MESSAGING_MAX_LINE_MESSAGES - 1).join("\n"));
+    expect(texts.join("\n")).toBe(lines.join("\n"));
+  });
+
+  it("the notices are not replies: linePerMessage never reaches them", async () => {
+    await bindReplying(SPOKEN, { appId: "cli_lines_notice", linePerMessage: true });
+    await fake.lastConnection().fire({
+      chatId: "oc_notice",
+      chatType: "p2p",
+      messageId: "om_notice",
+      messageType: "image",
+      content: JSON.stringify({ image_key: "img_1" }),
+    });
+    await waitFor(() => fake.allSends().length > 0);
+    // One send carrying the notice whole. The notices are single-line by construction, so
+    // this is asserted from both ends: the text has no line break to split on, and it
+    // arrives as one message — a notice routed through the reply path would break the pair.
+    expect(MESSAGING_TEXT_ONLY_NOTICE).not.toContain("\n");
+    expect(fake.allSends()).toEqual([
+      { kind: "send", target: "oc_notice", text: MESSAGING_TEXT_ONLY_NOTICE },
+    ]);
+    // And the test message, sent through its own path, is one message too.
+    const sent = fake.allSends().length;
+    expect((await api.post(`/api/sessions/${SID2}/messaging/feishu/test-message`, {})).status).toBe(
+      200,
+    );
+    expect(fake.allSends().slice(sent)).toEqual([
+      { kind: "send", target: "oc_notice", text: MESSAGING_TEST_MESSAGE },
+    ]);
+  });
+
+  it("in a group, split lines still thread only once", async () => {
+    await bindReplying(SPOKEN, { appId: "cli_lines_group", linePerMessage: true });
+    await messageBot("oc_lines_group", "group");
+    await waitFor(() => fake.allSends().length === 3);
+    // The rule the option must not disturb: one reply-to anchors the exchange, and many
+    // lines must not become many quote headers.
+    expect(fake.allSends()).toEqual([
+      { kind: "reply", target: "om_oc_lines_group", text: "Line one." },
+      { kind: "send", target: "oc_lines_group", text: "Line two." },
+      { kind: "send", target: "oc_lines_group", text: "Line three." },
+    ]);
+  });
+
+  it("PUT saves the flag and an omitted one keeps the stored value", async () => {
+    await api.put(BASE(SID), { ...PUT_BODY, linePerMessage: true });
+    expect(t.deps.messagingRepo.find(SID, "feishu")?.linePerMessage).toBe(true);
+    // The masked read carries it, so the editor can render the switch from the GET.
+    const read = (await (await api.get(BASE(SID))).json()) as FeishuBindingResponse;
+    expect(read.binding?.linePerMessage).toBe(true);
+    // A credentials-only save says nothing about it, and it stays where it was.
+    await api.put(BASE(SID), { appId: PUT_BODY.appId });
+    expect(t.deps.messagingRepo.find(SID, "feishu")?.linePerMessage).toBe(true);
+    // Turning it off is an ordinary save.
+    await api.put(BASE(SID), { ...PUT_BODY, linePerMessage: false });
+    expect(t.deps.messagingRepo.find(SID, "feishu")?.linePerMessage).toBe(false);
   });
 
   it("the streamed compaction summary is not a reply and never reaches the chat", async () => {

@@ -432,6 +432,20 @@ describe("telegram binding routes and connector loop", () => {
     expect((await api.post(`${BASE(SID2)}/state`, { enabled: true })).status).toBe(409);
   });
 
+  it("the delivery flag rides the token PUT on this channel too, and defaults off", async () => {
+    // The bridge's splitting is channel-agnostic (messaging.test.ts pins the behaviour); what
+    // is per-channel is the route wiring, which is what this asserts.
+    await api.put(BASE(SID), { botToken: TOKEN });
+    expect(t.deps.messagingRepo.find(SID, "telegram")?.linePerMessage).toBe(false);
+    const on = await api.put(BASE(SID), { linePerMessage: true });
+    expect(on.status).toBe(200);
+    expect(((await on.json()) as TelegramBindingResponse).binding?.linePerMessage).toBe(true);
+    // The token was untouched by that save, and an omitted flag keeps the stored value.
+    expect(t.deps.messagingRepo.find(SID, "telegram")?.config.botToken).toBe(TOKEN);
+    await api.put(BASE(SID), {});
+    expect(t.deps.messagingRepo.find(SID, "telegram")?.linePerMessage).toBe(true);
+  });
+
   it("the account is the bot id: a rotated secret saves freely and collides only on enable", async () => {
     t.deps.sessionsRepo.insert(sessionRowOf(SID2, projectId));
     await bindEnabled(SID);

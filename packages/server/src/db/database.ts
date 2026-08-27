@@ -33,6 +33,7 @@ export function openDatabase(dbPath: string): DatabaseSync {
   ensureColumn(db, "sessions", "thinking_level", "TEXT");
   ensureColumn(db, "auth_sessions", "via", "TEXT");
   ensureColumn(db, "trace_files", "page_stats", "TEXT");
+  ensureColumn(db, "messaging_bindings", "line_per_message", "INTEGER NOT NULL DEFAULT 0");
   // Superseded by idx_usage_session_ts (session_id, ts), which SCHEMA_SQL just created on
   // this database: the old index is a strict prefix of it, so every query it served is
   // served identically. Dropping is safe — an index is derived, never data.

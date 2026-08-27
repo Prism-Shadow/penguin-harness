@@ -5,8 +5,9 @@
  * pre-existing database.
  *
  * The last two suites cover the other two directions a released build meets on disk: a table
- * that did not exist when the database was formed (and, in the same suite, an index that has
- * since been retired — the one shape openDatabase removes rather than adds), and a database
+ * that did not exist when the database was formed, a column added to it afterwards, and an
+ * index that has since been retired — the one shape openDatabase removes rather than adds — and
+ * a database
  * written by a *newer* build than the one opening it (a user who updates, dislikes it, and
  * reinstalls the previous release). Nothing records a schema version, so both properties rest
  * on every schema change staying additive — and the downgrade one on more than that, which the
@@ -364,6 +365,70 @@ describe("openDatabase table and index upgrades", () => {
         }).accountId,
       ).toBe("12345");
       expect(repo.find("session-pre-messaging", "telegram")?.accountId).toBe("12345");
+    } finally {
+      db.close();
+    }
+  });
+
+  /**
+   * Seeds a database in the shape it had before messaging_bindings.line_per_message existed:
+   * today's schema with that column dropped. Same derivation rule as the helpers around it.
+   */
+  function seedPreLinePerMessageDb(dbPath: string, seed: (db: DatabaseSync) => void): void {
+    const db = new sqlite.DatabaseSync(dbPath);
+    try {
+      db.exec(SCHEMA_SQL);
+      db.exec("ALTER TABLE messaging_bindings DROP COLUMN line_per_message");
+      seed(db);
+    } finally {
+      db.close();
+    }
+  }
+
+  it("adds line_per_message to a messaging_bindings formed before it, existing rows off", () => {
+    const dbPath = path.join(dir, "web.db");
+    const ts = "2026-01-01T00:00:00.000Z";
+    seedPreLinePerMessageDb(dbPath, (old) => {
+      old
+        .prepare(
+          `INSERT INTO messaging_bindings
+             (session_id, channel, account_id, config_json, enabled, created_at, updated_at)
+           VALUES ('session-old', 'telegram', '12345', '{"botToken":"t"}', 1, ?, ?)`,
+        )
+        .run(ts, ts);
+    });
+    const before = new sqlite.DatabaseSync(dbPath);
+    let columnsBefore: { name: string }[];
+    try {
+      columnsBefore = before.prepare("PRAGMA table_info(messaging_bindings)").all() as {
+        name: string;
+      }[];
+    } finally {
+      before.close();
+    }
+    expect(columnsBefore.map((c) => c.name)).not.toContain("line_per_message");
+
+    const db = openDatabase(dbPath);
+    try {
+      const repo = new MessagingBindingsRepo(db);
+      const row = repo.find("session-old", "telegram");
+      // The column arrives with a default that reproduces the behaviour the row already had —
+      // one message per reply — so the upgrade cannot change how an existing binding delivers.
+      expect(row?.linePerMessage).toBe(false);
+      // And the rest of the row is untouched, including the connection intent.
+      expect(row?.enabled).toBe(true);
+      expect(row?.config.botToken).toBe("t");
+      // It is writable immediately: an ALTERed column with no backing code path would look
+      // identical until something tried to set it.
+      expect(
+        repo.upsert({
+          sessionId: "session-old",
+          channel: "telegram",
+          accountId: "12345",
+          config: { botToken: "t" },
+          linePerMessage: true,
+        }).linePerMessage,
+      ).toBe(true);
     } finally {
       db.close();
     }
