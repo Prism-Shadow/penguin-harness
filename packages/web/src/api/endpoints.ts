@@ -99,6 +99,7 @@ import type {
   PluginIndexResponse,
   PluginConfigResponse,
   PluginConfigUpdateRequest,
+  LanguageIndexResponse,
   PluginReadmeResponse,
   SessionsResponse,
   SessionTracesResponse,
@@ -1096,6 +1097,9 @@ export const installAgentPlugins = (projectId: string, agentId: string, names: s
 
 /** Plugin index (available to any logged-in user): the merged index of every configured registry. */
 export const getPluginIndex = () => apiFetch<PluginIndexResponse>("/api/plugins/registry");
+
+/** Languages plugins contributed; the grammars themselves are fetched by the highlighter. */
+export const getLanguages = () => apiFetch<LanguageIndexResponse>("/api/languages");
 
 export const getPluginReadme = (name: string) =>
   apiFetch<PluginReadmeResponse>(`/api/plugins/registry/readme?name=${encodeURIComponent(name)}`);
