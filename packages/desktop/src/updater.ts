@@ -42,6 +42,11 @@ const FIRST_CHECK_DELAY_MS = 20_000;
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 const RELEASES_URL = "https://github.com/Prism-Shadow/penguin-harness/releases";
+const GITHUB_FEED = {
+  provider: "github" as const,
+  owner: "Prism-Shadow",
+  repo: "penguin-harness",
+};
 
 function log(line: string): void {
   process.stdout.write(`[updater] ${line}\n`);
@@ -54,6 +59,9 @@ let downloadInFlight = false;
 type FeedState =
   { phase: "pending" } | { phase: "unavailable" } | { phase: "ready"; fallbackUrl: string | null };
 let feedState: FeedState = { phase: "pending" };
+type FeedRefreshMode = "static" | "github" | "oss" | "auto-probe";
+let feedRefreshMode: FeedRefreshMode = "github";
+let feedRefreshInFlight: Promise<void> | null = null;
 /** The generic URL electron-updater currently points at (null = default GitHub feed). */
 let activeGenericUrl: string | null = null;
 /** The other pinned feed: retrying switches to it, and the pair swaps roles. */
@@ -70,6 +78,13 @@ function setGenericFeed(url: string, fallbackUrl: string | null): void {
   autoUpdater.setFeedURL({ provider: "generic", url });
 }
 
+function setGitHubFeed(): void {
+  activeGenericUrl = null;
+  otherGenericUrl = null;
+  feedState = { phase: "ready", fallbackUrl: null };
+  autoUpdater.setFeedURL(GITHUB_FEED);
+}
+
 function switchToFallbackFeed(reason: string): boolean {
   if (downloadedVersion !== null || feedState.phase !== "ready" || feedState.fallbackUrl === null) {
     return false;
@@ -82,6 +97,61 @@ function switchToFallbackFeed(reason: string): boolean {
   autoUpdater.setFeedURL({ provider: "generic", url: next });
   log(`${feedLabel(previous ?? next)} update ${reason}; retrying ${feedLabel(next)}`);
   return true;
+}
+
+function refreshUpdateFeed(): Promise<void> {
+  if (feedRefreshInFlight !== null) return feedRefreshInFlight;
+  feedRefreshInFlight = refreshUpdateFeedOnce().finally(() => {
+    feedRefreshInFlight = null;
+  });
+  return feedRefreshInFlight;
+}
+
+async function refreshUpdateFeedOnce(): Promise<void> {
+  if (feedRefreshMode === "static") return;
+  if (feedRefreshMode === "github") {
+    setGitHubFeed();
+    return;
+  }
+
+  feedState = { phase: "pending" };
+  if (feedRefreshMode === "oss") {
+    try {
+      const tag = await resolveOssLatestTag(fetchForUpdateSource);
+      if (tag === null) {
+        feedState = { phase: "unavailable" };
+        log(
+          "PENGUIN_UPDATE_SOURCE=oss but the OSS mirror latest.json is unavailable or invalid; updates are disabled for this check.",
+        );
+        return;
+      }
+      setGenericFeed(ossFeedUrl(tag), null);
+      log(`selected OSS update feed (${tag})`);
+    } catch {
+      feedState = { phase: "unavailable" };
+      log("OSS update source selection failed; updates are disabled for this check.");
+    }
+    return;
+  }
+
+  try {
+    const decision = await selectAutoUpdateFeed({
+      fetchFn: fetchForUpdateSource,
+      platform: process.platform,
+      arch: process.arch,
+      log,
+    });
+    if (decision.kind === "pinned") {
+      setGenericFeed(decision.primaryUrl, decision.fallbackUrl);
+      log(`selected ${feedLabel(decision.primaryUrl)} update feed`);
+    } else {
+      setGitHubFeed();
+      log("selected GitHub update feed");
+    }
+  } catch (err) {
+    setGitHubFeed();
+    log(`update source selection failed: ${(err as Error).message}; keeping GitHub update feed.`);
+  }
 }
 
 function scheduleChecks(): void {
@@ -169,10 +239,6 @@ export function handleUpdaterCommand(action: "check" | "install"): void {
     }
     if (feedState.phase === "pending") {
       reannounceStatus();
-      return;
-    }
-    if (feedState.phase === "unavailable") {
-      emitStatus({ kind: "error", message: "The configured update source is unavailable." });
       return;
     }
     void check();
@@ -275,6 +341,7 @@ export function initUpdater(getWindow: () => BrowserWindow | null): void {
 
   const override = feedUrlOverride(process.env);
   if (override) {
+    feedRefreshMode = "static";
     setGenericFeed(override, null);
     log(`feed override: ${override}`);
     scheduleChecks();
@@ -290,74 +357,49 @@ export function initUpdater(getWindow: () => BrowserWindow | null): void {
   }
 
   if (config.source === "github") {
-    feedState = { phase: "ready", fallbackUrl: null };
+    feedRefreshMode = "github";
+    setGitHubFeed();
     log("selected GitHub update feed");
     scheduleChecks();
     return;
   }
 
   if (config.source === "oss") {
-    void resolveOssLatestTag(fetchForUpdateSource)
-      .then((tag) => {
-        if (tag === null) {
-          feedState = { phase: "unavailable" };
-          log(
-            "PENGUIN_UPDATE_SOURCE=oss but the OSS mirror latest.json is unavailable or invalid; updates are disabled for this run.",
-          );
-          return;
-        }
-        setGenericFeed(ossFeedUrl(tag), null);
-        log(`selected OSS update feed (${tag})`);
-      })
-      .catch(() => {
-        feedState = { phase: "unavailable" };
-        log("OSS update source selection failed; updates are disabled for this run.");
-      })
-      .finally(scheduleChecks);
+    feedRefreshMode = "oss";
+    void refreshUpdateFeed().finally(scheduleChecks);
     return;
   }
 
   if (!config.probe) {
-    feedState = { phase: "ready", fallbackUrl: null };
+    feedRefreshMode = "github";
+    setGitHubFeed();
     log("selected GitHub update feed");
     scheduleChecks();
     return;
   }
 
-  void selectAutoUpdateFeed({
-    fetchFn: fetchForUpdateSource,
-    platform: process.platform,
-    arch: process.arch,
-    log,
-  })
-    .then((decision) => {
-      if (decision.kind === "pinned") {
-        setGenericFeed(decision.primaryUrl, decision.fallbackUrl);
-        log(`selected ${feedLabel(decision.primaryUrl)} update feed`);
-      } else {
-        feedState = { phase: "ready", fallbackUrl: null };
-        log("selected GitHub update feed");
-      }
-    })
-    .catch((err) => {
-      feedState = { phase: "ready", fallbackUrl: null };
-      log(`update source selection failed: ${(err as Error).message}; keeping GitHub update feed.`);
-    })
-    .finally(scheduleChecks);
+  feedRefreshMode = "auto-probe";
+  void refreshUpdateFeed().finally(scheduleChecks);
 }
 
 async function check(): Promise<void> {
-  if (feedState.phase !== "ready") {
-    log(
-      `check skipped (${feedState.phase === "pending" ? "update source selection pending" : "update source unavailable"})`,
-    );
-    return;
-  }
   // A waiting build ends the checking: a re-check that finds a newer release would
   // start fetching it and invalidate the downloaded package on disk while the UI still
   // points its install action at it. The user installs what they were offered; the next
   // launch checks again. A running download likewise finishes undisturbed.
   if (downloadedVersion !== null || status.state === "downloading") return;
+  await refreshUpdateFeed();
+  if (feedState.phase !== "ready") {
+    const message =
+      feedState.phase === "pending"
+        ? "Update source selection is still in progress."
+        : "The configured update source is unavailable.";
+    log(
+      `check skipped (${feedState.phase === "pending" ? "update source selection pending" : "update source unavailable"})`,
+    );
+    emitStatus({ kind: "error", message });
+    return;
+  }
   // Each fresh cycle gets its one-shot switch back (the retry path bypasses check()).
   feedState = { phase: "ready", fallbackUrl: otherGenericUrl };
   try {
@@ -420,15 +462,6 @@ export async function checkForUpdatesManually(): Promise<void> {
     await promptRestart(downloadedVersion, null);
     return;
   }
-  if (feedState.phase === "unavailable") {
-    await dialog.showMessageBox({
-      type: "error",
-      message: "Could not check for updates.",
-      detail: "The configured update source is unavailable. See the updater log for details.",
-      buttons: ["OK"],
-    });
-    return;
-  }
   if (feedState.phase === "pending") {
     await dialog.showMessageBox({
       type: "info",
@@ -449,6 +482,15 @@ export async function checkForUpdatesManually(): Promise<void> {
   }
   manualCheckInFlight = true;
   await check();
+  if (manualCheckInFlight && feedState.phase === "unavailable") {
+    manualCheckInFlight = false;
+    await dialog.showMessageBox({
+      type: "error",
+      message: "Could not check for updates.",
+      detail: "The configured update source is unavailable. See the updater log for details.",
+      buttons: ["OK"],
+    });
+  }
 }
 
 /** "Ready to install" prompt; restarting is the only path that swaps the app. */
