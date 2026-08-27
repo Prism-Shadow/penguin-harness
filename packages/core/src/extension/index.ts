@@ -23,23 +23,32 @@
  * App, so subscribing from inside one would accumulate a copy per hot swap. Sealing
  * turns that slow leak into a loud error at the packaged boot.
  *
- * {@link PenguinContext} and {@link PenguinInterface} are OPEN: an embedder contributes
- * the members it owns by augmenting this module, which is why the harness's terminals
- * are not named here. Each layer declares what it actually provides, and no layer has
- * to be reachable from this one.
+ * {@link PenguinContext} and {@link PenguinInterface} are CLOSED. They name every member
+ * an extension may rely on, and are not reopened by declaration merging: an embedder that
+ * augmented this module would put members into the contract that only its own build has,
+ * so an extension type-checking against the contract would compile against a surface that
+ * the next embedder does not provide — and nothing at this layer could tell.
+ *
+ * An embedder with more to offer declares its own interface EXTENDING these and hands that
+ * in; reaching those extra members is then an explicit cast at the point of use, which is
+ * the honest cost of depending on one embedder (see the harness's `HarnessContext`).
  */
 
+import type { SandboxControl, SandboxProviderRegistry } from "./sandbox.js";
 import type { WorkflowFactory, WorkflowInstances } from "./workflow.js";
 
 export type { WorkflowFactory, WorkflowInstance, WorkflowInstances } from "./workflow.js";
+export type * from "./sandbox.js";
 
 /** A tool factory — RESERVED. The shape lands with the first extension-provided tool. */
 export type ToolFactory = unknown;
 
-/** An INSTANCE of the harness. Members an embedder owns flatten on by augmentation. */
+/** An INSTANCE of the harness. Closed — see the module doc. */
 export interface PenguinContext {
   /** Instances built from `iface.workflow`. */
   workflows: WorkflowInstances;
+  /** Flips confinement for this instance (see {@link SandboxControl}). */
+  sandbox: SandboxControl;
 }
 
 /** The DEFINITION view of the harness: factories by name. */
@@ -48,6 +57,8 @@ export interface PenguinInterface {
   workflow: Map<string, WorkflowFactory>;
   /** RESERVED (see {@link ToolFactory}). */
   tool: Map<string, ToolFactory>;
+  /** Sandbox backend registration (see {@link SandboxProviderRegistry}). */
+  sandbox: SandboxProviderRegistry;
 }
 
 /**

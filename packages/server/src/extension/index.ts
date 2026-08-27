@@ -1,26 +1,31 @@
 /**
  * The harness's extension surface — the `@prismshadow/penguin-server/extension` subpath.
  *
- * The contract itself lives in `@prismshadow/penguin-core/extension`; what this module adds
- * is the harness's own members, contributed by AUGMENTING that contract rather than by
- * redeclaring it. Core names nothing it cannot reach, this layer names what it owns, and
- * an extension sees one `PenguinContext` either way.
+ * The contract is `@prismshadow/penguin-core/extension` and is CLOSED: this module does not
+ * reopen it by declaration merging. Augmenting it would put `terminals` into the contract
+ * itself, so an extension type-checking against core would compile against a member only
+ * THIS embedder supplies, with nothing at the core layer able to say so.
+ *
+ * What the harness offers beyond the contract is named here instead, on an interface that
+ * EXTENDS it. Values of that type still satisfy the contract, so the seam is unchanged;
+ * what changes is that an extension wanting `terminals` writes the cast itself
+ * (`ctx as HarnessContext`) and thereby states, at the point of use, that it depends on
+ * running inside this harness rather than on any embedder.
+ *
+ * `sandbox` needs none of that: it is part of the contract in core, because a backend is
+ * written against the sandbox vocabulary and nothing else.
  *
  * Re-exported here so an extension package has one import site for every half.
  */
+import type { PenguinContext } from "@prismshadow/penguin-core/extension";
 import type { TerminalManager } from "../terminal/manager.js";
-import type { SandboxControl, SandboxProviderRegistry } from "../sandbox/types.js";
 
-declare module "@prismshadow/penguin-core/extension" {
-  interface PenguinContext {
-    terminals: TerminalManager;
-    /** The sandbox config surface (see {@link SandboxControl}). */
-    sandbox: SandboxControl;
-  }
-  interface PenguinInterface {
-    /** Sandbox backend registration (see {@link SandboxProviderRegistry}). */
-    sandbox: SandboxProviderRegistry;
-  }
+/**
+ * The instance view this harness actually hands to `"create"` handlers: the contract plus
+ * the members only it owns. An extension reaching `terminals` casts to this deliberately.
+ */
+export interface HarnessContext extends PenguinContext {
+  terminals: TerminalManager;
 }
 
 export type {
@@ -34,8 +39,6 @@ export type {
   WorkflowFactory,
   WorkflowInstance,
   WorkflowInstances,
-} from "@prismshadow/penguin-core/extension";
-export type {
   ConfinedArgv,
   ConfinedSandboxMode,
   RunnerFailureRule,
@@ -48,4 +51,4 @@ export type {
   SandboxProviderRegistry,
   SandboxProviderSource,
   SandboxSettings,
-} from "../sandbox/types.js";
+} from "@prismshadow/penguin-core/extension";
