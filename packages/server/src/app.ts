@@ -122,7 +122,7 @@ import { eventsRoutes, userChannelKey } from "./http/routes/events.js";
 import { projectsRoutes } from "./http/routes/projects.js";
 import { membersRoutes } from "./http/routes/members.js";
 import { modelsRoutes } from "./http/routes/models.js";
-import { modelOAuthRoutes } from "./http/routes/model-oauth.js";
+import { modelOAuthCallbackRoutes, modelOAuthRoutes } from "./http/routes/model-oauth.js";
 import { chatDefaultsRoutes } from "./http/routes/chat-defaults.js";
 import { commandPolicyRoutes } from "./http/routes/command-policy.js";
 import { vaultRoutes } from "./http/routes/vault.js";
@@ -879,6 +879,21 @@ export function createApp(
     }
     await next();
   });
+
+  // The provider key-minting redirect receiver, and the only business route mounted outside
+  // the auth gate below — the same shape /api/desktop/update uses in reverse, and for the
+  // mirror-image reason. A loopback OAuth callback is reached by whichever browser the
+  // provider redirected: on the desktop the shell hands the authorization page to the system
+  // browser, which holds no session cookie for this origin, so requiring one 401'd every
+  // desktop authorization. It authorizes on the flow id instead, and all it may do with one
+  // is deposit the code it carried: the exchange that writes a key runs on the owner's poll
+  // of the status route, behind this gate (see the route module).
+  //
+  // Exactly this literal path, registered here so the exemption cannot widen: the group
+  // mount below still carries /start, /:flowId/code and the status route behind the gate,
+  // and because this registration comes first, `:flowId` can never swallow "callback". Only
+  // GET is served, and the handler refuses the HEAD that Hono re-dispatches into it.
+  app.route("/api/projects/:projectId/model-oauth/callback", modelOAuthCallbackRoutes(deps));
 
   // Protected routes: cookie -> auth_session -> user, over the runtime's auth service.
   app.use("/api/*", authMiddleware(deps.authService));

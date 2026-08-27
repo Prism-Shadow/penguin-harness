@@ -101,9 +101,9 @@ Pressing it opens the provider's authorization page in a new tab. Authorize ther
 
 The exchange runs entirely on the server: the PKCE verifier is generated there and never reaches the browser, and the minted key goes straight into the model table without passing through it. An authorization is good for one key and expires in ten minutes.
 
-Where the redirect cannot come back — a desktop window that hands external links to the system browser, or a server the browser cannot reach on the address it was given — pick **Page can't redirect back? Enter the code by hand**. The authorization page then displays a one-time code instead of redirecting, and pasting it into the dialog finishes the same flow.
+Where the redirect cannot come back — a server the browser cannot reach on the address it was given — pick **Page can't redirect back? Enter the code by hand**. The authorization page then displays a one-time code instead of redirecting, and pasting it into the dialog finishes the same flow.
 
-Only the Project owner can start or finish an authorization. The full key is shown once and never again, so if saving it fails you have to authorize again and delete the unused key in the provider's console.
+Only the Project owner can start an authorization, and only their own signed-in session finishes one — in practice, the tab the dialog is open in. The redirect itself is received without a session, and has to be, because the browser the provider sends back is not always the one you started in. But all that redirect does is hand the code over: nothing is redeemed and no key is saved until the dialog asks for the result. The full key is shown once and never again, so if saving it fails you have to authorize again and delete the unused key in the provider's console.
 
 ## Local / self-hosted OpenAI-compatible endpoints (e.g. vLLM)
 
