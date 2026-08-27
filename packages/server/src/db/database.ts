@@ -118,7 +118,12 @@ function upgradeLastActiveAt(db: DatabaseSync): void {
  * Returns whether this call actually ALTERed the table (false = the column was already
  * there), so a caller can gate one-time backfill work on it.
  */
-function ensureColumn(db: DatabaseSync, table: string, column: string, ddl: string): boolean {
+export function ensureColumn(
+  db: DatabaseSync,
+  table: string,
+  column: string,
+  ddl: string,
+): boolean {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
   if (cols.some((c) => c.name === column)) return false;
   db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
