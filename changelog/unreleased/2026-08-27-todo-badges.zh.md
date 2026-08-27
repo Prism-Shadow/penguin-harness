@@ -3,6 +3,7 @@
 - **Date:** 2026-08-27
 - **Type:** feature
 - **Scope:** `web`, `server`
+- **PR:** [#510](https://github.com/Prism-Shadow/penguin-harness/pull/510)
 
 [English](2026-08-27-todo-badges.md)
 
