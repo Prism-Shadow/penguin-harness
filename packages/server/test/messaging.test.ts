@@ -1887,7 +1887,11 @@ describe("messaging binding routes and bridge", () => {
     await fs.writeFile(path.join(ws, "..", "outside.txt"), "secret");
     // A symlink is the case a lexical check alone would miss: the name is inside the
     // Workspace and only its canonical target leaves. WorkspaceFilesService resolves it.
-    await fs.symlink(path.join(ws, "..", "outside.txt"), path.join(ws, "linked.txt"));
+    // Creating one needs a privilege Windows does not always grant; without it the link
+    // simply does not exist, and the two lexical escapes still carry the test there.
+    await fs
+      .symlink(path.join(ws, "..", "outside.txt"), path.join(ws, "linked.txt"))
+      .catch(() => undefined);
     await bindWithWorkspace(
       ws,
       "Look at `../outside.txt`, `/etc/hostname` and `linked.txt`.",
