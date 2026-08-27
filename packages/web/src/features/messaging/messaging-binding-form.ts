@@ -8,9 +8,10 @@
  * QQ's sub-state mirrors Feishu's minus the domain field: the platform has one host, so
  * there is nothing for a domain to switch between.
  *
- * Not every field is a credential: `linePerMessage` is a per-binding delivery preference
- * (send a reply one message per non-blank line) that rides the same Save as the rest, which
- * is why it lives in the form state rather than behind a toggle of its own.
+ * Not every field is a credential: `linePerMessage` (send a reply one message per non-blank
+ * line) and `finalReplyOnly` (send only a run's last reply, when the run ends) are per-binding
+ * delivery preferences that ride the same Save as the rest, which is why they live in the form
+ * state rather than behind toggles of their own.
  *
  * Secrets never round-trip: `bindingToForm` always leaves the secret field empty (the
  * server only ever returns a masked value), and `formToPut` omits a blank one so the
@@ -34,34 +35,40 @@ export const FEISHU_DEFAULT_DOMAIN = "https://open.feishu.cn";
 /** The token shape @BotFather issues — mirrors the server's identity rule, for immediate feedback. */
 const TELEGRAM_TOKEN_RE = /^\d+:[A-Za-z0-9_-]{5,}$/;
 
-export interface FeishuFormFields {
+/**
+ * The delivery preferences every channel carries — the two saved fields that are not
+ * credentials, identical in meaning on every channel, which is what lets one row render each
+ * of them whichever channel is selected.
+ */
+export interface MessagingDeliveryFields {
+  /** Deliver a reply as one message per non-blank line. */
+  linePerMessage: boolean;
+  /** Deliver only a run's LAST completed reply, at the run's end, instead of each as it completes. */
+  finalReplyOnly: boolean;
+}
+
+export interface FeishuFormFields extends MessagingDeliveryFields {
   appId: string;
   /** Always starts empty; a non-empty value replaces the stored secret on save. */
   appSecret: string;
   baseDomain: string;
   /** The stored-secret clear checkbox (models idiom): applied on save, a typed secret wins over it. */
   clearSecret: boolean;
-  /** Deliver a reply as one message per non-blank line (saved, not a connection setting). */
-  linePerMessage: boolean;
 }
 
-export interface QQFormFields {
+export interface QQFormFields extends MessagingDeliveryFields {
   appId: string;
   /** Always starts empty; a non-empty value replaces the stored secret on save. */
   appSecret: string;
   /** The stored-secret clear checkbox (models idiom): applied on save, a typed secret wins over it. */
   clearSecret: boolean;
-  /** Deliver a reply as one message per non-blank line (saved, not a connection setting). */
-  linePerMessage: boolean;
 }
 
-export interface TelegramFormFields {
+export interface TelegramFormFields extends MessagingDeliveryFields {
   /** Always starts empty; a non-empty value replaces the stored token on save. */
   botToken: string;
   /** The stored-token clear checkbox (models idiom): applied on save, a typed token wins over it. */
   clearToken: boolean;
-  /** Deliver a reply as one message per non-blank line (saved, not a connection setting). */
-  linePerMessage: boolean;
 }
 
 /** Editable state backing the binding editor: the selected channel plus every channel's fields. */
@@ -99,9 +106,16 @@ export function emptyMessagingForm(channel: MessagingChannel = "feishu"): Messag
       baseDomain: FEISHU_DEFAULT_DOMAIN,
       clearSecret: false,
       linePerMessage: false,
+      finalReplyOnly: false,
     },
-    telegram: { botToken: "", clearToken: false, linePerMessage: false },
-    qq: { appId: "", appSecret: "", clearSecret: false, linePerMessage: false },
+    telegram: { botToken: "", clearToken: false, linePerMessage: false, finalReplyOnly: false },
+    qq: {
+      appId: "",
+      appSecret: "",
+      clearSecret: false,
+      linePerMessage: false,
+      finalReplyOnly: false,
+    },
   };
 }
 
@@ -122,6 +136,7 @@ export function bindingsToForm(bindings: MessagingBindingInfo[]): MessagingFormS
         baseDomain: info.baseDomain,
         clearSecret: false,
         linePerMessage: info.linePerMessage,
+        finalReplyOnly: info.finalReplyOnly,
       };
     } else if (info.channel === "qq") {
       form.qq = {
@@ -129,11 +144,17 @@ export function bindingsToForm(bindings: MessagingBindingInfo[]): MessagingFormS
         appSecret: "",
         clearSecret: false,
         linePerMessage: info.linePerMessage,
+        finalReplyOnly: info.finalReplyOnly,
       };
     } else {
       // Telegram's only credential field is the secret itself, so its sub-state loads empty
-      // apart from the delivery preference, which is not a credential.
-      form.telegram = { botToken: "", clearToken: false, linePerMessage: info.linePerMessage };
+      // apart from the delivery preferences, which are not credentials.
+      form.telegram = {
+        botToken: "",
+        clearToken: false,
+        linePerMessage: info.linePerMessage,
+        finalReplyOnly: info.finalReplyOnly,
+      };
     }
   }
   return form;
@@ -174,8 +195,9 @@ export function formToPut(form: MessagingFormState, hasStoredSecret: boolean): M
         ...(botToken !== "" ? { botToken } : {}),
         ...(clearing ? { clearBotToken: true } : {}),
         // Always sent, unlike the credential fields: an omitted flag means "keep", which
-        // would make turning the option back off impossible.
+        // would make turning either option back off impossible.
         linePerMessage: form.telegram.linePerMessage,
+        finalReplyOnly: form.telegram.finalReplyOnly,
       },
     };
   }
@@ -195,6 +217,7 @@ export function formToPut(form: MessagingFormState, hasStoredSecret: boolean): M
         ...(clearing ? { clearAppSecret: true } : {}),
         // Always sent, for the same reason as the other channels': an omitted flag means "keep".
         linePerMessage: form.qq.linePerMessage,
+        finalReplyOnly: form.qq.finalReplyOnly,
       },
     };
   }
@@ -216,6 +239,7 @@ export function formToPut(form: MessagingFormState, hasStoredSecret: boolean): M
       baseDomain,
       // Always sent, for the same reason as Telegram's: an omitted flag means "keep".
       linePerMessage: form.feishu.linePerMessage,
+      finalReplyOnly: form.feishu.finalReplyOnly,
     },
   };
 }
@@ -256,14 +280,17 @@ export function formToTest(form: MessagingFormState): MessagingTestRequestByChan
 
 /**
  * Unsaved edits on the selected channel: any field differing from the loaded baseline (a
- * typed secret always counts — it always loads empty — and so does a checked clear box).
+ * typed secret always counts — it always loads empty — and so does a checked clear box, and
+ * so does either delivery preference, which are the only edits a Telegram form can otherwise
+ * have nothing to show for).
  */
 export function formDirty(form: MessagingFormState, baseline: MessagingFormState): boolean {
   if (form.channel === "telegram") {
     return (
       form.telegram.botToken.trim() !== "" ||
       form.telegram.clearToken ||
-      form.telegram.linePerMessage !== baseline.telegram.linePerMessage
+      form.telegram.linePerMessage !== baseline.telegram.linePerMessage ||
+      form.telegram.finalReplyOnly !== baseline.telegram.finalReplyOnly
     );
   }
   if (form.channel === "qq") {
@@ -271,7 +298,8 @@ export function formDirty(form: MessagingFormState, baseline: MessagingFormState
       form.qq.appId !== baseline.qq.appId ||
       form.qq.appSecret.trim() !== "" ||
       form.qq.clearSecret ||
-      form.qq.linePerMessage !== baseline.qq.linePerMessage
+      form.qq.linePerMessage !== baseline.qq.linePerMessage ||
+      form.qq.finalReplyOnly !== baseline.qq.finalReplyOnly
     );
   }
   return (
@@ -279,7 +307,8 @@ export function formDirty(form: MessagingFormState, baseline: MessagingFormState
     form.feishu.baseDomain !== baseline.feishu.baseDomain ||
     form.feishu.appSecret.trim() !== "" ||
     form.feishu.clearSecret ||
-    form.feishu.linePerMessage !== baseline.feishu.linePerMessage
+    form.feishu.linePerMessage !== baseline.feishu.linePerMessage ||
+    form.feishu.finalReplyOnly !== baseline.feishu.finalReplyOnly
   );
 }
 

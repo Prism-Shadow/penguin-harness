@@ -15,9 +15,11 @@
  * the inbound message in groups), the files the reply MENTIONED follow it (existing ones
  * only, pictures as pictures, capped by count and by size, escapes refused by the Workspace
  * file service), an approval_request sends the one-line notice behind whatever is already
- * going out, and a binding with `linePerMessage` set delivers a reply one message per
+ * going out, a binding with `linePerMessage` set delivers a reply one message per
  * non-blank line — paced, and with a refused message costing only itself — while an unset
- * one is byte-for-byte the original single message. No test opens real network.
+ * one is byte-for-byte the original single message, and a binding with `finalReplyOnly` set
+ * relays a run's last completed message alone, at the run's end, files included. No test
+ * opens real network.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -1289,6 +1291,138 @@ describe("messaging binding routes and bridge", () => {
     expect(t.deps.messagingRepo.find(SID, "feishu")?.linePerMessage).toBe(false);
   });
 
+  // —— finalReplyOnly: the run's last word, and only it ——————————————————————
+
+  /** A run that thinks out loud: two working notes before the answer. */
+  const THINKING_ALOUD = ["working on it", "still going", "here is the answer"];
+
+  /** SID2 running one multi-message run, bound and connected. `gate` holds its LAST message. */
+  const bindThinkingAloud = async (put: Record<string, unknown>, gate?: Promise<void>) => {
+    const row2 = sessionRowOf(SID2, projectId);
+    t.deps.sessionsRepo.insert(row2);
+    t.deps.manager.adopt(row2, multiMessageFakeSession(SID2, THINKING_ALOUD, gate));
+    await bindEnabled(SID2, { ...PUT_BODY, ...put });
+  };
+
+  /**
+   * Counts the completed assistant messages of SID2 as the CHANNEL publishes them, which is
+   * what makes "nothing was sent" mean something: a held message produces no send to wait
+   * for, and the bridge subscribed to this channel before this listener did, so a message
+   * this listener has seen is one the bridge has already handled.
+   */
+  const countAssistantMessages = (): { seen: () => number; off: () => void } => {
+    let seen = 0;
+    const off = t.deps.channels.get(SID2).subscribe((evt) => {
+      const msg = JSON.parse(evt.data) as { type?: string; payload?: { role?: string } };
+      if (msg.type === "model_msg" && msg.payload?.role === "assistant") seen += 1;
+    });
+    return { seen: () => seen, off };
+  };
+
+  it("finalReplyOnly off (the default) mirrors every completed message of a run", async () => {
+    await bindThinkingAloud({ appId: "cli_final_off" });
+    // The default is off, on a binding whose PUT never mentioned the field.
+    expect(t.deps.messagingRepo.find(SID2, "feishu")?.finalReplyOnly).toBe(false);
+    await messageBot("oc_final_off");
+    await waitFor(() => fake.allSends().length === 3);
+    expect(fake.allTexts().map((s) => s.text)).toEqual(THINKING_ALOUD);
+  });
+
+  it("finalReplyOnly on sends the run's LAST message only, and only once the run ends", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await bindThinkingAloud({ appId: "cli_final_on", finalReplyOnly: true }, gate);
+    expect(t.deps.messagingRepo.find(SID2, "feishu")?.finalReplyOnly).toBe(true);
+    const notes = countAssistantMessages();
+    await messageBot("oc_final_on");
+    // Both working notes have completed and the run is still running. With the option off
+    // they would already be in the chat (the test above); here the chat has heard nothing.
+    await waitFor(() => notes.seen() === 2);
+    notes.off();
+    expect(t.deps.manager.statusOf(SID2)).toBe("running");
+    expect(fake.allSends()).toEqual([]);
+    release();
+    await waitFor(() => fake.allSends().length === 1);
+    await waitFor(() => t.deps.manager.statusOf(SID2) === "idle");
+    // One message, carrying the answer whole: the notes were dropped, not merged into it.
+    expect(fake.allSends()).toEqual([
+      { kind: "send", target: "oc_final_on", text: "here is the answer" },
+    ]);
+  });
+
+  it("a run whose only message is its last one delivers identically either way", async () => {
+    // The everyday single-answer run. The option is about what a run says ON THE WAY, so a
+    // run that says nothing on the way must not be able to tell the two settings apart —
+    // byte for byte the array the linePerMessage-off test asserts for the same reply.
+    await bindReplying(SPOKEN, { appId: "cli_final_single", finalReplyOnly: true });
+    await messageBot("oc_final_single");
+    await waitFor(() => fake.allSends().length > 0);
+    expect(fake.allSends()).toEqual([
+      { kind: "send", target: "oc_final_single", text: SPOKEN.trim() },
+    ]);
+  });
+
+  it("with linePerMessage too, the final reply is the one split per line", async () => {
+    const row2 = sessionRowOf(SID2, projectId);
+    t.deps.sessionsRepo.insert(row2);
+    t.deps.manager.adopt(row2, multiMessageFakeSession(SID2, ["a note held back", SPOKEN]));
+    await bindEnabled(SID2, {
+      ...PUT_BODY,
+      appId: "cli_final_lines",
+      finalReplyOnly: true,
+      linePerMessage: true,
+    });
+    await messageBot("oc_final_lines");
+    await waitFor(() => fake.allSends().length === 3);
+    // The two compose in one direction: finalReplyOnly picks WHICH text is sent, and
+    // linePerMessage decides how that one text is split. The held note is in neither.
+    expect(fake.allSends()).toEqual([
+      { kind: "send", target: "oc_final_lines", text: "Line one." },
+      { kind: "send", target: "oc_final_lines", text: "  Line two." },
+      { kind: "send", target: "oc_final_lines", text: "Line three." },
+    ]);
+  });
+
+  it("the approval notice is not an assistant message: it arrives while the run is held", async () => {
+    const row2 = sessionRowOf(SID2, projectId);
+    row2.approvalMode = "always-ask";
+    t.deps.sessionsRepo.insert(row2);
+    t.deps.manager.adopt(row2, replyThenApprovalFakeSession(SID2, "the answer"));
+    await bindEnabled(SID2, { ...PUT_BODY, appId: "cli_final_approve", finalReplyOnly: true });
+    await messageBot("oc_final_approve");
+    // The run has completed one assistant message and parked on the approval. Holding the
+    // reply must not hold the one line that says the run is waiting on the user.
+    await waitFor(() => fake.allSends().length === 1);
+    expect(fake.allSends()).toEqual([
+      { kind: "send", target: "oc_final_approve", text: MESSAGING_APPROVAL_NOTICE },
+    ]);
+    t.deps.manager.decideApproval(SID2, "tc-lines", "allow");
+    await waitFor(() => t.deps.manager.statusOf(SID2) === "idle");
+    await waitFor(() => fake.allSends().length === 2);
+    // And the held message goes out at the run's end, behind the notice on the same chain.
+    expect(fake.allTexts().map((s) => s.text)).toEqual([MESSAGING_APPROVAL_NOTICE, "the answer"]);
+  });
+
+  it("PUT saves finalReplyOnly, keeps an omitted one, and leaves the other option alone", async () => {
+    await api.put(BASE(SID), { ...PUT_BODY, finalReplyOnly: true });
+    expect(t.deps.messagingRepo.find(SID, "feishu")?.finalReplyOnly).toBe(true);
+    // The masked read carries it, so the editor can render the switch from the GET — and the
+    // two preferences are separate columns: saving one says nothing about the other.
+    const read = (await (await api.get(BASE(SID))).json()) as FeishuBindingResponse;
+    expect(read.binding?.finalReplyOnly).toBe(true);
+    expect(read.binding?.linePerMessage).toBe(false);
+    // A credentials-only save says nothing about it, and it stays where it was.
+    await api.put(BASE(SID), { appId: PUT_BODY.appId });
+    expect(t.deps.messagingRepo.find(SID, "feishu")?.finalReplyOnly).toBe(true);
+    // Turning it off is an ordinary save, and the other option is still its own field.
+    await api.put(BASE(SID), { ...PUT_BODY, finalReplyOnly: false, linePerMessage: true });
+    const both = t.deps.messagingRepo.find(SID, "feishu");
+    expect(both?.finalReplyOnly).toBe(false);
+    expect(both?.linePerMessage).toBe(true);
+  });
+
   it("the streamed compaction summary is not a reply and never reaches the chat", async () => {
     const row2 = sessionRowOf(SID2, projectId);
     t.deps.sessionsRepo.insert(row2);
@@ -2262,6 +2396,39 @@ describe("messaging binding routes and bridge", () => {
       fileName: "two.md",
       bytes: 1,
     });
+  });
+
+  it("under finalReplyOnly the files follow the ONE message that reached the chat", async () => {
+    const ws = await makeWorkspace();
+    await fs.writeFile(path.join(ws, "draft.md"), "wip");
+    await fs.writeFile(path.join(ws, "final.md"), "done");
+    const row = sessionRowOf(SID2, projectId);
+    row.workspace = ws;
+    t.deps.sessionsRepo.insert(row);
+    t.deps.manager.adopt(
+      row,
+      multiMessageFakeSession(SID2, [
+        "Working — see `draft.md` for now.",
+        "Done — the write-up is `final.md`.",
+      ]),
+    );
+    await bindEnabled(SID2, { ...PUT_BODY, appId: "cli_final_files", finalReplyOnly: true });
+    await fake.lastConnection().fire({
+      chatId: "oc_chat_files",
+      chatType: "p2p",
+      messageId: "om_files_final",
+      messageType: "text",
+      content: JSON.stringify({ text: "do the thing" }),
+    });
+    await waitFor(() => fake.allSends().length === 2);
+    await settle(20);
+    // `draft.md` was named only by the message the option held back. A file arriving in a
+    // chat where nothing named it is worse than the file not arriving: the mention is the
+    // whole reason this feature knows which output was the point.
+    expect(fake.allSends()).toEqual([
+      { kind: "send", target: "oc_chat_files", text: "Done — the write-up is `final.md`." },
+      { kind: "file", target: "oc_chat_files", fileName: "final.md", bytes: 4 },
+    ]);
   });
 
   // —— Inbound deduplication ————————————————————————————————————————————————

@@ -50,7 +50,7 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
-import { toneInk, type Tone } from "../../lib/tone";
+import { toneInk, toneStrip, type Tone } from "../../lib/tone";
 import { Button } from "../../components/ui/button";
 import { FieldLabel } from "../../components/ui/field";
 import { HelpFold } from "../../components/ui/help-fold";
@@ -68,6 +68,7 @@ import {
   formTestable,
   formToPut,
   formToTest,
+  type MessagingDeliveryFields,
   type MessagingFormErrors,
   type MessagingFormState,
 } from "./messaging-binding-form";
@@ -566,14 +567,48 @@ function StoredSecretRow({
 }
 
 /**
+ * One saved delivery preference: a label, its semantics behind the label's "?", and the
+ * switch. What the option does to a reply is meaning rather than formatting, which is what
+ * puts the sentence in a popover instead of under the row — a standing line of explanation
+ * is read once and stepped over on every later visit.
+ */
+function DeliveryOptionRow({
+  label,
+  help,
+  checked,
+  onChange,
+}: {
+  label: string;
+  /**
+   * The semantics behind the "?". A node rather than a string because one channel's answer
+   * needs a second paragraph, and the popover's panel does not preserve newlines — a `\n\n`
+   * inside a string would collapse to a space and read as one run-on sentence.
+   */
+  help: ReactNode;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="flex items-center gap-1.5">
+        <FieldLabel block={false}>{label}</FieldLabel>
+        <InfoPopover label={label}>{help}</InfoPopover>
+      </span>
+      <Switch aria-label={label} checked={checked} onChange={onChange} />
+    </div>
+  );
+}
+
+/**
  * The editor's body, top to bottom: the channel selector, the connection controls (enable
  * toggle + live status, then the two probes, then the hint naming what gates the switch),
  * then the selected channel's credential fields (credential-source link at the credential
- * field's corner, models-style stored-secret row), and last the one saved field that is not a
- * credential — the one-message-per-line delivery option, which Save persists like the rest. Only the selector and the controls sit above the
- * fields, and everything above the fields is channel-independent in height, so the toggle
- * and the probes hold one vertical position no matter which channel is selected. Hosts
- * place their own Save action after it and `MessagingBindingHelp` below that.
+ * field's corner, models-style stored-secret row), and last the saved fields that are not
+ * credentials — the two delivery options, which Save persists like the rest. Only the
+ * selector and the controls sit above the fields, and everything above the fields is
+ * channel-independent in height, so the toggle and the probes hold one vertical position no
+ * matter which channel is selected. Hosts place their own Save action after it and
+ * `MessagingBindingHelp` below that.
  */
 export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) {
   const { form } = b;
@@ -581,6 +616,19 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
   const channel = form.channel;
   const facts = b.channels[channel];
   const links = CHANNEL_LINKS[channel];
+  // The delivery preferences of the selected channel, and the patch that writes one back.
+  // All three sub-states carry the same two, so resolving the channel once here keeps the
+  // rows at the bottom free of a selector they have nothing to say about.
+  const delivery =
+    channel === "telegram" ? form.telegram : channel === "qq" ? form.qq : form.feishu;
+  const patchDelivery = (patch: Partial<MessagingDeliveryFields>) =>
+    b.patchForm(
+      channel === "telegram"
+        ? { telegram: { ...form.telegram, ...patch } }
+        : channel === "qq"
+          ? { qq: { ...form.qq, ...patch } }
+          : { feishu: { ...form.feishu, ...patch } },
+    );
   return (
     <div className="space-y-3">
       {/* Channel first — each channel's config is saved independently, so the selector
@@ -886,37 +934,50 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
           />
         </>
       )}
-      {/* The one saved field that is not a credential, so it closes the form rather than
-          sitting among them. Its explanation is semantics — what the option does to a
-          reply — and therefore rides the "?" beside its label instead of a line the reader
-          steps over on every later visit. */}
-      <div className="flex items-center justify-between gap-3">
-        <span className="flex items-center gap-1.5">
-          <FieldLabel block={false}>{S.messaging.linePerMessage}</FieldLabel>
-          <InfoPopover label={S.messaging.linePerMessage}>
-            {S.messaging.linePerMessageHelp}
-          </InfoPopover>
-        </span>
-        <Switch
-          aria-label={S.messaging.linePerMessage}
-          checked={
-            channel === "telegram"
-              ? form.telegram.linePerMessage
-              : channel === "qq"
-                ? form.qq.linePerMessage
-                : form.feishu.linePerMessage
-          }
-          onChange={(v) =>
-            b.patchForm(
-              channel === "telegram"
-                ? { telegram: { ...form.telegram, linePerMessage: v } }
-                : channel === "qq"
-                  ? { qq: { ...form.qq, linePerMessage: v } }
-                  : { feishu: { ...form.feishu, linePerMessage: v } },
-            )
-          }
-        />
-      </div>
+      {/* The saved fields that are not credentials, so they close the form rather than
+          sitting among them. Both rows are offered on every channel, and their explanations
+          sit behind the label's "?" — see DeliveryOptionRow. Order is the order they take
+          effect in: which messages are sent, then how each one is split.
+
+          The one place a channel changes the answer rather than shading it: on QQ every send
+          is a passive reply anchored to an inbound message, and that anchor expires, so
+          holding the reply to the run's end loses a long run's output entirely instead of
+          merely delaying it. That is a different outcome, not a nuance of the same one, so it
+          is said twice — appended to the explanation, for the reader deciding, and stood on
+          screen under the row while the switch is on, for the one who already has. Left to
+          the "?" alone, the user learns it from an empty chat. `linePerMessage` needs nothing
+          similar: QQ clamps the split to its own budget and the reply still arrives. */}
+      <DeliveryOptionRow
+        label={S.messaging.finalReplyOnly}
+        help={
+          channel === "qq" ? (
+            <>
+              <p>{S.messaging.finalReplyOnlyHelp}</p>
+              <p className="mt-2">{S.messaging.finalReplyOnlyQQWarning}</p>
+            </>
+          ) : (
+            S.messaging.finalReplyOnlyHelp
+          )
+        }
+        checked={delivery.finalReplyOnly}
+        onChange={(v) => patchDelivery({ finalReplyOnly: v })}
+      />
+      {/* Rendered by the state it describes, so it is on screen exactly while the loss it
+          names is possible and nowhere else. */}
+      {channel === "qq" && delivery.finalReplyOnly && (
+        <p
+          role="alert"
+          className={`rounded-md border px-2.5 py-1.5 text-xs ${toneStrip.attention}`}
+        >
+          {S.messaging.finalReplyOnlyQQWarning}
+        </p>
+      )}
+      <DeliveryOptionRow
+        label={S.messaging.linePerMessage}
+        help={S.messaging.linePerMessageHelp}
+        checked={delivery.linePerMessage}
+        onChange={(v) => patchDelivery({ linePerMessage: v })}
+      />
     </div>
   );
 }

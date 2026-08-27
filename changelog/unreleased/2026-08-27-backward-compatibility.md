@@ -3,20 +3,22 @@
 - **Date:** 2026-08-27
 - **Type:** process
 - **Scope:** `server`, `web`
-- **PR:** [#507](https://github.com/Prism-Shadow/penguin-harness/pull/507), [#508](https://github.com/Prism-Shadow/penguin-harness/pull/508)
+- **PR:** [#507](https://github.com/Prism-Shadow/penguin-harness/pull/507), [#508](https://github.com/Prism-Shadow/penguin-harness/pull/508), [#512](https://github.com/Prism-Shadow/penguin-harness/pull/512)
 - **Breaking:** yes — on downgrade only: a Telegram binding whose last message was written in a forum topic sends nothing on a build from before this change until its next inbound message
 
 [中文版](2026-08-27-backward-compatibility.zh.md)
 
-This batch touched three things that outlive a release.
+This batch touched four things that outlive a release.
 [Scoping browser-persisted UI state to its data root](2026-08-26-install-scoped-local-state.md)
 added a file in the data root, `<root>/install-id`, and a `localStorage` entry,
-`penguin.installId`; and
+`penguin.installId`;
 [a Telegram reply carrying the forum topic it was asked in](2026-08-26-telegram-forum-topics.md)
 changed what `messaging_bindings.last_chat_id` means on an existing `web.db`, without adding or
-dropping a column or rewriting a row. Only the browser side and the column needed a decision; the
-file and the key are recorded here too, so a reader looking for "does my install need anything?"
-finds every answer in one place.
+dropping a column or rewriting a row; and
+[relaying a run's final reply only](2026-08-27-messaging-final-reply-only.md) added a column,
+`messaging_bindings.final_reply_only`. Only the browser side and the `last_chat_id` change needed
+a decision; the file, the key and the new column are recorded here too, so a reader looking for
+"does my install need anything?" finds every answer in one place.
 
 
 ## The browser that has keys but no recorded id
@@ -86,6 +88,21 @@ not a legacy encoding: it is the only encoding a chat with no topic has, and eve
 every ordinary group and every forum's General topic writes one on every message. The two-form
 parse is the format, so nothing ever stops writing the bare form and nothing ever removes the code
 that reads it. `chatRefOf` in `telegram-connector.ts` carries the same note.
+
+## The added `final_reply_only` column
+
+[Relaying a run's final reply only](2026-08-27-messaging-final-reply-only.md) added
+`messaging_bindings.final_reply_only INTEGER NOT NULL DEFAULT 0`, ALTERed in on open by the
+`ensureColumn` list that exists for exactly this — the same shape `line_per_message` took one
+batch earlier. It is purely additive and needs no decision: the default reproduces the delivery
+every existing binding already had — every completed assistant message of a run, mirrored as it
+completes — so no binding changes behaviour, nothing is rewritten, and the user does nothing. The
+`ensureColumn` entry stays for as long as a `web.db` formed before this release can be opened, on
+the same terms as the rest of that list.
+
+A downgrade is invisible in both directions. What the column does is done by the bridge, so an
+older server ignores a column it has never heard of and relays every message again — the setting
+is still on disk, and an upgrade back honours it without the user re-saving anything.
 
 ## Compatibility
 

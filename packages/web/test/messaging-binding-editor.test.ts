@@ -177,14 +177,17 @@ describe("MessagingBindingBody", () => {
     expect(html).toContain(`title="${lastError}"`);
   });
 
-  it('closes the form with the delivery option, its explanation behind the label\'s "?"', () => {
+  it('closes the form with the delivery options, each explanation behind its label\'s "?"', () => {
     for (const channel of ["feishu", "telegram", "qq"] as MessagingChannel[]) {
       const html = render(stateOf(channel));
-      // Both channels carry it: it is a delivery preference, not a credential.
+      // Every channel carries both: they are delivery preferences, not credentials.
       expect(html).toContain(S.messaging.linePerMessage);
-      // Semantics disclose — the sentence is in the popover panel, which renders collapsed.
+      expect(html).toContain(S.messaging.finalReplyOnly);
+      // Semantics disclose — each sentence is in a popover panel, which renders collapsed.
       expect(html).toContain(S.common.moreInfoAbout(S.messaging.linePerMessage));
+      expect(html).toContain(S.common.moreInfoAbout(S.messaging.finalReplyOnly));
       expect(html).not.toContain(S.messaging.linePerMessageHelp);
+      expect(html).not.toContain(S.messaging.finalReplyOnlyHelp);
       // After the credential fields, not among them.
       const fieldAt = html.indexOf(
         channel === "telegram"
@@ -194,8 +197,28 @@ describe("MessagingBindingBody", () => {
             : S.feishu.appId,
       );
       expect(fieldAt).toBeGreaterThanOrEqual(0);
-      expect(html.indexOf(S.messaging.linePerMessage)).toBeGreaterThan(fieldAt);
+      expect(html.indexOf(S.messaging.finalReplyOnly)).toBeGreaterThan(fieldAt);
+      // In the order the two take effect: which messages are sent, then how each is split.
+      expect(html.indexOf(S.messaging.linePerMessage)).toBeGreaterThan(
+        html.indexOf(S.messaging.finalReplyOnly),
+      );
     }
+  });
+
+  it("renders each delivery switch from its own form field", () => {
+    // One row per option, both fed from the SELECTED channel's sub-state: a row wired to the
+    // wrong field renders a switch that is on while the form says off, which no type checker
+    // and no snapshot of the default state would catch.
+    const form = emptyMessagingForm("telegram");
+    form.telegram.finalReplyOnly = true;
+    const html = render(stateOf("telegram", {}, { form }));
+    const finalAt = html.indexOf(S.messaging.finalReplyOnly);
+    const lineAt = html.indexOf(S.messaging.linePerMessage);
+    expect(finalAt).toBeGreaterThanOrEqual(0);
+    expect(lineAt).toBeGreaterThan(finalAt);
+    // Exactly one switch is checked, and it is the one under the label that was flipped.
+    expect(html.slice(finalAt, lineAt)).toContain('aria-checked="true"');
+    expect(html.slice(lineAt)).toContain('aria-checked="false"');
   });
 
   it("states QQ's replies-only rule on screen, not in a collapsed fold", () => {

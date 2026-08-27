@@ -1935,6 +1935,22 @@ Scenarios:
     /** Its disclosure, beside the label: what the option does to a reply, and its two edges. */
     linePerMessageHelp:
       "Each non-blank line of a reply is sent as its own message and blank lines are dropped, so an answer written as several spoken lines arrives as several messages. Past a per-reply limit the remaining lines are combined into one last message rather than dropped, and a line longer than the channel allows is still split. The messages go out about a second apart, the pace a chat platform allows.",
+    /** The saved delivery option: hold a run's working notes, send its last reply only. */
+    finalReplyOnly: "Final reply only",
+    /** Its disclosure, beside the label: what the option changes, and what it costs. */
+    finalReplyOnlyHelp:
+      "Only the last thing the assistant says in a run is sent, when the run ends. The notes it writes between tool calls stay in the web app instead of arriving as their own messages, so the chat receives the answer rather than the work — at the cost of hearing nothing while a long run is under way. The approval reminder is not a reply and still arrives immediately. With one message per line also on, that final reply is the one that is split.",
+    /**
+     * QQ only, and said twice there: appended to the option's explanation for the reader
+     * deciding, and stood under the row as a warning strip while the switch is on. Not a
+     * nuance of the same trade but a different outcome: QQ can only send a passive reply
+     * anchored to an inbound message, and that anchor expires. On the other two channels the
+     * cost of holding the reply is silence; here a run that outlasts the window delivers
+     * nothing at all — too much to rest on a "?" the user need never open, which would leave
+     * them to discover it from an empty chat.
+     */
+    finalReplyOnlyQQWarning:
+      "On QQ this needs a second thought: QQ only accepts a passive reply anchored to an inbound message, and that anchor expires after about five minutes. Holding the reply until the run ends means a run that outlasts the window delivers nothing at all — with this off, at least whatever finished inside the window arrives.",
     /** Enabled-row indicator's tooltip / sr text (the small per-channel glyph on the session row). */
     enabledIndicator: {
       feishu: "Feishu connection enabled",

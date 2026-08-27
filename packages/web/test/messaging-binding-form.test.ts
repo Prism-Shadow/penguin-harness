@@ -4,9 +4,10 @@
  * always load empty, an empty submit keeps the stored secret (the PUT body omits it), and
  * only a first bind requires one — the models-idiom clear checkbox (applied on save, a
  * typed secret wins over it), the per-channel submit routing (only the selected channel's
- * fields are validated and sent), the blank-domain-means-default fallback, and the one saved
- * field that is not a credential — `linePerMessage`, which loads per channel and is always sent
- * (an omitted flag would mean "keep", leaving no way to turn the option back off).
+ * fields are validated and sent), the blank-domain-means-default fallback, and the two saved
+ * fields that are not credentials — `linePerMessage` and `finalReplyOnly`, which load per
+ * channel and are always sent (an omitted flag would mean "keep", leaving no way to turn either
+ * option back off).
  */
 import { describe, expect, it } from "vitest";
 import type {
@@ -32,6 +33,7 @@ const STORED_FEISHU: FeishuBindingInfo = {
   baseDomain: "https://open.larksuite.com",
   enabled: false,
   linePerMessage: false,
+  finalReplyOnly: false,
   lastChatKnown: true,
   createdAt: "2026-08-25T00:00:00.000Z",
   updatedAt: "2026-08-25T00:00:00.000Z",
@@ -45,6 +47,7 @@ const STORED_TELEGRAM: TelegramBindingInfo = {
   enabled: true,
   // Set on one fixture only, so a per-channel load cannot pass by copying the other channel.
   linePerMessage: true,
+  finalReplyOnly: false,
   lastChatKnown: false,
   createdAt: "2026-08-26T00:00:00.000Z",
   updatedAt: "2026-08-26T00:00:00.000Z",
@@ -57,6 +60,8 @@ const STORED_QQ: QQBindingInfo = {
   appSecretMasked: "qq-a…1234",
   enabled: false,
   linePerMessage: false,
+  // The other flag, set on a different fixture: neither can pass by riding the other.
+  finalReplyOnly: true,
   lastChatKnown: true,
   createdAt: "2026-08-27T00:00:00.000Z",
   updatedAt: "2026-08-27T00:00:00.000Z",
@@ -72,9 +77,16 @@ describe("emptyMessagingForm / bindingsToForm", () => {
         baseDomain: FEISHU_DEFAULT_DOMAIN,
         clearSecret: false,
         linePerMessage: false,
+        finalReplyOnly: false,
       },
-      telegram: { botToken: "", clearToken: false, linePerMessage: false },
-      qq: { appId: "", appSecret: "", clearSecret: false, linePerMessage: false },
+      telegram: { botToken: "", clearToken: false, linePerMessage: false, finalReplyOnly: false },
+      qq: {
+        appId: "",
+        appSecret: "",
+        clearSecret: false,
+        linePerMessage: false,
+        finalReplyOnly: false,
+      },
     });
   });
 
@@ -90,17 +102,28 @@ describe("emptyMessagingForm / bindingsToForm", () => {
         baseDomain: "https://open.larksuite.com",
         clearSecret: false,
         linePerMessage: false,
+        finalReplyOnly: false,
       },
-      // Each channel's delivery preference comes from its own stored config.
-      telegram: { botToken: "", clearToken: false, linePerMessage: true },
+      // Each channel's delivery preferences come from its own stored config.
+      telegram: { botToken: "", clearToken: false, linePerMessage: true, finalReplyOnly: false },
       // An unsaved channel keeps its empty sub-state, so switching to it shows a blank form.
-      qq: { appId: "", appSecret: "", clearSecret: false, linePerMessage: false },
+      qq: {
+        appId: "",
+        appSecret: "",
+        clearSecret: false,
+        linePerMessage: false,
+        finalReplyOnly: false,
+      },
     });
     // All three coexist: every saved channel loads its own non-secret fields.
     const all = bindingsToForm([STORED_FEISHU, STORED_TELEGRAM, STORED_QQ]);
     expect(all.feishu.appId).toBe("cli_abc");
     expect(all.qq.appId).toBe("102000001");
     expect(all.qq.appSecret).toBe("");
+    // Each flag loads from the channel that stored it, and from nowhere else.
+    expect(all.qq.finalReplyOnly).toBe(true);
+    expect(all.telegram.finalReplyOnly).toBe(false);
+    expect(all.feishu.linePerMessage).toBe(false);
     // No enabled channel: the first saved one is selected; nothing saved: Feishu.
     expect(bindingsToForm([STORED_FEISHU]).channel).toBe("feishu");
     expect(bindingsToForm([STORED_QQ]).channel).toBe("qq");
@@ -114,7 +137,12 @@ describe("formToPut (feishu)", () => {
     expect(res).toEqual({
       ok: true,
       channel: "feishu",
-      body: { appId: "cli_abc", baseDomain: "https://open.larksuite.com", linePerMessage: false },
+      body: {
+        appId: "cli_abc",
+        baseDomain: "https://open.larksuite.com",
+        linePerMessage: false,
+        finalReplyOnly: false,
+      },
     });
   });
 
@@ -145,6 +173,7 @@ describe("formToPut (feishu)", () => {
         clearAppSecret: true,
         baseDomain: "https://open.larksuite.com",
         linePerMessage: false,
+        finalReplyOnly: false,
       },
     });
     // The models idiom: a typed replacement wins over a stale checked box.
@@ -155,6 +184,7 @@ describe("formToPut (feishu)", () => {
       appSecret: "replacement-secret",
       baseDomain: "https://open.larksuite.com",
       linePerMessage: false,
+      finalReplyOnly: false,
     });
     // Without a stored secret there is nothing to clear: the flag never reaches the body.
     const nothingStored = emptyMessagingForm();
@@ -174,6 +204,7 @@ describe("formToPut (feishu)", () => {
       baseDomain: "   ",
       clearSecret: false,
       linePerMessage: false,
+      finalReplyOnly: false,
     };
     const blankDomain = formToPut(form, false);
     expect(blankDomain.ok && blankDomain.channel === "feishu" && blankDomain.body.baseDomain).toBe(
@@ -193,7 +224,11 @@ describe("formToPut (telegram)", () => {
     expect(formToPut(form, false)).toEqual({
       ok: true,
       channel: "telegram",
-      body: { botToken: "7000000001:secret-token-AAAA", linePerMessage: false },
+      body: {
+        botToken: "7000000001:secret-token-AAAA",
+        linePerMessage: false,
+        finalReplyOnly: false,
+      },
     });
     // With a stored token an empty field means "keep it": the body omits the token — but not
     // the delivery flag, which is a plain field and always carries its current value.
@@ -201,7 +236,7 @@ describe("formToPut (telegram)", () => {
     expect(formToPut(form, true)).toEqual({
       ok: true,
       channel: "telegram",
-      body: { linePerMessage: false },
+      body: { linePerMessage: false, finalReplyOnly: false },
     });
     // A first bind must carry one.
     expect(formToPut(form, false)).toEqual({ ok: false, errors: { botToken: "required" } });
@@ -213,13 +248,14 @@ describe("formToPut (telegram)", () => {
     expect(formToPut(form, true)).toEqual({
       ok: true,
       channel: "telegram",
-      body: { clearBotToken: true, linePerMessage: false },
+      body: { clearBotToken: true, linePerMessage: false, finalReplyOnly: false },
     });
     form.telegram.botToken = "7000000001:replacement-token";
     const typed = formToPut(form, true);
     expect(typed.ok && typed.channel === "telegram" && typed.body).toEqual({
       botToken: "7000000001:replacement-token",
       linePerMessage: false,
+      finalReplyOnly: false,
     });
   });
 
@@ -243,9 +279,38 @@ describe("formToPut (telegram)", () => {
       baseDomain: FEISHU_DEFAULT_DOMAIN,
       clearSecret: false,
       linePerMessage: false,
+      finalReplyOnly: false,
     };
     feishuSide.telegram.botToken = "garbage";
     expect(formToPut(feishuSide, false).ok).toBe(true);
+  });
+});
+
+describe("the delivery flags", () => {
+  it("sends both on every channel, whatever their values, so either can be turned back off", () => {
+    // The rule that makes them work at all: an omitted flag means "keep the stored value",
+    // so a body that drops the ones currently off can never turn an option off again.
+    for (const [form, channel] of [
+      [emptyMessagingForm("feishu"), "feishu"],
+      [emptyMessagingForm("telegram"), "telegram"],
+      [emptyMessagingForm("qq"), "qq"],
+    ] as const) {
+      form.feishu.appId = "cli_x";
+      form.qq.appId = "102000001";
+      form.telegram.botToken = "7000000001:secret-token-AAAA";
+      for (const values of [
+        { linePerMessage: false, finalReplyOnly: false },
+        { linePerMessage: true, finalReplyOnly: false },
+        { linePerMessage: false, finalReplyOnly: true },
+        { linePerMessage: true, finalReplyOnly: true },
+      ]) {
+        Object.assign(form[channel], values);
+        const res = formToPut(form, true);
+        expect(res.ok).toBe(true);
+        expect(res.ok && res.body.linePerMessage).toBe(values.linePerMessage);
+        expect(res.ok && res.body.finalReplyOnly).toBe(values.finalReplyOnly);
+      }
+    }
   });
 });
 
@@ -266,6 +331,7 @@ describe("formToTest", () => {
       baseDomain: FEISHU_DEFAULT_DOMAIN,
       clearSecret: false,
       linePerMessage: false,
+      finalReplyOnly: false,
     };
     expect(formToTest(feishu)).toEqual({
       channel: "feishu",
@@ -305,20 +371,27 @@ describe("formDirty / formTestable", () => {
     expect(formDirty(tg, tgBaseline)).toBe(true);
   });
 
-  it("counts the delivery flag as an edit on both channels", () => {
-    // Telegram is the one that would silently break: before this field its only dirty signals
-    // were the token and the clear box, so flipping a switch would have left Save disabled.
+  it("counts either delivery flag as an edit on every channel", () => {
+    // Telegram is the one that would silently break: without these fields its only dirty
+    // signals are the token and the clear box, so flipping a switch would leave Save disabled.
     const tgBaseline = bindingsToForm([STORED_TELEGRAM]);
     const tg = bindingsToForm([STORED_TELEGRAM]);
     tg.telegram.linePerMessage = !tg.telegram.linePerMessage;
     expect(formDirty(tg, tgBaseline)).toBe(true);
+    const tgFinal = bindingsToForm([STORED_TELEGRAM]);
+    tgFinal.telegram.finalReplyOnly = true;
+    expect(formDirty(tgFinal, tgBaseline)).toBe(true);
     const baseline = bindingsToForm([STORED_FEISHU]);
     const feishu = bindingsToForm([STORED_FEISHU]);
     feishu.feishu.linePerMessage = true;
     expect(formDirty(feishu, baseline)).toBe(true);
-    // The unselected channel's flag is not the selected channel's business.
+    const feishuFinal = bindingsToForm([STORED_FEISHU]);
+    feishuFinal.feishu.finalReplyOnly = true;
+    expect(formDirty(feishuFinal, baseline)).toBe(true);
+    // The unselected channel's flags are not the selected channel's business.
     const otherChannel = bindingsToForm([STORED_FEISHU]);
     otherChannel.telegram.linePerMessage = true;
+    otherChannel.telegram.finalReplyOnly = true;
     expect(formDirty(otherChannel, baseline)).toBe(false);
   });
 
@@ -349,6 +422,9 @@ describe("the QQ channel", () => {
     expect(form.qq.appId).toBe("102000001");
     expect(form.qq.appSecret).toBe("");
     expect(form.qq.clearSecret).toBe(false);
+    // Both delivery preferences load from the stored config, each on its own.
+    expect(form.qq.finalReplyOnly).toBe(true);
+    expect(form.qq.linePerMessage).toBe(false);
   });
 
   it("submits the pair, omits a blank secret, and always sends the delivery flag", () => {
@@ -359,14 +435,19 @@ describe("the QQ channel", () => {
       channel: "qq",
       // No `appSecret` key at all: an omitted secret is what tells the server to keep the
       // stored one, and the masked value must never round-trip.
-      body: { appId: "102000001", linePerMessage: false },
+      body: { appId: "102000001", linePerMessage: false, finalReplyOnly: true },
     });
 
     form.qq.appSecret = "  fresh-secret  ";
     expect(formToPut(form, true)).toEqual({
       ok: true,
       channel: "qq",
-      body: { appId: "102000001", appSecret: "fresh-secret", linePerMessage: false },
+      body: {
+        appId: "102000001",
+        appSecret: "fresh-secret",
+        linePerMessage: false,
+        finalReplyOnly: true,
+      },
     });
   });
 
@@ -382,14 +463,24 @@ describe("the QQ channel", () => {
     expect(formToPut(stored, true)).toEqual({
       ok: true,
       channel: "qq",
-      body: { appId: "102000001", clearAppSecret: true, linePerMessage: false },
+      body: {
+        appId: "102000001",
+        clearAppSecret: true,
+        linePerMessage: false,
+        finalReplyOnly: true,
+      },
     });
     // A typed secret wins over a stale clear checkbox (the models idiom).
     stored.qq.appSecret = "typed";
     expect(formToPut(stored, true)).toEqual({
       ok: true,
       channel: "qq",
-      body: { appId: "102000001", appSecret: "typed", linePerMessage: false },
+      body: {
+        appId: "102000001",
+        appSecret: "typed",
+        linePerMessage: false,
+        finalReplyOnly: true,
+      },
     });
   });
 
@@ -401,6 +492,9 @@ describe("the QQ channel", () => {
     expect(formDirty(form, baseline)).toBe(false);
     form.qq.linePerMessage = true;
     expect(formDirty(form, baseline)).toBe(true);
+    const qqFinal = bindingsToForm([STORED_QQ]);
+    qqFinal.qq.finalReplyOnly = !qqFinal.qq.finalReplyOnly;
+    expect(formDirty(qqFinal, baseline)).toBe(true);
 
     // A stored secret is testable as-is; a draft needs both halves.
     expect(formTestable(emptyMessagingForm("qq"), true)).toBe(true);

@@ -27,27 +27,33 @@
  * marked.
  *
  * Outbound (Session → channel): the bridge subscribes to the Session's in-process channel
- * and relays each of the main conversation's completed assistant messages on its own, the
- * moment it completes — a run that writes working notes between tool calls before its
- * answer reaches the chat as that same sequence of messages, so the chat follows the run
- * as it happens. Each is sent to the last known chat, chunked under the channel's
- * text-size limits — or, when the binding's `linePerMessage` is set, split into one message
- * per non-blank line first, each of those chunked and the resulting burst paced — and the
- * outbound traffic of one entry is serialised through a promise chain:
+ * and relays the main conversation's completed assistant messages — by default each of them
+ * on its own, the moment it completes: a run that writes working notes between tool calls
+ * before its answer reaches the chat as that same sequence of messages, so the chat follows
+ * the run as it happens. A binding with `finalReplyOnly` set holds them back instead and
+ * delivers the run's LAST completed assistant text alone, at the run's end: the answer
+ * without the working notes, at the cost of the chat hearing nothing while the run works.
+ * Either way delivery is the same path — sent to the last known chat (a held reply to the chat
+ * its run was ASKED in, captured at the run's start: it leaves late enough for another message
+ * to have moved the conversation elsewhere), chunked under the channel's text-size limits, or,
+ * when the binding's `linePerMessage` is set, split into one message per non-blank line first,
+ * each of those chunked and the resulting burst paced (the two options compose: a binding with
+ * both sends that final reply one message per line) — and the outbound traffic of one entry is
+ * serialised through a promise chain:
  * several messages completing in quick succession must reach the chat in the order they
  * completed. In a group chat the run's FIRST outbound message threads onto the inbound
  * one and everything after it is a plain send — one reply-to anchors the exchange, where
  * repeating it per message would stack a quote header over each of them; a direct chat is
- * plain sends throughout. EVERY completed assistant message mirrors once a chat is known
- * — web-initiated turns included; before the first inbound message no chat is known and
- * nothing is sent. Compaction output (the summary the model streams between compaction
- * events) is not a reply and is skipped, and
- * a connection joining mid-run relays nothing from that run rather than mirroring half a
+ * plain sends throughout. Mirroring needs a known chat — web-initiated turns included;
+ * before the first inbound message no chat is known and nothing is sent. Compaction output
+ * (the summary the model streams between compaction events) is not a reply and is skipped,
+ * and a connection joining mid-run relays nothing from that run rather than mirroring half a
  * reply. An `approval_request` additionally sends a one-line notice that a tool call is
  * waiting in the web UI — on the same chain, so it lands between replies instead of inside
- * one.
+ * one. That notice is not an assistant message, so `finalReplyOnly` never holds it: a run
+ * blocked on approval is exactly when the chat must hear something.
  *
- * When the run ends, the files its reply MENTIONED follow the text into the chat (see
+ * When the run ends, the files ITS DELIVERED TEXT mentioned follow it into the chat (see
  * reply-files.ts): path-like tokens that resolve inside the Workspace and actually exist,
  * pictures sent as pictures and everything else as attachments. Not "every file the run
  * wrote": the Agent's own words are what say which output was the point, and a chat window
@@ -496,6 +502,18 @@ export interface MessagingBridgeDeps {
   inboundImageBudgetBytes?: number;
 }
 
+/**
+ * Where one outbound reply is addressed: the chat ref, whether that chat is direct, and the
+ * inbound message its first chunk quotes (null in a direct chat, where nothing is quoted).
+ * All three move together when a user writes from somewhere new, which is why they travel
+ * as one value rather than being read from two places at delivery time.
+ */
+interface ReplyTarget {
+  chatId: string;
+  isDirect: boolean;
+  inboundMessageId: string | null;
+}
+
 /** One connected (or connecting/errored) binding's in-memory state. */
 interface BridgeEntry {
   sessionId: string;
@@ -554,11 +572,34 @@ interface BridgeEntry {
    */
   runStartedAt: number;
   /**
+   * Where the run in progress was asked, captured on the same edge as `runStartedAt` and null
+   * while no chat is known. Only the run's END delivers anything through it: a message relayed
+   * as it completes is addressed live, because the chat it goes to is where the conversation
+   * currently is, whereas a held reply is the whole answer to a question asked before another
+   * user could move the row's chat and this entry's reply anchor (see deliverReply).
+   */
+  runTarget: ReplyTarget | null;
+  /**
    * What this run has relayed so far, joined at the run's end to find the files the reply
    * mentions. Only text that actually mirrored is collected: a connection joined mid-run
-   * relays none of that run's messages and must not send its files either.
+   * relays none of that run's messages and must not send its files either, and a message
+   * `finalReplyOnly` held back never arrives here — the one held reply joins it at the run's
+   * end, in the same step that delivers it.
    */
   replyText: string[];
+  /**
+   * The run's last completed assistant text, held instead of sent, for a binding with
+   * `finalReplyOnly` set. Each later message overwrites it: only the last one is the answer,
+   * and everything before it is the working note the option exists to suppress. Null when
+   * nothing is held — the option is off, or the run has produced no assistant text yet — and
+   * cleared at the run's end by the delivery it feeds.
+   *
+   * Memory only, and only as long as the entry: a run whose idle edge this connection never
+   * sees (the process ends, or a state toggle / credential save mid-run rebuilds the entry)
+   * delivers nothing of what it held. The same event costs the every-message path only the
+   * remainder of that run, which is the price of holding the answer back.
+   */
+  heldReply: string | null;
   /**
    * Tail of this entry's outbound sends. Every relayed message AND every notice is appended
    * rather than started on its own, so outbound traffic completing in quick succession cannot
@@ -761,7 +802,9 @@ export class MessagingBridge {
       inCompaction: false,
       threadedThisRun: false,
       runStartedAt: 0,
+      runTarget: null,
       replyText: [],
+      heldReply: null,
       sendChain: Promise.resolve(),
     };
     this.entries.set(row.sessionId, entry);
@@ -1126,17 +1169,63 @@ export class MessagingBridge {
   }
 
   /**
-   * Queues one completed assistant message for the bound chat. Appended to the entry's
-   * send chain rather than started here: a run can complete several messages within
-   * milliseconds, and two sends racing would reach the chat in the wrong order. Returns
-   * immediately either way, so a slow channel never blocks the Session's stream handling.
+   * Queues one completed assistant message for the bound chat — or holds it back.
+   *
+   * Appended to the entry's send chain rather than started here: a run can complete several
+   * messages within milliseconds, and two sends racing would reach the chat in the wrong
+   * order. Returns immediately either way, so a slow channel never blocks the Session's
+   * stream handling.
+   *
+   * A binding with `finalReplyOnly` set sends nothing from here: the message replaces
+   * whatever this run was already holding, and the last one standing is delivered at the
+   * run's idle edge (see onTaskState). The preference is read per message off the stored row,
+   * as every delivery preference is, and no run ever sees it change: each of the three PUT
+   * handlers calls `sync` on an enabled binding, `sync` reconnects, and `connect` opens with a
+   * disconnect and a fresh entry — so a save made mid-run discards whatever was held at that
+   * moment along with the rest of this entry's memory (see heldReply).
    */
   private relay(entry: BridgeEntry, text: string): void {
     if (!entry.armed) return; // joined mid-run: this run's messages are not a reply
     const body = text.trim();
     if (body === "") return;
+    if (this.finalReplyOnly(entry)) {
+      entry.heldReply = body;
+      return;
+    }
     entry.replyText.push(body);
     entry.sendChain = entry.sendChain.then(() => this.deliverReply(entry, body));
+  }
+
+  /**
+   * Whether this binding holds a run's intermediate messages back. A row that cannot be read
+   * at all is deliberately not decided here: relaying is the default, and the same read
+   * inside deliverReply then records the failure rather than letting it pass as a preference.
+   */
+  private finalReplyOnly(entry: BridgeEntry): boolean {
+    try {
+      return this.deps.repo.find(entry.sessionId, entry.channel)?.finalReplyOnly === true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Where this entry's traffic would go right now: null before any chat is known, and null
+   * when the row cannot be read at all — a caller holding null falls back to reading it again
+   * at delivery time, which is where a failure to read is recorded rather than swallowed.
+   */
+  private replyTargetOf(entry: BridgeEntry): ReplyTarget | null {
+    try {
+      const row = this.deps.repo.find(entry.sessionId, entry.channel);
+      if (!row || row.lastChatId === null) return null;
+      return {
+        chatId: row.lastChatId,
+        isDirect: row.lastChatIsDirect,
+        inboundMessageId: entry.lastInboundMessageId,
+      };
+    } catch {
+      return null;
+    }
   }
 
   private onTaskState(entry: BridgeEntry, state: string): void {
@@ -1149,26 +1238,64 @@ export class MessagingBridge {
         // The cut-off the run's own output is judged against. Taken on the same edge, so a
         // task_state republished mid-run cannot move it forward past files already written.
         entry.runStartedAt = this.now();
+        // Where this run was asked, for what it delivers at its END. Taken here for the same
+        // reason: a task_state republished mid-run must not move it either.
+        entry.runTarget = this.replyTargetOf(entry);
       }
     } else if (state === "idle") {
       // A run joined midway ends here; from the next one on its messages mirror.
       entry.armed = true;
-      // The run's files ride behind its text on the same chain — the reply first, then what
-      // it produced. Taken and cleared here, so a task_state republished at idle cannot
-      // send the same batch twice and the next run starts from nothing.
-      const replyText = entry.replyText.join("\n\n");
+      // The run's text and then its files ride the same chain, in that order. Both sources
+      // are taken and cleared here, so a task_state republished at idle cannot send either
+      // twice and the next run starts from nothing.
+      const relayed = entry.replyText;
+      const held = entry.heldReply;
       const since = entry.runStartedAt;
+      // Read on this edge with the rest, before the next run's `running` edge can replace it.
+      const askedAt = entry.runTarget;
       entry.replyText = [];
+      entry.heldReply = null;
+      if (held !== null) {
+        // All of `finalReplyOnly`, in one place: the run's last completed assistant text, and
+        // only it, goes out at the end — through the same deliverReply as any relayed
+        // message, so chunking, the per-line split, pacing, group threading and the chain's
+        // ordering are the ones the other path already has. Addressed where the run was
+        // ASKED: this is the one delivery whose whole text was written before an inbound
+        // message from someone else could move the chat out from under it.
+        relayed.push(held);
+        entry.sendChain = entry.sendChain.then(() => this.deliverReply(entry, held, askedAt));
+      }
+      // The files follow the words that actually REACHED THE CHAT, not everything the run
+      // said. With `finalReplyOnly` on, the messages this run held back were never delivered,
+      // and a file named only in one of them would land in a chat with nothing there naming
+      // it — so `relayed` carries exactly the texts deliverReply was handed, the held one
+      // included, and never the ones that were dropped.
+      const replyText = relayed.join("\n\n");
       if (replyText !== "") {
-        entry.sendChain = entry.sendChain.then(() => this.deliverFiles(entry, replyText, since));
+        // ...and the files go wherever those words went, which is the held reply's chat when
+        // there was one and the live chat otherwise — the every-message path's texts left as
+        // they completed, so the live chat is the only answer that fits all of them.
+        entry.sendChain = entry.sendChain.then(() =>
+          this.deliverFiles(entry, replyText, since, held !== null ? askedAt : null),
+        );
       }
     }
     entry.active = state;
   }
 
   /**
-   * Sends one completed assistant message to the last known chat, in chunks under the
-   * channel's cap; a send failure is recorded, never thrown, so the chain behind it keeps
+   * Sends one relayed assistant message to the bound chat, in chunks under the channel's cap.
+   * Which messages arrive here is the caller's business — every completed message of the run,
+   * or its last one alone when the binding holds the rest (`finalReplyOnly`) — and nothing
+   * below is affected by the difference.
+   *
+   * `at` is where to put it. A message relayed as it completes passes none and goes to the
+   * chat the row names now, which is where the conversation is. A held reply passes the target
+   * captured when its run started (see onTaskState), because it leaves at the run's END: a
+   * second user writing in another forum topic meanwhile would otherwise take delivery of a
+   * whole answer to a question they never asked, quoted onto their own message.
+   *
+   * A send failure is recorded, never thrown, so the chain behind it keeps
    * moving — and so do the messages behind it in THIS reply: one refused message (a 429 on
    * the third line of twelve) must not abandon the rest, which would leave a reply stopping
    * mid-sentence with nothing in the chat to say why. A binding with `linePerMessage` set
@@ -1182,17 +1309,28 @@ export class MessagingBridge {
    * answered, and one of them says it — repeating it per message and per chunk stacks quote
    * headers over the whole conversation.
    */
-  private async deliverReply(entry: BridgeEntry, text: string): Promise<void> {
-    // Both halves of the target are snapshotted together, ahead of every await: this line runs
-    // before sendTarget, which reads the chat ref off the row synchronously before its own.
-    // An inbound message arriving mid-delivery moves them independently, and a reply whose
+  private async deliverReply(
+    entry: BridgeEntry,
+    text: string,
+    at: ReplyTarget | null = null,
+  ): Promise<void> {
+    // Both halves of the LIVE target are snapshotted together, ahead of every await: this line
+    // runs before sendTarget, which reads the chat ref off the row synchronously before its
+    // own. An inbound message arriving mid-delivery moves them independently, and a reply whose
     // first chunk threaded onto the new message while the rest went to the chat the row
     // still named would be split across two places — two forum topics, on a channel that
     // packs one into the chat ref.
-    const inboundMessageId = entry.lastInboundMessageId;
+    const liveInboundMessageId = entry.lastInboundMessageId;
     const target = await this.sendTarget(entry);
     if (target === null) return;
-    const { row, chatId, client } = target;
+    const { row, client } = target;
+    // The caller's target when it named one, the live one otherwise. The ROW is read fresh
+    // either way: WHERE a reply goes belongs to the run, HOW it is split to the binding.
+    const to: ReplyTarget = at ?? {
+      chatId: target.chatId,
+      isDirect: row.lastChatIsDirect,
+      inboundMessageId: liveInboundMessageId,
+    };
     // One body per outbound message: the whole reply, or one per non-blank line when the
     // binding asked for that. Everything below is untouched by the choice.
     const bodies = row.linePerMessage
@@ -1204,15 +1342,15 @@ export class MessagingBridge {
       // about one a second, so they go out at that pace rather than back to back.
       if (i > 0 && row.linePerMessage) await this.pace();
       const threadOnto =
-        !row.lastChatIsDirect && inboundMessageId !== null && !entry.threadedThisRun
-          ? inboundMessageId
+        !to.isDirect && to.inboundMessageId !== null && !entry.threadedThisRun
+          ? to.inboundMessageId
           : null;
       try {
         if (threadOnto !== null) {
           entry.threadedThisRun = true;
           this.noteSend(entry, await client.replyText(threadOnto, chunk));
         } else {
-          this.noteSend(entry, await client.sendText(chatId, chunk));
+          this.noteSend(entry, await client.sendText(to.chatId, chunk));
         }
       } catch (err) {
         this.recordDeliveryFailure(entry, err, "send", "messaging_send_failed");
@@ -1222,6 +1360,15 @@ export class MessagingBridge {
 
   /**
    * Sends the files THIS RUN produced and its reply mentioned, after its text.
+   *
+   * `replyText` is what the run actually SENT, not everything it said: a binding with
+   * `finalReplyOnly` set delivered one message, so that message is the whole of what this
+   * scans (see onTaskState). A file named only in a held-back working note has nothing in
+   * the chat to explain its arrival.
+   *
+   * `at` is where those words went, for the one caller whose text is not addressed to the live
+   * chat (again the held reply). Files follow their words: a picture landing in a forum topic
+   * where nothing named it is the same defect as one arriving unmentioned.
    *
    * Two filters, and both are load-bearing. The reply having said the name is what picks
    * the one output that was the point out of the dozen a run writes. The file being newer
@@ -1241,10 +1388,16 @@ export class MessagingBridge {
    * one reply-to. Nothing here throws — a batch that fails is recorded, and a single file
    * that fails does not stop the ones behind it.
    */
-  private async deliverFiles(entry: BridgeEntry, replyText: string, since: number): Promise<void> {
+  private async deliverFiles(
+    entry: BridgeEntry,
+    replyText: string,
+    since: number,
+    at: ReplyTarget | null = null,
+  ): Promise<void> {
     try {
       const row = this.deps.repo.find(entry.sessionId, entry.channel);
       if (!row || row.lastChatId === null) return; // no chat known yet: nothing mirrors
+      const chatId = at?.chatId ?? row.lastChatId;
       const session = this.deps.sessions.findById(entry.sessionId);
       if (session === null) return; // deleted mid-run
       const mentions = replyFileMentions(replyText, session.workspace);
@@ -1265,18 +1418,18 @@ export class MessagingBridge {
       const client = await this.clientFor(entry.sessionId, row);
       for (const rel of produced.slice(0, MESSAGING_OUTBOUND_FILE_MAX_COUNT)) {
         try {
-          await this.deliverOneFile(client, row.lastChatId, session.workspace, rel);
+          await this.deliverOneFile(client, chatId, session.workspace, rel);
         } catch (err) {
           this.recordError(entry.sessionId, err, "messaging_file_send_failed");
-          await this.noteFileFailure(client, row.lastChatId, rel, err);
+          await this.noteFileFailure(client, chatId, rel, err);
         }
       }
       const skipped = produced.length - MESSAGING_OUTBOUND_FILE_MAX_COUNT;
       if (skipped > 0) {
-        await client.sendText(row.lastChatId, messagingFilesSkippedNotice(skipped));
+        await client.sendText(chatId, messagingFilesSkippedNotice(skipped));
       }
       if (missing.length > 0) {
-        await client.sendText(row.lastChatId, messagingFilesMissingNotice(missing));
+        await client.sendText(chatId, messagingFilesMissingNotice(missing));
       }
     } catch (err) {
       this.recordError(entry.sessionId, err, "messaging_send_failed");
