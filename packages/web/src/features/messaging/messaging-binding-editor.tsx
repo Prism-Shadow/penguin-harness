@@ -14,12 +14,12 @@
  * channels' field lists differ in length, so controls placed under the fields would sit at
  * a different height in each channel and move on every switch. The explanation lives in
  * collapsed FAQ folds below the save area (`MessagingBindingHelp`), and the channel's
- * leading credential field — where the console values start being pasted — carries the
- * developer-console link at its label's top-right corner (the models-page "get API key"
- * idiom, which puts the link on the field, not in a row of its own). Secrets follow that
- * page's interaction: the field always starts empty, a stored secret shows as a masked
- * line under it with a "clear stored …" checkbox (typing unchecks it; applied on Save),
- * blank keeps the stored value — and clearing requires the channel's connection to be
+ * leading credential field — where the value starts being pasted — carries at its label's
+ * top-right corner a link to wherever that channel issues the credential (the models-page
+ * "get API key" idiom, which puts the link on the field, not in a row of its own). Secrets
+ * follow that page's interaction: the field always starts empty, a stored secret shows as a
+ * masked line under it with a "clear stored …" checkbox (typing unchecks it; applied on
+ * Save), blank keeps the stored value — and clearing requires the channel's connection to be
  * disabled first. The connection switch IS the bind/unbind control — enabling binds the
  * bot to this conversation, turning it off releases it, and the credentials stay saved
  * through both, so several conversations may keep one bot saved and take turns holding it
@@ -66,16 +66,30 @@ import {
 /** How often the visible editor refreshes the runtime status (connects settle within a poll or two). */
 const STATUS_POLL_MS = 3000;
 
-/** Per-channel external links: the walkthrough (setup FAQ fold) and the console where the credential is fetched (field corner). */
-const CHANNEL_LINKS: Record<MessagingChannel, { tutorial: string; console: string }> = {
+/**
+ * Per-channel external links: the walkthrough (setup FAQ fold) and where the channel issues
+ * the credential (field corner). The second is a developer console for some channels and a
+ * chat with a bot for others, so its label belongs to the channel — only the ones that do
+ * have a console reach for the shared `S.messaging.console` wording.
+ */
+const CHANNEL_LINKS: Record<MessagingChannel, { tutorial: string; credentialSource: string }> = {
   feishu: {
     // Feishu's own echo-bot walkthrough: creating a self-built app and its long connection.
     tutorial: "https://open.feishu.cn/document/develop-an-echo-bot/introduction",
-    console: "https://open.feishu.cn/app",
+    credentialSource: "https://open.feishu.cn/app",
   },
   telegram: {
-    tutorial: "https://core.telegram.org/bots/tutorial",
-    console: "https://core.telegram.org/bots/api",
+    // The BotFather section of the bot-features page: "a detailed guide to using
+    // @BotFather", opening on /newbot and the token it returns — which is this fold's
+    // steps, one level deeper. NOT /bots/tutorial: that one is "From BotFather to 'Hello
+    // World'", and past its token section it is about downloading an IDE and picking a
+    // framework, i.e. about WRITING a bot. Nobody here is writing one — PenguinHarness is
+    // the bot. The fragment is a plain document anchor present in the served HTML, so it
+    // lands where it says (unlike a hash route, which the server never sees).
+    tutorial: "https://core.telegram.org/bots/features#botfather",
+    // Where the credential is actually issued. Telegram has no web console: the token comes
+    // from @BotFather inside the app, and this link is the one that leads there.
+    credentialSource: "https://t.me/BotFather",
   },
 };
 
@@ -476,8 +490,8 @@ function StoredSecretRow({
 /**
  * The editor's body, top to bottom: the channel selector, the connection controls (enable
  * toggle + live status, then the two probes, then the hint naming what gates the switch),
- * then the selected channel's credential fields (console link at the credential field's
- * corner, models-style stored-secret row), and last the one saved field that is not a
+ * then the selected channel's credential fields (credential-source link at the credential
+ * field's corner, models-style stored-secret row), and last the one saved field that is not a
  * credential — the one-message-per-line delivery option, which Save persists like the rest. Only the selector and the controls sit above the
  * fields, and everything above the fields is channel-independent in height, so the toggle
  * and the probes hold one vertical position no matter which channel is selected. Hosts
@@ -585,7 +599,12 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
           <CornerLinkedField
             label={S.telegram.botToken}
             required={!facts.secretConfigured}
-            link={<ExternalLink href={links.console} label={S.messaging.console} />}
+            // Not the shared "developer console" label: this one opens @BotFather in the
+            // Telegram app, and a corner link promising a console that does not exist sends
+            // the reader looking for a web page Telegram has never had. The label names the
+            // thing the click actually reaches — Telegram's own page for it is titled
+            // "Launch @BotFather".
+            link={<ExternalLink href={links.credentialSource} label={S.telegram.openBotFather} />}
           >
             <PasswordInput
               size="sm"
@@ -618,7 +637,7 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
           <CornerLinkedField
             label={S.feishu.appId}
             required
-            link={<ExternalLink href={links.console} label={S.messaging.console} />}
+            link={<ExternalLink href={links.credentialSource} label={S.messaging.console} />}
           >
             <Input
               size="sm"

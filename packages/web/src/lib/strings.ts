@@ -1760,6 +1760,12 @@ Benchmark：
     botTokenKeepHint: "留空保持已保存的 Bot Token 不变",
     /** The stored-token row's clear checkbox (the models-page clear idiom). */
     clearToken: "清除已存 Bot Token",
+    /**
+     * The Bot Token field's corner link. Telegram has no developer console — the token is
+     * issued by @BotFather inside the app — so this channel names the destination instead
+     * of borrowing the shared "open developer console" label.
+     */
+    openBotFather: "打开 @BotFather",
     invalidToken: "Bot Token 形如「数字:密钥」，由 @BotFather 签发",
     /** Why "send test message" is disabled before the bot has ever been messaged. */
     testMessageNoChat: "先在 Telegram 中给机器人发一条消息，机器人才知道要发到哪个会话",
@@ -1786,7 +1792,12 @@ Benchmark：
       feishu: "飞书",
       telegram: "Telegram",
     },
-    /** Per-channel external links: the tutorial (in the setup FAQ fold) and the console (at the credential field's corner). */
+    /**
+     * Shared link labels: the tutorial (in the setup FAQ fold) and, at the credential field's
+     * corner, the developer console — the latter only for the channels that have one. A
+     * channel whose credential is issued elsewhere names that destination itself (Telegram's
+     * `telegram.openBotFather`).
+     */
     tutorial: "前往教程",
     console: "前往开发者后台",
     /** The connection toggle (flips immediately, using the stored credentials). */

@@ -3,14 +3,15 @@
  *
  * Six rules this pins, all of which are invisible to a type checker: the form opens on its
  * FIELDS (the explanation lives in the collapsed FAQ under the save area, not above the first
- * input), each channel's developer-console link rides the credential field's corner, the
- * connection switch — which IS the bind/unbind — carries that sentence as its own tooltip
- * rather than as a line the form would have to make room for, a stored secret is removed by
- * the models-page clear checkbox and that checkbox is gated, on screen, while the channel
- * holds the connection, and a connection error's detail reaches the reader whole rather than
- * as a few words of a shared row.
+ * input), each channel's credential-source link rides the credential field's corner, that
+ * link's label names the place it actually opens, the connection switch — which IS the
+ * bind/unbind — carries that sentence as its own tooltip rather than as a line the form
+ * would have to make room for, a stored secret is removed by the models-page clear checkbox
+ * and that checkbox is gated, on screen, while the channel holds the connection, and a
+ * connection error's detail reaches the reader whole rather than as a few words of a shared
+ * row.
  */
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { MessagingChannel } from "@prismshadow/penguin-server/api";
@@ -21,7 +22,10 @@ import {
   type MessagingChannelFacts,
 } from "../src/features/messaging/messaging-binding-editor";
 import { emptyMessagingForm } from "../src/features/messaging/messaging-binding-form";
-import { S } from "../src/lib/strings";
+import { S, setActiveStrings, zh } from "../src/lib/strings";
+import { en } from "../src/lib/strings-en";
+
+afterEach(() => setActiveStrings(zh));
 
 const DARK: MessagingChannelFacts = {
   secretConfigured: false,
@@ -72,11 +76,33 @@ describe("MessagingBindingBody", () => {
     expect(render(stateOf("telegram"))).not.toContain(S.telegram.intro);
   });
 
-  it("hangs each channel's developer-console link on its credential field's corner", () => {
+  it("hangs each channel's credential source on its credential field's corner", () => {
     // The models dialog's "get API key" idiom: the link sits where the value is pasted, so the
     // reader never has to leave the field to find out where the value comes from.
     expect(render(stateOf("feishu"))).toContain('href="https://open.feishu.cn/app"');
-    expect(render(stateOf("telegram"))).toContain('href="https://core.telegram.org/bots/api"');
+    // Telegram's Bot Token is issued by @BotFather in the app, not by a web console — the
+    // corner link goes there rather than into the API reference it used to point at.
+    const telegram = render(stateOf("telegram"));
+    expect(telegram).toContain('href="https://t.me/BotFather"');
+    expect(telegram).not.toContain("core.telegram.org/bots/api");
+  });
+
+  it("labels that corner link with what it opens, never with a console Telegram has not got", () => {
+    // The defect this pins: a link labelled "open developer console" that landed in the API
+    // manual. Both dictionaries, because the label is per-locale and `S` is zh until a test
+    // says otherwise — an assertion against the active dictionary alone would leave English
+    // free to carry the very wording this fixed.
+    for (const dict of [zh, en]) {
+      setActiveStrings(dict);
+      // Label and target in ONE assertion: pinned apart, they pass just as happily with the
+      // right href on the wrong anchor.
+      const telegram = render(stateOf("telegram"));
+      const corner = /<a href="https:\/\/t\.me\/BotFather"[^>]*>([^<]*)<\/a>/.exec(telegram);
+      expect(corner?.[1]).toBe(`${dict.telegram.openBotFather} ↗`);
+      expect(telegram).not.toContain(dict.messaging.console);
+      // ...and the channels that do have a console keep it.
+      expect(render(stateOf("feishu"))).toContain(dict.messaging.console);
+    }
   });
 
   it("offers a stored secret's removal as the clear checkbox, gated on screen while enabled", () => {
@@ -201,7 +227,9 @@ describe("MessagingBindingHelp", () => {
     const telegram = renderToStaticMarkup(
       createElement(MessagingBindingHelp, { channel: "telegram" as MessagingChannel }),
     );
-    expect(telegram).toContain('href="https://core.telegram.org/bots/tutorial"');
+    // The BotFather guide, not "From BotFather to 'Hello World'": the reader of this fold is
+    // creating a bot to paste a token from, not writing one.
+    expect(telegram).toContain('href="https://core.telegram.org/bots/features#botfather"');
     expect(telegram).toContain(S.telegram.setupSteps[0]);
   });
 });
