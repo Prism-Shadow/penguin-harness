@@ -36,6 +36,7 @@ import { ChartFrame, useChartWidth } from "../usage/chart-svg";
 import { modelSeries, scoreScale, scoreValues, seriesValues } from "./benchmark-metrics";
 import type { EvaluationSeries } from "./benchmark-metrics";
 import { BenchmarkCaseBrowser } from "./benchmark-case-browser";
+import { benchmarkSelectionFromSearch, benchmarkSelectionSearch } from "./benchmark-selection";
 
 interface Selection {
   agentId: string;
@@ -50,6 +51,7 @@ function AgentNode({
   defaultOpen,
   selection,
   onSelect,
+  initialBenchmarkId,
 }: {
   projectId: string;
   agentId: string;
@@ -58,6 +60,7 @@ function AgentNode({
   defaultOpen: boolean;
   selection: Selection | null;
   onSelect: (sel: Selection) => void;
+  initialBenchmarkId: string | null;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const [benchmarks, setBenchmarks] = useState<BenchmarkSummary[] | null>(null);
@@ -67,9 +70,13 @@ function AgentNode({
     if (!open || benchmarks) return;
     api
       .listBenchmarks(projectId, agentId)
-      .then((data) => setBenchmarks(data.benchmarks))
+      .then((data) => {
+        setBenchmarks(data.benchmarks);
+        const initial = data.benchmarks.find((b) => b.id === initialBenchmarkId);
+        if (initial) onSelect({ agentId, benchmark: initial });
+      })
       .catch((e: unknown) => setError(apiErrorText(e)));
-  }, [open, benchmarks, projectId, agentId]);
+  }, [open, benchmarks, projectId, agentId, initialBenchmarkId, onSelect]);
 
   return (
     <li className="pt-2.5">
@@ -502,8 +509,9 @@ export function BenchmarkPage() {
   const { currency } = useTheme();
   const projectId = currentProject?.projectId ?? null;
   // ?agentId= deep link (entered from the "Benchmark" tab on the Agent settings page): only the target Agent is expanded by default.
-  const [searchParams] = useSearchParams();
-  const focusAgentId = searchParams.get("agentId");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const savedSelection = benchmarkSelectionFromSearch(searchParams.toString());
+  const focusAgentId = savedSelection?.agentId ?? searchParams.get("agentId");
   const [selection, setSelection] = useState<Selection | null>(null);
   const [caseStatements, setCaseStatements] = useState<BenchmarkCaseSummary[] | null>(null);
   const [caseError, setCaseError] = useState<string | null>(null);
@@ -513,6 +521,16 @@ export function BenchmarkPage() {
   useEffect(() => {
     setSelection(null);
   }, [projectId]);
+
+  useEffect(() => {
+    if (!selection) return;
+    const next = benchmarkSelectionSearch({
+      agentId: selection.agentId,
+      benchmarkId: selection.benchmark.id,
+    });
+    if (searchParams.toString() === next.slice(1)) return;
+    setSearchParams(next, { replace: true });
+  }, [selection, searchParams, setSearchParams]);
 
   useEffect(() => {
     setCaseStatements(null);
@@ -562,6 +580,9 @@ export function BenchmarkPage() {
                 defaultOpen={focusAgentId === null || focusAgentId === a.agentId}
                 selection={selection}
                 onSelect={setSelection}
+                initialBenchmarkId={
+                  savedSelection?.agentId === a.agentId ? savedSelection.benchmarkId : null
+                }
               />
             ))}
           </ul>
