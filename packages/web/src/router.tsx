@@ -14,7 +14,6 @@ import { AgentsPage } from "./features/agents/agents-page";
 import { AgentSettingsPage } from "./features/agents/agent-settings-page";
 import { SkillsPage } from "./features/skills/skills-page";
 import { ModelsPage } from "./features/models/models-page";
-import { MachinesPage } from "./features/machines/machines-page";
 import { UsagePage } from "./features/usage/usage-page";
 import { BenchmarkPage } from "./features/benchmark/benchmark-page";
 import { TerminalPage } from "./features/terminal/terminal-page";
@@ -74,7 +73,6 @@ export function AppRouter() {
           <Route path="/models" element={<ModelsPage />} />
           {/* Admin-only server-side (403 otherwise); the sidebar hides the row for
               everyone else, so a member only ever reaches this by typing the URL. */}
-          <Route path="/machines" element={<MachinesPage />} />
           <Route path="/usage" element={<UsagePage />} />
           <Route path="/benchmark" element={<BenchmarkPage />} />
           {/* System settings and user management live in the settings dialog now (see
