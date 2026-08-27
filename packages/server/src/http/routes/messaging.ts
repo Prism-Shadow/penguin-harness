@@ -617,6 +617,10 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
       }
       appSecret = stored;
     }
+    // Same reason as the Feishu and Telegram PUTs: an enabled binding re-pointed at another
+    // App ID keeps its connection and restarts it below, which would stand two Sessions on
+    // one bot's single gateway without either passing the enable gate.
+    if (existing !== null && existing.enabled) guardAccountFree(row.sessionId, "qq", appId);
     const saved = deps.messagingRepo.upsert({
       sessionId: row.sessionId,
       channel: "qq",

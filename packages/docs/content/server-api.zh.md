@@ -308,7 +308,7 @@ Session 可以接入消息软件机器人——目前的渠道是飞书、Telegr
 | POST | /messaging/telegram/test | 凭据探测（`getMe`），草稿 Token 缺省回落到已存值 → `{ok, latencyMs?, botUsername?, groupPrivacy?, error?}`——成功时报出 Token 登录到的机器人；当 @BotFather 的 Group Privacy 处于开启状态（默认如此，此时机器人在它不担任管理员的群里收不到任何普通消息）时报出 `groupPrivacy: true` |
 | POST | /messaging/telegram/test-message | 向最近一次收到消息的会话发送一条固定测试文本；在 Telegram 里给机器人发过消息之前返回 409 `telegram_no_chat` |
 | GET | /messaging/qq | 同一形态下的 QQ 配置（`appId`、`appSecretMasked`） |
-| PUT | /messaging/qq | 保存凭据对：`{appId, appSecret?, clearAppSecret?, linePerMessage?}`——QQ 开放平台「开发设置」页的 App ID 与 App Secret。留空保持、清除标记、保存与启用分离都与飞书 PUT 同口径；没有域名字段，因为 API v2 只有一个接口域名 |
+| PUT | /messaging/qq | 保存凭据对：`{appId, appSecret?, clearAppSecret?, linePerMessage?}`——QQ 开放平台「开发设置」页的 App ID 与 App Secret。留空保持、清除标记、保存与启用分离都与飞书 PUT 同口径；把一条已启用绑定的 App ID 换成另一个 Session 已启用的账号时，同样返回 409 `account_enabled_elsewhere`，此外保存不会跨 Session 冲突；没有域名字段，因为 API v2 只有一个接口域名 |
 | POST | /messaging/qq/state | 与其他开关同一契约（无已存密钥时返回 400 `qq_secret_required`） |
 | DELETE | /messaging/qq | 整体删除该渠道的配置（含 App Secret）。仅为 API 完整性保留 |
 | POST | /messaging/qq/test | 凭据探测（换取 app access token）→ `{ok, latencyMs?, error?}`。不报出账号名：平台没有能识别机器人身份的接口 |

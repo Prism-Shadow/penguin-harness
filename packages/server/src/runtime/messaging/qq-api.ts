@@ -203,6 +203,33 @@ function closeCodeIsFatal(code: number): boolean {
   return code === 4914 || code === 4915;
 }
 
+/**
+ * How long a socket has to finish its handshake before it is dropped and retried.
+ *
+ * A socket that opened and then went quiet — a proxy that accepted the upgrade and
+ * blackholed everything after it — never reaches HELLO, never starts a heartbeat, and never
+ * fires `close`. Nothing else in this session would notice, so the binding would sit at
+ * `connected` receiving nothing, forever. Generous next to a handshake that normally takes
+ * one round trip.
+ */
+export const QQ_HANDSHAKE_TIMEOUT_MS = 30_000;
+
+/**
+ * The slice of the WebSocket API this session uses.
+ *
+ * Named as a type so a test can drive the handshake, the heartbeat and every close code
+ * without opening a socket. It is not a module mock on purpose: the server suite shares one
+ * module registry across files (see vitest.config.ts), so `vi.mock` is not available to it.
+ */
+export interface QQSocket {
+  readonly readyState: number;
+  addEventListener(type: "message", fn: (evt: { data: unknown }) => void): void;
+  addEventListener(type: "error", fn: () => void): void;
+  addEventListener(type: "close", fn: (evt: { code: number }) => void): void;
+  send(data: string): void;
+  close(): void;
+}
+
 /** Gateway reconnect backoff: 1s doubling to a 60s ceiling (a revoked secret retries once a minute). */
 function defaultGatewayRetryMs(failures: number): number {
   return Math.min(1000 * 2 ** (failures - 1), 60_000);
@@ -257,6 +284,10 @@ export function qqSendErrorText(errCode: number | undefined, message: string): s
 export interface QQTransportOpts {
   /** Test hook: gateway reconnect backoff (default: exponential, 1s → 60s). */
   gatewayRetryMs?: (failures: number) => number;
+  /** Test hook: the socket the gateway session runs on (default: undici's WebSocket). */
+  createSocket?: (url: string) => QQSocket;
+  /** Test hook: the handshake deadline (default QQ_HANDSHAKE_TIMEOUT_MS). */
+  handshakeTimeoutMs?: number;
 }
 
 /** One bot's access token with early refresh, shared by the OpenAPI client and the gateway identify. */
@@ -376,10 +407,16 @@ function createProductionClient(creds: QQCredentials): ProductionClient {
 /** The production factory: plain HTTPS for the OpenAPI, undici's WebSocket for the gateway. */
 export function createQQTransport(opts: QQTransportOpts = {}): QQTransport {
   const retryMs = opts.gatewayRetryMs ?? defaultGatewayRetryMs;
+  const createSocket = opts.createSocket ?? ((url: string): QQSocket => new WebSocket(url));
+  const handshakeMs = opts.handshakeTimeoutMs ?? QQ_HANDSHAKE_TIMEOUT_MS;
   return {
     createClient: (creds) => createProductionClient(creds),
     async openGateway(creds, handlers): Promise<QQGatewayConnection> {
-      const session = new GatewaySession(createProductionClient(creds), handlers, retryMs);
+      const session = new GatewaySession(createProductionClient(creds), handlers, {
+        retryMs,
+        createSocket,
+        handshakeMs,
+      });
       session.start();
       return { close: () => session.close() };
     },
@@ -407,12 +444,21 @@ export function createQQTransport(opts: QQTransportOpts = {}): QQTransport {
  * The gateway URL is fetched once and reused across reconnects: `GET /gateway` is rate
  * limited to 2 requests a minute, which a reconnect storm would spend on nothing.
  *
+ * Two watchdogs bound a session that is neither speaking nor closing, because a socket that
+ * stops carrying traffic without a FIN — a NAT or proxy drop, and this path deliberately
+ * inherits the admin proxy dispatcher — keeps `readyState` OPEN and fires no `close` at
+ * all: one deadline on the handshake (QQ_HANDSHAKE_TIMEOUT_MS), and one on the heartbeat,
+ * which the platform acknowledges with HEARTBEAT_ACK and which is therefore a round trip
+ * rather than a write. Either drops the socket into the same fail-and-back-off path a real
+ * close takes — and drives it directly rather than waiting on a `close` event a half-open
+ * socket may never produce.
+ *
  * What surfaces upward is only the outcome: `onReady` per successful handshake, `onError`
  * once per outage — the same contract the Feishu long connection and the Telegram poll loop
  * report, so the bridge's status means the same thing on all three channels.
  */
 class GatewaySession {
-  private ws: WebSocket | null = null;
+  private ws: QQSocket | null = null;
   private closed = false;
   private failures = 0;
   /** The resume handle from READY; null until the first successful identify. */
@@ -423,13 +469,21 @@ class GatewaySession {
   private gatewayUrl: string | null = null;
   private heartbeat: ReturnType<typeof setInterval> | null = null;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Armed with the socket, disarmed by the handshake: see QQ_HANDSHAKE_TIMEOUT_MS. */
+  private handshakeTimer: ReturnType<typeof setTimeout> | null = null;
+  /** When the last HEARTBEAT_ACK arrived, against which the heartbeat tick measures silence. */
+  private lastAckAt = 0;
   /** This outage already reported; the retries stay quiet until a handshake succeeds. */
   private reported = false;
 
   constructor(
     private readonly client: ProductionClient,
     private readonly handlers: QQGatewayHandlers,
-    private readonly retryMs: (failures: number) => number,
+    private readonly opts: {
+      retryMs: (failures: number) => number;
+      createSocket: (url: string) => QQSocket;
+      handshakeMs: number;
+    },
   ) {}
 
   start(): void {
@@ -439,6 +493,7 @@ class GatewaySession {
   close(): void {
     this.closed = true;
     this.stopHeartbeat();
+    this.disarmHandshake();
     if (this.retryTimer !== null) clearTimeout(this.retryTimer);
     this.retryTimer = null;
     const ws = this.ws;
@@ -481,8 +536,15 @@ class GatewaySession {
   }
 
   private openSocket(url: string, token: string): void {
-    const ws = new WebSocket(url);
+    const ws = this.opts.createSocket(url);
     this.ws = ws;
+    // The socket is open; nothing says the far end is listening. This is the deadline for
+    // it to prove it, and it covers both silences: no HELLO, and an IDENTIFY nobody answers.
+    this.handshakeTimer = setTimeout(() => {
+      this.handshakeTimer = null;
+      this.dropSocket(ws, new Error("gateway handshake did not complete"));
+    }, this.opts.handshakeMs);
+    this.handshakeTimer.unref?.();
     ws.addEventListener("message", (evt) => {
       if (this.ws !== ws) return;
       this.onFrame(String(evt.data), token);
@@ -493,6 +555,7 @@ class GatewaySession {
     ws.addEventListener("close", (evt) => {
       if (this.ws !== ws) return;
       this.stopHeartbeat();
+      this.disarmHandshake();
       this.ws = null;
       if (closeCodeInvalidatesSession(evt.code)) {
         this.sessionId = null;
@@ -558,8 +621,13 @@ class GatewaySession {
         // Politely asked to reconnect; the session stays resumable.
         this.ws?.close();
         return;
+      case OP.HEARTBEAT_ACK:
+        // The one frame that proves the socket is still a round trip rather than a write
+        // into a dead pipe. startHeartbeat measures its silence.
+        this.lastAckAt = Date.now();
+        return;
       default:
-        // HEARTBEAT_ACK and the webhook-only opcodes need no action.
+        // The webhook-only opcodes need no action.
         return;
     }
   }
@@ -581,14 +649,56 @@ class GatewaySession {
 
   /** A handshake completed: the outage (if any) is over and the backoff resets. */
   private onHandshake(): void {
+    this.disarmHandshake();
     this.failures = 0;
     this.reported = false;
     this.handlers.onReady?.();
   }
 
+  private disarmHandshake(): void {
+    if (this.handshakeTimer !== null) clearTimeout(this.handshakeTimer);
+    this.handshakeTimer = null;
+  }
+
+  /**
+   * Abandons a socket the session has given up on and starts the backoff itself.
+   *
+   * The `close` handler is not enough on its own here: the failure both watchdogs cover is
+   * a socket that never fires `close`, and asking a half-open one to close is a request the
+   * far end may never answer. Detaching first makes the `close` that may eventually arrive
+   * a no-op (every listener is gated on `this.ws === ws`).
+   */
+  private dropSocket(ws: QQSocket, err: Error): void {
+    if (this.ws !== ws) return;
+    this.stopHeartbeat();
+    this.disarmHandshake();
+    this.ws = null;
+    try {
+      ws.close();
+    } catch {
+      // Same as close(): a socket already going away throws on some paths and it changes
+      // nothing here.
+    }
+    this.fail(err);
+  }
+
   private startHeartbeat(intervalMs: number): void {
     this.stopHeartbeat();
-    this.heartbeat = setInterval(() => this.send({ op: OP.HEARTBEAT, d: this.seq }), intervalMs);
+    const ws = this.ws;
+    if (ws === null) return;
+    // HELLO is the last thing heard from this socket so far, which is what the first
+    // interval is measured against.
+    this.lastAckAt = Date.now();
+    this.heartbeat = setInterval(() => {
+      // Two intervals of silence: the platform acknowledges every heartbeat, so a socket
+      // still writable but no longer answering is a dead pipe rather than a slow one. One
+      // interval would be a lost ack; two is an outage.
+      if (Date.now() - this.lastAckAt > intervalMs * 2) {
+        this.dropSocket(ws, new Error("gateway stopped acknowledging heartbeats"));
+        return;
+      }
+      this.send({ op: OP.HEARTBEAT, d: this.seq });
+    }, intervalMs);
     // A heartbeat must never be the reason the process cannot exit.
     this.heartbeat.unref?.();
   }
@@ -618,7 +728,7 @@ class GatewaySession {
     this.retryTimer = setTimeout(() => {
       this.retryTimer = null;
       void this.connect();
-    }, this.retryMs(this.failures));
+    }, this.opts.retryMs(this.failures));
     this.retryTimer.unref?.();
   }
 }

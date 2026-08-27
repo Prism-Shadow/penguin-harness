@@ -42,6 +42,10 @@
  *     the next inbound message, whose `msg_id` carries a fresh budget — that is the only new
  *     budget that ever exists — provided the message they were written for has not itself
  *     expired in the meantime (see noteInbound).
+ *   - A chat's accounting lives no longer than the connection that opened it. Closing the
+ *     gateway — the unbind, or the restart a credential change makes — forgets that
+ *     account's ledgers, so nothing withheld can arrive in a chat the binding has stopped
+ *     answering; and a chat left quiet past the window is swept when the map next grows.
  *
  * ## Why an undeliverable reply throws instead of vanishing
  *
@@ -228,6 +232,8 @@ function chatOfReplyRef(ref: string): { kind: QQChatKind; openid: string } {
  * message's remaining budget is worth nothing next to a window that may have minutes left.
  */
 interface QQReplyLedger {
+  /** The bot this chat belongs to — what a closing connection matches its own ledgers on. */
+  appId: string;
   kind: QQChatKind;
   openid: string;
   /** The message replies anchor to; null before the bot has ever been messaged here. */
@@ -340,7 +346,18 @@ export class QQConnector implements MessagingChannelConnector {
       ...(handlers.onReady ? { onReady: handlers.onReady } : {}),
       ...(handlers.onError ? { onError: handlers.onError } : {}),
     });
-    return { close: () => connection.close() };
+    return {
+      close: () => {
+        connection.close();
+        // A ledger exists only because THIS gateway delivered an inbound message, and a
+        // passive reply may not outlive the binding that earned it: without this, a tail
+        // withheld a second ago is sent into the chat after the user turned the connection
+        // off, and a tail from before a disable is carried onto the first message after a
+        // re-enable. Closing the gateway alone leaves both, because the ledgers hang off
+        // the connector rather than off the connection.
+        this.dropLedgers(creds.appId);
+      },
+    };
   }
 
   // —— The passive-reply budget ————————————————————————————————————————————
@@ -353,7 +370,14 @@ export class QQConnector implements MessagingChannelConnector {
     const key = this.ledgerKey(appId, kind, openid);
     let ledger = this.ledgers.get(key);
     if (ledger === undefined) {
+      // Every chat the bot is ever messaged in opens a ledger, each able to hold
+      // QQ_TAIL_MAX_CHARS — so the map is swept whenever it is about to grow. Nothing past
+      // the reply window can be replied to at all (see repliable), which makes an expired
+      // ledger's whole content unusable: its budget funds nothing, and its tail would be
+      // dropped by the next noteInbound anyway.
+      this.evictExpired();
       ledger = {
+        appId,
         kind,
         openid,
         msgId: null,
@@ -369,6 +393,32 @@ export class QQConnector implements MessagingChannelConnector {
     return ledger;
   }
 
+  /** Clears a ledger's pending flush and forgets it. */
+  private dropLedger(key: string, ledger: QQReplyLedger): void {
+    if (ledger.timer !== null) clearTimeout(ledger.timer);
+    this.ledgers.delete(key);
+  }
+
+  /** Forgets every ledger of one credential set — the connection's close (see connect). */
+  private dropLedgers(appId: string): void {
+    for (const [key, ledger] of this.ledgers) {
+      if (ledger.appId === appId) this.dropLedger(key, ledger);
+    }
+  }
+
+  /**
+   * Forgets every ledger whose anchor message is past the reply window. An unanchored one
+   * is left alone: it holds no budget to lose, and the client that just created it is
+   * holding the object.
+   */
+  private evictExpired(): void {
+    for (const [key, ledger] of this.ledgers) {
+      if (ledger.msgId === null) continue;
+      if (this.now() - ledger.receivedAt <= QQ_PASSIVE_WINDOW_MS) continue;
+      this.dropLedger(key, ledger);
+    }
+  }
+
   /**
    * A new inbound message: fresh budget, and the moment a withheld tail can finally go out.
    *
@@ -381,6 +431,14 @@ export class QQConnector implements MessagingChannelConnector {
    */
   private noteInbound(creds: QQCredentials, evt: QQInboundEvent): void {
     const ledger = this.ledgerFor(creds.appId, evt.kind, evt.openid);
+    // A REDELIVERY is not new budget. The platform repeats a `msg_id` to guarantee delivery
+    // (see qqReplyRefOf) and the bridge's dedupe runs downstream of this, so a repeat lands
+    // here mid-run — re-anchoring to the id already held would reset `spent` to zero and
+    // make the next reply reuse a (msg_id, msg_seq) pair the platform has already accepted,
+    // which it REFUSES (40054005) rather than deduplicates. Every remaining message of the
+    // run would be rejected: half an answer, then silence. Nothing below may run for it,
+    // the pending flush included — it is already scheduled against this same anchor.
+    if (ledger.msgId === evt.messageId) return;
     if (ledger.timer !== null) {
       clearTimeout(ledger.timer);
       ledger.timer = null;
@@ -468,7 +526,16 @@ export class QQConnector implements MessagingChannelConnector {
       return;
     }
     ledger.tail = chunks.slice(1);
-    await this.sendNow(ledger, head);
+    try {
+      await this.sendNow(ledger, head);
+    } catch (err) {
+      // The slot is spent (sendNow reserves the sequence number before the wire) but the
+      // TEXT is not lost: `head` goes back to the front of the tail, so the next inbound
+      // message's budget carries it. Anything withheld while the send was in flight was
+      // appended to that same array and keeps its place behind it.
+      ledger.tail.unshift(head);
+      throw err;
+    }
   }
 
   /** One real send: the next `msg_seq` against the ledger's anchor message. */

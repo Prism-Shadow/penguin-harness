@@ -41,7 +41,9 @@ import type {
   QQTransport,
 } from "../src/runtime/messaging/qq-api.js";
 import { normalizeDispatch, qqSendErrorText } from "../src/runtime/messaging/qq-api.js";
+import type { QQConnectorOpts } from "../src/runtime/messaging/qq-connector.js";
 import {
+  QQ_PASSIVE_WINDOW_MS,
   QQ_REPLY_BUDGET,
   QQConnector,
   parseQQChatId,
@@ -285,6 +287,42 @@ describe("normalizeDispatch", () => {
     });
   });
 
+  it("takes the platform at its word on the @bot prefix and edits nothing else", () => {
+    // The whole of this channel's mention handling: the platform removes the bot's own
+    // mention from a group message's content and leaves the whitespace it sat in, and the
+    // trim is this side's half of that contract. Pinned because it is the sibling of the
+    // defect #497 fixed on the other two channels — where the placeholder or handle DOES
+    // reach the connector and has to be resolved or cut.
+    const mentioning = normalizeDispatch({
+      op: 0,
+      t: "GROUP_AT_MESSAGE_CREATE",
+      d: {
+        id: "m_at",
+        content: "   summarize what <@!member_2> said\t",
+        group_openid: GROUP_OPENID,
+        author: { member_openid: "member_1" },
+      },
+    });
+    // A mention of somebody ELSE is content. This connector has no identity to resolve it
+    // against and makes no claim about its shape, so whatever the platform put there
+    // reaches the model exactly as it arrived — the trim is the only edit.
+    expect(mentioning?.content).toBe("summarize what <@!member_2> said");
+    // ...and a group message left with nothing but the stripped mention reads as no text,
+    // which the bridge answers with the text-only notice instead of starting a run on it.
+    expect(
+      normalizeDispatch({
+        op: 0,
+        t: "GROUP_AT_MESSAGE_CREATE",
+        d: {
+          id: "m_bare",
+          content: "  ",
+          group_openid: GROUP_OPENID,
+          author: { member_openid: "member_1" },
+        },
+      })?.content,
+    ).toBe("");
+  });
+
   it("drops everything else the intent carries, including the un-mentioned group firehose", () => {
     for (const t of ["GROUP_MESSAGE_CREATE", "FRIEND_ADD", "READY", "RESUMED"]) {
       expect(normalizeDispatch({ op: 0, t, d: { id: "m", content: "x" } })).toBeNull();
@@ -395,6 +433,30 @@ describe("qq binding routes and the passive reply budget", () => {
     expect((await api.post(`${BASE(SID)}/state`, { enabled: false })).status).toBe(200);
     expect((await api.post(`${BASE(SID2)}/state`, { enabled: true })).status).toBe(200);
     await waitFor(() => t.deps.messaging.statusOf(SID2, "qq").state === "connected");
+  });
+
+  it("...and a save cannot carry an enabled connection onto another Session's bot either", async () => {
+    // The enable gate's other half. A binding that is already ON keeps its connection
+    // across a save and restarts it with the new credentials, so a PUT re-pointing it at
+    // an App ID somebody else has enabled would stand two gateways on one bot's single
+    // event stream without ever passing the gate above.
+    const other = "102000002";
+    t.deps.sessionsRepo.insert(sessionRowOf(SID2, projectId));
+    await bindEnabled(SID, other);
+    await bindEnabled(SID2, APP_ID);
+
+    const collide = await api.put(BASE(SID2), { appId: other, appSecret: APP_SECRET });
+    expect(collide.status).toBe(409);
+    const refusal = (await collide.json()) as { error: { code: string; message: string } };
+    expect(refusal.error.code).toBe("account_enabled_elsewhere");
+    expect(refusal.error.message).not.toContain(SID);
+    // Nothing was written and nothing was restarted.
+    expect(t.deps.messagingRepo.find(SID2, "qq")?.accountId).toBe(APP_ID);
+
+    // A DISABLED binding stays free to be saved onto that App ID: only the enable binds.
+    expect((await api.post(`${BASE(SID2)}/state`, { enabled: false })).status).toBe(200);
+    expect((await api.put(BASE(SID2), { appId: other, appSecret: APP_SECRET })).status).toBe(200);
+    expect(t.deps.messagingRepo.find(SID2, "qq")?.accountId).toBe(other);
   });
 
   it("clearing the stored secret is gated on the connection being off", async () => {
@@ -644,5 +706,126 @@ describe("the QQ client's media half", () => {
     await expect(client.sendText(qqChatIdOf("c2c", USER_OPENID), "unprompted")).rejects.toThrow(
       /only accepts replies/,
     );
+  });
+});
+
+/**
+ * The ledger's LIFETIME, driven through the connector's two halves directly.
+ *
+ * The route tests above always see the same shape: one run, inside the window, on a live
+ * connection. What is left is when the passive-reply accounting is reset, kept and
+ * forgotten — a redelivered anchor, a connection that goes away with text still withheld, a
+ * send that fails carrying the withheld text, and a chat nobody has spoken in for longer
+ * than the platform will accept a reply. Each of those is a message that silently never
+ * arrives, or one that arrives where it no longer should.
+ */
+describe("the passive-reply ledger's lifetime", () => {
+  const CONFIG = { appId: APP_ID, appSecret: APP_SECRET };
+  const CHAT = qqChatIdOf("c2c", USER_OPENID);
+  const settle = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  /**
+   * The ledger map is private and, for the eviction below, has no behavioural surface at
+   * all: nothing past the window can be replied to whether it is held or not, so how many
+   * are held is the only question there is to ask.
+   */
+  const ledgerCount = (c: QQConnector): number =>
+    (c as unknown as { ledgers: Map<string, unknown> }).ledgers.size;
+
+  /** A connector on a fake transport with its gateway open and its client built. */
+  async function connected(opts: QQConnectorOpts = {}) {
+    const fake = new FakeQQTransport();
+    const connector = new QQConnector(fake, { tailFlushMs: TAIL_MS, ...opts });
+    const client = await connector.createClient(CONFIG);
+    const connection = await connector.connect(CONFIG, { onMessage: () => {} });
+    return { fake, connector, client, connection, gateway: fake.lastGateway() };
+  }
+
+  /** Spends every immediate slot of a single chat's budget, leaving only the reserved one. */
+  async function spendImmediate(client: { sendText(chatId: string, text: string): Promise<void> }) {
+    for (const text of ["a", "b", "c"]) await client.sendText(CHAT, text);
+  }
+
+  it("a redelivered msg_id is not fresh budget", async () => {
+    const { fake, client, gateway } = await connected();
+    await gateway.fire(c2cText("go", "msg_1"));
+    await client.sendText(CHAT, "first");
+    await client.sendText(CHAT, "second");
+    // The platform repeats a msg_id to guarantee delivery, and the bridge's redelivery
+    // guard runs downstream of the connector — so a repeat lands here mid-run, between two
+    // replies to the same message.
+    await gateway.fire(c2cText("go", "msg_1"));
+    await client.sendText(CHAT, "third");
+    // A (msg_id, msg_seq) pair the platform has already accepted is REFUSED (40054005),
+    // not deduplicated: a sequence that restarts here is the rest of the answer never
+    // arriving, and the chat going quiet halfway through it.
+    expect(fake.allSends().map((s) => s.msgSeq)).toEqual([1, 2, 3]);
+    expect(new Set(fake.allSends().map((s) => s.msgId))).toEqual(new Set(["msg_1"]));
+  });
+
+  it("closing the connection drops a withheld tail instead of delivering it after the unbind", async () => {
+    const { fake, client, connector, connection, gateway } = await connected();
+    await gateway.fire(c2cText("go", "msg_close"));
+    await spendImmediate(client);
+    await client.sendText(CHAT, "withheld"); // no immediate slot left: waits for the reserved one
+    connection.close();
+    await settle(TAIL_MS * 3);
+    // The binding is off. A message arriving now lands in a chat the Session no longer
+    // answers, and there is no route by which the user could have expected it.
+    expect(fake.allSends().map((s) => s.content)).toEqual(["a", "b", "c"]);
+
+    // ...and the next connection starts the chat over rather than inheriting that tail.
+    const again = await connector.connect(CONFIG, { onMessage: () => {} });
+    await fake.lastGateway().fire(c2cText("hello again", "msg_reenabled"));
+    await client.sendText(CHAT, "fresh");
+    await settle(TAIL_MS * 3);
+    expect(fake.allSends().map((s) => s.content)).toEqual(["a", "b", "c", "fresh"]);
+    expect(fake.allSends().at(-1)).toMatchObject({ msgId: "msg_reenabled", msgSeq: 1 });
+    again.close();
+  });
+
+  it("a flush that fails keeps its text for the next inbound message's budget", async () => {
+    const { fake, client, gateway } = await connected();
+    await gateway.fire(c2cText("go", "msg_fail"));
+    await spendImmediate(client);
+    await client.sendText(CHAT, "the end");
+    // The one send carrying a long answer's coalesced end, lost to a transient 5xx.
+    fake.failSend = "503 Service Unavailable";
+    await settle(TAIL_MS * 3);
+    expect(fake.allSends().map((s) => s.content)).toEqual(["a", "b", "c"]);
+
+    fake.failSend = null;
+    await gateway.fire(c2cText("still there?", "msg_next"));
+    await waitFor(() => fake.allSends().length === 4);
+    expect(fake.allSends().at(-1)).toMatchObject({
+      content: "the end",
+      msgId: "msg_next",
+      msgSeq: 1,
+    });
+  });
+
+  it("forgets a chat left quiet past the reply window", async () => {
+    let clock = Date.now();
+    const { fake, client, connector, gateway } = await connected({ now: () => clock });
+    await gateway.fire(c2cText("go", "msg_old"));
+    await client.sendText(CHAT, "answered");
+    expect(ledgerCount(connector)).toBe(1);
+
+    // Past the window this chat can never be replied to again, so its accounting is dead
+    // weight — one entry per chat the bot is ever messaged in, each able to hold a tail.
+    clock += QQ_PASSIVE_WINDOW_MS + 1;
+    await gateway.fire({
+      kind: "group",
+      openid: GROUP_OPENID,
+      messageId: "msg_new",
+      content: "hi",
+      senderOpenid: "member_1",
+    });
+    expect(ledgerCount(connector)).toBe(1);
+    // The live chat still answers, and the expired one refuses rather than restarting a
+    // sequence the platform still remembers.
+    await client.sendText(qqChatIdOf("group", GROUP_OPENID), "answered too");
+    expect(fake.allSends().at(-1)).toMatchObject({ msgId: "msg_new", msgSeq: 1 });
+    await expect(client.sendText(CHAT, "too late")).rejects.toThrow(/only accepts replies/);
   });
 });
