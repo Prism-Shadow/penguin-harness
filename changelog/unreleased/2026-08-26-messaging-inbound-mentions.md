@@ -3,6 +3,7 @@
 - **Date:** 2026-08-26
 - **Type:** fix
 - **Scope:** `server`
+- **PR:** [#497](https://github.com/Prism-Shadow/penguin-harness/pull/497)
 
 [中文版](2026-08-26-messaging-inbound-mentions.zh.md)
 
