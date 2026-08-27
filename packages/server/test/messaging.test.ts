@@ -71,6 +71,9 @@ class FakeClient implements FeishuApiClient {
   async replyText(messageId: string, text: string): Promise<void> {
     this.sends.push({ kind: "reply", target: messageId, text });
   }
+  async botOpenId(): Promise<string | null> {
+    return this.sdk.botOpenId;
+  }
 }
 
 class FakeConnection {
@@ -92,6 +95,8 @@ class FakeSdk implements FeishuSdk {
   readonly connections: FakeConnection[] = [];
   /** Non-null makes checkCredentials throw with this message. */
   failCheck: string | null = null;
+  /** What `/open-apis/bot/v3/info` reports for this app; null = the identity is unavailable. */
+  botOpenId: string | null = null;
   async createClient(creds: FeishuCredentials): Promise<FeishuApiClient> {
     const client = new FakeClient(creds, this);
     this.clients.push(client);
@@ -695,6 +700,105 @@ describe("messaging binding routes and bridge", () => {
     expect(t.deps.messagingRepo.find(SID2, "feishu")?.enabled).toBe(false);
     t.deps.messaging.stop();
     expect(fake.connections[0]!.closed).toBe(true);
+  });
+
+  // —— Group mentions ————————————————————————————————————————————————————————
+  // Feishu never puts a mention in the message text: it writes a placeholder (`@_user_1`)
+  // and carries who it refers to alongside. Handed over raw, the model gets a token nothing
+  // in the conversation can resolve — and every group message carries one, because
+  // addressing a bot in a group means mentioning it.
+
+  const groupMention = (
+    text: string,
+    mentions: { key: string; name: string; id?: { open_id?: string } }[],
+    messageId = "om_mention",
+  ) => ({
+    chatId: "oc_group_1",
+    chatType: "group",
+    messageId,
+    messageType: "text",
+    content: JSON.stringify({ text }),
+    mentions: mentions.map((m) => ({
+      key: m.key,
+      name: m.name,
+      ...(m.id?.open_id !== undefined ? { openId: m.id.open_id } : {}),
+    })),
+  });
+
+  it("resolves mention placeholders to names and drops this bot's own", async () => {
+    fake.botOpenId = "ou_this_bot";
+    await bindEnabled(SID);
+    await fake.lastConnection().fire(
+      groupMention("@_user_1 @_user_2 check the build", [
+        { key: "@_user_1", name: "PenguinHarness", id: { open_id: "ou_this_bot" } },
+        { key: "@_user_2", name: "Alice", id: { open_id: "ou_alice" } },
+      ]),
+    );
+    await waitFor(() => runs.length === 1);
+    // The bot's own mention is gone (the model is deliberately not told the message arrived
+    // through a chat channel); Alice's is a name the model can actually use.
+    expect(runs[0]![0]!.text).toBe("@Alice check the build");
+  });
+
+  it("names this bot's mention like any other when its identity is unavailable", async () => {
+    // botOpenId stays null: the app cannot report one (bot capability off, or the call
+    // failed). Naming beats a raw placeholder, and the connection is never refused over it.
+    await bindEnabled(SID);
+    await fake
+      .lastConnection()
+      .fire(
+        groupMention("@_user_1 status?", [
+          { key: "@_user_1", name: "PenguinHarness", id: { open_id: "ou_this_bot" } },
+        ]),
+      );
+    await waitFor(() => runs.length === 1);
+    expect(runs[0]![0]!.text).toBe("@PenguinHarness status?");
+  });
+
+  it("replaces the longest placeholder first, so a tenth mention is not corrupted by the first", async () => {
+    fake.botOpenId = "ou_this_bot";
+    await bindEnabled(SID);
+    // Feishu numbers placeholders from 1 up, so @_user_1 is a literal prefix of @_user_10.
+    await fake.lastConnection().fire(
+      groupMention("@_user_10 and @_user_1 ship it", [
+        { key: "@_user_1", name: "Alice", id: { open_id: "ou_alice" } },
+        { key: "@_user_10", name: "Jules", id: { open_id: "ou_jules" } },
+      ]),
+    );
+    await waitFor(() => runs.length === 1);
+    expect(runs[0]![0]!.text).toBe("@Jules and @Alice ship it");
+  });
+
+  it("a message that is nothing but a mention starts no Task", async () => {
+    fake.botOpenId = "ou_this_bot";
+    await bindEnabled(SID);
+    await fake
+      .lastConnection()
+      .fire(
+        groupMention("@_user_1 ", [
+          { key: "@_user_1", name: "PenguinHarness", id: { open_id: "ou_this_bot" } },
+        ]),
+      );
+    // Nothing but the mention: no words to run a Task on, so it takes the same branch a
+    // sticker does rather than spending a turn on a bare placeholder.
+    await waitFor(() => fake.allSends().length === 1);
+    expect(fake.allSends()[0]!.text).toBe(MESSAGING_TEXT_ONLY_NOTICE);
+    expect(runs).toHaveLength(0);
+  });
+
+  it("a direct chat with no mentions is untouched", async () => {
+    await bindEnabled(SID);
+    await fake.lastConnection().fire({
+      chatId: "oc_chat_1",
+      chatType: "p2p",
+      messageId: "om_plain",
+      messageType: "text",
+      content: JSON.stringify({ text: "@_user_1 is not a placeholder here" }),
+    });
+    await waitFor(() => runs.length === 1);
+    // No mentions array means nothing to resolve: the text is whatever the user typed,
+    // even when it happens to look like a placeholder.
+    expect(runs[0]![0]!.text).toBe("@_user_1 is not a placeholder here");
   });
 
   // —— Inbound deduplication ————————————————————————————————————————————————
