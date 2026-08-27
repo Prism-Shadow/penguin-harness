@@ -3,6 +3,7 @@
 - **Date:** 2026-08-26
 - **Type:** feature
 - **Scope:** `core`, `skills`
+- **PR:** [#498](https://github.com/Prism-Shadow/penguin-harness/pull/498)
 
 [English](2026-08-26-schedule-target-current-session.md)
 
