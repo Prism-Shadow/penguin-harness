@@ -1730,6 +1730,14 @@ export interface FeishuBindingInfo {
    */
   finalReplyOnly: boolean;
   /**
+   * Render a relayed reply's Markdown in this channel's own markup instead of sending its
+   * characters as written. ON by default. Each channel shows what it can — Telegram has no
+   * headings, lists or tables, QQ has no code or tables, Feishu has all of them — and a
+   * rendering the channel refuses falls back to the plain source, so this can cost
+   * formatting and never a message.
+   */
+  renderMarkdown: boolean;
+  /**
    * Whether an inbound Feishu chat is known (the bot has been messaged at least once).
    * Replies and test messages target that chat; until it exists nothing can be sent.
    */
@@ -1764,6 +1772,14 @@ export interface TelegramBindingInfo {
    * that one final message. The approval notice is not a reply and is unaffected.
    */
   finalReplyOnly: boolean;
+  /**
+   * Render a relayed reply's Markdown in this channel's own markup instead of sending its
+   * characters as written. ON by default. Each channel shows what it can — Telegram has no
+   * headings, lists or tables, QQ has no code or tables, Feishu has all of them — and a
+   * rendering the channel refuses falls back to the plain source, so this can cost
+   * formatting and never a message.
+   */
+  renderMarkdown: boolean;
   /**
    * Whether an inbound Telegram chat is known (the bot has been messaged at least once).
    * Replies and test messages target that chat; until it exists nothing can be sent.
@@ -1808,6 +1824,15 @@ export interface QQBindingInfo {
    * at all, where the every-message relay would have sent whatever completed inside it.
    */
   finalReplyOnly: boolean;
+  /**
+   * Render a relayed reply's Markdown in this channel's own markup instead of sending its
+   * characters as written. ON by default. QQ's own subset is the widest for prose and the
+   * narrowest for code: headings, lists, blockquotes and rules render, while inline code,
+   * fenced code and tables have no syntax at all here — a code block arrives as plain
+   * escaped lines. A rendering the platform refuses falls back to the plain source, at the
+   * cost of one more slot from the passive-reply budget.
+   */
+  renderMarkdown: boolean;
   /**
    * Whether an inbound QQ chat is known (the bot has been messaged at least once).
    * Weaker than it looks on this channel: QQ accepts only replies to a recent message, so a
@@ -1881,6 +1906,11 @@ export interface FeishuBindingPutRequest {
    * value; a binding created without it starts with it off.
    */
   finalReplyOnly?: boolean;
+  /**
+   * Delivery preference (see `FeishuBindingInfo.renderMarkdown`). Omitted keeps the stored
+   * value; a binding created without it starts with it ON.
+   */
+  renderMarkdown?: boolean;
 }
 
 /**
@@ -1908,6 +1938,11 @@ export interface TelegramBindingPutRequest {
    * value; a binding created without it starts with it off.
    */
   finalReplyOnly?: boolean;
+  /**
+   * Delivery preference (see `TelegramBindingInfo.renderMarkdown`). Omitted keeps the stored
+   * value; a binding created without it starts with it ON.
+   */
+  renderMarkdown?: boolean;
 }
 
 /**
@@ -1935,6 +1970,11 @@ export interface QQBindingPutRequest {
    * value; a binding created without it starts with it off.
    */
   finalReplyOnly?: boolean;
+  /**
+   * Delivery preference (see `QQBindingInfo.renderMarkdown`). Omitted keeps the stored
+   * value; a binding created without it starts with it ON.
+   */
+  renderMarkdown?: boolean;
 }
 
 /**

@@ -76,6 +76,8 @@ import type {
   MessagingInboundMessage,
 } from "../src/runtime/messaging/connector.js";
 import { FeishuConnector } from "../src/runtime/messaging/feishu-connector.js";
+import type { FeishuCard } from "../src/runtime/messaging/feishu-card.js";
+import { FeishuApiError } from "../src/runtime/messaging/feishu-sdk.js";
 import {
   MessagingPermissionError,
   collectUnderCap,
@@ -131,6 +133,15 @@ interface ImageFetch {
   maxBytes: number;
 }
 
+/** The rich-text content out of a card, which is the whole of what a card carries here. */
+function cardContent(card: FeishuCard): string {
+  const element = card.body.elements[0];
+  if (card.schema !== "2.0" || element?.tag !== "markdown") {
+    throw new Error(`unexpected card envelope: ${JSON.stringify(card)}`);
+  }
+  return element.content;
+}
+
 /** The bytes as a stream, so the fakes read them through the real capped reader. */
 async function* oneChunk(bytes: Buffer): AsyncGenerator<Uint8Array> {
   yield bytes;
@@ -144,6 +155,15 @@ const FILE_BYTES = Buffer.from("quarterly revenue: 42\n", "utf8");
 
 class FakeClient implements FeishuApiClient {
   readonly sends: Sent[] = [];
+  /**
+   * The card sends specifically, as the rich-text content they carried.
+   *
+   * A card is ALSO recorded in `sends` as an ordinary text send, so the routing, ordering
+   * and threading assertions read the same whichever transport carried the message — those
+   * are what they are about. This list is what separates the two, and it is what a test
+   * asserting the plain path checks is empty.
+   */
+  readonly cards: SentText[] = [];
   /** When each send was recorded, parallel to `sends`: what the pacing test measures. */
   readonly sentAt: number[] = [];
   readonly imageFetches: ImageFetch[] = [];
@@ -169,6 +189,28 @@ class FakeClient implements FeishuApiClient {
     this.sdk.noteSend();
     this.record({ kind: "reply", target: messageId, text });
     await this.sdk.hold();
+  }
+  async sendCard(chatId: string, card: FeishuCard): Promise<void> {
+    // The typed failures fire on a card exactly as they do on a text bubble: Feishu refuses a
+    // missing scope on EVERY send, whatever the msg_type, so a fake that let a card through
+    // would make the card path quietly immune to the failure the text path is asserted on.
+    if (this.sdk.failSendWith !== null) throw this.sdk.failSendWith;
+    if (this.sdk.failCard !== null) throw this.sdk.failCard;
+    if (this.sdk.failSend !== null) throw new Error(this.sdk.failSend);
+    this.sdk.noteSend();
+    this.recordCard({ kind: "send", target: chatId, text: cardContent(card) });
+    await this.sdk.hold();
+  }
+  async replyCard(messageId: string, card: FeishuCard): Promise<void> {
+    if (this.sdk.failSendWith !== null) throw this.sdk.failSendWith;
+    if (this.sdk.failCard !== null) throw this.sdk.failCard;
+    this.sdk.noteSend();
+    this.recordCard({ kind: "reply", target: messageId, text: cardContent(card) });
+    await this.sdk.hold();
+  }
+  private recordCard(sent: SentText): void {
+    this.cards.push(sent);
+    this.record(sent);
   }
   private record(sent: SentText): void {
     this.sends.push(sent);
@@ -261,6 +303,11 @@ class FakeSdk implements FeishuSdk {
   /** Non-null makes every outbound sendText throw THIS — for the failure shapes that carry data. */
   failSendWith: Error | null = null;
   /**
+   * Non-null makes every CARD send throw this, leaving the plain text sends working — the
+   * shape of a channel that refuses a rendering and accepts the message behind it.
+   */
+  failCard: Error | null = null;
+  /**
    * Non-null holds every createClient until it resolves, which is what makes the bridge's
    * one await between reading the binding row and its first send observable to a test.
    */
@@ -317,6 +364,10 @@ class FakeSdk implements FeishuSdk {
   /** Just the text messages — for the assertions that read `.text`. */
   allTexts(): SentText[] {
     return this.allSends().filter((s): s is SentText => s.kind === "send" || s.kind === "reply");
+  }
+  /** Only the messages that went out as an interactive card, across every client. */
+  allCards(): SentText[] {
+    return this.clients.flatMap((c) => c.cards);
   }
   /** Every image download asked of any client, in order. */
   allImageFetches(): ImageFetch[] {
@@ -1145,12 +1196,19 @@ describe("messaging binding routes and bridge", () => {
    */
   const SPOKEN = "Line one.\n\n  Line two.  \nLine three.";
 
-  /** SID2 replying with one fixed text, bound and connected, ready to be messaged. */
+  /**
+   * SID2 replying with one fixed text, bound and connected, ready to be messaged.
+   *
+   * Markdown rendering is OFF unless a case turns it on: these cases are about which lines
+   * become which messages, and SPOKEN's indent and trailing padding are the point of the
+   * fixture — a rendering pass normalizes exactly that whitespace away. The interaction
+   * between the two options has its own case below.
+   */
   const bindReplying = async (text: string, put: Record<string, unknown>) => {
     const row2 = sessionRowOf(SID2, projectId);
     t.deps.sessionsRepo.insert(row2);
     t.deps.manager.adopt(row2, multiMessageFakeSession(SID2, [text]));
-    await bindEnabled(SID2, { ...PUT_BODY, ...put });
+    await bindEnabled(SID2, { ...PUT_BODY, renderMarkdown: false, ...put });
   };
 
   /** One inbound text into a direct chat, which becomes the reply target. */
@@ -1249,7 +1307,12 @@ describe("messaging binding routes and bridge", () => {
     row2.approvalMode = "always-ask";
     t.deps.sessionsRepo.insert(row2);
     t.deps.manager.adopt(row2, replyThenApprovalFakeSession(SID2, SPOKEN));
-    await bindEnabled(SID2, { ...PUT_BODY, appId: "cli_lines_approve", linePerMessage: true });
+    await bindEnabled(SID2, {
+      ...PUT_BODY,
+      appId: "cli_lines_approve",
+      linePerMessage: true,
+      renderMarkdown: false,
+    });
     // Hold every send open: the whole reply is then still in flight when the approval fires.
     let release = () => {};
     fake.heldSends = new Promise<void>((resolve) => {
@@ -1416,6 +1479,10 @@ describe("messaging binding routes and bridge", () => {
       appId: "cli_final_lines",
       finalReplyOnly: true,
       linePerMessage: true,
+      // Markdown rendering off: this case is about WHICH text is split and how, and SPOKEN's
+      // indent and trailing padding are the point of the fixture — a rendering pass
+      // normalizes exactly that whitespace away.
+      renderMarkdown: false,
     });
     await messageBot("oc_final_lines");
     await waitFor(() => fake.allSends().length === 3);
@@ -1464,6 +1531,96 @@ describe("messaging binding routes and bridge", () => {
     const both = t.deps.messagingRepo.find(SID, "feishu");
     expect(both?.finalReplyOnly).toBe(false);
     expect(both?.linePerMessage).toBe(true);
+  });
+
+  // —— renderMarkdown: the per-binding formatting option ————————————————————————
+
+  /** A reply with the constructs Feishu's rich-text component renders. */
+  const RICH = "## Result\n\nRan **2** tests, `all green`.\n\n- one\n- two";
+
+  it("renderMarkdown on (the default) sends an interactive card carrying the rich text", async () => {
+    await bindReplying(RICH, { appId: "cli_md_on", renderMarkdown: undefined });
+    // The default, on a binding whose PUT never mentioned the field.
+    expect(t.deps.messagingRepo.find(SID2, "feishu")?.renderMarkdown).toBe(true);
+    await messageBot("oc_md_on");
+    await waitFor(() => fake.allSends().length > 0);
+    // A card, not a text bubble — which is the whole difference the switch makes here.
+    expect(fake.allCards()).toEqual([{ kind: "send", target: "oc_md_on", text: RICH }]);
+  });
+
+  it("renderMarkdown off reproduces the plain text bubble, byte for byte", async () => {
+    await bindReplying(RICH, { appId: "cli_md_off", renderMarkdown: false });
+    await messageBot("oc_md_off");
+    await waitFor(() => fake.allSends().length > 0);
+    // No card at all, and the reply's own characters: what this channel sent before the
+    // option existed.
+    expect(fake.allCards()).toEqual([]);
+    expect(fake.allSends()).toEqual([{ kind: "send", target: "oc_md_off", text: RICH }]);
+  });
+
+  it("a card Feishu REFUSES falls back to a plain text bubble, so the reply still arrives", async () => {
+    await bindReplying(RICH, { appId: "cli_md_reject", renderMarkdown: true });
+    // The platform answering `{code}`: it received the request and delivered nothing.
+    fake.failCard = new FeishuApiError("Message send failed: invalid card (code 230001)", 230001);
+    await messageBot("oc_md_reject");
+    await waitFor(() => fake.allSends().length === 1);
+    // Two attempts, one delivery: the card was refused and the same message went out as
+    // text. The formatting is what the refusal cost, never the answer.
+    expect(fake.allCards()).toHaveLength(0);
+    expect(fake.allSends()).toEqual([{ kind: "send", target: "oc_md_reject", text: RICH }]);
+    // And it is a delivery, not a failure: nothing is recorded against the binding.
+    expect(
+      t.deps.db.prepare("SELECT code FROM error_records WHERE source = 'messaging'").all(),
+    ).toEqual([]);
+  });
+
+  it("a card that never completed is NOT retried, since it may already have been delivered", async () => {
+    await bindReplying(RICH, { appId: "cli_md_timeout", renderMarkdown: true });
+    // No `{code}`: a timeout or a reset, which says nothing about whether the card landed.
+    fake.failCard = new Error("Message send failed: Message send timed out after 60000ms");
+    await messageBot("oc_md_timeout");
+    // The failure is recorded and nothing goes out a second time — a retry here would post
+    // the reply twice.
+    await waitFor(
+      () =>
+        (
+          t.deps.db.prepare("SELECT code FROM error_records WHERE source = 'messaging'").all() as {
+            code: string;
+          }[]
+        ).length > 0,
+    );
+    expect(fake.allSends()).toEqual([]);
+  });
+
+  it("with linePerMessage, each line is converted on its own", async () => {
+    // A table row alone is not a table, and that is the honest reading of a message
+    // containing one line: it arrives as the text it is rather than as a broken construct.
+    await bindReplying("**bold line**\n| a | b |", {
+      appId: "cli_md_lines",
+      linePerMessage: true,
+      renderMarkdown: true,
+    });
+    await messageBot("oc_md_lines");
+    await waitFor(() => fake.allSends().length === 2);
+    expect(fake.allCards().map((c) => c.text)).toEqual(["**bold line**", "| a | b |"]);
+  });
+
+  it("PUT saves renderMarkdown, defaults it ON, and an omitted one keeps the stored value", async () => {
+    // A binding created without an opinion renders Markdown: the corrected behaviour is the
+    // default, because sending the model's Markdown as characters was the defect.
+    await api.put(BASE(SID), { appId: PUT_BODY.appId, appSecret: PUT_BODY.appSecret });
+    expect(t.deps.messagingRepo.find(SID, "feishu")?.renderMarkdown).toBe(true);
+    // Round trip: PUT -> row -> the masked read the editor renders its switch from.
+    await api.put(BASE(SID), { ...PUT_BODY, renderMarkdown: false });
+    expect(t.deps.messagingRepo.find(SID, "feishu")?.renderMarkdown).toBe(false);
+    const read = (await (await api.get(BASE(SID))).json()) as FeishuBindingResponse;
+    expect(read.binding?.renderMarkdown).toBe(false);
+    // A credentials-only save says nothing about it, so an OFF binding stays off — the
+    // default must not creep back in on every later save.
+    await api.put(BASE(SID), { appId: PUT_BODY.appId });
+    expect(t.deps.messagingRepo.find(SID, "feishu")?.renderMarkdown).toBe(false);
+    await api.put(BASE(SID), { ...PUT_BODY, renderMarkdown: true });
+    expect(t.deps.messagingRepo.find(SID, "feishu")?.renderMarkdown).toBe(true);
   });
 
   it("the streamed compaction summary is not a reply and never reaches the chat", async () => {

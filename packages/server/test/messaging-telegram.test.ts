@@ -22,6 +22,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   approvalDecision,
   assistantText,
+  attachedFileLine,
   matchAttachedFileLine,
   modelVisiblePath,
   scratchpadDir,
@@ -85,6 +86,8 @@ interface SentMessage {
   text: string;
   replyTo?: number;
   threadId?: number;
+  /** Present only when the send asked Telegram to parse the text — the formatted path. */
+  parseMode?: "HTML";
 }
 
 /**
@@ -157,8 +160,15 @@ class FakeBotClient implements TelegramBotClient {
     text: string;
     replyToMessageId?: number;
     messageThreadId?: number;
+    parseMode?: "HTML";
   }): Promise<void> {
     this.sendCalls++;
+    // The 400 Telegram answers for HTML it will not parse: only the formatted attempt fails,
+    // and the same message without `parse_mode` goes through — which is the shape the
+    // entity fallback has to survive.
+    if (args.parseMode !== undefined && this.t.failParsedSend !== null) {
+      throw new TelegramApiError(this.t.failParsedSend, this.t.failParsedSendCode);
+    }
     if (this.t.failSend !== null) {
       // A plain Error is a transport failure (no envelope, so no code); a TelegramApiError is
       // Telegram answering `ok: false`, and only its code may be branched on.
@@ -176,6 +186,7 @@ class FakeBotClient implements TelegramBotClient {
       text: args.text,
       ...(args.replyToMessageId !== undefined ? { replyTo: args.replyToMessageId } : {}),
       ...(args.messageThreadId !== undefined ? { threadId: args.messageThreadId } : {}),
+      ...(args.parseMode !== undefined ? { parseMode: args.parseMode } : {}),
     });
   }
 
@@ -276,6 +287,9 @@ class FakeTelegramTransport {
   failSend: string | null = null;
   /** `failSend`'s Bot API `error_code`; null makes it a transport failure, which carries none. */
   failSendCode: number | null = null;
+  /** Non-null makes only the sends that carry a `parse_mode` throw (HTML Telegram will not parse). */
+  failParsedSend: string | null = null;
+  failParsedSendCode: number | undefined = 400;
   /** Non-null makes only the sends that carry a forum topic throw (a deleted/closed topic). */
   failThreadedSend: string | null = null;
   /** `failThreadedSend`'s `error_code`: 400 is the deleted-topic shape, 429 a flood wait. */
@@ -361,6 +375,8 @@ class FakeFeishuSdk implements FeishuSdk {
       },
       async sendText() {},
       async replyText() {},
+      async sendCard() {},
+      async replyCard() {},
       async botOpenId() {
         return null;
       },
@@ -872,7 +888,12 @@ describe("telegram binding routes and connector loop", () => {
     expect(row.lastChatIsDirect).toBe(true);
     // Task end mirrors the assistant text to that chat as a plain send (direct chat).
     await waitFor(() => fake.allSends().length > 0);
-    expect(fake.allSends()).toContainEqual({ chatId: "42424242", text: "Reply text" });
+    // `parse_mode` rides every relayed reply: rendering the model's Markdown is the default.
+    expect(fake.allSends()).toContainEqual({
+      chatId: "42424242",
+      text: "Reply text",
+      parseMode: "HTML",
+    });
 
     // A second message is processed exactly once: the loop confirmed the first update
     // via its offset, so nothing re-delivers.
@@ -947,6 +968,7 @@ describe("telegram binding routes and connector loop", () => {
     expect(fake.allSends()).toContainEqual({
       chatId: "-1002233445566",
       text: "Reply text",
+      parseMode: "HTML",
       replyTo: 77,
     });
   });
@@ -1083,6 +1105,7 @@ describe("telegram binding routes and connector loop", () => {
     expect(fake.allSends()).toContainEqual({
       chatId: String(chatId),
       text: "Reply text",
+      parseMode: "HTML",
       replyTo: 4,
     });
   });
@@ -1270,16 +1293,20 @@ describe("telegram binding routes and connector loop", () => {
     );
   });
 
-  it("a threaded send that fails both times surfaces the failure after exactly two attempts", async () => {
+  it("a send that fails every way surfaces the failure after a bounded number of attempts", async () => {
     await bindEnabled(SID);
-    // `Bad Request: chat not found` is a 400 too, so the fallback fires — and then fails as
+    // `Bad Request: chat not found` is a 400 too, so both fallbacks fire — and then fail as
     // well. The reply is lost either way; what must not be lost is the report.
     fake.failSend = "sendMessage failed: Bad Request: chat not found (code 400)";
     fake.failSendCode = 400;
     fake.push(forumText("into a chat that is gone", 207));
     await waitFor(() => runs.length === 1);
     await waitFor(() => t.deps.messaging.statusOf(SID, "telegram").lastDeliveryError !== undefined);
-    expect(fake.allSendCalls()).toBe(2);
+    // Four, and each one is a named step: the two fallbacks compose, the entity one wrapping
+    // the thread one, so a 400 no fallback can fix walks HTML-with-topic,
+    // HTML-without-topic, plain-with-topic, plain-without-topic and then stops. What matters
+    // is that it STOPS — nothing here retries a 429 or a transport failure.
+    expect(fake.allSendCalls()).toBe(4);
     expect(t.deps.messaging.statusOf(SID, "telegram").lastDeliveryError?.detail).toContain(
       "chat not found",
     );
@@ -1590,7 +1617,13 @@ describe("telegram binding routes and connector loop", () => {
     fake.push(privateText("go"));
     await waitFor(() => fake.allSends().length === 3);
     expect(fake.allSends()).toEqual([
-      { chatId: "42424242", text: "Rendered `chart.png`, notes in `notes.md`." },
+      // The backticks the mention scanner reads are also inline code, so the same text is
+      // both a file mention and a rendered construct.
+      {
+        chatId: "42424242",
+        text: "Rendered <code>chart.png</code>, notes in <code>notes.md</code>.",
+        parseMode: "HTML",
+      },
       { kind: "photo", chatId: "42424242", fileName: "chart.png", bytes: PHOTO_BYTES.length },
       { kind: "document", chatId: "42424242", fileName: "notes.md", bytes: 5 },
     ]);
@@ -1609,12 +1642,12 @@ describe("telegram binding routes and connector loop", () => {
     // The first message is already in the chat while the run is still running.
     await waitFor(() => fake.allSends().length === 1);
     expect(t.deps.manager.statusOf(SID2)).toBe("running");
-    expect(fake.allSends()).toEqual([{ chatId: "42424242", text: "step one" }]);
+    expect(fake.allSends()).toEqual([{ chatId: "42424242", text: "step one", parseMode: "HTML" }]);
     release();
     await waitFor(() => fake.allSends().length === 2);
     expect(fake.allSends()).toEqual([
-      { chatId: "42424242", text: "step one" },
-      { chatId: "42424242", text: "step two" },
+      { chatId: "42424242", text: "step one", parseMode: "HTML" },
+      { chatId: "42424242", text: "step two", parseMode: "HTML" },
     ]);
   });
 
@@ -1632,8 +1665,8 @@ describe("telegram binding routes and connector loop", () => {
     await waitFor(() => fake.allSends().length === 2);
     // One reply-to anchors the exchange; the follow-up is a plain send into the same chat.
     expect(fake.allSends()).toEqual([
-      { chatId: "-1002233445566", text: "first", replyTo: 91 },
-      { chatId: "-1002233445566", text: "second" },
+      { chatId: "-1002233445566", text: "first", parseMode: "HTML", replyTo: 91 },
+      { chatId: "-1002233445566", text: "second", parseMode: "HTML" },
     ]);
   });
 
@@ -1648,6 +1681,152 @@ describe("telegram binding routes and connector loop", () => {
     expect(sends.map((s) => s.text.length)).toEqual([4000, 4000, 1000]);
     expect(sends.every((s) => s.chatId === "42424242")).toBe(true);
     expect(sends.map((s) => s.text).join("")).toBe("x".repeat(9000));
+  });
+
+  // —— renderMarkdown: the per-binding formatting option ————————————————————————
+
+  /** SID2 replying with one fixed text, bound and connected, ready to be messaged. */
+  const bindReplying = async (text: string, token: string, put: Record<string, unknown> = {}) => {
+    const row2 = sessionRowOf(SID2, projectId);
+    t.deps.sessionsRepo.insert(row2);
+    t.deps.manager.adopt(row2, echoFakeSession(SID2, runs, text));
+    expect((await api.put(BASE(SID2), { botToken: token, ...put })).status).toBe(200);
+    expect((await api.post(`${BASE(SID2)}/state`, { enabled: true })).status).toBe(200);
+    await waitFor(() => t.deps.messaging.statusOf(SID2, "telegram").state === "connected");
+  };
+
+  it("renders the constructs Telegram has, and degrades the three it does not", async () => {
+    await bindReplying(
+      "## Result\n\nRan **2** tests, `all green`.\n\n- one\n- two\n\n| a | b |\n| - | - |\n| 1 | 2 |",
+      "7000000010:test-secret-MD01-0001",
+    );
+    fake.push(privateText("go"));
+    await waitFor(() => fake.allSends().length === 1);
+    const sent = fake.allTexts()[0]!;
+    expect(sent.parseMode).toBe("HTML");
+    // The heading is a bold line, the bullets are text, the table is a pre block — and the
+    // markup the model wrote is nowhere in the output as characters.
+    expect(sent.text).toBe(
+      [
+        "<b>Result</b>",
+        "",
+        "Ran <b>2</b> tests, <code>all green</code>.",
+        "",
+        "• one\n• two",
+        "",
+        "<pre>| a | b |\n| 1 | 2 |</pre>",
+      ].join("\n"),
+    );
+  });
+
+  it("escapes the model's own HTML characters instead of letting Telegram parse them", async () => {
+    await bindReplying(
+      '5 < 6 & a > b\n\n```js\nconst s = "<script>alert(1)</script>";\n```',
+      "7000000011:test-secret-MD02-0002",
+    );
+    fake.push(privateText("go"));
+    await waitFor(() => fake.allSends().length === 1);
+    expect(fake.allTexts()[0]!.text).toBe(
+      '5 &lt; 6 &amp; a &gt; b\n\n<pre><code class="language-js">const s = "&lt;script&gt;alert(1)&lt;/script&gt;";</code></pre>',
+    );
+  });
+
+  it("renderMarkdown off reproduces the plain send, byte for byte and with no parse_mode", async () => {
+    const raw = "## Result\n\nRan **2** tests.";
+    await bindReplying(raw, "7000000012:test-secret-MD03-0003", { renderMarkdown: false });
+    fake.push(privateText("go"));
+    await waitFor(() => fake.allSends().length === 1);
+    // What this channel sent before the option existed: the characters the model wrote, and
+    // no `parse_mode` field at all.
+    expect(fake.allSends()).toEqual([{ chatId: "42424242", text: raw }]);
+  });
+
+  it("a formatted send Telegram REFUSES falls back to plain text, so the reply still arrives", async () => {
+    const raw = "**bold** and more";
+    await bindReplying(raw, "7000000013:test-secret-MD04-0004");
+    // The 400 Telegram answers for entities it cannot parse. Only the formatted attempt
+    // fails; the same message without `parse_mode` goes through.
+    fake.failParsedSend = "sendMessage failed: Bad Request: can't parse entities (code 400)";
+    fake.push(privateText("go"));
+    await waitFor(() => fake.allSends().length === 1);
+    // Two requests, one delivery: the refusal cost a retry, not the message.
+    expect(fake.allSendCalls()).toBe(2);
+    expect(fake.allSends()).toEqual([{ chatId: "42424242", text: raw }]);
+    expect(t.deps.errorsRepo.recent(projectId).map((r) => r.code)).not.toContain(
+      "messaging_send_failed",
+    );
+  });
+
+  it("a formatted send that never completed is NOT retried, since it may have been delivered", async () => {
+    await bindReplying("**bold**", "7000000014:test-secret-MD05-0005");
+    // A transport failure carries no `error_code`, so it is not Telegram refusing anything.
+    fake.failParsedSend = "sendMessage failed: request timed out";
+    fake.failParsedSendCode = undefined;
+    fake.push(privateText("go"));
+    await waitFor(
+      () => t.deps.messaging.statusOf(SID2, "telegram").lastDeliveryError !== undefined,
+    );
+    expect(fake.allSendCalls()).toBe(1);
+    expect(fake.allSends()).toEqual([]);
+  });
+
+  it("relays a reply quoting an inbound file's path without downgrading the formatting", async () => {
+    // Inbound files and outbound Markdown now share a conversation: an inbound file is folded
+    // into the message text as an `[attached file: <path>]` line, and the model quotes that
+    // path back. The path is scratchpad-shaped and full of characters the converter escapes,
+    // so this is where a formatting bug would show up as a 400 and be SILENTLY downgraded to
+    // plain text by the fallback — the reply would still arrive and nobody would know the
+    // formatting had been lost.
+    const filePath = "/home/u/.penguin/data/scratchpad/session-2026-08-27-aa/my_report_v2.pdf";
+    await bindReplying(
+      `I read ${attachedFileLine(filePath)}\n\nThe file \`${filePath}\` has **3** rows.`,
+      "7000000016:test-secret-MD07-0007",
+    );
+    fake.push(privateText("go"));
+    await waitFor(() => fake.allSends().length === 1);
+    const sent = fake.allTexts()[0]!;
+    // ONE request: the formatted send was accepted, so no fallback ran.
+    expect(fake.allSendCalls()).toBe(1);
+    expect(sent.parseMode).toBe("HTML");
+    // The marker line stays literal and the backticked path is byte-exact inside `<code>`.
+    expect(sent.text).toBe(
+      `I read ${attachedFileLine(filePath)}\n\nThe file <code>${filePath}</code> has <b>3</b> rows.`,
+    );
+  });
+
+  it("chunks a long formatted reply without splitting a code fence or an entity", async () => {
+    // A reply that straddles the size boundary with a fence open across it — the case that
+    // would otherwise reach Telegram as one unterminated block and one wall of prose, and
+    // whose 400 the fallback would then downgrade to plain text.
+    const lines = Array.from({ length: 400 }, (_, i) => `const someValue${i} = ${i};`);
+    await bindReplying(
+      `Here is the file:\n\n\`\`\`ts\n${lines.join("\n")}\n\`\`\`\n\nThat is **all** of it.`,
+      "7000000015:test-secret-MD06-0006",
+    );
+    fake.push(privateText("go"));
+    await waitFor(() => fake.allSends().length >= 3);
+    const sends = fake.allTexts();
+    for (const sent of sends) {
+      expect(sent.parseMode).toBe("HTML");
+      expect(sent.text.length).toBeLessThanOrEqual(4096);
+      // Balanced tags: no message opens a `pre` or a `b` it does not close.
+      expect(sent.text.split("<pre>").length).toBe(sent.text.split("</pre>").length);
+      expect(sent.text.split("<b>").length).toBe(sent.text.split("</b>").length);
+    }
+    // The proof the fence was re-opened rather than merely closed: the block spans several
+    // messages and EVERY one of them is a code block with the language still on it. A cut
+    // that did not re-fence would leave the second message's lines as bare prose.
+    const codeMessages = sends.filter((x) => x.text.includes("const someValue"));
+    expect(codeMessages.length).toBeGreaterThan(1);
+    for (const sent of codeMessages) {
+      expect(sent.text).toContain('<pre><code class="language-ts">');
+      expect(sent.text.endsWith("</code></pre>")).toBe(true);
+    }
+    // Nothing was lost between the messages: every line of the file arrived, and the prose
+    // after the block still renders.
+    const all = sends.map((x) => x.text).join("\n");
+    for (const line of lines) expect(all).toContain(line);
+    expect(all).toContain("That is <b>all</b> of it.");
   });
 
   it("connect drains the dark-period backlog: only messages after enabling reach the Session", async () => {

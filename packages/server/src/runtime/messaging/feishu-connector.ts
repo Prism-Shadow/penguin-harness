@@ -15,8 +15,11 @@ import type {
   MessagingConnectorHandlers,
   MessagingInboundFile,
   MessagingInboundImage,
+  MessagingSendOptions,
 } from "./connector.js";
+import { feishuCardOf } from "./feishu-card.js";
 import type { FeishuApiClient, FeishuCredentials, FeishuMention, FeishuSdk } from "./feishu-sdk.js";
+import { FeishuApiError } from "./feishu-sdk.js";
 
 /** Default Feishu open-platform domain (Lark tenants override it in the form). */
 export const FEISHU_DEFAULT_DOMAIN = "https://open.feishu.cn";
@@ -158,6 +161,34 @@ function fileOfContent(content: string): { fileKey: string; fileName: string } |
   }
 }
 
+/**
+ * One outbound message: an interactive card when the binding asked for Markdown, a plain
+ * `text` bubble when it did not — and a plain `text` bubble anyway if Feishu refuses the
+ * card.
+ *
+ * The fallback runs on a REFUSAL only: a `{code}` envelope means Feishu answered and
+ * delivered nothing, so the same message may safely go out again. A transport failure — a
+ * timeout, a reset — carries no code and propagates untouched, because it may already have
+ * put the card in the chat and a retry would post the reply twice. A permission denial
+ * propagates too: it is not about the card, and its scope names and console link are the
+ * whole of what the user can act on (see MessagingPermissionError).
+ *
+ * The plain text is the model's own Markdown source, unaltered — the same bytes the switch
+ * would have sent with formatting off.
+ */
+function sendFormatted(
+  opts: MessagingSendOptions | undefined,
+  text: string,
+  asCard: (card: ReturnType<typeof feishuCardOf>) => Promise<void>,
+  asText: (plain: string) => Promise<void>,
+): Promise<void> {
+  if (opts?.markdown !== true) return asText(text);
+  return asCard(feishuCardOf(text)).catch((err: unknown) => {
+    if (!(err instanceof FeishuApiError)) throw err;
+    return asText(text);
+  });
+}
+
 export class FeishuConnector implements MessagingChannelConnector {
   readonly channel = "feishu" as const;
 
@@ -167,9 +198,29 @@ export class FeishuConnector implements MessagingChannelConnector {
     return feishuConfigOf(config);
   }
 
-  createClient(config: Record<string, unknown>): Promise<MessagingClient> {
-    // FeishuApiClient already satisfies MessagingClient member for member.
-    return this.sdk.createClient(this.credsOf(config));
+  async createClient(config: Record<string, unknown>): Promise<MessagingClient> {
+    const api = await this.sdk.createClient(this.credsOf(config));
+    // FeishuApiClient satisfies the seam's other members verbatim; only the two text sends
+    // are wrapped, and only to choose between a card and a bubble (see sendFormatted).
+    return {
+      checkCredentials: () => api.checkCredentials(),
+      sendText: (chatId, text, opts) =>
+        sendFormatted(
+          opts,
+          text,
+          (card) => api.sendCard(chatId, card),
+          (plain) => api.sendText(chatId, plain),
+        ),
+      replyText: (messageId, text, opts) =>
+        sendFormatted(
+          opts,
+          text,
+          (card) => api.replyCard(messageId, card),
+          (plain) => api.replyText(messageId, plain),
+        ),
+      sendImage: (chatId, file) => api.sendImage(chatId, file),
+      sendFile: (chatId, file) => api.sendFile(chatId, file),
+    };
   }
 
   async connect(

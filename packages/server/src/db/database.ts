@@ -18,7 +18,7 @@ const sqlite = process.getBuiltinModule("node:sqlite");
 /**
  * Opens an EXISTING database for a narrow write, without running any schema work.
  *
- * `openDatabase` migrates — CREATE TABLE, six ensureColumn calls, a DROP INDEX and a backfill.
+ * `openDatabase` migrates — CREATE TABLE, several ensureColumn calls, a DROP INDEX and a backfill.
  * That is right for the process that owns the database and wrong for a short-lived CLI writing
  * one row (`penguin auth token`): after `penguin update` the CLI on disk can be NEWER than the
  * running server, and migrating under a live server's prepared statements is not something a
@@ -57,6 +57,11 @@ export function openDatabase(dbPath: string): DatabaseSync {
   ensureColumn(db, "trace_files", "page_stats", "TEXT");
   ensureColumn(db, "messaging_bindings", "line_per_message", "INTEGER NOT NULL DEFAULT 0");
   ensureColumn(db, "messaging_bindings", "final_reply_only", "INTEGER NOT NULL DEFAULT 0");
+  // DEFAULT 1, unlike every other added flag here: this one's default is the CORRECTED
+  // behaviour, not the previous one. Sending the model's Markdown as characters was the
+  // defect, so an existing binding starts rendering it — a visible change to every relayed
+  // message, recorded in the release's backward-compatibility entry.
+  ensureColumn(db, "messaging_bindings", "render_markdown", "INTEGER NOT NULL DEFAULT 1");
   ensureColumn(db, "messaging_bindings", "last_inbound_message_id", "TEXT");
   // Superseded by idx_usage_session_ts (session_id, ts), which SCHEMA_SQL just created on
   // this database: the old index is a strict prefix of it, so every query it served is

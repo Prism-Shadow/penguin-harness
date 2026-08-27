@@ -3,22 +3,24 @@
 - **Date:** 2026-08-27
 - **Type:** process
 - **Scope:** `server`, `web`
-- **PR:** [#507](https://github.com/Prism-Shadow/penguin-harness/pull/507), [#508](https://github.com/Prism-Shadow/penguin-harness/pull/508), [#512](https://github.com/Prism-Shadow/penguin-harness/pull/512)
+- **PR:** [#507](https://github.com/Prism-Shadow/penguin-harness/pull/507), [#508](https://github.com/Prism-Shadow/penguin-harness/pull/508), [#512](https://github.com/Prism-Shadow/penguin-harness/pull/512), [#519](https://github.com/Prism-Shadow/penguin-harness/pull/519)
 - **Breaking:** yes — on downgrade only: a Telegram binding whose last message was written in a forum topic sends nothing on a build from before this change until its next inbound message
 
 [中文版](2026-08-27-backward-compatibility.zh.md)
 
-This batch touched four things that outlive a release.
+This batch touched five things that outlive a release.
 [Scoping browser-persisted UI state to its data root](2026-08-26-install-scoped-local-state.md)
 added a file in the data root, `<root>/install-id`, and a `localStorage` entry,
 `penguin.installId`;
 [a Telegram reply carrying the forum topic it was asked in](2026-08-26-telegram-forum-topics.md)
 changed what `messaging_bindings.last_chat_id` means on an existing `web.db`, without adding or
 dropping a column or rewriting a row; and
-[relaying a run's final reply only](2026-08-27-messaging-final-reply-only.md) added a column,
-`messaging_bindings.final_reply_only`. Only the browser side and the `last_chat_id` change needed
-a decision; the file, the key and the new column are recorded here too, so a reader looking for
-"does my install need anything?" finds every answer in one place.
+[relaying a run's final reply only](2026-08-27-messaging-final-reply-only.md) and
+[relaying a reply's Markdown as formatting](2026-08-27-messaging-markdown.md) each added a column,
+`messaging_bindings.final_reply_only` and `messaging_bindings.render_markdown`. Only the browser
+side, the `last_chat_id` change and the second of those columns needed a decision; the file, the
+key and the purely additive column are recorded here too, so a reader looking for "does my install
+need anything?" finds every answer in one place.
 
 
 ## The browser that has keys but no recorded id
@@ -104,10 +106,35 @@ A downgrade is invisible in both directions. What the column does is done by the
 older server ignores a column it has never heard of and relays every message again — the setting
 is still on disk, and an upgrade back honours it without the user re-saving anything.
 
+## The added `render_markdown` column, whose default is not the old behaviour
+
+[Relaying a reply's Markdown as formatting](2026-08-27-messaging-markdown.md) added
+`messaging_bindings.render_markdown INTEGER NOT NULL DEFAULT 1`, ALTERed in on open by the same
+`ensureColumn` list. The mechanics are the ones `line_per_message` and `final_reply_only` already
+took; the DEFAULT is not.
+
+This is the one added flag whose default is the CORRECTED behaviour rather than the previous one,
+and that was the decision. Relaying the model's Markdown as characters — `**bold**`, `## heading`,
+raw code fences — was the defect being fixed, so a default of 0 would have shipped the fix to
+nobody and left every existing binding on the broken side of a switch they would have to go and
+find. **Every existing binding therefore starts rendering Markdown on the first open of an updated
+build.** Nothing is asked of the user and no row is rewritten, but it is a visible change to every
+relayed message, and a user who wants the old bytes turns the switch off in the binding editor —
+off reproduces the previous plain-text relay exactly, on every channel.
+
+The `ensureColumn` entry stays for as long as a `web.db` formed before this release can be opened,
+on the same terms as the rest of that list.
+
+A downgrade is invisible in both directions. What the column does is done by the bridge and the
+connectors, so an older server ignores a column it has never heard of and relays plain text again
+— the setting is still on disk, and an upgrade back honours it without the user re-saving anything.
+
 ## Compatibility
 
 No action is required on upgrade or on downgrade. The single manual step, for a user who wiped
-a data root before this release, is above.
+a data root before this release, is above. The one thing to expect rather than do: every messaging
+binding starts rendering Markdown, which changes how its relayed messages look until the switch is
+turned off.
 
 Upgrading asks nothing of the user. The first message after the upgrade rewrites the column as
 usual, and until then the stored bare id keeps working exactly as it did.

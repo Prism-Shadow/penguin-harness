@@ -42,7 +42,7 @@ import type {
   QQSendArgs,
   QQTransport,
 } from "../src/runtime/messaging/qq-api.js";
-import { normalizeDispatch, qqSendErrorText } from "../src/runtime/messaging/qq-api.js";
+import { QQApiError, normalizeDispatch, qqSendErrorText } from "../src/runtime/messaging/qq-api.js";
 import type { QQConnectorOpts } from "../src/runtime/messaging/qq-connector.js";
 import {
   QQ_PASSIVE_WINDOW_MS,
@@ -90,6 +90,11 @@ class FakeQQClient implements QQBotClient {
   }
 
   async sendMessage(args: QQSendArgs): Promise<void> {
+    // The platform refusing a `msg_type: 2` body while accepting the plain one behind it —
+    // the shape the markdown-to-text fallback has to survive.
+    if (args.markdown !== undefined && this.t.failMarkdownSend !== null) {
+      throw this.t.failMarkdownSend;
+    }
     if (this.t.failSend !== null) throw new Error(this.t.failSend);
     this.sends.push(args);
   }
@@ -117,6 +122,8 @@ class FakeQQTransport implements QQTransport {
   failAuth: string | null = null;
   /** Non-null makes every send throw with this message. */
   failSend: string | null = null;
+  /** Non-null makes only the `msg_type: 2` sends throw THIS, leaving the plain ones working. */
+  failMarkdownSend: Error | null = null;
 
   createClient(creds: QQCredentials): FakeQQClient {
     const client = new FakeQQClient(creds, this);
@@ -352,8 +359,8 @@ describe("qq binding routes and the passive reply budget", () => {
   let runs: TextPayload[][];
 
   /** Save the credentials, then flip the toggle on and wait for the gateway handshake. */
-  const bindEnabled = async (sid: string, appId = APP_ID) => {
-    expect((await api.put(BASE(sid), { appId, appSecret: APP_SECRET })).status).toBe(200);
+  const bindEnabled = async (sid: string, appId = APP_ID, put: Record<string, unknown> = {}) => {
+    expect((await api.put(BASE(sid), { appId, appSecret: APP_SECRET, ...put })).status).toBe(200);
     expect((await api.post(`${BASE(sid)}/state`, { enabled: true })).status).toBe(200);
     await waitFor(() => t.deps.messaging.statusOf(sid, "qq").state === "connected");
   };
@@ -547,6 +554,81 @@ describe("qq binding routes and the passive reply budget", () => {
       msgSeq: 1,
     });
     expect(runs).toHaveLength(0);
+  });
+
+  // —— renderMarkdown: the per-binding formatting option ————————————————————————
+
+  it("renders the constructs QQ has, and degrades the two it does not", async () => {
+    const row = sessionRowOf(SID2, projectId);
+    t.deps.sessionsRepo.insert(row);
+    t.deps.manager.adopt(
+      row,
+      multiMessageFakeSession(SID2, [
+        "## Result\n\nRan **2** tests, `all green`.\n\n```py\n# note\nx = a ** b\n```",
+      ]),
+    );
+    await bindEnabled(SID2);
+    await fake.lastGateway().fire(c2cText("go", "msg_md"));
+    await waitFor(() => fake.allSends().length === 1);
+    // The heading and the bold survive; inline code loses its backticks and the fenced block
+    // becomes plain escaped lines, this channel having no code syntax at all. Nothing arrives
+    // as a wall of literal backticks, and no character is lost — only backslashes added.
+    expect(fake.allSends()[0]!.markdown).toBe(
+      "## Result\n\nRan **2** tests, all green.\n\n\\# note\nx = a \\*\\* b",
+    );
+  });
+
+  it("renderMarkdown off reproduces the plain msg_type 0 send, byte for byte", async () => {
+    const raw = "## Result\n\nRan **2** tests.";
+    const row = sessionRowOf(SID2, projectId);
+    t.deps.sessionsRepo.insert(row);
+    t.deps.manager.adopt(row, multiMessageFakeSession(SID2, [raw]));
+    await bindEnabled(SID2, APP_ID, { renderMarkdown: false });
+    await fake.lastGateway().fire(c2cText("go", "msg_md_off"));
+    await waitFor(() => fake.allSends().length === 1);
+    const sent = fake.allSends()[0]!;
+    // No markdown body at all, and the reply's own characters: what this channel sent
+    // before the option existed.
+    expect(sent.markdown).toBeUndefined();
+    expect(sent.content).toBe(raw);
+  });
+
+  it("a markdown send the platform REFUSES falls back to plain text, at the cost of one slot", async () => {
+    const raw = "**bold** and more";
+    const row = sessionRowOf(SID2, projectId);
+    t.deps.sessionsRepo.insert(row);
+    t.deps.manager.adopt(row, multiMessageFakeSession(SID2, [raw]));
+    await bindEnabled(SID2);
+    fake.failMarkdownSend = new QQApiError(
+      "Message send failed: bad markdown (code 40054001)",
+      40054001,
+    );
+    await fake.lastGateway().fire(c2cText("go", "msg_md_reject"));
+    await waitFor(() => fake.allSends().length === 1);
+    const sent = fake.allSends()[0]!;
+    expect(sent.markdown).toBeUndefined();
+    expect(sent.content).toBe(raw);
+    // The retry needs a FRESH msg_seq — a repeated (msg_id, msg_seq) pair is refused rather
+    // than deduplicated — so the fallback costs a second slot of the four this message funds.
+    expect(sent.msgSeq).toBe(2);
+  });
+
+  it("a refusal that was not about the body is not retried, so the reserved slot is kept", async () => {
+    const row = sessionRowOf(SID2, projectId);
+    t.deps.sessionsRepo.insert(row);
+    t.deps.manager.adopt(row, multiMessageFakeSession(SID2, ["**bold**"]));
+    await bindEnabled(SID2);
+    // 40034128 is "the window closed, or the replies ran out". Plain text fails identically,
+    // and the attempt would spend a slot to learn nothing.
+    fake.failMarkdownSend = new QQApiError(
+      "Message send failed: reply limit (code 40034128)",
+      40034128,
+    );
+    await fake.lastGateway().fire(c2cText("go", "msg_md_nobody"));
+    await waitFor(() =>
+      t.deps.errorsRepo.recent(projectId).some((r) => r.code === "messaging_send_failed"),
+    );
+    expect(fake.allSends()).toEqual([]);
   });
 
   // —— The budget ——————————————————————————————————————————————————————————
