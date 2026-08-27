@@ -45,6 +45,10 @@
     "./secret-file": {
       "types": "./dist/secret-file.d.ts",
       "import": "./dist/secret-file.js"
+    },
+    "./extension": {
+      "types": "./dist/extension/index.d.ts",
+      "import": "./dist/extension/index.js"
     }
   },
   "main": "./dist/index.js",
