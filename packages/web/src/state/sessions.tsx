@@ -23,7 +23,15 @@
  * user-event subscription) and republishes the store's state through the same context value
  * as before. Mutations read current values via store.getState() (the old refs' job).
  */
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { ReactNode } from "react";
 import type {
   ServerEvent,
@@ -783,7 +791,15 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     };
   }, [projectId]);
 
+  /**
+   * The Project and its Agent set: what the list is OF. A change here invalidates every row
+   * on screen, so it clears them. The machine set is deliberately not part of it — see below.
+   */
+  const contextKey = `${projectId ?? ""} ${agentIdsKey}`;
+  const appliedContext = useRef<string | null>(null);
   useEffect(() => {
+    const contextChanged = appliedContext.current !== contextKey;
+    appliedContext.current = contextKey;
     // Sync the fetch context and reset the loaded pages in the same synchronous step:
     // reload() picks the categories to refetch from pageState, so a Project switch can't
     // carry folder page state across via shared Agent ids (default_agent exists in every
@@ -795,24 +811,36 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       projectId,
       agentIds: agentIdsKey === "" ? [] : agentIdsKey.split(","),
       machineIds: machineIdsKey === "" ? [] : machineIdsKey.split(","),
-      sessions: [],
-      pageState: new Map(),
-      countsByAgent: new Map(),
-      workspaceCountsByAgent: new Map(),
-      // The pages were just cleared, so the list is loading from this instant — including
-      // the window where the Agent set itself is still being refetched (a Project switch
-      // empties it, which makes reload() below return without fetching or clearing the
-      // flag). Raising it HERE, on fetch-context change, is what keeps an unrelated
-      // reloadAgents() — same agent set, fired after every completed turn — from flapping
-      // the app-wide flag.
-      loading: true,
+      // Cleared only when the CONTEXT changed. A machine appearing, or going unreachable and
+      // dropping out, changes which servers are asked — not whether what is already on screen
+      // is still true. reload() below rebuilds the list wholesale from whatever answers, so a
+      // departed machine's rows leave on their own; clearing first would instead blank the
+      // sidebar, and with it the chat page, for as long as an ssh probe takes. A machine that
+      // flaps would do it repeatedly, which is the bug this guard exists for.
+      ...(contextChanged
+        ? {
+            sessions: [],
+            pageState: new Map(),
+            countsByAgent: new Map(),
+            workspaceCountsByAgent: new Map(),
+            // The pages were just cleared, so the list is loading from this instant —
+            // including the window where the Agent set itself is still being refetched (a
+            // Project switch empties it, which makes reload() below return without fetching
+            // or clearing the flag). Raising it HERE, on fetch-context change, is what keeps
+            // an unrelated reloadAgents() — same agent set, fired after every completed turn
+            // — from flapping the app-wide flag.
+            loading: true,
+          }
+        : {}),
     });
     // Which machine owns which Session is rebuilt by the very fetch below, so the old
     // answers are dropped with the rows they described: a stale entry would route a call at
-    // a machine that may no longer hold — or no longer have — that Session.
-    forgetSessionMachines();
+    // a machine that may no longer hold — or no longer have — that Session. Only alongside
+    // the rows themselves: dropped while they are still displayed, every one of them would
+    // route at THIS server until the refetch lands.
+    if (contextChanged) forgetSessionMachines();
     void store.getState().reload();
-  }, [store, projectId, agentIdsKey, machineIdsKey]);
+  }, [store, projectId, agentIdsKey, machineIdsKey, contextKey]);
 
   // User-level event stream (/api/events); see applyUserEvent for what each event does. The
   // connection stays a single one for the whole login session and doesn't reconnect on Project
