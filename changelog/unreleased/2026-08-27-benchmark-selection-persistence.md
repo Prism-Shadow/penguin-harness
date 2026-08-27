@@ -3,6 +3,7 @@
 - **Date:** 2026-08-27
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#515](https://github.com/Prism-Shadow/penguin-harness/pull/515)
 - **Issue:** [#181](https://github.com/Prism-Shadow/penguin-harness/issues/181)
 
 [中文版](2026-08-27-benchmark-selection-persistence.zh.md)
