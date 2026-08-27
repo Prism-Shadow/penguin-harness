@@ -3,6 +3,7 @@
 - **Date:** 2026-08-26
 - **Type:** fix
 - **Scope:** `server`, `docs`
+- **PR:** [#502](https://github.com/Prism-Shadow/penguin-harness/pull/502)
 
 [中文版](2026-08-26-model-oauth-desktop-callback.zh.md)
 
