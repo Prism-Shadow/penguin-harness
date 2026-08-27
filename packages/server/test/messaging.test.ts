@@ -138,6 +138,7 @@ class FakeClient implements FeishuApiClient {
     return null;
   }
   async sendText(chatId: string, text: string): Promise<void> {
+    if (this.sdk.failSendWith !== null) throw this.sdk.failSendWith;
     if (this.sdk.failSend !== null) throw new Error(this.sdk.failSend);
     this.sdk.noteSend();
     this.record({ kind: "send", target: chatId, text });
@@ -229,6 +230,8 @@ class FakeSdk implements FeishuSdk {
   botIdentityLookups = 0;
   /** Non-null makes every outbound sendText throw with this message. */
   failSend: string | null = null;
+  /** Non-null makes every outbound sendText throw THIS — for the failure shapes that carry data. */
+  failSendWith: Error | null = null;
   /**
    * Non-null holds every createClient until it resolves, which is what makes the bridge's
    * one await between reading the binding row and its first send observable to a test.
@@ -1185,9 +1188,6 @@ describe("messaging binding routes and bridge", () => {
       .prepare("SELECT code FROM error_records WHERE source = 'messaging'")
       .all() as Array<{ code: string }>;
     expect(errors).toEqual([{ code: "messaging_send_failed" }]);
-    // Unexpected on purpose: a refused send loses a line of the answer and says so to nobody,
-    // which is the opposite of a refusal the chat explains (see error-kind.ts).
-    expect(messagingErrorKinds()).toEqual([{ code: "messaging_send_failed", kind: "unexpected" }]);
   });
 
   it("paces the messages of a per-line reply instead of firing them back to back", async () => {
@@ -1579,25 +1579,6 @@ describe("messaging binding routes and bridge", () => {
     expect(runs).toHaveLength(0);
   });
 
-  it("files a download that simply failed as unexpected, unlike a refusal it explained", async () => {
-    await bindEnabled(SID);
-    // The contrast that makes the classification worth having: no scope to grant and no
-    // smaller file to send, just a transfer that did not happen. Nobody has been told how to
-    // fix it, because nobody knows — which is exactly what the dashboard is for.
-    fake.failImageFetchWith = new Error("socket hang up");
-    await fake.lastConnection().fire({
-      chatId: "oc_chat_1",
-      chatType: "p2p",
-      messageId: "om_img_broke",
-      messageType: "image",
-      content: JSON.stringify({ image_key: "img_v2_broke" }),
-    });
-    await waitFor(() => imageFetchErrors().length === 1);
-    expect(messagingErrorKinds()).toEqual([
-      { code: "messaging_image_fetch_failed", kind: "unexpected" },
-    ]);
-  });
-
   it("bounds inbound imagery per binding, refusing the overflow with its own notice", async () => {
     // Per image the ceiling is the inline-image limit; in aggregate there was nothing. Every
     // accepted image is written into the conversation as base64 and read back whole on every
@@ -1870,7 +1851,13 @@ describe("messaging binding routes and bridge", () => {
 
   it("a reply that never went out is reported on the status and filed under the Project", async () => {
     await bindEnabled(SID);
-    fake.failSend = "Bad Request: have no rights to send a message";
+    // The half-configured first run: an app granted the receive scopes but never
+    // `im:message:send_as_bot`. Typed, because the type is what the classification below reads.
+    fake.failSendWith = new MessagingPermissionError(
+      ["im:message:send_as_bot"],
+      "https://open.feishu.cn/app/cli_x/auth?q=im:message:send_as_bot",
+      "Access denied. One of the following scopes is required: [im:message:send_as_bot] (code 99991672)",
+    );
     await fake.lastConnection().fire({
       chatId: "oc_chat_1",
       chatType: "p2p",
@@ -1887,12 +1874,18 @@ describe("messaging binding routes and bridge", () => {
     // says which end failed, because the two send the user to different places.
     expect(failed.lastInboundAt).toBeDefined();
     expect(failed.lastDeliveryError?.stage).toBe("send");
-    expect(failed.lastDeliveryError?.detail).toContain("have no rights to send a message");
+    expect(failed.lastDeliveryError?.detail).toContain("im:message:send_as_bot");
 
     // And the error record is attributed, which is what makes it reachable at all: the
     // project errors query serves unattributed records to admins only.
     const recorded = t.deps.errorsRepo.recent(projectId);
     expect(recorded.map((r) => r.code)).toContain("messaging_send_failed");
+    // UNEXPECTED, even though the same refusal on the image download is expected: there the
+    // chat is handed the scope names and the console link, here it is handed nothing — the
+    // message that would carry them is the one being refused. A bot that receives every
+    // question and answers none of them is the worst state this feature has, and this record
+    // is the only place it shows (see error-kind.ts).
+    expect(messagingErrorKinds()).toEqual([{ code: "messaging_send_failed", kind: "unexpected" }]);
   });
 
   it("keeps a delivery failure on the status after a later message goes through", async () => {

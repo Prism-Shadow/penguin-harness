@@ -17,41 +17,31 @@ nor anyone's bug were filed as "shouldn't happen, needs a human":
 - a file sent to QQ, which the platform can only accept behind a publicly reachable https URL that
   this server has no way to provide — a refusal it will repeat identically every time.
 
-Both are now `expected`. The recorder's criterion is **"does a human need to step in"**, and in both
+Both became `expected`. The recorder's criterion is **"does a human need to step in"**, and in both
 cases the answer is no: the one person who can act has already been handed the fix in the chat, or
 there is no fix to apply.
 
 ## Details
 
-- `runtime/messaging/error-kind.ts` holds the rule, with the reasoning for each case. It is a small
-  allowlist of TYPED failures, not a message match: anything the connectors have not classified
-  stays `unexpected`, which is the safe direction — a real fault miscounted as routine is invisible,
-  while routine noise miscounted as a fault is merely loud. Classifying by type rather than wording
-  also keeps the count from depending on how a platform phrases its refusal.
-- Three failures are expected: `MessagingPermissionError` (a scope to grant, already named in the
-  chat), `MessagingMediaTooLargeError` (the sender fixes it by sending something smaller) and the
-  new `MessagingUnsupportedError` (the channel structurally cannot carry it). QQ's outbound media
-  refusal now throws the last of these instead of a bare `Error`.
-- A send the channel refused — a rate limit dropping a line of an answer — stays `unexpected`: that
-  loses content and tells nobody, which is the opposite of a refusal the chat explains.
-- The records themselves are unchanged in every other respect, including still being recorded at
-  all: a scope nobody grants is still worth finding on the dashboard, it is simply not a defect.
-
-## A mention that names no file is no longer announced in the chat
-
-The reply-file feature scans a reply's prose for path-like tokens and sends the ones that
-resolve inside the Workspace. Names that resolve to nothing were announced — *"Named in the
-reply but not sent — no such file inside this Session's Workspace: hello-world.md"* — on the
-reasoning that a promised file which never arrives, with nothing to say why, reads as broken.
-
-That reasoning holds only when something was promised. The rule reads prose, and prose names
-files for reasons that have nothing to do with delivery: a model describing a `hello-world.md`
-it went on not to write, or quoting a path out of a document it read. Announcing those puts an
-error-shaped line under replies that were entirely correct, and leaves the reader no move to
-make. They are logged now instead.
-
-A file that EXISTS and whose upload failed is still named in the chat: there the reply promised
-something that then did not arrive, which is the one case where silence reads as broken.
+- `runtime/messaging/error-kind.ts` was added to carry the rule, with the reasoning for each case
+  written beside it. It was built as a small allowlist of TYPED failures at NAMED capture points
+  rather than a message match: anything the connectors had not classified was left `unexpected`,
+  which is the safe direction — a real fault miscounted as routine is invisible, while routine
+  noise miscounted as a fault is merely loud. Deciding by type rather than by wording also keeps
+  the count from depending on how a platform phrases its refusal.
+- Three failure types were allowed through: `MessagingPermissionError` (a scope to grant, already
+  named in the chat), `MessagingMediaTooLargeError` (the sender fixes it by sending something
+  smaller) and the new `MessagingUnsupportedError` (the channel structurally cannot carry it).
+  QQ's outbound media refusal was changed to throw the last of these instead of a bare `Error`.
+- The capture point counts as much as the type, because Feishu throws the same scope denial from
+  every call it makes. Only the inbound image download and the outbound file upload answer that
+  refusal with a notice in the chat, so only those two were allowed to file it as `expected`. A
+  send, an inbound message whose Task never started and a connection that never came up were left
+  `unexpected` whatever they threw: the chat hears nothing there, and an app granted the receive
+  scopes but not `im:message:send_as_bot` would otherwise take every question and answer none of
+  them without raising anything anywhere.
+- The records were left unchanged in every other respect, including still being written at all: a
+  scope nobody grants is still worth finding on the dashboard, it is simply not a defect.
 
 ## Compatibility
 

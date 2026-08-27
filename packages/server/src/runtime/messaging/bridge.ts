@@ -904,8 +904,11 @@ export class MessagingBridge {
       code,
       // Classified here rather than left to the recorder's default: its fallback for a
       // non-HTTP source is `unexpected`, which files a scope the app was never granted and a
-      // file the platform cannot carry as defects (see error-kind.ts for the rule).
-      kind: messagingErrorKind(err),
+      // file the platform cannot carry as defects. `code` goes in with the error because the
+      // same refusal means different things at different capture points — on an image
+      // download the chat is handed the fix, on a send it hears nothing at all, and only the
+      // first of those is routine (see error-kind.ts for the rule).
+      kind: messagingErrorKind(err, code),
       ctx: {
         sessionId,
         ...(row !== null ? { projectId: row.projectId, agentId: row.agentId } : {}),

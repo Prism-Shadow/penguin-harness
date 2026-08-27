@@ -166,6 +166,15 @@ interface QQOutboundFile {
  * picture reached a chat that never received one. It is a `MessagingUnsupportedError` rather
  * than a bare one so that record is filed as expected: this refusal is the platform's shape,
  * identical every time, and nothing an operator reads a dashboard to find (see error-kind.ts).
+ *
+ * The passive-reply-window refusal in `enqueue` deliberately stays a BARE `Error`, and the
+ * split is the point rather than an oversight: this one costs nothing, since the chat gets the
+ * reply text carrying its own explanation of the missing file, while that one IS the reply —
+ * the text is dropped and the chat cannot be told, because the message that would carry the
+ * reason is the message being refused. Somebody therefore does have to notice it, which is
+ * what `unexpected` is for; and `MessagingUnsupportedError` promises the opposite in its own
+ * contract ("`message` must say what could not be carried and why, because that text reaches
+ * the chat"), which for a send outside the window it cannot keep.
  */
 function refuseMedia(file: QQOutboundFile): Promise<never> {
   return Promise.reject(
@@ -477,6 +486,10 @@ export class QQConnector implements MessagingChannelConnector {
       // `async` so this is a rejection rather than a synchronous throw: the seam's methods
       // are typed as promises, and a caller that only attaches `.catch` — as any caller
       // reasonably may — would never see a throw raised before the promise exists.
+      //
+      // A bare Error on purpose, unlike the media refusal next door: this one drops text the
+      // chat was meant to receive and has no way to say so, so the error record is the only
+      // place it can be noticed (see refuseMedia).
       throw new Error(
         "QQ only accepts replies to a message sent from QQ, within a few minutes of it — send the bot a message in QQ and it will answer",
       );
