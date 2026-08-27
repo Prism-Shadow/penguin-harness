@@ -3,6 +3,7 @@
 - **Date:** 2026-08-26
 - **Type:** feature
 - **Scope:** `server`, `web`
+- **PR:** [#499](https://github.com/Prism-Shadow/penguin-harness/pull/499)
 
 [中文版](2026-08-26-telegram-group-privacy.zh.md)
 
