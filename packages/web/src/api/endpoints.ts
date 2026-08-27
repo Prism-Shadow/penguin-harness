@@ -65,6 +65,7 @@ import type {
   ModelOAuthStatusResponse,
   ModelProtocolDetectRequest,
   ModelProtocolDetectResponse,
+  MachinesResponse,
   ModelsResponse,
   ModelsUpdateRequest,
   ModelTestRequest,
@@ -1062,6 +1063,22 @@ export const importAgent = (projectId: string, agentId: string, body: AgentImpor
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/import`,
     { method: "POST", body },
   );
+
+// Machines (admin only) ----------------------------------------------------------------
+
+/**
+ * The server's ssh hosts, the version it would install, and the running or last install
+ * job. The Machines page polls this while a job runs — the progress lines live on the job,
+ * not on the event channel, because they belong to the one page that is waiting for them.
+ */
+export const getMachines = () => apiFetch<MachinesResponse>("/api/machines");
+
+/** Starts an install (202, long-running); the returned body already carries the new job. */
+export const installOnMachine = (machineId: string) =>
+  apiFetch<MachinesResponse>(`/api/machines/${encodeURIComponent(machineId)}/install`, {
+    method: "POST",
+    body: {},
+  });
 
 // Version & self-update ----------------------------------------------------------------
 

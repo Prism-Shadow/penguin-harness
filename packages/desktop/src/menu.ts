@@ -1,7 +1,11 @@
 /**
  * Application menu. Electron's default menu cannot be extended, only replaced, so the
  * standard structure is rebuilt here. The custom entries are native-only shell actions:
- * installing the bundled `penguin` command and checking for desktop updates.
+ * installing the bundled `penguin` command, and checking for desktop updates.
+ *
+ * Installing this build's server onto an SSH host used to live here too; it is now the
+ * Machines page in the Web App, served by the server itself (packages/server/src/machines)
+ * so that it travels by hot push and works in a browser, not just in this shell.
  */
 import { app, Menu, shell } from "electron";
 import type { MenuItemConstructorOptions } from "electron";

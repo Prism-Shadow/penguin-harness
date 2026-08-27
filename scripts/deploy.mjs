@@ -178,7 +178,7 @@ async function readWebManifest() {
 }
 
 /**
- * Native modules the pushed platform needs as real files. A bundle cannot carry one: it is
+ * Files the pushed platform needs as real files rather than bundled code. A bundle cannot carry one: it is
  * imported from the runtime's data root, where node-pty's own relative `build/Release/
  * pty.node` does not resolve. So the package ships whole — its JS, its prebuilds and its
  * darwin `spawn-helper` — and the runtime unpacks it next to the bundle (hmr/host.ts's
@@ -218,6 +218,11 @@ async function readNativeAssets() {
     if (rel.endsWith("spawn-helper") || ((await fsp.stat(abs)).mode & 0o111) !== 0) {
       exec.push(target);
     }
+  }
+  // The ordinary installers: the machines push scp's one to the far side and runs it there
+  // against the payload, so they have to exist as files on the pushing side too.
+  for (const name of ["install.sh", "install.ps1"]) {
+    files[name] = (await fsp.readFile(path.join(ROOT, name))).toString("base64");
   }
   return { files, exec };
 }

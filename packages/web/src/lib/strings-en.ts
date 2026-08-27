@@ -16,6 +16,7 @@ export const en: Strings = {
     agents: "Agents",
     skills: "Skills",
     models: "Models",
+    machines: "Machines",
     usage: "Cost Center",
     traces: "Trajectories",
     benchmark: "Evaluation Center",
@@ -27,6 +28,38 @@ export const en: Strings = {
     expandGroup: "Expand",
     pinGroup: "Pin group",
     unpinGroup: "Unpin group",
+  },
+
+  /** Machines page: the server's own ssh hosts, and installing this build on one. */
+  machines: {
+    pageTitle: "Machines",
+    pageDesc:
+      "The hosts declared in this server's own ~/.ssh/config. Pick one to install this build of PenguinHarness on it: the machine is probed, a matching Node runtime rides along only if it needs one, and the image is copied over and installed there. The config is read, never written, and the install uses the server account's own ssh keys.",
+    /** Version line under the title; `version` is what would be pushed. */
+    imageVersion: (version: string) => `Installs version ${version}`,
+    noImage:
+      "This server has no install image to push. A packaged or tarball install carries one; a source checkout gets one from its first hot push.",
+    empty: "No hosts in ~/.ssh/config.",
+    /** The picker: an ssh config can declare hundreds of hosts, so the panel is a fuzzy search over aliases. */
+    pick: "Choose a machine\u2026",
+    search: "Search hosts\u2026",
+    noMatch: "No host matches that.",
+    /** How many matches the visible rows leave out — a silent truncation would read as "not in my config". */
+    more: (count: number) => `${count} more \u2014 keep typing to narrow it down.`,
+    /** Heading of the standing list of machines this server has installed on. */
+    installedTitle: (count: number) => `Installed machines (${count})`,
+    /** What the selected machine already carries, remembered on the server across restarts. */
+    installedAt: (version: string, when: string) => `${version} installed here on ${when}.`,
+    install: "Install",
+    installing: "Installing\u2026",
+    reinstall: "Reinstall",
+    /** Terminal states of a finished job. */
+    installed: (version: string) => `Installed ${version}.`,
+    alreadyInstalled: (version: string) => `Already on ${version} \u2014 nothing to install.`,
+    failedAt: (step: string) => `The install failed while trying to ${step}.`,
+    /** The progress log's own heading, so the block is not an unlabelled wall of text. */
+    output: "Install output",
+    adminOnly: "Only an admin can install on a machine.",
   },
 
   /** Server-side terminal (the in-app dock and the standalone /terminal page). */

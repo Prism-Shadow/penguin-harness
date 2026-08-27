@@ -1,0 +1,374 @@
+/**
+ * Machines page: pick a host out of the SERVER's own `~/.ssh/config` and install this build
+ * on it.
+ *
+ * The host list is a PICKER, not a rendered list, because an ssh config routinely declares
+ * hundreds of entries: the panel shows a few rows, a fuzzy query reaches the rest, and the
+ * matched characters are highlighted so a subsequence hit (`gpu1` → `gpu-01`) reads as a
+ * match rather than as a wrong result. A counter names how many rows the current view leaves
+ * out — silent truncation would read as "that host is not in my config".
+ *
+ * The list itself is the config text; the server does no `ssh -G` and no network to produce
+ * it, so hundreds of hosts cost one file read and a row carries nothing but its alias.
+ *
+ * An install is a job on the server, not a request that finishes: it probes the machine,
+ * may fetch a Node runtime, copies an image over scp and runs an installer there. POST
+ * starts it and the page polls while it runs. The progress lines are the far side's own
+ * words wherever there are any, so they are rendered verbatim in a monospace block rather
+ * than interpreted here — a refused key or an unusable Node explains itself better than any
+ * status enum could.
+ *
+ * One job exists at a time server-side, so the panel below follows THE JOB and names the
+ * alias it belongs to, while the button follows the SELECTION: picking another host while
+ * one installs must not hide the install that is running.
+ *
+ * Which hosts already carry this program comes from each machine's own persisted record,
+ * not from the job — the job is one slot, so reading "installed" off it made a host stop
+ * looking installed the moment anything else was installed or the server restarted.
+ */
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { MachinesResponse } from "@prismshadow/penguin-server/api";
+import * as api from "../../api/endpoints";
+import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
+import { useDocumentTitle } from "../../lib/use-document-title";
+import { formatDateTime } from "../../lib/format";
+import { toneInk, toneStrip } from "../../lib/tone";
+import type { Tone } from "../../lib/tone";
+import { ICON_SIZE } from "../../lib/icon-scale";
+import { Button } from "../../components/ui/button";
+import { Dropdown } from "../../components/ui/dropdown";
+import { EmptyState } from "../../components/ui/empty-state";
+import { InfoPopover } from "../../components/ui/info-popover";
+import { Skeleton } from "../../components/ui/skeleton";
+import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { ChevronDown, NAV_ICONS } from "../../components/ui/icons";
+import { installButtonState, installedMachines, verdictOf } from "./machines-view";
+import type { MachineVerdict } from "./machines-view";
+import { MAX_VISIBLE_MACHINES, highlightSegments, matchMachines } from "./machines-match";
+
+/** How often a running job is re-read. Slow enough to be free, fast enough that a step reads as progress. */
+const POLL_MS = 1500;
+
+/** A finished job's one-line verdict, and the tone that carries it. */
+function verdictLine(verdict: MachineVerdict): { text: string; tone: Tone } {
+  if (verdict.kind === "failed") {
+    return { text: S.machines.failedAt(verdict.step), tone: "danger" };
+  }
+  const version = verdict.version ?? "";
+  return {
+    text:
+      verdict.kind === "already-installed"
+        ? S.machines.alreadyInstalled(version)
+        : S.machines.installed(version),
+    tone: "success",
+  };
+}
+
+export function MachinesPage() {
+  useDocumentTitle(S.machines.pageTitle);
+  const [state, setState] = useState<MachinesResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  /** True while a POST has not come back yet — the server has no job to report in that window. */
+  const [starting, setStarting] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  /** The picker panel; closing it always clears the query, so it reopens unfiltered. */
+  const [pickerOpen, setPickerOpenState] = useState(false);
+  const [query, setQuery] = useState("");
+  const setPickerOpen = (open: boolean) => {
+    setPickerOpenState(open);
+    if (!open) setQuery("");
+  };
+
+  const load = useCallback(async () => {
+    try {
+      setState(await api.getMachines());
+      setError(null);
+    } catch (err) {
+      setError(apiErrorText(err));
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // Poll only while a job runs. Chained timeouts rather than an interval: a slow response
+  // must not stack requests behind itself.
+  const running = state?.job?.running === true;
+  const loadRef = useRef(load);
+  loadRef.current = load;
+  useEffect(() => {
+    if (!running) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = () => {
+      timer = setTimeout(() => {
+        void loadRef.current().finally(() => {
+          if (!cancelled) tick();
+        });
+      }, POLL_MS);
+    };
+    tick();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [running]);
+
+  const machines = useMemo(() => state?.machines ?? [], [state]);
+  const installed = useMemo(() => (state === null ? [] : installedMachines(state)), [state]);
+  const matched = useMemo(() => matchMachines(machines, query), [machines, query]);
+  const visible = matched.slice(0, MAX_VISIBLE_MACHINES);
+  const hiddenCount = matched.length - visible.length;
+  const selected = machines.find((machine) => machine.id === selectedId) ?? null;
+
+  const install = async () => {
+    if (selectedId === null) return;
+    setStarting(true);
+    try {
+      setState(await api.installOnMachine(selectedId));
+      setError(null);
+    } catch (err) {
+      setError(apiErrorText(err));
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  const job = state?.job ?? null;
+  const verdict = job === null ? null : verdictOf(job);
+  const verdictText = verdict === null ? null : verdictLine(verdict);
+  const button =
+    state === null
+      ? { action: "install" as const, disabled: true }
+      : installButtonState(selected, state, starting);
+
+  return (
+    <div className="h-full overflow-y-auto p-4 md:p-6">
+      <div className="mx-auto max-w-3xl">
+        <h1 className="flex items-center gap-1.5 text-xl font-semibold">
+          {S.machines.pageTitle}
+          <InfoPopover label={S.machines.pageTitle}>{S.machines.pageDesc}</InfoPopover>
+        </h1>
+
+        {error !== null && (
+          <div className={`mt-4 rounded-md border px-3 py-2 text-sm ${toneStrip.danger}`}>
+            {error}
+          </div>
+        )}
+
+        {state === null ? (
+          <div className="mt-6 space-y-2">
+            <Skeleton className="h-4 w-40" />
+            <Skeleton className="h-9 w-full" />
+          </div>
+        ) : (
+          <>
+            {state.imageVersion === null ? (
+              <div className={`mt-4 rounded-md border px-3 py-2 text-sm ${toneStrip.attention}`}>
+                {S.machines.noImage}
+              </div>
+            ) : (
+              <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                {S.machines.imageVersion(state.imageVersion)}
+              </p>
+            )}
+
+            {machines.length === 0 ? (
+              <EmptyState title={S.machines.empty} />
+            ) : (
+              <div className="mt-6 flex items-start gap-2">
+                {/* The picker. Fuzzy query over the aliases, matched characters bright and
+                    the rest dimmed — with a subsequence match, an unmarked row looks wrong. */}
+                <Dropdown
+                  open={pickerOpen}
+                  setOpen={setPickerOpen}
+                  className="min-w-0 flex-1"
+                  menuClass="left-0 right-0 top-full mt-1 origin-top"
+                  button={
+                    <button
+                      type="button"
+                      onClick={() => setPickerOpen(!pickerOpen)}
+                      aria-haspopup="listbox"
+                      aria-expanded={pickerOpen}
+                      className="flex w-full items-center gap-2 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-left text-sm transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800"
+                    >
+                      <span className="shrink-0 text-gray-500 dark:text-gray-400">
+                        <GlyphIcon d={NAV_ICONS.machines} size={ICON_SIZE.rowLead} />
+                      </span>
+                      <span
+                        className={`min-w-0 flex-1 truncate ${selected === null ? "text-gray-400 dark:text-gray-500" : ""}`}
+                      >
+                        {selected?.alias ?? S.machines.pick}
+                      </span>
+                      <ChevronDown className="shrink-0 text-gray-400" />
+                    </button>
+                  }
+                >
+                  {machines.length > MAX_VISIBLE_MACHINES && (
+                    <div className="px-2 pt-1 pb-1">
+                      <input
+                        type="search"
+                        autoFocus
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        placeholder={S.machines.search}
+                        aria-label={S.machines.search}
+                        className="w-full rounded-md border border-gray-200 bg-transparent px-2.5 py-1.5 text-sm transition-colors outline-none placeholder:text-gray-400 focus:border-gray-400 dark:border-gray-700 dark:placeholder:text-gray-500 dark:focus:border-gray-500"
+                      />
+                    </div>
+                  )}
+                  {visible.map(({ machine, positions }) => (
+                    <button
+                      key={machine.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedId(machine.id);
+                        setPickerOpen(false);
+                      }}
+                      className="flex w-full min-w-0 items-center gap-2 px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800"
+                    >
+                      <span
+                        className={`min-w-0 flex-1 truncate ${positions.length > 0 ? "text-gray-400 dark:text-gray-500" : ""}`}
+                      >
+                        {positions.length === 0
+                          ? machine.alias
+                          : highlightSegments(machine.alias, positions).map((segment, i) => (
+                              <span
+                                key={i}
+                                className={
+                                  segment.hit
+                                    ? "font-semibold text-gray-900 dark:text-white"
+                                    : undefined
+                                }
+                              >
+                                {segment.text}
+                              </span>
+                            ))}
+                      </span>
+                      {/* Which hosts already carry this program — the version, not a bare
+                          tick, because a stale one is the reason to reinstall. */}
+                      {machine.installed !== null && (
+                        <span className={`shrink-0 text-xs ${toneInk.success}`}>
+                          {machine.installed.version}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                  {visible.length === 0 && (
+                    <p className="px-3.5 py-2 text-sm text-gray-400 dark:text-gray-500">
+                      {S.machines.noMatch}
+                    </p>
+                  )}
+                  {hiddenCount > 0 && (
+                    <p className="px-3.5 pt-1 pb-1.5 text-xs text-gray-400 dark:text-gray-500">
+                      {S.machines.more(hiddenCount)}
+                    </p>
+                  )}
+                </Dropdown>
+                <Button
+                  variant="primary"
+                  disabled={button.disabled}
+                  onClick={() => void install()}
+                  className="shrink-0"
+                >
+                  {button.action === "installing"
+                    ? S.machines.installing
+                    : button.action === "reinstall"
+                      ? S.machines.reinstall
+                      : S.machines.install}
+                </Button>
+              </div>
+            )}
+
+            {selected?.installed != null && (
+              <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                {S.machines.installedAt(
+                  selected.installed.version,
+                  formatDateTime(selected.installed.at),
+                )}
+              </p>
+            )}
+
+            {/* What this server has already installed, standing on the page rather than
+                only inside the picker: it is the answer to "what did I do", which a panel
+                that has to be opened one row at a time cannot give. */}
+            {installed.length > 0 && (
+              <section className="mt-6">
+                <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400">
+                  {S.machines.installedTitle(installed.length)}
+                </h2>
+                <div className="mt-2 divide-y divide-gray-200 overflow-hidden rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
+                  {installed.map((machine) => (
+                    <button
+                      key={machine.id}
+                      type="button"
+                      onClick={() => setSelectedId(machine.id)}
+                      aria-current={machine.id === selectedId ? "true" : undefined}
+                      className={`flex w-full min-w-0 items-center gap-3 px-3 py-2.5 text-left transition-colors duration-150 ${
+                        machine.id === selectedId
+                          ? "bg-gray-100 dark:bg-gray-800"
+                          : "bg-white hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800/70"
+                      }`}
+                    >
+                      <span className="shrink-0 text-gray-500 dark:text-gray-400">
+                        <GlyphIcon d={NAV_ICONS.machines} size={ICON_SIZE.rowLead} />
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                        {machine.alias}
+                      </span>
+                      <span className={`shrink-0 text-xs ${toneInk.success}`}>
+                        {machine.installed!.version}
+                      </span>
+                      <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
+                        {formatDateTime(machine.installed!.at)}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* The job, whichever machine it belongs to — named, so a selection change
+                while one runs never leaves an unattributed log on screen. */}
+            {job !== null && (
+              <section className="mt-5 overflow-hidden rounded-md border border-gray-200 dark:border-gray-800">
+                <div className="flex items-center gap-2 bg-gray-50 px-3 py-2 dark:bg-gray-900">
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium">{job.alias}</span>
+                  {running ? (
+                    <span className={`text-xs ${toneInk.busy}`}>{S.machines.installing}</span>
+                  ) : (
+                    verdictText !== null && (
+                      <span className={`text-xs ${toneInk[verdictText.tone]}`}>
+                        {verdictText.text}
+                      </span>
+                    )
+                  )}
+                </div>
+                {job.log.length > 0 && (
+                  <div className="border-t border-gray-100 px-3 py-2 dark:border-gray-800">
+                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                      {S.machines.output}
+                    </p>
+                    <pre className="mt-1 max-h-64 overflow-auto font-mono text-xs break-words whitespace-pre-wrap text-gray-700 dark:text-gray-300">
+                      {job.log.join("\n")}
+                    </pre>
+                    {verdict?.kind === "failed" && (
+                      <pre
+                        className={`mt-2 font-mono text-xs break-words whitespace-pre-wrap ${toneInk.danger}`}
+                      >
+                        {verdict.message}
+                      </pre>
+                    )}
+                  </div>
+                )}
+              </section>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
