@@ -37,6 +37,10 @@
     "./version-report": {
       "types": "./dist/version-report.d.ts",
       "import": "./dist/version-report.js"
+    },
+    "./extension": {
+      "types": "./dist/extension/index.d.ts",
+      "import": "./dist/extension/index.js"
     }
   },
   "main": "./dist/index.js",
