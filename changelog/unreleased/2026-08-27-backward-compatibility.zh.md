@@ -3,7 +3,7 @@
 - **Date:** 2026-08-27
 - **Type:** process
 - **Scope:** `server`, `web`
-- **PR:** [#507](https://github.com/Prism-Shadow/penguin-harness/pull/507), [#508](https://github.com/Prism-Shadow/penguin-harness/pull/508), [#512](https://github.com/Prism-Shadow/penguin-harness/pull/512)
+- **PR:** [#507](https://github.com/Prism-Shadow/penguin-harness/pull/507), [#508](https://github.com/Prism-Shadow/penguin-harness/pull/508), [#512](https://github.com/Prism-Shadow/penguin-harness/pull/512), [#519](https://github.com/Prism-Shadow/penguin-harness/pull/519)
 - **Breaking:** yes — 仅在降级时：最后一条消息写在论坛话题里的 Telegram 绑定，在此改动之前的构建上会一直发不出消息，直到下一条入站消息到来
 
 [English](2026-08-27-backward-compatibility.md)

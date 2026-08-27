@@ -3,6 +3,7 @@
 - **Date:** 2026-08-27
 - **Type:** feature
 - **Scope:** `server`, `web`, `docs`
+- **PR:** [#519](https://github.com/Prism-Shadow/penguin-harness/pull/519)
 - **Breaking:** yes — 升级后存量绑定即开始渲染 Markdown，每条转发消息的样子都会改变；新增的按绑定开关可将其关闭
 
 [English](2026-08-27-messaging-markdown.md)
