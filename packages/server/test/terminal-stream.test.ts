@@ -291,26 +291,45 @@ describePty("terminal stream handshake", () => {
   );
 });
 
+/**
+ * The line the backpressure flood is made of, and the marker its resync assertion reads.
+ * It fills every row of the screen for the whole burst, so it is there whichever instant
+ * the resync snapshot is taken at — unlike a marker printed once at the end of a round,
+ * which megabytes of scrolling carry off the screen again.
+ */
+const FLOOD_LINE = "0123456789abcdef";
+
+/** Every Restore opens with this self-contained repaint (see snapshot.ts). */
+const RESTORE_PREAMBLE = "\x1b[0m\x1b[?1049l\x1b[H\x1b[2J\x1b[3J";
+
 describePty("terminal stream backpressure", () => {
   it("resyncs a lagging viewer with a fresh Restore instead of disconnecting it", async () => {
     const terminal = await createTerminal();
+    const client = await attach(terminal.id);
     try {
-      const client = await attach(terminal.id);
       await client.waitFor(() => client.restoreText().length > 0, "attach restore");
 
       // Stop reading: the TCP window and then the server's userland queue fill while
-      // the shell floods ~7 MB — far past the high watermark.
-      const socket = (client.ws as unknown as { _socket: { pause(): void; resume(): void } })
-        ._socket;
-      socket.pause();
+      // the shell floods ~7 MB — far past the high watermark. Pausing the WebSocket rather
+      // than the socket under it is what makes the pause hold: ws pauses that socket on
+      // its own whenever its receiver backs up, and resumes it again on the receiver's
+      // 'drain' unless this flag says the caller asked for the pause.
+      client.ws.pause();
       // Flood until the server itself reports this viewer as lagging. A fixed burst is a
       // coin flip: a paused reader still lets the kernel absorb megabytes into its socket
       // buffers (autotuned), so the server's own send queue — the thing the watermark
       // measures — may never cross 1 MiB however much the shell wrote. This suite failed
       // that way roughly one run in three, locally and on CI.
-      const isLagging = (): boolean => serverLogs.some((l) => l.includes("pausing for resync"));
+      //
+      // Only lines logged from here on count. `serverLogs` outlives one attempt and vitest
+      // retries this file on macOS, so a second attempt reading the first one's line would
+      // skip the flood altogether and then sit out the resync deadline below on a terminal
+      // nothing ever flooded — which is how a single flake became a hard 60s failure.
+      const loggedBefore = serverLogs.length;
+      const isLagging = (): boolean =>
+        serverLogs.slice(loggedBefore).some((l) => l.includes("pausing for resync"));
       for (let round = 1; round <= 8 && !isLagging(); round += 1) {
-        client.sendInput(`yes 0123456789abcdef | head -n 400000; echo BURST-DONE-${round}\r`);
+        client.sendInput(`yes ${FLOOD_LINE} | head -n 400000; echo BURST-DONE-${round}\r`);
         await waitForCapture(terminal.id, `BURST-DONE-${round}`, 60_000);
       }
       expect(isLagging(), "server never marked the paused viewer as lagging").toBe(true);
@@ -318,17 +337,26 @@ describePty("terminal stream backpressure", () => {
       // The burst has fully landed server-side, and the lagging viewer is still attached.
       expect(client.ws.readyState).toBe(WebSocket.OPEN);
 
-      // Catching up delivers one resync Restore carrying the final screen, and the
-      // stream is live again afterwards.
-      socket.resume();
-      const restores = (): number =>
-        client.frames.filter((f) => f.opcode === TerminalStreamOpcode.Restore).length;
-      await client.waitFor(() => restores() >= 2, "resync Restore frame", 60_000);
-      const resync = client.frames.filter((f) => f.opcode === TerminalStreamOpcode.Restore)[1]!;
-      expect(resync.text).toContain("BURST-DONE-");
+      // Catching up delivers a resync Restore, and the stream is live again afterwards.
+      client.ws.resume();
+      const restores = (): StreamClient["frames"] =>
+        client.frames.filter((f) => f.opcode === TerminalStreamOpcode.Restore);
+      await client.waitFor(() => restores().length >= 2, "resync Restore frame", 60_000);
+      const resync = restores()[1]!;
+      // What a resync promises is the repaint, not a particular line of screen residue:
+      // the snapshot is taken whenever this viewer's socket drains past the low watermark,
+      // which the test does not get to choose and which may well be mid-flood. So assert
+      // the two things that hold at every such instant — it is the same self-contained
+      // repaint an attach sends, and it carries the flooded screen rather than the empty
+      // one the attach Restore captured.
+      expect(resync.text.slice(0, RESTORE_PREAMBLE.length)).toBe(RESTORE_PREAMBLE);
+      expect(resync.text).toContain(`${FLOOD_LINE}\r\n${FLOOD_LINE}`);
       await runAndWait(client, "echo LIVE-$((40+2))", "LIVE-42");
-      await client.close();
     } finally {
+      // Closed here rather than after the assertions: a socket a failed assertion left open
+      // holds server.close() in afterAll until the hook deadline, which buries the real
+      // failure under a hook timeout.
+      await client.close();
       await api.delete(`/api/terminals/${terminal.id}`);
     }
     // Megabytes through a pty, a paused socket and a drain: minutes of budget on a loaded
