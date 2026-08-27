@@ -89,6 +89,30 @@ export class MessagingMediaTooLargeError extends Error {
 }
 
 /**
+ * A transfer the channel refused because the bot's own app lacks a permission.
+ *
+ * Its own class because it is the one transfer failure the person in the chat can fix, and
+ * only if they are told what to grant and where: "Request failed with status code 403" sends
+ * them to a log, while the scope name and the console link are ten seconds of work. Feishu
+ * hands both back in its refusal (`code` 99991672) — see the connector's scopeDenialDetail.
+ *
+ * `scopes` is what the channel said would satisfy the call (any ONE of them, in Feishu's
+ * wording); `grantUrl` is the channel's own console link, or null when the refusal carried
+ * none. Nothing else off the channel's error travels with it: the raw SDK error carries the
+ * request config, and that is where credentials live.
+ */
+export class MessagingPermissionError extends Error {
+  constructor(
+    readonly scopes: readonly string[],
+    readonly grantUrl: string | null,
+    message: string,
+  ) {
+    super(message);
+    this.name = "MessagingPermissionError";
+  }
+}
+
+/**
  * Reads a download into memory, refusing at the byte that crosses `maxBytes`.
  *
  * Buffering `await res.arrayBuffer()` and checking the length afterwards would be a

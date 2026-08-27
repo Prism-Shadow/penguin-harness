@@ -40,6 +40,7 @@ import type {
   TelegramCredentials,
   TelegramFileBytes,
   TelegramTransport,
+  TelegramTransportOpts,
   TelegramUpdate,
   TelegramWebhookInfo,
 } from "../src/runtime/messaging/telegram-api.js";
@@ -1294,6 +1295,26 @@ describe("telegram binding routes and connector loop", () => {
     expect(t.deps.messagingRepo.find(SID, "telegram")?.lastChatId).toBe("42424242");
   });
 
+  it("a captioned document still gets the not-supported notice and starts no task", async () => {
+    await bindEnabled(SID);
+    // The common shape of this: a picture dragged into Telegram uncompressed arrives as a
+    // `document`, caption and all, with no `photo` array. The caption is not this message
+    // on its own — the file it describes is never downloaded — so falling back to it would
+    // run the model on "summarize this for me" with nothing attached.
+    fake.push({
+      message_id: 22,
+      chat: { id: 42424242, type: "private" },
+      caption: "summarize this for me",
+      from: { first_name: "Ada" },
+    });
+    await waitFor(() => fake.allSends().length > 0);
+    expect(fake.allSends()).toContainEqual({
+      chatId: "42424242",
+      text: MESSAGING_TEXT_ONLY_NOTICE,
+    });
+    expect(runs).toHaveLength(0);
+  });
+
   it("an inbound photo becomes an image_url part, downloaded at its largest size", async () => {
     await bindEnabled(SID);
     fake.push(privatePhoto(undefined, 31));
@@ -1320,6 +1341,23 @@ describe("telegram binding routes and connector loop", () => {
     expect(runs[0]![0]!.role).toBe("user");
     expect("sender" in runs[0]![0]!).toBe(false);
     expect(runs[0]![1]!.image_url).toBe(`data:image/jpeg;base64,${PHOTO_BYTES.toString("base64")}`);
+  });
+
+  it("strips this bot's own @mention off a photo's caption, as it does off a text message", async () => {
+    await bindEnabled(SID);
+    // Addressing a bot in a group means naming it, and a picture posted to a group is
+    // addressed in its CAPTION — Telegram marks the span in `caption_entities`, the
+    // caption's own copy of `entities`.
+    fake.push({
+      message_id: 34,
+      chat: { id: -1002233445566, type: "supergroup" },
+      photo: [{ file_id: "full-1280", width: 1280, height: 960 }],
+      caption: "@penguin_test_bot what is wrong with this chart?",
+      caption_entities: [{ type: "mention", offset: 0, length: 17 }],
+      from: { first_name: "Ada" },
+    });
+    await waitFor(() => runs.length === 1);
+    expect(runs[0]![0]!.text).toBe("what is wrong with this chart?");
   });
 
   it("a photo that cannot be downloaded degrades to a notice, caption and all", async () => {
@@ -1751,20 +1789,20 @@ describe("telegram transport error mapping", () => {
     body: unknown,
     run: (bot: TelegramBotClient) => Promise<unknown>,
   ): Promise<string> {
-    const original = globalThis.fetch;
-    globalThis.fetch = (async () =>
+    // Through the transport's own fetch seam, not the global: the production transport
+    // calls undici's fetch on purpose (see telegram-api's TelegramFetch), so replacing
+    // `globalThis.fetch` would leave it talking to the real Bot API.
+    const stub = (async () =>
       new Response(JSON.stringify(body), {
         status: 409,
         headers: { "content-type": "application/json" },
-      })) as typeof fetch;
+      })) as unknown as TelegramTransportOpts["fetch"];
     try {
-      const bot = createTelegramTransport().createClient({ botToken: TOKEN });
+      const bot = createTelegramTransport({ fetch: stub }).createClient({ botToken: TOKEN });
       await run(bot);
       return "";
     } catch (err) {
       return err instanceof Error ? err.message : String(err);
-    } finally {
-      globalThis.fetch = original;
     }
   }
 

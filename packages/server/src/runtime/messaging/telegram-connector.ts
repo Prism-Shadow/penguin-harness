@@ -326,13 +326,18 @@ function normalizeUpdate(
     chatId: chatRefOf(msg.chat.id, topicId),
     chatKind: msg.chat.type === "private" ? "direct" : "group",
     messageId: replyRefOf(msg.chat.id, msg.message_id, topicId),
-    // A text message carries `text`; a photo carries its words in `caption` instead, which
-    // is that message's text as far as the bridge is concerned. Everything else (sticker,
-    // voice, document, …) normalizes to null and gets the not-supported notice.
+    // A text message carries `text`; a PHOTO carries its words in `caption` instead, which
+    // is that message's text as far as the bridge is concerned. Every other media kind
+    // (document, video, audio, voice, …) normalizes to null EVEN WHEN it has a caption:
+    // its bytes are not delivered, so running the model on the caption alone would answer
+    // confidently about a file it never received. A picture dragged in uncompressed
+    // arrives as a document, which makes that the common case rather than a corner one.
     text:
       typeof msg.text === "string"
         ? stripBotMention(msg.text, msg.entities, me)
-        : (msg.caption ?? null),
+        : photo !== null && typeof msg.caption === "string"
+          ? stripBotMention(msg.caption, msg.caption_entities, me)
+          : null,
     ...(images.length > 0 ? { images } : {}),
     ...(senderName !== undefined ? { senderName } : {}),
   };

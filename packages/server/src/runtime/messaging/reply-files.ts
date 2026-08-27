@@ -104,8 +104,15 @@ const MAX_PATH_LEN = 512;
  */
 const TOKEN_BOUNDARY = /[\s`*"'()[\]{}<>|,;、，。：；！？“”‘’（）【】〔〕「」『』《》〈〉…—–]+/;
 
-/** Sentence punctuation left clinging to a token's edges ("report.md." → "report.md"). */
-const EDGE_PUNCTUATION = /^[.,;:!?]+|[.,;:!?]+$/g;
+/**
+ * Sentence punctuation left clinging to a token's edges ("report.md." → "report.md").
+ *
+ * The LEADING class deliberately excludes `.`: a dot in front of a path is part of it, not
+ * prose. Stripping it turned `./chart.png` into `/chart.png`, which reads as an absolute
+ * path outside the Workspace and is refused, and `.eslintrc.json` into a file that does not
+ * exist — the two spellings an Agent reaches for most often after a bare name.
+ */
+const EDGE_PUNCTUATION = /^[,;:!?]+|[.,;:!?]+$/g;
 
 /**
  * How many candidates are considered per reply. A bound, not a feature: a run that pastes a
@@ -174,14 +181,31 @@ function toWorkspaceRelative(mentioned: string, workspace: string): string | nul
   return stack.length > 0 ? stack.join("/") : null;
 }
 
+/** One path-like token a reply wrote, and where it points. */
+export interface ReplyFileMention {
+  /**
+   * The token exactly as the reply spelled it. A notice quotes THIS back, never the
+   * normalized form: the chat gets to see the reply's own words, and nothing the reply did
+   * not already say reaches it.
+   */
+  mentioned: string;
+  /** Its Workspace-relative form, or null when it names nothing inside this Workspace. */
+  rel: string | null;
+}
+
 /**
- * The Workspace-relative paths one run's assistant text mentions, deduplicated and in order
- * of appearance. Deduplication is keyed on the NORMALIZED path, so a file named once
+ * Every path-like token one run's assistant text mentions, in order of appearance.
+ *
+ * Deduplication is keyed on the NORMALIZED path where there is one, so a file named once
  * absolutely and once relatively is one file — otherwise a run that reports its output both
- * ways would send the same picture twice.
+ * ways would send the same picture twice — and on the token itself where there is not.
+ *
+ * The unresolvable ones are returned rather than dropped because the caller has to say
+ * something about them: a reply that names a file the chat then never receives, with
+ * nothing anywhere to say why, is how this feature reads as broken.
  */
-export function replyFilePaths(text: string, workspace: string): string[] {
-  const out: string[] = [];
+export function replyFileMentions(text: string, workspace: string): ReplyFileMention[] {
+  const out: ReplyFileMention[] = [];
   const seen = new Set<string>();
   let considered = 0;
   for (const token of text.split(TOKEN_BOUNDARY)) {
@@ -190,9 +214,10 @@ export function replyFilePaths(text: string, workspace: string): string[] {
     if (!isFilePathLike(candidate)) continue;
     considered += 1;
     const rel = toWorkspaceRelative(candidate, workspace);
-    if (rel === null || seen.has(rel)) continue;
-    seen.add(rel);
-    out.push(rel);
+    const key = rel ?? `\u0000${candidate}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ mentioned: candidate, rel });
   }
   return out;
 }

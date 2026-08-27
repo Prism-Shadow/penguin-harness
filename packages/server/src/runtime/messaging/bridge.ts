@@ -71,8 +71,8 @@ import type {
   MessagingInboundMessage,
   MessagingSendNote,
 } from "./connector.js";
-import { MessagingMediaTooLargeError, isImageFileName } from "./media.js";
-import { replyFilePaths } from "./reply-files.js";
+import { MessagingMediaTooLargeError, MessagingPermissionError, isImageFileName } from "./media.js";
+import { replyFileMentions } from "./reply-files.js";
 
 /**
  * Max characters per outbound text message, shared by every channel: it must sit under
@@ -138,6 +138,39 @@ export function messagingImageTooLargeNotice(): string {
 /** How much of a channel's own failure reason rides into the chat before it is cut. */
 const MESSAGING_NOTICE_REASON_MAX = 200;
 
+/** A channel's own reason, bounded — a chat bubble is not a log line. */
+function noticeReason(reason: string): string {
+  return reason.length > MESSAGING_NOTICE_REASON_MAX
+    ? `${reason.slice(0, MESSAGING_NOTICE_REASON_MAX)}…`
+    : reason;
+}
+
+/**
+ * The actionable half of a permission refusal: the scopes that would satisfy the call, and
+ * the channel's own console link to grant them. The link goes on its own line so both
+ * clients keep it clickable, and NOTHING else off the channel's error travels with it —
+ * the raw SDK error carries the request config, which is where credentials live.
+ */
+function permissionDetail(scopes: readonly string[], grantUrl: string | null): string {
+  const list = scopes.join(", ");
+  return grantUrl === null ? list : `${list}\n${grantUrl}`;
+}
+
+/**
+ * An inbound image this bot's app is not permitted to download.
+ *
+ * Its own notice rather than a generic failure because it is the one transfer failure the
+ * person in the chat can fix, in about ten seconds, provided they are told which permission
+ * to grant and where — which the channel says in its refusal (see feishu-sdk's
+ * scopeDenialDetail).
+ */
+export function messagingImagePermissionNotice(
+  scopes: readonly string[],
+  grantUrl: string | null,
+): string {
+  return `That image could not be downloaded: this bot's app is missing a permission. Grant it, then send the picture again. 无法下载该图片：机器人应用缺少所需权限，开通后重新发送即可。\n${permissionDetail(scopes, grantUrl)}`;
+}
+
 /**
  * An image the channel would not hand over, carrying the channel's OWN reason — "app has no
  * permission to access resource" is a scope to go and grant, and it reads nothing like a
@@ -148,11 +181,17 @@ const MESSAGING_NOTICE_REASON_MAX = 200;
  * credential (see telegram-api's fetchErrorText — its file endpoint embeds the bot token).
  */
 export function messagingImageFailedNotice(reason: string): string {
-  const detail =
-    reason.length > MESSAGING_NOTICE_REASON_MAX
-      ? `${reason.slice(0, MESSAGING_NOTICE_REASON_MAX)}…`
-      : reason;
-  return `That image could not be downloaded from the chat, so nothing was sent to the Agent. 无法从会话中下载该图片，未发送给智能体。(${detail})`;
+  return `That image could not be downloaded from the chat, so nothing was sent to the Agent. 无法从会话中下载该图片，未发送给智能体。(${noticeReason(reason)})`;
+}
+
+/**
+ * Inbound imagery this binding's rolling budget refused (see
+ * MESSAGING_INBOUND_IMAGE_BUDGET_BYTES). Deliberately not the size notice: nothing about
+ * this picture is wrong, there have just been too many of them, and the fix is to wait
+ * rather than to send a smaller one.
+ */
+export function messagingImageBudgetNotice(): string {
+  return "Too many images from this chat just now, so this one was not sent to the Agent. Try again in a few minutes. 该会话短时间内发来的图片过多，本张未发送给智能体，请过几分钟再试。";
 }
 export const MESSAGING_APPROVAL_NOTICE =
   "A tool call is waiting for your approval in the PenguinHarness web UI. 有工具调用正在等待你在网页端审批。";
@@ -178,15 +217,108 @@ export const MESSAGING_OUTBOUND_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
 export const MESSAGING_OUTBOUND_FILE_MAX_BYTES = 30 * 1024 * 1024;
 export const MESSAGING_OUTBOUND_FILE_MAX_COUNT = 5;
 
+/**
+ * How far before a run's start a file may have been written and still count as its output.
+ *
+ * Not slack in the rule but in the clock: mtime granularity is a filesystem property (one
+ * second on HFS+, two on FAT), so a file the run wrote in its first moments can report a
+ * timestamp a second or so behind the event that said the run had started. Small enough
+ * that a file from an earlier turn never rides along.
+ */
+const MESSAGING_OUTBOUND_MTIME_GRACE_MS = 2_000;
+
 /** One file a ceiling refused, named so the user knows which one to go and fetch. */
 export function messagingFileTooLargeNotice(fileName: string, maxBytes: number): string {
   const mb = Math.floor(maxBytes / (1024 * 1024));
   return `"${fileName}" is over this channel's ${mb}MB limit and was not sent. 文件“${fileName}”超过该渠道 ${mb}MB 的上限，未发送。`;
 }
 
+/**
+ * One file the channel would not take, with its own reason.
+ *
+ * Every other way a file does not arrive is named in the chat — over the byte cap, past the
+ * count cap, an inbound refusal. A failed upload reached `error_records` and nothing else,
+ * which the person in the chat cannot open, so the feature simply looked broken.
+ */
+export function messagingFileFailedNotice(fileName: string, reason: string): string {
+  return `"${fileName}" could not be sent to the chat. 文件“${fileName}”未能发送到会话。(${noticeReason(reason)})`;
+}
+
+/** One file this bot's app is not permitted to upload — the fixable half of the above. */
+export function messagingFilePermissionNotice(
+  fileName: string,
+  scopes: readonly string[],
+  grantUrl: string | null,
+): string {
+  return `"${fileName}" could not be sent: this bot's app is missing a permission. 文件“${fileName}”未能发送：机器人应用缺少所需权限。\n${permissionDetail(scopes, grantUrl)}`;
+}
+
+/** How many names one drop notice lists before it stops: a signal, not an inventory. */
+const MESSAGING_NOTICE_NAMES_MAX = 5;
+
+/**
+ * Files the reply named that the Workspace has nothing to send for — a path that resolves
+ * outside it, a `~` path, or one that simply is not there.
+ *
+ * One notice for the batch, quoting the reply's own spelling. The two causes share a
+ * sentence because they share the user's next move (look at the path) and share one true
+ * statement: there is no such file in this Session's Workspace.
+ */
+export function messagingFilesMissingNotice(names: readonly string[]): string {
+  const shown = names.slice(0, MESSAGING_NOTICE_NAMES_MAX);
+  const list = shown.join(", ") + (names.length > shown.length ? ", …" : "");
+  return `Named in the reply but not sent — no such file inside this Session's Workspace: ${list}. 回复中提及但未发送——该会话 Workspace 内没有这些文件：${list}。`;
+}
+
 /** The tail of a batch the count cap cut off. */
 export function messagingFilesSkippedNotice(skipped: number): string {
   return `${skipped} more mentioned file(s) were not sent — at most ${MESSAGING_OUTBOUND_FILE_MAX_COUNT} ride along with one reply. 另有 ${skipped} 个提及的文件未发送——每条回复最多附带 ${MESSAGING_OUTBOUND_FILE_MAX_COUNT} 个。`;
+}
+
+/**
+ * How many bytes of inbound imagery one binding may hand its Session inside a rolling
+ * window, and how long that window is.
+ *
+ * Per image, the ceiling is the server's inline-image limit. In aggregate there was
+ * nothing: every accepted image is written into the conversation as a base64 data URL, and
+ * services/attachment-limits.ts says what that costs — the Trace JSONL is read back whole,
+ * into a single JS string, on every history page and every Session resume, so a large
+ * enough pile of inline images is not a slow Session but one that never recovers. The web
+ * composer reaches the same ceiling only through an authenticated user; anyone who can DM
+ * the bot reaches this one.
+ *
+ * A burst bound, not a lifetime one: two full-size images per ten minutes is far above any
+ * real conversation (both channels re-encode a chat photo to a fraction of the ceiling) and
+ * far below the pile that breaks a Session. Sustained abuse still costs the attacker time
+ * they cannot compress.
+ */
+export const MESSAGING_INBOUND_IMAGE_BUDGET_BYTES = 2 * INLINE_IMAGE_MAX_BYTES;
+const MESSAGING_INBOUND_IMAGE_WINDOW_MS = 10 * 60_000;
+
+/**
+ * One binding's rolling image budget. A fixed window rather than a sliding one, and a
+ * counter rather than a list of transfers: a sliding window has to remember every accepted
+ * image, which a thousand one-byte images turn into a thousand entries. The point is a
+ * bound; a window that resets on its own is bounded in both bytes and memory.
+ */
+class InboundImageBudget {
+  private windowStart = 0;
+  private spent = 0;
+
+  /** Bytes still allowed right now (a window older than the span has already lapsed). */
+  remaining(now: number, budget: number): number {
+    if (now - this.windowStart > MESSAGING_INBOUND_IMAGE_WINDOW_MS) return budget;
+    return Math.max(0, budget - this.spent);
+  }
+
+  /** Records bytes actually accepted, opening a new window when the last one has lapsed. */
+  spend(now: number, bytes: number): void {
+    if (now - this.windowStart > MESSAGING_INBOUND_IMAGE_WINDOW_MS) {
+      this.windowStart = now;
+      this.spent = 0;
+    }
+    this.spent += bytes;
+  }
 }
 
 /**
@@ -330,8 +462,15 @@ export interface MessagingSessionIndex {
  * exactly the kind of thing that ends up one security fix behind.
  */
 export interface MessagingWorkspaceFiles {
-  /** The subset of `rels` that exist as regular files inside the Workspace, in input order. */
-  statExisting(workspace: string, rels: string[]): Promise<string[]>;
+  /**
+   * The subset of `rels` that exist as regular files inside the Workspace, each with the
+   * time it was last written — which is what separates a file this run produced from one
+   * the reply merely named (see deliverFiles).
+   */
+  statExistingWithMtime(
+    workspace: string,
+    rels: string[],
+  ): Promise<{ rel: string; mtimeMs: number }[]>;
   /** Reads a file, at most `maxBytes` of it. */
   read(
     workspace: string,
@@ -353,6 +492,8 @@ export interface MessagingBridgeDeps {
   now?: () => number;
   /** Test hook: the pace between a per-line reply's messages (default MESSAGING_LINE_DELAY_MS; tests collapse it to zero). */
   lineDelayMs?: number;
+  /** Test hook: one binding's inbound image budget (default MESSAGING_INBOUND_IMAGE_BUDGET_BYTES). */
+  inboundImageBudgetBytes?: number;
 }
 
 /** One connected (or connecting/errored) binding's in-memory state. */
@@ -408,6 +549,11 @@ interface BridgeEntry {
   /** The run in progress already threaded its first outbound message onto the inbound one. */
   threadedThisRun: boolean;
   /**
+   * When the run in progress started, as the bridge saw it (0 before it has seen one). The
+   * cut-off for "a file this run produced" — see deliverFiles.
+   */
+  runStartedAt: number;
+  /**
    * What this run has relayed so far, joined at the run's end to find the files the reply
    * mentions. Only text that actually mirrored is collected: a connection joined mid-run
    * relays none of that run's messages and must not send its files either.
@@ -443,16 +589,21 @@ export class MessagingBridge {
    * replay to catch.
    */
   private readonly recentInbound = new Map<string, RecentInboundIds>();
+  /** Inbound image budgets, keyed like recentInbound: per BINDING, surviving a reconnect. */
+  private readonly imageBudgets = new Map<string, InboundImageBudget>();
   private readonly connectors: ReadonlyMap<string, MessagingChannelConnector>;
   private readonly now: () => number;
   private readonly log: (line: string) => void;
   private readonly lineDelayMs: number;
+  private readonly inboundImageBudgetBytes: number;
 
   constructor(private readonly deps: MessagingBridgeDeps) {
     this.connectors = new Map(deps.connectors.map((c) => [c.channel, c]));
     this.now = deps.now ?? (() => Date.now());
     this.log = deps.log ?? (() => {});
     this.lineDelayMs = deps.lineDelayMs ?? MESSAGING_LINE_DELAY_MS;
+    this.inboundImageBudgetBytes =
+      deps.inboundImageBudgetBytes ?? MESSAGING_INBOUND_IMAGE_BUDGET_BYTES;
   }
 
   /**
@@ -609,6 +760,7 @@ export class MessagingBridge {
       armed: runState === "idle",
       inCompaction: false,
       threadedThisRun: false,
+      runStartedAt: 0,
       replyText: [],
       sendChain: Promise.resolve(),
     };
@@ -866,22 +1018,53 @@ export class MessagingBridge {
     entry: BridgeEntry,
     images: readonly MessagingInboundImage[],
   ): Promise<{ parts: OmniMessage[] } | { notice: string }> {
+    const budget = this.imageBudgetFor(entry);
     const parts: OmniMessage[] = [];
     for (const image of images) {
+      const remaining = budget.remaining(this.now(), this.inboundImageBudgetBytes);
+      if (remaining <= 0) return { notice: messagingImageBudgetNotice() };
+      // The window's remainder rides into the fetch exactly as the ceiling does, so an
+      // image that would overspend is refused at the byte that crosses rather than
+      // buffered whole and measured afterwards.
+      const cap = Math.min(INLINE_IMAGE_MAX_BYTES, remaining);
       try {
-        const { data, mimeType } = await image.fetch(INLINE_IMAGE_MAX_BYTES);
+        const { data, mimeType } = await image.fetch(cap);
+        budget.spend(this.now(), data.length);
         parts.push(imageUrlMessage(`data:${mimeType};base64,${data.toString("base64")}`));
       } catch (err) {
         const reason = err instanceof Error ? err.message : String(err);
         this.log(`[messaging] ${entry.channel} image fetch failed: ${reason}`);
         if (err instanceof MessagingMediaTooLargeError) {
-          return { notice: messagingImageTooLargeNotice() };
+          // Which ceiling stopped it decides what the chat is told: the server's limit is
+          // fixed by sending a smaller picture, the window's budget only by waiting.
+          return {
+            notice:
+              cap < INLINE_IMAGE_MAX_BYTES
+                ? messagingImageBudgetNotice()
+                : messagingImageTooLargeNotice(),
+          };
         }
         this.recordError(entry.sessionId, err, "messaging_image_fetch_failed");
-        return { notice: messagingImageFailedNotice(reason) };
+        return {
+          notice:
+            err instanceof MessagingPermissionError
+              ? messagingImagePermissionNotice(err.scopes, err.grantUrl)
+              : messagingImageFailedNotice(reason),
+        };
       }
     }
     return { parts };
+  }
+
+  /** This binding's rolling image budget, created on first use (see InboundImageBudget). */
+  private imageBudgetFor(entry: BridgeEntry): InboundImageBudget {
+    const key = inboundKey(entry.sessionId, entry.channel);
+    let budget = this.imageBudgets.get(key);
+    if (budget === undefined) {
+      budget = new InboundImageBudget();
+      this.imageBudgets.set(key, budget);
+    }
+    return budget;
   }
 
   /** Reply to the inbound message itself: threaded reply in groups, plain send in direct chats. */
@@ -961,7 +1144,12 @@ export class MessagingBridge {
       // A fresh run observed from its start gets one thread reply again. Only a real
       // idle -> running edge counts: task_state is re-published mid-run for queue and
       // steering changes, and re-arming there would thread every message of the run.
-      if (entry.active !== "running") entry.threadedThisRun = false;
+      if (entry.active !== "running") {
+        entry.threadedThisRun = false;
+        // The cut-off the run's own output is judged against. Taken on the same edge, so a
+        // task_state republished mid-run cannot move it forward past files already written.
+        entry.runStartedAt = this.now();
+      }
     } else if (state === "idle") {
       // A run joined midway ends here; from the next one on its messages mirror.
       entry.armed = true;
@@ -969,9 +1157,10 @@ export class MessagingBridge {
       // it produced. Taken and cleared here, so a task_state republished at idle cannot
       // send the same batch twice and the next run starts from nothing.
       const replyText = entry.replyText.join("\n\n");
+      const since = entry.runStartedAt;
       entry.replyText = [];
       if (replyText !== "") {
-        entry.sendChain = entry.sendChain.then(() => this.deliverFiles(entry, replyText));
+        entry.sendChain = entry.sendChain.then(() => this.deliverFiles(entry, replyText, since));
       }
     }
     entry.active = state;
@@ -1032,57 +1221,120 @@ export class MessagingBridge {
   }
 
   /**
-   * Sends the files this run's reply mentioned, after its text.
+   * Sends the files THIS RUN produced and its reply mentioned, after its text.
+   *
+   * Two filters, and both are load-bearing. The reply having said the name is what picks
+   * the one output that was the point out of the dozen a run writes. The file being newer
+   * than the run's start is what keeps that from becoming an exfiltration primitive: the
+   * reply is steerable by whoever is in the chat, and on a mention-only rule a group member
+   * who asks "what is in secrets.json?" gets the file uploaded by the very refusal that
+   * declined to paste it. Containment (the Workspace and nothing narrower) lives in the
+   * file service either way — see MessagingWorkspaceFiles.
+   *
+   * A file the run did not write is dropped SILENTLY: a reply that mentions the config it
+   * read is the ordinary case, and announcing every one of those would bury the notices
+   * that matter. A file that could not be delivered at all is named, because a mention the
+   * chat never receives with nothing to say why is how this feature reads as broken.
    *
    * Always plain sends, never a threaded reply: a run that mentions a file has by
    * definition already sent the text that mentions it, and that message took the group's
    * one reply-to. Nothing here throws — a batch that fails is recorded, and a single file
    * that fails does not stop the ones behind it.
    */
-  private async deliverFiles(entry: BridgeEntry, replyText: string): Promise<void> {
+  private async deliverFiles(entry: BridgeEntry, replyText: string, since: number): Promise<void> {
     try {
       const row = this.deps.repo.find(entry.sessionId, entry.channel);
       if (!row || row.lastChatId === null) return; // no chat known yet: nothing mirrors
       const session = this.deps.sessions.findById(entry.sessionId);
       if (session === null) return; // deleted mid-run
-      const mentioned = replyFilePaths(replyText, session.workspace);
-      if (mentioned.length === 0) return;
-      // Existence is the filter that makes a loose extraction safe: a path the model
-      // invented, or one it has since deleted, is simply not there to send. Containment
-      // lives in this call too — see MessagingWorkspaceFiles.
-      const existing = await this.deps.files.statExisting(session.workspace, mentioned);
-      if (existing.length === 0) return;
+      const mentions = replyFileMentions(replyText, session.workspace);
+      if (mentions.length === 0) return; // the reply named no file at all: nothing to say
+      const stats = await this.deps.files.statExistingWithMtime(
+        session.workspace,
+        mentions.flatMap((m) => (m.rel === null ? [] : [m.rel])),
+      );
+      const mtimeByRel = new Map(stats.map((f) => [f.rel, f.mtimeMs]));
+      const produced: string[] = [];
+      const missing: string[] = [];
+      for (const mention of mentions) {
+        const mtime = mention.rel === null ? undefined : mtimeByRel.get(mention.rel);
+        if (mtime === undefined) missing.push(mention.mentioned);
+        else if (mtime >= since - MESSAGING_OUTBOUND_MTIME_GRACE_MS) produced.push(mention.rel!);
+      }
+      if (produced.length === 0 && missing.length === 0) return;
       const client = await this.clientFor(entry.sessionId, row);
-      for (const rel of existing.slice(0, MESSAGING_OUTBOUND_FILE_MAX_COUNT)) {
+      for (const rel of produced.slice(0, MESSAGING_OUTBOUND_FILE_MAX_COUNT)) {
         try {
           await this.deliverOneFile(client, row.lastChatId, session.workspace, rel);
         } catch (err) {
           this.recordError(entry.sessionId, err, "messaging_file_send_failed");
+          await this.noteFileFailure(client, row.lastChatId, rel, err);
         }
       }
-      const skipped = existing.length - MESSAGING_OUTBOUND_FILE_MAX_COUNT;
+      const skipped = produced.length - MESSAGING_OUTBOUND_FILE_MAX_COUNT;
       if (skipped > 0) {
         await client.sendText(row.lastChatId, messagingFilesSkippedNotice(skipped));
+      }
+      if (missing.length > 0) {
+        await client.sendText(row.lastChatId, messagingFilesMissingNotice(missing));
       }
     } catch (err) {
       this.recordError(entry.sessionId, err, "messaging_send_failed");
     }
   }
 
-  /** One mirrored file: read under its kind's ceiling, then sent as a picture or an attachment. */
+  /**
+   * Names one file that did not make it, in the chat.
+   *
+   * Every other way a file does not arrive is already visible there — over the byte cap,
+   * past the count cap, an inbound refusal. A failed upload reached `error_records` alone,
+   * which the person in the chat cannot open, so the feature just looked broken. A missing
+   * permission gets its own wording: it is the one failure they can fix themselves, in
+   * about ten seconds, given the scope name and the console link.
+   *
+   * Its own try/catch: a chat that will not take the notice must not take the rest of the
+   * batch down with it, and the upload failure behind it is already recorded.
+   */
+  private async noteFileFailure(
+    client: MessagingClient,
+    chatId: string,
+    rel: string,
+    err: unknown,
+  ): Promise<void> {
+    // `rel` is always "/"-joined (see toWorkspaceRelative), so its base name is its tail.
+    const fileName = rel.slice(rel.lastIndexOf("/") + 1);
+    const text =
+      err instanceof MessagingPermissionError
+        ? messagingFilePermissionNotice(fileName, err.scopes, err.grantUrl)
+        : messagingFileFailedNotice(fileName, err instanceof Error ? err.message : String(err));
+    try {
+      await client.sendText(chatId, text);
+    } catch {
+      // A channel that will not take the notice either is one problem, not two.
+    }
+  }
+
+  /** One mirrored file: read under the outer ceiling, then sent as a picture or an attachment. */
   private async deliverOneFile(
     client: MessagingClient,
     chatId: string,
     workspace: string,
     rel: string,
   ): Promise<void> {
-    const asImage = isImageFileName(rel);
+    // Read first, classify second. `rel` is the path the REPLY spelled, and the canonical
+    // file behind it may not share its extension: an in-Workspace `report.png -> report.pdf`
+    // (the everyday "latest" symlink) classified by the mention would go to the image
+    // endpoint under the image ceiling and arrive named report.pdf, which Telegram refuses.
+    // The read is bounded by the larger of the two ceilings either way.
+    const file = await this.deps.files.read(workspace, rel, {
+      // One byte past the ceiling is enough to know the file is over it — reading the whole
+      // of a 2GB log to measure it would be the same mistake in the other direction.
+      maxBytes: MESSAGING_OUTBOUND_FILE_MAX_BYTES + 1,
+    });
+    const asImage = isImageFileName(file.fileName);
     const maxBytes = asImage
       ? MESSAGING_OUTBOUND_IMAGE_MAX_BYTES
       : MESSAGING_OUTBOUND_FILE_MAX_BYTES;
-    // One byte past the ceiling is enough to know the file is over it — reading the whole
-    // of a 2GB log to measure it would be the same mistake in the other direction.
-    const file = await this.deps.files.read(workspace, rel, { maxBytes: maxBytes + 1 });
     if (file.data.length > maxBytes) {
       await client.sendText(chatId, messagingFileTooLargeNotice(file.fileName, maxBytes));
       return;

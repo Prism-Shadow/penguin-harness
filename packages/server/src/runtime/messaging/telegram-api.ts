@@ -10,6 +10,7 @@
  * Wire types below mirror the Bot API JSON verbatim (snake_case): the transport does not
  * reshape payloads, so a test fake constructs exactly what the real API returns.
  */
+import { FormData, fetch as undiciFetch } from "undici";
 import { MessagingMediaTooLargeError, collectUnderCap } from "./media.js";
 
 /** Telegram Bot API host. Deliberately not configurable: bindings carry only the token. */
@@ -80,11 +81,7 @@ export interface TelegramMessage {
   };
   /** Present only for text messages; anything else (photo, sticker, voice, …) omits it. */
   text?: string;
-  /**
-   * Spans over `text` (mentions, formatting, …); absent when the message has none. A
-   * captioned media message carries the same shapes over its caption under
-   * `caption_entities` instead — the day this connector reads captions, it reads that.
-   */
+  /** Spans over `text` (mentions, formatting, …); absent when the message has none. */
   entities?: TelegramMessageEntity[];
   /**
    * "Unique identifier of a message thread or forum topic to which the message belongs; for
@@ -110,6 +107,12 @@ export interface TelegramMessage {
   photo?: TelegramPhotoSize[];
   /** The text sent WITH a photo (or another media message) — a text message carries `text` instead. */
   caption?: string;
+  /**
+   * The same spans over `caption` that `entities` carries over `text`. A captioned photo is
+   * how a group addresses this bot about a picture, so the caption needs the same mention
+   * handling the text gets — see the connector's stripBotMention.
+   */
+  caption_entities?: TelegramMessageEntity[];
   from?: {
     first_name?: string;
     username?: string;
@@ -206,6 +209,34 @@ export interface TelegramTransport {
   createClient(creds: TelegramCredentials): TelegramBotClient;
 }
 
+/**
+ * `fetch` AND `FormData` are imported from undici on purpose, and must stay a matched pair.
+ *
+ * The startup entry replaces `globalThis.fetch` with undici's so outbound traffic follows
+ * the proxy dispatcher (see net/proxy.ts). undici's fetch brand-checks a FormData body
+ * against ITS OWN class, and Node's built-in `FormData` is a different class, so a global
+ * `new FormData()` fell through undici's body handling to `String(body)` — the Bot API
+ * received the 17 bytes `[object FormData]` as `text/plain` and answered "there is no
+ * document in the request". Every upload failed in production and none did in CI, where
+ * `globalThis.fetch` is still the runtime's own and the pairing happens to match.
+ *
+ * Importing FormData from undici while calling `globalThis.fetch` inverts the same bug, so
+ * the transport calls undici's fetch directly. That keeps the proxy: undici's fetch
+ * resolves the global dispatcher per call, which is the contract net/proxy.ts is written
+ * against. `Blob` needs no such treatment — `globalThis.Blob` IS node:buffer's Blob, and
+ * undici's FormData accepts it (verified on the wire, not assumed).
+ */
+type TelegramFetch = typeof undiciFetch;
+
+export interface TelegramTransportOpts {
+  /**
+   * Test seam: the `fetch` the transport calls. Only for the tests that assert on request
+   * shape and error mapping — the multipart pairing above is provable only against a real
+   * socket, so the tests that cover it drive the default.
+   */
+  fetch?: TelegramFetch;
+}
+
 // ---------------------------------------------------------------------------
 // Production adapter over fetch
 // ---------------------------------------------------------------------------
@@ -300,7 +331,8 @@ async function* bodyChunks(body: ReadableStream<Uint8Array>): AsyncGenerator<Uin
 }
 
 /** The production factory: plain HTTPS against the Bot API. */
-export function createTelegramTransport(): TelegramTransport {
+export function createTelegramTransport(opts: TelegramTransportOpts = {}): TelegramTransport {
+  const doFetch = opts.fetch ?? undiciFetch;
   return {
     createClient(creds: TelegramCredentials): TelegramBotClient {
       /** One Bot API method call: POST the body, then unwrap the `{ok, result}` envelope. */
@@ -313,9 +345,9 @@ export function createTelegramTransport(): TelegramTransport {
       ): Promise<T> => {
         const deadline = AbortSignal.timeout(opts?.timeoutMs ?? CALL_TIMEOUT_MS);
         const signal = opts?.signal ? AbortSignal.any([opts.signal, deadline]) : deadline;
-        let res: Response;
+        let res: Awaited<ReturnType<TelegramFetch>>;
         try {
-          res = await fetch(`${TELEGRAM_API_BASE}/bot${creds.botToken}/${method}`, {
+          res = await doFetch(`${TELEGRAM_API_BASE}/bot${creds.botToken}/${method}`, {
             method: "POST",
             headers,
             body,
@@ -399,11 +431,14 @@ export function createTelegramTransport(): TelegramTransport {
           if (file.file_size !== undefined && file.file_size > maxBytes) {
             throw new MessagingMediaTooLargeError("The image", maxBytes);
           }
-          let res: Response;
+          let res: Awaited<ReturnType<TelegramFetch>>;
           try {
-            res = await fetch(`${TELEGRAM_API_BASE}/file/bot${creds.botToken}/${file.file_path}`, {
-              signal: AbortSignal.timeout(TRANSFER_TIMEOUT_MS),
-            });
+            res = await doFetch(
+              `${TELEGRAM_API_BASE}/file/bot${creds.botToken}/${file.file_path}`,
+              {
+                signal: AbortSignal.timeout(TRANSFER_TIMEOUT_MS),
+              },
+            );
           } catch (err) {
             throw new Error(`file download failed: ${fetchErrorText(err)}`);
           }

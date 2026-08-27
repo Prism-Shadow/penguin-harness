@@ -25,11 +25,22 @@
  *
  * No test opens a socket.
  */
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { Readable } from "node:stream";
+import { Agent, getGlobalDispatcher, setGlobalDispatcher } from "undici";
+import type { Dispatcher } from "undici";
 import { afterEach, describe, expect, it } from "vitest";
 import { createLarkSdk } from "../src/runtime/messaging/feishu-sdk.js";
 import { createTelegramTransport } from "../src/runtime/messaging/telegram-api.js";
-import { MessagingMediaTooLargeError } from "../src/runtime/messaging/media.js";
+import type {
+  TelegramTransport,
+  TelegramTransportOpts,
+} from "../src/runtime/messaging/telegram-api.js";
+import {
+  MessagingMediaTooLargeError,
+  MessagingPermissionError,
+} from "../src/runtime/messaging/media.js";
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x01, 0x02, 0x03]);
 const CREDS = { appId: "cli_wire", appSecret: "secret", baseDomain: "https://open.feishu.cn" };
@@ -43,11 +54,15 @@ interface WireCall {
   contentType?: unknown;
 }
 
-/** What a stubbed route answers with: a parsed body, a stream, or an axios-shaped throw. */
+/**
+ * What a stubbed route answers with: a parsed body, a stream, an axios-shaped throw, or
+ * nothing at all — the request the API accepts and never answers.
+ */
 type Answer =
   | { body: unknown }
   | { stream: Buffer; headers?: Record<string, string> }
-  | { status: number; streamError: unknown };
+  | { status: number; streamError: unknown }
+  | { stall: true };
 
 /**
  * A stand-in for the axios instance the Lark SDK talks to, reproducing its response
@@ -60,6 +75,7 @@ function larkHttp(routes: (url: string) => Answer): {
   const calls: WireCall[] = [];
   const answer = (url: string, config?: Record<string, unknown>): unknown => {
     const found = routes(url);
+    if ("stall" in found) return new Promise<never>(() => {});
     if ("body" in found) return found.body;
     if ("stream" in found) {
       const data = Readable.from([found.stream]);
@@ -170,6 +186,131 @@ describe("feishu adapter against the SDK's HTTP boundary", () => {
     ).rejects.toBeInstanceOf(MessagingMediaTooLargeError);
   });
 
+  it("reports the scopes to grant and the console link when the app lacks a permission", async () => {
+    // The live failure: an app that receives messages happily is refused the upload until
+    // one of these is granted. Feishu names both the scopes and a per-app grant URL in its
+    // own `msg`, and the CODE is what identifies the case — the prose is localized.
+    const denial = {
+      code: 99991672,
+      msg:
+        "Access denied. One of the following scopes is required: [im:resource:upload, im:resource]. " +
+        "应用尚未开通所需的应用身份权限：[im:resource:upload, im:resource]，点击链接申请并开通任一权限即可：" +
+        "https://open.feishu.cn/app/cli_wire/auth?q=im:resource:upload,im:resource&op_from=openapi&token_type=tenant",
+    };
+    const { http } = larkHttp((url) =>
+      url.includes("tenant_access_token") ? TOKEN_ANSWER : { status: 403, streamError: denial },
+    );
+    const client = await createLarkSdk({ httpInstance: http }).createClient(CREDS);
+    const err = await client
+      .sendImage("oc_wire", { fileName: "chart.png", data: PNG })
+      .then(() => null)
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(MessagingPermissionError);
+    const denied = err as MessagingPermissionError;
+    expect(denied.scopes).toEqual(["im:resource:upload", "im:resource"]);
+    expect(denied.grantUrl).toBe(
+      "https://open.feishu.cn/app/cli_wire/auth?q=im:resource:upload,im:resource&op_from=openapi&token_type=tenant",
+    );
+    // The scope list and the link, and nothing else: the raw SDK error carries the request
+    // config, which is where the app secret lives.
+    expect(denied.message).not.toContain("secret");
+  });
+
+  it("reads a stream error's own code and msg, not the HTTP status (the second shipped bug)", async () => {
+    // `messageResource.get` is fetched as a stream, so a REFUSAL arrives as a stream too —
+    // Feishu's reason sits unread inside it, and reading the error straight off yields only
+    // "Request failed with status code 400". `log_id` rides along because it is the first
+    // thing Feishu support asks for.
+    const body = { code: 234043, msg: "message id is invalid", log_id: "0214abc" };
+    const { http } = larkHttp((url) =>
+      url.includes("tenant_access_token")
+        ? TOKEN_ANSWER
+        : { status: 400, streamError: Readable.from([Buffer.from(JSON.stringify(body))]) },
+    );
+    const client = await createLarkSdk({ httpInstance: http }).createClient(CREDS);
+    await expect(
+      client.fetchMessageImage({ messageId: "om_x", fileKey: "img_x", maxBytes: 1024 }),
+    ).rejects.toThrow("message id is invalid (code 234043, log_id 0214abc)");
+  });
+
+  it("carries the grant link out of a stream error too, so an inbound refusal is fixable", async () => {
+    const denial = {
+      code: 99991672,
+      msg:
+        "Access denied. One of the following scopes is required: [im:resource]. " +
+        "点击链接申请并开通：https://open.feishu.cn/app/cli_wire/auth?q=im:resource&op_from=openapi",
+    };
+    const { http } = larkHttp((url) =>
+      url.includes("tenant_access_token")
+        ? TOKEN_ANSWER
+        : {
+            status: 403,
+            streamError: Readable.from([Buffer.from(JSON.stringify(denial))]),
+          },
+    );
+    const client = await createLarkSdk({ httpInstance: http }).createClient(CREDS);
+    const err = await client
+      .fetchMessageImage({ messageId: "om_x", fileKey: "img_x", maxBytes: 1024 })
+      .then(() => null)
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(MessagingPermissionError);
+    expect((err as MessagingPermissionError).scopes).toEqual(["im:resource"]);
+    expect((err as MessagingPermissionError).grantUrl).toBe(
+      "https://open.feishu.cn/app/cli_wire/auth?q=im:resource&op_from=openapi",
+    );
+  });
+
+  it("labels bytes that are not an image by the header, and PNG only as a last resort", async () => {
+    // The reverse of the test above it: the sniff is inconclusive, so the header decides —
+    // and where the header says nothing usable either, a data URL still needs some type.
+    const notAnImage = Buffer.from("this is not an image at all");
+    const { http } = larkHttp((url) =>
+      url.includes("tenant_access_token")
+        ? TOKEN_ANSWER
+        : { stream: notAnImage, headers: { "content-type": "image/gif; charset=binary" } },
+    );
+    const client = await createLarkSdk({ httpInstance: http }).createClient(CREDS);
+    const byHeader = await client.fetchMessageImage({
+      messageId: "om_x",
+      fileKey: "img_x",
+      maxBytes: 1024,
+    });
+    expect(byHeader.mimeType).toBe("image/gif");
+
+    const bare = larkHttp((url) =>
+      url.includes("tenant_access_token")
+        ? TOKEN_ANSWER
+        : { stream: notAnImage, headers: { "content-type": "application/octet-stream" } },
+    );
+    const client2 = await createLarkSdk({ httpInstance: bare.http }).createClient(CREDS);
+    const lastResort = await client2.fetchMessageImage({
+      messageId: "om_x",
+      fileKey: "img_x",
+      maxBytes: 1024,
+    });
+    expect(lastResort.mimeType).toBe("image/png");
+  });
+
+  it("gives every call a deadline, so a request that never answers cannot wedge the chain", async () => {
+    // The SDK's own transport is a bare `axios.create()` with no timeout. Every outbound
+    // message of a Session goes out on one serial chain, so a request the API accepts and
+    // never answers parks every later reply, notice and file for that Session — with no
+    // error record and no status change — until the server restarts.
+    let stalled = true;
+    const { http } = larkHttp((url) => {
+      if (url.includes("tenant_access_token")) return TOKEN_ANSWER;
+      if (stalled) return { stall: true };
+      return { body: { code: 0, msg: "success", data: {} } };
+    });
+    const client = await createLarkSdk({ httpInstance: http, timeoutMs: 40 }).createClient(CREDS);
+    await expect(
+      client.fetchMessageImage({ messageId: "om_x", fileKey: "img_x", maxBytes: 1024 }),
+    ).rejects.toThrow(/timed out/);
+    // And the caller is free again: what was queued behind the stall still goes out.
+    stalled = false;
+    await expect(client.sendText("oc_wire", "still working")).resolves.toBeUndefined();
+  });
+
   it("uploads a picture, then sends the returned key as an image message", async () => {
     // The upload endpoints resolve to their INNER `data` object rather than the `{code,msg}`
     // envelope the JSON endpoints return — a difference invisible to a seam-level fake, and
@@ -237,27 +378,27 @@ describe("feishu adapter against the SDK's HTTP boundary", () => {
 });
 
 describe("telegram adapter against the fetch boundary", () => {
-  const realFetch = globalThis.fetch;
-  afterEach(() => {
-    globalThis.fetch = realFetch;
-  });
-
   const TOKEN = "7000000001:SECRET-TOKEN-VALUE";
   const PHOTO = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x11, 0x22]);
+  const DOC = Buffer.from("hello from the workspace");
 
-  /** Records every request and answers by URL. */
-  function stubFetch(answer: (url: string) => Response | Promise<Response>): {
+  /** A recorded stub, handed to the transport through its own seam rather than to the global. */
+  interface FetchStub {
     urls: string[];
     bodies: unknown[];
-  } {
+    transport: TelegramTransport;
+  }
+
+  /** Records every request and answers by URL. */
+  function stubFetch(answer: (url: string) => Response | Promise<Response>): FetchStub {
     const urls: string[] = [];
     const bodies: unknown[] = [];
-    globalThis.fetch = ((url: string | URL, init?: RequestInit) => {
+    const fetchImpl = ((url: string | URL, init?: RequestInit) => {
       urls.push(String(url));
       bodies.push(init?.body);
       return Promise.resolve(answer(String(url)));
-    }) as typeof globalThis.fetch;
-    return { urls, bodies };
+    }) as unknown as TelegramTransportOpts["fetch"];
+    return { urls, bodies, transport: createTelegramTransport({ fetch: fetchImpl }) };
   }
 
   const okJson = (result: unknown): Response =>
@@ -266,27 +407,27 @@ describe("telegram adapter against the fetch boundary", () => {
     });
 
   it("downloads a photo in two hops: getFile, then the FILE endpoint", async () => {
-    const { urls } = stubFetch((url) =>
+    const stub = stubFetch((url) =>
       url.includes("/getFile")
         ? okJson({ file_path: "photos/file_7.jpg", file_size: PHOTO.length })
         : new Response(PHOTO, { headers: { "content-type": "image/jpeg" } }),
     );
-    const bot = createTelegramTransport().createClient({ botToken: TOKEN });
+    const bot = stub.transport.createClient({ botToken: TOKEN });
     const got = await bot.getFileBytes({ fileId: "full-1280", maxBytes: 20 * 1024 * 1024 });
     expect(got.data.equals(PHOTO)).toBe(true);
     expect(got.filePath).toBe("photos/file_7.jpg");
     // The second hop is /file/bot<token>/<path> — a different endpoint from the methods,
     // and the detail most easily got wrong.
-    expect(urls[0]).toBe(`https://api.telegram.org/bot${TOKEN}/getFile`);
-    expect(urls[1]).toBe(`https://api.telegram.org/file/bot${TOKEN}/photos/file_7.jpg`);
+    expect(stub.urls[0]).toBe(`https://api.telegram.org/bot${TOKEN}/getFile`);
+    expect(stub.urls[1]).toBe(`https://api.telegram.org/file/bot${TOKEN}/photos/file_7.jpg`);
   });
 
   it("never puts the bot token in an error, though the download URL embeds it", async () => {
     // Transport failure first.
-    stubFetch(() => {
+    const stub = stubFetch(() => {
       throw Object.assign(new Error("fetch failed"), { cause: new Error("ECONNREFUSED") });
     });
-    const bot = createTelegramTransport().createClient({ botToken: TOKEN });
+    const bot = stub.transport.createClient({ botToken: TOKEN });
     await expect(bot.getFileBytes({ fileId: "f", maxBytes: 1024 })).rejects.toThrow(
       /getFile failed/,
     );
@@ -294,12 +435,13 @@ describe("telegram adapter against the fetch boundary", () => {
       /SECRET-TOKEN-VALUE/,
     );
     // Then an HTTP failure on the file endpoint itself, whose URL carries the token.
-    stubFetch((url) =>
+    const stub2 = stubFetch((url) =>
       url.includes("/getFile")
         ? okJson({ file_path: "photos/f.jpg" })
         : new Response("nope", { status: 404 }),
     );
-    const err = await bot
+    const err = await stub2.transport
+      .createClient({ botToken: TOKEN })
       .getFileBytes({ fileId: "f", maxBytes: 1024 })
       .then(() => null)
       .catch((e: Error) => e);
@@ -308,16 +450,19 @@ describe("telegram adapter against the fetch boundary", () => {
   });
 
   it("refuses a file the API already says is over the cap, as a size error", async () => {
-    stubFetch(() => okJson({ file_path: "photos/f.jpg", file_size: 30 * 1024 * 1024 }));
-    const bot = createTelegramTransport().createClient({ botToken: TOKEN });
+    const stub = stubFetch(() =>
+      okJson({ file_path: "photos/f.jpg", file_size: 30 * 1024 * 1024 }),
+    );
+    const bot = stub.transport.createClient({ botToken: TOKEN });
     await expect(
       bot.getFileBytes({ fileId: "f", maxBytes: 20 * 1024 * 1024 }),
     ).rejects.toBeInstanceOf(MessagingMediaTooLargeError);
   });
 
   it("posts a picture as multipart sendPhoto, and other files as sendDocument", async () => {
-    const { urls, bodies } = stubFetch(() => okJson({}));
-    const bot = createTelegramTransport().createClient({ botToken: TOKEN });
+    const stub = stubFetch(() => okJson({}));
+    const { urls, bodies } = stub;
+    const bot = stub.transport.createClient({ botToken: TOKEN });
     await bot.sendPhoto({ chatId: "42424242", fileName: "chart.png", data: PHOTO });
     await bot.sendDocument({
       chatId: "-1002233445566",
@@ -338,8 +483,77 @@ describe("telegram adapter against the fetch boundary", () => {
     expect((doc.get("document") as File).name).toBe("notes.md");
   });
 
+  it("really posts multipart, driving the transport's OWN fetch at a real socket", async () => {
+    // The one assertion no stub can make. The startup entry replaces `globalThis.fetch`
+    // with undici's (net/proxy.ts), and undici's fetch brand-checks a FormData body against
+    // its OWN class — so a global `new FormData()` fell through to `String(body)` and the
+    // Bot API received the 17 bytes `[object FormData]` as text/plain: "there is no
+    // document in the request". Every upload failed in production and none did in CI, where
+    // `globalThis.fetch` is still the runtime's own and the pairing happens to match.
+    //
+    // So this test replaces neither: it takes the transport exactly as production builds
+    // it, points undici's global dispatcher at a local server, and reads what arrived.
+    const received: { path: string; contentType?: string; body: Buffer }[] = [];
+    const server = createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on("data", (c: Buffer) => chunks.push(c));
+      req.on("end", () => {
+        received.push({
+          path: req.url ?? "",
+          ...(req.headers["content-type"] !== undefined
+            ? { contentType: req.headers["content-type"] }
+            : {}),
+          body: Buffer.concat(chunks),
+        });
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true, result: {} }));
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as AddressInfo).port;
+    const previous = getGlobalDispatcher();
+    const inner = new Agent();
+    // Everything undici's fetch dispatches goes to the local server instead, request bytes
+    // untouched — the Bot API host is not configurable, and should not become so for a test.
+    const redirect: Pick<Dispatcher, "dispatch" | "close" | "destroy"> = {
+      dispatch: (opts, handler) =>
+        inner.dispatch({ ...opts, origin: `http://127.0.0.1:${port}` }, handler),
+      close: () => inner.close(),
+      destroy: () => inner.destroy(),
+    };
+    setGlobalDispatcher(redirect as Dispatcher);
+    try {
+      const bot = createTelegramTransport().createClient({ botToken: TOKEN });
+      await bot.sendDocument({ chatId: "42424242", fileName: "notes.md", data: DOC });
+      await bot.sendPhoto({ chatId: "42424242", fileName: "chart.png", data: PHOTO });
+    } finally {
+      setGlobalDispatcher(previous);
+      await inner.close();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+
+    expect(received).toHaveLength(2);
+    const [doc, photo] = received;
+    expect(doc!.path).toBe(`/bot${TOKEN}/sendDocument`);
+    expect(doc!.contentType).toMatch(/^multipart\/form-data;/);
+    const docBody = doc!.body.toString("latin1");
+    expect(docBody).toContain('name="document"');
+    expect(docBody).toContain('filename="notes.md"');
+    expect(docBody).toContain(DOC.toString("latin1"));
+    // The failure this guards against was a 17-byte `[object FormData]` body.
+    expect(doc!.body.length).toBeGreaterThan(100);
+    expect(docBody).not.toContain("[object FormData]");
+
+    expect(photo!.path).toBe(`/bot${TOKEN}/sendPhoto`);
+    expect(photo!.contentType).toMatch(/^multipart\/form-data;/);
+    const photoBody = photo!.body.toString("latin1");
+    expect(photoBody).toContain('name="photo"');
+    expect(photoBody).toContain('filename="chart.png"');
+    expect(photoBody).toContain(PHOTO.toString("latin1"));
+  });
+
   it("surfaces a Bot API refusal of an upload with its description", async () => {
-    stubFetch(
+    const stub = stubFetch(
       () =>
         new Response(
           JSON.stringify({ ok: false, description: "PHOTO_INVALID_DIMENSIONS", error_code: 400 }),
@@ -349,7 +563,7 @@ describe("telegram adapter against the fetch boundary", () => {
           },
         ),
     );
-    const bot = createTelegramTransport().createClient({ botToken: TOKEN });
+    const bot = stub.transport.createClient({ botToken: TOKEN });
     await expect(
       bot.sendPhoto({ chatId: "1", fileName: "chart.png", data: PHOTO }),
     ).rejects.toThrow("sendPhoto failed: PHOTO_INVALID_DIMENSIONS (code 400)");

@@ -63,6 +63,13 @@ export interface WorkspaceFileReadOptions {
   maxBytes?: number;
 }
 
+/** One existing file from a batch existence check, with the time it was last written. */
+export interface WorkspaceFileStat {
+  /** The path as it was asked for, not its canonical form. */
+  rel: string;
+  mtimeMs: number;
+}
+
 export class WorkspaceFilesService {
   /** Canonical path (realpath) of the Workspace root; 404 if it doesn't exist. */
   private async realBase(workspace: string): Promise<string> {
@@ -180,18 +187,28 @@ export class WorkspaceFilesService {
    * leaking containment details. Returns the deduplicated existing items in input order.
    */
   async statExisting(workspace: string, rels: string[]): Promise<string[]> {
+    return (await this.statExistingWithMtime(workspace, rels)).map((f) => f.rel);
+  }
+
+  /**
+   * The same check, with each file's modification time — for the caller that has to tell a
+   * file this run wrote from one that was already sitting in the Workspace (the messaging
+   * bridge sends only the former). Statting is what the check already does, so the time
+   * costs nothing extra.
+   */
+  async statExistingWithMtime(workspace: string, rels: string[]): Promise<WorkspaceFileStat[]> {
     const unique = [...new Set(rels)];
-    const exists = await Promise.all(
-      unique.map(async (rel) => {
+    const stats = await Promise.all(
+      unique.map(async (rel): Promise<WorkspaceFileStat | null> => {
         try {
           const stat = await fs.stat(await this.resolveRead(workspace, rel));
-          return stat.isFile();
+          return stat.isFile() ? { rel, mtimeMs: stat.mtimeMs } : null;
         } catch {
-          return false;
+          return null;
         }
       }),
     );
-    return unique.filter((_, i) => exists[i]);
+    return stats.filter((s): s is WorkspaceFileStat => s !== null);
   }
 
   /**
