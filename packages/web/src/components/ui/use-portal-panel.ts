@@ -18,8 +18,8 @@
  * "That moved the trigger" is not a nicety. Capture on `window` hears every
  * scrolling element in the document, and the panel took each one as a reason to
  * close — so a chat pane auto-following a streaming reply closed the context
- * ring's panel, which sits in the header over content that never moved, on every
- * chunk that arrived. `scrollMovesAnchor` (dropdown.tsx, shared with the context
+ * ring's panel, which sits in the composer toolbar over content that never moved,
+ * on every chunk that arrived. `scrollMovesAnchor` (lib/context-menu.ts, shared with the context
  * menu's own dismissal) decides which scrolls those are, from the trigger this
  * hook already holds. Closing rather than re-positioning stays the behavior: the
  * panel is placed once and does not follow its trigger, so a scroll that DID move
@@ -27,7 +27,7 @@
  * as before — the panel must never become one that no scroll dismisses.
  */
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { scrollMovesAnchor } from "./dropdown";
+import { scrollMovesAnchor } from "../../lib/context-menu";
 
 export interface PortalPanelPosition {
   topPx?: number;

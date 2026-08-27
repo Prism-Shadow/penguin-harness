@@ -1,12 +1,13 @@
 /**
  * Scroll dismissal for the shared portal panel (src/components/ui/use-portal-panel.ts),
- * which OptionMenu, Select, InfoPopover and the chat header's context ring all open through.
+ * which OptionMenu, Select, InfoPopover and the composer toolbar's context ring all open through.
  *
  * The panel listens for scroll in the capture phase because scroll does not bubble, and the
  * price of capture on `window` is that it hears every scrolling element in the document. The
  * rule that closes a panel whose position has gone stale must therefore ask whether the
  * scrolled container holds this panel's trigger — otherwise a chat pane auto-following a
- * streaming reply closes a panel opened in the header, over content that never moved.
+ * streaming reply closes a panel opened in the composer toolbar, over content that never
+ * moved.
  *
  * `scrollMovesAnchor` itself is exercised in context-menu.test.ts; what cannot be reached
  * from a node-only suite (`environment: "node"`, no jsdom) is the wiring, and the wiring is
@@ -46,7 +47,7 @@ describe("use-portal-panel scroll dismissal", () => {
 
   it("asks whether the scroll moved this panel's trigger before closing", () => {
     const onScroll = handler(hook, "onScroll");
-    expect(onScroll).toContain("scrollMovesAnchor(");
+    expect(onScroll).toMatch(/if \(!scrollMovesAnchor\(/);
     // The trigger is the owner: the panel is placed against that element's box, so a scroll
     // that did not move it did not invalidate the position.
     expect(onScroll).toContain("triggerRef.current");

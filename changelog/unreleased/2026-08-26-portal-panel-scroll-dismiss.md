@@ -7,7 +7,7 @@
 
 [中文版](2026-08-26-portal-panel-scroll-dismiss.zh.md)
 
-Every panel opened through the shared portal-panel hook — `OptionMenu`, `Select`, `InfoPopover` and the chat header's context ring — closed on any scroll anywhere in the document. Clicking the context ring to watch the context fill during a streaming run closed the panel on the next chunk that arrived. These panels now close only when the scrolled container holds the panel's own trigger.
+Every panel opened through the shared portal-panel hook — `OptionMenu`, `Select`, `InfoPopover` and the composer toolbar's context ring — closed on any scroll anywhere in the document. Clicking the context ring to watch the context fill during a streaming run closed the panel on the next chunk that arrived. These panels now close only when the scrolled container holds the panel's own trigger.
 
 ## Details
 
