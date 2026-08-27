@@ -146,7 +146,7 @@ Every endpoint that names a model takes the complete `(provider, modelId)` pair.
 
 #### Provider key minting
 
-Owner-only. A provider group that publishes an authorization flow in the built-in catalog can mint a **new** API key for the user in the browser, instead of the user copying one out of a console.
+Owner-only, except the redirect receiver `GET /callback`, which answers without a session — see below. A provider group that publishes an authorization flow in the built-in catalog can mint a **new** API key for the user in the browser, instead of the user copying one out of a console.
 
 | Method | Path | Description |
 | --- | --- | --- |
@@ -155,7 +155,11 @@ Owner-only. A provider group that publishes an authorization flow in the built-i
 | GET | /api/projects/:projectId/model-oauth/:flowId | Poll a flow: `{status: pending\|done\|error, provider, error?}` |
 | POST | /api/projects/:projectId/model-oauth/:flowId/code | Redeem a code the user pasted: `{code}` → `{ok, applied?, error?}` |
 
-The PKCE verifier is generated server-side, held in memory for ten minutes, and never sent to a client; the minted key goes straight into the provider group's models and is never returned, logged, or put in a URL. A flow belongs to one user in one Project and is single-use — anyone else's request, and any second redemption, is refused. `mode: manual` omits the callback so the authorization page shows a one-time code to carry back by hand, for deployments the redirect cannot reach. A completed flow invalidates cached runtimes and publishes `credentials_updated`, exactly as `PUT /models` does.
+The PKCE verifier is generated server-side, held in memory for ten minutes, and never sent to a client; the minted key goes straight into the provider group's models and is never returned, logged, or put in a URL. A flow belongs to one user in one Project and is single-use: a second redemption is refused, and `/start`, `/:flowId` and `/:flowId/code` refuse anyone but that owner.
+
+`GET /callback` is the exception, and has to be. A loopback OAuth redirect is delivered by whichever browser the provider redirected, which is not necessarily the one that started the flow — the desktop shell opens the authorization page in the *system* browser, which holds no cookie for the app's origin. So that one path is mounted outside the session gate and authorizes on the flow id instead: 32 random bytes, valid for ten minutes, spendable once, and only against the Project the flow was opened in. Nothing adjacent is exempt — a longer path, another method, and the three sibling routes all still require the session.
+
+`mode: manual` omits the callback so the authorization page shows a one-time code to carry back by hand, for deployments the redirect cannot reach. A completed flow invalidates cached runtimes and publishes `credentials_updated`, exactly as `PUT /models` does.
 
 ### Agents
 

@@ -3,6 +3,10 @@
  * expiry and single-use rules, the exchange's error mapping, and the routes end to end —
  * owner-only, key written to every model of the group, `credentials_updated` published.
  *
+ * The redirect receiver is the one route of the group that answers without a session, and
+ * the last describe covers exactly that: what the flow id alone buys, and — case by case —
+ * what it still does not.
+ *
  * No test reaches the network: `exchangeCode` takes its fetch as an argument, and the route
  * cases stub the global one.
  */
@@ -24,6 +28,7 @@ import {
   codeChallenge,
   createVerifier,
   exchangeCode,
+  FLOW_TTL_MS,
   ModelOAuthService,
 } from "../src/services/model-oauth-service.js";
 import { requestOrigin } from "../src/http/routes/model-oauth.js";
@@ -489,5 +494,157 @@ describe("model-oauth routes", () => {
     expect((await owner.get(`${base()}/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA`)).status).toBe(
       404,
     );
+  });
+});
+
+/**
+ * The redirect receiver's exemption from the session gate.
+ *
+ * This is the desktop's whole story: the shell hands every non-app URL to
+ * `shell.openExternal`, so the authorization page opens in the *system* browser, and the
+ * system browser is redirected back to `http://localhost:<port>` holding no
+ * `penguin_session` cookie for it. Behind the gate that was a bare 401 on every desktop
+ * authorization while the browser — whose popup is a tab of the session that opened it —
+ * completed fine.
+ *
+ * So the flow id is the credential on this one route, and these cases pin the whole of what
+ * it buys: one Project, one code, ten minutes, once. Everything below is asserted with NO
+ * cookie unless the case is specifically about the signed-in browser still working.
+ */
+describe("model-oauth callback without a session", () => {
+  let t: TestApp;
+  let owner: ReturnType<typeof apiClient>;
+  let projectId: string;
+  let otherProjectId: string;
+  let exchanges: number;
+
+  const base = (p = projectId) => `/api/projects/${p}/model-oauth`;
+  /** The system browser the provider redirected: a request carrying no cookie at all. */
+  const noSession = (apiPath: string, init?: RequestInit) => t.app.request(apiPath, init);
+  const startFlow = async (p = projectId): Promise<string> =>
+    (
+      (await (
+        await owner.post(`${base(p)}/start`, { provider: "tokendance" })
+      ).json()) as ModelOAuthStartResponse
+    ).flowId;
+  const callback = (flowId: string, code = "auth-code-1", p = projectId) =>
+    `${base(p)}/callback?flow=${encodeURIComponent(flowId)}&code=${code}`;
+  /**
+   * Whether any model of the group ended up with a stored key. The group's entries always
+   * carry a `credential` (it holds the catalog's base URL), so only `apiKeyMasked` answers
+   * the question actually being asked.
+   */
+  const groupHasKey = async (p = projectId): Promise<boolean> => {
+    const models = (await (await owner.get(`/api/projects/${p}/models`)).json()) as ModelsResponse;
+    return models.models.some(
+      (m) => m.provider === "tokendance" && m.credential?.apiKeyMasked !== undefined,
+    );
+  };
+
+  beforeEach(async () => {
+    t = await createTestApp();
+    const a = await provisionUser(t.app, "owner_o");
+    owner = apiClient(t.app, a.cookie);
+    const create = async (id: string): Promise<string> =>
+      (
+        (await (
+          await owner.post("/api/projects", { projectId: id, name: id })
+        ).json()) as ProjectCreateResponse
+      ).project.projectId;
+    projectId = await create("owner_o-td");
+    otherProjectId = await create("owner_o-td2");
+
+    exchanges = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        exchanges += 1;
+        return jsonResponse(200, { key: "sk-oauth-minted-key-9911" });
+      }),
+    );
+  });
+  afterEach(async () => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    await t.cleanup();
+  });
+
+  it("completes for the system browser, which carries no cookie — and still for a signed-in tab", async () => {
+    // The desktop path: nothing but the flow id in the URL.
+    const desktop = await noSession(callback(await startFlow()));
+    expect(desktop.status).toBe(200);
+    expect(desktop.headers.get("content-type")).toContain("text/html");
+    const page = await desktop.text();
+    expect(page).toContain("API key created");
+    // Still says nothing but the outcome, session or no session.
+    expect(page).not.toContain("sk-oauth-minted-key-9911");
+    expect(page).not.toContain("auth-code-1");
+
+    // The browser path, on the very same route: a popup of the session that opened it. It
+    // was never broken and must not become so — the cookie is simply not consulted here.
+    const browser = await owner.get(callback(await startFlow(), "auth-code-2"));
+    expect(browser.status).toBe(200);
+    expect(await browser.text()).toContain("API key created");
+
+    expect(exchanges).toBe(2);
+    expect(await groupHasKey()).toBe(true);
+  });
+
+  it("buys nothing for a flow id that does not exist", async () => {
+    const res = await noSession(callback("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"));
+    expect(res.status).toBe(400);
+    // The same page an expired or foreign flow gets: a flow id is not a probe for what exists.
+    expect(await res.text()).toContain("Authorization failed");
+    expect(exchanges).toBe(0);
+    expect(await groupHasKey()).toBe(false);
+  });
+
+  it("cannot be redirected at a Project the flow does not belong to", async () => {
+    const flowId = await startFlow();
+    const res = await noSession(callback(flowId, "auth-code-1", otherProjectId));
+    expect(res.status).toBe(400);
+    expect(exchanges).toBe(0);
+    expect(await groupHasKey(otherProjectId)).toBe(false);
+    // And the flow itself is untouched — the misdirected attempt did not spend it.
+    expect((await noSession(callback(flowId))).status).toBe(200);
+    expect(await groupHasKey()).toBe(true);
+  });
+
+  it("refuses a flow past its ten-minute TTL", async () => {
+    const flowId = await startFlow();
+    // The service reads the clock through `Date.now()` at call time, so moving it is enough.
+    const expired = Date.now() + FLOW_TTL_MS + 1;
+    vi.spyOn(Date, "now").mockReturnValue(expired);
+    const res = await noSession(callback(flowId));
+    expect(res.status).toBe(400);
+    expect(exchanges).toBe(0);
+    vi.restoreAllMocks();
+    expect(await groupHasKey()).toBe(false);
+  });
+
+  it("is single use: the redirect cannot be replayed", async () => {
+    const flowId = await startFlow();
+    expect((await noSession(callback(flowId))).status).toBe(200);
+    const replay = await noSession(callback(flowId));
+    expect(replay.status).toBe(400);
+    expect(await replay.text()).toContain("Authorization failed");
+    // One code redeemed, one verifier spent.
+    expect(exchanges).toBe(1);
+  });
+
+  it("exempts exactly this literal path and this method, and nothing around it", async () => {
+    const flowId = await startFlow();
+    // GET on the literal path is the exemption — and it beats the `:flowId` status route,
+    // which would otherwise match "callback" and answer JSON from behind the gate.
+    const literal = await noSession(`${base()}/callback`);
+    expect(literal.status).toBe(400);
+    expect(literal.headers.get("content-type")).toContain("text/html");
+    // Everything adjacent is still gated: a longer path, another method, the sibling routes.
+    expect((await noSession(`${base()}/callback/extra`)).status).toBe(401);
+    expect((await noSession(`${base()}/callback`, { method: "POST" })).status).toBe(401);
+    expect((await noSession(`${base()}/start`, { method: "POST" })).status).toBe(401);
+    expect((await noSession(`${base()}/${flowId}`)).status).toBe(401);
+    expect((await noSession(`${base()}/${flowId}/code`, { method: "POST" })).status).toBe(401);
+    expect(exchanges).toBe(0);
   });
 });

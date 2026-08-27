@@ -146,7 +146,7 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 #### 授权新建 API key
 
-仅限 Owner。若某个供应商分组在内置目录中声明了授权流程，用户可以在浏览器里授权并**新建**一个 API key，不必再去控制台复制。
+仅限 Owner，但供应商跳回的 `GET /callback` 例外——它无需会话即可应答，详见下文。若某个供应商分组在内置目录中声明了授权流程，用户可以在浏览器里授权并**新建**一个 API key，不必再去控制台复制。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
@@ -155,7 +155,11 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 | GET | /api/projects/:projectId/model-oauth/:flowId | 轮询流程状态：`{status: pending\|done\|error, provider, error?}` |
 | POST | /api/projects/:projectId/model-oauth/:flowId/code | 兑换用户粘贴的授权码：`{code}` → `{ok, applied?, error?}` |
 
-PKCE 的 verifier 在服务端生成、只在内存中保留十分钟，绝不下发到客户端；新建出的 key 直接写入该分组的模型，不回传、不记录日志、也不出现在 URL 中。一次流程只属于某个 Project 下的某个用户且只能用一次——其他人的请求、以及第二次兑换，都会被拒绝。`mode: manual` 不传回调地址，授权页改为显示一次性授权码供用户手动带回，适用于跳转回不来的部署。流程完成后同样会使缓存的运行时失效并发布 `credentials_updated`，与 `PUT /models` 一致。
+PKCE 的 verifier 在服务端生成、只在内存中保留十分钟，绝不下发到客户端；新建出的 key 直接写入该分组的模型，不回传、不记录日志、也不出现在 URL 中。一次流程只属于某个 Project 下的某个用户且只能用一次：第二次兑换会被拒绝，`/start`、`/:flowId`、`/:flowId/code` 也拒绝该 Owner 以外的任何人。
+
+`GET /callback` 是唯一的例外，且只能如此。环回地址上的 OAuth 跳转由供应商所跳转的那个浏览器送达，而它未必就是发起流程的那一个——桌面端 shell 会把授权页交给**系统**浏览器打开，系统浏览器并不持有该应用来源的 Cookie。因此这一条路径挂载在会话校验之外，改以 flow id 作为凭据：32 字节随机数，十分钟有效，只能用一次，且只对开启该流程的那个 Project 生效。周边的一切都不在豁免之内——更长的路径、其它请求方法，以及另外三条同级路由，仍然都需要会话。
+
+`mode: manual` 不传回调地址，授权页改为显示一次性授权码供用户手动带回，适用于跳转回不来的部署。流程完成后同样会使缓存的运行时失效并发布 `credentials_updated`，与 `PUT /models` 一致。
 
 ### Agent
 

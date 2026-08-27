@@ -12,6 +12,11 @@
  * straight into the Project's model config and is never echoed to a caller, a URL, or a
  * log line. What the Web App holds is an opaque flow id and a status.
  *
+ * That flow id is also a capability, and `complete` treats it as one: 32 random bytes bound
+ * here to a user, a Project, a provider and a verifier, valid for ten minutes and spendable
+ * once. The loopback redirect receiver leans on exactly that, because the browser the
+ * provider redirects cannot be assumed to hold a session — see the route module.
+ *
  * Flows are in-memory and per-App: a restart or a platform push drops the pending ones,
  * which costs the user a re-authorization and nothing else (the upstream code expires in
  * minutes anyway, and no key exists until the exchange runs).
@@ -278,6 +283,14 @@ export class ModelOAuthService {
   /**
    * Redeem a code against a pending flow and write the minted key onto the group.
    *
+   * `userId` is the signed-in caller, or `null` when the flow id itself is the credential.
+   * `null` is for the loopback redirect receiver only: whichever browser the provider
+   * redirected arrives there, and on the desktop that is the system browser, which holds no
+   * session cookie for the App's origin. Waiving the user check is what makes that path work
+   * at all; nothing else about the flow is waived with it — the Project in the request must
+   * still be the flow's own, the TTL must not have passed, and the flow must still be
+   * pending.
+   *
    * One shot: the flow leaves `pending` before the exchange runs, so a replayed callback
    * cannot spend the same verifier twice, and the verifier is dropped from memory as soon
    * as it has been used. A key that arrives but cannot be stored is reported as
@@ -286,7 +299,7 @@ export class ModelOAuthService {
    */
   async complete(input: {
     flowId: string;
-    userId: string;
+    userId: string | null;
     projectId: string;
     code: string;
   }): Promise<{ ok: true; applied: number } | { ok: false; error: ModelOAuthErrorCode }> {
@@ -328,12 +341,21 @@ export class ModelOAuthService {
     return this.require(input).provider;
   }
 
-  private require(input: { flowId: string; userId: string; projectId: string }): Flow {
+  /**
+   * The flow a caller may act on. 404 for anything they may not see — unknown, expired, or
+   * belonging to another user or another Project — so a flow id is never a probe for what
+   * exists.
+   *
+   * A `null` userId waives the user check and nothing else, and only `complete` passes it
+   * (see there): the flow id is then the credential. The Project and the TTL are checked
+   * either way.
+   */
+  private require(input: { flowId: string; userId: string | null; projectId: string }): Flow {
     this.sweep();
     const flow = this.flows.get(input.flowId);
     if (
       flow === undefined ||
-      flow.userId !== input.userId ||
+      (input.userId !== null && flow.userId !== input.userId) ||
       flow.projectId !== input.projectId ||
       flow.expiresAt <= this.now()
     ) {

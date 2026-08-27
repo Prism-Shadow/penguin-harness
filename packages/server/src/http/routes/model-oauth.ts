@@ -5,10 +5,13 @@
  * POST /api/projects/:p/model-oauth/:flowId/code,
  * GET  /api/projects/:p/model-oauth/:flowId.
  *
- * Owner only, like every other route that spends or rewrites a Project's credentials. The
- * whole exchange runs here: the PKCE verifier is generated server-side and never leaves this
- * process, and the minted key goes straight into the Project's model config without passing
- * through the browser. A caller only ever holds an opaque flow id and a status.
+ * Owner only, like every other route that spends or rewrites a Project's credentials — with
+ * one deliberate exception, `GET /callback`, which is mounted ahead of the global auth
+ * middleware (see `modelOAuthCallbackRoutes` below and its mount in app.ts).
+ *
+ * The whole exchange runs here: the PKCE verifier is generated server-side and never leaves
+ * this process, and the minted key goes straight into the Project's model config without
+ * passing through the browser. A caller only ever holds an opaque flow id and a status.
  */
 import { Hono } from "hono";
 import type {
@@ -114,14 +117,91 @@ const FAILURE_TEXT: Record<string, string> = {
     "A key was created but could not be saved. Authorize again, then delete the unused key in the provider's console.",
 };
 
-export function modelOAuthRoutes(deps: AppDeps): Hono<AppEnv> {
+/** Credential change: same follow-up the models PUT performs, so live Sessions pick the key up. */
+function credentialsChanged(deps: AppDeps, projectId: string): void {
+  deps.manager.invalidateProjectRuntimes(projectId);
+  publishCredentialsUpdated(deps, projectId);
+}
+
+/**
+ * `GET /api/projects/:projectId/model-oauth/callback` — where the provider sends the browser
+ * back, and the ONE route of this group that does not require a session.
+ *
+ * It cannot require one. A loopback OAuth redirect receiver is reached by whichever browser
+ * the provider redirected, which is not necessarily the one that started the flow: the
+ * desktop shell hands every non-app URL to `shell.openExternal`, so the authorization page
+ * opens in the *system* browser, and the system browser holds no `penguin_session` cookie
+ * for `http://localhost:<port>`. Behind the global auth middleware every desktop
+ * authorization therefore ended on a bare 401 while the same flow completed in the browser,
+ * where the popup is a tab of the session that opened it.
+ *
+ * So authorization here is the flow id, which is already a capability rather than a name:
+ * 32 random bytes minted server-side, bound in ModelOAuthService to a user, a Project, a
+ * provider and a PKCE verifier that never leaves this process, valid for ten minutes and
+ * spendable once. The Project in the path must be the flow's own, so a flow id cannot be
+ * redirected at a Project it does not belong to. A caller who already knows a pending flow
+ * id can complete that flow with a code of their own — see the service's `complete`; the
+ * trade is 256 bits of unguessable, single-use, ten-minute secret against a desktop flow
+ * that otherwise cannot work at all.
+ *
+ * Mounted separately (not inside `modelOAuthRoutes`) because the exemption has to be exactly
+ * this literal path and this method: it is registered ahead of the auth middleware in app.ts,
+ * where a whole-group mount would have exempted /start, /:flowId/code and the status route
+ * with it. Those stay owner-only, unchanged.
+ *
+ * Answers HTML throughout — a person is looking at this tab, not a client parsing JSON.
+ */
+export function modelOAuthCallbackRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
-  /** Credential change: same follow-up the models PUT performs, so live Sessions pick the key up. */
-  const credentialsChanged = (projectId: string): void => {
-    deps.manager.invalidateProjectRuntimes(projectId);
-    publishCredentialsUpdated(deps, projectId);
-  };
+  app.get("/", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const flowId = c.req.query("flow") ?? "";
+    // The provider appends `code=` to the callback URL it was given, preserving its path and
+    // query, which is how the flow id rides back alongside it.
+    const code = c.req.query("code") ?? "";
+    if (!FLOW_ID_RE.test(flowId) || !CODE_RE.test(code)) {
+      return c.html(
+        resultPage(
+          "Authorization failed",
+          "This link is incomplete. Return to PenguinHarness and start a new authorization.",
+        ),
+        400,
+      );
+    }
+    let result: Awaited<ReturnType<typeof deps.modelOAuth.complete>>;
+    try {
+      result = await deps.modelOAuth.complete({
+        flowId,
+        // The flow id is the credential here; there is no session to read a user from.
+        userId: null,
+        projectId,
+        code,
+      });
+    } catch (err) {
+      const message =
+        err instanceof HttpError
+          ? err.message
+          : "Something went wrong. Return to PenguinHarness and start a new authorization.";
+      return c.html(resultPage("Authorization failed", message), 400);
+    }
+    if (!result.ok) {
+      return c.html(resultPage("Authorization failed", FAILURE_TEXT[result.error]!), 400);
+    }
+    credentialsChanged(deps, projectId);
+    return c.html(
+      resultPage(
+        "API key created",
+        "The new key has been saved to this Project's models. You can close this tab and return to PenguinHarness.",
+      ),
+    );
+  });
+
+  return app;
+}
+
+export function modelOAuthRoutes(deps: AppDeps): Hono<AppEnv> {
+  const app = new Hono<AppEnv>();
 
   // Opens a flow and returns the page to send the user to. The provider is looked up in the
   // built-in catalog inside the service, which is what rejects a group that publishes no
@@ -153,54 +233,9 @@ export function modelOAuthRoutes(deps: AppDeps): Hono<AppEnv> {
     return c.json(started satisfies ModelOAuthStartResponse);
   });
 
-  // Where the provider sends the browser back. Registered before the `:flowId` status route
-  // so the literal path wins. Answers HTML throughout — a person is looking at this tab, not
-  // a client parsing JSON.
-  app.get("/callback", async (c) => {
-    const projectId = requireValidId(c, "projectId");
-    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
-    const flowId = c.req.query("flow") ?? "";
-    // The provider appends `code=` to the callback URL it was given, preserving its path and
-    // query, which is how the flow id rides back alongside it.
-    const code = c.req.query("code") ?? "";
-    if (!FLOW_ID_RE.test(flowId) || !CODE_RE.test(code)) {
-      return c.html(
-        resultPage(
-          "Authorization failed",
-          "This link is incomplete. Return to PenguinHarness and start a new authorization.",
-        ),
-        400,
-      );
-    }
-    let result: Awaited<ReturnType<typeof deps.modelOAuth.complete>>;
-    try {
-      result = await deps.modelOAuth.complete({
-        flowId,
-        userId: c.var.user.userId,
-        projectId,
-        code,
-      });
-    } catch (err) {
-      const message =
-        err instanceof HttpError
-          ? err.message
-          : "Something went wrong. Return to PenguinHarness and start a new authorization.";
-      return c.html(resultPage("Authorization failed", message), 400);
-    }
-    if (!result.ok) {
-      return c.html(resultPage("Authorization failed", FAILURE_TEXT[result.error]!), 400);
-    }
-    credentialsChanged(projectId);
-    return c.html(
-      resultPage(
-        "API key created",
-        "The new key has been saved to this Project's models. You can close this tab and return to PenguinHarness.",
-      ),
-    );
-  });
-
   // Manual counterpart of the callback: the user pastes the one-time code the authorization
-  // page displayed when it was asked not to redirect.
+  // page displayed when it was asked not to redirect. Owner-only, because unlike the
+  // callback this one IS reached by the App's own signed-in tab.
   app.post("/:flowId/code", async (c) => {
     const projectId = requireValidId(c, "projectId");
     deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
@@ -224,7 +259,7 @@ export function modelOAuthRoutes(deps: AppDeps): Hono<AppEnv> {
     if (!result.ok) {
       return c.json({ ok: false, error: result.error } satisfies ModelOAuthCodeResponse);
     }
-    credentialsChanged(projectId);
+    credentialsChanged(deps, projectId);
     return c.json({ ok: true, applied: result.applied } satisfies ModelOAuthCodeResponse);
   });
 
