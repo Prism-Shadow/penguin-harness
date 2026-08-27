@@ -1812,6 +1812,9 @@ Benchmark：
     /** Success feedback naming the account the credentials sign in as (Telegram: the bot's @username). */
     testOkAs: (account: string, ms: number): string => `连接成功，机器人为 ${account}（${ms}ms）`,
     testFail: (reason: string): string => `连接失败：${reason}`,
+    /** Second line on a successful Telegram test whose bot still has Group Privacy on; the remedies live in the troubleshooting fold, which outlasts a toast. */
+    testPrivacyOn:
+      "该机器人的 Group Privacy 处于开启状态：在它不担任管理员的群里，它收不到普通消息。修复办法见下方「常见问题」。",
     sendTestMessage: "发送测试消息",
     sendingTestMessage: "发送中…",
     testMessageSent: "测试消息已发送",
@@ -1845,17 +1848,14 @@ Benchmark：
     faqWhatBinding:
       "同一个机器人可以同时保存在多个对话里，但同一时刻只能有一个对话启用它的连接。要换一个对话使用，先在原对话停用连接，再在这里启用——凭证不必删除。",
     faqTroubleTitle: "常见问题",
-    /** Troubleshooting entries (bot must be messaged once; connection errors point at credentials; one poller per Telegram token; Telegram group privacy withholds group messages). */
+    /** Troubleshooting entries (bot must be messaged once; connection errors point at credentials; one poller per Telegram token; Telegram Group Privacy withholds group messages from a non-admin bot). */
     troubleNoChat: "「发送测试消息」不可用？机器人要先收到过一条消息，才知道要发到哪个会话。",
     troubleConnError:
       "连接状态显示错误？检查凭证是否正确；飞书还需确认 API 域名与事件订阅方式（长连接）。",
     troubleOnePoller:
       "Telegram 提示已有其他程序在轮询？一个 Bot Token 同一时刻只能被一个程序使用——关闭正在占用它的另一个 PenguinHarness 服务端或机器人脚本，或为该会话单独建一个机器人。",
     troubleGroupPrivacy:
-      "在 Telegram 群里发消息，机器人毫无反应？Telegram 的 Group Privacy 默认开启，此时机器人只能收到明确指向它的命令（如 /start@your_bot）和对它自己消息的回复，普通群消息根本不会送达，连接本身没有任何异常。三选一：到 @BotFather 用 /setprivacy 关闭它，然后把机器人移出群再重新拉入（已在的群不会自动生效）；或把它设为群管理员，管理员始终收到全部消息。",
-    /** Successful Telegram credential test whose bot still has Group Privacy on (getMe reports it). */
-    testPrivacyOn:
-      "该机器人的 Group Privacy 处于开启状态：它收不到普通群消息。到 @BotFather 用 /setprivacy 关闭后，需要把它移出已在的群再重新拉入；或把它设为群管理员。私聊不受影响。",
+      "在 Telegram 群里发消息，机器人毫无反应？Telegram 的 Group Privacy 默认开启，此时不担任该群管理员的机器人只能收到明确指向它的命令（如 /start@your_bot）和对它自己消息的回复，普通群消息根本不会送达，连接本身也没有任何异常。把机器人设为该群的管理员即可单独解决，管理员始终收到全部消息。也可以到 @BotFather 用 /setprivacy 关闭 Group Privacy，然后把机器人移出该群再重新拉入——已在的群不会自动生效。",
   },
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */

@@ -305,7 +305,7 @@ Session 可以接入消息软件机器人——目前的渠道是飞书与 Teleg
 | PUT | /messaging/telegram | 保存凭据：`{botToken?, clearBotToken?, linePerMessage?}`——整份凭据就是 @BotFather 签发的一条 `<机器人 id>:<密钥>` Token（省略或留空则保持已存值；读不出数字 id 时返回 400 `telegram_token_invalid`；清除标记与飞书同口径，清除后配置保留其机器人身份）。保存与启用的分离一致；把已启用绑定的 Token 换成另一个 Session 已启用的机器人时，同样返回 409 `account_enabled_elsewhere`，其余情况不存在跨 Session 的保存冲突 |
 | POST | /messaging/telegram/state | 与飞书开关同一契约（无已存 Token 时返回 400 `telegram_token_required`） |
 | DELETE | /messaging/telegram | 整体删除该渠道的配置（含 Bot Token）。仅为 API 完整性保留 |
-| POST | /messaging/telegram/test | 凭据探测（`getMe`），草稿 Token 缺省回落到已存值 → `{ok, latencyMs?, botUsername?, groupPrivacy?, error?}`——成功时报出 Token 登录到的机器人；当 @BotFather 的 Group Privacy 处于开启状态（默认如此，此时机器人收不到任何普通群消息）时报出 `groupPrivacy: true` |
+| POST | /messaging/telegram/test | 凭据探测（`getMe`），草稿 Token 缺省回落到已存值 → `{ok, latencyMs?, botUsername?, groupPrivacy?, error?}`——成功时报出 Token 登录到的机器人；当 @BotFather 的 Group Privacy 处于开启状态（默认如此，此时机器人在它不担任管理员的群里收不到任何普通消息）时报出 `groupPrivacy: true` |
 | POST | /messaging/telegram/test-message | 向最近一次收到消息的会话发送一条固定测试文本；在 Telegram 里给机器人发过消息之前返回 409 `telegram_no_chat` |
 
 没有已存密钥的配置（被清除过的）不返回掩码字段，也无法启用。`linePerMessage` 是唯一一个不属于凭据的已存字段：开启后，转发的助手回复中每个非空行各自作为一条消息发出（空行忽略，单行仍按长度上限分段，超出每条回复的消息条数上限的部分合并为最后一条）；默认为 false，PUT 省略该字段则保持已存值，且它不作用于通知与测试消息。唯一的跨 Session 规则按渠道内机器人账号计，且只作用于连接：一个账号只有一条事件流，因此至多一个 Session 能将其启用。飞书的账号身份是 `app_id`，Telegram 是 Token 冒号前的数字机器人 id（换发 Token 也不会改变）。读取与两个测试接口对任意 Project 成员开放；PUT、state 开关与 DELETE 仅限所有者（与 Vault 同口径——绑定写操作携带或作用于密钥）。密钥永不回传。删除 Session 会连带删除其全部渠道配置；入站仅处理文本消息（其他类型收到双语的“仅支持文本”回复）。Telegram 建立连接时先清空积压：无连接期间发来的消息会被跳过，与飞书“错过的事件即消失”同口径。

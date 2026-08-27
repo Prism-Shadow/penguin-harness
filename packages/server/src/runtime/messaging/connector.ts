@@ -54,23 +54,27 @@ export interface MessagingConnection {
 }
 
 /**
- * A successful credential check's optional payload: a short human-readable label of the
- * account the credentials sign in as (Telegram: the bot's `@username`), surfaced in the
- * test endpoint's success feedback. Channels with no cheap label return null.
+ * A successful credential check's optional payload: whatever the probe learned that the test
+ * endpoint's feedback can act on. Every member is independently optional — a channel reports
+ * the ones its check happens to answer and omits the rest, so a check that learned nothing
+ * beyond "these credentials work" returns an empty object.
  */
 export interface MessagingAccountInfo {
+  /** A short human-readable label of the account the credentials sign in as (Telegram: the bot's `@username`). */
   accountLabel?: string;
   /**
-   * Whether this account receives ORDINARY messages in a group it belongs to — as opposed
-   * to only the ones a platform hands a bot by default.
+   * Whether this ACCOUNT is set up to receive ordinary messages in the groups it belongs to
+   * — as opposed to only the ones a platform hands a bot by default.
    *
-   * Telegram's privacy mode is the case that needs saying: it is on unless the bot was
-   * added as a group admin or its owner turned it off, and under it `getUpdates` simply
-   * omits everything in a group that is not a command addressed to this bot or a reply to
-   * one of its messages. Nothing errors — the messages are never delivered, so a binding
-   * that works perfectly in a direct chat looks dead in a group. Absent when the channel
-   * has no such notion, or reports nothing about it: unknown must never be reported as a
-   * problem.
+   * Telegram's privacy mode is the case that needs saying: it is on for every bot whose
+   * owner has not turned it off in @BotFather, and under it `getUpdates` simply omits
+   * everything in a group that is not a command addressed to this bot or a reply to one of
+   * its messages. Nothing errors — the messages are never delivered, so a binding that works
+   * perfectly in a direct chat looks dead in a group. It is one account-wide setting and
+   * Telegram overrides it in any group the bot administers, so `false` says the account is
+   * muted where it is an ordinary member, never that some particular group is silent. Absent
+   * when the channel has no such notion, or reports nothing about it: unknown must never be
+   * reported as a problem.
    */
   readsGroupMessages?: boolean;
 }

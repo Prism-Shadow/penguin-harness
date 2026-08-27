@@ -1851,6 +1851,9 @@ Scenarios:
     /** Success feedback naming the account the credentials sign in as (Telegram: the bot's @username). */
     testOkAs: (account: string, ms: number): string => `Connected as ${account} (${ms}ms)`,
     testFail: (reason: string): string => `Connection failed: ${reason}`,
+    /** Second line on a successful Telegram test whose bot still has Group Privacy on; the remedies live in the troubleshooting fold, which outlasts a toast. */
+    testPrivacyOn:
+      "Group Privacy is on for this bot: it receives no ordinary messages in any group where it is not an administrator. See Troubleshooting below.",
     sendTestMessage: "Send test message",
     sendingTestMessage: "Sending…",
     testMessageSent: "Test message sent",
@@ -1885,7 +1888,7 @@ Scenarios:
     faqWhatBinding:
       "The same bot can stay saved in several conversations, but only one of them may have its connection enabled at a time. To move it, turn the connection off where it is on and enable it here — no credential has to be deleted.",
     faqTroubleTitle: "Troubleshooting",
-    /** Troubleshooting entries (bot must be messaged once; connection errors point at credentials; one poller per Telegram token; Telegram group privacy withholds group messages). */
+    /** Troubleshooting entries (bot must be messaged once; connection errors point at credentials; one poller per Telegram token; Telegram Group Privacy withholds group messages from a non-admin bot). */
     troubleNoChat:
       "“Send test message” disabled? The bot must have received one message first, so it knows which chat to send to.",
     troubleConnError:
@@ -1893,10 +1896,7 @@ Scenarios:
     troubleOnePoller:
       "Telegram reports that another program is polling? A Bot Token serves exactly one program at a time — close the other PenguinHarness server or bot script using it, or give this conversation a bot of its own.",
     troubleGroupPrivacy:
-      "The bot ignores everything you say in a Telegram group? Telegram's Group Privacy is on by default: the bot then receives only commands addressed to it (such as /start@your_bot) and replies to its own messages — ordinary group messages are never delivered at all, and the connection itself looks perfectly healthy. Either turn it off with /setprivacy in @BotFather and then remove the bot from the group and add it back (a group it is already in does not pick up the change), or make it a group admin, since admins always receive every message.",
-    /** Successful Telegram credential test whose bot still has Group Privacy on (getMe reports it). */
-    testPrivacyOn:
-      "Group Privacy is on for this bot: it receives no ordinary group messages. Turn it off with /setprivacy in @BotFather, then remove the bot from any group it is already in and add it back; or make it a group admin. Direct chats are unaffected.",
+      "The bot ignores everything you say in a Telegram group? Telegram's Group Privacy is on by default, and under it a bot that is not an administrator of the group receives only commands addressed to it (such as /start@your_bot) and replies to its own messages — ordinary group messages are never delivered at all, and the connection itself looks perfectly healthy. Making the bot an administrator of that group fixes it on its own, since administrators always receive every message. Otherwise turn Group Privacy off with /setprivacy in @BotFather, then remove the bot from the group and add it back — a group it is already in does not pick up the change.",
   },
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */

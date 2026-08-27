@@ -11,6 +11,8 @@
  * connection error's detail reaches the reader whole rather than as a few words of a shared
  * row.
  */
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -18,6 +20,7 @@ import type { MessagingChannel } from "@prismshadow/penguin-server/api";
 import {
   MessagingBindingBody,
   MessagingBindingHelp,
+  telegramTestNotices,
   type MessagingBindingEditorState,
   type MessagingChannelFacts,
 } from "../src/features/messaging/messaging-binding-editor";
@@ -222,11 +225,8 @@ describe("MessagingBindingHelp", () => {
       createElement(MessagingBindingHelp, { channel: "telegram" as MessagingChannel }),
     );
     // Group Privacy is on by default and produces silence, not an error, so the fold is the
-    // only place a user who has not run a credential test can find out about it. The entry
-    // has to name all three moves or it wastes the trip: turn it off in @BotFather, re-add
-    // the bot to groups it is already in, or make it an admin.
+    // only place a user who has not run a credential test can find out about it.
     expect(telegram).toContain(S.messaging.troubleGroupPrivacy);
-    expect(S.messaging.troubleGroupPrivacy).toContain("/setprivacy");
     expect(telegram).toContain(S.messaging.troubleOnePoller);
 
     const feishu = renderToStaticMarkup(
@@ -250,5 +250,90 @@ describe("MessagingBindingHelp", () => {
     // creating a bot to paste a token from, not writing one.
     expect(telegram).toContain('href="https://core.telegram.org/bots/features#botfather"');
     expect(telegram).toContain(S.telegram.setupSteps[0]);
+  });
+});
+
+describe("the Group Privacy copy, in both dictionaries", () => {
+  // `S` is the zh dictionary at import time, so each rule is asserted per dictionary — the
+  // two drifted apart once already (zh promised 三选一 and listed two options).
+  const entries = [
+    [en.messaging.troubleGroupPrivacy, "Making the bot an administrator"],
+    [zh.messaging.troubleGroupPrivacy, "把机器人设为该群的管理员"],
+  ] as const;
+
+  it("leads the fold entry with the admin route, then the @BotFather one", () => {
+    // Making the bot an administrator is the only remedy that fixes the group without
+    // touching its membership, and it is what a user whose bot already works has done — so
+    // it comes first, and the /setprivacy route (which requires a re-add) follows it.
+    for (const [entry, adminRemedy] of entries) {
+      expect(entry).toContain(adminRemedy);
+      expect(entry).toContain("/setprivacy");
+      expect(entry.indexOf(adminRemedy)).toBeLessThan(entry.indexOf("/setprivacy"));
+    }
+  });
+
+  it("points the toast at that fold instead of repeating the remedies in it", () => {
+    // The notice rides an `info` toast: four seconds, no hover-pause. So the toast carries
+    // the diagnosis and names the fold — by the fold's own title, which stays true if the
+    // fold is renamed — and the steps stay where they can be read.
+    for (const dict of [en, zh]) {
+      expect(dict.messaging.testPrivacyOn).toContain(dict.messaging.faqTroubleTitle);
+      expect(dict.messaging.testPrivacyOn).not.toContain("/setprivacy");
+    }
+  });
+});
+
+describe("telegramTestNotices", () => {
+  it("adds the privacy notice as a second line, leaving the success line untouched", () => {
+    // Two lines, not one longer one: the credentials passed and a direct chat will answer,
+    // so the success line is the truth and the privacy line is a separate caveat.
+    expect(
+      telegramTestNotices({
+        ok: true,
+        latencyMs: 12,
+        botUsername: "@penguin_bot",
+        groupPrivacy: true,
+      }),
+    ).toEqual([
+      { tone: "success", text: S.messaging.testOkAs("@penguin_bot", 12) },
+      { tone: "info", text: S.messaging.testPrivacyOn },
+    ]);
+  });
+
+  it("says nothing extra when privacy is off, or when getMe never reported it", () => {
+    expect(telegramTestNotices({ ok: true, latencyMs: 12, groupPrivacy: false })).toEqual([
+      { tone: "success", text: S.messaging.testOk(12) },
+    ]);
+    // Absent is unknown, and unknown is not a problem: a notice on a field the API never
+    // sent would send a user to @BotFather for nothing.
+    expect(telegramTestNotices({ ok: true, latencyMs: 12 })).toEqual([
+      { tone: "success", text: S.messaging.testOk(12) },
+    ]);
+  });
+
+  it("reports a failed test as one error line and nothing else", () => {
+    expect(telegramTestNotices({ ok: false, error: "Unauthorized", groupPrivacy: true })).toEqual([
+      { tone: "error", text: S.messaging.testFail("Unauthorized") },
+    ]);
+  });
+
+  it("is shown by testConnection, one toast per notice, each in its own tone", () => {
+    // The hook itself is out of reach from a node-only suite (`environment: "node"`, no
+    // jsdom), and dropping the info branch would silently lose the only line that reports
+    // Group Privacy — so the dispatch is pinned here (account-menu.test.ts convention).
+    const src = readFileSync(
+      fileURLToPath(
+        new URL("../src/features/messaging/messaging-binding-editor.tsx", import.meta.url),
+      ),
+      "utf8",
+    );
+    const loop = /for \(const notice of telegramTestNotices\(res\)\) \{[\s\S]*?\n {8}\}/.exec(src);
+    expect(
+      loop,
+      "testConnection should show every notice telegramTestNotices returns",
+    ).not.toBeNull();
+    expect(loop![0]).toContain("toastError(notice.text)");
+    expect(loop![0]).toContain("toastInfo(notice.text)");
+    expect(loop![0]).toContain("toastSuccess(notice.text)");
   });
 });

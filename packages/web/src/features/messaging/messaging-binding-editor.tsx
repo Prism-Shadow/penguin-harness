@@ -38,6 +38,7 @@ import type {
   MessagingBindingsResponse,
   MessagingChannel,
   MessagingRuntimeStatus,
+  TelegramTestResponse,
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -179,6 +180,43 @@ export interface MessagingBindingEditorState {
   sendTestMessage(): Promise<void>;
 }
 
+/** One notice a credential test produces; the tone picks the toast that carries it. */
+export interface MessagingTestNotice {
+  tone: "success" | "info" | "error";
+  text: string;
+}
+
+/**
+ * The notices one Telegram credential-test response turns into, in the order they are shown
+ * (the updateCheckOutcome idiom: the classification is a pure function, the host only picks
+ * toasts for it).
+ *
+ * A success whose bot still has Group Privacy on produces TWO. The success line stands
+ * unchanged — the credentials really are fine, and the bot really will answer a direct chat —
+ * and the privacy notice rides beside it rather than lengthening it: it is about group chats
+ * only, and it is the one thing a user cannot discover by testing, since a bot that cannot
+ * hear a group produces silence and never an error.
+ */
+export function telegramTestNotices(res: TelegramTestResponse): MessagingTestNotice[] {
+  if (!res.ok) {
+    return [{ tone: "error", text: S.messaging.testFail(res.error ?? S.common.unknownError) }];
+  }
+  const ms = res.latencyMs ?? 0;
+  const notices: MessagingTestNotice[] = [
+    // The success line names the bot: the one detail a user can check against @BotFather.
+    {
+      tone: "success",
+      text:
+        res.botUsername !== undefined
+          ? S.messaging.testOkAs(res.botUsername, ms)
+          : S.messaging.testOk(ms),
+    },
+  ];
+  // Only an answered `true`: an absent field is unknown, and unknown is not a problem.
+  if (res.groupPrivacy === true) notices.push({ tone: "info", text: S.messaging.testPrivacyOn });
+  return notices;
+}
+
 export function useMessagingBinding(
   sessionId: string,
   opts: {
@@ -295,20 +333,11 @@ export function useMessagingBinding(
       const draft = formToTest(form);
       if (draft.channel === "telegram") {
         const res = await api.testTelegramBinding(sessionId, draft.body);
-        if (res.ok) {
-          const ms = res.latencyMs ?? 0;
-          // The success line names the bot: the one detail a user can check against @BotFather.
-          toastSuccess(
-            res.botUsername !== undefined
-              ? S.messaging.testOkAs(res.botUsername, ms)
-              : S.messaging.testOk(ms),
-          );
-          // A second, separate line rather than a longer success one: the credentials really
-          // are fine, and the bot really will answer a direct chat — the notice is about
-          // group chats only, and it is the one thing a user cannot discover by testing (a
-          // muted bot in a group produces silence, never an error).
-          if (res.groupPrivacy === true) toastInfo(S.messaging.testPrivacyOn);
-        } else toastError(S.messaging.testFail(res.error ?? S.common.unknownError));
+        for (const notice of telegramTestNotices(res)) {
+          if (notice.tone === "error") toastError(notice.text);
+          else if (notice.tone === "info") toastInfo(notice.text);
+          else toastSuccess(notice.text);
+        }
       } else {
         const res = await api.testFeishuBinding(sessionId, draft.body);
         if (res.ok) toastSuccess(S.messaging.testOk(res.latencyMs ?? 0));

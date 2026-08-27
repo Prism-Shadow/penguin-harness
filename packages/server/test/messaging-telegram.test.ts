@@ -86,7 +86,7 @@ class FakeBotClient implements TelegramBotClient {
     return {
       id: Number(telegramBotIdOf(this.creds.botToken) ?? "0"),
       first_name: "Penguin Test",
-      username: "penguin_test_bot",
+      ...(this.t.botUsername !== undefined ? { username: this.t.botUsername } : {}),
       ...(this.t.readsAllGroupMessages !== undefined
         ? { can_read_all_group_messages: this.t.readsAllGroupMessages }
         : {}),
@@ -167,6 +167,8 @@ class FakeTelegramTransport {
   webhookUrl = "";
   /** getMe's `can_read_all_group_messages` (true = privacy mode OFF); undefined = the field is absent. */
   readsAllGroupMessages: boolean | undefined = undefined;
+  /** getMe's `username`; undefined = the field is absent, which the Bot API's User allows. */
+  botUsername: string | undefined = "penguin_test_bot";
   private nextUpdateId = 100;
 
   createClient(creds: TelegramCredentials): FakeBotClient {
@@ -661,6 +663,21 @@ describe("telegram binding routes and connector loop", () => {
     ).json()) as TelegramTestResponse;
     expect(silent.ok).toBe(true);
     expect("groupPrivacy" in silent).toBe(false);
+  });
+
+  it("POST /test reports Group Privacy for a bot getMe names no username for", async () => {
+    // `username` is optional on the Bot API's User, and checkCredentials answered `null` for
+    // a response without one — which threw the privacy flag away along with the label. The
+    // two are independent: an unnamed bot is exactly as mute in a group as a named one.
+    fake.botUsername = undefined;
+    fake.readsAllGroupMessages = false;
+    const res = (await (
+      await api.post(`${BASE(SID)}/test`, { botToken: TOKEN })
+    ).json()) as TelegramTestResponse;
+    expect(res.ok).toBe(true);
+    expect(res.groupPrivacy).toBe(true);
+    expect(typeof res.latencyMs).toBe("number");
+    expect("botUsername" in res).toBe(false);
   });
 
   it("group messages thread the reply onto the inbound message; non-message updates are skipped", async () => {
