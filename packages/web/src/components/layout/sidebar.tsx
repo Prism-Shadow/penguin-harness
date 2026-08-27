@@ -1419,9 +1419,16 @@ export function Sidebar({
     return (
       <>
         {empty ? (
-          <p className="px-2.5 py-1 text-xs text-gray-400 dark:text-gray-600">
-            {S.chat.noSessions}
-          </p>
+          loading ? (
+            // The same window the chat pane's skeleton covers: the Agent groups render as
+            // soon as the Agents arrive, but the session pages are still being fetched —
+            // "no Sessions yet" is not the honest answer until they land.
+            <SkeletonList rows={2} />
+          ) : (
+            <p className="px-2.5 py-1 text-xs text-gray-400 dark:text-gray-600">
+              {S.chat.noSessions}
+            </p>
+          )
         ) : (
           // Drag-reorder is offered on the active list under manual sort (folders keep
           // chronological order), and never on a search-filtered view.

@@ -587,9 +587,20 @@ export function ChatPage() {
   // below concludes it doesn't exist; only a failed probe releases that redirect.
   const probeKey = projectId && routeSessionId ? sessionProbeKey(projectId, routeSessionId) : null;
   const [probeFailedKey, setProbeFailedKey] = useState<string | null>(null);
+  /**
+   * The route names a Session we cannot answer for YET: not in the loaded pages, and the
+   * direct lookup that settles it has not failed. Ordinary with a paged list — a deep link,
+   * a Session just created, a row beyond the first page. Shared by the probe effect, the
+   * auto-select effect and the render, so the three cannot disagree about what "pending"
+   * means — their disagreeing is what once painted "no Sessions yet" over a conversation
+   * that was about to appear.
+   */
+  const routeSessionPending = !!routeSessionId && selected === null && probeFailedKey !== probeKey;
   useEffect(() => {
     if (draft || !projectId || !routeSessionId || !probeKey || sessionsLoading) return;
-    if (sessions.some((s) => s.sessionId === routeSessionId)) return;
+    // Settled (row loaded, or the lookup already failed): nothing to probe — and a failed
+    // key must not be re-probed just because the list's identity churned.
+    if (!routeSessionPending) return;
     // We deleted this Session ourselves: the row is gone from the list on purpose, so the
     // lookup below could only 404 (and the server would record that as an error). Deleting
     // the conversation you are looking at is the normal way to discard a Session fork, so
@@ -614,13 +625,17 @@ export function ChatPage() {
     return () => {
       cancelled = true;
     };
+    // `selected` rather than `sessions`: while the routed row stays unloaded, list churn
+    // (status flips, new pages) keeps it null and leaves the in-flight lookup alone —
+    // depending on the array identity cancelled and re-issued it on every user event.
   }, [
     draft,
     projectId,
     routeSessionId,
     probeKey,
     sessionsLoading,
-    sessions,
+    routeSessionPending,
+    selected,
     addSession,
     isSessionDeleted,
   ]);
@@ -631,12 +646,12 @@ export function ChatPage() {
   // (instead of auto-creating one).
   useEffect(() => {
     if (sessionsLoading || draft) return;
-    if (routeSessionId && sessions.some((s) => s.sessionId === routeSessionId)) return;
+    if (selected !== null) return;
     // A routed id missing from the paged list isn't gone until the direct lookup fails.
-    if (routeSessionId && probeFailedKey !== probeKey) return;
+    if (routeSessionPending) return;
     const last = latestConversation(sessions);
     navigate(last ? `/chat/${last.sessionId}` : `/chat/${DRAFT_SESSION_ID}`, { replace: true });
-  }, [sessionsLoading, draft, routeSessionId, probeKey, probeFailedKey, sessions, navigate]);
+  }, [sessionsLoading, draft, selected, routeSessionPending, sessions, navigate]);
 
   // Sync task_state to the sidebar list badge.
   //
@@ -2024,7 +2039,7 @@ export function ChatPage() {
                     </div>
                   </>
                 )
-              ) : sessionsLoading ? (
+              ) : sessionsLoading || routeSessionPending ? (
                 <div className="space-y-3 p-6">
                   <Skeleton className="h-5 w-1/2" />
                 </div>

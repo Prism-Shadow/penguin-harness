@@ -63,6 +63,12 @@ interface SessionsContextValue {
   isLoadedFor: (agentId: string, category: SessionCategory, workspaceGroup?: string) => boolean;
   /** Whether the server still holds unfetched Sessions of a category for an Agent (or for one of its Workspace groups) — an unloaded pair answers from the counts. */
   hasMoreFor: (agentId: string, category: SessionCategory, workspaceGroup?: string) => boolean;
+  /**
+   * Whether the list is still being assembled — including the window where the Agent set it
+   * is fetched for is itself being refetched (a Project switch clears it). Consumers gate
+   * their "no sessions" empty state on this, so it must not read false while the answer is
+   * merely not known yet.
+   */
   loading: boolean;
   reload: () => Promise<void>;
   /** Fetches a category's first page for each given unloaded Agent and the next page for each loaded one with more (no-op otherwise); `workspaceGroup` pages that group's own stream instead of the Agent's whole one. */
@@ -235,6 +241,10 @@ export function createSessionsStore() {
 
       reload: async () => {
         const { projectId, agentIds } = get();
+        // No context to fetch against yet. `loading` is deliberately left alone rather than
+        // cleared: nothing was loaded, so reporting "done" here would be a lie — and one the
+        // empty state renders. The Provider's reset step raised it and a later reload,
+        // once an Agent set exists, is what clears it.
         if (!projectId || agentIds.length === 0) return;
         const g = ++gen;
         set({ loading: true });
@@ -611,6 +621,13 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       pageState: new Map(),
       countsByAgent: new Map(),
       workspaceCountsByAgent: new Map(),
+      // The pages were just cleared, so the list is loading from this instant — including
+      // the window where the Agent set itself is still being refetched (a Project switch
+      // empties it, which makes reload() below return without fetching or clearing the
+      // flag). Raising it HERE, on fetch-context change, is what keeps an unrelated
+      // reloadAgents() — same agent set, fired after every completed turn — from flapping
+      // the app-wide flag.
+      loading: true,
     });
     void store.getState().reload();
   }, [store, projectId, agentIdsKey]);
@@ -655,21 +672,28 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     [store],
   );
 
-  const value = useMemo<SessionsContextValue>(() => {
-    const byAgent = new Map<string, SessionInfo[]>();
+  // Keyed on the rows alone: the outer value memo re-runs on every store change (status,
+  // titles, page state), and rebuilding + re-sorting every Agent's bucket for those would be
+  // pure waste.
+  const byAgent = useMemo(() => {
+    const map = new Map<string, SessionInfo[]>();
     for (const s of state.sessions) {
-      const list = byAgent.get(s.agentId);
+      const list = map.get(s.agentId);
       if (list) list.push(s);
-      else byAgent.set(s.agentId, [s]);
+      else map.set(s.agentId, [s]);
     }
     // Encounter order is no longer reliable with paging (appended pages are older, but a
     // deep-linked old session is prepended via add): sort each Agent's list newest first
     // (same key the server sorts by).
-    for (const list of byAgent.values()) {
+    for (const list of map.values()) {
       list.sort(
         (a, b) => b.createdAt.localeCompare(a.createdAt) || b.sessionId.localeCompare(a.sessionId),
       );
     }
+    return map;
+  }, [state.sessions]);
+
+  const value = useMemo<SessionsContextValue>(() => {
     return {
       sessions: state.sessions,
       byAgent,
@@ -687,7 +711,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       setStatus: state.setStatus,
       setTitle: state.setTitle,
     };
-  }, [state, isLoadedFor, hasMoreFor, isDeleted]);
+  }, [state, byAgent, isLoadedFor, hasMoreFor, isDeleted]);
 
   return <SessionsContext.Provider value={value}>{children}</SessionsContext.Provider>;
 }
