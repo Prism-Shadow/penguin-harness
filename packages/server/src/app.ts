@@ -448,9 +448,10 @@ export function createRuntimeApp(deps: AppDeps): Hono<AppEnv> {
     app.use("/api/desktop/update/*", authMiddleware(deps.authService, deps.config.trustProxy));
     app.route("/api/desktop/update", desktopUpdateRoutes(deps));
   }
-  // Hot platform APIs authenticate themselves (local-agent Bearer token OR
-  // admin cookie session, see hot/routes.ts), so they mount outside the
-  // cookie-only authMiddleware below.
+  // Hot platform APIs run their own gate — the network gate, then the SAME auth middleware
+  // the routes below use (the boot's local API token as `Authorization: Bearer`, or an admin
+  // cookie session) with an admin check on top; see hmr/routes.ts. That is why they mount
+  // above the blanket /api/* middleware rather than under it.
   app.route("/api/hmr", hmrRoutes(deps));
 
   // THE seam: from here down, every route is one the platform may take over by push. Mounted

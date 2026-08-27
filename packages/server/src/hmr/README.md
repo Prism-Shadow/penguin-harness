@@ -79,8 +79,11 @@ Two boundaries keep it safe, and both are load-bearing:
   runtime's older handler instead would answer with semantics the caller was not promised. The
   error surfaces as a 500.
 
-Streaming responses (SSE, long downloads) stay runtime-side: the handler returns a whole
-Response. That is a limit of today's seam, not a layer boundary.
+A streaming response rides the seam unchanged — the handler returns a whole `Response` as
+soon as the stream exists and keeps writing to it, which is what the platform's SSE endpoints
+do. A live **socket** is what the seam cannot carry, there being no `Response` to return for
+one, so the terminal WebSocket handshake reaches the App through in-process members instead.
+That is a property of the contract, not a layer boundary.
 
 ## Worked examples (all real, all from review)
 

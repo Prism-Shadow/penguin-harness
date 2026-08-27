@@ -98,12 +98,6 @@ export interface GitSource {
 }
 
 /**
- * One atomic push: the platform bundle and the cli bundle (each inline ESM source,
- * independent single-file artifacts) plus the web dist as a { relPath: base64 }
- * manifest. All three travel in the SAME request — there is no partial-target
- * upgrade.
- */
-/**
  * Files a push needs on DISK rather than in memory. The web dist is only ever served as
  * bytes, so it stays in RAM; an asset is something the platform hands to the OS — a
  * native `.node` whose loader resolves it by path, a helper binary it execs — and a
@@ -118,6 +112,12 @@ export interface UpgradeAssets {
   exec?: string[];
 }
 
+/**
+ * One atomic push: the platform bundle and the cli bundle (each inline ESM source,
+ * independent single-file artifacts) plus the web dist as a { relPath: base64 }
+ * manifest. All three travel in the SAME request — there is no partial-target
+ * upgrade.
+ */
 export interface UpgradeAllTarget {
   platform: string;
   cli: string;
@@ -152,7 +152,12 @@ export type UpgradeOutcome =
     }
   | { status: "blocked"; dropped: string[]; missing: string[]; invalid: string[] };
 
-/** How many past versions (platform bundle / cli bundle / web dist, each independently) the store keeps (current + one rollback). */
+/**
+ * How many versions of each artifact (platform bundle / cli bundle / web dist / assets
+ * dir, each independently) the store keeps by recency — a rollback copy behind the newest.
+ * The version harness.json references is kept on top of these, so a store holds three
+ * entries whenever the committed version is not among the two most recently written.
+ */
 const STORE_KEEP = 2;
 
 export class HmrHost {
@@ -519,20 +524,6 @@ export class HmrHost {
   // -- Persistence ----------------------------------------------------------
 
   /**
-   * Content-addresses the cli bundle (never imported — just stored, for packages/cli's
-   * own loader to pick up) and the web gzip artifact next to the platform bundle the
-   * boot already stored (its CODE only — see the module doc: state is never
-   * persisted), then flips harness.json ONCE — `platform`, `cli`, and `web` all land in the SAME atomic
-   * rename, never three separate commits that could leave one pointer ahead of the
-   * others. `platform.bundle` and `cli.bundle` are genuinely independent files
-   * (distinct content, distinct sha) rather than the same physical bundle under two
-   * manifest keys.
-   *
-   * Returns whether the commit succeeded — the caller surfaces this to clients
-   * (`persisted` in UpgradeOutcome) so a live swap that could not be written to disk
-   * is visibly at risk of reverting on the next restart, rather than silently ok.
-   */
-  /**
    * Unpacks a push's assets under store/assets/<sha>/, content-addressed like every other
    * artifact so an unchanged set reuses its directory. Modes are restored from the push's
    * `exec` list: an asset arrives as base64 with no mode of its own, and a helper binary
@@ -583,6 +574,20 @@ export class HmrHost {
     return this.assets;
   }
 
+  /**
+   * Content-addresses the cli bundle (never imported — just stored, for packages/cli's
+   * own loader to pick up) and the web gzip artifact next to the platform bundle the
+   * boot already stored (its CODE only — see the module doc: state is never
+   * persisted), then flips harness.json ONCE — `platform`, `cli`, and `web` all land in the SAME atomic
+   * rename, never three separate commits that could leave one pointer ahead of the
+   * others. `platform.bundle` and `cli.bundle` are genuinely independent files
+   * (distinct content, distinct sha) rather than the same physical bundle under two
+   * manifest keys.
+   *
+   * Returns whether the commit succeeded — the caller surfaces this to clients
+   * (`persisted` in UpgradeOutcome) so a live swap that could not be written to disk
+   * is visibly at risk of reverting on the next restart, rather than silently ok.
+   */
   private async persistVersion(
     platformSha: string,
     cliContent: string,
@@ -637,11 +642,11 @@ export class HmrHost {
   }
 
   /**
-   * Store GC: keep at most STORE_KEEP versions — the committed one is always
-   * kept, the rest by recency. Best-effort; ordered after the manifest flip so
-   * nothing referenced can be pruned. `platform`, `cli`, and `web` are three
-   * independent subtrees now (no shared file to piggyback a sweep on), so each
-   * gets its own pass.
+   * Store GC: keep the STORE_KEEP most recently written of each artifact, plus the one
+   * harness.json references, which is kept whether or not recency would have. Best-effort;
+   * ordered after the manifest flip so nothing referenced can be pruned. `platform`, `cli`,
+   * `web` and the assets directories are independent subtrees (no shared file to piggyback a
+   * sweep on), so each gets its own pass.
    */
   private async pruneStore(manifest: Manifest): Promise<void> {
     const keepNewest = async (
@@ -765,7 +770,6 @@ async function writeStoreFile(file: string, content: Buffer): Promise<void> {
   }
 }
 
-/** No absolute paths, no `..` segments — the map is looked up by exact key, but a malformed key must never be stored. */
 /** Whether `file` already holds exactly these bytes (missing/unreadable counts as no). */
 async function sameFileContent(file: string, content: Buffer): Promise<boolean> {
   try {
@@ -777,6 +781,7 @@ async function sameFileContent(file: string, content: Buffer): Promise<boolean> 
   }
 }
 
+/** No absolute paths, no `..` segments — the map is looked up by exact key, but a malformed key must never be stored. */
 function isSafeRelPath(rel: string): boolean {
   if (rel === "" || rel.startsWith("/") || rel.includes("\\")) return false;
   return rel.split("/").every((seg) => seg !== "" && seg !== "." && seg !== "..");
