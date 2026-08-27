@@ -5,6 +5,7 @@
  */
 import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import { useAuth } from "./state/auth";
+import { useRuntimeLanguages } from "./features/chat/use-runtime-languages";
 import { ProjectProvider } from "./state/project";
 import { SessionsProvider } from "./state/sessions";
 import { AppLayout } from "./components/layout/app-layout";
@@ -51,6 +52,10 @@ function renderPage(page: PageEntry): React.ReactNode {
 /** Route guard: shows blank while initializing, redirects to /login when not authenticated. */
 function RequireAuth() {
   const { user } = useAuth();
+  // Extension-contributed grammars, adopted once for the signed-in tree (see the hook). Called
+  // before the early returns, because a hook cannot be conditional; it fetches nothing until
+  // the effect runs, which is only after this component actually renders its tree.
+  useRuntimeLanguages();
   if (user === undefined) return null; // GET /api/me is still initializing
   if (user === null) return <Navigate to="/login" replace />;
   return (
