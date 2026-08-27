@@ -660,7 +660,20 @@ export class MachinesService {
         // Remember it BEFORE the job settles, so the first poll that sees `running: false`
         // already sees the machine marked installed — otherwise the page would flash the
         // verdict and a still-uninstalled row in the same frame.
-        this.#remember(machineId, { version, at: this.#effects.now().toISOString() });
+        //
+        // Written OVER the existing record rather than in place of it. What the record holds
+        // besides the version is the machine's own id, learned from a probe and not asked for
+        // again — and this path runs on a machine that already has one, every time an install
+        // is re-run over a build that is already there. Dropping it there un-identifies a
+        // machine that never moved: it stops being addressable, its Sessions leave the list
+        // they were merged into, and the conversation open on it loses the only record of
+        // where it lives.
+        const previous = parseInstallRecords(this.#readRecords())[machineId];
+        this.#remember(machineId, {
+          ...previous,
+          version,
+          at: this.#effects.now().toISOString(),
+        });
         // The Project that asked for the install is the Project that gets the machine. Written
         // in the same breath as the record: a machine installed but belonging to nobody would
         // read as "installed elsewhere" on the very page that just installed it.

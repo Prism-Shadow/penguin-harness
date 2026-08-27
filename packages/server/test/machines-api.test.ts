@@ -248,6 +248,32 @@ describe("machines API", () => {
       });
     });
 
+    it("re-running an install keeps the machine id the record already carried", async () => {
+      // The id is learned from a probe and never asked for again, so the record is the only
+      // place it lives. This path runs whenever an install is re-run over a build that is
+      // already there — and writing a fresh record there un-identifies a machine that never
+      // moved: it stops being addressable, and the Sessions living on it leave the merged
+      // list they were part of, taking the open conversation's routing with them.
+      await boot({
+        install: async () => ({ kind: "already-installed", version: "9.9.9", identity: IDENTITY }),
+      });
+      fs.writeFileSync(
+        path.join(machinesRoot, "machines-installs.json"),
+        JSON.stringify({
+          "ssh:nas": {
+            version: "9.9.9",
+            at: "2026-08-01T00:00:00.000Z",
+            machineId: "kUkIyqU-1GOfXgKD",
+          },
+        }),
+      );
+      await admin.post("/api/projects/default_project/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(recordsOnDisk()).toMatchObject({
+        "ssh:nas": { machineId: "kUkIyqU-1GOfXgKD" },
+      });
+    });
+
     it("a throw from the push path still ends the job", async () => {
       await boot({
         install: () => {
