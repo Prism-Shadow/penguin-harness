@@ -29,10 +29,11 @@ import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import { INLINE_IMAGE_MAX_BYTES } from "../src/services/attachment-limits.js";
 import {
   MESSAGING_APPROVAL_NOTICE,
-  MESSAGING_IMAGE_FAILED_NOTICE,
   MESSAGING_TEXT_ONLY_NOTICE,
   MESSAGING_TEST_MESSAGE,
+  messagingImageFailedNotice,
 } from "../src/runtime/messaging/bridge.js";
+import { collectUnderCap } from "../src/runtime/messaging/media.js";
 import type {
   TelegramBotClient,
   TelegramBotUser,
@@ -92,6 +93,11 @@ type Sent = SentMessage | SentMedia;
 interface FileFetch {
   fileId: string;
   maxBytes: number;
+}
+
+/** The bytes as a stream, so the fake reads them through the real capped reader. */
+async function* oneChunk(bytes: Buffer): AsyncGenerator<Uint8Array> {
+  yield bytes;
 }
 
 /** A JPEG's magic bytes plus a little payload: enough for a data URL to be asserted verbatim. */
@@ -182,12 +188,11 @@ class FakeBotClient implements TelegramBotClient {
   async getFileBytes(args: FileFetch): Promise<TelegramFileBytes> {
     this.fileFetches.push(args);
     if (this.t.failFileFetch !== null) throw new Error(this.t.failFileFetch);
-    // The real transport refuses the transfer at the byte that crosses the cap; the fake
-    // reproduces that outcome from bytes it already holds.
-    if (this.t.fileBytes.length > args.maxBytes) {
-      throw new Error("The image is larger than the 20MB limit");
-    }
-    return { data: this.t.fileBytes, filePath: this.t.filePath };
+    // The cap is enforced through the REAL machinery the transport uses, not a hand-written
+    // imitation of it (see the Feishu suite's note: an imitation is free to disagree with
+    // production about which failure this is).
+    const data = await collectUnderCap(oneChunk(this.t.fileBytes), args.maxBytes, "The image");
+    return { data, filePath: this.t.filePath };
   }
 
   getUpdates(args: {
@@ -1324,7 +1329,7 @@ describe("telegram binding routes and connector loop", () => {
     await waitFor(() => fake.allSends().length > 0);
     expect(fake.allSends()).toContainEqual({
       chatId: "42424242",
-      text: MESSAGING_IMAGE_FAILED_NOTICE,
+      text: messagingImageFailedNotice("getFile failed: file is temporarily unavailable"),
     });
     // The caption does NOT run on its own: a question about a picture the model never
     // received would be answered confidently about nothing.

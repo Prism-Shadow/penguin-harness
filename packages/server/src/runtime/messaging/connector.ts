@@ -34,9 +34,12 @@ export interface MessagingInboundImageData {
  */
 export interface MessagingInboundImage {
   /**
-   * Downloads the image, throwing when it is larger than `maxBytes` or the transfer fails.
-   * Both outcomes read the same to the bridge, which answers either with one notice — the
-   * user's next move ("send a smaller one") is the same in both cases.
+   * Downloads the image. Two distinct failures, and the bridge answers them differently:
+   * `MessagingMediaTooLargeError` (see media.ts) for anything past `maxBytes`, which the
+   * user fixes by sending something smaller, and any other Error — carrying the channel's
+   * OWN reason, since a permission the bot lacks and a network blip are not the same
+   * problem — for a transfer that could not be made at all. That reason reaches the chat,
+   * so a connector must keep credentials out of it (see telegram-api's fetchErrorText).
    */
   fetch(maxBytes: number): Promise<MessagingInboundImageData>;
 }

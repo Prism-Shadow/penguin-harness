@@ -47,12 +47,12 @@
  * waiting in the web UI — on the same chain, so it lands between replies instead of inside
  * one.
  *
- * When the run ends, the files its reply MENTIONED follow the text into the chat — the same
- * rule as the Web App's file card (see reply-files.ts): inline-code paths that resolve
- * inside the Workspace and actually exist, pictures sent as pictures and everything else as
- * attachments. Not "every file the run wrote": the Agent's own words are what say which
- * output was the point, and a chat window is a bad place to receive a directory. What the
- * caps drop is named in the chat rather than dropped quietly.
+ * When the run ends, the files its reply MENTIONED follow the text into the chat (see
+ * reply-files.ts): path-like tokens that resolve inside the Workspace and actually exist,
+ * pictures sent as pictures and everything else as attachments. Not "every file the run
+ * wrote": the Agent's own words are what say which output was the point, and a chat window
+ * is a bad place to receive a directory. What the caps drop is named in the chat rather
+ * than dropped quietly.
  */
 import { imageUrlMessage, userText } from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
@@ -71,7 +71,7 @@ import type {
   MessagingInboundMessage,
   MessagingSendNote,
 } from "./connector.js";
-import { isImageFileName } from "./media.js";
+import { MessagingMediaTooLargeError, isImageFileName } from "./media.js";
 import { replyFilePaths } from "./reply-files.js";
 
 /**
@@ -123,12 +123,37 @@ export const MESSAGING_LINE_DELAY_MS = 1000;
 export const MESSAGING_TEXT_ONLY_NOTICE =
   "Only text and image messages are supported for now. 目前仅支持文本和图片消息。";
 /**
- * One image that never reached the Agent. Oversize and failed-download deliberately share
- * a notice: the user's next move is the same either way, and "the download failed" tells
- * someone typing into a chat window nothing they can act on.
+ * The two ways an inbound image does not arrive, deliberately worded as two notices.
+ *
+ * One notice covering both ("too large, or the download failed") was the first version, and
+ * it cost us: a Feishu app that had never been granted the resource-read scope refused
+ * every image, and the report that came back was indistinguishable from a size complaint.
+ * A message that names two causes names neither.
  */
-export const MESSAGING_IMAGE_FAILED_NOTICE =
-  "That image could not be delivered to the Agent (too large, or the download failed), so nothing was sent. 该图片无法发送给智能体（体积过大或下载失败），本条消息未处理。";
+export function messagingImageTooLargeNotice(): string {
+  const mb = Math.floor(INLINE_IMAGE_MAX_BYTES / (1024 * 1024));
+  return `That image is larger than the ${mb}MB limit, so it was not sent to the Agent. Try a smaller one. 该图片超过 ${mb}MB 上限，未发送给智能体，请改用更小的图片。`;
+}
+
+/** How much of a channel's own failure reason rides into the chat before it is cut. */
+const MESSAGING_NOTICE_REASON_MAX = 200;
+
+/**
+ * An image the channel would not hand over, carrying the channel's OWN reason — "app has no
+ * permission to access resource" is a scope to go and grant, and it reads nothing like a
+ * timeout. The reason is machine text in parentheses after the bilingual sentence, so the
+ * sentence stays readable in both languages whatever the channel says.
+ *
+ * The reason is safe to show: both adapters guarantee their error text names no URL and no
+ * credential (see telegram-api's fetchErrorText — its file endpoint embeds the bot token).
+ */
+export function messagingImageFailedNotice(reason: string): string {
+  const detail =
+    reason.length > MESSAGING_NOTICE_REASON_MAX
+      ? `${reason.slice(0, MESSAGING_NOTICE_REASON_MAX)}…`
+      : reason;
+  return `That image could not be downloaded from the chat, so nothing was sent to the Agent. 无法从会话中下载该图片，未发送给智能体。(${detail})`;
+}
 export const MESSAGING_APPROVAL_NOTICE =
   "A tool call is waiting for your approval in the PenguinHarness web UI. 有工具调用正在等待你在网页端审批。";
 export const MESSAGING_TEST_MESSAGE =
@@ -786,18 +811,18 @@ export class MessagingBridge {
           });
         }
       } else {
-        const parts = await this.inboundImageParts(entry, images);
-        if (parts === null) {
+        const result = await this.inboundImageParts(entry, images);
+        if ("notice" in result) {
           // The whole message stops here rather than running on the caption alone: a model
           // asked "what is wrong with this?" about a picture it never received answers
           // confidently about nothing, which is worse than a notice saying so.
-          await this.replyInbound(entry, msg, MESSAGING_IMAGE_FAILED_NOTICE);
+          await this.replyInbound(entry, msg, result.notice);
         } else {
           // Text first, then the images — the same order and the same parts the web composer
           // submits, so a chat message with a picture is indistinguishable from a pasted one.
           await this.deps.runner.startTask(
             entry.sessionId,
-            [...(text === null ? [] : [userText(text)]), ...parts],
+            [...(text === null ? [] : [userText(text)]), ...result.parts],
             { queueIfBusy: true },
           );
         }
@@ -822,8 +847,8 @@ export class MessagingBridge {
   }
 
   /**
-   * Downloads the message's images into `image_url` input parts, or null when any one of
-   * them could not be delivered.
+   * Downloads the message's images into `image_url` input parts, or the notice to answer
+   * with when one of them could not be delivered.
    *
    * All-or-nothing on purpose: a message is one thing the user sent, and half of it
    * reaching the Agent is not a partial success but a misleading one. The cap is the
@@ -831,25 +856,32 @@ export class MessagingBridge {
    * because these images land in exactly the same place (the conversation, and from there
    * the Trace, which is read back whole on every resume). It happens to match Telegram's
    * own 20MB download ceiling for bots.
+   *
+   * A refusal for size is the user's to fix and is not an error record — they sent
+   * something too big and the chat says so. A failure is somebody's fault (a scope the bot
+   * was never granted, most likely) and lands in the error log with the channel's reason,
+   * so it is diagnosable from the dashboard and not only from a chat bubble.
    */
   private async inboundImageParts(
     entry: BridgeEntry,
     images: readonly MessagingInboundImage[],
-  ): Promise<OmniMessage[] | null> {
+  ): Promise<{ parts: OmniMessage[] } | { notice: string }> {
     const parts: OmniMessage[] = [];
     for (const image of images) {
       try {
         const { data, mimeType } = await image.fetch(INLINE_IMAGE_MAX_BYTES);
         parts.push(imageUrlMessage(`data:${mimeType};base64,${data.toString("base64")}`));
       } catch (err) {
-        this.log(
-          `[messaging] ${entry.channel} image fetch failed: ${err instanceof Error ? err.message : String(err)}`,
-        );
+        const reason = err instanceof Error ? err.message : String(err);
+        this.log(`[messaging] ${entry.channel} image fetch failed: ${reason}`);
+        if (err instanceof MessagingMediaTooLargeError) {
+          return { notice: messagingImageTooLargeNotice() };
+        }
         this.recordError(entry.sessionId, err, "messaging_image_fetch_failed");
-        return null;
+        return { notice: messagingImageFailedNotice(reason) };
       }
     }
-    return parts;
+    return { parts };
   }
 
   /** Reply to the inbound message itself: threaded reply in groups, plain send in direct chats. */
@@ -1015,8 +1047,9 @@ export class MessagingBridge {
       if (session === null) return; // deleted mid-run
       const mentioned = replyFilePaths(replyText, session.workspace);
       if (mentioned.length === 0) return;
-      // The same filter the Web App's card applies: a path the model invented, or one it
-      // has since deleted, is simply not there to send. Containment lives in this call.
+      // Existence is the filter that makes a loose extraction safe: a path the model
+      // invented, or one it has since deleted, is simply not there to send. Containment
+      // lives in this call too — see MessagingWorkspaceFiles.
       const existing = await this.deps.files.statExisting(session.workspace, mentioned);
       if (existing.length === 0) return;
       const client = await this.clientFor(entry.sessionId, row);

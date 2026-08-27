@@ -1,22 +1,30 @@
 /**
- * Which files a reply MENTIONS: the inline-code paths in a run's assistant text, normalized
+ * Which files a reply MENTIONS: the path-like tokens in a run's assistant text, normalized
  * to Workspace-relative paths.
  *
- * This is deliberately the Web App's "N files" card rule, not a list of everything the run
- * wrote. The Agent's own words are what decide: a chart it hands over is named in the
- * answer, while the twelve intermediates it wrote on the way there are not, and mirroring
- * the filesystem instead would bury the one file the user asked for. Existence is checked
- * separately (WorkspaceFilesService), so a path the model invented or has since deleted
- * simply drops out.
+ * The Agent's own words are what decide. A chart it hands over is named in the answer,
+ * while the twelve intermediates it wrote on the way there are not, and mirroring the
+ * filesystem instead would bury the one file the user asked for. Existence is checked
+ * separately (WorkspaceFilesService), and that check is what makes a loose extraction safe:
+ * a token that is not a real file in this Workspace costs nothing to have considered.
  *
- * The rule is duplicated rather than shared because the card's copy
- * (`packages/web/src/lib/file-path.ts`, `features/chat/message-files-card.tsx`) is a
- * browser module in a package the server cannot import. The two must stay in step: a file
- * the chat sends but the card does not show — or the reverse — is the same feature
- * disagreeing with itself, so a change to either extension set or path rule belongs in
- * both.
+ * ## Why this is looser than the Web App's file card
+ *
+ * The card (`packages/web/src/features/chat/message-files-card.tsx`) reads inline-code
+ * spans only, and that was this module's first rule too. It does not survive contact with
+ * a chat: a model that writes "已经把图表保存为 chart.png" or "Saved it at
+ * /ws/out/chart.png" names the file perfectly clearly and matched nothing, so the feature
+ * produced nothing at all for most real replies. The card can afford the strict rule
+ * because it decorates Markdown that is already rendered — a path it misses is simply not
+ * clickable, and the file is still one click away in the Files panel. Here the extraction
+ * IS the feature: what it misses never reaches the user.
+ *
+ * So a token is a candidate wherever it appears — prose, a list, a code block — and
+ * prose punctuation is stripped off its edges. The cost is precision: a reply that merely
+ * mentions a file it read can now send it. That is bounded by three things — the file must
+ * exist in the Workspace, at most a handful ride along per run, and the reply said the name
+ * out loud.
  */
-
 /**
  * Extensions that make a token look like a file path. The card's list verbatim: it is
  * broad on purpose (an Agent writes reports, data and code), and the existence check
@@ -86,8 +94,31 @@ const URL_SCHEME_RE = /^[a-z][a-z0-9+.-]*:\/\//i;
 const MAX_PATH_LEN = 512;
 
 /**
- * Whether one inline-code span looks like a file path: no whitespace, no URL scheme, ends
- * in a known extension. Heuristic, not exhaustive — the same one the card applies.
+ * What separates one token from the next: whitespace, Markdown's own decorations
+ * (backticks, asterisks, brackets, parentheses, quotes, table pipes, autolink angles), and
+ * CJK punctuation — a Chinese sentence puts no spaces around a filename, so without the
+ * last group a whole clause arrives as one token and matches nothing.
+ *
+ * Deliberately NOT boundaries: the ASCII colon and the backslash (together they spell a
+ * Windows path, `C:\ws\out.png`), and `_ - + ~ .`, all common inside real file names.
+ */
+const TOKEN_BOUNDARY = /[\s`*"'()[\]{}<>|,;、，。：；！？“”‘’（）【】〔〕「」『』《》〈〉…—–]+/;
+
+/** Sentence punctuation left clinging to a token's edges ("report.md." → "report.md"). */
+const EDGE_PUNCTUATION = /^[.,;:!?]+|[.,;:!?]+$/g;
+
+/**
+ * How many candidates are considered per reply. A bound, not a feature: a run that pastes a
+ * directory listing into its answer would otherwise put hundreds of names through a stat
+ * each. Well past any reply that is actually handing a file over — the batch itself caps at
+ * a handful.
+ */
+const MAX_CANDIDATES = 50;
+
+/**
+ * Whether one token looks like a file path: no whitespace, no URL scheme, ends in a known
+ * extension. Heuristic, not exhaustive — the card's test, unchanged; what changed around it
+ * is which tokens are offered to it.
  */
 function isFilePathLike(text: string): boolean {
   const s = text.trim();
@@ -152,10 +183,13 @@ function toWorkspaceRelative(mentioned: string, workspace: string): string | nul
 export function replyFilePaths(text: string, workspace: string): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
-  for (const match of text.matchAll(/`([^`\n]+)`/g)) {
-    const raw = match[1]!.trim();
-    if (!isFilePathLike(raw)) continue;
-    const rel = toWorkspaceRelative(raw, workspace);
+  let considered = 0;
+  for (const token of text.split(TOKEN_BOUNDARY)) {
+    if (considered >= MAX_CANDIDATES) break;
+    const candidate = token.replace(EDGE_PUNCTUATION, "");
+    if (!isFilePathLike(candidate)) continue;
+    considered += 1;
+    const rel = toWorkspaceRelative(candidate, workspace);
     if (rel === null || seen.has(rel)) continue;
     seen.add(rel);
     out.push(rel);

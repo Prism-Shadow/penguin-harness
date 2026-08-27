@@ -72,6 +72,23 @@ export function sniffImageMime(bytes: Uint8Array): string | null {
 }
 
 /**
+ * A transfer refused for its size, as opposed to one that failed.
+ *
+ * The distinction exists because the two have nothing in common but the outcome, and the
+ * user's next move differs: a size refusal is theirs to fix by sending something smaller,
+ * while a failure is a fault somewhere else — a permission the bot was never granted, a
+ * network blip — that no amount of resending will clear. A notice that covers both says
+ * neither, which is how a real permission error was first reported to us as "the image is
+ * too large or the download failed".
+ */
+export class MessagingMediaTooLargeError extends Error {
+  constructor(what: string, maxBytes: number) {
+    super(`${what} is larger than the ${Math.floor(maxBytes / (1024 * 1024))}MB limit`);
+    this.name = "MessagingMediaTooLargeError";
+  }
+}
+
+/**
  * Reads a download into memory, refusing at the byte that crosses `maxBytes`.
  *
  * Buffering `await res.arrayBuffer()` and checking the length afterwards would be a
@@ -92,9 +109,7 @@ export async function collectUnderCap(
   let total = 0;
   for await (const chunk of chunks) {
     total += chunk.byteLength;
-    if (total > maxBytes) {
-      throw new Error(`${what} is larger than the ${Math.floor(maxBytes / (1024 * 1024))}MB limit`);
-    }
+    if (total > maxBytes) throw new MessagingMediaTooLargeError(what, maxBytes);
     parts.push(chunk);
   }
   return Buffer.concat(parts);

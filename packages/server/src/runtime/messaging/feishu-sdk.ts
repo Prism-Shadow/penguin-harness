@@ -9,7 +9,7 @@
  * which would tax every typecheck for the handful of calls made here; the local interfaces
  * below are the contract, and the adapter casts the loaded module once.
  */
-import { collectUnderCap, sniffImageMime } from "./media.js";
+import { MessagingMediaTooLargeError, collectUnderCap, sniffImageMime } from "./media.js";
 
 /** One credential set (a binding's stored values, or a test request's draft). */
 export interface FeishuCredentials {
@@ -91,9 +91,15 @@ export interface FeishuApiClient {
   botOpenId(): Promise<string | null>;
   /**
    * Downloads an image carried by an inbound message (`file_key` is the content JSON's
-   * `image_key`), throwing when the transfer fails or exceeds `maxBytes`. The resource
-   * endpoint is scoped to the message, so a bot can only read images from conversations it
-   * is in — there is no key-only fetch to abuse.
+   * `image_key`). Throws `MessagingMediaTooLargeError` past `maxBytes`, and a plain Error
+   * carrying the API's own reason otherwise. The resource endpoint is scoped to the
+   * message, so a bot can only read images from conversations it is in — there is no
+   * key-only fetch to abuse.
+   *
+   * It is also permissioned SEPARATELY from receiving messages: an app that happily
+   * delivers `im.message.receive_v1` events still gets a refusal here until the resource
+   * read scope is granted to it. Nothing in this process can fix that, which is exactly why
+   * the API's reason has to survive all the way to the chat.
    */
   fetchMessageImage(args: {
     messageId: string;
@@ -142,6 +148,8 @@ interface LarkModule {
     appSecret: string;
     domain: string;
     loggerLevel: number;
+    /** Test seam: the SDK's `params.httpInstance`, which every call (token fetch included) goes through. */
+    httpInstance?: unknown;
   }) => LarkClient;
   WSClient: new (params: {
     appId: string;
@@ -283,6 +291,50 @@ function larkErrorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/**
+ * How much of a failed download's body is read back to find the API's reason. A Feishu
+ * error envelope is a few hundred bytes; the bound is there because the body is untrusted
+ * and the process must not be made to hold whatever arrives.
+ */
+const ERROR_BODY_MAX_BYTES = 64 * 1024;
+
+/** Whether a value is something `for await` can read (the error body of a streamed request). */
+function isAsyncIterable(value: unknown): value is AsyncIterable<Uint8Array> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as AsyncIterable<Uint8Array>)[Symbol.asyncIterator] === "function"
+  );
+}
+
+/**
+ * Readable failure text for a request made with `responseType: "stream"` — the resource
+ * download.
+ *
+ * That response type applies to the FAILURE as well: on a refusal the SDK hands back an
+ * error whose `response.data` is a stream, not a parsed `{code,msg}` envelope, so
+ * `larkErrorText` finds nothing there and reports "Request failed with status code 403".
+ * That sentence names the one thing the user cannot act on and hides the one they can —
+ * "app has no permission to access resource" is a scope to go and grant. The body is small
+ * and already in hand, so it is read and parsed here.
+ */
+async function larkStreamErrorText(err: unknown): Promise<string> {
+  const body = (err as { response?: { data?: unknown } }).response?.data;
+  if (isAsyncIterable(body)) {
+    try {
+      const raw = await collectUnderCap(body, ERROR_BODY_MAX_BYTES, "The error body");
+      const parsed = JSON.parse(raw.toString("utf8")) as { code?: unknown; msg?: unknown };
+      if (typeof parsed.msg === "string" && parsed.msg !== "") {
+        return typeof parsed.code === "number" ? `${parsed.msg} (code ${parsed.code})` : parsed.msg;
+      }
+    } catch {
+      // Not a JSON envelope (an HTML error page, a truncated body): the generic text below
+      // is still better than throwing a second error out of the error path.
+    }
+  }
+  return larkErrorText(err);
+}
+
 /** Non-zero `{code}` envelopes come back as resolved responses; converge them to throws. */
 function ensureOk(res: LarkResponse, what: string): void {
   if (res.code !== undefined && res.code !== 0) {
@@ -291,7 +343,19 @@ function ensureOk(res: LarkResponse, what: string): void {
 }
 
 /** The production factory: lazy-loads the Lark SDK on first use. */
-export function createLarkSdk(): FeishuSdk {
+/**
+ * `httpInstance` is the SDK's own injection point (`params.httpInstance`, used by every
+ * call including the tenant-token fetch). Tests pass a stub that stands exactly where axios
+ * stands, so the SDK's URL building, `:path` filling, param serialization and response
+ * unwrapping all run for real — the layer a hand-written fake of this module's own
+ * interface cannot reach, and where both of this adapter's protocol bugs lived. Production
+ * passes nothing.
+ */
+export interface LarkSdkOpts {
+  httpInstance?: unknown;
+}
+
+export function createLarkSdk(opts: LarkSdkOpts = {}): FeishuSdk {
   let modPromise: Promise<LarkModule> | null = null;
   const load = (): Promise<LarkModule> => {
     modPromise ??= import("@larksuiteoapi/node-sdk").then(
@@ -309,6 +373,7 @@ export function createLarkSdk(): FeishuSdk {
         appSecret: creds.appSecret,
         domain: creds.baseDomain,
         loggerLevel: lark.LoggerLevel.error,
+        ...(opts.httpInstance !== undefined ? { httpInstance: opts.httpInstance } : {}),
       });
       /** One `im.v1.message.create`, shared by every message kind: the content JSON differs, nothing else does. */
       const sendContent = async (
@@ -376,7 +441,7 @@ export function createLarkSdk(): FeishuSdk {
               params: { type: "image" },
             });
           } catch (err) {
-            throw new Error(larkErrorText(err));
+            throw new Error(await larkStreamErrorText(err));
           }
           const data = await collectUnderCap(res.getReadableStream(), maxBytes, "The image");
           // The response header states what the SENDER uploaded, which is a claim; the

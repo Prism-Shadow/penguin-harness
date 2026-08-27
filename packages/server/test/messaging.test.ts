@@ -36,7 +36,6 @@ import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import { INLINE_IMAGE_MAX_BYTES } from "../src/services/attachment-limits.js";
 import {
   MESSAGING_APPROVAL_NOTICE,
-  MESSAGING_IMAGE_FAILED_NOTICE,
   MESSAGING_MAX_LINE_MESSAGES,
   MESSAGING_OUTBOUND_FILE_MAX_COUNT,
   MESSAGING_OUTBOUND_IMAGE_MAX_BYTES,
@@ -47,6 +46,8 @@ import {
   chunkMessagingText,
   messagingFileTooLargeNotice,
   messagingFilesSkippedNotice,
+  messagingImageFailedNotice,
+  messagingImageTooLargeNotice,
   splitReplyLines,
 } from "../src/runtime/messaging/bridge.js";
 import type { MessagingTaskRunner } from "../src/runtime/messaging/bridge.js";
@@ -57,6 +58,7 @@ import {
   isImageFileName,
   sniffImageMime,
 } from "../src/runtime/messaging/media.js";
+import { replyFilePaths } from "../src/runtime/messaging/reply-files.js";
 import type {
   FeishuApiClient,
   FeishuCredentials,
@@ -104,6 +106,11 @@ interface ImageFetch {
   maxBytes: number;
 }
 
+/** The bytes as a stream, so the fakes read them through the real capped reader. */
+async function* oneChunk(bytes: Buffer): AsyncGenerator<Uint8Array> {
+  yield bytes;
+}
+
 /** A PNG's magic bytes plus a little payload: enough for a data URL to be asserted verbatim. */
 const IMAGE_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x01, 0x02, 0x03]);
 
@@ -146,12 +153,11 @@ class FakeClient implements FeishuApiClient {
   async fetchMessageImage(args: ImageFetch): Promise<FeishuImageData> {
     this.imageFetches.push(args);
     if (this.sdk.failImageFetch !== null) throw new Error(this.sdk.failImageFetch);
-    // The real adapter reads the download under the cap and throws at the byte that
-    // crosses it; the fake reproduces that outcome from bytes it already holds.
-    if (this.sdk.imageBytes.length > args.maxBytes) {
-      throw new Error("The image is larger than the 20MB limit");
-    }
-    return { data: this.sdk.imageBytes, mimeType: "image/png" };
+    // The cap is enforced through the REAL machinery the adapter uses, not a hand-written
+    // imitation of it: a fake free to throw its own error shape is a fake free to disagree
+    // with production about which failure this is (it did, once).
+    const data = await collectUnderCap(oneChunk(this.sdk.imageBytes), args.maxBytes, "The image");
+    return { data, mimeType: "image/png" };
   }
   async sendImage(chatId: string, file: { fileName: string; data: Buffer }): Promise<void> {
     this.sdk.failMediaSendOnce();
@@ -512,6 +518,59 @@ describe("messaging media helpers", () => {
     await expect(collectUnderCap(chunks([4, 4, 4]), 10, "The image")).rejects.toThrow(
       /The image is larger than the/,
     );
+  });
+});
+
+describe("replyFilePaths", () => {
+  const WS = "/data/ws";
+
+  // The regression that matters: this rule used to read inline-code spans only, which is
+  // what the Web App's file card does. Applied to a chat it delivered almost nothing — a
+  // model that writes a filename in a sentence, which is most of them, named no file at
+  // all. Each line below is a way a reply really does hand a file over.
+  it("finds a mentioned path however the reply happens to phrase it", () => {
+    const cases: Array<[string, string[]]> = [
+      ["Done — the chart is `chart.png`.", ["chart.png"]],
+      ["Saved to `/data/ws/out/chart.png`.", ["out/chart.png"]],
+      ["I've written the chart to chart.png for you.", ["chart.png"]],
+      ["Saved it at /data/ws/out/chart.png — take a look.", ["out/chart.png"]],
+      ["The report is report.md.", ["report.md"]],
+      ["图表已生成：/data/ws/chart.png。", ["chart.png"]],
+      ["已经把图表保存为 chart.png，请查收。", ["chart.png"]],
+      ["Wrote **chart.png** to the workspace.", ["chart.png"]],
+      ["See [the chart](chart.png).", ["chart.png"]],
+      ["The chart (chart.png) is ready.", ["chart.png"]],
+      ['Saved as "chart.png".', ["chart.png"]],
+      ["- chart.png\n- report.md", ["chart.png", "report.md"]],
+    ];
+    for (const [text, expected] of cases) {
+      expect(replyFilePaths(text, WS), text).toEqual(expected);
+    }
+  });
+
+  it("still refuses what is not a Workspace file, which is what keeps the loose rule safe", () => {
+    for (const text of [
+      "See https://example.com/logo.png for the original.",
+      "Check www.example.com/x.png.",
+      "Upgraded to v1.2 and 3.14 today.",
+      // Escapes are refused here as well as by the file service behind it.
+      "Read ../../etc/passwd earlier.",
+      "Compared against /etc/hostname just now.",
+      "Config lives at ~/.penguinrc.toml.",
+    ]) {
+      expect(replyFilePaths(text, WS), text).toEqual([]);
+    }
+  });
+
+  it("reads a Windows Workspace's path in either spelling, and dedupes on the result", () => {
+    // core spells model-visible paths with "/" while path.join produces "\\"; the same file
+    // named both ways is one file, and must not be sent twice.
+    expect(replyFilePaths("Wrote C:\\ws\\out\\chart.png just now.", "C:\\ws")).toEqual([
+      "out/chart.png",
+    ]);
+    expect(
+      replyFilePaths("Wrote C:/ws/out/chart.png, i.e. C:\\ws\\out\\chart.png.", "C:\\ws"),
+    ).toEqual(["out/chart.png"]);
   });
 });
 
@@ -1265,9 +1324,12 @@ describe("messaging binding routes and bridge", () => {
     expect(fake.allTexts().map((s) => s.text)).toEqual(["Reply text"]);
   });
 
-  it("an image the channel will not hand over degrades to a notice, and starts no task", async () => {
+  it("an image the channel will not hand over reports the channel's OWN reason", async () => {
     await bindEnabled(SID);
-    fake.failImageFetch = "resource not found (code 234043)";
+    // The case that actually shipped broken: a Feishu app without the resource-read scope
+    // refuses every image. The chat has to say THAT, not "too large or the download failed"
+    // — one of those is a scope to go and grant, the other is unactionable.
+    fake.failImageFetch = "Access denied. app has no permission to access resource (code 99991672)";
     await fake.lastConnection().fire({
       chatId: "oc_chat_1",
       chatType: "p2p",
@@ -1276,17 +1338,25 @@ describe("messaging binding routes and bridge", () => {
       content: JSON.stringify({ image_key: "img_v2_gone" }),
     });
     await waitFor(() => fake.allSends().length > 0);
-    expect(fake.allSends()).toContainEqual({
-      kind: "send",
-      target: "oc_chat_1",
-      text: MESSAGING_IMAGE_FAILED_NOTICE,
-    });
+    const notice = fake.allTexts().at(-1)!.text;
+    expect(notice).toBe(
+      messagingImageFailedNotice(
+        "Access denied. app has no permission to access resource (code 99991672)",
+      ),
+    );
+    expect(notice).toContain("no permission to access resource");
+    // A failure is somebody's fault and belongs in the error log, not only in a chat
+    // bubble — with the channel's reason, so it is diagnosable from the dashboard.
+    const recorded = imageFetchErrors();
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0]).toContain("no permission to access resource");
     expect(runs).toHaveLength(0);
   });
 
-  it("an image over the inline-image cap degrades to the same notice", async () => {
+  it("an image over the inline-image cap says so, with the limit, and is not an error record", async () => {
     await bindEnabled(SID);
-    // One byte past the ceiling: the cap is what refuses it, not a network failure.
+    // One byte past the ceiling: the cap refuses it, and the user fixes that by sending
+    // something smaller — a different notice from a failure, and nobody's fault.
     fake.imageBytes = Buffer.alloc(INLINE_IMAGE_MAX_BYTES + 1, 0x41);
     await fake.lastConnection().fire({
       chatId: "oc_chat_1",
@@ -1296,11 +1366,10 @@ describe("messaging binding routes and bridge", () => {
       content: JSON.stringify({ image_key: "img_v2_huge" }),
     });
     await waitFor(() => fake.allSends().length > 0);
-    expect(fake.allSends()).toContainEqual({
-      kind: "send",
-      target: "oc_chat_1",
-      text: MESSAGING_IMAGE_FAILED_NOTICE,
-    });
+    expect(fake.allTexts().at(-1)!.text).toBe(messagingImageTooLargeNotice());
+    expect(messagingImageTooLargeNotice()).toContain("20MB");
+    // Nobody's fault: the chat notice is the whole report, and the error log stays clean.
+    expect(imageFetchErrors()).toHaveLength(0);
     expect(runs).toHaveLength(0);
   });
 
@@ -1812,6 +1881,17 @@ describe("messaging binding routes and bridge", () => {
     await bindEnabled(SID2, { ...PUT_BODY, appId });
   };
 
+  /**
+   * Messages of the image-download failures recorded for this app. Read straight off the
+   * table: the bridge records with no Project (it knows a Session id), which is exactly the
+   * shape ErrorsRepo's project-scoped queries filter out.
+   */
+  const imageFetchErrors = (): string[] =>
+    t.deps.db
+      .prepare("SELECT message FROM error_records WHERE code = 'messaging_image_fetch_failed'")
+      .all()
+      .map((r) => r.message as string);
+
   let asks = 0;
   /** Message the bound Session from the chat, and wait for the run to start AND finish. */
   const askAndSettle = async (): Promise<void> => {
@@ -1851,6 +1931,22 @@ describe("messaging binding routes and bridge", () => {
       { kind: "image", target: "oc_chat_files", fileName: "chart.png", bytes: IMAGE_BYTES.length },
       { kind: "file", target: "oc_chat_files", fileName: "notes.md", bytes: 5 },
     ]);
+  });
+
+  it("delivers a file the reply names in a plain sentence, with no inline code", async () => {
+    // The end-to-end shape of the bug a user hit: everything downstream of extraction was
+    // right, and a reply phrased the way models actually phrase it produced nothing.
+    const ws = await makeWorkspace();
+    await fs.writeFile(path.join(ws, "chart.png"), IMAGE_BYTES);
+    await bindWithWorkspace(ws, "已经把图表保存为 chart.png，请查收。", "cli_bare_path");
+    await askAndSettle();
+    await waitFor(() => fake.allSends().length === 2);
+    expect(fake.allSends()[1]).toEqual({
+      kind: "image",
+      target: "oc_chat_files",
+      fileName: "chart.png",
+      bytes: IMAGE_BYTES.length,
+    });
   });
 
   it("mentions the same file twice and sends it once, however it is spelled", async () => {

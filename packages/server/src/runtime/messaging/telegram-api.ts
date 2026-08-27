@@ -10,7 +10,7 @@
  * Wire types below mirror the Bot API JSON verbatim (snake_case): the transport does not
  * reshape payloads, so a test fake constructs exactly what the real API returns.
  */
-import { collectUnderCap } from "./media.js";
+import { MessagingMediaTooLargeError, collectUnderCap } from "./media.js";
 
 /** Telegram Bot API host. Deliberately not configurable: bindings carry only the token. */
 export const TELEGRAM_API_BASE = "https://api.telegram.org";
@@ -397,9 +397,7 @@ export function createTelegramTransport(): TelegramTransport {
           // The declared size refuses an oversized transfer before it starts; the capped
           // read below is what actually holds, since the claim can be absent or wrong.
           if (file.file_size !== undefined && file.file_size > maxBytes) {
-            throw new Error(
-              `The image is larger than the ${Math.floor(maxBytes / (1024 * 1024))}MB limit`,
-            );
+            throw new MessagingMediaTooLargeError("The image", maxBytes);
           }
           let res: Response;
           try {
