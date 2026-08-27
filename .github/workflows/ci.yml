@@ -35,6 +35,16 @@ jobs:
       - name: Code style (Prettier)
         run: pnpm format:check
 
+      # A workflow that does not parse produces a run with zero jobs and no annotation
+      # anywhere useful -- the failure this very file shipped once, over a double-quoted
+      # string in a ${{ }} expression, where only single quotes are legal. Cheap to catch.
+      - name: Lint workflows (actionlint)
+        run: |
+          ver=1.7.12
+          curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v${ver}/actionlint_${ver}_linux_amd64.tar.gz" \
+            | tar xz actionlint
+          ./actionlint
+
   # tsc over every package, so this one does need the whole build. Results are
   # platform-independent, which is why neither macOS nor Windows repeats it.
   typecheck:
@@ -286,7 +296,7 @@ jobs:
     steps:
       - name: Every gate passed
         run: |
-          results='${{ join(needs.*.result, " ") }}'
+          results='${{ join(needs.*.result, ' ') }}'
           echo "upstream results: $results"
           for r in $results; do
             if [ "$r" != "success" ]; then
