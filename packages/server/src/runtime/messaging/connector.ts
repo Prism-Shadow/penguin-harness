@@ -60,6 +60,19 @@ export interface MessagingConnection {
  */
 export interface MessagingAccountInfo {
   accountLabel?: string;
+  /**
+   * Whether this account receives ORDINARY messages in a group it belongs to — as opposed
+   * to only the ones a platform hands a bot by default.
+   *
+   * Telegram's privacy mode is the case that needs saying: it is on unless the bot was
+   * added as a group admin or its owner turned it off, and under it `getUpdates` simply
+   * omits everything in a group that is not a command addressed to this bot or a reply to
+   * one of its messages. Nothing errors — the messages are never delivered, so a binding
+   * that works perfectly in a direct chat looks dead in a group. Absent when the channel
+   * has no such notion, or reports nothing about it: unknown must never be reported as a
+   * problem.
+   */
+  readsGroupMessages?: boolean;
 }
 
 /** Outbound half of one bound account. Every method throws on failure with a readable reason. */

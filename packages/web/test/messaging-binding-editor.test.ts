@@ -217,6 +217,25 @@ describe("MessagingBindingHelp", () => {
     expect(html).toContain(S.feishu.setupSteps[0]);
   });
 
+  it("carries the Telegram-only troubleshooting entries, and neither of them on Feishu", () => {
+    const telegram = renderToStaticMarkup(
+      createElement(MessagingBindingHelp, { channel: "telegram" as MessagingChannel }),
+    );
+    // Group Privacy is on by default and produces silence, not an error, so the fold is the
+    // only place a user who has not run a credential test can find out about it. The entry
+    // has to name all three moves or it wastes the trip: turn it off in @BotFather, re-add
+    // the bot to groups it is already in, or make it an admin.
+    expect(telegram).toContain(S.messaging.troubleGroupPrivacy);
+    expect(S.messaging.troubleGroupPrivacy).toContain("/setprivacy");
+    expect(telegram).toContain(S.messaging.troubleOnePoller);
+
+    const feishu = renderToStaticMarkup(
+      createElement(MessagingBindingHelp, { channel: "feishu" as MessagingChannel }),
+    );
+    expect(feishu).not.toContain(S.messaging.troubleGroupPrivacy);
+    expect(feishu).not.toContain(S.messaging.troubleOnePoller);
+  });
+
   it("puts each channel's tutorial link in its setup fold", () => {
     const feishu = renderToStaticMarkup(
       createElement(MessagingBindingHelp, { channel: "feishu" as MessagingChannel }),

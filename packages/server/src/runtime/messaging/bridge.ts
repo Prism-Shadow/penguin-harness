@@ -375,12 +375,19 @@ export class MessagingBridge {
   /**
    * Credential probe for the test endpoints: ok/error with latency, never a throw. A
    * channel whose check identifies the account (Telegram: the bot's @username) passes
-   * that label through for the route's success feedback.
+   * that label through for the route's success feedback, along with anything else the
+   * probe learned that the user should act on (see MessagingAccountInfo).
    */
   async testCredentials(
     channel: string,
     config: Record<string, unknown>,
-  ): Promise<{ ok: boolean; latencyMs?: number; accountLabel?: string; error?: string }> {
+  ): Promise<{
+    ok: boolean;
+    latencyMs?: number;
+    accountLabel?: string;
+    readsGroupMessages?: boolean;
+    error?: string;
+  }> {
     const startedAt = this.now();
     try {
       const client = await this.connectorFor(channel).createClient(config);
@@ -389,6 +396,9 @@ export class MessagingBridge {
         ok: true,
         latencyMs: this.now() - startedAt,
         ...(info?.accountLabel !== undefined ? { accountLabel: info.accountLabel } : {}),
+        ...(info?.readsGroupMessages !== undefined
+          ? { readsGroupMessages: info.readsGroupMessages }
+          : {}),
       };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };

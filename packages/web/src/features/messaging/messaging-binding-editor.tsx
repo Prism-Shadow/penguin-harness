@@ -51,7 +51,7 @@ import { Input } from "../../components/ui/input";
 import { PasswordInput } from "../../components/ui/password-input";
 import { Segmented } from "../../components/ui/segmented";
 import { Switch } from "../../components/ui/switch";
-import { toastError, toastSuccess } from "../../components/ui/toast";
+import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import {
   bindingsToForm,
   emptyMessagingForm,
@@ -303,6 +303,11 @@ export function useMessagingBinding(
               ? S.messaging.testOkAs(res.botUsername, ms)
               : S.messaging.testOk(ms),
           );
+          // A second, separate line rather than a longer success one: the credentials really
+          // are fine, and the bot really will answer a direct chat — the notice is about
+          // group chats only, and it is the one thing a user cannot discover by testing (a
+          // muted bot in a group produces silence, never an error).
+          if (res.groupPrivacy === true) toastInfo(S.messaging.testPrivacyOn);
         } else toastError(S.messaging.testFail(res.error ?? S.common.unknownError));
       } else {
         const res = await api.testFeishuBinding(sessionId, draft.body);
@@ -752,6 +757,7 @@ export function MessagingBindingHelp({ channel }: { channel: MessagingChannel })
           <li>{S.messaging.troubleNoChat}</li>
           <li>{S.messaging.troubleConnError}</li>
           {channel === "telegram" && <li>{S.messaging.troubleOnePoller}</li>}
+          {channel === "telegram" && <li>{S.messaging.troubleGroupPrivacy}</li>}
         </ul>
       </HelpFold>
     </div>

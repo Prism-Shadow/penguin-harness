@@ -203,7 +203,15 @@ export class TelegramConnector implements MessagingChannelConnector {
     return {
       async checkCredentials() {
         const me = await bot.getMe();
-        return me.username !== undefined ? { accountLabel: `@${me.username}` } : null;
+        return {
+          ...(me.username !== undefined ? { accountLabel: `@${me.username}` } : {}),
+          // Reported only when the API actually answered the question. A missing flag is
+          // "unknown", and telling a user their bot is muted in groups on the strength of an
+          // absent field would send them to BotFather for nothing.
+          ...(typeof me.can_read_all_group_messages === "boolean"
+            ? { readsGroupMessages: me.can_read_all_group_messages }
+            : {}),
+        };
       },
       async sendText(chatId, text) {
         await bot.sendMessage({ chatId, text });

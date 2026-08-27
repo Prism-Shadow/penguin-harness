@@ -18,11 +18,23 @@ export interface TelegramCredentials {
   botToken: string;
 }
 
-/** `getMe` result — the slice of the Bot API `User` object the connector consumes. */
+/**
+ * `getMe` result — the slice of the Bot API `User` object the connector consumes. The two
+ * capability flags are documented as "Returned only in getMe", so this is the one call that
+ * can report them, and either may be absent from a response that predates them.
+ */
 export interface TelegramBotUser {
   id: number;
   first_name?: string;
   username?: string;
+  /** "True, if the bot can be invited to groups." */
+  can_join_groups?: boolean;
+  /**
+   * "True, if privacy mode is disabled for the bot." Privacy mode is ON by default for
+   * every bot that was not added to its group as an admin, and it silently withholds
+   * ordinary group messages — see the connector's checkCredentials.
+   */
+  can_read_all_group_messages?: boolean;
 }
 
 /**

@@ -87,6 +87,9 @@ class FakeBotClient implements TelegramBotClient {
       id: Number(telegramBotIdOf(this.creds.botToken) ?? "0"),
       first_name: "Penguin Test",
       username: "penguin_test_bot",
+      ...(this.t.readsAllGroupMessages !== undefined
+        ? { can_read_all_group_messages: this.t.readsAllGroupMessages }
+        : {}),
     };
   }
 
@@ -162,6 +165,8 @@ class FakeTelegramTransport {
   failPolls = 0;
   /** The webhook registered on the bot; the empty string means none, as the Bot API encodes it. */
   webhookUrl = "";
+  /** getMe's `can_read_all_group_messages` (true = privacy mode OFF); undefined = the field is absent. */
+  readsAllGroupMessages: boolean | undefined = undefined;
   private nextUpdateId = 100;
 
   createClient(creds: TelegramCredentials): FakeBotClient {
@@ -626,6 +631,36 @@ describe("telegram binding routes and connector loop", () => {
     fake.push(privateText("second", 12));
     await waitFor(() => runs.length === 2);
     expect(runs.map((r) => r[0]!.text)).toEqual(["how is the build?", "second"]);
+  });
+
+  it("POST /test reports @BotFather's Group Privacy, and reports nothing when getMe is silent about it", async () => {
+    // Privacy mode ON is the Bot API default for every bot not added as a group admin. It is
+    // never an error — the bot answers a direct chat perfectly — so the test result is the
+    // only place the user learns why the same bot ignores a group.
+    fake.readsAllGroupMessages = false;
+    const on = (await (
+      await api.post(`${BASE(SID)}/test`, { botToken: TOKEN })
+    ).json()) as TelegramTestResponse;
+    expect(on.ok).toBe(true);
+    expect(on.groupPrivacy).toBe(true);
+
+    // Turned off in @BotFather: the flag says so, and the response says there is nothing to do.
+    fake.readsAllGroupMessages = true;
+    const off = (await (
+      await api.post(`${BASE(SID)}/test`, { botToken: TOKEN })
+    ).json()) as TelegramTestResponse;
+    expect(off.groupPrivacy).toBe(false);
+
+    // The field is documented as "returned only in getMe" and could be missing from a
+    // response this build did not anticipate. Unknown is reported as unknown: telling a user
+    // their bot is muted in groups on the strength of an absent field sends them to
+    // @BotFather for nothing.
+    fake.readsAllGroupMessages = undefined;
+    const silent = (await (
+      await api.post(`${BASE(SID)}/test`, { botToken: TOKEN })
+    ).json()) as TelegramTestResponse;
+    expect(silent.ok).toBe(true);
+    expect("groupPrivacy" in silent).toBe(false);
   });
 
   it("group messages thread the reply onto the inbound message; non-message updates are skipped", async () => {
