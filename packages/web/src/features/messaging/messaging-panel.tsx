@@ -5,10 +5,10 @@
  * channel selector switching between the two channels' forms (each independently
  * savable), then the connection controls — the enable/disable toggle (one enabled channel
  * per conversation) with the live status line, both probes, and the hint naming what gates
- * the switch — then the per-channel credential fields with the console link at the field
- * corner and the models-style stored-secret row, and the collapsed FAQ folds below the
- * Save area. There is no unbind action — removing a credential is the secret field's clear
- * checkbox.
+ * the switch — then the per-channel credential fields with the credential-source link at
+ * the field corner and the models-style stored-secret row, and the collapsed FAQ folds
+ * below the Save area. There is no unbind action — removing a credential is the secret
+ * field's clear checkbox.
  *
  * Status polling is gated on `active` (the dock keeps hidden tabs mounted): a hidden tab
  * neither polls nor loses the form state it accumulated.

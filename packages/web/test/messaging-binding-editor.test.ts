@@ -3,14 +3,15 @@
  *
  * Six rules this pins, all of which are invisible to a type checker: the form opens on its
  * FIELDS (the explanation lives in the collapsed FAQ under the save area, not above the first
- * input), each channel's developer-console link rides the credential field's corner, the
- * connection switch — which IS the bind/unbind — carries that sentence as its own tooltip
- * rather than as a line the form would have to make room for, a stored secret is removed by
- * the models-page clear checkbox and that checkbox is gated, on screen, while the channel
- * holds the connection, and a connection error's detail reaches the reader whole rather than
- * as a few words of a shared row.
+ * input), each channel's credential-source link rides the credential field's corner, that
+ * link's label names the place it actually opens, the connection switch — which IS the
+ * bind/unbind — carries that sentence as its own tooltip rather than as a line the form
+ * would have to make room for, a stored secret is removed by the models-page clear checkbox
+ * and that checkbox is gated, on screen, while the channel holds the connection, and a
+ * connection error's detail reaches the reader whole rather than as a few words of a shared
+ * row.
  */
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { MessagingChannel } from "@prismshadow/penguin-server/api";
@@ -21,7 +22,10 @@ import {
   type MessagingChannelFacts,
 } from "../src/features/messaging/messaging-binding-editor";
 import { emptyMessagingForm } from "../src/features/messaging/messaging-binding-form";
-import { S } from "../src/lib/strings";
+import { S, setActiveStrings, zh } from "../src/lib/strings";
+import { en } from "../src/lib/strings-en";
+
+afterEach(() => setActiveStrings(zh));
 
 const DARK: MessagingChannelFacts = {
   secretConfigured: false,
@@ -85,13 +89,20 @@ describe("MessagingBindingBody", () => {
 
   it("labels that corner link with what it opens, never with a console Telegram has not got", () => {
     // The defect this pins: a link labelled "open developer console" that landed in the API
-    // manual. Label and target have to name the same thing, so the shared console wording is
-    // used only by the channels that actually have one.
-    const telegram = render(stateOf("telegram"));
-    expect(telegram).toContain(S.telegram.openBotFather);
-    expect(telegram).not.toContain(S.messaging.console);
-    // ...and the channels that do have a console keep it.
-    expect(render(stateOf("feishu"))).toContain(S.messaging.console);
+    // manual. Both dictionaries, because the label is per-locale and `S` is zh until a test
+    // says otherwise — an assertion against the active dictionary alone would leave English
+    // free to carry the very wording this fixed.
+    for (const dict of [zh, en]) {
+      setActiveStrings(dict);
+      // Label and target in ONE assertion: pinned apart, they pass just as happily with the
+      // right href on the wrong anchor.
+      const telegram = render(stateOf("telegram"));
+      const corner = /<a href="https:\/\/t\.me\/BotFather"[^>]*>([^<]*)<\/a>/.exec(telegram);
+      expect(corner?.[1]).toBe(`${dict.telegram.openBotFather} ↗`);
+      expect(telegram).not.toContain(dict.messaging.console);
+      // ...and the channels that do have a console keep it.
+      expect(render(stateOf("feishu"))).toContain(dict.messaging.console);
+    }
   });
 
   it("offers a stored secret's removal as the clear checkbox, gated on screen while enabled", () => {

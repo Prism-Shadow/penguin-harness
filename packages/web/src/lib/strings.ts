@@ -1792,7 +1792,12 @@ Benchmark：
       feishu: "飞书",
       telegram: "Telegram",
     },
-    /** Per-channel external links: the tutorial (in the setup FAQ fold) and the console (at the credential field's corner). */
+    /**
+     * Shared link labels: the tutorial (in the setup FAQ fold) and, at the credential field's
+     * corner, the developer console — the latter only for the channels that have one. A
+     * channel whose credential is issued elsewhere names that destination itself (Telegram's
+     * `telegram.openBotFather`).
+     */
     tutorial: "前往教程",
     console: "前往开发者后台",
     /** The connection toggle (flips immediately, using the stored credentials). */
