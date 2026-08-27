@@ -1,6 +1,6 @@
 # Security Policy
 
-[中文版](SECURITY.zh.md)
+[中文版](https://github.com/Prism-Shadow/penguin-harness/blob/main/.github/SECURITY.zh.md)
 
 ## Supported versions
 
@@ -12,8 +12,9 @@ nothing is backported: a fix lands in the next release, and upgrading is the way
 | The most recent release | Yes       |
 | Any earlier release     | No        |
 
-The releases are listed in [CHANGELOG.md](../CHANGELOG.md); `penguin version` prints which
-build a machine is actually running.
+The releases are listed in
+[CHANGELOG.md](https://github.com/Prism-Shadow/penguin-harness/blob/main/CHANGELOG.md);
+`penguin version` prints which build a machine is actually running.
 
 ## Reporting a vulnerability
 

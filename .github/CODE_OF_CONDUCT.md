@@ -1,6 +1,6 @@
 # Contributor Covenant Code of Conduct
 
-[中文版](CODE_OF_CONDUCT.zh.md)
+[中文版](https://github.com/Prism-Shadow/penguin-harness/blob/main/.github/CODE_OF_CONDUCT.zh.md)
 
 ## Our Pledge
 

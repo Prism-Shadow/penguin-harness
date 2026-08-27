@@ -156,3 +156,5 @@ issue：数据根目录以明文保存 Provider 凭据，而 issue 是公开且�
 - 新增的用户可见行为应当带上测试；当它改变了已被文档记录的行为时（README、文档站），还要更新文档。
 - 标题与正文用英文撰写，并在 `## Verification` 小节下列出你实际运行过的内容。开 PR 时
   [Pull Request 模板](PULL_REQUEST_TEMPLATE.md) 会自动填入。
+- PR 采用 squash 合并，一个 PR 在 `main` 上落成一次提交。合并需要一位审阅者批准，并且所有评审
+  讨论串都已解决。

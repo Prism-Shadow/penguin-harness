@@ -10,8 +10,8 @@ bare `#N` is ambiguous here, because issues and pull requests share one numberin
 
 <!--
 What you ran, and what it said. Pick the narrowest evidence that would have failed without
-this change; the full chain CI runs is `pnpm -r build`, `pnpm typecheck`, `pnpm test`,
-`pnpm format` + `pnpm format:check`, on Node >= 24.
+this change; the full chain CI runs is `pnpm build`, `pnpm format:check`, `pnpm typecheck`,
+`pnpm test`, `sh scripts/test-installer.sh`, on Node >= 24.
 -->
 
 ## Checklist

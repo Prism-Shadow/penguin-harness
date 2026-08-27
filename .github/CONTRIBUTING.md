@@ -186,3 +186,5 @@ WeChat group, not in the issue tracker.
 - Write the title and body in English, and list what you actually ran under a
   `## Verification` heading. The [pull request template](PULL_REQUEST_TEMPLATE.md) is
   filled in for you when you open the PR.
+- Pull requests are squash-merged, so one PR lands on `main` as one commit. Merging needs
+  one approving review and every review thread resolved.
