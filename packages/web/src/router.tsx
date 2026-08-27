@@ -7,6 +7,7 @@ import { useEffect } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import { useAuth } from "./state/auth";
 import { loadContributions, resetContributions, useContributions } from "./lib/contributions";
+import { useRuntimeLanguages } from "./features/chat/use-runtime-languages";
 import { ProjectProvider } from "./state/project";
 import { SessionsProvider } from "./state/sessions";
 import { AppLayout } from "./components/layout/app-layout";
@@ -72,6 +73,10 @@ function RequireAuth() {
     if (user) void loadContributions(user.userId);
     else if (user === null) resetContributions();
   }, [user]);
+  // Extension-contributed grammars, adopted once for the signed-in tree (see the hook). Called
+  // before the early returns, because a hook cannot be conditional; it fetches nothing until
+  // the effect runs, which is only after this component actually renders its tree.
+  useRuntimeLanguages();
   if (user === undefined) return null; // GET /api/me is still initializing
   if (user === null) return <Navigate to="/login" replace />;
   return (
