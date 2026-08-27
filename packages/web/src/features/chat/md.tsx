@@ -11,12 +11,16 @@
  * re-tokenizing a growing block every frame is O(n²) main-thread cost — and the settle
  * re-render (new string instance, streaming=false) highlights each block exactly once.
  * Inline code keeps the default rendering (`.md-body code` styling).
+ *
+ * KaTeX is held back the same way, for the same reason: `streaming` swaps the rehype stage
+ * out, so a formula shows its own TeX source until the message settles and is typeset once
+ * (see NO_REHYPE_PLUGINS in lib/markdown-plugins.ts for the measurements).
  */
 import { isValidElement, memo } from "react";
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components, ExtraProps } from "react-markdown";
-import { REHYPE_PLUGINS, REMARK_PLUGINS } from "../../lib/markdown-plugins";
+import { NO_REHYPE_PLUGINS, REHYPE_PLUGINS, REMARK_PLUGINS } from "../../lib/markdown-plugins";
 import { CodeBlock } from "./code-block";
 
 /** Flatten a react-markdown code element's children to plain text (string or string array in practice). */
@@ -26,11 +30,21 @@ function codeText(children: unknown): string {
   return "";
 }
 
-/** Fenced-block adapter: unwraps the <pre><code class="language-x"> pair react-markdown emits into CodeBlock. */
+/**
+ * Fenced-block adapter: unwraps the <pre><code class="language-x"> pair react-markdown emits into
+ * CodeBlock.
+ *
+ * `language-math` is the exception. remark-math models block math as a fence in that language and
+ * rehype-katex replaces the whole pair before this adapter is consulted — except while streaming,
+ * where the rehype stage is off, and the block would otherwise pick up CodeBlock's chrome and copy
+ * button for the few hundred milliseconds before it settles into a formula. A plain <pre> is the
+ * source either way, so the settle changes the typesetting and nothing else.
+ */
 function MdPre({ children, streaming }: { children?: ReactNode; streaming: boolean }) {
   if (isValidElement(children)) {
     const props = children.props as { className?: string; children?: unknown };
     const language = /language-([\w+-]+)/.exec(props.className ?? "")?.[1] ?? "";
+    if (language === "math") return <pre>{children}</pre>;
     return (
       <CodeBlock
         language={language}
@@ -70,8 +84,8 @@ function MdLink({
  * text selection and resetting each block's Copy-button state — ~8 times a second while a reply
  * streams, including for blocks that closed long ago. `streaming` is the only thing the adapter
  * closes over, so one frozen map per value is enough; the single flip between them happens on
- * the settle render, which re-parses the message anyway. The `a` adapter closes over nothing,
- * so both maps share the one `MdLink` reference.
+ * the settle render, which re-parses the message anyway — the same render the rehype stage
+ * flips on. The `a` adapter closes over nothing, so both maps share the one `MdLink` reference.
  */
 const STREAMING_COMPONENTS: Components = {
   pre: (props) => <MdPre streaming>{props.children}</MdPre>,
@@ -92,7 +106,7 @@ export const Md = memo(function Md({
   return (
     <ReactMarkdown
       remarkPlugins={REMARK_PLUGINS}
-      rehypePlugins={REHYPE_PLUGINS}
+      rehypePlugins={streaming ? NO_REHYPE_PLUGINS : REHYPE_PLUGINS}
       components={streaming ? STREAMING_COMPONENTS : SETTLED_COMPONENTS}
     >
       {text}

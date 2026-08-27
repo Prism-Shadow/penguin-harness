@@ -557,10 +557,10 @@ html.dark .shiki span {
 /* ---------- KaTeX (math rendering; see lib/markdown-plugins.ts) ---------- */
 
 /* KaTeX's own fonts carry no CJK glyphs, and it tags every CJK run `cjk_fallback` while leaving
-   that class undefined in its stylesheet — so `\text{采集}` inherits `.katex { font: … KaTeX_Main,
-   "Times New Roman", serif }` and lands on whatever the browser picks last. Pointing the class at
-   the app's own stack makes CJK inside a formula match the sentence it sits in, on every platform,
-   and leaves Latin math on KaTeX's metrics-tuned faces where it belongs. */
+   that class undefined in its stylesheet — so a CJK `\text{}` inherits `.katex { font: …
+   KaTeX_Main, "Times New Roman", serif }` and lands on whatever the browser picks last. Pointing
+   the class at the app's own stack makes CJK inside a formula match the sentence it sits in, on
+   every platform, and leaves Latin math on KaTeX's metrics-tuned faces where it belongs. */
 .katex .cjk_fallback {
   font-family: var(--font-app-sans);
 }
@@ -583,4 +583,17 @@ html.dark .shiki span {
   overflow-x: auto;
   overflow-y: hidden;
   padding: 0.25rem 0;
+}
+
+/* The same guard for inline math, which is nowrap too and sits in the text flow where nothing
+   clips it. `\(…\)` is meant for short spans, but nothing stops a model putting a whole derivation
+   in one, and an inline run that overflows takes the message column and the page with it.
+   A scroll container has to be inline-block to exist at all; `vertical-align: middle` is what
+   keeps it on the line, because an inline-block whose overflow is not `visible` aligns its bottom
+   margin edge to the baseline and would otherwise hang a fraction's descender above the text. */
+.md-body :not(.katex-display) > .katex {
+  display: inline-block;
+  max-width: 100%;
+  overflow-x: auto;
+  vertical-align: middle;
 }

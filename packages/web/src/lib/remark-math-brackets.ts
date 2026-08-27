@@ -2,9 +2,9 @@
  * LaTeX's `\(…\)` and `\[…\]` delimiters, taught to remark as first-class math.
  *
  * `remark-math` understands `$…$` and `$$…$$` only, but models emit the TeX bracket forms
- * constantly — the report that prompted this feature was a pasted reply whose entire formula was
- * `\[\text{采集} \rightarrow …\]`. Without this, such replies render as prose littered with
- * backslash commands.
+ * constantly — the report that prompted this feature was a pasted reply whose entire formula was a
+ * `\[…\]` chain of `\text{}` runs joined by `\rightarrow`. Without this, such replies render as
+ * prose littered with backslash commands.
  *
  * **Why this is a syntax extension and not a text-node rewrite.** By CommonMark, a backslash before
  * any ASCII punctuation is a character escape, so `\[x\]` has *already* become the literal text
@@ -17,9 +17,11 @@
  *
  * Registering a micromark construct makes both problems disappear by construction. The tokenizer is
  * only consulted where inline content is read, so a `\[` inside a fenced block or a code span is
- * never offered to it — not "handled correctly", never seen. And because
- * `micromark-util-combine-extensions` splices extension constructs *before* the built-in ones at
- * the same character, this runs ahead of `characterEscape` and gets first refusal on every `\`;
+ * never offered to it — not "handled correctly", never seen. That covers the opener only: once
+ * inside a formula the construct reads raw characters, so it has to decline a backtick itself
+ * (see `declineAtBacktick`). And because `micromark-util-combine-extensions` splices extension
+ * constructs *before* the built-in ones at the same character, this runs ahead of
+ * `characterEscape` and gets first refusal on every `\`;
  * when it declines — the next character is not `(`/`[`, or no closer arrives — micromark falls back
  * to the escape exactly as before, so a half-arrived `\[` mid-stream stays ordinary text and
  * settles into math once its closer lands.
@@ -33,8 +35,12 @@
  * the span still reads as display math wherever it lands.
  *
  * **Known limits.** A `\[…\]` broken by a blank line spans two paragraphs and is not matched (a
- * blank line inside display math is not valid input anyway), and `\[a\\]` — a TeX line break butted
- * straight against the closer, ambiguous in TeX too — closes at the second backslash.
+ * blank line inside display math is not valid input anyway); `\[a\\]` — a TeX line break butted
+ * straight against the closer, ambiguous in TeX too — closes at the second backslash; a backtick
+ * between the delimiters declines the formula outright (see `declineAtBacktick`); and `\[`/`\]` is
+ * also CommonMark's escape for a literal bracket, so `See \[1\] and \[2\]` is read as two formulas
+ * rather than two footnote markers. The last is a genuine collision between two syntaxes that
+ * cannot both win, and it is resolved in favour of the one models actually emit.
  */
 
 /**
@@ -82,6 +88,7 @@ interface ProcessorData {
 }
 
 const BACKSLASH = 92;
+const BACKTICK = 96;
 const PAREN_OPEN = 40;
 const PAREN_CLOSE = 41;
 const BRACKET_OPEN = 91;
@@ -184,6 +191,7 @@ function tokenizeMathBracket(
    */
   function valueStart(code: Code): State | undefined {
     if (code === null) return giveUp(code);
+    if (code === BACKTICK) return declineAtBacktick(code);
     if (code === BACKSLASH) return backslash(code);
     if (isLineEnding(code)) return lineEnding(code);
     effects.enter(VALUE);
@@ -196,6 +204,7 @@ function tokenizeMathBracket(
     // An unclosed formula at end of input: the value token is left open for `nok` to discard
     // along with the rest of this attempt's events.
     if (code === null) return giveUp(code);
+    if (code === BACKTICK) return declineAtBacktick(code);
     if (code === BACKSLASH) {
       effects.exit(VALUE);
       return backslash(code);
@@ -206,6 +215,28 @@ function tokenizeMathBracket(
     }
     effects.consume(code);
     return value;
+  }
+
+  /**
+   * Declines the attempt at a backtick, because from here the scan cannot see a code span.
+   *
+   * The construct is only *entered* where inline content is read, so an opener inside a code span
+   * is never offered to it — but once inside a formula it consumes raw characters, and a code
+   * span's boundaries are just more of them. Prose explaining the delimiters is the shape that
+   * breaks: a sentence that opens with a bare `\(` and then shows its closer inside a code span
+   * finds that closer, swallows the opening backtick into the formula and leaves the closing one
+   * stranded in the text. Declining hands the backslash back to `characterEscape` and the backtick
+   * to `codeText`, which is the reading a writer meant.
+   *
+   * Whether the run has a partner later — the CommonMark rule for a code span — is not checked:
+   * knowing would mean scanning ahead for a matching run, and preferring prose to math on the rare
+   * unpaired backtick is the safe direction. The cost is that a backtick *inside* a formula (TeX's
+   * open-quote pair, in a `\text{}`) declines it, which no reported input has contained. `nok`
+   * rather than `giveUp`, because nothing here proves the closer is missing from the rest of the
+   * paragraph — only that this attempt must not cross the backtick to reach it.
+   */
+  function declineAtBacktick(code: Code): State | undefined {
+    return nok(code);
   }
 
   function lineEnding(code: Code): State | undefined {

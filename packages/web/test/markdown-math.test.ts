@@ -51,12 +51,16 @@ describe("delimiters that are math", () => {
     expect(text(html)).toBe("采集→解码→干预");
   });
 
-  it("accepts all four delimiter forms", () => {
-    for (const source of [String.raw`\(E=mc^2\)`, String.raw`\[E=mc^2\]`, "$$E=mc^2$$"]) {
+  it("accepts all three delimiter pairs", () => {
+    for (const source of [
+      String.raw`\(E=mc^2\)`,
+      String.raw`\[E=mc^2\]`,
+      "$$E=mc^2$$",
+      // Fenced $$ on its own lines, the block form remark-math documents.
+      "$$\nE=mc^2\n$$",
+    ]) {
       expect(isMath(render(source)), source).toBe(true);
     }
-    // Fenced $$ on its own lines, the block form remark-math documents.
-    expect(isMath(render("$$\nE=mc^2\n$$"))).toBe(true);
   });
 
   it("distinguishes display from inline", () => {
@@ -64,6 +68,24 @@ describe("delimiters that are math", () => {
     expect(isDisplay(render("$$\nx\n$$"))).toBe(true);
     expect(isDisplay(render(String.raw`\(x\)`))).toBe(false);
     expect(isMath(render(String.raw`\(x\)`))).toBe(true);
+  });
+
+  it("makes a $$…$$ pair display wherever it is written, not only on its own lines", () => {
+    // remark-math decides by run length, which leaves a one-line `$$…$$` inline: nowrap, typeset
+    // cramped, and behaving unlike `\[…\]` for content nobody writes meaning inline. A `$$` pair
+    // has been display since plain TeX, and single-dollar math is off, so nothing else fits.
+    for (const source of ["$$E=mc^2$$", "text $$E=mc^2$$ text", "# heading $$x^2$$"]) {
+      expect(isDisplay(render(source)), source).toBe(true);
+    }
+  });
+
+  it("clamps a sizing command to a size the message body absorbs", () => {
+    // KaTeX defaults maxSize to Infinity, so `\rule{9999em}{9999em}` is a black square many
+    // viewports wide and no overflow rule can help: the element's own height is the problem.
+    const html = render(String.raw`\[\rule{9999em}{9999em}\]`);
+    const sizes = [...html.matchAll(/(?:width|height)[:="]+([\d.]+)em/g)].map((m) => Number(m[1]));
+    expect(sizes.length).toBeGreaterThan(0);
+    expect(Math.max(...sizes)).toBeLessThanOrEqual(5);
   });
 
   it("renders \\[…\\] mid-sentence without breaking the paragraph open", () => {
@@ -131,6 +153,23 @@ describe("delimiters that are not math", () => {
     }
   });
 
+  it("does not reach into a code span for a closer", () => {
+    // The opener is safe by construction — the tokenizer is only entered where inline content is
+    // read — but a closer inside a code span is just more raw characters to a scan already inside
+    // a formula. Prose about the delimiters is the shape that breaks.
+    for (const source of [
+      "In LaTeX you open with \\( and close with `\\)`.",
+      "Open with \\[ and close with `\\]`.",
+      "Write \\( then `\\)` then more text.",
+    ]) {
+      const html = render(source);
+      expect(isMath(html), source).toBe(false);
+      expect(html, source).toContain("<code>");
+      // The code span survives intact: no backtick spilled into the surrounding prose.
+      expect(text(html), source).not.toContain("`");
+    }
+  });
+
   it("never renders math inside a fenced or indented code block", () => {
     for (const source of [
       "```\n\\[x\\]\n$$y$$\n\\(z\\)\n```",
@@ -155,6 +194,22 @@ describe("delimiters that are not math", () => {
   });
 });
 
+describe("collisions resolved on purpose", () => {
+  it("reads CommonMark's escaped brackets as math", () => {
+    // `\[` and `\]` are also the escapes for a literal bracket, so a footnote marker or a
+    // placeholder written that way becomes a formula — and, `\[…\]` being display, a centred one
+    // that splits the sentence. Two syntaxes over one character, and only one can win; it goes to
+    // the one models actually emit. Pinned so the trade stays a decision rather than a surprise.
+    for (const source of [
+      String.raw`See \[1\] and \[2\] for details.`,
+      String.raw`Write \[TODO\] in the file.`,
+      String.raw`Use \(foo\) to capture a group.`,
+    ]) {
+      expect(isMath(render(source)), source).toBe(true);
+    }
+  });
+});
+
 describe("input that arrives broken or half-written", () => {
   it("renders a malformed expression as its own source instead of throwing", () => {
     const html = render(String.raw`\[\frac{1\]`);
@@ -172,7 +227,7 @@ describe("input that arrives broken or half-written", () => {
   });
 
   it("renders the user's own mangled paste rather than blanking the reply", () => {
-    // `\text(采集)` — braces typed as parentheses. LaTeX-incompatible, still renderable.
+    // `\text(…)` — braces typed as parentheses. LaTeX-incompatible, still renderable.
     const html = render(String.raw`\[\text(采集) \rightarrow \text(解码)\]`);
     expect(text(html)).toContain("采集");
     expect(html).not.toBe("");
@@ -216,15 +271,35 @@ describe("the chat renderer", () => {
   const renderMd = (text: string, streaming = false) =>
     renderToStaticMarkup(createElement(Md, { text, streaming }));
 
-  it("renders math in both the streaming and the settled component map", () => {
-    // KaTeX is synchronous, so a formula is complete in the same pass that parses it — a streaming
-    // message never shows raw source and re-lays it out a frame later.
-    for (const streaming of [true, false]) {
-      expect(isDisplay(renderMd(String.raw`\[\frac{a}{b}\]`, streaming)), String(streaming)).toBe(
-        true,
-      );
-      expect(isMath(renderMd(String.raw`\(E=mc^2\)`, streaming)), String(streaming)).toBe(true);
+  it("typesets a formula on settle and shows its source until then", () => {
+    // rehype-katex is the expensive half of the pipeline — KaTeX's markup is re-parsed into hast
+    // and rebuilt as several hundred React elements per formula — and a streaming body re-renders
+    // on every delta. So the stage is held back to the settle render, the same one that
+    // re-highlights code blocks. Losing this is invisible in a screenshot and quadratic in a chat.
+    expect(isDisplay(renderMd(String.raw`\[\frac{a}{b}\]`))).toBe(true);
+    expect(isMath(renderMd(String.raw`\(E=mc^2\)`))).toBe(true);
+
+    for (const [source, formula] of [
+      [String.raw`\[\frac{a}{b}\]`, String.raw`\frac{a}{b}`],
+      [String.raw`\(E=mc^2\)`, "E=mc^2"],
+      ["$$E=mc^2$$", "E=mc^2"],
+    ] as const) {
+      const html = renderMd(source, true);
+      expect(isMath(html), source).toBe(false);
+      // The source, delimiters aside, stays legible while it streams.
+      expect(text(html), source).toBe(formula);
     }
+  });
+
+  it("keeps a streaming $$ block out of the CodeBlock chrome", () => {
+    // remark-math models block math as a `language-math` fence, which is exactly what the `pre`
+    // override turns into CodeBlock. Settled, rehype-katex replaces the pair before the override
+    // is consulted; streaming, nothing does — so a formula would grow a language label and a copy
+    // button for as long as the reply takes to arrive, then lose them.
+    const html = renderMd("$$\n\\frac{a}{b}\n$$", true);
+    expect(html).not.toContain("code-block");
+    expect(html).toContain("<pre>");
+    expect(text(html)).toContain(String.raw`\frac{a}{b}`);
   });
 
   it("a $$ block becomes a formula, not a code block", () => {
@@ -259,6 +334,13 @@ describe("the pipeline every renderer shares", () => {
     "../src/features/traces/trace-event-row.tsx",
   ];
 
+  /**
+   * Matched by the constant each prop names rather than by an exact string, because md.tsx picks
+   * its rehype stage by `streaming`. What is being guarded is that the name comes from the shared
+   * module, not the shape of the expression around it.
+   */
+  const SHARED = { remarkPlugins: "REMARK_PLUGINS", rehypePlugins: "REHYPE_PLUGINS" };
+
   it("every ReactMarkdown in the app is given both shared plugin lists", () => {
     let total = 0;
     for (const relative of RENDERERS) {
@@ -266,8 +348,11 @@ describe("the pipeline every renderer shares", () => {
       const uses = source.split("<ReactMarkdown").length - 1;
       expect(uses, relative).toBeGreaterThan(0);
       total += uses;
-      expect(source.split("remarkPlugins={REMARK_PLUGINS}").length - 1, relative).toBe(uses);
-      expect(source.split("rehypePlugins={REHYPE_PLUGINS}").length - 1, relative).toBe(uses);
+      for (const [prop, constant] of Object.entries(SHARED)) {
+        const values = [...source.matchAll(new RegExp(`${prop}=\\{([^}]*)\\}`, "g"))];
+        expect(values.length, `${relative} ${prop}`).toBe(uses);
+        for (const [, value] of values) expect(value, `${relative} ${prop}`).toContain(constant);
+      }
       expect(source, relative).toContain('from "../../lib/markdown-plugins"');
     }
     expect(total).toBe(5); // md.tsx, workspace, benchmark, and two in trace-event-row
@@ -276,8 +361,9 @@ describe("the pipeline every renderer shares", () => {
   it("no renderer assembles its own pipeline out of the underlying plugins", () => {
     for (const relative of RENDERERS) {
       const source = read(relative);
+      // The quotes are the point: a renderer may name a plugin in a comment, not import one.
       for (const plugin of ["remark-gfm", "remark-math", "rehype-katex"]) {
-        expect(source, `${relative} imports ${plugin} directly`).not.toContain(plugin);
+        expect(source, `${relative} imports ${plugin} directly`).not.toContain(`"${plugin}"`);
       }
     }
   });

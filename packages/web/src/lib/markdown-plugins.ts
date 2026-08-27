@@ -10,10 +10,11 @@
  *
  * ## Math
  *
- * Four delimiter forms are accepted, which is what it takes to cover what models actually emit:
+ * Three delimiter pairs are accepted, which is what it takes to cover what models actually emit:
  * `$$…$$` and `\[…\]` render as display math, `\(…\)` as inline. `remark-math` brings the dollar
- * forms and `remarkMathBrackets` the TeX bracket forms (see its module comment for why those cannot
- * be a text-node rewrite).
+ * form, `remarkMathBrackets` the TeX bracket forms (see its module comment for why those cannot be
+ * a text-node rewrite), and `remarkMathDollars` makes a `$$…$$` pair display wherever it is written
+ * rather than only when it stands alone on its own lines.
  *
  * **Single-dollar inline math is off.** It is the one delimiter whose cost is paid by text that was
  * never meant to be math, and in this product that text is everywhere: `$PATH`, `$HOME`, prices.
@@ -38,6 +39,7 @@ import rehypeKatex from "rehype-katex";
 import type { Options } from "react-markdown";
 import { remarkAutolinkBoundary } from "./remark-autolink-boundary";
 import { remarkMathBrackets } from "./remark-math-brackets";
+import { remarkMathDollars } from "./remark-math-dollars";
 
 /** react-markdown's own plugin-list type, taken from its props so `unified` need not be a dep. */
 type PluginList = NonNullable<Options["remarkPlugins"]>;
@@ -55,8 +57,11 @@ type PluginList = NonNullable<Options["remarkPlugins"]>;
  *   dotted underline and keeps KaTeX's parse error in the `title` tooltip.
  * - `trust: false` (KaTeX's default, restated because it is a boundary) — leaves `\href`, `\url`
  *   and `\includegraphics` inert, so a formula cannot smuggle in a link or an image request.
- * - `maxSize` — caps the em value any sizing command may claim, so `\rule{9999em}{9999em}` cannot
- *   blow the message layout apart. KaTeX defaults to Infinity.
+ * - `maxSize` — caps the em value any sizing command may claim. KaTeX defaults to Infinity, so
+ *   `\rule{9999em}{9999em}` is a black square the size of the viewport many times over; 5em is
+ *   80px at a 16px root, which a message body absorbs the way it absorbs an emoji. Every sizing
+ *   command a real formula uses — a `\rule` for a fraction bar, a `\raisebox`, an array row gap,
+ *   `\hspace{1cm}` — is well under it.
  *
  * `throwOnError` is *not* here, and cannot be: `rehype-katex` omits it from its options type
  * because it owns that behaviour. It renders once strictly, and on any error re-renders with
@@ -68,7 +73,7 @@ const KATEX_OPTIONS = {
   strict: "ignore",
   errorColor: "currentColor",
   trust: false,
-  maxSize: 100,
+  maxSize: 5,
 } as const;
 
 /** The remark (Markdown -> mdast) stage. */
@@ -77,15 +82,34 @@ export const REMARK_PLUGINS: PluginList = [
   remarkAutolinkBoundary,
   [remarkMath, { singleDollarTextMath: false }],
   remarkMathBrackets,
+  remarkMathDollars,
 ];
 
 /**
  * The rehype (mdast -> hast) stage. `rehype-katex` turns every element the remark stage classed
  * `math-inline` / `math-display` into KaTeX's own markup, replacing it outright — which is also why
  * a `$$…$$` block never reaches the chat renderer's `<pre>` override and never becomes a CodeBlock.
- *
- * KaTeX renders synchronously, and that is load-bearing rather than incidental: it keeps the whole
- * pipeline one pass, so the memoized chat body stays a pure function of its text and a streaming
- * message never shows a formula as raw source and then re-lays it out a frame later.
  */
 export const REHYPE_PLUGINS: NonNullable<Options["rehypePlugins"]> = [[rehypeKatex, KATEX_OPTIONS]];
+
+/**
+ * The rehype stage for a message that is still streaming: nothing, so the remark stage's own
+ * `math-*` elements reach the DOM carrying the TeX source, and the formula is typeset once on the
+ * settle render.
+ *
+ * KaTeX itself is cheap — ~0.3ms for a typical formula. What is not cheap is the rest of the stage
+ * around it: `rehype-katex` re-parses KaTeX's ~2.5KB of markup per formula back into hast, and
+ * React then builds several hundred elements from it. Measured through this pipeline with
+ * `renderToStaticMarkup` on a 3.6KB reply carrying 60 formulas: 16ms for gfm alone, 13ms with the
+ * math parsed but not rendered, 284ms for the full stage. Streamed in 40 deltas — chat bodies
+ * re-parse on every delta, ~8 times a second — that is 196ms of total work without the rehype
+ * stage and 2352ms with it, and it grows with the square of the reply's length. One oversized
+ * formula shows the same shape on its own: a 16KB formula is 885ms per render, and a 20KB
+ * paragraph accidentally wrapped by an unmatched `\[ … \]` is 856ms.
+ *
+ * Memoizing the produced hast per formula was measured too and is not enough: it cannot help the
+ * formula that is still growing, which is the one being re-rendered, and it left 1853ms of the
+ * 2352ms in place. This is the same trade as `highlight={!streaming}` for code blocks — the settle
+ * render re-parses the message anyway, so it is where the expensive stage belongs.
+ */
+export const NO_REHYPE_PLUGINS: NonNullable<Options["rehypePlugins"]> = [];
