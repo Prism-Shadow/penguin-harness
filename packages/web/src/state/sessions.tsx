@@ -85,6 +85,16 @@ interface SessionsContextValue {
    * merely not known yet.
    */
   loading: boolean;
+  /**
+   * Whether a machine of this Project could not be asked — unreachable, or not signed in to.
+   *
+   * A Session missing from the list means "this server has not got it", which is only the
+   * same as "it does not exist" when every server that could hold it answered. The chat page
+   * reads this before deciding a routed id is gone: concluding that from a lookup against
+   * THIS server, while the machine the Session lives on is down, drops the reader out of a
+   * conversation that is merely out of reach.
+   */
+  machinesUnreachable: boolean;
   reload: () => Promise<void>;
   /** Fetches a category's first page for each given unloaded Agent and the next page for each loaded one with more (no-op otherwise); `workspaceGroup` pages that group's own stream instead of the Agent's whole one. */
   loadMoreFor: (
@@ -191,6 +201,13 @@ interface SessionsStoreState {
    * server's answer — it is every one of them, ordered together (lib/session-merge.ts).
    */
   machineIds: string[];
+  /**
+   * Whether a machine of this Project is one this list could NOT ask — unreachable, or not
+   * signed in to. It is the difference between "this server does not have that Session" and
+   * "nobody who might have it answered", which is the whole question for a routed id that is
+   * missing from the list (features/chat/chat-page.tsx).
+   */
+  machinesUnreachable: boolean;
 
   sessions: SessionInfo[];
   /**
@@ -264,6 +281,7 @@ export function createSessionsStore() {
       projectId: null,
       agentIds: [],
       machineIds: [],
+      machinesUnreachable: false,
 
       sessions: [],
       deletedSessionIds: new Set(),
@@ -744,9 +762,17 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
    * Sessions, listed. That is the right failure — a partial list beats none.
    */
   const [machineIdsKey, setMachineIdsKey] = useState("");
+  /**
+   * Whether any of them could not be reached. Kept beside the reachable set rather than
+   * derived from it: a machine that drops out is simply absent from the key, which cannot be
+   * told apart from a Project that has no machines at all — and those two answer the "is this
+   * Session gone, or merely out of reach" question differently.
+   */
+  const [machinesUnreachable, setMachinesUnreachable] = useState(false);
   useEffect(() => {
     if (projectId === null) {
       setMachineIdsKey("");
+      setMachinesUnreachable(false);
       return;
     }
     let cancelled = false;
@@ -784,7 +810,9 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
         }),
       );
       if (cancelled) return;
-      setMachineIdsKey(reachable.filter((id): id is string => id !== null).join(","));
+      const answered = reachable.filter((id): id is string => id !== null);
+      setMachineIdsKey(answered.join(","));
+      setMachinesUnreachable(answered.length < ids.length);
     })();
     return () => {
       cancelled = true;
@@ -811,6 +839,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       projectId,
       agentIds: agentIdsKey === "" ? [] : agentIdsKey.split(","),
       machineIds: machineIdsKey === "" ? [] : machineIdsKey.split(","),
+      machinesUnreachable,
       // Cleared only when the CONTEXT changed. A machine appearing, or going unreachable and
       // dropping out, changes which servers are asked — not whether what is already on screen
       // is still true. reload() below rebuilds the list wholesale from whatever answers, so a
@@ -840,7 +869,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     // route at THIS server until the refetch lands.
     if (contextChanged) forgetSessionMachines();
     void store.getState().reload();
-  }, [store, projectId, agentIdsKey, machineIdsKey, contextKey]);
+  }, [store, projectId, agentIdsKey, machineIdsKey, machinesUnreachable, contextKey]);
 
   // User-level event stream (/api/events); see applyUserEvent for what each event does. The
   // connection stays a single one for the whole login session and doesn't reconnect on Project
@@ -927,6 +956,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       isLoadedFor,
       hasMoreFor,
       loading: state.loading,
+      machinesUnreachable: state.machinesUnreachable,
       reload: state.reload,
       loadMoreFor: state.loadMoreFor,
       add: state.add,

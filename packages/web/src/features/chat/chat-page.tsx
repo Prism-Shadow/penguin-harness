@@ -34,6 +34,7 @@ import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
+import { machineForSession } from "../../lib/session-machines";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import {
   formatDateTime,
@@ -267,6 +268,7 @@ export function ChatPage() {
   const {
     sessions,
     loading: sessionsLoading,
+    machinesUnreachable,
     reload: reloadSessions,
     add: addSession,
     isDeleted: isSessionDeleted,
@@ -595,7 +597,18 @@ export function ChatPage() {
    * means — their disagreeing is what once painted "no Sessions yet" over a conversation
    * that was about to appear.
    */
-  const routeSessionPending = !!routeSessionId && selected === null && probeFailedKey !== probeKey;
+  /**
+   * The probe asks whoever owns the Session — and when nothing has told us who that is, it
+   * asks THIS server (lib/session-machines.ts: absence means here). That answer settles the
+   * question only when this server is the one that could have it. A Session living on a
+   * machine drops out of the list the moment that machine stops answering, taking its owner
+   * entry with it, so the lookup then 404s HERE about a Session that is alive THERE — and
+   * reading that as "gone" is what drops the reader into the draft page mid-conversation.
+   */
+  const routeSessionUnowned =
+    !!routeSessionId && machineForSession(routeSessionId) === null && machinesUnreachable;
+  const routeSessionPending =
+    !!routeSessionId && selected === null && (probeFailedKey !== probeKey || routeSessionUnowned);
   useEffect(() => {
     if (draft || !projectId || !routeSessionId || !probeKey || sessionsLoading) return;
     // Settled (row loaded, or the lookup already failed): nothing to probe — and a failed
