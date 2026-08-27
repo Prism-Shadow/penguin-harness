@@ -495,6 +495,11 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
       ok: result.ok,
       ...(result.latencyMs !== undefined ? { latencyMs: result.latencyMs } : {}),
       ...(result.accountLabel !== undefined ? { botUsername: result.accountLabel } : {}),
+      // The probe answers "does this bot read group messages"; the response states the
+      // BotFather setting behind it, which is the name the user has to go and look for.
+      ...(result.readsGroupMessages !== undefined
+        ? { groupPrivacy: !result.readsGroupMessages }
+        : {}),
       ...(result.error !== undefined ? { error: result.error } : {}),
     } satisfies TelegramTestResponse);
   });

@@ -1786,6 +1786,16 @@ export interface TelegramTestResponse {
   latencyMs?: number;
   /** The bot's `@username`, when the API reports one. */
   botUsername?: string;
+  /**
+   * True when @BotFather's **Group Privacy** is ON for this bot, which is the default. In
+   * every group where the bot is not an administrator it then receives only a command
+   * addressed to it or a reply to one of its own messages — an ordinary sentence is never
+   * delivered, so a binding that answers fine in a direct chat stays silent there. The
+   * setting is account-wide and Telegram overrides it for a group the bot administers, so
+   * this reports the setting and never the outcome in any particular group. Absent when the
+   * API did not report the setting; never inferred.
+   */
+  groupPrivacy?: boolean;
   error?: string;
 }
 
