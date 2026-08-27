@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ReactMarkdown from "react-markdown";
-import { REMARK_PLUGINS } from "../src/lib/remark-autolink-boundary";
+import { REMARK_PLUGINS } from "../src/lib/markdown-plugins";
 
 /** The rendered `[href, text]` of the first link, or null. */
 function firstLink(markdown: string): [string, string] | null {

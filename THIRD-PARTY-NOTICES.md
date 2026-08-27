@@ -1,12 +1,18 @@
 # Third-party notices
 
 PenguinHarness itself is licensed under Apache-2.0 (see [LICENSE](LICENSE)). Some **distributed
-release artifacts** additionally bundle third-party programs, which keep their own licenses. This
-file records those, and how to obtain their source.
+release artifacts** additionally bundle third-party programs and files, which keep their own
+licenses. This file records those, and how to obtain their source.
 
-Nothing listed here is part of this repository — the components are downloaded by the release
-workflow (`.github/workflows/release.yml`) and placed alongside the application inside the
-release archives. Installing from npm (`@prismshadow/penguin-cli`) bundles none of them.
+Nothing listed here is source code of this repository. The programs below are downloaded by the
+release workflow (`.github/workflows/release.yml`) and placed alongside the application inside the
+release archives; the fonts are copied out of an npm dependency into the built web assets.
+Installing from npm (`@prismshadow/penguin-cli`) bundles none of them.
+
+What earns an entry is a third-party work redistributed **as its own file**. An npm package whose
+JavaScript is compiled and minified into the application bundle (React, Shiki, xterm.js, KaTeX's own
+code, ...) is not listed: its license travels with it in `node_modules` and in the lockfile, and
+repeating every one of them here would be a second, staler copy of `pnpm-lock.yaml`.
 
 ## Node.js runtime — `node/`
 
@@ -45,3 +51,21 @@ MinGit is published by the Git for Windows project at:
 The bundled binaries are byte-identical to the `MinGit-<version>-64-bit.zip` asset of that tag;
 no patches are applied. If you need the corresponding source and cannot obtain it from the URLs
 above, open an issue on this repository and we will provide it.
+
+## KaTeX fonts — `KaTeX_*.woff2` in the web assets
+
+Present wherever the Web App ships: every release archive, the desktop application, and the assets
+the server serves.
+
+Math rendering uses [KaTeX](https://katex.org), whose typefaces are separate font files rather than
+code. The web build copies them unmodified out of the `katex` npm package into the application's
+asset directory, where the browser fetches them by URL; bundling them locally is what lets the
+desktop application render formulas with no network. Only the woff2 format is copied — the woff and
+truetype fallbacks KaTeX also ships are dropped at build time (`dropNonWoff2FontSources` in
+`packages/web/vite.config.ts`).
+
+**License: MIT**, the same license as the rest of KaTeX. The full text ships inside the package, at
+`node_modules/katex/LICENSE`.
+
+Source: <https://github.com/KaTeX/KaTeX> — the tag matching the `katex` version resolved in
+`pnpm-lock.yaml`. The font sources and the script that builds them live in that repository.

@@ -12,6 +12,7 @@
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
+import type { Plugin } from "vite";
 
 /**
  * Resolves the `/api` proxy target: PENGUIN_API_PROXY replaces it outright, otherwise the
@@ -30,8 +31,42 @@ export function apiProxyTarget(env: Record<string, string | undefined> = process
   return env.PENGUIN_API_PROXY || `http://127.0.0.1:${env.PORT || "7368"}`;
 }
 
+/**
+ * Drops the `woff` and `truetype` fallbacks from a KaTeX stylesheet, leaving each `@font-face` with
+ * its woff2 source alone.
+ *
+ * KaTeX ships twenty faces in three formats and lists all three in every `src`, so Vite — which
+ * emits an asset for each URL a stylesheet references — copies sixty font files into the bundle.
+ * The forty non-woff2 ones are ~800KB that nothing can request: woff2 has been supported by every
+ * browser this SPA runs in since 2016, and the desktop shell is Chromium. A browser somehow without
+ * it now falls back to the `serif` at the end of KaTeX's own font stack rather than failing.
+ *
+ * Exported for the unit test: a silent miss here (a Vite id format change, a KaTeX release that
+ * reorders `src`) costs bundle size without breaking anything, so nothing would otherwise notice.
+ */
+export function dropNonWoff2FontSources(css: string): string {
+  return css.replace(/\s*,\s*url\([^)]*\.(?:woff|ttf)\)\s*format\("(?:woff|truetype)"\)/g, "");
+}
+
+/**
+ * Applies {@link dropNonWoff2FontSources} to KaTeX's stylesheet before Vite resolves the `url()`s
+ * in it into emitted assets, which is what `enforce: "pre"` buys — by the time the `vite:css`
+ * transform runs, the fallback URLs must already be gone or their files are copied regardless.
+ */
+function katexWoff2Only(): Plugin {
+  return {
+    name: "penguin:katex-woff2-only",
+    enforce: "pre",
+    transform(code, id) {
+      if (!id.includes("/katex/dist/") || !id.includes(".css")) return null;
+      const next = dropNonWoff2FontSources(code);
+      return next === code ? null : { code: next, map: null };
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), katexWoff2Only()],
   server: {
     // Fixed PenguinHarness dev port (stands alone — vite configs cannot import core TS,
     // so the numbers are literals here; the allocation table lives in core's internal/ports.ts).

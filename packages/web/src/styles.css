@@ -31,6 +31,11 @@
 @layer base {
   :root {
     color-scheme: light;
+    /* The body font stack, named because KaTeX borrows it: math has to fall back to the same CJK
+       faces as the prose around it (see .katex .cjk_fallback below), and two copies would drift. */
+    --font-app-sans:
+      ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei",
+      sans-serif;
     /* Theme color (accent): used for primary buttons, focus rings, etc. Defaults to gray/white (neutral,
        switches with light/dark); selecting a specific color via data-accent overrides it (consistent across
        light/dark, white text). */
@@ -101,15 +106,7 @@
   }
   body {
     @apply bg-white text-gray-900 antialiased dark:bg-gray-950 dark:text-gray-100;
-    font-family:
-      ui-sans-serif,
-      system-ui,
-      -apple-system,
-      "Segoe UI",
-      Roboto,
-      "PingFang SC",
-      "Microsoft YaHei",
-      sans-serif;
+    font-family: var(--font-app-sans);
   }
   code,
   pre,
@@ -555,4 +552,35 @@ html.dark .shiki span {
 }
 .md-body :is(th, td) {
   @apply border border-gray-200 px-2 py-1 text-sm dark:border-gray-800;
+}
+
+/* ---------- KaTeX (math rendering; see lib/markdown-plugins.ts) ---------- */
+
+/* KaTeX's own fonts carry no CJK glyphs, and it tags every CJK run `cjk_fallback` while leaving
+   that class undefined in its stylesheet — so `\text{采集}` inherits `.katex { font: … KaTeX_Main,
+   "Times New Roman", serif }` and lands on whatever the browser picks last. Pointing the class at
+   the app's own stack makes CJK inside a formula match the sentence it sits in, on every platform,
+   and leaves Latin math on KaTeX's metrics-tuned faces where it belongs. */
+.katex .cjk_fallback {
+  font-family: var(--font-app-sans);
+}
+
+/* A formula KaTeX could not parse (rehype-katex falls back to this rather than throwing): its own
+   source, in the body colour, marked as suspect without shouting. The parse error rides along in
+   the element's title attribute, which is what `cursor: help` advertises. */
+.katex-error {
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  cursor: help;
+  @apply decoration-gray-400 dark:decoration-gray-600;
+}
+
+/* Display math is `white-space: nowrap` by construction, so a wide matrix or a long derivation
+   would otherwise push the whole message body sideways. Same treatment as .md-body table and pre:
+   scroll inside the block. Overflow on one axis forces the other to scroll too, so the padding is
+   what keeps tall fractions and descenders from being clipped. */
+.md-body .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.25rem 0;
 }

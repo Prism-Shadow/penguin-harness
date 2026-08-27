@@ -16,7 +16,7 @@ import { isValidElement, memo } from "react";
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components, ExtraProps } from "react-markdown";
-import { REMARK_PLUGINS } from "../../lib/remark-autolink-boundary";
+import { REHYPE_PLUGINS, REMARK_PLUGINS } from "../../lib/markdown-plugins";
 import { CodeBlock } from "./code-block";
 
 /** Flatten a react-markdown code element's children to plain text (string or string array in practice). */
@@ -92,6 +92,7 @@ export const Md = memo(function Md({
   return (
     <ReactMarkdown
       remarkPlugins={REMARK_PLUGINS}
+      rehypePlugins={REHYPE_PLUGINS}
       components={streaming ? STREAMING_COMPONENTS : SETTLED_COMPONENTS}
     >
       {text}
