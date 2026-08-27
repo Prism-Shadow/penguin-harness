@@ -47,7 +47,6 @@ export function ExtensionsPage() {
     <div className="h-full overflow-y-auto p-4 md:p-6">
       <div className="mx-auto max-w-3xl">
         <h1 className="text-xl font-semibold">{S.extensions.pageTitle}</h1>
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{S.extensions.pageDesc}</p>
 
         {error ? (
           <div className="mt-6 flex items-center gap-3">
