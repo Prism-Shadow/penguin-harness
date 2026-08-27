@@ -36,6 +36,7 @@ import {
   chunkMessagingText,
   splitReplyLines,
 } from "../src/runtime/messaging/bridge.js";
+import type { MessagingTaskRunner } from "../src/runtime/messaging/bridge.js";
 import { FeishuConnector } from "../src/runtime/messaging/feishu-connector.js";
 import type {
   FeishuApiClient,
@@ -372,6 +373,21 @@ describe("messaging binding routes and bridge", () => {
     expect((await api.put(BASE(sid), body)).status).toBe(200);
     expect((await api.post(`${BASE(sid)}/state`, { enabled: true })).status).toBe(200);
   };
+
+  /**
+   * A second bridge over the SAME database with an empty in-memory ring: what a
+   * desktop-app relaunch — or a runtime hot swap, which stops the bridge and starts a
+   * fresh one — leaves behind. The caller stops the app's own bridge first.
+   */
+  const restartBridge = (runner: MessagingTaskRunner = t.deps.manager) =>
+    new MessagingBridge({
+      repo: t.deps.messagingRepo,
+      sessions: t.deps.sessionsRepo,
+      channels: t.deps.channels,
+      runner,
+      connectors: [new FeishuConnector(fake)],
+      errors: t.deps.errors,
+    });
 
   /** The suite's app, rebuildable: the pacing test needs one whose per-line wait is not zero. */
   const boot = async (opts: TestAppOptions = {}) => {
@@ -1354,6 +1370,26 @@ describe("messaging binding routes and bridge", () => {
     expect(runs).toHaveLength(66);
   });
 
+  it("a message with no channel id leaves the binding's watermark where it was", async () => {
+    await bindEnabled(SID);
+    const fire = (messageId: string, text: string) =>
+      fake.lastConnection().fire({
+        chatId: "oc_chat_1",
+        chatType: "p2p",
+        messageId,
+        messageType: "text",
+        content: JSON.stringify({ text }),
+      });
+    await fire("om_identified", "deploy the build");
+    await waitFor(() => runs.length === 1);
+    // A connector that mints no message identity opts out of the dedupe entirely (see
+    // isRedelivery), so it has nothing to say about the last message that did carry one —
+    // and must not wipe the restart guard on its way past.
+    await fire("", "and again");
+    await waitFor(() => runs.length === 2);
+    expect(t.deps.messagingRepo.find(SID, "feishu")?.lastInboundMessageId).toBe("om_identified");
+  });
+
   it("remembers across a SERVER restart: the binding row's watermark survives the process", async () => {
     await bindEnabled(SID);
     const evt = {
@@ -1371,27 +1407,129 @@ describe("messaging binding routes and bridge", () => {
       "om_across_restart_process",
     );
 
-    // What a desktop-app relaunch (or a runtime hot swap — hmr/platform.ts stops the
-    // bridge and its successor starts a fresh one) does: a NEW bridge over the SAME
-    // database, with an empty in-memory ring. Feishu then replays, on the connection it
-    // has just opened, the event it never saw acknowledged.
+    // Feishu then replays, on the connection the successor has just opened, the event it
+    // never saw acknowledged.
     t.deps.messaging.stop();
-    const successor = new MessagingBridge({
-      repo: t.deps.messagingRepo,
-      sessions: t.deps.sessionsRepo,
-      channels: t.deps.channels,
-      runner: t.deps.manager,
-      connectors: [new FeishuConnector(fake)],
-      errors: t.deps.errors,
-    });
+    const successor = restartBridge();
     try {
       await successor.start();
       await fake.lastConnection().fire(evt);
       await settle(80);
       expect(runs).toHaveLength(1);
+      // Control: the successor is not merely deaf. Seeding the ring has to silence the one
+      // replayed id and nothing else — a bridge that never wired onMessage, or one whose
+      // seeding poisoned the ring wholesale, passes the assertion above identically.
+      await fake.lastConnection().fire({
+        ...evt,
+        messageId: "om_after_restart",
+        content: JSON.stringify({ text: "and now this" }),
+      });
+      await waitFor(() => runs.length === 2);
+      expect(runs[1]![0]!.text).toBe("and now this");
     } finally {
       successor.stop();
     }
+  });
+
+  it("a replayed non-text message does not re-send the text-only notice across a restart", async () => {
+    await bindEnabled(SID);
+    const sticker = {
+      chatId: "oc_chat_1",
+      chatType: "p2p",
+      messageId: "om_sticker_restart",
+      messageType: "sticker",
+      content: JSON.stringify({}),
+    };
+    await fake.lastConnection().fire(sticker);
+    await waitFor(() => fake.allSends().length === 1);
+    // Sending the notice IS the work for a non-text message, so finishing it carries the
+    // binding's watermark forward exactly as a started Task does.
+    expect(t.deps.messagingRepo.find(SID, "feishu")?.lastInboundMessageId).toBe(
+      "om_sticker_restart",
+    );
+
+    t.deps.messaging.stop();
+    const successor = restartBridge();
+    try {
+      await successor.start();
+      await fake.lastConnection().fire(sticker);
+      await settle(80);
+      expect(fake.allSends().filter((x) => x.text === MESSAGING_TEXT_ONLY_NOTICE)).toHaveLength(1);
+      // Control: a sticker the binding has never seen still gets its notice.
+      await fake.lastConnection().fire({ ...sticker, messageId: "om_sticker_after_restart" });
+      await waitFor(
+        () => fake.allSends().filter((x) => x.text === MESSAGING_TEXT_ONLY_NOTICE).length === 2,
+      );
+    } finally {
+      successor.stop();
+    }
+  });
+
+  it("a message whose Task never started is left unwatermarked, so the replay runs it", async () => {
+    await bindEnabled(SID);
+    const evt = {
+      chatId: "oc_chat_1",
+      chatType: "p2p",
+      messageId: "om_start_threw",
+      messageType: "text",
+      content: JSON.stringify({ text: "deploy the build" }),
+    };
+    // The window the ordering guards. A message becomes a Task, and a busy Session's
+    // queued follow-up lives in memory only — so a watermark written ahead of the work
+    // would outlive it, and the successor's seeding would turn the channel's replay into a
+    // no-op: the message never runs and nothing ever answers. A runner that throws stands
+    // in for the process that died before the Task existed.
+    t.deps.messaging.stop();
+    const stillborn = restartBridge({
+      statusOf: () => "idle",
+      startTask: () => Promise.reject(new Error("the Session went away")),
+    });
+    try {
+      await stillborn.start();
+      await fake.lastConnection().fire(evt);
+      const row = t.deps.messagingRepo.find(SID, "feishu");
+      // The chat is remembered either way — the outbound relay reads it, and even a
+      // rejected message teaches the bridge where the user is.
+      expect(row?.lastChatId).toBe("oc_chat_1");
+      expect(row?.lastInboundMessageId).toBeNull();
+    } finally {
+      stillborn.stop();
+    }
+
+    const successor = restartBridge();
+    try {
+      await successor.start();
+      await fake.lastConnection().fire(evt);
+      await waitFor(() => runs.length === 1);
+      expect(runs[0]![0]!.text).toBe("deploy the build");
+    } finally {
+      successor.stop();
+    }
+  });
+
+  it("re-saving a binding onto a different bot account drops the watermark with the chat", () => {
+    const repo = t.deps.messagingRepo;
+    const save = (accountId: string) =>
+      repo.upsert({ sessionId: SID, channel: "feishu", accountId, config: { appId: accountId } });
+    expect(save("cli_before").accountId).toBe("cli_before");
+    repo.recordChat(SID, "feishu", "oc_group_1", false);
+    repo.recordInboundWatermark(SID, "feishu", "om_before_resave");
+    // Re-saving the SAME account is an ordinary settings edit — a rotated secret, say —
+    // and this bot's chat and its message ids still belong to this binding.
+    expect(save("cli_before").accountId).toBe("cli_before");
+    expect(repo.find(SID, "feishu")).toMatchObject({
+      lastChatId: "oc_group_1",
+      lastChatIsDirect: false,
+      lastInboundMessageId: "om_before_resave",
+    });
+    // A DIFFERENT account: a reply must never land in the old bot's conversation, and the
+    // old bot's message ids would only silence themselves.
+    expect(save("cli_after").accountId).toBe("cli_after");
+    expect(repo.find(SID, "feishu")).toMatchObject({
+      lastChatId: null,
+      lastChatIsDirect: true,
+      lastInboundMessageId: null,
+    });
   });
 
   it("remembers across a connector restart, so a re-enable does not replay a message", async () => {

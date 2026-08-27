@@ -166,7 +166,8 @@ describe("openDatabase column upgrade", () => {
       expect(legacy?.lastInboundMessageId).toBeNull();
       // And the upgraded table takes the new write, which is the half a created-but-unused
       // column would pass silently.
-      repo.recordChat("session-legacy-binding", "feishu", "oc_new", true, "om_first_after_upgrade");
+      repo.recordChat("session-legacy-binding", "feishu", "oc_new", true);
+      repo.recordInboundWatermark("session-legacy-binding", "feishu", "om_first_after_upgrade");
       expect(repo.find("session-legacy-binding", "feishu")?.lastInboundMessageId).toBe(
         "om_first_after_upgrade",
       );

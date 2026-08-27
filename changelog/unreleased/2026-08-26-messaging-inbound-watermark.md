@@ -15,19 +15,27 @@ Session then answered twice, in the chat and in the Web App.
 
 ## The watermark on the binding row
 
-`messaging_bindings` gains `last_inbound_message_id`: the channel id of the most recently processed
-inbound message. It is written by the `UPDATE` that already records the message's chat as the
-binding's reply target, on every inbound message, so it costs one bound parameter and no statement
-of its own.
+`messaging_bindings` gained `last_inbound_message_id`: the channel id of the most recently
+processed inbound message. `MessagingBridge` folds the stored id back into the binding's in-memory
+ring when a connection opens, before the stream can deliver anything. The two are one memory rather
+than two guards: the ring holds the last 64 ids for as long as the process lives, the row holds the
+last one for as long as the binding does.
 
-`MessagingBridge` folds the stored id back into the binding's in-memory ring when a connection
-opens, before the stream can deliver anything. The two are one memory rather than two guards: the
-ring holds the last 64 ids for as long as the process lives, the row holds the last one for as
-long as the binding does.
+The watermark is advanced by an `UPDATE` of its own, issued only once the message has become a Task
+— or been answered with the text-only notice. The write that records the message's chat as the
+binding's reply target still goes first, because the outbound relay reads that chat; the watermark
+could not join it. A busy Session's queued follow-up lives in memory only, so an id persisted ahead
+of the work would outlive that work whenever the process died in between, and the seeding above
+would then turn the channel's replay into a complete no-op — the message would never run and
+nothing would ever answer. A start that threw leaves the id unwritten, and the replay runs the
+message instead.
 
-The row remembers one id, so a channel replaying a whole burst across a restart is only guaranteed
-to have its most recent event recognized. A connector acknowledges each event as it finishes with
-it, so at most the one in flight when the process ended is still owed.
+The row remembers one id, which is what Feishu's long connection needs and all it needs: that
+stream replays events it never saw acknowledged, and the SDK acknowledges each one only after the
+bridge's handler returns, so at most the message in flight when the process ended is still owed.
+Telegram redelivers nothing across a restart — its poller advances past an update before handing it
+over, and a new connection drains whatever arrived while nothing was connected — so on that channel
+the row is carried and never consulted.
 
 Re-saving a binding onto a **different** bot account clears the watermark along with the remembered
 chat, as the other account's message ids mean nothing to the new one.

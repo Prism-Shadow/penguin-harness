@@ -219,29 +219,36 @@ export class MessagingBindingsRepo {
       .run(enabled ? 1 : 0, new Date().toISOString(), sessionId, channel);
   }
 
-  /**
-   * Remember the most recent inbound chat (the reply and test-message target; chats are
-   * channel-scoped) and, on the same write, the id of the message that came from it —
-   * the bridge's durable redelivery watermark. One statement for both because the bridge
-   * calls this for EVERY inbound message before anything else happens to it, so the
-   * watermark costs a bound parameter rather than a write of its own. `messageId` is null
-   * for a channel that mints no message identity (nothing to remember).
-   */
-  recordChat(
-    sessionId: string,
-    channel: string,
-    chatId: string,
-    isDirect: boolean,
-    messageId: string | null,
-  ): void {
+  /** Remember the most recent inbound chat (the reply and test-message target; chats are channel-scoped). */
+  recordChat(sessionId: string, channel: string, chatId: string, isDirect: boolean): void {
     this.db
       .prepare(
         `UPDATE messaging_bindings
-           SET last_chat_id = ?, last_chat_is_direct = ?, last_inbound_message_id = ?,
-               updated_at = ?
+           SET last_chat_id = ?, last_chat_is_direct = ?, updated_at = ?
          WHERE session_id = ? AND channel = ?`,
       )
-      .run(chatId, isDirect ? 1 : 0, messageId, new Date().toISOString(), sessionId, channel);
+      .run(chatId, isDirect ? 1 : 0, new Date().toISOString(), sessionId, channel);
+  }
+
+  /**
+   * Advance the bridge's durable redelivery watermark to a message it has FINISHED with.
+   * Deliberately its own statement, issued after the work rather than folded into
+   * recordChat: a watermark written first would, if the process died before the Task
+   * existed, mark as processed a message nothing ever ran — and the seeding in
+   * MessagingBridge.connect would then swallow the channel's replay of it.
+   *
+   * A null `messageId` (a channel that mints no message identity) leaves the column
+   * alone rather than clearing it: such a message opts out of the dedupe entirely, so it
+   * has nothing to say about the last message that did carry one.
+   */
+  recordInboundWatermark(sessionId: string, channel: string, messageId: string | null): void {
+    this.db
+      .prepare(
+        `UPDATE messaging_bindings
+           SET last_inbound_message_id = COALESCE(?, last_inbound_message_id), updated_at = ?
+         WHERE session_id = ? AND channel = ?`,
+      )
+      .run(messageId, new Date().toISOString(), sessionId, channel);
   }
 
   /** Drop one channel's config. */
