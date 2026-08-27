@@ -1698,6 +1698,13 @@ export interface FeishuBindingInfo {
    */
   linePerMessage: boolean;
   /**
+   * Relay only the LAST completed assistant message of a run, delivered when the run ends,
+   * instead of mirroring each completed message as it completes. Off by default; off is the
+   * original every-message behaviour. Independent of `linePerMessage`, which then applies to
+   * that one final message. The approval notice is not a reply and is unaffected.
+   */
+  finalReplyOnly: boolean;
+  /**
    * Whether an inbound Feishu chat is known (the bot has been messaged at least once).
    * Replies and test messages target that chat; until it exists nothing can be sent.
    */
@@ -1725,6 +1732,13 @@ export interface TelegramBindingInfo {
    * message per reply. Off by default; off is the original one-message-per-reply behaviour.
    */
   linePerMessage: boolean;
+  /**
+   * Relay only the LAST completed assistant message of a run, delivered when the run ends,
+   * instead of mirroring each completed message as it completes. Off by default; off is the
+   * original every-message behaviour. Independent of `linePerMessage`, which then applies to
+   * that one final message. The approval notice is not a reply and is unaffected.
+   */
+  finalReplyOnly: boolean;
   /**
    * Whether an inbound Telegram chat is known (the bot has been messaged at least once).
    * Replies and test messages target that chat; until it exists nothing can be sent.
@@ -1755,6 +1769,15 @@ export interface QQBindingInfo {
    * far fewer messages here than on the other channels.
    */
   linePerMessage: boolean;
+  /**
+   * Relay only the LAST completed assistant message of a run, delivered when the run ends,
+   * instead of mirroring each completed message as it completes. Off by default; off is the
+   * original every-message behaviour. Independent of `linePerMessage`, which then applies to
+   * that one final message. The approval notice is not a reply and is unaffected. On QQ it
+   * also spends the least of the platform's passive-reply budget a run can spend: one
+   * message where an every-message relay would spend one per completed message.
+   */
+  finalReplyOnly: boolean;
   /**
    * Whether an inbound QQ chat is known (the bot has been messaged at least once).
    * Weaker than it looks on this channel: QQ accepts only replies to a recent message, so a
@@ -1823,6 +1846,11 @@ export interface FeishuBindingPutRequest {
    * value; a binding created without it starts with it off.
    */
   linePerMessage?: boolean;
+  /**
+   * Delivery preference (see `FeishuBindingInfo.finalReplyOnly`). Omitted keeps the stored
+   * value; a binding created without it starts with it off.
+   */
+  finalReplyOnly?: boolean;
 }
 
 /**
@@ -1845,6 +1873,11 @@ export interface TelegramBindingPutRequest {
    * value; a binding created without it starts with it off.
    */
   linePerMessage?: boolean;
+  /**
+   * Delivery preference (see `TelegramBindingInfo.finalReplyOnly`). Omitted keeps the stored
+   * value; a binding created without it starts with it off.
+   */
+  finalReplyOnly?: boolean;
 }
 
 /**
@@ -1867,6 +1900,11 @@ export interface QQBindingPutRequest {
    * value; a binding created without it starts with it off.
    */
   linePerMessage?: boolean;
+  /**
+   * Delivery preference (see `QQBindingInfo.finalReplyOnly`). Omitted keeps the stored
+   * value; a binding created without it starts with it off.
+   */
+  finalReplyOnly?: boolean;
 }
 
 /**

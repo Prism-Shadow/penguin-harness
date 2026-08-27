@@ -26,9 +26,11 @@
  * code, and the App ID that came back — the same never-round-trip-the-secret rule the PUT
  * handlers follow, applied to a secret that arrives from outside instead of from the user.
  *
- * A PUT also carries `linePerMessage`, the one saved field that is not a credential: whether
- * a relayed reply is delivered one message per non-blank line. It is an ordinary form field
- * applied on Save — omitted keeps the stored value — and it never touches the connection.
+ * A PUT also carries the two saved fields that are not credentials: `linePerMessage` (whether
+ * a relayed reply is delivered one message per non-blank line) and `finalReplyOnly` (whether a
+ * run relays only its last completed assistant message, at the run's end, instead of each one
+ * as it completes). Both are ordinary form fields applied on Save — omitted keeps the stored
+ * value — and neither touches the connection.
  *
  * Round-trip rule for secrets: GET only ever returns the masked value, and a PUT whose
  * secret (feishu `appSecret`, telegram `botToken`, qq `appSecret`) is omitted or blank keeps the stored
@@ -115,6 +117,7 @@ function toFeishuInfo(row: MessagingBindingRow): FeishuBindingInfo {
     baseDomain: fields.baseDomain,
     enabled: row.enabled,
     linePerMessage: row.linePerMessage,
+    finalReplyOnly: row.finalReplyOnly,
     lastChatKnown: row.lastChatId !== null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -130,6 +133,7 @@ function toTelegramInfo(row: MessagingBindingRow): TelegramBindingInfo {
     ...(botToken !== "" ? { botTokenMasked: maskApiKey(botToken) } : {}),
     enabled: row.enabled,
     linePerMessage: row.linePerMessage,
+    finalReplyOnly: row.finalReplyOnly,
     lastChatKnown: row.lastChatId !== null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -145,6 +149,7 @@ function toQQInfo(row: MessagingBindingRow): QQBindingInfo {
     ...(fields.appSecret !== "" ? { appSecretMasked: maskApiKey(fields.appSecret) } : {}),
     enabled: row.enabled,
     linePerMessage: row.linePerMessage,
+    finalReplyOnly: row.finalReplyOnly,
     lastChatKnown: row.lastChatId !== null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -318,6 +323,7 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
     const clearSecret = (body as { clearAppSecret?: unknown }).clearAppSecret === true;
     const baseDomain = parseBaseDomain(optionalString(body, "baseDomain", { maxLen: 500 }));
     const linePerMessage = optionalBoolean(body, "linePerMessage");
+    const finalReplyOnly = optionalBoolean(body, "finalReplyOnly");
     const existing = deps.messagingRepo.find(row.sessionId, "feishu");
     const typed = secretInput !== undefined && secretInput !== "" ? secretInput : undefined;
     // Blank keeps the stored secret; the clear flag (models idiom — a typed secret wins
@@ -353,6 +359,7 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
       accountId: appId,
       config: { appId, appSecret, baseDomain },
       ...(linePerMessage !== undefined ? { linePerMessage } : {}),
+      ...(finalReplyOnly !== undefined ? { finalReplyOnly } : {}),
     });
     // Save persists credentials only and never flips the connection — with one deliberate
     // exception: an ENABLED binding's connector restarts with the new credentials, so the
@@ -458,6 +465,7 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
     const tokenInput = optionalString(body, "botToken", { maxLen: 200 })?.trim();
     const clearToken = (body as { clearBotToken?: unknown }).clearBotToken === true;
     const linePerMessage = optionalBoolean(body, "linePerMessage");
+    const finalReplyOnly = optionalBoolean(body, "finalReplyOnly");
     const existing = deps.messagingRepo.find(row.sessionId, "telegram");
     const typed = tokenInput !== undefined && tokenInput !== "" ? tokenInput : undefined;
     // Same ladder as the Feishu PUT: typed wins, then the clear flag (disable first),
@@ -503,6 +511,7 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
       accountId: botId,
       config: { botToken },
       ...(linePerMessage !== undefined ? { linePerMessage } : {}),
+      ...(finalReplyOnly !== undefined ? { finalReplyOnly } : {}),
     });
     // Same save/enable split as Feishu: only an enabled binding restarts its connector.
     if (saved.enabled) await deps.messaging.sync(row.sessionId);
@@ -603,6 +612,7 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
     const secretInput = optionalString(body, "appSecret", { maxLen: 500 })?.trim();
     const clearSecret = (body as { clearAppSecret?: unknown }).clearAppSecret === true;
     const linePerMessage = optionalBoolean(body, "linePerMessage");
+    const finalReplyOnly = optionalBoolean(body, "finalReplyOnly");
     const existing = deps.messagingRepo.find(row.sessionId, "qq");
     const typed = secretInput !== undefined && secretInput !== "" ? secretInput : undefined;
     // The same ladder as the other two channels: typed wins, then the clear flag (disable
@@ -635,6 +645,7 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
       accountId: appId,
       config: { appId, appSecret },
       ...(linePerMessage !== undefined ? { linePerMessage } : {}),
+      ...(finalReplyOnly !== undefined ? { finalReplyOnly } : {}),
     });
     if (saved.enabled) await deps.messaging.sync(row.sessionId);
     return c.json(qqResponse(row.sessionId));

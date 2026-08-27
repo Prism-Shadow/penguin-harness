@@ -68,6 +68,7 @@ import {
   formTestable,
   formToPut,
   formToTest,
+  type MessagingDeliveryFields,
   type MessagingFormErrors,
   type MessagingFormState,
 } from "./messaging-binding-form";
@@ -566,14 +567,43 @@ function StoredSecretRow({
 }
 
 /**
+ * One saved delivery preference: a label, its semantics behind the label's "?", and the
+ * switch. What the option does to a reply is meaning rather than formatting, which is what
+ * puts the sentence in a popover instead of under the row — a standing line of explanation
+ * is read once and stepped over on every later visit.
+ */
+function DeliveryOptionRow({
+  label,
+  help,
+  checked,
+  onChange,
+}: {
+  label: string;
+  help: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="flex items-center gap-1.5">
+        <FieldLabel block={false}>{label}</FieldLabel>
+        <InfoPopover label={label}>{help}</InfoPopover>
+      </span>
+      <Switch aria-label={label} checked={checked} onChange={onChange} />
+    </div>
+  );
+}
+
+/**
  * The editor's body, top to bottom: the channel selector, the connection controls (enable
  * toggle + live status, then the two probes, then the hint naming what gates the switch),
  * then the selected channel's credential fields (credential-source link at the credential
- * field's corner, models-style stored-secret row), and last the one saved field that is not a
- * credential — the one-message-per-line delivery option, which Save persists like the rest. Only the selector and the controls sit above the
- * fields, and everything above the fields is channel-independent in height, so the toggle
- * and the probes hold one vertical position no matter which channel is selected. Hosts
- * place their own Save action after it and `MessagingBindingHelp` below that.
+ * field's corner, models-style stored-secret row), and last the saved fields that are not
+ * credentials — the two delivery options, which Save persists like the rest. Only the
+ * selector and the controls sit above the fields, and everything above the fields is
+ * channel-independent in height, so the toggle and the probes hold one vertical position no
+ * matter which channel is selected. Hosts place their own Save action after it and
+ * `MessagingBindingHelp` below that.
  */
 export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) {
   const { form } = b;
@@ -581,6 +611,19 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
   const channel = form.channel;
   const facts = b.channels[channel];
   const links = CHANNEL_LINKS[channel];
+  // The delivery preferences of the selected channel, and the patch that writes one back.
+  // All three sub-states carry the same two, so resolving the channel once here keeps the
+  // rows at the bottom free of a selector they have nothing to say about.
+  const delivery =
+    channel === "telegram" ? form.telegram : channel === "qq" ? form.qq : form.feishu;
+  const patchDelivery = (patch: Partial<MessagingDeliveryFields>) =>
+    b.patchForm(
+      channel === "telegram"
+        ? { telegram: { ...form.telegram, ...patch } }
+        : channel === "qq"
+          ? { qq: { ...form.qq, ...patch } }
+          : { feishu: { ...form.feishu, ...patch } },
+    );
   return (
     <div className="space-y-3">
       {/* Channel first — each channel's config is saved independently, so the selector
@@ -886,37 +929,23 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
           />
         </>
       )}
-      {/* The one saved field that is not a credential, so it closes the form rather than
-          sitting among them. Its explanation is semantics — what the option does to a
-          reply — and therefore rides the "?" beside its label instead of a line the reader
-          steps over on every later visit. */}
-      <div className="flex items-center justify-between gap-3">
-        <span className="flex items-center gap-1.5">
-          <FieldLabel block={false}>{S.messaging.linePerMessage}</FieldLabel>
-          <InfoPopover label={S.messaging.linePerMessage}>
-            {S.messaging.linePerMessageHelp}
-          </InfoPopover>
-        </span>
-        <Switch
-          aria-label={S.messaging.linePerMessage}
-          checked={
-            channel === "telegram"
-              ? form.telegram.linePerMessage
-              : channel === "qq"
-                ? form.qq.linePerMessage
-                : form.feishu.linePerMessage
-          }
-          onChange={(v) =>
-            b.patchForm(
-              channel === "telegram"
-                ? { telegram: { ...form.telegram, linePerMessage: v } }
-                : channel === "qq"
-                  ? { qq: { ...form.qq, linePerMessage: v } }
-                  : { feishu: { ...form.feishu, linePerMessage: v } },
-            )
-          }
-        />
-      </div>
+      {/* The saved fields that are not credentials, so they close the form rather than
+          sitting among them. What each does to a reply is one channel-neutral question, so
+          both rows are identical on every channel — see DeliveryOptionRow for where their
+          explanations sit. Order is the order they take effect in: which messages are sent,
+          then how each one is split. */}
+      <DeliveryOptionRow
+        label={S.messaging.finalReplyOnly}
+        help={S.messaging.finalReplyOnlyHelp}
+        checked={delivery.finalReplyOnly}
+        onChange={(v) => patchDelivery({ finalReplyOnly: v })}
+      />
+      <DeliveryOptionRow
+        label={S.messaging.linePerMessage}
+        help={S.messaging.linePerMessageHelp}
+        checked={delivery.linePerMessage}
+        onChange={(v) => patchDelivery({ linePerMessage: v })}
+      />
     </div>
   );
 }

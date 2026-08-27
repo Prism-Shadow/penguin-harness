@@ -414,14 +414,19 @@ describe("openDatabase table and index upgrades", () => {
   });
 
   /**
-   * Seeds a database in the shape it had before messaging_bindings.line_per_message existed:
-   * today's schema with that column dropped. Same derivation rule as the helpers around it.
+   * Seeds a database in the shape it had before one of messaging_bindings' delivery-preference
+   * columns existed: today's schema with that column dropped. Same derivation rule as the
+   * helpers around it — a hand-copied DDL replica forks silently from the schema it imitates.
    */
-  function seedPreLinePerMessageDb(dbPath: string, seed: (db: DatabaseSync) => void): void {
+  function seedPreDeliveryColumnDb(
+    dbPath: string,
+    column: string,
+    seed: (db: DatabaseSync) => void,
+  ): void {
     const db = new sqlite.DatabaseSync(dbPath);
     try {
       db.exec(SCHEMA_SQL);
-      db.exec("ALTER TABLE messaging_bindings DROP COLUMN line_per_message");
+      db.exec(`ALTER TABLE messaging_bindings DROP COLUMN ${column}`);
       seed(db);
     } finally {
       db.close();
@@ -431,7 +436,7 @@ describe("openDatabase table and index upgrades", () => {
   it("adds line_per_message to a messaging_bindings formed before it, existing rows off", () => {
     const dbPath = path.join(dir, "web.db");
     const ts = "2026-01-01T00:00:00.000Z";
-    seedPreLinePerMessageDb(dbPath, (old) => {
+    seedPreDeliveryColumnDb(dbPath, "line_per_message", (old) => {
       old
         .prepare(
           `INSERT INTO messaging_bindings
@@ -471,6 +476,47 @@ describe("openDatabase table and index upgrades", () => {
           config: { botToken: "t" },
           linePerMessage: true,
         }).linePerMessage,
+      ).toBe(true);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("adds final_reply_only to a messaging_bindings formed before it, existing rows off", () => {
+    const dbPath = path.join(dir, "web.db");
+    const ts = "2026-01-01T00:00:00.000Z";
+    seedPreDeliveryColumnDb(dbPath, "final_reply_only", (old) => {
+      old
+        .prepare(
+          `INSERT INTO messaging_bindings
+             (session_id, channel, account_id, config_json, enabled, line_per_message, created_at, updated_at)
+           VALUES ('session-old', 'telegram', '12345', '{"botToken":"t"}', 1, 1, ?, ?)`,
+        )
+        .run(ts, ts);
+    });
+
+    const db = openDatabase(dbPath);
+    try {
+      const repo = new MessagingBindingsRepo(db);
+      const row = repo.find("session-old", "telegram");
+      // The default reproduces the delivery the row already had — every completed message
+      // mirrored as it completed — so the upgrade cannot change how a binding behaves.
+      expect(row?.finalReplyOnly).toBe(false);
+      // The rest of the row is untouched, the OTHER delivery preference included: the two
+      // are separate columns, and reading a new one must not reset the one beside it.
+      expect(row?.linePerMessage).toBe(true);
+      expect(row?.enabled).toBe(true);
+      expect(row?.config.botToken).toBe("t");
+      // Writable immediately: an ALTERed column with no backing code path would look
+      // identical until something tried to set it.
+      expect(
+        repo.upsert({
+          sessionId: "session-old",
+          channel: "telegram",
+          accountId: "12345",
+          config: { botToken: "t" },
+          finalReplyOnly: true,
+        }).finalReplyOnly,
       ).toBe(true);
     } finally {
       db.close();

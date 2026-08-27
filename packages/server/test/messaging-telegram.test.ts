@@ -632,6 +632,22 @@ describe("telegram binding routes and connector loop", () => {
     expect(t.deps.messagingRepo.find(SID, "telegram")?.linePerMessage).toBe(true);
   });
 
+  it("the final-reply-only flag rides the same PUT, defaults off, and is its own field", async () => {
+    // Same split as the flag above: the bridge's holding back is channel-agnostic (pinned in
+    // messaging.test.ts), and what is per-channel is the route wiring this asserts.
+    await api.put(BASE(SID), { botToken: TOKEN });
+    expect(t.deps.messagingRepo.find(SID, "telegram")?.finalReplyOnly).toBe(false);
+    const on = await api.put(BASE(SID), { finalReplyOnly: true });
+    expect(on.status).toBe(200);
+    const saved = (await on.json()) as TelegramBindingResponse;
+    expect(saved.binding?.finalReplyOnly).toBe(true);
+    // Two independent columns: saving one never carries the other along.
+    expect(saved.binding?.linePerMessage).toBe(false);
+    expect(t.deps.messagingRepo.find(SID, "telegram")?.config.botToken).toBe(TOKEN);
+    await api.put(BASE(SID), {});
+    expect(t.deps.messagingRepo.find(SID, "telegram")?.finalReplyOnly).toBe(true);
+  });
+
   it("the account is the bot id: a rotated secret saves freely and collides only on enable", async () => {
     t.deps.sessionsRepo.insert(sessionRowOf(SID2, projectId));
     await bindEnabled(SID);
