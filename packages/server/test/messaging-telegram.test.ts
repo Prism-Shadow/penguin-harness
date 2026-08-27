@@ -6,11 +6,15 @@
  * probe surfacing the bot username), the channel-agnostic GET the channel-aware editor
  * reads, and the connector's long-poll loop through a fake Bot API transport — offset
  * advancement, the connect-time backlog drain, inbound routing as plain user input,
- * per-message mirroring with one reply thread per run in groups, 4096-safe chunking,
+ * an inbound photo (largest variant, caption as the message text, a failed download
+ * degrading to a notice), per-message mirroring with one reply thread per run in groups,
+ * mentioned files leaving as a photo or a document, 4096-safe chunking,
  * non-text notices, poll-failure status flips, and the conflict path a second poller
  * produces (the 409 backoff, the connect-time webhook clear, and the actionable text the
  * transport maps a 409 to). No test opens real network.
  */
+import fs from "node:fs/promises";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { approvalDecision, assistantText, toolCall } from "@prismshadow/penguin-core";
 import type { ApproveFn, OmniMessage } from "@prismshadow/penguin-core";
@@ -69,6 +73,21 @@ interface SentMessage {
   threadId?: number;
 }
 
+/**
+ * One picture or attachment that reached the channel. Byte count rather than the bytes:
+ * what the assertions care about is which file went where, in what order, and that the
+ * caps let it through.
+ */
+interface SentMedia {
+  kind: "photo" | "document";
+  chatId: string;
+  fileName: string;
+  bytes: number;
+}
+
+/** Everything one client sent, in order — the ordering of text against media is the point. */
+type Sent = SentMessage | SentMedia;
+
 /** One file download the bridge asked for, cap included. */
 interface FileFetch {
   fileId: string;
@@ -79,7 +98,7 @@ interface FileFetch {
 const PHOTO_BYTES = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x11, 0x22, 0x33]);
 
 class FakeBotClient implements TelegramBotClient {
-  readonly sends: SentMessage[] = [];
+  readonly sends: Sent[] = [];
   readonly fileFetches: FileFetch[] = [];
   /** Every sendMessage ATTEMPT, failures included — `sends` records only what got through. */
   sendCalls = 0;
@@ -137,6 +156,26 @@ class FakeBotClient implements TelegramBotClient {
       text: args.text,
       ...(args.replyToMessageId !== undefined ? { replyTo: args.replyToMessageId } : {}),
       ...(args.messageThreadId !== undefined ? { threadId: args.messageThreadId } : {}),
+    });
+  }
+
+  async sendPhoto(args: { chatId: string; fileName: string; data: Buffer }): Promise<void> {
+    if (this.t.failMediaSend !== null) throw new Error(this.t.failMediaSend);
+    this.sends.push({
+      kind: "photo",
+      chatId: args.chatId,
+      fileName: args.fileName,
+      bytes: args.data.length,
+    });
+  }
+
+  async sendDocument(args: { chatId: string; fileName: string; data: Buffer }): Promise<void> {
+    if (this.t.failMediaSend !== null) throw new Error(this.t.failMediaSend);
+    this.sends.push({
+      kind: "document",
+      chatId: args.chatId,
+      fileName: args.fileName,
+      bytes: args.data.length,
     });
   }
 
@@ -216,6 +255,8 @@ class FakeTelegramTransport {
   failPolls = 0;
   /** Non-null makes getFileBytes throw with this message (an expired file_id, a network fault). */
   failFileFetch: string | null = null;
+  /** Non-null makes an outbound photo/document send throw (the channel refusing an upload). */
+  failMediaSend: string | null = null;
   /** What a file download resolves to; oversize bytes exercise the cap. */
   fileBytes: Buffer = PHOTO_BYTES;
   /** The path the Bot API served the bytes from — its extension names the type. */
@@ -256,13 +297,19 @@ class FakeTelegramTransport {
     return client;
   }
 
-  allSends(): SentMessage[] {
+  /** Everything sent through any client, in order (texts and media interleaved). */
+  allSends(): Sent[] {
     return this.clients.flatMap((c) => c.sends);
   }
 
   /** Every sendMessage attempt across every client: what tells one round trip from two. */
   allSendCalls(): number {
     return this.clients.reduce((n, c) => n + c.sendCalls, 0);
+  }
+
+  /** Just the text messages — for the assertions that read `.text`. */
+  allTexts(): SentMessage[] {
+    return this.allSends().filter((s): s is SentMessage => !("kind" in s));
   }
 
   /** Every file download asked of any client, in order. */
@@ -289,6 +336,8 @@ class FakeFeishuSdk implements FeishuSdk {
       async fetchMessageImage(): Promise<never> {
         throw new Error("the feishu side of these tests never carries an image");
       },
+      async sendImage() {},
+      async sendFile() {},
     };
   }
   async connect(_creds: FeishuCredentials, handlers: FeishuEventHandlers) {
@@ -997,7 +1046,7 @@ describe("telegram binding routes and connector loop", () => {
 
     fake.push(forumText("status?"));
     await waitFor(() => fake.allSends().length === 3, 5000);
-    const sends = fake.allSends();
+    const sends = fake.allTexts();
     // Every one of them, not just the threaded first.
     expect(sends.map((x) => x.threadId)).toEqual([TOPIC, TOPIC, TOPIC]);
     expect(sends.map((x) => x.text)).toEqual(["first", "second", "third"]);
@@ -1013,12 +1062,12 @@ describe("telegram binding routes and connector loop", () => {
     fake.push(forumText("in the first topic", 201, TOPIC));
     await waitFor(() => runs.length === 1);
     await waitFor(() => fake.allSends().length === 1);
-    expect(fake.allSends()[0]!.threadId).toBe(TOPIC);
+    expect(fake.allTexts()[0]!.threadId).toBe(TOPIC);
 
     fake.push(forumText("now over here", 202, 77));
     await waitFor(() => runs.length === 2);
     await waitFor(() => fake.allSends().length === 2);
-    expect(fake.allSends()[1]!.threadId).toBe(77);
+    expect(fake.allTexts()[1]!.threadId).toBe(77);
     expect(t.deps.messagingRepo.find(SID, "telegram")?.lastChatId).toBe(`${FORUM_CHAT}:77`);
   });
 
@@ -1033,15 +1082,15 @@ describe("telegram binding routes and connector loop", () => {
     fake.push(forumText("do the thing", 203));
     // The notice is a bare send with no inbound message to thread onto — the shape that had
     // nothing at all to put it back in the topic.
-    await waitFor(() => fake.allSends().some((x) => x.text === MESSAGING_APPROVAL_NOTICE), 5000);
-    const notice = fake.allSends().find((x) => x.text === MESSAGING_APPROVAL_NOTICE)!;
+    await waitFor(() => fake.allTexts().some((x) => x.text === MESSAGING_APPROVAL_NOTICE), 5000);
+    const notice = fake.allTexts().find((x) => x.text === MESSAGING_APPROVAL_NOTICE)!;
     expect(notice.threadId).toBe(TOPIC);
     expect(notice.replyTo).toBeUndefined();
 
     // The test message reads the stored chat straight off the row, so it is the path that
     // would hand an encoded string to the API if the connector were not the one parsing it.
     expect((await api.post(`${BASE(SID2)}/test-message`, {})).status).toBe(200);
-    const test = fake.allSends().find((x) => x.text === MESSAGING_TEST_MESSAGE)!;
+    const test = fake.allTexts().find((x) => x.text === MESSAGING_TEST_MESSAGE)!;
     expect(test.chatId).toBe(String(FORUM_CHAT));
     expect(test.threadId).toBe(TOPIC);
 
@@ -1062,7 +1111,7 @@ describe("telegram binding routes and connector loop", () => {
     fake.failThreadedSend = "sendMessage failed: Bad Request: message thread not found (code 400)";
     fake.push(forumText("still there?", 204));
     await waitFor(() => fake.allSends().length === 3, 5000);
-    const sends = fake.allSends();
+    const sends = fake.allTexts();
     expect(sends.map((x) => x.text)).toEqual(["first", "second", "third"]);
     expect(sends.map((x) => x.threadId)).toEqual([undefined, undefined, undefined]);
     expect(sends.every((x) => x.chatId === String(FORUM_CHAT))).toBe(true);
@@ -1120,7 +1169,7 @@ describe("telegram binding routes and connector loop", () => {
     fake.push(forumText("written in General", 205, null));
     await waitFor(() => runs.length === 1);
     await waitFor(() => fake.allSends().length === 1);
-    expect(fake.allSends()[0]!.threadId).toBeUndefined();
+    expect(fake.allTexts()[0]!.threadId).toBeUndefined();
     // A send that carried no topic is never retried — one round trip, as before this existed.
     expect(fake.allSendCalls()).toBe(1);
     // The stored chat is the bare id every row written before this feature already holds, so
@@ -1149,7 +1198,7 @@ describe("telegram binding routes and connector loop", () => {
     });
     await waitFor(() => runs.length === 1);
     await waitFor(() => fake.allSends().length === 1);
-    expect(fake.allSends()[0]!.threadId).toBeUndefined();
+    expect(fake.allTexts()[0]!.threadId).toBeUndefined();
     expect(fake.allSendCalls()).toBe(1);
     expect(t.deps.messagingRepo.find(SID, "telegram")?.lastChatId).toBe("123456789");
   });
@@ -1167,7 +1216,7 @@ describe("telegram binding routes and connector loop", () => {
     });
     await waitFor(() => runs.length === 1);
     await waitFor(() => fake.allSends().length === 1);
-    expect(fake.allSends()[0]!.threadId).toBeUndefined();
+    expect(fake.allTexts()[0]!.threadId).toBeUndefined();
     expect(fake.allSendCalls()).toBe(1);
     expect(t.deps.messagingRepo.find(SID, "telegram")?.lastChatId).toBe("-1002233445566");
   });
@@ -1185,7 +1234,7 @@ describe("telegram binding routes and connector loop", () => {
     });
     await waitFor(() => runs.length === 1);
     await waitFor(() => fake.allSends().length === 1);
-    expect(fake.allSends()[0]!.threadId).toBeUndefined();
+    expect(fake.allTexts()[0]!.threadId).toBeUndefined();
     expect(fake.allSendCalls()).toBe(1);
     expect(t.deps.messagingRepo.find(SID, "telegram")?.lastChatId).toBe(String(FORUM_CHAT));
   });
@@ -1202,7 +1251,7 @@ describe("telegram binding routes and connector loop", () => {
       )
       .run(String(FORUM_CHAT), SID, "telegram");
     expect((await api.post(`${BASE(SID)}/test-message`, {})).status).toBe(200);
-    const sent = fake.allSends().find((x) => x.text === MESSAGING_TEST_MESSAGE)!;
+    const sent = fake.allTexts().find((x) => x.text === MESSAGING_TEST_MESSAGE)!;
     expect(sent.chatId).toBe(String(FORUM_CHAT));
     expect(sent.threadId).toBeUndefined();
   });
@@ -1217,7 +1266,7 @@ describe("telegram binding routes and connector loop", () => {
       from: { first_name: "Ada" },
     });
     await waitFor(() => fake.allSends().length > 0);
-    expect(fake.allSends()[0]!.text).toBe(MESSAGING_TEXT_ONLY_NOTICE);
+    expect(fake.allTexts()[0]!.text).toBe(MESSAGING_TEXT_ONLY_NOTICE);
     expect(runs).toHaveLength(0);
   });
 
@@ -1282,6 +1331,30 @@ describe("telegram binding routes and connector loop", () => {
     expect(runs).toHaveLength(0);
   });
 
+  it("sends the files the reply mentions as a photo and a document, after its text", async () => {
+    // The Feishu suite carries the whole outbound-file rule (existence, caps, containment);
+    // this is the channel half of it — a picture must reach Telegram as a photo, so it
+    // renders in the chat, and everything else as a document.
+    const ws = await fs.mkdtemp(path.join(t.root, "ws-"));
+    await fs.writeFile(path.join(ws, "chart.png"), PHOTO_BYTES);
+    await fs.writeFile(path.join(ws, "notes.md"), "hello");
+    const row2 = sessionRowOf(SID2, projectId);
+    row2.workspace = ws;
+    t.deps.sessionsRepo.insert(row2);
+    t.deps.manager.adopt(
+      row2,
+      echoFakeSession(SID2, runs, "Rendered `chart.png`, notes in `notes.md`."),
+    );
+    await bindEnabled(SID2, "7000000004:test-secret-FFFF-6666");
+    fake.push(privateText("go"));
+    await waitFor(() => fake.allSends().length === 3);
+    expect(fake.allSends()).toEqual([
+      { chatId: "42424242", text: "Rendered `chart.png`, notes in `notes.md`." },
+      { kind: "photo", chatId: "42424242", fileName: "chart.png", bytes: PHOTO_BYTES.length },
+      { kind: "document", chatId: "42424242", fileName: "notes.md", bytes: 5 },
+    ]);
+  });
+
   it("relays each completed assistant message separately, in order, as it completes", async () => {
     const row2 = sessionRowOf(SID2, projectId);
     t.deps.sessionsRepo.insert(row2);
@@ -1330,7 +1403,7 @@ describe("telegram binding routes and connector loop", () => {
     await bindEnabled(SID2, "7000000002:test-secret-DDDD-4444");
     fake.push(privateText("long one"));
     await waitFor(() => fake.allSends().length >= 3);
-    const sends = fake.allSends();
+    const sends = fake.allTexts();
     expect(sends.map((s) => s.text.length)).toEqual([4000, 4000, 1000]);
     expect(sends.every((s) => s.chatId === "42424242")).toBe(true);
     expect(sends.map((s) => s.text).join("")).toBe("x".repeat(9000));
@@ -1465,6 +1538,8 @@ class ConflictBotClient implements TelegramBotClient {
   getFileBytes(): Promise<TelegramFileBytes> {
     throw new Error("this outage suite never downloads a file");
   }
+  async sendPhoto(): Promise<void> {}
+  async sendDocument(): Promise<void> {}
   getUpdates(args: {
     offset?: number;
     timeoutSec: number;

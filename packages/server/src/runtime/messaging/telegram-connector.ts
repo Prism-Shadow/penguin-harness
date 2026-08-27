@@ -380,6 +380,12 @@ export class TelegramConnector implements MessagingChannelConnector {
         // conversation is least able to spare it.
         return sendWithThreadFallback(bot, { chatId, text, replyToMessageId: messageId }, threadId);
       },
+      async sendImage(chatId, file) {
+        await bot.sendPhoto({ chatId, fileName: file.fileName, data: file.data });
+      },
+      async sendFile(chatId, file) {
+        await bot.sendDocument({ chatId, fileName: file.fileName, data: file.data });
+      },
     };
   }
 

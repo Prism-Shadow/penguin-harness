@@ -130,6 +130,13 @@ export interface MessagingAccountInfo {
  */
 export type MessagingSendNote = string;
 
+/** One file on its way out to a chat: the bytes, plus the name the chat should show. */
+export interface MessagingOutboundFile {
+  /** Display name — the base name of the Workspace-relative path the reply mentioned. */
+  fileName: string;
+  data: Buffer;
+}
+
 /** Outbound half of one bound account. Every method throws on failure with a readable reason. */
 export interface MessagingClient {
   /** Credential check (used by the test endpoint); resolving means the config signs in. */
@@ -138,6 +145,14 @@ export interface MessagingClient {
   sendText(chatId: string, text: string): Promise<MessagingSendNote | void>;
   /** Replies a text message to a specific inbound message (threads correctly in group chats). */
   replyText(messageId: string, text: string): Promise<MessagingSendNote | void>;
+  /**
+   * Sends a picture into a chat, so a chart the Agent drew arrives as something the reader
+   * can see rather than as a download. Channels that need an upload step first do it here —
+   * the bridge holds bytes and a name, never a channel's file handle.
+   */
+  sendImage(chatId: string, file: MessagingOutboundFile): Promise<void>;
+  /** Sends any other file into a chat as an attachment. */
+  sendFile(chatId: string, file: MessagingOutboundFile): Promise<void>;
 }
 
 export interface MessagingChannelConnector {

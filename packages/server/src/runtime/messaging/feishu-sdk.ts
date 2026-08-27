@@ -56,7 +56,18 @@ export interface FeishuImageData {
   mimeType: string;
 }
 
-/** OpenAPI half of the seam: credential probe + text sends + image download. Every method throws on failure. */
+/**
+ * One file on its way into a chat. Structurally the connector seam's MessagingOutboundFile
+ * — declared here rather than imported for the same reason FeishuApiClient mirrors
+ * MessagingClient member for member: this module is the layer below the seam and stays
+ * free of it, and the connector's assignment is what proves the two agree.
+ */
+export interface FeishuOutboundFile {
+  fileName: string;
+  data: Buffer;
+}
+
+/** OpenAPI half of the seam: credential probe, text sends, media in both directions. Every method throws on failure. */
 export interface FeishuApiClient {
   /**
    * Credential check: obtains a tenant access token (no scopes needed); throws with a
@@ -89,6 +100,10 @@ export interface FeishuApiClient {
     fileKey: string;
     maxBytes: number;
   }): Promise<FeishuImageData>;
+  /** Uploads a picture (`im.v1.image.create`) and sends the resulting key as an `image` message. */
+  sendImage(chatId: string, file: FeishuOutboundFile): Promise<void>;
+  /** Uploads a file (`im.v1.file.create`) and sends the resulting key as a `file` message. */
+  sendFile(chatId: string, file: FeishuOutboundFile): Promise<void>;
 }
 
 export interface FeishuEventHandlers {
@@ -147,6 +162,35 @@ interface LarkResponse {
   msg?: string;
 }
 
+/** The `msg_type` values this adapter sends (Feishu has many more; these are the three it uses). */
+type FeishuMessageType = "text" | "image" | "file";
+
+/**
+ * Feishu's upload categories. `stream` is the general one — the rest exist because the
+ * client renders a preview for them, so mapping a `.pdf` or a `.xlsx` onto its own category
+ * is what makes it open in the chat instead of only downloading.
+ */
+type FeishuFileType = "opus" | "mp4" | "pdf" | "doc" | "xls" | "ppt" | "stream";
+
+const FEISHU_FILE_TYPE_BY_EXT: Readonly<Record<string, FeishuFileType>> = {
+  opus: "opus",
+  mp4: "mp4",
+  pdf: "pdf",
+  doc: "doc",
+  docx: "doc",
+  xls: "xls",
+  xlsx: "xls",
+  ppt: "ppt",
+  pptx: "ppt",
+};
+
+/** The upload category for a file name; anything unrecognized uploads as a plain stream. */
+function feishuFileTypeOf(fileName: string): FeishuFileType {
+  const dot = fileName.lastIndexOf(".");
+  if (dot < 0) return "stream";
+  return FEISHU_FILE_TYPE_BY_EXT[fileName.slice(dot + 1).toLowerCase()] ?? "stream";
+}
+
 /**
  * The binary-download shape (`im.v1.messageResource.get`): the SDK hands back a stream
  * wrapper, not a `{code,msg}` envelope, because the endpoint answers with the file itself.
@@ -180,7 +224,7 @@ interface LarkClient {
       message: {
         create(payload: {
           params: { receive_id_type: "chat_id" };
-          data: { receive_id: string; content: string; msg_type: "text" };
+          data: { receive_id: string; content: string; msg_type: FeishuMessageType };
         }): Promise<LarkResponse>;
         reply(payload: {
           path: { message_id: string };
@@ -192,6 +236,16 @@ interface LarkClient {
           path: { message_id: string; file_key: string };
           params: { type: string };
         }): Promise<LarkStreamResponse>;
+      };
+      image: {
+        create(payload: {
+          data: { image_type: "message"; image: Buffer };
+        }): Promise<{ image_key?: string } | null>;
+      };
+      file: {
+        create(payload: {
+          data: { file_type: FeishuFileType; file_name: string; file: Buffer };
+        }): Promise<{ file_key?: string } | null>;
       };
     };
   };
@@ -256,6 +310,24 @@ export function createLarkSdk(): FeishuSdk {
         domain: creds.baseDomain,
         loggerLevel: lark.LoggerLevel.error,
       });
+      /** One `im.v1.message.create`, shared by every message kind: the content JSON differs, nothing else does. */
+      const sendContent = async (
+        chatId: string,
+        msgType: FeishuMessageType,
+        content: Record<string, string>,
+      ): Promise<void> => {
+        let res: LarkResponse;
+        try {
+          res = await client.im.v1.message.create({
+            params: { receive_id_type: "chat_id" },
+            data: { receive_id: chatId, content: JSON.stringify(content), msg_type: msgType },
+          });
+        } catch (err) {
+          throw new Error(larkErrorText(err));
+        }
+        ensureOk(res, "Message send");
+      };
+
       return {
         async checkCredentials(): Promise<null> {
           let res: LarkResponse;
@@ -269,17 +341,8 @@ export function createLarkSdk(): FeishuSdk {
           ensureOk(res, "Credential check");
           return null;
         },
-        async sendText(chatId: string, text: string): Promise<void> {
-          let res: LarkResponse;
-          try {
-            res = await client.im.v1.message.create({
-              params: { receive_id_type: "chat_id" },
-              data: { receive_id: chatId, content: JSON.stringify({ text }), msg_type: "text" },
-            });
-          } catch (err) {
-            throw new Error(larkErrorText(err));
-          }
-          ensureOk(res, "Message send");
+        sendText(chatId: string, text: string): Promise<void> {
+          return sendContent(chatId, "text", { text });
         },
         async replyText(messageId: string, text: string): Promise<void> {
           let res: LarkResponse;
@@ -325,6 +388,44 @@ export function createLarkSdk(): FeishuSdk {
               ? declared.split(";")[0]!.trim()
               : null;
           return { data, mimeType: sniffImageMime(data) ?? headerType ?? "image/png" };
+        },
+        async sendImage(chatId: string, file: FeishuOutboundFile): Promise<void> {
+          // Two steps, as Feishu requires: the bytes are uploaded on their own and the
+          // message carries only the key they were stored under.
+          let uploaded: { image_key?: string } | null;
+          try {
+            uploaded = await client.im.v1.image.create({
+              data: { image_type: "message", image: file.data },
+            });
+          } catch (err) {
+            throw new Error(larkErrorText(err));
+          }
+          // The upload endpoints resolve to their `data` object, so a refusal arrives as a
+          // missing key rather than as a non-zero `{code}` this adapter could report.
+          const imageKey = uploaded?.image_key;
+          if (imageKey === undefined || imageKey === "") {
+            throw new Error(`Image upload failed: ${file.fileName} returned no image_key`);
+          }
+          await sendContent(chatId, "image", { image_key: imageKey });
+        },
+        async sendFile(chatId: string, file: FeishuOutboundFile): Promise<void> {
+          let uploaded: { file_key?: string } | null;
+          try {
+            uploaded = await client.im.v1.file.create({
+              data: {
+                file_type: feishuFileTypeOf(file.fileName),
+                file_name: file.fileName,
+                file: file.data,
+              },
+            });
+          } catch (err) {
+            throw new Error(larkErrorText(err));
+          }
+          const fileKey = uploaded?.file_key;
+          if (fileKey === undefined || fileKey === "") {
+            throw new Error(`File upload failed: ${file.fileName} returned no file_key`);
+          }
+          await sendContent(chatId, "file", { file_key: fileKey });
         },
       };
     },

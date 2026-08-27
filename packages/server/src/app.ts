@@ -760,6 +760,9 @@ export function buildAppDeps(
   const messaging = new MessagingBridge({
     repo: messagingRepo,
     sessions: sessionsRepo,
+    // The same service the Files panel reads through: mirroring a file the reply mentions
+    // must obey exactly the containment rules browsing it does, not a second copy of them.
+    files: workspaceFiles,
     channels,
     runner: manager,
     connectors: [

@@ -46,6 +46,13 @@
  * reply. An `approval_request` additionally sends a one-line notice that a tool call is
  * waiting in the web UI — on the same chain, so it lands between replies instead of inside
  * one.
+ *
+ * When the run ends, the files its reply MENTIONED follow the text into the chat — the same
+ * rule as the Web App's file card (see reply-files.ts): inline-code paths that resolve
+ * inside the Workspace and actually exist, pictures sent as pictures and everything else as
+ * attachments. Not "every file the run wrote": the Agent's own words are what say which
+ * output was the point, and a chat window is a bad place to receive a directory. What the
+ * caps drop is named in the chat rather than dropped quietly.
  */
 import { imageUrlMessage, userText } from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
@@ -64,6 +71,8 @@ import type {
   MessagingInboundMessage,
   MessagingSendNote,
 } from "./connector.js";
+import { isImageFileName } from "./media.js";
+import { replyFilePaths } from "./reply-files.js";
 
 /**
  * Max characters per outbound text message, shared by every channel: it must sit under
@@ -124,6 +133,36 @@ export const MESSAGING_APPROVAL_NOTICE =
   "A tool call is waiting for your approval in the PenguinHarness web UI. 有工具调用正在等待你在网页端审批。";
 export const MESSAGING_TEST_MESSAGE =
   "PenguinHarness test message: this Session's messaging binding works. 测试消息：该会话的消息绑定工作正常。";
+
+/**
+ * Per-file ceilings for a mirrored file, and how many of them one run may send.
+ *
+ * The byte numbers are the tighter of each channel's own limit, because the file is read
+ * once for whichever channel this Session happens to be bound to: Feishu accepts an image
+ * up to 10MB and a file up to 30MB, Telegram's `sendPhoto` stops at 10MB and its
+ * `sendDocument` at 50MB. 10MB for a picture and 30MB for anything else therefore hold
+ * everywhere — better than the same reply succeeding on one channel and failing on the
+ * other.
+ *
+ * The count is not anyone's API limit but a judgement about the medium: a reply naming more
+ * than a handful of files is reporting on work rather than delivering it, and a chat is the
+ * wrong place to receive twenty attachments. The remainder is counted in a notice, never
+ * silently dropped — the Web App still has all of them.
+ */
+export const MESSAGING_OUTBOUND_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
+export const MESSAGING_OUTBOUND_FILE_MAX_BYTES = 30 * 1024 * 1024;
+export const MESSAGING_OUTBOUND_FILE_MAX_COUNT = 5;
+
+/** One file a ceiling refused, named so the user knows which one to go and fetch. */
+export function messagingFileTooLargeNotice(fileName: string, maxBytes: number): string {
+  const mb = Math.floor(maxBytes / (1024 * 1024));
+  return `"${fileName}" is over this channel's ${mb}MB limit and was not sent. 文件“${fileName}”超过该渠道 ${mb}MB 的上限，未发送。`;
+}
+
+/** The tail of a batch the count cap cut off. */
+export function messagingFilesSkippedNotice(skipped: number): string {
+  return `${skipped} more mentioned file(s) were not sent — at most ${MESSAGING_OUTBOUND_FILE_MAX_COUNT} ride along with one reply. 另有 ${skipped} 个提及的文件未发送——每条回复最多附带 ${MESSAGING_OUTBOUND_FILE_MAX_COUNT} 个。`;
+}
 
 /**
  * How many recently processed inbound message ids one binding remembers.
@@ -250,16 +289,36 @@ export interface MessagingTaskRunner {
 }
 
 /**
- * Minimal dependency on the sessions index: existence checks for reconcile/cascade, and the
- * Session's Project/Agent so a messaging failure can be filed under them (see recordError).
+ * Minimal dependency on the sessions index: existence checks for reconcile/cascade, the
+ * Session's Project/Agent so a messaging failure can be filed under them (see recordError),
+ * and the one field an outbound file needs — the Workspace a mentioned path resolves against.
  */
 export interface MessagingSessionIndex {
-  findById(sessionId: string): { projectId: string; agentId: string } | null;
+  findById(sessionId: string): { projectId: string; agentId: string; workspace: string } | null;
+}
+
+/**
+ * Minimal dependency on the Workspace file service. Narrow, but deliberately NOT a
+ * reimplementation: both methods carry that service's containment rules (a path that leaves
+ * the Workspace — by `..`, by an absolute path, or through a symlink — is refused there,
+ * and reads happen on the canonical path). A second resolver living in the bridge is
+ * exactly the kind of thing that ends up one security fix behind.
+ */
+export interface MessagingWorkspaceFiles {
+  /** The subset of `rels` that exist as regular files inside the Workspace, in input order. */
+  statExisting(workspace: string, rels: string[]): Promise<string[]>;
+  /** Reads a file, at most `maxBytes` of it. */
+  read(
+    workspace: string,
+    rel: string,
+    options?: { maxBytes?: number },
+  ): Promise<{ data: Buffer; fileName: string }>;
 }
 
 export interface MessagingBridgeDeps {
   repo: MessagingBindingsRepo;
   sessions: MessagingSessionIndex;
+  files: MessagingWorkspaceFiles;
   channels: ChannelHub;
   runner: MessagingTaskRunner;
   /** One connector per channel; a stored binding whose channel has no connector is skipped with an error record. */
@@ -323,6 +382,12 @@ interface BridgeEntry {
   inCompaction: boolean;
   /** The run in progress already threaded its first outbound message onto the inbound one. */
   threadedThisRun: boolean;
+  /**
+   * What this run has relayed so far, joined at the run's end to find the files the reply
+   * mentions. Only text that actually mirrored is collected: a connection joined mid-run
+   * relays none of that run's messages and must not send its files either.
+   */
+  replyText: string[];
   /**
    * Tail of this entry's outbound sends. Every relayed message AND every notice is appended
    * rather than started on its own, so outbound traffic completing in quick succession cannot
@@ -519,6 +584,7 @@ export class MessagingBridge {
       armed: runState === "idle",
       inCompaction: false,
       threadedThisRun: false,
+      replyText: [],
       sendChain: Promise.resolve(),
     };
     this.entries.set(row.sessionId, entry);
@@ -854,6 +920,7 @@ export class MessagingBridge {
     if (!entry.armed) return; // joined mid-run: this run's messages are not a reply
     const body = text.trim();
     if (body === "") return;
+    entry.replyText.push(body);
     entry.sendChain = entry.sendChain.then(() => this.deliverReply(entry, body));
   }
 
@@ -866,6 +933,14 @@ export class MessagingBridge {
     } else if (state === "idle") {
       // A run joined midway ends here; from the next one on its messages mirror.
       entry.armed = true;
+      // The run's files ride behind its text on the same chain — the reply first, then what
+      // it produced. Taken and cleared here, so a task_state republished at idle cannot
+      // send the same batch twice and the next run starts from nothing.
+      const replyText = entry.replyText.join("\n\n");
+      entry.replyText = [];
+      if (replyText !== "") {
+        entry.sendChain = entry.sendChain.then(() => this.deliverFiles(entry, replyText));
+      }
     }
     entry.active = state;
   }
@@ -922,6 +997,66 @@ export class MessagingBridge {
         this.recordDeliveryFailure(entry, err, "send", "messaging_send_failed");
       }
     }
+  }
+
+  /**
+   * Sends the files this run's reply mentioned, after its text.
+   *
+   * Always plain sends, never a threaded reply: a run that mentions a file has by
+   * definition already sent the text that mentions it, and that message took the group's
+   * one reply-to. Nothing here throws — a batch that fails is recorded, and a single file
+   * that fails does not stop the ones behind it.
+   */
+  private async deliverFiles(entry: BridgeEntry, replyText: string): Promise<void> {
+    try {
+      const row = this.deps.repo.find(entry.sessionId, entry.channel);
+      if (!row || row.lastChatId === null) return; // no chat known yet: nothing mirrors
+      const session = this.deps.sessions.findById(entry.sessionId);
+      if (session === null) return; // deleted mid-run
+      const mentioned = replyFilePaths(replyText, session.workspace);
+      if (mentioned.length === 0) return;
+      // The same filter the Web App's card applies: a path the model invented, or one it
+      // has since deleted, is simply not there to send. Containment lives in this call.
+      const existing = await this.deps.files.statExisting(session.workspace, mentioned);
+      if (existing.length === 0) return;
+      const client = await this.clientFor(entry.sessionId, row);
+      for (const rel of existing.slice(0, MESSAGING_OUTBOUND_FILE_MAX_COUNT)) {
+        try {
+          await this.deliverOneFile(client, row.lastChatId, session.workspace, rel);
+        } catch (err) {
+          this.recordError(entry.sessionId, err, "messaging_file_send_failed");
+        }
+      }
+      const skipped = existing.length - MESSAGING_OUTBOUND_FILE_MAX_COUNT;
+      if (skipped > 0) {
+        await client.sendText(row.lastChatId, messagingFilesSkippedNotice(skipped));
+      }
+    } catch (err) {
+      this.recordError(entry.sessionId, err, "messaging_send_failed");
+    }
+  }
+
+  /** One mirrored file: read under its kind's ceiling, then sent as a picture or an attachment. */
+  private async deliverOneFile(
+    client: MessagingClient,
+    chatId: string,
+    workspace: string,
+    rel: string,
+  ): Promise<void> {
+    const asImage = isImageFileName(rel);
+    const maxBytes = asImage
+      ? MESSAGING_OUTBOUND_IMAGE_MAX_BYTES
+      : MESSAGING_OUTBOUND_FILE_MAX_BYTES;
+    // One byte past the ceiling is enough to know the file is over it — reading the whole
+    // of a 2GB log to measure it would be the same mistake in the other direction.
+    const file = await this.deps.files.read(workspace, rel, { maxBytes: maxBytes + 1 });
+    if (file.data.length > maxBytes) {
+      await client.sendText(chatId, messagingFileTooLargeNotice(file.fileName, maxBytes));
+      return;
+    }
+    const outbound = { fileName: file.fileName, data: file.data };
+    if (asImage) await client.sendImage(chatId, outbound);
+    else await client.sendFile(chatId, outbound);
   }
 
   /** One-line notice (approval waiting) to the last known chat; silent before one exists. */

@@ -190,6 +190,14 @@ export interface TelegramBotClient {
    * whichever ceiling is lower is the one that bites.
    */
   getFileBytes(args: { fileId: string; maxBytes: number }): Promise<TelegramFileBytes>;
+  /**
+   * Sends a picture into a chat as a photo, so it renders inline. Multipart upload from
+   * bytes rather than by URL — the file lives in a Workspace this server can read and
+   * Telegram cannot.
+   */
+  sendPhoto(args: { chatId: string; fileName: string; data: Buffer }): Promise<void>;
+  /** Sends any other file into a chat as a document (the attachment form). */
+  sendDocument(args: { chatId: string; fileName: string; data: Buffer }): Promise<void>;
 }
 
 /** Factory the Telegram connector is built over: the production fetch adapter, or a test fake. */
@@ -205,11 +213,11 @@ export interface TelegramTransport {
 const CALL_TIMEOUT_MS = 15_000;
 
 /**
- * Deadline for a file transfer. Far longer than a method call: this one moves megabytes
- * over whatever link the server has, and a 15s ceiling would fail an image that was on its
- * way in perfectly well.
+ * Deadline for a file transfer, in either direction. Far longer than a method call: these
+ * move megabytes over whatever link the server has, and a 15s ceiling would fail a picture
+ * that was on its way perfectly well.
  */
-const DOWNLOAD_TIMEOUT_MS = 60_000;
+const TRANSFER_TIMEOUT_MS = 60_000;
 
 /** The `{ok, result, description, error_code}` envelope every Bot API response carries. */
 interface TelegramEnvelope<T> {
@@ -294,9 +302,12 @@ async function* bodyChunks(body: ReadableStream<Uint8Array>): AsyncGenerator<Uin
 export function createTelegramTransport(): TelegramTransport {
   return {
     createClient(creds: TelegramCredentials): TelegramBotClient {
-      const call = async <T>(
+      /** One Bot API method call: POST the body, then unwrap the `{ok, result}` envelope. */
+      const send = async <T>(
         method: string,
-        payload: Record<string, unknown>,
+        // The two body shapes this transport posts: a JSON string, or a multipart upload.
+        body: string | FormData,
+        headers: Record<string, string>,
         opts?: { signal?: AbortSignal; timeoutMs?: number },
       ): Promise<T> => {
         const deadline = AbortSignal.timeout(opts?.timeoutMs ?? CALL_TIMEOUT_MS);
@@ -305,25 +316,40 @@ export function createTelegramTransport(): TelegramTransport {
         try {
           res = await fetch(`${TELEGRAM_API_BASE}/bot${creds.botToken}/${method}`, {
             method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(payload),
+            headers,
+            body,
             signal,
           });
         } catch (err) {
           throw new Error(`${method} failed: ${fetchErrorText(err)}`);
         }
-        const body = (await res.json().catch(() => null)) as TelegramEnvelope<T> | null;
-        if (body === null || body.ok !== true) {
-          const described = body?.description;
+        const parsed = (await res.json().catch(() => null)) as TelegramEnvelope<T> | null;
+        if (parsed === null || parsed.ok !== true) {
+          const described = parsed?.description;
           const detail =
             (described !== undefined ? conflictText(described) : null) ??
             described ??
             `HTTP ${res.status}`;
-          const code = body?.error_code !== undefined ? ` (code ${body.error_code})` : "";
-          throw new TelegramApiError(`${method} failed: ${detail}${code}`, body?.error_code);
+          const code = parsed?.error_code !== undefined ? ` (code ${parsed.error_code})` : "";
+          throw new TelegramApiError(`${method} failed: ${detail}${code}`, parsed?.error_code);
         }
-        return body.result as T;
+        return parsed.result as T;
       };
+
+      const call = <T>(
+        method: string,
+        payload: Record<string, unknown>,
+        opts?: { signal?: AbortSignal; timeoutMs?: number },
+      ): Promise<T> =>
+        send<T>(method, JSON.stringify(payload), { "content-type": "application/json" }, opts);
+
+      /**
+       * A file-carrying call. No content-type is set on purpose: fetch derives the
+       * multipart one from the FormData, boundary included, and a hand-written header
+       * would name a boundary the body does not use.
+       */
+      const callForm = (method: string, form: FormData): Promise<unknown> =>
+        send<unknown>(method, form, {}, { timeoutMs: TRANSFER_TIMEOUT_MS });
 
       // Chat ids are stored as text; the API wants the numeric form back (a string works
       // for @channel usernames only), so safe integers are converted.
@@ -377,7 +403,7 @@ export function createTelegramTransport(): TelegramTransport {
           let res: Response;
           try {
             res = await fetch(`${TELEGRAM_API_BASE}/file/bot${creds.botToken}/${file.file_path}`, {
-              signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+              signal: AbortSignal.timeout(TRANSFER_TIMEOUT_MS),
             });
           } catch (err) {
             throw new Error(`file download failed: ${fetchErrorText(err)}`);
@@ -388,6 +414,18 @@ export function createTelegramTransport(): TelegramTransport {
           }
           const data = await collectUnderCap(bodyChunks(res.body), maxBytes, "The image");
           return { data, filePath: file.file_path };
+        },
+        async sendPhoto({ chatId, fileName, data }): Promise<void> {
+          const form = new FormData();
+          form.append("chat_id", String(wireChatId(chatId)));
+          form.append("photo", new Blob([data]), fileName);
+          await callForm("sendPhoto", form);
+        },
+        async sendDocument({ chatId, fileName, data }): Promise<void> {
+          const form = new FormData();
+          form.append("chat_id", String(wireChatId(chatId)));
+          form.append("document", new Blob([data]), fileName);
+          await callForm("sendDocument", form);
         },
       };
     },
