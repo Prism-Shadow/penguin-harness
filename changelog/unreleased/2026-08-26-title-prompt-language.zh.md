@@ -3,6 +3,7 @@
 - **Date:** 2026-08-26
 - **Type:** fix
 - **Scope:** `core`
+- **PR:** [#489](https://github.com/Prism-Shadow/penguin-harness/pull/489)
 
 [English](2026-08-26-title-prompt-language.md)
 
