@@ -21,9 +21,26 @@ inputs:
 runs:
   using: composite
   steps:
+    # corepack fetches the pinned pnpm tarball on first use -- ~20s on the Windows runner,
+    # which is most of what replacing pnpm/action-setup was meant to save. Cache what it
+    # unpacks, keyed on the packageManager pin, and the fetch happens once per pin per OS.
+    - name: Cache corepack's pnpm
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/node/corepack
+          ~/AppData/Local/node/corepack
+        key: corepack-${{ runner.os }}-${{ hashFiles('package.json') }}
+
     - name: Enable pnpm (corepack)
       shell: bash
-      run: corepack enable
+      env:
+        COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+      run: |
+        corepack enable
+        # Materialise the pinned version now so the cache above has something to save, and
+        # so a download failure surfaces here rather than inside an unrelated step.
+        pnpm --version
 
     - uses: actions/setup-node@v5
       with:
