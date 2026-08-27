@@ -175,24 +175,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - shard: core-1
+          - shard: core
             build: "@prismshadow/penguin-core..."
-            tests: pnpm --filter @prismshadow/penguin-core exec vitest run --shard=1/2
-          - shard: core-2
-            build: "@prismshadow/penguin-core..."
-            tests: pnpm --filter @prismshadow/penguin-core exec vitest run --shard=2/2
+            tests: pnpm --filter @prismshadow/penguin-core test
           - shard: server-1
             build: "@prismshadow/penguin-core..."
-            tests: pnpm --filter @prismshadow/penguin-server exec vitest run --shard=1/4
+            tests: pnpm --filter @prismshadow/penguin-server exec vitest run --shard=1/3
           - shard: server-2
             build: "@prismshadow/penguin-core..."
-            tests: pnpm --filter @prismshadow/penguin-server exec vitest run --shard=2/4
+            tests: pnpm --filter @prismshadow/penguin-server exec vitest run --shard=2/3
           - shard: server-3
             build: "@prismshadow/penguin-core..."
-            tests: pnpm --filter @prismshadow/penguin-server exec vitest run --shard=3/4
-          - shard: server-4
-            build: "@prismshadow/penguin-core..."
-            tests: pnpm --filter @prismshadow/penguin-server exec vitest run --shard=4/4
+            tests: pnpm --filter @prismshadow/penguin-server exec vitest run --shard=3/3
           - shard: rest
             build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-cli..."
             tests: >-
