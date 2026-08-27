@@ -15,6 +15,11 @@
  * Library and registry are two views of one kind of thing — a package of skills and/or
  * hooks. The library is what this build carries; the registry is what the deployment can
  * fetch. Both are deployment-global (no Project check); only installing touches an Agent.
+ *
+ * The registry merges two sources: the index embedded in this package (the sandbox backends
+ * the workspace ships) and the one published by the index repository. The published document
+ * is cached, and a failure to reach it is reported alongside the entries rather than emptying
+ * the page — see plugin/registry.ts for both rules.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -43,7 +48,14 @@ import type { AgentConfig } from "../../mechanisms/agents.js";
 import type { Access } from "../../mechanisms/projects.js";
 import type { Sessions as ManagerIface } from "../../runtime/session-manager.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import { builtinPluginRegistry } from "../../plugin/registry.js";
+import {
+  BUILTIN_REGISTRY_SOURCE,
+  builtinPluginRegistry,
+  cachedRegistry,
+  httpPluginRegistry,
+  mergeIndexes,
+} from "../../plugin/registry.js";
+import type { PluginRegistry } from "../../plugin/registry.js";
 
 /** What these route groups reach — bound by their component below. */
 export interface PluginsRouteDeps {
@@ -203,11 +215,22 @@ export class PluginRoutes {
   }
 }
 
-export function pluginRegistryRoutes(): Hono<AppEnv> {
+export interface PluginRoutesOptions {
+  /** The published index to read, or null for builtin entries only (see ServerConfig). */
+  indexUrl?: string | null;
+  /** Overrides the resolved source list entirely; tests pass registries directly. */
+  registries?: readonly PluginRegistry[];
+  fetchImpl?: typeof fetch;
+}
+
+export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
-  const registry = builtinPluginRegistry();
+  // Built once per App, so the cache outlives a request rather than being rebuilt per page load.
+  const registries = options.registries ?? resolveRegistries(options);
+
   app.get("/", async (c) => {
-    const body: PluginIndexResponse = { plugins: await registry.index() };
+    const { entries, failures } = await mergeIndexes(registries);
+    const body: PluginIndexResponse = { plugins: entries, failures };
     return c.json(body);
   });
   app.get("/readme", async (c) => {
@@ -215,24 +238,35 @@ export function pluginRegistryRoutes(): Hono<AppEnv> {
     if (name === undefined || name === "") {
       return c.json({ error: { code: "bad_request", message: "name is required" } }, 400);
     }
-    // Only entries this deployment actually lists: the readme map is keyed by specifier,
-    // and answering for an unlisted name would make the endpoint a probe of what exists.
-    const listed = (await registry.index()).some((e) => e.name === name);
-    if (!listed) {
+    // Only entries this deployment actually lists: answering for an unlisted name would make
+    // the endpoint a probe of what exists.
+    const { entries } = await mergeIndexes(registries);
+    if (!entries.some((e) => e.name === name)) {
       return c.json({ error: { code: "not_found", message: "no such plugin" } }, 404);
     }
-    const body: PluginReadmeResponse = { name, readme: await registry.readme(name) };
+    // First source that has one. Only the builtin registry carries readmes today: the shared
+    // index format has no readme location, so a remote source has none to offer.
+    for (const registry of registries) {
+      const readme = await registry.readme(name).catch(() => null);
+      if (readme !== null) {
+        const body: PluginReadmeResponse = { name, readme };
+        return c.json(body);
+      }
+    }
+    const body: PluginReadmeResponse = { name, readme: null };
     return c.json(body);
   });
   return app;
 }
 
-/**
- * The registry the Plugins page reads beside the built-in library: deployment-global, and
- * nested under /api/plugins/registry so both views answer under one prefix. The specifier
- * is a query parameter on `readme`, not a path segment, because it is scoped
- * (`@scope/name`) and would otherwise have to survive two rounds of slash encoding.
- */
+function resolveRegistries(options: PluginRoutesOptions): PluginRegistry[] {
+  const builtin = builtinPluginRegistry();
+  const url = options.indexUrl ?? null;
+  if (url === null) return [builtin];
+  return [builtin, cachedRegistry(httpPluginRegistry(url, options.fetchImpl ?? fetch))];
+}
+
+/** The index the Plugins page reads: deployment-global, like the skill library. */
 @Component({
   contributes: {
     "HttpModule.routes": [
@@ -246,8 +280,9 @@ export function pluginRegistryRoutes(): Hono<AppEnv> {
   },
 })
 export class PluginRegistryRoutes {
+  @Use() private readonly config!: Config;
   @Bind("PluginRegistryRoutes.routes") routes!: Hono<AppEnv>;
   setup() {
-    this.routes = pluginRegistryRoutes();
+    this.routes = pluginRegistryRoutes({ indexUrl: this.config.pluginIndexUrl });
   }
 }

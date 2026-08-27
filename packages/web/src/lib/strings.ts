@@ -1182,6 +1182,11 @@ export const zh = {
     readme: "说明文档",
     noReadme: "该插件暂无说明文档。",
     notFound: "找不到这个插件。",
+    /** Shown above the list when a source answered with nothing, so a short list is not read as a complete one. */
+    sourceUnavailable: (count: number): string =>
+      count === 1
+        ? "有 1 个插件来源无法访问，下面的列表可能不完整。"
+        : `有 ${count} 个插件来源无法访问，下面的列表可能不完整。`,
     repository: "源码仓库",
     homepage: "主页",
     authors: "作者",
