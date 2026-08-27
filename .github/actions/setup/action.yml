@@ -37,13 +37,23 @@ runs:
     # Only the requested packages and their dependencies. A shard that tests core
     # alone does not pay for the desktop bundle, which is the slowest target here.
     # verify-deps-before-run is off because it wants a TTY it does not have on a runner.
+    #
+    # The empty check is in the script, not a step-level `if`. A composite step whose `if`
+    # reads `inputs` silently evaluated false here, so every job skipped its build and only
+    # the shards that never import a built package stayed green -- a failure that looks like
+    # a broken test, not a broken workflow. The echo makes the decision visible in the log.
     - name: Build (tsup)
-      if: inputs.build != ''
       shell: bash
+      env:
+        BUILD_FILTERS: ${{ inputs.build }}
       run: |
+        if [ -z "$BUILD_FILTERS" ]; then
+          echo "No build requested for this job."
+          exit 0
+        fi
         args=""
         IFS=','
-        for f in ${{ inputs.build }}; do
+        for f in $BUILD_FILTERS; do
           args="$args --filter $f"
         done
         unset IFS

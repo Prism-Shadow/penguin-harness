@@ -43,7 +43,10 @@ jobs:
           ver=1.7.12
           curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v${ver}/actionlint_${ver}_linux_amd64.tar.gz" \
             | tar xz actionlint
-          ./actionlint
+          # -shellcheck= turns off the bundled shellcheck pass: what is wanted here is the
+          # workflow-expression and schema check, and shellcheck's info-level findings in
+          # workflows this change does not touch are a separate conversation.
+          ./actionlint -shellcheck=
 
   # tsc over every package, so this one does need the whole build. Results are
   # platform-independent, which is why neither macOS nor Windows repeats it.
@@ -51,9 +54,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      # tsc runs over every package, so every package's dist has to exist -- core's test
+      # files read skills' emitted types, for one.
       - uses: ./.github/actions/setup
         with:
-          build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-landing...,@prismshadow/penguin-docs..."
+          build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-landing...,@prismshadow/penguin-docs...,@prismshadow/penguin-server...,@prismshadow/penguin-cli...,@prismshadow/penguin-web...,@prismshadow/penguin-skills..."
       - name: Typecheck (tsc)
         run: pnpm typecheck
 
