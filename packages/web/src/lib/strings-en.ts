@@ -1829,8 +1829,10 @@ Scenarios:
     /** Why "send test message" is disabled before the bot has ever been messaged. */
     testMessageNoChat: "Message the bot once in QQ first, so it knows which chat to send to",
     /**
-     * The rule that shapes this whole channel, stated where it is first needed rather than
-     * left for the user to infer from a reply that never arrives.
+     * The rule that shapes this whole channel, disclosed under "what does binding do" beside
+     * the reply budget: neither is a fault, both are how QQ delivers. The troubleshooting
+     * fold answers the same rule from the other end, for a reader who arrives already
+     * wondering why nothing came back.
      */
     repliesOnly:
       "QQ only lets a bot reply to a message you just sent it — it cannot start one. So a turn you begin in the web app is not mirrored to QQ, and once a few minutes have passed since your last QQ message, replies can no longer be delivered either. Send the bot another message in QQ to continue.",

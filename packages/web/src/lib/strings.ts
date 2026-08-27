@@ -1791,8 +1791,10 @@ Benchmark：
     /** Why "send test message" is disabled before the bot has ever been messaged. */
     testMessageNoChat: "先在 QQ 中给机器人发一条消息，机器人才知道要发到哪个会话",
     /**
-     * The rule that shapes this whole channel, stated where it is first needed rather than
-     * left for the user to infer from a reply that never arrives.
+     * The rule that shapes this whole channel, disclosed under "what does binding do" beside
+     * the reply budget: neither is a fault, both are how QQ delivers. The troubleshooting
+     * fold answers the same rule from the other end, for a reader who arrives already
+     * wondering why nothing came back.
      */
     repliesOnly:
       "QQ 只允许机器人回复你刚发出的消息，不允许主动发消息。因此：在网页端发起的对话不会同步到 QQ；距离你上一条 QQ 消息过去几分钟后，回复也发不出去。想继续对话，在 QQ 里再发一条消息即可。",

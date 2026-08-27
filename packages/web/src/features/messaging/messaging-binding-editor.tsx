@@ -868,12 +868,6 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
               onChange={(checked) => b.patchForm({ qq: { ...form.qq, clearSecret: checked } })}
             />
           )}
-          {/* The one channel whose rule cannot wait for a collapsed fold: QQ delivers only
-              replies to messages sent from QQ, so a user who binds it and then types in the
-              web app sees nothing arrive and concludes the binding is broken. It sits under
-              this channel's fields rather than above them, which keeps the controls at the
-              same height across channels. */}
-          <p className="text-xs text-gray-500 dark:text-gray-400">{S.qq.repliesOnly}</p>
         </>
       ) : (
         <>
@@ -1000,8 +994,14 @@ export function MessagingBindingHelp({ channel }: { channel: MessagingChannel })
         <p>{per.intro}</p>
         {/* The channel's own flavor first, then the channel-neutral rule that owns the
             question a reader actually arrives with: how the bot moves conversations. */}
-        {/* QQ's reply budget belongs to "what binding does" rather than troubleshooting:
-            it is not a fault, it is how the channel delivers a long answer. */}
+        {/* QQ's two caveats belong to "what binding does" rather than troubleshooting:
+            neither is a fault, both are how the channel delivers. The replies-only rule
+            comes first because it decides whether a reply arrives at all, and the budget
+            after it because it only shapes one that does. They are disclosed here rather
+            than standing under the fields — a rule that is true of the channel forever is
+            read once, and a permanent paragraph on one channel is read past on every later
+            visit while making that channel's form the odd one out. */}
+        {channel === "qq" && <p className="mt-1.5">{S.qq.repliesOnly}</p>}
         {channel === "qq" && <p className="mt-1.5">{S.qq.replyBudget}</p>}
         <p className="mt-1.5">{S.messaging.faqWhatBinding}</p>
       </HelpFold>

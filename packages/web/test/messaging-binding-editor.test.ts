@@ -221,17 +221,14 @@ describe("MessagingBindingBody", () => {
     expect(html.slice(lineAt)).toContain('aria-checked="false"');
   });
 
-  it("states QQ's replies-only rule on screen, not in a collapsed fold", () => {
-    // The one piece of channel copy that cannot wait to be unfolded. QQ delivers only
-    // replies to messages sent from QQ, so a user who binds it and then works in the web app
-    // sees nothing arrive and concludes the binding is broken. Every other channel's
-    // explanation stays in the FAQ; this one is a line under the fields.
+  it("keeps QQ's delivery rules out of the form, where they would be read past forever", () => {
+    // A rule that is true of the channel for as long as it is bound is read once. Standing it
+    // under one channel's fields makes that channel's form the odd one out on every later
+    // visit, so both of QQ's rules are disclosed in MessagingBindingHelp's folds instead —
+    // asserted there, in the suite for that component.
     const html = render(stateOf("qq"));
-    expect(html).toContain(S.qq.repliesOnly);
-    // Under the credential fields, so the controls above hold one height across channels.
-    expect(html.indexOf(S.qq.repliesOnly)).toBeGreaterThan(html.indexOf(S.qq.appSecret));
-    // ...and it belongs to QQ alone.
-    expect(render(stateOf("feishu"))).not.toContain(S.qq.repliesOnly);
+    expect(html).not.toContain(S.qq.repliesOnly);
+    expect(html).not.toContain(S.qq.replyBudget);
   });
 
   it("offers all three channels in the selector", () => {
@@ -484,9 +481,14 @@ describe("MessagingBindingHelp", () => {
     // What the QR button spares the reader belongs beside those steps, not beside the
     // button: it is semantics, and a control is not a title for a standing sentence.
     expect(qq).toContain(S.qq.scanHint);
-    // The reply budget is how this channel delivers a long answer, not a fault: it rides the
-    // "what binding does" fold, while the passive-reply failure rides troubleshooting.
+    // Both delivery rules ride the "what binding does" fold: neither is a fault, both are how
+    // the channel delivers. Order is what a reader needs first — whether a reply arrives at
+    // all, then how a long one is shaped. The troubleshooting fold answers the same rule from
+    // the other end, for a reader who arrives already wondering why nothing came back.
+    expect(qq).toContain(S.qq.repliesOnly);
     expect(qq).toContain(S.qq.replyBudget);
+    expect(qq.indexOf(S.qq.repliesOnly)).toBeLessThan(qq.indexOf(S.qq.replyBudget));
+    expect(qq).toContain(S.messaging.troubleQQPassive);
     expect(qq).toContain(S.messaging.troubleQQPassive);
     expect(telegram).not.toContain(S.messaging.troubleQQPassive);
   });
