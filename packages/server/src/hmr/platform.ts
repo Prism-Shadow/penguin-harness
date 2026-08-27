@@ -40,7 +40,7 @@ import {
   claimRuntimeCapabilities,
 } from "./capabilities.js";
 import type { Interfaces, MembersOf } from "./capabilities.js";
-import type { PenguinInterface } from "../extension/index.js";
+import type { HarnessContext, PenguinInterface } from "../extension/index.js";
 import { extensionHostFrom } from "../extension/host.js";
 import { instantiateWorkflows, WorkflowFactories } from "../extension/workflow.js";
 
@@ -242,14 +242,18 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     // would construct a fresh service on defaults and silently un-confine a deployment
     // that had confinement on.
     if (context.sandbox !== undefined) sandbox.configure(context.sandbox);
-    extensions.emit("create", {
+    // Typed as HarnessContext, not the bare contract: `terminals` is this harness's own
+    // (see ../extension/index.ts). Handlers receive it as PenguinContext and reach that
+    // member only by casting, which is where the dependency on this embedder gets stated.
+    const extContext: HarnessContext = {
       workflows: instantiateWorkflows(extIface.workflow),
       terminals,
       sandbox: {
         configure: (settings) => sandbox.configure(settings),
         settings: () => sandbox.currentSettings(),
       },
-    });
+    };
+    extensions.emit("create", extContext);
 
     // The business deps, built per App over the runtime's published capabilities — see
     // app.ts's buildAppDeps and ./capabilities.ts. Null only for a declared bare kernel;
