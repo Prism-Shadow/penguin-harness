@@ -3,6 +3,7 @@
 - **Date:** 2026-08-26
 - **Type:** feature
 - **Scope:** `server`, `web`, `docs`
+- **PR:** [#490](https://github.com/Prism-Shadow/penguin-harness/pull/490)
 
 [中文版](2026-08-26-messaging-bind-by-enable.zh.md)
 
