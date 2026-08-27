@@ -303,6 +303,7 @@ describe("model-catalog", () => {
       ["glm-5.3", 1000000, false],
       ["glm-5.3-flash", 1000000, true],
       ["kimi-k3", 1048576, true],
+      ["qwen3.8-flash", 1000000, true],
       ["qwen3.8-max", 1000000, true],
     ]);
     for (const m of td) {
@@ -322,6 +323,20 @@ describe("model-catalog", () => {
     expect([tdFlash.cache_read, tdFlash.cache_write, tdFlash.output]).toEqual([
       0.032857, 0.114286, 0.4,
     ]);
+    // qwen3.8-flash at 0.1 / 0.8 / 2.7 CNY, undiscounted. The same id also sits in the
+    // qwen-pay-as-you-go group at Qwen's own 0.1 / 1 / 3, and the pair is the point: one
+    // model reached two ways, priced by whoever is selling it, so the two rows must not
+    // silently converge.
+    const tdQwenFlash = td.find((m) => m.modelId === "qwen3.8-flash")!.pricing!;
+    expect([tdQwenFlash.cache_read, tdQwenFlash.cache_write, tdQwenFlash.output]).toEqual([
+      0.014286, 0.114286, 0.385714,
+    ]);
+    const payggFlash = MODEL_CATALOG.find(
+      (m) => m.provider === "qwen-pay-as-you-go" && m.modelId === "qwen3.8-flash",
+    )!.pricing!;
+    expect(payggFlash.cache_write).toBeGreaterThan(tdQwenFlash.cache_write);
+    expect(payggFlash.output).toBeGreaterThan(tdQwenFlash.output);
+    expect(payggFlash.cache_read).toEqual(tdQwenFlash.cache_read);
     const qpayg = MODEL_CATALOG.filter((m) => m.provider === "qwen-pay-as-you-go");
     expect(qpayg.map((m) => [m.modelId, m.supportsVision])).toEqual([
       ["deepseek-v4-flash-0731", false],

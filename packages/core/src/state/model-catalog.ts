@@ -4,7 +4,8 @@
  * Data verified as of 2026-07-10 (Qwen Token Plan entries: 2026-07-20; MiniMax: 2026-08-03;
  * DeepSeek, Gemini 3.7, GLM-5.3 and the whole OpenAI line-up (direct + OpenRouter):
  * 2026-08-18; the direct Anthropic group: 2026-08-20; the DeepSeek V4 Flash Vision Exp rows:
- * 2026-08-21; the TokenDance group: 2026-08-25, its glm-5.3-flash row: 2026-08-26; the
+ * 2026-08-21; the TokenDance group: 2026-08-25, its glm-5.3-flash row: 2026-08-26 and its
+ * qwen3.8-flash row: 2026-08-27; the
  * GLM-5.3 Flash rows (direct + OpenRouter) and qwen3.8-flash: 2026-08-26 — per each
  * provider's docs).
  * Docs: packages/docs/content/models.{zh,en}.md (site path /docs/models) documents the
@@ -1021,6 +1022,28 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     provider: "tokendance",
     contextWindow: 1048576,
     pricing: cny(2, 20, 100),
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: TOKENDANCE_BASE_URL,
+  },
+  {
+    // The gateway's own rate undercuts Qwen's direct list price for the same id (CNY 0.8 vs 1
+    // input, 2.7 vs 3 output, cache hit the same 0.1), which is the whole reason both rows
+    // exist: the pair is one model reached two ways, priced by whoever is selling it.
+    //
+    // Its supported_protocols is the widest in this group — openai:chat-completions,
+    // openai:responses AND anthropic:messages — so the openai-chat pin here is the group's
+    // convention rather than the only shape the id serves, unlike glm-5.3-flash above where
+    // it is forced. Natively multimodal per the catalog entry, and this group's openai-chat
+    // client forwards image_url parts, so image input works on this path.
+    //
+    // Not discounted: unlike qwen3.8-max below, its catalog `description` carries no
+    // bracketed 限时 tag, so list price and billed rate coincide.
+    modelId: "qwen3.8-flash",
+    displayName: "Qwen 3.8 Flash",
+    provider: "tokendance",
+    contextWindow: 1000000,
+    pricing: cny(0.1, 0.8, 2.7),
     supportsVision: true,
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
