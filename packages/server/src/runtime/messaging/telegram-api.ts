@@ -25,6 +25,22 @@ export interface TelegramBotUser {
   username?: string;
 }
 
+/**
+ * One entry of a message's `entities` array: a span over the text with a meaning attached.
+ *
+ * `offset` and `length` are counted in UTF-16 code units — which is exactly what a
+ * JavaScript string index is, so a span applies with `slice(offset, offset + length)` and
+ * nothing has to be converted anywhere in this codebase.
+ */
+export interface TelegramMessageEntity {
+  /** `mention` (the span is a literal `@username`), `text_mention` (a user with no username, carried in `user`), `bold`, `code`, … */
+  type: string;
+  offset: number;
+  length: number;
+  /** Present on `text_mention` only: the user the span refers to, there being no `@username` in the text to match on. */
+  user?: { id: number };
+}
+
 /** The slice of a Bot API `Message` the connector consumes. */
 export interface TelegramMessage {
   message_id: number;
@@ -35,6 +51,12 @@ export interface TelegramMessage {
   };
   /** Present only for text messages; anything else (photo, sticker, voice, …) omits it. */
   text?: string;
+  /**
+   * Spans over `text` (mentions, formatting, …); absent when the message has none. A
+   * captioned media message carries the same shapes over its caption under
+   * `caption_entities` instead — the day this connector reads captions, it reads that.
+   */
+  entities?: TelegramMessageEntity[];
   from?: {
     first_name?: string;
     username?: string;

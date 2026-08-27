@@ -18,6 +18,21 @@ export interface FeishuCredentials {
   baseDomain: string;
 }
 
+/**
+ * One `@` in a message, as Feishu reports it: the event's `content` JSON carries only a
+ * placeholder (`@_user_1`) where the mention stands, and this array says what each
+ * placeholder refers to. Without it the text is unreadable — see the connector's
+ * resolveFeishuMentions.
+ */
+export interface FeishuMention {
+  /** The literal placeholder inside the content JSON's `text`, e.g. `@_user_1`. */
+  key: string;
+  /** Display name of whoever was mentioned (a bot's is its own name). */
+  name: string;
+  /** Open id of whoever was mentioned; absent when the event carries no id for them. */
+  openId?: string;
+}
+
 /** One inbound `im.message.receive_v1` event, reduced to what the connector consumes. */
 export interface FeishuInboundEvent {
   chatId: string;
@@ -30,6 +45,8 @@ export interface FeishuInboundEvent {
   content: string;
   /** Sender display name when the event carries one (the standard event does not). */
   senderName?: string;
+  /** Everyone `@`-ed in this message, in the order Feishu lists them; absent when nobody was. */
+  mentions?: FeishuMention[];
 }
 
 /** OpenAPI half of the seam: credential probe + text sends. Every method throws on failure. */
@@ -44,6 +61,16 @@ export interface FeishuApiClient {
   sendText(chatId: string, text: string): Promise<void>;
   /** Replies a text message to a specific inbound message (threads correctly in group chats). */
   replyText(messageId: string, text: string): Promise<void>;
+  /**
+   * This app's own bot open id, so a group message's mention of THIS bot can be told apart
+   * from a mention of anyone else (the ids are the only thing that distinguishes them —
+   * two accounts may share a display name).
+   *
+   * Resolves null rather than throwing when the app cannot report one: the bot capability
+   * may be off, or the call may simply fail, and neither is a reason to refuse a
+   * connection. A null answer degrades mention handling, it does not break it.
+   */
+  botOpenId(): Promise<string | null>;
 }
 
 export interface FeishuEventHandlers {
@@ -103,6 +130,15 @@ interface LarkResponse {
 }
 
 interface LarkClient {
+  /**
+   * The SDK's generic call, for endpoints its typed surface does not cover. Used for
+   * `/open-apis/bot/v3/info`, which has no typed member here (the SDK's own internals reach
+   * it the same way).
+   */
+  request(args: {
+    url: string;
+    method: string;
+  }): Promise<LarkResponse & { bot?: { open_id?: string } }>;
   auth: {
     v3: {
       tenantAccessToken: {
@@ -140,6 +176,11 @@ interface LarkEventDispatcher {
         chat_type: string;
         message_type: string;
         content: string;
+        mentions?: {
+          key: string;
+          name: string;
+          id?: { open_id?: string };
+        }[];
       };
     }) => Promise<void>;
   }): LarkEventDispatcher;
@@ -217,6 +258,18 @@ export function createLarkSdk(): FeishuSdk {
           }
           ensureOk(res, "Message reply");
         },
+        async botOpenId(): Promise<string | null> {
+          // Best effort by contract (see FeishuApiClient.botOpenId): every failure shape —
+          // a thrown request, a non-zero envelope, a body without the field — answers
+          // "unknown" so a connection is never refused over it.
+          try {
+            const res = await client.request({ url: "/open-apis/bot/v3/info", method: "GET" });
+            if (res.code !== undefined && res.code !== 0) return null;
+            return res.bot?.open_id ?? null;
+          } catch {
+            return null;
+          }
+        },
       };
     },
 
@@ -227,12 +280,18 @@ export function createLarkSdk(): FeishuSdk {
       const lark = await load();
       const dispatcher = new lark.EventDispatcher({}).register({
         "im.message.receive_v1": async (data) => {
+          const mentions = data.message.mentions?.map((m) => ({
+            key: m.key,
+            name: m.name,
+            ...(m.id?.open_id !== undefined ? { openId: m.id.open_id } : {}),
+          }));
           await handlers.onMessage({
             chatId: data.message.chat_id,
             chatType: data.message.chat_type,
             messageId: data.message.message_id,
             messageType: data.message.message_type,
             content: data.message.content,
+            ...(mentions !== undefined ? { mentions } : {}),
           });
         },
       });

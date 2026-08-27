@@ -9,7 +9,9 @@
  *
  * The poll loop's lifecycle: a `getMe` probe (a bad token surfaces immediately as the
  * connection error instead of an eternally failing poll — it runs again ahead of every
- * recovery attempt, so a token revoked mid-outage stops reading as a stale conflict), a
+ * recovery attempt, so a token revoked mid-outage stops reading as a stale conflict, and
+ * its answer is what lets a group message's opening mention of THIS bot be stripped — see
+ * stripBotMention), a
  * `getWebhookInfo` probe (a webhook and `getUpdates` are mutually exclusive on the Bot API,
  * so a bot pointed at one cannot be polled until the webhook goes — the probe names it and
  * stops there, because removing it is the user's call: see below), then a one-time backlog
@@ -42,7 +44,9 @@ import type {
 } from "./connector.js";
 import type {
   TelegramBotClient,
+  TelegramBotUser,
   TelegramCredentials,
+  TelegramMessageEntity,
   TelegramTransport,
   TelegramUpdate,
 } from "./telegram-api.js";
@@ -118,8 +122,53 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-/** One update reduced to the bridge's normalized shape; null for updates that are not chat messages. */
-function normalizeUpdate(update: TelegramUpdate): MessagingInboundMessage | null {
+/** Whether this entity is a mention OF the bot itself, by either of the two shapes Telegram uses. */
+function mentionsBot(text: string, entity: TelegramMessageEntity, me: TelegramBotUser): boolean {
+  if (entity.type === "text_mention") return entity.user?.id === me.id;
+  if (entity.type !== "mention" || me.username === undefined) return false;
+  // Telegram matches @usernames case-insensitively, and a user typing the bot's handle by
+  // hand rarely matches its capitalization.
+  const span = text.slice(entity.offset, entity.offset + entity.length);
+  return span.toLowerCase() === `@${me.username.toLowerCase()}`;
+}
+
+/**
+ * Strips the bot's own `@mention` off the FRONT of a group message.
+ *
+ * Addressing a bot in a group means naming it, so nearly every message this connector sees
+ * from a group opens with `@thisbot `. The bridge feeds inbound text to the model exactly as
+ * if it had been typed into the web composer, and that prefix announces the channel the
+ * message came through — a detail the model is deliberately not told.
+ *
+ * Only that addressing prefix goes. This bot named further in ("what is @thisbot's status?",
+ * "summarize what @thisbot said yesterday") is a word the user chose exactly like everyone
+ * else's mention, and cutting it would hand the model a sentence with a hole in it.
+ *
+ * Leading means nothing but whitespace ahead of the span, and the cut is followed by a trim,
+ * which is the same whitespace policy the Feishu side applies to its own placeholder.
+ */
+function stripBotMention(
+  text: string,
+  entities: readonly TelegramMessageEntity[] | undefined,
+  me: TelegramBotUser | null,
+): string {
+  if (entities === undefined || me === null) return text;
+  const lead = entities.find(
+    (e) => text.slice(0, e.offset).trim() === "" && mentionsBot(text, e, me),
+  );
+  if (lead === undefined) return text;
+  return (text.slice(0, lead.offset) + text.slice(lead.offset + lead.length)).trim();
+}
+
+/**
+ * One update reduced to the bridge's normalized shape; null for updates that are not chat
+ * messages. `me` is this bot's own account (null before the first `getMe` of a connection
+ * has answered), used only to recognize its own mention.
+ */
+function normalizeUpdate(
+  update: TelegramUpdate,
+  me: TelegramBotUser | null,
+): MessagingInboundMessage | null {
   const msg = update.message;
   if (msg === undefined) return null;
   const senderName = msg.from?.first_name ?? msg.from?.username;
@@ -129,7 +178,7 @@ function normalizeUpdate(update: TelegramUpdate): MessagingInboundMessage | null
     messageId: replyRefOf(msg.chat.id, msg.message_id),
     // Only text messages carry `text`; every other message type normalizes to null (the
     // bridge answers those with the text-only notice).
-    text: typeof msg.text === "string" ? msg.text : null,
+    text: typeof msg.text === "string" ? stripBotMention(msg.text, msg.entities, me) : null,
     ...(senderName !== undefined ? { senderName } : {}),
   };
 }
@@ -194,12 +243,14 @@ export class TelegramConnector implements MessagingChannelConnector {
     let webhookChecked = false;
     /** The backlog drain runs once per connection, never again after an outage: messages sent during a mere blip still deliver. */
     let drained = false;
+    /** This bot's own account, from the `getMe` the loop already makes; only its own mention needs it. */
+    let me: TelegramBotUser | null = null;
     let failures = 0;
     let offset: number | undefined;
     while (!isClosed()) {
       try {
         if (!ready) {
-          await bot.getMe();
+          me = await bot.getMe();
           if (isClosed()) return;
           if (!webhookChecked) {
             const { url } = await bot.getWebhookInfo();
@@ -238,7 +289,7 @@ export class TelegramConnector implements MessagingChannelConnector {
         }
         for (const update of updates) {
           offset = update.update_id + 1;
-          const msg = normalizeUpdate(update);
+          const msg = normalizeUpdate(update, me);
           if (msg !== null) await handlers.onMessage(msg);
         }
       } catch (err) {

@@ -209,6 +209,9 @@ class FakeFeishuSdk implements FeishuSdk {
       },
       async sendText() {},
       async replyText() {},
+      async botOpenId() {
+        return null;
+      },
     };
   }
   async connect(_creds: FeishuCredentials, handlers: FeishuEventHandlers) {
@@ -634,6 +637,125 @@ describe("telegram binding routes and connector loop", () => {
       text: "Reply text",
       replyTo: 77,
     });
+  });
+
+  it("strips this bot's own @mention out of a group message, keeping everyone else's", async () => {
+    await bindEnabled(SID);
+    // What addressing a bot in a group looks like on the wire: the handle is part of the
+    // text, and Telegram marks it with a `mention` entity. Offsets are UTF-16 code units,
+    // which is what a JS string index already is.
+    fake.push({
+      message_id: 88,
+      chat: { id: -1002233445566, type: "supergroup" },
+      text: "@penguin_test_bot ask @alice about the build",
+      entities: [
+        { type: "mention", offset: 0, length: 17 },
+        { type: "mention", offset: 22, length: 6 },
+      ],
+      from: { first_name: "Ada" },
+    });
+    await waitFor(() => runs.length === 1);
+    // Only the bot's own handle goes: the model is deliberately not told the message came
+    // through a chat channel. @alice is a word the user chose and reads as itself.
+    expect(runs[0]![0]!.text).toBe("ask @alice about the build");
+  });
+
+  it("matches the bot's handle case-insensitively and recognizes a text_mention by user id", async () => {
+    await bindEnabled(SID);
+    fake.push({
+      message_id: 89,
+      chat: { id: -1002233445566, type: "supergroup" },
+      text: "@Penguin_Test_Bot deploy",
+      entities: [{ type: "mention", offset: 0, length: 17 }],
+      from: { first_name: "Ada" },
+    });
+    await waitFor(() => runs.length === 1);
+    expect(runs[0]![0]!.text).toBe("deploy");
+
+    // A bot with no username, or a client that linked the mention rather than typing it:
+    // Telegram sends a `text_mention` carrying the user object instead of an @handle.
+    fake.push({
+      message_id: 90,
+      chat: { id: -1002233445566, type: "supergroup" },
+      text: "Penguin Test roll it back",
+      entities: [{ type: "text_mention", offset: 0, length: 12, user: { id: 7000000001 } }],
+      from: { first_name: "Ada" },
+    });
+    await waitFor(() => runs.length === 2);
+    expect(runs[1]![0]!.text).toBe("roll it back");
+  });
+
+  it("keeps a mention of this bot that is not the addressing prefix", async () => {
+    await bindEnabled(SID);
+    fake.push({
+      message_id: 92,
+      chat: { id: -1002233445566, type: "supergroup" },
+      text: "@penguin_test_bot summarize what @penguin_test_bot said yesterday",
+      entities: [
+        { type: "mention", offset: 0, length: 17 },
+        { type: "mention", offset: 33, length: 17 },
+      ],
+      from: { first_name: "Ada" },
+    });
+    await waitFor(() => runs.length === 1);
+    // The opening handle is how a group addresses the bot; the second one is a word inside
+    // the user's sentence, and cutting it would leave the model a hole to guess at.
+    expect(runs[0]![0]!.text).toBe("summarize what @penguin_test_bot said yesterday");
+
+    // Nothing to cut here either: the sentence starts before the handle.
+    fake.push({
+      message_id: 93,
+      chat: { id: -1002233445566, type: "supergroup" },
+      text: "what is @penguin_test_bot's status?",
+      entities: [{ type: "mention", offset: 8, length: 17 }],
+      from: { first_name: "Ada" },
+    });
+    await waitFor(() => runs.length === 2);
+    expect(runs[1]![0]!.text).toBe("what is @penguin_test_bot's status?");
+
+    // What comes first need not be words. Only whitespace ahead of the handle makes it the
+    // addressing prefix — and the offset that says so is in UTF-16 code units, which is what
+    // a JS string index already is (the family emoji is 8 of them).
+    fake.push({
+      message_id: 94,
+      chat: { id: -1002233445566, type: "supergroup" },
+      text: "👨‍👩‍👧 @penguin_test_bot deploy",
+      entities: [{ type: "mention", offset: 9, length: 17 }],
+      from: { first_name: "Ada" },
+    });
+    await waitFor(() => runs.length === 3);
+    expect(runs[2]![0]!.text).toBe("👨‍👩‍👧 @penguin_test_bot deploy");
+  });
+
+  it("cuts the addressing prefix by UTF-16 code units, not code points", async () => {
+    await bindEnabled(SID);
+    // A display name carrying an emoji, linked as a `text_mention` (matched by user id, so
+    // the offsets are the only thing under test). The family emoji is 8 UTF-16 code units
+    // but 5 code points: an implementation that indexed by code point would cut 21 of the
+    // latter and hand the model "ploy".
+    fake.push({
+      message_id: 95,
+      chat: { id: -1002233445566, type: "supergroup" },
+      text: "👨‍👩‍👧 Penguin Test deploy",
+      entities: [{ type: "text_mention", offset: 0, length: 21, user: { id: 7000000001 } }],
+      from: { first_name: "Ada" },
+    });
+    await waitFor(() => runs.length === 1);
+    expect(runs[0]![0]!.text).toBe("deploy");
+  });
+
+  it("a group message that is nothing but the bot's mention starts no task", async () => {
+    await bindEnabled(SID);
+    fake.push({
+      message_id: 91,
+      chat: { id: -1002233445566, type: "supergroup" },
+      text: "@penguin_test_bot",
+      entities: [{ type: "mention", offset: 0, length: 17 }],
+      from: { first_name: "Ada" },
+    });
+    await waitFor(() => fake.allSends().length > 0);
+    expect(fake.allSends()[0]!.text).toBe(MESSAGING_TEXT_ONLY_NOTICE);
+    expect(runs).toHaveLength(0);
   });
 
   it("non-text messages get the bilingual text-only reply and start no task", async () => {
