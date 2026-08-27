@@ -23,6 +23,7 @@ import type {
 import {
   QQ_API_BASE,
   QQ_INTENT_GROUP_AND_C2C,
+  QQApiError,
   createQQTransport,
 } from "../src/runtime/messaging/qq-api.js";
 import { waitFor } from "./helpers.js";
@@ -327,6 +328,50 @@ describe("the QQ OpenAPI send", () => {
         msg_seq: 2,
       });
     });
+  });
+
+  it("posts a markdown reply as msg_type 2, with `content` emptied as the platform requires", async () => {
+    await withFetch(defaults, async (calls) => {
+      const bot = createQQTransport().createClient(CREDS);
+      await bot.sendMessage({ ...args, markdown: "## Head\n\n**bold**" });
+      const sent = calls.filter((c) => c.url.includes("/v2/"))[0]!;
+      // "传了 markdown 后此字段必须为空" — a payload carrying both is rejected, so `content`
+      // goes out empty rather than merely ignored. The deprecated template fields are absent.
+      expect(JSON.parse(sent.body)).toEqual({
+        content: "",
+        msg_type: 2,
+        markdown: { content: "## Head\n\n**bold**" },
+        msg_id: "msg_1",
+        msg_seq: 2,
+      });
+    });
+  });
+
+  it("types a refusal as QQApiError and a transfer failure as a plain Error", async () => {
+    // The distinction the markdown-to-text fallback turns on: the platform answered and
+    // delivered nothing, so another form of the same message is safe to send — where a
+    // request that never completed may already have been delivered.
+    await withFetch(
+      (call) => (call.url.includes("/v2/") ? jsonResponse({ err_code: 40054001 }, 400) : null),
+      async () => {
+        const bot = createQQTransport().createClient(CREDS);
+        const err = await bot.sendMessage(args).catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(QQApiError);
+        expect((err as QQApiError).code).toBe(40054001);
+      },
+    );
+    await withFetch(
+      (call) => {
+        if (!call.url.includes("/v2/")) return null;
+        throw new TypeError("fetch failed");
+      },
+      async () => {
+        const bot = createQQTransport().createClient(CREDS);
+        const err = await bot.sendMessage(args).catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(Error);
+        expect(err).not.toBeInstanceOf(QQApiError);
+      },
+    );
   });
 
   it("replays a 401 once on a fresh token, and gives up rather than looping", async () => {

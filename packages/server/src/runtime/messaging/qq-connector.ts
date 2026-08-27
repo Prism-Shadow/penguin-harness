@@ -72,14 +72,16 @@
  * reads as no text, which the bridge answers with its notice) and outbound files are
  * refused with a reason — see refuseMedia, which explains what QQ would require.
  */
-import { chunkMessagingText } from "./bridge.js";
+import { MESSAGING_TEXT_CHUNK_CHARS, chunkMessagingText } from "./bridge.js";
 import { MessagingUnsupportedError } from "./media.js";
 import type {
   MessagingChannelConnector,
   MessagingClient,
   MessagingConnection,
   MessagingConnectorHandlers,
+  MessagingSendOptions,
 } from "./connector.js";
+import { chunkMarkdown } from "./markdown.js";
 import type {
   QQBotClient,
   QQChatKind,
@@ -87,6 +89,8 @@ import type {
   QQInboundEvent,
   QQTransport,
 } from "./qq-api.js";
+import { QQ_BODY_INDEPENDENT_SEND_CODES, QQApiError } from "./qq-api.js";
+import { qqMarkdownOf } from "./qq-markdown.js";
 
 /** The QQ binding's stored config document (`messaging_bindings.config_json`). */
 export interface QQBindingConfig extends Record<string, unknown> {
@@ -257,6 +261,12 @@ interface QQReplyLedger {
   /** Text withheld for the reserved final slot. */
   tail: string[];
   /**
+   * Whether the withheld tail goes out as Markdown. The binding's own preference, carried
+   * on the chat rather than on each body: it is one saved setting and it does not change
+   * within a run, while the tail is combined into a single message that needs one answer.
+   */
+  markdown: boolean;
+  /**
    * The client the last send used, which is the one a deferred flush uses too. Held here
    * rather than passed in: a flush can be triggered by an INBOUND event, whose path has no
    * outbound client of its own, and minting one there would open a second token cache for
@@ -305,9 +315,13 @@ export class QQConnector implements MessagingChannelConnector {
   async createClient(config: Record<string, unknown>): Promise<MessagingClient> {
     const creds = qqConfigOf(config);
     const bot = this.transport.createClient(creds);
-    const deliver = (chatId: string, text: string): Promise<void> => {
+    const deliver = (
+      chatId: string,
+      text: string,
+      opts: MessagingSendOptions | undefined,
+    ): Promise<void> => {
       const { kind, openid } = parseQQChatId(chatId);
-      return this.enqueue(creds, bot, kind, openid, text);
+      return this.enqueue(creds, bot, kind, openid, text, opts?.markdown === true);
     };
     // Assembled into a variable rather than returned as a literal: the media methods below
     // are refusals rather than implementations, and a channel that grows one later should
@@ -320,12 +334,13 @@ export class QQConnector implements MessagingChannelConnector {
         // back would confirm nothing.
         return null;
       },
-      sendText: (chatId: string, text: string) => deliver(chatId, text),
+      sendText: (chatId: string, text: string, opts?: MessagingSendOptions) =>
+        deliver(chatId, text, opts),
       // Same operation as sendText: `msg_id` is an authorization anchor on QQ, not a
       // visible quote, so there is no threading to honour (see the module doc).
-      replyText: (ref: string, text: string) => {
+      replyText: (ref: string, text: string, opts?: MessagingSendOptions) => {
         const { kind, openid } = chatOfReplyRef(ref);
-        return this.enqueue(creds, bot, kind, openid, text);
+        return this.enqueue(creds, bot, kind, openid, text, opts?.markdown === true);
       },
       sendImage: (_chatId: string, file: QQOutboundFile) => refuseMedia(file),
       sendFile: (_chatId: string, file: QQOutboundFile) => refuseMedia(file),
@@ -396,6 +411,7 @@ export class QQConnector implements MessagingChannelConnector {
         receivedAt: 0,
         spent: 0,
         tail: [],
+        markdown: false,
         bot: null,
         timer: null,
         chain: Promise.resolve(),
@@ -479,9 +495,11 @@ export class QQConnector implements MessagingChannelConnector {
     kind: QQChatKind,
     openid: string,
     text: string,
+    markdown: boolean,
   ): Promise<void> {
     const ledger = this.ledgerFor(creds.appId, kind, openid);
     ledger.bot = bot;
+    ledger.markdown = markdown;
     if (!this.repliable(ledger)) {
       // `async` so this is a rejection rather than a synchronous throw: the seam's methods
       // are typed as promises, and a caller that only attaches `.catch` — as any caller
@@ -496,7 +514,7 @@ export class QQConnector implements MessagingChannelConnector {
     }
     const budget = QQ_REPLY_BUDGET[kind];
     if (ledger.spent < budget - 1) {
-      await this.chain(ledger, () => this.sendNow(ledger, text));
+      await this.chain(ledger, () => this.sendNow(ledger, text, markdown));
       return;
     }
     this.withhold(ledger, text);
@@ -535,7 +553,12 @@ export class QQConnector implements MessagingChannelConnector {
   private async flush(ledger: QQReplyLedger): Promise<void> {
     if (ledger.tail.length === 0) return;
     if (!this.repliable(ledger) || ledger.spent >= QQ_REPLY_BUDGET[ledger.kind]) return;
-    const chunks = chunkMessagingText(ledger.tail.join("\n\n"));
+    const combined = ledger.tail.join("\n\n");
+    // Chunked the same way the bridge chunks a reply, so the cut lands where the document
+    // has a boundary rather than through a construct (see markdown.ts chunkMarkdown).
+    const chunks = ledger.markdown
+      ? chunkMarkdown(combined, MESSAGING_TEXT_CHUNK_CHARS)
+      : chunkMessagingText(combined);
     const head = chunks[0];
     if (head === undefined) {
       ledger.tail = [];
@@ -543,7 +566,7 @@ export class QQConnector implements MessagingChannelConnector {
     }
     ledger.tail = chunks.slice(1);
     try {
-      await this.sendNow(ledger, head);
+      await this.sendNow(ledger, head, ledger.markdown);
     } catch (err) {
       // The slot is spent (sendNow reserves the sequence number before the wire) but the
       // TEXT is not lost: `head` goes back to the front of the tail, so the next inbound
@@ -554,21 +577,45 @@ export class QQConnector implements MessagingChannelConnector {
     }
   }
 
-  /** One real send: the next `msg_seq` against the ledger's anchor message. */
-  private async sendNow(ledger: QQReplyLedger, text: string): Promise<void> {
+  /**
+   * One real send: the next `msg_seq` against the ledger's anchor message, as Markdown when
+   * the binding asked for it and as plain text if the platform refuses that.
+   *
+   * The fallback costs a SLOT here, which it does on no other channel: a repeated
+   * `(msg_id, msg_seq)` pair is refused rather than deduplicated, so the retry must carry a
+   * fresh sequence number and that number is one of the four an inbound message funds. It is
+   * still the right trade — a reply the reader never sees is worse than a reply that spent
+   * an extra slot — but it is only taken while a slot remains, and never for a refusal that
+   * was not about the body in the first place (see QQ_BODY_INDEPENDENT_SEND_CODES): those
+   * would fail identically as text and burn the slot reserved for the withheld tail.
+   */
+  private async sendNow(ledger: QQReplyLedger, text: string, markdown: boolean): Promise<void> {
     const msgId = ledger.msgId;
     const bot = ledger.bot;
     if (msgId === null || bot === null) return;
-    // Reserved before the await: a rejected send has still consumed its sequence number,
-    // and reusing one is refused by the platform (40054005) rather than retried.
-    ledger.spent += 1;
-    await bot.sendMessage({
-      kind: ledger.kind,
-      openid: ledger.openid,
-      content: text,
-      msgId,
-      msgSeq: ledger.spent,
-    });
+    const send = (body: Partial<{ markdown: string }>): Promise<void> => {
+      // Reserved before the await: a rejected send has still consumed its sequence number,
+      // and reusing one is refused by the platform (40054005) rather than retried.
+      ledger.spent += 1;
+      return bot.sendMessage({
+        kind: ledger.kind,
+        openid: ledger.openid,
+        content: text,
+        ...body,
+        msgId,
+        msgSeq: ledger.spent,
+      });
+    };
+    if (!markdown) return send({});
+    try {
+      await send({ markdown: qqMarkdownOf(text) });
+      return;
+    } catch (err) {
+      if (!(err instanceof QQApiError)) throw err;
+      if (err.code !== undefined && QQ_BODY_INDEPENDENT_SEND_CODES.has(err.code)) throw err;
+      if (ledger.spent >= QQ_REPLY_BUDGET[ledger.kind]) throw err;
+    }
+    await send({});
   }
 
   /**

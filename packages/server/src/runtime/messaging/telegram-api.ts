@@ -197,6 +197,13 @@ export interface TelegramBotClient {
     text: string;
     replyToMessageId?: number;
     messageThreadId?: number;
+    /**
+     * How `text` is to be parsed. Omitted, it is delivered verbatim — which is what every
+     * fixed notice wants. `"HTML"` reads it as Telegram's closed tag set (see
+     * telegram-html.ts); a construct it dislikes is a 400 for the WHOLE message, so a
+     * caller that sets it must have a plain-text send to fall back to.
+     */
+    parseMode?: "HTML";
   }): Promise<void>;
   /**
    * Long-poll for updates: blocks up to `timeoutSec` (0 = return immediately) and resolves
@@ -425,10 +432,17 @@ export function createTelegramTransport(opts: TelegramTransportOpts = {}): Teleg
       return {
         getMe: () => call<TelegramBotUser>("getMe", {}),
         getWebhookInfo: () => call<TelegramWebhookInfo>("getWebhookInfo", {}),
-        async sendMessage({ chatId, text, replyToMessageId, messageThreadId }): Promise<void> {
+        async sendMessage({
+          chatId,
+          text,
+          replyToMessageId,
+          messageThreadId,
+          parseMode,
+        }): Promise<void> {
           await call("sendMessage", {
             chat_id: wireChatId(chatId),
             text,
+            ...(parseMode !== undefined ? { parse_mode: parseMode } : {}),
             ...(messageThreadId !== undefined ? { message_thread_id: messageThreadId } : {}),
             // Degrade to a plain send when the replied-to message is gone, rather than fail.
             ...(replyToMessageId !== undefined

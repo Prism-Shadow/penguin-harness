@@ -1935,6 +1935,19 @@ Benchmark：
     credentialMissingHint: "先填写并保存凭证，再启用连接",
     /** Why the clear checkbox is gated while the channel's connection is enabled. */
     disableBeforeClearHint: "先停用连接，才能清除凭证",
+    /** The saved delivery option: render a reply's Markdown in the channel's own markup. */
+    renderMarkdown: "渲染 Markdown",
+    /**
+     * Its disclosure, beside the label. One per channel, because what a channel can show is
+     * the whole of what the reader needs to know here — a shared sentence would have to say
+     * "depending on the channel", which answers nothing.
+     */
+    renderMarkdownHelpFeishu:
+      "开启后，回复中的 Markdown 以排版形式到达，而不是显示为 `**字符**`。飞书以卡片渲染：标题、粗体、斜体、删除线、行内代码与代码块、列表、引用、分割线、链接和表格都支持。超过五行的表格改以代码块发送，任何一行都不会被隐藏。若飞书拒绝该卡片，回复会改以纯文本发出，不会丢失。",
+    renderMarkdownHelpTelegram:
+      "开启后，回复中的 Markdown 以排版形式到达，而不是显示为 `**字符**`。Telegram 支持粗体、斜体、删除线、链接、行内代码与代码块；它没有标题、列表和表格，因此标题渲染为一行粗体，列表符号作为文本的一部分保留，表格改以代码块发送。若 Telegram 拒绝该排版，回复会改以纯文本发出，不会丢失。",
+    renderMarkdownHelpQQ:
+      "开启后，回复中的 Markdown 以排版形式到达，而不是显示为 `**字符**`。QQ 支持标题、粗体、斜体、删除线、列表、引用、分割线和链接；它没有代码格式，也没有表格，因此代码块按普通文本行到达，表格按其行到达。若 QQ 拒绝该排版，回复会改以纯文本发出——这会多占用 QQ 对每条消息只允许的少数几条回复中的一条。",
     /** The saved delivery option: one message per non-blank line of a reply. */
     linePerMessage: "每行一条消息",
     /** Its disclosure, beside the label: what the option does to a reply, and its two edges. */

@@ -8,14 +8,15 @@
 
 [English](2026-08-27-backward-compatibility.md)
 
-本批改动动到了四样会跨越版本存活的东西。[把浏览器持久化的 UI 状态按数据根划定作用域](2026-08-26-install-scoped-local-state.zh.md)
+本批改动动到了五样会跨越版本存活的东西。[把浏览器持久化的 UI 状态按数据根划定作用域](2026-08-26-install-scoped-local-state.zh.md)
 新增了数据根里的文件 `<root>/install-id` 与 `localStorage` 条目 `penguin.installId`；
 [让 Telegram 的回复带上提问所在的论坛话题](2026-08-26-telegram-forum-topics.zh.md)则改变了存量
 `web.db` 上 `messaging_bindings.last_chat_id` 的含义——不增删任何列，也不重写任何行；
-[只转发一次运行的最终回复](2026-08-27-messaging-final-reply-only.zh.md)新增了一列
-`messaging_bindings.final_reply_only`。需要做决定的只有浏览器一侧与 `last_chat_id` 的含义变化；那个
-文件、那个键和这个新列也一并记在这里，方便有人来查「我这套安装需要做什么吗？」时，在同一处找到全部
-答案。
+[只转发一次运行的最终回复](2026-08-27-messaging-final-reply-only.zh.md)与
+[把回复的 Markdown 按排版转发](2026-08-27-messaging-markdown.zh.md)各新增了一列，分别是
+`messaging_bindings.final_reply_only` 与 `messaging_bindings.render_markdown`。需要做决定的只有浏览器
+一侧、`last_chat_id` 的含义变化，以及后一个新列；那个文件、那个键和纯属新增的那一列也一并记在这里，
+方便有人来查「我这套安装需要做什么吗？」时，在同一处找到全部答案。
 
 
 ## 有键、但从未记录过 id 的浏览器
@@ -84,9 +85,30 @@
 降级在两个方向上都看不出来。这一列的效果由 bridge 实现，因此旧构建会忽略一个它从未听说过的列，重新
 逐条转发；设置本身仍留在磁盘上，再升级回来时无需用户重新保存即可继续生效。
 
+## 新增的 `render_markdown` 列——它的默认值不是旧行为
+
+[把回复的 Markdown 按排版转发](2026-08-27-messaging-markdown.zh.md)新增了
+`messaging_bindings.render_markdown INTEGER NOT NULL DEFAULT 1`，同样由那份 `ensureColumn` 列表在打
+开时 ALTER 进来。机制与 `line_per_message`、`final_reply_only` 完全一样；默认值不一样。
+
+这是唯一一个默认值取「修正后行为」而非「原行为」的新增标志位，这正是需要拍板的地方。把模型写的
+Markdown 当作字符转发——`**bold**`、`## heading`、裸代码围栏——正是本次要修的缺陷，因此默认值取 0
+等于把修复交付给零个人，并且把每一份存量绑定都留在一个他们还得自己去找的开关的错误一侧。**因此，
+所有存量绑定在升级后第一次打开时即开始渲染 Markdown。** 用户无需做任何事，也没有任何行被改写，但这
+是每条转发消息都可见的变化；想要旧字节的用户，在绑定编辑器里把开关关掉即可——关闭状态在每个渠道上
+都精确复现原先的纯文本转发。
+
+只要当前构建仍需打开本次发布之前形成的 `web.db`，该 `ensureColumn` 条目就保留，与该列表中其余条目
+同一口径。
+
+降级在两个方向上都不可见。该列的作用由消息桥与各连接器实现，因此旧服务端会忽略一个它从未听说过的列，
+重新以纯文本转发——设置仍在磁盘上，再升级回来时无需用户重新保存即可生效。
+
 ## 兼容性
 
 升级与降级都不需要做任何操作。对在本版本之前清空过数据根的用户而言，唯一需要手动执行的一步在上文。
+唯一需要预期而非动手的一点：所有消息绑定都会开始渲染 Markdown，在关掉该开关之前，其转发消息的样子
+都会改变。
 
 升级对用户没有任何要求。升级后的第一条消息会照常重写该列，在那之前存着的裸 id 与从前一样可用。
 

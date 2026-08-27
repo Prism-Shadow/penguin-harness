@@ -43,7 +43,12 @@
  * to have moved the conversation elsewhere), chunked under the channel's text-size limits, or,
  * when the binding's `linePerMessage` is set, split into one message per non-blank line first,
  * each of those chunked and the resulting burst paced (the two options compose: a binding with
- * both sends that final reply one message per line) — and the outbound traffic of one entry is
+ * both sends that final reply one message per line). With the binding's `renderMarkdown` set
+ * (the default) each message additionally carries a request to render it: the connector
+ * converts the model's Markdown into its own channel's markup and falls back to sending the
+ * plain source if the channel refuses the result, so formatting is the only thing a rendering
+ * failure can cost, and the chunking follows the request, cutting at boundaries the document
+ * actually has (see markdown.ts). The outbound traffic of one entry is
  * serialised through a promise chain:
  * several messages completing in quick succession must reach the chat in the order they
  * completed. In a group chat the run's FIRST outbound message threads onto the inbound
@@ -89,6 +94,7 @@ import type {
   MessagingSendNote,
 } from "./connector.js";
 import { messagingErrorKind } from "./error-kind.js";
+import { chunkMarkdown } from "./markdown.js";
 import { MessagingMediaTooLargeError, MessagingPermissionError, isImageFileName } from "./media.js";
 import { replyFileMentions } from "./reply-files.js";
 
@@ -472,12 +478,25 @@ export function chunkMessagingText(text: string, max = MESSAGING_TEXT_CHUNK_CHAR
  * it); leading indentation is content, and a code block that arrives unindented does not run.
  *
  * `max` bounds the outbound MESSAGES, not the lines: each body returned still goes through
- * chunkMessagingText, so the budget is spent in chunks — a line over the channel's cap costs
+ * `chunk`, so the budget is spent in chunks — a line over the channel's cap costs
  * as many messages as it chunks into. Splitting therefore stops while what is left still fits
  * in the remaining budget, and everything from there rides one combined body (chunked like any
- * other), so the reply reaches the chat entire either way.
+ * other), so the reply reaches the chat entire either way. `chunk` is the caller's own
+ * chunker so the estimate agrees with what it will actually do — Markdown cuts at different
+ * places (see chunkMarkdown).
+ *
+ * It composes with Markdown rendering by staying literal there too. Each line becomes its own
+ * message and is converted on its own, so a line that is not a whole construct renders as the
+ * text it is: one row of a table arrives as `| a | b |`, one line out of a fenced block
+ * arrives as that line of code. That is the honest reading of a message containing one line —
+ * and the alternative, holding constructs together, is the "smart" grouping this option exists
+ * to avoid.
  */
-export function splitReplyLines(text: string, max = MESSAGING_MAX_LINE_MESSAGES): string[] {
+export function splitReplyLines(
+  text: string,
+  max = MESSAGING_MAX_LINE_MESSAGES,
+  chunk: (body: string) => string[] = chunkMessagingText,
+): string[] {
   const lines = text
     .split("\n")
     .map((line) => line.trimEnd())
@@ -486,9 +505,9 @@ export function splitReplyLines(text: string, max = MESSAGING_MAX_LINE_MESSAGES)
   let used = 0;
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i]!;
-    const lineCost = chunkMessagingText(line).length;
+    const lineCost = chunk(line).length;
     const rest = lines.slice(i + 1);
-    const restCost = rest.length === 0 ? 0 : chunkMessagingText(rest.join("\n")).length;
+    const restCost = rest.length === 0 ? 0 : chunk(rest.join("\n")).length;
     if (used + lineCost + restCost > max) {
       // Splitting this line off would put the reply over the budget. The rest rides one
       // combined body instead, keeping its own line breaks so the message reads as the lines
@@ -1571,6 +1590,14 @@ export class MessagingBridge {
    * everything after it is a plain send: the reply-to relation names which message is being
    * answered, and one of them says it — repeating it per message and per chunk stacks quote
    * headers over the whole conversation.
+   *
+   * A binding with `renderMarkdown` set relays the model's Markdown as formatting rather
+   * than as characters. The bridge only carries the REQUEST: the conversion is the
+   * connector's, because what a channel can show and what it does with a rendering the
+   * channel refuses are both channel-shaped (see MessagingSendOptions). What is not
+   * channel-shaped is where a reply too long for one message may be cut, and that is why the
+   * chunker changes with the flag — a cut through a code fence or an emphasis run costs the
+   * construct everywhere, and on a strict parser costs the whole message's formatting.
    */
   private async deliverReply(
     entry: BridgeEntry,
@@ -1583,6 +1610,7 @@ export class MessagingBridge {
     // first chunk threaded onto the new message while the rest went to the chat the row
     // still named would be split across two places — two forum topics, on a channel that
     // packs one into the chat ref.
+    if (!this.live(entry)) return;
     const liveInboundMessageId = entry.lastInboundMessageId;
     const target = await this.sendTarget(entry);
     if (target === null) return;
@@ -1594,12 +1622,15 @@ export class MessagingBridge {
       isDirect: row.lastChatIsDirect,
       inboundMessageId: liveInboundMessageId,
     };
+    const markdown = row.renderMarkdown;
+    const chunkBody = (body: string): string[] =>
+      markdown ? chunkMarkdown(body, MESSAGING_TEXT_CHUNK_CHARS) : chunkMessagingText(body);
     // One body per outbound message: the whole reply, or one per non-blank line when the
     // binding asked for that. Everything below is untouched by the choice.
     const bodies = row.linePerMessage
-      ? splitReplyLines(text, entry.connector.replyBudget ?? MESSAGING_MAX_LINE_MESSAGES)
+      ? splitReplyLines(text, entry.connector.replyBudget ?? MESSAGING_MAX_LINE_MESSAGES, chunkBody)
       : [text];
-    const messages = bodies.flatMap((body) => chunkMessagingText(body));
+    const messages = bodies.flatMap(chunkBody);
     for (const [i, chunk] of messages.entries()) {
       // The messages of a per-line reply are a burst; the channel's per-chat allowance is
       // about one a second, so they go out at that pace rather than back to back.
@@ -1611,9 +1642,9 @@ export class MessagingBridge {
       try {
         if (threadOnto !== null) {
           entry.threadedThisRun = true;
-          this.noteSend(entry, await client.replyText(threadOnto, chunk));
+          this.noteSend(entry, await client.replyText(threadOnto, chunk, { markdown }));
         } else {
-          this.noteSend(entry, await client.sendText(to.chatId, chunk));
+          this.noteSend(entry, await client.sendText(to.chatId, chunk, { markdown }));
         }
       } catch (err) {
         this.recordDeliveryFailure(entry, err, "send", "messaging_send_failed");
@@ -1659,6 +1690,7 @@ export class MessagingBridge {
     since: number,
     at: ReplyTarget | null = null,
   ): Promise<void> {
+    if (!this.live(entry)) return;
     try {
       const row = this.deps.repo.find(entry.sessionId, entry.channel);
       if (!row || row.lastChatId === null) return; // no chat known yet: nothing mirrors
@@ -1764,6 +1796,7 @@ export class MessagingBridge {
 
   /** One-line notice (approval waiting) to the last known chat; silent before one exists. */
   private async deliverNotice(entry: BridgeEntry, text: string): Promise<void> {
+    if (!this.live(entry)) return;
     const target = await this.sendTarget(entry);
     if (target === null) return;
     try {
@@ -1790,6 +1823,20 @@ export class MessagingBridge {
       this.recordDeliveryFailure(entry, err, "send", "messaging_send_failed");
       return null;
     }
+  }
+
+  /**
+   * Whether this entry still holds its Session's connection — asked at the head of every
+   * step of the send chain, the way `observe` asks it of every event.
+   *
+   * The chain outlives what fed it. A run's last messages and the files behind them are
+   * queued on it, and `stop()` — App dispose, a hot swap — drops the entry and takes the
+   * database with it while they are still waiting their turn. A step that ran anyway would
+   * read a closed database, and it would fail again inside its own error recording, leaving
+   * the chain rejected with nothing left to catch it.
+   */
+  private live(entry: BridgeEntry): boolean {
+    return this.entries.get(entry.sessionId) === entry;
   }
 
   /** The pace between a per-line reply's messages; zero (tests) waits for nothing. */

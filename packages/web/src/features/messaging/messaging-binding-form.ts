@@ -9,7 +9,8 @@
  * there is nothing for a domain to switch between.
  *
  * Not every field is a credential: `linePerMessage` (send a reply one message per non-blank
- * line) and `finalReplyOnly` (send only a run's last reply, when the run ends) are per-binding
+ * line), `finalReplyOnly` (send only a run's last reply, when the run ends) and
+ * `renderMarkdown` (render its Markdown in the channel's own markup) are per-binding
  * delivery preferences that ride the same Save as the rest, which is why they live in the form
  * state rather than behind toggles of their own.
  *
@@ -36,15 +37,17 @@ export const FEISHU_DEFAULT_DOMAIN = "https://open.feishu.cn";
 const TELEGRAM_TOKEN_RE = /^\d+:[A-Za-z0-9_-]{5,}$/;
 
 /**
- * The delivery preferences every channel carries — the two saved fields that are not
- * credentials, identical in meaning on every channel, which is what lets one row render each
- * of them whichever channel is selected.
+ * The delivery preferences every channel carries — the saved fields that are not credentials,
+ * identical in meaning on every channel, which is what lets one row render each of them
+ * whichever channel is selected.
  */
 export interface MessagingDeliveryFields {
   /** Deliver a reply as one message per non-blank line. */
   linePerMessage: boolean;
   /** Deliver only a run's LAST completed reply, at the run's end, instead of each as it completes. */
   finalReplyOnly: boolean;
+  /** Render a reply's Markdown in this channel's own markup instead of sending its characters. */
+  renderMarkdown: boolean;
 }
 
 export interface FeishuFormFields extends MessagingDeliveryFields {
@@ -100,6 +103,8 @@ export type MessagingTestRequestByChannel =
 export function emptyMessagingForm(channel: MessagingChannel = "feishu"): MessagingFormState {
   return {
     channel,
+    // `renderMarkdown` starts ON, matching what the server gives a binding created without
+    // an opinion: a reply's Markdown is meant to render, and raw `**bold**` was the defect.
     feishu: {
       appId: "",
       appSecret: "",
@@ -107,14 +112,22 @@ export function emptyMessagingForm(channel: MessagingChannel = "feishu"): Messag
       clearSecret: false,
       linePerMessage: false,
       finalReplyOnly: false,
+      renderMarkdown: true,
     },
-    telegram: { botToken: "", clearToken: false, linePerMessage: false, finalReplyOnly: false },
+    telegram: {
+      botToken: "",
+      clearToken: false,
+      linePerMessage: false,
+      finalReplyOnly: false,
+      renderMarkdown: true,
+    },
     qq: {
       appId: "",
       appSecret: "",
       clearSecret: false,
       linePerMessage: false,
       finalReplyOnly: false,
+      renderMarkdown: true,
     },
   };
 }
@@ -137,6 +150,7 @@ export function bindingsToForm(bindings: MessagingBindingInfo[]): MessagingFormS
         clearSecret: false,
         linePerMessage: info.linePerMessage,
         finalReplyOnly: info.finalReplyOnly,
+        renderMarkdown: info.renderMarkdown,
       };
     } else if (info.channel === "qq") {
       form.qq = {
@@ -145,6 +159,7 @@ export function bindingsToForm(bindings: MessagingBindingInfo[]): MessagingFormS
         clearSecret: false,
         linePerMessage: info.linePerMessage,
         finalReplyOnly: info.finalReplyOnly,
+        renderMarkdown: info.renderMarkdown,
       };
     } else {
       // Telegram's only credential field is the secret itself, so its sub-state loads empty
@@ -154,6 +169,7 @@ export function bindingsToForm(bindings: MessagingBindingInfo[]): MessagingFormS
         clearToken: false,
         linePerMessage: info.linePerMessage,
         finalReplyOnly: info.finalReplyOnly,
+        renderMarkdown: info.renderMarkdown,
       };
     }
   }
@@ -198,6 +214,7 @@ export function formToPut(form: MessagingFormState, hasStoredSecret: boolean): M
         // would make turning either option back off impossible.
         linePerMessage: form.telegram.linePerMessage,
         finalReplyOnly: form.telegram.finalReplyOnly,
+        renderMarkdown: form.telegram.renderMarkdown,
       },
     };
   }
@@ -218,6 +235,7 @@ export function formToPut(form: MessagingFormState, hasStoredSecret: boolean): M
         // Always sent, for the same reason as the other channels': an omitted flag means "keep".
         linePerMessage: form.qq.linePerMessage,
         finalReplyOnly: form.qq.finalReplyOnly,
+        renderMarkdown: form.qq.renderMarkdown,
       },
     };
   }
@@ -240,6 +258,7 @@ export function formToPut(form: MessagingFormState, hasStoredSecret: boolean): M
       // Always sent, for the same reason as Telegram's: an omitted flag means "keep".
       linePerMessage: form.feishu.linePerMessage,
       finalReplyOnly: form.feishu.finalReplyOnly,
+      renderMarkdown: form.feishu.renderMarkdown,
     },
   };
 }
@@ -290,7 +309,8 @@ export function formDirty(form: MessagingFormState, baseline: MessagingFormState
       form.telegram.botToken.trim() !== "" ||
       form.telegram.clearToken ||
       form.telegram.linePerMessage !== baseline.telegram.linePerMessage ||
-      form.telegram.finalReplyOnly !== baseline.telegram.finalReplyOnly
+      form.telegram.finalReplyOnly !== baseline.telegram.finalReplyOnly ||
+      form.telegram.renderMarkdown !== baseline.telegram.renderMarkdown
     );
   }
   if (form.channel === "qq") {
@@ -299,7 +319,8 @@ export function formDirty(form: MessagingFormState, baseline: MessagingFormState
       form.qq.appSecret.trim() !== "" ||
       form.qq.clearSecret ||
       form.qq.linePerMessage !== baseline.qq.linePerMessage ||
-      form.qq.finalReplyOnly !== baseline.qq.finalReplyOnly
+      form.qq.finalReplyOnly !== baseline.qq.finalReplyOnly ||
+      form.qq.renderMarkdown !== baseline.qq.renderMarkdown
     );
   }
   return (
@@ -308,7 +329,8 @@ export function formDirty(form: MessagingFormState, baseline: MessagingFormState
     form.feishu.appSecret.trim() !== "" ||
     form.feishu.clearSecret ||
     form.feishu.linePerMessage !== baseline.feishu.linePerMessage ||
-    form.feishu.finalReplyOnly !== baseline.feishu.finalReplyOnly
+    form.feishu.finalReplyOnly !== baseline.feishu.finalReplyOnly ||
+    form.feishu.renderMarkdown !== baseline.feishu.renderMarkdown
   );
 }
 

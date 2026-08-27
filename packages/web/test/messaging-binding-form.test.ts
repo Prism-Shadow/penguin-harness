@@ -34,6 +34,7 @@ const STORED_FEISHU: FeishuBindingInfo = {
   enabled: false,
   linePerMessage: false,
   finalReplyOnly: false,
+  renderMarkdown: true,
   lastChatKnown: true,
   createdAt: "2026-08-25T00:00:00.000Z",
   updatedAt: "2026-08-25T00:00:00.000Z",
@@ -48,6 +49,9 @@ const STORED_TELEGRAM: TelegramBindingInfo = {
   // Set on one fixture only, so a per-channel load cannot pass by copying the other channel.
   linePerMessage: true,
   finalReplyOnly: false,
+  // Off on one fixture only, for the same reason — and because ON is the default, so a load
+  // that ignored the stored value would still look right on the other two.
+  renderMarkdown: false,
   lastChatKnown: false,
   createdAt: "2026-08-26T00:00:00.000Z",
   updatedAt: "2026-08-26T00:00:00.000Z",
@@ -62,6 +66,7 @@ const STORED_QQ: QQBindingInfo = {
   linePerMessage: false,
   // The other flag, set on a different fixture: neither can pass by riding the other.
   finalReplyOnly: true,
+  renderMarkdown: true,
   lastChatKnown: true,
   createdAt: "2026-08-27T00:00:00.000Z",
   updatedAt: "2026-08-27T00:00:00.000Z",
@@ -71,6 +76,7 @@ describe("emptyMessagingForm / bindingsToForm", () => {
   it("starts empty forms on Feishu with the default domain, both channels blank", () => {
     expect(emptyMessagingForm()).toEqual({
       channel: "feishu",
+      // Markdown rendering starts ON, matching the server's default for a fresh binding.
       feishu: {
         appId: "",
         appSecret: "",
@@ -78,14 +84,22 @@ describe("emptyMessagingForm / bindingsToForm", () => {
         clearSecret: false,
         linePerMessage: false,
         finalReplyOnly: false,
+        renderMarkdown: true,
       },
-      telegram: { botToken: "", clearToken: false, linePerMessage: false, finalReplyOnly: false },
+      telegram: {
+        botToken: "",
+        clearToken: false,
+        linePerMessage: false,
+        finalReplyOnly: false,
+        renderMarkdown: true,
+      },
       qq: {
         appId: "",
         appSecret: "",
         clearSecret: false,
         linePerMessage: false,
         finalReplyOnly: false,
+        renderMarkdown: true,
       },
     });
   });
@@ -103,9 +117,17 @@ describe("emptyMessagingForm / bindingsToForm", () => {
         clearSecret: false,
         linePerMessage: false,
         finalReplyOnly: false,
+        renderMarkdown: true,
       },
-      // Each channel's delivery preferences come from its own stored config.
-      telegram: { botToken: "", clearToken: false, linePerMessage: true, finalReplyOnly: false },
+      // Each channel's delivery preferences come from its own stored config — including the
+      // one whose default is ON, which only a stored `false` can prove was actually read.
+      telegram: {
+        botToken: "",
+        clearToken: false,
+        linePerMessage: true,
+        finalReplyOnly: false,
+        renderMarkdown: false,
+      },
       // An unsaved channel keeps its empty sub-state, so switching to it shows a blank form.
       qq: {
         appId: "",
@@ -113,6 +135,7 @@ describe("emptyMessagingForm / bindingsToForm", () => {
         clearSecret: false,
         linePerMessage: false,
         finalReplyOnly: false,
+        renderMarkdown: true,
       },
     });
     // All three coexist: every saved channel loads its own non-secret fields.
@@ -142,6 +165,7 @@ describe("formToPut (feishu)", () => {
         baseDomain: "https://open.larksuite.com",
         linePerMessage: false,
         finalReplyOnly: false,
+        renderMarkdown: true,
       },
     });
   });
@@ -174,6 +198,7 @@ describe("formToPut (feishu)", () => {
         baseDomain: "https://open.larksuite.com",
         linePerMessage: false,
         finalReplyOnly: false,
+        renderMarkdown: true,
       },
     });
     // The models idiom: a typed replacement wins over a stale checked box.
@@ -185,6 +210,7 @@ describe("formToPut (feishu)", () => {
       baseDomain: "https://open.larksuite.com",
       linePerMessage: false,
       finalReplyOnly: false,
+      renderMarkdown: true,
     });
     // Without a stored secret there is nothing to clear: the flag never reaches the body.
     const nothingStored = emptyMessagingForm();
@@ -205,6 +231,7 @@ describe("formToPut (feishu)", () => {
       clearSecret: false,
       linePerMessage: false,
       finalReplyOnly: false,
+      renderMarkdown: true,
     };
     const blankDomain = formToPut(form, false);
     expect(blankDomain.ok && blankDomain.channel === "feishu" && blankDomain.body.baseDomain).toBe(
@@ -228,6 +255,7 @@ describe("formToPut (telegram)", () => {
         botToken: "7000000001:secret-token-AAAA",
         linePerMessage: false,
         finalReplyOnly: false,
+        renderMarkdown: true,
       },
     });
     // With a stored token an empty field means "keep it": the body omits the token — but not
@@ -236,7 +264,7 @@ describe("formToPut (telegram)", () => {
     expect(formToPut(form, true)).toEqual({
       ok: true,
       channel: "telegram",
-      body: { linePerMessage: false, finalReplyOnly: false },
+      body: { linePerMessage: false, finalReplyOnly: false, renderMarkdown: true },
     });
     // A first bind must carry one.
     expect(formToPut(form, false)).toEqual({ ok: false, errors: { botToken: "required" } });
@@ -248,7 +276,12 @@ describe("formToPut (telegram)", () => {
     expect(formToPut(form, true)).toEqual({
       ok: true,
       channel: "telegram",
-      body: { clearBotToken: true, linePerMessage: false, finalReplyOnly: false },
+      body: {
+        clearBotToken: true,
+        linePerMessage: false,
+        finalReplyOnly: false,
+        renderMarkdown: true,
+      },
     });
     form.telegram.botToken = "7000000001:replacement-token";
     const typed = formToPut(form, true);
@@ -256,6 +289,7 @@ describe("formToPut (telegram)", () => {
       botToken: "7000000001:replacement-token",
       linePerMessage: false,
       finalReplyOnly: false,
+      renderMarkdown: true,
     });
   });
 
@@ -280,6 +314,7 @@ describe("formToPut (telegram)", () => {
       clearSecret: false,
       linePerMessage: false,
       finalReplyOnly: false,
+      renderMarkdown: true,
     };
     feishuSide.telegram.botToken = "garbage";
     expect(formToPut(feishuSide, false).ok).toBe(true);
@@ -332,6 +367,7 @@ describe("formToTest", () => {
       clearSecret: false,
       linePerMessage: false,
       finalReplyOnly: false,
+      renderMarkdown: true,
     };
     expect(formToTest(feishu)).toEqual({
       channel: "feishu",
@@ -435,7 +471,12 @@ describe("the QQ channel", () => {
       channel: "qq",
       // No `appSecret` key at all: an omitted secret is what tells the server to keep the
       // stored one, and the masked value must never round-trip.
-      body: { appId: "102000001", linePerMessage: false, finalReplyOnly: true },
+      body: {
+        appId: "102000001",
+        linePerMessage: false,
+        finalReplyOnly: true,
+        renderMarkdown: true,
+      },
     });
 
     form.qq.appSecret = "  fresh-secret  ";
@@ -447,6 +488,7 @@ describe("the QQ channel", () => {
         appSecret: "fresh-secret",
         linePerMessage: false,
         finalReplyOnly: true,
+        renderMarkdown: true,
       },
     });
   });
@@ -468,6 +510,7 @@ describe("the QQ channel", () => {
         clearAppSecret: true,
         linePerMessage: false,
         finalReplyOnly: true,
+        renderMarkdown: true,
       },
     });
     // A typed secret wins over a stale clear checkbox (the models idiom).
@@ -480,6 +523,7 @@ describe("the QQ channel", () => {
         appSecret: "typed",
         linePerMessage: false,
         finalReplyOnly: true,
+        renderMarkdown: true,
       },
     });
   });

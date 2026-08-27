@@ -9,6 +9,7 @@
  * which would tax every typecheck for the handful of calls made here; the local interfaces
  * below are the contract, and the adapter casts the loaded module once.
  */
+import type { FeishuCard } from "./feishu-card.js";
 import {
   MessagingMediaTooLargeError,
   MessagingPermissionError,
@@ -87,6 +88,18 @@ export interface FeishuApiClient {
   sendText(chatId: string, text: string): Promise<void>;
   /** Replies a text message to a specific inbound message (threads correctly in group chats). */
   replyText(messageId: string, text: string): Promise<void>;
+  /**
+   * Sends an interactive card into a chat by chat_id — how a reply's Markdown renders (see
+   * feishu-card.ts). `msg_type: "interactive"` with the card JSON serialized into `content`;
+   * a refusal throws FeishuApiError, so the caller can send the plain text instead.
+   */
+  sendCard(chatId: string, card: FeishuCard): Promise<void>;
+  /**
+   * Replies an interactive card to a specific inbound message. The reply endpoint takes the
+   * same `msg_type` set as the send one, so a card threads in a group exactly as text does —
+   * which is what keeps the group's one reply-to relation working with formatting on.
+   */
+  replyCard(messageId: string, card: FeishuCard): Promise<void>;
   /**
    * This app's own bot open id, so a group message's mention of THIS bot can be told apart
    * from a mention of anyone else (the ids are the only thing that distinguishes them —
@@ -190,8 +203,8 @@ interface LarkResponse {
   msg?: string;
 }
 
-/** The `msg_type` values this adapter sends (Feishu has many more; these are the three it uses). */
-type FeishuMessageType = "text" | "image" | "file";
+/** The `msg_type` values this adapter sends (Feishu has many more; these are the four it uses). */
+type FeishuMessageType = "text" | "image" | "file" | "interactive";
 
 /**
  * Feishu's upload categories. `stream` is the general one — the rest exist because the
@@ -256,7 +269,7 @@ interface LarkClient {
         }): Promise<LarkResponse>;
         reply(payload: {
           path: { message_id: string };
-          data: { content: string; msg_type: "text" };
+          data: { content: string; msg_type: FeishuMessageType };
         }): Promise<LarkResponse>;
       };
       messageResource: {
@@ -374,6 +387,26 @@ function scopeDenialDetail(msg: string): { scopes: string[]; grantUrl: string | 
 }
 
 /**
+ * A call Feishu itself REFUSED, carrying the `{code}` it refused with.
+ *
+ * Its own class for the reason telegram-api's TelegramApiError is one: a refusal and a
+ * request that never completed are the same outcome and opposite facts. Feishu answered, so
+ * nothing was delivered and the same message may safely be sent again in another form —
+ * which is what the card-to-text fallback does. A timeout or a reset carries no code, stays
+ * a plain Error, and must never be retried: it may well have been delivered already, and a
+ * retry would put the reply in the chat twice.
+ */
+export class FeishuApiError extends Error {
+  constructor(
+    message: string,
+    readonly code: number | undefined,
+  ) {
+    super(message);
+    this.name = "FeishuApiError";
+  }
+}
+
+/**
  * The error a refused call throws: a permission denial when Feishu said so by CODE, a plain
  * failure otherwise. Only the scope names and the console link travel with the first — the
  * SDK's own error object carries the request config, which is where credentials live.
@@ -387,6 +420,8 @@ function larkFailure(envelope: LarkErrorEnvelope | null, err: unknown, what?: st
     const { scopes, grantUrl } = scopeDenialDetail(envelope.msg);
     if (scopes.length > 0) return new MessagingPermissionError(scopes, grantUrl, text);
   }
+  // An envelope with a code is Feishu's own refusal; anything else never reached it.
+  if (envelope?.code !== undefined) return new FeishuApiError(text, envelope.code);
   return new Error(text);
 }
 
@@ -552,7 +587,7 @@ export function createLarkSdk(opts: LarkSdkOpts = {}): FeishuSdk {
       const sendContent = async (
         chatId: string,
         msgType: FeishuMessageType,
-        content: Record<string, string>,
+        content: unknown,
       ): Promise<void> => {
         let res: LarkResponse;
         try {
@@ -567,6 +602,26 @@ export function createLarkSdk(opts: LarkSdkOpts = {}): FeishuSdk {
           throw larkFailure(larkErrorEnvelope(err), err);
         }
         ensureOk(res, "Message send");
+      };
+      /** One `im.v1.message.reply`, the threading twin of sendContent. */
+      const replyContent = async (
+        messageId: string,
+        msgType: FeishuMessageType,
+        content: unknown,
+      ): Promise<void> => {
+        let res: LarkResponse;
+        try {
+          res = await deadline(
+            client.im.v1.message.reply({
+              path: { message_id: messageId },
+              data: { content: JSON.stringify(content), msg_type: msgType },
+            }),
+            "Message reply",
+          );
+        } catch (err) {
+          throw larkFailure(larkErrorEnvelope(err), err);
+        }
+        ensureOk(res, "Message reply");
       };
 
       return {
@@ -588,20 +643,14 @@ export function createLarkSdk(opts: LarkSdkOpts = {}): FeishuSdk {
         sendText(chatId: string, text: string): Promise<void> {
           return sendContent(chatId, "text", { text });
         },
-        async replyText(messageId: string, text: string): Promise<void> {
-          let res: LarkResponse;
-          try {
-            res = await deadline(
-              client.im.v1.message.reply({
-                path: { message_id: messageId },
-                data: { content: JSON.stringify({ text }), msg_type: "text" },
-              }),
-              "Message reply",
-            );
-          } catch (err) {
-            throw larkFailure(larkErrorEnvelope(err), err);
-          }
-          ensureOk(res, "Message reply");
+        sendCard(chatId: string, card: FeishuCard): Promise<void> {
+          return sendContent(chatId, "interactive", card);
+        },
+        replyText(messageId: string, text: string): Promise<void> {
+          return replyContent(messageId, "text", { text });
+        },
+        replyCard(messageId: string, card: FeishuCard): Promise<void> {
+          return replyContent(messageId, "interactive", card);
         },
         async botOpenId(): Promise<string | null> {
           // Best effort by contract (see FeishuApiClient.botOpenId): every failure shape —

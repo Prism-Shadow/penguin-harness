@@ -206,19 +206,53 @@ describe("MessagingBindingBody", () => {
   });
 
   it("renders each delivery switch from its own form field", () => {
-    // One row per option, both fed from the SELECTED channel's sub-state: a row wired to the
+    // One row per option, each fed from the SELECTED channel's sub-state: a row wired to the
     // wrong field renders a switch that is on while the form says off, which no type checker
     // and no snapshot of the default state would catch.
     const form = emptyMessagingForm("telegram");
     form.telegram.finalReplyOnly = true;
+    // Markdown rendering defaults ON, so the fresh form already has two of the three rows in
+    // opposite states — which is what makes each row's slice worth reading separately.
     const html = render(stateOf("telegram", {}, { form }));
     const finalAt = html.indexOf(S.messaging.finalReplyOnly);
     const lineAt = html.indexOf(S.messaging.linePerMessage);
+    const markdownAt = html.indexOf(S.messaging.renderMarkdown);
     expect(finalAt).toBeGreaterThanOrEqual(0);
     expect(lineAt).toBeGreaterThan(finalAt);
-    // Exactly one switch is checked, and it is the one under the label that was flipped.
+    expect(markdownAt).toBeGreaterThan(lineAt);
+    // Each switch reads its own field: flipped, unflipped, and on by default.
     expect(html.slice(finalAt, lineAt)).toContain('aria-checked="true"');
-    expect(html.slice(lineAt)).toContain('aria-checked="false"');
+    expect(html.slice(lineAt, markdownAt)).toContain('aria-checked="false"');
+    expect(html.slice(markdownAt)).toContain('aria-checked="true"');
+  });
+
+  it('closes the form with the Markdown option too, its per-channel explanation behind the "?"', () => {
+    const help = {
+      feishu: S.messaging.renderMarkdownHelpFeishu,
+      telegram: S.messaging.renderMarkdownHelpTelegram,
+      qq: S.messaging.renderMarkdownHelpQQ,
+    } as const;
+    for (const channel of ["feishu", "telegram", "qq"] as MessagingChannel[]) {
+      const html = render(stateOf(channel));
+      expect(html).toContain(S.messaging.renderMarkdown);
+      // Semantics disclose — the sentence is in the popover panel, which renders collapsed.
+      expect(html).toContain(S.common.moreInfoAbout(S.messaging.renderMarkdown));
+      expect(html).not.toContain(help[channel]);
+      // One sentence per channel: what a channel can show is the whole of what the reader
+      // needs here, and a shared line would have to say "depending on the channel".
+      for (const other of ["feishu", "telegram", "qq"] as MessagingChannel[]) {
+        if (other !== channel) expect(html).not.toContain(help[other]);
+      }
+      // After the credential fields, like the other delivery preference.
+      const fieldAt = html.indexOf(
+        channel === "telegram"
+          ? S.telegram.botToken
+          : channel === "qq"
+            ? S.qq.appId
+            : S.feishu.appId,
+      );
+      expect(html.indexOf(S.messaging.renderMarkdown)).toBeGreaterThan(fieldAt);
+    }
   });
 
   it("states QQ's replies-only rule on screen, not in a collapsed fold", () => {

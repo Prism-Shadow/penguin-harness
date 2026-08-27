@@ -111,7 +111,18 @@ export interface QQInboundEvent {
 export interface QQSendArgs {
   kind: QQChatKind;
   openid: string;
+  /**
+   * The message body. Sent as `msg_type: 0` plain text, unless `markdown` is set — the
+   * platform requires `content` to be EMPTY once a markdown object rides along, so the two
+   * are alternatives rather than a body plus a rendering hint.
+   */
   content: string;
+  /**
+   * QQ Markdown (see qq-markdown.ts), sent as `msg_type: 2` with `markdown.content`.
+   * Free-form markdown is open to every bot in single and group chats; the deprecated
+   * template fields are deliberately not used.
+   */
+  markdown?: string;
   /** The inbound message being answered — what makes this a passive reply rather than a push. */
   msgId: string;
   /**
@@ -268,6 +279,16 @@ interface QQErrorBody {
  * "the reply window closed" and "the reply count ran out" into a single code, so the text
  * has to name both. qq-connector.ts exists largely to keep it from ever being returned.
  */
+/**
+ * The send refusals that say nothing about the message BODY: the reply window closed, the
+ * budget ran out, the user turned bots off. Re-sending the same message in another form
+ * cannot help, and on this channel the attempt costs a slot out of four — so the
+ * markdown-to-text fallback stops at these rather than spending one to learn nothing.
+ */
+export const QQ_BODY_INDEPENDENT_SEND_CODES: ReadonlySet<number> = new Set([
+  40034128, 40034005, 304103, 40034024, 40034105, 40054013,
+]);
+
 export function qqSendErrorText(errCode: number | undefined, message: string): string {
   if (errCode === 40034128) {
     return `${message} — QQ allows only a few replies to one message, within minutes of it`;
@@ -279,6 +300,26 @@ export function qqSendErrorText(errCode: number | undefined, message: string): s
     return `${message} — this QQ user has turned off messages from bots`;
   }
   return message;
+}
+
+/**
+ * A call the platform itself REFUSED, carrying the `err_code` it refused with.
+ *
+ * Its own class for the reason telegram-api's TelegramApiError is one: a refusal and a
+ * request that never completed are the same outcome and opposite facts. The platform
+ * answered, so nothing was delivered and the same message may safely be sent again in
+ * another form — which is what the markdown-to-text fallback does. A timeout or a reset
+ * carries no code, stays a plain Error, and must never be retried: it may already have been
+ * delivered, and on this channel a retry also spends another slot of a four-reply budget.
+ */
+export class QQApiError extends Error {
+  constructor(
+    message: string,
+    readonly code: number | undefined,
+  ) {
+    super(message);
+    this.name = "QQApiError";
+  }
 }
 
 export interface QQTransportOpts {
@@ -378,8 +419,11 @@ function createProductionClient(creds: QQCredentials): ProductionClient {
     }
     const errCode = body?.err_code ?? body?.code;
     const detail = qqSendErrorText(errCode, body?.message ?? `HTTP ${res.status}`);
-    throw new Error(
+    // The platform answered, whatever it said: a refused request delivered nothing, which is
+    // what makes another form of the same message safe to send (see QQApiError).
+    throw new QQApiError(
       `Message send failed: ${detail}${errCode !== undefined ? ` (code ${errCode})` : ""}`,
+      errCode,
     );
   };
 
@@ -393,10 +437,14 @@ function createProductionClient(creds: QQCredentials): ProductionClient {
         args.kind === "group"
           ? `/v2/groups/${encodeURIComponent(args.openid)}/messages`
           : `/v2/users/${encodeURIComponent(args.openid)}/messages`;
+      const markdown = args.markdown;
       return post(path, {
-        content: args.content,
-        // 0 = plain text. Markdown, ark and rich-media types each need separate approval.
-        msg_type: 0,
+        // "传了 markdown 后此字段必须为空" — the platform rejects a payload carrying both.
+        content: markdown === undefined ? args.content : "",
+        // 0 = plain text, 2 = markdown. Rich media (7) needs a publicly reachable URL for the
+        // bytes, which is why this channel refuses outbound files (see qq-connector).
+        msg_type: markdown === undefined ? 0 : 2,
+        ...(markdown !== undefined ? { markdown: { content: markdown } } : {}),
         msg_id: args.msgId,
         msg_seq: args.msgSeq,
       });

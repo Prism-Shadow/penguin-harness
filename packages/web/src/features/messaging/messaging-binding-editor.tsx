@@ -935,9 +935,11 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
         </>
       )}
       {/* The saved fields that are not credentials, so they close the form rather than
-          sitting among them. Both rows are offered on every channel, and their explanations
+          sitting among them. Every row is offered on every channel, and their explanations
           sit behind the label's "?" — see DeliveryOptionRow. Order is the order they take
-          effect in: which messages are sent, then how each one is split.
+          effect in: which messages are sent, then how each one is split, then how each of
+          those is rendered. The Markdown row's sentence is the one that differs per channel,
+          because what a channel can show is the whole of what the reader needs to decide.
 
           The one place a channel changes the answer rather than shading it: on QQ every send
           is a passive reply anchored to an inbound message, and that anchor expires, so
@@ -968,6 +970,18 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
         help={S.messaging.linePerMessageHelp}
         checked={delivery.linePerMessage}
         onChange={(v) => patchDelivery({ linePerMessage: v })}
+      />
+      <DeliveryOptionRow
+        label={S.messaging.renderMarkdown}
+        help={
+          channel === "telegram"
+            ? S.messaging.renderMarkdownHelpTelegram
+            : channel === "qq"
+              ? S.messaging.renderMarkdownHelpQQ
+              : S.messaging.renderMarkdownHelpFeishu
+        }
+        checked={delivery.renderMarkdown}
+        onChange={(v) => patchDelivery({ renderMarkdown: v })}
       />
     </div>
   );

@@ -15,10 +15,10 @@
  * `findEnabledByAccount` to see it. One account has one event stream, so two live
  * connections on it are meaningless; two saved configs are not.
  *
- * `line_per_message` and `final_reply_only` are delivery preferences rather than credentials,
- * which is why they are columns beside `enabled` and not keys inside `config`: that document
- * is the channel's own shape, owned by its connector, and these apply to every channel
- * identically.
+ * `line_per_message`, `final_reply_only` and `render_markdown` are delivery preferences
+ * rather than credentials, which is why they are columns beside `enabled` and not keys inside
+ * `config`: that document is the channel's own shape, owned by its connector, and these apply
+ * to every channel identically — each channel renders what it can of the same request.
  *
  * `config` is the channel-specific credential/config document, stored as JSON. Secrets
  * inside it are plaintext at rest (same trade-off as the proxy address in
@@ -61,6 +61,15 @@ export interface MessagingBindingRow {
    */
   finalReplyOnly: boolean;
   /**
+   * DELIVERY preference: render a relayed assistant reply's Markdown in the channel's own
+   * markup rather than sending its characters as written. ON by default — the model writes
+   * Markdown, and relaying it raw is what this replaced. What survives differs per channel
+   * (Telegram has no headings, lists or tables; QQ has no code or tables; Feishu has all of
+   * them) and a rendering the channel refuses falls back to the plain source, so the setting
+   * can cost formatting and never a message.
+   */
+  renderMarkdown: boolean;
+  /**
    * Most recent inbound chat (null until the bot is messaged once). The channel's connector
    * mints this string and is the only thing that may read it: Telegram encodes the forum
    * topic into it, so it is not always a bare chat id. Pass it to `MessagingClient.sendText`,
@@ -98,6 +107,7 @@ function mapRow(r: Record<string, unknown>): MessagingBindingRow {
     enabled: Number(r.enabled) === 1,
     linePerMessage: Number(r.line_per_message) === 1,
     finalReplyOnly: Number(r.final_reply_only) === 1,
+    renderMarkdown: Number(r.render_markdown) === 1,
     lastChatId: (r.last_chat_id as string | null) ?? null,
     lastChatIsDirect: Number(r.last_chat_is_direct) === 1,
     lastInboundMessageId: (r.last_inbound_message_id as string | null) ?? null,
@@ -159,9 +169,9 @@ export class MessagingBindingsRepo {
   /**
    * Create or replace the Session's config for one channel — credentials/config only:
    * `enabled` is intent state the state toggle owns, so an insert starts disabled and an
-   * update keeps the stored value. `linePerMessage` and `finalReplyOnly` are ordinary saved
-   * fields this write does own, and an omitted one keeps the stored value (a fresh row starts
-   * with both off).
+   * update keeps the stored value. `linePerMessage`, `finalReplyOnly` and `renderMarkdown` are
+   * ordinary saved fields this write does own, and an omitted one keeps the stored value (a
+   * fresh row starts with the first two off and the third ON, matching the column defaults).
    * It cannot fail on another Session: the same account saved elsewhere is none of this
    * write's business, since only enabling is exclusive.
    * Re-saving a Session's own binding keeps its last-chat memory, so a settings edit never
@@ -175,6 +185,7 @@ export class MessagingBindingsRepo {
     config: Record<string, unknown>;
     linePerMessage?: boolean;
     finalReplyOnly?: boolean;
+    renderMarkdown?: boolean;
   }): MessagingBindingRow {
     const now = new Date().toISOString();
     const configJson = JSON.stringify(args.config);
@@ -183,8 +194,9 @@ export class MessagingBindingsRepo {
       this.db
         .prepare(
           `INSERT INTO messaging_bindings
-             (session_id, channel, account_id, config_json, line_per_message, final_reply_only, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+             (session_id, channel, account_id, config_json, line_per_message, final_reply_only,
+              render_markdown, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           args.sessionId,
@@ -193,6 +205,9 @@ export class MessagingBindingsRepo {
           configJson,
           args.linePerMessage === true ? 1 : 0,
           args.finalReplyOnly === true ? 1 : 0,
+          // Absent means ON, matching the column default: a binding created without an
+          // opinion renders Markdown, which is the behaviour a new binding should have.
+          args.renderMarkdown === false ? 0 : 1,
           now,
           now,
         );
@@ -204,6 +219,7 @@ export class MessagingBindingsRepo {
              SET account_id = ?, config_json = ?,
                  line_per_message = COALESCE(?, line_per_message),
                  final_reply_only = COALESCE(?, final_reply_only),
+                 render_markdown = COALESCE(?, render_markdown),
                  last_chat_id = CASE WHEN ? THEN last_chat_id ELSE NULL END,
                  last_chat_is_direct = CASE WHEN ? THEN last_chat_is_direct ELSE 1 END,
                  last_inbound_message_id = CASE WHEN ? THEN last_inbound_message_id ELSE NULL END,
@@ -216,6 +232,7 @@ export class MessagingBindingsRepo {
           // NULL = the caller said nothing about it, and COALESCE keeps what is stored.
           args.linePerMessage === undefined ? null : args.linePerMessage ? 1 : 0,
           args.finalReplyOnly === undefined ? null : args.finalReplyOnly ? 1 : 0,
+          args.renderMarkdown === undefined ? null : args.renderMarkdown ? 1 : 0,
           keepChat ? 1 : 0,
           keepChat ? 1 : 0,
           keepChat ? 1 : 0,

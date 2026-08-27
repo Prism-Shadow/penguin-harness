@@ -43,6 +43,14 @@ import {
  * noteFileFailure). Every other code fails with the chat hearing nothing at all — a reply that
  * never went out, an inbound message whose Task never started, a connection that will not come
  * up — so the dashboard is where it has to be noticed.
+ *
+ * A Markdown send the channel refuses adds no code here, and that is deliberate. The
+ * connector retries it as plain text (see the three renderers' fallback), so the ordinary
+ * outcome is a DELIVERED message and nothing is recorded at all — there is no failure to
+ * file and nothing to tell anyone. Only a send that then fails on its own terms records
+ * anything, as `messaging_send_failed`, and that code stays out of this set for the reason
+ * every other send failure does: the message that would have carried the explanation is the
+ * message that did not go out.
  */
 const CODES_EXPLAINED_IN_CHAT = new Set([
   "messaging_image_fetch_failed",

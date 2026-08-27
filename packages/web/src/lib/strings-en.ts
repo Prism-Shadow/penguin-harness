@@ -1981,6 +1981,19 @@ Scenarios:
     credentialMissingHint: "Enter and save the credential first, then enable the connection",
     /** Why the clear checkbox is gated while the channel's connection is enabled. */
     disableBeforeClearHint: "Disable the connection before clearing the credential",
+    /** The saved delivery option: render a reply's Markdown in the channel's own markup. */
+    renderMarkdown: "Render Markdown",
+    /**
+     * Its disclosure, beside the label. One per channel, because what a channel can show is
+     * the whole of what the reader needs to know here — a shared sentence would have to say
+     * "depending on the channel", which answers nothing.
+     */
+    renderMarkdownHelpFeishu:
+      "A reply's Markdown arrives as formatting instead of as `**characters**`. Feishu renders it as a card: headings, bold, italic, strikethrough, code and fenced code blocks, lists, quotes, rules, links and tables. A table longer than five rows arrives as a code block so no row is hidden. If Feishu refuses the card, the reply is sent as plain text rather than lost.",
+    renderMarkdownHelpTelegram:
+      "A reply's Markdown arrives as formatting instead of as `**characters**`. Telegram shows bold, italic, strikethrough, links, inline code and code blocks; it has no headings, lists or tables, so a heading becomes a bold line, list markers become part of the text, and a table arrives as a code block. If Telegram refuses the formatting, the reply is sent as plain text rather than lost.",
+    renderMarkdownHelpQQ:
+      "A reply's Markdown arrives as formatting instead of as `**characters**`. QQ shows headings, bold, italic, strikethrough, lists, quotes, rules and links; it has no code formatting and no tables, so a code block arrives as plain lines and a table as its rows. If QQ refuses the formatting, the reply is sent as plain text — which costs one more of the few replies QQ allows per message.",
     /** The saved delivery option: one message per non-blank line of a reply. */
     linePerMessage: "One message per line",
     /** Its disclosure, beside the label: what the option does to a reply, and its two edges. */

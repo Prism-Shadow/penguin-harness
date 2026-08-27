@@ -433,6 +433,70 @@ describe("openDatabase table and index upgrades", () => {
     }
   }
 
+  /**
+   * Seeds a database in the shape it had before messaging_bindings.render_markdown existed:
+   * today's schema with that column dropped. Same derivation rule as the helpers around it.
+   */
+  function seedPreRenderMarkdownDb(dbPath: string, seed: (db: DatabaseSync) => void): void {
+    const db = new sqlite.DatabaseSync(dbPath);
+    try {
+      db.exec(SCHEMA_SQL);
+      db.exec("ALTER TABLE messaging_bindings DROP COLUMN render_markdown");
+      seed(db);
+    } finally {
+      db.close();
+    }
+  }
+
+  it("adds render_markdown to a messaging_bindings formed before it, existing rows ON", () => {
+    const dbPath = path.join(dir, "web-md.db");
+    const ts = "2026-01-01T00:00:00.000Z";
+    seedPreRenderMarkdownDb(dbPath, (old) => {
+      old
+        .prepare(
+          `INSERT INTO messaging_bindings
+             (session_id, channel, account_id, config_json, enabled, created_at, updated_at)
+           VALUES ('session-old', 'feishu', 'cli_x', '{"appId":"cli_x"}', 1, ?, ?)`,
+        )
+        .run(ts, ts);
+    });
+    const before = new sqlite.DatabaseSync(dbPath);
+    try {
+      const columns = before.prepare("PRAGMA table_info(messaging_bindings)").all() as {
+        name: string;
+      }[];
+      expect(columns.map((c) => c.name)).not.toContain("render_markdown");
+    } finally {
+      before.close();
+    }
+
+    const db = openDatabase(dbPath);
+    try {
+      const repo = new MessagingBindingsRepo(db);
+      const row = repo.find("session-old", "feishu");
+      // ON, unlike every other added flag: this column's default is the CORRECTED behaviour
+      // rather than the previous one, so an existing binding starts rendering Markdown after
+      // the upgrade. That is a visible change to every relayed message and is deliberate —
+      // relaying the model's Markdown as characters was the defect.
+      expect(row?.renderMarkdown).toBe(true);
+      // Nothing else about the row moved.
+      expect(row?.enabled).toBe(true);
+      expect(row?.config.appId).toBe("cli_x");
+      // And it is writable immediately, in the direction a user would actually want.
+      expect(
+        repo.upsert({
+          sessionId: "session-old",
+          channel: "feishu",
+          accountId: "cli_x",
+          config: { appId: "cli_x" },
+          renderMarkdown: false,
+        }).renderMarkdown,
+      ).toBe(false);
+    } finally {
+      db.close();
+    }
+  });
+
   it("adds line_per_message to a messaging_bindings formed before it, existing rows off", () => {
     const dbPath = path.join(dir, "web.db");
     const ts = "2026-01-01T00:00:00.000Z";

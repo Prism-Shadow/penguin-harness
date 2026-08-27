@@ -31,7 +31,8 @@ import { Readable } from "node:stream";
 import { Agent, getGlobalDispatcher, setGlobalDispatcher } from "undici";
 import type { Dispatcher } from "undici";
 import { afterEach, describe, expect, it } from "vitest";
-import { createLarkSdk } from "../src/runtime/messaging/feishu-sdk.js";
+import { FeishuApiError, createLarkSdk } from "../src/runtime/messaging/feishu-sdk.js";
+import { feishuCardOf } from "../src/runtime/messaging/feishu-card.js";
 import { createTelegramTransport } from "../src/runtime/messaging/telegram-api.js";
 import type {
   TelegramTransport,
@@ -333,6 +334,60 @@ describe("feishu adapter against the SDK's HTTP boundary", () => {
     await expect(client.sendText("oc_wire", "still working")).resolves.toBeUndefined();
   });
 
+  it("sends a card as msg_type interactive, with the schema 2.0 envelope serialized in", async () => {
+    const { http, calls } = larkHttp((url) =>
+      url.includes("tenant_access_token")
+        ? TOKEN_ANSWER
+        : { body: { code: 0, msg: "success", data: {} } },
+    );
+    const client = await createLarkSdk({ httpInstance: http }).createClient(CREDS);
+    await client.sendCard("oc_wire", feishuCardOf("## Head\n\n**bold**"));
+    const sent = calls.find((c) => String(c.url).endsWith("/im/v1/messages"))!;
+    expect(sent.data).toEqual({
+      receive_id: "oc_wire",
+      msg_type: "interactive",
+      // The card JSON goes in `content` as a STRING, which is the whole of what the IM API
+      // accepts for a card — the deprecated template fields are not used.
+      content: JSON.stringify({
+        schema: "2.0",
+        body: { elements: [{ tag: "markdown", content: "## Head\n\n**bold**" }] },
+      }),
+    });
+    expect((sent.params as { receive_id_type: string }).receive_id_type).toBe("chat_id");
+  });
+
+  it("threads a card through the reply endpoint, which takes the same msg_type set", async () => {
+    const { http, calls } = larkHttp((url) =>
+      url.includes("tenant_access_token")
+        ? TOKEN_ANSWER
+        : { body: { code: 0, msg: "success", data: {} } },
+    );
+    const client = await createLarkSdk({ httpInstance: http }).createClient(CREDS);
+    await client.replyCard("om_wire_9", feishuCardOf("**hi**"));
+    // The `:message_id` path parameter is filled by the SDK; a card replies exactly as text
+    // does, which is what keeps a group's one reply-to relation working with formatting on.
+    const sent = calls.find((c) => String(c.url).includes("/im/v1/messages/om_wire_9/reply"))!;
+    expect((sent.data as { msg_type: string }).msg_type).toBe("interactive");
+    expect(JSON.parse((sent.data as { content: string }).content)).toEqual({
+      schema: "2.0",
+      body: { elements: [{ tag: "markdown", content: "**hi**" }] },
+    });
+  });
+
+  it("types a refused call as FeishuApiError and a stalled one as a plain Error", async () => {
+    // The distinction the card-to-text fallback turns on: Feishu answered and delivered
+    // nothing, so the same message is safe to send again as text.
+    const { http } = larkHttp((url) =>
+      url.includes("tenant_access_token")
+        ? TOKEN_ANSWER
+        : { body: { code: 230001, msg: "invalid card" } },
+    );
+    const client = await createLarkSdk({ httpInstance: http }).createClient(CREDS);
+    const err = await client.sendCard("oc_wire", feishuCardOf("x")).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(FeishuApiError);
+    expect((err as FeishuApiError).code).toBe(230001);
+  });
+
   it("uploads a picture, then sends the returned key as an image message", async () => {
     // The upload endpoints resolve to their INNER `data` object rather than the `{code,msg}`
     // envelope the JSON endpoints return — a difference invisible to a seam-level fake, and
@@ -469,6 +524,18 @@ describe("telegram adapter against the fetch boundary", () => {
       .catch((e: Error) => e);
     expect(err?.message).toBe("file download failed: HTTP 404");
     expect(err?.message).not.toContain("SECRET");
+  });
+
+  it("puts parse_mode on the wire only when the send asked for it", async () => {
+    const stub = stubFetch(() => okJson({ message_id: 1 }));
+    const bot = stub.transport.createClient({ botToken: TOKEN });
+    await bot.sendMessage({ chatId: "42", text: "<b>hi</b>", parseMode: "HTML" });
+    // A fixed notice carries no markup and must go out verbatim, which means no field at all
+    // rather than a field naming plain text.
+    await bot.sendMessage({ chatId: "42", text: "plain notice" });
+    const bodies = stub.bodies.map((b) => JSON.parse(String(b)) as Record<string, unknown>);
+    expect(bodies[0]).toEqual({ chat_id: 42, text: "<b>hi</b>", parse_mode: "HTML" });
+    expect(bodies[1]).toEqual({ chat_id: 42, text: "plain notice" });
   });
 
   it("refuses a file the API already says is over the cap, as a size error", async () => {

@@ -47,6 +47,7 @@ import type {
   MessagingSendNote,
 } from "./connector.js";
 import { imageMimeOfName } from "./media.js";
+import { telegramHtmlOf } from "./telegram-html.js";
 import type {
   TelegramBotClient,
   TelegramBotUser,
@@ -195,7 +196,7 @@ const THREAD_DROPPED_NOTE = "forum topic gone, the reply went to General instead
  */
 async function sendWithThreadFallback(
   bot: TelegramBotClient,
-  args: { chatId: string; text: string; replyToMessageId?: number },
+  args: { chatId: string; text: string; replyToMessageId?: number; parseMode?: "HTML" },
   threadId: number | undefined,
 ): Promise<MessagingSendNote | void> {
   if (threadId === undefined) {
@@ -210,6 +211,45 @@ async function sendWithThreadFallback(
   }
   await bot.sendMessage(args);
   return THREAD_DROPPED_NOTE;
+}
+
+/**
+ * One send, rendered as HTML when the binding asked for it, degrading to the plain text if
+ * Telegram will not parse it.
+ *
+ * The formatted attempt can fail for a reason no amount of care here prevents: the tag set
+ * is closed and the parser is strict, so a construct combination it dislikes answers 400
+ * `Bad Request: can't parse entities`, and the whole message is refused. A reply is never
+ * worth that. The plain text — what the model actually wrote, `**` and all — goes out
+ * instead, and the reader loses the formatting rather than the answer.
+ *
+ * ANY 400 is retried, not a 400 whose description mentions entities. `description` is prose
+ * Telegram rewords without notice (see telegram-api's TelegramApiError), and there is no
+ * distinct code for a parse failure; a 400 from some other cause simply fails again on the
+ * plain attempt and reaches the caller as it always did, one wasted request later. Every
+ * other shape propagates on its first attempt for the reasons sendWithThreadFallback gives:
+ * a 429 must not be answered with a second request, and a transport failure may already
+ * have delivered the message.
+ *
+ * The order matters. The entity fallback wraps the THREAD fallback rather than the other
+ * way round, so a parse failure inside a forum topic — which the inner retry cannot fix,
+ * both of its attempts carrying the same bad HTML — still ends in a plain send that keeps
+ * the topic.
+ */
+async function sendFormatted(
+  bot: TelegramBotClient,
+  args: { chatId: string; text: string; replyToMessageId?: number },
+  threadId: number | undefined,
+  markdown: boolean,
+): Promise<MessagingSendNote | void> {
+  if (!markdown) return sendWithThreadFallback(bot, args, threadId);
+  const html = telegramHtmlOf(args.text);
+  try {
+    return await sendWithThreadFallback(bot, { ...args, text: html, parseMode: "HTML" }, threadId);
+  } catch (err) {
+    if (!(err instanceof TelegramApiError) || err.errorCode !== 400) throw err;
+  }
+  return sendWithThreadFallback(bot, args, threadId);
 }
 
 /** Whether this entity is a mention OF the bot itself, by either of the two shapes Telegram uses. */
@@ -421,17 +461,22 @@ export class TelegramConnector implements MessagingChannelConnector {
             : {}),
         };
       },
-      sendText(chatRef, text) {
+      sendText(chatRef, text, opts) {
         const { chatId, threadId } = parseChatRef(chatRef);
-        return sendWithThreadFallback(bot, { chatId, text }, threadId);
+        return sendFormatted(bot, { chatId, text }, threadId, opts?.markdown === true);
       },
-      replyText(messageRef, text) {
+      replyText(messageRef, text, opts) {
         const { chatId, messageId, threadId } = parseReplyRef(messageRef);
         // The thread rides along even though a reply normally inherits its target's topic:
         // `allow_sending_without_reply` degrades a vanished target to a plain send, and a
         // plain send with no thread lands in General — losing the topic exactly when the
         // conversation is least able to spare it.
-        return sendWithThreadFallback(bot, { chatId, text, replyToMessageId: messageId }, threadId);
+        return sendFormatted(
+          bot,
+          { chatId, text, replyToMessageId: messageId },
+          threadId,
+          opts?.markdown === true,
+        );
       },
       async sendImage(chatId, file) {
         await bot.sendPhoto({ chatId, fileName: file.fileName, data: file.data });

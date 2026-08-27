@@ -180,14 +180,40 @@ export interface MessagingOutboundFile {
   data: Buffer;
 }
 
+/** How one outbound text should be rendered. Absent throughout means plain text. */
+export interface MessagingSendOptions {
+  /**
+   * Read the text as Markdown and render it in whatever this channel's markup is.
+   *
+   * A REQUEST, not an instruction: the connector owns both what its channel can show and
+   * what to do when the channel refuses the rendered form, and it must fall back to sending
+   * this same text plainly rather than let a formatting failure cost the message. What
+   * survives the conversion differs per channel and is documented at each renderer
+   * (telegram-html.ts, feishu-card.ts, qq-markdown.ts).
+   *
+   * Only a relayed assistant message ever sets it. The fixed notices and the test message
+   * carry no markup and are sent as they are written, so a bug in a renderer can never
+   * reach the one message a user sends to check whether the binding works at all.
+   */
+  markdown?: boolean;
+}
+
 /** Outbound half of one bound account. Every method throws on failure with a readable reason. */
 export interface MessagingClient {
   /** Credential check (used by the test endpoint); resolving means the config signs in. */
   checkCredentials(): Promise<MessagingAccountInfo | null>;
   /** Sends a text message into a chat by chat id; resolves a MessagingSendNote when it degraded. */
-  sendText(chatId: string, text: string): Promise<MessagingSendNote | void>;
+  sendText(
+    chatId: string,
+    text: string,
+    opts?: MessagingSendOptions,
+  ): Promise<MessagingSendNote | void>;
   /** Replies a text message to a specific inbound message (threads correctly in group chats). */
-  replyText(messageId: string, text: string): Promise<MessagingSendNote | void>;
+  replyText(
+    messageId: string,
+    text: string,
+    opts?: MessagingSendOptions,
+  ): Promise<MessagingSendNote | void>;
   /**
    * Sends a picture into a chat, so a chart the Agent drew arrives as something the reader
    * can see rather than as a download. Channels that need an upload step first do it here —
