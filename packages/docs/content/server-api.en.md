@@ -10,7 +10,7 @@ The PenguinHarness server exposes a same-origin HTTP API used by the bundled Web
 - Stack: Hono + @hono/node-server, requires Node >= 24;
 - Storage: SQLite (built-in `node:sqlite`, WAL mode) holds only indexes and aggregates — users, auth sessions, Project authorization, Agent / Session indexes, usage, UI preferences, error records, and Schedule state; all Agent, Trace, and Workspace data stays as files under `~/.penguin/data`, shared with the CLI / SDK — see the [Configuration Reference](/configuration);
 - Binding: defaults to `127.0.0.1:7364`, adjustable via the `PORT` / `HOST` environment variables;
-- Request bodies: writes accept JSON only (Content-Type check, one of the CSRF defenses), capped at **384MB**. That is not a policy about what may be uploaded but where the transport stops working: the body is buffered and JSON-parsed as one string, and V8 caps a string near 512MB. It is counted as the body is read, so a request that declares no length (chunked) is capped just the same. `/api/hmr` is the exception — a hot-update push is a gzip stream and carries its own 256MB bound, on the compressed body and on what it inflates to alike;
+- Request bodies: writes accept JSON only (Content-Type check, one of the CSRF defenses), and **nothing caps their size**. The only ceiling is the platform's own: the body is decoded into one string before `JSON.parse` sees it, and V8 caps a string near 512MB, so a larger body answers `413` `payload_too_large` naming that ceiling rather than a number this server chose. `/api/hmr` takes a gzip body and bounds what it *inflates* to at the same ceiling — without that, a small gzip decides how much memory the process allocates;
 - Errors share a single shape:
 
 ```text

@@ -307,13 +307,12 @@ export function messagingFilesSkippedNotice(skipped: number): string {
  * How many bytes of inbound imagery one binding may hand its Session inside a rolling
  * window, and how long that window is.
  *
- * Per image, the ceiling is the server's inline-image limit. In aggregate there was
- * nothing: every accepted image is written into the conversation as a base64 data URL, and
- * services/attachment-limits.ts says what that costs — the Trace JSONL is read back whole,
- * into a single JS string, on every history page and every Session resume, so a large
- * enough pile of inline images is not a slow Session but one that never recovers. The web
- * composer reaches the same ceiling only through an authenticated user; anyone who can DM
- * the bot reaches this one.
+ * Per image the ceiling is MESSAGING_INBOUND_IMAGE_MAX_BYTES above; in aggregate it is this.
+ * Every accepted image is written into the conversation as a base64 data URL, and the Trace
+ * JSONL that holds it is read back whole — into a single JS string — on every history page and
+ * every Session resume, so a large enough pile of inline images is not a slow Session but one
+ * that never recovers. A web composer reaches this cost only through an authenticated user;
+ * anyone who can DM the bot reaches it here.
  *
  * A burst bound, not a lifetime one: two full-size images per ten minutes is far above any
  * real conversation (both channels re-encode a chat photo to a fraction of the ceiling) and

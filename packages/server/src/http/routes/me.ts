@@ -15,7 +15,7 @@ import { readJson, requireString } from "../validate.js";
 import type { AppDeps } from "../../app.js";
 import { resolvePreviewTarget } from "../../services/preview-token.js";
 import { validateDraftShortcuts } from "../../services/draft-shortcuts.js";
-import { MAX_ATTACHMENT_COUNT } from "../../services/attachment-limits.js";
+import { MAX_ATTACHMENT_COUNT } from "../../services/task-attachments.js";
 import {
   MAX_IMAGE_COMPRESSION_OVER_MB,
   MIN_IMAGE_COMPRESSION_OVER_MB,

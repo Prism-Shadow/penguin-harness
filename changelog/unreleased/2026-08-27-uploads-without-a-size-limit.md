@@ -18,10 +18,10 @@ re-encoded in the browser before it is uploaded rather than being turned away.
 - **File attachments have no size limit at all.** The bytes go to the Session scratchpad and the
   model opens them by path, so nothing downstream scales with them. What remains is the per-message
   file count (20, `413` `too_many_files`) and the request body cap.
-- **The request body cap is a fixed 384MB**, no longer derived from a setting. It marks where the
-  transport stops working — the body is buffered and JSON-parsed as one string, and V8 caps a
-  string near 512MB — rather than a policy about what may be sent, and it is above every body the
-  derived cap could previously reach.
+- **The request body cap is gone**, not replaced by a constant. The only ceiling left is the
+  platform's: the body is decoded into one string before `JSON.parse` sees it, and V8 caps a
+  string near 512MB. A body past that answers `413` `payload_too_large` naming that ceiling, so
+  the failure stays legible without any number this server chose.
 - **Automatic image compression** (**System settings → Uploads**, admin, server-global): a switch,
   on by default, and a threshold in whole MB, 4 by default and settable between 1 and 64. An image
   over the threshold is fitted inside a 2048px box and re-encoded in its own format before it is
@@ -32,7 +32,7 @@ re-encoded in the browser before it is uploaded rather than being turned away.
   the per-message file count. It shapes what a client uploads and gates nothing — an API client
   that ignores it is not refused.
 - The `413` codes `file_too_large` (for a composer attachment) and `image_too_large` are no longer
-  raised; `PUT /api/admin/settings` answers `400` `invalid_image_compression` for a threshold
+  raised; `payload_too_large` now means only "larger than this API can decode"; `PUT /api/admin/settings` answers `400` `invalid_image_compression` for a threshold
   outside the range, in place of `invalid_attachment_limit`.
 
 ## Compatibility

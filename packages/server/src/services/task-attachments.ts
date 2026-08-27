@@ -24,18 +24,21 @@ import {
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import { HttpError } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
-import { MAX_ATTACHMENT_COUNT } from "./attachment-limits.js";
 
 /**
- * A file's SIZE is bounded here by nothing: what one attachment may weigh is the body cap's
- * business (app.ts), and nothing downstream of this module scales with it — the bytes go to disk
- * and come back through the model's own bounded file tools.
+ * A file's SIZE is bounded here by nothing, and nothing downstream of this module scales with it:
+ * the bytes go to disk and come back through the model's own bounded file tools, never into the
+ * conversation. How large a request may be is the transport's own ceiling, not a rule stated here
+ * (see http/validate.ts readJson).
  *
- * The per-message file COUNT is enforced here rather than delegated to that body cap, because
- * the two bound different things: a body well inside the cap still fits ~350k minimal `file`
- * parts, which is 350k sequential writes into one directory and 350k marker lines on one
- * message. See MAX_ATTACHMENT_COUNT in attachment-limits.ts.
+ * The per-message file COUNT is a different question and is enforced. It bounds how many files
+ * one message can NAME, which is a composer concern rather than a byte-budget one: a request the
+ * transport carries happily still fits hundreds of thousands of minimal `file` parts, and that is
+ * as many sequential writes into one directory and as many marker lines on one message. 20 is far
+ * past any plausible composer use — the chip row stops being usable long before that — while
+ * still allowing "drop a folder of small files in".
  */
+export const MAX_ATTACHMENT_COUNT = 20;
 
 /**
  * Longest stem kept on disk, measured in **UTF-8 bytes**: filesystems cap a name near 255

@@ -2,16 +2,20 @@
  * Request-validation helper unit tests: positiveIntParam and the two paging helpers reject
  * trailing garbage, optionalDateParam rejects impossible calendar dates (shape-only checks
  * let these through), and optionalNumber enforces the agent runtime-parameter rule
- * (integer, > 0 or exactly -1) used for max_turns and friends.
+ * (integer, > 0 or exactly -1) used for max_turns and friends. readJson separates the one body
+ * failure that is not a shape problem — a body too large to become a string — from the parse
+ * error it would otherwise be reported as.
  */
 import { describe, expect, it } from "vitest";
 import type { Context } from "hono";
+import { constants } from "node:buffer";
 import {
   optionalDateParam,
   optionalNumber,
   optionalPagingQuery,
   paginationQuery,
   positiveIntParam,
+  readJson,
 } from "../src/http/validate.js";
 import { HttpError } from "../src/http/errors.js";
 
@@ -154,6 +158,49 @@ describe("optionalPagingQuery", () => {
       expect(() => optionalPagingQuery(ctxWithQuery({ limit: "50", offset: bad }))).toThrow(
         HttpError,
       );
+    }
+  });
+});
+
+describe("readJson", () => {
+  /** Context stub whose body read fails the way the caller asked for. */
+  const ctxRejecting = (err: unknown): Context =>
+    ({ req: { json: () => Promise.reject(err) } }) as unknown as Context;
+
+  it("reports a body too large to decode as 413, not as a syntax error", async () => {
+    // Node raises ERR_STRING_TOO_LONG when the body passes MAX_STRING_LENGTH on its way to one
+    // string for JSON.parse. Reported as "must be valid JSON" it would send someone hunting a
+    // syntax error in a body that has none — nothing capped the request, the platform did.
+    const err = Object.assign(
+      new Error("Cannot create a string longer than 0x1fffffe8 characters"),
+      {
+        code: "ERR_STRING_TOO_LONG",
+      },
+    );
+    await expect(readJson(ctxRejecting(err))).rejects.toMatchObject({
+      status: 413,
+      code: "payload_too_large",
+    });
+    // The message names the real ceiling rather than a number this codebase chose.
+    await readJson(ctxRejecting(err)).catch((e: HttpError) => {
+      expect(e.message).toContain(String(Math.floor(constants.MAX_STRING_LENGTH / (1024 * 1024))));
+    });
+  });
+
+  it("still reports an ordinary parse failure as 400", async () => {
+    await expect(readJson(ctxRejecting(new SyntaxError("Unexpected token")))).rejects.toMatchObject(
+      {
+        status: 400,
+        code: "bad_request",
+      },
+    );
+  });
+
+  it("rejects a body that parses to something other than an object", async () => {
+    const ctxWith = (value: unknown): Context =>
+      ({ req: { json: () => Promise.resolve(value) } }) as unknown as Context;
+    for (const value of [null, [1, 2], "text", 7]) {
+      await expect(readJson(ctxWith(value))).rejects.toMatchObject({ status: 400 });
     }
   });
 });

@@ -17,9 +17,9 @@
  * the one thing the platform is never offered: it is how a broken platform
  * gets replaced.
  */
+import { constants } from "node:buffer";
 import zlib from "node:zlib";
 import { Hono } from "hono";
-import { bodyLimit } from "hono/body-limit";
 import type { AppDeps } from "../app.js";
 import { authMiddleware } from "../auth/middleware.js";
 import type { AppEnv } from "../auth/middleware.js";
@@ -29,22 +29,19 @@ import { HttpError } from "../http/errors.js";
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
 
 /**
- * The upgrade channel's own size cap, on the compressed body and on what it inflates to alike.
+ * Bound on what an upgrade body may INFLATE to.
  *
- * Deliberately its own rather than the `/api/*` cap (app.ts): what arrives here is a gzip
- * stream, so the number that matters is what it INFLATES to, and the ordinary JSON cap has
- * nothing to say about that. Without the inflate bound a few hundred kilobytes of gzip decides
- * how many gigabytes this process allocates, which is what makes bounding the body meaningful
- * at all.
+ * Not a size policy — it is the platform's own ceiling, read from it rather than chosen: the
+ * inflated payload is turned into ONE string for `JSON.parse`, and V8 caps a string at
+ * `MAX_STRING_LENGTH` (~512MB), so a payload past this point cannot be parsed however large a
+ * push is allowed to be. Nothing about a legitimate push comes near it; a real one is
+ * single-digit megabytes.
  *
- * 256MB is where the transport stops working rather than a taste judgement, the same wall
- * services/attachment-limits.ts describes: the inflated payload is turned into ONE string
- * for JSON.parse, and V8 caps a string near 512MB. Peak memory for a request at the cap is
- * the compressed body, the inflated buffer, and that string — on the order of a gigabyte,
- * which is the documented tolerance. A real push is single-digit megabytes; this is the
- * bound, not the expectation.
+ * What it stops is the case where the number is missing altogether: `gunzipSync` with no bound
+ * lets a few hundred kilobytes of gzip decide how many gigabytes this process allocates, and the
+ * process dies before ever reaching the string that would have thrown.
  */
-const UPGRADE_MAX_BYTES = 256 * 1024 * 1024;
+const UPGRADE_MAX_INFLATED_BYTES = constants.MAX_STRING_LENGTH;
 
 export function hmrRoutes(deps: AppDeps): Hono<AppEnv> {
   const routes = new Hono<AppEnv>();
@@ -54,22 +51,6 @@ export function hmrRoutes(deps: AppDeps): Hono<AppEnv> {
   // other half) rather than relying on the generic middleware being mounted
   // later.
   const cookieAuth = authMiddleware(deps.authService, deps.config.trustProxy);
-
-  // Before the gate below, so an oversized body is cut off the stream rather than buffered
-  // while its credentials are checked.
-  routes.use(
-    "*",
-    bodyLimit({
-      maxSize: UPGRADE_MAX_BYTES,
-      onError: () => {
-        throw new HttpError(
-          413,
-          "payload_too_large",
-          `Hot update payload exceeds the ${Math.floor(UPGRADE_MAX_BYTES / (1024 * 1024))}MB limit.`,
-        );
-      },
-    }),
-  );
 
   routes.use("*", async (c, next) => {
     // Dangerous-network off: hot APIs load and run code, so on a non-loopback
@@ -159,7 +140,7 @@ export function hmrRoutes(deps: AppDeps): Hono<AppEnv> {
     try {
       const gz = Buffer.from(await c.req.arrayBuffer());
       payload = JSON.parse(
-        zlib.gunzipSync(gz, { maxOutputLength: UPGRADE_MAX_BYTES }).toString("utf8"),
+        zlib.gunzipSync(gz, { maxOutputLength: UPGRADE_MAX_INFLATED_BYTES }).toString("utf8"),
       );
     } catch (err) {
       throw new HttpError(

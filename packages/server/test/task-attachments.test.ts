@@ -25,7 +25,7 @@ import {
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
-import { MAX_ATTACHMENT_COUNT } from "../src/services/attachment-limits.js";
+import { MAX_ATTACHMENT_COUNT } from "../src/services/task-attachments.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 

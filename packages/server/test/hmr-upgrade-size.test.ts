@@ -1,12 +1,12 @@
 /**
- * The hot-update channel's own size bounds (hmr/routes.ts).
+ * The hot-update channel's inflate bound (hmr/routes.ts).
  *
- * A push is a whole web dist plus the platform's native assets, arriving as a gzip stream — so
- * the channel bounds both the compressed body and what it inflates to, rather than riding the
- * `/api/*` JSON cap, which has nothing to say about the second. The body bound sits ahead of the
- * channel's authentication, so an oversized push is cut off the stream rather than buffered
- * while its credentials are checked.
+ * Nothing limits how large a push may be. What is bounded is what a gzip body may INFLATE to,
+ * and the bound is read from the platform rather than chosen: past MAX_STRING_LENGTH the payload
+ * cannot become the string `JSON.parse` needs, whatever size a push is allowed to be. Without the
+ * bound the process allocates until it dies, and never reaches the string that would have thrown.
  */
+import { constants } from "node:buffer";
 import crypto from "node:crypto";
 import zlib from "node:zlib";
 import { afterEach, describe, expect, it } from "vitest";
@@ -37,31 +37,11 @@ export const hotPlatform = { id: "sized", iface, impl, context: {} };
 
 const MINIMAL_CLI = "export async function cli(argv) { return 0; }\n";
 
-describe("hot update payload bounds", () => {
+describe("hot update inflate bound", () => {
   let t: TestApp | undefined;
   afterEach(async () => {
     if (t) await t.cleanup();
     t = undefined;
-  });
-
-  it("refuses an oversized push before the channel authenticates", async () => {
-    t = await createTestApp();
-
-    // A declared length over the bound, and no cookie: the bound short-circuits on the header
-    // without reading the (tiny) body, so the answer names the size rather than the missing
-    // credentials. A 401 here would mean the payload was being buffered before it was measured.
-    const res = await t.app.request("/api/hmr/upgrade", {
-      method: "POST",
-      headers: {
-        "content-type": "application/gzip",
-        "content-length": String(512 * 1024 * 1024),
-      },
-      body: zlib.gzipSync(Buffer.from("{}")),
-    });
-    expect(res.status).toBe(413);
-    const body = (await res.json()) as { error: { code: string; message: string } };
-    expect(body.error.code).toBe("payload_too_large");
-    expect(body.error.message).toMatch(/Hot update payload/);
   });
 
   it("carries a push far larger than an ordinary API request", async () => {
@@ -101,15 +81,18 @@ describe("hot update payload bounds", () => {
     t = await createTestApp();
     const cookie = (await loginAdmin(t.app)).cookie;
 
-    // A few hundred kilobytes on the wire, 300MB once inflated. Streamed through gzip with
-    // backpressure, so the test never holds the uncompressed form either.
+    // A few hundred kilobytes on the wire, past MAX_STRING_LENGTH once inflated. Streamed
+    // through gzip with backpressure, so the test never holds the uncompressed form either.
+    // Written in 16MB blocks rather than 1MB ones: the deflate work is what this costs, and
+    // half a gigabyte of it in small writes is slow enough to time out under a loaded suite.
+    const inflated = constants.MAX_STRING_LENGTH + 64 * 1024 * 1024;
+    const block = Buffer.alloc(16 * 1024 * 1024);
     const gzip = zlib.createGzip();
     const chunks: Buffer[] = [];
     gzip.on("data", (c: Buffer) => chunks.push(c));
     const done = new Promise<void>((resolve) => gzip.on("end", resolve));
-    const megabyte = Buffer.alloc(1024 * 1024);
-    for (let i = 0; i < 300; i++) {
-      if (!gzip.write(megabyte)) await new Promise((resolve) => gzip.once("drain", resolve));
+    for (let written = 0; written < inflated; written += block.length) {
+      if (!gzip.write(block)) await new Promise((resolve) => gzip.once("drain", resolve));
     }
     gzip.end();
     await done;
@@ -124,9 +107,13 @@ describe("hot update payload bounds", () => {
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: { code: string; message: string } };
     expect(body.error.code).toBe("bad_request");
-    // Refused by the inflate bound, not by whatever JSON.parse makes of 300MB of NULs
+    // Refused by the inflate bound, not by whatever JSON.parse makes of half a gigabyte of NULs
     // after the process has already allocated all of it.
     expect(body.error.message).toMatch(/invalid gzip upgrade payload/);
-    expect(body.error.message).toMatch(/Cannot create a Buffer larger than 268435456 bytes/);
-  });
+    expect(body.error.message).toMatch(
+      new RegExp(`Cannot create a Buffer larger than ${constants.MAX_STRING_LENGTH} bytes`),
+    );
+    // Half a gigabyte of deflate plus the inflate the server then refuses: generous enough that
+    // a loaded suite cannot turn this into a timeout that reads as a broken bound.
+  }, 60_000);
 });

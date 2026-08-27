@@ -22,8 +22,6 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import { Hono } from "hono";
 import type { Context } from "hono";
-import { bodyLimit } from "hono/body-limit";
-import { BODY_MAX_BYTES } from "./services/attachment-limits.js";
 import type { DatabaseSync } from "node:sqlite";
 import type { ServerConfig } from "./config.js";
 import { applyProxySettings, mergedNoProxy } from "./net/proxy.js";
@@ -393,39 +391,13 @@ export function createRuntimeApp(deps: AppDeps): Hono<AppEnv> {
     });
   }
 
-  // API common defenses: request body size cap and write-request Content-Type (one of the CSRF
-  // MVP defenses).
+  // Write-request Content-Type check (one of the CSRF MVP defenses).
   //
-  // The cap has to be measured, not read: a chunked request carries no `content-length` at all,
-  // so a header check alone passes a body of any size — the sinks behind it (task input images,
-  // file attachments, Trace import) then decode whatever arrives. hono's bodyLimit keeps the
-  // header fast path when the length is declared and otherwise counts bytes off the stream,
-  // aborting the moment the total crosses the cap.
-  //
-  // The cap is a constant, not a setting: it marks where the transport stops working rather than
-  // a policy about what a user may send (see services/attachment-limits.ts), and a request that
-  // reaches it is one no configuration could have made succeed.
-  const bodyCap = bodyLimit({
-    maxSize: BODY_MAX_BYTES,
-    // Its default is a bare text/plain 413; throw the App's own error instead so the
-    // response stays the documented `payload_too_large` body that every client handles.
-    onError: () => {
-      throw new HttpError(
-        413,
-        "payload_too_large",
-        `Request body exceeds the ${Math.floor(BODY_MAX_BYTES / (1024 * 1024))}MB limit.`,
-      );
-    },
-  });
-  app.use("/api/*", (c, next) => {
-    // /api/hmr carries its own, tighter cap instead (hmr/routes.ts). A hot-update push is a
-    // gzip stream whose inflated size has to be bounded too, and it is the endpoint a broken
-    // installation gets repaired through — the one place a 413 locks an operator out rather
-    // than inconveniencing them, so it states its own number where the rest of its transport
-    // rules live.
-    if (c.req.path.startsWith("/api/hmr")) return next();
-    return bodyCap(c, next);
-  });
+  // There is deliberately no request body size cap here. A size refusal on this path could only
+  // ever fire on a request the transport was going to fail anyway: the body is buffered and
+  // JSON-parsed as one string, and V8 caps a string near 512MB, so the ceiling is the platform's
+  // and not a policy anyone has to agree with. What that ceiling produces is made legible in
+  // http/validate.ts readJson rather than bounded here.
   app.use("/api/*", jsonOnlyWrites);
 
   // Public routes (no login required).

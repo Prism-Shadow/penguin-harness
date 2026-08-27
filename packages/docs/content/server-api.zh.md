@@ -10,7 +10,7 @@ PenguinHarness Server 提供一套同源 HTTP API，自带的 Web App 与其他 
 - 技术栈：Hono + @hono/node-server，要求 Node >= 24；
 - 存储：SQLite（内置 `node:sqlite`，WAL 模式）仅存放索引与聚合数据——用户、登录会话、Project 授权、Agent / Session 索引、用量、UI 偏好、错误记录与 Schedule 状态；Agent、Trace 与 Workspace 数据全部以文件形式存放在 `~/.penguin/data` 下，与 CLI / SDK 共享，见[配置参考](/configuration)；
 - 监听：默认 `127.0.0.1:7364`，可用环境变量 `PORT` / `HOST` 调整；
-- 请求体：写请求仅接受 JSON（Content-Type 校验，CSRF 防线之一），上限 **384MB**。这不是一条关于「允许上传多大」的策略，而是传输本身失效的位置：请求体被整体缓冲并作为单个字符串 JSON 解析，而 V8 对字符串长度的上限约为 512MB。按读取到的字节数统计，未声明长度（分块传输）的请求同样受限。`/api/hmr` 是例外——热更新推送是一条 gzip 流，自带 256MB 上限，压缩体与解压后的体积同时受限；
+- 请求体：写请求仅接受 JSON（Content-Type 校验，CSRF 防线之一），**体积不设上限**。唯一的天花板来自平台本身：请求体在交给 `JSON.parse` 之前会被解码成一个字符串，而 V8 对字符串长度的上限约为 512MB，超出者返回 `413` `payload_too_large`，报出的是那个天花板而非本服务自定的数字。`/api/hmr` 接收 gzip 请求体，并把**解压后**的体积限制在同一个天花板——否则一小段 gzip 就能决定这个进程分配多少内存；
 - 错误响应统一为：
 
 ```text
