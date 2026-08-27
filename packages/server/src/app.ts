@@ -400,6 +400,12 @@ export function createRuntimeApp(deps: AppDeps): Hono<AppEnv> {
   // size so the steady state allocates nothing.
   let capped: { size: number; mw: MiddlewareHandler } | null = null;
   app.use("/api/*", (c, next) => {
+    // /api/hmr carries its own cap instead (hmr/routes.ts). A hot-update push is a whole
+    // web dist plus the platform's native assets, which has nothing to do with what one
+    // chat message may attach — and tying the two together points the wrong way: an admin
+    // turning the attachment budget down would shrink the channel a broken installation is
+    // repaired through, and a 413 there is the failure class that locks an operator out.
+    if (c.req.path.startsWith("/api/hmr")) return next();
     const size = bodyLimitBytes(deps.serverSettingsRepo.getAttachmentLimitsMb());
     if (capped === null || capped.size !== size) {
       capped = {
