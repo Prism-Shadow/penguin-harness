@@ -201,9 +201,11 @@ PKCE 的 verifier 在服务端生成、只在内存中保留十分钟，绝不�
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | /api/plugins | 插件市场页的插件索引：`{plugins: PluginIndexEntry[]}`——所有已配置注册表（当前仅内置注册表）合并后的索引 |
+| GET | /api/plugins | 插件市场页的插件索引：`{plugins: PluginIndexEntry[], failures: {source, error}[]}`——内置索引与已发布索引合并的结果；`failures` 列出读不到的来源 |
 
 索引格式沿用 typst/packages 的 `index.json` 模式：扁平数组，每个元素是插件的一个版本条目（`name`、`version`、`description`、`authors`、`license`，可选 `repository` / `homepage` / `keywords` / `categories` / `updatedAt`）。仅用于发现——安装插件仍是运维侧编辑 `plugins.json` 的操作，此接口不会导入任何插件代码。
+
+合并两个来源：内嵌在 server 包中的索引，以及索引仓库发布的那份——固定 tag 上的 release 附件（`releases/download/nightly/index.json`），最多每 30 分钟抓取一次，其内容由每 6 小时运行一次的工作流替换。读不到的来源只会让列表变短、不会让它变空，并会列入 `failures`；但在单个文档**内部**，一行格式错误仍会让整份索引失败。`PENGUIN_PLUGIN_INDEX=off` 可关闭已发布索引的查询（不发起任何出网请求），填其他值则替换其 URL。
 
 ### Agent
 
