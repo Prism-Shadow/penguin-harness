@@ -3,7 +3,7 @@ title: 接口契约
 description: 自顶向下的接口全览：LLMInterface 与 EnvironmentInterface 的完整签名、内层类型逐字段定义，以及每一处可替换的扩展点。
 ---
 
-context_engine 依赖三个接口：Human、LLM、Environment。协议转换全部发生在接口实现内部——引擎只见 [OmniMessage](/omni-message)。本页自顶向下：先给出两大接口的完整签名与 Human 边界，再逐层展开每个接口的内部类型。类型全部由 `@prismshadow/penguin-core` 导出，源码见 `packages/core/src/interfaces.ts`。
+context_engine 依赖三个接口：Human、LLM、Environment。协议转换全部发生在接口实现内部——引擎只见 [OmniMessage](/omni-message)。本页自顶向下：先给出两大接口的完整签名与 Human 边界，再逐层展开每个接口的内部类型。类型全部由 `@prismshadow/penguin-core` 导出，源码见 `packages/core/src/interfaces/`——`llm.ts`(模型侧所需)、`environment.ts`(Environment 侧所需)、`shared.ts`(两侧确实共用的词汇)，以及 `index.ts`：`@prismshadow/penguin-core/interfaces` 子路径背后的 barrel。
 
 ## 总览
 
@@ -27,6 +27,22 @@ context_engine 依赖三个接口：Human、LLM、Environment。协议转换全�
 | Environment | `EnvironmentInterface.executeTool` 等 | `Environment` + 内置工具注册表 |
 
 两条铁律贯穿所有接口：**从不向引擎抛异常**(错误收敛为带 `stop_reason` 的消息/返回值),**流式纪律**(`start → delta → stop`，随后立即产出完整消息)。
+
+### 消息面与控制面
+
+三条边界上流动的**内容**只有 OmniMessage，没有别的——`session.run` 的输入与流式输出、`streamGenerate` 的输入数组与产出流、`executeTool` 的已批准调用与其输出流、子会话一轮的输入与被转发的消息，以及每一次 Trace 写入。
+
+与之**并行**流动的是**控制面**，刻意不做成消息形态——它们都不是对话内容：
+
+| 控制面项 | 位置 | 为什么不是消息 |
+| --- | --- | --- |
+| `signal: AbortSignal` | `RunOptions`、`GenerativeModelParameters`、`ToolExecutionRequest` | 要在消息队列里排队才生效的打断，就不叫打断了。 |
+| `thinkingLevel` | `RunOptions` → `GenerativeModelParameters` | 逐次请求参数，与超时同类——它说的是这次请求怎么跑，而不是说了什么。 |
+| `approve` 及其 `ApprovalDecision` | `RunOptions`、`ToolExecutionRequest` | 回调的入参是 OmniMessage 工具调用；答案是三值枚举，引擎拿到后立刻转写为 `approval_decision` 消息。 |
+| `LLMOutcome` | `streamGenerate` generator 的返回值 | 本次 Request 的结束态，引擎的重试与重连策略全部据此分支。generator 的返回值由类型强制存在；「最后产出的消息必须是 `request_end`」只能是运行期约定。引擎正是据它写出那条 `request_end`。 |
+
+除此之外仍非 OmniMessage 的部分，属于 Environment 的管理面，见下。
+
 
 ## LLMInterface
 
@@ -113,6 +129,11 @@ interface EnvironmentInterface {
   dispose?(): void;                                        // 释放运行时资源,幂等
 }
 ```
+
+本接口承载两条面，只有第一条属于 Agent 循环：
+
+- **消息面**——`executeTool`，`context_engine` 在此唯一调用的方法：进去一条 OmniMessage 工具调用，出来一串 OmniMessage；
+- **管理面**——`listTools` 与 `toolPermission`，以及可选的后台命令与子会话成员(各类列举、`killBackgroundCommand`、`sendToBackgroundSubagent`、`abortBackgroundSubagentRun`、监听器挂载与 `dispose`)。它们都不经过引擎：服务于 Session 装配与宿主自己的 UI——Web App 的进程面板与子会话面板、审批模式的权限查询——是返回普通数据的普通方法调用。这正是它们不做成消息形态的原因，也是把它们消息化并不会让引擎边界更纯的原因。
 
 `executeTool` 逐条产出 `partial_tool_call_output`，并以恰好一条完整 `tool_call_output` 收尾；带 `origin` 的嵌套消息(如 `run_subagent` 转发的子 Session 消息)原样透传。内置 Environment 可以把被截断文本保存在 Session scratchpad 中，无需在此公共接口暴露存储生命周期钩子。其模型可见 recovery 路径是普通绝对路径；Windows 上统一写成正斜杠——Node 的 fs API 与包内 (Git) Bash 工具 Shell 都接受这种写法，同一拼写既可直接作 `read_file` 参数、也可用于 Shell 命令。渲染不是本接口的职责——流式渲染由 CLI / Web 前端完成。
 
@@ -243,7 +264,7 @@ interface SubagentRunner {
 interface SubagentHandle {
   sessionId: string;      // 子 Session id:消息 origin 的一跳,subagent_id 由其尾部派生
   run(input: {
-    prompt: string;
+    messages: OmniMessage[];  // 本轮输入，与 Session.run 接收 Prompt 的形状一致
     signal?: AbortSignal;
     approve?: ApproveFn;  // 父级审批回调,转发即继承
   }): AsyncGenerator<OmniMessage>;
@@ -252,6 +273,8 @@ interface SubagentHandle {
 ```
 
 派生(spawn)与运行(run)分离，同一子 Session 可以在一轮结束后接受追加 Prompt 继续运行(长驻 Subagent，经 `input_subagent` 驱动)。子 Session 在同一 Workspace 中运行、拥有独立 Trace；嵌套深度当前限制为 1。
+
+一轮的输入是 OmniMessage 数组——与 `steer` 相同的形状，也与宿主调用 `EnvironmentInterface.sendToBackgroundSubagent` 时相同的形状——通往子会话的两条路径由此说同一套词汇。每条消息的 `sender` 由调用方决定：模型自己派发(`run_subagent`、`input_subagent`)标记 `parent_agent`，宿主面板上真人发出的消息不带 sender，子会话的 Trace 因此记录的是真正说话的人。
 
 ## VisionDescriberService
 

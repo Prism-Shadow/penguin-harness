@@ -16,7 +16,7 @@ import {
 } from "../src/environment/tools/read-image.js";
 import type { ToolResult } from "../src/environment/tools/types.js";
 import type { OmniMessage } from "../src/omnimessage/index.js";
-import type { ToolDefinitionConfig } from "../src/interfaces.js";
+import type { ToolDefinitionConfig } from "../src/interfaces/index.js";
 
 /** Full bytes of a 1x1 transparent PNG (including the magic number, enough for mime sniffing
  *  and data URL assertions). */
@@ -78,7 +78,7 @@ describe("read_image — local files", () => {
 
   it("finishes as failed with an explanation when the file does not exist", async () => {
     const { result, text } = await run({ source: "missing.png" }, tmp);
-    expect(result?.stopReason).toBe("failed");
+    expect(result?.stopReason).toBe("fatal");
     expect(result?.images).toBeUndefined();
     expect(text).toContain("missing.png");
   });
@@ -88,21 +88,21 @@ describe("read_image — local files", () => {
     PNG_1X1.copy(big); // Header carries the PNG magic number, ensuring the failure is due to size, not type
     await writeFile(path.join(tmp, "big.png"), big);
     const { result, text } = await run({ source: "big.png" }, tmp);
-    expect(result?.stopReason).toBe("failed");
+    expect(result?.stopReason).toBe("fatal");
     expect(text).toContain("too large");
   });
 
   it("finishes as failed for an unsupported image type", async () => {
     await writeFile(path.join(tmp, "img.bmp"), Buffer.from("BM not really an image"));
     const { result, text } = await run({ source: "img.bmp" }, tmp);
-    expect(result?.stopReason).toBe("failed");
+    expect(result?.stopReason).toBe("fatal");
     expect(text).toContain("Unsupported image type");
   });
 
   it("finishes as failed with a clear note when source points to a directory (no raw EISDIR passthrough)", async () => {
     await mkdir(path.join(tmp, "subdir"));
     const { result, text } = await run({ source: "subdir" }, tmp);
-    expect(result?.stopReason).toBe("failed");
+    expect(result?.stopReason).toBe("fatal");
     expect(text).toContain("not a file");
     expect(text).not.toContain("EISDIR");
   });
@@ -110,13 +110,13 @@ describe("read_image — local files", () => {
   it("finishes as failed for an empty file (the extension fallback must not let empty base64 through)", async () => {
     await writeFile(path.join(tmp, "empty.png"), Buffer.alloc(0));
     const { result, text } = await run({ source: "empty.png" }, tmp);
-    expect(result?.stopReason).toBe("failed");
+    expect(result?.stopReason).toBe("fatal");
     expect(text).toContain("empty");
   });
 
   it("finishes as failed when the source argument is missing", async () => {
     const { result, text } = await run({}, tmp);
-    expect(result?.stopReason).toBe("failed");
+    expect(result?.stopReason).toBe("fatal");
     expect(text).toContain('"source"');
   });
 });
@@ -141,7 +141,7 @@ describe("read_image — http(s) URL", () => {
       vi.fn(async () => new Response("nope", { status: 404 })),
     );
     const { result, text } = await run({ source: "https://example.com/missing.png" }, tmp);
-    expect(result?.stopReason).toBe("failed");
+    expect(result?.stopReason).toBe("fatal");
     expect(text).toContain("404");
   });
 });

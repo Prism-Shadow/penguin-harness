@@ -1,16 +1,10 @@
 /**
  * file-path.ts unit tests: whether inline code in message text looks like a file path,
  * all branches of normalizing body paths to a Workspace-relative path (toWorkspaceRelative),
- * the directory-browser navigation join (joinWorkspacePath), and the display name of a
- * file path (pathFileName — the details card's Trace file row).
+ * and the directory-browser navigation join (joinWorkspacePath).
  */
 import { describe, expect, it } from "vitest";
-import {
-  isFilePathLike,
-  joinWorkspacePath,
-  pathFileName,
-  toWorkspaceRelative,
-} from "../src/lib/file-path";
+import { isFilePathLike, joinWorkspacePath, toWorkspaceRelative } from "../src/lib/file-path";
 
 describe("isFilePathLike", () => {
   it("relative path + image extension → match", () => {
@@ -162,37 +156,5 @@ describe("joinWorkspacePath", () => {
     // …whereas joining against the advanced path state — the old behavior — compounds the
     // segment into a directory that does not exist ("home/home", then "home/home/home", …).
     expect(joinWorkspacePath(pathStateAfterFirstClick, "home")).toBe("home/home");
-  });
-});
-
-describe("pathFileName", () => {
-  it("POSIX absolute path → final segment", () => {
-    expect(pathFileName("/home/user/PenguinHarness/traces/2026-08-18/s-1/001.jsonl")).toBe(
-      "001.jsonl",
-    );
-  });
-
-  it("Windows path (backslashes) → final segment", () => {
-    expect(pathFileName("C:\\Users\\u\\PenguinHarness\\traces\\001.jsonl")).toBe("001.jsonl");
-  });
-
-  it("mixed separators → the last of either kind cuts", () => {
-    expect(pathFileName("C:/Users/u\\traces\\001.jsonl")).toBe("001.jsonl");
-  });
-
-  it("bare filename → unchanged", () => {
-    expect(pathFileName("001.jsonl")).toBe("001.jsonl");
-  });
-
-  it("a backslash inside a POSIX directory name is harmless — the later '/' wins the cut", () => {
-    expect(pathFileName("/data/weird\\dir/traces/001.jsonl")).toBe("001.jsonl");
-  });
-
-  it("the cut is the last separator of either kind, so a backslash in the file name cuts too (no such trace name exists — pinning the rule, not endorsing it)", () => {
-    expect(pathFileName("/data/traces/weird\\001.jsonl")).toBe("001.jsonl");
-  });
-
-  it("degenerate trailing separator falls back to the input (never blank)", () => {
-    expect(pathFileName("/home/user/")).toBe("/home/user/");
   });
 });

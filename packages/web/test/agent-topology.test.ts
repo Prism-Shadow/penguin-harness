@@ -109,6 +109,46 @@ describe("extractTopology", () => {
     expect(nodes[1]!.running).toBe(false);
   });
 
+  it("pins the most recent subagent-bearing Task: a plain user message does not wipe the graph", () => {
+    const m = createStreamModel();
+    pushMessage(m, userText("go"));
+    spawnChild(m, "t1", "child1");
+    pushMessage(m, toolCallOutput({ output: "done", toolCallId: "t1" }));
+    pushMessage(m, assistantText("answered"));
+
+    // Two plain follow-up messages with no spawns: the panel keeps showing child1's Task —
+    // its root reads as ended (the next user message closed that Task).
+    pushMessage(m, userText("thanks"));
+    pushMessage(m, assistantText("np"));
+    pushMessage(m, userText("one more question"));
+    let nodes = extractTopology(m, "root", true);
+    expect(nodes.map((n) => n.sessionId)).toEqual(["root", "child1"]);
+    expect(nodes[0]!.running).toBe(false);
+
+    // The moment a new Task spawns its own child, it takes the panel over.
+    spawnChild(m, "t2", "child2");
+    nodes = extractTopology(m, "root", true);
+    expect(nodes.map((n) => n.sessionId)).toEqual(["root", "child2"]);
+  });
+
+  it("server liveness overrides the text heuristics whenever it knows the child (issue #274)", () => {
+    const m = createStreamModel();
+    pushMessage(m, userText("go"));
+    spawnChild(m, "t1", "child1");
+    // The card completed long ago — the heuristic reads done — but the runtime reports the
+    // child running again (an input_subagent revival or a panel-started round).
+    pushMessage(m, toolCallOutput({ output: "done", toolCallId: "t1" }));
+    const live = new Map([["child1", true]]);
+    expect(extractTopology(m, "root", false, live)[1]!.running).toBe(true);
+
+    // The reverse: a card that still looks running settles the moment the server says idle.
+    const idle = new Map([["child1", false]]);
+    expect(extractTopology(m, "root", true, idle)[1]!.running).toBe(false);
+
+    // A child the server does not know (dead runtime, old server) keeps the heuristic.
+    expect(extractTopology(m, "root", false, new Map())[1]!.running).toBe(false);
+  });
+
   it("prefers the child's own session_meta capture (agent_state path) over the call-argument agent id", () => {
     const m = createStreamModel();
     pushMessage(m, userText("go"));
@@ -163,14 +203,17 @@ describe("extractTopology", () => {
     expect(nodes[1]).toMatchObject({ sessionId: "childX", running: false, parentId: "root" });
   });
 
-  it("shows only the latest Task's spawns: a new user message resets the graph to the root", () => {
+  it("a new user message keeps the previous subagent Task pinned until its own spawn takes over", () => {
     const m = createStreamModel();
     pushMessage(m, userText("task 1"));
     spawnChild(m, "t1", "child1");
     pushMessage(m, toolCallOutput({ output: "done", toolCallId: "t1" }));
 
+    // Task 2 starts with no spawns of its own: the panel stays on Task 1's graph (root ended).
     pushMessage(m, userText("task 2"));
-    expect(extractTopology(m, "root", true).map((n) => n.sessionId)).toEqual(["root"]);
+    const pinned = extractTopology(m, "root", true);
+    expect(pinned.map((n) => n.sessionId)).toEqual(["root", "child1"]);
+    expect(pinned[0]!.running).toBe(false);
 
     spawnChild(m, "t2", "child2");
     expect(extractTopology(m, "root", true).map((n) => n.sessionId)).toEqual(["root", "child2"]);
@@ -567,5 +610,38 @@ describe("background subagents in the topology", () => {
     // The model's own count still sees both: the notice DID open a Task there (and zeroed the
     // per-Task usage buckets), which is what the header's cost fold keys on.
     expect(modelTaskStartCount(m.items)).toBe(2);
+  });
+
+  it("a steered notice settles the child too, and counts as a task start nowhere", () => {
+    const m = createStreamModel();
+    pushMessage(m, userText("go"));
+    spawnBackground(m, "t1", "session-child-55cc66dd", "subagent-55cc66dd");
+    // The engine-injected form: delivery: steering on the block, arriving mid-run.
+    pushMessage(
+      m,
+      userText(
+        buildBackgroundTaskDoneMessage(
+          {
+            kind: "subagent",
+            id: "subagent-55cc66dd",
+            status: "completed",
+            detail: "",
+            delivery: "steering",
+          },
+          "Background subagent finished",
+        ),
+        "harness",
+      ),
+    );
+    // The reducer keeps it inside the Task as its own item kind; the terminal-state scan
+    // still reads the handle off it, so the node settles.
+    expect(m.items.some((i) => i.kind === "background_notice")).toBe(true);
+    const nodes = extractTopology(m, "root", false);
+    expect(nodes).toHaveLength(2);
+    expect(nodes[1]!.running).toBe(false);
+    // Steered delivery starts nothing: not a panel scope, and not a reducer Task either —
+    // modelTaskStartCount stays 1:1 with the reducer's startTask calls by not counting it.
+    expect(taskStartCount(m.items)).toBe(1);
+    expect(modelTaskStartCount(m.items)).toBe(1);
   });
 });

@@ -2,6 +2,9 @@
  * `penguin-hmr`: the CLI currently pushed to this machine's HMR store, instead of the
  * one built into this binary. Use `penguin` when nothing is pushed.
  */
+// First import on purpose, as in penguin.ts: the pushed CLI bundle this entry loads
+// reaches node:sqlite the same way (see warnings.ts).
+import "./warnings.js";
 import "dotenv/config";
 import { pathToFileURL } from "node:url";
 import { resolveRoot } from "@prismshadow/penguin-core";

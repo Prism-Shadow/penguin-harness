@@ -16,7 +16,7 @@ frontmatter 字段：
 | `short_description` / `short_description_zh` | UI 短标签(卡片等紧凑位置用)，不注入 Prompt |
 | `preinstall` | 可选；`false` 表示不进入 default_agent 的预装集合，仅可从技能库手动安装 |
 | `version` | 自然数版本号，默认 1 |
-| `updated` | 更新日期 |
+| `updated` | 更新时间戳，ISO 8601 UTC(`2026-07-17T09:00:00Z`) |
 
 ```md
 ---
@@ -25,7 +25,7 @@ description: One-line English description injected into the system prompt.
 short_description: Short UI label.
 short_description_zh: 简短的中文标签。
 version: 1
-updated: 2026-07-17
+updated: 2026-07-17T09:00:00Z
 ---
 
 # My Skill
@@ -33,7 +33,7 @@ updated: 2026-07-17
 具体的步骤、边界与验收标准……
 ```
 
-解析是容错的：只识别首个 `---` 块内的 `key: value` 标量行；`version` 不是自然数时回退为 1,`updated` 缺省为空；`preinstall` 仅识别字面量 `false`。
+解析是容错的：只识别首个 `---` 块内的 `key: value` 标量行；`version` 不是自然数时回退为 1,`updated` 缺省为空；`preinstall` 仅识别字面量 `false`。`updated` 按原样存储、从不解析——UI 将其渲染为相对日期——但内置技能库通篇写 ISO 8601 UTC，为它编写的 Skill 也应如此。
 
 ## 渐进式加载
 
@@ -68,6 +68,7 @@ Skill 库以 npm 包 `@prismshadow/penguin-skills` 发布，tarball 直接携带
 | | `remote-claude-code` | 通过 SSH 在远程主机上驱动 Claude Code：expect 持久会话、headless `-p` 的 stdin 修正、tmux 驱动的交互 TUI（逐个按键并截屏确认，用户消息原样转发）与多轮续接（不预装，按需从技能库安装） |
 | AI 应用开发 | `penguin-sdk` | 基于 SDK 构建智能体应用、AI 与 RAG 应用（写应用代码，而非配置 Agent State）：createSession/run 流式循环、以 CLI 形式接入用户已有工具，外加带可溯源引用的完整检索配方 |
 | | `penguin-cli` | 用 penguin CLI 管理模型 API Key、默认模型与各 Agent 的 Vault 密钥 |
+| | `penguin-orchestration` | 从 shell 驱动 PenguinHarness 自身：用 penguin CLI 列出与创建 Agent 和会话、发送并中途改向消息、查询成本与定时任务 |
 | | `agenthub-models` | 经 `@prismshadow/agenthub` 调用模型 API：流式文本、图像生成、语音合成与 Embedding |
 | | `vllm` | 用 vLLM 部署与服务 LLM，提供 OpenAI 兼容端点，并为 Agent 负载启用工具调用 |
 | | `ollama` | 用 Ollama 部署与运行本地模型，把 OpenAI 兼容端点接入应用与 Agent |

@@ -59,6 +59,29 @@ export function contextMenuAnchor(e: ContextMenuEventLike, row: AnchorRect): Anc
 }
 
 /**
+ * Does a scroll of `target` move the content `owner` sits in — the question a
+ * pointer-anchored panel has to answer before dismissing itself?
+ *
+ * The panel's scroll listener runs in the capture phase, because scroll events do not
+ * bubble. The price is that it hears **every** scrolling element in the document, not only
+ * the ones the anchor lies inside: a streaming conversation scrolls its message list on
+ * every chunk, and taking each of those as a reason to dismiss wiped a context menu opened
+ * in the sidebar — a part of the page that had not moved at all. Containment is the whole
+ * test, and the page itself needs no case of its own, because a full-page scroll targets
+ * `document`, which contains every node in it.
+ *
+ * A caller that names no owner still dismisses on any scroll, which is what every anchored
+ * panel did before this rule existed.
+ */
+export function scrollMovesAnchor(target: Node | null, owner: Node | null): boolean {
+  if (owner === null || target === null) return true;
+  // An Element and the Document both answer `contains`; a target that does not is not
+  // something this rule can judge, so it dismisses rather than pin the panel to content
+  // that may well have moved.
+  return typeof target.contains === "function" ? target.contains(owner) : true;
+}
+
+/**
  * Shift+F10 — the platform chord for "open the context menu for the focused element".
  * Handled explicitly rather than left to the browser: Windows and Linux browsers
  * synthesize a `contextmenu` event from it, but macOS keyboards have no Menu key and

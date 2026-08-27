@@ -17,7 +17,7 @@ import {
   UnsupportedParameterError,
 } from "@prismshadow/agenthub";
 import type { UniConfig, UniEvent, UniMessage, UsageMetadata } from "@prismshadow/agenthub";
-import type { LLMOutcome, ThinkingLevelName } from "../src/interfaces.js";
+import type { LLMOutcome, ThinkingLevelName } from "../src/interfaces/index.js";
 
 import {
   EventTranslator,
@@ -29,7 +29,7 @@ import {
   isIncompleteStreamError,
   isFastModeUnsupportedError,
   isMalformedJsonParseError,
-  isRetryableError,
+  isFatalProviderRejection,
   FAST_MODE_UNSUPPORTED_GUIDANCE,
   mapThinkingLevel,
   mergeOmniToUniMessage,
@@ -40,12 +40,14 @@ import {
 } from "../src/llm/index.js";
 import {
   assistantText,
+  buildBackgroundTaskDoneMessage,
   imageUrlMessage,
   inlineData,
   inlineThinking,
   thinkingMessage,
   toolCall,
   toolCallOutput,
+  userSteeringText,
   userText,
 } from "../src/omnimessage/index.js";
 import type {
@@ -152,6 +154,34 @@ describe("mergeOmniToUniMessage", () => {
       images: [dataUrl],
       tool_call_id: "call_img",
     });
+  });
+
+  it("an injected request input (tool outputs + steered notice + steering) collapses into ONE user message", () => {
+    // The engine's next-input assembly appends background notices and steering behind the
+    // turn's tool outputs — several user-side OmniMessages. On the wire they must be a
+    // single user UniMessage (content_items in input order): what AgentHub receives always
+    // alternates user / assistant, and an injection can never produce two adjacent user
+    // messages. The per-message granularity exists only at the OmniMessage/Trace layer.
+    const notice = buildBackgroundTaskDoneMessage(
+      {
+        kind: "command",
+        id: "proc-1",
+        status: "completed",
+        detail: "exit code 0",
+        delivery: "steering",
+      },
+      "Background command finished",
+    );
+    const uni = mergeOmniToUniMessage([
+      toolCallOutput({ output: "total 0", toolCallId: "call_1" }),
+      userText(notice, "harness"),
+      userText(userSteeringText("also check the tests")),
+    ]);
+    expect(uni.role).toBe("user");
+    expect(uni.content_items.map((c) => c.type)).toEqual(["tool_result", "text", "text"]);
+    const texts = uni.content_items.filter((c) => c.type === "text");
+    expect((texts[0] as { text: string }).text).toBe(notice);
+    expect((texts[1] as { text: string }).text).toContain("[user_steering]");
   });
 
   it("throws on mixed roles", () => {
@@ -934,7 +964,7 @@ describe("EventTranslator.finishInterrupted (PRN-012 structural closure)", () =>
     ]) {
       for (const m of tr.pushEvent(e)) out.push(m);
     }
-    for (const m of tr.finishInterrupted("timeout")) out.push(m);
+    for (const m of tr.finishInterrupted("retryable")) out.push(m);
 
     const types = out.map((m) => (m.payload as { type: string }).type);
     expect(types).toEqual([
@@ -948,10 +978,10 @@ describe("EventTranslator.finishInterrupted (PRN-012 structural closure)", () =>
 
     const stop = out[3]!.payload as { event_type: string; stop_reason: string };
     expect(stop.event_type).toBe("stop");
-    expect(stop.stop_reason).toBe("timeout");
+    expect(stop.stop_reason).toBe("retryable");
     const complete = out[4]!.payload as TextPayload;
     expect(complete.text).toBe("Partial");
-    expect(complete.stop_reason).toBe("timeout");
+    expect(complete.stop_reason).toBe("retryable");
   });
 
   it("closes an open thinking segment with the interruption reason on both partial stop and complete message", () => {
@@ -1047,7 +1077,7 @@ describe("EventTranslator.finishInterrupted (PRN-012 structural closure)", () =>
       for (const m of tr.pushEvent(e)) out.push(m);
     }
     const before = out.length;
-    for (const m of tr.finishInterrupted("timeout")) out.push(m);
+    for (const m of tr.finishInterrupted("retryable")) out.push(m);
     expect(out.length).toBe(before); // Already produced immediately, not duplicated.
     const complete = out.find((m) => (m.payload as { type: string }).type === "tool_call")!
       .payload as ToolCallPayload;
@@ -1133,99 +1163,74 @@ describe("config helpers", () => {
   });
 });
 
-describe("isRetryableError (the timeout-vs-failed label; the engine retries every non-auth error)", () => {
-  it("labels 429, 408 and 5xx transport-shaped (timeout)", () => {
-    expect(isRetryableError({ status: 429 })).toBe(true);
-    expect(isRetryableError({ status: 408 })).toBe(true); // Request Timeout (transient)
-    expect(isRetryableError({ status: 500 })).toBe(true);
-    expect(isRetryableError({ statusCode: 503 })).toBe(true);
+describe("isFatalProviderRejection (the fatal allowlist; everything it misses stays retryable)", () => {
+  it("matches definitive 4xx rejections — including quota-coded and bare 403s", () => {
+    expect(isFatalProviderRejection({ status: 400 })).toBe(true);
+    expect(isFatalProviderRejection({ status: 403 })).toBe(true);
+    expect(isFatalProviderRejection({ status: 404 })).toBe(true);
+    expect(isFatalProviderRejection({ statusCode: 422 })).toBe(true);
+    expect(isFatalProviderRejection({ status: 403, code: "insufficient_user_quota" })).toBe(true);
+    expect(isFatalProviderRejection({ status: 402, code: "insufficient_quota" })).toBe(true);
+    expect(isFatalProviderRejection({ status: 403, message: "no active subscription" })).toBe(true);
+    // 401 matches here too, but the auth detector runs first and gives it the more
+    // specific credentials handling.
+    expect(isFatalProviderRejection({ status: 401 })).toBe(true);
   });
 
-  it("labels provider 4xx rejections failed — including quota-coded and bare 403s", () => {
-    // The label is taxonomy, not policy: `failed` is in the engine's RETRY_STATUSES, so
-    // every one of these retries on the ladder and fails after exhaustion. There is no
-    // quota detector anymore — a 402/403 with a quota code or subscription message
-    // classifies exactly like a bare one.
-    expect(isRetryableError({ status: 400 })).toBe(false);
-    expect(isRetryableError({ status: 403 })).toBe(false);
-    expect(isRetryableError({ status: 404 })).toBe(false);
-    expect(isRetryableError({ status: 403, code: "insufficient_user_quota" })).toBe(false);
-    expect(isRetryableError({ status: 402, code: "insufficient_quota" })).toBe(false);
-    expect(isRetryableError({ status: 403, message: "no active subscription" })).toBe(false);
-    // 401 is auth (terminal), not merely failed-shaped.
-    expect(isRetryableError({ status: 401 })).toBe(false);
+  it("leaves the transient statuses out: 408, 429 and 5xx keep their retries", () => {
+    expect(isFatalProviderRejection({ status: 408 })).toBe(false);
+    expect(isFatalProviderRejection({ status: 429 })).toBe(false);
+    expect(isFatalProviderRejection({ status: 500 })).toBe(false);
+    expect(isFatalProviderRejection({ statusCode: 503 })).toBe(false);
   });
 
-  it("labels network error codes transport-shaped", () => {
-    expect(isRetryableError({ code: "ECONNRESET" })).toBe(true);
-    expect(isRetryableError({ code: "ETIMEDOUT" })).toBe(true);
-    expect(isRetryableError(new Error("socket hang up"))).toBe(true);
-    expect(isRetryableError(new Error("request timeout"))).toBe(true);
-  });
-
-  it("labels undici transport failures transport-shaped, probing the cause chain", () => {
-    // Node fetch wraps a dropped connection as TypeError("terminated") with the real code on
-    // `cause` — exactly the field observed: "terminated: other side closed (UND_ERR_SOCKET)".
+  it("finds the status down the cause chain (SDKs wrap the response error)", () => {
     expect(
-      isRetryableError(
+      isFatalProviderRejection(
+        new Error("request failed", {
+          cause: Object.assign(new Error("bad request"), { status: 400 }),
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isFatalProviderRejection(
+        new Error("request failed", {
+          cause: Object.assign(new Error("throttled"), { status: 429 }),
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("never matches status-less errors: transport drops and local failures stay retryable", () => {
+    expect(isFatalProviderRejection({ code: "ECONNRESET" })).toBe(false);
+    expect(isFatalProviderRejection(new Error("socket hang up"))).toBe(false);
+    expect(
+      isFatalProviderRejection(
         new TypeError("terminated", {
           cause: Object.assign(new Error("other side closed"), { code: "UND_ERR_SOCKET" }),
         }),
       ),
-    ).toBe(true);
-    expect(isRetryableError({ code: "UND_ERR_SOCKET" })).toBe(true);
-    expect(isRetryableError({ code: "UND_ERR_CONNECT_TIMEOUT" })).toBe(true);
-    expect(isRetryableError({ code: "UND_ERR_HEADERS_TIMEOUT" })).toBe(true);
-    expect(isRetryableError({ code: "UND_ERR_BODY_TIMEOUT" })).toBe(true);
-    // A cause-less "fetch failed" still counts via the message keywords; "terminated" only
-    // counts alongside transport vocabulary — the real socket case always carries the
-    // UND_ERR_* code on its cause, and bare "terminated" appears in unrelated provider
-    // copy too (see the content-filter counter-case below).
-    expect(isRetryableError(new TypeError("fetch failed"))).toBe(true);
-    expect(isRetryableError(new TypeError("terminated: other side closed"))).toBe(true);
-    expect(isRetryableError(new TypeError("terminated"))).toBe(false);
-    // Provider verdict copy that merely contains the word is failed-shaped, not transport.
-    expect(isRetryableError(new Error("Request terminated by content filter"))).toBe(false);
-    // Classic Node codes wrapped one level down are found too.
-    expect(
-      isRetryableError(
-        new Error("request failed", {
-          cause: Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" }),
-        }),
-      ),
-    ).toBe(true);
+    ).toBe(false);
+    const abort = new Error("aborted");
+    abort.name = "AbortError";
+    expect(isFatalProviderRejection(abort)).toBe(false);
+    expect(isFatalProviderRejection(new Error("unexpected token in JSON"))).toBe(false);
+    expect(isFatalProviderRejection(null)).toBe(false);
+    expect(isFatalProviderRejection(undefined)).toBe(false);
   });
 
-  it("auth always wins: a definitive credential signal is terminal, never merely a label", () => {
+  it("the auth detector keeps its own contract: a definitive credential signal, wherever it rides", () => {
     // A 403 whose BODY carries a definitive auth code but whose MESSAGE mentions a
     // subscription (SDKs routinely put the body's message on err.message): the explicit
-    // credential signal decides, keeping the dead credential off the retry ladder.
+    // credential signal decides, and the classifier checks auth before the generic 4xx.
     const err = Object.assign(new Error("subscription key invalid"), {
       status: 403,
       error: { code: "invalid_api_key" },
     });
     expect(isAuthenticationError(err)).toBe(true);
-    expect(isRetryableError(err)).toBe(false);
-    // Same with the auth signal on the cause chain.
-    expect(
-      isRetryableError(
-        new Error("request failed: quota subscription issue", {
-          cause: { status: 403, error: { type: "authentication_error" } },
-        }),
-      ),
-    ).toBe(false);
-    // A bare 403 carries no credential signal: NOT auth (it rides the retry ladder as
-    // failed; see the engine tests).
+    // A bare 403 carries no credential signal: NOT auth (it is fatal through the generic
+    // 4xx rejection instead; see the classification tests).
     expect(isAuthenticationError({ status: 403, message: "forbidden" })).toBe(false);
-  });
-
-  it("labels abort and unknown local errors failed-shaped", () => {
-    const abort = new Error("aborted");
-    abort.name = "AbortError";
-    expect(isRetryableError(abort)).toBe(false);
-    expect(isRetryableError(new Error("unexpected token in JSON"))).toBe(false);
-    expect(isRetryableError(null)).toBe(false);
-    expect(isRetryableError(undefined)).toBe(false);
   });
 });
 
@@ -1286,9 +1291,9 @@ describe("isFastModeUnsupportedError (fast_mode rejected by a model without a fa
   });
 
   it("stays scoped to fast_mode: other unsupported parameters and unrelated errors do not match", () => {
-    // Another UnsupportedParameterError source (e.g. temperature) keeps the default failed
-    // classification and the engine's retry ladder — this detector must not widen the
-    // permanent special case.
+    // Another UnsupportedParameterError source (e.g. temperature) keeps the default
+    // retryable classification and the engine's retry ladder — this detector must not
+    // widen the fatal special case.
     expect(
       isFastModeUnsupportedError(
         new UnsupportedParameterError({
@@ -1673,10 +1678,12 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     return { messages, outcome: res.value as LLMOutcome };
   }
 
-  it("returns failed on a build failure such as empty input (never throws)", async () => {
+  it("returns fatal on a build failure such as empty input (never throws)", async () => {
     const model = new SeamModel((sig) => hang(sig));
     const { messages, outcome } = await drain(model.streamGenerate({ newMessages: [] }));
-    expect(outcome.status).toBe("failed"); // A mergeOmniToUniMessage failure converges to failed, never throws
+    // A mergeOmniToUniMessage failure converges to fatal (the same input can never
+    // assemble on a retry), never throws.
+    expect(outcome.status).toBe("fatal");
     expect(messages).toHaveLength(0);
   });
 
@@ -1717,18 +1724,18 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     expect(res.value).toMatchObject({ status: "aborted" });
   });
 
-  it("classifies an idle timeout as timeout, with no token_usage", async () => {
+  it("classifies an idle timeout as retryable, with no token_usage", async () => {
     const model = new SeamModel((sig) => hang(sig), 30); // 30ms idle timeout
     const { messages, outcome } = await drain(
       model.streamGenerate({ newMessages: [userText("go")] }),
     );
-    expect(outcome.status).toBe("timeout");
+    expect(outcome.status).toBe("retryable");
     expect(messages.map(typeOf)).not.toContain("token_usage");
   });
 
-  it("classifies an idle timeout as timeout even when the stream ends gracefully on abort", async () => {
+  it("classifies an idle timeout as retryable even when the stream ends gracefully on abort", async () => {
     // The underlying implementation does not throw on abort, and ends gracefully with done:
-    // this must still be classified as timeout, not mistakenly as completed.
+    // this must still be classified as retryable, not mistakenly as completed.
     async function* gracefulHang(signal: AbortSignal): AsyncGenerator<UniEvent> {
       await new Promise<void>((resolve) => {
         if (signal.aborted) {
@@ -1742,32 +1749,32 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     const { messages, outcome } = await drain(
       model.streamGenerate({ newMessages: [userText("go")] }),
     );
-    expect(outcome.status).toBe("timeout");
+    expect(outcome.status).toBe("retryable");
     expect(messages.map(typeOf)).not.toContain("token_usage");
   });
 
-  it("classifies a network drop as timeout, closing the open text segment, no token_usage", async () => {
+  it("classifies a network drop as retryable, closing the open text segment, no token_usage", async () => {
     const model = new SeamModel(() => dropAfterText());
     const { messages, outcome } = await drain(
       model.streamGenerate({ newMessages: [userText("go")] }),
     );
-    expect(outcome.status).toBe("timeout");
+    expect(outcome.status).toBe("retryable");
     const complete = messages.find((m) => typeOf(m) === "text");
     expect((complete!.payload as TextPayload).text).toBe("hi");
-    expect((complete!.payload as TextPayload).stop_reason).toBe("timeout");
+    expect((complete!.payload as TextPayload).stop_reason).toBe("retryable");
     expect(messages.map(typeOf)).not.toContain("token_usage");
   });
 
-  it("classifies an AgentHub JSON parse exception as malformed and closes partial output", async () => {
+  it("classifies an AgentHub JSON parse exception as retryable and closes partial output", async () => {
     const model = new SeamModel(() => malformedJsonAfterText());
     const { messages, outcome } = await drain(
       model.streamGenerate({ newMessages: [userText("go")] }),
     );
-    expect(outcome.status).toBe("malformed");
+    expect(outcome.status).toBe("retryable");
     expect(outcome.errorMessage).toContain("Unexpected token");
     const complete = messages.find((m) => typeOf(m) === "text");
     expect((complete!.payload as TextPayload).text).toBe("hi");
-    expect((complete!.payload as TextPayload).stop_reason).toBe("malformed");
+    expect((complete!.payload as TextPayload).stop_reason).toBe("retryable");
     expect(messages.map(typeOf)).not.toContain("token_usage");
   });
 
@@ -1783,7 +1790,7 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     const { messages, outcome } = await drain(
       model.streamGenerate({ newMessages: [userText("go")] }),
     );
-    expect(outcome.status).toBe("malformed");
+    expect(outcome.status).toBe("retryable");
     expect(messages.map(typeOf)).not.toContain("token_usage");
 
     async function* noEvents(): AsyncGenerator<UniEvent> {
@@ -1793,7 +1800,7 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     const { outcome: outcome2 } = await drain(
       model2.streamGenerate({ newMessages: [userText("go")] }),
     );
-    expect(outcome2.status).toBe("malformed");
+    expect(outcome2.status).toBe("retryable");
   });
 
   it("a user abort ends the run even when upstream ignores the signal and never settles", async () => {
@@ -1814,23 +1821,22 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
       drain(model.streamGenerate({ newMessages: [userText("go")] })),
       2000,
     );
-    expect(outcome.status).toBe("timeout");
+    expect(outcome.status).toBe("retryable");
   });
 
-  it("classifies a credentials failure as its own terminal status auth; params stay failed", async () => {
+  it("classifies a credentials failure as fatal; a parameter 400 is fatal too", async () => {
     const model = new SeamModel(() => authError());
     const { messages, outcome } = await drain(
       model.streamGenerate({ newMessages: [userText("go")] }),
     );
-    // 401 = credentials failure: its own stop reason so hosts can gate input until the
-    // model's API key is updated (same engine behavior as failed).
-    expect(outcome.status).toBe("auth");
+    // 401 = credentials failure: fatal — the engine stops the run and the errorMessage
+    // tells the user to update the model's API key.
+    expect(outcome.status).toBe("fatal");
     expect(outcome.errorMessage).toContain("invalid api key");
     expect(messages.map(typeOf)).not.toContain("token_usage");
 
-    // A parameter error (400) labels failed — honestly reported, and still retried by the
-    // engine like every non-auth failure (see engine.test.ts: it burns the ladder, then
-    // surfaces verbatim).
+    // A parameter error (400) is a definitive provider rejection: fatal — the identical
+    // request fails identically on every retry, so the engine surfaces it immediately.
     async function* paramError(): AsyncGenerator<UniEvent> {
       throw Object.assign(new Error("unknown parameter: max_output_tokens"), { status: 400 });
     }
@@ -1838,14 +1844,14 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     const { outcome: outcome2 } = await drain(
       model2.streamGenerate({ newMessages: [userText("go")] }),
     );
-    expect(outcome2.status).toBe("failed");
+    expect(outcome2.status).toBe("fatal");
   });
 
-  it("marks a fast-mode rejection as permanent failed with actionable guidance (guarded on its own config)", async () => {
+  it("marks a fast-mode rejection as fatal with actionable guidance (guarded on its own config)", async () => {
     // AgentHub throws UnsupportedParameterError before any network I/O when fast_mode is
     // enabled on a model without a fast tier: deterministic for this object's frozen config,
-    // so it is the one failed shape the engine aborts on instead of retrying
-    // (LLMOutcome.permanent; the engine side is covered in engine.test.ts).
+    // so it is fatal — the engine aborts on it instead of retrying (the engine side is
+    // covered in engine.test.ts).
     async function* fastModeRejected(): AsyncGenerator<UniEvent> {
       throw new UnsupportedParameterError({
         client: "KimiK3Client",
@@ -1875,27 +1881,26 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     const { messages, outcome } = await drain(
       model.streamGenerate({ newMessages: [userText("go")] }),
     );
-    expect(outcome.status).toBe("failed");
-    expect(outcome.permanent).toBe(true);
+    expect(outcome.status).toBe("fatal");
     // The surfaced text keeps AgentHub's own words and appends where the switch lives.
     expect(outcome.errorMessage).toContain("Kimi does not support fast mode.");
     expect(outcome.errorMessage).toContain(FAST_MODE_UNSUPPORTED_GUIDANCE);
     expect(messages.map(typeOf)).not.toContain("token_usage");
 
     // Guard: the same error on a config that never sent fast_mode cannot be ours to
-    // explain — it stays a plain failed (no permanent) and rides the engine's ladder.
+    // explain — it carries no HTTP status, so it stays retryable and rides the engine's
+    // ladder.
     const model2 = new FastSeamModel(false);
     const { outcome: outcome2 } = await drain(
       model2.streamGenerate({ newMessages: [userText("go")] }),
     );
-    expect(outcome2.status).toBe("failed");
-    expect(outcome2.permanent).toBeUndefined();
+    expect(outcome2.status).toBe("retryable");
   });
 
-  it("an explicit auth signal wins whatever the message says: status auth, never retried", async () => {
+  it("an explicit auth signal wins whatever the message says: fatal, never retried", async () => {
     // 403 + body code invalid_api_key + a message mentioning the subscription: the
-    // explicit credential signal decides — auth is the one terminal status, and no
-    // message vocabulary may pull a dead credential back onto the retry ladder.
+    // explicit credential signal decides — fatal, and no message vocabulary may pull a
+    // dead credential back onto the retry ladder.
     async function* dressedAuthError(): AsyncGenerator<UniEvent> {
       throw Object.assign(new Error("subscription key invalid"), {
         status: 403,
@@ -1906,17 +1911,15 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     const { messages, outcome } = await drain(
       model.streamGenerate({ newMessages: [userText("go")] }),
     );
-    expect(outcome.status).toBe("auth");
+    expect(outcome.status).toBe("fatal");
     expect(outcome.errorMessage).toContain("subscription key invalid");
     expect(messages.map(typeOf)).not.toContain("token_usage");
   });
 
-  it("labels a bare 403 as failed — a retryable status, no quota/message heuristics involved", async () => {
-    // Every LLM error retries except auth: a 403 without a credential signal lands in
-    // `failed` (which the engine reconnects on) instead of being probed for quota or
-    // subscription vocabulary. The former quota detector is gone; a quota-coded provider
-    // rejection classifies exactly the same way, and its real message still rides on the
-    // outcome for observability.
+  it("labels a bare 403 as fatal — a definitive provider rejection, no message heuristics involved", async () => {
+    // A 4xx (minus 408/429) is a definitive rejection: fatal, whatever the message says.
+    // A quota-coded provider rejection classifies exactly the same way, and its real
+    // message still rides on the outcome for observability.
     async function* bare403(): AsyncGenerator<UniEvent> {
       throw Object.assign(new Error("forbidden"), { status: 403 });
     }
@@ -1924,7 +1927,7 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     const { messages, outcome } = await drain(
       model.streamGenerate({ newMessages: [userText("go")] }),
     );
-    expect(outcome.status).toBe("failed");
+    expect(outcome.status).toBe("fatal");
     expect(outcome.errorMessage).toContain("forbidden");
     expect(messages.map(typeOf)).not.toContain("token_usage");
 
@@ -1938,11 +1941,11 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     const { outcome: outcome2 } = await drain(
       model2.streamGenerate({ newMessages: [userText("go")] }),
     );
-    expect(outcome2.status).toBe("failed");
+    expect(outcome2.status).toBe("fatal");
     expect(outcome2.errorMessage).toContain("insufficient_user_quota");
   });
 
-  it("classifies an undici transport drop (TypeError terminated, cause UND_ERR_SOCKET) as timeout", async () => {
+  it("classifies an undici transport drop (TypeError terminated, cause UND_ERR_SOCKET) as retryable", async () => {
     async function* socketDrop(): AsyncGenerator<UniEvent> {
       yield ev({ content_items: [{ type: "text", text: "hi" }] });
       throw new TypeError("terminated", {
@@ -1953,13 +1956,13 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     const { messages, outcome } = await drain(
       model.streamGenerate({ newMessages: [userText("go")] }),
     );
-    expect(outcome.status).toBe("timeout");
+    expect(outcome.status).toBe("retryable");
     const complete = messages.find((m) => typeOf(m) === "text");
-    expect((complete!.payload as TextPayload).stop_reason).toBe("timeout");
+    expect((complete!.payload as TextPayload).stop_reason).toBe("retryable");
     expect(messages.map(typeOf)).not.toContain("token_usage");
   });
 
-  it("classifies a user abort (mid idle) as aborted, not timeout", async () => {
+  it("classifies a user abort (mid idle) as aborted, not retryable", async () => {
     const controller = new AbortController();
     const model = new SeamModel((sig) => hang(sig)); // Default 10s timeout, won't fire first
     const p = drain(

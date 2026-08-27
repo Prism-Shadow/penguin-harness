@@ -46,8 +46,14 @@ export interface WorkspaceFileContent {
   data: Buffer;
   fileName: string;
   contentType: string;
-  /** Types whose same-origin inline rendering would execute scripts (html/svg): inline preview must fall back to plain text. */
-  scriptable: boolean;
+  /**
+   * Which kind of scriptable document this is, or false. Both kinds would execute scripts if
+   * a browser rendered them as a same-origin document, but they need different inline
+   * handling: `"html"` falls back to plain text, while `"svg"` keeps its real type so an
+   * `<img>` can render it (an image never runs the SVG's scripts) and is served with a
+   * sandbox CSP so a direct navigation to it stays inert. See the file-content routes.
+   */
+  scriptable: "html" | "svg" | false;
   /** True when a bounded preview returned only the beginning of the file. */
   truncated?: boolean;
 }
@@ -55,6 +61,13 @@ export interface WorkspaceFileContent {
 export interface WorkspaceFileReadOptions {
   /** Return at most this many bytes. Used for bounded text previews. */
   maxBytes?: number;
+}
+
+/** One existing file from a batch existence check, with the time it was last written. */
+export interface WorkspaceFileStat {
+  /** The path as it was asked for, not its canonical form. */
+  rel: string;
+  mtimeMs: number;
 }
 
 export class WorkspaceFilesService {
@@ -174,18 +187,28 @@ export class WorkspaceFilesService {
    * leaking containment details. Returns the deduplicated existing items in input order.
    */
   async statExisting(workspace: string, rels: string[]): Promise<string[]> {
+    return (await this.statExistingWithMtime(workspace, rels)).map((f) => f.rel);
+  }
+
+  /**
+   * The same check, with each file's modification time — for the caller that has to tell a
+   * file this run wrote from one that was already sitting in the Workspace (the messaging
+   * bridge sends only the former). Statting is what the check already does, so the time
+   * costs nothing extra.
+   */
+  async statExistingWithMtime(workspace: string, rels: string[]): Promise<WorkspaceFileStat[]> {
     const unique = [...new Set(rels)];
-    const exists = await Promise.all(
-      unique.map(async (rel) => {
+    const stats = await Promise.all(
+      unique.map(async (rel): Promise<WorkspaceFileStat | null> => {
         try {
           const stat = await fs.stat(await this.resolveRead(workspace, rel));
-          return stat.isFile();
+          return stat.isFile() ? { rel, mtimeMs: stat.mtimeMs } : null;
         } catch {
-          return false;
+          return null;
         }
       }),
     );
-    return unique.filter((_, i) => exists[i]);
+    return stats.filter((s): s is WorkspaceFileStat => s !== null);
   }
 
   /**
@@ -276,7 +299,7 @@ export class WorkspaceFilesService {
       data,
       fileName: path.basename(file),
       contentType: CONTENT_TYPES[ext] ?? "application/octet-stream",
-      scriptable: ext === ".html" || ext === ".htm" || ext === ".svg",
+      scriptable: ext === ".html" || ext === ".htm" ? "html" : ext === ".svg" ? "svg" : false,
       ...(truncated ? { truncated: true } : {}),
     };
   }

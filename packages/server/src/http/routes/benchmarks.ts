@@ -58,12 +58,17 @@ function readCaseFile(deps: AppDeps, material: CaseMaterial) {
         material,
         boundedPreview ? { maxBytes: TEXT_PREVIEW_BYTES } : undefined,
       );
+    // Case material is browsed the same way a Workspace is, and gets the same inline
+    // hardening (see the session file-content route for the reasoning behind each branch).
+    const inertSvg = !download && scriptable === "svg";
     return new Response(new Uint8Array(data), {
       status: 200,
       headers: {
-        "Content-Type": !download && scriptable ? "text/plain; charset=utf-8" : contentType,
+        "Content-Type":
+          !download && scriptable === "html" ? "text/plain; charset=utf-8" : contentType,
         "Content-Disposition": `${download ? "attachment" : "inline"}; filename*=UTF-8''${encodeURIComponent(fileName)}`,
         "X-Content-Type-Options": "nosniff",
+        ...(inertSvg ? { "Content-Security-Policy": "sandbox" } : {}),
         ...(truncated ? { "X-Content-Truncated": "1" } : {}),
       },
     });

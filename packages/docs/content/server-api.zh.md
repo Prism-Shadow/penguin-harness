@@ -45,6 +45,21 @@ curl -c cookies.txt -H "Content-Type: application/json" \
   http://127.0.0.1:7364/api/auth/login
 ```
 
+### 本机 API token（Bearer）
+
+所有受保护路由同时接受携带**本机 API token** 的 `Authorization: Bearer <token>`——这是 CLI（以及经 CLI 驱动 harness 的 Agent）用来替代登录的本机凭据：
+
+- 服务端每次启动铸造新 token 并写入 `<root>/api-token`（仅属主可读，`0600`）；新 token 铸造的那一刻，上一次启动的 token 即失效。
+- 有效的 Bearer 即以内置 `admin` 身份通过认证。这个等价关系是授权模型本身，不是疏漏：对数据根目录的本机文件系统访问本就等于管理员权限——能读 `api-token` 的人也能读旁边的 `web.db`，与 `penguin server reset-admin-password` 是同一条规则。
+- 服务端驱动的会话把当前 token 以 `PENGUIN_API_TOKEN` 注入每个工具子进程（连同 `PENGUIN_API_URL`、`PENGUIN_PROJECT_ID`、`PENGUIN_AGENT_ID`、`PENGUIN_SESSION_ID`），Agent 自己的 `penguin` / API 调用由此获得连回运行它的服务器的授权。
+- SSE 端点与其它路由一样接受该请求头（用 `fetch` 消费，不要用 `EventSource`——后者无法携带请求头）。
+- 写请求的 JSON-only Content-Type 检查对 Bearer 请求同样生效。
+
+```bash
+curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
+  http://127.0.0.1:7364/api/me
+```
+
 ## 路由参考
 
 ### 认证与账户
@@ -53,6 +68,7 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 | --- | --- | --- |
 | POST | /api/auth/login | 登录：`{userId, password}` → `{user}` |
 | POST | /api/auth/logout | 退出登录，返回 204 |
+| GET | /api/install | 公开：`{installId}`——标识当前所服务数据根的不透明 id（`<root>/install-id`），在该根首次被使用时铸造。Web App 将其与自己存下的值比较，不一致时清除浏览器侧那些引用服务端实体的 UI 状态，因此更换数据根后不会再留下旧的 Workspace、草稿与置顶。`null` 表示服务端无法确定该 id，此时客户端不应改动任何内容。 |
 | GET | /api/me | 当前用户信息 |
 | PUT | /api/me/password | 修改密码：`{oldPassword, newPassword}` |
 | GET | /api/me/prefs | 读取 UI 偏好 |
@@ -95,7 +111,7 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | /api/version | 当前运行版本：`{version, buildDate}`（`buildDate` 是当前运行版本的发布日期，构建时打入、无需联网；开发/源码构建以及打入机制之前的发布版为 null） |
+| GET | /api/version | 当前运行构建的身份，外加该根目录被推送的 harness：`{version, describe, channel, buildDate, commit, branch, dirty, runtime, harness}`，与 `penguin version --json` 输出同一份记录。`harness` 描述该数据根目录的 HMR store（`{source, pushedAt, bundles}`，其中 `source` 为推送方 checkout 的 `{repo, revision}`），从未被推送过时为 null。`describe` 是单行身份（发布版为 `v0.2.3`，源码构建为 `v0.2.3-14-g9e8f7d6-dirty`）；`channel` 取 `release` 或 `source`；`buildDate`（UTC yyyy-mm-dd）与 `commit` 在构建时打入、无需联网，源码构建以及打入机制之前的发布版为 null；`branch` 与 `dirty` 记录源码构建的 git 位置，发布版为 null |
 | GET | /api/version/update-check | 对比 GitHub 最新 Release 与当前版本：`{currentVersion, latestVersion, updateAvailable, releaseUrl, publishedAt, checkedAt, disabled?, error?}`；`?force=1`（手动「检查更新」）绕过 TTL 缓存，结果照常写入缓存 |
 | POST | /api/version/update | **仅管理员。**在服务器上执行 CLI 在线更新（`penguin update --yes`）：`{status, output, needsRestart}` |
 
@@ -128,6 +144,25 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 所有涉及模型的接口都要求完整的 `(provider, modelId)` 二元组，不做任何推断：只带一半的请求一律 400，绝不会退化为一次查找。模型引用本身可省略的场景（创建 Session、定时任务）省略的是整对，两半都不给即选用 Project 默认模型。
 
 `PUT /models` 同时会使该 Project 已缓存的 Session 运行时失效（与 vault 更新同一套生效语义）：进行中的运行不做热替换，但该 Project 下任何 Session 的下一个 Task 都会重新装载并读到新的 `api_key` / `base_url`。它还会向该 Project 已打开的 Session 通道发布 `credentials_updated` 事件（见下文「流式推送」），且模型响应携带 `updatedAt`（配置文件 mtime）——Web App 用它与最近一次鉴权失败的时间比较，决定鉴权失败的输入框是否继续禁用。
+
+#### 授权新建 API key
+
+仅限 Owner，但供应商跳回的 `GET /callback` 例外——它无需会话即可应答，且只能把跳回时带来的授权码存到流程上，详见下文。若某个供应商分组在内置目录中声明了授权流程，用户可以在浏览器里授权并**新建**一个 API key，不必再去控制台复制。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| POST | /api/projects/:projectId/model-oauth/start | 开启一次流程：`{provider, mode?: callback\|manual}` → `{flowId, authorizeUrl}` |
+| GET | /api/projects/:projectId/model-oauth/callback | 供应商跳回的地址（`?flow=&code=`）：把授权码存到流程上，并返回一个 HTML 页面；`HEAD` 返回 405 |
+| GET | /api/projects/:projectId/model-oauth/:flowId | 轮询流程状态，并顺带兑换已存下的授权码、写入 key：`{status: pending\|done\|error, provider, error?}` |
+| POST | /api/projects/:projectId/model-oauth/:flowId/code | 兑换用户粘贴的授权码：`{code}` → `{ok, applied?, error?}` |
+
+PKCE 的 verifier 在服务端生成、只在内存中保留十分钟，绝不下发到客户端；新建出的 key 直接写入该分组的模型，不回传、不记录日志、也不出现在 URL 中。一次流程只属于某个 Project 下的某个用户且只能用一次：第二次兑换会被拒绝，`/start`、`/:flowId`、`/:flowId/code` 也拒绝该 Owner 以外的任何人。
+
+`GET /callback` 是唯一的例外，且只能如此。环回地址上的 OAuth 跳转由供应商所跳转的那个浏览器送达，而它未必就是发起流程的那一个——桌面端 shell 会把授权页交给**系统**浏览器打开，系统浏览器并不持有该应用来源的 Cookie。因此这一条路径挂载在会话校验之外，改以 flow id 作为凭据：32 字节随机数，十分钟有效，只能存入一次，只对开启该流程的那个 Project 生效，且只服务于确实要了跳回地址的流程（`manual` 流程会被拒绝，它压根没拿到过跳回地址）。
+
+这条路由能做的事还有第二重边界：它只把授权码存到流程上，此外什么都不做。与供应商的兑换、以及写入该 Project 模型的动作，都发生在 `GET /:flowId`——Owner 自己的轮询，仍在会话校验之内。因此没有 Owner 主动查询流程状态，就不会有 key 落进任何 Project；兑换失败也在那里以 `{status: error, error}` 报出，而不是显示在跳回页面上。周边的一切同样不在豁免之内：更长的路径、其它任何请求方法（该字面路径上的 `HEAD` 返回 405），以及另外三条同级路由，仍然都需要会话。
+
+`mode: manual` 不传回调地址，授权页改为显示一次性授权码供用户手动带回，适用于跳转回不来的部署。无论由哪条路由完成兑换，流程完成后同样会使缓存的运行时失效并发布 `credentials_updated`，与 `PUT /models` 一致。
 
 ### Agent
 
@@ -164,8 +199,8 @@ Schedule 写操作仅限 Owner。新建 Session 模式的任务，`modelId` 与 
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | /agents/:agentId/sessions | Session 列表（含运行状态） |
-| POST | /agents/:agentId/sessions | 创建 Session：`{modelId?, provider?, workspace?, approvalMode?}` → 201 |
+| GET | /agents/:agentId/sessions | Session 列表（含运行状态）；无论由哪个客户端创建，所有行都会列出 |
+| POST | /agents/:agentId/sessions | 创建 Session：`{modelId?, provider?, workspace?, approvalMode?, client?}` → 201。`client` 是存入索引行的创建客户端标记（CLI 传 `"cli"`，缺省 `"web"`）——仅作来源信息，绝不参与列表过滤 |
 | GET | /dirs?path= | 服务器端目录浏览（Workspace 选择器数据源） |
 
 创建 Session 时，`modelId` 与 `provider` 要么成对给出、要么都不给：给出完整二元组即指定模型，两个都省略则取 Project 默认模型，只给一个返回 400。Workspace 默认自动创建临时工作区，审批模式默认 `allow-all`。
@@ -199,7 +234,7 @@ Trace 下载对任意成员开放；导入仅限 owner（同 Agent 快照导入�
 | POST | /tasks | 发起 Task：`{input: TaskInputPart[], thinkingLevel?, queueIfBusy?}` → 202。带 `queueIfBusy` 时，运行中的 Session 会把输入暂存为跟进消息（`queued: true`），空闲后按序自动作为普通 Task 发出；`task_state` 事件携带排队数。`file` 类型的输入会写入 Session scratchpad，以 `[attached file: <路径>]` 行交给模型（见下方请求体）。带 `goal: {budget?}` 时该输入转为发起目标循环：必须含非空文字（一张图说明不了目标），随行的图片一律折叠成 scratchpad 路径行写入目标文本、与模型是否支持视觉无关，而 `file` 会被拒绝——没有东西能把它折进每轮重注入的目标里——见[目标模式](/goal-mode) |
 | POST | /steer | 运行中插话：`{text, images?}` 为运行中的 Task 排队一条消息（作为独立的 `[user_steering]` 用户消息随下一轮送达，图片紧随其后）→ 202；两个字段任一非空即可成消息，都为空则 400；无 Task 运行返回 409 `not_running` |
 | DELETE | /steer/:steerId | 撤回一条尚未送达的插话（id 随 `task_state` 的 `pendingSteering` 下发）：从队列中撤出 → 200，返回其原始内容 `{text, images, files}`（文件从 scratchpad 读回为 data URL，磁盘副本随之删除），供输入框恢复编辑；已送达模型则 409 `not_pending` |
-| DELETE | /follow-ups/:followUpId | 撤回一条排队中的跟进消息（id 随 `task_state` 的 `pendingFollowUps` 下发）：在自动发出前移除 → 200，返回其原始内容 `{text, images, files, thinkingLevel?}`；已自动发出则 409 `not_pending` |
+| DELETE | /follow-ups/:followUpId | 撤回一条排队中的跟进消息（id 随 `task_state` 的 `pendingFollowUps` 下发）：在自动发出前移除 → 200，返回其原始内容 `{text, images, files, thinkingLevel?}`——排队中的跟进消息一律带有该内容，与其入队路径无关；已自动发出则 409 `follow_up_started` |
 | POST | /approvals/:toolCallId | 审批决定：`{decision}` 取 `allow` 或 `deny` → 204 |
 | POST | /abort | 中断当前 Task：已触发返回 202，无任务返回 204 |
 | POST | /retry-now | 重连倒计时上的「立即重试」：跳过进行中的退避等待、立刻发起下一次重试（重试计数不变）→ 200 `{skipped}`——`skipped:false` 表示当前没有等待可跳过（良性空操作，非错误） |
@@ -253,6 +288,41 @@ Workspace 文件可能由 Agent 生成，`GET /files/content` 一律按不可信
 `GET /scratchpad/:fileName` 提供的同样是不可信字节（用户上传与 Agent 写下的临时文件），防护口径一致，只是没有那两个开关：始终带 `nosniff`；仅五种可安全内联的图片类型（`.png` / `.jpg` / `.jpeg` / `.gif` / `.webp`）按真实类型内联，供对话里的 `<img>` 使用；其余一律 `application/octet-stream` 并带 `Content-Disposition: attachment` —— 非图片内容无法在 App 所在源上作为文档渲染。
 
 文件名始终以 `filename*=UTF-8''` 形式携带（百分号编码）。`preview=1` 是预览跳转在没有独立预览源时的回退目标：文档保留真实类型，可以正常渲染并执行脚本，但沙箱刻意不含 `allow-same-origin`，因此它落在一个不透明源里，既拿不到本源的 Cookie，也调不动 API。这份隔离也正是那里 `localStorage`、`document.cookie` 与第三方 embed 全都不可用的原因。
+
+### 消息绑定（飞书、Telegram、QQ）
+
+Session 可以接入消息软件机器人——目前的渠道是飞书、Telegram 与 QQ，各自挂在 `/messaging/<channel>` 之下。一个 Session **每个渠道至多保存一份配置**（多份可同时保存），其中**至多一个渠道处于启用状态**——启用的渠道持有在线连接。启用即把机器人账号绑定到该 Session，停用即解除绑定，因此同一个应用或机器人可以同时保存在任意多个 Session 上，只有启用是互斥的。发给机器人的消息以普通用户输入在该 Session 上发起 Task——与在网页输入框里输入完全一致（无标记块；忙碌时排入 follow-up 队列）——完成的回复再转发回对应会话，并按渠道文本上限分段（Telegram 硬上限 4096 字符）。飞书经 SDK 的 WebSocket 长连接接收事件，Telegram 用 `getUpdates` 长轮询，QQ 以 `GROUP_AND_C2C_EVENT` intent 保持平台的 WebSocket 网关连接——三者都无需公网回调地址。保存与连接是两件事：PUT 只保存凭据，连接由独立的 state 接口开关。路径同上表，省略 `/api/sessions/:sessionId` 前缀。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | /messaging | 渠道无关读取：该 Session **每一份**已保存的渠道配置（`channel` 判别字段、密钥掩码、逐行 `enabled` 意图 + `linePerMessage` + 连接运行状态 + `lastChatKnown`）。渠道感知的绑定编辑器只加载这一个 |
+| GET | /messaging/feishu | `{binding, status}` 形态下的飞书配置（未保存时为 null） |
+| PUT | /messaging/feishu | 保存凭据：`{appId, appSecret?, baseDomain?, clearAppSecret?, linePerMessage?}`。`appSecret` 省略或留空则保持已存值；`clearAppSecret: true` 清除已存密钥（新输入的密钥优先于清除标记；启用中返回 409 `messaging_disable_before_clear`——清除后配置行与非密钥字段保留）；`baseDomain` 默认 `https://open.feishu.cn`。不带连接副作用——唯一例外：**已启用**绑定的连接器会用新凭据重启，保证存储配置与在线连接永不背离。保存不会与其他 Session 冲突，唯一例外正源于这次重启：把**已启用**的绑定改指到另一个 Session 已启用的账号上，返回 409 `account_enabled_elsewhere`，否则那次重启就会绕过启用闸门、把第二条在线连接接到同一账号上 |
+| POST | /messaging/feishu/state | 连接开关：`{enabled}`——启用即用**已存凭据**建立连接，停用即断开。该 Session 另一渠道已启用时返回 409 `another_channel_enabled`，同一账号已在**其他 Session** 上启用时返回 409 `account_enabled_elsewhere`（两者都是「先停用那一个」——后者不透露持有方的任何信息，它可能位于调用方看不到的 Project）；已存配置没有密钥时返回 400 `feishu_secret_required`。新配置默认停用；服务端启动只连接已启用的配置 |
+| DELETE | /messaging/feishu | 整体删除该渠道的配置（含 App Secret；另一渠道不受影响）。仅为 API 完整性保留——Web 界面的移除入口是清除标记 |
+| POST | /messaging/feishu/test | 用请求携带的草稿值做凭据探测，缺省字段回落到已存配置 → `{ok, latencyMs?, error?}`（凭据被拒是 `ok: false`，不是 HTTP 错误） |
+| POST | /messaging/feishu/test-message | 向最近一次收到消息的会话发送一条固定测试文本；在飞书里给机器人发过消息之前返回 409 `feishu_no_chat` |
+| GET | /messaging/telegram | 同一形态下的 Telegram 配置（`botId`、`botTokenMasked`） |
+| PUT | /messaging/telegram | 保存凭据：`{botToken?, clearBotToken?, linePerMessage?}`——整份凭据就是 @BotFather 签发的一条 `<机器人 id>:<密钥>` Token（省略或留空则保持已存值；读不出数字 id 时返回 400 `telegram_token_invalid`；清除标记与飞书同口径，清除后配置保留其机器人身份）。保存与启用的分离一致；把已启用绑定的 Token 换成另一个 Session 已启用的机器人时，同样返回 409 `account_enabled_elsewhere`，其余情况不存在跨 Session 的保存冲突 |
+| POST | /messaging/telegram/state | 与飞书开关同一契约（无已存 Token 时返回 400 `telegram_token_required`） |
+| DELETE | /messaging/telegram | 整体删除该渠道的配置（含 Bot Token）。仅为 API 完整性保留 |
+| POST | /messaging/telegram/test | 凭据探测（`getMe`），草稿 Token 缺省回落到已存值 → `{ok, latencyMs?, botUsername?, groupPrivacy?, error?}`——成功时报出 Token 登录到的机器人；当 @BotFather 的 Group Privacy 处于开启状态（默认如此，此时机器人在它不担任管理员的群里收不到任何普通消息）时报出 `groupPrivacy: true` |
+| POST | /messaging/telegram/test-message | 向最近一次收到消息的会话发送一条固定测试文本；在 Telegram 里给机器人发过消息之前返回 409 `telegram_no_chat` |
+| GET | /messaging/qq | 同一形态下的 QQ 配置（`appId`、`appSecretMasked`） |
+| PUT | /messaging/qq | 保存凭据对：`{appId, appSecret?, clearAppSecret?, linePerMessage?}`——QQ 开放平台「开发设置」页的 App ID 与 App Secret。留空保持、清除标记、保存与启用分离都与飞书 PUT 同口径；把一条已启用绑定的 App ID 换成另一个 Session 已启用的账号时，同样返回 409 `account_enabled_elsewhere`，此外保存不会跨 Session 冲突；没有域名字段，因为 API v2 只有一个接口域名 |
+| POST | /messaging/qq/state | 与其他开关同一契约（无已存密钥时返回 400 `qq_secret_required`） |
+| DELETE | /messaging/qq | 整体删除该渠道的配置（含 App Secret）。仅为 API 完整性保留 |
+| POST | /messaging/qq/test | 凭据探测（换取 app access token）→ `{ok, latencyMs?, error?}`。不报出账号名：平台没有能识别机器人身份的接口 |
+| POST | /messaging/qq/scan | 发起扫码连接：服务端用新生成、且不外传的 AES 密钥注册一个绑定任务 → `{taskId, qrUrl, pollMs}`。把 `qrUrl` 渲染成二维码；它由 QQ 客户端打开，浏览器不会请求它。该 Session 的 QQ 连接处于启用状态时返回 409 `messaging_disable_before_scan`——扫码会在在线连接器底下换掉整对凭据；平台拒绝时返回 502 `qq_scan_failed` |
+| POST | /messaging/qq/scan/poll | `{taskId}` → `{status, appId?, binding?}`。`completed` 表示服务端已解密 App Secret 并**保存**了绑定（启用仍是独立动作）；`expired` 表示需重新建任务。未知、属于其他 Session 或已完成的任务返回 404 `qq_scan_task_unknown` |
+| POST | /messaging/qq/scan/cancel | `{taskId}`——用户中途离开时丢弃该任务，立即忘记其密钥，而不是等待过期清扫 |
+| POST | /messaging/qq/test-message | 向最近一次收到消息的会话发送一条固定测试文本；在 QQ 里给机器人发过消息之前返回 409 `qq_no_chat`；没有可回复的近期消息时返回 502 `qq_send_failed`（见下） |
+
+没有已存密钥的配置（被清除过的）不返回掩码字段，也无法启用。`linePerMessage` 是唯一一个不属于凭据的已存字段：开启后，转发的助手回复中每个非空行各自作为一条消息发出（空行忽略，单行仍按长度上限分段，超出每条回复的消息条数上限的部分合并为最后一条）；默认为 false，PUT 省略该字段则保持已存值，且它不作用于通知与测试消息。唯一的跨 Session 规则按渠道内机器人账号计，且只作用于连接：一个账号只有一条事件流，因此至多一个 Session 能将其启用。飞书的账号身份是 `app_id`，Telegram 是 Token 冒号前的数字机器人 id（换发 Token 也不会改变）。读取与两个测试接口对任意 Project 成员开放；PUT、state 开关与 DELETE 仅限所有者（与 Vault 同口径——绑定写操作携带或作用于密钥）。密钥永不回传。删除 Session 会连带删除其全部渠道配置。入站处理文本与图片：图片按普通 `image_url` 输入部分送入（**图片**消息的说明文字即该消息的文本；其他媒体类型的说明文字不是——其字节并不会送达，仅凭说明文字运行只会让模型对一个它从未收到的文件侃侃而谈），单张受服务端的内联图片上限约束，总量再受每个绑定一个滚动窗口的字节预算约束——内联图片会原样写入 Trace，而这条路径不像网页输入框，前面没有任何鉴权。超过单张上限、超出窗口预算与渠道拒绝下载分别回复三种不同的双语提示，且都不会把半条消息交给模型；因机器人自身权限被拒时，提示会点名所需权限并带上渠道给出的授权链接——飞书通常正是此种情况（接收消息与下载其中的附件是两项独立权限）。其余类型仍收到双语的“暂不支持”回复。出站方向，一次运行结束后会在回复文本之后发送该回复**提及且由本次运行产出**的文件——回复中形如路径、能解析到 Workspace 之内、确实存在、且修改时间不早于本次运行开始的片段，出现在回复的任何位置皆可（「提及」挑出这次真正要交付的那个产物；「修改时间」则确保一条可被会话中任何人引导的回复不会变成读取原语——拒绝粘贴某个文件的回复同样会点到它的名字）——图片按图片发送、其余按文件发送，且按**读取时实际拿到的文件名**分类，而非回复中写下的那个名字；每次运行最多 5 个，单个图片上限 10MB、单个文件上限 30MB（取两个渠道各自限制中更紧的一个）。被提及的文件凡是没送到，都会在会话中说明原因——超过上限、超出数量上限、Workspace 内没有该文件、渠道拒绝上传——唯独「本次运行没有写过」是静默跳过的，因为回复中提到自己读过的配置文件属于常态。Telegram 建立连接时先清空积压：无连接期间发来的消息会被跳过，与飞书“错过的事件即消失”同口径。绑定的运行时状态另外报出该连接**实际见到**的情况——`lastInboundAt`（最近一条消息到达的时间；自本次连接建立以来还没有收到过时该字段缺席）、`lastDeliveryError`（`{at, stage, detail}`，`stage` 为 `inbound` 表示消息已到达但其 Task 没能开始，为 `send` 表示回复没能送达聊天；后续的成功不会把它清掉），以及 `lastConnectionError`（`{at, detail}`，最近一次连接失败，并在连接恢复之后依然保留——不同于属于 `error` 状态、状态一离开就被抹掉的 `lastError`）。三者都只存在于进程内，且每次（重新）建立连接都会清空——重新启用连接或再保存一次凭证，都会开启一条新连接——所以 `lastInboundAt` 缺席只意味着「本次连接以来没有收到过」，而不是「从来没有收到过」。它们的存在是因为一个扣着消息不投递的渠道，表现出来正是 `connected` 且毫无报错。
+
+**QQ 是只能被动回复的渠道，这改变了「送达」的含义。** 平台不提供本产品可用的主动推送：每一条外发消息都是携带入站 `msg_id` 的*被动回复*，有效期只有几分钟，且单聊对同一条消息最多 4 条回复（群聊 5 条）。由此有三点在 API 上可见。一次运行完成的助手消息超过该额度时会被**合并**——前 `budget - 1` 条随完成即时发出，其余合并为最后一条送达，内容不丢。`linePerMessage` 的拆分上限**收敛到该额度**，而不是渠道无关的 20。而没有可回复对象的发送——在网页端发起的对话，或窗口关闭之后的回复——会被**拒绝而非主动推送**：测试接口上表现为 502 `qq_send_failed`，转发回复则记为一条 `messaging_send_failed` 错误记录。QQ 的账号身份是 App ID。该渠道拒绝外发文件：平台的富媒体接口要求为文件提供公网可达地址。
+
+**扫码连接不会把密钥交给浏览器。** 解密 App Secret 的 AES 密钥在服务端生成、持有、使用并丢弃；客户端只拿到任务句柄、待绘制的 URL 与状态。任务只存在于内存，归属发起它的 Session，按 Session 单独限量（一个调用方的扫码任务挤不掉另一个调用方的），并被「解决它的那一次轮询」认领掉，因此重放与对同一任务的并发轮询得到的都是 404，而不是第二次绑定。所有扫码路由都仅限 Project 所有者——无论调用方实际输入了多少内容，这个流程的终点都是一份存下来的凭据。
 
 ### 独立源预览
 
@@ -335,7 +405,7 @@ export type ServerEvent =
 | session_title | 首轮后模型生成的标题已持久化 |
 | session_state | `task_state` 在用户通道上的对应事件：同一次运行状态翻转，带上 `sessionId`，因此会话列表的每一行都能保持实时，而不只是客户端当前打开的那个会话。事件还携带重绘该行所需的行字段，无需重新拉取列表 —— 刚刚写入的 `lastActiveAt`，以及 `hasTrace`（状态为 running 或 compacting 时必为 true，因为正在运行的会话必然已经启动过 Task）。仅发往该 Project 拥有者与成员的用户通道 |
 | resync_required | Last-Event-ID 已被缓冲区淘汰，客户端须重新拉取历史 |
-| credentials_updated | Project 模型凭据已变更（`PUT /models`）：缓存运行时已失效，客户端应清除鉴权失败的输入框禁用态 |
+| credentials_updated | Project 模型凭据已变更（`PUT /models`，或一次完成的授权新建 key 流程）：缓存运行时已失效，客户端应清除鉴权失败的输入框禁用态 |
 | hello | 用户通道连接握手 |
 | session_created | 新 Session 注册（如子 Agent 会话） |
 | schedule_fired | 定时任务已触发并发送 |

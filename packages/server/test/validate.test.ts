@@ -1,12 +1,18 @@
 /**
- * Request-validation helper unit tests: positiveIntParam rejects trailing garbage,
- * optionalDateParam rejects impossible calendar dates (shape-only checks let these through),
- * and optionalNumber enforces the agent runtime-parameter rule (integer, > 0 or exactly -1)
- * used for max_turns and friends.
+ * Request-validation helper unit tests: positiveIntParam and the two paging helpers reject
+ * trailing garbage, optionalDateParam rejects impossible calendar dates (shape-only checks
+ * let these through), and optionalNumber enforces the agent runtime-parameter rule
+ * (integer, > 0 or exactly -1) used for max_turns and friends.
  */
 import { describe, expect, it } from "vitest";
 import type { Context } from "hono";
-import { optionalDateParam, optionalNumber, positiveIntParam } from "../src/http/validate.js";
+import {
+  optionalDateParam,
+  optionalNumber,
+  optionalPagingQuery,
+  paginationQuery,
+  positiveIntParam,
+} from "../src/http/validate.js";
 import { HttpError } from "../src/http/errors.js";
 
 /** Minimal Context stub exposing a single path parameter. */
@@ -92,6 +98,62 @@ describe("optionalNumber with the agent runtime-parameter rule (integer, > 0 or 
   it("rejects non-integers and non-finite or non-number values", () => {
     for (const bad of [1.5, -1.5, Number.NaN, Number.POSITIVE_INFINITY, "100", true, null]) {
       expect(() => optionalNumber({ maxTurns: bad }, "maxTurns", rule)).toThrow(HttpError);
+    }
+  });
+});
+
+/** Minimal Context stub exposing query parameters. */
+function ctxWithQuery(query: Record<string, string>): Context {
+  return { req: { query: (n: string) => query[n] } } as unknown as Context;
+}
+
+describe("paginationQuery", () => {
+  it("defaults to offset 0 / limit 200", () => {
+    expect(paginationQuery(ctxWithQuery({}))).toEqual({ offset: 0, limit: 200 });
+  });
+
+  it("parses plain integers", () => {
+    expect(paginationQuery(ctxWithQuery({ offset: "40", limit: "20" }))).toEqual({
+      offset: 40,
+      limit: 20,
+    });
+  });
+
+  it("rejects trailing garbage and exponent notation (parseInt would accept both)", () => {
+    // "200abc" parsed to 200 and "1e3" to 1, both landing inside the range check.
+    for (const bad of ["200abc", "1e3", "0x10", " 20", "20 ", "1.5", "+20", "-1"]) {
+      expect(() => paginationQuery(ctxWithQuery({ limit: bad }))).toThrow(HttpError);
+      expect(() => paginationQuery(ctxWithQuery({ offset: bad }))).toThrow(HttpError);
+    }
+  });
+
+  it("enforces the limit range", () => {
+    for (const bad of ["0", "1001"]) {
+      expect(() => paginationQuery(ctxWithQuery({ limit: bad }))).toThrow(HttpError);
+    }
+    expect(paginationQuery(ctxWithQuery({ limit: "1000" })).limit).toBe(1000);
+  });
+});
+
+describe("optionalPagingQuery", () => {
+  it("returns null when neither param is present", () => {
+    expect(optionalPagingQuery(ctxWithQuery({}))).toBeNull();
+  });
+
+  it("requires limit when only offset is given", () => {
+    expect(() => optionalPagingQuery(ctxWithQuery({ offset: "10" }))).toThrow(HttpError);
+  });
+
+  it("defaults offset to 0 when only limit is given", () => {
+    expect(optionalPagingQuery(ctxWithQuery({ limit: "50" }))).toEqual({ offset: 0, limit: 50 });
+  });
+
+  it("rejects trailing garbage and exponent notation (parseInt would accept both)", () => {
+    for (const bad of ["50abc", "1e3", "0x10", "1.5", "-1"]) {
+      expect(() => optionalPagingQuery(ctxWithQuery({ limit: bad }))).toThrow(HttpError);
+      expect(() => optionalPagingQuery(ctxWithQuery({ limit: "50", offset: bad }))).toThrow(
+        HttpError,
+      );
     }
   });
 });

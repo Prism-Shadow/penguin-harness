@@ -41,6 +41,8 @@ import {
   SIDEBAR_PAGE_SIZE,
   sessionCategory,
   splitPage,
+  workspaceGroupKey,
+  workspaceGroupQuery,
 } from "../lib/session-grouping";
 import { useProject } from "./project";
 
@@ -53,14 +55,22 @@ interface SessionsContextValue {
   countsByAgent: ReadonlyMap<string, SessionCategoryCounts>;
   /** agentId → the same totals broken down by Workspace path (workspace-mode groups read their own share from it; maintained like countsByAgent). */
   workspaceCountsByAgent: ReadonlyMap<string, Readonly<Record<string, SessionCategoryCounts>>>;
-  /** Whether a pair's first page has been fetched (false = the folder shows nothing because nothing was asked for yet). */
-  isLoadedFor: (agentId: string, category: SessionCategory) => boolean;
-  /** Whether the server still holds unfetched Sessions of a category for an Agent — an unloaded pair answers from the counts. */
-  hasMoreFor: (agentId: string, category: SessionCategory) => boolean;
+  /**
+   * Whether a pair's first page has been fetched (false = the folder shows nothing because
+   * nothing was asked for yet). `workspaceGroup` asks about ONE group's own stream, which
+   * is paged separately from the Agent's whole one.
+   */
+  isLoadedFor: (agentId: string, category: SessionCategory, workspaceGroup?: string) => boolean;
+  /** Whether the server still holds unfetched Sessions of a category for an Agent (or for one of its Workspace groups) — an unloaded pair answers from the counts. */
+  hasMoreFor: (agentId: string, category: SessionCategory, workspaceGroup?: string) => boolean;
   loading: boolean;
   reload: () => Promise<void>;
-  /** Fetches a category's first page for each given unloaded Agent and the next page for each loaded one with more (no-op otherwise). */
-  loadMoreFor: (agentIds: string[], category: SessionCategory) => Promise<void>;
+  /** Fetches a category's first page for each given unloaded Agent and the next page for each loaded one with more (no-op otherwise); `workspaceGroup` pages that group's own stream instead of the Agent's whole one. */
+  loadMoreFor: (
+    agentIds: string[],
+    category: SessionCategory,
+    workspaceGroup?: string,
+  ) => Promise<void>;
   /** Prepend to the list on success (draft materialized by the first message, or explicit creation via dialog). */
   add: (session: SessionInfo) => void;
   /** Remove from the list in place after deletion (also tombstones the id — see isDeleted). */
@@ -82,10 +92,6 @@ interface SessionsContextValue {
   setStatus: (sessionId: string, status: SessionStatus, row?: LiveRowFields) => void;
   /** session_title server event → update the title in place. */
   setTitle: (sessionId: string, title: string) => void;
-  /** Whether CLI-created Sessions are listed too (persisted per user; default off = the list is served from the DB without Trace scanning). */
-  showCliSessions: boolean;
-  /** Flip the CLI-session preference: persists it and refetches the whole list under the new filter. */
-  setShowCliSessions: (value: boolean) => void;
 }
 
 /**
@@ -100,8 +106,34 @@ export interface LiveRowFields {
 
 const SessionsContext = createContext<SessionsContextValue | null>(null);
 
-/** Page-state key of one (Agent, category) pair ("\0" never appears in Agent ids). */
-const pageKey = (agentId: string, category: SessionCategory) => `${agentId}\0${category}`;
+/**
+ * Page-state key of one (Agent, category, Workspace-group) triple. The scope is the
+ * server's query form of a group (workspaceGroupQuery) — a path or the temp sentinel —
+ * and "" means the Agent's whole stream, which is what Agent and time grouping page down.
+ * "\0" appears in none of the three (the merged temp group's own key does contain one,
+ * which is exactly why the query form is what gets stored).
+ */
+const pageKey = (agentId: string, category: SessionCategory, scope = "") =>
+  `${agentId}\0${category}\0${scope}`;
+
+/** Every list category, in the order the store loads them (active eagerly, the folders on demand). */
+const ALL_CATEGORIES: readonly string[] = ["active", ...FOLDER_CATEGORIES];
+
+/** The triple a page key names, or null if it is not one (never, in practice — a guard for the reload scan). */
+function parsePageKey(
+  key: string,
+): { agentId: string; category: SessionCategory; scope: string } | null {
+  const parts = key.split("\0");
+  if (parts.length !== 3) return null;
+  const [agentId, category, scope] = parts as [string, string, string];
+  return ALL_CATEGORIES.includes(category)
+    ? { agentId, category: category as SessionCategory, scope }
+    : null;
+}
+
+/** Scope string of a Workspace group (undefined / "" = the Agent's whole stream). */
+const scopeOf = (workspaceGroup?: string) =>
+  workspaceGroup === undefined || workspaceGroup === "" ? "" : workspaceGroupQuery(workspaceGroup);
 
 /** One pair's paging cursor. */
 interface PagePosition {
@@ -134,19 +166,18 @@ interface SessionsStoreState {
   countsByAgent: ReadonlyMap<string, SessionCategoryCounts>;
   workspaceCountsByAgent: ReadonlyMap<string, Readonly<Record<string, SessionCategoryCounts>>>;
   loading: boolean;
-  // "Show CLI sessions" preference: server-persisted per user (ui_prefs); hydrated once by the
-  // Provider on mount, default off. Changing it makes the Provider's reset effect refetch the
-  // whole list under the new filter.
-  showCliSessions: boolean;
 
   reload: () => Promise<void>;
-  loadMoreFor: (agentIds: string[], category: SessionCategory) => Promise<void>;
+  loadMoreFor: (
+    agentIds: string[],
+    category: SessionCategory,
+    workspaceGroup?: string,
+  ) => Promise<void>;
   add: (session: SessionInfo) => void;
   remove: (sessionId: string) => void;
   replace: (session: SessionInfo) => void;
   setStatus: (sessionId: string, status: SessionStatus, row?: LiveRowFields) => void;
   setTitle: (sessionId: string, title: string) => void;
-  setShowCliSessions: (value: boolean) => void;
 }
 
 /**
@@ -201,35 +232,41 @@ export function createSessionsStore() {
       countsByAgent: new Map(),
       workspaceCountsByAgent: new Map(),
       loading: true,
-      showCliSessions: false,
 
       reload: async () => {
-        const { projectId, agentIds, showCliSessions } = get();
+        const { projectId, agentIds } = get();
         if (!projectId || agentIds.length === 0) return;
         const g = ++gen;
         set({ loading: true });
         try {
           const results = await Promise.all(
             agentIds.map(async (agentId) => {
-              // Active first page (with per-category totals) always; plus the first page of
-              // every folder category already on screen — a reload triggered by a server
-              // event must refresh, not blank, an open folder.
-              const categories: SessionCategory[] = [
-                "active",
-                ...FOLDER_CATEGORIES.filter((cat) => get().pageState.has(pageKey(agentId, cat))),
+              // The Agent's whole-stream active first page (with per-category totals)
+              // always; plus the first page of every other pair already on screen — an open
+              // folder, and each Workspace group paging its own stream — because a reload
+              // triggered by a server event must refresh them, not blank them.
+              const pairs: { category: SessionCategory; scope: string }[] = [
+                { category: "active", scope: "" },
               ];
+              for (const key of get().pageState.keys()) {
+                const parsed = parsePageKey(key);
+                if (parsed === null || parsed.agentId !== agentId) continue;
+                if (parsed.category === "active" && parsed.scope === "") continue;
+                pairs.push({ category: parsed.category, scope: parsed.scope });
+              }
               try {
                 const pages = await Promise.all(
-                  categories.map(async (category) => {
+                  pairs.map(async ({ category, scope }) => {
                     const res = await api.listSessions(projectId, agentId, {
                       offset: 0,
                       limit: SIDEBAR_PAGE_SIZE + 1,
                       category,
-                      ...(category === "active" ? { withCounts: true } : {}),
-                      ...(showCliSessions ? { cli: true } : {}),
+                      ...(scope === "" ? {} : { workspaceGroup: scope }),
+                      ...(category === "active" && scope === "" ? { withCounts: true } : {}),
                     });
                     return {
                       category,
+                      scope,
                       counts: res.counts,
                       workspaceCounts: res.workspaceCounts,
                       ...splitPage(res.sessions, SIDEBAR_PAGE_SIZE),
@@ -254,7 +291,7 @@ export function createSessionsStore() {
           >();
           for (const r of results) {
             for (const p of r.pages) {
-              nextPageState.set(pageKey(r.agentId, p.category), {
+              nextPageState.set(pageKey(r.agentId, p.category, p.scope), {
                 hasMore: p.hasMore,
                 fetched: p.items.length,
               });
@@ -287,31 +324,61 @@ export function createSessionsStore() {
        * created since the last page still shifts server offsets, so appended rows are
        * deduplicated by sessionId (a short page is fine — `hasMore` comes from the server
        * response, and the next click continues from the advanced cursor).
+       *
+       * `workspaceGroup` pages ONE group's own server stream instead of the Agent's whole
+       * one, under its own cursor: this is what keeps a Workspace group's "load more" from
+       * consuming the page its siblings were about to read and moving their rows on screen.
+       * Rows land in the same pool either way — a scope only decides which stream is being
+       * walked, so the pool absorbs any overlap by sessionId.
        */
-      loadMoreFor: async (agentIds, category) => {
-        const { projectId, showCliSessions } = get();
+      loadMoreFor: async (agentIds, category, workspaceGroup) => {
+        const { projectId } = get();
         if (!projectId) return;
+        const scope = scopeOf(workspaceGroup);
         const targets = [...new Set(agentIds)].filter((agentId) => {
-          const position = get().pageState.get(pageKey(agentId, category));
+          const position = get().pageState.get(pageKey(agentId, category, scope));
+          // An unloaded pair: the Agent's own totals still decide whether asking is worth a
+          // request. A scoped pair cannot consult them (they are not broken down by group
+          // here), so it always gets its first page — the caller only asks for a group it
+          // has reason to believe holds rows.
           if (position === undefined)
-            return (get().countsByAgent.get(agentId)?.[category] ?? 0) > 0;
+            return scope !== "" || (get().countsByAgent.get(agentId)?.[category] ?? 0) > 0;
           return position.hasMore;
         });
         if (targets.length === 0) return;
         const g = gen;
+        /**
+         * Rows of this (Agent, category, group) already in the pool. They arrived on pages of
+         * the Agent's whole stream, and a prefix of that stream cut by Workspace is a prefix
+         * of the group's stream — so the count doubles as the offset a FIRST scoped fetch
+         * starts from. Without it that fetch would re-read rows the group already shows and
+         * the click would appear to do nothing.
+         */
+        const loadedInScope = (agentId: string, group: string) =>
+          get().sessions.filter(
+            (s) =>
+              s.agentId === agentId &&
+              sessionCategory(s) === category &&
+              workspaceGroupKey(s.workspace) === group,
+          ).length;
         const results = await Promise.all(
           targets.map(async (agentId) => {
-            const offset = get().pageState.get(pageKey(agentId, category))?.fetched ?? 0;
+            const position = get().pageState.get(pageKey(agentId, category, scope));
+            const offset =
+              position?.fetched ??
+              (workspaceGroup === undefined || workspaceGroup === ""
+                ? 0
+                : loadedInScope(agentId, workspaceGroup));
             try {
               const fetched = (
                 await api.listSessions(projectId, agentId, {
                   offset,
                   limit: SIDEBAR_PAGE_SIZE + 1,
                   category,
-                  ...(showCliSessions ? { cli: true } : {}),
+                  ...(scope === "" ? {} : { workspaceGroup: scope }),
                 })
               ).sessions;
-              return { agentId, ...splitPage(fetched, SIDEBAR_PAGE_SIZE) };
+              return { agentId, offset, ...splitPage(fetched, SIDEBAR_PAGE_SIZE) };
             } catch {
               // Transient failure: leave the pair's state untouched (still unloaded / still
               // has-more), so the affordance stays and the user can retry.
@@ -327,10 +394,12 @@ export function createSessionsStore() {
         const prevPageState = get().pageState;
         const nextPageState = new Map(prevPageState);
         for (const r of ok) {
-          const key = pageKey(r.agentId, category);
+          const key = pageKey(r.agentId, category, scope);
           nextPageState.set(key, {
             hasMore: r.hasMore,
-            fetched: (prevPageState.get(key)?.fetched ?? 0) + r.items.length,
+            // A first scoped fetch started at the rows the group already held (see
+            // loadedInScope), so the cursor advances from where it actually read.
+            fetched: (prevPageState.get(key)?.fetched ?? r.offset) + r.items.length,
           });
         }
         set({
@@ -454,13 +523,6 @@ export function createSessionsStore() {
           sessions: prev.map((s) => (s.sessionId === sessionId ? { ...s, title } : s)),
         });
       },
-
-      setShowCliSessions: (value) => {
-        set({ showCliSessions: value });
-        // Fire-and-forget: PUT /me/prefs merges shallowly; a lost write only costs persistence,
-        // the in-memory toggle already took effect.
-        void api.putPrefs({ showCliSessions: value }).catch(() => undefined);
-      },
     };
   });
 }
@@ -534,29 +596,11 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
   const [store] = useState(createSessionsStore);
   const state = useStore(store);
 
-  // Hydrate the "show CLI sessions" preference once on mount (a bare setState, not the
-  // setShowCliSessions action: hydration must not write the preference back).
-  useEffect(() => {
-    let cancelled = false;
-    void api
-      .getPrefs()
-      .then((res) => {
-        if (!cancelled && res.prefs.showCliSessions === true)
-          store.setState({ showCliSessions: true });
-      })
-      .catch(() => undefined); // Unreachable prefs: stay with the default (web only).
-    return () => {
-      cancelled = true;
-    };
-  }, [store]);
-
-  const { showCliSessions } = state;
   useEffect(() => {
     // Sync the fetch context and reset the loaded pages in the same synchronous step:
     // reload() picks the categories to refetch from pageState, so a Project switch can't
     // carry folder page state across via shared Agent ids (default_agent exists in every
-    // Project). Also reruns on a showCliSessions flip: refetch the whole list under the
-    // new filter.
+    // Project).
     // deletedSessionIds is deliberately NOT reset: session ids are globally unique and never
     // reused, so a Session deleted before a Project switch is still deleted after it — and
     // re-arming its lookup would just re-create the 404 this set exists to prevent.
@@ -569,7 +613,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       workspaceCountsByAgent: new Map(),
     });
     void store.getState().reload();
-  }, [store, projectId, agentIdsKey, showCliSessions]);
+  }, [store, projectId, agentIdsKey]);
 
   // User-level event stream (/api/events); see applyUserEvent for what each event does. The
   // connection stays a single one for the whole login session and doesn't reconnect on Project
@@ -585,15 +629,19 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
 
   const { pageState, countsByAgent } = state;
   const isLoadedFor = useCallback(
-    (agentId: string, category: SessionCategory) => pageState.has(pageKey(agentId, category)),
+    (agentId: string, category: SessionCategory, workspaceGroup?: string) =>
+      pageState.has(pageKey(agentId, category, scopeOf(workspaceGroup))),
     [pageState],
   );
 
   const hasMoreFor = useCallback(
-    (agentId: string, category: SessionCategory) => {
-      const position = pageState.get(pageKey(agentId, category));
+    (agentId: string, category: SessionCategory, workspaceGroup?: string) => {
+      const scope = scopeOf(workspaceGroup);
+      const position = pageState.get(pageKey(agentId, category, scope));
       if (position !== undefined) return position.hasMore;
-      // Unloaded pair: anything the counts report is by definition still unfetched.
+      // Unloaded pair: anything the counts report is by definition still unfetched. A group's
+      // own stream is not in those counts, so an unloaded scoped pair answers from the
+      // Agent's total for the category — the group's share of it cannot exceed that.
       return (countsByAgent.get(agentId)?.[category] ?? 0) > 0;
     },
     [pageState, countsByAgent],
@@ -638,8 +686,6 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       replace: state.replace,
       setStatus: state.setStatus,
       setTitle: state.setTitle,
-      showCliSessions: state.showCliSessions,
-      setShowCliSessions: state.setShowCliSessions,
     };
   }, [state, isLoadedFor, hasMoreFor, isDeleted]);
 

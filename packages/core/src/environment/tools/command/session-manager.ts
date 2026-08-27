@@ -9,9 +9,10 @@
  * injection + hardening).
  * Docs: /docs/tools § "Background session caps".
  */
+import { statSync } from "node:fs";
 import { ManagedSession } from "./session.js";
 import { BackgroundRegistry } from "../background/index.js";
-import type { ProxyEnvPolicy } from "../../../interfaces.js";
+import type { ProxyEnvPolicy } from "../../../interfaces/index.js";
 
 /** Concurrent managed-session cap: evicts once exceeded (exited sessions first, otherwise LRU — killing a background process has bounded cost). */
 const MAX_SESSIONS = 64;
@@ -64,10 +65,18 @@ const HARDENED_ENV: NodeJS.ProcessEnv = {
  * colors on". The vault still wins, so a user who genuinely wants forced color in commands can
  * set it there.
  *
- * Deliberately **not** stripped: `PENGUIN_HOME`, `PENGUIN_WEB_DB` and the rest of the user-facing
- * `PENGUIN_*` settings. Those select the *data* an Agent-started harness works against, and the
- * self-development case may legitimately want the same data root — sharing state is a config
- * decision, whereas serving a deployment's code from a workspace checkout never is.
+ * Every `PENGUIN_*` variable is removed as well — see {@link HARNESS_ENV_PREFIX}. That covers
+ * `PENGUIN_HOME` and `PENGUIN_WEB_DB`, which select the *data* an Agent-started harness works
+ * against. They were once left inheriting on the grounds that the self-development case may
+ * legitimately want the same data root, but inheriting them is not that decision being made — it
+ * is an accident of where this process happens to be running. Whenever an Agent spawns a command
+ * the harness is by definition up, holding `<root>/server.lock`, so an Agent-started server on the
+ * inherited root cannot start at all; it exits 3 against a lock whose owner is the very process
+ * that handed it the root.
+ *
+ * Any of it really wanted is asked for rather than inherited: the vault is applied after this
+ * environment (see the spread in `spawn`), so a `PENGUIN_HOME` set there reaches commands exactly
+ * as before. Same escape hatch as `FORCE_COLOR` above.
  */
 const STRIPPED_ENV_KEYS = new Set([
   "PORT",
@@ -85,6 +94,24 @@ const STRIPPED_ENV_KEYS = new Set([
   // Pinned seed password (tests/e2e): a credential, not a data-selection setting.
   "PENGUIN_SEED_ADMIN_PASSWORD",
 ]);
+
+/**
+ * Every variable named `PENGUIN_*` is this installation's own configuration — where its data
+ * lives, which shell it resolved, which release feed it checks, which language its UI speaks —
+ * and none of it describes the command an Agent is running. Stripping by prefix rather than by
+ * name is the point: the harness reads two dozen of them today and gains more with each feature,
+ * and a list has to be remembered at exactly the moment nobody is thinking about it. Twenty-five
+ * existed when this was written and a by-name list had caught seven.
+ *
+ * Outbound proxy settings are the deliberate exception to "the harness's environment stays out of
+ * the child", and they are not `PENGUIN_*` — they are HTTP_PROXY and friends, governed by
+ * {@link PROXY_ENV_KEYS} and the host's policy just below. `PENGUIN_TRUST_PROXY` only looks like
+ * one: it decides whether the server trusts an inbound `x-forwarded-proto`, and means nothing to
+ * a child.
+ *
+ * The vault still wins, so any single variable that is genuinely wanted can be set there.
+ */
+const HARNESS_ENV_PREFIX = "PENGUIN_";
 
 /**
  * Proxy variables removed IN ADDITION when the host supplies a proxy policy (`proxyEnv`,
@@ -114,7 +141,7 @@ function hostEnvForChild(policy: ProxyEnvPolicy | null): NodeJS.ProcessEnv {
   // child as PORT. On POSIX the two are distinct names and only the exact one exists.
   for (const [key, value] of Object.entries(process.env)) {
     const name = key.toUpperCase();
-    if (STRIPPED_ENV_KEYS.has(name)) continue;
+    if (STRIPPED_ENV_KEYS.has(name) || name.startsWith(HARNESS_ENV_PREFIX)) continue;
     if (policy !== null && PROXY_ENV_KEYS.has(name)) continue;
     if (policy?.mode === "inject" && name === "NO_PROXY") continue;
     env[key] = value;
@@ -128,6 +155,36 @@ function hostEnvForChild(policy: ProxyEnvPolicy | null): NodeJS.ProcessEnv {
     env.no_proxy = policy.noProxy;
   }
   return env;
+}
+
+/**
+ * Rejects a working directory that cannot be spawned into, before the spawn.
+ *
+ * Node reports a missing or unusable `cwd` as `spawn <shell> ENOENT` — the error names the
+ * COMMAND, not the directory, so a Workspace that has been deleted or moved reads exactly
+ * like a missing shell and sends the reader hunting for a `bash` that was there all along.
+ * The directory is therefore checked here, where the real reason can still be named.
+ *
+ * Never auto-created: Agent.createSession and the server's Workspace guard both refuse to
+ * create a Workspace so a typo cannot silently start working in the wrong place, and a
+ * directory that disappeared under a live Session is a fact to report rather than paper over.
+ *
+ * A check before a spawn cannot close the gap between them: a directory removed in that
+ * window still produces the old ENOENT. That is the rare case, and the only alternative is
+ * re-reading Node's error after the fact, which is the string this exists to stop trusting.
+ */
+function assertUsableCwd(cwd: string): void {
+  let stat;
+  try {
+    stat = statSync(cwd);
+  } catch {
+    throw new Error(
+      `working directory does not exist: ${cwd}. That is the Session's Workspace unless a workdir was given — restore the directory, or run the command somewhere that exists.`,
+    );
+  }
+  if (!stat.isDirectory()) {
+    throw new Error(`working directory is not a directory: ${cwd}.`);
+  }
 }
 
 export class CommandSessionManager {
@@ -146,10 +203,22 @@ export class CommandSessionManager {
    * are already running. Absent = pass through (SDK/CLI standalone use).
    */
   private readonly proxyEnv: (() => ProxyEnvPolicy | null) | undefined;
+  /**
+   * Harness-control variables (PENGUIN_API_URL / PENGUIN_API_TOKEN / the Session
+   * coordinates, see {@link EnvironmentConfig.controlEnv}): injected on every spawn AFTER
+   * the vault, so the host's sanctioned wiring wins over a vault entry of the same name.
+   * A getter like `proxyEnv`, re-read at every spawn. Absent = nothing injected.
+   */
+  private readonly controlEnv: (() => Record<string, string>) | undefined;
 
-  constructor(opts?: { vault?: Record<string, string>; proxyEnv?: () => ProxyEnvPolicy | null }) {
+  constructor(opts?: {
+    vault?: Record<string, string>;
+    proxyEnv?: () => ProxyEnvPolicy | null;
+    controlEnv?: () => Record<string, string>;
+  }) {
     this.vault = opts?.vault ?? {};
     this.proxyEnv = opts?.proxyEnv;
+    this.controlEnv = opts?.controlEnv;
   }
 
   /** Starts a command, returning an **unregistered** session (no process_id yet). */
@@ -157,17 +226,33 @@ export class CommandSessionManager {
     if (this.registry.isDisposed) {
       throw new Error("command session manager disposed");
     }
+    assertUsableCwd(opts.cwd);
     return new ManagedSession({
       cmd: opts.cmd,
       cwd: opts.cwd,
-      // Spread order is priority: vault overrides host variables of the same name, but must
-      // come before HARDENED_ENV — the hardening entries (GIT_EDITOR/PAGER etc. that prevent
-      // interactive hangs) must never be overridable by vault. The host side is stripped of
-      // the harness's own variables first (see STRIPPED_ENV_KEYS) and has the proxyEnv
-      // policy applied (strip or inject); the vault still wins — over an injected proxy
-      // too — so a user who genuinely wants PORT, or their own proxy, in commands can set
-      // it there.
-      env: { ...hostEnvForChild(this.proxyEnv?.() ?? null), ...this.vault, ...HARDENED_ENV },
+      // Spread order is priority: vault overrides host variables of the same name; the
+      // host's control variables (controlEnv) override the vault — they are the hosting
+      // server's own wiring (API URL/token, Session coordinates) and a vault entry must
+      // not silently point commands at another server; and HARDENED_ENV comes last — the
+      // hardening entries (GIT_EDITOR/PAGER etc. that prevent interactive hangs) are never
+      // overridable by anything. The host side is stripped of the harness's own variables
+      // first (see STRIPPED_ENV_KEYS) and has the proxyEnv policy applied (strip or
+      // inject); the vault still wins over the host env — over an injected proxy too — so
+      // a user who genuinely wants PORT, or their own proxy, in commands can set it there.
+      //
+      // The strip governs inheritance only: it runs inside hostEnvForChild and never
+      // re-applies to entries spread in after it, so the vault and controlEnv carry
+      // authoritative values into the child — stripped names, PENGUIN_* included, and all.
+      // Both guarantees hold because of that order: no PENGUIN_* reaches a command by
+      // inheritance, while the control variables the host does sanction arrive as injected
+      // values rather than as surviving copies. Pinned by the "an explicit injection
+      // layered after the strip wins" test.
+      env: {
+        ...hostEnvForChild(this.proxyEnv?.() ?? null),
+        ...this.vault,
+        ...(this.controlEnv?.() ?? {}),
+        ...HARDENED_ENV,
+      },
     });
   }
 

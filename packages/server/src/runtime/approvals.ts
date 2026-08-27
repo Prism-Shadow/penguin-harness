@@ -76,6 +76,18 @@ export class ApprovalRegistry {
   denyAll(): void {
     for (const entry of [...this.pending.values()]) entry.resolve("deny");
   }
+
+  /**
+   * Task-boundary convergence: deny only the MAIN session's pending approvals (no origin).
+   * An origin-tagged approval belongs to a subagent child that outlives the parent's task —
+   * the child is still blocked on the question, so it stays pending for the user; it is
+   * denied only with the child itself (kill/dispose paths use denyAll).
+   */
+  denyMain(): void {
+    for (const entry of [...this.pending.values()]) {
+      if (entry.origin === undefined || entry.origin.length === 0) entry.resolve("deny");
+    }
+  }
 }
 
 /**

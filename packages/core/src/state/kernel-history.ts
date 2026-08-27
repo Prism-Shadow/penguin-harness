@@ -1,87 +1,78 @@
 /**
  * Agent config kernel versions: which generation of the built-in defaults a stored
- * `system_config.yaml` is based on, and the per-leaf hash history that lets the kernel
- * update (see kernel-update.ts) tell "still the old default" apart from "customized by
- * the user".
+ * `system_config.yaml` is based on, and the per-tab hash record that lets the kernel update
+ * (see kernel-update.ts) tell "still the old default" apart from "customized by the user".
  *
  * A kernel version is a date string (`YYYY-MM-DD`). It advances **manually** and only when
  * the built-in defaults change substantively: the pinned-hash test in
- * `core/test/kernel-version.test.ts` recomputes every default leaf hash and fails the build
- * whenever `defaultSystemConfig()` drifts from the latest history entry — the failure message
- * tells the developer to bump `KERNEL_VERSION` and append a new entry here. Several changes
- * on the same day may revise that day's entry in place instead of appending (the entry is
- * only frozen once a later generation exists).
+ * `core/test/kernel-version.test.ts` recomputes every tab hash and fails the build whenever
+ * `defaultSystemConfig()` drifts from `KERNEL_HISTORY.current` — the failure message names
+ * the tabs that moved and spells out the edit each one needs. Several changes on the same day
+ * may reuse that day's version rather than taking a new one.
  *
  * The user's own edits never move a config between generations: matching is purely by value
- * hash, and a value that matches no recorded generation is conservatively treated as a user
- * customization (see kernel-update.ts).
+ * hash, and a tab that matches no recorded default is conservatively treated as customized.
  */
 import { createHash } from "node:crypto";
-import type { SystemConfig } from "./default-config.js";
 
 /**
  * The current kernel version — the generation stamp `defaultSystemConfig()` carries in
  * `kernel_version`, so newly created (and default-restored) configs record which generation
- * of defaults they materialized. Must equal the newest key of `KERNEL_HASH_HISTORY`; the
- * pinned-hash test enforces both directions (bump without new hashes, or changed defaults
- * without a bump, both fail).
+ * of defaults they materialized. The pinned-hash test fails the build whenever the defaults
+ * change without it moving. (The reverse — moving it with no default change — is inert rather
+ * than an error: nothing is keyed by version, so there is no table to fall out of sync with.)
  */
-export const KERNEL_VERSION = "2026-08-21";
-
-/**
- * Identity / user-data fields excluded from kernel management: never hashed, never written
- * by a kernel update. `version` is the Agent State optimization counter (unrelated to the
- * kernel version); `kernel_version` is the stamp itself.
- */
-const EXCLUDED_TOP_LEVEL_KEYS = new Set(["name", "description", "version", "kernel_version"]);
-
-/** One kernel-managed leaf of the default config: a dotted path and the value at it. */
-export interface KernelLeaf {
-  path: string;
-  value: unknown;
-}
+export const KERNEL_VERSION = "2026-08-26";
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 /**
- * The kernel-managed leaves of a config, in stable traversal order: scalars and arrays are
- * atomic leaves; plain objects recurse. Two special cases:
- *
- * - `tools.builtin` is broken up **per tool name** (`tools.builtin.<name>`, each entry an
- *   atomic leaf), so a user who customized one tool keeps only that one while the rest
- *   follow a kernel update. Tool names allow no `.` (see assertValidId's character set), so
- *   the dotted path stays unambiguous.
- * - `tools.mcpServers` is user data (like name/description/version) and is skipped entirely.
+ * The value a config carries at a dotted path, or `undefined` when any segment is missing or
+ * is not a plain object (a hand-edited `tools:` with no value parses as null and reads as
+ * missing here, exactly as it does on the write side).
  */
-export function kernelLeafEntries(config: SystemConfig): KernelLeaf[] {
-  const leaves: KernelLeaf[] = [];
-  const visit = (value: unknown, path: string[]): void => {
-    if (value === undefined) return;
-    if (path.length === 1 && EXCLUDED_TOP_LEVEL_KEYS.has(path[0]!)) return;
-    if (path.length === 2 && path[0] === "tools") {
-      if (path[1] === "mcpServers") return;
-      if (path[1] === "builtin" && Array.isArray(value)) {
-        for (const entry of value) {
-          if (isPlainObject(entry) && typeof entry["name"] === "string") {
-            leaves.push({ path: `tools.builtin.${entry["name"]}`, value: entry });
-          }
-        }
-        return;
-      }
-    }
-    if (isPlainObject(value)) {
-      for (const key of Object.keys(value)) visit(value[key], [...path, key]);
-      return;
-    }
-    leaves.push({ path: path.join("."), value });
-  };
-  for (const key of Object.keys(config)) {
-    visit((config as unknown as Record<string, unknown>)[key], [key]);
+export function valueAtPath(root: unknown, path: readonly string[]): unknown {
+  let current: unknown = root;
+  for (const segment of path) {
+    if (!isPlainObject(current)) return undefined;
+    current = current[segment];
   }
-  return leaves;
+  return current;
 }
+
+/**
+ * The unit of kernel management: one **settings tab** of the Web App's Agent settings page
+ * (`web/src/features/agents/agent-settings-page.tsx`), and the config paths it owns. A tab is
+ * matched, advanced and kept **whole** — the granularity is deliberately coarse, so a user who
+ * edits one field of a tab keeps that entire tab until they restore defaults.
+ *
+ * Two things the page shows are absent on purpose:
+ *
+ * - `overview` holds name / description / the Agent State version — identity and user data the
+ *   kernel never writes, alongside the Kernel section itself.
+ * - the tools tab also hosts `tools.mcpServers`, which is user data; only `tools.builtin` is
+ *   kernel-managed, so an MCP Server the user configured survives even a wholesale advance.
+ *
+ * The order is the page's own tab order, so a reported `advanced` / `kept` list reads in the
+ * order the tabs appear.
+ */
+export const KERNEL_TABS = {
+  prompt: ["system_prompt"],
+  runtime: ["max_turns", "model", "compaction"],
+  tools: ["tools.builtin"],
+  skills: ["skills"],
+  memory: ["memory"],
+  vault: ["vault"],
+  schedules: ["schedules"],
+} as const satisfies Readonly<Record<string, readonly string[]>>;
+
+/** A kernel-managed settings tab. */
+export type KernelTab = keyof typeof KERNEL_TABS;
+
+/** Every kernel-managed tab, in the settings page's tab order. */
+export const KERNEL_TAB_KEYS = Object.keys(KERNEL_TABS) as readonly KernelTab[];
 
 /**
  * Canonical JSON: object keys sorted recursively (arrays keep order, `undefined` properties
@@ -105,11 +96,32 @@ export function hashKernelValue(value: unknown): string {
   return createHash("sha256").update(canonicalJson(value), "utf8").digest("hex");
 }
 
-/** `{ leafPath: sha256 }` over a config's kernel-managed leaves (see kernelLeafEntries). */
-export function computeKernelHashes(config: SystemConfig): Record<string, string> {
-  const hashes: Record<string, string> = {};
-  for (const { path, value } of kernelLeafEntries(config)) {
-    hashes[path] = hashKernelValue(value);
+/**
+ * A tab's hash over a config: sha256 of `{ ownedPath: value }` across the paths the tab owns
+ * that the config actually carries — so an extra key the user added anywhere inside the tab
+ * changes it, and the tab is then kept rather than overwritten.
+ *
+ * `null` when the config carries none of them: the tab is **absent** (a config predating the
+ * section, or one that never had it), and a kernel update materializes it from the defaults.
+ */
+export function kernelTabHash(config: unknown, tab: KernelTab): string | null {
+  const owned: Record<string, unknown> = {};
+  let present = false;
+  for (const path of KERNEL_TABS[tab]) {
+    const value = valueAtPath(config, path.split("."));
+    if (value === undefined) continue;
+    owned[path] = value;
+    present = true;
+  }
+  return present ? hashKernelValue(owned) : null;
+}
+
+/** `{ tab: sha256 }` over a config's kernel-managed tabs; a tab the config lacks is omitted. */
+export function computeKernelTabHashes(config: unknown): Partial<Record<KernelTab, string>> {
+  const hashes: Partial<Record<KernelTab, string>> = {};
+  for (const tab of KERNEL_TAB_KEYS) {
+    const hash = kernelTabHash(config, tab);
+    if (hash !== null) hashes[tab] = hash;
   }
   return hashes;
 }
@@ -124,266 +136,105 @@ export function isKernelOutdated(kernelVersion: string | null | undefined): bool
 }
 
 /**
- * Per-generation pinned hashes of the built-in defaults: `{ kernelVersion: { leafPath:
- * sha256 } }`, oldest first. These are **literals, frozen once a later generation exists**
- * (only the newest entry may still be revised, on a same-day change) — they must keep
- * matching what old `system_config.yaml` files actually contain even as the current defaults
- * evolve, exactly like the LEGACY_* template constants in default-config.ts.
+ * Each tab's hash under today's built-in defaults — the **drift anchor**. The pinned-hash
+ * test compares this against `computeKernelTabHashes(defaultSystemConfig())` and fails the
+ * build on any difference, which is the mechanical definition of "the defaults changed
+ * substantively, bump the kernel". A kernel update never consults it as history: a stored tab
+ * equal to the current default short-circuits before any lookup.
  *
- * Seeded generations:
+ * **Advancing the kernel** — what the pinned-hash test asks for when a default changes, and
+ * the whole of the appending workflow. Set `KERNEL_VERSION` to today's date (a second change
+ * the same day reuses it), then, per tab the test names, with the hashes from
+ * `computeKernelTabHashes(defaultSystemConfig())`: append the tab's **old** hash here to the
+ * end of its `KERNEL_SUPERSEDED_TAB_HASHES` entry (creating the entry if this is its first
+ * change), then write the new hash in. Then add a line to the generation list below saying
+ * what moved. Never edit a hash already superseded: it is a frozen record of what shipped.
  *
- * - `"2026-08-10"` — the generation *before* the prompt-injection toggles (PR #257): no
- *   `vault` / `skills` / `schedules` sections, and the default template carried the hardcoded
- *   legacy # Vault / # Skills sections instead of the `{{VAULT}}` / `{{SKILLS}}` /
- *   `{{SCHEDULES}}` placeholders. The date is a retroactive label (configs of that era carry
- *   no stamp, so the key never has to match anything on disk; matching is purely by hash).
- *   While the toggles generation was current, the test suite proved these hashes equal a
- *   byte-exact reconstruction of that era's defaults from the frozen LEGACY_* constants;
- *   that proof self-retired once the defaults evolved past the toggles generation.
- * - `"2026-08-11"` — the toggles generation.
- * - `"2026-08-18"` — `run_subagent` gained the optional `thinking_level` argument
- *   (issue #306): only the `tools.builtin.run_subagent` leaf changed.
- * - `"2026-08-19"` — the `max` thinking level joined the ladder, widening `run_subagent`'s
- *   `thinking_level` enum: again only the `tools.builtin.run_subagent` leaf changed.
- * - `"2026-08-20"` — the seeded `compaction.max_context_length` rose to 256000, with the
- *   per-model `context_window` cap as its backstop: only the
- *   `compaction.max_context_length` leaf changed.
- * - `"2026-08-21"` (current) — background execution: `exec_command` / `run_subagent` gained
+ * The generations behind the record, oldest first (the dates are kernel versions; matching is
+ * purely by hash, so a stored date never has to line up with anything):
+ *
+ * - `2026-08-10` — the generation *before* the prompt-injection toggles (PR #257): no `vault`
+ *   / `skills` / `schedules` sections, and the default template carried the hardcoded legacy
+ *   # Vault / # Skills sections instead of the `{{VAULT}}` / `{{SKILLS}}` / `{{SCHEDULES}}`
+ *   placeholders. The date is a retroactive label (configs of that era carry no stamp). This
+ *   is where the record starts; anything older cannot be reconstructed at all — those tabs
+ *   match no recorded hash and are conservatively kept, with restore-default-config as the
+ *   recourse. Only the prompt tab has a hash here: the three missing sections are absent
+ *   rather than superseded, and the runtime / tools / memory tabs still shipped what the
+ *   toggles generation shipped.
+ * - `2026-08-11` — the toggles generation: the `vault` / `skills` / `schedules` sections
+ *   appeared and `system_prompt` took the placeholder template (prompt tab).
+ * - `2026-08-18` — `run_subagent` gained the optional `thinking_level` argument (issue #306):
+ *   the tools tab moved.
+ * - `2026-08-19` — the `max` thinking level joined the ladder, widening `run_subagent`'s
+ *   `thinking_level` enum: the tools tab moved again.
+ * - `2026-08-20` — the seeded `compaction.max_context_length` rose to 256000, with the
+ *   per-model `context_window` cap as its backstop: the runtime tab moved.
+ * - `2026-08-21` — background execution: `exec_command` / `run_subagent` gained
  *   `run_in_background`, `input_command`'s empty-poll default became 120000ms, and the
- *   `kill_command` / `kill_subagent` tools joined the set (five `tools.builtin.*` leaves
- *   changed or appeared).
- *
- * Generations older than the seeded ones cannot be fully reconstructed; their values match
- * no recorded hash and are conservatively kept by a kernel update (restore-default-config is
- * the recourse for a full refresh).
+ *   `kill_command` / `kill_subagent` tools joined the set, moving the tools tab; alongside
+ *   them the memory prompt was reworded to name when a fact is worth saving (PR #397), moving
+ *   the memory tab.
+ * - `2026-08-24` — the kill notion left: `kill_command` folded into `input_command` as its
+ *   `kill` parameter, `kill_subagent` was removed outright (a subagent session is never
+ *   destroyed — `input_subagent` resumes a released id), and `input_subagent` gained `abort`
+ *   and now returns the subagent's latest reply: the tools tab moved.
+ * - `2026-08-26` (current) — the schedules prompt's default target became the Session the
+ *   model is already in (`session_id` taken from the Environment section) instead of a fresh
+ *   Session per trigger, alongside the hygiene line that bounds a self-directed recurring task
+ *   and the carve-outs from the new default (an open-ended reminder keeps no `end_at`, work
+ *   that must outlive the conversation takes the new-Session form, and a subagent omits the
+ *   field): the schedules tab moved.
  */
-export const KERNEL_HASH_HISTORY: Readonly<Record<string, Readonly<Record<string, string>>>> = {
-  "2026-08-10": {
-    system_prompt: "7c0dce1e6b4a7b94aaec5f09d4c7bc9bf104c46c9167fdca9543306b9e1ba595",
-    max_turns: "1bad6b8cf97131fceab8543e81f7757195fbb1d36b376ee994ad1cf17699c464",
-    "model.max_tokens": "492f431bae35265f2e5f4ed49bd8c58dda912431be561504846988d00d05d117",
-    "model.thinking_level": "60d4c90eee5e731df8d3ef2891de541d2e755ff8ee9db358e26bdec49f6e0db9",
-    "model.timeoutMs": "4f9f73b34c5b89879aad65a48025f3187dd9ce6dc3d4e88eecb2fc79227350f1",
-    "compaction.max_context_length":
-      "8eda794b86cb709202a0023fd5273e3de6d24117b7e36b9bdb53c0238dac4785",
-    "compaction.max_session_turns":
-      "1bad6b8cf97131fceab8543e81f7757195fbb1d36b376ee994ad1cf17699c464",
-    "compaction.mode": "e58fac0b4b9c0f29b3d224da119dff5f6517a40d139faf92e309705b98bd410a",
-    "compaction.prompt": "8ed55781e8071083f8246ed70d9e063ee729d3872d5bc6a2bedfa9c99aed6ae5",
-    "memory.enabled": "b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b",
-    "memory.prompt": "9380e2382e5dd3d37a6470b0bc0d27c9ed113fa9a54ff78122784c57a16b992c",
-    "memory.workspace_prompt": "76c5a8e18a568f471593ef1da6d75d2596f27619cb877703b2dd28bb0554e0d5",
-    "tools.builtin.read_file": "858f128945421043f5f373c908a0ee081e93e9413debaa49c8c7af1c1c76db3c",
-    "tools.builtin.edit_file": "165a3e2dabe3d13200a1670f3c23ed2d6561c508439db1972db066719f3549ef",
-    "tools.builtin.write_file": "c98253bd5a3b6ff021accda91af016a809a9b50ce56f38a3ed60eeb673c0b130",
-    "tools.builtin.exec_command":
-      "16b327e5c3617b7c4d21505c9d1a72dd33a74de97cd5c60d6c4538b8ec408421",
-    "tools.builtin.input_command":
-      "4c907500cda145161a9481803cfb57ed814b6793e762fd6284510187e9d781c8",
-    "tools.builtin.run_subagent":
-      "c3f93add8da3032850fb2e1f484e2d6ddf97e57d73639d887549494ce9f15fb2",
-    "tools.builtin.input_subagent":
-      "22cc4648d773e8422e80a12a7a095b00b7f7eb01ab5a9ea080858dcd7517b4e3",
-    "tools.builtin.read_image": "05b797a88df1e6a90fb3da67ec654b206f8d81291f89d160a505620afcea38bb",
-    "tools.builtin.describe_image":
-      "fad6d0cdd483eb53b5d243c0508024ab3b708ce6d3c81933acd291f05d4a265f",
-  },
-  "2026-08-11": {
-    system_prompt: "de8952daede04db17400c5cd59b279eccf523cf2d8a0ecedfa37a96de7925b44",
-    max_turns: "1bad6b8cf97131fceab8543e81f7757195fbb1d36b376ee994ad1cf17699c464",
-    "model.max_tokens": "492f431bae35265f2e5f4ed49bd8c58dda912431be561504846988d00d05d117",
-    "model.thinking_level": "60d4c90eee5e731df8d3ef2891de541d2e755ff8ee9db358e26bdec49f6e0db9",
-    "model.timeoutMs": "4f9f73b34c5b89879aad65a48025f3187dd9ce6dc3d4e88eecb2fc79227350f1",
-    "compaction.max_context_length":
-      "8eda794b86cb709202a0023fd5273e3de6d24117b7e36b9bdb53c0238dac4785",
-    "compaction.max_session_turns":
-      "1bad6b8cf97131fceab8543e81f7757195fbb1d36b376ee994ad1cf17699c464",
-    "compaction.mode": "e58fac0b4b9c0f29b3d224da119dff5f6517a40d139faf92e309705b98bd410a",
-    "compaction.prompt": "8ed55781e8071083f8246ed70d9e063ee729d3872d5bc6a2bedfa9c99aed6ae5",
-    "memory.enabled": "b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b",
-    "memory.prompt": "9380e2382e5dd3d37a6470b0bc0d27c9ed113fa9a54ff78122784c57a16b992c",
-    "memory.workspace_prompt": "76c5a8e18a568f471593ef1da6d75d2596f27619cb877703b2dd28bb0554e0d5",
-    "vault.enabled": "b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b",
-    "vault.prompt": "66e607aa4e205413f1816a677bed31af2d8c24218e71b55adba54aff5aa094ce",
-    "skills.enabled": "b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b",
-    "skills.prompt": "42934d17f5dd9c02dfa7c1d37f255dea92bd36905c96a54775c65ef7db713bd9",
-    "schedules.enabled": "b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b",
-    "schedules.prompt": "3c690ff9bb3e4d423b2d5dfce74f5890d52bf8ae159cfe135a671ac3d46da75a",
-    "tools.builtin.read_file": "858f128945421043f5f373c908a0ee081e93e9413debaa49c8c7af1c1c76db3c",
-    "tools.builtin.edit_file": "165a3e2dabe3d13200a1670f3c23ed2d6561c508439db1972db066719f3549ef",
-    "tools.builtin.write_file": "c98253bd5a3b6ff021accda91af016a809a9b50ce56f38a3ed60eeb673c0b130",
-    "tools.builtin.exec_command":
-      "16b327e5c3617b7c4d21505c9d1a72dd33a74de97cd5c60d6c4538b8ec408421",
-    "tools.builtin.input_command":
-      "4c907500cda145161a9481803cfb57ed814b6793e762fd6284510187e9d781c8",
-    "tools.builtin.run_subagent":
-      "c3f93add8da3032850fb2e1f484e2d6ddf97e57d73639d887549494ce9f15fb2",
-    "tools.builtin.input_subagent":
-      "22cc4648d773e8422e80a12a7a095b00b7f7eb01ab5a9ea080858dcd7517b4e3",
-    "tools.builtin.read_image": "05b797a88df1e6a90fb3da67ec654b206f8d81291f89d160a505620afcea38bb",
-    "tools.builtin.describe_image":
-      "fad6d0cdd483eb53b5d243c0508024ab3b708ce6d3c81933acd291f05d4a265f",
-  },
-  "2026-08-18": {
-    system_prompt: "de8952daede04db17400c5cd59b279eccf523cf2d8a0ecedfa37a96de7925b44",
-    max_turns: "1bad6b8cf97131fceab8543e81f7757195fbb1d36b376ee994ad1cf17699c464",
-    "model.max_tokens": "492f431bae35265f2e5f4ed49bd8c58dda912431be561504846988d00d05d117",
-    "model.thinking_level": "60d4c90eee5e731df8d3ef2891de541d2e755ff8ee9db358e26bdec49f6e0db9",
-    "model.timeoutMs": "4f9f73b34c5b89879aad65a48025f3187dd9ce6dc3d4e88eecb2fc79227350f1",
-    "compaction.max_context_length":
-      "8eda794b86cb709202a0023fd5273e3de6d24117b7e36b9bdb53c0238dac4785",
-    "compaction.max_session_turns":
-      "1bad6b8cf97131fceab8543e81f7757195fbb1d36b376ee994ad1cf17699c464",
-    "compaction.mode": "e58fac0b4b9c0f29b3d224da119dff5f6517a40d139faf92e309705b98bd410a",
-    "compaction.prompt": "8ed55781e8071083f8246ed70d9e063ee729d3872d5bc6a2bedfa9c99aed6ae5",
-    "memory.enabled": "b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b",
-    "memory.prompt": "9380e2382e5dd3d37a6470b0bc0d27c9ed113fa9a54ff78122784c57a16b992c",
-    "memory.workspace_prompt": "76c5a8e18a568f471593ef1da6d75d2596f27619cb877703b2dd28bb0554e0d5",
-    "vault.enabled": "b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b",
-    "vault.prompt": "66e607aa4e205413f1816a677bed31af2d8c24218e71b55adba54aff5aa094ce",
-    "skills.enabled": "b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b",
-    "skills.prompt": "42934d17f5dd9c02dfa7c1d37f255dea92bd36905c96a54775c65ef7db713bd9",
-    "schedules.enabled": "b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b",
-    "schedules.prompt": "3c690ff9bb3e4d423b2d5dfce74f5890d52bf8ae159cfe135a671ac3d46da75a",
-    "tools.builtin.read_file": "858f128945421043f5f373c908a0ee081e93e9413debaa49c8c7af1c1c76db3c",
-    "tools.builtin.edit_file": "165a3e2dabe3d13200a1670f3c23ed2d6561c508439db1972db066719f3549ef",
-    "tools.builtin.write_file": "c98253bd5a3b6ff021accda91af016a809a9b50ce56f38a3ed60eeb673c0b130",
-    "tools.builtin.exec_command":
-      "16b327e5c3617b7c4d21505c9d1a72dd33a74de97cd5c60d6c4538b8ec408421",
-    "tools.builtin.input_command":
-      "4c907500cda145161a9481803cfb57ed814b6793e762fd6284510187e9d781c8",
-    "tools.builtin.run_subagent":
-      "be00af47c7098cde840a662c99f9f6d0cdf8358883e09974ce840b0c4683a9af",
-    "tools.builtin.input_subagent":
-      "22cc4648d773e8422e80a12a7a095b00b7f7eb01ab5a9ea080858dcd7517b4e3",
-    "tools.builtin.read_image": "05b797a88df1e6a90fb3da67ec654b206f8d81291f89d160a505620afcea38bb",
-    "tools.builtin.describe_image":
-      "fad6d0cdd483eb53b5d243c0508024ab3b708ce6d3c81933acd291f05d4a265f",
-  },
-  "2026-08-19": {
-    system_prompt: "de8952daede04db17400c5cd59b279eccf523cf2d8a0ecedfa37a96de7925b44",
-    max_turns: "1bad6b8cf97131fceab8543e81f7757195fbb1d36b376ee994ad1cf17699c464",
-    "model.max_tokens": "492f431bae35265f2e5f4ed49bd8c58dda912431be561504846988d00d05d117",
-    "model.thinking_level": "60d4c90eee5e731df8d3ef2891de541d2e755ff8ee9db358e26bdec49f6e0db9",
-    "model.timeoutMs": "4f9f73b34c5b89879aad65a48025f3187dd9ce6dc3d4e88eecb2fc79227350f1",
-    "compaction.max_context_length":
-      "8eda794b86cb709202a0023fd5273e3de6d24117b7e36b9bdb53c0238dac4785",
-    "compaction.max_session_turns":
-      "1bad6b8cf97131fceab8543e81f7757195fbb1d36b376ee994ad1cf17699c464",
-    "compaction.mode": "e58fac0b4b9c0f29b3d224da119dff5f6517a40d139faf92e309705b98bd410a",
-    "compaction.prompt": "8ed55781e8071083f8246ed70d9e063ee729d3872d5bc6a2bedfa9c99aed6ae5",
-    "memory.enabled": "b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b",
-    "memory.prompt": "9380e2382e5dd3d37a6470b0bc0d27c9ed113fa9a54ff78122784c57a16b992c",
-    "memory.workspace_prompt": "76c5a8e18a568f471593ef1da6d75d2596f27619cb877703b2dd28bb0554e0d5",
-    "vault.enabled": "b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b",
-    "vault.prompt": "66e607aa4e205413f1816a677bed31af2d8c24218e71b55adba54aff5aa094ce",
-    "skills.enabled": "b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b",
-    "skills.prompt": "42934d17f5dd9c02dfa7c1d37f255dea92bd36905c96a54775c65ef7db713bd9",
-    "schedules.enabled": "b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b",
-    "schedules.prompt": "3c690ff9bb3e4d423b2d5dfce74f5890d52bf8ae159cfe135a671ac3d46da75a",
-    "tools.builtin.read_file": "858f128945421043f5f373c908a0ee081e93e9413debaa49c8c7af1c1c76db3c",
-    "tools.builtin.edit_file": "165a3e2dabe3d13200a1670f3c23ed2d6561c508439db1972db066719f3549ef",
-    "tools.builtin.write_file": "c98253bd5a3b6ff021accda91af016a809a9b50ce56f38a3ed60eeb673c0b130",
-    "tools.builtin.exec_command":
-      "16b327e5c3617b7c4d21505c9d1a72dd33a74de97cd5c60d6c4538b8ec408421",
-    "tools.builtin.input_command":
-      "4c907500cda145161a9481803cfb57ed814b6793e762fd6284510187e9d781c8",
-    "tools.builtin.run_subagent":
-      "f43ac4f9621032d554275be1d416f994f0d3cc0918537de99c974e436eb69316",
-    "tools.builtin.input_subagent":
-      "22cc4648d773e8422e80a12a7a095b00b7f7eb01ab5a9ea080858dcd7517b4e3",
-    "tools.builtin.read_image": "05b797a88df1e6a90fb3da67ec654b206f8d81291f89d160a505620afcea38bb",
-    "tools.builtin.describe_image":
-      "fad6d0cdd483eb53b5d243c0508024ab3b708ce6d3c81933acd291f05d4a265f",
-  },
-  "2026-08-20": {
-    system_prompt: "de8952daede04db17400c5cd59b279eccf523cf2d8a0ecedfa37a96de7925b44",
-    max_turns: "1bad6b8cf97131fceab8543e81f7757195fbb1d36b376ee994ad1cf17699c464",
-    "model.max_tokens": "492f431bae35265f2e5f4ed49bd8c58dda912431be561504846988d00d05d117",
-    "model.thinking_level": "60d4c90eee5e731df8d3ef2891de541d2e755ff8ee9db358e26bdec49f6e0db9",
-    "model.timeoutMs": "4f9f73b34c5b89879aad65a48025f3187dd9ce6dc3d4e88eecb2fc79227350f1",
-    "compaction.max_context_length":
-      "b412afcc00967650c9e51efd8cdc35ae59d3d6c30234331b7bf75b382d982ee9",
-    "compaction.max_session_turns":
-      "1bad6b8cf97131fceab8543e81f7757195fbb1d36b376ee994ad1cf17699c464",
-    "compaction.mode": "e58fac0b4b9c0f29b3d224da119dff5f6517a40d139faf92e309705b98bd410a",
-    "compaction.prompt": "8ed55781e8071083f8246ed70d9e063ee729d3872d5bc6a2bedfa9c99aed6ae5",
-    "memory.enabled": "b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b",
-    "memory.prompt": "9380e2382e5dd3d37a6470b0bc0d27c9ed113fa9a54ff78122784c57a16b992c",
-    "memory.workspace_prompt": "76c5a8e18a568f471593ef1da6d75d2596f27619cb877703b2dd28bb0554e0d5",
-    "vault.enabled": "b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b",
-    "vault.prompt": "66e607aa4e205413f1816a677bed31af2d8c24218e71b55adba54aff5aa094ce",
-    "skills.enabled": "b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b",
-    "skills.prompt": "42934d17f5dd9c02dfa7c1d37f255dea92bd36905c96a54775c65ef7db713bd9",
-    "schedules.enabled": "b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b",
-    "schedules.prompt": "3c690ff9bb3e4d423b2d5dfce74f5890d52bf8ae159cfe135a671ac3d46da75a",
-    "tools.builtin.read_file": "858f128945421043f5f373c908a0ee081e93e9413debaa49c8c7af1c1c76db3c",
-    "tools.builtin.edit_file": "165a3e2dabe3d13200a1670f3c23ed2d6561c508439db1972db066719f3549ef",
-    "tools.builtin.write_file": "c98253bd5a3b6ff021accda91af016a809a9b50ce56f38a3ed60eeb673c0b130",
-    "tools.builtin.exec_command":
-      "16b327e5c3617b7c4d21505c9d1a72dd33a74de97cd5c60d6c4538b8ec408421",
-    "tools.builtin.input_command":
-      "4c907500cda145161a9481803cfb57ed814b6793e762fd6284510187e9d781c8",
-    "tools.builtin.run_subagent":
-      "f43ac4f9621032d554275be1d416f994f0d3cc0918537de99c974e436eb69316",
-    "tools.builtin.input_subagent":
-      "22cc4648d773e8422e80a12a7a095b00b7f7eb01ab5a9ea080858dcd7517b4e3",
-    "tools.builtin.read_image": "05b797a88df1e6a90fb3da67ec654b206f8d81291f89d160a505620afcea38bb",
-    "tools.builtin.describe_image":
-      "fad6d0cdd483eb53b5d243c0508024ab3b708ce6d3c81933acd291f05d4a265f",
-  },
-  "2026-08-21": {
-    system_prompt: "de8952daede04db17400c5cd59b279eccf523cf2d8a0ecedfa37a96de7925b44",
-    max_turns: "1bad6b8cf97131fceab8543e81f7757195fbb1d36b376ee994ad1cf17699c464",
-    "model.max_tokens": "492f431bae35265f2e5f4ed49bd8c58dda912431be561504846988d00d05d117",
-    "model.thinking_level": "60d4c90eee5e731df8d3ef2891de541d2e755ff8ee9db358e26bdec49f6e0db9",
-    "model.timeoutMs": "4f9f73b34c5b89879aad65a48025f3187dd9ce6dc3d4e88eecb2fc79227350f1",
-    "compaction.max_context_length":
-      "b412afcc00967650c9e51efd8cdc35ae59d3d6c30234331b7bf75b382d982ee9",
-    "compaction.max_session_turns":
-      "1bad6b8cf97131fceab8543e81f7757195fbb1d36b376ee994ad1cf17699c464",
-    "compaction.mode": "e58fac0b4b9c0f29b3d224da119dff5f6517a40d139faf92e309705b98bd410a",
-    "compaction.prompt": "8ed55781e8071083f8246ed70d9e063ee729d3872d5bc6a2bedfa9c99aed6ae5",
-    "memory.enabled": "b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b",
-    "memory.prompt": "be1a8733b5d23afb11af3086b369105d42b7209edce6749eed31c4dbede9beff",
-    "memory.workspace_prompt": "76c5a8e18a568f471593ef1da6d75d2596f27619cb877703b2dd28bb0554e0d5",
-    "vault.enabled": "b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b",
-    "vault.prompt": "66e607aa4e205413f1816a677bed31af2d8c24218e71b55adba54aff5aa094ce",
-    "skills.enabled": "b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b",
-    "skills.prompt": "42934d17f5dd9c02dfa7c1d37f255dea92bd36905c96a54775c65ef7db713bd9",
-    "schedules.enabled": "b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b",
-    "schedules.prompt": "3c690ff9bb3e4d423b2d5dfce74f5890d52bf8ae159cfe135a671ac3d46da75a",
-    "tools.builtin.read_file": "858f128945421043f5f373c908a0ee081e93e9413debaa49c8c7af1c1c76db3c",
-    "tools.builtin.edit_file": "165a3e2dabe3d13200a1670f3c23ed2d6561c508439db1972db066719f3549ef",
-    "tools.builtin.write_file": "c98253bd5a3b6ff021accda91af016a809a9b50ce56f38a3ed60eeb673c0b130",
-    "tools.builtin.exec_command":
-      "c7cf0639eb9434b2eecdd064aabeead52e22c966ddce348f987c744e93f9686f",
-    "tools.builtin.input_command":
-      "071daddb34cba05556cda2b6a87d18d5bd73fb863e6e3bd62f033626fbabf017",
-    "tools.builtin.kill_command":
-      "1d35d3be0408349c0bb099c442abfde3975c720e2c85cda3c2b749b359bef891",
-    "tools.builtin.run_subagent":
-      "6d890081b3dcd0405bab35590ee5d85c1ffa4815faf3b1b4de62b2617da77ec6",
-    "tools.builtin.input_subagent":
-      "22cc4648d773e8422e80a12a7a095b00b7f7eb01ab5a9ea080858dcd7517b4e3",
-    "tools.builtin.kill_subagent":
-      "8d8c11a1ae565b9b8334a498c5fc5b8903a2f657ac4e46d1c3dc9b7288e12ce4",
-    "tools.builtin.read_image": "05b797a88df1e6a90fb3da67ec654b206f8d81291f89d160a505620afcea38bb",
-    "tools.builtin.describe_image":
-      "fad6d0cdd483eb53b5d243c0508024ab3b708ce6d3c81933acd291f05d4a265f",
-  },
+export const KERNEL_DEFAULT_TAB_HASHES: Readonly<Record<KernelTab, string>> = {
+  prompt: "048198c37b8d7840352c225fdfcb15baf2679973c6eab4bf400d492daf6ce254",
+  runtime: "c952d44ecdd6790e17f02bc1b5056118b56ec7f0987dc2cbe950f6051fddbd20",
+  tools: "c24bcf47b1377e9da4dcfb69a1f7240dcdbfff2d420df5db0a5eaec2b7d4087d",
+  skills: "7e343aa692e5eaeadfc8add6bb375fb50ac33ef81ebe460490fc219b0f3d707f",
+  memory: "53d190390829cc0132bb12e468a6891f2e0576ec0c4022a9b4a5d9233666900d",
+  vault: "19bd36a6d4ab442b66583c423450602b817990a9a79bafa21c9b6137fb6b47d8",
+  schedules: "c722922eca13a83400d92924e4d1aa8b09964b4081261be81e5149f0eae1119d",
 };
 
 /**
- * Every hash any recorded generation gives for a leaf path — the "known default, any era"
- * test set of the kernel update. A path absent from an old generation (e.g. `vault.*` before
- * #257) simply contributes nothing there.
+ * Per tab, the hashes *earlier* kernels shipped, oldest first, the current default excluded.
+ * **The only hashes that can decide anything**: a stored tab hitting one is an old default the
+ * user never edited, so the whole tab advances instead of being kept.
+ *
+ * These are literals, **frozen once written** — they must keep matching what old
+ * `system_config.yaml` files actually contain even as the defaults evolve, exactly like the
+ * LEGACY_* template constants in default-config.ts. A tab whose defaults never changed does
+ * not appear here; nor does one that simply did not exist yet, since a config predating a
+ * section carries no such tab at all and is materialized on absence rather than matched.
  */
-export function historicalHashesFor(path: string): Set<string> {
-  const hashes = new Set<string>();
-  for (const generation of Object.values(KERNEL_HASH_HISTORY)) {
-    const hash = generation[path];
-    if (hash !== undefined) hashes.add(hash);
-  }
-  return hashes;
+export type KernelSupersededTabHashes = Readonly<Partial<Record<KernelTab, readonly string[]>>>;
+
+export const KERNEL_SUPERSEDED_TAB_HASHES: KernelSupersededTabHashes = {
+  // The pre-toggles template, with the hardcoded # Vault / # Skills sections (before #257).
+  prompt: ["99b8babb72d95c636a2c2893b657ac9c92d60c270a2e04e346b35b1fb720c932"],
+  // compaction.max_context_length was 128000, before the rise to 256000 in 2026-08-20.
+  runtime: ["808ae1d1b544f46daff4f59f1e62357b89a61f60803061e86b10635616e0102c"],
+  tools: [
+    "238440586ad2e075bde04948cf8dc9876301da538aafeb8926cd9c6a5738081b", // before run_subagent's `thinking_level` (#306)
+    "c719f2fe8a25bc5c644a4e1a78d26cf960dd0561efc453614af2e395000ed4de", // before `max` joined the ladder
+    "074248073c5fe89537ff257cc5d5662159288fc79ede7703eded6b440b4e38e9", // before background execution and the kill tools
+    "8bbd336ff1f3fc283c4e11e54d43dd2bfe4ba2458577bf9eb3b6e3d7be4f3cde", // before the kill tools folded into the input tools
+  ],
+  // The memory prompt's wording before #397 named when a fact is worth saving.
+  memory: ["c28acdda755552967cd0c99ba4ced407eddfa843b3dce228a965da4674676dc7"],
+  // The schedules prompt before a scheduled task defaulted to the current Session.
+  schedules: ["79123643abd445c8540696c3e4395d9582cfa662bed2e5f879dd859fa09715f2"],
+};
+
+/**
+ * Whether a stored tab hash is a *superseded* default — an old built-in tab the user never
+ * edited, which a kernel update rewrites from the current defaults. The current default is
+ * deliberately not a match: the update has already short-circuited on it by the time it asks.
+ */
+export function isSupersededTab(
+  tab: KernelTab,
+  hash: string,
+  superseded: KernelSupersededTabHashes = KERNEL_SUPERSEDED_TAB_HASHES,
+): boolean {
+  return superseded[tab]?.includes(hash) ?? false;
 }

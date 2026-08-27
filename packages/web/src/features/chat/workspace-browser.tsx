@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { REHYPE_PLUGINS, REMARK_PLUGINS } from "../../lib/markdown-plugins";
 import type { SessionInfo, WorkspaceFilesResponse } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
@@ -149,6 +149,7 @@ export function WorkspaceBrowser({
   openRequest,
   active,
   onPreviewOpen,
+  reloadSignal,
 }: {
   session: SessionInfo;
   /** External navigation command (from clicking a file chip in a message): navigates to the
@@ -161,6 +162,13 @@ export function WorkspaceBrowser({
   active?: boolean;
   /** Callback when entering file preview (used by the mobile Sheet to raise its snap point to full). */
   onPreviewOpen?: () => void;
+  /**
+   * Bumped by the parent every time a Task settles on this session: the turn that just ended
+   * is exactly when the Agent's writes land, so the listing — and whatever file is open in
+   * the preview — is stale the moment it does. Any change of the number means "re-read",
+   * so the initial value is irrelevant and no edge tracking is needed.
+   */
+  reloadSignal?: number;
 }) {
   // Whether the HTML preview lands on a separate origin. True routes both the in-app
   // rendered view and "open in new tab" through the preview origin; false downgrades
@@ -211,7 +219,7 @@ export function WorkspaceBrowser({
     return () => {
       cancelled = true;
     };
-  }, [session.sessionId, path, reloadTick]);
+  }, [session.sessionId, path, reloadTick, reloadSignal]);
 
   // Session switched: back to the root directory with no preview. Reset during render
   // (React's documented "adjust state when a prop changes" pattern), not in an effect —
@@ -243,9 +251,17 @@ export function WorkspaceBrowser({
   const onPreviewOpenRef = useRef(onPreviewOpen);
   onPreviewOpenRef.current = onPreviewOpen;
 
+  /**
+   * Opens `filePath` in the preview. `refresh` re-reads a file already on screen (the
+   * settled-turn refresh below): it must not touch the things that belong to the user's
+   * hands — the mobile sheet's snap point, the rendered/source choice — and a failed
+   * re-read leaves what is on screen alone instead of replacing a working preview with
+   * "unsupported".
+   */
   const previewPath = useCallback(
-    async (filePath: string) => {
-      onPreviewOpenRef.current?.();
+    async (filePath: string, opts?: { refresh?: boolean }) => {
+      const refresh = opts?.refresh === true;
+      if (!refresh) onPreviewOpenRef.current?.();
       const name = filePath.includes("/")
         ? filePath.slice(filePath.lastIndexOf("/") + 1)
         : filePath;
@@ -257,8 +273,10 @@ export function WorkspaceBrowser({
       const present = (p: Preview) => {
         if (nonce === previewSeq) setPreview(p);
       };
-      setRichView("rendered");
-      setSourceError(null);
+      if (!refresh) {
+        setRichView("rendered");
+        setSourceError(null);
+      }
       if (IMAGE_EXTS.has(ext)) {
         present({ path: filePath, name, kind: "image", nonce });
         return;
@@ -296,7 +314,9 @@ export function WorkspaceBrowser({
         // Oversized Markdown defaults to the source view (benefiting from the unhighlighted
         // highlight=false path): feeding the whole block to remark for parsing is a one-time
         // main-thread cost; the user can still manually switch to "rendered view" as an informed choice.
-        if (isMd && full.length > HIGHLIGHT_LIMIT && nonce === previewSeq) setRichView("source");
+        if (!refresh && isMd && full.length > HIGHLIGHT_LIMIT && nonce === previewSeq) {
+          setRichView("source");
+        }
         present({
           path: filePath,
           name,
@@ -306,7 +326,9 @@ export function WorkspaceBrowser({
           nonce,
         });
       } catch {
-        present({ path: filePath, name, kind: "unsupported", nonce });
+        // A re-read that fails (the Agent deleted the file mid-turn, a blip) keeps the
+        // preview the user is looking at; only a fresh open reports it as unsupported.
+        if (!refresh) present({ path: filePath, name, kind: "unsupported", nonce });
       }
     },
     [session.sessionId],
@@ -348,6 +370,21 @@ export function WorkspaceBrowser({
       cancelled = true;
     };
   }, [preview, richView, previewIsolated, session.sessionId]);
+
+  // The same settled-turn signal re-reads whatever is open in the preview: watching a file
+  // the Agent is editing is the reason this panel sits next to the conversation. Skipped on
+  // the first run (the mount already read it) and while no preview is open. Reading the path
+  // from a ref keeps this effect keyed on the signal alone — depending on `preview` would
+  // re-run it on every preview change and re-read a file that was just read.
+  const previewPathRef = useRef<string | null>(null);
+  previewPathRef.current = preview?.path ?? null;
+  const lastReloadSignal = useRef(reloadSignal);
+  useEffect(() => {
+    if (reloadSignal === lastReloadSignal.current) return;
+    lastReloadSignal.current = reloadSignal;
+    const open = previewPathRef.current;
+    if (open !== null) void previewPath(open, { refresh: true });
+  }, [reloadSignal, previewPath]);
 
   // External navigation command (clicking a file chip in a message / a file card): navigates to
   // the directory and previews the target path. Also refreshes the list: the target is most
@@ -503,15 +540,26 @@ export function WorkspaceBrowser({
             {S.files.download}
           </a>
         </div>
-        <div className="min-h-0 flex-1 overflow-auto p-3">
+        {/* scrollbar-gutter: an SVG carries no pixel size, so its height is whatever its width
+            divides to — which makes the content height a function of the scrollbar's presence.
+            Without a reserved gutter that closes a loop: content overflows -> scrollbar takes
+            width -> the image shrinks -> content fits -> scrollbar goes -> repeat, forever, as
+            a visible shake. Reserving it always breaks the feedback path (and is inert where
+            scrollbars are overlays). */}
+        <div className="min-h-0 flex-1 overflow-auto p-3 [scrollbar-gutter:stable]">
           {preview.kind === "image" ? (
+            // Keyed on the nonce like the isolated HTML iframe: the src alone is unchanged
+            // when the same file is re-read, so only a remount re-requests the bytes the
+            // Agent just rewrote.
             <img
+              key={preview.nonce}
               src={api.workspaceFileUrl(session.sessionId, preview.path)}
               alt={preview.name}
               className="max-w-full rounded-md border border-gray-200 dark:border-gray-800"
             />
           ) : preview.kind === "pdf" ? (
             <iframe
+              key={preview.nonce}
               src={api.workspaceFileUrl(session.sessionId, preview.path)}
               title={preview.name}
               className="h-full min-h-[60vh] w-full rounded-md border border-gray-200 dark:border-gray-800"
@@ -566,17 +614,22 @@ export function WorkspaceBrowser({
             <>
               <div className="md-body text-base leading-relaxed text-gray-800 dark:text-gray-100">
                 <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
+                  remarkPlugins={REMARK_PLUGINS}
+                  rehypePlugins={REHYPE_PLUGINS}
                   components={{
                     // Relative images are resolved against the md file's directory into the file API (otherwise resolving against the app's origin would always 404).
+                    // `v` is the read nonce, not a cache-buster for its own sake: a
+                    // Workspace image is rewritten under the same path, and without it a
+                    // re-read of the Markdown would keep painting the previous bytes from
+                    // the browser's image cache.
                     img: ({ src, alt }) => (
                       <img
                         src={
                           typeof src === "string" && !EXTERNAL_REF_RE.test(src)
-                            ? api.workspaceFileUrl(
+                            ? `${api.workspaceFileUrl(
                                 session.sessionId,
                                 resolveRelative(dirOf(preview.path), src),
-                              )
+                              )}&v=${preview.nonce}`
                             : src
                         }
                         alt={alt ?? ""}

@@ -10,10 +10,10 @@
  *
  * The panel is portaled to document.body and positioned against viewport coordinates by
  * usePortalPanel, so no ancestor's overflow can clip it (a modal body, a horizontally scrolling
- * table) and it closes on outside click / Esc / scroll / resize. Esc there is captured and its
- * propagation stopped, which is what lets one Esc dismiss this popover while an enclosing Modal
- * stays open. z-[60] for the same reason OptionMenu uses it: a portaled node sits in the root
- * stacking context and must clear the modal overlay's z-50.
+ * table) and it closes on outside click / Esc / a scroll that moves the trigger / resize. Esc
+ * there is captured and its propagation stopped, which is what lets one Esc dismiss this
+ * popover while an enclosing Modal stays open. z-[60] for the same reason OptionMenu uses it:
+ * a portaled node sits in the root stacking context and must clear the modal overlay's z-50.
  */
 import { useId, useState } from "react";
 import type { ReactNode } from "react";

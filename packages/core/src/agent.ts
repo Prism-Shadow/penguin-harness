@@ -58,16 +58,16 @@ import type {
 } from "./omnimessage/index.js";
 import { SUBAGENT_NAME } from "./environment/tools/run-subagent.js";
 import { INPUT_SUBAGENT_NAME } from "./environment/tools/input-subagent.js";
-import { KILL_SUBAGENT_NAME } from "./environment/tools/kill-subagent.js";
 import type { CompactionSettings } from "./engine/context-engine.js";
 import type {
   GenerativeModelConfig,
   ProxyEnvPolicy,
+  SubagentHandle,
   SubagentRunner,
   ThinkingLevelName,
   ToolDefinition,
   VisionDescriberService,
-} from "./interfaces.js";
+} from "./interfaces/index.js";
 import type { ModelEntry } from "./state/index.js";
 
 /**
@@ -92,6 +92,23 @@ export interface CreateAgentOptions {
    * user's own shell environment).
    */
   proxyEnv?: () => ProxyEnvPolicy | null;
+  /**
+   * Harness-control variables for the command subprocesses of every Session this Agent
+   * creates or resumes. The hosting server passes a policy getter here; core evaluates it
+   * with each Session's own coordinates (subagent Sessions get their own agent/session
+   * ids — a child Agent inherits the getter like `proxyEnv`, and its Sessions call it with
+   * their own context). The returned entries override vault entries of the same name (see
+   * {@link EnvironmentConfig.controlEnv}). Absent = nothing is injected (SDK/CLI
+   * standalone use).
+   */
+  controlEnv?: (ctx: ControlEnvContext) => Record<string, string>;
+}
+
+/** The Session coordinates a {@link CreateAgentOptions.controlEnv} policy is evaluated with. */
+export interface ControlEnvContext {
+  projectId: string;
+  agentId: string;
+  sessionId: string;
 }
 
 export interface CreateSessionOptions {
@@ -156,7 +173,7 @@ export function metaMaxTokens(budget: number, modelCap: number | undefined): num
 export async function createAgent(opts: CreateAgentOptions = {}): Promise<Agent> {
   const state = await loadOrInitAgentState(opts);
   const projectConfig = await loadProjectConfig(state.root, state.projectId);
-  return new Agent(state, projectConfig, opts.proxyEnv);
+  return new Agent(state, projectConfig, opts.proxyEnv, opts.controlEnv);
 }
 
 export class Agent {
@@ -165,6 +182,8 @@ export class Agent {
     readonly projectConfig: ProjectConfig,
     /** See {@link CreateAgentOptions.proxyEnv}; forwarded into every Session's Environment. */
     private readonly proxyEnv?: () => ProxyEnvPolicy | null,
+    /** See {@link CreateAgentOptions.controlEnv}; evaluated per Session with that Session's coordinates. */
+    private readonly controlEnv?: (ctx: ControlEnvContext) => Record<string, string>,
   ) {}
 
   /**
@@ -505,7 +524,7 @@ export class Agent {
     // must not block the resume itself.
     if (resumed.danglingCompaction) {
       try {
-        await trace.write(compactionEnd({ ...resumed.danglingCompaction, status: "failed" }));
+        await trace.write(compactionEnd({ ...resumed.danglingCompaction, status: "retryable" }));
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         process.stderr.write(`[trace] interrupted-compaction closure failed: ${detail}\n`);
@@ -670,10 +689,13 @@ export class Agent {
                 root,
                 projectId,
                 agentId,
-                // A child Agent loads its own vault/config, but the proxy-env policy
-                // getter is host policy, not Agent state: the subagent's commands run in
-                // the same serving process, so they follow the same settings as the parent's.
+                // A child Agent loads its own vault/config, but the proxy-env and
+                // control-env policy getters are host policy, not Agent state: the
+                // subagent's commands run in the same serving process, so they follow the
+                // same settings as the parent's — controlEnv is then evaluated with the
+                // child Session's own coordinates.
                 ...(parentAgent.proxyEnv ? { proxyEnv: parentAgent.proxyEnv } : {}),
+                ...(parentAgent.controlEnv ? { controlEnv: parentAgent.controlEnv } : {}),
               })
             : parentAgent;
         // The child Session follows the PARENT Session, never the Project default: with the
@@ -700,68 +722,108 @@ export class Agent {
           subagentDepth: subagentDepth + 1,
           source: "subagent",
         });
-        // All child-session messages are tagged with an origin (the child Session id,
-        // prepended as one hop from outer to inner); the first turn forwards the
-        // child's session_meta first (including agent_state and other metadata) so the
-        // parent frontend can recognize the nested session (for rendering, stats,
-        // approval visibility); the parent Trace skips these accordingly (the child
-        // Session has its own Trace, linked by session id).
-        const hop: MessageOrigin = childSession.sessionId;
-        let metaSent = false;
-        return {
-          sessionId: hop,
-          // One-shot upfront meta for background launches (see SubagentHandle.takeMeta):
-          // shares metaSent with run, so the meta reaches the parent stream exactly once
-          // whichever side sends it first.
-          takeMeta() {
-            if (metaSent) return null;
-            metaSent = true;
-            return withOrigin(childSession.metaMessage, hop);
-          },
-          async *run({ prompt, signal, approve }) {
-            if (!metaSent) {
-              metaSent = true;
-              yield withOrigin(childSession.metaMessage, hop);
-            }
-            // Pass through the parent's approval callback: the child Session inherits
-            // the parent Agent's approval mode (with no callback, the child engine
-            // defaults to deny). The tool_call received for approval also carries the
-            // origin, so the approval UI can identify which tool a subagent is calling.
-            const childApprove = approve
-              ? (tc: OmniMessage<ToolCallPayload>) => approve(withOrigin(tc, hop))
-              : undefined;
-            // The engine writes a run's input to the CHILD's own Trace but never replays
-            // it to its consumer (a session's normal caller typed that input itself) —
-            // here the consumer is the PARENT, whose frontend has never seen the child's
-            // prompt. Forward the input message itself (origin-tagged, ahead of the run's
-            // output) so the live nested view shows the child's user side exactly like a
-            // reloaded one (history expansion splices the child Trace, which carries this
-            // same message). The parent engine drops origin messages from the parent
-            // Trace, so replay never duplicates it. Later rounds (input_subagent
-            // follow-up prompts) come through this same generator and are forwarded the
-            // same way.
-            // sender "parent_agent": in the child's Trace this user turn came from the
-            // parent agent (run_subagent's prompt / input_subagent's follow-up), not a human.
-            const input = userText(prompt, "parent_agent");
-            yield withOrigin(input, hop);
-            for await (const msg of childSession.run([input], {
-              ...(signal ? { signal } : {}),
-              ...(childApprove ? { approve: childApprove } : {}),
-            })) {
-              yield withOrigin(msg, hop);
-            }
-          },
-          dispose() {
-            childSession.dispose();
-          },
-        };
+        return subagentHandleFor(childSession);
+      },
+      // Revival: a RELEASED child session resumes with its own history, model and Workspace
+      // (resumeSession semantics) — reached by the panel and by input_subagent on a released
+      // id alike. The owning Agent comes from the caller's record (the host's session
+      // registry, or the spawn-time tombstone); omitted or self-owned reuses the parent
+      // Agent instance.
+      async resume({ agentId, sessionId }) {
+        if (agentId !== undefined) assertValidId("agent_id", agentId);
+        const childAgent =
+          agentId === undefined || agentId === parentAgentId
+            ? parentAgent
+            : await createAgent({
+                root,
+                projectId,
+                agentId,
+                ...(parentAgent.proxyEnv ? { proxyEnv: parentAgent.proxyEnv } : {}),
+                ...(parentAgent.controlEnv ? { controlEnv: parentAgent.controlEnv } : {}),
+              });
+        const childSession = await childAgent.resumeSession({ sessionId });
+        return subagentHandleFor(childSession);
       },
     };
 
+    /**
+     * Wraps a child Session as a SubagentHandle — shared by spawn and resume. All
+     * child-session messages are tagged with an origin (the child Session id, prepended as
+     * one hop from outer to inner); the first turn forwards the child's session_meta first
+     * (including agent_state and other metadata) so the parent frontend can recognize the
+     * nested session (for rendering, stats, approval visibility); the parent Trace skips
+     * these accordingly (the child Session has its own Trace, linked by session id).
+     */
+    function subagentHandleFor(childSession: Session): SubagentHandle {
+      const hop: MessageOrigin = childSession.sessionId;
+      let metaSent = false;
+      return {
+        sessionId: hop,
+        // One-shot upfront meta for background launches (see SubagentHandle.takeMeta):
+        // shares metaSent with run, so the meta reaches the parent stream exactly once
+        // whichever side sends it first.
+        takeMeta() {
+          if (metaSent) return null;
+          metaSent = true;
+          return withOrigin(childSession.metaMessage, hop);
+        },
+        async *run({ messages, signal, approve, thinkingLevel: turnThinkingLevel }) {
+          if (!metaSent) {
+            metaSent = true;
+            yield withOrigin(childSession.metaMessage, hop);
+          }
+          // Pass through the parent's approval callback: the child Session inherits
+          // the parent Agent's approval mode (with no callback, the child engine
+          // defaults to deny). The tool_call received for approval also carries the
+          // origin, so the approval UI can identify which tool a subagent is calling.
+          const childApprove = approve
+            ? (tc: OmniMessage<ToolCallPayload>) => approve(withOrigin(tc, hop))
+            : undefined;
+          // The engine writes a run's input to the CHILD's own Trace but never replays
+          // it to its consumer (a session's normal caller typed that input itself) —
+          // here the consumer is the PARENT, whose frontend has never seen the child's
+          // prompt. Forward the input messages themselves (origin-tagged, ahead of the
+          // run's output) so the live nested view shows the child's user side exactly
+          // like a reloaded one (history expansion splices the child Trace, which
+          // carries these same messages). The parent engine drops origin messages from
+          // the parent Trace, so replay never duplicates them. Later rounds
+          // (input_subagent follow-up prompts, a host panel's message) come through this
+          // same generator and are forwarded the same way.
+          // The caller owns each message's `sender` — "parent_agent" for the model's own
+          // dispatch, none for a human's message from a host panel — so the child's Trace
+          // records who actually spoke.
+          for (const input of messages) yield withOrigin(input, hop);
+          // Manual iteration so the child run's return value — whether the round was cut
+          // off — propagates to the handle's own return for the parent's round report.
+          const it = childSession.run(messages, {
+            ...(signal ? { signal } : {}),
+            ...(childApprove ? { approve: childApprove } : {}),
+            ...(turnThinkingLevel !== undefined ? { thinkingLevel: turnThinkingLevel } : {}),
+          });
+          for (;;) {
+            const res = await it.next();
+            if (res.done) return res.value;
+            yield withOrigin(res.value, hop);
+          }
+        },
+        // Mid-run steering rides the child Session's own steering queue — the same
+        // mechanism a user steers the main session with. The queued message keeps its
+        // caller-chosen sender ("parent_agent" from input_subagent, none from a human
+        // panel), and the delivered [user_steering] message streams back out through
+        // `run` with the origin hop like every other child message.
+        steer(messages) {
+          return childSession.steer(messages);
+        },
+        dispose() {
+          childSession.dispose();
+        },
+      };
+    }
+
     // Tool exposure is capped by depth: a (leaf) child Agent that has reached the
-    // max spawn depth no longer gets run_subagent, input_subagent or kill_subagent
-    // (the latter two depend on the subagent_id produced by the former, so exposing
-    // them alone is meaningless).
+    // max spawn depth no longer gets run_subagent or input_subagent (the latter
+    // depends on the subagent_id produced by the former, so exposing it alone is
+    // meaningless).
     const canSpawn = subagentDepth < MAX_SUBAGENT_DEPTH;
     const baseToolConfig = buildToolConfig(this.state);
     // Select tool entries by the session model's type (marked via forModel: vision
@@ -774,7 +836,9 @@ export class Agent {
         (d) =>
           d.name !== SUBAGENT_NAME &&
           d.name !== INPUT_SUBAGENT_NAME &&
-          d.name !== KILL_SUBAGENT_NAME,
+          // Legacy entry still present in stale stored configs; the registry no longer
+          // assembles it, this just keeps the leaf filter symmetrical.
+          d.name !== "kill_subagent",
       );
     }
     const toolConfig = { ...baseToolConfig, customTools };
@@ -839,6 +903,19 @@ export class Agent {
       services: { subagentRunner, ...(visionDescriber ? { visionDescriber } : {}) },
       ...(Object.keys(vault).length > 0 ? { vault } : {}),
       ...(this.proxyEnv ? { proxyEnv: this.proxyEnv } : {}),
+      // The control-env policy is bound to THIS Session's coordinates here (sessionId is
+      // final by now); the getter shape keeps it re-evaluated at every command spawn, so
+      // the host can rotate what it injects (e.g. its API token) without a rebuild.
+      ...(this.controlEnv
+        ? {
+            controlEnv: () =>
+              this.controlEnv!({
+                projectId: this.state.projectId,
+                agentId: this.state.agentId,
+                sessionId,
+              }),
+          }
+        : {}),
     });
 
     // Configured output cap: the entry's per-model annotation wins over the Agent's

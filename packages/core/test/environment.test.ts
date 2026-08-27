@@ -12,7 +12,7 @@ import {
 } from "../src/omnimessage/index.js";
 import type { OmniMessage } from "../src/omnimessage/index.js";
 import { BUILTIN_TOOL_FACTORIES } from "../src/environment/tools/registry.js";
-import type { ToolConfig, ToolDefinitionConfig } from "../src/interfaces.js";
+import type { ToolConfig, ToolDefinitionConfig } from "../src/interfaces/index.js";
 
 /** Tool config for exec_command (permission/maxOutputLength adjustable). */
 function execTool(overrides: Partial<ToolDefinitionConfig> = {}): ToolDefinitionConfig {
@@ -257,7 +257,7 @@ describe("Environment.executeTool — edit file", () => {
 });
 
 describe("Environment.executeTool — maxOutputLength truncation", () => {
-  it("keeps standalone Environment's legacy truncation behavior without archive config", async () => {
+  it("keeps standalone Environment truncation-only (head and tail windows, no archive) without scratchpad config", async () => {
     const env = new Environment({
       workspaceDir: tmp,
       toolConfig: makeToolConfig(execTool({ maxOutputLength: 5 })),
@@ -272,11 +272,12 @@ describe("Environment.executeTool — maxOutputLength truncation", () => {
       }),
     );
     const output = (messages[messages.length - 1]!.payload as { output: string }).output;
-    expect(output).toContain("[output truncated: exceeded 5 chars]");
+    // Budget 5 splits into a 2-char head and a 3-char tail around the counting marker.
+    expect(output).toBe("ab\n[output truncated: kept first 2 and last 3 of 26 chars]\nxyz");
     expect(output).not.toContain("[output archived:");
   });
 
-  it("truncates front-to-back, archives the received output, and keeps stream == complete", async () => {
+  it("keeps head and tail windows, archives the received output, and keeps stream == complete", async () => {
     const maxOutputLength = 50;
     const env = new Environment({
       workspaceDir: tmp,
@@ -297,15 +298,20 @@ describe("Environment.executeTool — maxOutputLength truncation", () => {
     const last = messages[messages.length - 1]!;
     expect((last.payload as { type?: string }).type).toBe("tool_call_output");
     const output = (last.payload as { output: string }).output;
-    // Truncates front-to-back: the head is kept, and the truncation marker is appended at the
-    // tail (the marker does not count toward the limit).
+    // The budget splits into head and tail windows around a marker carrying kept and total
+    // counts (the marker and notes do not count toward the limit).
     expect(output.startsWith("1\n2\n3\n")).toBe(true);
-    const marker = `[output truncated: exceeded ${maxOutputLength} chars]`;
-    expect(output).toContain(marker);
-    expect(output.indexOf(marker)).toBe(maxOutputLength + 1);
+    const marker = output.match(/\[output truncated: kept first 25 and last 25 of (\d+) chars\]/);
+    expect(marker).not.toBeNull();
+    expect(output.indexOf(marker![0])).toBe(26); // right after the 25-char head + newline
+    // The tail window surfaces the end of the run without reading the archive.
+    expect(output).toContain("100000");
     const savedPath = recoveryPath(output);
     expect(savedPath).toBeDefined();
-    expect(await readFile(savedPath!, "utf8")).toMatch(/100000\r?\n$/);
+    const archived = await readFile(savedPath!, "utf8");
+    expect(archived).toMatch(/100000\r?\n$/);
+    // The marker's total equals the full text the archive preserved (ASCII: chars == bytes).
+    expect(Number(marker![1])).toBe(archived.length);
     // Even when truncated, concatenating the streamed deltas == the complete content (the
     // excess part is never forwarded).
     const streamed = messages
@@ -383,7 +389,12 @@ describe("Environment.executeTool — maxOutputLength truncation", () => {
       stop_reason?: string;
     };
     expect(complete.stop_reason).toBe("completed");
-    expect(complete.output.startsWith(expected.slice(0, maxOutputLength))).toBe(true);
+    expect(complete.output.startsWith(expected.slice(0, 25))).toBe(true);
+    expect(complete.output).toContain(
+      `[output truncated: kept first 25 and last 25 of ${expected.length} chars]`,
+    );
+    // The visible tail window carries the end of the output.
+    expect(complete.output).toContain("\nEND\n");
     const savedPath = recoveryPath(complete.output);
     expect(savedPath).toBeDefined();
     if (process.platform === "win32") {
@@ -597,6 +608,8 @@ describe("Environment.executeTool — maxOutputLength truncation", () => {
       );
       const complete = messages[messages.length - 1]!.payload as { output: string };
       expect(complete.output).toContain("head and tail kept");
+      // The visible tail window ends with the intact trailing surrogate pair.
+      expect(complete.output).toContain("-END-🐧");
       const savedPath = recoveryPath(complete.output);
       expect(savedPath).toBeDefined();
       const archived = await readFile(savedPath!, "utf8");
@@ -647,7 +660,12 @@ describe("Environment.executeTool — maxOutputLength truncation", () => {
       const savedPath = recoveryPath(complete.output);
       expect(savedPath).toBeDefined();
       expect(await readFile(savedPath!, "utf8")).toBe(source);
-      expect(complete.output.startsWith(source.slice(0, 20))).toBe(true);
+      // The full-message basis gets the same head/tail windows as the streamed path.
+      expect(complete.output.startsWith(source.slice(0, 10))).toBe(true);
+      expect(complete.output).toContain(
+        `[output truncated: kept first 10 and last 10 of ${source.length} chars]`,
+      );
+      expect(complete.output).toContain("-END");
       expect(complete.stop_reason).toBe("completed");
       const streamed = messages
         .filter(
@@ -660,6 +678,117 @@ describe("Environment.executeTool — maxOutputLength truncation", () => {
       expect(streamed).toBe(complete.output);
       env.dispose();
       expect(await readFile(savedPath!, "utf8")).toBe(source);
+    } finally {
+      delete BUILTIN_TOOL_FACTORIES[NAME];
+    }
+  });
+
+  it("flushes withheld text verbatim when the total stays within budget", async () => {
+    const NAME = "__band_tool__";
+    BUILTIN_TOOL_FACTORIES[NAME] = (definition) => ({
+      name: NAME,
+      definition,
+      async *execute(_args, ctx) {
+        for (const piece of ["alpha-", "beta-", "gamma"]) {
+          yield partialToolCallOutput({
+            eventType: "delta",
+            output: piece,
+            toolCallId: ctx.toolCallId,
+          });
+        }
+      },
+    });
+    try {
+      const sessionScratchpadDir = path.join(tmp, "scratch");
+      const env = new Environment({
+        workspaceDir: tmp,
+        toolConfig: {
+          customTools: [{ name: NAME, description: "band", permission: "r", maxOutputLength: 20 }],
+          mcpServers: [],
+        },
+        sessionScratchpadDir,
+      });
+      const messages = await collect(
+        env.executeTool({
+          toolCall: toolCall({ name: NAME, arguments: "{}", toolCallId: "band" }),
+        }),
+      );
+      const complete = messages[messages.length - 1]!.payload as {
+        output: string;
+        stop_reason?: string;
+      };
+      // 16 chars: past the 10-char head window but within the 20-char budget. The part past the
+      // head arrives as a finalization flush — complete result, no marker, no archive.
+      expect(complete.output).toBe("alpha-beta-gamma");
+      expect(complete.stop_reason).toBe("completed");
+      await expect(
+        access(path.join(sessionScratchpadDir, "truncated-tool-output")),
+      ).rejects.toThrow();
+      const streamed = messages
+        .filter(
+          (m) =>
+            (m.payload as { type?: string }).type === "partial_tool_call_output" &&
+            (m.payload as { event_type?: string }).event_type === "delta",
+        )
+        .map((m) => (m.payload as { output?: string }).output ?? "")
+        .join("");
+      expect(streamed).toBe(complete.output);
+    } finally {
+      delete BUILTIN_TOOL_FACTORIES[NAME];
+    }
+  });
+
+  it("keeps surrogate pairs whole at both window cuts", async () => {
+    const NAME = "__surrogate_cut_tool__";
+    // Budget 8 → 4-char head, 4-char tail. The first delta ends exactly at the head window with
+    // a high surrogate; its low half arrives in the next delta together with the overflow.
+    const deltas = ["abc\ud83d", `\udc27${"x".repeat(20)}`];
+    BUILTIN_TOOL_FACTORIES[NAME] = (definition) => ({
+      name: NAME,
+      definition,
+      async *execute(_args, ctx) {
+        for (const piece of deltas) {
+          yield partialToolCallOutput({
+            eventType: "delta",
+            output: piece,
+            toolCallId: ctx.toolCallId,
+          });
+        }
+      },
+    });
+    try {
+      const env = new Environment({
+        workspaceDir: tmp,
+        toolConfig: {
+          customTools: [
+            { name: NAME, description: "surrogate", permission: "r", maxOutputLength: 8 },
+          ],
+          mcpServers: [],
+        },
+        sessionScratchpadDir: path.join(tmp, "scratch"),
+      });
+      const messages = await collect(
+        env.executeTool({
+          toolCall: toolCall({ name: NAME, arguments: "{}", toolCallId: "surrogate" }),
+        }),
+      );
+      const complete = messages[messages.length - 1]!.payload as { output: string };
+      // The pairable high surrogate is withheld instead of closing the head, so the visible
+      // result carries no half characters; the dropped pair stays intact in the archive.
+      expect(complete.output).toContain("[output truncated: kept first 3 and last 4 of 25 chars]");
+      expect(/[\ud800-\udfff]/.test(complete.output)).toBe(false);
+      const savedPath = recoveryPath(complete.output);
+      expect(savedPath).toBeDefined();
+      expect(await readFile(savedPath!, "utf8")).toBe("abc🐧" + "x".repeat(20));
+      const streamed = messages
+        .filter(
+          (m) =>
+            (m.payload as { type?: string }).type === "partial_tool_call_output" &&
+            (m.payload as { event_type?: string }).event_type === "delta",
+        )
+        .map((m) => (m.payload as { output?: string }).output ?? "")
+        .join("");
+      expect(streamed).toBe(complete.output);
     } finally {
       delete BUILTIN_TOOL_FACTORIES[NAME];
     }
@@ -685,7 +814,7 @@ describe("Environment.executeTool — relaxed tool contract", () => {
           output: "result",
           toolCallId: ctx.toolCallId,
         });
-        return { stopReason: "failed" as const };
+        return { stopReason: "fatal" as const };
       },
     });
     try {
@@ -710,7 +839,7 @@ describe("Environment.executeTool — relaxed tool contract", () => {
       };
       expect(complete.type).toBe("tool_call_output");
       expect(complete.output).toBe("partial result");
-      expect(complete.stop_reason).toBe("failed"); // Finish reason reported via the return value
+      expect(complete.stop_reason).toBe("fatal"); // Finish reason reported via the return value
       expect((out[out.length - 2]!.payload as { event_type?: string }).event_type).toBe("stop");
     } finally {
       delete BUILTIN_TOOL_FACTORIES[NAME];
@@ -784,7 +913,7 @@ describe("Environment.executeTool — relaxed tool contract", () => {
           output: "broken",
           toolCallId: ctx.toolCallId,
         });
-        return { stopReason: "failed" as const, images: ["data:image/png;base64,AAAA"] };
+        return { stopReason: "fatal" as const, images: ["data:image/png;base64,AAAA"] };
       },
     });
     try {
@@ -803,7 +932,7 @@ describe("Environment.executeTool — relaxed tool contract", () => {
       const complete = out[out.length - 1]!.payload as { stop_reason?: string; images?: string[] };
       // Only a normal completion carries images: a failed finish drops them (neither the
       // stream nor the complete message carries them), keeping the finish handling simple.
-      expect(complete.stop_reason).toBe("failed");
+      expect(complete.stop_reason).toBe("fatal");
       expect(complete.images).toBeUndefined();
       for (const m of out) {
         const p = m.payload as { type?: string };
@@ -901,7 +1030,7 @@ describe("Environment.executeTool — timeoutMs (PRN-013)", () => {
       stop_reason?: string;
     };
     expect(last.type).toBe("tool_call_output");
-    expect(last.stop_reason).toBe("failed");
+    expect(last.stop_reason).toBe("fatal");
     // Kept-prior-output is asserted only where the shell can win the race: a Git-Bash login
     // shell on Windows needs several hundred ms to start, so nothing is printed before a
     // sub-250ms timeout there — the timeout mechanics above are still fully exercised.
@@ -988,7 +1117,7 @@ describe("Environment.executeTool — robustness", () => {
     expect(payload.type).toBe("tool_call_output");
     expect(payload.output).toContain("Unknown tool: not_a_real_tool"); // Complete content matches
     expect(payload.tool_call_id).toBe("call_unknown");
-    expect(payload.stop_reason).toBe("failed");
+    expect(payload.stop_reason).toBe("fatal");
   });
 
   /** Runs one tool call and returns the payload of the last complete tool_call_output. */
@@ -1015,14 +1144,14 @@ describe("Environment.executeTool — robustness", () => {
       const payload = await runTool(args, `call_badjson_${i}`);
       expect(payload.type).toBe("tool_call_output");
       expect(payload.output, args).toContain("not valid JSON");
-      expect(payload.stop_reason).toBe("failed");
+      expect(payload.stop_reason).toBe("fatal");
     }
   });
 
   it("tells the model the arguments were empty", async () => {
     const payload = await runTool("", "call_emptyargs");
     expect(payload.output).toContain("arguments field is empty");
-    expect(payload.stop_reason).toBe("failed");
+    expect(payload.stop_reason).toBe("fatal");
   });
 
   it("never returns an empty tool output", async () => {
@@ -1078,7 +1207,7 @@ describe("Environment.executeTool — robustness", () => {
       stop_reason?: string;
     };
     expect(payload.output).toContain("[exit code: 3]");
-    expect(payload.stop_reason).toBe("failed");
+    expect(payload.stop_reason).toBe("fatal");
     // The exit-code marker is also produced via streaming (renderable by the frontend); the
     // streamed deltas concatenated == the complete content (short output here, no truncation).
     const streamed = messages
@@ -1190,9 +1319,9 @@ describe("Environment structure invariant on tool throw (PRN-012)", () => {
       const noteDelta = out[2]!.payload as { output?: string };
       expect(noteDelta.output).toContain("kaboom"); // The error marker is produced via a streamed delta
       const stop = out[3]!.payload as { stop_reason?: string };
-      expect(stop.stop_reason).toBe("failed");
+      expect(stop.stop_reason).toBe("fatal");
       const complete = out[4]!.payload as { stop_reason?: string; output?: string };
-      expect(complete.stop_reason).toBe("failed");
+      expect(complete.stop_reason).toBe("fatal");
       expect(complete.output).toContain("kaboom");
       expect(complete.output).toContain("working"); // Keeps the partial content already streamed.
       // Concatenating the streamed deltas == the complete content (relevant for frontend rendering).

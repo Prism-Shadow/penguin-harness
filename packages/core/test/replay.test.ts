@@ -36,7 +36,7 @@ import { parseTraceLines, readTraceTolerant, resumeTrace } from "../src/trace/re
 import { ContextEngine } from "../src/engine/context-engine.js";
 import { Environment } from "../src/environment/index.js";
 import { Writer, readTrace } from "../src/trace/index.js";
-import type { ApproveFn, LLMInterface } from "../src/interfaces.js";
+import type { ApproveFn, LLMInterface } from "../src/interfaces/index.js";
 
 const usage = (total: number): TokenCounts => ({
   cache_read: 0,
@@ -97,7 +97,7 @@ describe("resumeTrace", () => {
       meta(),
       userText("A"),
       requestBegin(),
-      requestEnd("timeout"), // failed with zero output
+      requestEnd("retryable"), // failed with zero output
       requestBegin(),
       assistantText("ok"),
       requestEnd("completed"),
@@ -308,8 +308,8 @@ describe("resumeTrace", () => {
       compactionBegin({ reason: "context", mode: "summarize", context: 10, turns: 1 }),
       userText("please summarize"),
       requestBegin(),
-      requestEnd("failed"),
-      compactionEnd({ reason: "context", mode: "summarize", status: "failed" }),
+      requestEnd("retryable"),
+      compactionEnd({ reason: "context", mode: "summarize", status: "retryable" }),
       userText("continue"),
       requestBegin(),
       assistantText("sure"),
@@ -598,7 +598,7 @@ describe("resumeTrace regressions (PR #39 review)", () => {
       requestBegin(),
       toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc1" }),
       toolCallOutput({ output: "ran-during-timeout", toolCallId: "tc1" }),
-      requestEnd("timeout"), // this round is dropped: tc1 never entered AgentHub history
+      requestEnd("retryable"), // this round is dropped: tc1 never entered AgentHub history
       requestBegin(),
       assistantText("recovered"),
       requestEnd("completed"),
@@ -707,13 +707,13 @@ describe("resumeTrace regressions (PR #39 review)", () => {
       toolCallOutput({
         output: "[tool error] the compaction request expects a summary, not tool calls",
         toolCallId: "c1",
-        stopReason: "failed",
+        stopReason: "fatal",
       }),
       requestBegin(),
       thinkingMessage("still nothing"),
       requestEnd("completed"),
       tokenUsage(usage(170), usage(480)),
-      compactionEnd({ reason: "context", mode: "summarize", status: "failed" }),
+      compactionEnd({ reason: "context", mode: "summarize", status: "retryable" }),
     ]);
     expect(result.contextClosed).toBe(false);
     expect(result.pendingSummary).toBeUndefined();
@@ -757,7 +757,7 @@ describe("resumeTrace regressions (PR #39 review)", () => {
       toolCallOutput({
         output: "[tool error] the compaction request expects a summary, not tool calls",
         toolCallId: "c1",
-        stopReason: "failed",
+        stopReason: "fatal",
       }),
       compactionEnd({ reason: "context", mode: "summarize", status: "aborted" }),
     ]);

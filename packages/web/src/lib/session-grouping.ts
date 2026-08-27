@@ -37,6 +37,16 @@ export function workspaceGroupKey(workspace: string): string {
   return isTempWorkspace(workspace) ? TEMP_WORKSPACE_GROUP_KEY : workspace.trim();
 }
 
+/**
+ * Query value that names a Workspace group to the server's list endpoint — the group's
+ * path, or the sentinel the server merges every auto-created temporary Workspace under
+ * (its `TEMP_WORKSPACE_GROUP`; stored Workspaces are realpath results and therefore
+ * absolute, so the bare word cannot collide with one).
+ */
+export function workspaceGroupQuery(groupKey: string): string {
+  return groupKey === TEMP_WORKSPACE_GROUP_KEY ? "temp" : groupKey;
+}
+
 /** Short display label: the last path segment (the filesystem root yields "/"). */
 export function workspaceLabel(workspace: string): string {
   const parts = workspace
@@ -56,11 +66,69 @@ export function workspaceLabel(workspace: string): string {
 export const SIDEBAR_PAGE_SIZE = 10;
 
 /**
- * Groups (Agents / Workspace groups) rendered per sidebar "page": the initial render cap,
- * raised by one page per "more groups" click. A pure display cap — with dozens of groups the
- * full list renders too tall to scan (#139); the groups' data loading is unchanged.
+ * Groups (Agents / Workspace groups) rendered per sidebar page. With dozens of groups the
+ * full list renders too tall to scan (#139), so the sidebar paginates them: one page at a
+ * time, stepped by the pager below the list. A pure display window — every group's data
+ * loading is unchanged, and the manual group order is committed over the whole sequence,
+ * not the page on screen.
  */
 export const SIDEBAR_GROUP_PAGE_SIZE = 10;
+
+/** Pages `total` groups take (always at least one, so an empty list still has a page 1). */
+export function groupPageCount(total: number, pageSize = SIDEBAR_GROUP_PAGE_SIZE): number {
+  return Math.max(1, Math.ceil(total / pageSize));
+}
+
+/**
+ * A stored page number pinned inside the pages that currently exist. Groups come and go
+ * (a Workspace is removed, an Agent is deleted, a Project switch swaps the whole list),
+ * and a page that outlived its groups must land on the last real one rather than render
+ * an empty sidebar.
+ */
+export function clampGroupPage(
+  page: number,
+  total: number,
+  pageSize = SIDEBAR_GROUP_PAGE_SIZE,
+): number {
+  return Math.min(Math.max(page, 0), groupPageCount(total, pageSize) - 1);
+}
+
+/** The page a group at `index` of the ordered sequence renders on (0-based both ends). */
+export function groupPageOf(index: number, pageSize = SIDEBAR_GROUP_PAGE_SIZE): number {
+  return Math.floor(Math.max(index, 0) / pageSize);
+}
+
+/** The groups of one page, in the order given (the caller has already sorted them). */
+export function groupPageSlice<T>(
+  groups: readonly T[],
+  page: number,
+  pageSize = SIDEBAR_GROUP_PAGE_SIZE,
+): T[] {
+  const start = clampGroupPage(page, groups.length, pageSize) * pageSize;
+  return groups.slice(start, start + pageSize);
+}
+
+/**
+ * Conversations of one group that its reveal row still hides — what "Show N more chats"
+ * counts. Computed from the group's OWN numbers only: `loaded` rows are in memory,
+ * `shown` of them are past the display cap, and `total` is the group's exact server share
+ * — except once every Agent that could hold its rows is fully fetched (`fullyLoaded`),
+ * when the loaded rows ARE the share. That last clause is what keeps a count drifting
+ * above reality (totals refresh only on reload) from leaving a row that reveals nothing.
+ */
+export function hiddenRowCount({
+  shown,
+  loaded,
+  total,
+  fullyLoaded,
+}: {
+  shown: number;
+  loaded: number;
+  total: number;
+  fullyLoaded: boolean;
+}): number {
+  return Math.max((fullyLoaded ? loaded : Math.max(total, loaded)) - shown, 0);
+}
 
 /**
  * Applies the limit+1 fetch trick: `fetched` came from a request with `limit = pageSize + 1`;

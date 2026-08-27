@@ -1,23 +1,24 @@
 /**
  * Session index service.
  *
- * The default list is served from the DB index alone (web rows: `client` web/NULL) — no
- * Trace directory scanning in steady state (#139). `includeCli` widens it to DB ∪ Trace
- * directory discovery: scans `<agent>/traces/<date>/<session_id>_<index3>.jsonl`; an
- * unmanaged Session (one started via the CLI) has its first line's session_meta read for
- * (provider, model_id) / workspace, which is backfilled into a DB row marked
- * `client: "cli"` (approval_mode defaults, createdAt is taken from the timestamp embedded
- * in session_id) — the default list keeps excluding it, but it becomes individually
- * reachable (deep links).
+ * Lists are served from the DB index alone — no Trace directory scanning in steady state
+ * (#139), and no client-side filtering: every row is listed whichever client created it.
+ * Sessions that exist only as Trace files (left behind by a pre-server CLI) are adopted
+ * into the index once per boot by the startup sweep (`adoptUnmanagedTraceSessions`):
+ * the trace index's registration-time facts supply (provider, model_id) / workspace,
+ * and the row is stamped `client: "cli"` (approval_mode defaults, createdAt taken from
+ * the timestamp embedded in session_id).
  * Create: via core's `agent.createSession` (the model reference is always a complete
  * (provider, modelId) pair — both or neither; omitting both falls back to the
  * Project's default reference, 400 if there is none); the new Session is
  * added to session-manager's active table (state idle).
  */
-import { createAgent, isSessionMeta } from "@prismshadow/penguin-core";
-import type { ProxyEnvPolicy } from "@prismshadow/penguin-core";
+import fs from "node:fs/promises";
+import { agentsDir, createAgent, isSessionMeta } from "@prismshadow/penguin-core";
+import type { ControlEnvContext, ProxyEnvPolicy } from "@prismshadow/penguin-core";
 import type {
   ApprovalMode,
+  MessagingChannel,
   SessionCategory,
   SessionCategoryCounts,
   SessionInfo,
@@ -30,6 +31,7 @@ import type { SessionManager } from "../runtime/session-manager.js";
 import { asSessionSource } from "../runtime/session-sources.js";
 import type { SessionSources } from "../runtime/session-sources.js";
 import { TraceIndexService, traceFilePath } from "./trace-index.js";
+import { matchesWorkspaceGroup } from "./workspace-group.js";
 import type { ProjectConfigService } from "./project-config-service.js";
 
 const SESSION_ID_TS_RE = /^session-(\d{4})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-[0-9a-f]{8}$/;
@@ -58,6 +60,20 @@ export interface SessionServiceDeps {
    * runs the Session's first Task, so it needs the command-subprocess proxy policy too.
    */
   proxyEnv?: () => ProxyEnvPolicy | null;
+  /**
+   * Harness-control env threading (same policy the session loader passes): the server's
+   * API URL/token plus the Session coordinates, injected into command subprocesses so
+   * agents can drive the harness back through the CLI/API.
+   */
+  controlEnv?: (ctx: ControlEnvContext) => Record<string, string>;
+  /**
+   * The channel of the Session's ENABLED messaging binding, or null when none is enabled
+   * (SessionInfo.messagingChannel, the sidebar row's per-channel indicator — saved-but-
+   * disabled configs stay off the row). A lookup lambda rather than the repo, so the
+   * service stays decoupled from the bindings table; absent (older assemblies/tests)
+   * means the field is never set.
+   */
+  messagingChannel?: (sessionId: string) => MessagingChannel | null;
 }
 
 export class SessionService {
@@ -71,6 +87,7 @@ export class SessionService {
    */
   async toInfo(row: SessionRow, hasTrace: boolean): Promise<SessionInfo> {
     const source = await this.sourceOf(row, hasTrace);
+    const messagingChannel = this.deps.messagingChannel?.(row.sessionId) ?? null;
     return {
       sessionId: row.sessionId,
       projectId: row.projectId,
@@ -89,6 +106,7 @@ export class SessionService {
       pendingFollowUpCount: this.deps.manager.pendingFollowUpCount(row.sessionId),
       hasTrace,
       archived: (row.archivedAt ?? null) !== null,
+      ...(messagingChannel !== null ? { messagingChannel } : {}),
     };
   }
 
@@ -128,15 +146,15 @@ export class SessionService {
   }
 
   /**
-   * List, sorted by createdAt descending. The default serves **web sessions straight from
-   * the DB** (`client` web/NULL rows) with no Trace directory scanning — the answer to
-   * many-session sidebar reloads re-walking the filesystem on every request (#139). One
-   * lazy discovery walk still runs for a list call that contains rows this process has not
-   * classified yet (no in-process source entry): it supplies the Trace locations for the
-   * one-time head reads and backfills the `has_trace` cache; once every row is classified,
-   * list calls touch only the DB. `includeCli` widens the list to DB ∪ Trace directory
-   * discovery (adopting unmanaged CLI Traces as `client: "cli"` rows), which inherently
-   * scans — that path is opt-in via the "show CLI sessions" preference.
+   * List, sorted by createdAt descending. Every row is served **straight from the DB**,
+   * whichever client created it, with no Trace directory scanning — the answer to
+   * many-session sidebar reloads re-walking the filesystem on every request (#139).
+   * Sessions living only in the Trace directory were adopted into the index by the
+   * boot-time sweep (`adoptUnmanagedTraceSessions`), so listing never discovers. One
+   * lazy discovery walk still runs for a list call that contains rows this process has
+   * not classified yet (no in-process source entry): it supplies the Trace locations for
+   * the one-time head reads and backfills the `has_trace` cache; once every row is
+   * classified, list calls touch only the DB.
    *
    * Optional `paging` returns just that slice (the sidebar pages with limit+1 to detect
    * "has more"); slicing happens before toInfo, so per-request source derivation (lazy
@@ -149,6 +167,12 @@ export class SessionService {
    * every row and returns per-category totals over the whole list — plus the same
    * totals broken down by Workspace path — so the sidebar can label the collapsed
    * folders (and a workspace group can know its own share) without loading them.
+   *
+   * `workspaceGroup` filters the same way, to one Workspace group (see workspace-group.ts),
+   * so a sidebar grouped by Workspace pages each group down its OWN stream instead of
+   * sharing one per-Agent cursor — without it, one group's "load more" consumes the page
+   * its siblings were about to read, and their rows move on screen untouched. The two
+   * filters compose; the returned counts stay whole-Agent either way.
    */
   async listSessions(
     projectId: string,
@@ -156,33 +180,21 @@ export class SessionService {
     opts: {
       paging?: { offset: number; limit: number };
       category?: SessionCategory;
+      workspaceGroup?: string;
       withCounts?: boolean;
-      includeCli?: boolean;
     } = {},
   ): Promise<{
     sessions: SessionInfo[];
     counts?: SessionCategoryCounts;
     workspaceCounts?: Record<string, SessionCategoryCounts>;
   }> {
-    const { paging, category, withCounts, includeCli } = opts;
+    const { paging, category, workspaceGroup, withCounts } = opts;
     const rows = new Map(
-      this.deps.sessions
-        .listByAgent(projectId, agentId, { webOnly: !includeCli })
-        .map((r) => [r.sessionId, r]),
+      this.deps.sessions.listByAgent(projectId, agentId).map((r) => [r.sessionId, r]),
     );
 
     let traces: ReadonlySet<string> | undefined;
-    if (includeCli) {
-      traces = await this.discoverTraces(projectId, agentId);
-      // Unmanaged Trace Sessions (the CLI's): backfill an index row from the trace
-      // index's registration-time facts, marked client "cli" so the default list can
-      // exclude them.
-      for (const sessionId of traces) {
-        if (rows.has(sessionId)) continue;
-        const discovered = this.adoptTraceSession(projectId, agentId, sessionId);
-        if (discovered) rows.set(sessionId, discovered);
-      }
-    } else if ([...rows.values()].some((r) => this.deps.sources.get(r.sessionId) === undefined)) {
+    if ([...rows.values()].some((r) => this.deps.sources.get(r.sessionId) === undefined)) {
       // Hydration pass: some rows predate this process and are unclassified — one
       // reconciled index read supplies discovery so sourceOf's facts lookups and the
       // has_trace cache need no per-row work. Steady state (everything classified)
@@ -205,7 +217,7 @@ export class SessionService {
       Promise.all(page.map((row) => this.toInfo(row, rowHasTrace(row))));
 
     // No classification asked for: slice straight away (the pre-category behavior).
-    if (category === undefined && !withCounts) {
+    if (category === undefined && workspaceGroup === undefined && !withCounts) {
       return {
         sessions: await toPage(
           paging ? sorted.slice(paging.offset, paging.offset + paging.limit) : sorted,
@@ -230,7 +242,10 @@ export class SessionService {
         });
         ws[cat] += 1;
       }
-      if ((category === undefined || cat === category) && matched.length < want) matched.push(row);
+      const wanted =
+        (category === undefined || cat === category) &&
+        (workspaceGroup === undefined || matchesWorkspaceGroup(row.workspace, workspaceGroup));
+      if (wanted && matched.length < want) matched.push(row);
     }
     const sessions = await toPage(paging ? matched.slice(paging.offset, want) : matched);
     return withCounts ? { sessions, counts, workspaceCounts } : { sessions };
@@ -300,6 +315,12 @@ export class SessionService {
     approvalMode?: ApprovalMode;
     /** Session source marker (schedule when triggered by a scheduled task; defaults to user-created). */
     source?: "schedule";
+    /**
+     * Creating-client hint stored on the index row (`POST .../sessions` body `client`):
+     * "cli" from the CLI, defaulting to "web". Purely informational — lists no longer
+     * filter on it.
+     */
+    client?: "web" | "cli";
   }): Promise<SessionInfo> {
     if ((args.modelId === undefined) !== (args.provider === undefined)) {
       throw badRequest(
@@ -329,6 +350,7 @@ export class SessionService {
       projectId: args.projectId,
       agentId: args.agentId,
       ...(this.deps.proxyEnv ? { proxyEnv: this.deps.proxyEnv } : {}),
+      ...(this.deps.controlEnv ? { controlEnv: this.deps.controlEnv } : {}),
     });
     let session;
     try {
@@ -368,9 +390,10 @@ export class SessionService {
       workspace: session.workspaceDir,
       approvalMode: args.approvalMode ?? "allow-all",
       title: null,
-      // Everything created through this service is the Web App's (schedule runs included);
-      // "cli" is stamped only by Trace adoption. NULL means a legacy row, treated as web.
-      client: "web",
+      // The creator's hint: "cli" when the CLI created this Session through the API,
+      // otherwise "web" (schedule runs included). NULL means a legacy row, treated as
+      // web. Informational only — lists serve every row.
+      client: args.client ?? "web",
       // Creation is the first activity; the first driven run advances it (see SessionManager.drive).
       lastActiveAt: createdAt,
       createdAt,
@@ -424,6 +447,34 @@ export class SessionService {
   }
 
   /**
+   * Startup adoption sweep: walks the whole trace tree once per boot and adopts every
+   * unmanaged Session (a Trace with no index row — legacy CLI-direct runs) as a
+   * `client: "cli"` row, so lists stay pure-SQLite afterwards. Enumerates
+   * `<root>/<project>/agents/<agent>/` directories directly — legacy Traces can live
+   * under Projects the DB has never seen — and reuses the existing discovery/adoption
+   * path per Agent (mtime-gated TraceIndexService reconcile, then registration-time
+   * facts; adoption reads no file itself). Idempotent (insertOrIgnore), so re-running —
+   * e.g. after a hot swap re-assembles the business surface — only costs the gated
+   * reconcile. Returns the number of rows adopted.
+   */
+  async adoptUnmanagedTraceSessions(): Promise<number> {
+    let adopted = 0;
+    for (const projectId of await listChildDirs(this.deps.root)) {
+      const agentIds = await listChildDirs(agentsDir(this.deps.root, projectId));
+      for (const agentId of agentIds) {
+        const known = new Set(
+          this.deps.sessions.listByAgent(projectId, agentId).map((r) => r.sessionId),
+        );
+        for (const sessionId of await this.discoverTraces(projectId, agentId)) {
+          if (known.has(sessionId)) continue;
+          if (this.adoptTraceSession(projectId, agentId, sessionId) !== null) adopted += 1;
+        }
+      }
+    }
+    return adopted;
+  }
+
+  /**
    * Adopts a Session that exists only in the Trace directory, from the index's
    * registration-time facts (the reconciler head-read the earliest shard's session_meta
    * once when the file first appeared — adoption itself reads no file).
@@ -453,8 +504,8 @@ export class SessionService {
       // The approval mode for an unmanaged Session (started via the CLI) isn't in the Trace, so it's backfilled with the default value.
       approvalMode: "allow-all",
       title: null,
-      // Adopted = a Trace this server never created, i.e. the CLI's: the default list
-      // (web-only) excludes these rows; the "show CLI sessions" preference includes them.
+      // Adopted = a Trace this server never created, i.e. a legacy CLI-direct run: the
+      // row keeps that provenance, and lists serve it like any other.
       client: "cli",
       hasTrace: true,
       createdAt,
@@ -466,6 +517,16 @@ export class SessionService {
     // Idempotent backfill: concurrent list calls may discover the same Session for the first time simultaneously (consistent with AgentsRepo's convention).
     this.deps.sessions.insertOrIgnore(row);
     return row;
+  }
+}
+
+/** Child directory names of `dir` (empty on a missing/unreadable directory — a fresh root has no Projects yet). */
+async function listChildDirs(dir: string): Promise<string[]> {
+  try {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    return entries.filter((e) => e.isDirectory()).map((e) => e.name);
+  } catch {
+    return [];
   }
 }
 

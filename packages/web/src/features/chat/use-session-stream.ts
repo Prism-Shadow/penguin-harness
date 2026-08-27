@@ -21,6 +21,7 @@ import type {
   PendingFollowUpInfo,
   PendingSteeringInfo,
   SessionStatus,
+  SubagentRuntimeInfo,
 } from "@prismshadow/penguin-server/api";
 import { getGoal, getMe, getMessages } from "../../api/endpoints";
 import { openSessionStream } from "../../api/sse";
@@ -67,20 +68,11 @@ export interface SessionStreamState {
   /** Queued follow-up tasks (from task_state events): per-entry content + recall handle; empty on old servers (the count above still renders a plain hint). */
   pendingFollowUps: PendingFollowUpInfo[];
   /**
-   * Timestamp (ms) of the last main-session auth failure (request_end with status "auth"),
-   * or null. Derived from the model, so it survives history replay and resets when
-   * switching sessions; cleared by a later completed request, a `credentials_updated`
-   * server event, or dismissModelAuthDead. The composer gates on it TOGETHER with the
-   * models response's `updatedAt` (see isModelAuthDead): an abort older than the last
-   * credential update no longer disables the composer.
+   * Live subagent children of this session's runtime (from task_state events and the
+   * subscribe snapshot): the panel's structural running marks. Empty for dead/unloaded
+   * runtimes and on old servers — the topology then falls back to its text heuristics.
    */
-  lastAuthFailureMs: number | null;
-  /**
-   * Clears the auth-dead state (the user clicked Retry / dismissed the notice — e.g. the
-   * credential changed outside the UI in a way the timestamps miss); the state re-arms if
-   * the next request aborts on auth again.
-   */
-  dismissModelAuthDead: () => void;
+  subagents: SubagentRuntimeInfo[];
   /** approvalKey(origin, toolCallId) → pending approval. */
   pendingApprovals: ReadonlyMap<string, PendingApproval>;
   /** Recorded when this client clicks an approval decision (marks it as "manual"). */
@@ -118,6 +110,7 @@ export function useSessionStream(
   const [queuedFollowUps, setQueuedFollowUps] = useState(0);
   const [pendingSteering, setPendingSteering] = useState<PendingSteeringInfo[]>([]);
   const [pendingFollowUps, setPendingFollowUps] = useState<PendingFollowUpInfo[]>([]);
+  const [subagents, setSubagents] = useState<SubagentRuntimeInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [pendingTick, setPendingTick] = useState(0);
   const [goal, setGoal] = useState<GoalBannerState | null>(null);
@@ -197,6 +190,7 @@ export function useSessionStream(
       setQueuedFollowUps(0);
       setPendingSteering([]);
       setPendingFollowUps([]);
+      setSubagents([]);
       setLoading(false);
       setError(null);
       setGoal(null);
@@ -214,6 +208,7 @@ export function useSessionStream(
     setQueuedFollowUps(0);
     setPendingSteering([]);
     setPendingFollowUps([]);
+    setSubagents([]);
     setPendingTick((t) => t + 1);
 
     // Restore an in-flight goal's banner (only when still active — a long-finished goal
@@ -242,6 +237,7 @@ export function useSessionStream(
       onQueuedFollowUps: setQueuedFollowUps,
       onPendingSteering: setPendingSteering,
       onPendingFollowUps: setPendingFollowUps,
+      onSubagents: setSubagents,
       onLoading: setLoading,
       onError: setError,
       onModelChange: bump,
@@ -302,14 +298,6 @@ export function useSessionStream(
     void controllerRef.current?.loadOlder();
   }, []);
 
-  const dismissModelAuthDead = useCallback(() => {
-    const m = controllerRef.current?.model;
-    if (m && m.lastAuthFailureMs !== null) {
-      m.lastAuthFailureMs = null;
-      setVersion((v) => v + 1);
-    }
-  }, []);
-
   // pendingTick participates in the render dependencies, ensuring pending-table changes trigger a re-render.
   void pendingTick;
 
@@ -326,8 +314,7 @@ export function useSessionStream(
     queuedFollowUps,
     pendingSteering,
     pendingFollowUps,
-    lastAuthFailureMs: (controllerRef.current?.model ?? placeholderRef.current).lastAuthFailureMs,
-    dismissModelAuthDead,
+    subagents,
     pendingApprovals: controllerRef.current?.pendingApprovals ?? EMPTY_PENDING,
     markLocalDecision,
     resolveApproval,

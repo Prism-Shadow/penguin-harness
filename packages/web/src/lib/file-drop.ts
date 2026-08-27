@@ -5,8 +5,8 @@
  * attachment intake (after the "+" menu pickers and image paste); everything here is about
  * deciding, not doing:
  *   - which drags count as file drags at all (`isFileDrag`) — text selections, in-app drags
- *     such as the sidebar's session reorder (a custom MIME for exactly this reason) and
- *     dragged page images must never light the overlay;
+ *     such as the sidebar's session and group reorders (each a custom MIME for exactly this
+ *     reason) and dragged page images must never light the overlay;
  *   - what the chat area's drop zone should do with one drag event (`dropRegionAction`) —
  *     show the overlay, claim the drag, take the files, or stand aside;
  *   - which staged intake a dropped file belongs to (`splitDroppedFiles`) — images join the
@@ -28,7 +28,8 @@
 /**
  * True when a drag carries OS files: `DataTransfer.types` contains `"Files"`. Every other
  * drag — text selections (`text/plain`), links, dragged `<img>` elements (`text/uri-list`),
- * the sidebar's session reorder MIME — lacks it and must be left to its native behavior.
+ * the sidebar's session-reorder and group-reorder MIMEs — lacks it and must be left to its
+ * native behavior.
  * Accepts null/undefined because `dataTransfer` is nullable on the DOM event type.
  */
 export function isFileDrag(types: readonly string[] | null | undefined): boolean {

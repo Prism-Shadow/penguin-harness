@@ -17,8 +17,12 @@
  * such as \`<app_data_dir>\`, \`<agent_id>\`, \`<session_id>\` — these are **not substituted**;
  * the model fills in the actual values from the Environment section itself.
  */
-import { SUBAGENT_THINKING_LEVELS } from "../interfaces.js";
-import type { MCPServerConfig, ThinkingLevelName, ToolDefinitionConfig } from "../interfaces.js";
+import { SUBAGENT_THINKING_LEVELS } from "../interfaces/index.js";
+import type {
+  MCPServerConfig,
+  ThinkingLevelName,
+  ToolDefinitionConfig,
+} from "../interfaces/index.js";
 import type { CompactionMode } from "../omnimessage/types.js";
 import { KERNEL_VERSION } from "./kernel-history.js";
 
@@ -316,11 +320,30 @@ export const DEFAULT_SKILLS_PROMPT = LEGACY_SKILLS_SECTION;
 /**
  * Built-in default Schedules Prompt: what `{{SCHEDULES}}` expands to — teaches the model to
  * manage scheduled tasks as TOML files with its ordinary file tools (there is no dedicated
- * tool), in template-example form like DEFAULT_MEMORY_PROMPT: the directory as a literal
- * angle-bracket pattern resolvable from the Environment section, a fenced example, the field
- * rules schedule-file.ts enforces, the hygiene rules, then the current roster via
- * `{{SCHEDULE_LIST}}`. Stored per-Agent in `system_config.yaml` and editable on the Web App's
- * Schedules tab.
+ * tool), in template-example form like DEFAULT_MEMORY_PROMPT: the directory and the target
+ * Session as literal angle-bracket patterns resolvable from the Environment section, a fenced
+ * example, the field rules schedule-file.ts enforces, the hygiene rules, then the current
+ * roster via `{{SCHEDULE_LIST}}`. Stored per-Agent in `system_config.yaml` and editable on the
+ * Web App's Schedules tab.
+ *
+ * The target guidance is deliberate: `session_id` set to the Environment section's Session ID
+ * makes a task the user arranged in conversation report back into that same conversation
+ * rather than into a fresh Session nobody is watching. It is guidance only — schedule-file.ts
+ * still opens a new Session for a file carrying no `session_id`, so the format's own default
+ * is untouched. It does make the self-directed loop the ordinary shape, which is what the
+ * `end_at` / one-shot / small-work hygiene line pays for: a periodic task firing into its own
+ * Session grows that Session's context on every trigger and ends only when someone ends it.
+ * The `end_at` half of that line is conditional on purpose: an open-ended reminder bounded by
+ * an invented date stops on that date with no event and no error record, so the section asks
+ * for a bound only when the request has a horizon, and for the reply to say so otherwise.
+ *
+ * The section also spells out where this Session is the wrong target. A Session is not the
+ * durable identity of a conversation — switching model or agent opens a new one, and deleting
+ * the conversation stops a task bound to it (the next fire records a missing-session error and
+ * marks the task invalid) — so work meant to outlive the conversation belongs in the
+ * new-Session form. And a subagent renders this same section against its own short-lived
+ * Session, so it is told to omit the field (the `run_subagent` self-test the system prompt
+ * already uses).
  */
 export const DEFAULT_SCHEDULES_PROMPT = `# Scheduled Tasks
 Prompts delivered to this agent on a timer: TOML files you manage with the file tools, in \`<app_data_dir>/agents/<agent_id>/agent_state/schedule/\` (create the directory if it does not exist). One task per file; the file name minus \`.toml\` is the task's name (letters, digits, \`_\` and \`-\` only). The server re-reads the directory within about 30 seconds — creating, editing or deleting a file is all it takes, there is nothing to register.
@@ -330,9 +353,13 @@ prompt = "Check yesterday's build results and summarize the failures"
 enabled = true
 start_at = 2026-08-01T09:00:00Z
 period = "12h"
+end_at = 2026-09-01T09:00:00Z
+session_id = "<session_id>"
 \`\`\`
 
-Field rules: \`prompt\` (required) is the message sent when the task fires. \`enabled\` defaults to false — set it to true explicitly or the task never runs. \`start_at\` (required) is the first trigger time, an ISO 8601 instant. \`period\` is a fixed interval like \`30m\` / \`12h\` / \`7d\` (5 minutes minimum); omit it for a one-shot task. \`end_at\` (optional) must be later than start_at; a periodic task stops after it. Each trigger starts a new Session by default: \`workspace\` (optional) picks its working directory, and \`provider\` + \`model_id\` pick its model — always both or neither; omit both to use the Project's default model. Setting \`session_id\` instead sends the prompt into an existing Session, and cannot be combined with workspace / provider / model_id.
+Field rules: \`prompt\` (required) is the message sent when the task fires. \`enabled\` defaults to false — set it to true explicitly or the task never runs. \`start_at\` (required) is the first trigger time, an ISO 8601 instant. \`period\` is a fixed interval like \`30m\` / \`12h\` / \`7d\` (5 minutes minimum); omit it for a one-shot task. \`end_at\` (optional) must be later than start_at; a periodic task stops after it. \`session_id\` picks where the prompt is delivered, and by default it is this Session: write the id from the Environment section's Session ID line, so every trigger arrives in the conversation you are in now, with its context intact. If \`run_subagent\` is not in your tool list, you are the subagent: nobody is watching your Session, so omit \`session_id\` unless your caller gave you an id to target. Omit it when the user asks for a separate Session, or when the task is better off starting clean — a nightly report that should not inherit this conversation's history. Omit it as well for anything that has to outlive this conversation: this Session is not permanent — switching the model or the agent opens a new one, and deleting the conversation strands a task bound to it, which then stops firing. Each trigger then opens a new Session, in which \`workspace\` (optional) picks the working directory and \`provider\` + \`model_id\` pick the model — always both or neither; omit both to use the Project's default model. \`session_id\` cannot be combined with workspace / provider / model_id.
+
+A repeating task aimed at this Session grows its context on every trigger and nothing ends it on its own: give it an \`end_at\` when the request has a natural horizon; when the user wants it open-ended, leave \`end_at\` off and say in your reply that it will run until they remove it. Use a one-shot task for a one-time reminder, and keep the work each trigger asks for small.
 
 Check the current tasks below before creating one so you never duplicate an existing task; change a task by editing its file in place; delete the file when a task is obsolete.
 
@@ -691,7 +718,7 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
           run_in_background: {
             type: "boolean",
             description:
-              "Run the command in the background: return a process_id immediately without waiting. When it exits, its result arrives as an automatic user message — no polling needed. Use for long builds or work you want to continue past; interact via input_command, stop via kill_command. Defaults to false.",
+              "Run the command in the background: return a process_id immediately without waiting. When it exits, its result arrives as an automatic user message — no polling needed. Use for long builds or work you want to continue past; interact via input_command (kill: true terminates it). Defaults to false.",
           },
         },
         required: ["description", "cmd"],
@@ -704,7 +731,7 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
     {
       name: "input_command",
       description:
-        "Interact with a running command session started by exec_command: write to its stdin, send Ctrl-C, or poll for new output. Identify the session with its process_id.",
+        "Interact with a running command session started by exec_command: write to its stdin, send Ctrl-C, poll for new output, or terminate it with kill: true. Identify the session with its process_id.",
       parameters: {
         type: "object",
         properties: {
@@ -722,6 +749,11 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
             description:
               'Characters to write to the command\'s stdin. Send "\\u0003" alone to deliver Ctrl-C (SIGINT); mixing it with other characters is an error. Empty (the default) writes nothing and only polls for new output and exit status.',
           },
+          kill: {
+            type: "boolean",
+            description:
+              "Terminate the command session: kills the whole process group (SIGTERM, then SIGKILL), returns any output not yet delivered, and removes the session — an already-exited session is just removed with its recorded exit status. Defaults to false.",
+          },
           yield_time_ms: {
             type: "number",
             description:
@@ -734,30 +766,6 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
       call_description: true,
       // An empty poll can wait out a build/test run (the yield ceiling is derived from timeoutMs, clamped inside the tool).
       timeoutMs: 130000,
-      maxOutputLength: 16000,
-    },
-    {
-      name: "kill_command",
-      description:
-        "Terminate a background command session started by exec_command: kills the whole process group (SIGTERM, then SIGKILL) and returns any output not yet delivered. Also removes an already-exited session. Identify the session with its process_id.",
-      parameters: {
-        type: "object",
-        properties: {
-          description: {
-            type: "string",
-            description:
-              "Required, and emit it first, before the other arguments: it is shown to the user while the call runs. One short sentence describing what this call is doing and why, written in the user's language.",
-          },
-          process_id: {
-            type: "string",
-            description: "The process_id returned by exec_command for the command session.",
-          },
-        },
-        required: ["description", "process_id"],
-      },
-      permission: "rw",
-      call_description: true,
-      timeoutMs: 30000,
       maxOutputLength: 16000,
     },
     {
@@ -807,7 +815,7 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
           run_in_background: {
             type: "boolean",
             description:
-              "Start the subagent in the background: return a subagent_id immediately without waiting. When it finishes, its answer arrives as an automatic user message — no polling needed. Good for dispatching parallel subtasks; interact via input_subagent, stop via kill_subagent. Defaults to false.",
+              "Start the subagent in the background: return a subagent_id immediately without waiting. When it finishes, its answer arrives as an automatic user message — no polling needed. Good for dispatching parallel subtasks; message or steer it mid-run (and abort its current run) via input_subagent. Defaults to false.",
           },
         },
         required: ["description", "prompt"],
@@ -821,7 +829,7 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
     {
       name: "input_subagent",
       description:
-        "Interact with a background subagent started by run_subagent: poll for new output, or send a follow-up prompt once it is idle to continue the same subagent session. Identify the session with its subagent_id. Pending tool approvals of the subagent are surfaced while this tool is waiting.",
+        "Talk to a subagent started by run_subagent, exactly like a user talking to an agent: a prompt sent while it is RUNNING is delivered mid-run as a steering message (use it to correct course without waiting); sent while it is idle, the prompt continues the same session as a follow-up task. Set abort=true to stop the current run (the session survives; combine with a prompt to interrupt and redirect). The output is the subagent's most recent complete reply. A subagent session is never destroyed: a subagent_id whose session was released resumes automatically when you message it. Pending tool approvals of the subagent are surfaced while this tool is waiting.",
       parameters: {
         type: "object",
         properties: {
@@ -837,7 +845,12 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
           prompt: {
             type: "string",
             description:
-              "A follow-up task for the subagent, delivered as a new user message on the same session. Only accepted when the subagent is idle (its previous run finished). Empty (the default) sends nothing and only polls for new output and status.",
+              "A message for the subagent. While it is running, it is injected mid-run as a steering interjection the subagent absorbs at its next step (course corrections, extra context, an early stop request). While it is idle, it starts a follow-up task on the same session. Empty (the default) sends nothing and only polls for new output and status.",
+          },
+          abort: {
+            type: "boolean",
+            description:
+              "Abort the subagent's CURRENT run, like a user pressing stop: the run ends but the session stays available for steering and follow-up prompts. With a non-empty prompt, the aborted run settles first and the prompt then starts a fresh run — interrupt and redirect. Defaults to false; a no-op when the subagent is already idle.",
           },
           yield_time_ms: {
             type: "number",
@@ -851,30 +864,6 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
       call_description: true,
       // Same generous timeout tier as run_subagent: an empty poll can wait a long time for the subagent to wrap up.
       timeoutMs: 600000,
-      maxOutputLength: 16000,
-    },
-    {
-      name: "kill_subagent",
-      description:
-        "Terminate a background subagent started by run_subagent: aborts its run (denying its pending approvals), returns any answer text not yet delivered, and removes the session. Also removes an idle background subagent, freeing its slot. Identify the session with its subagent_id.",
-      parameters: {
-        type: "object",
-        properties: {
-          description: {
-            type: "string",
-            description:
-              "Required, and emit it first, before the other arguments: it is shown to the user while the call runs. One short sentence describing what this call is doing and why, written in the user's language.",
-          },
-          subagent_id: {
-            type: "string",
-            description: "The subagent_id returned by run_subagent for the background subagent.",
-          },
-        },
-        required: ["description", "subagent_id"],
-      },
-      permission: "rw",
-      call_description: true,
-      timeoutMs: 30000,
       maxOutputLength: 16000,
     },
     // The image-reading tools are mutually exclusive based on the session model's type

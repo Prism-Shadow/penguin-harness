@@ -85,8 +85,20 @@ describe("pure formatters", () => {
 
   it("renderHistory includes abort events from resumed sessions", () => {
     const { stream, text } = collector();
-    renderHistory([assistantText("partial", "aborted"), abortEvent("aborted by user")], stream, t);
+    renderHistory([assistantText("partial", "aborted"), abortEvent()], stream, t);
     expect(stripAnsi(text())).toBe("partial [aborted]\n[abort]: aborted by user\n");
+  });
+
+  it("a legacy abort without an error_code renders its reason prose verbatim", () => {
+    const { stream, text } = collector();
+    const legacy = abortEvent();
+    delete (legacy.payload as { error_code?: string }).error_code;
+    (legacy.payload as { reason?: string }).reason =
+      "llm request error: 401 Missing Authentication header";
+    renderHistory([legacy], stream, t);
+    expect(stripAnsi(text())).toBe(
+      "[abort]: llm request error: 401 Missing Authentication header\n",
+    );
   });
 });
 
@@ -302,47 +314,61 @@ describe("StreamRenderer", () => {
     const { stream, text } = collector();
     const r = new StreamRenderer(stream, t);
     r.handle(requestBegin());
-    r.handle(requestEnd("malformed", { attempt: 1 }));
+    r.handle(requestEnd("retryable", { attempt: 1, retryInMs: 2000 }));
     expect(stripAnsi(text())).toBe(""); // the failure itself prints nothing; only the retry's start does
     r.handle(requestBegin()); // retry #1 begins
     expect(stripAnsi(text())).toContain("retry #1");
-    r.handle(requestEnd("timeout", { attempt: 2 }));
+    r.handle(requestEnd("retryable", { attempt: 2, retryInMs: 4000 }));
     r.handle(requestBegin()); // retry #2 begins
     expect(stripAnsi(text())).toContain("retry #2");
-    // Retry #2 fails again and retries are exhausted: no next request_begin, only abort — no retry #3 appears.
-    r.handle(requestEnd("malformed", { attempt: 3 }));
-    r.handle(abortEvent("malformed response failed after 2 retries"));
+    // Retry #2 fails again and retries are exhausted: the terminal request_end (no
+    // retry planned) prints the give-up line itself — no abort event follows.
+    r.handle(requestEnd("retryable", { attempt: 3, errorMessage: "socket hang up" }));
+    expect(stripAnsi(text())).toContain("giving up after attempt 3: socket hang up");
     expect(stripAnsi(text())).not.toContain("retry #3");
     // The first request of the next run is not a retry, so it prints nothing; the next run's
     // failures are stamped from 1 again.
     r.handle(requestBegin());
-    r.handle(requestEnd("timeout", { attempt: 1 }));
+    r.handle(requestEnd("retryable", { attempt: 1, retryInMs: 2000 }));
     r.handle(requestBegin());
     const lines = stripAnsi(text());
     expect(lines.match(/retry #1/g)).toHaveLength(2);
     expect(lines).not.toContain("retry #3");
   });
 
-  it("prints the retry line for a failed request too, straight from the stamped ordinal", () => {
-    // The engine reconnects on `failed` as well, so the CLI has to say so — otherwise the
-    // session goes quiet for the whole ladder. The number is the event's own attempt, so a
-    // mixed timeout → failed → timeout run keeps counting without any client-side state.
+  it("a fatal request_end prints the error line; an interim-build abort duplicate is dropped", () => {
     const { stream, text } = collector();
     const r = new StreamRenderer(stream, t);
     r.handle(requestBegin());
-    r.handle(requestEnd("failed", { errorMessage: "Upstream HTTP/2 stream failed", attempt: 1 }));
+    r.handle(requestEnd("fatal", { errorCode: "auth", errorMessage: "401 invalid x-api-key" }));
+    expect(stripAnsi(text())).toBe("[error] llm request error: 401 invalid x-api-key\n");
+    // A user abort afterwards still prints.
+    r.handle(abortEvent());
+    expect(stripAnsi(text())).toContain("[abort]: aborted by user");
+  });
+
+  it("prints the retry line for legacy-trace spellings too, straight from the stamped ordinal", () => {
+    // Traces written before the stop-reason convergence spell retryable ends as
+    // failed/timeout/malformed; the CLI keeps printing their retries. The number is the
+    // event's own attempt, so a mixed run keeps counting without any client-side state.
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    r.handle(requestBegin());
+    const legacyEnd = (status: string, retry?: { attempt?: number; errorMessage?: string }) =>
+      requestEnd(status as Parameters<typeof requestEnd>[0], retry);
+    r.handle(legacyEnd("failed", { errorMessage: "Upstream HTTP/2 stream failed", attempt: 1 }));
     r.handle(requestBegin()); // retry #1 begins
     let lines = stripAnsi(text());
     expect(lines).toContain("the model provider returned an error");
     expect(lines).toContain("retry #1");
-    r.handle(requestEnd("timeout", { attempt: 2 }));
+    r.handle(legacyEnd("timeout", { attempt: 2 }));
     r.handle(requestBegin()); // retry #2 begins — the count does not restart
     lines = stripAnsi(text());
     expect(lines).toContain("connection timed out");
     expect(lines).toContain("retry #2");
-    // `auth` is terminal: the engine never retries it, so the next request_begin (a new run)
-    // must not be announced as a retry.
-    r.handle(requestEnd("auth", { errorMessage: "401 invalid x-api-key", attempt: 3 }));
+    // `fatal` is terminal: the engine never retries it, so the next request_begin (a new
+    // run) must not be announced as a retry.
+    r.handle(requestEnd("fatal", { errorMessage: "401 invalid x-api-key", attempt: 3 }));
     r.handle(requestBegin());
     expect(stripAnsi(text())).not.toContain("retry #3");
   });
@@ -486,14 +512,14 @@ describe("StreamRenderer", () => {
     r.handle(compactionEnd({ reason: "context", mode: "summarize", status: "completed" }));
     r.handle(compactionBegin({ reason: "manual", mode: "discard", context: 10, turns: 1 }));
     r.handle(compactionEnd({ reason: "manual", mode: "discard", status: "completed" }));
-    r.handle(compactionEnd({ reason: "context", mode: "summarize", status: "failed" }));
+    r.handle(compactionEnd({ reason: "context", mode: "summarize", status: "retryable" }));
     expect(stripAnsi(text())).toBe(
       [
         "[compaction] summarizing context (context)…",
         "[compaction] done; continuing with the summarized context",
         "[compaction] discarding context (manual)…",
         "[compaction] done; old context discarded",
-        "[compaction] failed; keeping the current context",
+        "[compaction] failed; keeping the current context; retries at the next trigger",
         "",
       ].join("\n"),
     );

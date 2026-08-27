@@ -160,26 +160,34 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     // nothing provable, nothing disposed on its behalf (pre-declaration behavior).
     const inherited = ctx.resources.claim<Interfaces>(RESOURCE_IFACES_RESOURCE_ID);
     const inheritable = inherited !== undefined && inherited.family === DECLARED_RESOURCES.family;
-    for (const [group, offered] of Object.entries(inherited ?? {})) {
-      if (group === "family") continue;
-      // Wrong family, wrong version, or a group this build no longer declares: this
-      // create() cannot speak the contract behind those handles.
-      const need = DECLARED_RESOURCES[group];
-      const offers =
-        Array.isArray(need) && Array.isArray(offered) && need.every((m) => offered.includes(m));
-      if (!inheritable || !offers) ctx.resources.disposeGroup?.(group);
-    }
-    // Overwritten (never released — see the ID's doc) so the NEXT App reads this build's
-    // declaration, whatever generation it is.
-    ctx.resources.register(RESOURCE_IFACES_RESOURCE_ID, DECLARED_RESOURCES);
+    // DECIDE ONLY. Disposing a group kills live ptys and child processes, and nothing
+    // brings them back — so the decision is computed here and ACTED ON at the bottom,
+    // once this App is fully built. Everything between can still throw (plugin handlers,
+    // workflow factories, the scheduler), and a boot that fails there is recovered by
+    // re-booting the previous bundle; that recovery is only honest if the resources it
+    // re-adopts are still alive.
+    const doomedGroups = Object.entries(inherited ?? {})
+      .filter(([group]) => group !== "family")
+      .filter(([group, offered]) => {
+        // Wrong family, wrong version, or a group this build no longer declares: this
+        // create() cannot speak the contract behind those handles.
+        const need = DECLARED_RESOURCES[group];
+        const offers =
+          Array.isArray(need) && Array.isArray(offered) && need.every((m) => offered.includes(m));
+        return !inheritable || !offers;
+      })
+      .map(([group]) => group);
 
     const terminals = new TerminalManager(ctx.resources, {
       // A pushed bundle's node-pty binaries live where the host materialized them.
       assets: () => caps?.hmr.assetsDir() ?? null,
     });
     // Shells started before this instance existed are still running in the registry: claim
-    // them back so a push is invisible to whoever was typing in one.
-    terminals.adopt(context.terminals ?? []);
+    // them back so a push is invisible to whoever was typing in one — unless their group
+    // is doomed, in which case this build cannot speak the contract behind those handles
+    // and must not adopt them. It does not dispose them either: that happens at the
+    // commit below, so a failed boot leaves them for the recovered predecessor.
+    terminals.adopt(doomedGroups.includes("terminal") ? [] : (context.terminals ?? []));
     // Ordinary code over the claimed capability (see terminal/identity.ts): the resolver
     // wraps caps.authService, the same object the business routes authenticate with. A
     // bare kernel has no auth — terminals stay fail-closed there.
@@ -210,12 +218,24 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       // Schedule scheduler: startup reconciliation (missed, don't backfill) + periodic
       // scan; only active while this App is.
       await deps.scheduler.start();
+      // Messaging bridge: connect every enabled Session binding (channel event
+      // streams); only active while this App is, like the scheduler.
+      await deps.messaging.start();
       // Goal mode runs only in SessionManager memory: a hard crash (SIGKILL, power loss)
       // can leave goal_state rows stuck `active` with no runner behind them — and so can
       // the previous App, whose manager a swap hard-aborts. Reconcile them to `aborted`
       // now — nothing is running in THIS App yet — so the chat banner never restores a
       // phantom "running" goal. GOAL.yaml on disk stays `active` as the resume point.
       deps.goalsRepo.abortOrphanedActive();
+      // Startup adoption sweep: fold Trace-only Sessions (legacy CLI-direct runs) into
+      // the sessions index as client:'cli' rows, so every later list is pure SQLite.
+      // Fire-and-forget — a broken trace shard must not block the boot — with failures
+      // recorded like any background capture point. Idempotent and mtime-gated, so the
+      // re-run after a hot swap costs only the gate checks.
+      const errors = deps.errors;
+      void deps.sessionService.adoptUnmanagedTraceSessions().catch((err: unknown) => {
+        errors.record({ source: "process", err, code: "trace_adoption_failed" });
+      });
     }
 
     // ONE app, ONE pointer: every route this App serves — terminal group and business
@@ -244,6 +264,8 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     //                         runtime-owned, re-claimed by every App; not this App's to park
     // SUSPENDED (stopped here; the successor rebuilds it fresh at load):
     //   - scheduler           stop() now; successor start() reconciles missed fires
+    //   - messaging bridge    stop() closes the channel connections; successor start()
+    //                         reconnects every enabled binding from the DB
     //   - agent runs          approvals → deny, drives → abort; goal rows reconciled by
     //                         the successor's abortOrphanedActive
     //   - session environments dispose() after the drive settles — kills background
@@ -271,10 +293,18 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       const drains: Promise<unknown>[] = [];
       if (business !== null) {
         business.scheduler.stop();
+        business.messaging.stop();
         drains.push(business.manager.shutdown(DRAIN_GRACE_MS));
       }
       drained = Promise.allSettled(drains).then(() => undefined);
     });
+
+    // COMMIT: from here the App is built and nothing below throws, so the irreversible
+    // half of the resource reconciliation runs — the groups this build cannot speak for
+    // are disposed, and the declaration is overwritten (never released — see the ID's
+    // doc) so the NEXT App reads this build's.
+    for (const group of doomedGroups) ctx.resources.disposeGroup?.(group);
+    ctx.resources.register(RESOURCE_IFACES_RESOURCE_ID, DECLARED_RESOURCES);
 
     const http = seamHttp(app);
 

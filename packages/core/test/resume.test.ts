@@ -167,7 +167,7 @@ describe("agent.resumeSession", () => {
       requestBegin(),
       assistantText("partial answer", "aborted"),
       requestEnd("aborted"),
-      abortEvent("aborted by user"),
+      abortEvent(),
     ]);
 
     const session = await agent.resumeSession({ sessionId: SID });
@@ -203,7 +203,7 @@ describe("agent.resumeSession", () => {
       type: "compaction_end",
       reason: "context",
       mode: "summarize",
-      status: "failed",
+      status: "retryable",
     });
     // Nothing was reconstructed from the interrupted compaction: the original context is
     // resumed as it stood before it, with no `[context_summary]` injected.
@@ -441,7 +441,7 @@ describe("agent.resumeSession", () => {
       userText("q1"),
       requestBegin(),
       assistantText("half-writ"),
-      abortEvent("user"),
+      abortEvent(),
     ]);
 
     const session = await agent.resumeSession({ sessionId: SID });

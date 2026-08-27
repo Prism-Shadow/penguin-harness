@@ -38,9 +38,13 @@ describe("builders", () => {
       decision: "allow",
       tool_call_id: "call_1",
     });
-    expect(abortEvent("stop").payload).toMatchObject({
+    expect(abortEvent().payload).toMatchObject({
       type: "abort",
-      reason: "stop",
+      error_code: "user_abort",
+    });
+    expect(abortEvent("backoff_interrupted").payload).toMatchObject({
+      type: "abort",
+      error_code: "backoff_interrupted",
     });
   });
 

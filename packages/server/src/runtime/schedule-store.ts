@@ -8,7 +8,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { stringify as stringifyToml } from "smol-toml";
-import { resolveModelRef, scheduleDir } from "@prismshadow/penguin-core";
+import { atomicWriteFile, resolveModelRef, scheduleDir } from "@prismshadow/penguin-core";
 import type { ProjectConfig } from "@prismshadow/penguin-core";
 import { cacheable, statMtime } from "../internal/mtime-gate.js";
 import type { ScheduleDefinition } from "./schedule-file.js";
@@ -261,7 +261,7 @@ export async function writeScheduleFile(
 ): Promise<void> {
   const dir = scheduleDir(root, projectId, agentId);
   await fs.mkdir(dir, { recursive: true });
-  await fs.writeFile(path.join(dir, `${name}.toml`), raw, "utf8");
+  await atomicWriteFile(path.join(dir, `${name}.toml`), raw, { followSymlinks: true });
 }
 
 /** Delete a schedule file; returns false if it doesn't exist. */

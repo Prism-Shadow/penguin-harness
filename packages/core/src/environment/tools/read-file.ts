@@ -32,7 +32,7 @@ import path from "node:path";
 import { open, realpath, stat } from "node:fs/promises";
 import { partialToolCallOutput } from "../../omnimessage/index.js";
 import type { OmniMessage } from "../../omnimessage/index.js";
-import type { ToolDefinitionConfig } from "../../interfaces.js";
+import type { ToolDefinitionConfig } from "../../interfaces/index.js";
 import { missingPathHint } from "./path-hint.js";
 import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
 
@@ -256,12 +256,12 @@ export function createReadFileTool(definition: ToolDefinitionConfig): BuiltinToo
       const filePath = args["file_path"];
       if (typeof filePath !== "string" || filePath.length === 0) {
         yield delta(`Missing required argument "file_path" for ${definition.name}.`);
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
       const offsetArg = coerceCount(args["offset"], 1);
       if (!offsetArg.ok) {
         yield delta(`Invalid "offset": expected a number (got ${JSON.stringify(args["offset"])}).`);
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
       const offset = Math.max(1, offsetArg.value);
       const limitArg = coerceCount(args["limit"], DEFAULT_READ_FILE_LIMIT);
@@ -269,7 +269,7 @@ export function createReadFileTool(definition: ToolDefinitionConfig): BuiltinToo
         yield delta(
           `Invalid "limit": expected a positive number (got ${JSON.stringify(args["limit"])}).`,
         );
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
       const limit = limitArg.value;
 
@@ -284,7 +284,7 @@ export function createReadFileTool(definition: ToolDefinitionConfig): BuiltinToo
         yield delta(
           `Refusing to read "${filePath}": ${secretHit} holds the user's secrets and must never enter the conversation.`,
         );
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
 
       let size: number;
@@ -294,7 +294,7 @@ export function createReadFileTool(definition: ToolDefinitionConfig): BuiltinToo
           yield delta(
             `Cannot read "${filePath}": it is a directory. Pass the path of a file inside it.`,
           );
-          return { stopReason: "failed" };
+          return { stopReason: "fatal" };
         }
         size = st.size;
       } catch (err) {
@@ -311,7 +311,7 @@ export function createReadFileTool(definition: ToolDefinitionConfig): BuiltinToo
           const message = err instanceof Error ? err.message : String(err);
           yield delta(`Failed to read "${filePath}": ${message}`);
         }
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
       if (signal?.aborted) return { stopReason: "aborted" };
       if (size === 0) {
@@ -326,14 +326,14 @@ export function createReadFileTool(definition: ToolDefinitionConfig): BuiltinToo
         if (signal?.aborted) return { stopReason: "aborted" };
         const message = err instanceof Error ? err.message : String(err);
         yield delta(`Failed to read "${filePath}": ${message}`);
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
       if (scan.aborted || signal?.aborted) return { stopReason: "aborted" };
       if (scan.binary) {
         yield delta(
           `"${filePath}" looks like a binary file (contains NUL bytes). Use shell commands to inspect it, or read_image if it is an image.`,
         );
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
       if (scan.capBeforeWindow) {
         const mb = Math.round(READ_FILE_SCAN_CAP_BYTES / (1024 * 1024));
@@ -342,13 +342,13 @@ export function createReadFileTool(definition: ToolDefinitionConfig): BuiltinToo
             `(scanned ${scan.total} line${scan.total === 1 ? "" : "s"}). The offset is too deep or the file has extremely long ` +
             `lines — use shell commands (e.g. sed -n '${offset},${offset + limit - 1}p') for this file.`,
         );
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
       if (scan.totalKnown && offset > scan.total) {
         yield delta(
           `Offset ${offset} is past the end of "${filePath}" (${scan.total} line${scan.total === 1 ? "" : "s"} total).`,
         );
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
 
       // Render the window, self-budgeted below the tool's output cap so the trailing notes

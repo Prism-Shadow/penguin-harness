@@ -142,12 +142,47 @@ function parseParkedNode(doc: Json, path: string): ParkedNode {
   };
 }
 
+/**
+ * Accumulators a node fills as it builds — held by {@link bootNode} so that a failure
+ * partway through still has something to unwind.
+ */
+interface PartialNode {
+  children: Map<string, NodeInst | KeyedInst>;
+  disposers: Array<() => void>;
+}
+
 async function bootNode(
   impl: AnyImpl,
   iface: AnyIface,
   doc: Json,
   resources: Resources,
   path: string,
+): Promise<NodeInst> {
+  const partial: PartialNode = { children: new Map(), disposers: [] };
+  try {
+    return await buildNode(impl, iface, doc, resources, path, partial);
+  } catch (err) {
+    // A node that fails half-built still HAS a half: children already booted, effects
+    // already registered. Nothing else can reach them — the caller gets an exception,
+    // not an instance — so unwinding here is the only chance to run them. Same
+    // children-first convention as disposeNode; a throwing disposer must not mask the
+    // failure actually being reported.
+    try {
+      disposeNode({ iface, api: {} as NodeInst["api"], ...partial });
+    } catch {
+      // Best-effort: the original failure is what the caller needs to see.
+    }
+    throw err;
+  }
+}
+
+async function buildNode(
+  impl: AnyImpl,
+  iface: AnyIface,
+  doc: Json,
+  resources: Resources,
+  path: string,
+  partial: PartialNode,
 ): Promise<NodeInst> {
   const parked = parseParkedNode(doc, path);
   const parsed = iface.context.strictParse(parked.self, `${path}.self`);
@@ -158,7 +193,7 @@ async function bootNode(
     );
   }
 
-  const childInsts = new Map<string, NodeInst | KeyedInst>();
+  const childInsts = partial.children;
   const childHandles: Record<string, unknown> = {};
   for (const [name, decl] of Object.entries(iface.children)) {
     const childImpl = impl.children?.[name];
@@ -199,7 +234,7 @@ async function bootNode(
     }
   }
 
-  const disposers: Array<() => void> = [];
+  const disposers = partial.disposers;
   const ctx: NodeCtx = {
     resources,
     effect: (dispose) => disposers.push(dispose),

@@ -38,12 +38,14 @@ import { ConfirmModal, useSaveConfirm } from "../../components/ui/confirm-modal"
 import { CopyButton, ROW_COPY_CLASS } from "../../components/ui/copy-button";
 import { Skeleton } from "../../components/ui/skeleton";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { UpdateDot } from "../../components/ui/update-dot";
 import { SkillsTab } from "./skills-tab";
 import { MemoryTab } from "./memory-tab";
-import { kernelFieldLabel } from "./kernel-labels";
+import { kernelTabLabel } from "./kernel-labels";
 import { VaultTab } from "./vault-tab";
 import { SchedulesTab } from "./schedules-tab";
 import { McpServersSection } from "./mcp-servers-section";
+import { SNAPSHOT_ACCEPT, SNAPSHOT_BUTTON_CLASS, fileToBase64 } from "./snapshot-file";
 import { thinkingLevelOptionsFor } from "../chat/thinking-level";
 import { InfoPopover } from "../../components/ui/info-popover";
 import { ICON_SIZE } from "../../lib/icon-scale";
@@ -244,7 +246,17 @@ export function AgentSettingsPage() {
         </Button>
         <h1 className="mb-1 text-xl font-semibold">{data.config.name ?? agentId}</h1>
         <p className="mb-4 font-mono text-xs text-gray-400">{agentId}</p>
-        <Tabs items={TABS} active={tab} onChange={switchTab} />
+        {/* The kernel update action lives in the Overview tab's Kernel section, so the trail
+            from the Agents list has to cross the tab strip to reach it. */}
+        <Tabs
+          items={TABS.map((t) =>
+            t.key === "overview" && data.config.kernelOutdated
+              ? { ...t, badge: S.agent.kernelOutdatedHint }
+              : t,
+          )}
+          active={tab}
+          onChange={switchTab}
+        />
         <div className="py-4">
           {tab === "overview" && (
             <OverviewTab
@@ -279,13 +291,6 @@ export function AgentSettingsPage() {
 }
 
 type SaveFn = (update: AgentConfigUpdateRequest) => Promise<void>;
-
-/** <a download>/<label> version of the button look (matches Button secondary sm; the Button component only renders <button>). */
-const TRANSFER_BUTTON_CLASS =
-  "inline-flex cursor-pointer items-center justify-center gap-1 rounded-md border border-gray-300 " +
-  "bg-white px-2.5 py-1 text-xs font-medium text-gray-800 transition-colors duration-150 " +
-  "hover:bg-gray-50 focus-within:ring-2 focus-within:ring-gray-400/30 " +
-  "dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800";
 
 /** Kernel-outdated hint icon (rotate-cw, 24×24 line path — the skill library's update glyph). */
 const KERNEL_UPDATE_ICON = "M23 4v6h-6M20.49 15a9 9 0 1 1-2.12-9.36L23 10";
@@ -393,13 +398,10 @@ function OverviewTab({
     e.target.value = "";
     if (!file) return;
     setImportError(null);
-    const reader = new FileReader();
-    reader.onload = () => {
-      const url = reader.result as string;
-      void runImport(url.slice(url.indexOf(",") + 1), false); // strip the data:...;base64, prefix
-    };
-    reader.onerror = () => setImportError(S.common.unknownError);
-    reader.readAsDataURL(file);
+    fileToBase64(file).then(
+      (dataBase64) => void runImport(dataBase64, false),
+      () => setImportError(S.common.unknownError),
+    );
   };
 
   return (
@@ -439,16 +441,20 @@ function OverviewTab({
               <a
                 href={api.agentExportUrl(projectId, agentId)}
                 download
-                className={TRANSFER_BUTTON_CLASS}
+                className={SNAPSHOT_BUTTON_CLASS}
               >
                 {S.agent.exportSnapshot}
               </a>
             )}
             {isOwner && (
               <label
-                className={`${TRANSFER_BUTTON_CLASS} ${importing ? "pointer-events-none opacity-60" : ""}`}
+                className={`${SNAPSHOT_BUTTON_CLASS} ${importing ? "pointer-events-none opacity-60" : ""}`}
               >
-                <HiddenFileInput accept=".tar.gz,.tgz" disabled={importing} onChange={onPickFile} />
+                <HiddenFileInput
+                  accept={SNAPSHOT_ACCEPT}
+                  disabled={importing}
+                  onChange={onPickFile}
+                />
                 {importing ? S.agent.importing : S.agent.importSnapshot}
               </label>
             )}
@@ -496,14 +502,30 @@ function OverviewTab({
           light, mirroring the State rows' label/value contrast. */}
       <section className="border-t border-gray-200 pt-4 dark:border-gray-800">
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          {/* Last stop on the kernel trail: the dot sits on the update control itself, straddling
+              the top-right corner of the enabled button's border (the anchoring rule in
+              update-dot.tsx), not hung off the section title's text, whose flex item is only
+              as wide as its glyphs. The dot is decorative — the sr-only sentence folds what is
+              waiting into the button's accessible name, in the same wording the trail carried
+              all the way down. */}
           <p className="text-sm font-medium">{S.agent.kernelTitle}</p>
           <div className="flex shrink-0 items-center gap-2">
             <Button
               size="sm"
+              className="relative"
               disabled={kernelUpdating || !data.config.kernelOutdated}
               onClick={() => setKernelOpen(true)}
             >
               {S.agent.kernelUpdateAction}
+              {data.config.kernelOutdated && (
+                <>
+                  <UpdateDot
+                    size="inline"
+                    position="right-0.5 top-0.5 -translate-y-1/2 translate-x-1/2"
+                  />
+                  <span className="sr-only"> · {S.agent.kernelOutdatedHint}</span>
+                </>
+              )}
             </Button>
             <Button
               size="sm"
@@ -551,7 +573,7 @@ function OverviewTab({
         {kernelResult !== null && kernelResult.kept.length > 0 && (
           <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
             {S.agent.kernelUpdateKeptIntro}
-            {kernelResult.kept.map(kernelFieldLabel).join(S.agent.kernelListSeparator)}
+            {kernelResult.kept.map(kernelTabLabel).join(S.agent.kernelListSeparator)}
           </p>
         )}
       </section>

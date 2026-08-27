@@ -34,7 +34,7 @@ function serverOf(toolName: string, servers: string[]): string | null {
 /** One server's group: a collapsible row; the body is its tool list, or the failure detail. */
 function ServerGroup({ outcome, tools }: { outcome: McpServerOutcome; tools: McpToolSummary[] }) {
   const [open, setOpen] = useState(false);
-  const failed = outcome.status === "failed";
+  const failed = outcome.status === "fatal" || (outcome.status as string) === "failed";
   // A failed server expands into its error; a connected one into its tools (when any).
   const expandable = failed ? outcome.error !== undefined : tools.length > 0;
   const meta = failed ? S.chat.mcpServerFailed : S.chat.mcpToolsCount(outcome.tools ?? 0);

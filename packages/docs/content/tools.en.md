@@ -30,7 +30,7 @@ interface ToolExecutionContext {
 
 interface ToolResult {
   stopReason?: StopReason; // the tool's self-reported terminal state (lowest priority, see below)
-  note?: string; // terminal marker appended outside the truncation window (e.g. exit code)
+  note?: string; // terminal marker appended outside the output budget (e.g. exit code)
   images?: string[]; // data-URL images, appended after the text output
 }
 ```
@@ -38,22 +38,22 @@ interface ToolResult {
 A tool only yields incremental `partial_tool_call_output` deltas; the Environment handles the close-out centrally:
 
 - streaming framing (start / stop) and `tool_call_id` threading;
-- timeout merging, and head-kept truncation once output exceeds `maxOutputLength` (default 16000 characters);
+- timeout merging, and head+tail-window truncation once output exceeds `maxOutputLength` (default 16000 characters): the budget splits in half, the head window streams live, and the last tail window arrives at finalization after a `[output truncated: kept first H and last T of C chars]` marker — the total C tells the model whether the recovery file is worth reading; output that ends past the head window but within the budget is flushed verbatim at finalization instead, with no marker;
 - stop_reason priority: user interrupt > timeout > tool throw > tool self-report;
 - never-empty output (`[no output]` is substituted when a tool produced nothing);
-- `note` (e.g. the exit code) and images are appended outside the truncation window, so the terminal marker survives even when long output is cut.
+- `note` (e.g. the exit code) and images are appended outside the output budget, so the terminal marker survives even when long output is cut.
 
 Tools and the Environment never throw into the engine: errors collapse into `tool_call_output` messages the model can read and react to. See the [OmniMessage Protocol](/omni-message) for message structure.
 
 ### Recovering oversized output
 
-When tool text in an Agent Session exceeds `maxOutputLength`, the model and Web/CLI still receive the same head window, truncation marker, and terminal marker, and the streaming invariant that user-visible output equals model-visible output does not change. Environment also appends a short archive status/path note outside that visible-output cap and saves a Session-owned recovery file. The file is exact within the per-call archive budget and otherwise contains bounded head/tail windows. This is the complete text **received by Environment**: a producer such as a command or subagent session may already have replaced overflow with an `[..., N chars of earlier output dropped ...]` marker in its own bounded unread buffer, and the downstream archive cannot recover text lost before that point.
+When tool text in an Agent Session exceeds `maxOutputLength`, the model and Web/CLI still receive the same head and tail windows, counting truncation marker, and terminal marker, and the streaming invariant that user-visible output equals model-visible output does not change. Environment also appends a short archive status/path note outside that visible-output cap and saves a Session-owned recovery file. The file is exact within the per-call archive budget and otherwise contains bounded head/tail windows. This is the complete text **received by Environment**: a producer such as a command or subagent session may already have replaced overflow with an `[..., N chars of earlier output dropped ...]` marker in its own bounded unread buffer, and the downstream archive cannot recover text lost before that point.
 
 The Agent can inspect ordinary multiline archives with the existing `read_file` (`offset` / `limit`). For byte tails or very long lines, it must construct a targeted shell command such as `rg` / `tail`; no dedicated retrieval tool is added. The note carries a plain absolute path, always the last element inside the bracket. On Windows it is written with forward slashes: `exec_command` runs through (Git) Bash and Node's fs APIs accept them, so one spelling works in JSON tool arguments and shell commands alike; POSIX paths pass through unchanged, and Session paths are ordinary absolute paths (never `\\?\`-prefixed), so the separator swap is lossless. As with any path, quote it inside shell commands when it contains spaces. The same spelling rule covers every path core composes for the model — the system prompt's App Data Dir / CWD lines, `[attached image/file: …]` lines and the goal-file line (`modelVisiblePath` in the SDK).
 
 Recovery files live under the Session's `scratchpad/<session-id>/truncated-tool-output/`, are created only after actual truncation, and use private permissions where the platform supports them. One call stores at most 8 MiB (the production byte limit is one byte lower so `read_file` remains below its 8 MiB scan cap); larger output keeps bounded head/tail windows in the file with an explicit middle-gap marker. The limit is per call only: a Session has no aggregate archive byte or file-count quota, and concurrent captures independently retain up to one call's budget. Files remain readable across Tasks, runtime disposal, and Session resume until explicit Session deletion removes the entire scratchpad; no separate archive cleanup lifecycle is added.
 
-Recovery files contain the unredacted tool text received by Environment. Accidentally reading credentials or other sensitive data can therefore increase local at-rest retention from the visible head window to the archive budget. Trace does not duplicate those bytes, but it records the same absolute Session path shown to the model and Web/CLI, exposing the host's data-root layout. Archive-write failure never changes the original tool's `stop_reason`; the visible note and stderr warning carry only a short error code (and stderr's tool name), not the path or raw error message.
+Recovery files contain the unredacted tool text received by Environment. Accidentally reading credentials or other sensitive data can therefore increase local at-rest retention from the visible windows to the archive budget. Trace does not duplicate those bytes, but it records the same absolute Session path shown to the model and Web/CLI, exposing the host's data-root layout. Archive-write failure never changes the original tool's `stop_reason`; the visible note and stderr warning carry only a short error code (and stderr's tool name), not the path or raw error message.
 
 ## Configuration fields
 
@@ -72,31 +72,29 @@ Each tool is described by one `ToolDefinitionConfig`:
 
 ## Built-in tools
 
-There are 11 built-in tools (assembled via `packages/core/src/environment/tools/registry.ts`):
+There are 9 built-in tools (assembled via `packages/core/src/environment/tools/registry.ts`):
 
 | Tool | Permission | Timeout (ms) | Purpose |
 | --- | --- | --- | --- |
 | `exec_command` | rw | 120000 | Run a shell command in the Workspace via `bash -lc`, streaming stdout/stderr |
-| `input_command` | rw | 130000 | Drive a running command by `process_id`: write stdin, send Ctrl-C, poll output |
-| `kill_command` | rw | 30000 | Terminate a command session by `process_id` (whole process group), returning undelivered output |
+| `input_command` | rw | 130000 | Drive a command session by `process_id`: write stdin, send Ctrl-C, poll output, or terminate it (`kill: true`) |
 | `read_file` | r | 30000 | Read a text file as a line-numbered (`cat -n`) window, paged by offset/limit |
 | `edit_file` | rw | 30000 | Exact-string replacement in an existing file, echoing a verification snippet |
 | `write_file` | rw | 30000 | Create or overwrite a whole file, creating parent directories as needed |
 | `run_subagent` | rw | 600000 | Delegate a self-contained subtask to a child Agent in the same Workspace |
-| `input_subagent` | rw | 600000 | Poll a background subagent, or send a follow-up prompt once it is idle |
-| `kill_subagent` | rw | 30000 | Abort a background subagent by `subagent_id` and remove it, returning undelivered text |
+| `input_subagent` | rw | 600000 | Poll a background subagent, steer it mid-run, stop its current run, or continue it with a follow-up prompt |
 | `read_image` | r | 60000 | Read an image and return it as image content (vision models) |
 | `describe_image` | r | 90000 | Have the configured `vision_model` read the image and answer in text (text-only models) |
 
-Note that an existing agent's persisted `tools.builtin` list is frozen as written (the settings UI edits rows but adds none): agents created before this toolset do not pick up newer tools (the file tools, `kill_command`, `kill_subagent`) or newer arguments (`run_in_background`) automatically — hand-edit the agent's `system_config.yaml` and add the new entries (copy them from the default definitions in `packages/core/src/state/default-config.ts`) to adopt them.
+Note that an existing agent's persisted `tools.builtin` list is frozen as written (the settings UI edits rows but adds none): agents created before this toolset do not pick up newer tools (e.g. the file tools) or newer arguments (`run_in_background`, `kill`, `abort`) automatically — and entries for since-removed tools (`kill_command`, `kill_subagent`) simply stop assembling: a model calling them gets the standard unknown-tool failure — hand-edit the agent's `system_config.yaml` and add the new entries (copy them from the default definitions in `packages/core/src/state/default-config.ts`) to adopt them.
 
 ### Call descriptions
 
-The command/subagent tools (`exec_command`, `input_command`, `kill_command`, `run_subagent`, `input_subagent`, `kill_subagent`) take a `description` argument: one model-written sentence about what the call is doing, shown by the CLI and Web UI while the call runs. The argument is declared as a normal `description` property in each entry's `parameters` in `system_config.yaml` (tool schemas live entirely in the editable config), and it is **required** there — a tool that offers the argument always gets one, so the frontends can pick a call's display form from the schema instead of guessing while the arguments stream; the model is also asked to emit it first. The per-entry `call_description` field toggles the whole thing — missing = kept, `call_description: false` filters the property (and its `required` entry) out of the schema at assembly time (in-memory only, the YAML is never rewritten). The file tools don't take it — their `file_path` argument is self-describing.
+The command/subagent tools (`exec_command`, `input_command`, `run_subagent`, `input_subagent`) take a `description` argument: one model-written sentence about what the call is doing, shown by the CLI and Web UI while the call runs. The argument is declared as a normal `description` property in each entry's `parameters` in `system_config.yaml` (tool schemas live entirely in the editable config), and it is **required** there — a tool that offers the argument always gets one, so the frontends can pick a call's display form from the schema instead of guessing while the arguments stream; the model is also asked to emit it first. The per-entry `call_description` field toggles the whole thing — missing = kept, `call_description: false` filters the property (and its `required` entry) out of the schema at assembly time (in-memory only, the YAML is never rewritten). The file tools don't take it — their `file_path` argument is self-describing.
 
 ### Command sessions
 
-`exec_command` waits in the foreground first; if the command outruns `yield_time_ms` it moves to the background and the call returns the output so far plus a `process_id`, driven from then on by `input_command`. With `run_in_background: true` it skips the foreground window entirely: the call returns the `process_id` immediately, and when the process exits its result arrives as an automatic user message (see [Background completion reports](#background-completion-reports)). `kill_command` terminates a session either way:
+`exec_command` waits in the foreground first; if the command outruns `yield_time_ms` it moves to the background and the call returns the output so far plus a `process_id`, driven from then on by `input_command`. With `run_in_background: true` it skips the foreground window entirely: the call returns the `process_id` immediately, and when the process exits its result arrives as an automatic user message (see [Background completion reports](#background-completion-reports)). `input_command` with `kill: true` terminates a session either way — a process is a real OS object that IS destroyed, so termination is a parameter of the access tool rather than a tool of its own:
 
 ```text
 exec_command(cmd)
@@ -108,7 +106,7 @@ exec_command(cmd)
   │                  └─ loop until the command exits
   └─ run_in_background: true ──► returns process_id immediately
                      └─ on exit: completion report arrives as a user message
-     kill_command(process_id) ──► SIGTERM the process group (SIGKILL after a grace period)
+     input_command(process_id, kill: true) ──► SIGTERM the process group (SIGKILL after a grace period)
 ```
 
 The tools' arguments (explicit keys):
@@ -127,13 +125,8 @@ The tools' arguments (explicit keys):
 {
   process_id: string;      // required: the command-session id returned by exec_command
   chars?: string;          // characters for stdin; send "\u0003" alone to deliver Ctrl-C; empty = poll only
+  kill?: boolean;          // true = terminate: kill the whole process group, return undelivered output, remove the session
   yield_time_ms?: number;  // wait; defaults 250 for writes, 120000 for empty polls (one poll waits out most builds; pass a smaller value to peek)
-  description: string;     // required while call_description is on
-}
-
-// kill_command
-{
-  process_id: string;      // required: the command session to terminate (already-exited sessions are removed too)
   description: string;     // required while call_description is on
 }
 ```
@@ -142,7 +135,7 @@ On POSIX, Ctrl-C sends `SIGINT` to the session's process group, interrupting the
 
 ### File tools
 
-`read_file` / `edit_file` / `write_file` run with the user's full permissions, same as the shell tool; relative paths resolve against the Workspace and absolute paths are allowed. They are non-streaming (a single final output) and never throw — failures come back as explanatory text with `stop_reason: failed`.
+`read_file` / `edit_file` / `write_file` run with the user's full permissions, same as the shell tool; relative paths resolve against the Workspace and absolute paths are allowed. A symlinked path is followed to the file it names — reads, edits and writes all land on that file, and the link stays a link. They are non-streaming (a single final output) and never throw — failures come back as explanatory text with `stop_reason: failed`.
 
 ```ts
 // read_file — cat -n style output (line number, tab, content); overlong single lines are
@@ -175,7 +168,9 @@ On POSIX, Ctrl-C sends `SIGINT` to the session's process group, interrupting the
 
 ### Subagents
 
-`run_subagent` hands a subtask you can fully specify in one prompt to a child Agent, with the same two-phase shape: after the foreground window (default 300000ms) it moves to the background with a `subagent_id`, driven by `input_subagent` for polling or follow-up prompts; the child's pending approvals surface while the poll waits. With `run_in_background: true` the call returns the `subagent_id` immediately and every round's completion arrives as an automatic user message (see [Background completion reports](#background-completion-reports)); `kill_subagent` aborts and removes a background subagent (an idle one is removed too, freeing its slot).
+`run_subagent` hands a subtask you can fully specify in one prompt to a child Agent, with the same two-phase shape: after the foreground window (default 300000ms) it moves to the background with a `subagent_id`, driven by `input_subagent`; the child's pending approvals surface while the poll waits. `input_subagent` covers four gestures: an empty `prompt` polls; a `prompt` sent while the child **runs** is injected mid-run as a steering message (the same mechanism as a user interjecting into the main session — delivered as a `[user_steering]` message at the child's next step, recorded in the child's Trace with sender `parent_agent`); a `prompt` sent while it is idle continues the same session with a follow-up round; and `abort: true` stops the child's **current run only** — the session survives for steering and follow-ups, and combined with a `prompt` it interrupts and redirects. The model-facing output of every `input_subagent` access is the child's **most recent complete reply** — an idempotent “what it last said” snapshot rather than an incremental drain. With `run_in_background: true` the launch returns the `subagent_id` immediately and every model-initiated round's completion arrives as an automatic user message (panel-started and explicitly aborted rounds stay silent; see [Background completion reports](#background-completion-reports)). There is **no kill for subagents**: like the main agent, a subagent session is never destroyed — releasing an idle one only frees its slot, and a released `subagent_id` **revives automatically** when messaged again (the model's access and the panel's share the same resume path).
+
+The Web App's subagents panel drives a selected child with the **same composer as the main conversation** (its subagent variant): the text body, skills and slash skill commands, a per-turn thinking level (applies to the round the message starts), the context ring (the child's own usage), the locked-model badge, and the approval-mode selector — which edits the parent session's mode, the one child approvals are actually judged by. A message is simply a user input on the child, whatever its state: steering while it runs, a follow-up round while it is idle, and a **revival** when the session was already released — the server resumes the child session (its own history, model and Workspace) and re-manages it, so the conversation just continues. The action button's stop face aborts only the child's current run. Everything converges on the same core channel as `input_subagent`, and the panel's running marks follow the server's live child states rather than the transcript.
 
 ```ts
 // run_subagent
@@ -193,16 +188,12 @@ On POSIX, Ctrl-C sends `SIGINT` to the session's process group, interrupting the
 // input_subagent
 {
   subagent_id: string;     // required: the background Subagent id returned by run_subagent
-  prompt?: string;         // follow-up task, accepted only while the child Session is idle; empty = poll only
+  prompt?: string;         // steering interjection while the child runs; a follow-up round while it is idle; empty = poll only
+  abort?: boolean;         // stop the child's CURRENT run (session kept; the aborted round sends no completion report); with a prompt: interrupt and redirect
   yield_time_ms?: number;  // wait; defaults 300000 with a prompt, 10000 for empty polls
   description: string;     // required while call_description is on
 }
 
-// kill_subagent
-{
-  subagent_id: string;     // required: the background subagent to abort and remove
-  description: string;     // required while call_description is on
-}
 ```
 
 - Depth is capped at 1: a subagent cannot spawn another subagent.
@@ -231,9 +222,11 @@ On POSIX, Ctrl-C sends `SIGINT` to the session's process group, interrupting the
 
 A task launched with `run_in_background: true` reports its completion as a **user message injected by the harness** — the model does not need to poll. The message opens with a `[background_task_done]` marker block (kind, id, status, one-line detail) followed by what ran and the tail of its yet-undelivered output (capped at 4000 characters; the Web App collapses the block into a one-line notice). Its `text` payload carries `sender: "harness"`, distinguishing it from human input in the Trace (see [OmniMessage](/omni-message)).
 
-Delivery: while a Task is running, the report rides the next turn boundary — a final reply already streaming does not lose it, the Task simply continues for one more turn to react. While the Session is idle, the hosting server starts a new Task carrying the report (SDK embedders subscribe via `Session.onBackgroundNotice` / `takeBackgroundNotices`, or get it prepended to the next run). A task stopped through `kill_command` / `kill_subagent` sends no report — the kill's own result already carries the outcome.
+Delivery: while a Task is running, the report rides the next turn boundary — a final reply already streaming does not lose it, the Task simply continues for one more turn to react. While the Session is idle, the hosting server starts a new Task carrying the report (SDK embedders subscribe via `Session.onBackgroundNotice` / `takeBackgroundNotices`, or get it prepended to the next run). A command terminated through `input_command`'s `kill` sends no report — that call's own result already carries the outcome — and neither does a subagent round ended by an explicit `abort` (the aborter reads the outcome directly). Reports cover **model-initiated rounds only** — the `run_in_background` launch and `input_subagent` follow-ups; a round the user starts from the subagents panel is their own conversation with the child and sends no report (its answer text stays in the model-facing buffer for the next poll).
 
-A background subagent's lifecycle is decoupled from the call that launched it: its abort signal is its own (only `kill_subagent`, Session end, or registry eviction ends it), its messages stream to the frontend live through the launching Session (same origin-tagged channel a foreground window relays), and its tool approvals resolve through the launching call's own approval callback as a standing sink — so an `allow-all` launch runs unattended, and a failure still ends in a `status: failed` report rather than a child parked forever.
+A stop is reported, but not as a failure. A command ended on purpose reports `status: stopped` — the user's **Stop** button in the Web App's process list, a stop signal that arrived from outside (`SIGTERM`/`SIGINT`/`SIGHUP`: a Ctrl-C in a terminal sharing its process group, a `pkill`, a supervisor shutting a dev server down), or a stop the harness itself forced (a capacity eviction, an idle reap) — and its marker block says in as many words that nobody should restart it unasked. The conversation does need to hear that the dev server it started is down; worded `failed` it reads like a crash instead, and the reasonable response to a crashed dev server is to start it again, undoing the stop somebody just asked for. `failed` stays for outcomes nobody asked for: a spawn error, a non-zero exit, a hard kill or a fault signal (an OOM kill, a segfault).
+
+A background subagent's lifecycle is decoupled from the call that launched it: its abort scope is its own (a per-run `abort` ends a round; the session itself leaves only with the parent Session, and even a capacity-released one can be revived), its messages stream to the frontend live through the launching Session (same origin-tagged channel a foreground window relays), and its tool approvals resolve through the launching call's own approval callback as a standing sink — so an `allow-all` launch runs unattended, and a failure still ends in a `status: failed` report rather than a child parked forever.
 
 ### Background session caps
 
@@ -258,6 +251,8 @@ type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalDec
 | Web / Server | The same four modes, set per Session; the mode is re-read from the DB on every decision, so changes take effect immediately; manual decisions arrive via the API |
 
 A deny produces a synthetic `aborted` `tool_call_output` for the model to react to — `Tool call denied by user.`, or `Tool call denied by policy.` when the [command policy](/configuration#command-policy) denied it, so a policy hit never reads as a person cancelling. See [ApproveFn](/interfaces#approvefn). Every decision is written to the Trace as an `approval_decision` event — a policy veto recorded as `forbidden` — forming a complete audit record. Approval happens in the tool-execution phase of the [Agent Loop](/agent-loop).
+
+A subagent child's approval is never auto-denied by the parent's task ending. On the Web server, a session-lifetime fallback approval sink escalates any child approval that has no active poll window and no background-launch standing sink straight to the user (the parent session sitting idle included), and a parent task ending or being stopped converges only the **main** session's pending approvals — an origin-tagged child approval stays pending, and its card stays on screen, until the user decides. Hosts that attach no such sink (the CLI) keep the poll-window-only semantics: the child's requests queue until a `run_subagent` / `input_subagent` call is active.
 
 ## Custom tools & MCP
 

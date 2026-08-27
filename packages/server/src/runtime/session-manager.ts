@@ -42,11 +42,15 @@ import {
 import type {
   ApproveFn,
   BackgroundCommandInfo,
+  BackgroundSubagentInfo,
   CompactAvailability,
+  ControlEnvContext,
   OmniMessage,
   ProxyEnvPolicy,
   SessionMetaPayload,
   SessionTitleResult,
+  SubagentMessageOptions,
+  SubagentMessageOutcome,
   TextPayload,
   ThinkingLevelName,
 } from "@prismshadow/penguin-core";
@@ -161,6 +165,20 @@ export interface RuntimeSession {
   killBackgroundCommand?(processId: string): boolean;
   /** Whether a background subagent is mid-round (core `Session.hasRunningBackgroundSubagents`); pins the entry against idle eviction. Optional, like listBackgroundCommands. */
   hasRunningBackgroundSubagents?(): boolean;
+  /** All live subagent child sessions of the Session's environment (core `Session.listBackgroundSubagents`). Optional, like listBackgroundCommands. */
+  listBackgroundSubagents?(): BackgroundSubagentInfo[];
+  /** Host message to one child session — steering mid-run, a follow-up run when idle, a revival when released (core `Session.sendToBackgroundSubagent`). Optional. */
+  sendToBackgroundSubagent?(
+    childSessionId: string,
+    messages: OmniMessage[],
+    opts?: SubagentMessageOptions,
+  ): Promise<SubagentMessageOutcome>;
+  /** Subscribes the host's session-lifetime fallback approval sink for child sessions (core `Session.setSubagentApprovalFallback`). Optional. */
+  setSubagentApprovalFallback?(approve: ApproveFn): void;
+  /** Aborts one child session's current run, keeping the session (core `Session.abortBackgroundSubagentRun`); false when unknown or idle. Optional. */
+  abortBackgroundSubagentRun?(childSessionId: string): boolean;
+  /** Subscribes subagent run-state changes (core `Session.onSubagentState`): the manager republishes `task_state` with the fresh live listing. Optional. */
+  onSubagentState?(listener: () => void): void;
   /** Releases environment resources — kills the remaining background processes (core `Session.dispose`). Optional, idempotent. */
   dispose?(): void;
 }
@@ -182,12 +200,17 @@ export interface SessionLoader {
  * rebuilt Session is unsourced — session_meta is the single source of truth, and none survived.
  * `opts.proxyEnv` threads the admin proxy settings into core (a live getter returning the
  * agent-command-subprocess policy: strip the proxy variables, inject the explicit proxy
- * address, or null = pass the environment through).
+ * address, or null = pass the environment through). `opts.controlEnv` threads the
+ * harness-control injection the same way (the server's API URL/token plus the Session's
+ * coordinates; core evaluates it per Session — see CreateAgentOptions.controlEnv).
  */
 export function createCoreSessionLoader(
   root: string,
   sources?: SessionSources,
-  opts: { proxyEnv?: () => ProxyEnvPolicy | null } = {},
+  opts: {
+    proxyEnv?: () => ProxyEnvPolicy | null;
+    controlEnv?: (ctx: ControlEnvContext) => Record<string, string>;
+  } = {},
 ): SessionLoader {
   return {
     async load(row: SessionRow): Promise<RuntimeSession> {
@@ -196,6 +219,7 @@ export function createCoreSessionLoader(
         projectId: row.projectId,
         agentId: row.agentId,
         ...(opts.proxyEnv ? { proxyEnv: opts.proxyEnv } : {}),
+        ...(opts.controlEnv ? { controlEnv: opts.controlEnv } : {}),
       });
       const located = await findLatestTraceFile(
         tracesDir(root, row.projectId, row.agentId),
@@ -307,8 +331,14 @@ interface QueuedFollowUp {
   id: string;
   input: OmniMessage[];
   thinkingLevel?: ThinkingLevelName;
-  /** Original content for recall; absent when the queueing path predates or bypasses the route (recall then returns 409). */
-  recall?: RecallStore;
+  /**
+   * Original content for recall, and the content `task_state` shows on the queued line.
+   * Always present: a caller that knows more than the input carries (the HTTP route, which
+   * also knows where the file attachments landed on disk) supplies it, and every other
+   * queueing path gets it derived from the input — what can be recalled must not depend on
+   * which door the message came through.
+   */
+  recall: RecallStore;
 }
 
 /** One undelivered steering entry: the display info broadcast on task_state, plus what a recall needs — the exact input list core queued (its unsteer handle) and the original content. */
@@ -386,14 +416,40 @@ function agentKey(projectId: string, agentId: string): string {
   return `${projectId}\0${agentId}`;
 }
 
-/** The `task_state` display info of one queued follow-up (see PendingFollowUpInfo); an entry queued without a recall store truthfully reports empty content. */
+/** The `task_state` display info of one queued follow-up (see PendingFollowUpInfo). */
 function followUpInfo(f: QueuedFollowUp): PendingFollowUpInfo {
   return {
     id: f.id,
-    text: f.recall?.text ?? "",
-    images: f.recall?.images.length ?? 0,
-    files: f.recall?.files.length ?? 0,
+    text: f.recall.text,
+    images: f.recall.images.length,
+    files: f.recall.files.length,
   };
+}
+
+/**
+ * The recall store of a queued input whose caller supplied none (the messaging bridge's
+ * inbound path): everything recallable is already in the input itself — the user's text and
+ * the inline image URLs, the only two shapes a task input is ever built from. `files` is
+ * empty because only the HTTP route writes file attachments to the Session scratchpad, and
+ * only it knows the paths they landed on.
+ */
+function recallStoreOf(input: OmniMessage[]): RecallStore {
+  const text = input
+    .filter(isPlainText("user"))
+    .map((m) => m.payload.text)
+    .join("\n");
+  const images: string[] = [];
+  for (const msg of input) {
+    const payload = msg.payload as { type?: string; image_url?: unknown };
+    if (
+      msg.type === "model_msg" &&
+      payload.type === "image_url" &&
+      typeof payload.image_url === "string"
+    ) {
+      images.push(payload.image_url);
+    }
+  }
+  return { text, images, files: [] };
 }
 
 /** If msg is a run_subagent tool call carrying a `prompt`, return its id and prompt (for use as the subagent's title); otherwise null. */
@@ -508,6 +564,54 @@ export class SessionManager {
     return (this.entries.get(sessionId)?.pendingSteering ?? []).map((p) => p.info);
   }
 
+  /**
+   * Live subagent children of an ACTIVE runtime entry (empty when the session is not loaded
+   * — after a restart there is no in-process child left to report, so empty is the truth).
+   * Rides `task_state` events and the SSE subscribe snapshot; the panel renders child
+   * running marks from this instead of parsing tool-output text.
+   */
+  subagentsOf(sessionId: string): BackgroundSubagentInfo[] {
+    return this.entries.get(sessionId)?.session.listBackgroundSubagents?.() ?? [];
+  }
+
+  /**
+   * Host message to one child session — a user input on the child, whatever its state:
+   * steering while it runs, a follow-up run while it is idle, a revival (resume-session
+   * semantics) when it is no longer live (core `Session.sendToBackgroundSubagent`). The
+   * parent runtime itself is loaded on demand (ensureEntry — the same get-or-resume path a
+   * task uses), so messaging a child of a long-idle conversation works after a restart too;
+   * the resume fallback names the child's owning Agent from its own session row, which must
+   * belong to the parent's project.
+   */
+  async sendToSubagent(
+    sessionId: string,
+    childSessionId: string,
+    messages: OmniMessage[],
+    thinkingLevel?: ThinkingLevelName,
+  ): Promise<SubagentMessageOutcome> {
+    const entry = await this.ensureEntry(sessionId);
+    entry.lastActivityMs = Date.now();
+    const childRow = this.deps.sessions.findById(childSessionId);
+    const resume =
+      childRow && childRow.projectId === entry.projectId
+        ? { agentId: childRow.agentId }
+        : undefined;
+    return (
+      (await entry.session.sendToBackgroundSubagent?.(childSessionId, messages, {
+        ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
+        ...(resume ? { resume } : {}),
+      })) ?? "gone"
+    );
+  }
+
+  /** Host abort of one child session's current run (core `Session.abortBackgroundSubagentRun`); false when the parent runtime is not loaded, the child is unknown, or it is idle. */
+  abortSubagentRun(sessionId: string, childSessionId: string): boolean {
+    const entry = this.entries.get(sessionId);
+    if (!entry) return false;
+    entry.lastActivityMs = Date.now();
+    return entry.session.abortBackgroundSubagentRun?.(childSessionId) ?? false;
+  }
+
   /** Queued follow-up tasks awaiting auto-start, as their display/recall info (id + content summary). */
   pendingFollowUpsOf(sessionId: string): PendingFollowUpInfo[] {
     return (this.entries.get(sessionId)?.followUps ?? []).map(followUpInfo);
@@ -581,11 +685,43 @@ export class SessionManager {
    *   the run by core; this signal is the only trigger left when the session sits idle);
    * - live-forwarded background-subagent messages, published to the session channel (the
    *   same feed SSE relays) and recorded for usage — a background child streams to the
-   *   frontend in real time past the launching turn's end, until its terminal state.
+   *   frontend in real time past the launching turn's end, until its terminal state;
+   * - subagent run-state changes, republished as `task_state` so the panel's running
+   *   marks track child rounds structurally instead of parsing tool-output text.
    */
   private registerNoticeListener(sessionId: string, session: RuntimeSession): void {
     session.onBackgroundNotice?.(() => void this.startBackgroundNoticeTask(sessionId));
     session.onBackgroundMessage?.((msg) => this.forwardBackgroundMessage(sessionId, msg));
+    session.onSubagentState?.(() => {
+      const entry = this.entries.get(sessionId);
+      if (entry) this.publishState(entry, entry.status);
+    });
+    // The entry-lifetime approve doubles as the children's fallback approval sink: a child
+    // approval with no window and no background-launch standing sink escalates to the user
+    // (SSE approval_request) instead of parking until the model's next poll — the parent
+    // session idle included.
+    const entry = this.entries.get(sessionId);
+    if (entry) session.setSubagentApprovalFallback?.(this.entryApprove(entry));
+  }
+
+  /**
+   * The entry-lifetime approval callback: the registry, the per-decision approval-mode
+   * re-read, and the SSE escalation are all entry-scoped, so one instance serves every run
+   * of the entry and the children's session-lifetime fallback sink alike.
+   */
+  private entryApprove(entry: RuntimeEntry): ApproveFn {
+    return makeApprove({
+      // Re-reads approval_mode from the DB on every decision (a PATCH takes effect immediately).
+      getMode: () => this.deps.sessions.findById(entry.sessionId)?.approvalMode ?? "always-ask",
+      toolPermission: (name) => entry.session.toolPermission(name),
+      registry: entry.approvals,
+      publishRequest: (pending) =>
+        this.publishEvent(entry, {
+          type: "approval_request",
+          toolCall: pending.toolCall,
+          ...(pending.origin !== undefined ? { origin: pending.origin } : {}),
+        }),
+    });
   }
 
   /** Publishes one live background-subagent message and records its usage (fire-and-forget; the child's own Trace is the durable record). */
@@ -685,7 +821,11 @@ export class SessionManager {
    * With `queueIfBusy`, a busy session (running/compacting) enqueues the input as a
    * follow-up instead of 409: it auto-starts as an ordinary next task once the session
    * returns to idle (`queued: true` in the result; see startQueuedFollowUp), keeping its
-   * thinkingLevel for that auto-start.
+   * thinkingLevel for that auto-start. `opts.recall` is that queued message's original
+   * content — optional, because only the HTTP route knows the parts of it the input does
+   * not carry (the pre-attachment text and where each file landed on disk); every other
+   * caller's store is read off the input, so a queued follow-up is recallable and shows
+   * its content whichever path queued it.
    */
   async startTask(
     sessionId: string,
@@ -702,8 +842,10 @@ export class SessionManager {
           id: randomUUID(),
           input,
           ...(opts.thinkingLevel !== undefined ? { thinkingLevel: opts.thinkingLevel } : {}),
-          // The original content rides the queue so a recall can hand it back (see recallFollowUp).
-          ...(opts.recall !== undefined ? { recall: opts.recall } : {}),
+          // The original content rides the queue so a recall can hand it back, and so the
+          // queued line shows what is waiting (see recallFollowUp). Callers that know more
+          // than the input carries pass their own; the rest get it read off the input.
+          recall: opts.recall ?? recallStoreOf(input),
         });
         entry.lastActivityMs = Date.now();
         // Re-publish the current state so subscribers pick up the new queued count (the
@@ -764,17 +906,7 @@ export class SessionManager {
       entry.pendingInputs = [...entry.pendingInputs, ...args.input];
       entry.pendingBootstrap = [];
       this.publishState(entry, "running");
-      const approve = makeApprove({
-        getMode: () => this.deps.sessions.findById(entry.sessionId)?.approvalMode ?? "always-ask",
-        toolPermission: (name) => entry.session.toolPermission(name),
-        registry: entry.approvals,
-        publishRequest: (pending) =>
-          this.publishEvent(entry, {
-            type: "approval_request",
-            toolCall: pending.toolCall,
-            ...(pending.origin !== undefined ? { origin: pending.origin } : {}),
-          }),
-      });
+      const approve = this.entryApprove(entry);
       const goalId = this.deps.goals?.create({
         sessionId: entry.sessionId,
         projectId: entry.projectId,
@@ -938,18 +1070,7 @@ export class SessionManager {
     for (const msg of input) channel.publish(msg);
     this.publishState(entry, "running");
 
-    const approve = makeApprove({
-      // Re-reads approval_mode from the DB on every decision (a PATCH takes effect immediately).
-      getMode: () => this.deps.sessions.findById(entry.sessionId)?.approvalMode ?? "always-ask",
-      toolPermission: (name) => entry.session.toolPermission(name),
-      registry: entry.approvals,
-      publishRequest: (pending) =>
-        this.publishEvent(entry, {
-          type: "approval_request",
-          toolCall: pending.toolCall,
-          ...(pending.origin !== undefined ? { origin: pending.origin } : {}),
-        }),
-    });
+    const approve = this.entryApprove(entry);
     const gen = entry.session.run(input, {
       approve,
       signal: ac.signal,
@@ -1090,9 +1211,12 @@ export class SessionManager {
   /**
    * Recall a queued follow-up task (#287): remove it from the queue before it auto-starts,
    * re-broadcast state, and hand back its original content (plus the thinking level it was
-   * queued with). 409 `not_pending` when the id is not in the queue — it already
-   * auto-started (or the runtime was evicted/restarted, which empties the queue) — or the
-   * entry has no recall store to give back.
+   * queued with). Being in the queue is the whole condition — every queued entry carries a
+   * recall store (see QueuedFollowUp.recall), so no queued message is ever refused. 409
+   * `follow_up_started` when the id is not in the queue: it already auto-started, or the
+   * runtime was released and took the queue with it. Its own code, distinct from steering's
+   * `not_pending`, because the two mean different things to the user — a follow-up became a
+   * task of its own, a steering message reached the model mid-run.
    */
   recallFollowUp(
     sessionId: string,
@@ -1101,10 +1225,10 @@ export class SessionManager {
     const entry = this.entries.get(sessionId);
     const i = entry?.followUps.findIndex((f) => f.id === followUpId) ?? -1;
     const queued = i >= 0 ? entry!.followUps[i]! : undefined;
-    if (!entry || !queued?.recall) {
+    if (!entry || !queued) {
       throw new HttpError(
         409,
-        "not_pending",
+        "follow_up_started",
         "This follow-up message already started and can no longer be recalled.",
       );
     }
@@ -1142,7 +1266,9 @@ export class SessionManager {
   abortTask(sessionId: string): boolean {
     const entry = this.entries.get(sessionId);
     if (!entry || !entry.abort) return false;
-    entry.approvals.denyAll();
+    // Deny only the MAIN session's pending approvals: an approval blocks the run the user is
+    // stopping. A subagent child survives the parent's stop, and so does its question.
+    entry.approvals.denyMain();
     entry.abort.abort();
     return true;
   }
@@ -1683,7 +1809,9 @@ export class SessionManager {
       // to the Trace, so its held input (and the aborted connect pair) are the only copy
       // a reload can show until the next run carries the input forward and persists it.
       // Runs that issued a request already cleared them at their first request_begin.
-      entry.approvals.denyAll();
+      // Main approvals only: an origin-tagged approval belongs to a subagent child that
+      // outlives this task — it stays pending for the user (see ApprovalRegistry.denyMain).
+      entry.approvals.denyMain();
       entry.status = "idle";
       entry.abort = null;
       entry.running = null;
@@ -1795,8 +1923,10 @@ export class SessionManager {
   }
 
   private publishState(entry: RuntimeEntry, state: SessionStatus): void {
-    // Every state flip also reports the queued follow-up count and the undelivered steering
-    // mirror, so subscribers can render both hints without a dedicated event type.
+    // Every state flip also reports the queued follow-up count, the undelivered steering
+    // mirror, and the live subagent children, so subscribers can render all three hints
+    // without a dedicated event type.
+    const subagents = entry.session.listBackgroundSubagents?.() ?? [];
     this.publishEvent(entry, {
       type: "task_state",
       state,
@@ -1807,6 +1937,7 @@ export class SessionManager {
       ...(entry.followUps.length > 0
         ? { pendingFollowUps: entry.followUps.map(followUpInfo) }
         : {}),
+      ...(subagents.length > 0 ? { subagents } : {}),
     });
     // The same flip again, this time on the user channel and carrying the Session id: a tab
     // subscribes to the ONE conversation it has open, so the event above can never move any

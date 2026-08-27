@@ -37,13 +37,18 @@ import { imagesToScratchpadPaths } from "./internal/session-support.js";
 import { runGoalLoop } from "./goal/goal-loop.js";
 import { goalFinishedOf } from "./goal/goal-stream.js";
 import type {
+  ApproveFn,
+  RunCutoff,
   BackgroundCommandInfo,
+  BackgroundSubagentInfo,
+  SubagentMessageOptions,
+  SubagentMessageOutcome,
   BackgroundTaskDoneEvent,
   CommandPolicyConfig,
   EnvironmentInterface,
   LLMInterface,
   ToolPermission,
-} from "./interfaces.js";
+} from "./interfaces/index.js";
 import { withCommandPolicy } from "./internal/command-policy.js";
 import { generateTitleWithLLM } from "./internal/session-title.js";
 import type { SessionTitleResult } from "./internal/session-title.js";
@@ -179,17 +184,31 @@ const TITLE_ASSISTANT_MATERIAL_LIMIT = 1000;
  * `[background_task_done]` block carries the structured facts, the body the display text —
  * what settled, then the tail of its yet-undelivered output. `sender: "harness"` marks the
  * non-human origin in the Trace.
+ *
+ * Built at DELIVERY time, not queue time, because the message must record how it reached the
+ * conversation and a queued event does not know that yet: the engine's mid-run drain stamps
+ * `delivery: "steering"` (injected into an already-started Task — the render and stats layers
+ * keep it inside that turn), while the host's idle take leaves the field off (the notice is
+ * the new task's own starting input and keeps its independent turn). The two deliveries are
+ * positionally identical in the Trace, so only this recorded stamp can tell them apart.
  */
-function backgroundDoneNotice(event: BackgroundTaskDoneEvent): OmniMessage {
+function backgroundDoneNotice(event: BackgroundTaskDoneEvent, delivery?: "steering"): OmniMessage {
   const what = event.kind === "command" ? "Background command" : "Background subagent";
   const idField = event.kind === "command" ? "process_id" : "subagent_id";
-  const verb = event.status === "completed" ? "finished" : "failed";
+  const verb =
+    event.status === "completed" ? "finished" : event.status === "stopped" ? "stopped" : "failed";
   const detail = event.detail ? ` — ${event.detail}` : "";
   const head = `${what} ${verb}: \`${event.label}\` (${idField} ${event.id})${detail}`;
   const body = event.output.trim() ? `${head}\n\n${event.output}` : head;
   return userText(
     buildBackgroundTaskDoneMessage(
-      { kind: event.kind, id: event.id, status: event.status, detail: event.detail },
+      {
+        kind: event.kind,
+        id: event.id,
+        status: event.status,
+        detail: event.detail,
+        ...(delivery ? { delivery } : {}),
+      },
       body,
     ),
     "harness",
@@ -271,14 +290,16 @@ export class Session {
   /** Material-frozen flag: becomes true once the first Task containing user text finishes; subsequent runs stop accumulating. */
   private titleMaterialFrozen = false;
   /**
-   * Background-task completion notices not yet delivered (harness user messages built from
-   * the Environment's completion events). Single source of truth for delivery: a running
-   * Task's engine drains it at every input-assembly boundary (yield + Trace write + request
-   * input); an idle Session fires `noticeListener` so the host can take the queue
-   * (`takeBackgroundNotices`) and submit it as an ordinary task — whichever consumes first,
-   * each notice is delivered exactly once. With neither, the next run's start drains it.
+   * Background-task completion events not yet delivered. Single source of truth for
+   * delivery: a running Task's engine drains it at every input-assembly boundary (yield +
+   * Trace write + request input); an idle Session fires `noticeListener` so the host can
+   * take the queue (`takeBackgroundNotices`) and submit it as an ordinary task — whichever
+   * consumes first, each notice is delivered exactly once. With neither, the next run's
+   * start drains it. The queue holds raw EVENTS: the harness user message is built by the
+   * consuming path, which is when the delivery mode is known (see backgroundDoneNotice —
+   * the engine drain stamps `delivery: steering`, the host take does not).
    */
-  private pendingNotices: OmniMessage[] = [];
+  private pendingNotices: BackgroundTaskDoneEvent[] = [];
   /** Idle-arrival signal for the host (see `onBackgroundNotice`); null until a host subscribes. */
   private noticeListener: (() => void) | null = null;
   /** Live background-subagent message subscriber (see `onBackgroundMessage`); null until a host subscribes — messages are display copies and drop without one. */
@@ -322,9 +343,11 @@ export class Session {
       ...(config.modelHasVision ? {} : { foldInputImages: this.foldImages }),
       sessionMeta: this.meta,
       // Background completion notices: the engine pulls from the Session's queue at every
-      // input-assembly boundary (see pendingNotices for the exactly-once contract).
+      // input-assembly boundary (see pendingNotices for the exactly-once contract). This is
+      // the steering delivery path — the notice joins a Task that already exists — so the
+      // built message carries the `delivery: steering` stamp.
       backgroundNotices: {
-        drain: () => this.pendingNotices.splice(0),
+        drain: () => this.pendingNotices.splice(0).map((e) => backgroundDoneNotice(e, "steering")),
         pending: () => this.pendingNotices.length,
       },
     };
@@ -357,7 +380,10 @@ export class Session {
    * the final message is exactly one `goal_finished` event carrying the outcome.
    * Docs: /docs/goal-mode.
    */
-  async *run(newMessages: OmniMessage[], opts?: SessionRunOptions): AsyncGenerator<OmniMessage> {
+  async *run(
+    newMessages: OmniMessage[],
+    opts?: SessionRunOptions,
+  ): AsyncGenerator<OmniMessage, RunCutoff | null> {
     // The sandbox command policy is applied here, at the Human boundary itself: the
     // injected callback is wrapped so a vetoed command is refused before the host is ever
     // asked, which is what makes the policy outrank every approval mode — no host, and no
@@ -369,18 +395,20 @@ export class Session {
     }
     if (opts?.goal) {
       // Rounds run with the caller's per-call options minus `goal` (each round is a plain Task).
+      // Per-round cutoffs are consumed by the goal loop itself; goal mode always closes
+      // with its own goal_finished terminal event.
       const { goal, ...roundOpts } = opts;
       yield* this.runGoal(newMessages, goal, roundOpts);
-      return;
+      return null;
     }
-    yield* this.runTask(newMessages, opts);
+    return yield* this.runTask(newMessages, opts);
   }
 
   /** The single-Task path (a goal round runs one of these per round). */
   private async *runTask(
     newMessages: OmniMessage[],
     opts?: RunOptions,
-  ): AsyncGenerator<OmniMessage> {
+  ): AsyncGenerator<OmniMessage, RunCutoff | null> {
     // Folded before Trace and title material, so the path lines are what gets recorded.
     if (!this.modelHasVision) newMessages = await this.foldImages(newMessages);
     // A previously aborted bootstrap dropped these before the engine existed: they lead
@@ -412,7 +440,7 @@ export class Session {
       this.abortedBootstrapRecords = [];
       // Carry the merged list, so repeated aborts keep accumulating exactly once each.
       this.carryOverInput = newMessages;
-      return;
+      return { kind: "abort", errorCode: "user_abort" };
     }
     // Self-captures title material (the title is derived from the first-turn
     // conversation text): while material isn't frozen yet, collect this call's user text and
@@ -429,7 +457,17 @@ export class Session {
         );
       }
     }
-    for await (const msg of this.engine!.run(newMessages, opts)) {
+    // Manual iteration (not for-await) so the engine's return value — how the run ended —
+    // propagates to this generator's own return.
+    const it = this.engine!.run(newMessages, opts);
+    let cutoff: RunCutoff | null = null;
+    for (;;) {
+      const res = await it.next();
+      if (res.done) {
+        cutoff = res.value;
+        break;
+      }
+      const msg = res.value;
       if (capture) {
         this.titleAssistantText = appendTitleText(
           this.titleAssistantText,
@@ -441,6 +479,7 @@ export class Session {
       yield msg;
     }
     if (capture && this.titleUserText.trim()) this.titleMaterialFrozen = true;
+    return cutoff;
   }
 
   /**
@@ -492,16 +531,23 @@ export class Session {
         yield end;
         this.abortedBootstrapRecords.push(end);
       }
-      const aborted = abortEvent("user");
+      const aborted = abortEvent("user_abort");
       yield aborted;
       this.abortedBootstrapRecords.push(aborted);
       return false;
     }
     const { tools, llm, mcp } = outcome.value;
     if (this.mcpServers.length > 0) {
+      const failed = mcp.filter((r) => r.status !== "completed").map((r) => r.server);
       const end = mcpConnectEnd({
-        status: mcp.some((r) => r.status !== "completed") ? "failed" : "completed",
+        status: failed.length > 0 ? "fatal" : "completed",
         results: mcp,
+        ...(failed.length > 0
+          ? {
+              errorCode: "connect_failed" as const,
+              errorMessage: `unavailable: ${failed.join(", ")}`,
+            }
+          : {}),
       });
       yield end;
       records.push(end);
@@ -783,9 +829,45 @@ export class Session {
     return this.environment.hasRunningBackgroundSubagents?.() ?? false;
   }
 
-  /** Queues a background completion event as a harness user notice; a running Task delivers it at the next boundary, otherwise the host is signaled (see pendingNotices). */
+  /** All live subagent child sessions of this Session's Environment, for a host UI's subagents panel (see EnvironmentInterface.listBackgroundSubagents). */
+  listBackgroundSubagents(): BackgroundSubagentInfo[] {
+    return this.environment.listBackgroundSubagents?.() ?? [];
+  }
+
+  /**
+   * Host-initiated message to one child session by its Session id — the user's input on the
+   * child, whatever its state: steering while it runs, a follow-up run while it is idle, a
+   * revival when it is no longer live (see EnvironmentInterface.sendToBackgroundSubagent).
+   * The human (panel) and the model (input_subagent) converge on the same channel.
+   */
+  async sendToBackgroundSubagent(
+    childSessionId: string,
+    messages: OmniMessage[],
+    opts?: SubagentMessageOptions,
+  ): Promise<SubagentMessageOutcome> {
+    return (
+      (await this.environment.sendToBackgroundSubagent?.(childSessionId, messages, opts)) ?? "gone"
+    );
+  }
+
+  /** Host-initiated abort of one child session's current run — the session survives for follow-ups (see EnvironmentInterface.abortBackgroundSubagentRun). */
+  abortBackgroundSubagentRun(childSessionId: string): boolean {
+    return this.environment.abortBackgroundSubagentRun?.(childSessionId) ?? false;
+  }
+
+  /** Attaches the host's session-lifetime fallback approval sink for child sessions (see EnvironmentInterface.setSubagentApprovalFallback). */
+  setSubagentApprovalFallback(approve: ApproveFn): void {
+    this.environment.setSubagentApprovalFallback?.(approve);
+  }
+
+  /** Attaches the single listener for subagent run-state changes; the host re-reads `listBackgroundSubagents` on each ping (see EnvironmentInterface.setSubagentStateListener). */
+  onSubagentState(listener: () => void): void {
+    this.environment.setSubagentStateListener?.(listener);
+  }
+
+  /** Queues a background completion event; a running Task delivers it at the next boundary, otherwise the host is signaled (see pendingNotices). */
   private handleBackgroundDone(event: BackgroundTaskDoneEvent): void {
-    this.pendingNotices.push(backgroundDoneNotice(event));
+    this.pendingNotices.push(event);
     if (!(this.engine?.isTaskRunning ?? false)) this.noticeListener?.();
   }
 
@@ -802,11 +884,13 @@ export class Session {
 
   /**
    * Takes the queued background completion notices (harness user messages) for submission as
-   * a task's input. Empties the queue — the caller owns delivery of what it took; anything
-   * queued after this call is signaled/drained separately.
+   * a task's input — the notices become that task's starting input, so they carry no
+   * `delivery` stamp and keep their independent turn in every render layer. Empties the
+   * queue — the caller owns delivery of what it took; anything queued after this call is
+   * signaled/drained separately.
    */
   takeBackgroundNotices(): OmniMessage[] {
-    return this.pendingNotices.splice(0);
+    return this.pendingNotices.splice(0).map((e) => backgroundDoneNotice(e));
   }
 
   /** Whether completion notices are still queued (hosts use it to keep a Session's runtime entry alive until they are delivered). */

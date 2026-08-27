@@ -34,13 +34,13 @@ When a model entry has no inline `api_key`, AgentHub falls back to the provider'
 | --- | --- | --- |
 | deepseek | `DEEPSEEK_API_KEY` | `DEEPSEEK_BASE_URL` |
 | anthropic | `ANTHROPIC_API_KEY` | `ANTHROPIC_BASE_URL` |
-| openai, openrouter, fireworks, siliconflow, qwen-token-plan, qwen-pay-as-you-go, custom | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
+| openai, openrouter, fireworks, siliconflow, tokendance, qwen-pay-as-you-go, qwen-token-plan, custom | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
 | minimax | `MINIMAX_API_KEY` | `MINIMAX_BASE_URL` |
 | google | `GEMINI_API_KEY` | `GEMINI_BASE_URL` |
 | zhipu | `ZAI_API_KEY` | `ZAI_BASE_URL` |
 | moonshot | `MOONSHOT_API_KEY` | `MOONSHOT_BASE_URL` |
 
-The openrouter, fireworks, siliconflow, qwen-token-plan, qwen-pay-as-you-go, and custom groups speak the OpenAI-compatible protocol, hence the shared `OPENAI_*` variables. The direct MiniMax M3 Responses client uses `MINIMAX_*`; the built-in MiniMax preset already pins the official endpoint. Provider groups and the built-in model catalog are covered in [Models & Providers](/models).
+The openrouter, fireworks, siliconflow, tokendance, qwen-pay-as-you-go, qwen-token-plan, and custom groups speak the OpenAI-compatible protocol, hence the shared `OPENAI_*` variables. The direct MiniMax M3 Responses client uses `MINIMAX_*`; the built-in MiniMax preset already pins the official endpoint. Provider groups and the built-in model catalog are covered in [Models & Providers](/models).
 
 ## Project config
 
@@ -196,10 +196,10 @@ compaction:
 
 An existing Agent always runs with its on-disk config verbatim — newer code defaults are never merged in automatically. When the built-in defaults change substantively, the config's `kernel_version` falls behind the current kernel and the settings page and agents list show an update hint. Two paths adopt the current defaults (side by side on the settings overview):
 
-- **Update kernel**: a lossless merge. Field by field: a missing field, or one still equal to a *recorded* generation's built-in default, follows the current default; a user-edited field stays unchanged and is listed in the result. `tools.builtin` merges per tool name — only the edited tool is kept, the rest follow, and user-added entries are untouched; `name`, `description`, `version` and `tools.mcpServers` are never touched. The config is then stamped with the current `kernel_version`. Matching is **conservative**: only values whose hash hits a recorded generation count as old defaults — generations too old to reconstruct are kept as if customized.
+- **Update kernel**: a lossless merge, **one settings tab at a time** (System Prompt, Runtime, Tools, Skills, Memory, Vault, Schedules). A tab the config lacks entirely, or one still hashing to a *recorded* generation's built-in default, is rewritten from the current defaults — that wholesale rewrite is also how tools added by a later version reach an existing Agent. A tab you have changed in any way stays unchanged **in full** and is listed in the result: edit one built-in tool and the entire Tools tab is kept, so tools you added and tools you deleted both survive, and the rest of that tab stops following new defaults until you restore defaults. `name`, `description`, `version` and `tools.mcpServers` belong to no tab and are never touched. The config is then stamped with the current `kernel_version`. Matching is **conservative**: only a tab whose hash hits a recorded generation counts as an old default — a tab from a generation too old to be recorded is kept as if customized.
 - **Restore default configuration**: like a skill update, overwrites the existing configuration with the current defaults — custom system prompt, tool list, model/compaction settings and MCP Servers — keeping only `name`, `description` and `version`. The full-refresh fallback when the kernel update's conservative matching leaves fields behind.
 
-For developers: `kernel_version` advances manually, and only on a substantive change to the built-in defaults (using that day's date). The pinned-hash test in CI (`core/test/kernel-version.test.ts`) recomputes every default leaf hash against the latest `kernel-history.ts` entry and fails on drift, telling you to bump `KERNEL_VERSION` and append a new entry; several changes on the same day may revise that day's entry, while older entries are frozen forever — they are what identifies "still the old default".
+For developers: `kernel_version` advances manually, and only on a substantive change to the built-in defaults (using that day's date). The pinned-hash test in CI (`core/test/kernel-version.test.ts`) recomputes every tab hash against `KERNEL_DEFAULT_TAB_HASHES` in `kernel-history.ts` and fails on drift, naming each tab that moved and the edit it needs: bump `KERNEL_VERSION`, append the tab's previous hash to `KERNEL_SUPERSEDED_TAB_HASHES`, and write the recomputed hash in. Several changes on the same day may reuse that day's version. The superseded hashes are frozen forever — they are what identifies "still the old default".
 
 ### System prompt placeholders
 

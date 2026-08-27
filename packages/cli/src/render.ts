@@ -186,7 +186,14 @@ function humanizeDuration(ms: number): string {
 }
 
 export function formatAbort(p: AbortPayload, t: Messages, c: Palette = STDOUT_PALETTE): string {
-  return dim(t.abortLabel(p.reason ?? undefined), c);
+  return dim(
+    t.abortLabel({
+      ...(p.error_code !== undefined ? { errorCode: p.error_code } : {}),
+      ...(p.error_message !== undefined ? { errorMessage: p.error_message } : {}),
+      ...(p.reason != null ? { reason: p.reason } : {}),
+    }),
+    c,
+  );
 }
 
 /** Options shared by history and streaming rendering. */
@@ -457,8 +464,10 @@ export class StreamRenderer {
    */
   private taskFirstTsMs: number | null = null;
   private taskLastReqEndMs: number | null = null;
-  /** Retryable terminal state (failed/timeout/malformed) of the previous request: the next request_begin is a retry, at which point a notice is printed. */
-  private pendingRetry: "failed" | "timeout" | "malformed" | null = null;
+  /** Retryable terminal state of the previous request (legacy Traces carry the finer pre-convergence spellings): the next request_begin is a retry, at which point a notice is printed. */
+  private pendingRetry: "retryable" | "failed" | "timeout" | "malformed" | null = null;
+  /** The pending failure's classified cause (request_end.error_code), for the retry line's wording. */
+  private pendingRetryCode: string | undefined;
   /** The pending failure's attempt ordinal (request_end.attempt — the core's authoritative count, printed on the retry line). */
   private pendingRetryAttempt: number | undefined;
 
@@ -780,9 +789,11 @@ export class StreamRenderer {
         this.out.write(`${dim(this.t.approvalDecision(p.decision), this.c)}\n`);
         this.lastLineKey = null;
       } else if (payload.type === "abort") {
-        // Run ended (user interrupt / retries exhausted): clear any pending retry state so the next run doesn't mistakenly print a retry line.
+        // Run ended (a user interruption — failures end on their own terminal records):
+        // clear any pending retry state so the next run doesn't mistakenly print a retry line.
         this.pendingRetry = null;
         this.pendingRetryAttempt = undefined;
+        this.pendingRetryCode = undefined;
         this.finishLine();
         this.out.write(`${formatAbort(payload as AbortPayload, this.t, this.c)}\n`);
         this.lastLineKey = null;
@@ -797,9 +808,12 @@ export class StreamRenderer {
           const attempt = this.pendingRetryAttempt ?? 1;
           this.pendingRetryAttempt = undefined;
           this.finishLine();
-          this.out.write(`${dim(this.t.reconnectLabel(this.pendingRetry, attempt), this.c)}\n`);
+          this.out.write(
+            `${dim(this.t.reconnectLabel(this.pendingRetry, attempt, this.pendingRetryCode), this.c)}\n`,
+          );
           this.lastLineKey = null;
           this.pendingRetry = null;
+          this.pendingRetryCode = undefined;
         }
       } else if (payload.type === "request_end") {
         const p = payload as RequestEndPayload;
@@ -817,15 +831,44 @@ export class StreamRenderer {
             this.hasUsage = true;
           }
         }
-        // Every status the engine reconnects on, `failed` included — only `auth` is terminal.
-        // Leaving `failed` out would print nothing for a retry that is really happening, and
-        // reset the counter mid-ladder so a mixed run renumbers back to retry #1.
-        if (p.status === "failed" || p.status === "timeout" || p.status === "malformed") {
-          this.pendingRetry = p.status;
+        const endStatus = p.status as string;
+        if (endStatus === "fatal") {
+          // A fatal end stops the run; no abort event follows — this request_end is the
+          // terminal record, printed here.
+          this.pendingRetry = null;
+          this.pendingRetryAttempt = undefined;
+          this.pendingRetryCode = undefined;
+          this.finishLine();
+          this.out.write(`${dim(this.t.llmFatalLabel(p.error_message), this.c)}\n`);
+          this.lastLineKey = null;
+        } else if (endStatus === "retryable" && p.retry_in_ms === undefined) {
+          // A live-protocol retryable with no planned wait is the ladder giving up — the
+          // run ends on it. The legacy spellings never take this branch: their era stamped
+          // no retry_in_ms mid-ladder, and their exhaustion printed from the abort event.
+          this.pendingRetry = null;
+          this.pendingRetryAttempt = undefined;
+          this.pendingRetryCode = undefined;
+          this.finishLine();
+          this.out.write(
+            `${dim(this.t.reconnectGaveUpLabel(p.attempt ?? 1, p.error_message), this.c)}\n`,
+          );
+          this.lastLineKey = null;
+        } else if (
+          endStatus === "retryable" ||
+          endStatus === "failed" ||
+          endStatus === "timeout" ||
+          endStatus === "malformed"
+        ) {
+          // Every status the engine reconnects on gets the retry notice (printed when the
+          // retry actually starts); the legacy spellings keep pre-convergence Traces
+          // printing the same way.
+          this.pendingRetry = endStatus;
           this.pendingRetryAttempt = p.attempt;
+          this.pendingRetryCode = p.error_code;
         } else {
           this.pendingRetry = null;
           this.pendingRetryAttempt = undefined;
+          this.pendingRetryCode = undefined;
         }
       } else if (payload.type === "compaction_begin") {
         // Paired compaction events: begin signals compaction is in progress.
@@ -875,8 +918,12 @@ export class StreamRenderer {
         // One line, reasons included: the failure reason (spawn error, timeout, HTTP
         // status) otherwise never reaches the terminal — only the server-side stderr warning.
         const failures = p.results
-          .filter((r) => r.status === "failed")
-          .map((r) => ({ server: r.server, error: r.error ?? "unknown error" }));
+          .filter((r) => r.status === "fatal" || (r.status as string) === "failed")
+          .map((r) => ({
+            server: r.server,
+            // Live results carry the unified pair; legacy Traces spell the detail `error`.
+            error: r.error_message ?? (r as { error?: string }).error ?? "unknown error",
+          }));
         this.out.write(
           `${dim(this.t.mcpConnectStop(durationMs, failures, p.status === "aborted"), this.c)}\n`,
         );

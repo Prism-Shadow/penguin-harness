@@ -9,6 +9,13 @@
  * running, returns the same `process_id`; once exited, returns the trailing output and exit
  * status and cleans up the session.
  *
+ * `kill: true` terminates the session instead (a process is a real OS object — unlike a
+ * subagent session, it IS destroyed): the pending completion report is disarmed first (this
+ * call reads the outcome right here), the yet-undelivered output drains as this call's own
+ * output, then the whole process group is killed (SIGTERM, escalating to SIGKILL) and the
+ * session leaves the registry. Works on already-exited sessions too (reports the recorded
+ * exit and removes the row).
+ *
  * Shares the same `CommandSessionManager` injected by Environment with exec_command. An
  * interruption only cancels this poll — **it does not kill the background process** (the process
  * was started independently earlier; interrupting one poll shouldn't kill it as a side effect).
@@ -16,11 +23,12 @@
  */
 import { partialToolCallOutput } from "../../omnimessage/index.js";
 import type { OmniMessage } from "../../omnimessage/index.js";
-import type { EnvironmentServices, ToolDefinitionConfig } from "../../interfaces.js";
+import type { EnvironmentServices, ToolDefinitionConfig } from "../../interfaces/index.js";
 import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
 import {
   DEFAULT_EMPTY_POLL_YIELD_MS,
   DEFAULT_WRITE_YIELD_MS,
+  isStopSignal,
   resultForExit,
 } from "./command/index.js";
 import { clampYield } from "./background/index.js";
@@ -49,20 +57,47 @@ export function createInputCommandTool(
 
       if (!manager) {
         yield delta("[input_command unavailable: no command session manager configured]");
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
 
       const processId = args["process_id"];
       if (typeof processId !== "string" || processId.length === 0) {
         yield delta('Missing required argument "process_id" for input_command.');
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
       const session = manager.get(processId);
       if (!session) {
         yield delta(
           `[input_command error: unknown process_id ${processId} (the session may have exited and been cleared)]`,
         );
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
+      }
+
+      // Termination path (kill: true): disarm the report, drain, kill the group, drop the row.
+      if (args["kill"] === true) {
+        session.clearExitWatchers();
+        const pending = session.drainPending();
+        if (pending) yield delta(pending);
+        const wasRunning = session.running;
+        const exit = session.exit;
+        manager.kill(processId);
+        if (wasRunning) {
+          return {
+            stopReason: "completed",
+            note: `[process ${processId} killed (SIGTERM to the process group, SIGKILL after a grace period)]`,
+          };
+        }
+        // Same vocabulary the completion report uses: a stop signal ended it on purpose,
+        // anything else broke it.
+        const status = session.error
+          ? `spawn error: ${session.error.message}`
+          : exit?.signal != null
+            ? `${isStopSignal(exit.signal) ? "stopped by" : "terminated by signal"} ${exit.signal}`
+            : `exit code ${exit?.code ?? "unknown"}`;
+        return {
+          stopReason: "completed",
+          note: `[process ${processId} had already exited (${status}); session removed]`,
+        };
       }
 
       const chars = typeof args["chars"] === "string" ? (args["chars"] as string) : "";
@@ -85,7 +120,7 @@ export function createInputCommandTool(
           yield delta(
             '[input_command error: chars mixes U+0003 (Ctrl-C) with other content; send "\\u0003" alone to interrupt]',
           );
-          return { stopReason: "failed" };
+          return { stopReason: "fatal" };
         } else session.write(chars);
       }
 
@@ -101,7 +136,7 @@ export function createInputCommandTool(
       // Already exited: clean up the registry and report the exit status.
       manager.remove(processId);
       if (session.error) {
-        return { stopReason: "failed", note: `[spawn error: ${session.error.message}]` };
+        return { stopReason: "fatal", note: `[spawn error: ${session.error.message}]` };
       }
       return resultForExit(session.exit);
     },

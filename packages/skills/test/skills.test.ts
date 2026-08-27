@@ -17,9 +17,61 @@ import {
   loadSkillGroups,
   parseSkillFrontmatter,
   type LibrarySkill,
+  type SkillGroupInfo,
 } from "../src/index.js";
 
 const skillsRoot = path.resolve(import.meta.dirname, "../skills");
+
+/**
+ * READMEs carrying the group table, relative to this directory, each with the heading its
+ * rows spell the groups by — the English files take the manifest's `title`, the Chinese one
+ * its `titleZh`.
+ */
+const README_TABLES = [
+  { label: "packages/skills/README.md", file: "../README.md", heading: groupTitle },
+  { label: "README.md", file: "../../../README.md", heading: groupTitle },
+  { label: "README.zh.md", file: "../../../README.zh.md", heading: groupTitleZh },
+];
+
+function groupTitle(group: SkillGroupInfo): string {
+  return group.title;
+}
+
+function groupTitleZh(group: SkillGroupInfo): string {
+  // titleZh is optional on the manifest; a group without one is displayed under its English title.
+  return group.titleZh ?? group.title;
+}
+
+/** One row of a README's group table: the group as the row spells it, and its Skill names. */
+interface ReadmeGroupRow {
+  group: string;
+  skills: string[];
+}
+
+/**
+ * Rows of a README's group table. Located by the table's own `Group` / `分组` header row
+ * rather than by a surrounding heading, so the three files parse the same way despite
+ * different headings and list separators; rows end at the first line that is not a table row.
+ */
+function readmeTableRows(markdown: string): ReadmeGroupRow[] {
+  const lines = markdown.split("\n");
+  const header = lines.findIndex((line) => /^\|\s*(?:Group|分组)\s*\|/.test(line));
+  if (header === -1) return [];
+  const rows: ReadmeGroupRow[] = [];
+  for (const line of lines.slice(header + 1)) {
+    if (!line.startsWith("|")) break;
+    const cells = line.split("|").slice(1, -1);
+    if (cells.length < 2) continue;
+    const group = cells[0]!.trim();
+    // The alignment row between the header and the first group.
+    if (/^:?-{3,}:?$/.test(group)) continue;
+    rows.push({
+      group,
+      skills: [...cells[1]!.matchAll(/`([^`]+)`/g)].map((match) => match[1]!),
+    });
+  }
+  return rows;
+}
 
 /** Minimal LibrarySkill for groupSkills unit tests. */
 const fakeSkill = (name: string): LibrarySkill => ({
@@ -152,6 +204,7 @@ describe("loadSkillGroups / groupSkills", () => {
     expect(groups[2]!.skills.map((s) => s.name)).toEqual([
       "penguin-sdk",
       "penguin-cli",
+      "penguin-orchestration",
       "agenthub-models",
       "vllm",
       "ollama",
@@ -221,6 +274,7 @@ describe("loadSkillGroups / groupSkills", () => {
         skills: [
           "penguin-sdk",
           "penguin-cli",
+          "penguin-orchestration",
           "agenthub-models",
           "vllm",
           "ollama",
@@ -239,6 +293,47 @@ describe("loadSkillGroups / groupSkills", () => {
       },
     ]);
   });
+
+  /**
+   * This package's README and the repository's two root READMEs each repeat the manifest as a
+   * table for human readers, and nothing else reads those tables. Derived from the library and
+   * from SKILL_GROUPS rather than pinned, so adding a Skill — or filing it under the wrong
+   * heading — fails here instead of leaving a table quietly wrong; the same guard the docs pages
+   * get from docs' skills-sync test. The root READMEs are checked from here because this package
+   * owns the library the tables claim to list; they belong to no package of their own.
+   */
+  for (const { label, file, heading } of README_TABLES) {
+    it(`${label}'s group table names exactly the library's Skills, each under its own group`, async () => {
+      const markdown = await fs.readFile(path.resolve(import.meta.dirname, file), "utf8");
+      const rows = readmeTableRows(markdown);
+      const listed = rows.flatMap((row) => row.skills);
+      expect(listed.length, `no Group/分组 table found in ${label}`).toBeGreaterThan(0);
+      const library = loadLibrarySkills().map((skill) => skill.name);
+      expect(
+        library.filter((name) => !listed.includes(name)),
+        `Skills that ship but are missing from ${label}`,
+      ).toEqual([]);
+      expect(
+        listed.filter((name) => !library.includes(name)).sort(),
+        `Skills listed in ${label} that no longer ship`,
+      ).toEqual([]);
+
+      // Which group a Skill sits in is the manifest's call, and a table that lists every Skill
+      // under the wrong heading is as wrong as one that omits it. Compared as a set per group,
+      // so reordering inside a row stays free; row order is free too, since rows are matched by
+      // their heading rather than by position.
+      expect(rows.map((row) => row.group).sort(), `group headings in ${label}`).toEqual(
+        SKILL_GROUPS.map(heading).sort(),
+      );
+      for (const group of SKILL_GROUPS) {
+        const row = rows.find((entry) => entry.group === heading(group));
+        expect(
+          [...(row?.skills ?? [])].sort(),
+          `Skills under "${heading(group)}" in ${label}`,
+        ).toEqual([...group.skills].sort());
+      }
+    });
+  }
 });
 
 describe("librarySkill", () => {

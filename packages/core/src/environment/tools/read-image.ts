@@ -25,7 +25,7 @@ import path from "node:path";
 import { readFile, stat } from "node:fs/promises";
 import { partialToolCallOutput } from "../../omnimessage/index.js";
 import type { OmniMessage } from "../../omnimessage/index.js";
-import type { ToolDefinitionConfig } from "../../interfaces.js";
+import type { ToolDefinitionConfig } from "../../interfaces/index.js";
 import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
 
 /** Tool name constant (used only within this tool module, never exposed to Environment). */
@@ -228,14 +228,14 @@ export function createReadImageTool(definition: ToolDefinitionConfig): BuiltinTo
       const source = args["source"];
       if (typeof source !== "string" || source.length === 0) {
         yield delta('Missing required argument "source" for read_image.');
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
 
       const res = await loadImage(source, ctx.workspaceDir, signal);
       if (!res.ok) {
         if (res.reason === "aborted") return { stopReason: "aborted" };
         yield delta(res.message);
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
 
       // Success: yield a brief one-line description as a text delta (both in the streaming and

@@ -11,14 +11,28 @@
  */
 import { partialToolCallOutput } from "../../../omnimessage/index.js";
 import type { OmniMessage } from "../../../omnimessage/index.js";
-import type { ApproveFn } from "../../../interfaces.js";
+import type { ApproveFn } from "../../../interfaces/index.js";
 import type { ManagedSubagentSession } from "./session.js";
 
 export async function* collectWindow(
   session: ManagedSubagentSession,
-  opts: { yieldMs: number; toolCallId: string; signal?: AbortSignal; approve?: ApproveFn },
+  opts: {
+    yieldMs: number;
+    toolCallId: string;
+    signal?: AbortSignal;
+    approve?: ApproveFn;
+    /**
+     * Whether the child's text deltas mirror into this tool's own output (default true —
+     * run_subagent's launch window streams the forming answer live). input_subagent passes
+     * false: its model-facing output is the child's latest COMPLETE assistant text, emitted
+     * once at the end, so every access reads as "what it last said" instead of an
+     * incremental delta drain. The buffer still drains either way (bounded memory).
+     */
+    includeText?: boolean;
+  },
 ): AsyncGenerator<OmniMessage> {
   const { yieldMs, toolCallId, signal, approve } = opts;
+  const includeText = opts.includeText ?? true;
   const delta = (output: string): OmniMessage =>
     partialToolCallOutput({ eventType: "delta", output, toolCallId });
   const detach = approve ? session.attachApprovalSink(approve) : null;
@@ -31,7 +45,7 @@ export async function* collectWindow(
     for (;;) {
       for (const m of session.drainMessages()) yield m;
       const text = session.drainText();
-      if (text) yield delta(text);
+      if (text && includeText) yield delta(text);
       if (!session.running) break;
       if (signal?.aborted) break;
       const remaining = yieldMs - (Date.now() - start);
@@ -44,7 +58,7 @@ export async function* collectWindow(
     // Final drain: there may still be a tail buffer right when the run finishes/yields.
     for (const m of session.drainMessages()) yield m;
     const tail = session.drainText();
-    if (tail) yield delta(tail);
+    if (tail && includeText) yield delta(tail);
   } finally {
     signal?.removeEventListener("abort", onAbort);
     detach?.();

@@ -14,6 +14,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { OmniMessage } from "../src/omnimessage/index.js";
 import {
   addModel,
   createAgent,
@@ -23,11 +24,16 @@ import {
   loadProjectConfig,
   saveProjectConfig,
   setVaultEntry,
+  userText,
 } from "../src/index.js";
 import { metaMaxTokens } from "../src/agent.js";
 import { mapThinkingLevel } from "../src/llm/index.js";
 import { stubProviderKeys } from "./provider-keys.js";
-import type { EnvironmentConfig, EnvironmentServices, SubagentRunner } from "../src/interfaces.js";
+import type {
+  EnvironmentConfig,
+  EnvironmentServices,
+  SubagentRunner,
+} from "../src/interfaces/index.js";
 
 // Captures the services buildRuntime hands to each Environment, so tests can drive the REAL
 // subagent runner (the spawn closure in agent.ts). Spawning only constructs the child Session,
@@ -382,22 +388,22 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
     const handle = await runner.spawn(input);
     let llm: { thinkingLevel?: string } | undefined;
     try {
-      const gen = handle.run({ prompt: "noop" });
+      const gen = handle.run({ messages: [userText("noop")] });
       const first = await gen.next();
       expect(first.done).toBe(false);
-      const msg = first.value!;
+      const msg = first.value as OmniMessage;
       expect(msg.type).toBe("session_meta");
       // Child messages are stamped with the child Session id as the origin hop.
       expect(msg.origin?.[0]).toBe(handle.sessionId);
       for (;;) {
         const next = await gen.next();
         expect(next.done).toBe(false);
-        if ((next.value!.payload as { type?: string }).type === "tool_list_ready") {
+        if (((next.value as OmniMessage).payload as { type?: string }).type === "tool_list_ready") {
           llm = capturedLLMConfigs.list.at(-1)!;
           break;
         }
       }
-      await gen.return(undefined);
+      await gen.return(null);
       return {
         ...(msg.payload as {
           provider: string;
@@ -591,7 +597,7 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
       // own input, but this caller is the PARENT — the frontend renders the child conversation
       // purely from these forwarded messages. (Regression: the panel showed no user messages
       // live, while a reload — child-Trace expansion — did show them.)
-      const gen = handle.run({ prompt: "count the TODO items" });
+      const gen = handle.run({ messages: [userText("count the TODO items")] });
       const first = (await gen.next()).value as { type: string };
       expect(first.type).toBe("session_meta");
       // The input yield precedes childSession.run: pulling it never issues an LLM request.
@@ -609,7 +615,7 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
         role: "user",
         text: "count the TODO items",
       });
-      await gen.return(undefined);
+      await gen.return(null);
     } finally {
       handle.dispose();
       parent.dispose();

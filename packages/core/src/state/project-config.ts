@@ -27,7 +27,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
-import type { CommandPolicyConfig, CommandPolicyRule, ThinkingLevelName } from "../interfaces.js";
+import type {
+  CommandPolicyConfig,
+  CommandPolicyRule,
+  ThinkingLevelName,
+} from "../interfaces/index.js";
+import { atomicWriteFile } from "../internal/atomic-write.js";
 import { DEFAULT_COMMAND_POLICY_RULES } from "./command-policy-defaults.js";
 import { canonicalClientType, presetModelEntries } from "./model-catalog.js";
 import { projectConfigPath } from "./paths.js";
@@ -421,8 +426,8 @@ export function renderProjectConfigToml(data: Record<string, unknown>): string {
 /**
  * Saves the Project config: writes the full table to the single config file
  * `.project_config.toml`. The file contains secrets like api_key, so it's written to disk with
- * mode 0600 (a hidden file blocks `ls`, not reads; mode only takes effect on creation, so chmod
- * converges an existing file too).
+ * mode 0600 (a hidden file blocks `ls`, not reads); the atomic write applies that mode to every
+ * replacement, so an existing file converges to it as well.
  */
 export async function saveProjectConfig(
   root: string,
@@ -431,11 +436,10 @@ export async function saveProjectConfig(
 ): Promise<void> {
   const file = projectConfigPath(root, projectId);
   await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.writeFile(file, renderProjectConfigToml({ ...cfg }), {
-    encoding: "utf8",
+  await atomicWriteFile(file, renderProjectConfigToml({ ...cfg }), {
     mode: 0o600,
+    followSymlinks: true,
   });
-  await fs.chmod(file, 0o600);
 }
 
 /**

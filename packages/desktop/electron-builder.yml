@@ -47,8 +47,9 @@ files:
     to: web-dist
 # The app's own metadata, which the workspace package.json cannot carry: deb and AppImage
 # derive package and executable names from `name`, where "@prismshadow/…" is invalid, and
-# fpm refuses to build without a homepage. The name also decides the app data directory, so
-# it stays what installed apps already use.
+# fpm refuses to build without a homepage. It does NOT decide the app data directory: the
+# shell calls app.setName() before anything reads userData, so that keeps the name
+# src/app-identity.ts chooses per form.
 extraMetadata:
   name: penguin-harness-desktop
   homepage: https://github.com/Prism-Shadow/penguin-harness
@@ -97,7 +98,18 @@ win:
     sign: build/evsign.cjs
     signingHashAlgorithms:
       - sha256
+    # electron-updater checks a downloaded update against the publisherName the
+    # *installed* client recorded, so this list is forward policy rather than a
+    # description of today's certificate: the current identity, then the previous
+    # one, each in both the full-DN and bare-CN forms the verifier compares. A
+    # client shipped by this release therefore still accepts the next rotation's
+    # builds. Removing the key is not the way to stop pinning a name — a missing
+    # publisherName reads as "nothing to verify" and installs whatever was fetched.
+    # Drop an identity only once no supported client was installed by a release
+    # that signed with it.
     publisherName:
+      - "CN=NaisNet Technology Co., Ltd., O=NaisNet Technology Co., Ltd."
+      - "NaisNet Technology Co., Ltd."
       - CN=RushRush Network Technology Ltd, O=RushRush Network Technology Ltd
       - RushRush Network Technology Ltd
   target:

@@ -33,10 +33,22 @@ export function openDatabase(dbPath: string): DatabaseSync {
   ensureColumn(db, "sessions", "thinking_level", "TEXT");
   ensureColumn(db, "auth_sessions", "via", "TEXT");
   ensureColumn(db, "trace_files", "page_stats", "TEXT");
+  ensureColumn(db, "messaging_bindings", "line_per_message", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "messaging_bindings", "last_inbound_message_id", "TEXT");
   // Superseded by idx_usage_session_ts (session_id, ts), which SCHEMA_SQL just created on
   // this database: the old index is a strict prefix of it, so every query it served is
   // served identically. Dropping is safe — an index is derived, never data.
   db.exec("DROP INDEX IF EXISTS idx_usage_session");
+  // The uniqueness index of the old binding model, where a bot account belonged to one
+  // Session forever and a second Session could not even SAVE its credentials. Enabling a
+  // connection is the binding now, so exclusivity is checked per enable (the state route's
+  // 409 account_enabled_elsewhere) and the same account may sit saved on many Sessions —
+  // which this index would reject. SCHEMA_SQL has just created idx_messaging_by_account
+  // over the same columns, so the by-account lookup stays indexed. Dropping is safe: an
+  // index is derived, never data. It is however ONE-WAY — an older build recreates the
+  // unique index on open, which fails outright once duplicate (channel, account_id) rows
+  // exist, so a downgrade after two Sessions saved the same bot needs those rows removed.
+  db.exec("DROP INDEX IF EXISTS idx_messaging_account");
   upgradeLastActiveAt(db);
   return db;
 }

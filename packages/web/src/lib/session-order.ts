@@ -72,6 +72,38 @@ export function storeSessionSortMode(mode: SessionSortMode, storage?: SessionOrd
 export const sessionOrderKey = (projectId: string, mode: GroupMode): string =>
   `penguin.sessionOrder.${projectId}.${mode}`;
 
+/**
+ * Reads a stored JSON string array, degrading to empty on anything unexpected: nothing
+ * stored, malformed JSON, a non-array shape, or storage that throws. Junk elements are
+ * dropped. `localStorage` is resolved INSIDE the try, never as a default parameter:
+ * merely touching it throws a SecurityError when site data is blocked (or in a
+ * partitioned iframe), and these run from useState initializers — an escaping throw
+ * would take the sidebar's first render down. Shared with group-order.ts, which stores
+ * the same shape under its own key namespace.
+ */
+export function readStringArray(key: string, storage?: SessionOrderStorage): string[] {
+  try {
+    const store = storage ?? localStorage;
+    const parsed: unknown = JSON.parse(store.getItem(key) ?? "[]");
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Writes a JSON string array, best-effort (quota limits / private browsing fail silently). Shared with group-order.ts. */
+export function writeStringArray(
+  key: string,
+  value: readonly string[],
+  storage?: SessionOrderStorage,
+): void {
+  try {
+    (storage ?? localStorage).setItem(key, JSON.stringify(value));
+  } catch {
+    /* best-effort persistence (quota limits / private browsing) */
+  }
+}
+
 /** Reads a Project+mode's persisted manual order; no Project, nothing stored, or corrupted storage degrade to empty (pure recency). Junk array elements are dropped. (localStorage resolved inside the try — see initialSessionSortMode.) */
 export function loadSessionOrder(
   projectId: string | null,
@@ -79,13 +111,7 @@ export function loadSessionOrder(
   storage?: SessionOrderStorage,
 ): string[] {
   if (projectId === null) return [];
-  try {
-    const store = storage ?? localStorage;
-    const parsed: unknown = JSON.parse(store.getItem(sessionOrderKey(projectId, mode)) ?? "[]");
-    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
-  } catch {
-    return [];
-  }
+  return readStringArray(sessionOrderKey(projectId, mode), storage);
 }
 
 /** Writes a Project+mode's manual order on every drop (best-effort: quota limits / private browsing fail silently). */
@@ -96,11 +122,7 @@ export function saveSessionOrder(
   storage?: SessionOrderStorage,
 ): void {
   if (projectId === null) return;
-  try {
-    (storage ?? localStorage).setItem(sessionOrderKey(projectId, mode), JSON.stringify(order));
-  } catch {
-    /* best-effort persistence (quota limits / private browsing) */
-  }
+  writeStringArray(sessionOrderKey(projectId, mode), order, storage);
 }
 
 /**
@@ -120,6 +142,32 @@ export function applyManualOrder<T>(
   for (const row of rows) (pos.has(keyOf(row)) ? listed : unlisted).push(row);
   listed.sort((a, b) => (pos.get(keyOf(a)) ?? 0) - (pos.get(keyOf(b)) ?? 0));
   return [...unlisted, ...listed];
+}
+
+/**
+ * Applies a manual order WITHIN each pin partition: the pinned cluster renders first
+ * (pinnedFirst), then the stored sequence is applied to the pinned cluster and to the
+ * rest independently — so a drag can reorder but can never move an item across the pin
+ * boundary. An empty `order` is the identity: the pinned-first list, untouched.
+ *
+ * The rows (orderSessionRows, below) and the sidebar's GROUPS (group-order.ts's
+ * orderGroups) are the same operation one axis apart, so it lives here once. What
+ * differs between them is upstream of this call — the rows sort by recency first and
+ * gate on an explicit sort mode, the groups arrive in their own automatic order and have
+ * no toggle — and that stays with each caller.
+ */
+export function orderWithinPinPartitions<T>(
+  items: readonly T[],
+  keyOf: (item: T) => string,
+  pinned: ReadonlySet<string>,
+  order: readonly string[],
+): T[] {
+  if (order.length === 0) return pinnedFirst(items, keyOf, pinned);
+  // pinnedFirst's concat would be undone by the two filters below (it preserves input
+  // order within each partition), so the manual path splits the input directly.
+  const pin = items.filter((item) => pinned.has(keyOf(item)));
+  const rest = items.filter((item) => !pinned.has(keyOf(item)));
+  return [...applyManualOrder(pin, keyOf, order), ...applyManualOrder(rest, keyOf, order)];
 }
 
 /**
@@ -155,14 +203,13 @@ export function orderSessionRows<T>(
         (a, b) => recencyOf(b).localeCompare(recencyOf(a)) || keyOf(b).localeCompare(keyOf(a)),
       )
     : rows;
-  const byPin = pinnedFirst(byRecency, keyOf, opts.pinned);
-  if (opts.sortMode !== "manual") return byPin;
-  const pin = byPin.filter((r) => opts.pinned.has(keyOf(r)));
-  const rest = byPin.filter((r) => !opts.pinned.has(keyOf(r)));
-  return [
-    ...applyManualOrder(pin, keyOf, opts.order),
-    ...applyManualOrder(rest, keyOf, opts.order),
-  ];
+  // Recent mode passes an empty order, which is orderWithinPinPartitions's identity.
+  return orderWithinPinPartitions(
+    byRecency,
+    keyOf,
+    opts.pinned,
+    opts.sortMode === "manual" ? opts.order : [],
+  );
 }
 
 /**

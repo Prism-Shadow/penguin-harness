@@ -19,6 +19,7 @@
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
+import type { HarnessInfo } from "@prismshadow/penguin-core";
 
 /**
  * The committed on-disk record: a runtime restart resumes exactly this CODE (platform,
@@ -48,6 +49,49 @@ export interface Manifest {
    * filesystem, with its exec bit intact.
    */
   assets?: { dir: string };
+  /**
+   * Provenance of the push that produced this version, exactly as the pushing client sent
+   * it (scripts/deploy.mjs fills it from its own checkout). Recorded, never executed or
+   * resolved. Absent for a version pushed without it, and for every version committed
+   * before the field existed — which is why every reader treats it as optional.
+   */
+  source?: { repo: string; revision: string };
+  /** When this version was committed to the store (ISO 8601). Absent on older records. */
+  pushedAt?: string;
+}
+
+/** A string field of an untrusted manifest, or null unless it is a non-empty string. */
+function str(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+/**
+ * What the store has committed, for version reporting: provenance, commit time, and the
+ * three artifact pointers. Null when nothing has ever been pushed to this root.
+ *
+ * Read defensively rather than cast: harness.json is written only by persistVersion, but a
+ * truncated or hand-edited file must degrade a `penguin version` to missing fields, never
+ * crash it. A record missing every artifact pointer counts as nothing pushed.
+ */
+export async function readHarnessInfo(root: string): Promise<HarnessInfo | null> {
+  const manifest = await readManifest(root);
+  if (manifest === null) return null;
+
+  const bundles = {
+    platform: str(manifest.platform?.bundle),
+    cli: str(manifest.cli?.bundle),
+    web: str(manifest.web?.manifest),
+  };
+  if (bundles.platform === null && bundles.cli === null && bundles.web === null) return null;
+
+  const repo = str(manifest.source?.repo);
+  const revision = str(manifest.source?.revision);
+  return {
+    // Both halves or neither: half a provenance names nothing.
+    source: repo !== null && revision !== null ? { repo, revision } : null,
+    pushedAt: str(manifest.pushedAt),
+    bundles,
+  };
 }
 
 /** Reads and parses `<root>/hmr/harness.json`; null when missing or corrupt (nothing committed yet). */

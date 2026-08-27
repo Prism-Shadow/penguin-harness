@@ -23,7 +23,7 @@
  *   - Events: approval_decision annotates the corresponding tool card
  *     (labeled "manual" if clicked on this end, "automatic" otherwise);
  *     abort → an interruption marker item; request_end ending in any status
- *     the engine reconnects on (failed/timeout/malformed) → a retry-hint item (the engine discards that
+ *     the engine reconnects on (retryable) → a retry-hint item (the engine discards that
  *     attempt and resends the original input; the next request_begin marks the hint as resent, and an
  *     arriving abort marks it as retries exhausted); other request_begin/end
  *     events aren't rendered (Request duration is covered by Trace
@@ -52,6 +52,7 @@
 import {
   isEventMessage,
   isPartialPayload,
+  parseBackgroundTaskDoneMessage,
   parseUserSteeringText,
 } from "@prismshadow/penguin-core/omnimessage";
 import type {
@@ -60,7 +61,6 @@ import type {
   CompactionReason,
   CompleteModelPayload,
   EventPayload,
-  McpConnectStatus,
   OmniMessage,
   PartialModelPayload,
   SessionMetaPayload,
@@ -115,6 +115,24 @@ export interface UserSteeringItem {
    * which the chip restores at render time like any user message.)
    */
   images?: string[];
+  /** Message timestamp (milliseconds): shown on footer hover. */
+  atMs?: number;
+}
+
+/**
+ * A background completion notice steered into the running Task (`delivery: steering` on its
+ * `[background_task_done]` block — see core's Session notice queue): rendered as the
+ * completion banner **inside** the running Task's flow, like a steering chip it never starts
+ * a new Task — so the turn's stats row still arrives exactly once, at task end. An unstamped
+ * notice (an idle-launched notice task's own input) stays an ordinary `user_text` item and
+ * keeps its independent turn. `text` is the raw message text (block included): the renderer
+ * and the topology's terminal-state scan both re-parse it, exactly as they do for the
+ * unstamped form.
+ */
+export interface BackgroundNoticeItem {
+  kind: "background_notice";
+  id: number;
+  text: string;
   /** Message timestamp (milliseconds): shown on footer hover. */
   atMs?: number;
 }
@@ -208,32 +226,52 @@ export interface SubagentItem {
 export interface AbortItem {
   kind: "abort";
   id: number;
+  /** Machine-readable cause (the omnimessage ErrorCode vocabulary); the banner localizes from it. */
+  errorCode?: string;
+  /** Raw failure detail, shown verbatim (absent on live user interrupts). */
+  errorMessage?: string;
+  /** Legacy Traces only: the cause as English prose, rendered verbatim when no errorCode is present. */
   reason?: string;
 }
 
 /**
- * The statuses the engine reconnects on — every LLM failure except `auth`, which is terminal
- * (see core's TURN_RETRY_STATUSES). A retry the user cannot see is a stalled session with no
- * explanation and no way out, so all three render the same countdown and the same controls.
+ * A run-ending LLM failure, from a `request_end` with status `fatal` (an LLM failure
+ * produces no abort event — the request_end is its terminal record).
  */
-export type ReconnectStatus = "failed" | "timeout" | "malformed";
-
-function isReconnectStatus(status: StopReason | undefined): status is ReconnectStatus {
-  return status === "failed" || status === "timeout" || status === "malformed";
+export interface LlmErrorItem {
+  kind: "llm_error";
+  id: number;
+  /** Machine-readable cause (request_end.error_code). */
+  errorCode?: string;
+  /** The provider's own error text (request_end.error_message), shown verbatim. */
+  errorMessage?: string;
 }
 
-/** An LLM Request ending in failed/timeout/malformed → the engine retries carrying the content already produced. */
+/** `retryable` is the live protocol; failed/timeout/malformed are legacy Trace spellings kept for replay. */
+export type ReconnectStatus = "retryable" | "failed" | "timeout" | "malformed";
+
+function isReconnectStatus(status: string | undefined): status is ReconnectStatus {
+  return (
+    status === "retryable" || status === "failed" || status === "timeout" || status === "malformed"
+  );
+}
+
+/** An LLM Request ending retryable → the engine retries carrying the content already produced. */
 export interface ReconnectItem {
   kind: "reconnect";
   id: number;
-  /** Trigger reason: timeout (timed out / disconnected), malformed (an incomplete or unparseable response), or failed (the provider returned an error). */
+  /** Trigger status (legacy Traces carry the finer pre-convergence spellings). */
   status: ReconnectStatus;
   /** Which retry attempt this is — request_end.attempt, the core's authoritative 1-based ordinal (1 for Traces written before the field existed). */
   attempt: number;
   /** The retry request has been sent (set true by the next request_begin). */
   retrying: boolean;
-  /** Retries exhausted (set true when an abort event arrives; the subsequent interruption marker item gives the reason). */
+  /** Retries exhausted: set at creation when the request_end announced no retry (`retryable` with no retry_in_ms — the run ends there), or by an abort event in legacy Traces. */
   gaveUp?: boolean;
+  /** Machine-readable cause (request_end.error_code); the cause wording localizes from it. */
+  errorCode?: string;
+  /** The final failure's detail (request_end.error_message), rendered in the gave-up state. */
+  errorMessage?: string;
   /**
    * The engine's planned wait before the next attempt (request_end.retry_in_ms; absent
    * when the event carried none — old Traces, or a final failure). Waits can reach the
@@ -283,7 +321,8 @@ export interface McpToolSummary {
 /** One server's connect outcome (from the end payload), backing the row's per-server groups. */
 export interface McpServerOutcome {
   server: string;
-  status: McpConnectStatus;
+  /** `completed` / `fatal`; legacy Traces spell the failure `failed`. */
+  status: StopReason;
   /** That server's own connect + discovery time (the payload's duration_ms). */
   durationMs: number;
   /** Discovered tool count (present on a completed connect). */
@@ -345,12 +384,14 @@ export interface TaskStatsItem {
 export type ChatItem =
   | UserTextItem
   | UserSteeringItem
+  | BackgroundNoticeItem
   | UserImageItem
   | AssistantTextItem
   | ThinkingItem
   | ToolCallItem
   | SubagentItem
   | AbortItem
+  | LlmErrorItem
   | ReconnectItem
   | CompactionItem
   | McpConnectItem
@@ -447,20 +488,6 @@ export interface StreamModel {
    * dispatches it via `void executeOne`, which doesn't block the streaming loop — execution happens between two Requests).
    */
   openApprovalWaitMs: number;
-  /**
-   * Timestamp (ms) of the most recent auth failure: a main-session `request_end` with
-   * status "auth" arrived on THIS model (a subagent's request events route to the nested
-   * model and never mark the parent). Only the model REFERENCE is fixed at Session
-   * creation — credentials are read from the current Project config on load — so this is
-   * recoverable: the composer disables itself and points at the Models page. Cleared by a
-   * later completed main-session request_end (live and history replay take the same path,
-   * so a Trace with an auth failure followed by a completed request does not resurrect the
-   * state on reload), by a `credentials_updated` server event, or by an explicit user
-   * retry/dismiss; a timestamp (not a boolean) so the composer gate can compare it against
-   * the Project's credentials-updated time after a reload (see isModelAuthDead). Re-arms
-   * on the next auth failure.
-   */
-  lastAuthFailureMs: number | null;
   /** Task segmentation state. */
   taskOpen: boolean;
   /**
@@ -546,7 +573,6 @@ function newModel(nested: boolean, localDecisions: Set<string>): StreamModel {
     lastTsMs: 0,
     openRequestBeginMs: null,
     openApprovalWaitMs: 0,
-    lastAuthFailureMs: null,
     taskOpen: false,
     taskStartLocalMs: 0,
     taskFirstTsMs: 0,
@@ -561,23 +587,6 @@ function newModel(nested: boolean, localDecisions: Set<string>): StreamModel {
 /** Create the main-session model; localDecisions can inject a shared set (persisting across models when a resync rebuild swaps in a new one). */
 export function createStreamModel(localDecisions: Set<string> = new Set()): StreamModel {
   return newModel(false, localDecisions);
-}
-
-/**
- * Composer auth-dead gate: an auth failure is on record AND the Project's credentials have
- * not been updated since. `credentialsUpdatedMs` is the models response's `updatedAt`
- * (null = unknown / not loaded — nothing proves the credential changed, so the notice
- * stays). The time comparison is what keeps a reload honest: after a key fix the Trace
- * still ends with the auth-failed request, but that failure predates the credential update, so the
- * composer stays alive; a wrong replacement key re-arms naturally because its own auth
- * abort is newer than the update.
- */
-export function isModelAuthDead(
-  lastAuthFailureMs: number | null,
-  credentialsUpdatedMs: number | null,
-): boolean {
-  if (lastAuthFailureMs === null) return false;
-  return credentialsUpdatedMs === null || lastAuthFailureMs > credentialsUpdatedMs;
 }
 
 function nextId(model: StreamModel): number {
@@ -1147,6 +1156,37 @@ function handleComplete(
           model.openSteering = item;
           return;
         }
+        // A background completion notice ([background_task_done] block) injected into the
+        // running Task: same exclusion as steering — rendered inside the Task as the
+        // completion banner, never a Task starter, so no stats row is flushed at the
+        // injection point. Two ways to recognize the injection:
+        //   - the delivery stamp (`delivery: steering`), written by the engine's drain;
+        //   - POSITION, for notices written by a pre-stamp core (0.2.4 traces): a Task can
+        //     never end between a turn's paired tool outputs and the continuation request,
+        //     so a notice arriving while this turn's tool outputs are still owed to the
+        //     model (turnToolOutputs) is provably in-task even without the stamp. This is
+        //     the same rule trace analysis has always applied (a tool-calling request
+        //     forces a continuation), so the two pages agree on legacy data.
+        // An unstamped notice after a NO-tool final turn still falls through to the
+        // user_text branch below: there an idle-launched notice task is genuinely possible
+        // and position cannot tell the two apart — only the stamp can, and new cores write
+        // it.
+        const notice = parseBackgroundTaskDoneMessage(p.text);
+        if (notice !== null && (notice.done.delivery === "steering" || model.turnToolOutputs)) {
+          // A wrap-up compaction may have settled the round early; an injected notice is
+          // exactly what keeps the Task going past it, so it opens the continuation's own
+          // round rather than joining a closed one (same rule as the steering chip above).
+          if (model.reopenTaskAtSteering && !model.taskOpen) startTask(model, timestamp, nowMs);
+          touchTask(model, timestamp);
+          const noticeMs = tsOf(timestamp);
+          model.items.push({
+            kind: "background_notice",
+            id: nextId(model),
+            text: p.text,
+            ...(noticeMs !== undefined ? { atMs: noticeMs } : {}),
+          });
+          return;
+        }
         // A complete text message on the main session's user side: starts a new Task.
         startTask(model, timestamp, nowMs);
         const atMs = tsOf(timestamp);
@@ -1363,10 +1403,10 @@ function closeExecutingToolCards(model: StreamModel): void {
 }
 
 /**
- * A tool_call that closed with a non-completed status (produced by a
- * timeout/malformed interrupt closure) was never dispatched for execution
- * and will never get a tool_call_output: settle the card by its closing
- * reason as soon as it arrives, so the execution timer doesn't keep spinning forever.
+ * A tool_call that closed with a non-completed status (produced by an interrupt closure)
+ * was never dispatched for execution and will never get a tool_call_output: settle the
+ * card by its closing reason as soon as it arrives, so the execution timer doesn't keep
+ * spinning forever.
  */
 function settleUndispatchedCall(card: ToolCallItem): void {
   if (!card.callStopReason || card.callStopReason === "completed" || card.outputComplete) return;
@@ -1488,6 +1528,8 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       const waiting = findLastWaitingReconnect(model);
       if (waiting) waiting.gaveUp = true;
       const item: AbortItem = { kind: "abort", id: nextId(model) };
+      if (typeof p.error_code === "string") item.errorCode = p.error_code;
+      if (typeof p.error_message === "string") item.errorMessage = p.error_message;
       if (p.reason != null) item.reason = p.reason;
       model.items.push(item);
       return;
@@ -1519,14 +1561,20 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       item.toolCount = p.results.reduce((sum, r) => sum + (r.tools ?? 0), 0);
       // Per-server outcomes back the row's server groups (error details live there, not
       // on the header line).
-      item.results = p.results.map((r) => ({
-        server: r.server,
-        status: r.status,
-        durationMs: r.duration_ms,
-        ...(r.tools !== undefined ? { tools: r.tools } : {}),
-        ...(r.error !== undefined ? { error: r.error.slice(0, 500) } : {}),
-      }));
-      const failedResults = p.results.filter((r) => r.status === "failed");
+      item.results = p.results.map((r) => {
+        // Live results carry the unified pair; legacy Traces spell the detail `error`.
+        const detail = r.error_message ?? (r as { error?: string }).error;
+        return {
+          server: r.server,
+          status: r.status,
+          durationMs: r.duration_ms,
+          ...(r.tools !== undefined ? { tools: r.tools } : {}),
+          ...(detail !== undefined ? { error: detail.slice(0, 500) } : {}),
+        };
+      });
+      const failedResults = p.results.filter(
+        (r) => r.status === "fatal" || (r.status as string) === "failed",
+      );
       if (failedResults.length > 0) item.failed = failedResults.map((r) => r.server);
       return;
     }
@@ -1610,25 +1658,13 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       return;
     }
     case "request_end": {
-      // failed/timeout/malformed: the engine retries carrying the content already
+      // A retryable end: the engine retries carrying the content already
       // produced, rendering a retry hint (with the attempt number); the terminal
       // statuses aren't rendered (Request duration is covered by Trace performance
       // analysis) and reset the consecutive-failure count. request events
       // within a compaction range (only visible during history rebuild)
       // are neither rendered nor counted — the compaction process only exposes the compaction event pair to the Human.
       if (model.stats.compactionActive) return;
-      // Credentials lifecycle rides on the request's own terminal status:
-      // - "auth" records WHEN the failure happened (the event's envelope time), so the
-      //   composer gate can compare it against the Project's credentials-updated time
-      //   (see lastAuthFailureMs / isModelAuthDead). Origin routing already sends a
-      //   subagent's request events to the nested model, so reaching here with "auth"
-      //   always means the failure belongs to THIS session.
-      // - a completed request proves the credentials work (again): the auth-dead state
-      //   must not outlive a success. Live and history replay share this path, so a Trace
-      //   with an auth failure followed by a completed request does not resurrect the dead
-      //   composer on reload.
-      if (p.status === "auth") model.lastAuthFailureMs = tsMs ?? Date.now();
-      if (p.status === "completed") model.lastAuthFailureMs = null;
       // Pairs with request_begin to compute this Request's wall-clock
       // duration, deducts the human approval wait, and adds the result to
       // this Task's LLM time (for output TPS) — this duration includes tool
@@ -1650,10 +1686,19 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       // round, so the pending compaction usage never reaches this step and is discarded at finalization (not counted into this round).
       if (tsMs !== undefined) model.taskLastReqEndMs = tsMs;
       commitPendingCompaction(model.stats);
-      // Every status the engine reconnects on gets an item, `failed` included: it is retried
-      // exactly like the other two, so leaving it out would stall the session for the whole
-      // ladder with nothing on screen and no give-up control. It would also reset the counter
-      // mid-ladder, renumbering a mixed timeout → failed → timeout run back to retry #1.
+      // A fatal end stops the run — no abort event follows; this request_end is the
+      // terminal record, rendered as an error banner.
+      if (p.status === "fatal") {
+        const item: LlmErrorItem = { kind: "llm_error", id: nextId(model) };
+        if (typeof p.error_code === "string") item.errorCode = p.error_code;
+        if (typeof p.error_message === "string" && p.error_message) {
+          item.errorMessage = p.error_message;
+        }
+        model.items.push(item);
+        return;
+      }
+      // Every status the engine reconnects on gets an item — leaving one out would stall
+      // the session for the whole ladder with nothing on screen and no give-up control.
       if (isReconnectStatus(p.status)) {
         const item: ReconnectItem = {
           kind: "reconnect",
@@ -1664,11 +1709,21 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
           attempt: p.attempt ?? 1,
           retrying: false,
         };
+        if (typeof p.error_code === "string") item.errorCode = p.error_code;
+        if (typeof p.error_message === "string" && p.error_message) {
+          item.errorMessage = p.error_message;
+        }
         // The engine announced its planned backoff: keep it with the CLIENT arrival time
         // as the countdown anchor (skew-free — see ReconnectItem.arrivedAtMs).
         if (typeof p.retry_in_ms === "number" && p.retry_in_ms > 0) {
           item.plannedDelayMs = p.retry_in_ms;
           item.arrivedAtMs = nowMs ?? Date.now();
+        } else if (p.status === "retryable") {
+          // A live-protocol retryable without a planned wait is the ladder giving up —
+          // the run ends on it (an abort follows only in legacy Traces). The legacy
+          // spellings never self-settle here: their era stamped no retry_in_ms mid-ladder,
+          // and their exhaustion is marked by the abort event instead.
+          item.gaveUp = true;
         }
         model.items.push(item);
       }

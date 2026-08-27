@@ -60,7 +60,7 @@ import {
   type ProjectConfig,
   type SystemConfig,
 } from "../src/state/index.js";
-import { SUBAGENT_THINKING_LEVELS } from "../src/interfaces.js";
+import { SUBAGENT_THINKING_LEVELS } from "../src/interfaces/index.js";
 import { DEFAULT_COMMAND_POLICY_RULES } from "../src/state/command-policy-defaults.js";
 import { sessionEnvironment } from "../src/internal/session-support.js";
 
@@ -253,10 +253,8 @@ describe("buildToolConfig", () => {
       "write_file",
       "exec_command",
       "input_command",
-      "kill_command",
       "run_subagent",
       "input_subagent",
-      "kill_subagent",
       "read_image",
       "describe_image",
     ]);
@@ -383,10 +381,8 @@ describe("buildToolConfig", () => {
       "write_file",
       "exec_command",
       "input_command",
-      "kill_command",
       "run_subagent",
       "input_subagent",
-      "kill_subagent",
       "read_image",
       "describe_image",
     ]);
@@ -633,7 +629,9 @@ describe("assembleSystemPrompt", () => {
       modelId: "deepseek-v4-pro",
       platform: "darwin",
       osVersion: "Darwin 25.0.0",
-      shell: "zsh",
+      // The shell a pre-{{SHELL}} template already implies, so the compatibility fallback
+      // stays out of this assertion; its own cases live in their describe block below.
+      shell: "bash",
       date: "2026-06-30",
     });
     expect(prompt).toBe("base prompt");
@@ -732,9 +730,10 @@ describe("assembleSystemPrompt", () => {
     expect(prompt.indexOf("Model ID:")).toBeLessThan(prompt.indexOf("Session ID:"));
   });
 
-  // The win32 Shell-line fallback for pre-{{SHELL}} templates (system_config.yaml is baked at
-  // Agent creation and never auto-upgraded). Removable together with `withShellLineFallback`
-  // once pre-{{SHELL}} Agent configs are no longer expected in the wild.
+  // The Shell-line fallback for pre-{{SHELL}} templates (system_config.yaml is baked at Agent
+  // creation and never auto-upgraded), gated on the resolved shell rather than the platform.
+  // Removable together with `withShellLineFallback` once pre-{{SHELL}} Agent configs are no
+  // longer expected in the wild.
   describe("Shell line fallback for templates without {{SHELL}}", () => {
     const stateWithPrompt = (system_prompt: string) => ({
       root: tmpRoot,
@@ -786,19 +785,21 @@ describe("assembleSystemPrompt", () => {
       expect(prompt.split("- Shell: pwsh").length - 1).toBe(1);
     });
 
-    it("keeps POSIX output byte-identical (no injected line)", () => {
-      for (const platform of ["linux", "darwin"]) {
+    // Bash is what a pre-{{SHELL}} template already implies, so a resolved bash needs no line
+    // — on every platform, Windows included.
+    it("keeps the prompt byte-identical wherever bash resolved (no injected line)", () => {
+      for (const platform of ["linux", "darwin", "win32"]) {
         const prompt = assembleSystemPrompt(stateWithPrompt(preShellTemplate), {
           ...envFor(platform),
           shell: "bash",
-          osVersion: "Linux 6.1.0",
+          osVersion: "OS 1.0",
         });
         expect(prompt).toBe(
           [
             "intro",
             "# Environment",
             `- Platform: ${platform}`,
-            "- OS Version: Linux 6.1.0",
+            "- OS Version: OS 1.0",
             "- Date: 2026-07-27",
             "",
             "# Tail section",
@@ -806,6 +807,35 @@ describe("assembleSystemPrompt", () => {
           ].join("\n"),
         );
         expect(prompt).not.toContain("Shell:");
+      }
+    });
+
+    // Shell resolution falls back to zsh / dash / sh on a POSIX box without bash, and a
+    // pre-{{SHELL}} template would otherwise leave the model writing bash syntax into it.
+    it("injects the line on POSIX when the resolved shell is not bash", () => {
+      for (const { platform, shell } of [
+        { platform: "linux", shell: "dash" },
+        { platform: "darwin", shell: "zsh" },
+      ]) {
+        const prompt = assembleSystemPrompt(stateWithPrompt(preShellTemplate), {
+          ...envFor(platform),
+          shell,
+          osVersion: "OS 1.0",
+        });
+        expect(prompt).toBe(
+          [
+            "intro",
+            "# Environment",
+            `- Shell: ${shell}`,
+            `- Platform: ${platform}`,
+            "- OS Version: OS 1.0",
+            "- Date: 2026-07-27",
+            "",
+            "# Tail section",
+            "tail",
+          ].join("\n"),
+        );
+        expect(prompt.split(`- Shell: ${shell}`).length - 1).toBe(1);
       }
     });
 

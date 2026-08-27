@@ -1,13 +1,20 @@
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
+  adminSymlinkAppleScript,
   appImageBootstrapJs,
   appImageWrapperScript,
+  appleScriptString,
   CLI_ENTRY_RELPATH,
   cliInstallKind,
+  LAUNCHER_MARKER,
   LINUX_EXECUTABLE,
   MAC_EXECUTABLE,
   mergeWindowsUserPath,
   posixLauncherScript,
+  shellQuote,
   WIN_EXECUTABLE,
   windowsLauncherScript,
 } from "../src/launcher.js";
@@ -110,6 +117,74 @@ describe("appImageBootstrapJs", () => {
   });
 });
 
+describe("LAUNCHER_MARKER", () => {
+  it("appears in every generated launcher", () => {
+    // cli-link.ts recognises a `penguin` this app wrote by this text, and skips anything
+    // that lacks it. A launcher that stopped carrying it would be classified as somebody
+    // else's command and the install would silently stop repairing itself.
+    for (const script of [
+      posixLauncherScript(),
+      windowsLauncherScript(),
+      appImageWrapperScript("/home/user/Apps/penguin.AppImage"),
+    ]) {
+      expect(script).toContain(LAUNCHER_MARKER);
+    }
+  });
+});
+
+describe("shellQuote", () => {
+  it("wraps a plain value in single quotes", () => {
+    expect(shellQuote("/Applications/PenguinHarness.app")).toBe(
+      "'/Applications/PenguinHarness.app'",
+    );
+  });
+
+  it("splices embedded single quotes so the word never closes early", () => {
+    expect(shellQuote("/Users/anne/Anne's Apps")).toBe(`'/Users/anne/Anne'\\''s Apps'`);
+  });
+
+  it("leaves shell metacharacters inert inside the quotes", () => {
+    expect(shellQuote('a b;$(id)`x`&|>"')).toBe(`'a b;$(id)\`x\`&|>"'`);
+  });
+});
+
+describe("appleScriptString", () => {
+  it("escapes backslashes and double quotes", () => {
+    expect(appleScriptString(`say "hi" \\ bye`)).toBe(`"say \\"hi\\" \\\\ bye"`);
+  });
+});
+
+describe("adminSymlinkAppleScript", () => {
+  const target = "/Applications/PenguinHarness.app/Contents/Resources/app/bin/penguin";
+  const link = "/usr/local/bin/penguin";
+
+  /** The shell command osascript would run: the AppleScript literal, unescaped. */
+  function shellCommandOf(script: string): string {
+    const m = /^do shell script "(.*)" with administrator privileges$/s.exec(script);
+    expect(m).not.toBeNull();
+    return m![1]!.replace(/\\(.)/g, "$1");
+  }
+
+  it("creates the link directory and links the bundled launcher", () => {
+    expect(adminSymlinkAppleScript(target, link)).toBe(
+      `do shell script "mkdir -p '/usr/local/bin' && ln -sf '${target}' '${link}'"` +
+        " with administrator privileges",
+    );
+  });
+
+  it("keeps an apostrophe in the bundle path inside its shell word", () => {
+    // What a user gets by keeping the app in a folder named with an apostrophe — and what
+    // an attacker gets to write if the two escapers are not applied, since this command
+    // runs with administrator privileges.
+    const evil = "/Users/anne/Anne's Apps'; touch /tmp/pwned; '/PenguinHarness.app/bin/penguin";
+    const command = shellCommandOf(adminSymlinkAppleScript(evil, link));
+    expect(command).toBe(`mkdir -p '/usr/local/bin' && ln -sf ${shellQuote(evil)} '${link}'`);
+    // The injected segment survives only as literal text inside the quoted word.
+    expect(command).not.toContain("&& touch");
+    expect(command).not.toContain("; touch /tmp/pwned; '/PenguinHarness");
+  });
+});
+
 describe("mergeWindowsUserPath", () => {
   const bin = "C:\\Program Files\\PenguinHarness\\resources\\app\\bin";
 
@@ -166,5 +241,65 @@ describe("cliInstallKind", () => {
     expect(
       cliInstallKind({ packaged: true, platform: "linux", appImagePath: "/x/y.AppImage" }),
     ).toBe("appimage");
+  });
+});
+
+/**
+ * The couplings that make an installed desktop app carry a working `penguin`. They span
+ * three files nothing else compares: the constants above, the packaging decisions in
+ * electron-builder.yml, and the deb postinst templates. Each is load-bearing at run time
+ * and silent at build time — a packed app with no CLI in it builds, signs and ships
+ * exactly like one that has it (scripts/verify-packed-cli.mjs checks the produced tree).
+ */
+describe("packaged CLI", () => {
+  const pkgDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+  const read = (rel: string): string =>
+    fs.readFileSync(path.join(pkgDir, ...rel.split("/")), "utf8");
+  const builderConfig = read("electron-builder.yml");
+  /** The deb link target, spelled identically by the install and remove templates. */
+  const debTarget = "/opt/${sanitizedProductName}/resources/app/bin/penguin";
+
+  it("ships bin/, which is the only reason <app>/bin/penguin exists in an install", () => {
+    expect(builderConfig).toContain("- bin/**/*");
+  });
+
+  it("keeps asar off — inside an archive there is no bin/penguin to exec", () => {
+    expect(builderConfig).toMatch(/^asar: false$/m);
+  });
+
+  it("names the runtime the launchers exec", () => {
+    // posixLauncherScript and windowsLauncherScript hardcode these three names; they come
+    // from productName (macOS bundle executable and the .exe) and linux.executableName.
+    expect(builderConfig).toMatch(new RegExp(`^productName: ${MAC_EXECUTABLE}$`, "m"));
+    expect(WIN_EXECUTABLE).toBe(`${MAC_EXECUTABLE}.exe`);
+    expect(builderConfig).toMatch(new RegExp(`^ {2}executableName: ${LINUX_EXECUTABLE}$`, "m"));
+  });
+
+  it("bundles the CLI at the entry the launchers run", () => {
+    const entry = CLI_ENTRY_RELPATH.replace(/^dist\//, "").replace(/\.js$/, "");
+    expect(read("tsup.config.ts")).toMatch(
+      new RegExp(`^\\s*"?${entry}"?: "\\.\\./cli/dist/penguin\\.js",$`, "m"),
+    );
+  });
+
+  it("deb creates /usr/bin/penguin itself: it is the one form the shell does not install", () => {
+    // cliInstallKind returns null for it, so nothing else would ever put the CLI on PATH.
+    expect(cliInstallKind({ packaged: true, platform: "linux", appImagePath: null })).toBeNull();
+    expect(builderConfig).toMatch(
+      /^deb:\n(?: .*\n|#.*\n)*? {2}afterInstall: build\/linux\/after-install\.tpl$/m,
+    );
+    const afterInstall = read("build/linux/after-install.tpl");
+    expect(afterInstall).toContain(`ln -sf '${debTarget}' '/usr/bin/penguin'`);
+    // Never over a real file of that name — a CLI installed by install.sh, say.
+    expect(afterInstall).toContain(`if [ ! -e '/usr/bin/penguin' ] || [ -L '/usr/bin/penguin' ]`);
+  });
+
+  it("deb removes only the link it made", () => {
+    expect(builderConfig).toMatch(
+      /^deb:\n(?: .*\n|#.*\n)*? {2}afterRemove: build\/linux\/after-remove\.tpl$/m,
+    );
+    const afterRemove = read("build/linux/after-remove.tpl");
+    expect(afterRemove).toContain(`[ "\`readlink '/usr/bin/penguin'\`" = '${debTarget}' ]`);
+    expect(afterRemove).toContain("rm -f '/usr/bin/penguin'");
   });
 });

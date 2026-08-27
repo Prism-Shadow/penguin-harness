@@ -19,6 +19,7 @@ import {
   agentsMdPath,
   BUILTIN_AGENT_IDS,
   createAgent as coreCreateAgent,
+  installSkill,
   isValidId,
   loadAgentVault,
   memoryDir,
@@ -29,7 +30,10 @@ import {
 import type { AgentsRepo } from "../db/repos/agents.js";
 import { SEMANTIC_ID_PATTERN, SEMANTIC_ID_RULE } from "./ids.js";
 import type { AgentConfigService } from "./agent-config-service.js";
+import type { SnapshotService } from "./snapshot-service.js";
 import { isTopicFileName } from "./memory-service.js";
+import { resolveLibrarySkills } from "./skill-library.js";
+import { resolveDirectorySkills } from "./directory-skills.js";
 
 export interface AgentListItem {
   agentId: string;
@@ -59,6 +63,7 @@ export class AgentService {
     private readonly root: string,
     private readonly agents: AgentsRepo,
     private readonly agentConfig: AgentConfigService,
+    private readonly snapshots: SnapshotService,
   ) {}
 
   /** Union of DB index ∪ directory scan; unmanaged directory Agents are backfilled into the DB. */
@@ -150,7 +155,8 @@ export class AgentService {
     }
     const present = await Promise.all(
       dirents
-        .filter((d) => d.isDirectory())
+        // Dot-prefixed directories are install staging, never a Skill (a Skill name has no dot).
+        .filter((d) => d.isDirectory() && !d.name.startsWith("."))
         .map(async (d) => {
           try {
             await fs.access(path.join(base, d.name, "SKILL.md"));
@@ -230,19 +236,40 @@ export class AgentService {
    * Create an Agent: the id is chosen by the creator (a semantic id, checked for
    * duplicates against both the DB and the directory within the Project — a 409
    * if taken, which naturally also blocks built-in Agent ids) → initialize State →
-   * write name/description (name defaults to the id).
+   * write name/description (name defaults to the id) → install the seed Skills.
+   *
+   * `skillNames` are library Skill names picked at creation; they go through the same
+   * `installSkill` writer the Skills tab uses, inside the same cleanup window as the rest of
+   * initialization, so an Agent never survives with only part of its picked set. They are
+   * resolved before anything is created, so an unknown name creates no directory at all.
+   *
+   * `archive` is an exported Agent State snapshot package: the fresh Agent is seeded from
+   * it instead of the default template (explicit name/description override the package's
+   * values, absent ones keep them — no id fallback). Mutually exclusive with skill seeding:
+   * the package carries its own skills. An invalid package fails the whole creation inside
+   * the same cleanup window, leaving no empty Agent behind.
    */
   async createAgent(
     projectId: string,
     agentId: string,
     name?: string,
     description?: string,
+    skillNames?: readonly string[],
+    directory?: { path: string; names: readonly string[] },
+    archive?: Buffer,
   ): Promise<AgentListItem> {
     if (!SEMANTIC_ID_PATTERN.test(agentId)) {
       throw new HttpError(
         400,
         "invalid_agent_id",
         `Agent id must be 2–64 characters: ${SEMANTIC_ID_RULE}.`,
+      );
+    }
+    if (archive !== undefined && (skillNames?.length || directory)) {
+      throw new HttpError(
+        400,
+        "snapshot_with_skills",
+        "Snapshot initialization and skill seeding are mutually exclusive: the package carries its own skills.",
       );
     }
     const taken =
@@ -255,11 +282,43 @@ export class AgentService {
       throw new HttpError(409, "agent_exists", `Agent id is already taken: ${agentId}.`);
     }
     const displayName = name ?? agentId;
+    // Both sources are resolved before a single file is written, so a name that has since left the
+    // library or the directory fails while the Agent still does not exist. Directory Skills are
+    // installed after the library ones and so win a name collision: the user picked that directory
+    // for this Agent specifically, which is a narrower intent than "install the built-in one".
+    const librarySeed = resolveLibrarySkills(skillNames ?? []);
+    const directorySeed = directory
+      ? await resolveDirectorySkills(directory.path, directory.names)
+      : [];
+    const seedSkills = [...librarySeed, ...directorySeed];
     await coreCreateAgent({ root: this.root, projectId, agentId });
     try {
-      await this.agentConfig.updateConfig(projectId, agentId, {
-        config: { name: displayName, ...(description !== undefined ? { description } : {}) },
-      });
+      if (archive !== undefined) {
+        // Seed the fresh state from the snapshot package. No pre-import snapshot and no
+        // version confirmation: both guards protect existing State, and this Agent has
+        // none yet — its template state is not worth preserving.
+        await this.snapshots.importArchive(projectId, agentId, archive, {
+          confirm: true,
+          preSnapshot: false,
+        });
+        // Explicit name/description override the package's values; absent ones keep them.
+        // No id fallback here: the package is the identity being copied in.
+        if (name !== undefined || description !== undefined) {
+          await this.agentConfig.updateConfig(projectId, agentId, {
+            config: {
+              ...(name !== undefined ? { name } : {}),
+              ...(description !== undefined ? { description } : {}),
+            },
+          });
+        }
+      } else {
+        await this.agentConfig.updateConfig(projectId, agentId, {
+          config: { name: displayName, ...(description !== undefined ? { description } : {}) },
+        });
+      }
+      for (const skill of seedSkills) {
+        await installSkill(this.root, projectId, agentId, skill);
+      }
     } catch (err) {
       // If initialization fails partway through, clean up the directory: an orphaned
       // directory would make retries with this agent id 409 forever.
@@ -270,22 +329,27 @@ export class AgentService {
     }
     const createdAt = new Date().toISOString();
     this.agents.insertOrIgnore({ projectId, agentId, createdAt });
-    // The init template ships with a default toolset and version number; read back the actual values.
+    // Read back the actual values: the init template ships a default toolset and version
+    // number, and a snapshot seed brings the package's own name, description, version,
+    // skills, schedules and memory.
     const meta = await this.agentConfig.readCardMeta(projectId, agentId);
+    const cardName = archive !== undefined ? (meta.name ?? agentId) : displayName;
+    const cardDescription = archive !== undefined ? meta.description : description;
     return {
       agentId,
-      name: displayName,
-      ...(description !== undefined ? { description } : {}),
+      name: cardName,
+      ...(cardDescription !== undefined ? { description: cardDescription } : {}),
       createdAt,
       updatedAt: createdAt,
       toolCount: meta.toolCount,
       version: meta.version,
       kernelOutdated: meta.kernelOutdated,
+      // The vault never travels in a snapshot, so this is 0 either way; the other counts
+      // are real reads because a package may carry any of them.
       vaultKeyCount: 0,
-      scheduleCount: 0,
-      // Read the real count: coreCreateAgent seeds the default skill set for default_agent.
+      scheduleCount: await this.scheduleCount(projectId, agentId),
       skillCount: await this.skillCount(projectId, agentId),
-      memoryCount: 0,
+      memoryCount: await this.memoryCount(projectId, agentId),
     };
   }
 }

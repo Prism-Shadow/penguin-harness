@@ -4,6 +4,8 @@
  *
  * No validation library: each helper checks one basic shape, throwing a 400 HttpError on failure.
  */
+import fs from "node:fs/promises";
+import path from "node:path";
 import type { Context } from "hono";
 import { isValidId } from "@prismshadow/penguin-core";
 import { HttpError } from "./errors.js";
@@ -40,28 +42,49 @@ export function requireValidId(c: Context, name: string): string {
   return v;
 }
 
+/**
+ * Parse a decimal non-negative integer, or null when the text is not exactly one.
+ *
+ * Digits only: Number.parseInt accepts trailing garbage ("12abc" -> 12, "1e3" -> 1), so a
+ * caller that only range-checks the result silently honours a request it never validated.
+ * isSafeInteger (not isInteger) additionally rejects overlong runs like
+ * "99999999999999999999", which parse to an imprecise float (1e20).
+ */
+function parseNonNegativeInt(raw: string): number | null {
+  if (!/^\d+$/.test(raw)) return null;
+  const v = Number.parseInt(raw, 10);
+  return Number.isSafeInteger(v) ? v : null;
+}
+
 /** Parse a positive-integer path parameter (e.g. Trace file index). */
 export function positiveIntParam(c: Context, name: string): number {
-  // Match digits only: Number.parseInt would accept trailing garbage ("12abc" -> 12).
-  const raw = pathParam(c, name);
-  if (!/^\d+$/.test(raw)) throw badRequest(`${name} must be a positive integer.`);
-  const v = Number.parseInt(raw, 10);
-  // isSafeInteger (not isInteger) also rejects overlong indices like "99999999999999999999"
-  // that would otherwise parse to an imprecise float (1e20).
-  if (!Number.isSafeInteger(v) || v < 1) throw badRequest(`${name} must be a positive integer.`);
+  const v = parseNonNegativeInt(pathParam(c, name));
+  if (v === null || v < 1) throw badRequest(`${name} must be a positive integer.`);
+  return v;
+}
+
+/** Parse an already-defaulted offset query param (>= 0). */
+function offsetQuery(raw: string): number {
+  const v = parseNonNegativeInt(raw);
+  if (v === null) throw badRequest("offset must be a non-negative integer.");
+  return v;
+}
+
+/** Parse an already-defaulted limit query param (1-1000). */
+function limitQuery(raw: string): number {
+  const v = parseNonNegativeInt(raw);
+  if (v === null || v < 1 || v > 1000) {
+    throw badRequest("limit must be an integer between 1 and 1000.");
+  }
   return v;
 }
 
 /** Parse Trace pagination query params: offset >= 0 (default 0), limit 1-1000 (default 200). */
 export function paginationQuery(c: Context): { offset: number; limit: number } {
-  const offset = Number.parseInt(c.req.query("offset") ?? "0", 10);
-  const limit = Number.parseInt(c.req.query("limit") ?? "200", 10);
-  if (!Number.isInteger(offset) || offset < 0)
-    throw badRequest("offset must be a non-negative integer.");
-  if (!Number.isInteger(limit) || limit < 1 || limit > 1000) {
-    throw badRequest("limit must be an integer between 1 and 1000.");
-  }
-  return { offset, limit };
+  return {
+    offset: offsetQuery(c.req.query("offset") ?? "0"),
+    limit: limitQuery(c.req.query("limit") ?? "200"),
+  };
 }
 
 /**
@@ -75,14 +98,8 @@ export function optionalPagingQuery(c: Context): { offset: number; limit: number
   const rawOffset = c.req.query("offset");
   if (rawLimit === undefined && rawOffset === undefined) return null;
   if (rawLimit === undefined) throw badRequest("offset requires limit.");
-  const limit = Number.parseInt(rawLimit, 10);
-  if (!Number.isInteger(limit) || limit < 1 || limit > 1000) {
-    throw badRequest("limit must be an integer between 1 and 1000.");
-  }
-  const offset = Number.parseInt(rawOffset ?? "0", 10);
-  if (!Number.isInteger(offset) || offset < 0) {
-    throw badRequest("offset must be a non-negative integer.");
-  }
+  const limit = limitQuery(rawLimit);
+  const offset = offsetQuery(rawOffset ?? "0");
   return { offset, limit };
 }
 
@@ -135,6 +152,65 @@ export function optionalString(
 ): string | undefined {
   if (obj[key] === undefined) return undefined;
   return requireString(obj, key, rule);
+}
+
+/**
+ * Optional array-of-strings body field: absent (or null) yields undefined, anything that is not
+ * an array of non-empty strings is a 400. The per-item message carries the index, so a caller
+ * sending one bad entry in a long list is told which one.
+ */
+export function optionalStringArray(
+  obj: Record<string, unknown>,
+  key: string,
+  label = key,
+): string[] | undefined {
+  const v = obj[key];
+  if (v === undefined || v === null) return undefined;
+  if (!Array.isArray(v)) throw badRequest(`${label} must be an array of strings.`);
+  return v.map((item, i) => {
+    if (typeof item !== "string" || item.length === 0) {
+      throw badRequest(`${label}[${i}] must be a non-empty string.`);
+    }
+    return item;
+  });
+}
+
+/**
+ * Admits a client-supplied filesystem path for a Project-scoped route and returns its realpath:
+ * absolute, existing, and a directory. Shared by every route that takes a path from the client —
+ * the `dirs` browser, Skill discovery, and Agent creation's `skillsDirectory` — so the three
+ * cannot drift on what a valid path is or on which error code says so. The caller must already
+ * have checked Project access.
+ */
+export async function requireProjectDir(raw: string | undefined): Promise<string> {
+  const target = raw?.trim();
+  if (!target || !path.isAbsolute(target)) {
+    throw new HttpError(400, "dir_not_absolute", "Directory must be an absolute path.");
+  }
+  let real: string;
+  try {
+    real = await fs.realpath(target);
+  } catch {
+    throw new HttpError(
+      404,
+      "dir_not_found",
+      `Directory does not exist or is inaccessible: ${target}.`,
+    );
+  }
+  // stat can still fail if the directory goes away between realpath and here; that is the same
+  // "not there" the caller is being told about, not a server fault.
+  const isDir = await fs.stat(real).then(
+    (s) => s.isDirectory(),
+    () => {
+      throw new HttpError(
+        404,
+        "dir_not_found",
+        `Directory does not exist or is inaccessible: ${target}.`,
+      );
+    },
+  );
+  if (!isDir) throw new HttpError(400, "not_a_dir", "Not a directory.");
+  return real;
 }
 
 export function requireEnum<T extends string>(

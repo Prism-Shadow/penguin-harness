@@ -22,14 +22,17 @@ import type {
   RecalledMessageResponse,
   ServerEvent,
   SessionCategory,
+  SessionContextResponse,
   SessionCreateResponse,
   SessionForkResponse,
   SessionProcessesResponse,
   SessionResponse,
   SessionsResponse,
+  SubagentMessageResponse,
   RetryNowResponse,
   TaskCreateResponse,
 } from "../../api/types.js";
+import { compactionThresholdFor } from "../../services/context-breakdown.js";
 import { decodeCursor } from "../../services/message-window.js";
 import type { MessagesPageRequest } from "../../services/trace-service.js";
 import { PREVIEW_TOKEN_TTL_MS, resolvePreviewTarget } from "../../services/preview-token.js";
@@ -155,6 +158,29 @@ function messagesPageQuery(c: Context): MessagesPageRequest | null {
     cursor,
     limit: rawLimit !== undefined ? pageLimit(rawLimit, "limit") : MESSAGES_PAGE_LIMIT_DEFAULT,
   };
+}
+
+/**
+ * Where compaction will fire for one Session, in tokens of occupancy: the Agent's configured
+ * threshold capped by what its model's context window leaves room for. Both halves are read from
+ * config rather than from a running engine, so an idle Session answers as well as a busy one.
+ *
+ * Fail-soft: this is one mark on a gauge, and an Agent deleted out from under a still-indexed
+ * Session (or a config that will not parse) must not take the whole composition down with it.
+ */
+async function sessionCompactionThreshold(deps: AppDeps, row: SessionRow): Promise<number | null> {
+  try {
+    const [agent, project] = await Promise.all([
+      deps.agentConfigService.getConfig(row.projectId, row.agentId),
+      deps.projectConfigService.loadConfig(row.projectId),
+    ]);
+    const entry = (project.models ?? []).find(
+      (m) => m.provider === row.provider && m.model_id === row.modelId,
+    );
+    return compactionThresholdFor(agent.config.compaction?.maxContextLength, entry?.context_window);
+  } catch {
+    return null;
+  }
 }
 
 /** Accepted `category` query values of the list endpoint (SessionCategory, spelled out for validation). */
@@ -403,10 +429,10 @@ function parseGoalField(body: Record<string, unknown>): { budget: number } | nul
 export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
-  // `cli=1` widens the list to CLI-created Sessions (Trace-directory discovery + adoption);
-  // the default serves web rows straight from the DB (see SessionService.listSessions).
+  // Serves every row straight from the DB, whichever client created it (legacy CLI-direct
+  // Traces were adopted by the boot sweep; see SessionService.listSessions).
   app.get("/", async (c) => {
-    // Id validity is checked before any path is constructed (FD-4: guards against agentId path traversal across Projects).
+    // Id validity is checked before any path is constructed: guards against agentId path traversal across Projects.
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
@@ -420,18 +446,23 @@ export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     if (rawCategory !== undefined && !SESSION_CATEGORIES.includes(rawCategory as SessionCategory)) {
       throw badRequest(`category must be one of ${SESSION_CATEGORIES.join(" / ")}.`);
     }
+    // Optional Workspace-group filter (applied with the category, before paging): a
+    // sidebar grouped by Workspace pages each group down its own stream, so one group's
+    // "load more" cannot consume the page a sibling was about to read.
+    const rawWorkspaceGroup = c.req.query("workspaceGroup");
+    if (rawWorkspaceGroup !== undefined && rawWorkspaceGroup.trim() === "") {
+      throw badRequest("workspaceGroup must not be empty.");
+    }
     const rawCounts = c.req.query("counts");
     if (rawCounts !== undefined && rawCounts !== "1") throw badRequest("counts only accepts 1.");
-    const rawCli = c.req.query("cli");
-    if (rawCli !== undefined && rawCli !== "1") throw badRequest("cli only accepts 1.");
     const { sessions, counts, workspaceCounts } = await deps.sessionService.listSessions(
       projectId,
       agentId,
       {
         ...(paging ? { paging } : {}),
         ...(rawCategory !== undefined ? { category: rawCategory as SessionCategory } : {}),
+        ...(rawWorkspaceGroup !== undefined ? { workspaceGroup: rawWorkspaceGroup } : {}),
         ...(rawCounts !== undefined ? { withCounts: true } : {}),
-        ...(rawCli !== undefined ? { includeCli: true } : {}),
       },
     );
     return c.json({
@@ -459,6 +490,9 @@ export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       );
     }
     const approvalMode = optionalEnum(body, "approvalMode", APPROVAL_MODES);
+    // Creating-client hint stored on the row ("cli" from the CLI; default "web").
+    // Informational provenance only — lists serve every row regardless.
+    const client = optionalEnum(body, "client", ["web", "cli"] as const);
     let workspace = optionalString(body, "workspace", { minLen: 1, label: "workspace" });
     if (workspace !== undefined) {
       // An explicitly specified Workspace must be an existing directory (never auto-created); reachability is determined by file permissions.
@@ -471,6 +505,7 @@ export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       ...(provider !== undefined ? { provider } : {}),
       ...(workspace !== undefined ? { workspace } : {}),
       ...(approvalMode !== undefined ? { approvalMode } : {}),
+      ...(client !== undefined ? { client } : {}),
     });
     return c.json({ session } satisfies SessionCreateResponse, 201);
   });
@@ -672,6 +707,10 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       );
       deps.sessionsRepo.deleteById(row.sessionId);
       deps.goalsRepo.deleteBySession(row.sessionId);
+      // A bound Session takes its messaging bindings with it: close the channel
+      // connection and drop every channel's row (no-op when unbound; bulk Agent/Project
+      // deletes are reconciled by the bridge's next start()).
+      deps.messaging.unbindSession(row.sessionId);
       // Drop the derived-origin entry along with the Session (bulk Agent/Project deletion
       // may leave stale entries; session ids are never reused, so they are never matched).
       deps.sessionSources.delete(row.sessionId);
@@ -815,22 +854,25 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
   app.get("/:sessionId/stream", (c) => {
     const row = resolveSession(c);
     const channel = deps.channels.get(row.sessionId);
-    // FD-1: the first event of every new subscription (including reconnects and resync
+    // The first event of every new subscription (including reconnects and resync
     // rebuilds) is always a snapshot of the current running state — the frontend treats
     // this as authoritative, eliminating input-area lockup or premature Task closure
     // caused by a stale running/idle in the list; followed by replaying all still-pending
     // approval requests.
     const pendingSteering = deps.manager.pendingSteeringOf(row.sessionId);
     const pendingFollowUps = deps.manager.pendingFollowUpsOf(row.sessionId);
+    const subagents = deps.manager.subagentsOf(row.sessionId);
     const initialEvents: ServerEvent[] = [
       {
         type: "task_state",
         state: deps.manager.statusOf(row.sessionId),
         queued: deps.manager.pendingFollowUpCount(row.sessionId),
-        // Undelivered steering and queued follow-ups ride the snapshot too, so the composer's
-        // queued hints (and what they say) survive a reload.
+        // Undelivered steering, queued follow-ups and live subagent children ride the
+        // snapshot too, so the composer's queued hints and the panel's running marks
+        // survive a reload.
         ...(pendingSteering.length > 0 ? { pendingSteering } : {}),
         ...(pendingFollowUps.length > 0 ? { pendingFollowUps } : {}),
+        ...(subagents.length > 0 ? { subagents } : {}),
       },
       ...deps.manager.pendingApprovals(row.sessionId).map((p) => ({
         type: "approval_request" as const,
@@ -968,9 +1010,61 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     return c.json((await recalledResponse(recall)) satisfies RecalledMessageResponse);
   });
 
+  // Panel message to one subagent child of this session (#272): a user input on the child,
+  // whatever its state — steering while it runs, a follow-up run while it is idle, a revival
+  // (resume-session semantics) when it was released — the same core channel input_subagent
+  // uses. The optional thinkingLevel pins only a round this message starts. The parent
+  // runtime loads on demand (the same get-or-resume path a task uses). 404 subagent_gone
+  // when the child's record does not exist or cannot be revived; 409 subagent_busy when the
+  // child cannot take the message right now.
+  app.post("/:sessionId/subagents/:childSessionId/message", async (c) => {
+    const row = resolveSession(c);
+    const body = await readJson(c);
+    const text = typeof body.text === "string" ? body.text.trim() : "";
+    if (!text) throw badRequest("text must carry the message.");
+    const thinkingLevel = optionalEnum(body, "thinkingLevel", THINKING_LEVELS);
+    const outcome = await deps.manager.sendToSubagent(
+      row.sessionId,
+      pathParam(c, "childSessionId"),
+      // The HTTP boundary is where a host's payload becomes OmniMessage — no sender, because
+      // a human typed this (the model's own dispatch through input_subagent stamps
+      // "parent_agent" on its side).
+      [userText(text)],
+      thinkingLevel,
+    );
+    if (outcome === "gone") {
+      throw new HttpError(
+        404,
+        "subagent_gone",
+        "This subagent session no longer exists and could not be revived.",
+      );
+    }
+    if (outcome === "busy") {
+      throw new HttpError(
+        409,
+        "subagent_busy",
+        "This subagent cannot take a message right now; try again in a moment.",
+      );
+    }
+    return c.json({ outcome } satisfies SubagentMessageResponse);
+  });
+
+  // Panel stop for one subagent child (#272): aborts the child's CURRENT run only — the
+  // session survives for steering and follow-ups — a subagent session is never destroyed.
+  // 202 aborted; 204 when the child is already idle or unknown (both
+  // are "nothing left to stop", and the panel treats them alike).
+  app.post("/:sessionId/subagents/:childSessionId/abort", (c) => {
+    const row = resolveSession(c);
+    const aborted = deps.manager.abortSubagentRun(row.sessionId, pathParam(c, "childSessionId"));
+    return c.body(null, aborted ? 202 : 204);
+  });
+
   // Recall a queued follow-up task back to the composer (#287): removes it from the queue
   // before it auto-starts and returns its original content (with the thinking level it was
-  // queued with). 409 not_pending once it already started (or the id is unknown).
+  // queued with). Every queued follow-up carries that content, whichever path queued it, so
+  // being in the queue is the whole condition. 409 follow_up_started once it already
+  // started (or the id is unknown) — steering's not_pending is a different sentence to the
+  // user and keeps its own code.
   app.delete("/:sessionId/follow-ups/:followUpId", async (c) => {
     const row = resolveSession(c);
     const { recall, thinkingLevel } = deps.manager.recallFollowUp(
@@ -1123,24 +1217,36 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       rel,
     );
     const disposition = download ? "attachment" : "inline";
-    // Same-origin XSS defense: html/svg inline previews are always returned as plain
-    // text (Workspace files may be Agent-generated and untrusted); downloads
-    // (attachment) keep the real content type, and sandboxed previews keep it under the
-    // CSP above. Paired with nosniff to prevent MIME sniffing from undoing this.
+    // Same-origin XSS defense: an inline HTML preview is always returned as plain text
+    // (Workspace files may be Agent-generated and untrusted); downloads (attachment) keep
+    // the real content type, and sandboxed previews keep it under the CSP above. Paired
+    // with nosniff to prevent MIME sniffing from undoing this.
+    // An SVG is a document AND an image. Downgrading it to text/plain made every <img> in a
+    // Markdown preview (and every .svg preview) a broken image, so it keeps its real type —
+    // an image never runs the SVG's scripts. What the type does re-open is a DIRECT
+    // navigation to this URL, where the browser would render it as a same-origin document:
+    // the sandbox CSP closes that (no allow-scripts, no allow-same-origin — opaque origin,
+    // no script execution), and CSP sandbox is ignored for a subresource, so the <img> path
+    // is unaffected.
+    const inertSvg = !download && !preview && scriptable === "svg";
     const effectiveType =
-      !download && scriptable && !preview ? "text/plain; charset=utf-8" : contentType;
+      !download && scriptable === "html" && !preview ? "text/plain; charset=utf-8" : contentType;
     return new Response(new Uint8Array(data), {
       status: 200,
       headers: {
         "Content-Type": effectiveType,
         "Content-Disposition": `${disposition}; filename*=UTF-8''${encodeURIComponent(fileName)}`,
         "X-Content-Type-Options": "nosniff",
+        // A Workspace file is whatever the Agent last wrote to that path. Letting a browser
+        // cache it by URL is how a re-read after a settled turn paints the previous version.
+        "Cache-Control": "no-store",
         ...(preview && scriptable
           ? {
               "Content-Security-Policy":
                 "sandbox allow-scripts allow-popups allow-modals allow-forms",
             }
           : {}),
+        ...(inertSvg ? { "Content-Security-Policy": "sandbox" } : {}),
       },
     });
   });
@@ -1229,6 +1335,25 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     }
     await deps.workspaceFiles.write(row.workspace, rel, data);
     return c.body(null, 204);
+  });
+
+  /**
+   * What the Session's current model context is made of, and where compaction will fire. Read on
+   * demand (the chat page's context ring opens its detail panel with it), not streamed: it
+   * re-reads the newest Trace shard on every call, and the figures are a snapshot rather than a
+   * live counter.
+   */
+  app.get("/:sessionId/context", async (c) => {
+    const row = resolveSession(c);
+    const parts = await deps.traceService.contextBreakdown(
+      row.projectId,
+      row.agentId,
+      row.sessionId,
+    );
+    return c.json({
+      ...parts,
+      compactionThreshold: await sessionCompactionThreshold(deps, row),
+    } satisfies SessionContextResponse);
   });
 
   app.get("/:sessionId/traces", async (c) => {

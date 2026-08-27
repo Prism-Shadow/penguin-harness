@@ -16,7 +16,7 @@ Frontmatter fields:
 | `short_description` / `short_description_zh` | UI labels for compact spots such as cards; not injected into the prompt |
 | `preinstall` | Optional; `false` keeps the Skill out of default_agent's preinstalled set — install it manually from the library |
 | `version` | Natural-number version, default 1 |
-| `updated` | Update date |
+| `updated` | Update timestamp, ISO 8601 UTC (`2026-07-17T09:00:00Z`) |
 
 ```md
 ---
@@ -25,7 +25,7 @@ description: One-line English description injected into the system prompt.
 short_description: Short UI label.
 short_description_zh: 简短的中文标签。
 version: 1
-updated: 2026-07-17
+updated: 2026-07-17T09:00:00Z
 ---
 
 # My Skill
@@ -33,7 +33,7 @@ updated: 2026-07-17
 Concrete steps, boundaries and acceptance criteria...
 ```
 
-Parsing is tolerant: only `key: value` scalar lines inside the first `---` block are recognized; a `version` that is not a natural number falls back to 1, and a missing `updated` defaults to empty. For `preinstall`, only the literal `false` is recognized.
+Parsing is tolerant: only `key: value` scalar lines inside the first `---` block are recognized; a `version` that is not a natural number falls back to 1, and a missing `updated` defaults to empty. For `preinstall`, only the literal `false` is recognized. `updated` is stored as written and never parsed — the UI renders it as a relative date — but the built-in library writes ISO 8601 UTC throughout, so a Skill written for it should too.
 
 ## Progressive loading
 
@@ -68,6 +68,7 @@ The built-in Skills, by group (the group manifest is `SKILL_GROUPS` in `packages
 | | `remote-claude-code` | Run Claude Code on a remote host over SSH — a persistent expect session, headless `-p` with the stdin fix, a tmux-driven interactive TUI (one capture-verified keystroke at a time, user messages relayed verbatim) and multi-turn continuity (not preinstalled: install from the library when needed) |
 | AI App Development | `penguin-sdk` | Build agent, AI and RAG applications on the SDK — application code, not Agent State configuration: the createSession/run streaming loop, CLI-wrapped user tools, plus a complete retrieval recipe with chunk-revealing citations |
 | | `penguin-cli` | Manage model API keys, default models and per-agent Vault secrets with the penguin CLI |
+| | `penguin-orchestration` | Drive PenguinHarness itself from a shell: list and create agents and sessions, send and steer messages mid-flight, and query costs and scheduled tasks via the penguin CLI |
 | | `agenthub-models` | Call model APIs through `@prismshadow/agenthub`: streaming text, image generation, speech synthesis and embeddings |
 | | `vllm` | Deploy and serve LLMs with vLLM behind an OpenAI-compatible endpoint, with tool calling enabled for agent workloads |
 | | `ollama` | Deploy and serve local models with Ollama: pull and run them, then expose the OpenAI-compatible endpoint to apps and agents |

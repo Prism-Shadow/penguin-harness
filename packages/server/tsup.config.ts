@@ -5,7 +5,9 @@ export default defineConfig({
   // "./initial-password" and "./reset-admin-password" (lock, initial-password and
   // reset-admin-password are side-effect-free for CLI pre-checks and the offline
   // admin-password rescue); "./hmr/manifest" is the host-less harness.json reader the
-  // CLI's thin loader resolves the current cli bundle through. There is deliberately no
+  // CLI's thin loader resolves the current cli bundle through, and "./version-report" is
+  // the shared assembler `penguin version` and GET /api/version both render (core plus
+  // that same reader — no server). There is deliberately no
   // "./platform" subpath: src/hmr/entry.ts (this package's platform artifact
   // compile target — see its own module doc) is compiled straight from source by
   // esbuild in scripts/deploy.mjs, never through this package's published dist,
@@ -17,6 +19,7 @@ export default defineConfig({
     "initial-password": "src/initial-password.ts",
     "reset-admin-password": "src/reset-admin-password.ts",
     "hmr/manifest": "src/hmr/manifest.ts",
+    "version-report": "src/version-report.ts",
     // "./extension": the surface extension PACKAGES compile against. Extensions live outside
     // this bundle entirely — they are configuration resolved from the installation,
     // not platform capability.

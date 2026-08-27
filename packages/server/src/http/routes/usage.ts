@@ -34,7 +34,7 @@ export function usageRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.get("/", async (c) => {
-    // Defensive id validation (FD-4).
+    // Defensive id validation.
     const projectId = requireValidId(c, "projectId");
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
     const groupByRaw = c.req.query("groupBy") ?? "date";

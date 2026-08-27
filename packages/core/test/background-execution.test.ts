@@ -1,7 +1,7 @@
 /**
  * Behavior tests for background execution: `run_in_background` on exec_command /
  * run_subagent, the completion-report pipeline (Environment listener → Session notice
- * queue → engine boundary delivery), the kill_command / kill_subagent tools, and the
+ * queue → engine boundary delivery), input_command's kill termination, and the
  * `sender` marking on user texts.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -9,17 +9,19 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Environment } from "../src/environment/index.js";
+import { armCommandDoneReport } from "../src/environment/tools/exec-command.js";
+import { ManagedSession } from "../src/environment/tools/command/index.js";
 import { createSubagentTool } from "../src/environment/tools/run-subagent.js";
 import { createInputSubagentTool } from "../src/environment/tools/input-subagent.js";
-import { createKillSubagentTool } from "../src/environment/tools/kill-subagent.js";
 import { SubagentSessionManager } from "../src/environment/tools/subagent/index.js";
 import { DEFAULT_EMPTY_POLL_YIELD_MS } from "../src/environment/tools/command/index.js";
 import { ContextEngine } from "../src/engine/context-engine.js";
 import {
-  abortEvent,
+  requestEnd,
   assistantText,
   buildBackgroundTaskDoneMessage,
   emptyTokenCounts,
+  isSteeredBackgroundNotice,
   parseBackgroundTaskDoneMessage,
   partialText,
   stripLeadingMarkerBlocks,
@@ -45,7 +47,7 @@ import type {
   SubagentRunner,
   ToolConfig,
   ToolDefinitionConfig,
-} from "../src/interfaces.js";
+} from "../src/interfaces/index.js";
 import type { ToolExecutionContext } from "../src/environment/tools/types.js";
 
 // ---------------------------------------------------------------------------
@@ -149,6 +151,24 @@ describe("[background_task_done] marker and the sender field", () => {
     expect(parseBackgroundTaskDoneMessage(bare)!.done.detail).toBe("");
   });
 
+  it("stamps and parses the steering delivery field; unstamped blocks read as task input", () => {
+    const steered = buildBackgroundTaskDoneMessage(
+      { kind: "command", id: "proc-1", status: "completed", detail: "", delivery: "steering" },
+      "body",
+    );
+    expect(parseBackgroundTaskDoneMessage(steered)!.done.delivery).toBe("steering");
+    expect(isSteeredBackgroundNotice(steered)).toBe(true);
+    // The unstamped form (idle delivery, and every pre-stamp Trace) has no delivery field.
+    const plain = buildBackgroundTaskDoneMessage(
+      { kind: "command", id: "proc-1", status: "completed", detail: "" },
+      "body",
+    );
+    expect(plain).not.toContain("delivery:");
+    expect(parseBackgroundTaskDoneMessage(plain)!.done.delivery).toBeUndefined();
+    expect(isSteeredBackgroundNotice(plain)).toBe(false);
+    expect(isSteeredBackgroundNotice("plain user text")).toBe(false);
+  });
+
   it("only parses as a leading block, and the title stripper removes it", () => {
     const block = buildBackgroundTaskDoneMessage(
       { kind: "command", id: "proc-1", status: "completed", detail: "" },
@@ -156,6 +176,26 @@ describe("[background_task_done] marker and the sender field", () => {
     );
     expect(parseBackgroundTaskDoneMessage(`hello\n${block}`)).toBeNull();
     expect(stripLeadingMarkerBlocks(block)).toBe("body");
+  });
+
+  it("a stopped status reads as a deliberate stop, with the do-not-restart instruction", () => {
+    const stopped = buildBackgroundTaskDoneMessage(
+      { kind: "command", id: "proc-12ab34cd", status: "stopped", detail: "stopped by SIGTERM" },
+      "`pnpm dev` — stopped by SIGTERM",
+    );
+    expect(parseBackgroundTaskDoneMessage(stopped)!.done).toMatchObject({
+      status: "stopped",
+      detail: "stopped by SIGTERM",
+    });
+    expect(stopped).toContain("Do not restart it unless you are asked to.");
+    // Everything else keeps the plain "has finished" lead — a real failure still asks to be
+    // reacted to.
+    const failed = buildBackgroundTaskDoneMessage(
+      { kind: "command", id: "proc-12ab34cd", status: "failed", detail: "exit code 2" },
+      "",
+    );
+    expect(failed).toContain("has finished.");
+    expect(failed).not.toContain("Do not restart");
   });
 
   it("userText marks non-human senders and leaves human input unmarked", () => {
@@ -214,7 +254,7 @@ describe("exec_command run_in_background", () => {
     expect(events[0]!.output).toContain("early");
   });
 
-  it("kill_command terminates a running background command without a completion report", async () => {
+  it("input_command kill terminates a running background command without a completion report", async () => {
     const { env } = await makeEnv();
     const events: BackgroundTaskDoneEvent[] = [];
     env.setBackgroundTaskListener((e) => events.push(e));
@@ -229,7 +269,7 @@ describe("exec_command run_in_background", () => {
     // the scanner immediately before appending it to that buffer, so a detected serviceUrl
     // proves the line is already buffered.
     await waitFor(() => env.listBackgroundCommands().some((p) => p.serviceUrl !== undefined));
-    const killed = await runTool(env, "kill_command", { process_id: id });
+    const killed = await runTool(env, "input_command", { process_id: id, kill: true });
     expect(killed.stopReason).toBe("completed");
     expect(killed.output).toContain("pre");
     expect(killed.output).toContain(`process ${id} killed`);
@@ -237,15 +277,65 @@ describe("exec_command run_in_background", () => {
     await new Promise((r) => setTimeout(r, 400));
     expect(events).toHaveLength(0);
     // And the session is gone from the registry.
-    const again = await runTool(env, "kill_command", { process_id: id });
-    expect(again.stopReason).toBe("failed");
+    const again = await runTool(env, "input_command", { process_id: id, kill: true });
+    expect(again.stopReason).toBe("fatal");
   });
 
-  it("kill_command fails on an unknown process_id", async () => {
+  it("input_command kill fails on an unknown process_id; the legacy kill_command name is an unknown tool", async () => {
     const { env } = await makeEnv();
-    const res = await runTool(env, "kill_command", { process_id: "proc-deadbeef" });
-    expect(res.stopReason).toBe("failed");
+    const res = await runTool(env, "input_command", { process_id: "proc-deadbeef", kill: true });
+    expect(res.stopReason).toBe("fatal");
     expect(res.output).toContain("unknown process_id");
+    // A stale stored config may still carry the removed tool; the registry no longer
+    // assembles it, so a model call collapses to the standard unknown-tool failure.
+    const legacy = await runTool(env, "kill_command", { process_id: "proc-deadbeef" });
+    expect(legacy.stopReason).toBe("fatal");
+    expect(legacy.output).toContain("Unknown tool: kill_command");
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "a stop signal from outside reports stopped, not a signal failure",
+    async () => {
+      const { env } = await makeEnv();
+      const events: BackgroundTaskDoneEvent[] = [];
+      env.setBackgroundTaskListener((e) => events.push(e));
+      await runTool(env, "exec_command", { cmd: "sleep 30", run_in_background: true });
+      const pid = env.listBackgroundCommands()[0]!.pid!;
+      // Nobody told the harness: a Ctrl-C in a terminal sharing the group, a pkill, a
+      // supervisor stopping a dev server. Only the signal itself says it was deliberate —
+      // and read as a crash, the model's next move is to start the thing back up.
+      process.kill(pid, "SIGTERM");
+      await waitFor(() => events.length === 1);
+      expect(events[0]).toMatchObject({ status: "stopped", detail: "stopped by SIGTERM" });
+    },
+  );
+
+  it("the host's stop button still reports — as stopped, not as a signal failure", async () => {
+    const { env } = await makeEnv();
+    const events: BackgroundTaskDoneEvent[] = [];
+    env.setBackgroundTaskListener((e) => events.push(e));
+    const res = await runTool(env, "exec_command", { cmd: "sleep 30", run_in_background: true });
+    const id = extractProcessId(res.output);
+    // The user's stop from the Web App's process list: the conversation still hears about it
+    // — the dev server it started is down — it just must not hear "failed".
+    expect(env.killBackgroundCommand(id)).toBe(true);
+    await waitFor(() => events.length === 1);
+    expect(events[0]).toMatchObject({ id, status: "stopped" });
+    expect(env.killBackgroundCommand(id)).toBe(false);
+  });
+
+  it("a harness-forced stop (capacity eviction, idle reap) reports stopped", async () => {
+    // Those two paths kill through the registry rather than CommandSessionManager.kill, so
+    // their report stays armed — and must not blame the process for a stop the harness
+    // itself asked for, whatever the platform turns that kill into.
+    const { dir } = await makeEnv();
+    const events: BackgroundTaskDoneEvent[] = [];
+    const session = new ManagedSession({ cmd: "sleep 30", cwd: dir, env: process.env });
+    cleanups.push(() => session.killHard());
+    armCommandDoneReport(session, "proc-evicted", { backgroundDone: (e) => events.push(e) });
+    session.kill();
+    await waitFor(() => events.length === 1);
+    expect(events[0]).toMatchObject({ id: "proc-evicted", status: "stopped" });
   });
 
   it("dispose suppresses pending completion reports", async () => {
@@ -273,11 +363,17 @@ describe("input_command defaults", () => {
 
 const SUB_DEF = toolDef("run_subagent");
 const SUB_INPUT_DEF = toolDef("input_subagent");
-const SUB_KILL_DEF = toolDef("kill_subagent");
 const CTX: ToolExecutionContext = { workspaceDir: "/tmp/ws", toolCallId: "call_1" };
 const HOP = "session-child-12ab34cd";
 
 type RunInput = { prompt: string; signal?: AbortSignal; approve?: ApproveFn };
+
+/**
+ * Test fakes still talk in prompt strings; the contract now takes the OmniMessage list a
+ * Session's `run` takes, so the adapters below unwrap it once (see SubagentHandle.run).
+ */
+const promptOf = (messages: OmniMessage[]): string =>
+  messages.map((m) => (m.payload as { text?: string }).text ?? "").join("");
 
 function runnerOf(run: (input: RunInput) => AsyncGenerator<OmniMessage>): SubagentRunner {
   return {
@@ -295,7 +391,7 @@ function runnerOf(run: (input: RunInput) => AsyncGenerator<OmniMessage>): Subage
             payload: { session_id: HOP },
           } as unknown as OmniMessage);
         },
-        run,
+        run: ({ messages, ...rest }) => run({ prompt: promptOf(messages), ...rest }),
         dispose() {},
       };
       return handle;
@@ -340,6 +436,7 @@ describe("run_subagent run_in_background", () => {
     const runner = runnerOf(async function* ({ prompt }) {
       await new Promise<void>((r) => gates.set(prompt, r));
       yield withHop(partialText("delta", `answer to: ${prompt}`));
+      yield withHop(assistantText(`answer to: ${prompt}`));
     });
     const events: BackgroundTaskDoneEvent[] = [];
     const services = {
@@ -388,7 +485,53 @@ describe("run_subagent run_in_background", () => {
     expect(events[1]!.output).toContain("answer to: second round");
   });
 
-  it("kill_subagent aborts a running background subagent without a completion report", async () => {
+  it("a HOST-started round stays silent: no completion report for the user's own message", async () => {
+    const manager = new SubagentSessionManager();
+    cleanups.push(() => manager.dispose());
+    const gates = new Map<string, () => void>();
+    const runner = runnerOf(async function* ({ prompt }) {
+      await new Promise<void>((r) => gates.set(prompt, r));
+      yield withHop(partialText("delta", `answer to: ${prompt}`));
+      yield withHop(assistantText(`answer to: ${prompt}`));
+    });
+    const events: BackgroundTaskDoneEvent[] = [];
+    const services = {
+      subagentRunner: runner,
+      subagentSessions: manager,
+      backgroundDone: (e: BackgroundTaskDoneEvent) => events.push(e),
+    };
+    const tool = createSubagentTool(SUB_DEF, services);
+    const res = await drive(tool, { prompt: "dispatched work", run_in_background: true });
+    const id = extractSubagentId(res.note);
+    await waitFor(() => gates.has("dispatched work"));
+    gates.get("dispatched work")!();
+    await waitFor(() => events.length === 1);
+
+    // The user messages the idle child from the panel: their conversation, not dispatched
+    // work — the parent must not be notified when it settles.
+    const session = manager.get(id)!;
+    session.startRun([userText("user says hi")], { suppressDoneReport: true });
+    await waitFor(() => gates.has("user says hi"));
+    gates.get("user says hi")!();
+    await waitFor(() => !session.running);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(events).toHaveLength(1);
+
+    // The next MODEL-initiated round reports again (the watcher stayed armed).
+    const input = createInputSubagentTool(SUB_INPUT_DEF, services);
+    const follow = await drive(input, {
+      subagent_id: id,
+      prompt: "model round",
+      yield_time_ms: 250,
+    });
+    expect(follow.stopReason).toBe("completed");
+    await waitFor(() => gates.has("model round"));
+    gates.get("model round")!();
+    await waitFor(() => events.length === 2);
+    expect(events[1]!.output).toContain("answer to: model round");
+  });
+
+  it("input_subagent abort ends a running background round without a completion report", async () => {
     const manager = new SubagentSessionManager();
     cleanups.push(() => manager.dispose());
     const runner = runnerOf(async function* ({ signal }) {
@@ -405,13 +548,15 @@ describe("run_subagent run_in_background", () => {
       backgroundDone: (e: BackgroundTaskDoneEvent) => events.push(e),
     };
     const tool = createSubagentTool(SUB_DEF, services);
-    const res = await drive(tool, { prompt: "will be killed", run_in_background: true });
+    const res = await drive(tool, { prompt: "will be aborted", run_in_background: true });
     const id = extractSubagentId(res.note);
-    const kill = createKillSubagentTool(SUB_KILL_DEF, services);
-    const killed = await drive(kill, { subagent_id: id });
-    expect(killed.stopReason).toBe("completed");
-    expect(killed.note).toContain("aborted and removed");
-    expect(manager.get(id)).toBeUndefined();
+    const input = createInputSubagentTool(SUB_INPUT_DEF, services);
+    const stopped = await drive(input, { subagent_id: id, abort: true, yield_time_ms: 3000 });
+    expect(stopped.output).toContain(`aborting subagent ${id}'s current run`);
+    expect(stopped.note).toContain(`subagent idle with subagent_id ${id}`);
+    // The session survives — a subagent has no kill notion, only its rounds end.
+    expect(manager.get(id)).toBeDefined();
+    // The abort-caused settle must not masquerade as a task completion.
     await new Promise((r) => setTimeout(r, 100));
     expect(events).toHaveLength(0);
   });
@@ -420,8 +565,14 @@ describe("run_subagent run_in_background", () => {
     const manager = new SubagentSessionManager();
     cleanups.push(() => manager.dispose());
     const runner = runnerOf(async function* () {
-      // A child-session failure surfaces as an origin-tagged abort event, never a throw.
-      yield withHop(abortEvent("llm request failed after 5 retries"));
+      // A child-session failure surfaces as its origin-tagged terminal record plus the
+      // run's return value (Session.run's contract), never a throw.
+      yield withHop(requestEnd("retryable", { attempt: 6, errorMessage: "socket hang up" }));
+      return {
+        kind: "llm_failure" as const,
+        errorCode: "network" as const,
+        errorMessage: "socket hang up",
+      };
     });
     const events: BackgroundTaskDoneEvent[] = [];
     const tapped: OmniMessage[] = [];
@@ -436,9 +587,9 @@ describe("run_subagent run_in_background", () => {
     extractSubagentId(res.note);
     await waitFor(() => events.length === 1);
     expect(events[0]).toMatchObject({ kind: "subagent", status: "failed" });
-    expect(events[0]!.detail).toContain("aborted");
-    // The failure event reached the live tap too (origin-tagged), not a poll buffer.
-    expect(tapped.some((m) => (m.payload as { type?: string }).type === "abort")).toBe(true);
+    expect(events[0]!.detail).toContain("socket hang up");
+    // The failure record reached the live tap too (origin-tagged), not a poll buffer.
+    expect(tapped.some((m) => (m.payload as { type?: string }).type === "request_end")).toBe(true);
   });
 
   it("a background child's approvals resolve through the launching call's standing sink", async () => {
@@ -473,12 +624,12 @@ describe("run_subagent run_in_background", () => {
     expect(events[0]!.status).toBe("completed");
   });
 
-  it("kill_subagent fails on an unknown subagent_id", async () => {
+  it("input_subagent fails on an id this conversation never allocated (nothing to resume)", async () => {
     const manager = new SubagentSessionManager();
     cleanups.push(() => manager.dispose());
-    const kill = createKillSubagentTool(SUB_KILL_DEF, { subagentSessions: manager });
-    const res = await drive(kill, { subagent_id: "subagent-deadbeef" });
-    expect(res.stopReason).toBe("failed");
+    const input = createInputSubagentTool(SUB_INPUT_DEF, { subagentSessions: manager });
+    const res = await drive(input, { subagent_id: "subagent-deadbeef" });
+    expect(res.stopReason).toBe("fatal");
     expect(res.output).toContain("unknown subagent_id");
   });
 });
@@ -622,6 +773,9 @@ describe("Session background notices", () => {
     expect(p.sender).toBe("harness");
     const parsed = parseBackgroundTaskDoneMessage(p.text);
     expect(parsed!.done).toMatchObject({ kind: "command", id: "proc-11aa22bb" });
+    // The host take is the idle path: the notice is the new task's own starting input, so it
+    // carries no delivery stamp and keeps its independent turn in every render layer.
+    expect(parsed!.done.delivery).toBeUndefined();
     expect(parsed!.rest).toContain("`sleep 1`");
     expect(parsed!.rest).toContain("done!");
     // Taking empties the queue, and the pending flag (the host's eviction pin) tracks it.
@@ -631,6 +785,24 @@ describe("Session background notices", () => {
     session.takeBackgroundNotices();
     expect(session.takeBackgroundNotices()).toHaveLength(0);
     expect(session.hasPendingBackgroundNotices()).toBe(false);
+  });
+
+  it("a stopped command's notice says stopped, not failed", async () => {
+    const { environment, fire } = listenerEnvironment();
+    const session = new Session({
+      meta: META,
+      ...IMAGES,
+      bootstrap: async () => ({ tools: [], llm: new ReplyLLM(), mcp: [] }),
+      mcpServers: [],
+      environment,
+    });
+    fire({ ...DONE_EVENT, status: "stopped", detail: "stopped by SIGTERM" });
+    const text = (session.takeBackgroundNotices()[0]!.payload as TextPayload).text;
+    // The line the model reads first — "Background command failed … terminated by signal
+    // SIGTERM" was the whole problem.
+    expect(text).toContain("Background command stopped: `sleep 1` (process_id proc-11aa22bb)");
+    expect(text).toContain("stopped by SIGTERM");
+    expect(text).not.toContain("failed");
   });
 
   it("delivers a queued notice on the next run without a host signal for running tasks", async () => {
@@ -650,5 +822,8 @@ describe("Session background notices", () => {
     const texts = llm.inputs[0]!.map((m) => (m.payload as { text?: string }).text ?? "");
     expect(texts[0]).toBe("hi");
     expect(texts[1]).toContain("[background_task_done]");
+    // Engine drains are the steering delivery path — the notice joined a Task the user's
+    // prompt started, so it must carry the steering stamp and never open a turn of its own.
+    expect(isSteeredBackgroundNotice(texts[1]!)).toBe(true);
   });
 });

@@ -87,7 +87,7 @@ CREATE TABLE IF NOT EXISTS error_records (     -- server-side error capture (the
   project_id TEXT,                     -- nullable: sign-in/registration and process-level errors have no Project context
   agent_id   TEXT,
   session_id TEXT,
-  source     TEXT NOT NULL,            -- http | session | usage | title | subagent | process | llm | environment | compaction | schedule
+  source     TEXT NOT NULL,            -- http | session | usage | title | subagent | process | llm | environment | compaction | schedule | messaging
   kind       TEXT NOT NULL,            -- expected (HttpError, business 4xx) | unexpected (500/runtime)
   code       TEXT NOT NULL,            -- HttpError.code / internal / session_run_failed / ...
   status     INTEGER,                  -- HTTP status code; NULL for non-HTTP sources
@@ -122,6 +122,21 @@ CREATE TABLE IF NOT EXISTS goal_state (        -- goal-mode runtime state (GOAL.
   updated_at  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_goal_session ON goal_state(session_id);
+CREATE TABLE IF NOT EXISTS messaging_bindings ( -- Session ↔ messaging-channel bot bindings (runtime/messaging/ holds the long connections)
+  session_id       TEXT NOT NULL,              -- a Session keeps at most one saved config PER channel (composite PK below); at most ONE of them is enabled at a time (route-enforced, 409 another_channel_enabled), and enabling is what binds the account to this Session
+  channel          TEXT NOT NULL,              -- messaging channel discriminator ('feishu' | 'telegram' | 'qq')
+  account_id       TEXT NOT NULL,              -- channel-scoped bot/app identity (feishu: app_id; telegram: the bot token's numeric id; qq: the bot's App ID); NOT unique — any number of Sessions may keep the same account saved side by side, each with its own config and last-chat memory; only ENABLING is exclusive (route-enforced, 409 account_enabled_elsewhere: one account has one event stream, two live connections on it would race)
+  config_json      TEXT NOT NULL,              -- channel-specific credentials/config JSON (feishu: appId/appSecret/baseDomain; telegram: botToken; qq: appId/appSecret); secrets plaintext at rest (same trade-off as the proxy address in server_settings), masked at every API surface; a cleared secret is stored as "" (the row and its account identity stay)
+  enabled          INTEGER NOT NULL DEFAULT 0, -- INTENT state (the connection's runtime status stays in memory): new bindings start disabled — saving credentials never opens a connection, the explicit state toggle does
+  line_per_message INTEGER NOT NULL DEFAULT 0, -- delivery preference: 1 = every non-blank line of a relayed assistant reply is sent as its own message (a reply written as spoken lines arrives as spoken lines), 0 = one message per reply. Channel-agnostic, so it lives here rather than in config_json, which each connector owns
+  last_chat_id     TEXT,                       -- most recent inbound chat (NULL until the bot is messaged once; replies and test messages target it); CONNECTOR-OPAQUE, not necessarily a bare chat id — telegram appends the forum topic (see telegram-connector.ts chatRefOf), so only that channel's connector may interpret it
+  last_chat_is_direct INTEGER NOT NULL DEFAULT 1, -- 1 = direct chat (reply by chat id), 0 = group chat (prefer reply-to-message)
+  last_inbound_message_id TEXT,                 -- channel id of the most recently PROCESSED inbound message (NULL until one arrives); the durable half of the bridge's redelivery guard, so a channel replaying an event this server already turned into a Task after a restart does not run it twice
+  created_at       TEXT NOT NULL,
+  updated_at       TEXT NOT NULL,
+  PRIMARY KEY (session_id, channel)
+);
+CREATE INDEX IF NOT EXISTS idx_messaging_by_account ON messaging_bindings(channel, account_id);  -- serves the enable guard's by-account lookup; deliberately NOT unique, unlike its predecessor idx_messaging_account (dropped on open) which made an account exclusive to one Session forever
 CREATE TABLE IF NOT EXISTS ui_prefs (
   user_id    TEXT PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
   prefs_json TEXT NOT NULL                    -- {theme?, lastProjectId?, ...} free-form JSON

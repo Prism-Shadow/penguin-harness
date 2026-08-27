@@ -48,7 +48,7 @@ Item by item (design → owner → carrying file or module):
 | --- | --- | --- |
 | The OmniMessage protocol, message parsing and partial aggregation | SDK | `core/src/omnimessage/` — see [The OmniMessage Protocol](/omni-message) |
 | The ReAct loop, carry-over, reconnect, compaction | SDK | `core/src/engine/context-engine.ts` — see [The Agent Loop](/agent-loop) |
-| The approval mechanism (one decision per tool_call) | SDK | `ApproveFn` (`core/src/interfaces.ts`); the concrete mode is injected by CLI/Server |
+| The approval mechanism (one decision per tool_call) | SDK | `ApproveFn` (`core/src/interfaces/shared.ts`); the concrete mode is injected by CLI/Server |
 | Tool execution and centralized close-out | SDK | `core/src/environment/` — see [Tools & Approval](/tools) |
 | Model access (provider protocol adaptation) | SDK → AgentHub | `core/src/llm/` + `@prismshadow/agenthub` — see [Models & Providers](/models) |
 | Trace writing and Session-recovery logic | SDK | `core/src/trace/` (the records themselves live in the file layer) |
@@ -132,4 +132,4 @@ The Server keeps an additional SQLite index (users, authorization, usage stats) 
 - **Errors converge into messages**: the LLM and Environment never throw into the engine; results carry a six-value `stop_reason` (`completed | failed | aborted | timeout | malformed | auth`), and every LLM-side status except `auth` triggers an in-run reconnect (`failed / timeout / malformed`, up to 5 times with an exponential-with-ceiling backoff). `auth` is the one terminal class: a rejected credential cannot be retried into working. Retrying `failed` is a policy choice — the status itself is still reported as `failed`.
 - **A thin model layer**: core defines only `LLMInterface`; provider adaptation lives entirely in AgentHub (`@prismshadow/agenthub`), which is what makes any OpenAI-compatible endpoint reachable. See [Models & Providers](/models).
 
-Source entry points: `packages/core/src/engine/context-engine.ts`, `packages/core/src/interfaces.ts`.
+Source entry points: `packages/core/src/engine/context-engine.ts`, `packages/core/src/interfaces/`.

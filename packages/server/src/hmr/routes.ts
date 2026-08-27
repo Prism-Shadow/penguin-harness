@@ -67,16 +67,17 @@ export function hmrRoutes(deps: AppDeps): Hono<AppEnv> {
       if (!c.req.path.endsWith("/upgrade")) await hmr.waitIdle();
       await next();
     };
-    // Admin cookie session only. There used to be a second credential here — a
-    // per-boot Bearer token published to $PENGUIN_HOME/hmr/api.json — for local
-    // tools to call in without a browser session. It was removed: it ran as
-    // plaintext on disk, readable by anything running as the same OS user
-    // (including an agent's own shell/exec tools, which inherit that user and
-    // PENGUIN_HOME), and it was admin-equivalent — making it the single
-    // plaintext admin-equivalent secret on disk, i.e. the vulnerability itself.
-    // Session tokens and passwords are hashed at rest (auth/service.ts); a local
-    // caller now authenticates the same way an operator does: log in with the
-    // admin password and present the resulting cookie.
+    // Admin credential required. An earlier per-boot Bearer token published to
+    // $PENGUIN_HOME/hmr/api.json was removed over the on-disk-plaintext objection
+    // (readable by any process of the same OS user, agent shells included, and
+    // admin-equivalent). That objection has since been deliberately reversed as a
+    // product decision, harness-wide: agents driving their own server through the
+    // CLI is the feature, and local filesystem access to the data root is defined
+    // as admin authority (exactly the reset-admin-password rule). The mechanism now
+    // lives at the general auth layer instead of here: the per-boot local API token
+    // at <root>/api-token (auth/api-token.ts), which authMiddleware — reused below —
+    // accepts as `Authorization: Bearer` and authenticates as the admin. A local
+    // caller may therefore present either that token or an admin cookie session.
     return cookieAuth(c, async () => {
       if (!c.get("user").isAdmin) {
         throw new HttpError(403, "forbidden", "Hot platform APIs are admin-only.");
@@ -159,7 +160,17 @@ export function hmrRoutes(deps: AppDeps): Hono<AppEnv> {
               },
             }
           : {}),
-        ...(payload.source ? { source: payload.source } : {}),
+        // Provenance is optional and, unlike the bundles, now outlives the request in
+        // harness.json — so it is accepted only fully formed. A half-filled or
+        // wrong-typed `source` is dropped rather than committed: readers already
+        // tolerate its absence, and a malformed record on disk would outlive the push
+        // that produced it.
+        ...(typeof payload.source?.repo === "string" &&
+        typeof payload.source.revision === "string" &&
+        payload.source.repo.length > 0 &&
+        payload.source.revision.length > 0
+          ? { source: { repo: payload.source.repo, revision: payload.source.revision } }
+          : {}),
       });
     } catch (err) {
       throw new HttpError(400, "bad_request", err instanceof Error ? err.message : String(err));

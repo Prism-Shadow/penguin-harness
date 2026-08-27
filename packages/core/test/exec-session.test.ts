@@ -2,13 +2,13 @@
  * Behavior tests for long-running command sessions (exec_command yield + input_command).
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Environment, ManagedSession } from "../src/environment/index.js";
 import { toolCall } from "../src/omnimessage/index.js";
 import type { OmniMessage } from "../src/omnimessage/index.js";
-import type { ProxyEnvPolicy, ToolConfig, ToolDefinitionConfig } from "../src/interfaces.js";
+import type { ProxyEnvPolicy, ToolConfig, ToolDefinitionConfig } from "../src/interfaces/index.js";
 
 function execTool(overrides: Partial<ToolDefinitionConfig> = {}): ToolDefinitionConfig {
   return {
@@ -193,7 +193,7 @@ describe("exec_command — long-running command sessions", () => {
     const elapsed = Date.now() - startedAt;
     expect(elapsed).toBeLessThan(3000); // Did not wait for the full sleep 30
     expect(res.output).not.toContain("still running");
-    expect(res.stopReason).toBe("failed"); // Interrupted by signal -> non-zero exit
+    expect(res.stopReason).toBe("fatal"); // Interrupted by signal -> non-zero exit
   });
 
   it("input_command rejects chars mixing U+0003 with other content", async () => {
@@ -209,7 +209,7 @@ describe("exec_command — long-running command sessions", () => {
       yield_time_ms: 2000,
     });
     expect(res.output).toContain('send "\\u0003" alone');
-    expect(res.stopReason).toBe("failed");
+    expect(res.stopReason).toBe("fatal");
 
     // The session was not mistakenly killed: still running.
     const poll = await runTool(env, "input_command", { process_id: pid, yield_time_ms: 300 });
@@ -219,7 +219,7 @@ describe("exec_command — long-running command sessions", () => {
   it("input_command reports an unknown process_id without throwing", async () => {
     const res = await runTool(env, "input_command", { process_id: "proc-deadbeef" });
     expect(res.output).toContain("unknown process_id proc-deadbeef");
-    expect(res.stopReason).toBe("failed");
+    expect(res.stopReason).toBe("fatal");
   });
 
   it("input_command ignores writes to a closed stdin pipe without crashing", async () => {
@@ -264,7 +264,7 @@ describe("exec_command — long-running command sessions", () => {
     });
     expect(res.output).toContain("command session manager disposed");
     expect(res.output).not.toContain("should-not-run");
-    expect(res.stopReason).toBe("failed");
+    expect(res.stopReason).toBe("fatal");
   });
 
   it("delivers output arriving while the consumer is suspended without waiting out the window", async () => {
@@ -302,6 +302,16 @@ describe("harness environment variables never reach a spawned command", () => {
     "PENGUIN_DESKTOP_TOKEN",
     "PENGUIN_PORT_FILE",
     "PENGUIN_SEED_ADMIN_PASSWORD",
+    "PENGUIN_HOME",
+    "PENGUIN_WEB_DB",
+    // A sample of the PENGUIN_* the prefix rule covers that no by-name list ever named: the
+    // resolved shell, the release feed, the UI language and the install location. Whether these
+    // specific ones are set at run time is beside the point — the rule is the prefix, and a new
+    // variable added next release has to be covered without anyone remembering this file.
+    "PENGUIN_SHELL",
+    "PENGUIN_UPDATE_FEED_URL",
+    "PENGUIN_LANG",
+    "PENGUIN_INSTALL_DIR",
   ] as const;
   const saved: Partial<Record<(typeof KEYS)[number], string | undefined>> = {};
 
@@ -318,6 +328,14 @@ describe("harness environment variables never reach a spawned command", () => {
     process.env.PENGUIN_DESKTOP_TOKEN = "secret-desktop-token";
     process.env.PENGUIN_PORT_FILE = "/tmp/port-file";
     process.env.PENGUIN_SEED_ADMIN_PASSWORD = "penguin-0000";
+    // The data roots this very process is serving from. Inherited, they aim an Agent-started
+    // harness at the running one's data — where the lock is already held, so it cannot start.
+    process.env.PENGUIN_HOME = "/home/someone/.penguin/data";
+    process.env.PENGUIN_WEB_DB = "/home/someone/.penguin/data/web.db";
+    process.env.PENGUIN_SHELL = "/opt/penguin/bin/bash";
+    process.env.PENGUIN_UPDATE_FEED_URL = "https://example.invalid/feed";
+    process.env.PENGUIN_LANG = "zh";
+    process.env.PENGUIN_INSTALL_DIR = "/opt/penguin";
   });
   afterEach(() => {
     for (const k of KEYS) {
@@ -379,14 +397,17 @@ describe("harness environment variables never reach a spawned command", () => {
   });
 
   it("the rest of the host environment still passes through", async () => {
-    process.env.PENGUIN_TEST_PASSTHROUGH = "kept";
+    // Deliberately not a PENGUIN_* name any more. This case asserts that stripping is narrow —
+    // that a variable the user's own project relies on survives — and a harness-prefixed name
+    // can no longer stand for that, since the prefix is itself the rule.
+    process.env.MY_PROJECT_TEST_PASSTHROUGH = "kept";
     try {
       const res = await runTool(env, "exec_command", {
-        cmd: `node -e "console.log('V=[' + (process.env.PENGUIN_TEST_PASSTHROUGH ?? '') + ']')"`,
+        cmd: `node -e "console.log('V=[' + (process.env.MY_PROJECT_TEST_PASSTHROUGH ?? '') + ']')"`,
       });
       expect(res.output).toContain("V=[kept]");
     } finally {
-      delete process.env.PENGUIN_TEST_PASSTHROUGH;
+      delete process.env.MY_PROJECT_TEST_PASSTHROUGH;
     }
   });
 
@@ -403,6 +424,68 @@ describe("harness environment variables never reach a spawned command", () => {
       expect(res.output).toContain("PORT=[3000]");
     } finally {
       vaultEnv.dispose();
+    }
+  });
+
+  it("a PENGUIN_* nobody has invented yet is stripped, because the rule is the prefix", async () => {
+    // The point of matching on the prefix: this variable exists in no list, and a feature that
+    // adds one next release inherits the protection without anyone editing this file.
+    process.env.PENGUIN_SOME_FUTURE_SETTING = "leaked";
+    try {
+      const res = await runTool(env, "exec_command", {
+        cmd: `node -e "console.log('X=[' + (process.env.PENGUIN_SOME_FUTURE_SETTING ?? '') + ']')"`,
+      });
+      expect(res.output).toContain("X=[]");
+    } finally {
+      delete process.env.PENGUIN_SOME_FUTURE_SETTING;
+    }
+  });
+
+  it("the vault can put PENGUIN_HOME back, which is how a shared data root is asked for", async () => {
+    // Sharing a root with the running harness is a legitimate config decision; inheriting it from
+    // whichever process happens to be serving is not. The vault is where that decision is made.
+    // The value is deliberately not path-shaped. Git Bash's MSYS layer rewrites POSIX-looking
+    // *values* into Windows paths when it launches a native program, so a real root would come
+    // back as `C:/Program Files/Git/home/...` on ci-windows and say nothing about the vault. What
+    // is under test is that a stripped name is restored at all — the sibling PORT case above uses
+    // a plain "3000" for the same reason.
+    const vaultEnv = new Environment({
+      workspaceDir: tmp,
+      toolConfig: sessionConfig(),
+      vault: { PENGUIN_HOME: "vault-supplied-root" },
+    });
+    try {
+      const res = await runTool(vaultEnv, "exec_command", {
+        cmd: `node -e "console.log('PENGUIN_HOME=[' + (process.env.PENGUIN_HOME ?? '') + ']')"`,
+      });
+      expect(res.output).toContain("PENGUIN_HOME=[vault-supplied-root]");
+    } finally {
+      vaultEnv.dispose();
+    }
+  });
+
+  it("an explicit injection layered after the strip wins, for any PENGUIN_* name", async () => {
+    // The strip governs inheritance only — it runs while the host env is copied and never
+    // re-applies to entries spread in after it. That seam is what every injection layer
+    // relies on (the vault stands in for all of them here): the host's copy of the name is
+    // set to a different value to prove the child's value came from the injection, not
+    // through inheritance.
+    const savedInherited = process.env.PENGUIN_API_URL;
+    process.env.PENGUIN_API_URL = "http://inherited.invalid";
+    const vaultEnv = new Environment({
+      workspaceDir: tmp,
+      toolConfig: sessionConfig(),
+      vault: { PENGUIN_API_URL: "http://injected.example" },
+    });
+    try {
+      const res = await runTool(vaultEnv, "exec_command", {
+        cmd: `node -e "console.log('A=[' + (process.env.PENGUIN_API_URL ?? '') + ']')"`,
+      });
+      expect(res.output).toContain("A=[http://injected.example]");
+    } finally {
+      vaultEnv.dispose();
+      if (savedInherited === undefined) delete process.env.PENGUIN_API_URL;
+      else process.env.PENGUIN_API_URL = savedInherited;
     }
   });
 });
@@ -524,5 +607,116 @@ describe("proxyEnv policy governs the proxy variables commands inherit", () => {
       cmd: `node -e "console.log('H=[' + (process.env.HTTP_PROXY ?? '') + ']')"`,
     });
     expect(res.output).toContain("H=[http://proxy.corp.example:8080]");
+  });
+});
+
+describe("controlEnv injects the host's harness-control variables into commands", () => {
+  // The hosting server threads a controlEnv getter through Environment ->
+  // CommandSessionManager so commands the Agent runs can drive the harness back through
+  // the CLI/API (PENGUIN_API_URL / PENGUIN_API_TOKEN / the Session coordinates).
+
+  it("injected PENGUIN_* variables reach the child even though inherited ones are stripped", async () => {
+    // The host process's own PENGUIN_API_URL must NOT leak through inheritance; the same
+    // name from controlEnv must arrive — injection happens after the prefix strip.
+    process.env.PENGUIN_API_URL = "http://inherited.example:1";
+    const controlled = new Environment({
+      workspaceDir: tmp,
+      toolConfig: sessionConfig(),
+      controlEnv: () => ({
+        PENGUIN_API_URL: "http://localhost:7364",
+        PENGUIN_SESSION_ID: "session-x",
+      }),
+    });
+    try {
+      const res = await runTool(controlled, "exec_command", {
+        cmd: `node -e "console.log('U=[' + (process.env.PENGUIN_API_URL ?? '') + '] S=[' + (process.env.PENGUIN_SESSION_ID ?? '') + ']')"`,
+      });
+      expect(res.output).toContain("U=[http://localhost:7364] S=[session-x]");
+    } finally {
+      controlled.dispose();
+      delete process.env.PENGUIN_API_URL;
+    }
+  });
+
+  it("controlEnv overrides a vault entry of the same name (sanctioned host wiring wins)", async () => {
+    const controlled = new Environment({
+      workspaceDir: tmp,
+      toolConfig: sessionConfig(),
+      vault: { PENGUIN_API_TOKEN: "vault-token", KEEP_ME: "vault-kept" },
+      controlEnv: () => ({ PENGUIN_API_TOKEN: "boot-token" }),
+    });
+    try {
+      const res = await runTool(controlled, "exec_command", {
+        cmd: `node -e "console.log('T=[' + (process.env.PENGUIN_API_TOKEN ?? '') + '] K=[' + (process.env.KEEP_ME ?? '') + ']')"`,
+      });
+      expect(res.output).toContain("T=[boot-token] K=[vault-kept]");
+    } finally {
+      controlled.dispose();
+    }
+  });
+
+  it("the getter is re-read at every spawn, so a rotated token reaches running Sessions", async () => {
+    let token = "first";
+    const controlled = new Environment({
+      workspaceDir: tmp,
+      toolConfig: sessionConfig(),
+      controlEnv: () => ({ PENGUIN_API_TOKEN: token }),
+    });
+    try {
+      const read = `node -e "console.log('T=[' + (process.env.PENGUIN_API_TOKEN ?? '') + ']')"`;
+      expect((await runTool(controlled, "exec_command", { cmd: read })).output).toContain(
+        "T=[first]",
+      );
+      token = "second";
+      expect((await runTool(controlled, "exec_command", { cmd: read })).output).toContain(
+        "T=[second]",
+      );
+    } finally {
+      controlled.dispose();
+    }
+  });
+});
+
+describe("exec_command — a working directory that is not there", () => {
+  // Node reports an unusable `cwd` as `spawn <shell> ENOENT`: the error names the COMMAND,
+  // so a Workspace deleted under a live Session reads exactly like a missing shell. These
+  // pin the honest message — the one difference between "install bash" and "your Workspace
+  // is gone" for whoever reads the reply.
+
+  it("names the missing Workspace instead of blaming the shell", async () => {
+    // The Session is live and its Environment already built; the directory goes away
+    // underneath it, which is all it takes — the Workspace is validated when a Session
+    // loads and never again.
+    await rm(tmp, { recursive: true, force: true });
+    const res = await runTool(env, "exec_command", { cmd: "echo test" });
+    expect(res.output).toContain("working directory does not exist");
+    expect(res.output).toContain(tmp);
+    expect(res.output).not.toContain("ENOENT");
+    expect(res.output).not.toContain("spawn bash");
+    expect(res.stopReason).toBe("fatal");
+  });
+
+  it("names a workdir argument that does not resolve, rather than the shell", async () => {
+    const res = await runTool(env, "exec_command", {
+      cmd: "echo test",
+      workdir: "no/such/subdir",
+    });
+    expect(res.output).toContain("working directory does not exist");
+    expect(res.output).toContain(path.join(tmp, "no/such/subdir"));
+    expect(res.output).not.toContain("spawn bash");
+  });
+
+  it("names a workdir that is a file, not a directory", async () => {
+    const file = path.join(tmp, "notadir.txt");
+    await writeFile(file, "x");
+    const res = await runTool(env, "exec_command", { cmd: "echo test", workdir: "notadir.txt" });
+    expect(res.output).toContain("is not a directory");
+    expect(res.output).toContain(file);
+  });
+
+  it("still runs normally when the Workspace is there", async () => {
+    const res = await runTool(env, "exec_command", { cmd: "echo test" });
+    expect(res.output).toContain("test");
+    expect(res.stopReason).toBe("completed");
   });
 });

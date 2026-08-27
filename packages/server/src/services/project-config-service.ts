@@ -28,6 +28,7 @@ import path from "node:path";
 import { parse as parseToml } from "smol-toml";
 import {
   CHAT_APPROVAL_MODES,
+  atomicWriteFile,
   DEFAULT_CHAT_THINKING_LEVELS,
   DEFAULT_COMMAND_POLICY_RULES,
   effectiveCommandPolicyRules,
@@ -290,9 +291,8 @@ export class ProjectConfigService {
 
   /**
    * Writes the whole object to disk: the file inlines secrets like api_key, always
-   * written with mode 0600 (the `mode` option only applies at creation time, so
-   * chmod is used to enforce it on existing files too — matching core's
-   * saveProjectConfig behavior).
+   * written with mode 0600, and replaced atomically so a crash mid-write cannot
+   * truncate it — matching core's saveProjectConfig behavior.
    */
   async writeRaw(projectId: string, data: RawTable): Promise<void> {
     const file = this.filePath(projectId);
@@ -300,8 +300,10 @@ export class ProjectConfigService {
     // Rendering goes through core's single writer: paired references become inline
     // tables, models is placed last — matching the CLI's output format exactly
     // (the same file should never have two formats).
-    await fs.writeFile(file, renderProjectConfigToml(data), { encoding: "utf8", mode: 0o600 });
-    await fs.chmod(file, 0o600);
+    await atomicWriteFile(file, renderProjectConfigToml(data), {
+      mode: 0o600,
+      followSymlinks: true,
+    });
     // Every service write funnels through here: invalidate synchronously so the next
     // read re-parses (external writers are caught by readTable's stat instead).
     this.cache.delete(projectId);
@@ -1020,6 +1022,28 @@ export class ProjectConfigService {
     await this.writeRaw(projectId, next);
     return this.getModels(projectId);
   }
+
+  /**
+   * Writes one API key onto every model of a provider group — the credential half of the
+   * bulk group-key action, performing the same `api_key` + `created_at` write `updateModels`
+   * performs on the entries it rewrites. No other field is read or replaced, so a caller
+   * that never saw the rest of the table cannot flatten it.
+   *
+   * Returns how many entries were written; an empty group writes nothing and returns 0.
+   */
+  async setGroupApiKey(projectId: string, provider: string, apiKey: string): Promise<number> {
+    const raw = await this.readRaw(projectId);
+    const createdAt = new Date().toISOString();
+    let applied = 0;
+    const nextModels = asArray(raw.models).map((m) => {
+      if (m.provider !== provider) return m;
+      applied += 1;
+      return { ...m, api_key: apiKey, created_at: createdAt };
+    });
+    if (applied === 0) return 0;
+    await this.writeRaw(projectId, { ...raw, models: nextModels });
+    return applied;
+  }
 }
 
 /**
@@ -1038,16 +1062,17 @@ export function isProbeContent(msg: OmniMessage): boolean {
  * Probe verdict from the terminal LLM outcome. `completed` always passes. A `malformed`
  * ending after genuine streamed content also passes: the typical case is a reasoning-heavy
  * model that spends the probe's tiny max_tokens entirely on thinking (finish_reason=length ->
- * AgentHub's EmptyResponseError) — the endpoint, credential, and model id all demonstrably
- * work, which is what a connectivity test measures. Everything else (auth/parameter failures,
- * timeouts, malformed with nothing received) fails with the outcome's message.
+ * AgentHub's EmptyResponseError, a `retryable` outcome that still streamed content) — the
+ * endpoint, credential, and model id all demonstrably work, which is what a connectivity
+ * test measures. Everything else (fatal rejections, and retryable failures with nothing
+ * received) fails with the outcome's message.
  */
 export function probeVerdict(
   outcome: LLMOutcome,
   sawContent: boolean,
 ): { ok: true } | { ok: false; message: string } {
   if (outcome.status === "completed") return { ok: true };
-  if (outcome.status === "malformed" && sawContent) return { ok: true };
+  if (outcome.status === "retryable" && sawContent) return { ok: true };
   const detail =
     "errorMessage" in outcome && outcome.errorMessage ? outcome.errorMessage : outcome.status;
   return { ok: false, message: String(detail).slice(0, 300) };

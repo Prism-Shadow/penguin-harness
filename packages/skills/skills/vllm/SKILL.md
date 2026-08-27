@@ -3,8 +3,8 @@ name: vllm
 description: Deploy and serve LLMs with vLLM behind an OpenAI-compatible endpoint, with tool calling enabled for agent workloads.
 short_description: Serve models locally with vLLM.
 short_description_zh: 用 vLLM 部署本地模型服务。
-version: 1
-updated: 2026-07-22T00:00:00Z
+version: 2
+updated: 2026-08-23T15:42:44Z
 ---
 
 # vLLM Serving
@@ -32,7 +32,7 @@ The model must fit the available VRAM — model size and context length drive th
 2. Pick the engine the user prefers: vLLM for high-throughput GPU serving; Ollama is the simple default and the choice on macOS or CPU-only machines.
 3. Serve on a free port, with the tool-calling flags whenever agents will call it (see below).
 4. Verify with `curl http://localhost:8000/v1/models`.
-5. Register the endpoint: `penguin config model add ... --client-type openai --base-url http://localhost:8000/v1` — a served model is not visible to Penguin until added.
+5. Register the endpoint: `penguin config model add ... --client-type openai-chat --base-url http://localhost:8000/v1` — a served model is not visible to Penguin until added.
 6. Confirm the new entry with `penguin config model list`.
 
 ## Install
@@ -82,7 +82,7 @@ curl http://localhost:8000/v1/models
 Model configuration is the penguin CLI's job — `penguin config model add` registers an endpoint and `penguin config model list` shows what has been registered. A served model is not visible to Penguin until you add it:
 
 ```bash
-penguin config model add --provider custom --client-type openai \
+penguin config model add --provider custom --client-type openai-chat \
   --base-url http://localhost:8000/v1 --model-id <served-model-name> --api-key <key>
 penguin config model list   # the new entry should now be listed
 ```

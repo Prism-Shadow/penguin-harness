@@ -51,7 +51,9 @@ export function buildInputHistory(items: readonly ChatItem[]): string[] {
   for (const item of items) {
     if (item.kind === "user_text") {
       const parsed = parseUserMessageBody(item.text);
-      if (!parsed || parsed.scheduled) continue;
+      // Background completion notices are harness-written, never typed here — recalling one
+      // into the composer would resend a machine report as user input.
+      if (!parsed || parsed.scheduled || parsed.backgroundDone) continue;
       if (parsed.goalRound !== undefined && parsed.goalRound > 1) continue;
       push(parsed.body);
     } else if (item.kind === "user_steering") {

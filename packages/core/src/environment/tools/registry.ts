@@ -11,17 +11,15 @@
  * Docs: packages/docs/content/tools.{zh,en}.md (site path /docs/tools) documents every
  * built-in tool and the approval flow — keep the page in sync when this table changes.
  */
-import type { EnvironmentServices, ToolDefinitionConfig } from "../../interfaces.js";
+import type { EnvironmentServices, ToolDefinitionConfig } from "../../interfaces/index.js";
 import type { BuiltinTool } from "./types.js";
 import { READ_FILE_NAME, createReadFileTool } from "./read-file.js";
 import { EDIT_FILE_NAME, createEditFileTool } from "./edit-file.js";
 import { WRITE_FILE_NAME, createWriteFileTool } from "./write-file.js";
 import { EXEC_COMMAND_NAME, createExecCommandTool } from "./exec-command.js";
 import { INPUT_COMMAND_NAME, createInputCommandTool } from "./input-command.js";
-import { KILL_COMMAND_NAME, createKillCommandTool } from "./kill-command.js";
 import { SUBAGENT_NAME, createSubagentTool } from "./run-subagent.js";
 import { INPUT_SUBAGENT_NAME, createInputSubagentTool } from "./input-subagent.js";
-import { KILL_SUBAGENT_NAME, createKillSubagentTool } from "./kill-subagent.js";
 import { READ_IMAGE_NAME, createReadImageTool } from "./read-image.js";
 import { DESCRIBE_IMAGE_NAME, createDescribeImageTool } from "./describe-image.js";
 
@@ -42,10 +40,8 @@ export const BUILTIN_TOOL_FACTORIES: Record<string, BuiltinToolFactory> = {
   [WRITE_FILE_NAME]: createWriteFileTool,
   [EXEC_COMMAND_NAME]: createExecCommandTool,
   [INPUT_COMMAND_NAME]: createInputCommandTool,
-  [KILL_COMMAND_NAME]: createKillCommandTool,
   [SUBAGENT_NAME]: createSubagentTool,
   [INPUT_SUBAGENT_NAME]: createInputSubagentTool,
-  [KILL_SUBAGENT_NAME]: createKillSubagentTool,
   [READ_IMAGE_NAME]: createReadImageTool,
   // describe_image: the text-only-model variant of read_image (hands the image to the
   // configured vision model for description, returns text).

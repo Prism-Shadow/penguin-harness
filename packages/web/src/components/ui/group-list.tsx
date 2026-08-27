@@ -1,12 +1,12 @@
 /**
- * Shared building blocks of the grouped Session lists (the chat sidebar and the Trace
- * page's directory tree render the same structure — group header, collapsed lazy
- * folders, "More" rows, the Workspace/Agent grouping toggle). Extracted verbatim from
- * sidebar.tsx's inner closures so the two surfaces cannot drift apart visually: the
- * markup and classes here ARE the sidebar's; callers pass the state the closures used
- * to capture.
+ * Building blocks of the chat sidebar's grouped Session list — group header, collapsed
+ * lazy folders, the reveal/collapse rows, the group pager. Extracted from sidebar.tsx's
+ * inner closures, which is why the markup and classes here ARE the sidebar's and callers
+ * pass the state those closures used to capture. The Trace page's directory tree used to
+ * render the same structure from here; that page is gone, so this is now one surface's
+ * vocabulary kept in one file rather than a contract between two.
  */
-import type { ReactNode } from "react";
+import type { DragEvent as ReactDragEvent, ReactNode } from "react";
 import { S } from "../../lib/strings";
 import type { SessionSortMode } from "../../lib/session-order";
 import { Chevron } from "./chevron";
@@ -46,19 +46,6 @@ export const REORDER_ICON = "m21 16-4 4-4-4M17 20V4M3 8l4-4 4 4M7 4v16";
 
 /** Grouping mode of a Session list (persisted; Workspace is the default). */
 export type GroupMode = "workspace" | "agent" | "time";
-
-/**
- * The grouping modes a Trace-file tree can offer. Its rows are trace files keyed by
- * Session id and carry no activity timestamp, so there is nothing to cut time buckets
- * on; a stored "time" preference reads there as the Workspace grouping it falls back to
- * (treeGroupMode), and its two-icon toggle offers exactly these two.
- */
-export type TreeGroupMode = "workspace" | "agent";
-
-/** The nearest mode a Trace-file tree supports (see TreeGroupMode). */
-export function treeGroupMode(mode: GroupMode): TreeGroupMode {
-  return mode === "agent" ? "agent" : "workspace";
-}
 
 /**
  * Leading glyph per grouping mode — the one place these are chosen, read by both the
@@ -112,42 +99,6 @@ export function storeGroupMode(mode: GroupMode): void {
   localStorage.setItem(GROUP_MODE_KEY, mode);
 }
 
-/** The two-icon Workspace/Agent grouping toggle (the Trace tree's mode switch — see TreeGroupMode). */
-export function GroupModeToggle({
-  value,
-  onChange,
-}: {
-  value: TreeGroupMode;
-  onChange: (mode: TreeGroupMode) => void;
-}) {
-  return (
-    <div className="flex items-center gap-0.5">
-      {(
-        [
-          { value: "workspace", icon: GROUP_MODE_ICONS.workspace, label: S.chat.groupByWorkspace },
-          { value: "agent", icon: GROUP_MODE_ICONS.agent, label: S.chat.groupByAgent },
-        ] as const
-      ).map((opt) => (
-        <button
-          key={opt.value}
-          type="button"
-          title={opt.label}
-          aria-label={opt.label}
-          aria-pressed={value === opt.value}
-          onClick={() => onChange(opt.value)}
-          className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors duration-150 ${
-            value === opt.value
-              ? "bg-gray-200/70 text-gray-700 dark:bg-gray-800 dark:text-gray-200"
-              : "text-gray-400 hover:bg-gray-200/50 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800/70 dark:hover:text-gray-300"
-          }`}
-        >
-          <Icon d={opt.icon} size={14} />
-        </button>
-      ))}
-    </div>
-  );
-}
-
 /** Row class of folder toggles and "More" rows (the sidebar's folderClass). */
 export const FOLDER_ROW_CLASS =
   "flex w-full items-center gap-1 rounded px-1.5 py-1 text-left text-[11px] font-medium text-gray-400 transition-colors duration-150 hover:bg-gray-200/50 dark:text-gray-500 dark:hover:bg-gray-800/50";
@@ -191,6 +142,69 @@ export function MoreRow({
   );
 }
 
+/** Chevrons of the group pager's step buttons (lucide chevron-left / chevron-right). */
+const PAGER_PREV_ICON = "M15 18 9 12l6-6";
+const PAGER_NEXT_ICON = "m9 18 6-6-6-6";
+
+/**
+ * Page stepper of a grouped list whose groups are paginated (the sidebar renders at most
+ * SIDEBAR_GROUP_PAGE_SIZE groups per page): two flat chevron buttons around the "2/5"
+ * position readout, no wider than the rows it sits under — this list is a drawer at phone
+ * width. `page` is 0-based; the readout and the accessible names count from 1.
+ *
+ * Rendered only by callers that already know there is more than one page; the buttons
+ * still disable at the ends so the control never offers a step that goes nowhere.
+ */
+export function GroupPager({
+  page,
+  pageCount,
+  onChange,
+}: {
+  page: number;
+  pageCount: number;
+  onChange: (page: number) => void;
+}) {
+  const step = (delta: number) => {
+    const next = page + delta;
+    if (next >= 0 && next < pageCount) onChange(next);
+  };
+  const buttonClass =
+    "flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:bg-gray-200/50 hover:text-gray-700 disabled:pointer-events-none disabled:opacity-40 dark:text-gray-500 dark:hover:bg-gray-800/50 dark:hover:text-gray-300";
+  return (
+    <div className="mt-1 flex items-center justify-center gap-1.5 px-1.5 py-0.5">
+      <button
+        type="button"
+        title={S.chat.prevGroupPage}
+        aria-label={S.chat.prevGroupPage}
+        disabled={page <= 0}
+        onClick={() => step(-1)}
+        className={buttonClass}
+      >
+        <Icon d={PAGER_PREV_ICON} size={12} />
+      </button>
+      {/* The position doubles as the control's status: announced on change so a step is
+          audible without counting the rows that swapped underneath it. */}
+      <span
+        aria-live="polite"
+        aria-label={S.chat.groupPagePosition(page + 1, pageCount)}
+        className="min-w-[2.5rem] text-center text-[11px] font-medium tabular-nums text-gray-400 dark:text-gray-500"
+      >
+        {page + 1}/{pageCount}
+      </span>
+      <button
+        type="button"
+        title={S.chat.nextGroupPage}
+        aria-label={S.chat.nextGroupPage}
+        disabled={page >= pageCount - 1}
+        onClick={() => step(1)}
+        className={buttonClass}
+      >
+        <Icon d={PAGER_NEXT_ICON} size={12} />
+      </button>
+    </div>
+  );
+}
+
 /**
  * Collapsed-by-default lazy folder (subagent / scheduled / archived): the toggle row
  * shows the label (typically with the group's exact server share), the body renders only
@@ -201,6 +215,7 @@ export function FolderSection({
   open,
   onToggle,
   more = false,
+  moreLabel,
   pending = false,
   onMore,
   children,
@@ -210,6 +225,12 @@ export function FolderSection({
   onToggle: () => void;
   /** Show the folder's own "More" row (its share isn't fully loaded and somewhere is left to fetch from). */
   more?: boolean;
+  /**
+   * Wording of that row, when the caller can count what is still hidden in THIS folder
+   * ("Show 7 more chats"). Defaults to the bare shared "More" — the honest label where
+   * the caller has no per-folder remainder to name.
+   */
+  moreLabel?: string;
   /** The folder's "More" fetch in flight. */
   pending?: boolean;
   onMore?: () => void;
@@ -223,7 +244,12 @@ export function FolderSection({
       </button>
       {open && children}
       {open && more && (
-        <MoreRow label={S.chat.loadMore} pending={pending} onClick={() => onMore?.()} />
+        <MoreRow
+          label={moreLabel ?? S.chat.loadMore}
+          {...(moreLabel !== undefined ? { ariaLabel: moreLabel } : {})}
+          pending={pending}
+          onClick={() => onMore?.()}
+        />
       )}
     </div>
   );
@@ -234,6 +260,12 @@ export function FolderSection({
  * chevron) stretching across, with optional action buttons trailing outside it. The
  * toggle's hover pill spans the full row height set by any h-7 actions (self-stretch —
  * see the sidebar's header comments for where this first bit).
+ *
+ * The header doubles as the drag handle when the caller makes it draggable (the
+ * sidebar's manual group order). The handle is the header rather than the whole group
+ * block so that the Session rows inside keep their own row-level drag, and it is the
+ * element itself rather than an added grip button so the row costs no extra width —
+ * this list is a drawer at phone width and already carries up to three actions.
  */
 export function GroupHeader({
   open,
@@ -244,6 +276,12 @@ export function GroupHeader({
   count,
   title,
   actions,
+  draggable = false,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDragLeave,
+  onDrop,
 }: {
   open: boolean;
   onToggle: () => void;
@@ -258,9 +296,26 @@ export function GroupHeader({
   title?: string;
   /** Trailing header actions (pin / new chat / settings / import). */
   actions?: ReactNode;
+  /** Manual group order: the header acts as the drag handle (the caller wires the handlers below). */
+  draggable?: boolean;
+  onDragStart?: (e: ReactDragEvent) => void;
+  onDragEnd?: () => void;
+  onDragOver?: (e: ReactDragEvent) => void;
+  onDragLeave?: (e: ReactDragEvent) => void;
+  onDrop?: (e: ReactDragEvent) => void;
 }) {
   return (
-    <div className="group/header flex items-center gap-0.5 px-1 pb-0.5">
+    <div
+      // cursor-grab while the header is a handle — the SessionRow treatment one axis up.
+      // Groups have no sort toggle by design, so the cursor is the only thing on screen
+      // that says this row can be dragged at all.
+      className={`group/header flex items-center gap-0.5 px-1 pb-0.5${
+        draggable ? " cursor-grab" : ""
+      }`}
+      {...(draggable
+        ? { draggable: true, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop }
+        : {})}
+    >
       <button
         type="button"
         onClick={onToggle}

@@ -17,9 +17,11 @@ import {
   attachedFileLine,
   attachedImageLine,
   isSessionMeta,
+  isSteeredBackgroundNotice,
   matchAttachedFileLine,
   matchAttachedImageLine,
   modelVisiblePath,
+  parseBackgroundTaskDoneMessage,
   parseTraceLines,
   parseUserSteeringText,
   readTraceTolerant,
@@ -34,6 +36,7 @@ import type {
   RequestSpan,
   SessionCategory,
   SessionCategoryCounts,
+  SessionContextParts,
   HistoryMessage,
   TracePosition,
   ToolCallSpan,
@@ -67,6 +70,8 @@ import type {
   ScanState,
   WindowPriorStats,
 } from "./message-window.js";
+import { buildContextBreakdown, emptyContextBreakdown } from "./context-breakdown.js";
+import { sessionIdCreatedAt } from "./session-service.js";
 import { TraceIndexService, traceFilePath } from "./trace-index.js";
 
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
@@ -103,6 +108,9 @@ function isTaskStartingUser(msg: OmniMessage): boolean {
   if (p.type === "image_url") return true;
   if (p.type !== "text" || p.role !== "user" || typeof p.text !== "string") return false;
   if (parseUserSteeringText(p.text) !== null) return false;
+  // A steered background notice rides inside the running Task exactly like steering; only
+  // the unstamped form (an idle-launched notice task's own input) starts a Task.
+  if (isSteeredBackgroundNotice(p.text)) return false;
   return !p.text.startsWith("[context_summary]") && !p.text.startsWith("<context_summary>");
 }
 
@@ -206,6 +214,10 @@ function subagentPointer(msg: OmniMessage): string | null {
  */
 export interface TraceSessionIndex {
   listByAgent(projectId: string, agentId: string): SessionRow[];
+  /** One row by id, from anywhere in the install — the import path's uniqueness check (see importTraceFile). Optional, like the index itself: narrow tests stub only what they read. */
+  findById?(sessionId: string): SessionRow | null;
+  /** Registers an imported Trace as a Session of the receiving Agent (see importTraceFile); optional for the same reason. */
+  insertOrIgnore?(row: SessionRow): void;
 }
 
 /** TraceService wiring (the trace-file index is required: every listing/locating path serves from it — no directory walks). */
@@ -753,6 +765,26 @@ export class TraceService {
     }
   }
 
+  /**
+   * Composition of the Session's current model context, read from its **newest** Trace shard —
+   * one shard is one complete context (see context-breakdown.ts). A Session with no Trace yet
+   * answers with zeros rather than a 404: "nothing in the context" is a true statement about it,
+   * and the caller is a display that would have to invent the same answer.
+   */
+  async contextBreakdown(
+    projectId: string,
+    agentId: string,
+    sessionId: string,
+  ): Promise<SessionContextParts> {
+    const files = await this.locateAll(projectId, agentId, sessionId);
+    const newest = files.reduce<LocatedFile | null>(
+      (best, f) => (best === null || f.index > best.index ? f : best),
+      null,
+    );
+    if (newest === null) return emptyContextBreakdown();
+    return buildContextBreakdown(await this.readShard(newest.path));
+  }
+
   /** List of Trace files (index / date / size / mtime). */
   async listTraceFiles(
     projectId: string,
@@ -913,14 +945,32 @@ export class TraceService {
       // running Task): never a turn starter — same exclusion idea as the compaction summary —
       // and it forces the next request to be a continuation (a steering-only continuation
       // turn has no preceding tool call, but it is still the same Task).
-      const isSteeringText =
+      const isMainUserText =
         !hasOrigin &&
         msg.type === "model_msg" &&
         p.type === "text" &&
         p.role === "user" &&
-        typeof p.text === "string" &&
-        parseUserSteeringText(p.text) !== null;
-      if (isSteeringText) continuation = true;
+        typeof p.text === "string";
+      const isSteeringText = isMainUserText && parseUserSteeringText(p.text as string) !== null;
+      // A background completion notice injected into the running Task gets the same
+      // treatment as steering. Recognized by the delivery stamp (`delivery: steering` on
+      // its block), or by POSITION for notices written by a pre-stamp core: a Task never
+      // ends while the just-ended request's tool calls still await their continuation
+      // (sawToolCallThisRequest — the same fact that forces the continuation below), so a
+      // notice landing in that gap is in-task even without the stamp. The Web reducer and
+      // the message-window scanner apply the identical fallback — the four turn
+      // implementations must agree on legacy data too. An unstamped notice after a
+      // no-tool turn keeps its independent turn: there an idle launch is genuinely
+      // possible and only the stamp (written by new cores) can tell the two apart.
+      const noticeParsed = isMainUserText ? parseBackgroundTaskDoneMessage(p.text as string) : null;
+      const isInjectedNotice =
+        noticeParsed !== null &&
+        (noticeParsed.done.delivery === "steering" || sawToolCallThisRequest);
+      // The continuation force only applies to a gap delivery (between two requests of the
+      // running Task). A notice drained at run start rides behind a fresh user Prompt —
+      // pendingFrom is then already open for the new turn, whose own `continuation = false`
+      // must win, or the new turn would merge into the previous one.
+      if ((isSteeringText || isInjectedNotice) && pendingFrom === null) continuation = true;
       // Images sent with a steering message ride immediately behind its text, exactly as a
       // Prompt's images ride behind theirs — and they inherit its exclusion: still the same
       // Task, so `steeringImages` keeps the window open across the whole run of them and
@@ -936,6 +986,7 @@ export class TraceService {
         !hasOrigin &&
         !compactionActive &&
         !isSteeringText &&
+        !isInjectedNotice &&
         !steeringImages &&
         msg.type === "model_msg" &&
         ((p.type === "text" && p.role === "user") || p.type === "image_url");
@@ -1020,13 +1071,14 @@ export class TraceService {
           // continue the turn, otherwise a single blip would split that turn's
           // Tokens/duration/TPS across two Tasks and inflate the Task count.
           //
-          // This list must track the engine's, and the engine's differs by loop:
-          // the turn loop retries `failed` too, while compaction deliberately fails
-          // fast and stops on it (core's TURN_RETRY_STATUSES vs
-          // COMPACTION_RETRY_STATUSES). Hence the compactionActive guard — a failed
-          // compaction request really is the end of that request, and counting it
-          // as a reconnect would invent an attempt that never happened.
+          // This list must track the engine's: `retryable` is the one reconnecting
+          // status today (both loops share RETRY_STATUSES). The legacy spellings keep
+          // pre-convergence Traces analyzable — in that era timeout/malformed always
+          // reconnected, while `failed` reconnected in the turn loop but ended a
+          // compaction attempt (the then fail-fast compaction policy), hence the
+          // compactionActive guard on it.
           const retryable =
+            status === "retryable" ||
             status === "timeout" ||
             status === "malformed" ||
             (status === "failed" && !compactionActive);
@@ -1293,16 +1345,15 @@ export class TraceService {
    * drill-down (newest first: Agent -> date -> Session -> Trace files; sizes are the
    * index's last observed values). With `paging`: session-group-centric — Sessions
    * ordered by id descending (ids embed a timestamp, so that is reverse chronological),
-   * optionally filtered to one sidebar `category`, CLI-origin Sessions excluded unless
-   * `includeCli` (the "show CLI sessions" preference; the legacy shape is never
-   * filtered — back-compat), and only the returned slice gets per-file `fs.stat` for
+   * optionally filtered to one sidebar `category` — every Session is listed whichever
+   * client created it — and only the returned slice gets per-file `fs.stat` for
    * fresh sizes (written back to the index).
    */
   async agentTraces(
     projectId: string,
     agentId: string,
     paging?: { offset: number; limit: number } | null,
-    opts: { category?: SessionCategory; includeCli?: boolean } = {},
+    opts: { category?: SessionCategory } = {},
   ): Promise<AgentTracesResponse> {
     await this.deps.index.reconcileAgent(projectId, agentId);
     const files = this.deps.index.repo.listFilesByAgent(projectId, agentId);
@@ -1363,7 +1414,7 @@ export class TraceService {
     agentId: string,
     files: TraceFileRow[],
     paging: { offset: number; limit: number },
-    opts: { category?: SessionCategory; includeCli?: boolean },
+    opts: { category?: SessionCategory },
   ): Promise<AgentTracesResponse> {
     const bySession = new Map<string, TraceFileRow[]>();
     for (const f of files) {
@@ -1372,39 +1423,23 @@ export class TraceService {
       bySession.set(f.sessionId, list);
     }
     // One indexed query per source: the Agent's DB rows (title / archived / workspace /
-    // client — CLI rows included) and the registration-time facts.
+    // client) and the registration-time facts.
     const rows = new Map(
       (this.deps.sessions?.listByAgent(projectId, agentId) ?? []).map((r) => [r.sessionId, r]),
     );
     const factsBySession = new Map(
       this.deps.index.repo.listSessionsByAgent(projectId, agentId).map((r) => [r.sessionId, r]),
     );
-    /**
-     * CLI-origin = no web-created DB row AND not a subagent/schedule Session. Server-created
-     * Sessions always have a row (creation / subagent registration insert one), so rowless =
-     * external CLI; adopted CLI rows carry client='cli'. The default listing excludes these —
-     * the same "show CLI sessions" preference the sidebar applies — while subagent/schedule
-     * Sessions stay in their folders regardless of which process ran them.
-     */
-    const cliOrigin = (sessionId: string, facts: TraceSessionFacts): boolean => {
-      if (facts.category === "subagent" || facts.category === "schedule") return false;
-      const row = rows.get(sessionId);
-      return !(
-        row !== undefined &&
-        (row.client === null || row.client === undefined || row.client === "web")
-      );
-    };
     const ids = [...bySession.keys()].sort((a, b) => b.localeCompare(a));
-    // Classify every group once; the same result drives the CLI/category filters, the
+    // Classify every group once; the same result drives the category filter, the
     // counts AND the returned fields, so a row can never appear in a bucket its own
-    // `category` denies. Hidden CLI-origin groups are excluded from counts too.
+    // `category` denies. Every Session is listed whichever client created it.
     const counts: SessionCategoryCounts = { active: 0, subagent: 0, schedule: 0, archived: 0 };
     const workspaceCounts: Record<string, SessionCategoryCounts> = {};
     const factsById = new Map<string, TraceSessionFacts>();
     const visible: string[] = [];
     for (const id of ids) {
       const facts = this.classify(id, rows.get(id), factsBySession.get(id));
-      if (opts.includeCli !== true && cliOrigin(id, facts)) continue;
       factsById.set(id, facts);
       visible.push(id);
       counts[facts.category] += 1;
@@ -1540,9 +1575,16 @@ export class TraceService {
       new HttpError(
         409,
         "trace_session_exists",
-        `This Agent already has a Session with id ${sessionId}; a duplicate Trace cannot be imported.`,
+        `A Session with id ${sessionId} already exists here; a duplicate Trace cannot be imported.`,
       );
+    // A Session id is the identity everywhere — the sessions table keys on it, the frontend
+    // dedupes rows by it, and /chat/:sessionId routes by it — so the check spans the whole
+    // install, not just the receiving Agent. Importing the same Trace under a second Agent
+    // used to "succeed" into a Session nothing could own: no row could be inserted beside
+    // the existing one, and the list folded the two into a single conversation, leaving a
+    // group's count one above the rows it could ever show.
     if ((await this.locateAll(projectId, agentId, sessionId)).length > 0) throw duplicate();
+    if (this.deps.sessions?.findById?.(sessionId)) throw duplicate();
     const ts = Date.parse(first.timestamp);
     const date = formatLocalDate(Number.isNaN(ts) ? new Date() : new Date(ts));
     const index = 1;
@@ -1571,6 +1613,47 @@ export class TraceService {
       sizeBytes: Buffer.byteLength(body, "utf8"),
       records,
     });
+    this.indexImportedSession(projectId, agentId, sessionId);
     return { sessionId, index, date };
+  }
+
+  /**
+   * Registers an imported Trace as a **Session of the receiving Agent**, from the facts the
+   * registration above just head-read (no second parse).
+   *
+   * Without this the import produced a Trace file and nothing else: the conversation list is
+   * served straight from the sessions table, so an imported Trace stayed invisible unless
+   * "show CLI sessions" was on — that filter adopts Sessions this server never created, and
+   * a file the user deliberately imported is not one of those. Hence `client: "web"`: an
+   * imported conversation is a conversation of this install.
+   *
+   * `approvalMode` is backfilled with the default (a Trace does not record it), and the
+   * origin is recorded in the shared registry so the row lands in the right sidebar
+   * category. Facts too old or too broken to name a model are skipped rather than inserted
+   * half-formed — the Trace file itself is already written and readable either way.
+   */
+  private indexImportedSession(projectId: string, agentId: string, sessionId: string): void {
+    const sessions = this.deps.sessions;
+    if (!sessions) return;
+    const facts = this.deps.index.repo.getSession(sessionId);
+    if (!facts?.metaRead || facts.provider === null || facts.modelId === null) return;
+    if (facts.source !== null) this.deps.sources?.set(sessionId, facts.source);
+    const createdAt = sessionIdCreatedAt(sessionId) ?? facts.firstTs ?? new Date().toISOString();
+    sessions.insertOrIgnore?.({
+      sessionId,
+      projectId,
+      agentId,
+      provider: facts.provider,
+      modelId: facts.modelId,
+      workspace: facts.workspace,
+      approvalMode: "allow-all",
+      title: facts.title,
+      client: "web",
+      hasTrace: true,
+      createdAt,
+      // Nothing has run here yet: the imported conversation reads as last-active when it
+      // was created, until it is resumed on this install.
+      lastActiveAt: createdAt,
+    });
   }
 }

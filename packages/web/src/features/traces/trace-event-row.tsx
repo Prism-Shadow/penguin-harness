@@ -13,7 +13,7 @@
  */
 import { Fragment, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { REHYPE_PLUGINS, REMARK_PLUGINS } from "../../lib/markdown-plugins";
 import { S } from "../../lib/strings";
 import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
 import { formatTime, humanizeTokens } from "../../lib/format";
@@ -118,8 +118,13 @@ export function summarizeEvent(msg: OmniMessage): string {
     }
     case "tool_list_ready":
       return Array.isArray(p["tools"]) ? S.traces.toolDefs(p["tools"].length) : "";
-    case "abort":
-      return p["reason"] != null ? String(p["reason"]) : "";
+    case "abort": {
+      // Live events carry the unified pair; legacy Traces spell the cause as `reason` prose.
+      const code = p["error_code"] != null ? String(p["error_code"]) : "";
+      const detail = p["error_message"] != null ? String(p["error_message"]) : "";
+      const legacy = p["reason"] != null ? String(p["reason"]) : "";
+      return [code || legacy, detail].filter(Boolean).join(" · ");
+    }
     case "goal_finished":
       return `${String(p["outcome"])} · rounds=${String(p["rounds"])} · tokens=${String(p["tokens_used"])}`;
     case "subagent":
@@ -213,7 +218,9 @@ function SessionMetaBody({ p }: { p: Record<string, unknown> }) {
         <details>
           <summary className={summaryClass}>{S.traces.systemPrompt}</summary>
           <div className="md-body mt-1.5 max-h-96 overflow-auto rounded bg-gray-100 px-2.5 py-2 text-sm leading-relaxed text-gray-700 dark:bg-gray-800/70 dark:text-gray-300">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{prompt}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={REMARK_PLUGINS} rehypePlugins={REHYPE_PLUGINS}>
+              {prompt}
+            </ReactMarkdown>
           </div>
         </details>
       )}
@@ -316,7 +323,9 @@ function EventBody({ msg }: { msg: OmniMessage }) {
       if (!md.trim()) return <p className="text-xs text-gray-400">—</p>;
       return (
         <div className="md-body text-sm leading-relaxed text-gray-700 dark:text-gray-300">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{md}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={REMARK_PLUGINS} rehypePlugins={REHYPE_PLUGINS}>
+            {md}
+          </ReactMarkdown>
         </div>
       );
     }

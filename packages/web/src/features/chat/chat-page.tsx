@@ -34,7 +34,6 @@ import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { pathFileName } from "../../lib/file-path";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import {
   formatDateTime,
@@ -49,7 +48,6 @@ import {
   approvalKey,
   createStreamModel,
   finalizeHistory,
-  isModelAuthDead,
   pushMessage,
 } from "../../lib/omni/stream-model";
 import type { StreamModel } from "../../lib/omni/stream-model";
@@ -91,6 +89,7 @@ import { ChatDropRegion } from "./drop-zone";
 import { ConversationOutline, OutlineMenuButton, useOutlineRailFit } from "./conversation-outline";
 import { DraftView } from "./draft-view";
 import { parkActiveDraft } from "./draft-sessions";
+import { sessionForProject, sessionProbeKey } from "./session-project";
 import { CHAT_DEFAULTS_CHANGED_EVENT, chatDefaultsChangedDetail } from "./chat-defaults-event";
 import { advanceCostStat, applyUsageFetch, createCostStatHold } from "./header-stats";
 import type { CostStatDisplay } from "./header-stats";
@@ -106,6 +105,7 @@ import { useMemoryListing } from "./use-memory-listing";
 import { deletedChangeKeys } from "./memory-nav";
 import { SubagentsView } from "./subagents-view";
 import { TracePanel } from "../traces/trace-panel";
+import { MessagingPanel } from "../messaging/messaging-panel";
 import { DockPanel } from "../dock/dock-panel";
 import { useDockMount } from "../dock/use-dock-mount";
 import { panelLabel } from "../dock/panel-meta";
@@ -299,9 +299,6 @@ export function ChatPage() {
     cacheWrite: number;
     output: number;
   } | null>(null);
-  // Latest trace file path (single-session GET only — list rows don't carry it), fetched
-  // when the details popover opens; null = none yet (brand-new session) or still loading.
-  const [tracePath, setTracePath] = useState<string | null>(null);
   // A mid-chat thinking-level pick staged behind the confirm dialog (issue #310): some
   // providers key their prompt PREFIX on the thinking level, so switching with history in
   // place invalidates the provider's prefix cache and the next request re-bills the whole
@@ -588,9 +585,10 @@ export function ChatPage() {
   // The Session list is paged: a deep-linked Session (old bookmark, cross-page jump) may sit
   // beyond the loaded pages. Look it up directly and insert it before the auto-select effect
   // below concludes it doesn't exist; only a failed probe releases that redirect.
-  const [probeFailedId, setProbeFailedId] = useState<string | null>(null);
+  const probeKey = projectId && routeSessionId ? sessionProbeKey(projectId, routeSessionId) : null;
+  const [probeFailedKey, setProbeFailedKey] = useState<string | null>(null);
   useEffect(() => {
-    if (draft || !routeSessionId || sessionsLoading) return;
+    if (draft || !projectId || !routeSessionId || !probeKey || sessionsLoading) return;
     if (sessions.some((s) => s.sessionId === routeSessionId)) return;
     // We deleted this Session ourselves: the row is gone from the list on purpose, so the
     // lookup below could only 404 (and the server would record that as an error). Deleting
@@ -598,22 +596,34 @@ export function ChatPage() {
     // this path runs on every such delete. Treat it as an already-failed probe, which
     // releases the redirect effect below to move on to another conversation.
     if (isSessionDeleted(routeSessionId)) {
-      setProbeFailedId(routeSessionId);
+      setProbeFailedKey(probeKey);
       return;
     }
     let cancelled = false;
     api.getSession(routeSessionId).then(
       (res) => {
-        if (!cancelled) addSession(res.session);
+        if (cancelled) return;
+        const session = sessionForProject(res.session, projectId);
+        if (session) addSession(session);
+        else setProbeFailedKey(probeKey);
       },
       () => {
-        if (!cancelled) setProbeFailedId(routeSessionId);
+        if (!cancelled) setProbeFailedKey(probeKey);
       },
     );
     return () => {
       cancelled = true;
     };
-  }, [draft, routeSessionId, sessionsLoading, sessions, addSession, isSessionDeleted]);
+  }, [
+    draft,
+    projectId,
+    routeSessionId,
+    probeKey,
+    sessionsLoading,
+    sessions,
+    addSession,
+    isSessionDeleted,
+  ]);
 
   // Auto-select the most recent conversation when the route doesn't select one (newest loaded
   // active/schedule Session — archived rows are hidden by choice and subagent Sessions belong
@@ -623,10 +633,10 @@ export function ChatPage() {
     if (sessionsLoading || draft) return;
     if (routeSessionId && sessions.some((s) => s.sessionId === routeSessionId)) return;
     // A routed id missing from the paged list isn't gone until the direct lookup fails.
-    if (routeSessionId && probeFailedId !== routeSessionId) return;
+    if (routeSessionId && probeFailedKey !== probeKey) return;
     const last = latestConversation(sessions);
     navigate(last ? `/chat/${last.sessionId}` : `/chat/${DRAFT_SESSION_ID}`, { replace: true });
-  }, [sessionsLoading, draft, routeSessionId, probeFailedId, sessions, navigate]);
+  }, [sessionsLoading, draft, routeSessionId, probeKey, probeFailedKey, sessions, navigate]);
 
   // Sync task_state to the sidebar list badge.
   //
@@ -655,6 +665,11 @@ export function ChatPage() {
     id: selectedSessionId,
     state: "idle",
   });
+  /**
+   * Settled-turn counter handed to the dock panels that read what the Session produced — the
+   * Files browser and the Trace panel; every bump means "re-read".
+   */
+  const [settledTurnSignal, setSettledTurnSignal] = useState(0);
   useEffect(() => {
     const prev = prevTaskRef.current;
     const sameSession = prev.id === selectedSessionId;
@@ -666,6 +681,12 @@ export function ChatPage() {
     if (prev.state !== "idle" && stream.taskState === "idle") {
       void reloadSessions();
       void reloadAgents();
+      // The turn that just ended is when the Agent's file writes landed: the Files panel's
+      // listing and whatever it has open are stale from this moment on (see the browser's
+      // reloadSignal), and so are the Trace panel's file list and the file it is showing —
+      // the turn appended its own record to it. Same edge, same guard — a phantom "idle"
+      // from a detaching stream never reaches here.
+      setSettledTurnSignal((n) => n + 1);
     }
   }, [stream.taskState, selectedSessionId, reloadSessions, reloadAgents]);
 
@@ -689,7 +710,7 @@ export function ChatPage() {
   // Session switch: resets the usage-fetch marker, the file-card existence cache, any
   // thinking-level switch staged behind its dialog (per-session UI state — a compaction
   // that self-heals to a new session id routes through here too and drops the held pick),
-  // and the popover's per-session data (process list / token buckets / trace path),
+  // and the popover's per-session data (process list / token buckets),
   // avoiding stale data from the previous Session (the panel jump commands reset in their
   // own effect above, and the cost hold re-keys itself inside advanceCostStat). The thinking level itself needs no reset — it is read off the
   // selected Session row, so it changes with the session by construction.
@@ -699,7 +720,6 @@ export function ChatPage() {
     statCacheRef.current = new Map();
     setProcesses([]);
     setUsageBuckets(null);
-    setTracePath(null);
   }, [routeSessionId]);
 
   // Batched existence check for file summaries: cache stable positive results and share in-flight
@@ -867,23 +887,6 @@ export function ChatPage() {
     (processId: string) => runProcessAction(processId, api.removeSessionProcess, [404, 409]),
     [runProcessAction],
   );
-
-  // Trace file path for the popover's trace row: the single-session GET is the only
-  // surface carrying it, so fetch lazily on open (and once per session — the path only
-  // ever moves forward when a new trace file starts, which a reopen picks up).
-  useEffect(() => {
-    if (!infoOpen || !selectedSessionId) return;
-    let cancelled = false;
-    api
-      .getSession(selectedSessionId)
-      .then((res) => {
-        if (!cancelled) setTracePath(res.session.tracePath ?? null);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [infoOpen, selectedSessionId]);
 
   // Model config (context window + credential guide): fetched once per Project.
   //
@@ -1172,9 +1175,10 @@ export function ChatPage() {
   );
 
   // Recall a queued message back into the composer (#287): the DELETE returns the original
-  // content (text / images / files) and the input area restores it as the draft. A 409
-  // not_pending (steering already delivered, follow-up already started) surfaces as a toast;
-  // the queued hint retires on its own via the re-broadcast task_state.
+  // content (text / images / files) and the input area restores it as the draft. A 409 —
+  // not_pending (steering already delivered) or follow_up_started (the follow-up already
+  // became a task) — surfaces as a toast, each with its own sentence; the queued hint
+  // retires on its own via the re-broadcast task_state.
   const onRecallSteering = useCallback(
     async (steerId: string) => {
       if (!selected) return null;
@@ -1348,9 +1352,6 @@ export function ChatPage() {
   }, [user, projectId, navigate]);
 
   // Auth-dead notice primary CTA: the Models page is where the credential is actually fixed.
-  const openModels = useCallback(() => {
-    navigate("/models");
-  }, [navigate]);
 
   const onFork = useCallback(
     async (target: ForkTarget): Promise<void> => {
@@ -1483,11 +1484,22 @@ export function ChatPage() {
             ctx={ctx}
             focusRequest={subagentFocus}
             taskScope={subagentTaskScope}
+            subagents={stream.subagents}
+            models={models?.models ?? []}
+            approvalMode={selected.approvalMode}
+            onChangeApprovalMode={onChangeApprovalMode}
+            modeSaving={modeSaving}
+            parentThinkingLevel={sessionThinkingLevel(turnThinkingLevel, agentThinkingLevel)}
           />
         );
       case "workspace":
         return (
-          <WorkspaceBrowser session={selected} openRequest={fileOpenRequest} active={active} />
+          <WorkspaceBrowser
+            session={selected}
+            openRequest={fileOpenRequest}
+            active={active}
+            reloadSignal={settledTurnSignal}
+          />
         );
       case "memory":
         return (
@@ -1504,7 +1516,18 @@ export function ChatPage() {
           />
         );
       case "trace":
-        return <TracePanel key={selected.sessionId} session={selected} active={active} />;
+        return (
+          <TracePanel
+            key={selected.sessionId}
+            session={selected}
+            active={active}
+            reloadSignal={settledTurnSignal}
+          />
+        );
+      case "messaging":
+        return (
+          <MessagingPanel key={selected.sessionId} sessionId={selected.sessionId} active={active} />
+        );
     }
   };
 
@@ -1566,17 +1589,6 @@ export function ChatPage() {
   const emptyChat =
     selected !== null && !stream.loading && !stream.error && stream.model.items.length === 0;
 
-  // Auth-dead gate (recoverable): an auth failure is on record AND the Project's credentials
-  // have not been updated since — only the model reference is fixed at creation, credentials
-  // come from the current Project config, so a key update (Models page) unlocks the session
-  // (live via the credentials_updated event; across reloads via this time comparison against
-  // the models response's updatedAt).
-  const credsUpdatedMs = models?.updatedAt !== undefined ? Date.parse(models.updatedAt) : NaN;
-  const modelAuthDead = isModelAuthDead(
-    stream.lastAuthFailureMs,
-    Number.isFinite(credsUpdatedMs) ? credsUpdatedMs : null,
-  );
-
   // Input area in session state: Agent / Workspace / Model are already locked by the Session
   // (the model selector isn't rendered; models feeds the locked model's read-only display and
   // the /model switch picker) — approval mode and the per-turn thinking level stay editable;
@@ -1584,10 +1596,6 @@ export function ChatPage() {
   const input = selected && (
     <ChatInput
       status={stream.taskState}
-      modelAuthDead={modelAuthDead}
-      onOpenModels={openModels}
-      onRetryModelAuth={stream.dismissModelAuthDead}
-      onNewSession={newChat}
       onSend={onSend}
       onSteer={onSteer}
       // Count of steering messages already visible in the stream: the input area keeps its
@@ -1613,6 +1621,7 @@ export function ChatPage() {
       {...(contextWindow !== undefined ? { contextWindow } : {})}
       contextNow={stream.model.stats.contextNow}
       contextStale={stream.model.stats.contextStale}
+      sessionId={selected.sessionId}
       vision={vision}
       approvalMode={selected.approvalMode}
       onChangeApprovalMode={onChangeApprovalMode}
@@ -1905,49 +1914,6 @@ export function ChatPage() {
                       </li>
                     ))}
                   </ul>
-                </div>
-              )}
-              {/* Trace file, same section anatomy as the rows above (label + mono value):
-                  the value is the file NAME on a single line (#312 — the full path wrapped
-                  over several lines; it now lives in the tooltip and the copy button, which
-                  copies the FULL path). The name itself is the click target and
-                  SPA-navigates to the Trace page deep-linked to the owning Agent AND this
-                  Session (?agentId= focuses/expands the Agent group, ?sessionId=
-                  auto-selects — a Session beyond the first loaded page resolves via the
-                  Trace page's full-fetch fallback). Hidden until a trace exists (a
-                  brand-new session has no file to open); only reachable for a real
-                  Session — this whole header renders behind the `selected` guard, so a
-                  draft never shows it. */}
-              {tracePath !== null && (
-                <div>
-                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                    {S.chat.traceFile}
-                  </p>
-                  <div className="flex items-center gap-1.5">
-                    {/* Wrapper (not flex-1 on the button itself) keeps the click target no
-                        wider than the name while the copy button still sits at the row's
-                        right edge, mirroring the Session id row. */}
-                    <div className="min-w-0 flex-1">
-                      <button
-                        type="button"
-                        title={tracePath}
-                        onClick={() => {
-                          setInfoOpen(false);
-                          navigate(
-                            `/traces?agentId=${encodeURIComponent(selected.agentId)}&sessionId=${encodeURIComponent(selected.sessionId)}`,
-                          );
-                        }}
-                        className="max-w-full truncate text-left font-mono text-xs leading-5 text-gray-600 underline decoration-gray-300 underline-offset-2 transition-colors duration-150 hover:text-gray-900 dark:text-gray-300 dark:decoration-gray-600 dark:hover:text-gray-100"
-                      >
-                        {pathFileName(tracePath)}
-                      </button>
-                    </div>
-                    <CopyButton
-                      text={tracePath}
-                      label={S.chat.copyTracePath}
-                      className={ROW_COPY_CLASS}
-                    />
-                  </div>
                 </div>
               )}
             </div>

@@ -48,15 +48,18 @@ import { agentDisplayName, projectDisplayName, useProject } from "../../state/pr
 import { useSessions } from "../../state/sessions";
 import {
   FOLDER_CATEGORIES,
-  SIDEBAR_GROUP_PAGE_SIZE,
   SIDEBAR_PAGE_SIZE,
   TIME_FOLDERS_GROUP_KEY,
   aggregateWorkspaceCounts,
+  clampGroupPage,
+  groupPageCount,
+  groupPageOf,
+  groupPageSlice,
   groupSessionsByTime,
   groupSessionsByWorkspace,
+  hiddenRowCount,
   matchesSessionQuery,
   partitionSessions,
-  pinnedFirst,
   sessionCategory,
   totalCategoryCounts,
   workspaceGroupKey,
@@ -94,6 +97,13 @@ import {
   storeSessionSortMode,
 } from "../../lib/session-order";
 import type { SessionSortMode } from "../../lib/session-order";
+import {
+  commitGroupOrder,
+  isOrderableGroupMode,
+  loadGroupOrder,
+  orderGroups,
+  saveGroupOrder,
+} from "../../lib/group-order";
 import { Dropdown } from "../ui/dropdown";
 import { useRowContextMenu } from "../ui/context-menu";
 import {
@@ -110,7 +120,7 @@ import {
 } from "../ui/session-row-menu";
 import type { SessionRowAction } from "../ui/session-row-menu";
 import { AgentAvatar } from "../ui/agent-avatar";
-import { CheckIcon, ChevronDown, GEAR_ICON, NAV_ICONS } from "../ui/icons";
+import { CheckIcon, ChevronDown, GEAR_ICON, MESSAGING_RELAY_ICON, NAV_ICONS } from "../ui/icons";
 import {
   FOLDER_ICON,
   FOLDER_OPEN_ICON,
@@ -118,6 +128,7 @@ import {
   SORT_MODE_ICONS,
   FolderSection,
   GroupHeader,
+  GroupPager,
   Icon,
   MoreRow,
   initialGroupMode,
@@ -134,7 +145,9 @@ import { ConfirmModal } from "../ui/confirm-modal";
 import { Button } from "../ui/button";
 import { Input, noAutofill } from "../ui/input";
 import { SkeletonList } from "../ui/skeleton";
+import { UpdateDot } from "../ui/update-dot";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
+import { MessagingBindingModal } from "../../features/messaging/messaging-binding-modal";
 import { WorkspaceSelect } from "../../features/chat/workspace-select";
 import { clearDraft, sessionDraftKey } from "../../features/chat/draft-cache";
 import {
@@ -151,6 +164,8 @@ import { UpdateDialog } from "../account/update-dialog";
 import { offersClientUpdate } from "../../lib/desktop-update";
 import { requestClientInstall, useDesktopUpdate } from "../../lib/use-desktop-update";
 import { forceUpdateCheck, updateCheckOutcome, useVersionInfo } from "../../lib/use-version-info";
+import { useUpdateBadges } from "../../lib/use-update-badges";
+import { releaseUpdate } from "../../lib/update-badges";
 import { SettingsDialog } from "../../features/settings/settings-dialog";
 import { ICON_SIZE } from "../../lib/icon-scale";
 
@@ -184,6 +199,18 @@ const CLOSE_ICON = "M18 6L6 18M6 6l12 12";
  * into the user's message. Nothing outside these rows reads this type.
  */
 const SESSION_DRAG_MIME = "application/x-penguin-session-id";
+
+/** Private drag payload type of a group reorder (same reasoning as SESSION_DRAG_MIME: never text/plain). */
+const GROUP_DRAG_MIME = "application/x-penguin-group-key";
+
+/**
+ * Is the drag in flight one of our group reorders? `types` is readable during dragover
+ * (unlike getData), so the payload GROUP_DRAG_MIME carries is what authorizes the drop
+ * rather than React state alone: a `dragGroup` left behind by a source header that
+ * unmounted mid-drag can no longer make the sidebar swallow an unrelated drag — a file
+ * from the desktop, a Session row — paint a phantom drop line, and commit on release.
+ */
+const isGroupDrag = (e: ReactDragEvent): boolean => e.dataTransfer.types.includes(GROUP_DRAG_MIME);
 
 /** Manual drag-reordering needs a pointer that can drag (HTML5 DnD never fires from touch) — the outline rail's query. */
 const DRAG_POINTER_QUERY = "(hover: hover) and (pointer: fine)";
@@ -329,16 +356,23 @@ export function Sidebar({
   const clientUpdate = useDesktopUpdate(clientUpdateOffered, userOpen);
   /** Install confirmation (restarting interrupts running tasks — same consent as the shell's native prompt). */
   const [clientInstallOpen, setClientInstallOpen] = useState(false);
-  // Server update: nothing is fetched until the dropdown first opens.
+  // Server update: the app layout already ran the one check per session; keeping the dropdown
+  // as an activation only costs a retry after a failed one.
   const { version, update } = useVersionInfo(userOpen);
-  const updateAvailable = update?.updateAvailable === true;
+  /**
+   * The two update badges (use-update-badges.ts). Not the same gate as `newVersion` below,
+   * which drives the ROW: a badge only appears where the trail ends in a control this mode
+   * actually offers, so in the shell's own window the avatar marks the client build waiting
+   * to install rather than a server release the menu never shows here.
+   */
+  const badges = useUpdateBadges();
   /**
    * The newer release's version string, or null while none is known — the single update row's
    * whole state machine. A resolved version is required, not just the boolean: the row's label
    * names it, so a would-be "available but unnamed" result stays on the check action rather
    * than rendering a versionless reminder.
    */
-  const newVersion = updateAvailable ? (update?.latestVersion ?? null) : null;
+  const newVersion = releaseUpdate(update);
   /** Release announcement + admin self-update, opened from the update row once a release is known. */
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
   /**
@@ -374,6 +408,16 @@ export function Sidebar({
   const [sessionOrder, setSessionOrder] = useState<readonly string[]>(() =>
     loadSessionOrder(currentProjectId, initialGroupMode()),
   );
+  /**
+   * Manual GROUP order (Workspace keys / Agent ids), persisted per Project and grouping
+   * mode like the row order. Independent of `sortMode`: dragging a group is itself the
+   * intent, so there is no second toggle — an empty array is the identity and the list
+   * keeps its automatic sort. Empty in time mode, whose buckets are chronological
+   * (group-order.ts).
+   */
+  const [groupOrder, setGroupOrder] = useState<readonly string[]>(() =>
+    loadGroupOrder(currentProjectId, initialGroupMode()),
+  );
   /** Manually-added Workspaces (header 新建工作区; render as empty groups until Sessions exist, with optional display aliases); persisted per Project. */
   const [registeredWorkspaces, setRegisteredWorkspaces] = useState<readonly WorkspaceEntry[]>(() =>
     loadWorkspaceRegistry(currentProjectId),
@@ -408,14 +452,20 @@ export function Sidebar({
   /** Row being dragged (manual sort only) and the current drop hint (target row + which edge). */
   const [dragSession, setDragSession] = useState<{ scope: string; id: string } | null>(null);
   const [dropHint, setDropHint] = useState<{ id: string; after: boolean } | null>(null);
+  /** Group header being dragged (its key) and the current group drop hint (target group + which edge). */
+  const [dragGroup, setDragGroup] = useState<string | null>(null);
+  const [groupDropHint, setGroupDropHint] = useState<{ key: string; after: boolean } | null>(null);
   // Project resolved on first load / switched: swap in that Project's persisted collapse/pin sets.
   useEffect(() => {
     setCollapsedGroups(loadGroupSet(collapseStoreKey));
     setPinnedGroups(loadGroupSet(pinStoreKey));
     setPinnedSessions(loadPinnedSessions(currentProjectId));
     setSessionOrder(loadSessionOrder(currentProjectId, groupMode));
+    setGroupOrder(loadGroupOrder(currentProjectId, groupMode));
     setRegisteredWorkspaces(loadWorkspaceRegistry(currentProjectId));
-    setGroupCap(SIDEBAR_GROUP_PAGE_SIZE);
+    setGroupPage(0);
+    // The other Project's groups are gone, and so is any meaning their reveal state had.
+    setGroupCaps(new Map());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [collapseStoreKey, pinStoreKey, currentProjectId]);
   /** Expanded folders (subagent / scheduled / archived; collapsed by default), keyed by folderKey — each folder has its own open state. */
@@ -424,8 +474,8 @@ export function Sidebar({
   const [pendingLoads, setPendingLoads] = useState<ReadonlySet<string>>(new Set());
   /** Per-group display cap for active rows (keyed by group key; absent = SIDEBAR_PAGE_SIZE). "More" raises it a page at a time. */
   const [groupCaps, setGroupCaps] = useState<ReadonlyMap<string, number>>(new Map());
-  /** How many GROUPS render (#139: dozens of Agents/Workspaces made the list too tall to scan); "more groups" raises it a page at a time, reset per Project and on a mode switch. */
-  const [groupCap, setGroupCap] = useState(SIDEBAR_GROUP_PAGE_SIZE);
+  /** Which PAGE of groups renders (#139: dozens of Agents/Workspaces made the list too tall to scan), 0-based; reset per Project and on a mode switch, and clamped at render to the pages that still exist. */
+  const [groupPage, setGroupPage] = useState(0);
   /** Session pending delete confirmation (null = none). */
   const [deletingSession, setDeletingSession] = useState<SessionInfo | null>(null);
   const [deletingBusy, setDeletingBusy] = useState(false);
@@ -438,15 +488,20 @@ export function Sidebar({
   const [renameText, setRenameText] = useState("");
   const [renameBusy, setRenameBusy] = useState(false);
   const [renameError, setRenameError] = useState<string | null>(null);
+  /** Session whose messaging-binding dialog is open (null = none). */
+  const [messagingSession, setMessagingSession] = useState<SessionInfo | null>(null);
 
   const setGroupMode = (mode: GroupMode) => {
     storeGroupMode(mode);
     setGroupModeState(mode);
-    // The modes have unrelated group lists: restart the reveal window, and swap in
-    // this mode's own manual order (the stored sequence is read within partitions, whose
-    // boundaries are exactly what the mode decides — one shared array would scramble).
+    // The modes have unrelated group lists: go back to the first page, drop the per-group
+    // reveal state (a cap keyed by an Agent id means nothing to a Workspace group), and
+    // swap in this mode's own manual order (the stored sequence is read within partitions,
+    // whose boundaries are exactly what the mode decides — one shared array would scramble).
     setSessionOrder(loadSessionOrder(currentProjectId, mode));
-    setGroupCap(SIDEBAR_GROUP_PAGE_SIZE);
+    setGroupOrder(loadGroupOrder(currentProjectId, mode));
+    setGroupPage(0);
+    setGroupCaps(new Map());
   };
 
   /** Collapse/expand the page-nav group (same store-then-set convention as setGroupMode). */
@@ -468,15 +523,36 @@ export function Sidebar({
     [workspaceCountsByAgent],
   );
 
-  // Pinned groups first within each mode; inside each partition the existing order is kept
-  // (recency for Workspace groups, the configured Agent order for Agents).
+  // Pinned groups first within each mode, then the manual drag order within each pin
+  // partition. Nothing dragged yet = an empty order = the automatic sort untouched
+  // (recency for Workspace groups with the temp group last, the configured Agent order
+  // for Agents), which is also what a group with no stored place falls back to.
+  // The stored array belongs to the mode it was loaded for: handing an Agent list an
+  // order of Workspace keys is a no-op only as long as the two key namespaces cannot
+  // collide, and it costs the empty-order fast path on every render of the other mode.
   const orderedAgents = useMemo(
-    () => pinnedFirst(agents, (a) => a.agentId, pinnedGroups),
-    [agents, pinnedGroups],
+    () =>
+      orderGroups(agents, (a) => a.agentId, {
+        pinned: pinnedGroups,
+        order: groupMode === "agent" ? groupOrder : [],
+      }),
+    [agents, pinnedGroups, groupOrder, groupMode],
   );
   const orderedWorkspaceGroups = useMemo(
-    () => pinnedFirst(workspaceGroups, (g) => g.key, pinnedGroups),
-    [workspaceGroups, pinnedGroups],
+    () =>
+      orderGroups(workspaceGroups, (g) => g.key, {
+        pinned: pinnedGroups,
+        order: groupMode === "workspace" ? groupOrder : [],
+      }),
+    [workspaceGroups, pinnedGroups, groupOrder, groupMode],
+  );
+
+  // The FULL displayed group sequences a drop commits — every group of the mode, not the
+  // page of groups on screen (see groupDragProps).
+  const agentGroupSequence = useMemo(() => orderedAgents.map((a) => a.agentId), [orderedAgents]);
+  const workspaceGroupSequence = useMemo(
+    () => orderedWorkspaceGroups.map((g) => g.key),
+    [orderedWorkspaceGroups],
   );
 
   /** Group key a Session's FOLDERS hang off under the current mode (the archived-open state); time mode keeps one shared set for the whole Project. */
@@ -525,6 +601,33 @@ export function Sidebar({
 
   /** Search active = a non-blank query is live-filtering the list. */
   const searching = searchQuery.trim() !== "";
+
+  /**
+   * Group pagination (Workspace / Agent modes — time mode has at most three buckets and
+   * pages nothing). A pure display window: the manual group order still commits over the
+   * FULL sequence (see groupDragProps), and no group's data loading depends on which page
+   * it sits on. Search bypasses paging entirely — a match on page 3 would read as no match
+   * at all, which is the same reason a collapsed group is forced open while searching.
+   */
+  const pagedGroupTotal =
+    groupMode === "agent"
+      ? orderedAgents.length
+      : groupMode === "workspace"
+        ? orderedWorkspaceGroups.length
+        : 0;
+  const groupPageTotal = groupPageCount(pagedGroupTotal);
+  /** The page actually on screen: the stored one, pinned inside the pages that still exist. */
+  const shownGroupPage = clampGroupPage(groupPage, pagedGroupTotal);
+
+  /** The groups to render: this page's slice, or every match while searching. */
+  const groupsOnPage = <T,>(groups: T[]): T[] =>
+    searching ? groups : groupPageSlice(groups, shownGroupPage);
+
+  /** Pager below the group list — rendered only once the groups overflow a single page. */
+  const groupPagerRow = () =>
+    !searching && groupPageTotal > 1 ? (
+      <GroupPager page={shownGroupPage} pageCount={groupPageTotal} onChange={setGroupPage} />
+    ) : null;
 
   /** The sort actually applied: a stored "manual" needs a drag-capable pointer to mean anything (see canDrag). */
   const effectiveSortMode: SessionSortMode = sortMode === "manual" && canDrag ? "manual" : "recent";
@@ -583,6 +686,112 @@ export function Sidebar({
     saveSessionOrder(currentProjectId, groupMode, next);
   };
 
+  /**
+   * Drop of a group drag: splice the dragged group in beside its target and persist.
+   *
+   * `sequence` is the mode's FULL rendered key list — every group of the mode, not the
+   * page of groups on screen — and commitGroupOrder folds it into the stored array
+   * where those groups already render, so a Workspace whose Sessions have not paged in
+   * yet keeps its stored place instead of being pushed behind the ones that have.
+   *
+   * Nothing prunes here. Deciding a stored key is DEAD needs the mode's complete live
+   * key set, and this component cannot prove one — the per-Workspace counts that look
+   * like a proof are filtered by the "show CLI sessions" preference, and a settled Agent
+   * fetch may simply have failed. Stale keys are inert (group-order.ts), so the cost of
+   * keeping them is a map entry; the cost of a wrong proof is an arrangement the user
+   * cannot get back.
+   */
+  const commitGroupDrop = (sequence: readonly string[], targetKey: string, after: boolean) => {
+    if (dragGroup === null) return;
+    const next = commitGroupOrder(groupOrder, sequence, dragGroup, targetKey, after);
+    // Identity guard, as for rows: a drop that changes nothing must not persist a fresh array.
+    if (next === groupOrder) return;
+    setGroupOrder(next);
+    saveGroupOrder(currentProjectId, groupMode, next);
+  };
+
+  /**
+   * Drag-reorder wiring of one group header, given the mode's FULL ordered key list
+   * (not the page of groups on screen — committing only the visible groups would drop
+   * the hidden ones out of the stored sequence and bring them back as newcomers).
+   *
+   * Offered only where the groups have an order to change (isOrderableGroupMode: time
+   * mode's buckets are a fixed chronological ladder), never on a search-filtered view,
+   * and only where a pointer that can drag exists — HTML5 drag-and-drop never fires
+   * from touch. A stored order still APPLIES on such a device: unlike the rows' global
+   * sort mode, a group order is per Project and implicit, so there is nothing to
+   * degrade — a phone renders the arrangement its owner made at a desk.
+   *
+   * A drop stays inside the dragged group's own pin partition, so dragging can reorder
+   * but never pin or unpin (the rows' rule, one axis up).
+   */
+  const groupDragProps = (key: string, sequence: readonly string[]) => {
+    if (!canDrag || searching || !isOrderableGroupMode(groupMode)) {
+      return { header: {}, dropEdge: null as "above" | "below" | null };
+    }
+    const dragging = dragGroup;
+    const samePartition =
+      dragging !== null && dragging !== key && pinnedGroups.has(dragging) === pinnedGroups.has(key);
+    /** Which half of the header the pointer is in — the edge the drop would land on. */
+    const edgeOf = (e: ReactDragEvent) => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      return e.clientY - rect.top > rect.height / 2;
+    };
+    return {
+      header: {
+        draggable: true,
+        onDragStart: (e: ReactDragEvent) => {
+          e.dataTransfer.setData(GROUP_DRAG_MIME, key);
+          e.dataTransfer.effectAllowed = "move" as const;
+          setDragGroup(key);
+        },
+        onDragEnd: () => {
+          setDragGroup(null);
+          setGroupDropHint(null);
+        },
+        onDragOver: (e: ReactDragEvent) => {
+          if (!samePartition || !isGroupDrag(e)) return;
+          e.preventDefault();
+          // preventDefault alone only says "a drop may land here"; the effect still has
+          // to be one effectAllowed permits, or a modifier held during the drag resolves
+          // it to "none" and the drop event never fires (drop-zone.tsx sets it too).
+          e.dataTransfer.dropEffect = "move";
+          const after = edgeOf(e);
+          setGroupDropHint((prev) =>
+            prev?.key === key && prev.after === after ? prev : { key, after },
+          );
+        },
+        // dragleave also fires when the pointer merely crosses onto one of the header's
+        // OWN children — the collapse toggle spans most of the row, and up to three
+        // action buttons follow it — so clearing unconditionally strobes the indicator.
+        // relatedTarget is where the drag is going: still inside means nothing changed
+        // (the idiom features/chat/drop-zone.tsx already uses).
+        onDragLeave: (e: ReactDragEvent) => {
+          const to = e.relatedTarget;
+          if (to instanceof Node && e.currentTarget.contains(to)) return;
+          setGroupDropHint((prev) => (prev?.key === key ? null : prev));
+        },
+        onDrop: (e: ReactDragEvent) => {
+          if (!samePartition || dragging === null || !isGroupDrag(e)) return;
+          e.preventDefault();
+          // The FULL sequence, not the drag's pin partition: commitGroupOrder splices
+          // within one array, and samePartition has already refused a cross-boundary
+          // drop, so filtering here would only hide the other partition's keys from the
+          // splice and cost them their stored positions.
+          commitGroupDrop(sequence, key, edgeOf(e));
+          setDragGroup(null);
+          setGroupDropHint(null);
+        },
+      },
+      dropEdge:
+        samePartition && groupDropHint?.key === key
+          ? groupDropHint.after
+            ? ("below" as const)
+            : ("above" as const)
+          : null,
+    };
+  };
+
   /** Parked drafts through the live search (matched on their first-line title). */
   const shownDrafts = searching
     ? draftEntries.filter((e) =>
@@ -602,11 +811,25 @@ export function Sidebar({
   /** In-flight key of one group's category "More" (folderKey shares the same composite for folder categories). */
   const loadKey = (groupKey: string, category: SessionCategory) => `${category}\0${groupKey}`;
 
+  /**
+   * The server stream a group's fetches walk: its own, under Workspace grouping, or the
+   * Agent's whole one otherwise. Only Workspace groups need their own — an Agent group IS
+   * the whole stream, and a time bucket is cut from rows that are already loaded, so it
+   * fetches nothing of its own at all.
+   *
+   * This is what makes the groups independent. Sharing one per-Agent cursor meant a group's
+   * "load more" consumed the page its siblings were about to read: their rows appeared,
+   * their reveal counts moved, and the group that asked could grow by less than a page — or
+   * by nothing at all.
+   */
+  const fetchScope = (groupKey: string): string | undefined =>
+    groupMode === "workspace" ? groupKey : undefined;
+
   /** loadMoreFor with an in-flight marker for the triggering "More" row (disable + loading text). */
   const trackedLoadMore = (groupKey: string, category: SessionCategory, agentIds: string[]) => {
     const key = loadKey(groupKey, category);
     setPendingLoads((prev) => new Set(prev).add(key));
-    void loadMoreFor(agentIds, category).finally(() => {
+    void loadMoreFor(agentIds, category, fetchScope(groupKey)).finally(() => {
       setPendingLoads((prev) => {
         const next = new Set(prev);
         next.delete(key);
@@ -634,8 +857,9 @@ export function Sidebar({
       return next;
     });
     if (opening) {
-      const unloaded = agentIds.filter((id) => !isLoadedFor(id, category));
-      if (unloaded.length > 0) void loadMoreFor(unloaded, category);
+      const scope = fetchScope(groupKey);
+      const unloaded = agentIds.filter((id) => !isLoadedFor(id, category, scope));
+      if (unloaded.length > 0) void loadMoreFor(unloaded, category, scope);
     }
   };
 
@@ -666,9 +890,46 @@ export function Sidebar({
     const key = folderKey(groupKey, category);
     setOpenFolders((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
     // Same on-demand load a click-expand does, for this Session's own Agent (siblings of
-    // other contributing Agents stay behind the folder's "More").
-    if (!isLoadedFor(s.agentId, category)) void loadMoreFor([s.agentId], category);
+    // other contributing Agents stay behind the folder's "More"), down the same stream the
+    // folder itself pages.
+    const scope = groupMode === "workspace" ? groupKey : undefined;
+    if (!isLoadedFor(s.agentId, category, scope)) void loadMoreFor([s.agentId], category, scope);
   }, [activeSessionId, sessions, groupMode, isLoadedFor, loadMoreFor]);
+
+  /**
+   * Workspace mode: give every rendered group its own first page. The initial load reads
+   * the Agent's whole stream, which is one stream cut by Workspace — it fills the groups
+   * unevenly, so a group can come up with two rows while the neighbour it shares an Agent
+   * with got eight. Any group left short of a full first page (or of its own total, if that
+   * is smaller) asks for one down its own stream, once: the scoped pair is loaded from then
+   * on and this is inert.
+   *
+   * Only the groups on screen ask — the pager bounds that to one page of groups — and a
+   * search is left alone, since it renders loaded matches only and fetching cannot find more.
+   */
+  useEffect(() => {
+    if (groupMode !== "workspace" || searching) return;
+    for (const group of groupPageSlice(orderedWorkspaceGroups, shownGroupPage)) {
+      const counts = workspaceGroupCounts.get(group.key);
+      const total = counts?.totals.active ?? 0;
+      // Counts not in yet (0): nothing is known to be missing, so nothing is asked for.
+      const loaded = group.sessions.filter((s) => sessionCategory(s) === "active").length;
+      if (loaded >= Math.min(SIDEBAR_PAGE_SIZE, total)) continue;
+      const agents = [
+        ...new Set([...(counts?.agents.active ?? []), ...group.sessions.map((s) => s.agentId)]),
+      ];
+      const unloaded = agents.filter((id) => !isLoadedFor(id, "active", group.key));
+      if (unloaded.length > 0) void loadMoreFor(unloaded, "active", group.key);
+    }
+  }, [
+    groupMode,
+    searching,
+    orderedWorkspaceGroups,
+    shownGroupPage,
+    workspaceGroupCounts,
+    isLoadedFor,
+    loadMoreFor,
+  ]);
 
   /**
    * Manual server-update check, from the menu's update row: forces a lookup past the
@@ -835,15 +1096,18 @@ export function Sidebar({
 
   /**
    * 新建工作区: register the browsed pick so it surfaces as a group immediately, Sessions
-   * or not. Empty registered groups sort after the session-backed ones, so widen the
-   * group display cap to cover the whole list — otherwise, past ten groups, the freshly
-   * added Workspace would land behind 更多分组 and the click would look like a no-op.
+   * or not. An empty registered group is appended and nothing pins or orders it yet, so it
+   * lands last — turn to the page that now holds it, or to the page of the group that was
+   * already there. Otherwise, past ten groups, the freshly added Workspace would sit on a
+   * page the user is not looking at and the click would read as a no-op.
    */
   const addWorkspace = (path: string) => {
     const next = registerWorkspace(registeredWorkspaces, path);
     if (next === registeredWorkspaces) return;
     applyRegistryChange(next);
-    setGroupCap((c) => Math.max(c, workspaceGroups.length + 1));
+    const key = workspaceGroupKey(path);
+    const existing = orderedWorkspaceGroups.findIndex((g) => g.key === key);
+    setGroupPage(groupPageOf(existing >= 0 ? existing : orderedWorkspaceGroups.length));
   };
 
   /** Paths with a registry entry — only their groups offer the rename/remove overflow. */
@@ -997,6 +1261,7 @@ export function Sidebar({
               setRenameText(x.title ?? "");
               setRenamingSession(x);
             }}
+            onMessaging={(x) => setMessagingSession(x)}
             onDelete={(x) => setDeletingSession(x)}
             onToggleArchive={(x) => void toggleArchive(x)}
           />
@@ -1040,7 +1305,9 @@ export function Sidebar({
     // More while the group's share isn't fully loaded AND somewhere is left to fetch from
     // (counts drifting above reality would otherwise leave a dead button until reload).
     const more =
-      !searching && rows.length < total && agentIds.some((id) => hasMoreFor(id, category));
+      !searching &&
+      rows.length < total &&
+      agentIds.some((id) => hasMoreFor(id, category, fetchScope(groupKey)));
     return (
       <FolderSection
         key={category}
@@ -1048,6 +1315,9 @@ export function Sidebar({
         open={searching || openFolders.has(folderKey(groupKey, category))}
         onToggle={() => toggleFolder(groupKey, category, agentIds)}
         more={more}
+        // The folder shows every row it has loaded, so its remainder is its own share
+        // minus those — the same count the active list's reveal row names one level up.
+        moreLabel={S.chat.expandRestSessions(Math.max(total - rows.length, 0))}
         pending={pendingLoads.has(loadKey(groupKey, category))}
         onMore={() => trackedLoadMore(groupKey, category, agentIds)}
       >
@@ -1056,14 +1326,31 @@ export function Sidebar({
     );
   };
 
-  /** Active-list "More": reveal one more page of already-loaded active rows AND fetch the next active server page for every Agent that still has one. */
-  const showMore = (groupKey: string, agentIds: string[]) => {
+  /**
+   * Active-list "Show N more chats": reveal one more page of this group's already-loaded
+   * active rows, and fetch the next active server page only when the reveal actually runs
+   * past what is loaded. A group whose next page is already in memory spends no request —
+   * in workspace mode a fetch fans out to every Agent contributing to the group and its
+   * rows may land in other groups entirely, so a pointless one is not free.
+   */
+  const showMore = (groupKey: string, agentIds: string[], loaded: number) => {
+    const nextCap = (groupCaps.get(groupKey) ?? SIDEBAR_PAGE_SIZE) + SIDEBAR_PAGE_SIZE;
     setGroupCaps((prev) => {
       const next = new Map(prev);
-      next.set(groupKey, (prev.get(groupKey) ?? SIDEBAR_PAGE_SIZE) + SIDEBAR_PAGE_SIZE);
+      next.set(groupKey, nextCap);
       return next;
     });
-    if (agentIds.length > 0) trackedLoadMore(groupKey, "active", agentIds);
+    if (agentIds.length > 0 && loaded < nextCap) trackedLoadMore(groupKey, "active", agentIds);
+  };
+
+  /** "Show less": drop one group's reveal back to the first page (rows already fetched stay in memory). */
+  const collapseRows = (groupKey: string) => {
+    setGroupCaps((prev) => {
+      if (!prev.has(groupKey)) return prev;
+      const next = new Map(prev);
+      next.delete(groupKey);
+      return next;
+    });
   };
 
   /**
@@ -1102,14 +1389,28 @@ export function Sidebar({
       effectiveSortMode === "manual" && !searching
         ? { scope: groupKey, fullRows: orderedActive }
         : undefined;
-    // Only the outer active rows drive the group's "More" — the folders never feed it:
-    // hidden loaded rows exist, or the group's own active share isn't fully loaded yet.
+    // The reveal row counts THIS group's own hidden conversations and nothing else — the
+    // folders never feed it, and no other group's numbers reach it. `fullyLoaded` says the
+    // group's whole active share is already in memory (every Agent that could hold a row of
+    // it is fetched out), which is when the loaded rows become the truth: server counts
+    // refresh only on reload, so a count drifting above reality would otherwise leave a row
+    // that reveals nothing behind it.
     const activeAgents = agentsFor("active");
-    const activeTotal = Math.max(totals?.active ?? 0, parts.active.length);
-    const hasMore =
-      !searching &&
-      (parts.active.length > cap ||
-        (parts.active.length < activeTotal && activeAgents.some((id) => hasMoreFor(id, "active"))));
+    const fullyLoaded =
+      activeAgents.length > 0 &&
+      !activeAgents.some((id) => hasMoreFor(id, "active", fetchScope(groupKey)));
+    const hiddenActive = searching
+      ? 0
+      : hiddenRowCount({
+          shown: shownActive.length,
+          loaded: parts.active.length,
+          total: totals?.active ?? 0,
+          fullyLoaded,
+        });
+    // "Show less" appears once the group is revealed past its first page and there is
+    // something for it to hide again.
+    const canCollapse =
+      !searching && cap > SIDEBAR_PAGE_SIZE && parts.active.length > SIDEBAR_PAGE_SIZE;
     const folders = FOLDER_CATEGORIES.map((category) =>
       renderFolder(groupKey, category, parts, withAgentHint, agentsFor(category), totals),
     );
@@ -1127,13 +1428,24 @@ export function Sidebar({
           renderRows(shownActive, withAgentHint, dragCtx, true)
         )}
 
-        {/* Load/reveal more (kept adjacent to the active list it extends, above the folders) */}
-        {hasMore && (
+        {/* Reveal / collapse this group's own conversations (kept adjacent to the active
+            list they extend, above the folders). Both rows can stand at once: a group
+            revealed part-way still has more to show AND something to fold back. */}
+        {hiddenActive > 0 && (
           <MoreRow
-            label={S.chat.loadMore}
+            label={S.chat.expandRestSessions(hiddenActive)}
+            ariaLabel={S.chat.expandRestSessions(hiddenActive)}
             pending={activePending}
-            onClick={() => showMore(groupKey, activeAgents)}
+            onClick={() => showMore(groupKey, activeAgents, parts.active.length)}
             className="mt-0.5"
+          />
+        )}
+        {canCollapse && (
+          <MoreRow
+            label={S.chat.showLess}
+            ariaLabel={S.chat.showLess}
+            onClick={() => collapseRows(groupKey)}
+            {...(hiddenActive > 0 ? {} : { className: "mt-0.5" })}
           />
         )}
 
@@ -1144,15 +1456,6 @@ export function Sidebar({
       </>
     );
   };
-
-  /** Reveal-next-page-of-groups row (render cap only — data loading is untouched). */
-  const moreGroupsRow = (total: number) => (
-    <MoreRow
-      label={S.chat.moreGroups(total - groupCap)}
-      onClick={() => setGroupCap((c) => c + SIDEBAR_GROUP_PAGE_SIZE)}
-      className="mt-1"
-    />
-  );
 
   /**
    * Time mode's one shared, Project-wide set of folders (rendered once below the buckets):
@@ -1317,25 +1620,46 @@ export function Sidebar({
                   navCollapsed ? "opacity-0" : "opacity-100"
                 }`}
               >
-                {navItems.map((item) => (
-                  <NavLink
-                    key={item.to}
-                    to={item.to}
-                    onClick={() => onNavigate?.()}
-                    className={({ isActive }) =>
-                      `flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors duration-150 ${
-                        isActive
-                          ? "bg-gray-200/70 font-medium text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-                          : "text-gray-600 hover:bg-gray-200/50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800/70 dark:hover:text-gray-200"
-                      }`
-                    }
-                  >
-                    <span className="text-gray-500 dark:text-gray-400">
-                      <Icon d={item.icon} />
-                    </span>
-                    {item.label}
-                  </NavLink>
-                ))}
+                {navItems.map((item) => {
+                  /* Agents is the one nav entry on a badge trail: an outdated kernel is fixed
+                     on the Agent settings page two clicks down. The dot is anchored to the row,
+                     not to the label text (where it would float over whatever follows the word):
+                     at the row's right edge, on the same inset as its horizontal padding, and
+                     vertically centred on the row rather than on the line of text. */
+                  const note = item.to === "/agents" ? badges.kernelNote : null;
+                  return (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      onClick={() => onNavigate?.()}
+                      {...(note !== null
+                        ? {
+                            // The row's own label is visible, so the tooltip only adds what
+                            // the dot means; the accessible name keeps that label as its
+                            // prefix. (The collapsed rail's icon-only twin has no visible
+                            // label, so its tooltip carries both.)
+                            title: note,
+                            "aria-label": `${item.label} · ${note}`,
+                          }
+                        : {})}
+                      className={({ isActive }) =>
+                        `relative flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors duration-150 ${
+                          isActive
+                            ? "bg-gray-200/70 font-medium text-gray-900 dark:bg-gray-800 dark:text-gray-100"
+                            : "text-gray-600 hover:bg-gray-200/50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800/70 dark:hover:text-gray-200"
+                        }`
+                      }
+                    >
+                      <span className="text-gray-500 dark:text-gray-400">
+                        <Icon d={item.icon} />
+                      </span>
+                      {item.label}
+                      {note !== null && (
+                        <UpdateDot size="inline" position="right-2.5 top-1/2 -translate-y-1/2" />
+                      )}
+                    </NavLink>
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -1596,19 +1920,21 @@ export function Sidebar({
           loading && agents.length === 0 ? (
             <SkeletonList rows={5} />
           ) : (
-            // While searching: every group renders (cap bypassed), zero-match groups
+            // While searching: every group renders (paging bypassed), zero-match groups
             // hide, and the rest are forced open — a hit inside a collapsed group would
             // look like a missing result.
-            orderedAgents.slice(0, searching ? orderedAgents.length : groupCap).map((agent) => {
+            groupsOnPage(orderedAgents).map((agent) => {
               const groupRows = filterRows(byAgent.get(agent.agentId) ?? []);
               if (searching && groupRows.length === 0) return null;
               const parts = partitionSessions(groupRows);
               const collapsed = !searching && collapsedGroups.has(agent.agentId);
               const pinned = pinnedGroups.has(agent.agentId);
+              const drag = groupDragProps(agent.agentId, agentGroupSequence);
               return (
-                <div key={agent.agentId} className="pt-2.5">
-                  {/* Group header: collapse toggle (Agent name) + pin + new chat + Agent settings. */}
+                <GroupBlock key={agent.agentId} dropEdge={drag.dropEdge}>
+                  {/* Group header: collapse toggle (Agent name) + pin + new chat + Agent settings; also the group's drag handle. */}
                   <GroupHeader
+                    {...drag.header}
                     open={!collapsed}
                     onToggle={() => toggleGroup(agent.agentId)}
                     icon={
@@ -1655,14 +1981,12 @@ export function Sidebar({
                         countsByAgent.get(agent.agentId),
                         () => [agent.agentId],
                       )}
-                </div>
+                </GroupBlock>
               );
             })
           )
         ) : null}
-        {groupMode === "agent" && !searching && orderedAgents.length > groupCap
-          ? moreGroupsRow(orderedAgents.length)
-          : null}
+        {groupMode === "agent" ? groupPagerRow() : null}
         {groupMode !== "workspace" ? null : loading && sessions.length === 0 ? (
           <SkeletonList rows={5} />
         ) : orderedWorkspaceGroups.length === 0 && !searching ? (
@@ -1670,93 +1994,91 @@ export function Sidebar({
             {S.chat.noSessions}
           </p>
         ) : (
-          // Same search treatment as agent mode: cap bypassed, zero-match groups hidden, the rest forced open.
-          orderedWorkspaceGroups
-            .slice(0, searching ? orderedWorkspaceGroups.length : groupCap)
-            .map((group) => {
-              const groupRows = filterRows(group.sessions);
-              if (searching && groupRows.length === 0) return null;
-              const parts = partitionSessions(groupRows);
-              const collapsed = !searching && collapsedGroups.has(group.key);
-              const pinned = pinnedGroups.has(group.key);
-              /** This group's exact server share (per-Workspace fold) and its per-category fetch fan-out. */
-              const counts = workspaceGroupCounts.get(group.key);
-              const contributingAgents = [...new Set(group.sessions.map((s) => s.agentId))];
-              const agentsFor = (category: SessionCategory) => [
-                ...new Set([...(counts?.agents[category] ?? []), ...contributingAgents]),
-              ];
-              return (
-                <div key={group.key} className="pt-2.5">
-                  {/* Group header: collapse toggle (folder icon + directory basename + count, full
+          // Same search treatment as agent mode: paging bypassed, zero-match groups hidden, the rest forced open.
+          groupsOnPage(orderedWorkspaceGroups).map((group) => {
+            const groupRows = filterRows(group.sessions);
+            if (searching && groupRows.length === 0) return null;
+            const parts = partitionSessions(groupRows);
+            const collapsed = !searching && collapsedGroups.has(group.key);
+            const pinned = pinnedGroups.has(group.key);
+            const drag = groupDragProps(group.key, workspaceGroupSequence);
+            /** This group's exact server share (per-Workspace fold) and its per-category fetch fan-out. */
+            const counts = workspaceGroupCounts.get(group.key);
+            const contributingAgents = [...new Set(group.sessions.map((s) => s.agentId))];
+            const agentsFor = (category: SessionCategory) => [
+              ...new Set([...(counts?.agents[category] ?? []), ...contributingAgents]),
+            ];
+            return (
+              <GroupBlock key={group.key} dropEdge={drag.dropEdge}>
+                {/* Group header: collapse toggle (folder icon + directory basename + count, full
                     path in the tooltip; the count = the group's active conversations only, exact
                     server share, loaded rows win a disagreement — the folders never feed it) +
-                    pin + new chat in this Workspace. */}
-                  <GroupHeader
-                    open={!collapsed}
-                    onToggle={() => toggleGroup(group.key)}
-                    icon={
-                      /* Folder opens and closes with the group */
-                      <span className="shrink-0 text-gray-400 dark:text-gray-500">
-                        <Icon
-                          d={collapsed ? FOLDER_ICON : FOLDER_OPEN_ICON}
-                          size={ICON_SIZE.groupHeaderGlyph}
-                        />
-                      </span>
-                    }
-                    label={group.temp ? S.chat.tempWorkspaces : group.label}
-                    count={
-                      searching
-                        ? parts.active.length
-                        : Math.max(counts?.totals.active ?? 0, parts.active.length)
-                    }
-                    {...(group.fullPath !== null ? { title: group.fullPath } : {})}
-                    actions={
-                      <>
-                        <GroupPinButton pinned={pinned} onToggle={() => togglePin(group.key)} />
-                        {/* New chat in this Workspace: pre-fills the group's path in the draft ("" = temporary workspace); the Agent is the current one, falling back to default_agent */}
-                        <button
-                          type="button"
-                          title={S.chat.newSessionInWorkspace}
-                          aria-label={S.chat.newSessionInWorkspace}
-                          onClick={() => newChat(workspaceNewChatAgentId, group.fullPath ?? "")}
-                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-                        >
-                          <Icon d="M12 5v14M5 12h14" size={ICON_SIZE.groupHeaderAction} />
-                        </button>
-                        {/* Manually-added (registry-backed) Workspaces only: rename-alias /
+                    pin + new chat in this Workspace; also the group's drag handle. */}
+                <GroupHeader
+                  {...drag.header}
+                  open={!collapsed}
+                  onToggle={() => toggleGroup(group.key)}
+                  icon={
+                    /* Folder opens and closes with the group */
+                    <span className="shrink-0 text-gray-400 dark:text-gray-500">
+                      <Icon
+                        d={collapsed ? FOLDER_ICON : FOLDER_OPEN_ICON}
+                        size={ICON_SIZE.groupHeaderGlyph}
+                      />
+                    </span>
+                  }
+                  label={group.temp ? S.chat.tempWorkspaces : group.label}
+                  count={
+                    searching
+                      ? parts.active.length
+                      : Math.max(counts?.totals.active ?? 0, parts.active.length)
+                  }
+                  {...(group.fullPath !== null ? { title: group.fullPath } : {})}
+                  actions={
+                    <>
+                      <GroupPinButton pinned={pinned} onToggle={() => togglePin(group.key)} />
+                      {/* New chat in this Workspace: pre-fills the group's path in the draft ("" = temporary workspace); the Agent is the current one, falling back to default_agent */}
+                      <button
+                        type="button"
+                        title={S.chat.newSessionInWorkspace}
+                        aria-label={S.chat.newSessionInWorkspace}
+                        onClick={() => newChat(workspaceNewChatAgentId, group.fullPath ?? "")}
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+                      >
+                        <Icon d="M12 5v14M5 12h14" size={ICON_SIZE.groupHeaderAction} />
+                      </button>
+                      {/* Manually-added (registry-backed) Workspaces only: rename-alias /
                             remove-from-sidebar overflow, to the right of the "+" (session-
                             derived groups have no registry entry for these to act on). */}
-                        {registeredPaths.has(group.key) && (
-                          <GroupOverflowMenu
-                            onRename={() => openRenameWorkspace(group.key)}
-                            onDelete={() =>
-                              setDeletingWorkspace({ path: group.key, label: group.label })
-                            }
-                          />
-                        )}
-                      </>
-                    }
-                  />
+                      {registeredPaths.has(group.key) && (
+                        <GroupOverflowMenu
+                          onRename={() => openRenameWorkspace(group.key)}
+                          onDelete={() =>
+                            setDeletingWorkspace({ path: group.key, label: group.label })
+                          }
+                        />
+                      )}
+                    </>
+                  }
+                />
 
-                  {/* A workspace group can span Agents: the group body fans folder loads and "More"
+                {/* A workspace group can span Agents: the group body fans folder loads and "More"
                     out per category to the Agents whose share of THIS group is non-zero (plus the
                     Agents already contributing loaded rows) — the active list and each folder
                     page independently. */}
-                  {collapsed
-                    ? null
-                    : renderGroupBody(group.key, parts, true, counts?.totals, agentsFor)}
-                </div>
-              );
-            })
+                {collapsed
+                  ? null
+                  : renderGroupBody(group.key, parts, true, counts?.totals, agentsFor)}
+              </GroupBlock>
+            );
+          })
         )}
-        {groupMode === "workspace" && !searching && orderedWorkspaceGroups.length > groupCap
-          ? moreGroupsRow(orderedWorkspaceGroups.length)
-          : null}
+        {groupMode === "workspace" ? groupPagerRow() : null}
 
         {/* Time mode: last day / last month / earlier, bucketed on each conversation's last
             activity — the same stamp the rows' compact timestamps and the recency sort read,
             so a row can never sit under a bucket its own timestamp contradicts. Empty buckets
-            are dropped, and there are at most three, so this mode has no "more groups" row.
+            are dropped, and there are at most three, so this mode never paginates its groups.
             The buckets span every Agent and every Workspace: a bucket's "More" only reveals
             further loaded rows, while fetching the next page and reaching the Subagents /
             Scheduled / Archived rows happen once for the whole Project, below. */}
@@ -1839,28 +2161,21 @@ export function Sidebar({
             <button
               type="button"
               onClick={() => setUserOpen(!userOpen)}
-              {...(newVersion !== null
+              {...(badges.softwareNote !== null
                 ? {
-                    // The dot alone is mysterious: name the release on the trigger (hover
-                    // tooltip + accessible name), in the update row's exact wording.
-                    title: S.update.newVersion(newVersion),
-                    "aria-label": `${user?.userId ?? ""} · ${S.update.newVersion(newVersion)}`,
+                    // The dot alone is mysterious: name what is waiting on the trigger (hover
+                    // tooltip + accessible name), in the update row's own wording.
+                    title: badges.softwareNote,
+                    "aria-label": `${user?.userId ?? ""} · ${badges.softwareNote}`,
                   }
                 : {})}
               className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors duration-150 hover:bg-gray-200/70 dark:hover:bg-gray-800"
             >
               <span className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-900 text-xs font-bold text-white dark:bg-gray-200 dark:text-gray-900">
                 {(user?.userId ?? "?").slice(0, 1).toUpperCase()}
-                {/* Update reminder dot: only once the lazy check has actually run and found a
-                    newer release (the trigger button's tooltip/label above explains it). The
-                    border (sidebar background color) separates it from the avatar for every
-                    accent — the neutral accent matches the avatar fill. */}
-                {updateAvailable && (
-                  <span
-                    aria-hidden
-                    className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-gray-50 bg-[var(--accent-bg)] dark:border-gray-900"
-                  />
-                )}
+                {/* Update reminder: the menu behind this trigger holds the row that acts on
+                    it, and the trigger's tooltip/label above say what it is. */}
+                {badges.software !== null && <UpdateDot />}
               </span>
               <span className="min-w-0 flex-1 truncate text-sm font-medium">{user?.userId}</span>
               {user?.isAdmin && (
@@ -2022,6 +2337,23 @@ export function Sidebar({
         />
       </Modal>
 
+      {/* Messaging binding dialog (row menu "Messaging binding…"): the row indicator
+          updates in place from the dialog's own save/unbind outcome. */}
+      {messagingSession && (
+        <MessagingBindingModal
+          sessionId={messagingSession.sessionId}
+          onClose={() => setMessagingSession(null)}
+          onChanged={(sessionId, channel) => {
+            const current = sessions.find((x) => x.sessionId === sessionId);
+            if (!current) return;
+            const updated = { ...current };
+            if (channel !== null) updated.messagingChannel = channel;
+            else delete updated.messagingChannel;
+            replace(updated);
+          }}
+        />
+      )}
+
       {/* Rename workspace (alias edit, same Modal + Input idiom as rename chat): the alias
           replaces the directory basename as the group label; leaving it blank reverts to
           the basename — so an empty save is valid here, unlike the chat rename. */}
@@ -2163,6 +2495,39 @@ function DraftRow({
 }
 
 /**
+ * One group's block — its header and body — carrying the manual group order's drop
+ * indicator: a thin accent line in the gap the drop would land in, drawn against the
+ * WHOLE group rather than its header, so "below" reads as "after this group and its
+ * conversations" instead of "between the header and its own first row".
+ *
+ * The line is absolutely positioned and `inset-x-1` (matching the header's `px-1`), so
+ * it consumes no layout width and cannot push the header's up-to-three action buttons
+ * out of a narrow drawer.
+ */
+function GroupBlock({
+  dropEdge,
+  children,
+}: {
+  /** Which edge of this group a drop would land on while a group drag hovers it. */
+  dropEdge: "above" | "below" | null;
+  children: ReactNode;
+}) {
+  return (
+    <div className="relative pt-2.5">
+      {dropEdge !== null && (
+        <div
+          aria-hidden
+          className={`pointer-events-none absolute inset-x-1 z-10 h-0.5 rounded-full bg-[var(--accent-bg)] ${
+            dropEdge === "above" ? "top-1" : "-bottom-1"
+          }`}
+        />
+      )}
+      {children}
+    </div>
+  );
+}
+
+/**
  * Group-header pin toggle, shared by both grouping modes: revealed on header hover (or
  * keyboard focus) while unpinned; once pinned it stays visible, doubling as the subtle
  * pinned indicator. The header row carries the `group/header` scope so the reveal only
@@ -2229,6 +2594,7 @@ function SessionRow({
   onOpen,
   onTogglePin,
   onRename,
+  onMessaging,
   onDelete,
   onToggleArchive,
 }: {
@@ -2256,6 +2622,7 @@ function SessionRow({
   onOpen: (s: SessionInfo) => void;
   onTogglePin: (s: SessionInfo) => void;
   onRename: (s: SessionInfo) => void;
+  onMessaging: (s: SessionInfo) => void;
   onDelete: (s: SessionInfo) => void;
   onToggleArchive: (s: SessionInfo) => void;
 }) {
@@ -2266,6 +2633,7 @@ function SessionRow({
     const handler: Record<SessionRowAction, (x: SessionInfo) => void> = {
       pin: onTogglePin,
       rename: onRename,
+      messaging: onMessaging,
       archive: onToggleArchive,
       delete: onDelete,
     };
@@ -2361,6 +2729,18 @@ function SessionRow({
               <span className="sr-only">{S.chat.pinnedSession}</span>
             </span>
           )}
+          {/* Enabled-messaging indicator: one glyph for every channel, the channel named in
+              the tooltip and sr text. Same dim treatment as the pin (saved-but-disabled
+              configs stay off the row; the binding dialog lives in the row menu). */}
+          {s.messagingChannel !== undefined && (
+            <span
+              title={S.messaging.enabledIndicator[s.messagingChannel]}
+              className="shrink-0 text-gray-400 dark:text-gray-500"
+            >
+              <Icon d={MESSAGING_RELAY_ICON} size={12} />
+              <span className="sr-only">{S.messaging.enabledIndicator[s.messagingChannel]}</span>
+            </span>
+          )}
           {/* No per-row source tag: subagent / scheduled Sessions live in their own labelled, collapsed folders, so a badge on the title would just repeat the folder. */}
           <StatusGlyph activity={activity} />
           {s.pendingApprovalCount > 0 && (
@@ -2383,7 +2763,12 @@ function SessionRow({
           {/* No hover pill on these (a fill as wide as the date read ugly); feedback is
               the glyph color deepening — red for delete. */}
           <div className="peer absolute right-0 top-1/2 flex -translate-y-1/2 items-center">
-            <SessionRowHoverActions actions={HOVER_ROW_ACTIONS} state={rowState} onRun={run} />
+            <SessionRowHoverActions
+              actions={HOVER_ROW_ACTIONS}
+              state={rowState}
+              onRun={run}
+              onMore={ctx.openAt}
+            />
           </div>
           {lastActive !== "" && (
             <span
@@ -2403,6 +2788,7 @@ function SessionRow({
           setOpen={ctx.setOpen}
           portal={{ direction: "down", align: "left" }}
           anchorRect={ctx.anchor}
+          anchorOwner={ctx.anchorOwner}
           returnFocus={ctx.returnFocus}
           className="contents"
           menuClass="w-36"

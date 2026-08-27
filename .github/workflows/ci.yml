@@ -1,7 +1,15 @@
-# CI: build -> style (Prettier) -> typecheck (tsc) -> unit tests (vitest) -> live e2e (DeepSeek).
-# Build first: core's exports point at dist/, and cli's type resolution and runtime imports both need core's build output.
-# e2e needs the repo secret DEEPSEEK_API_KEY; when absent (e.g. forks) that step self-skips and the other checks run as usual.
-# Two more jobs repeat build/typecheck/test on macos-latest and windows-latest (ci-macos / ci-windows below).
+# CI: one gate (`ci`) over a fan-out of short jobs.
+#
+# The shape is chosen for wall clock. The old workflow ran build -> style -> typecheck ->
+# test -> installer -> e2e as six serial steps inside one job per platform, so every
+# platform paid for every gate in sequence and the slowest job — Windows, at 254s — set
+# the whole run's length. Here each gate is its own job, tests are sharded by package,
+# and every job builds only the packages its shard actually needs (see the shared setup
+# action). Nothing is dropped: every package's tests still run exactly once per platform.
+#
+# `ci` at the bottom is the aggregate gate. It is the one job worth marking required in
+# branch protection — the shard names below are an implementation detail and will change
+# again as the suite grows, whereas `ci` means what it has always meant.
 name: CI
 
 # Limit triggers to avoid duplicate runs: push runs only on main/dev; PRs always run once (no target-branch filter --
@@ -17,39 +25,88 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ci:
+  # Prettier reads sources, so this needs no build at all — the cheapest job in the run.
+  style:
+    name: style (prettier)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-
-      # pnpm version comes from package.json's packageManager field.
-      - uses: pnpm/action-setup@v6
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 24
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build (tsup)
-        run: pnpm build
-
+      - uses: ./.github/actions/setup
       - name: Code style (Prettier)
         run: pnpm format:check
 
+      # A workflow that does not parse produces a run with zero jobs and no annotation
+      # anywhere useful -- the failure this very file shipped once, over a double-quoted
+      # string in a ${{ }} expression, where only single quotes are legal. Cheap to catch.
+      - name: Lint workflows (actionlint)
+        run: |
+          ver=1.7.12
+          curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v${ver}/actionlint_${ver}_linux_amd64.tar.gz" \
+            | tar xz actionlint
+          # -shellcheck= turns off the bundled shellcheck pass: what is wanted here is the
+          # workflow-expression and schema check, and shellcheck's info-level findings in
+          # workflows this change does not touch are a separate conversation.
+          ./actionlint -shellcheck=
+
+  # tsc over every package, so this one does need the whole build. Results are
+  # platform-independent, which is why neither macOS nor Windows repeats it.
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      # tsc runs over every package, so every package's dist has to exist -- core's test
+      # files read skills' emitted types, for one.
+      - uses: ./.github/actions/setup
+        with:
+          build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-landing...,@prismshadow/penguin-docs...,@prismshadow/penguin-server...,@prismshadow/penguin-cli...,@prismshadow/penguin-web...,@prismshadow/penguin-skills..."
       - name: Typecheck (tsc)
         run: pnpm typecheck
 
+  # The unit suite, split four ways. Shards are drawn so that build cost and test cost
+  # roughly balance: core and server are the two long suites and get one each, the rest
+  # pair up behind them.
+  test:
+    name: test (${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: core
+            build: "@prismshadow/penguin-core..."
+            tests: pnpm --filter @prismshadow/penguin-core test
+          - shard: server
+            build: "@prismshadow/penguin-core..."
+            tests: pnpm --filter @prismshadow/penguin-server test
+          - shard: web-cli
+            build: "@prismshadow/penguin-core...,@prismshadow/penguin-web..."
+            tests: pnpm --filter @prismshadow/penguin-web --filter @prismshadow/penguin-cli test
+          - shard: rest
+            build: "@prismshadow/penguin-desktop..."
+            tests: >-
+              pnpm --filter @prismshadow/penguin-desktop --filter @prismshadow/penguin-landing
+              --filter @prismshadow/penguin-docs --filter @prismshadow/penguin-skills test
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+        with:
+          build: ${{ matrix.build }}
       - name: Unit tests (vitest)
-        run: pnpm test
+        run: ${{ matrix.tests }}
 
+  # The installer bundle and the live-LLM e2e, together because both want a full build and
+  # neither is long. The secret is exposed only in its own step (step-level env), so earlier
+  # steps and third-party actions cannot see it; the secrets context is not usable in `if`,
+  # so the skip happens inside the shell for forks, where it is absent.
+  installer-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+        with:
+          build: "@prismshadow/penguin-cli...,@prismshadow/penguin-server..."
       - name: Installer bundle and POSIX installer tests
         run: sh scripts/test-installer.sh
-
-      # The secret is exposed only in this step (step-level env); earlier steps and third-party actions can't see it.
-      # The secrets context can't be used in if expressions, so skip inside the shell when it's absent (e.g. forks).
       - name: E2E (live LLM via DeepSeek)
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
@@ -60,95 +117,112 @@ jobs:
           fi
           pnpm test:e2e
 
-  # macOS: the same build/typecheck/test gates on macos-latest (arm64). This is the only job
-  # where the terminal's pty suites run on darwin — node-pty compiles against the runner's
-  # toolchain and its darwin-only spawn-helper actually executes — and the terminal smoke
-  # script then re-runs node-pty under Electron's own Node (ELECTRON_RUN_AS_NODE), resolved
-  # from the built desktop bundle: the same module lookup, on the same runtime, that the
-  # packaged app's server performs. It runs after the build because that staged copy is a
-  # build output. A macOS terminal regression that once shipped as a silently empty panel
-  # fails here instead. No format:check (same files as ubuntu) and no live-LLM e2e
-  # (ubuntu-only budget).
-  ci-macos:
+  # macOS (arm64). This is the only place the terminal's pty suites run on darwin —
+  # node-pty compiles against the runner's toolchain and its darwin-only spawn-helper
+  # actually executes — and the terminal smoke script then re-runs node-pty under
+  # Electron's own Node (ELECTRON_RUN_AS_NODE), resolved from the built desktop bundle:
+  # the same module lookup, on the same runtime, that the packaged app's server performs.
+  # A macOS terminal regression that once shipped as a silently empty panel fails here.
+  # No format:check and no typecheck (same files, platform-independent results, gated on
+  # ubuntu); no live-LLM e2e (ubuntu-only budget).
+  test-macos:
+    name: test-macos (${{ matrix.shard }})
     runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v5
-
-      # pnpm version comes from package.json's packageManager field.
-      - uses: pnpm/action-setup@v6
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 24
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build (tsup)
-        run: pnpm build
-
-      - name: Typecheck (tsc)
-        run: pnpm typecheck
-
-      - name: Unit tests (vitest)
-        run: pnpm test
-
-      - name: Terminal smoke (node-pty under Electron's Node)
-        run: node packages/desktop/scripts/terminal-smoke.mjs
-
-  # Windows: the same build/test gates on windows-latest (the ubuntu job above stays the
-  # required one), split into two shards so the process-heavy suites don't share a small
-  # runner: `server` gives the pty-streaming suites the whole machine and carries the
-  # installer checks, while `packages` runs core alone first (its exec_command suites spawn
-  # real shells and read their output under timeouts, races they lose when oversubscribed)
-  # and the remaining packages together after it. Every package's tests run exactly once
-  # across the two shards. The runner ships Git-Bash on PATH, so core's exec_command tests
-  # run through the shell resolver's bash pick; genuinely POSIX-only tests skip themselves
-  # via process.platform guards (not CI filters), so local Windows devs see the same
-  # behavior. Line endings come from .gitattributes (LF working tree), keeping build
-  # outputs and fixtures byte-identical. No format:check and no typecheck (same files as
-  # ubuntu, and both results are platform-independent, so the ubuntu job gates them); no
-  # live-LLM e2e here (ubuntu-only budget).
-  ci-windows:
     strategy:
       fail-fast: false
       matrix:
         include:
+          - shard: core
+            build: "@prismshadow/penguin-core..."
+            tests: pnpm --filter @prismshadow/penguin-core test
+            smoke: false
           - shard: server
+            build: "@prismshadow/penguin-core..."
             tests: pnpm --filter @prismshadow/penguin-server test
-            installer: true
-          - shard: packages
+            smoke: false
+          - shard: rest
+            build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-cli..."
             tests: >-
-              pnpm --filter @prismshadow/penguin-core test &&
               pnpm -r --filter '!@prismshadow/penguin-core' --filter '!@prismshadow/penguin-server' test
-            installer: false
-    name: ci-windows (${{ matrix.shard }})
+            smoke: true
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+        with:
+          build: ${{ matrix.build }}
+      - name: Unit tests (vitest)
+        run: ${{ matrix.tests }}
+      - name: Terminal smoke (node-pty under Electron's Node)
+        if: matrix.smoke
+        run: node packages/desktop/scripts/terminal-smoke.mjs
+
+  # Windows. The runner is the slowest and the most I/O-variable of the three, so the
+  # server suite — the longest here by a wide margin — is split across two vitest shards
+  # on top of the per-package split. core runs alone rather than beside anything else:
+  # its exec_command suites spawn real shells and read their output under timeouts, races
+  # they lose when oversubscribed. Every package's tests still run exactly once across the
+  # shards. The runner ships Git-Bash on PATH, so core's exec_command tests exercise
+  # the shell resolver's bash pick; genuinely POSIX-only tests skip themselves via
+  # process.platform guards rather than CI filters, so a local Windows dev sees the same
+  # behaviour. Every package's tests still run exactly once across the shards. Line
+  # endings come from .gitattributes (LF working tree), keeping build
+  # outputs and fixtures byte-identical. No format:check, no typecheck, no e2e — see the
+  # macOS note above.
+  test-windows:
+    name: test-windows (${{ matrix.shard }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: core
+            build: "@prismshadow/penguin-core..."
+            tests: pnpm --filter @prismshadow/penguin-core test
+          - shard: server-1
+            build: "@prismshadow/penguin-core..."
+            tests: pnpm --filter @prismshadow/penguin-server exec vitest run --shard=1/3
+          - shard: server-2
+            build: "@prismshadow/penguin-core..."
+            tests: pnpm --filter @prismshadow/penguin-server exec vitest run --shard=2/3
+          - shard: server-3
+            build: "@prismshadow/penguin-core..."
+            tests: pnpm --filter @prismshadow/penguin-server exec vitest run --shard=3/3
+          - shard: rest
+            build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-cli..."
+            tests: >-
+              pnpm -r --filter '!@prismshadow/penguin-core' --filter '!@prismshadow/penguin-server' test
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+        with:
+          build: ${{ matrix.build }}
+
+      # One retry, and only here. Per-test flakes are already absorbed inside vitest
+      # (`retry` in core's and the server's configs, Windows only); what this covers is the
+      # failure that has no failing test at all — a tinypool `ERR_IPC_CHANNEL_CLOSED` raised
+      # while the worker pool tears down, after every file has reported green. A real
+      # regression fails both attempts.
+      - name: Unit tests (vitest)
+        shell: bash
+        run: |
+          ${{ matrix.tests }} && exit 0
+          echo "::warning::vitest failed on Windows; retrying once (see the pool-teardown note in ci.yml)"
+          ${{ matrix.tests }}
+
+  # The Windows installer checks, in their own job rather than riding a test shard: they add
+  # ~20s and have nothing to do with the suite they were attached to, which happened to be
+  # the longest one in the run.
+  installer-windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
-
-      # pnpm version comes from package.json's packageManager field.
-      - uses: pnpm/action-setup@v6
-
-      - uses: actions/setup-node@v5
+      - uses: ./.github/actions/setup
         with:
-          node-version: 24
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build (tsup)
-        run: pnpm build
-
-      - name: Unit tests (vitest)
-        run: ${{ matrix.tests }}
+          build: "@prismshadow/penguin-cli..."
 
       # The Linux job cannot validate PowerShell syntax; parse (never execute) the installer
       # scripts with the real PowerShell parser so a broken install.ps1 cannot ship.
       - name: Parse installer scripts (PowerShell)
-        if: matrix.installer
         shell: pwsh
         run: |
           $failed = $false
@@ -168,20 +242,18 @@ jobs:
           if ($failed) { exit 1 }
 
       - name: Windows installer tests
-        if: matrix.installer
         shell: pwsh
         run: ./scripts/test-installer.ps1
 
-  # Runtime desktop app, in parallel with the test jobs: an unpacked Electron
-  # shell that boots the server and WAITS for hot-reload requests (the
-  # "runtime" form of the four-layer model). The platform units are the
-  # existing packages (server = backend platform, web = frontend platform);
-  # the artifact bakes a copy of both in so it works out of the box, and its
-  # running platform is replaceable over /api/hmr. Built with electron-builder
-  # `--dir` (an unpacked app directory including the Electron runtime, not an
-  # installer): a runtime is meant to be dropped in and hot-updated, not
-  # distributed through an installer channel — signed installers stay in
-  # desktop-build.yml. Unsigned by design.
+  # Runtime desktop app, in parallel with the test jobs: an unpacked Electron shell that
+  # boots the server and WAITS for hot-reload requests (the "runtime" form of the
+  # four-layer model). The platform units are the existing packages (server = backend
+  # platform, web = frontend platform); the artifact bakes a copy of both in so it works
+  # out of the box, and its running platform is replaceable over /api/hmr. Built with
+  # electron-builder `--dir` (an unpacked app directory including the Electron runtime,
+  # not an installer): a runtime is meant to be dropped in and hot-updated, not distributed
+  # through an installer channel — signed installers stay in desktop-build.yml. Unsigned
+  # by design.
   runtime:
     strategy:
       fail-fast: false
@@ -198,23 +270,22 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v5
-
-      # pnpm version comes from package.json's packageManager field.
-      - uses: pnpm/action-setup@v6
-
-      - uses: actions/setup-node@v5
+      - uses: ./.github/actions/setup
         with:
-          node-version: 24
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
-
-      - run: pnpm build
+          build: "@prismshadow/penguin-desktop..."
 
       - name: Build unpacked runtime
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: pnpm --dir packages/desktop exec electron-builder ${{ matrix.platform }} --dir --publish never
+
+      # An installed desktop app installs the `penguin` command on the user's PATH — the deb
+      # postinst links /usr/bin/penguin, the other forms do it from the shell at launch — and
+      # every route runs <app>/bin/penguin against <app>/dist/penguin.js
+      # inside this tree. Nothing else in the build fails if those stop being packed, so the
+      # tree gets checked here, on all three platforms, where it already exists.
+      - name: Bundled CLI runs from the packed app
+        run: node packages/desktop/scripts/verify-packed-cli.mjs
 
       - name: Upload runtime artifact
         uses: actions/upload-artifact@v4
@@ -228,3 +299,24 @@ jobs:
             packages/desktop/out/mac
             packages/desktop/out/mac-arm64
             packages/desktop/out/mac-x64
+
+  # The aggregate gate: green only when every job above is. Mark THIS one required in
+  # branch protection — it survives the shard list changing, which the individual job
+  # names do not. `if: always()` so it still runs (and fails) when something upstream did.
+  ci:
+    if: always()
+    needs:
+      [style, typecheck, test, installer-e2e, test-macos, test-windows, installer-windows, runtime]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every gate passed
+        run: |
+          results='${{ join(needs.*.result, ' ') }}'
+          echo "upstream results: $results"
+          for r in $results; do
+            if [ "$r" != "success" ]; then
+              echo "::error::a CI job did not succeed ($results)"
+              exit 1
+            fi
+          done
+          echo "all green"

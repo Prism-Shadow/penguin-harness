@@ -4,11 +4,13 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  APP_URL,
   MODEL_CATALOG,
   MODEL_PROVIDERS,
   canonicalClientType,
   modelHomepageUrl,
   catalogEntryFor,
+  attributionHeaders,
   presetModelEntries,
   providerInfo,
   fastModeProtocol,
@@ -24,21 +26,22 @@ describe("model-catalog", () => {
     expect(new Set(pairs).size).toBe(pairs.length);
     const ids = MODEL_CATALOG.map((m) => m.modelId);
     expect(MODEL_CATALOG[0]!.provider).toBe("deepseek");
-    // Group order: DeepSeek first, followed by the gateway and first-party groups, with
-    // MiniMax immediately before custom.
+    // Group order is hand-curated, interleaving gateways and first-party vendors: DeepSeek
+    // first (the default model's provider) and custom always last.
     expect(MODEL_PROVIDERS.map((p) => p.id)).toEqual([
       "deepseek",
       "openrouter",
       "fireworks",
-      "siliconflow",
-      "qwen-token-plan",
-      "qwen-pay-as-you-go",
       "google",
-      "anthropic",
       "openai",
+      "anthropic",
+      "siliconflow",
+      "tokendance",
       "zhipu",
       "moonshot",
       "minimax",
+      "qwen-pay-as-you-go",
+      "qwen-token-plan",
       "custom",
     ]);
     expect(providerInfo("siliconflow")!.label).toBe("SiliconFlow");
@@ -78,6 +81,23 @@ describe("model-catalog", () => {
       expect(p.envKey).toMatch(/_API_KEY$/);
       expect(p.envBaseUrlKey).toMatch(/_BASE_URL$/);
     }
+  });
+
+  it("TokenDance is the only group publishing a key-minting flow, and both its endpoints are https", () => {
+    const withOAuth = MODEL_PROVIDERS.filter((p) => p.oauth !== undefined).map((p) => p.id);
+    expect(withOAuth).toEqual(["tokendance"]);
+    const oauth = providerInfo("tokendance")!.oauth!;
+    expect(oauth.authorizeUrl).toBe("https://tokendance.space/auth");
+    expect(oauth.exchangeUrl).toBe("https://tokendance.space/portal/api/v1/auth/keys");
+    // The key's name is also the app name the authorization page shows.
+    expect(oauth.keyName).toBe("PenguinHarness");
+  });
+
+  it("the app URL a minted key is stamped with is the same one attribution headers carry", () => {
+    expect(APP_URL).toBe("https://penguin.ooo/");
+    expect(attributionHeaders("https://tokendance.space/gateway/v1")).toEqual({
+      "X-App-URL": APP_URL,
+    });
   });
 
   it("every entry has valid three-bucket pricing; context_window is a positive integer", () => {
@@ -204,6 +224,7 @@ describe("model-catalog", () => {
       "x-ai/grok-4.5",
       "xiaomi/mimo-v2.5",
       "z-ai/glm-5.3",
+      "z-ai/glm-5.3-flash",
       "z-ai/glm-5.2",
     ]);
     for (const m of or) {
@@ -272,10 +293,40 @@ describe("model-catalog", () => {
       ["qwen3.8-max", true],
       ["qwen3.7-plus", true],
     ]);
+    const td = MODEL_CATALOG.filter((m) => m.provider === "tokendance");
+    // Dictionary order by upstream id; vision flags and context windows from TokenDance's
+    // public catalog API.
+    expect(td.map((m) => [m.modelId, m.contextWindow, m.supportsVision])).toEqual([
+      ["deepseek-v4-flash-0731", 1048576, false],
+      ["deepseek-v4-flash-vision-exp", 1000000, true],
+      ["deepseek-v4-pro-0813", 1000000, false],
+      ["glm-5.3", 1000000, false],
+      ["glm-5.3-flash", 1000000, true],
+      ["kimi-k3", 1048576, true],
+      ["qwen3.8-max", 1000000, true],
+    ]);
+    for (const m of td) {
+      expect(m.clientType).toBe("openai-chat");
+      expect(m.baseUrl).toBe("https://tokendance.space/gateway/v1");
+    }
+    // The gateway's own CNY LIST rates throughout, promotion or not: qwen3.8-max at
+    // 1.5 / 12 / 36 CNY while a 20% off runs, glm-5.3-flash at 0.23 / 0.8 / 2.8 CNY while a
+    // 50% off runs; no other row carries a promotion, so list price and billed rate coincide
+    // for the rest.
+    const tdQwen = td.find((m) => m.modelId === "qwen3.8-max")!.pricing!;
+    expect([tdQwen.cache_read, tdQwen.cache_write, tdQwen.output]).toEqual([
+      0.214286, 1.714286, 5.142857,
+    ]);
+    // cache_write carries the input price: TokenDance charges no separate cache-write fee.
+    const tdFlash = td.find((m) => m.modelId === "glm-5.3-flash")!.pricing!;
+    expect([tdFlash.cache_read, tdFlash.cache_write, tdFlash.output]).toEqual([
+      0.032857, 0.114286, 0.4,
+    ]);
     const qpayg = MODEL_CATALOG.filter((m) => m.provider === "qwen-pay-as-you-go");
     expect(qpayg.map((m) => [m.modelId, m.supportsVision])).toEqual([
       ["deepseek-v4-flash-0731", false],
       ["kimi/kimi-k3", true],
+      ["qwen3.8-flash", true],
       ["qwen3.8-max", true],
       ["qwen3.7-plus", true],
       ["ZHIPU/GLM-5.2", false],
@@ -312,6 +363,7 @@ describe("model-catalog", () => {
       "openrouter",
       "fireworks",
       "siliconflow",
+      "tokendance",
       "qwen-token-plan",
       "qwen-pay-as-you-go",
       "custom",
@@ -329,10 +381,12 @@ describe("model-catalog", () => {
       "https://dashscope.aliyuncs.com/compatible-mode/v1",
     );
     expect(providerInfo("fireworks")!.gatewayBaseUrl).toBe("https://api.fireworks.ai/inference/v1");
+    expect(providerInfo("tokendance")!.gatewayBaseUrl).toBe("https://tokendance.space/gateway/v1");
     const GATEWAYS = [
       "openrouter",
       "fireworks",
       "siliconflow",
+      "tokendance",
       "qwen-token-plan",
       "qwen-pay-as-you-go",
     ];
@@ -341,7 +395,7 @@ describe("model-catalog", () => {
         expect(p.gatewayBaseUrl, p.id).toBeUndefined();
       }
     }
-    const gateway = [...or, ...fw, ...sf, ...qtp, ...qpayg];
+    const gateway = [...or, ...fw, ...sf, ...td, ...qtp, ...qpayg];
     // Pricing (USD, per the 2026-08-03 models-API re-read): MiMo v2.5 and Hy3 publish a real
     // cache-hit price and no per-token write premium, so cache_write carries the input price.
     const mimo = MODEL_CATALOG.find((m) => m.modelId === "xiaomi/mimo-v2.5")!.pricing!;
@@ -401,6 +455,7 @@ describe("model-catalog", () => {
     ]);
     expect(MODEL_CATALOG.filter((m) => m.provider === "zhipu").map((m) => m.modelId)).toEqual([
       "glm-5.3",
+      "glm-5.3-flash",
       "glm-5.2",
       "glm-5.1",
       "glm-5",
@@ -433,6 +488,46 @@ describe("model-catalog", () => {
     const glm53 = catalogEntryFor("zhipu", "glm-5.3")!;
     expect([glm53.contextWindow, glm53.supportsVision]).toEqual([1000000, false]);
     expect(glm53.pricing).toEqual(catalogEntryFor("zhipu", "glm-5.2")!.pricing);
+    // GLM-5.3 Flash is listed both directly and on OpenRouter, and the two rows deliberately
+    // disagree on price: the direct row keeps Z.AI's list price while the gateway row stores
+    // the 50%-off rate OpenRouter actually bills through 2026-09-09, so the gateway figures
+    // are exactly half the direct ones.
+    const glm53f = catalogEntryFor("zhipu", "glm-5.3-flash")!;
+    expect([glm53f.contextWindow, glm53f.supportsVision]).toEqual([1000000, true]);
+    expect([
+      glm53f.pricing!.cache_read,
+      glm53f.pricing!.cache_write,
+      glm53f.pricing!.output,
+    ]).toEqual([0.03, 0.15, 0.5]);
+    const glm53for = catalogEntryFor("openrouter", "z-ai/glm-5.3-flash")!;
+    expect([glm53for.contextWindow, glm53for.supportsVision]).toEqual([1048576, true]);
+    expect([
+      glm53for.pricing!.cache_read,
+      glm53for.pricing!.cache_write,
+      glm53for.pricing!.output,
+    ]).toEqual([0.015, 0.075, 0.25]);
+    // Vision agrees on both routes: the direct row's AgentHub GLM client forwards image_url
+    // parts for this one id, and the gateway row's generic openai-chat client carries them
+    // for any id. It is the only vision-capable row in the direct Z.AI group.
+    expect(glm53f.clientType).toBeUndefined();
+    expect(glm53for.clientType).toBe("openai-chat");
+    for (const m of MODEL_CATALOG.filter((m) => m.provider === "zhipu")) {
+      expect(m.supportsVision, m.modelId).toBe(m.modelId === "glm-5.3-flash");
+    }
+    // Both rows share one display name, as the other dual-listed models do.
+    expect(glm53f.displayName).toBe("GLM-5.3 Flash");
+    expect(glm53for.displayName).toBe("GLM-5.3 Flash");
+    // Qwen 3.8 Flash: official CNY list price (1 / 0.1 / 3 per MTok) at the catalog's 7:1
+    // display rate, 1M context, vision through the group's openai-chat client.
+    const q38f = catalogEntryFor("qwen-pay-as-you-go", "qwen3.8-flash")!;
+    expect([q38f.contextWindow, q38f.supportsVision, q38f.displayName]).toEqual([
+      1000000,
+      true,
+      "Qwen 3.8 Flash",
+    ]);
+    expect([q38f.pricing!.cache_read, q38f.pricing!.cache_write, q38f.pricing!.output]).toEqual([
+      0.014286, 0.142857, 0.428571,
+    ]);
     // Grok 4.6 keeps Grok 4.5's input/output rates with a raised cache-hit price.
     const grok46 = catalogEntryFor("openrouter", "x-ai/grok-4.6")!;
     expect([grok46.contextWindow, grok46.supportsVision]).toEqual([500000, true]);
@@ -643,6 +738,9 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing ru
     expect(resolveModelEnv("glm-5.2")?.envKey).toBe("ZAI_API_KEY");
     // glm-5.3 is served by agenthub 0.4.2's unified GLM client (same ZAI_* pair).
     expect(resolveModelEnv("glm-5.3")?.envKey).toBe("ZAI_API_KEY");
+    // glm-5.3-flash carries the glm-5 substring, so it reaches the same client and pair.
+    expect(resolveModelEnv("glm-5.3-flash")?.envKey).toBe("ZAI_API_KEY");
+    expect(resolveModelEnv("glm-5.3-flash")?.envBaseUrlKey).toBe("ZAI_BASE_URL");
     expect(resolveModelEnv("kimi-k2.6")?.envBaseUrlKey).toBe("MOONSHOT_BASE_URL");
     // agenthub 0.4.2 unified the Kimi clients; every spelling reads the same env pair
     // (kimi-k3 matches no k2.x substring, so it must resolve on its own).
@@ -725,6 +823,9 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing ru
     // Token Plan models link to their qianwenai model page (bare ids, no encoding needed).
     expect(modelHomepageUrl("qwen-token-plan", "qwen3.8-max")).toBe(
       "https://www.qianwenai.com/models/qwen3.8-max",
+    );
+    expect(modelHomepageUrl("tokendance", "glm-5.3")).toBe(
+      "https://tokendance.space/models/glm-5.3",
     );
     // Direct vendors link to the vendor's model docs page.
     expect(modelHomepageUrl("deepseek", "deepseek-v4-pro")).toBe(
@@ -847,5 +948,55 @@ describe("fastModeProtocol (which models may be offered AgentHub's fast_mode, an
     expect(verdictOf("openai", "gpt-5.5")).toBe("openai");
     expect(verdictOf("openai", "gpt-5.4-pro")).toBe("openai");
     expect(verdictOf("minimax", "MiniMax-M3")).toBe("openai");
+  });
+});
+
+describe("attributionHeaders (how the harness names itself to the gateways that read it)", () => {
+  it("OpenRouter gets its three attribution headers, on the preset base URL and on any custom one", () => {
+    const expected = {
+      "HTTP-Referer": "https://penguin.ooo/",
+      "X-OpenRouter-Title": "PenguinHarness",
+      "X-OpenRouter-Categories": "cli-agent,personal-agent",
+    };
+    expect(attributionHeaders(providerInfo("openrouter")!.gatewayBaseUrl)).toEqual(expected);
+    // The host decides, not the catalog: an entry filed under custom that points at the same
+    // gateway is the same app calling it.
+    expect(attributionHeaders("https://openrouter.ai/api/v1/")).toEqual(expected);
+    // `URL` keeps a fully-qualified trailing dot in `hostname`; it names the same server.
+    expect(attributionHeaders("https://openrouter.ai./api/v1")).toEqual(expected);
+    // OpenRouter accepts at most two categories per request and drops anything unrecognised.
+    expect(expected["X-OpenRouter-Categories"].split(",")).toHaveLength(2);
+  });
+
+  it("TokenDance gets the single X-App-URL header", () => {
+    expect(attributionHeaders(providerInfo("tokendance")!.gatewayBaseUrl)).toEqual({
+      "X-App-URL": "https://penguin.ooo/",
+    });
+  });
+
+  it("every other endpoint gets no extra headers, and a blank or unparseable base URL is inert", () => {
+    expect(attributionHeaders("https://api.deepseek.com")).toBeUndefined();
+    expect(attributionHeaders("https://api.siliconflow.cn/v1")).toBeUndefined();
+    expect(attributionHeaders(undefined)).toBeUndefined();
+    expect(attributionHeaders("   ")).toBeUndefined();
+    expect(attributionHeaders("not a url")).toBeUndefined();
+    // Suffix-anchored host matching: a lookalike domain is not the gateway.
+    expect(attributionHeaders("https://notopenrouter.ai/api/v1")).toBeUndefined();
+    expect(attributionHeaders("https://tokendance.space.example.com/v1")).toBeUndefined();
+    // Stripping the trailing dot must not widen that anchoring.
+    expect(attributionHeaders("https://openrouter.ai.attacker.com./v1")).toBeUndefined();
+  });
+
+  it("catalog invariant: every gateway row whose host runs an attribution scheme carries it", () => {
+    for (const m of MODEL_CATALOG) {
+      const headers = attributionHeaders(m.baseUrl);
+      if (m.provider === "openrouter") {
+        expect(headers?.["HTTP-Referer"], m.modelId).toBe("https://penguin.ooo/");
+      } else if (m.provider === "tokendance") {
+        expect(headers?.["X-App-URL"], m.modelId).toBe("https://penguin.ooo/");
+      } else {
+        expect(headers, `${m.provider}/${m.modelId}`).toBeUndefined();
+      }
+    }
   });
 });

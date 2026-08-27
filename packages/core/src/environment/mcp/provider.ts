@@ -21,7 +21,7 @@
  * cancels the in-flight request. Result content maps as: text blocks → output text; image
  * blocks → `images` data URLs; audio/binary-resource blocks → placeholder lines;
  * `structuredContent` is serialized only when no text block was present; `isError` →
- * `stopReason: "failed"`. Permission for the frontend's read-only mode comes from the
+ * `stopReason: "fatal"`. Permission for the frontend's read-only mode comes from the
  * spec's `readOnlyHint` annotation (`true` → `"r"`, anything else → `"rw"` — hints are
  * untrusted, so the default is the restrictive direction), unless the entry sets an
  * explicit `permission`, which then applies to every tool of that server.
@@ -37,7 +37,7 @@ import { StdioClientTransport, getDefaultEnvironment } from "@modelcontextprotoc
 import { partialToolCallOutput } from "../../omnimessage/index.js";
 import type { McpServerConnectResult, OmniMessage } from "../../omnimessage/index.js";
 import { VERSION } from "../../index.js";
-import type { MCPServerConfig, ToolDefinition, ToolPermission } from "../../interfaces.js";
+import type { MCPServerConfig, ToolDefinition, ToolPermission } from "../../interfaces/index.js";
 import type { BuiltinTool, ToolResult } from "../tools/types.js";
 import { resolveMCPServers, type ResolvedMCPServer } from "./config.js";
 
@@ -289,9 +289,11 @@ export class McpToolProvider {
               result: {
                 server: server.name,
                 transport: server.transport.kind,
-                status: aborted ? "aborted" : "failed",
+                status: aborted ? "aborted" : "fatal",
                 duration_ms: durationMs(),
-                ...(aborted ? {} : { error: describeError(err) }),
+                ...(aborted
+                  ? {}
+                  : { error_code: "connect_failed" as const, error_message: describeError(err) }),
               },
             };
           }
@@ -340,6 +342,11 @@ export class McpToolProvider {
         // Safe inherited defaults plus the entry's own env — and nothing else: the Agent
         // vault is deliberately NOT injected into MCP server processes (unlike command
         // subprocesses); a variable a server needs must be listed in the entry's env.
+        // The SDK defaults are an allowlist (HOME/PATH/SHELL-class names only), so the
+        // harness's own configuration — every PENGUIN_* variable, PORT/HOST and the rest —
+        // never reaches a server: the same outcome the command-session strip enforces,
+        // by the opposite mechanism. Widening this base (e.g. to process.env) would undo
+        // that; the "harness variables never reach a stdio server" test pins it.
         env: { ...getDefaultEnvironment(), ...t.env },
         ...(t.cwd !== undefined || this.workspaceDir !== undefined
           ? { cwd: t.cwd ?? this.workspaceDir }
@@ -442,7 +449,7 @@ export class McpToolProvider {
           });
         }
         return {
-          stopReason: failed ? "failed" : "completed",
+          stopReason: failed ? "fatal" : "completed",
           ...(rendered.images.length > 0 ? { images: rendered.images } : {}),
         };
       },

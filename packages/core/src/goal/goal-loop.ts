@@ -14,9 +14,10 @@
  *   normalize to `blocked` — see goal-file.ts),
  * - the loop's own token accounting against the budget (internal counters; the budget
  *   line in each round's block is composed from them, never read from anywhere),
- * - a round the engine cut off rather than finished — a main-session abort (LLM failure,
- *   user interrupt) or a final assistant notice with `stop_reason: "failed"` (the engine's
- *   max_turns cutoff emits exactly that, and no abort event): the model never got to write
+ * - a round the engine cut off rather than finished — a user abort, a terminal LLM
+ *   failure, or a mid-task compaction failure, read from the run generator's own return
+ *   value (`RunCutoff`; failures emit no abort event) — or a final assistant notice with
+ *   `stop_reason: "fatal"` (the engine's max_turns cutoff): the model never got to write
  *   the file, so re-firing would loop the same cutoff forever, and
  * - a hard round cap (`maxRounds`, default 100) as a runaway backstop independent of the
  *   budget — without it an unbudgeted goal whose model simply never writes the file would
@@ -30,7 +31,8 @@
  * the stream — including origin-marked ones from subagent sessions, which are part of the
  * goal's cost — contributes `request.total - request.cache_read`.
  */
-import { goalFinished, isEventMessage, isModelMessage, userText } from "../omnimessage/index.js";
+import { goalFinished, isModelMessage, userText } from "../omnimessage/index.js";
+import type { RunCutoff } from "../interfaces/shared.js";
 import type { GoalOutcomeStatus, OmniMessage } from "../omnimessage/index.js";
 import { stripLeadingMarkerBlocks } from "../omnimessage/markers/index.js";
 import { readGoalStatus, writeGoalFile, UNLIMITED_BUDGET } from "./goal-file.js";
@@ -39,7 +41,8 @@ import { goalTokenDelta } from "./goal-stream.js";
 
 /** The slice of Session the loop drives: one Task per round (structural, so tests can substitute a fake). */
 export interface GoalRoundRunner {
-  run(newMessages: OmniMessage[]): AsyncGenerator<OmniMessage>;
+  /** One round = one Task run; the return value says whether the round was cut off early (`Session.run`'s contract). Fakes returning nothing count as "ran to completion". */
+  run(newMessages: OmniMessage[]): AsyncGenerator<OmniMessage, RunCutoff | null | void>;
 }
 
 export interface GoalLoopOptions {
@@ -66,16 +69,12 @@ export interface GoalLoopOptions {
 /** Default `maxRounds`: the runaway backstop for goals with no (or a huge) budget. */
 export const GOAL_MAX_ROUNDS = 100;
 
-/** Whether this message is the **main** session's abort event (subagent aborts don't end the goal). */
-function isMainAbort(msg: OmniMessage): boolean {
-  return isEventMessage(msg) && msg.payload.type === "abort" && (msg.origin?.length ?? 0) === 0;
-}
-
 /**
  * The main session's assistant text, or null. Used to track how a round ended: the engine's
  * max_turns cutoff finishes the stream with an assistant notice carrying
- * `stop_reason: "failed"` (and no abort event) — the only failure mode that neither
- * `isMainAbort` nor the goal file can see.
+ * `stop_reason: "fatal"` (and no abort event) — the only failure mode that neither
+ * `isMainAbort` nor the goal file can see. Traces written before the stop-reason
+ * convergence spell the same notice "failed", so both spellings count.
  */
 function mainAssistantStopReason(msg: OmniMessage): string | null {
   if (msg.origin && msg.origin.length > 0) return null;
@@ -117,13 +116,22 @@ export async function* runGoalLoop(
       }),
     );
     yield input;
-    for await (const msg of session.run([input])) {
+    // Manual iteration (not for-await) to read the run's return value: whether the round
+    // was cut off early — a user abort, a terminal LLM failure, or a mid-task compaction
+    // failure. The engine states it directly; a cut-off round must not re-fire.
+    const it = session.run([input]);
+    for (;;) {
+      const res = await it.next();
+      if (res.done) {
+        if (res.value) aborted = true;
+        break;
+      }
+      const msg = res.value;
       used += goalTokenDelta(msg);
-      if (isMainAbort(msg)) aborted = true;
       // The LAST assistant text decides: a mid-round failed notice followed by normal text
       // means the round recovered; the max_turns cutoff is always the final message.
       const stop = mainAssistantStopReason(msg);
-      if (stop !== null) roundFailed = stop === "failed";
+      if (stop !== null) roundFailed = stop === "fatal" || stop === "failed";
       yield msg;
     }
   }

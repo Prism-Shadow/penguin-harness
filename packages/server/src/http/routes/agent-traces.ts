@@ -4,17 +4,15 @@
  *     trace-file index (mtime-gated reconcile, then pure DB — see services/trace-index.ts).
  *     Without `limit`: the legacy full drill-down (Agent -> date -> Session -> index,
  *     reverse order), never filtered. With optional `offset`/`limit` (+ optional
- *     `category`, `cli`): pages Session groups newest-first (within the category when
+ *     `category`): pages Session groups newest-first (within the category when
  *     given), stat-ing only the returned page for fresh sizes, and resolves per group a
  *     display title (sessions DB title, else the registration-time first-prompt
- *     fallback) plus its sidebar category / Workspace and per-category totals.
- *     CLI-origin Sessions (no web sessions-table row, not subagent/schedule) are
- *     excluded unless `cli=1` — the same "show CLI sessions" preference the sessions
- *     list honors, applied server-side to rows, counts and workspace groups alike.
+ *     fallback) plus its sidebar category / Workspace and per-category totals. Every
+ *     Session is listed whichever client created it.
  *     The listing consults the sessions table read-only (titles, archived, workspace,
  *     client); discovery itself still comes from the Trace directory tree via the index.
  *   - GET /api/projects/:p/agents/:a/traces/:sessionId/:index (including /analysis, /download) —
- *     read-only Trace detail endpoints (FD-3): locate the Trace file directly by
+ *     read-only Trace detail endpoints: locate the Trace file directly by
  *     (projectId, agentId, sessionId), without depending on the sessions table for
  *     tracking — any entry visible in the directory tree (subagent child Sessions,
  *     CLI-created Sessions) can be opened and read; access is enforced by requireProjectAccess.
@@ -52,7 +50,7 @@ export function agentTracesRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.get("/", async (c) => {
-    // Id validation happens before any path construction (FD-4: prevents agentId path traversal for cross-Project privilege escalation).
+    // Id validation happens before any path construction: prevents agentId path traversal for cross-Project privilege escalation.
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
@@ -69,15 +67,9 @@ export function agentTracesRoutes(deps: AppDeps): Hono<AppEnv> {
       throw badRequest(`category must be one of ${SESSION_CATEGORIES.join(" / ")}.`);
     }
     if (rawCategory !== undefined && paging === null) throw badRequest("category requires limit.");
-    // `cli=1` widens the paginated listing to CLI-origin Sessions (mirroring the sessions
-    // list's parameter): the default follows the "show CLI sessions" preference's OFF
-    // state. The legacy unpaged shape is never filtered (back-compat).
-    const rawCli = c.req.query("cli");
-    if (rawCli !== undefined && rawCli !== "1") throw badRequest("cli only accepts 1.");
     return c.json(
       await deps.traceService.agentTraces(projectId, agentId, paging, {
         ...(rawCategory !== undefined ? { category: rawCategory as SessionCategory } : {}),
-        ...(rawCli !== undefined ? { includeCli: true } : {}),
       }),
     );
   });

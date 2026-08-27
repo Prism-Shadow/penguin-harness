@@ -45,17 +45,29 @@ that only re-sync when the package's `build` script runs via pnpm
 cache — on the old build; if a running dev web app still serves stale core after a manual
 rebuild, delete `packages/web/node_modules/.vite` and restart.
 
-Dev entry points that touch data (`pnpm dev`, `pnpm dev:server`, `pnpm penguin`,
-`pnpm desktop`) default to a separate data root, `~/.penguin/dev-data`, kept apart from
-the installed CLI/server's `~/.penguin/data` — hacking on the repo never mixes state with
-your real agents. Export `PENGUIN_HOME` to point them anywhere else; an explicit value
-always wins. The desktop dev shell isolates one step further: an unpackaged run takes a
-dev-suffixed app identity (`PenguinHarness-Dev`) with its own userData directory,
-single-instance lock, and sticky port, and defaults to `~/.penguin/dev-data` even when
-launched without the env var (`pnpm --dir packages/desktop start`) — so it runs side by
-side with an installed release build, with neither instance seeing the other. Every
-unpackaged launch prints which pair it picked: `[shell] dev instance '<name>' on data
-root <root>`.
+Dev entry points that touch data default to separate data roots, kept apart from the
+installed CLI/server's `~/.penguin/data` — hacking on the repo never mixes state with
+your real agents. `pnpm dev`, `pnpm dev:server` and `pnpm desktop` share
+`~/.penguin/dev-data`; `pnpm penguin` takes its own `~/.penguin/dev-data-cli`, because a
+data root admits one server at a time (`<root>/server.lock`) and the dev CLI's
+`penguin web` is exactly the harness that then asks an Agent to run `pnpm dev` — on a
+shared root that Agent's `dev:server` would refuse to start, blocked by the harness's
+own lock (the same coexistence that already gives it port 7369, see
+`packages/core/src/internal/ports.ts`). To aim a dev CLI command at the `pnpm dev`
+dataset anyway, say so per command — `PENGUIN_HOME=~/.penguin/dev-data pnpm penguin ...`,
+or `--root` where the subcommand takes it. Need a different root?
+Pass `PENGUIN_HOME` inline, for the single
+command that needs it (`PENGUIN_HOME=~/.penguin/dev-data-<topic> pnpm dev`) — never export
+it into your shell: those defaults apply only when the variable is unset or empty
+(`scripts/run-with-env.mjs`), so an exported value silently wins over all of them, and an
+exported `PENGUIN_HOME=~/.penguin/data` puts `pnpm dev:server` on the release/CLI root
+where a running desktop app already holds the lock. The desktop dev shell isolates one
+step further: an unpackaged run takes a dev-suffixed app identity (`PenguinHarness-Dev`)
+with its own userData directory, single-instance lock, and sticky port, and defaults to
+`~/.penguin/dev-data` even when launched without the env var
+(`pnpm --dir packages/desktop start`) — so it runs side by side with an installed release
+build, with neither instance seeing the other. Every unpackaged launch prints which pair
+it picked: `[shell] dev instance '<name>' on data root <root>`.
 
 Two one-time moves came with that split. A bare `pnpm --dir packages/desktop start` used
 to run on `~/.penguin/data` (the release/CLI root) and now runs on `~/.penguin/dev-data`,

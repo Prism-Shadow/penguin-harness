@@ -4,7 +4,8 @@
  * files matching the library content, idempotent update on reinstall, the
  * directory disappearing after uninstall, default_agent starting with the
  * preinstalled library set (preinstall: false skills stay manual-install)
- * while a newly created plain Agent has none, and the zip
+ * while a newly created plain Agent has none, Agent creation seeding the Skills picked in the
+ * create dialog (unknown name = 404 with no Agent created), and the zip
  * archive install/export (layouts, zip-slip and limit rejections, 409
  * skill_exists + overwrite replace, byte-identical export round-trip).
  */
@@ -15,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { skillsDir } from "@prismshadow/penguin-core";
 import { librarySkill, loadPreinstalledSkills } from "@prismshadow/penguin-skills";
 import type {
+  AgentCreateResponse,
   AgentSkillsResponse,
   ProjectCreateResponse,
   SkillLibraryResponse,
@@ -88,6 +90,7 @@ describe("skills api", () => {
     expect(body.groups[2]!.skills.map((s) => s.name)).toEqual([
       "penguin-sdk",
       "penguin-cli",
+      "penguin-orchestration",
       "agenthub-models",
       "vllm",
       "ollama",
@@ -245,6 +248,54 @@ describe("skills api", () => {
     await createPlainAgent("fresh_agent");
     const fresh = (await (await member.get(base("fresh_agent"))).json()) as AgentSkillsResponse;
     expect(fresh.skills).toEqual([]);
+  });
+
+  it("agent create seeds the picked library skills; the files land verbatim and the card count follows", async () => {
+    const created = await owner.post(`/api/projects/${projectId}/agents`, {
+      agentId: "seeded_agent",
+      name: "Seeded",
+      skills: ["penguin-sdk", "web-design"],
+    });
+    expect(created.status).toBe(201);
+    const summary = (await created.json()) as AgentCreateResponse;
+    expect(summary.agent.skillCount).toBe(2);
+
+    // The installed list is the same shape a library install produces (name-sorted).
+    const listed = (await (await member.get(base("seeded_agent"))).json()) as AgentSkillsResponse;
+    expect(listed.skills.map((s) => s.name)).toEqual(["penguin-sdk", "web-design"]);
+    // Installed through the same writer as the Skills tab: SKILL.md is the library file verbatim.
+    const onDisk = await fs.readFile(
+      path.join(skillsDir(t.root, projectId, "seeded_agent"), "penguin-sdk", "SKILL.md"),
+      "utf8",
+    );
+    expect(onDisk).toBe(librarySkill("penguin-sdk")!.content);
+  });
+
+  it("agent create with an unknown skill is 404 unknown_skill and creates no Agent", async () => {
+    const res = await owner.post(`/api/projects/${projectId}/agents`, {
+      agentId: "ghost_agent",
+      skills: ["penguin-sdk", "no-such-skill"],
+    });
+    expect(res.status).toBe(404);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("unknown_skill");
+    // Nothing was created: the id is still free, and no directory was left behind.
+    await expect(
+      fs.stat(path.join(skillsDir(t.root, projectId, "ghost_agent"), "..")),
+    ).rejects.toThrow();
+    expect(
+      (await owner.post(`/api/projects/${projectId}/agents`, { agentId: "ghost_agent" })).status,
+    ).toBe(201);
+  });
+
+  it("agent create without skills stays a plain Agent; a non-array skills field is 400", async () => {
+    await createPlainAgent("plain_seed");
+    const plain = (await (await member.get(base("plain_seed"))).json()) as AgentSkillsResponse;
+    expect(plain.skills).toEqual([]);
+    const bad = await owner.post(`/api/projects/${projectId}/agents`, {
+      agentId: "bad_seed",
+      skills: "penguin-sdk",
+    });
+    expect(bad.status).toBe(400);
   });
 
   // ---- POST .../skills/archive: install one skill from an uploaded zip ----

@@ -15,7 +15,6 @@ import type { MidRunComposerState } from "../src/features/chat/composer-send";
 const BASE: MidRunComposerState = {
   sending: false,
   goalOn: false,
-  modelAuthDead: false,
   canSteerChannel: true,
   canQueueChannel: true,
   followUpMode: false,
@@ -88,12 +87,6 @@ describe("midRunAction — Stop is the fallthrough, not a case", () => {
     expect(act({ goalOn: true })).toBe("stop");
     expect(act({ goalOn: true, followUpMode: true })).toBe("stop");
     expect(act({ goalOn: true, hasImages: true })).toBe("stop");
-  });
-
-  it("a rejected model key leaves Stop, for every draft there is", () => {
-    expect(act({ modelAuthDead: true })).toBe("stop");
-    expect(act({ modelAuthDead: true, followUpMode: true })).toBe("stop");
-    expect(act({ modelAuthDead: true, ...EMPTY, hasContent: true })).toBe("stop");
   });
 
   it("a host with no channels at all leaves Stop rather than a dead Send", () => {

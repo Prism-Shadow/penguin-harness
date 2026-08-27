@@ -23,6 +23,11 @@
  *   the request stays queued, and a late-arriving decision still takes effect (settled guard,
  *   first to arrive wins).
  *
+ * Mid-run control: `steer` queues a message on the child Session's own steering queue (the
+ * mechanism a user steers the main session with), and `abortRun` aborts only the current
+ * round via a per-run AbortController — the session survives both for follow-up prompts.
+ * The model (input_subagent) and the host (subagents panel) converge on these same methods.
+ *
  * Cleanup: `kill()` aborts the current run via AbortSignal, denies all pending approvals, and
  * releases child Session resources; idempotent. The child Session runs in-process, so there's no
  * need for a separate synchronous hard-kill path (its command sessions are reaped by their own
@@ -30,7 +35,12 @@
  */
 import type { OmniMessage } from "../../../omnimessage/index.js";
 import type { ApprovalDecision, ToolCallPayload } from "../../../omnimessage/index.js";
-import type { ApproveFn, SubagentHandle } from "../../../interfaces.js";
+import type {
+  ApproveFn,
+  RunCutoff,
+  SubagentHandle,
+  ThinkingLevelName,
+} from "../../../interfaces/index.js";
 import type { ToolResult } from "../types.js";
 import { CappedTextBuffer, WakeSignal } from "../background/index.js";
 
@@ -58,6 +68,12 @@ export class ManagedSubagentSession {
 
   private readonly handle: SubagentHandle;
   private readonly abortCtrl = new AbortController();
+  /**
+   * Abort scope of the CURRENT run only: `abortRun` (input_subagent's `abort`, the panel's
+   * stop button) fires this one, ending the round the way a user's stop ends a main-session
+   * Task — the session itself survives for steering and follow-up runs, unlike `kill`.
+   */
+  private runCtrl: AbortController | null = null;
 
   private messages: OmniMessage[] = [];
   private readonly textBuffer = new CappedTextBuffer(OUTPUT_BUFFER_CAP, "earlier subagent output");
@@ -89,9 +105,17 @@ export class ManagedSubagentSession {
   // Single wake point: new message / run finished / new approval request all wake a waiting waitWake through it.
   private readonly wakeSignal = new WakeSignal();
 
-  constructor(handle: SubagentHandle) {
+  constructor(handle: SubagentHandle, opts?: { resumeAgentId?: string }) {
     this.handle = handle;
+    this.resumeAgentId = opts?.resumeAgentId;
   }
+
+  /**
+   * The owning Agent recorded at spawn/resume for the revival path (undefined = the parent
+   * Agent's own, i.e. a self-spawn): a released session's registry tombstone carries it so a
+   * later input_subagent on the same id can resume the child (see SubagentSessionManager).
+   */
+  readonly resumeAgentId: string | undefined;
 
   /** Child Session id (one hop of a message's origin); `subagent_id` is derived from its tail so the frontend can correlate it. */
   get sessionId(): string {
@@ -123,17 +147,72 @@ export class ManagedSubagentSession {
     return this.messages.length > 0 || !this.textBuffer.isEmpty;
   }
 
+  /** Whether the session has been killed/disposed (used by the manager's live index to drop dead entries lazily). */
+  get disposed(): boolean {
+    return this.killed;
+  }
+
   /**
    * Starts a new round of the task on the child Session (async pump, doesn't block the caller).
-   * Throws if already disposed or still running (converted to an explanatory output by the
-   * caller).
+   * `messages` is the round's input in the same OmniMessage shape `steer` takes — the caller
+   * owns their `sender`, so a model dispatch and a human's panel message stay distinguishable
+   * in the child's Trace. `opts.thinkingLevel` pins this round only (a host follow-up's per-turn picker);
+   * `opts.suppressDoneReport` keeps the settle watcher quiet for this round — a HOST-initiated
+   * round is the user's own conversation with the child, not work the model dispatched, so the
+   * parent must not receive a completion notice for it. Throws if already disposed or still
+   * running (converted to an explanatory output by the caller).
    */
-  startRun(prompt: string): void {
+  startRun(
+    messages: OmniMessage[],
+    opts?: { thinkingLevel?: ThinkingLevelName; suppressDoneReport?: boolean },
+  ): void {
     if (this.killed) throw new Error("subagent session disposed");
     if (this.isRunning) throw new Error("subagent is still running");
     this.isRunning = true;
     this.exitInfo = null;
-    void this.pump(prompt);
+    this.reportCurrentRun = opts?.suppressDoneReport !== true;
+    this.runCtrl = new AbortController();
+    this.notifyState();
+    void this.pump(messages, this.runCtrl, opts?.thinkingLevel);
+  }
+
+  /**
+   * Queues a steering message for the current run (the same channel a user steers the main
+   * session with — see SubagentHandle.steer). False when idle, killed, or the handle predates
+   * steering: the caller then falls back to a follow-up run or reports "not running".
+   */
+  steer(messages: OmniMessage[]): boolean {
+    if (this.killed || !this.isRunning) return false;
+    return this.handle.steer?.(messages) ?? false;
+  }
+
+  /**
+   * Aborts the CURRENT run only (see runCtrl); the session stays alive for steering and
+   * follow-up prompts. False when no run is in flight. The exit lands asynchronously through
+   * the pump (status failed with an aborted note), so callers observe settlement via
+   * waitWake/running like any other run end.
+   */
+  abortRun(): boolean {
+    if (this.killed || !this.isRunning) return false;
+    // An abort is always an explicit actor's gesture whose outcome that actor sees directly
+    // (the input_subagent call's own result, or the panel the user pressed stop on): the
+    // settling round must not additionally fire a completion report at the parent.
+    this.reportCurrentRun = false;
+    this.runCtrl?.abort();
+    return true;
+  }
+
+  // Run-state observer (host liveness): fired on every isRunning flip — startRun and the
+  // pump's settle. The event carries no payload; observers re-read `running`.
+  private stateListener: (() => void) | null = null;
+
+  /** Attaches the single run-state listener (the manager's aggregate notifier). */
+  onStateChange(cb: () => void): void {
+    this.stateListener = cb;
+  }
+
+  private notifyState(): void {
+    this.stateListener?.();
   }
 
   /** Takes the buffered child-session messages (already tagged with origin, for the parent tool to forward). */
@@ -149,6 +228,14 @@ export class ManagedSubagentSession {
     return this.textBuffer.drain();
   }
 
+  /** The child's most recent complete assistant text, across every round; null before it says anything (see the pump). */
+  private lastAnswer: string | null = null;
+
+  /** What the child last said — the idempotent snapshot input_subagent returns and a completion report carries. */
+  get lastAssistantText(): string | null {
+    return this.lastAnswer;
+  }
+
   /** External wakeup (e.g. the parent tool call was aborted): makes a waiting `waitWake` return immediately. */
   wakeup(): void {
     this.wakeSignal.notify();
@@ -156,7 +243,7 @@ export class ManagedSubagentSession {
 
   // Settle watcher (run_in_background completion reports): fires at the end of EVERY round of a
   // background-launched session (later input_subagent rounds included), until disarmed. A kill
-  // through the kill_subagent tool disarms first — the killer already reports the outcome.
+  // by an explicit per-run abort stays silent — the aborter reads the outcome directly.
   private settleWatcher: (() => void) | null = null;
 
   /** Arms the completion-report watcher (replacing any previous one); fires immediately (microtask) when the session is already idle with a terminal state. */
@@ -176,6 +263,30 @@ export class ManagedSubagentSession {
     void this.pumpApprovals();
   }
 
+  /**
+   * Host-provided session-lifetime fallback approval sink (see
+   * EnvironmentInterface.setSubagentApprovalFallback): consulted when neither a window sink
+   * nor a background launch's standing sink exists, so a child's approval escalates to the
+   * user instead of parking until the model's next poll. Lowest precedence of the three.
+   */
+  private fallbackApprove: ApproveFn | null = null;
+
+  /** Attaches the host fallback approval sink (see fallbackApprove) and drains anything already queued. */
+  setFallbackApprovalSink(approve: ApproveFn): void {
+    this.fallbackApprove = approve;
+    void this.pumpApprovals();
+  }
+
+  /** The active standing sink: a background launch's own, else the host fallback; null without either. */
+  private standingApprove(): ApproveFn | null {
+    return this.persistentApprove ?? this.fallbackApprove;
+  }
+
+  /** Whether a live forwarding tap is attached (host paths attach one on first touch; see setMessageTap). */
+  get hasMessageTap(): boolean {
+    return this.forwardTap !== null;
+  }
+
   /** Attaches the live forwarding tap of a background launch (see forwardTap), flushing the buffered backlog through it in order. */
   setMessageTap(tap: (msg: OmniMessage) => void): void {
     const backlog = this.messages;
@@ -184,9 +295,12 @@ export class ManagedSubagentSession {
     for (const msg of backlog) tap(msg);
   }
 
+  /** Whether the round in flight (or the last one) should fire the settle watcher: false for host-initiated rounds (see startRun). */
+  private reportCurrentRun = true;
+
   private fireSettleWatcher(): void {
     const cb = this.settleWatcher;
-    if (cb && !this.killed) cb();
+    if (cb && !this.killed && this.reportCurrentRun) cb();
   }
 
   /** Waits for "woken up" or `ms` to expire, whichever comes first. */
@@ -235,30 +349,42 @@ export class ManagedSubagentSession {
   // -------------------------------------------------------------------------
 
   /** Drives one round of `handle.run`: buffers messages and text, settling the terminal state when it ends. */
-  private async pump(prompt: string): Promise<void> {
+  private async pump(
+    messages: OmniMessage[],
+    runCtrl: AbortController,
+    thinkingLevel?: ThinkingLevelName,
+  ): Promise<void> {
     let wroteAny = false;
-    let childAbort: string | null = null;
+    // Whether the round was cut off early (a user abort, a terminal LLM failure, a
+    // mid-task compaction failure): read from the run generator's return value — the
+    // child engine states it directly; a cut-off round is reported failed, not completed.
+    let cut: RunCutoff | null = null;
     try {
-      for await (const msg of this.handle.run({
-        prompt,
-        signal: this.abortCtrl.signal,
+      // Either scope ends the round: the session-lifetime kill, or this run's own abort.
+      // Manual iteration (not for-await) so the handle's return value — whether the round
+      // was cut off — is read; a child session failure doesn't throw.
+      const it = this.handle.run({
+        messages,
+        signal: AbortSignal.any([this.abortCtrl.signal, runCtrl.signal]),
         approve: this.childApprove,
-      })) {
+        ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
+      });
+      for (;;) {
+        const res = await it.next();
+        if (res.done) {
+          // Older embedders' handles may return nothing: that counts as ran-to-completion.
+          cut = res.value ?? null;
+          break;
+        }
+        const msg = res.value;
         this.bufferMessage(msg);
         if ((msg.origin?.length ?? 0) === 1) {
           const p = msg.payload as {
             type?: string;
             event_type?: string;
             text?: string;
-            reason?: string;
           };
-          // A direct child layer's abort event: the child session was interrupted/failed (LLM
-          // request error, user interruption, etc). A child session failure doesn't throw, it
-          // only emits an event, based on which this round is reported as failed rather than
-          // marked completed.
-          if (p.type === "abort") {
-            childAbort = p.reason ?? "aborted";
-          } else if (
+          if (
             p.type === "partial_text" &&
             p.event_type === "delta" &&
             typeof p.text === "string" &&
@@ -266,12 +392,29 @@ export class ManagedSubagentSession {
           ) {
             wroteAny = true;
             this.appendText(p.text);
+          } else if (
+            p.type === "text" &&
+            (p as { role?: string }).role === "assistant" &&
+            typeof p.text === "string" &&
+            p.text
+          ) {
+            // The child's most recent COMPLETE utterance: what input_subagent hands the model
+            // and what a completion report carries — an idempotent "what it last said"
+            // snapshot rather than an incremental delta drain.
+            wroteAny = true;
+            this.lastAnswer = p.text;
           }
         }
         this.wakeSignal.notify();
       }
-      if (childAbort !== null) {
-        this.exitInfo = { status: "failed", note: `[subagent aborted: ${childAbort}]` };
+      if (cut !== null) {
+        // The note reaches the parent model: the cause code plus the raw detail.
+        const detail = cut.errorMessage;
+        const cause = cut.errorCode ?? (cut.kind === "abort" ? "aborted" : cut.kind);
+        this.exitInfo = {
+          status: "failed",
+          note: `[subagent ${cut.kind === "abort" ? "aborted" : "failed"}: ${cause}${detail ? ` — ${detail}` : ""}]`,
+        };
       } else if (!wroteAny) {
         this.exitInfo = {
           status: "completed",
@@ -287,6 +430,7 @@ export class ManagedSubagentSession {
       this.isRunning = false;
       if (this.killed) this.handle.dispose();
       this.wakeSignal.notify();
+      this.notifyState();
       this.fireSettleWatcher();
     }
   }
@@ -344,11 +488,11 @@ export class ManagedSubagentSession {
     if (this.pumpingApprovals) return;
     this.pumpingApprovals = true;
     try {
-      while ((this.sink !== null || this.persistentApprove !== null) && this.approvals.length > 0) {
+      while ((this.sink !== null || this.standingApprove() !== null) && this.approvals.length > 0) {
         const req = this.approvals[0]!;
         const sink = this.sink;
         if (sink === null) {
-          await this.persistentApprove!(req.toolCall).then(
+          await this.standingApprove()!(req.toolCall).then(
             (d) => this.settle(req, d),
             () => this.settle(req, "deny"), // An approval sink error is treated as a denial (avoids leaving the child session stuck forever)
           );
@@ -361,7 +505,7 @@ export class ManagedSubagentSession {
         await Promise.race([answer, sink.detached]);
         if (req.settled) continue;
         if (this.sink && this.sink !== sink) continue; // The sink was replaced by a new call: retry with the new sink
-        if (this.persistentApprove !== null) continue; // Window gone but a standing sink exists: fall through to it next round
+        if (this.standingApprove() !== null) continue; // Window gone but a standing sink exists: fall through to it next round
         break; // The sink was detached and still unresolved: stay queued for the next sink
       }
     } finally {
@@ -370,8 +514,11 @@ export class ManagedSubagentSession {
   }
 }
 
-/** Converts a run's terminal state into a tool result (note is appended outside the truncation, so it isn't lost with long output). */
+/** Converts a run's terminal state into a tool result (note is appended outside the truncation, so it isn't lost with long output). A failed child run is fatal for this call — nothing retries a tool. */
 export function resultForSubagentExit(exit: SubagentExit | null): ToolResult {
   if (!exit) return { stopReason: "completed" };
-  return { stopReason: exit.status, ...(exit.note !== undefined ? { note: exit.note } : {}) };
+  return {
+    stopReason: exit.status === "failed" ? "fatal" : exit.status,
+    ...(exit.note !== undefined ? { note: exit.note } : {}),
+  };
 }

@@ -234,7 +234,8 @@ describe("session-index", () => {
       sessionMeta(junkMeta),
       userText("junk"),
     ]);
-    const list = (await (await api.get(`${base()}?cli=1`)).json()) as SessionsResponse;
+    await t.deps.sessionService.adoptUnmanagedTraceSessions();
+    const list = (await (await api.get(base())).json()) as SessionsResponse;
     expect(list.sessions.find((s) => s.sessionId === adopted)?.source).toBe("schedule");
     expect(list.sessions.find((s) => s.sessionId === junk)?.source).toBeUndefined();
   });
@@ -382,6 +383,94 @@ describe("session-index", () => {
     expect((await api.get(`${base()}?counts=yes`)).status).toBe(400);
   });
 
+  it("workspaceGroup pages one Workspace group's own stream, temporary workspaces as one group", async () => {
+    // Rows are inserted straight into the index: the group filter reads the stored path, and
+    // going through create() would only add realpath validation this has nothing to say about.
+    const agentDir = `${t.root}/${projectId}/agents/default_agent`;
+    const seed = async (sessionId: string, workspace: string, createdAt: string) =>
+      t.deps.sessionsRepo.insert({
+        sessionId,
+        projectId,
+        agentId: "default_agent",
+        provider: "custom",
+        modelId: "m-x",
+        workspace,
+        approvalMode: "allow-all",
+        title: null,
+        createdAt,
+        lastActiveAt: createdAt,
+      });
+    // Interleaved by creation time, so no single page of the Agent's whole stream can be
+    // one group's page: alpha, beta and two single-use temporary workspaces.
+    const alpha = "/tmp/ws-alpha";
+    const beta = "/tmp/ws-beta";
+    await seed("session-2026-07-03-09-00-00-aaaa0001", alpha, "2026-07-03T09:00:00.000Z");
+    await seed("session-2026-07-03-09-01-00-bbbb0001", beta, "2026-07-03T09:01:00.000Z");
+    await seed("session-2026-07-03-09-02-00-aaaa0002", alpha, "2026-07-03T09:02:00.000Z");
+    await seed("session-2026-07-03-09-03-00-bbbb0002", beta, "2026-07-03T09:03:00.000Z");
+    await seed(
+      "session-2026-07-03-09-04-00-cccc0001",
+      `${agentDir}/workspaces/tmp-0123abcd`,
+      "2026-07-03T09:04:00.000Z",
+    );
+    await seed(
+      "session-2026-07-03-09-05-00-cccc0002",
+      `${agentDir}/workspaces/tmp-89abcdef`,
+      "2026-07-03T09:05:00.000Z",
+    );
+
+    const list = async (qs: string) => {
+      const res = await api.get(`${base()}${qs}`);
+      expect(res.status, qs).toBe(200);
+      return (await res.json()) as SessionsResponse;
+    };
+    const ids = (body: SessionsResponse) => body.sessions.map((s) => s.sessionId);
+
+    // A group's stream holds its rows and nobody else's.
+    expect(ids(await list(`?category=active&workspaceGroup=${encodeURIComponent(alpha)}`))).toEqual(
+      ["session-2026-07-03-09-02-00-aaaa0002", "session-2026-07-03-09-00-00-aaaa0001"],
+    );
+    expect(ids(await list(`?category=active&workspaceGroup=${encodeURIComponent(beta)}`))).toEqual([
+      "session-2026-07-03-09-03-00-bbbb0002",
+      "session-2026-07-03-09-01-00-bbbb0001",
+    ]);
+
+    // Every auto-created temporary Workspace is ONE group (they are single-use, so a group
+    // per path would be one-session noise).
+    expect(ids(await list("?category=active&workspaceGroup=temp"))).toEqual([
+      "session-2026-07-03-09-05-00-cccc0002",
+      "session-2026-07-03-09-04-00-cccc0001",
+    ]);
+
+    // Paging runs within the group: offset/limit walk that group's stream, not the Agent's.
+    const first = await list(
+      `?category=active&workspaceGroup=${encodeURIComponent(alpha)}&limit=1&offset=0`,
+    );
+    const second = await list(
+      `?category=active&workspaceGroup=${encodeURIComponent(alpha)}&limit=1&offset=1`,
+    );
+    expect(ids(first)).toEqual(["session-2026-07-03-09-02-00-aaaa0002"]);
+    expect(ids(second)).toEqual(["session-2026-07-03-09-00-00-aaaa0001"]);
+    expect(
+      (await list(`?category=active&workspaceGroup=${encodeURIComponent(alpha)}&limit=1&offset=2`))
+        .sessions,
+    ).toEqual([]);
+
+    // A group nobody lives in is empty, not unfiltered.
+    expect((await list("?category=active&workspaceGroup=/tmp/ws-nobody")).sessions).toEqual([]);
+
+    // The counts stay whole-Agent under a group filter: the sidebar reads a group's share
+    // from the per-Workspace breakdown, and the folder labels need the Agent's totals.
+    const counted = await list(
+      `?category=active&counts=1&workspaceGroup=${encodeURIComponent(alpha)}`,
+    );
+    expect(ids(counted)).toHaveLength(2);
+    expect(counted.counts?.active).toBe(6);
+
+    // An empty group name is rejected, never silently unfiltered.
+    expect((await api.get(`${base()}?workspaceGroup=`)).status).toBe(400);
+  });
+
   it("half a model reference is 400: the missing half is never inferred", async () => {
     await configureModels();
     // Only modelId: even though it names the one configured model, the provider is never
@@ -418,7 +507,7 @@ describe("session-index", () => {
     ).toBe(400);
   });
 
-  it("list union: Trace directory discovery finds unmanaged Sessions and backfills index rows", async () => {
+  it("startup adoption sweep: an unmanaged Trace becomes a client:'cli' row, and lists serve it from the DB", async () => {
     await configureModels();
     const discovered = "session-2026-07-01-08-30-00-deadbeef";
     const meta: SessionMetaPayload = {
@@ -435,13 +524,16 @@ describe("session-index", () => {
       userText("cli session"),
     ]);
 
-    // The default list is DB-only (web rows): an unmanaged CLI Trace is neither listed
-    // nor adopted by it (#139 — no Trace-directory scanning on the default path).
-    const webOnly = (await (await api.get(base())).json()) as SessionsResponse;
-    expect(webOnly.sessions.find((s) => s.sessionId === discovered)).toBeUndefined();
+    // Lists are DB-only (#139 — no Trace-directory scanning per request): before the
+    // sweep runs, the unmanaged Trace is neither listed nor reachable.
+    const before = (await (await api.get(base())).json()) as SessionsResponse;
+    expect(before.sessions.find((s) => s.sessionId === discovered)).toBeUndefined();
     expect((await api.get(`/api/sessions/${discovered}`)).status).toBe(404);
 
-    const list = (await (await api.get(`${base()}?cli=1`)).json()) as SessionsResponse;
+    // The boot-time sweep (fired at platform create; called directly here) adopts it.
+    const adopted = await t.deps.sessionService.adoptUnmanagedTraceSessions();
+    expect(adopted).toBe(1);
+    const list = (await (await api.get(base())).json()) as SessionsResponse;
     const found = list.sessions.find((s) => s.sessionId === discovered);
     expect(found).toBeDefined();
     expect(found!.modelId).toBe("cli-model");
@@ -449,15 +541,28 @@ describe("session-index", () => {
     expect(found!.approvalMode).toBe("allow-all");
     expect(found!.hasTrace).toBe(true);
     expect(found!.createdAt).toBe(sessionIdCreatedAt(discovered));
+    expect(t.deps.sessionsRepo.findById(discovered)!.client).toBe("cli");
 
-    // Adopted as client "cli": the default list still excludes it afterwards, and counts
-    // follow the same filter…
+    // Counts include the adopted row, the deep link works, and a re-run adopts nothing new.
     const after = (await (await api.get(`${base()}?counts=1`)).json()) as SessionsResponse;
-    expect(after.sessions.find((s) => s.sessionId === discovered)).toBeUndefined();
-    expect(after.counts!.active).toBe(0);
-    // …but the adopted row makes the Session individually reachable (deep links work).
-    const single = await api.get(`/api/sessions/${discovered}`);
-    expect(single.status).toBe(200);
+    expect(after.counts!.active).toBe(1);
+    expect((await api.get(`/api/sessions/${discovered}`)).status).toBe(200);
+    expect(await t.deps.sessionService.adoptUnmanagedTraceSessions()).toBe(0);
+  });
+
+  it("create stores the client hint: 'cli' when sent, 'web' by default, junk 400s; lists carry both", async () => {
+    await configureModels();
+    const fromCli = (await (
+      await api.post(base(), { client: "cli" })
+    ).json()) as SessionCreateResponse;
+    const fromWeb = (await (await api.post(base(), {})).json()) as SessionCreateResponse;
+    expect(t.deps.sessionsRepo.findById(fromCli.session.sessionId)!.client).toBe("cli");
+    expect(t.deps.sessionsRepo.findById(fromWeb.session.sessionId)!.client).toBe("web");
+    expect((await api.post(base(), { client: "carrier-pigeon" })).status).toBe(400);
+    const list = (await (await api.get(base())).json()) as SessionsResponse;
+    const ids = list.sessions.map((s) => s.sessionId);
+    expect(ids).toContain(fromCli.session.sessionId);
+    expect(ids).toContain(fromWeb.session.sessionId);
   });
 
   it("legacy rows without a client marker stay visible by default (grandfathered as web)", async () => {
@@ -551,7 +656,8 @@ describe("session-index", () => {
       }),
     ]);
     const created = (await (await api.post(base(), {})).json()) as SessionCreateResponse;
-    const list = (await (await api.get(`${base()}?cli=1`)).json()) as SessionsResponse;
+    await t.deps.sessionService.adoptUnmanagedTraceSessions();
+    const list = (await (await api.get(base())).json()) as SessionsResponse;
     expect(list.sessions[0]!.sessionId).toBe(created.session.sessionId);
     expect(list.sessions[list.sessions.length - 1]!.sessionId).toBe(older);
   });

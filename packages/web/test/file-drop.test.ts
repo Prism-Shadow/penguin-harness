@@ -30,8 +30,9 @@ describe("isFileDrag", () => {
   it("ignores every non-file drag: text selections, links, in-app drags", () => {
     expect(isFileDrag(["text/plain"])).toBe(false);
     expect(isFileDrag(["text/uri-list", "text/html"])).toBe(false);
-    // The sidebar's session reorder uses a private MIME precisely so nothing else reacts.
+    // The sidebar's two reorder drags each use a private MIME precisely so nothing else reacts.
     expect(isFileDrag(["application/x-penguin-session-id"])).toBe(false);
+    expect(isFileDrag(["application/x-penguin-group-key"])).toBe(false);
     expect(isFileDrag([])).toBe(false);
   });
 

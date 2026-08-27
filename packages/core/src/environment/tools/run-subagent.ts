@@ -27,14 +27,14 @@
  * a nonexistent agent are expressed by the runner as a throw, and collapsed to failed.
  * Docs: /docs/tools § "Subagents".
  */
-import { partialToolCallOutput } from "../../omnimessage/index.js";
+import { partialToolCallOutput, userText } from "../../omnimessage/index.js";
 import type { OmniMessage } from "../../omnimessage/index.js";
-import { SUBAGENT_THINKING_LEVELS } from "../../interfaces.js";
+import { SUBAGENT_THINKING_LEVELS } from "../../interfaces/index.js";
 import type {
   EnvironmentServices,
   ThinkingLevelName,
   ToolDefinitionConfig,
-} from "../../interfaces.js";
+} from "../../interfaces/index.js";
 import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
 import {
   DEFAULT_SUBAGENT_YIELD_MS,
@@ -76,16 +76,16 @@ export function createSubagentTool(
       // than throwing (consistent with other tools).
       if (!runner) {
         yield* fail("[run_subagent unavailable: no subagent runner configured]");
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
       if (!manager || manager.isDisposed) {
         yield* fail("[run_subagent unavailable: no subagent session manager available]");
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
       const prompt = typeof args.prompt === "string" ? args.prompt : "";
       if (prompt.trim().length === 0) {
         yield* fail("[run_subagent error: missing required string argument `prompt`]");
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
       const agentId = typeof args.agent_id === "string" ? args.agent_id : undefined;
       const modelId = typeof args.model_id === "string" ? args.model_id : undefined;
@@ -96,7 +96,7 @@ export function createSubagentTool(
         yield* fail(
           "[run_subagent error: `model_id` and `provider` must be given together (a model reference is the pair), or both omitted to inherit the parent session's model]",
         );
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
       // Thinking-level override: an explicit value must be one of the selectable tiers — a typo
       // must fail loudly rather than silently running the child at an inherited level the caller
@@ -110,7 +110,7 @@ export function createSubagentTool(
           `[run_subagent error: invalid \`thinking_level\` ${JSON.stringify(rawThinkingLevel)}; ` +
             `use one of ${SUBAGENT_THINKING_LEVELS.join(" / ")}, or omit it to inherit the parent session's level]`,
         );
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
       const thinkingLevel = rawThinkingLevel as ThinkingLevelName | undefined;
       const background = args.run_in_background === true;
@@ -128,7 +128,7 @@ export function createSubagentTool(
         yield* fail(
           "[run_subagent error: too many background subagents; poll or finish existing ones first]",
         );
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
 
       // Spawn the child Session (precheck errors such as exceeding the depth limit or a
@@ -141,18 +141,25 @@ export function createSubagentTool(
           ...(provider !== undefined ? { provider } : {}),
           ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
         });
-        session = new ManagedSubagentSession(handle);
+        session = new ManagedSubagentSession(handle, {
+          // Spawn-time owner for the revival tombstone (undefined = a self-spawn of this Agent).
+          ...(agentId !== undefined ? { resumeAgentId: agentId } : {}),
+        });
+        // Live index from the moment of spawn (before any registration): host paths — the
+        // subagents panel's steer/abort — reach this child by its session id even while it
+        // still runs inside this call's foreground collect window.
+        manager.track(session);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         yield* fail(`[run_subagent error: ${message}]`);
-        return { stopReason: "failed" };
+        return { stopReason: "fatal" };
       }
 
       // run_in_background: no collect window — register immediately, arm the completion
       // report (fires at the end of every round until the session is killed), start the run,
       // and hand back the subagent_id. The completion reaches the conversation as a harness
       // user message; the model can still poll or follow up with input_subagent, or stop it
-      // with kill_subagent. The child's messages stream to the host live through the
+      // input_subagent (abort included). The child's messages stream to the host live through the
       // forwarding tap below (its own Trace stays the durable record).
       if (background) {
         const id = manager.register(session);
@@ -162,7 +169,7 @@ export function createSubagentTool(
         // at the approval queue forever, since no collect window ever attaches one) and a
         // live message tap, so the child streams to the frontend past this turn's end. The
         // child's abort signal is its own (ManagedSubagentSession.abortCtrl) — only
-        // kill_subagent, dispose, or registry eviction ends it.
+        // dispose or registry eviction ends it (and a released session can be revived).
         if (approve) session.setPersistentApprovalSink(approve);
         const forward = services?.backgroundForward;
         if (forward) session.setMessageTap(forward);
@@ -171,12 +178,12 @@ export function createSubagentTool(
         // not at the first input_subagent access.
         const meta = session.takeMeta();
         if (meta) yield meta;
-        session.startRun(prompt);
+        session.startRun([userText(prompt, "parent_agent")]);
         return {
           stopReason: "completed",
           note:
             `[subagent running in background with subagent_id ${id}; its completion will arrive ` +
-            `as a user message — no need to poll. Use input_subagent to interact or kill_subagent to stop it]`,
+            `as a user message — no need to poll. Use input_subagent to interact (abort: true stops its current run)]`,
         };
       }
 
@@ -186,7 +193,7 @@ export function createSubagentTool(
       let registered = false;
       signal?.addEventListener("abort", onAbort, { once: true });
       try {
-        session.startRun(prompt);
+        session.startRun([userText(prompt, "parent_agent")]);
         yield* collectWindow(session, {
           yieldMs,
           toolCallId,
@@ -220,11 +227,15 @@ export function createSubagentTool(
 }
 
 /**
- * Arms the completion report of a background-launched subagent: at the end of every round
- * (input_subagent follow-ups included) the report — id, terminal status, tail of the
- * yet-undelivered answer text — goes to `services.backgroundDone`, which the Session turns
- * into a harness user message. `kill_subagent` disarms it first, and a killed/disposed
- * session never fires (see ManagedSubagentSession.onSettled).
+ * Arms the completion report of a background-launched subagent: at the end of every
+ * MODEL-initiated round (the launch itself and input_subagent follow-ups) the report — id,
+ * terminal status, tail of the yet-undelivered answer text — goes to
+ * `services.backgroundDone`, which the Session turns into a harness user message. Rounds the
+ * HOST starts (the panel's message on an idle child) stay silent: they are the user's own
+ * conversation with the child, not dispatched work awaiting a result (see
+ * ManagedSubagentSession.startRun's suppressDoneReport), and so does a round ended by an
+ * explicit abort (input_subagent's `abort` / the panel's stop — the aborter sees the outcome
+ * directly; see abortRun). A disposed session never fires (see ManagedSubagentSession.onSettled).
  */
 export function armSubagentDoneReport(
   session: ManagedSubagentSession,
@@ -236,13 +247,16 @@ export function armSubagentDoneReport(
   if (!notify) return;
   session.onSettled(() => {
     const exit = session.exit;
+    // Drain the delta buffer regardless (bounded memory); the report itself carries the
+    // child's latest complete utterance — the same snapshot input_subagent returns.
+    session.drainText();
     notify({
       kind: "subagent",
       id: subagentId,
       label: reportLabel(prompt),
       status: exit?.status ?? "completed",
       detail: exit?.note ?? "",
-      output: tailForReport(session.drainText()),
+      output: tailForReport(session.lastAssistantText ?? ""),
     });
   });
 }

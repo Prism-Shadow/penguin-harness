@@ -14,7 +14,7 @@ import { McpToolProvider, renderCallToolResult } from "../src/environment/mcp/pr
 import { Session } from "../src/session.js";
 import { assistantText, toolCall, userText } from "../src/omnimessage/index.js";
 import type { OmniMessage, SessionMetaPayload } from "../src/omnimessage/index.js";
-import type { LLMInterface, LLMOutcome, MCPServerConfig } from "../src/interfaces.js";
+import type { LLMInterface, LLMOutcome, MCPServerConfig } from "../src/interfaces/index.js";
 
 const FIXTURE = fileURLToPath(new URL("./fixtures/mcp-stdio-server.mjs", import.meta.url));
 
@@ -162,7 +162,7 @@ describe("MCP over stdio through Environment", () => {
 
   it("maps a tool-level isError result to failed with the server's message", async () => {
     const final = finalPayload(await runTool(env, "mcp__fx__fail", {}));
-    expect(final.stop_reason).toBe("failed");
+    expect(final.stop_reason).toBe("fatal");
     expect(final.output).toBe("boom");
   });
 
@@ -193,7 +193,7 @@ describe("MCP over stdio through Environment", () => {
 
   it("collapses an unknown MCP name into the unknown-tool reply", async () => {
     const final = finalPayload(await runTool(env, "mcp__fx__nope", {}));
-    expect(final.stop_reason).toBe("failed");
+    expect(final.stop_reason).toBe("fatal");
     expect(final.output).toContain("Unknown tool: mcp__fx__nope");
   });
 });
@@ -221,7 +221,9 @@ describe("MCP over stdio — per-server budgets and interruption", () => {
     try {
       const final = finalPayload(await runTool(env, "mcp__fx__spam", {}));
       expect(final.stop_reason).toBe("completed");
-      expect(final.output).toBe("x".repeat(100) + "\n[output truncated: exceeded 100 chars]");
+      expect(final.output).toBe(
+        `${"x".repeat(50)}\n[output truncated: kept first 50 and last 50 of 500 chars]\n${"x".repeat(50)}`,
+      );
     } finally {
       env.dispose();
     }
@@ -231,7 +233,7 @@ describe("MCP over stdio — per-server budgets and interruption", () => {
     const env = makeEnv({ timeoutMs: 300 });
     try {
       const final = finalPayload(await runTool(env, "mcp__fx__slow", { ms: 60_000 }));
-      expect(final.stop_reason).toBe("failed");
+      expect(final.stop_reason).toBe("fatal");
       expect(final.output).toContain("[tool timeout: exceeded 300ms]");
     } finally {
       env.dispose();
@@ -258,6 +260,33 @@ describe("MCP over stdio — per-server budgets and interruption", () => {
       expect(final.output).toMatch(/^from-entry\|/);
     } finally {
       env.dispose();
+    }
+  });
+
+  it("the host's harness variables never reach a stdio server", async () => {
+    // The stdio child env is the MCP SDK's safe-inherited allowlist plus the entry's own
+    // env — assembled in provider.ts, apart from the command-session strip — so the
+    // serving process's PENGUIN_HOME/PORT must be invisible here even though no strip
+    // runs on this path. Pinned locally because only the allowlist guarantees it: a
+    // widened inherited base (say, spreading process.env) would leak silently otherwise.
+    // The child env is captured when the server connects, i.e. at the first tool call of
+    // this fresh Environment, so the pollution below is what that capture sees.
+    const saved = { PENGUIN_HOME: process.env.PENGUIN_HOME, PORT: process.env.PORT };
+    process.env.PENGUIN_HOME = "leak-check-root";
+    process.env.PORT = "7364";
+    const env = makeEnv({ env: { FIXTURE_SECRET: "still-arrives" } });
+    try {
+      const final = finalPayload(await runTool(env, "mcp__fx__probe", {}));
+      const [secret, , penguinHome, port] = (final.output ?? "").split("|");
+      expect(secret).toBe("still-arrives");
+      expect(penguinHome).toBe("");
+      expect(port).toBe("");
+    } finally {
+      env.dispose();
+      for (const [k, v] of Object.entries(saved)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
     }
   });
 
@@ -600,8 +629,13 @@ describe("Session first-run bootstrap events", () => {
         status: "completed",
         tools: 6,
       });
-      expect(results[1]).toMatchObject({ server: "broken", transport: "stdio", status: "failed" });
-      expect(results[1]!.error).toBeTruthy();
+      expect(results[1]).toMatchObject({
+        server: "broken",
+        transport: "stdio",
+        status: "fatal",
+        error_code: "connect_failed",
+      });
+      expect(results[1]!.error_message).toBeTruthy();
       expect(results[1]!.duration_ms).toBeGreaterThanOrEqual(0);
     } finally {
       await provider.close();

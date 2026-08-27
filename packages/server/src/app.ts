@@ -43,6 +43,7 @@ import type { ProxyControl } from "./hmr/capabilities.js";
 import { openDatabase } from "./db/database.js";
 import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
 import { ErrorsRepo } from "./db/repos/errors.js";
+import { MessagingBindingsRepo } from "./db/repos/messaging-bindings.js";
 import { GoalsRepo } from "./db/repos/goals.js";
 import { SchedulesRepo } from "./db/repos/schedules.js";
 import { ServerSettingsRepo } from "./db/repos/server-settings.js";
@@ -51,6 +52,7 @@ import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
 import { UsersRepo } from "./db/repos/users.js";
 import type { UserRow } from "./db/repos/users.js";
 import { authMiddleware, jsonOnlyWrites } from "./auth/middleware.js";
+import { mintApiToken, storeApiToken } from "./auth/api-token.js";
 import type { Identity } from "./terminal/identity.js";
 import { terminalRoutes } from "./terminal/routes.js";
 import type { TerminalManager } from "./terminal/manager.js";
@@ -58,9 +60,11 @@ import { EXTENSIONS_RESOURCE_ID, type ExtensionHost } from "./extension/host.js"
 import type { AppEnv } from "./auth/middleware.js";
 import { ADMIN_USER_ID, AuthService } from "./auth/service.js";
 import { clearInitialAdminPassword } from "./initial-password.js";
+import { ensureInstallId } from "./install-id.js";
 import { handleError, HttpError, errorBody } from "./http/errors.js";
 import { attributedProjectId } from "./http/attribution.js";
 import { authRoutes } from "./http/routes/auth.js";
+import { installRoutes } from "./http/routes/install.js";
 import { ChannelHub } from "./runtime/channel.js";
 import { ErrorRecorder } from "./runtime/error-recorder.js";
 import {
@@ -70,6 +74,18 @@ import {
 } from "./runtime/session-manager.js";
 import { SessionSources } from "./runtime/session-sources.js";
 import { Scheduler } from "./runtime/scheduler.js";
+import { MessagingBridge } from "./runtime/messaging/bridge.js";
+import { FeishuConnector } from "./runtime/messaging/feishu-connector.js";
+import { createLarkSdk } from "./runtime/messaging/feishu-sdk.js";
+import type { FeishuSdk } from "./runtime/messaging/feishu-sdk.js";
+import { TelegramConnector } from "./runtime/messaging/telegram-connector.js";
+import { createTelegramTransport } from "./runtime/messaging/telegram-api.js";
+import type { TelegramTransport } from "./runtime/messaging/telegram-api.js";
+import { QQConnector } from "./runtime/messaging/qq-connector.js";
+import { createQQTransport } from "./runtime/messaging/qq-api.js";
+import type { QQTransport } from "./runtime/messaging/qq-api.js";
+import { QQScanService, createQQScanTransport } from "./runtime/messaging/qq-scan.js";
+import type { QQScanTransport } from "./runtime/messaging/qq-scan.js";
 import { TitleGenerator, TitleNotifier } from "./runtime/title-generator.js";
 import { AdminService } from "./services/admin-service.js";
 import { DesktopService } from "./services/desktop-service.js";
@@ -80,6 +96,7 @@ import { AgentService } from "./services/agent-service.js";
 import { BenchmarkService } from "./services/benchmark-service.js";
 import { SnapshotService } from "./services/snapshot-service.js";
 import { ProjectConfigService } from "./services/project-config-service.js";
+import { ModelOAuthService } from "./services/model-oauth-service.js";
 import { ProjectService } from "./services/project-service.js";
 import { SessionService } from "./services/session-service.js";
 import { TraceIndexService } from "./services/trace-index.js";
@@ -98,7 +115,7 @@ import {
 } from "./services/preview-token.js";
 import type { PreviewTokenSigner } from "./services/preview-token.js";
 
-import type { ProxyEnvPolicy } from "@prismshadow/penguin-core";
+import type { ControlEnvContext, ProxyEnvPolicy } from "@prismshadow/penguin-core";
 import { declined } from "./hmr/hono-seam.js";
 import { AgentsRepo } from "./db/repos/agents.js";
 import { MembersRepo } from "./db/repos/members.js";
@@ -113,6 +130,7 @@ import { eventsRoutes, userChannelKey } from "./http/routes/events.js";
 import { projectsRoutes } from "./http/routes/projects.js";
 import { membersRoutes } from "./http/routes/members.js";
 import { modelsRoutes } from "./http/routes/models.js";
+import { modelOAuthCallbackRoutes, modelOAuthRoutes } from "./http/routes/model-oauth.js";
 import { chatDefaultsRoutes } from "./http/routes/chat-defaults.js";
 import { commandPolicyRoutes } from "./http/routes/command-policy.js";
 import { vaultRoutes } from "./http/routes/vault.js";
@@ -123,10 +141,12 @@ import { agentSkillsRoutes, skillLibraryRoutes } from "./http/routes/skills.js";
 import { agentTransferRoutes } from "./http/routes/agent-transfer.js";
 import { agentsRoutes } from "./http/routes/agents.js";
 import { dirsRoutes } from "./http/routes/dirs.js";
+import { directorySkillsRoutes } from "./http/routes/directory-skills.js";
 import { agentConfigRoutes } from "./http/routes/agent-config.js";
 import { agentTracesRoutes } from "./http/routes/agent-traces.js";
 import { usageRoutes } from "./http/routes/usage.js";
 import { agentSessionsRoutes, sessionsRoutes } from "./http/routes/sessions.js";
+import { sessionMessagingRoutes } from "./http/routes/messaging.js";
 import { versionRoutes } from "./http/routes/version.js";
 import { UsageRecorder } from "./runtime/usage-recorder.js";
 import { previewRoutes } from "./http/routes/preview.js";
@@ -142,6 +162,8 @@ export interface AppDeps {
   adminService: AdminService;
   projectService: ProjectService;
   projectConfigService: ProjectConfigService;
+  /** In-flight provider key-minting flows (PKCE verifiers live here and nowhere else). */
+  modelOAuth: ModelOAuthService;
   agentService: AgentService;
   agentConfigService: AgentConfigService;
   memoryService: MemoryService;
@@ -160,6 +182,12 @@ export interface AppDeps {
   schedulesRepo: SchedulesRepo;
   goalsRepo: GoalsRepo;
   errorsRepo: ErrorsRepo;
+  /** Session ↔ messaging-channel bot bindings (stored; runtime connections live on `messaging`). */
+  messagingRepo: MessagingBindingsRepo;
+  /** Messaging bridge — channel connectors + event connections (started by the platform next to the scheduler). */
+  messaging: MessagingBridge;
+  /** QQ scan-to-connect: the in-flight bind tasks and the AES keys that never leave the server. */
+  qqScan: QQScanService;
   scheduler: Scheduler;
   channels: ChannelHub;
   manager: SessionManager;
@@ -189,6 +217,22 @@ export interface BuildDepsOverrides {
   titles?: TitleNotifier;
   /** Test double: update-check service with a stubbed fetch/clock (avoids real network calls). */
   updateCheck?: UpdateCheckService;
+  /** Test double: the Feishu connector's SDK factory (avoids real Lark network / long connections). */
+  feishuSdk?: FeishuSdk;
+  /** Test double: the Telegram connector's Bot API transport (avoids real Telegram network / long polls). */
+  telegramTransport?: TelegramTransport;
+  /** Test hook: the Telegram connector's poll backoff (tests collapse it to zero). */
+  telegramRetryDelayMs?: (failures: number) => number;
+  /** Test double: the QQ connector's OpenAPI + gateway transport (avoids real QQ network / a WebSocket). */
+  qqTransport?: QQTransport;
+  /** Test hook: how long the QQ connector withholds its coalesced tail (tests collapse it to zero). */
+  qqTailFlushMs?: number;
+  /** Test hook: the bridge's pace between a per-line reply's messages (tests collapse it to zero). */
+  messagingLineDelayMs?: number;
+  /** Test hook: one binding's inbound image budget, so a budget test needs no 20MB buffers. */
+  messagingInboundImageBudgetBytes?: number;
+  /** Test double: the QQ scan-to-connect transport (avoids real q.qq.com requests). */
+  qqScanTransport?: QQScanTransport;
   /**
    * Test double: scrypt work factor for password hashes written through this app.
    * Omitted in production, where the KDF runs at full strength.
@@ -254,6 +298,23 @@ export async function bootAppDeps(
       : {}),
     ...(overrides.now ? { now: overrides.now } : {}),
   });
+
+  // Local API token: minted per boot, persisted at <root>/api-token (0600) and installed
+  // on the runtime auth service, so authMiddleware accepts it as the admin for this
+  // process's whole life — across hot swaps too (the auth service is a runtime
+  // singleton). Local filesystem access to the data root is admin authority (the
+  // reset-admin-password rule); see auth/api-token.ts.
+  const apiToken = mintApiToken();
+  storeApiToken(config.root, apiToken);
+  authService.setLocalApiToken(apiToken);
+
+  // Install identity: minted here so a root gets its name the first time it is used rather
+  // than on the first browser request, which keeps `<root>/install-id` alongside the other
+  // files a boot creates and makes the id observable to the CLI and to tests. The return
+  // value is deliberately unused — GET /api/install re-reads the file per request (see
+  // http/routes/install.ts); this call exists for the minting side effect. Nothing fails
+  // when it cannot be persisted: the browser then simply never sweeps.
+  ensureInstallId(config.root);
 
   // The capability set buildAppDeps claims (see hmr/capabilities.ts) — every
   // entry must be in place before ensure() below performs the first boot. The interface
@@ -557,12 +618,44 @@ export function buildAppDeps(
     const url = serverSettingsRepo.getProxyUrl();
     return url === null ? null : { mode: "inject", url, noProxy: mergedNoProxy() };
   };
+  // Harness-control env for command subprocesses of server-driven Sessions: the server's
+  // own canonical URL, its boot API token, and the Session's coordinates — what lets
+  // commands the Agent runs drive this harness back through the CLI/API. Threaded like
+  // proxyEnv through BOTH core entry paths (loader + SessionService), and evaluated per
+  // spawn: config.port is written back by index.ts once the real port is bound (PORT=0),
+  // so the URL must not be captured at assembly time. On a loopback bind the URL uses the
+  // canonical App host (`localhost`) — the counterpart name serves only /preview/*; a
+  // wildcard bind falls back to 127.0.0.1.
+  const canonicalApiUrl = (): string => {
+    const host =
+      config.host === "0.0.0.0" || config.host === "::"
+        ? "127.0.0.1"
+        : (loopbackHostRoles(config.host)?.app ?? config.host);
+    return `http://${host}:${config.port}`;
+  };
+  const controlEnv = (ctx: ControlEnvContext): Record<string, string> => {
+    const token = authService.localApiToken();
+    return {
+      PENGUIN_API_URL: canonicalApiUrl(),
+      ...(token !== null ? { PENGUIN_API_TOKEN: token } : {}),
+      PENGUIN_PROJECT_ID: ctx.projectId,
+      PENGUIN_AGENT_ID: ctx.agentId,
+      PENGUIN_SESSION_ID: ctx.sessionId,
+    };
+  };
   const schedulesRepo = new SchedulesRepo(db);
   const goalsRepo = new GoalsRepo(db);
 
   const projectConfigService = new ProjectConfigService(config.root);
+  // Per-App like the preview signer above: a flow holds a PKCE verifier and nothing durable,
+  // so a push or a restart costs the user one re-authorization and leaks nothing.
+  const modelOAuth = new ModelOAuthService({
+    applyGroupKey: (projectId, provider, apiKey) =>
+      projectConfigService.setGroupApiKey(projectId, provider, apiKey),
+  });
   const agentConfigService = new AgentConfigService(config.root);
-  const agentService = new AgentService(config.root, agentsRepo, agentConfigService);
+  const snapshots = new SnapshotService(config.root);
+  const agentService = new AgentService(config.root, agentsRepo, agentConfigService, snapshots);
   const memoryService = new MemoryService(config.root, agentConfigService);
   // Session-origin registry: session_meta is the single source of truth (no DB column);
   // shared by the manager (subagent registration), the loader (self-heal rebuild),
@@ -584,7 +677,6 @@ export function buildAppDeps(
   // smaller scale: a push invalidates open previews, and a preview is one reload away.)
   const previewTokens = createPreviewTokenSigner();
   const benchmarks = new BenchmarkService(config.root, workspaceFiles);
-  const snapshots = new SnapshotService(config.root);
   const usageService = new UsageService(
     usageRepo,
     errorsRepo,
@@ -627,7 +719,9 @@ export function buildAppDeps(
   const manager = new SessionManager({
     sessions: sessionsRepo,
     channels,
-    loader: overrides.loader ?? createCoreSessionLoader(config.root, sessionSources, { proxyEnv }),
+    loader:
+      overrides.loader ??
+      createCoreSessionLoader(config.root, sessionSources, { proxyEnv, controlEnv }),
     sources: sessionSources,
     recorder,
     errors,
@@ -674,6 +768,44 @@ export function buildAppDeps(
       : {}),
     ...(overrides.now ? { now: overrides.now } : {}),
   });
+  const messagingRepo = new MessagingBindingsRepo(db);
+  // Messaging bridge: assembled here, started by platform.ts's create() (tests drive it
+  // via sync()/fake transports, no real network), stopped by the same create()'s dispose
+  // effect. One connector per channel; further channels register here.
+  const messaging = new MessagingBridge({
+    repo: messagingRepo,
+    sessions: sessionsRepo,
+    // The same service the Files panel reads through: mirroring a file the reply mentions
+    // must obey exactly the containment rules browsing it does, not a second copy of them.
+    files: workspaceFiles,
+    channels,
+    runner: manager,
+    connectors: [
+      new FeishuConnector(overrides.feishuSdk ?? createLarkSdk()),
+      new TelegramConnector(
+        overrides.telegramTransport ?? createTelegramTransport(),
+        overrides.telegramRetryDelayMs ? { retryDelayMs: overrides.telegramRetryDelayMs } : {},
+      ),
+      new QQConnector(overrides.qqTransport ?? createQQTransport(), {
+        ...(overrides.qqTailFlushMs !== undefined ? { tailFlushMs: overrides.qqTailFlushMs } : {}),
+        ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}),
+      }),
+    ],
+    errors,
+    log,
+    ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}),
+    ...(overrides.messagingLineDelayMs !== undefined
+      ? { lineDelayMs: overrides.messagingLineDelayMs }
+      : {}),
+    ...(overrides.messagingInboundImageBudgetBytes !== undefined
+      ? { inboundImageBudgetBytes: overrides.messagingInboundImageBudgetBytes }
+      : {}),
+  });
+  // Scan-to-connect holds one AES key per in-flight bind task, in memory only: it decrypts
+  // an App Secret, and a task lives for the couple of minutes a person spends scanning.
+  const qqScan = new QQScanService(overrides.qqScanTransport ?? createQQScanTransport(), {
+    ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}),
+  });
   const sessionService = new SessionService({
     root: config.root,
     sessions: sessionsRepo,
@@ -682,6 +814,17 @@ export function buildAppDeps(
     sources: sessionSources,
     traceIndex,
     proxyEnv,
+    controlEnv,
+    // List rows carry the ENABLED channel's indicator (saved-but-dark configs stay off
+    // the row); a point query per row keeps the repo out of the service. An unknown
+    // stored channel reads as none (same defensive skip as the bridge and the routes).
+    messagingChannel: (sessionId) => {
+      const enabled = messagingRepo.findEnabled(sessionId);
+      return enabled !== null &&
+        (enabled.channel === "feishu" || enabled.channel === "telegram" || enabled.channel === "qq")
+        ? enabled.channel
+        : null;
+    },
   });
   // Schedule scheduler: assembled here, started by platform.ts's create() (tests drive it
   // via tickOnce, no real timer), stopped by the same create()'s dispose effect.
@@ -710,6 +853,7 @@ export function buildAppDeps(
     adminService,
     projectService,
     projectConfigService,
+    modelOAuth,
     agentService,
     agentConfigService,
     memoryService,
@@ -725,6 +869,9 @@ export function buildAppDeps(
     schedulesRepo,
     goalsRepo,
     errorsRepo,
+    messagingRepo,
+    qqScan,
+    messaging,
     scheduler,
     channels,
     manager,
@@ -793,6 +940,34 @@ export function createApp(
     await next();
   });
 
+  // The provider key-minting redirect receiver, and the only business route mounted outside
+  // the auth gate below — the same shape /api/desktop/update uses in reverse, and for the
+  // mirror-image reason. A loopback OAuth callback is reached by whichever browser the
+  // provider redirected: on the desktop the shell hands the authorization page to the system
+  // browser, which holds no session cookie for this origin, so requiring one 401'd every
+  // desktop authorization. It authorizes on the flow id instead, and all it may do with one
+  // is deposit the code it carried: the exchange that writes a key runs on the owner's poll
+  // of the status route, behind this gate (see the route module).
+  //
+  // Exactly this literal path, registered here so the exemption cannot widen: the group
+  // mount below still carries /start, /:flowId/code and the status route behind the gate,
+  // and because this registration comes first, `:flowId` can never swallow "callback". Only
+  // GET is served, and the handler refuses the HEAD that Hono re-dispatches into it.
+  app.route("/api/projects/:projectId/model-oauth/callback", modelOAuthCallbackRoutes(deps));
+
+  // The data root's install identity, public: the web app compares it against what it holds
+  // in `localStorage` before React mounts, which is before it knows whether anyone is signed
+  // in — and a just-wiped root, the case the whole mechanism exists for, has nobody signed in
+  // at all. See http/routes/install.ts.
+  //
+  // Mounted in the PLATFORM rather than the runtime because a hot push carries platform + cli
+  // + web dist as ONE version and never the runtime (hmr/host.ts): the bundle that calls this
+  // route and the route itself then always move together, whereas a runtime mount would let a
+  // pushed web dist arrive on an installation whose runtime does not serve what it asks for.
+  // For that reason /api/install is deliberately absent from RUNTIME_PREFIXES above — the
+  // platform must serve it, not decline it.
+  app.route("/api/install", installRoutes(deps));
+
   // Protected routes: cookie -> auth_session -> user, over the runtime's auth service.
   app.use("/api/*", authMiddleware(deps.authService));
   app.route("/api/me", meRoutes(deps));
@@ -805,10 +980,12 @@ export function createApp(
   app.route("/api/projects", projectsRoutes(deps));
   app.route("/api/projects/:projectId/members", membersRoutes(deps));
   app.route("/api/projects/:projectId/models", modelsRoutes(deps));
+  app.route("/api/projects/:projectId/model-oauth", modelOAuthRoutes(deps));
   app.route("/api/projects/:projectId/chat-defaults", chatDefaultsRoutes(deps));
   app.route("/api/projects/:projectId/command-policy", commandPolicyRoutes(deps));
   app.route("/api/projects/:projectId/agents", agentsRoutes(deps));
   app.route("/api/projects/:projectId/dirs", dirsRoutes(deps));
+  app.route("/api/projects/:projectId/dir-skills", directorySkillsRoutes(deps));
   app.route("/api/projects/:projectId/agents/:agentId/config", agentConfigRoutes(deps));
   app.route("/api/projects/:projectId/agents/:agentId/vault", vaultRoutes(deps));
   app.route("/api/projects/:projectId/agents/:agentId/memory", memoryRoutes(deps));
@@ -820,6 +997,7 @@ export function createApp(
   app.route("/api/projects/:projectId/agents/:agentId/sessions", agentSessionsRoutes(deps));
   app.route("/api/projects/:projectId/usage", usageRoutes(deps));
   app.route("/api/sessions", sessionsRoutes(deps));
+  app.route("/api/sessions", sessionMessagingRoutes(deps));
 
   // Workspace HTML preview on the separate preview origin: deliberately outside /api and
   // outside the auth middleware — that origin never receives the session cookie, so the

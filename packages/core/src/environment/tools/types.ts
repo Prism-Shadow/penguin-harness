@@ -8,7 +8,7 @@
  * no changes needed to Environment.
  */
 import type { OmniMessage, StopReason } from "../../omnimessage/index.js";
-import type { ApproveFn, ToolDefinitionConfig } from "../../interfaces.js";
+import type { ApproveFn, ToolDefinitionConfig } from "../../interfaces/index.js";
 
 /**
  * Tool execution context: runtime information needed to execute one tool call.

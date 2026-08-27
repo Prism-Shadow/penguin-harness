@@ -9,6 +9,7 @@ import {
   abortEvent,
   approvalDecision,
   assistantText,
+  buildBackgroundTaskDoneMessage,
   compactionBegin,
   compactionEnd,
   imageUrlMessage,
@@ -24,7 +25,16 @@ import {
   userText,
   withOrigin,
 } from "@prismshadow/penguin-core";
-import type { OmniMessage, SessionMetaPayload, TokenCounts } from "@prismshadow/penguin-core";
+import type {
+  OmniMessage,
+  SessionMetaPayload,
+  TokenCounts,
+  StopReason,
+} from "@prismshadow/penguin-core";
+
+// Traces written before the stop-reason convergence carry the retired spellings; analysis
+// must keep reading them, so these fixtures write them through a cast.
+const legacyEnd = (status: string) => requestEnd(status as StopReason);
 import type { TraceService } from "../src/services/trace-service.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import { SessionSources } from "../src/runtime/session-sources.js";
@@ -145,7 +155,7 @@ describe("trace-service", () => {
       sessionMeta(metaPayload()),
       at("2026-07-05T10:00:00.000Z", userText("hi")),
       at("2026-07-05T10:00:01.000Z", requestBegin()),
-      at("2026-07-05T10:00:03.000Z", requestEnd("timeout")), // reconnect +1
+      at("2026-07-05T10:00:03.000Z", requestEnd("retryable")), // reconnect +1
       at("2026-07-05T10:00:03.500Z", requestBegin()),
       at(
         "2026-07-05T10:00:04.000Z",
@@ -168,7 +178,7 @@ describe("trace-service", () => {
     const analysis = await service.analyze(P, A, S, 1);
 
     expect(analysis.requests).toHaveLength(3);
-    expect(analysis.requests[0]!.status).toBe("timeout");
+    expect(analysis.requests[0]!.status).toBe("retryable");
     expect(analysis.requests[0]!.durationMs).toBe(2000);
     expect(analysis.requests[1]!.status).toBe("completed");
     expect(analysis.requests[1]!.durationMs).toBe(1500);
@@ -376,7 +386,7 @@ describe("trace-service", () => {
         compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 1 }),
       ),
       at("2026-07-05T10:00:04.000Z", requestBegin()), // the compaction request
-      at("2026-07-05T10:00:05.000Z", requestEnd("timeout")), // retries exhausted, ends in timeout
+      at("2026-07-05T10:00:05.000Z", requestEnd("retryable")), // retries exhausted
       at(
         "2026-07-05T10:00:06.000Z",
         compactionEnd({ reason: "context", mode: "summarize", status: "aborted" }),
@@ -422,7 +432,7 @@ describe("trace-service", () => {
       // Second turn: the Prompt precedes the Request; this turn's request fails outright, with no model output or tool call at all.
       at("2026-07-05T10:01:00.000Z", userText("question two")),
       at("2026-07-05T10:01:01.000Z", requestBegin()),
-      at("2026-07-05T10:01:04.000Z", requestEnd("failed")),
+      at("2026-07-05T10:01:04.000Z", requestEnd("retryable")),
     ]);
     const a = await service.analyze(P, A, S, 1);
 
@@ -445,16 +455,15 @@ describe("trace-service", () => {
     expect(a.elapsedMs).toBe(4_100);
   });
 
-  it("a failed request the engine retries stays inside the same turn (it is a reconnect, not a turn end)", async () => {
-    // The engine reconnects on `failed` as well as timeout/malformed, so the resent Request
-    // belongs to the same user turn. If segmentation still keyed on timeout/malformed only,
-    // one gateway blip would split a single turn's Tokens, duration and TPS across two Tasks
-    // and inflate the Task count — the same smearing the timeout rule exists to prevent.
+  it("a legacy-trace `failed` request the engine retried stays inside the same turn (reconnect, not a turn end)", async () => {
+    // Traces from the pre-convergence era spell a retried request `failed`; segmentation
+    // must keep reading it as a reconnect, or one gateway blip would split a single turn's
+    // Tokens, duration and TPS across two Tasks and inflate the Task count.
     await writeTraceFile(root, P, A, "2026-07-05", S, 1, [
       at("2026-07-05T10:00:00.000Z", sessionMeta(metaPayload())),
       at("2026-07-05T10:00:00.000Z", userText("question one")),
       at("2026-07-05T10:00:01.000Z", requestBegin()),
-      at("2026-07-05T10:00:02.000Z", requestEnd("failed")), // a gateway error → the engine reconnects
+      at("2026-07-05T10:00:02.000Z", legacyEnd("failed")), // a gateway error → that era's engine reconnected
       at("2026-07-05T10:00:03.000Z", requestBegin()),
       at("2026-07-05T10:00:05.000Z", requestEnd("completed")),
       at("2026-07-05T10:00:05.100Z", tokenUsage(counts(1000), buckets(0, 900, 100))),
@@ -466,10 +475,10 @@ describe("trace-service", () => {
     expect(a.tasks[0]!.tokens.output).toBe(100);
   });
 
-  it("a failed compaction request is NOT a reconnect: compaction fails fast on it", async () => {
-    // Segmentation has to track the engine loop by loop: the turn loop retries `failed`, the
-    // compaction loop deliberately does not (it keeps the old context and tries again on the
-    // next trigger). Counting this as a reconnect would invent an attempt that never happened.
+  it("a legacy-trace `failed` compaction request is NOT a reconnect: that era failed fast on it", async () => {
+    // Legacy segmentation nuance: the pre-convergence turn loop retried `failed`, its
+    // compaction loop deliberately did not. Counting the give-up as a reconnect would
+    // invent an attempt that never happened in that Trace.
     await writeTraceFile(root, P, A, "2026-07-05", S, 1, [
       at("2026-07-05T10:00:00.000Z", sessionMeta(metaPayload())),
       at("2026-07-05T10:00:00.000Z", userText("question one")),
@@ -481,18 +490,19 @@ describe("trace-service", () => {
         compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 1 }),
       ),
       at("2026-07-05T10:00:04.000Z", requestBegin()),
-      at("2026-07-05T10:00:05.000Z", requestEnd("failed")), // compaction gives up here
+      at("2026-07-05T10:00:05.000Z", legacyEnd("failed")), // compaction gives up here
       at(
         "2026-07-05T10:00:06.000Z",
-        compactionEnd({ reason: "context", mode: "summarize", status: "failed" }),
+        // Legacy Trace spelling for an abandoned compaction (see legacyEnd).
+        compactionEnd({ reason: "context", mode: "summarize", status: "failed" as StopReason }),
       ),
     ]);
     const a = await service.analyze(P, A, S, 1);
     expect(a.reconnectCount).toBe(0);
   });
 
-  it("after the previous turn ends in timeout (retries exhausted), a new user message starts a new turn", async () => {
-    // "timeout → continuation" holds only for **automatic retries within the
+  it("after the previous turn's retries are exhausted, a new user message starts a new turn", async () => {
+    // "retryable → continuation" holds only for **automatic retries within the
     // same run**. Once retries are exhausted and the engine gives up, a message
     // the user sends afterward starts a new turn — if continuation were still
     // stuck at true, this turn would get folded into the failed one, mixing
@@ -502,7 +512,7 @@ describe("trace-service", () => {
       at("2026-07-05T10:00:00.000Z", sessionMeta(metaPayload())),
       at("2026-07-05T10:00:00.000Z", userText("question one")),
       at("2026-07-05T10:00:01.000Z", requestBegin()),
-      at("2026-07-05T10:00:02.000Z", requestEnd("timeout")), // retries exhausted → gives up
+      at("2026-07-05T10:00:02.000Z", requestEnd("retryable")), // retries exhausted → gives up
       at("2026-07-05T10:00:03.000Z", abortEvent()),
       // A new user send
       at("2026-07-05T10:01:00.000Z", userText("question two")),
@@ -611,12 +621,12 @@ describe("trace-service", () => {
     await writeTraceFile(root, P, A, "2026-07-06", s2, 1, [userText("c")]);
     await writeTraceFile(root, P, A, "2026-07-07", s3, 1, [userText("d")]);
 
-    const page1 = await service.agentTraces(P, A, { offset: 0, limit: 2 }, { includeCli: true });
+    const page1 = await service.agentTraces(P, A, { offset: 0, limit: 2 });
     expect(page1.totalSessions).toBe(3);
     expect(page1.dates).toEqual([]); // paged responses are session-centric; per-file stats happen only for the slice
     expect(page1.sessions!.map((s) => s.sessionId)).toEqual([s3, s2]);
 
-    const page2 = await service.agentTraces(P, A, { offset: 2, limit: 2 }, { includeCli: true });
+    const page2 = await service.agentTraces(P, A, { offset: 2, limit: 2 });
     expect(page2.totalSessions).toBe(3);
     expect(page2.sessions!.map((s) => s.sessionId)).toEqual([S]);
     expect(page2.sessions![0]!.files.map((f) => ({ index: f.index, date: f.date }))).toEqual([
@@ -626,12 +636,7 @@ describe("trace-service", () => {
     expect(page2.sessions![0]!.files.every((f) => f.sizeBytes > 0)).toBe(true);
 
     // Paging an empty Agent stays well-formed.
-    const empty = await service.agentTraces(
-      P,
-      "agent-none",
-      { offset: 0, limit: 2 },
-      { includeCli: true },
-    );
+    const empty = await service.agentTraces(P, "agent-none", { offset: 0, limit: 2 });
     expect(empty.sessions).toEqual([]);
     expect(empty.totalSessions).toBe(0);
   });
@@ -668,7 +673,7 @@ describe("trace-service", () => {
       },
     });
 
-    const res = await h.service.agentTraces(P, A, { offset: 0, limit: 10 }, { includeCli: true });
+    const res = await h.service.agentTraces(P, A, { offset: 0, limit: 10 });
     const byId = new Map(res.sessions!.map((x) => [x.sessionId, x]));
     expect(byId.get(S)!.category).toBe("archived");
     expect(byId.get(S)!.workspace).toBe("/ws/one");
@@ -693,7 +698,7 @@ describe("trace-service", () => {
       P,
       A,
       { offset: 0, limit: 10 },
-      { category: "active", includeCli: true },
+      { category: "active" },
     );
     expect(active.sessions!.map((x) => x.sessionId)).toEqual([s3]);
     expect(active.totalSessions).toBe(1);
@@ -702,7 +707,7 @@ describe("trace-service", () => {
       P,
       A,
       { offset: 0, limit: 10 },
-      { category: "archived", includeCli: true },
+      { category: "archived" },
     );
     expect(archived.sessions!.map((x) => x.sessionId)).toEqual([S]);
     h.close();
@@ -717,7 +722,7 @@ describe("trace-service", () => {
       userText("child prompt"),
     ]);
 
-    const first = await service.agentTraces(P, A, { offset: 0, limit: 10 }, { includeCli: true });
+    const first = await service.agentTraces(P, A, { offset: 0, limit: 10 });
     expect(first.sessions![0]!.category).toBe("subagent");
     expect(first.sessions![0]!.workspace).toBe("/ws/child");
     expect(first.counts).toEqual({ active: 0, subagent: 1, schedule: 0, archived: 0 });
@@ -725,14 +730,14 @@ describe("trace-service", () => {
     expect(harness.sources.get(S)).toBe("subagent");
     const reads = harness.traceIndex.counters.headReads;
 
-    const second = await service.agentTraces(P, A, { offset: 0, limit: 10 }, { includeCli: true });
+    const second = await service.agentTraces(P, A, { offset: 0, limit: 10 });
     expect(second.sessions![0]!.category).toBe("subagent");
     expect(harness.traceIndex.counters.headReads).toBe(reads); // classification never re-reads
   });
 
-  it("Agent-level paging: CLI-origin Sessions are hidden by default and shown with includeCli (subagent/schedule stay visible)", async () => {
-    const cliSid = "session-2026-07-06-09-00-00-11112222"; // untracked, user-created meta -> CLI-origin
-    const childSid = "session-2026-07-07-08-00-00-33334444"; // untracked but subagent-origin -> its folder, regardless
+  it("Agent-level paging: every Session is listed whichever client created it (no CLI filter)", async () => {
+    const cliSid = "session-2026-07-06-09-00-00-11112222"; // untracked, user-created meta (a legacy CLI-direct run)
+    const childSid = "session-2026-07-07-08-00-00-33334444"; // untracked but subagent-origin -> its folder
     await writeTraceFile(root, P, A, "2026-07-06", cliSid, 1, [
       sessionMeta(metaPayload({ session_id: cliSid })),
       userText("cli run"),
@@ -750,20 +755,16 @@ describe("trace-service", () => {
       sessions: { listByAgent: () => [dbRow({ sessionId: webSid, workspace: "/ws/web" })] },
     });
 
-    const hidden = await h.service.agentTraces(P, A, { offset: 0, limit: 10 });
-    expect(hidden.sessions!.map((x) => x.sessionId)).toEqual([childSid, webSid]);
-    expect(hidden.totalSessions).toBe(2);
-    expect(hidden.counts).toEqual({ active: 1, subagent: 1, schedule: 0, archived: 0 });
-
-    const shown = await h.service.agentTraces(P, A, { offset: 0, limit: 10 }, { includeCli: true });
-    expect(shown.sessions!.map((x) => x.sessionId)).toEqual([childSid, cliSid, webSid]);
-    expect(shown.counts).toEqual({ active: 2, subagent: 1, schedule: 0, archived: 0 });
+    const listed = await h.service.agentTraces(P, A, { offset: 0, limit: 10 });
+    expect(listed.sessions!.map((x) => x.sessionId)).toEqual([childSid, cliSid, webSid]);
+    expect(listed.totalSessions).toBe(3);
+    expect(listed.counts).toEqual({ active: 2, subagent: 1, schedule: 0, archived: 0 });
     h.close();
   });
 
   it("Agent-level paging: a Session whose head has no user text gets no title (the client falls back to its default)", async () => {
     await writeTraceFile(root, P, A, "2026-07-05", S, 1, [sessionMeta(metaPayload())]);
-    const res = await service.agentTraces(P, A, { offset: 0, limit: 10 }, { includeCli: true });
+    const res = await service.agentTraces(P, A, { offset: 0, limit: 10 });
     expect(res.sessions![0]!.title).toBeUndefined();
   });
 
@@ -931,6 +932,111 @@ describe("trace-service", () => {
   });
 
   // The Web's live-stream twin of this case lives in stream-model.test.ts.
+  it("Task grouping: a steered background notice stays in the same Task; an unstamped notice task keeps its own turn", async () => {
+    const T = (sec: string) => `2026-07-05T10:05:${sec}Z`;
+    const steered = buildBackgroundTaskDoneMessage(
+      {
+        kind: "command",
+        id: "proc-1",
+        status: "completed",
+        detail: "exit code 0",
+        delivery: "steering",
+      },
+      "Background command finished",
+    );
+    const plain = buildBackgroundTaskDoneMessage(
+      { kind: "command", id: "proc-2", status: "failed", detail: "exit code 1" },
+      "Background command failed",
+    );
+    await writeTraceFile(root, P, A, "2026-07-05", S, 14, [
+      sessionMeta(metaPayload()),
+      // Task 0: the reply round produced no tool call — the steered notice is exactly what
+      // continues the loop, and it must not open a turn of its own.
+      at(T("00.000"), userText("build it")),
+      at(T("01.000"), requestBegin()),
+      at(T("02.000"), assistantText("kicked off")),
+      at(T("02.500"), requestEnd("completed")),
+      at(T("08.000"), userText(steered, "harness")),
+      at(T("08.500"), requestBegin()),
+      at(T("09.000"), assistantText("finished cleanly")),
+      at(T("09.500"), requestEnd("completed")),
+      // Idle delivery later: the unstamped notice is a task's own input — independent turn.
+      at(T("20.000"), userText(plain, "harness")),
+      at(T("21.000"), requestBegin()),
+      at(T("22.000"), assistantText("reacting to the failure")),
+      at(T("22.500"), requestEnd("completed")),
+    ]);
+    const a = await service.analyze(P, A, S, 14);
+    expect(a.requests.map((r) => r.taskIndex)).toEqual([0, 0, 1]);
+    expect(a.tasks.map((t) => t.taskIndex)).toEqual([0, 1]);
+    // Injected messages never move the duration start (first request_begin rule).
+    expect(a.tasks[0]!.startTs).toBe(T("01.000"));
+    expect(a.tasks[1]!.startTs).toBe(T("21.000"));
+  });
+
+  it("Task grouping: an UNSTAMPED notice in a tool-continuation gap merges too (pre-stamp traces)", async () => {
+    // Legacy shape (0.2.4 core, no delivery stamp): the notice sits between a tool-calling
+    // request and its continuation, where a Task cannot end — position alone proves it is
+    // in-task, and the round must not split at it (the reducer and the window scanner apply
+    // the identical fallback).
+    const T = (sec: string) => `2026-07-05T10:07:${sec}Z`;
+    const plain = buildBackgroundTaskDoneMessage(
+      { kind: "command", id: "proc-4", status: "completed", detail: "exit code 0" },
+      "Background command finished",
+    );
+    await writeTraceFile(root, P, A, "2026-07-05", S, 16, [
+      sessionMeta(metaPayload()),
+      at(T("00.000"), userText("build it")),
+      at(T("01.000"), requestBegin()),
+      at(T("02.000"), toolCall({ name: "exec_command", arguments: "{}", toolCallId: "t1" })),
+      at(T("02.500"), requestEnd("completed")),
+      at(T("03.000"), toolCallOutput({ output: "launched", toolCallId: "t1" })),
+      at(T("08.000"), userText(plain, "harness")),
+      at(T("08.500"), requestBegin()),
+      at(T("09.000"), assistantText("finished cleanly")),
+      at(T("09.500"), requestEnd("completed")),
+    ]);
+    const a = await service.analyze(P, A, S, 16);
+    expect(a.requests.map((r) => r.taskIndex)).toEqual([0, 0]);
+    expect(a.tasks.map((t) => t.taskIndex)).toEqual([0]);
+  });
+
+  it("Task grouping: a notice drained at run start rides behind the fresh Prompt without merging turns", async () => {
+    // A notice queued while the session sat idle can be consumed by a user run's start
+    // instead of the idle launcher: core writes it right after the Prompt, steering-stamped.
+    // The Prompt's own continuation break must win — the new turn opens normally, with the
+    // notice inside its span rather than gluing it onto the previous turn.
+    const T = (sec: string) => `2026-07-05T10:06:${sec}Z`;
+    const steered = buildBackgroundTaskDoneMessage(
+      {
+        kind: "command",
+        id: "proc-3",
+        status: "completed",
+        detail: "exit code 0",
+        delivery: "steering",
+      },
+      "Background command finished",
+    );
+    await writeTraceFile(root, P, A, "2026-07-05", S, 15, [
+      sessionMeta(metaPayload()),
+      at(T("00.000"), userText("q1")),
+      at(T("01.000"), requestBegin()),
+      at(T("02.000"), assistantText("a1")),
+      at(T("02.500"), requestEnd("completed")),
+      // The next send: Prompt, then the ride-along notice, then the request.
+      at(T("10.000"), userText("q2")),
+      at(T("10.100"), userText(steered, "harness")),
+      at(T("11.000"), requestBegin()),
+      at(T("12.000"), assistantText("a2")),
+      at(T("12.500"), requestEnd("completed")),
+    ]);
+    const a = await service.analyze(P, A, S, 15);
+    expect(a.requests.map((r) => r.taskIndex)).toEqual([0, 1]);
+    expect(a.tasks.map((t) => t.taskIndex)).toEqual([0, 1]);
+    // Both the Prompt and the ride-along notice belong to the second turn's span.
+    expect(a.tasks[1]!.messageFrom).toBe(5);
+  });
+
   it("Task grouping: images sent with a steering message don't start a Task either (a Prompt's do)", async () => {
     const T = (sec: string) => `2026-07-05T10:04:${sec}Z`;
     await writeTraceFile(root, P, A, "2026-07-05", S, 13, [
@@ -1011,8 +1117,8 @@ describe("trace-service", () => {
       ),
       at(T("04.500"), requestBegin()),
       at(T("05.000"), assistantText("bad summary")),
-      at(T("05.500"), requestEnd("failed")),
-      at(T("06.000"), compactionEnd({ reason: "context", mode: "summarize", status: "failed" })),
+      at(T("05.500"), requestEnd("retryable")),
+      at(T("06.000"), compactionEnd({ reason: "context", mode: "summarize", status: "retryable" })),
       at(T("07.000"), requestBegin()),
       at(T("08.000"), assistantText("answer")),
       at(T("08.500"), requestEnd("completed")),
@@ -1034,10 +1140,10 @@ describe("trace-service", () => {
           name: "exec_command",
           arguments: "{}",
           toolCallId: "t1",
-          stopReason: "timeout",
+          stopReason: "retryable",
         }),
       ),
-      at(T("02.500"), requestEnd("timeout")),
+      at(T("02.500"), requestEnd("retryable")),
       at(T("03.000"), requestBegin()),
       at(T("04.000"), toolCall({ name: "read_file", arguments: "{}", toolCallId: "t2" })),
       at(T("04.500"), toolCallOutput({ output: "ok", toolCallId: "t2" })),
@@ -1047,6 +1153,6 @@ describe("trace-service", () => {
     // A phantom call gets no lane: only t2 goes into toolSpans.
     expect(a.toolSpans.map((sp) => sp.toolCallId)).toEqual(["t2"]);
     // But the duration list still records t1 (flagged with the interrupted status).
-    expect(a.toolCalls.find((c) => c.toolCallId === "t1")?.stopReason).toBe("timeout");
+    expect(a.toolCalls.find((c) => c.toolCallId === "t1")?.stopReason).toBe("retryable");
   });
 });

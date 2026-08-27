@@ -128,7 +128,16 @@ function ReconnectLine({ item, ctx }: { item: ReconnectItem; ctx: StreamRenderCo
     <p
       className={`anim-msg my-1 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-xs ${toneInk.attention}`}
     >
-      <span>{S.chat.reconnect(item.status, state, item.attempt, seconds)}</span>
+      <span>
+        {S.chat.reconnect(
+          item.status,
+          state,
+          item.attempt,
+          seconds,
+          item.errorMessage,
+          item.errorCode,
+        )}
+      </span>
       {showControls && (
         <span className="flex shrink-0 items-center gap-1.5">
           {ctx.onRetryNow && (
@@ -258,6 +267,15 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
         </>
       );
     }
+    case "background_notice": {
+      // A background completion notice steered into the running Task (delivery: steering on
+      // its block): the same collapsed banner as a task-starting notice, but the dedicated
+      // item kind keeps it inside the running Task — no new turn, no outline entry, and the
+      // stats row still arrives once, at task end.
+      const done = parseBackgroundTaskDoneMessage(item.text);
+      if (done) return <BackgroundDoneBanner done={done.done} body={done.rest} />;
+      return null; // unreachable: the reducer only creates this kind from a parsed notice
+    }
     case "user_steering": {
       // Mid-run steering ([user_steering]-wrapped user text delivered between turns): a
       // compact right-aligned user-styled chip inside the running Task's flow — visually
@@ -370,7 +388,13 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
     case "abort":
       return (
         <p className="anim-msg my-1 font-mono text-xs text-gray-500 dark:text-gray-400">
-          {S.chat.aborted(item.reason)}
+          {S.chat.aborted(item)}
+        </p>
+      );
+    case "llm_error":
+      return (
+        <p className="anim-msg my-1 font-mono text-xs text-gray-500 dark:text-gray-400">
+          {S.chat.llmError(item.errorMessage)}
         </p>
       );
     case "reconnect":

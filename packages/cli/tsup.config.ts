@@ -1,4 +1,7 @@
 import { defineConfig } from "tsup";
+// Inlines this checkout's git identity into the artifact — see the helper's module doc:
+// the penguin binary bundles core, and a shipped bundle has no path back to the checkout it came from.
+import { buildGitDefine } from "../../scripts/build-git-stamp.mjs";
 
 export default defineConfig({
   entry: ["src/penguin.ts", "src/penguin-hmr.ts"],
@@ -19,4 +22,5 @@ export default defineConfig({
   // deps are already declared there.
   noExternal: ["@prismshadow/penguin-core"],
   banner: { js: "#!/usr/bin/env node" },
+  define: buildGitDefine(),
 });

@@ -8,7 +8,16 @@ import { Hono } from "hono";
 import type { AgentCreateResponse, AgentsResponse, AgentSummary } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { settleWithin } from "../settle.js";
-import { optionalString, readJson, requireString, requireValidId } from "../validate.js";
+import {
+  badRequest,
+  optionalString,
+  optionalStringArray,
+  readJson,
+  requireProjectDir,
+  requireString,
+  requireValidId,
+} from "../validate.js";
+import { readArchiveBase64 } from "./agent-transfer.js";
 import type { AppDeps } from "../../app.js";
 
 /** Window size in days for the card's activity sparkline (last 30 days, including today). */
@@ -18,7 +27,7 @@ export function agentsRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.get("/", async (c) => {
-    // Defensive id validation (FD-4): don't rely on the implicit invariant that requireProjectAccess always runs before path construction.
+    // Defensive id validation: don't rely on the implicit invariant that requireProjectAccess always runs before path construction.
     const projectId = requireValidId(c, "projectId");
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
     const items = await deps.agentService.listAgents(projectId);
@@ -50,7 +59,39 @@ export function agentsRoutes(deps: AppDeps): Hono<AppEnv> {
       maxLen: 2000,
       label: "description",
     });
-    const item = await deps.agentService.createAgent(projectId, agentId, name, description);
+    // Library Skills to seed the new Agent with (the create dialog's picker); unknown names are
+    // rejected before the Agent directory exists.
+    const skills = optionalStringArray(body, "skills");
+    // Skills imported from a directory the user picked. The pair only means anything together, so
+    // half of it is a bad request rather than a silently ignored field.
+    const skillsDirectory = optionalString(body, "skillsDirectory", {
+      minLen: 1,
+      maxLen: 4096,
+      label: "skillsDirectory",
+    });
+    const directorySkills = optionalStringArray(body, "directorySkills");
+    let directory: { path: string; names: string[] } | undefined;
+    if (skillsDirectory !== undefined || directorySkills !== undefined) {
+      if (skillsDirectory === undefined || directorySkills === undefined) {
+        throw badRequest("skillsDirectory and directorySkills must be sent together.");
+      }
+      // The same admission the discovery route applies, so the two entry points cannot disagree
+      // on what a valid directory is: a relative path would otherwise resolve against the server
+      // process's cwd instead of being rejected.
+      directory = { path: await requireProjectDir(skillsDirectory), names: directorySkills };
+    }
+    // Optional snapshot seed: the new Agent starts from an exported package instead of the
+    // default template (the service rejects combining it with skill seeding).
+    const archive = body.dataBase64 === undefined ? undefined : readArchiveBase64(body);
+    const item = await deps.agentService.createAgent(
+      projectId,
+      agentId,
+      name,
+      description,
+      skills,
+      directory,
+      archive,
+    );
     const agent: AgentSummary = {
       ...item,
       activeSessionCount: 0,

@@ -1,6 +1,6 @@
 {
   "name": "@prismshadow/penguin-core",
-  "version": "0.2.4",
+  "version": "0.2.7",
   "type": "module",
   "engines": {
     "node": ">=24"
@@ -26,8 +26,8 @@
       "import": "./dist/omnimessage/markers/index.js"
     },
     "./interfaces": {
-      "types": "./dist/interfaces.d.ts",
-      "import": "./dist/interfaces.js"
+      "types": "./dist/interfaces/index.d.ts",
+      "import": "./dist/interfaces/index.js"
     },
     "./extension": {
       "types": "./dist/extension/index.d.ts",
@@ -53,7 +53,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/client": "^2.0.0",
-    "@prismshadow/agenthub": "^0.4.6",
+    "@prismshadow/agenthub": "^0.4.8",
     "@prismshadow/penguin-skills": "workspace:*",
     "arktype": "^2.2.3",
     "smol-toml": "^1.3.0",

@@ -1,4 +1,10 @@
 import { defineConfig } from "tsup";
+// Inlines this checkout's git identity into the artifact — see the helper's module doc:
+// the app bundles the server and the CLI whole, and a shipped bundle has no path back to the checkout it came from.
+import { buildGitDefine } from "../../scripts/build-git-stamp.mjs";
+// The CJS globals these ESM bundles have to declare for the dependencies they absorb —
+// see the helper's module doc for what the shim covers and where it only approximates.
+import { ESM_CJS_BANNER } from "../../scripts/esm-cjs-banner.mjs";
 
 /**
  * Five self-contained bundles, no shared chunks: the shell itself, the server it forks as a
@@ -31,15 +37,14 @@ export default defineConfig({
   // where they would roughly triple what these bundles add.
   sourcemap: true,
   splitting: false,
-  // Several bundled CJS dependencies (yaml, tar, smol-toml, commander, agenthub) call a bare
-  // `require(...)` inside their own wrapper, which esbuild's ESM output otherwise routes to a
-  // shim that always throws. Same banner scripts/deploy.mjs uses for the hot-update bundles.
-  banner: {
-    js: 'import { createRequire as __penguinCreateRequire } from "node:module"; const require = __penguinCreateRequire(import.meta.url);',
-  },
+  // Load-bearing: bundled CJS dependencies reference `require` (yaml, tar, smol-toml,
+  // commander, agenthub) and `__dirname` (@larksuiteoapi/node-sdk) inside their own wrapper,
+  // and an ESM bundle supplies neither. scripts/deploy.mjs uses the same banner.
+  banner: { js: ESM_CJS_BANNER },
   // `electron` is a runtime builtin inside the Electron main process, and its npm package is
   // only a shim that reads the binary's path from disk — bundling that shim is what a bare
   // `noExternal: [/.*/]` gets you. Everything else is bundled by default: tsup externalizes
   // this package's `dependencies`, and it deliberately declares none.
   external: ["electron"],
+  define: buildGitDefine(),
 });

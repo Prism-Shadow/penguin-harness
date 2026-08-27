@@ -12,6 +12,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
+import { atomicWriteFile } from "../internal/atomic-write.js";
 import { agentVaultPath } from "./paths.js";
 import { assertValidId } from "./agent-state.js";
 
@@ -101,10 +102,9 @@ export async function saveAgentVault(
     return;
   }
   await fs.mkdir(path.dirname(file), { recursive: true });
-  // The secret file is written to disk with mode 0600 (a hidden file blocks `ls`, not reads; mode
-  // only takes effect on creation, so chmod is applied to converge an existing file too).
-  await fs.writeFile(file, `${stringifyToml(vault)}\n`, { encoding: "utf8", mode: 0o600 });
-  await fs.chmod(file, 0o600);
+  // The secret file is written to disk with mode 0600 (a hidden file blocks `ls`, not reads); the
+  // atomic write applies that mode to every replacement, so an existing file converges to it too.
+  await atomicWriteFile(file, `${stringifyToml(vault)}\n`, { mode: 0o600, followSymlinks: true });
 }
 
 /**

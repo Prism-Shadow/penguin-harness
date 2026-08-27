@@ -62,22 +62,48 @@ api_key = "sk-..."
 | deepseek | `DEEPSEEK_API_KEY` | 默认模型所在分组 |
 | openrouter | `OPENAI_API_KEY` | OpenAI 兼容网关，预置 base URL `https://openrouter.ai/api/v1` |
 | fireworks | `OPENAI_API_KEY` | Fireworks AI(OpenAI 兼容)，预置 base URL `https://api.fireworks.ai/inference/v1`；API 模型 id 形如 `accounts/fireworks/models/<slug>` |
-| siliconflow | `OPENAI_API_KEY` | OpenAI 兼容网关，预置 base URL `https://api.siliconflow.cn/v1` |
-| qwen-token-plan | `OPENAI_API_KEY` | Qwen Token Plan 订阅网关，预置 base URL `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`；定价取各模型页官方牌价(预览模型仅配额倍率促销、无牌价) |
-| qwen-pay-as-you-go | `OPENAI_API_KEY` | Qwen 按量付费(DashScope OpenAI 兼容端)，预置 base URL `https://dashscope.aliyuncs.com/compatible-mode/v1`；转售第三方模型保留厂商前缀 id(如 `kimi/kimi-k3`) |
 | google | `GEMINI_API_KEY` | |
-| anthropic | `ANTHROPIC_API_KEY` | |
 | openai | `OPENAI_API_KEY` | |
+| anthropic | `ANTHROPIC_API_KEY` | |
+| siliconflow | `OPENAI_API_KEY` | OpenAI 兼容网关，预置 base URL `https://api.siliconflow.cn/v1` |
+| tokendance | `OPENAI_API_KEY` | OpenAI 兼容网关，预置 base URL `https://tokendance.space/gateway/v1`；模型 id 为不带厂商前缀的裸 id(如 `glm-5.3`、`kimi-k3`)；价格取该网关自己的 CNY 牌价 |
 | zhipu | `ZAI_API_KEY` | |
 | moonshot | `MOONSHOT_API_KEY` | |
 | minimax | `MINIMAX_API_KEY` | 直连 MiniMax M3 Responses 客户端（`client_type = "minimax-m3"`）：`MiniMax-M3` 支持 1,000,000 Token 上下文和视觉输入；预置 base URL `https://api.minimax.io/v1`；接受 Token Plan Subscription Key 或按量付费 API Key |
+| qwen-pay-as-you-go | `OPENAI_API_KEY` | Qwen 按量付费(DashScope OpenAI 兼容端)，预置 base URL `https://dashscope.aliyuncs.com/compatible-mode/v1`；转售第三方模型保留厂商前缀 id(如 `kimi/kimi-k3`) |
+| qwen-token-plan | `OPENAI_API_KEY` | Qwen Token Plan 订阅网关，预置 base URL `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`；定价取各模型页官方牌价(预览模型仅配额倍率促销、无牌价) |
 | custom | `OPENAI_API_KEY` | 任意 OpenAI 协议端点 |
 
-网关分组(openrouter / fireworks / siliconflow / qwen-token-plan / qwen-pay-as-you-go)经 AgentHub 的通用 OpenAI 协议客户端请求，因此凭证留空时读取的是 `OPENAI_API_KEY`，而非网关自己的变量名。多数网关预置固定 Chat Completions 客户端(`client_type = "openai-chat"`)；OpenRouter 的 `openai/*` 预置则固定 Responses 客户端(`client_type = "openai-responses"`)——OpenRouter 在同一 base URL 上提供 Responses API，且这些条目的上游本就是 OpenAI。两种客户端读取相同的 `OPENAI_*` 变量，凭证规则完全一致。直连 MiniMax M3 客户端读取 `MINIMAX_API_KEY`。内置 MiniMax 预设固定使用 `https://api.minimax.io/v1`；仅当模型条目未内联 `base_url` 时才读取 `MINIMAX_BASE_URL`。M3 价格取 MiniMax 按量付费的标准档、输入不超过 512K Token 的牌价；超过 512K 后各档价格翻倍，priority 档另为 1.5 倍，因此长上下文与 priority 用量会被低估——与 OpenAI(>272K)、Gemini 3.1 Pro(>200K)沿用的基准档口径一致。
+网关分组(openrouter / fireworks / siliconflow / tokendance / qwen-pay-as-you-go / qwen-token-plan)经 AgentHub 的通用 OpenAI 协议客户端请求，因此凭证留空时读取的是 `OPENAI_API_KEY`，而非网关自己的变量名。多数网关预置固定 Chat Completions 客户端(`client_type = "openai-chat"`)；OpenRouter 的 `openai/*` 预置则固定 Responses 客户端(`client_type = "openai-responses"`)——OpenRouter 在同一 base URL 上提供 Responses API，且这些条目的上游本就是 OpenAI。两种客户端读取相同的 `OPENAI_*` 变量，凭证规则完全一致。直连 MiniMax M3 客户端读取 `MINIMAX_API_KEY`。内置 MiniMax 预设固定使用 `https://api.minimax.io/v1`；仅当模型条目未内联 `base_url` 时才读取 `MINIMAX_BASE_URL`。M3 价格取 MiniMax 按量付费的标准档、输入不超过 512K Token 的牌价；超过 512K 后各档价格翻倍，priority 档另为 1.5 倍，因此长上下文与 priority 用量会被低估——与 OpenAI(>272K)、Gemini 3.1 Pro(>200K)沿用的基准档口径一致。
 
 预置目录还收录了 OpenRouter 的免费档：`:free` 模型变体 `nvidia/nemotron-3-ultra-550b-a55b:free` 与统一路由 `openrouter/free`(Free Models Router)，零成本可用，但受 OpenRouter 免费档速率限制与数据政策约束。
 
-预置目录中的部分模型：deepseek-v4-pro / deepseek-v4-flash / deepseek-v4-flash-vision-exp(DeepSeek 分组中唯一支持图像输入的模型)、MiniMax-M3、gemini-3.7-flash、claude-opus-5 / claude-opus-4-8 / claude-sonnet-5、gpt-5.6 / gpt-5.5、glm-5.3、kimi-k3、qwen3.8-max 等(非完整清单)。OpenAI 全系列都收录了两份——直连(用自己的 OpenAI Key，记牌价)与 OpenRouter 上的 `openai/<id>`(记网关实际计费价，会随其促销浮动)。DeepSeek 直连分组的价格记录官方低谷时段档(高峰时段——北京时间 9:00–12:00、14:00–18:00——按双倍计费)。
+预置目录中的部分模型：deepseek-v4-pro / deepseek-v4-flash / deepseek-v4-flash-vision-exp(DeepSeek 分组中唯一支持图像输入的模型)、MiniMax-M3、gemini-3.7-flash、claude-opus-5 / claude-opus-4-8 / claude-sonnet-5、gpt-5.6 / gpt-5.5、glm-5.3 / glm-5.3-flash、kimi-k3、qwen3.8-max / qwen3.8-flash 等(非完整清单)。OpenAI 全系列都收录了两份——直连(用自己的 OpenAI Key，记牌价)与 OpenRouter 上的 `openai/<id>`(记网关实际计费价，会随其促销浮动)。DeepSeek 直连分组的价格记录官方低谷时段档(高峰时段——北京时间 9:00–12:00、14:00–18:00——按双倍计费)。`glm-5.3-flash` 收录了三份，三条都支持图像输入：AgentHub 的 GLM 客户端只为这一个 GLM id 转发图像部件(其余 GLM id 一律拒绝)，而 OpenRouter 上的 `z-ai/glm-5.3-flash` 与 TokenDance 分组的同名条目走通用 OpenAI 兼容客户端，对任何 id 都能携带图片。三条不一致的是价格——直连条目记 Z.AI 牌价，TokenDance 条目记 TokenDance 牌价，OpenRouter 条目记该网关实际计费的折后价，因此促销期间三者不同。
+
+## 应用归因
+
+部分网关会读取一个请求头，把调用归到发起它的应用名下，用于自己的应用榜单与用量报告。这类请求头由目录按**端点主机名**决定，与条目所在的 Provider 分组无关：一个填在 custom 分组、但 base URL 指向该网关的条目，同样会带上归因头。判断只看条目自己的 `base_url`——从 `OPENAI_BASE_URL` 读到的端点在 AgentHub 内部解析，这一侧看不到，因此不会归因。
+
+| 端点 | 请求头 | 取值 |
+| --- | --- | --- |
+| `openrouter.ai` | `HTTP-Referer` | `https://penguin.ooo/` |
+| `openrouter.ai` | `X-OpenRouter-Title` | `PenguinHarness` |
+| `openrouter.ai` | `X-OpenRouter-Categories` | `cli-agent,personal-agent` |
+| `tokendance.space` | `X-App-URL` | `https://penguin.ooo/` |
+
+其余端点(所有直连厂商，以及不读归因头的网关)不会收到任何额外请求头。归因头只声明应用身份，不携带用户、Agent 或会话信息。
+
+## 授权新建 API key
+
+若某个供应商公开了授权流程，模型页的该分组头部会多出一个动作：**自动获取密钥**。内置分组中只有 TokenDance 提供。它会在你的账户下**新建**一个 key，而不是读取你已有的 key，并写入该分组下的每一个模型，覆盖这些条目当前的 key。
+
+点击后会在新标签页打开供应商的授权页。在那里完成授权，供应商会把浏览器送回 PenguinHarness，由服务端兑换一次性授权码并保存 key；发起的那个标签页会自行报告结果。上文归因表中的同一个应用 URL 会写到这个 key 上，因此即便换用其他工具，用它发出的调用依然带着归因。
+
+整个兑换过程都在服务端进行：PKCE 的 verifier 在服务端生成、从不进入浏览器，新建出的 key 也直接写入模型表，不经过浏览器。一次授权只能换一个 key，且十分钟后过期。
+
+如果跳转回不来——比如浏览器根本访问不到那个地址的服务——请选择**授权页跳不回来？改为手动填写授权码**。授权页会改为显示一次性授权码，粘贴到对话框即可完成同一套流程。
+
+只有 Project owner 能发起授权，也只有他自己已登录的会话能完成授权——实际上就是打开着对话框的那个标签页。跳回地址本身不要求会话，也只能如此：供应商送回的浏览器未必就是你发起时的那一个。但跳回所做的只是把授权码交出来——在对话框去取结果之前，不会发生任何兑换，也不会有 key 被保存。完整的 key 只会出现一次，因此一旦保存失败，需要重新授权，并到供应商控制台删掉那个没用上的 key。
 
 ## 本地 / 自建 OpenAI 兼容端点（如 vLLM）
 

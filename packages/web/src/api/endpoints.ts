@@ -21,7 +21,6 @@ import type {
   AgentSkillsResponse,
   AgentVaultConfigDto,
   AgentsResponse,
-  AgentTracesResponse,
   ApprovalDecisionRequest,
   AuthLoginRequest,
   AuthResponse,
@@ -33,12 +32,18 @@ import type {
   CommandPolicyRuleDto,
   DefaultModelResponse,
   DefaultModelUpdateRequest,
+  DirectorySkillsResponse,
   DirListResponse,
   EndpointModelListRequest,
   EndpointModelListResponse,
+  FeishuBindingPutRequest,
+  FeishuBindingResponse,
+  FeishuTestRequest,
+  FeishuTestResponse,
   FilesStatRequest,
   FilesStatResponse,
   GoalResponse,
+  InstallResponse,
   McpServerTestResponse,
   MeResponse,
   MemberAddRequest,
@@ -51,6 +56,13 @@ import type {
   MemoryOverviewResponse,
   MemoryScopeExport,
   MessagesResponse,
+  MessagingBindingsResponse,
+  MessagingChannel,
+  MessagingTestMessageResponse,
+  ModelOAuthCodeResponse,
+  ModelOAuthStartRequest,
+  ModelOAuthStartResponse,
+  ModelOAuthStatusResponse,
   ModelProtocolDetectRequest,
   ModelProtocolDetectResponse,
   ModelsResponse,
@@ -72,6 +84,7 @@ import type {
   ServerSettingsResponse,
   ServerSettingsUpdateRequest,
   SessionCategory,
+  SessionContextResponse,
   SessionCreateRequest,
   SessionCreateResponse,
   SessionForkRequest,
@@ -84,11 +97,22 @@ import type {
   SkillArchiveInstallRequest,
   SkillInstallRequest,
   SkillLibraryResponse,
+  QQBindingPutRequest,
+  QQBindingResponse,
+  QQScanPollResponse,
+  QQScanStartResponse,
+  QQTestRequest,
+  QQTestResponse,
   RecalledMessageResponse,
   RetryNowResponse,
   SteerRequest,
+  SubagentMessageResponse,
   TaskCreateRequest,
   TaskCreateResponse,
+  TelegramBindingPutRequest,
+  TelegramBindingResponse,
+  TelegramTestRequest,
+  TelegramTestResponse,
   TraceAnalysisResponse,
   TraceEventsResponse,
   TraceImportRequest,
@@ -115,6 +139,12 @@ export const login = (body: AuthLoginRequest) =>
   apiFetch<AuthResponse>("/api/auth/login", { method: "POST", body });
 
 export const logout = () => apiFetch<void>("/api/auth/logout", { method: "POST", body: {} });
+
+/**
+ * The data root's install identity (public — no session needed, which is the point: the web
+ * app asks before it knows whether anyone is signed in). See lib/install-scope.ts.
+ */
+export const getInstall = () => apiFetch<InstallResponse>("/api/install");
 
 export const getMe = () => apiFetch<MeResponse>("/api/me");
 
@@ -250,6 +280,32 @@ export const detectVision = (projectId: string, body: ModelVisionDetectRequest) 
   apiFetch<ModelVisionDetectResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/models/detect-vision`,
     { method: "POST", body },
+  );
+
+// Provider key minting (owner) ----------------------------------------------------------
+
+/**
+ * Opens an authorization flow for a provider group that publishes one, and returns the page
+ * to send the user to. The PKCE verifier and the key it eventually mints stay on the server;
+ * this side only ever holds the flow id.
+ */
+export const startModelOAuth = (projectId: string, body: ModelOAuthStartRequest) =>
+  apiFetch<ModelOAuthStartResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/model-oauth/start`,
+    { method: "POST", body },
+  );
+
+/** Where a flow stands; 404 once it has expired. */
+export const getModelOAuthStatus = (projectId: string, flowId: string) =>
+  apiFetch<ModelOAuthStatusResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/model-oauth/${encodeURIComponent(flowId)}`,
+  );
+
+/** Redeems a code the user pasted, for when the provider's redirect cannot reach the harness. */
+export const submitModelOAuthCode = (projectId: string, flowId: string, code: string) =>
+  apiFetch<ModelOAuthCodeResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/model-oauth/${encodeURIComponent(flowId)}/code`,
+    { method: "POST", body: { code } },
   );
 
 // Vault environment variables (Agent-level) -------------------------------------------------------
@@ -394,36 +450,13 @@ export const kernelUpdateAgentConfig = (projectId: string, agentId: string) =>
     { method: "POST" },
   );
 
-/**
- * Optional paging (absent = the legacy full date-grouped response): pages Session groups
- * newest-first; a paged response answers with `sessions` (titles + category/workspace),
- * `totalSessions`, and per-category `counts` / `workspaceCounts`. `category` filters to
- * one sidebar bucket (paging applies within it, mirroring the sessions list); `cli`
- * includes CLI-origin Sessions (the "show CLI sessions" preference, default off — same
- * parameter convention as listSessions). The Trace page requests `limit+1` per page to
- * detect "has more" (splitPage).
- */
-export const getAgentTraces = (
-  projectId: string,
-  agentId: string,
-  paging?: { offset: number; limit: number; category?: SessionCategory; cli?: boolean },
-) =>
-  apiFetch<AgentTracesResponse>(
-    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/traces${
-      paging
-        ? `?limit=${paging.limit}&offset=${paging.offset}` +
-          (paging.category ? `&category=${paging.category}` : "") +
-          (paging.cli ? "&cli=1" : "")
-        : ""
-    }`,
-  );
-
 // Session ---------------------------------------------------------------------
 
 /**
  * Optional paging (absent = full unfiltered list): the store requests `limit+1` per page to
  * detect "has more". `category` filters server-side (paging applies within the category);
- * `withCounts` asks for per-category totals over the whole list alongside the page.
+ * `workspaceGroup` narrows the same way to one Workspace group, so a group can page its own
+ * stream; `withCounts` asks for per-category totals over the whole list alongside the page.
  */
 export const listSessions = (
   projectId: string,
@@ -432,16 +465,16 @@ export const listSessions = (
     offset: number;
     limit: number;
     category?: SessionCategory;
+    /** One Workspace group's rows only: its path, or the merged temporary group's sentinel (session-grouping.ts). */
+    workspaceGroup?: string;
     withCounts?: boolean;
-    /** Also list CLI-created Sessions (Trace discovery + adoption); default = web rows straight from the DB. */
-    cli?: boolean;
   },
 ) => {
   const qs = opts
     ? `?limit=${opts.limit}&offset=${opts.offset}` +
       (opts.category ? `&category=${opts.category}` : "") +
-      (opts.withCounts ? "&counts=1" : "") +
-      (opts.cli ? "&cli=1" : "")
+      (opts.workspaceGroup ? `&workspaceGroup=${encodeURIComponent(opts.workspaceGroup)}` : "") +
+      (opts.withCounts ? "&counts=1" : "")
     : "";
   return apiFetch<SessionsResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/sessions${qs}`,
@@ -452,6 +485,15 @@ export const listSessions = (
 export const listDirs = (projectId: string, path = "") =>
   apiFetch<DirListResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/dirs?path=${encodeURIComponent(path)}`,
+  );
+
+/**
+ * Skills a directory carries under `.agents/skills` / `.claude/skills`: what picking it at Agent
+ * creation would offer to install. `path` must be absolute.
+ */
+export const listDirectorySkills = (projectId: string, path: string) =>
+  apiFetch<DirectorySkillsResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/dir-skills?path=${encodeURIComponent(path)}`,
   );
 
 export const createSession = (projectId: string, agentId: string, body: SessionCreateRequest) =>
@@ -477,6 +519,99 @@ export const patchSession = (sessionId: string, body: SessionPatchRequest) =>
 
 export const deleteSession = (sessionId: string) =>
   apiFetch<void>(`/api/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
+
+// Messaging bindings ----------------------------------------------------------
+
+/** The channel-agnostic read: every saved channel config + status (the channel-aware editor's load + poll). */
+export const getMessagingBinding = (sessionId: string) =>
+  apiFetch<MessagingBindingsResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/messaging`);
+
+/** Saves Feishu credentials only — the connection toggle is setMessagingBindingState (an enabled binding restarts on save so config and connection never diverge). */
+export const putFeishuBinding = (sessionId: string, body: FeishuBindingPutRequest) =>
+  apiFetch<FeishuBindingResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/messaging/feishu`,
+    { method: "PUT", body },
+  );
+
+/** Saves the Telegram token only — the same save/enable split as the Feishu PUT. */
+export const putTelegramBinding = (sessionId: string, body: TelegramBindingPutRequest) =>
+  apiFetch<TelegramBindingResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/messaging/telegram`,
+    { method: "PUT", body },
+  );
+
+/** Saves the QQ App ID / App Secret pair only — the same save/enable split as the Feishu PUT. */
+export const putQQBinding = (sessionId: string, body: QQBindingPutRequest) =>
+  apiFetch<QQBindingResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/messaging/qq`, {
+    method: "PUT",
+    body,
+  });
+
+/** The connection toggle, which is also the bind/unbind: enable connects with the STORED credentials (409 `another_channel_enabled` while the other channel is enabled, 409 `account_enabled_elsewhere` while another conversation has this bot enabled), disable releases the account. */
+export const setMessagingBindingState = (
+  sessionId: string,
+  channel: MessagingChannel,
+  enabled: boolean,
+) =>
+  apiFetch<FeishuBindingResponse | TelegramBindingResponse | QQBindingResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/messaging/${channel}/state`,
+    { method: "POST", body: { enabled } },
+  );
+
+/** Feishu credential probe with the form's draft values; omitted fields fall back to the stored binding. */
+export const testFeishuBinding = (sessionId: string, body: FeishuTestRequest) =>
+  apiFetch<FeishuTestResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/messaging/feishu/test`,
+    { method: "POST", body },
+  );
+
+/** Telegram credential probe (`getMe`); success additionally names the bot's @username. */
+export const testTelegramBinding = (sessionId: string, body: TelegramTestRequest) =>
+  apiFetch<TelegramTestResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/messaging/telegram/test`,
+    { method: "POST", body },
+  );
+
+/**
+ * Starts a QQ scan-to-connect flow. The response carries the URL to render as a QR code and
+ * a task handle — never the AES key that decrypts the App Secret, which stays on the server.
+ */
+export const startQQScan = (sessionId: string) =>
+  apiFetch<QQScanStartResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/messaging/qq/scan`,
+    {
+      method: "POST",
+      body: {},
+    },
+  );
+
+/** One poll of a scan. `completed` means the server already decrypted and SAVED the credentials. */
+export const pollQQScan = (sessionId: string, taskId: string) =>
+  apiFetch<QQScanPollResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/messaging/qq/scan/poll`,
+    { method: "POST", body: { taskId } },
+  );
+
+/** Drops a scan the user walked away from, so its key is forgotten rather than left to expire. */
+export const cancelQQScan = (sessionId: string, taskId: string) =>
+  apiFetch<void>(`/api/sessions/${encodeURIComponent(sessionId)}/messaging/qq/scan/cancel`, {
+    method: "POST",
+    body: { taskId },
+  });
+
+/** QQ credential probe (the access-token exchange); the platform names no account, so success carries no label. */
+export const testQQBinding = (sessionId: string, body: QQTestRequest) =>
+  apiFetch<QQTestResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/messaging/qq/test`, {
+    method: "POST",
+    body,
+  });
+
+/** Short fixed text to the binding's last known chat (409 `feishu_no_chat` / `telegram_no_chat` / `qq_no_chat` before one exists; on QQ the send can still fail with 502 when no recent QQ message can be replied to). */
+export const sendMessagingTestMessage = (sessionId: string, channel: MessagingChannel) =>
+  apiFetch<MessagingTestMessageResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/messaging/${channel}/test-message`,
+    { method: "POST", body: {} },
+  );
 
 /** Windowed history request: the newest N units (tail), or the N units before a cursor. */
 export type MessagesPageQuery =
@@ -564,6 +699,25 @@ export const postSteer = (sessionId: string, body: SteerRequest) =>
     body,
   });
 
+/** Panel message to one subagent child (#272) — a user input on the child, whatever its state: steered mid-run, started on an idle child, resumed when the released session was revived; the optional thinkingLevel pins only a round this message starts. 404 subagent_gone when nothing can be revived, 409 subagent_busy when the child cannot take it right now. */
+export const messageSubagent = (
+  sessionId: string,
+  childSessionId: string,
+  text: string,
+  thinkingLevel?: string,
+) =>
+  apiFetch<SubagentMessageResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/subagents/${encodeURIComponent(childSessionId)}/message`,
+    { method: "POST", body: { text, ...(thinkingLevel ? { thinkingLevel } : {}) } },
+  );
+
+/** Panel stop for one subagent child (#272): aborts only its CURRENT run — the session survives for follow-ups (202 aborted; 204 when already idle/unknown). */
+export const abortSubagent = (sessionId: string, childSessionId: string) =>
+  apiFetch<void>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/subagents/${encodeURIComponent(childSessionId)}/abort`,
+    { method: "POST", body: {} },
+  );
+
 /** Recall an undelivered steering message back to the composer (#287): returns its original content; 409 not_pending once it was delivered to the model. */
 export const recallSteer = (sessionId: string, steerId: string) =>
   apiFetch<RecalledMessageResponse>(
@@ -571,7 +725,7 @@ export const recallSteer = (sessionId: string, steerId: string) =>
     { method: "DELETE" },
   );
 
-/** Recall a queued follow-up task back to the composer (#287): returns its original content (+ queued thinking level); 409 not_pending once it already auto-started. */
+/** Recall a queued follow-up task back to the composer (#287): returns its original content (+ queued thinking level); 409 follow_up_started once it already auto-started. */
 export const recallFollowUp = (sessionId: string, followUpId: string) =>
   apiFetch<RecalledMessageResponse>(
     `/api/sessions/${encodeURIComponent(sessionId)}/follow-ups/${encodeURIComponent(followUpId)}`,
@@ -584,6 +738,14 @@ export const postCompact = (sessionId: string) =>
     method: "POST",
     body: {},
   });
+
+/**
+ * Composition of the Session's current model context (the chat page's context-ring detail panel).
+ * A snapshot read from the newest Trace shard on each call, not a live counter: the figures are
+ * estimates whose value is the *shares* they give the measured occupancy.
+ */
+export const getSessionContext = (sessionId: string) =>
+  apiFetch<SessionContextResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/context`);
 
 // Trace browsing & performance analysis -----------------------------------------------------------
 
