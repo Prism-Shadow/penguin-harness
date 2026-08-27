@@ -37,6 +37,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { createPortal } from "react-dom";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { isTopEscLayer, popEscLayer, pushEscLayer } from "./modal";
+import { scrollMovesAnchor } from "../../lib/context-menu";
 
 /** Gap between the trigger and the portaled panel, and the panel's minimum distance from the viewport edge (px). */
 const PANEL_GAP = 4;
@@ -46,29 +47,6 @@ const VIEWPORT_MARGIN = 8;
 export interface DropdownPortal {
   direction: "up" | "down";
   align: "left" | "right";
-}
-
-/**
- * Does a scroll of `target` move the content `owner` sits in — the question a
- * pointer-anchored panel has to answer before dismissing itself?
- *
- * The panel's scroll listener runs in the capture phase, because scroll events do not
- * bubble. The price is that it hears **every** scrolling element in the document, not only
- * the ones the anchor lies inside: a streaming conversation scrolls its message list on
- * every chunk, and taking each of those as a reason to dismiss wiped a context menu opened
- * in the sidebar — a part of the page that had not moved at all. Containment is the whole
- * test, and the page itself needs no case of its own, because a full-page scroll targets
- * `document`, which contains every node in it.
- *
- * A caller that names no owner still dismisses on any scroll, which is what every anchored
- * panel did before this rule existed.
- */
-export function scrollMovesAnchor(target: Node | null, owner: Node | null): boolean {
-  if (owner === null || target === null) return true;
-  // An Element and the Document both answer `contains`; a target that does not is not
-  // something this rule can judge, so it dismisses rather than pin the panel to content
-  // that may well have moved.
-  return typeof target.contains === "function" ? target.contains(owner) : true;
 }
 
 export function Dropdown({
@@ -109,9 +87,9 @@ export function Dropdown({
    * The element the `anchorRect` was measured from. A scroll then dismisses the panel only
    * when this element moved with it, which is what keeps a context menu in the sidebar
    * open while an unrelated container — a streaming message list — scrolls itself.
-   * Supplied as an accessor rather than as the node so that a caller holding it in a ref
-   * does not re-register the panel's listeners on every render. Omitting it keeps the
-   * older, blunter rule: any scroll anywhere dismisses.
+   * Supplied as an accessor rather than as the node so a caller holding it in a ref can
+   * answer from whatever the ref points at when the scroll actually arrives. Omitting it
+   * keeps the older, blunter rule: any scroll anywhere dismisses.
    */
   anchorOwner?: () => HTMLElement | null;
   /**
@@ -205,8 +183,8 @@ export function Dropdown({
   setOpenRef.current = setOpen;
   const onEscapeRef = useRef(onEscape);
   onEscapeRef.current = onEscape;
-  // Read through a ref for the same reason, one effect further down: the scroll listener
-  // must not be torn down and re-registered because a caller passed a fresh arrow.
+  // Read through a ref, one effect further down: the scroll listener asks for the owner at
+  // event time, so the accessor's identity never has to reach that effect's dependencies.
   const anchorOwnerRef = useRef(anchorOwner);
   anchorOwnerRef.current = anchorOwner;
 

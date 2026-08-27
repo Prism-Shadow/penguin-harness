@@ -24,7 +24,6 @@ import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { scrollMovesAnchor } from "../src/components/ui/dropdown";
 import {
   IDLE_HOLD,
   LONG_PRESS_MS,
@@ -37,6 +36,7 @@ import {
   longPressMoved,
   pointerAnchor,
   reduceHold,
+  scrollMovesAnchor,
   withinSettleWindow,
 } from "../src/lib/context-menu";
 import type { HoldEvent } from "../src/lib/context-menu";
@@ -326,6 +326,22 @@ describe("sourceFiles", () => {
     expect(paths.filter((p) => p.includes("\\"))).toEqual([]);
     expect(paths).toContain("components/ui/context-menu.tsx");
     expect(paths).toContain("components/layout/sidebar.tsx");
+  });
+});
+
+describe("anchored dismissal wiring", () => {
+  it("asks scrollMovesAnchor before dismissing an anchored panel", () => {
+    // The rule's own cases are covered above against stand-in nodes. What a node-only suite
+    // cannot reach is the component consulting it at all, and that is where this silently
+    // breaks: drop the call and every assertion above still passes while the reported bug —
+    // a streaming message list wiping a menu opened in the sidebar — comes straight back.
+    const dropdown = sourceFiles().find(([path]) => path === "components/ui/dropdown.tsx");
+    expect(dropdown).toBeDefined();
+    const onScroll = /const onScroll = \(e: Event\) => \{([\s\S]*?)\n {4}\};/.exec(dropdown![1]);
+    expect(onScroll, "onScroll should be declared in dropdown.tsx").not.toBeNull();
+    expect(onScroll![1]).toContain("scrollMovesAnchor(");
+    // The owner is the element the anchorRect was measured from, read at event time.
+    expect(onScroll![1]).toContain("anchorOwnerRef.current");
   });
 });
 
