@@ -32,20 +32,40 @@ function open024(): DatabaseSync {
   return db;
 }
 
-/** Every schema object, in a form two databases can be compared by. */
+/**
+ * Every schema object, in a form two databases can be compared by — columns keyed by NAME,
+ * with ordinal position (`cid`) excluded.
+ *
+ * Column ORDER is deliberately not compared. `ALTER TABLE ADD COLUMN` appends, while a
+ * fresh database gets the column wherever SCHEMA_SQL declares it, so a migrated database
+ * and a freshly created one hold the same columns in a different order — and always have:
+ * openDatabase's own ensureColumn list has appended columns to released databases since
+ * long before migrations existed. Making the orders match would mean rebuilding the table,
+ * which is not additive and would take the rollback guarantee with it. What order actually
+ * costs is the column order of `SELECT *`, and every read here maps rows by name.
+ *
+ * Index column order IS compared: for a composite index it is the index.
+ */
 function shape(db: DatabaseSync): string {
   const objs = db
     .prepare(
       "SELECT type, name, tbl_name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name",
     )
     .all() as { type: string; name: string; tbl_name: string }[];
+  const dropCid = (rows: unknown[]): Record<string, unknown>[] =>
+    rows.map((r) => {
+      const { cid: _cid, ...rest } = r as Record<string, unknown>;
+      return rest;
+    });
   return JSON.stringify(
     objs.map((o) => ({
       ...o,
       detail:
         o.type === "table"
-          ? db.prepare(`PRAGMA table_info(${o.name})`).all()
-          : db.prepare(`PRAGMA index_info(${o.name})`).all(),
+          ? dropCid(db.prepare(`PRAGMA table_info(${o.name})`).all()).sort((a, b) =>
+              String(a.name) < String(b.name) ? -1 : String(a.name) > String(b.name) ? 1 : 0,
+            )
+          : dropCid(db.prepare(`PRAGMA index_info(${o.name})`).all()),
       unique:
         o.type === "index"
           ? (
@@ -72,7 +92,7 @@ describe("migration mechanism", () => {
       const r = migrate(db);
       expect(r.from).toBe(0);
       expect(r.to).toBe(LATEST_VERSION);
-      expect(r.applied).toEqual(["messaging-bindings"]);
+      expect(r.applied).toEqual(["messaging-bindings", "messaging-delivery-flags"]);
       expect(schemaVersion(db)).toBe(LATEST_VERSION);
     } finally {
       db.close();
@@ -127,7 +147,10 @@ describe("the swap path refuses what a rollback could not survive", () => {
   it("applies swap-safe migrations while a pushed platform boots", () => {
     const db = open024();
     try {
-      expect(migrate(db, { swapPath: true }).applied).toEqual(["messaging-bindings"]);
+      expect(migrate(db, { swapPath: true }).applied).toEqual([
+        "messaging-bindings",
+        "messaging-delivery-flags",
+      ]);
     } finally {
       db.close();
     }
@@ -152,7 +175,11 @@ describe("the swap path refuses what a rollback could not survive", () => {
         expect(shape(db)).toBe(before);
         expect(schemaVersion(db)).toBe(0);
         // The runtime's own open, which owns the process, may apply it.
-        expect(migrate(db).applied).toEqual(["messaging-bindings", "narrows-something"]);
+        expect(migrate(db).applied).toEqual([
+          "messaging-bindings",
+          "messaging-delivery-flags",
+          "narrows-something",
+        ]);
       } finally {
         (MIGRATIONS as unknown as (typeof narrowing)[]).pop();
       }
@@ -162,7 +189,7 @@ describe("the swap path refuses what a rollback could not survive", () => {
   });
 });
 
-describe("0.2.4 → 0.2.7", () => {
+describe("0.2.4 → current", () => {
   /** The whole point: an older runtime's database becomes what a current build creates. */
   it("brings a 0.2.4 database to the shape a fresh one is created with", () => {
     const old = open024();
