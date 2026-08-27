@@ -1,6 +1,8 @@
 /**
- * The Telegram Bot API seam: the four methods the Telegram connector uses (`getMe`,
- * `getWebhookInfo`, `sendMessage`, `getUpdates`), behind an injectable transport so unit
+ * The Telegram Bot API seam: the methods the Telegram connector uses (`getMe`,
+ * `getWebhookInfo`, `sendMessage`, `getUpdates`, the file download behind an inbound photo,
+ * and the `sendPhoto` / `sendDocument` uploads behind an outbound one),
+ * behind an injectable transport so unit
  * tests substitute a fake and never open real network. Telegram needs no SDK — the Bot API is plain HTTPS
  * POSTs against https://api.telegram.org — so the production transport is a thin fetch
  * wrapper.
@@ -8,6 +10,8 @@
  * Wire types below mirror the Bot API JSON verbatim (snake_case): the transport does not
  * reshape payloads, so a test fake constructs exactly what the real API returns.
  */
+import { FormData, fetch as undiciFetch } from "undici";
+import { MessagingMediaTooLargeError, collectUnderCap } from "./media.js";
 
 /** Telegram Bot API host. Deliberately not configurable: bindings carry only the token. */
 export const TELEGRAM_API_BASE = "https://api.telegram.org";
@@ -52,6 +56,19 @@ export interface TelegramMessageEntity {
   user?: { id: number };
 }
 
+/**
+ * One size variant of an inbound photo. The Bot API sends a photo as an ARRAY of these —
+ * the same picture re-encoded at several resolutions — and the connector picks the largest,
+ * which is the one the user actually sent.
+ */
+export interface TelegramPhotoSize {
+  file_id: string;
+  width: number;
+  height: number;
+  /** The Bot API marks it optional, so the size comparison cannot rely on it alone. */
+  file_size?: number;
+}
+
 /** The slice of a Bot API `Message` the connector consumes. */
 export interface TelegramMessage {
   message_id: number;
@@ -64,11 +81,7 @@ export interface TelegramMessage {
   };
   /** Present only for text messages; anything else (photo, sticker, voice, …) omits it. */
   text?: string;
-  /**
-   * Spans over `text` (mentions, formatting, …); absent when the message has none. A
-   * captioned media message carries the same shapes over its caption under
-   * `caption_entities` instead — the day this connector reads captions, it reads that.
-   */
+  /** Spans over `text` (mentions, formatting, …); absent when the message has none. */
   entities?: TelegramMessageEntity[];
   /**
    * "Unique identifier of a message thread or forum topic to which the message belongs; for
@@ -90,10 +103,36 @@ export interface TelegramMessage {
    * for the reply-chain `message_thread_id` above, which is exactly what tells the two apart.
    */
   is_topic_message?: boolean;
+  /** Size variants of an inbound photo, smallest first; absent for every other message kind. */
+  photo?: TelegramPhotoSize[];
+  /** The text sent WITH a photo (or another media message) — a text message carries `text` instead. */
+  caption?: string;
+  /**
+   * The same spans over `caption` that `entities` carries over `text`. A captioned photo is
+   * how a group addresses this bot about a picture, so the caption needs the same mention
+   * handling the text gets — see the connector's stripBotMention.
+   */
+  caption_entities?: TelegramMessageEntity[];
   from?: {
     first_name?: string;
     username?: string;
   };
+}
+
+/** The slice of `getFile`'s result the connector consumes. */
+export interface TelegramFile {
+  /**
+   * Path to pass to the file endpoint (valid at least an hour). Optional on the wire: a
+   * file the bot may not download resolves without one.
+   */
+  file_path?: string;
+  file_size?: number;
+}
+
+/** A downloaded file: the bytes, plus the path they came from (its extension names the type). */
+export interface TelegramFileBytes {
+  data: Buffer;
+  filePath: string;
 }
 
 /**
@@ -146,11 +185,56 @@ export interface TelegramBotClient {
     timeoutSec: number;
     signal: AbortSignal;
   }): Promise<TelegramUpdate[]>;
+  /**
+   * Downloads a file the bot can see, in two hops: `getFile` resolves a path, and the FILE
+   * endpoint serves the bytes. That second URL is not the method endpoint — it is
+   * `/file/bot<token>/<file_path>` — and it embeds the bot token, so no failure here may
+   * ever echo it (see fetchErrorText). Throws when the transfer fails or exceeds
+   * `maxBytes`; the Bot API itself refuses to serve a bot anything over 20MB this way, so
+   * whichever ceiling is lower is the one that bites.
+   */
+  getFileBytes(args: { fileId: string; maxBytes: number }): Promise<TelegramFileBytes>;
+  /**
+   * Sends a picture into a chat as a photo, so it renders inline. Multipart upload from
+   * bytes rather than by URL — the file lives in a Workspace this server can read and
+   * Telegram cannot.
+   */
+  sendPhoto(args: { chatId: string; fileName: string; data: Buffer }): Promise<void>;
+  /** Sends any other file into a chat as a document (the attachment form). */
+  sendDocument(args: { chatId: string; fileName: string; data: Buffer }): Promise<void>;
 }
 
 /** Factory the Telegram connector is built over: the production fetch adapter, or a test fake. */
 export interface TelegramTransport {
   createClient(creds: TelegramCredentials): TelegramBotClient;
+}
+
+/**
+ * `fetch` AND `FormData` are imported from undici on purpose, and must stay a matched pair.
+ *
+ * The startup entry replaces `globalThis.fetch` with undici's so outbound traffic follows
+ * the proxy dispatcher (see net/proxy.ts). undici's fetch brand-checks a FormData body
+ * against ITS OWN class, and Node's built-in `FormData` is a different class, so a global
+ * `new FormData()` fell through undici's body handling to `String(body)` — the Bot API
+ * received the 17 bytes `[object FormData]` as `text/plain` and answered "there is no
+ * document in the request". Every upload failed in production and none did in CI, where
+ * `globalThis.fetch` is still the runtime's own and the pairing happens to match.
+ *
+ * Importing FormData from undici while calling `globalThis.fetch` inverts the same bug, so
+ * the transport calls undici's fetch directly. That keeps the proxy: undici's fetch
+ * resolves the global dispatcher per call, which is the contract net/proxy.ts is written
+ * against. `Blob` needs no such treatment — `globalThis.Blob` IS node:buffer's Blob, and
+ * undici's FormData accepts it (verified on the wire, not assumed).
+ */
+type TelegramFetch = typeof undiciFetch;
+
+export interface TelegramTransportOpts {
+  /**
+   * Test seam: the `fetch` the transport calls. Only for the tests that assert on request
+   * shape and error mapping — the multipart pairing above is provable only against a real
+   * socket, so the tests that cover it drive the default.
+   */
+  fetch?: TelegramFetch;
 }
 
 // ---------------------------------------------------------------------------
@@ -159,6 +243,13 @@ export interface TelegramTransport {
 
 /** Overall per-request deadline for the short calls (getMe / sendMessage / the drain). */
 const CALL_TIMEOUT_MS = 15_000;
+
+/**
+ * Deadline for a file transfer, in either direction. Far longer than a method call: these
+ * move megabytes over whatever link the server has, and a 15s ceiling would fail a picture
+ * that was on its way perfectly well.
+ */
+const TRANSFER_TIMEOUT_MS = 60_000;
 
 /** The `{ok, result, description, error_code}` envelope every Bot API response carries. */
 interface TelegramEnvelope<T> {
@@ -220,40 +311,78 @@ function fetchErrorText(err: unknown): string {
   return String(err);
 }
 
+/**
+ * A response body as chunks. `Response.body` is a web ReadableStream, which is only
+ * async-iterable under some lib configurations; reading it through its reader works under
+ * all of them. Cancelling on the way out matters for the capped read — a transfer aborted
+ * over the ceiling must not leave the socket draining the rest of the file.
+ */
+async function* bodyChunks(body: ReadableStream<Uint8Array>): AsyncGenerator<Uint8Array> {
+  const reader = body.getReader();
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) return;
+      if (value !== undefined) yield value;
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
+}
+
 /** The production factory: plain HTTPS against the Bot API. */
-export function createTelegramTransport(): TelegramTransport {
+export function createTelegramTransport(opts: TelegramTransportOpts = {}): TelegramTransport {
+  const doFetch = opts.fetch ?? undiciFetch;
   return {
     createClient(creds: TelegramCredentials): TelegramBotClient {
-      const call = async <T>(
+      /** One Bot API method call: POST the body, then unwrap the `{ok, result}` envelope. */
+      const send = async <T>(
         method: string,
-        payload: Record<string, unknown>,
+        // The two body shapes this transport posts: a JSON string, or a multipart upload.
+        body: string | FormData,
+        headers: Record<string, string>,
         opts?: { signal?: AbortSignal; timeoutMs?: number },
       ): Promise<T> => {
         const deadline = AbortSignal.timeout(opts?.timeoutMs ?? CALL_TIMEOUT_MS);
         const signal = opts?.signal ? AbortSignal.any([opts.signal, deadline]) : deadline;
-        let res: Response;
+        let res: Awaited<ReturnType<TelegramFetch>>;
         try {
-          res = await fetch(`${TELEGRAM_API_BASE}/bot${creds.botToken}/${method}`, {
+          res = await doFetch(`${TELEGRAM_API_BASE}/bot${creds.botToken}/${method}`, {
             method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(payload),
+            headers,
+            body,
             signal,
           });
         } catch (err) {
           throw new Error(`${method} failed: ${fetchErrorText(err)}`);
         }
-        const body = (await res.json().catch(() => null)) as TelegramEnvelope<T> | null;
-        if (body === null || body.ok !== true) {
-          const described = body?.description;
+        const parsed = (await res.json().catch(() => null)) as TelegramEnvelope<T> | null;
+        if (parsed === null || parsed.ok !== true) {
+          const described = parsed?.description;
           const detail =
             (described !== undefined ? conflictText(described) : null) ??
             described ??
             `HTTP ${res.status}`;
-          const code = body?.error_code !== undefined ? ` (code ${body.error_code})` : "";
-          throw new TelegramApiError(`${method} failed: ${detail}${code}`, body?.error_code);
+          const code = parsed?.error_code !== undefined ? ` (code ${parsed.error_code})` : "";
+          throw new TelegramApiError(`${method} failed: ${detail}${code}`, parsed?.error_code);
         }
-        return body.result as T;
+        return parsed.result as T;
       };
+
+      const call = <T>(
+        method: string,
+        payload: Record<string, unknown>,
+        opts?: { signal?: AbortSignal; timeoutMs?: number },
+      ): Promise<T> =>
+        send<T>(method, JSON.stringify(payload), { "content-type": "application/json" }, opts);
+
+      /**
+       * A file-carrying call. No content-type is set on purpose: fetch derives the
+       * multipart one from the FormData, boundary included, and a hand-written header
+       * would name a boundary the body does not use.
+       */
+      const callForm = (method: string, form: FormData): Promise<unknown> =>
+        send<unknown>(method, form, {}, { timeoutMs: TRANSFER_TIMEOUT_MS });
 
       // Chat ids are stored as text; the API wants the numeric form back (a string works
       // for @channel usernames only), so safe integers are converted.
@@ -292,6 +421,46 @@ export function createTelegramTransport(): TelegramTransport {
             // The overall deadline must outlive the server-side long poll.
             { signal, timeoutMs: (timeoutSec + 15) * 1000 },
           ),
+        async getFileBytes({ fileId, maxBytes }): Promise<TelegramFileBytes> {
+          const file = await call<TelegramFile>("getFile", { file_id: fileId });
+          if (file.file_path === undefined || file.file_path === "") {
+            throw new Error("getFile failed: this file cannot be downloaded");
+          }
+          // The declared size refuses an oversized transfer before it starts; the capped
+          // read below is what actually holds, since the claim can be absent or wrong.
+          if (file.file_size !== undefined && file.file_size > maxBytes) {
+            throw new MessagingMediaTooLargeError("The image", maxBytes);
+          }
+          let res: Awaited<ReturnType<TelegramFetch>>;
+          try {
+            res = await doFetch(
+              `${TELEGRAM_API_BASE}/file/bot${creds.botToken}/${file.file_path}`,
+              {
+                signal: AbortSignal.timeout(TRANSFER_TIMEOUT_MS),
+              },
+            );
+          } catch (err) {
+            throw new Error(`file download failed: ${fetchErrorText(err)}`);
+          }
+          // The URL carries the token, so a failure names the status and nothing else.
+          if (!res.ok || res.body === null) {
+            throw new Error(`file download failed: HTTP ${res.status}`);
+          }
+          const data = await collectUnderCap(bodyChunks(res.body), maxBytes, "The image");
+          return { data, filePath: file.file_path };
+        },
+        async sendPhoto({ chatId, fileName, data }): Promise<void> {
+          const form = new FormData();
+          form.append("chat_id", String(wireChatId(chatId)));
+          form.append("photo", new Blob([data]), fileName);
+          await callForm("sendPhoto", form);
+        },
+        async sendDocument({ chatId, fileName, data }): Promise<void> {
+          const form = new FormData();
+          form.append("chat_id", String(wireChatId(chatId)));
+          form.append("document", new Blob([data]), fileName);
+          await callForm("sendDocument", form);
+        },
       };
     },
   };

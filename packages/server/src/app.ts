@@ -228,6 +228,8 @@ export interface BuildDepsOverrides {
   qqTailFlushMs?: number;
   /** Test hook: the bridge's pace between a per-line reply's messages (tests collapse it to zero). */
   messagingLineDelayMs?: number;
+  /** Test hook: one binding's inbound image budget, so a budget test needs no 20MB buffers. */
+  messagingInboundImageBudgetBytes?: number;
   /** Test double: the QQ scan-to-connect transport (avoids real q.qq.com requests). */
   qqScanTransport?: QQScanTransport;
   /**
@@ -760,6 +762,9 @@ export function buildAppDeps(
   const messaging = new MessagingBridge({
     repo: messagingRepo,
     sessions: sessionsRepo,
+    // The same service the Files panel reads through: mirroring a file the reply mentions
+    // must obey exactly the containment rules browsing it does, not a second copy of them.
+    files: workspaceFiles,
     channels,
     runner: manager,
     connectors: [
@@ -778,6 +783,9 @@ export function buildAppDeps(
     ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}),
     ...(overrides.messagingLineDelayMs !== undefined
       ? { lineDelayMs: overrides.messagingLineDelayMs }
+      : {}),
+    ...(overrides.messagingInboundImageBudgetBytes !== undefined
+      ? { inboundImageBudgetBytes: overrides.messagingInboundImageBudgetBytes }
       : {}),
   });
   // Scan-to-connect holds one AES key per in-flight bind task, in memory only: it decrypts

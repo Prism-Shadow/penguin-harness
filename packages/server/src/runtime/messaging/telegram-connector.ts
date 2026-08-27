@@ -41,15 +41,18 @@ import type {
   MessagingClient,
   MessagingConnection,
   MessagingConnectorHandlers,
+  MessagingInboundImage,
   MessagingInboundMessage,
   MessagingSendNote,
 } from "./connector.js";
+import { imageMimeOfName } from "./media.js";
 import type {
   TelegramBotClient,
   TelegramBotUser,
   TelegramCredentials,
   TelegramMessage,
   TelegramMessageEntity,
+  TelegramPhotoSize,
   TelegramTransport,
   TelegramUpdate,
 } from "./telegram-api.js";
@@ -264,18 +267,58 @@ function topicIdOf(msg: TelegramMessage): number | undefined {
 }
 
 /**
+ * The variant of an inbound photo to fetch: the largest, which is the picture as sent —
+ * the smaller entries are thumbnails the Bot API generated. Compared on pixel count, since
+ * `width`/`height` are always present while `file_size` is optional, with the byte size as
+ * the tie-break between two variants of equal dimensions.
+ */
+function largestPhoto(sizes: readonly TelegramPhotoSize[]): TelegramPhotoSize | null {
+  let best: TelegramPhotoSize | null = null;
+  for (const size of sizes) {
+    if (best === null) {
+      best = size;
+      continue;
+    }
+    const pixels = size.width * size.height;
+    const bestPixels = best.width * best.height;
+    if (pixels > bestPixels) best = size;
+    else if (pixels === bestPixels && (size.file_size ?? 0) > (best.file_size ?? 0)) best = size;
+  }
+  return best;
+}
+
+/**
  * One update reduced to the bridge's normalized shape; null for updates that are not chat
- * messages. `me` is this bot's own account (null before the first `getMe` of a connection
- * has answered), used only to recognize its own mention.
+ * messages. `bot` is captured by an inbound photo's `fetch`, so the bytes are pulled only
+ * if the bridge asks for them. `me` is this bot's own account (null before the first `getMe`
+ * of a connection has answered), used only to recognize its own mention.
  */
 function normalizeUpdate(
   update: TelegramUpdate,
+  bot: TelegramBotClient,
   me: TelegramBotUser | null,
 ): MessagingInboundMessage | null {
   const msg = update.message;
   if (msg === undefined) return null;
   const senderName = msg.from?.first_name ?? msg.from?.username;
   const topicId = topicIdOf(msg);
+  const photo = msg.photo !== undefined ? largestPhoto(msg.photo) : null;
+  const images: MessagingInboundImage[] =
+    photo === null
+      ? []
+      : [
+          {
+            fetch: async (maxBytes) => {
+              const { data, filePath } = await bot.getFileBytes({
+                fileId: photo.file_id,
+                maxBytes,
+              });
+              // Telegram re-encodes what it serves as a photo, so the served path's
+              // extension is the type; JPEG is what that re-encoding almost always yields.
+              return { data, mimeType: imageMimeOfName(filePath) ?? "image/jpeg" };
+            },
+          },
+        ];
   return {
     // The topic rides the chat id so the binding remembers the LAST one written in, the same
     // way it already remembers the last chat: a user who moves to a new topic gets the
@@ -283,9 +326,19 @@ function normalizeUpdate(
     chatId: chatRefOf(msg.chat.id, topicId),
     chatKind: msg.chat.type === "private" ? "direct" : "group",
     messageId: replyRefOf(msg.chat.id, msg.message_id, topicId),
-    // Only text messages carry `text`; every other message type normalizes to null (the
-    // bridge answers those with the text-only notice).
-    text: typeof msg.text === "string" ? stripBotMention(msg.text, msg.entities, me) : null,
+    // A text message carries `text`; a PHOTO carries its words in `caption` instead, which
+    // is that message's text as far as the bridge is concerned. Every other media kind
+    // (document, video, audio, voice, …) normalizes to null EVEN WHEN it has a caption:
+    // its bytes are not delivered, so running the model on the caption alone would answer
+    // confidently about a file it never received. A picture dragged in uncompressed
+    // arrives as a document, which makes that the common case rather than a corner one.
+    text:
+      typeof msg.text === "string"
+        ? stripBotMention(msg.text, msg.entities, me)
+        : photo !== null && typeof msg.caption === "string"
+          ? stripBotMention(msg.caption, msg.caption_entities, me)
+          : null,
+    ...(images.length > 0 ? { images } : {}),
     ...(senderName !== undefined ? { senderName } : {}),
   };
 }
@@ -331,6 +384,12 @@ export class TelegramConnector implements MessagingChannelConnector {
         // plain send with no thread lands in General — losing the topic exactly when the
         // conversation is least able to spare it.
         return sendWithThreadFallback(bot, { chatId, text, replyToMessageId: messageId }, threadId);
+      },
+      async sendImage(chatId, file) {
+        await bot.sendPhoto({ chatId, fileName: file.fileName, data: file.data });
+      },
+      async sendFile(chatId, file) {
+        await bot.sendDocument({ chatId, fileName: file.fileName, data: file.data });
       },
     };
   }
@@ -409,7 +468,7 @@ export class TelegramConnector implements MessagingChannelConnector {
         }
         for (const update of updates) {
           offset = update.update_id + 1;
-          const msg = normalizeUpdate(update, me);
+          const msg = normalizeUpdate(update, bot, me);
           if (msg !== null) await handlers.onMessage(msg);
         }
       } catch (err) {

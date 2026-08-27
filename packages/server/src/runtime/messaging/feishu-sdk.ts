@@ -9,6 +9,12 @@
  * which would tax every typecheck for the handful of calls made here; the local interfaces
  * below are the contract, and the adapter casts the loaded module once.
  */
+import {
+  MessagingMediaTooLargeError,
+  MessagingPermissionError,
+  collectUnderCap,
+  sniffImageMime,
+} from "./media.js";
 
 /** One credential set (a binding's stored values, or a test request's draft). */
 export interface FeishuCredentials {
@@ -49,7 +55,24 @@ export interface FeishuInboundEvent {
   mentions?: FeishuMention[];
 }
 
-/** OpenAPI half of the seam: credential probe + text sends. Every method throws on failure. */
+/** The bytes of one downloaded resource, with the MIME type the caller needs for a data URL. */
+export interface FeishuImageData {
+  data: Buffer;
+  mimeType: string;
+}
+
+/**
+ * One file on its way into a chat. Structurally the connector seam's MessagingOutboundFile
+ * — declared here rather than imported for the same reason FeishuApiClient mirrors
+ * MessagingClient member for member: this module is the layer below the seam and stays
+ * free of it, and the connector's assignment is what proves the two agree.
+ */
+export interface FeishuOutboundFile {
+  fileName: string;
+  data: Buffer;
+}
+
+/** OpenAPI half of the seam: credential probe, text sends, media in both directions. Every method throws on failure. */
 export interface FeishuApiClient {
   /**
    * Credential check: obtains a tenant access token (no scopes needed); throws with a
@@ -71,6 +94,27 @@ export interface FeishuApiClient {
    * connection. A null answer degrades mention handling, it does not break it.
    */
   botOpenId(): Promise<string | null>;
+  /**
+   * Downloads an image carried by an inbound message (`file_key` is the content JSON's
+   * `image_key`). Throws `MessagingMediaTooLargeError` past `maxBytes`, and a plain Error
+   * carrying the API's own reason otherwise. The resource endpoint is scoped to the
+   * message, so a bot can only read images from conversations it is in — there is no
+   * key-only fetch to abuse.
+   *
+   * It is also permissioned SEPARATELY from receiving messages: an app that happily
+   * delivers `im.message.receive_v1` events still gets a refusal here until the resource
+   * read scope is granted to it. Nothing in this process can fix that, which is exactly why
+   * the API's reason has to survive all the way to the chat.
+   */
+  fetchMessageImage(args: {
+    messageId: string;
+    fileKey: string;
+    maxBytes: number;
+  }): Promise<FeishuImageData>;
+  /** Uploads a picture (`im.v1.image.create`) and sends the resulting key as an `image` message. */
+  sendImage(chatId: string, file: FeishuOutboundFile): Promise<void>;
+  /** Uploads a file (`im.v1.file.create`) and sends the resulting key as a `file` message. */
+  sendFile(chatId: string, file: FeishuOutboundFile): Promise<void>;
 }
 
 export interface FeishuEventHandlers {
@@ -109,6 +153,8 @@ interface LarkModule {
     appSecret: string;
     domain: string;
     loggerLevel: number;
+    /** Test seam: the SDK's `params.httpInstance`, which every call (token fetch included) goes through. */
+    httpInstance?: unknown;
   }) => LarkClient;
   WSClient: new (params: {
     appId: string;
@@ -127,6 +173,46 @@ interface LarkModule {
 interface LarkResponse {
   code?: number;
   msg?: string;
+}
+
+/** The `msg_type` values this adapter sends (Feishu has many more; these are the three it uses). */
+type FeishuMessageType = "text" | "image" | "file";
+
+/**
+ * Feishu's upload categories. `stream` is the general one — the rest exist because the
+ * client renders a preview for them, so mapping a `.pdf` or a `.xlsx` onto its own category
+ * is what makes it open in the chat instead of only downloading.
+ */
+type FeishuFileType = "opus" | "mp4" | "pdf" | "doc" | "xls" | "ppt" | "stream";
+
+const FEISHU_FILE_TYPE_BY_EXT: Readonly<Record<string, FeishuFileType>> = {
+  opus: "opus",
+  mp4: "mp4",
+  pdf: "pdf",
+  doc: "doc",
+  docx: "doc",
+  xls: "xls",
+  xlsx: "xls",
+  ppt: "ppt",
+  pptx: "ppt",
+};
+
+/** The upload category for a file name; anything unrecognized uploads as a plain stream. */
+function feishuFileTypeOf(fileName: string): FeishuFileType {
+  const dot = fileName.lastIndexOf(".");
+  if (dot < 0) return "stream";
+  return FEISHU_FILE_TYPE_BY_EXT[fileName.slice(dot + 1).toLowerCase()] ?? "stream";
+}
+
+/**
+ * The binary-download shape (`im.v1.messageResource.get`): the SDK hands back a stream
+ * wrapper, not a `{code,msg}` envelope, because the endpoint answers with the file itself.
+ * Typed as an async iterable of chunks rather than as node:stream's `Readable` — that is
+ * all the adapter consumes, and it keeps the capped read (collectUnderCap) channel-neutral.
+ */
+interface LarkStreamResponse {
+  getReadableStream(): AsyncIterable<Uint8Array>;
+  headers?: Record<string, unknown>;
 }
 
 interface LarkClient {
@@ -151,12 +237,28 @@ interface LarkClient {
       message: {
         create(payload: {
           params: { receive_id_type: "chat_id" };
-          data: { receive_id: string; content: string; msg_type: "text" };
+          data: { receive_id: string; content: string; msg_type: FeishuMessageType };
         }): Promise<LarkResponse>;
         reply(payload: {
           path: { message_id: string };
           data: { content: string; msg_type: "text" };
         }): Promise<LarkResponse>;
+      };
+      messageResource: {
+        get(payload: {
+          path: { message_id: string; file_key: string };
+          params: { type: string };
+        }): Promise<LarkStreamResponse>;
+      };
+      image: {
+        create(payload: {
+          data: { image_type: "message"; image: Buffer };
+        }): Promise<{ image_key?: string } | null>;
+      };
+      file: {
+        create(payload: {
+          data: { file_type: FeishuFileType; file_name: string; file: Buffer };
+        }): Promise<{ file_key?: string } | null>;
       };
     };
   };
@@ -186,23 +288,202 @@ interface LarkEventDispatcher {
   }): LarkEventDispatcher;
 }
 
-/** Readable failure text out of the SDK's throw shapes (axios errors carry the API body). */
-function larkErrorText(err: unknown): string {
-  const axios = err as { response?: { data?: { msg?: string; code?: number } }; message?: string };
-  const body = axios.response?.data;
-  if (body?.msg) return body.code !== undefined ? `${body.msg} (code ${body.code})` : body.msg;
-  return err instanceof Error ? err.message : String(err);
+/**
+ * Feishu's `{code, msg, log_id}` refusal envelope, however it reached us. `log_id` is what
+ * Feishu support asks for first, so it rides into the error record with the rest.
+ */
+interface LarkErrorEnvelope {
+  code?: number;
+  msg?: string;
+  logId?: string;
 }
 
-/** Non-zero `{code}` envelopes come back as resolved responses; converge them to throws. */
-function ensureOk(res: LarkResponse, what: string): void {
-  if (res.code !== undefined && res.code !== 0) {
-    throw new Error(`${what} failed: ${res.msg ?? "unknown error"} (code ${res.code})`);
+/** The tenant-scope denial: the app is missing a permission, and the `msg` says which. */
+const FEISHU_SCOPE_DENIED_CODE = 99991672;
+
+/** Reads an envelope out of a value that may or may not be one (a parsed body, a JSON error). */
+function envelopeOf(body: unknown): LarkErrorEnvelope | null {
+  if (typeof body !== "object" || body === null) return null;
+  const { code, msg, log_id: logId } = body as { code?: unknown; msg?: unknown; log_id?: unknown };
+  if (typeof code !== "number" && typeof msg !== "string") return null;
+  return {
+    ...(typeof code === "number" ? { code } : {}),
+    ...(typeof msg === "string" ? { msg } : {}),
+    ...(typeof logId === "string" ? { logId } : {}),
+  };
+}
+
+/** The envelope carried by an SDK throw (axios puts the parsed API body on `response.data`). */
+function larkErrorEnvelope(err: unknown): LarkErrorEnvelope | null {
+  return envelopeOf((err as { response?: { data?: unknown } }).response?.data);
+}
+
+/** Readable text for a refusal: Feishu's own sentence when there is one, the SDK's otherwise. */
+function envelopeText(envelope: LarkErrorEnvelope | null, err: unknown): string {
+  const fallback = err instanceof Error ? err.message : String(err);
+  if (envelope?.msg === undefined || envelope.msg === "") return fallback;
+  const parts = [
+    ...(envelope.code !== undefined ? [`code ${envelope.code}`] : []),
+    ...(envelope.logId !== undefined ? [`log_id ${envelope.logId}`] : []),
+  ];
+  return parts.length > 0 ? `${envelope.msg} (${parts.join(", ")})` : envelope.msg;
+}
+
+/** How much of a refusal's `msg` is scanned for the grant link, and how long a link may be. */
+const SCOPE_MSG_MAX = 2000;
+const GRANT_URL_MAX = 500;
+
+/**
+ * The actionable half of a tenant-scope denial: which permissions would satisfy the call,
+ * and the console link that grants them.
+ *
+ * Feishu writes both into `msg` — "One of the following scopes is required:
+ * [im:resource:upload, im:resource]" followed by a per-app `…/app/<app-id>/auth?q=…` URL.
+ * The link is app-specific and already correct, so it is extracted rather than rebuilt.
+ * The prose around them is localized and must never be matched on: the CODE is the test.
+ */
+function scopeDenialDetail(msg: string): { scopes: string[]; grantUrl: string | null } {
+  const text = msg.slice(0, SCOPE_MSG_MAX);
+  const bracketed = /\[([^\]]+)\]/.exec(text);
+  const scopes = (bracketed?.[1] ?? "")
+    .split(",")
+    .map((scope) => scope.trim())
+    // A scope name is an ASCII colon-separated token; anything else is prose that happened
+    // to sit in brackets, and naming it would send the user looking for a permission that
+    // does not exist.
+    .filter((scope) => /^[a-z][a-z0-9_.:-]*$/i.test(scope));
+  // Only an https link, and only up to the first whitespace or CJK punctuation — the
+  // sentence continues in Chinese right after the URL in Feishu's own wording.
+  const url = /https:\/\/[^\s，。、）)]+/.exec(text)?.[0] ?? null;
+  return { scopes, grantUrl: url !== null && url.length <= GRANT_URL_MAX ? url : null };
+}
+
+/**
+ * The error a refused call throws: a permission denial when Feishu said so by CODE, a plain
+ * failure otherwise. Only the scope names and the console link travel with the first — the
+ * SDK's own error object carries the request config, which is where credentials live.
+ */
+function larkFailure(envelope: LarkErrorEnvelope | null, err: unknown, what?: string): Error {
+  const detail = envelopeText(envelope, err);
+  // The operation stays in front of the API's own sentence: an error record that reads only
+  // "invalid request" does not say which call made it.
+  const text = what === undefined ? detail : `${what} failed: ${detail}`;
+  if (envelope?.code === FEISHU_SCOPE_DENIED_CODE && envelope.msg !== undefined) {
+    const { scopes, grantUrl } = scopeDenialDetail(envelope.msg);
+    if (scopes.length > 0) return new MessagingPermissionError(scopes, grantUrl, text);
+  }
+  return new Error(text);
+}
+
+/**
+ * How much of a failed download's body is read back to find the API's reason. A Feishu
+ * error envelope is a few hundred bytes; the bound is there because the body is untrusted
+ * and the process must not be made to hold whatever arrives.
+ */
+const ERROR_BODY_MAX_BYTES = 64 * 1024;
+
+/** Whether a value is something `for await` can read (the error body of a streamed request). */
+function isAsyncIterable(value: unknown): value is AsyncIterable<Uint8Array> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as AsyncIterable<Uint8Array>)[Symbol.asyncIterator] === "function"
+  );
+}
+
+/**
+ * The refusal envelope of a request made with `responseType: "stream"` — the resource
+ * download.
+ *
+ * That response type applies to the FAILURE as well: on a refusal the SDK hands back an
+ * error whose `response.data` is the response STREAM, unread, not a parsed `{code,msg}`
+ * envelope. Read straight off the error it yields nothing, and the report is "Request
+ * failed with status code 400" — the one thing the user cannot act on, hiding the one they
+ * can. The body is small and already in hand, so it is drained and parsed here.
+ */
+async function larkStreamErrorEnvelope(err: unknown): Promise<LarkErrorEnvelope | null> {
+  const body = (err as { response?: { data?: unknown } }).response?.data;
+  const direct = envelopeOf(body);
+  if (direct !== null) return direct;
+  if (!isAsyncIterable(body)) return null;
+  try {
+    const raw = await collectUnderCap(body, ERROR_BODY_MAX_BYTES, "The error body");
+    return envelopeOf(JSON.parse(raw.toString("utf8")));
+  } catch {
+    // Not a JSON envelope (an HTML error page, a truncated body, a stream someone else
+    // already consumed): the generic text is still better than throwing a second error out
+    // of the error path.
+    return null;
   }
 }
 
+/**
+ * Non-zero `{code}` envelopes come back as RESOLVED responses; converge them to throws, and
+ * through the same reading as a rejection so a scope denial is one wherever it arrives.
+ */
+function ensureOk(res: LarkResponse, what: string): void {
+  if (res.code === undefined || res.code === 0) return;
+  throw larkFailure(envelopeOf(res), new Error("unknown error"), what);
+}
+
+/**
+ * Per-call deadline for everything this adapter puts on the wire.
+ *
+ * The SDK's default transport is a bare `axios.create()` with NO timeout, so a request the
+ * API accepts and never answers waits forever. That is not a slow send: every outbound
+ * message of a Session goes out on one serial chain (MessagingBridge's `sendChain`), so one
+ * request that never settles parks every later reply, approval notice and file for that
+ * Session — silently, with no error record and no status change — until the binding is
+ * toggled or the server restarts. The same stall on the inbound side parks the message with
+ * neither delivery nor refusal. Telegram has had a deadline on both directions from the
+ * start (see telegram-api's CALL_TIMEOUT_MS / TRANSFER_TIMEOUT_MS); this is Feishu's.
+ *
+ * One number for both kinds of call, unlike Telegram's two: the uploads and the resource
+ * download move at most 30MB, and a chat send that has not answered in a minute is not
+ * coming back.
+ */
+const FEISHU_CALL_TIMEOUT_MS = 60_000;
+
+/**
+ * `promise` with a deadline. The underlying request is NOT cancelled — the SDK exposes no
+ * signal — so this frees the CALLER, not the socket: the send chain moves on and the
+ * abandoned request is left to the runtime. That is the whole point; a leaked socket costs
+ * one connection, a wedged chain costs the Session.
+ */
+function withDeadline<T>(promise: Promise<T>, timeoutMs: number, what: string): Promise<T> {
+  // The abandoned promise still needs a handler, or its later rejection is an unhandled one.
+  promise.catch(() => {});
+  let timer: NodeJS.Timeout;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`${what} timed out after ${timeoutMs}ms`)),
+      timeoutMs,
+    );
+  });
+  return Promise.race([promise, deadline]).finally(() => {
+    clearTimeout(timer);
+  });
+}
+
 /** The production factory: lazy-loads the Lark SDK on first use. */
-export function createLarkSdk(): FeishuSdk {
+/**
+ * `httpInstance` is the SDK's own injection point (`params.httpInstance`, used by every
+ * call including the tenant-token fetch). Tests pass a stub that stands exactly where axios
+ * stands, so the SDK's URL building, `:path` filling, param serialization and response
+ * unwrapping all run for real — the layer a hand-written fake of this module's own
+ * interface cannot reach, and where both of this adapter's protocol bugs lived. Production
+ * passes nothing.
+ *
+ * `timeoutMs` overrides FEISHU_CALL_TIMEOUT_MS. Tests only — a deadline test cannot wait a
+ * minute, and production has no reason to want a different one.
+ */
+export interface LarkSdkOpts {
+  httpInstance?: unknown;
+  timeoutMs?: number;
+}
+
+export function createLarkSdk(opts: LarkSdkOpts = {}): FeishuSdk {
+  const timeoutMs = opts.timeoutMs ?? FEISHU_CALL_TIMEOUT_MS;
   let modPromise: Promise<LarkModule> | null = null;
   const load = (): Promise<LarkModule> => {
     modPromise ??= import("@larksuiteoapi/node-sdk").then(
@@ -220,41 +501,63 @@ export function createLarkSdk(): FeishuSdk {
         appSecret: creds.appSecret,
         domain: creds.baseDomain,
         loggerLevel: lark.LoggerLevel.error,
+        ...(opts.httpInstance !== undefined ? { httpInstance: opts.httpInstance } : {}),
       });
+      /** Every call this client makes goes out under the deadline — see withDeadline. */
+      const deadline = <T>(call: Promise<T>, what: string): Promise<T> =>
+        withDeadline(call, timeoutMs, what);
+      /** One `im.v1.message.create`, shared by every message kind: the content JSON differs, nothing else does. */
+      const sendContent = async (
+        chatId: string,
+        msgType: FeishuMessageType,
+        content: Record<string, string>,
+      ): Promise<void> => {
+        let res: LarkResponse;
+        try {
+          res = await deadline(
+            client.im.v1.message.create({
+              params: { receive_id_type: "chat_id" },
+              data: { receive_id: chatId, content: JSON.stringify(content), msg_type: msgType },
+            }),
+            "Message send",
+          );
+        } catch (err) {
+          throw larkFailure(larkErrorEnvelope(err), err);
+        }
+        ensureOk(res, "Message send");
+      };
+
       return {
         async checkCredentials(): Promise<null> {
           let res: LarkResponse;
           try {
-            res = await client.auth.v3.tenantAccessToken.internal({
-              data: { app_id: creds.appId, app_secret: creds.appSecret },
-            });
+            res = await deadline(
+              client.auth.v3.tenantAccessToken.internal({
+                data: { app_id: creds.appId, app_secret: creds.appSecret },
+              }),
+              "Credential check",
+            );
           } catch (err) {
-            throw new Error(larkErrorText(err));
+            throw larkFailure(larkErrorEnvelope(err), err);
           }
           ensureOk(res, "Credential check");
           return null;
         },
-        async sendText(chatId: string, text: string): Promise<void> {
-          let res: LarkResponse;
-          try {
-            res = await client.im.v1.message.create({
-              params: { receive_id_type: "chat_id" },
-              data: { receive_id: chatId, content: JSON.stringify({ text }), msg_type: "text" },
-            });
-          } catch (err) {
-            throw new Error(larkErrorText(err));
-          }
-          ensureOk(res, "Message send");
+        sendText(chatId: string, text: string): Promise<void> {
+          return sendContent(chatId, "text", { text });
         },
         async replyText(messageId: string, text: string): Promise<void> {
           let res: LarkResponse;
           try {
-            res = await client.im.v1.message.reply({
-              path: { message_id: messageId },
-              data: { content: JSON.stringify({ text }), msg_type: "text" },
-            });
+            res = await deadline(
+              client.im.v1.message.reply({
+                path: { message_id: messageId },
+                data: { content: JSON.stringify({ text }), msg_type: "text" },
+              }),
+              "Message reply",
+            );
           } catch (err) {
-            throw new Error(larkErrorText(err));
+            throw larkFailure(larkErrorEnvelope(err), err);
           }
           ensureOk(res, "Message reply");
         },
@@ -263,12 +566,81 @@ export function createLarkSdk(): FeishuSdk {
           // a thrown request, a non-zero envelope, a body without the field — answers
           // "unknown" so a connection is never refused over it.
           try {
-            const res = await client.request({ url: "/open-apis/bot/v3/info", method: "GET" });
+            const res = await deadline(
+              client.request({ url: "/open-apis/bot/v3/info", method: "GET" }),
+              "Bot identity lookup",
+            );
             if (res.code !== undefined && res.code !== 0) return null;
             return res.bot?.open_id ?? null;
           } catch {
             return null;
           }
+        },
+        async fetchMessageImage({ messageId, fileKey, maxBytes }): Promise<FeishuImageData> {
+          let res: LarkStreamResponse;
+          try {
+            res = await deadline(
+              client.im.v1.messageResource.get({
+                path: { message_id: messageId, file_key: fileKey },
+                params: { type: "image" },
+              }),
+              "Image download",
+            );
+          } catch (err) {
+            throw larkFailure(await larkStreamErrorEnvelope(err), err);
+          }
+          const data = await collectUnderCap(res.getReadableStream(), maxBytes, "The image");
+          // The response header states what the SENDER uploaded, which is a claim; the
+          // magic bytes are the file. PNG is the last resort — a data URL needs some type,
+          // and every provider that takes images at all takes that one.
+          const declared = res.headers?.["content-type"];
+          const headerType =
+            typeof declared === "string" && declared.startsWith("image/")
+              ? declared.split(";")[0]!.trim()
+              : null;
+          return { data, mimeType: sniffImageMime(data) ?? headerType ?? "image/png" };
+        },
+        async sendImage(chatId: string, file: FeishuOutboundFile): Promise<void> {
+          // Two steps, as Feishu requires: the bytes are uploaded on their own and the
+          // message carries only the key they were stored under.
+          let uploaded: { image_key?: string } | null;
+          try {
+            uploaded = await deadline(
+              client.im.v1.image.create({ data: { image_type: "message", image: file.data } }),
+              "Image upload",
+            );
+          } catch (err) {
+            throw larkFailure(larkErrorEnvelope(err), err);
+          }
+          // The upload endpoints resolve to their `data` object, so a refusal arrives as a
+          // missing key rather than as a non-zero `{code}` this adapter could report.
+          const imageKey = uploaded?.image_key;
+          if (imageKey === undefined || imageKey === "") {
+            throw new Error(`Image upload failed: ${file.fileName} returned no image_key`);
+          }
+          await sendContent(chatId, "image", { image_key: imageKey });
+        },
+        async sendFile(chatId: string, file: FeishuOutboundFile): Promise<void> {
+          let uploaded: { file_key?: string } | null;
+          try {
+            uploaded = await deadline(
+              client.im.v1.file.create({
+                data: {
+                  file_type: feishuFileTypeOf(file.fileName),
+                  file_name: file.fileName,
+                  file: file.data,
+                },
+              }),
+              "File upload",
+            );
+          } catch (err) {
+            throw larkFailure(larkErrorEnvelope(err), err);
+          }
+          const fileKey = uploaded?.file_key;
+          if (fileKey === undefined || fileKey === "") {
+            throw new Error(`File upload failed: ${file.fileName} returned no file_key`);
+          }
+          await sendContent(chatId, "file", { file_key: fileKey });
         },
       };
     },

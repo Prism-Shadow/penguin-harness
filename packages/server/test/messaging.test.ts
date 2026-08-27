@@ -6,14 +6,21 @@
  * save/enable split — PUT persists credentials only, POST /state owns the connection —
  * 409s, authz split, cascade on session delete), and the bridge's routing through a fake
  * Feishu SDK — inbound text becomes an ordinary user task
- * exactly as if typed in the composer (no marker, no special sender; queueIfBusy),
- * non-text gets the bilingual text-only reply, each completed assistant message mirrors on
+ * exactly as if typed in the composer (no marker, no special sender; queueIfBusy), an
+ * inbound image becomes the composer's `image_url` part (and a download that fails or
+ * exceeds the inline-image cap degrades to a notice instead of a half-message),
+ * anything else gets the bilingual not-supported reply, each completed assistant message
+ * mirrors on
  * its own to the last known chat as soon as it completes (the run's first one threaded onto
- * the inbound message in groups), an approval_request sends the one-line notice behind
- * whatever is already going out, and a binding with `linePerMessage` set delivers a reply one
- * message per non-blank line — paced, and with a refused message costing only itself — while
- * an unset one is byte-for-byte the original single message. No test opens real network.
+ * the inbound message in groups), the files the reply MENTIONED follow it (existing ones
+ * only, pictures as pictures, capped by count and by size, escapes refused by the Workspace
+ * file service), an approval_request sends the one-line notice behind whatever is already
+ * going out, and a binding with `linePerMessage` set delivers a reply one message per
+ * non-blank line — paced, and with a refused message costing only itself — while an unset
+ * one is byte-for-byte the original single message. No test opens real network.
  */
+import fs from "node:fs/promises";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   assistantText,
@@ -22,26 +29,47 @@ import {
   compactionEnd,
   toolCall,
 } from "@prismshadow/penguin-core";
-import type { ApproveFn, OmniMessage, TextPayload } from "@prismshadow/penguin-core";
+import type { ApproveFn, OmniMessage } from "@prismshadow/penguin-core";
 import type { FeishuBindingResponse, FeishuTestResponse } from "../src/api/types.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
+import { INLINE_IMAGE_MAX_BYTES } from "../src/services/attachment-limits.js";
 import {
   MESSAGING_APPROVAL_NOTICE,
   MESSAGING_MAX_LINE_MESSAGES,
+  MESSAGING_OUTBOUND_FILE_MAX_COUNT,
+  MESSAGING_OUTBOUND_IMAGE_MAX_BYTES,
   MESSAGING_TEST_MESSAGE,
   MESSAGING_TEXT_CHUNK_CHARS,
   MESSAGING_TEXT_ONLY_NOTICE,
   MessagingBridge,
   chunkMessagingText,
+  messagingFileFailedNotice,
+  messagingFilePermissionNotice,
+  messagingFileTooLargeNotice,
+  messagingFilesMissingNotice,
+  messagingFilesSkippedNotice,
+  messagingImageBudgetNotice,
+  messagingImageFailedNotice,
+  messagingImagePermissionNotice,
+  messagingImageTooLargeNotice,
   splitReplyLines,
 } from "../src/runtime/messaging/bridge.js";
 import type { MessagingTaskRunner } from "../src/runtime/messaging/bridge.js";
 import { FeishuConnector } from "../src/runtime/messaging/feishu-connector.js";
+import {
+  MessagingPermissionError,
+  collectUnderCap,
+  imageMimeOfName,
+  isImageFileName,
+  sniffImageMime,
+} from "../src/runtime/messaging/media.js";
+import { replyFileMentions } from "../src/runtime/messaging/reply-files.js";
 import type {
   FeishuApiClient,
   FeishuCredentials,
   FeishuEventHandlers,
+  FeishuImageData,
   FeishuInboundEvent,
   FeishuSdk,
 } from "../src/runtime/messaging/feishu-sdk.js";
@@ -62,10 +90,41 @@ interface SentText {
   text: string;
 }
 
+/**
+ * One picture or attachment that reached the channel. Byte count rather than the bytes:
+ * what the assertions care about is which file went where, in what order, and that the
+ * caps let it through.
+ */
+interface SentMedia {
+  kind: "image" | "file";
+  target: string;
+  fileName: string;
+  bytes: number;
+}
+
+/** Everything one client sent, in order — the ordering of text against media is the point. */
+type Sent = SentText | SentMedia;
+
+/** One image download the bridge asked for, cap included (the fake stands in for the SDK adapter). */
+interface ImageFetch {
+  messageId: string;
+  fileKey: string;
+  maxBytes: number;
+}
+
+/** The bytes as a stream, so the fakes read them through the real capped reader. */
+async function* oneChunk(bytes: Buffer): AsyncGenerator<Uint8Array> {
+  yield bytes;
+}
+
+/** A PNG's magic bytes plus a little payload: enough for a data URL to be asserted verbatim. */
+const IMAGE_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x01, 0x02, 0x03]);
+
 class FakeClient implements FeishuApiClient {
-  readonly sends: SentText[] = [];
+  readonly sends: Sent[] = [];
   /** When each send was recorded, parallel to `sends`: what the pacing test measures. */
   readonly sentAt: number[] = [];
+  readonly imageFetches: ImageFetch[] = [];
   checks = 0;
   constructor(
     readonly creds: FeishuCredentials,
@@ -96,6 +155,34 @@ class FakeClient implements FeishuApiClient {
     // A stalled endpoint: the TCP connection is accepted and the answer never comes.
     if (this.sdk.stallBotOpenId) return new Promise<never>(() => {});
     return this.sdk.botOpenId;
+  }
+  async fetchMessageImage(args: ImageFetch): Promise<FeishuImageData> {
+    this.imageFetches.push(args);
+    if (this.sdk.failImageFetchWith !== null) throw this.sdk.failImageFetchWith;
+    if (this.sdk.failImageFetch !== null) throw new Error(this.sdk.failImageFetch);
+    // The cap is enforced through the REAL machinery the adapter uses, not a hand-written
+    // imitation of it: a fake free to throw its own error shape is a fake free to disagree
+    // with production about which failure this is (it did, once).
+    const data = await collectUnderCap(oneChunk(this.sdk.imageBytes), args.maxBytes, "The image");
+    return { data, mimeType: "image/png" };
+  }
+  async sendImage(chatId: string, file: { fileName: string; data: Buffer }): Promise<void> {
+    this.sdk.failMediaSendOnce();
+    this.sends.push({
+      kind: "image",
+      target: chatId,
+      fileName: file.fileName,
+      bytes: file.data.length,
+    });
+  }
+  async sendFile(chatId: string, file: { fileName: string; data: Buffer }): Promise<void> {
+    this.sdk.failMediaSendOnce();
+    this.sends.push({
+      kind: "file",
+      target: chatId,
+      fileName: file.fileName,
+      bytes: file.data.length,
+    });
   }
 }
 
@@ -147,6 +234,24 @@ class FakeSdk implements FeishuSdk {
   createClientGate: Promise<void> | null = null;
   /** How many createClient calls the gate has held. */
   gated = 0;
+  /** Non-null makes fetchMessageImage throw with this message (a dead image_key, a network fault). */
+  failImageFetch: string | null = null;
+  /** Non-null makes it throw THIS — for the failure shapes that carry data, not just text. */
+  failImageFetchWith: Error | null = null;
+  /** What an image download resolves to; oversize bytes exercise the cap. */
+  imageBytes: Buffer = IMAGE_BYTES;
+  /** Fails this many upcoming outbound image/file sends (the channel refusing an upload). */
+  failMediaSends = 0;
+  /** Non-null makes EVERY media send throw this — for the failure shapes that carry data. */
+  failMediaSendWith: Error | null = null;
+  /** Consumes one scheduled media-send failure, throwing when there is one. */
+  failMediaSendOnce(): void {
+    if (this.failMediaSendWith !== null) throw this.failMediaSendWith;
+    if (this.failMediaSends > 0) {
+      this.failMediaSends -= 1;
+      throw new Error("upload rejected");
+    }
+  }
   async createClient(creds: FeishuCredentials): Promise<FeishuApiClient> {
     if (this.createClientGate !== null) {
       this.gated++;
@@ -162,13 +267,21 @@ class FakeSdk implements FeishuSdk {
     handlers.onReady?.();
     return conn;
   }
-  /** All texts sent through any client, in order. */
-  allSends(): SentText[] {
+  /** Everything sent through any client, in order (texts and media interleaved). */
+  allSends(): Sent[] {
     return this.clients.flatMap((c) => c.sends);
   }
   /** Their timestamps, in the same order. */
   allSentAt(): number[] {
     return this.clients.flatMap((c) => c.sentAt);
+  }
+  /** Just the text messages — for the assertions that read `.text`. */
+  allTexts(): SentText[] {
+    return this.allSends().filter((s): s is SentText => s.kind === "send" || s.kind === "reply");
+  }
+  /** Every image download asked of any client, in order. */
+  allImageFetches(): ImageFetch[] {
+    return this.clients.flatMap((c) => c.imageFetches);
   }
   lastConnection(): FakeConnection {
     const conn = this.connections.at(-1);
@@ -177,10 +290,22 @@ class FakeSdk implements FeishuSdk {
   }
 }
 
+/**
+ * One input part as the fake Sessions record it. Deliberately a loose shape rather than
+ * core's payload union: a run's input mixes composer text with `image_url` parts, and the
+ * assertions read one field of whichever arrived.
+ */
+interface InputPayload {
+  type?: string;
+  role?: string;
+  text?: string;
+  image_url?: string;
+}
+
 /** Fake Session: records each run's input payloads and replies with a fixed assistant text. */
 function echoFakeSession(
   sessionId: string,
-  runs: TextPayload[][],
+  runs: InputPayload[][],
   reply = "Reply text",
 ): RuntimeSession {
   return {
@@ -191,7 +316,7 @@ function echoFakeSession(
     steer: () => false,
     skipReconnectWait: () => false,
     async *run(input: OmniMessage[]) {
-      runs.push(input.map((m) => m.payload as TextPayload));
+      runs.push(input.map((m) => m.payload as InputPayload));
       yield assistantText(reply);
     },
     async *compact() {},
@@ -375,12 +500,119 @@ describe("splitReplyLines", () => {
   });
 });
 
+describe("messaging media helpers", () => {
+  it("classifies file names by extension, case-insensitively, and leaves SVG a file", () => {
+    expect(imageMimeOfName("chart.PNG")).toBe("image/png");
+    expect(imageMimeOfName("out/photo.jpeg")).toBe("image/jpeg");
+    expect(isImageFileName("a.webp")).toBe(true);
+    // Scriptable and unrenderable in both clients: it travels as an attachment.
+    expect(isImageFileName("diagram.svg")).toBe(false);
+    expect(isImageFileName("report.pdf")).toBe(false);
+    expect(isImageFileName("Makefile")).toBe(false);
+  });
+
+  it("reads the type out of the bytes, which beats whatever a header claims", () => {
+    expect(sniffImageMime(IMAGE_BYTES)).toBe("image/png");
+    expect(sniffImageMime(Buffer.from([0xff, 0xd8, 0xff, 0xe0]))).toBe("image/jpeg");
+    expect(sniffImageMime(Buffer.from("GIF89a"))).toBe("image/gif");
+    // RIFF, a four-byte size field, then WEBP: the tag is split, so the sniff must skip it.
+    const webp = Buffer.concat([Buffer.from("RIFF"), Buffer.alloc(4), Buffer.from("WEBPVP8 ")]);
+    expect(sniffImageMime(webp)).toBe("image/webp");
+    expect(sniffImageMime(Buffer.from("not an image"))).toBeNull();
+  });
+
+  it("stops a download at the byte that crosses the cap instead of buffering the rest", async () => {
+    const chunks = async function* (sizes: number[]): AsyncGenerator<Uint8Array> {
+      for (const size of sizes) yield Buffer.alloc(size, 0x7a);
+    };
+    expect((await collectUnderCap(chunks([4, 4, 2]), 10, "The image")).length).toBe(10);
+    // The third chunk crosses: it is refused rather than collected and measured afterwards.
+    await expect(collectUnderCap(chunks([4, 4, 4]), 10, "The image")).rejects.toThrow(
+      /The image is larger than the/,
+    );
+  });
+
+  it("lets a transfer that dies mid-stream fail, rather than returning the half it got", async () => {
+    // The shape a real download fails in: the connection drops after some of the file has
+    // already been buffered. Half an image handed on as a whole one would reach the model
+    // as a corrupt picture and be answered anyway.
+    const dies = async function* (): AsyncGenerator<Uint8Array> {
+      yield Buffer.alloc(4, 0x7a);
+      yield Buffer.alloc(4, 0x7a);
+      throw new Error("socket hang up");
+    };
+    await expect(collectUnderCap(dies(), 1024, "The image")).rejects.toThrow("socket hang up");
+  });
+});
+
+describe("replyFileMentions", () => {
+  const WS = "/data/ws";
+  /** Just the deliverable half: the resolvable mentions, in order. */
+  const paths = (text: string, workspace = WS): (string | null)[] =>
+    replyFileMentions(text, workspace)
+      .map((m) => m.rel)
+      .filter((rel) => rel !== null);
+
+  // The regression that matters: this rule used to read inline-code spans only, which is
+  // what the Web App's file card does. Applied to a chat it delivered almost nothing — a
+  // model that writes a filename in a sentence, which is most of them, named no file at
+  // all. Each line below is a way a reply really does hand a file over.
+  it("finds a mentioned path however the reply happens to phrase it", () => {
+    const cases: Array<[string, string[]]> = [
+      ["Done — the chart is `chart.png`.", ["chart.png"]],
+      ["Saved to `/data/ws/out/chart.png`.", ["out/chart.png"]],
+      ["I've written the chart to chart.png for you.", ["chart.png"]],
+      ["Saved it at /data/ws/out/chart.png — take a look.", ["out/chart.png"]],
+      ["The report is report.md.", ["report.md"]],
+      ["图表已生成：/data/ws/chart.png。", ["chart.png"]],
+      ["已经把图表保存为 chart.png，请查收。", ["chart.png"]],
+      ["Wrote **chart.png** to the workspace.", ["chart.png"]],
+      ["See [the chart](chart.png).", ["chart.png"]],
+      ["The chart (chart.png) is ready.", ["chart.png"]],
+      ['Saved as "chart.png".', ["chart.png"]],
+      ["- chart.png\n- report.md", ["chart.png", "report.md"]],
+      // A leading dot is part of the path, not prose punctuation: stripping it turned
+      // `./chart.png` into an absolute path outside the Workspace and `.eslintrc.json`
+      // into a file that is not there.
+      ["Saved to ./chart.png for you.", ["chart.png"]],
+      ["See ./out/chart.png", ["out/chart.png"]],
+      ["Config is in .eslintrc.json now.", [".eslintrc.json"]],
+    ];
+    for (const [text, expected] of cases) {
+      expect(paths(text), text).toEqual(expected);
+    }
+  });
+
+  it("still refuses what is not a Workspace file, which is what keeps the loose rule safe", () => {
+    for (const text of [
+      "See https://example.com/logo.png for the original.",
+      "Check www.example.com/x.png.",
+      "Upgraded to v1.2 and 3.14 today.",
+      // Escapes are refused here as well as by the file service behind it.
+      "Read ../../etc/passwd earlier.",
+      "Compared against /etc/hostname just now.",
+      "Config lives at ~/.penguinrc.toml.",
+    ]) {
+      expect(paths(text), text).toEqual([]);
+    }
+  });
+
+  it("reads a Windows Workspace's path in either spelling, and dedupes on the result", () => {
+    // core spells model-visible paths with "/" while path.join produces "\\"; the same file
+    // named both ways is one file, and must not be sent twice.
+    expect(paths("Wrote C:\\ws\\out\\chart.png just now.", "C:\\ws")).toEqual(["out/chart.png"]);
+    expect(paths("Wrote C:/ws/out/chart.png, i.e. C:\\ws\\out\\chart.png.", "C:\\ws")).toEqual([
+      "out/chart.png",
+    ]);
+  });
+});
+
 describe("messaging binding routes and bridge", () => {
   let t: TestApp;
   let api: ReturnType<typeof apiClient>;
   let fake: FakeSdk;
   let projectId: string;
-  let runs: TextPayload[][];
+  let runs: InputPayload[][];
 
   /** Save credentials, then flip the toggle on — the two-step flow the flow tests need. */
   const bindEnabled = async (sid: string, body: Record<string, unknown> = PUT_BODY) => {
@@ -397,6 +629,7 @@ describe("messaging binding routes and bridge", () => {
     new MessagingBridge({
       repo: t.deps.messagingRepo,
       sessions: t.deps.sessionsRepo,
+      files: t.deps.workspaceFiles,
       channels: t.deps.channels,
       runner,
       connectors: [new FeishuConnector(fake)],
@@ -780,16 +1013,16 @@ describe("messaging binding routes and bridge", () => {
     // the chat follows the run instead of receiving it as one block at the end.
     await waitFor(() => fake.allSends().length === 2);
     expect(t.deps.manager.statusOf(SID2)).toBe("running");
-    expect(fake.allSends().map((s) => s.text)).toEqual(["working on it", "still going"]);
+    expect(fake.allTexts().map((s) => s.text)).toEqual(["working on it", "still going"]);
     release();
     await waitFor(() => fake.allSends().length === 3);
     // Order preserved, and no message carries another one's text: nothing was joined.
-    expect(fake.allSends().map((s) => s.text)).toEqual([
+    expect(fake.allTexts().map((s) => s.text)).toEqual([
       "working on it",
       "still going",
       "here is the answer",
     ]);
-    expect(fake.allSends().every((s) => !s.text.includes("\n\n"))).toBe(true);
+    expect(fake.allTexts().every((s) => !s.text.includes("\n\n"))).toBe(true);
     expect(fake.allSends().every((s) => s.kind === "send" && s.target === "oc_chat_5")).toBe(true);
   });
 
@@ -916,7 +1149,7 @@ describe("messaging binding routes and bridge", () => {
     await waitFor(() => fake.allSends().length === 3);
     // Splitting happens first, chunking after: the long line becomes two messages, and the
     // pieces reassemble into exactly the line that was sent.
-    expect(fake.allSends().map((s) => s.text)).toEqual([
+    expect(fake.allTexts().map((s) => s.text)).toEqual([
       "head",
       long.slice(0, MESSAGING_TEXT_CHUNK_CHARS),
       long.slice(MESSAGING_TEXT_CHUNK_CHARS),
@@ -928,7 +1161,7 @@ describe("messaging binding routes and bridge", () => {
     await bindReplying(lines.join("\n"), { appId: "cli_lines_cap", linePerMessage: true });
     await messageBot("oc_cap");
     await waitFor(() => fake.allSends().length === MESSAGING_MAX_LINE_MESSAGES);
-    const texts = fake.allSends().map((s) => s.text);
+    const texts = fake.allTexts().map((s) => s.text);
     expect(texts.slice(0, -1)).toEqual(lines.slice(0, MESSAGING_MAX_LINE_MESSAGES - 1));
     // The tail rides the last message: the reply reaches the chat entire either way.
     expect(texts.at(-1)).toBe(lines.slice(MESSAGING_MAX_LINE_MESSAGES - 1).join("\n"));
@@ -943,7 +1176,7 @@ describe("messaging binding routes and bridge", () => {
     fake.failSendAt = 3;
     await messageBot("oc_429");
     await waitFor(() => fake.allSends().length === 5);
-    expect(fake.allSends().map((s) => s.text)).toEqual(["l0", "l1", "l3", "l4", "l5"]);
+    expect(fake.allTexts().map((s) => s.text)).toEqual(["l0", "l1", "l3", "l4", "l5"]);
     // The loss is recorded rather than swallowed (one row: the recorder dedupes a repeat of
     // the same code within its window).
     const errors = t.deps.db
@@ -991,7 +1224,7 @@ describe("messaging binding routes and bridge", () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
     release();
     await waitFor(() => fake.allSends().length === 4);
-    expect(fake.allSends().map((s) => s.text)).toEqual([
+    expect(fake.allTexts().map((s) => s.text)).toEqual([
       "Line one.",
       "  Line two.",
       "Line three.",
@@ -1003,12 +1236,13 @@ describe("messaging binding routes and bridge", () => {
 
   it("the notices are not replies: linePerMessage never reaches them", async () => {
     await bindReplying(SPOKEN, { appId: "cli_lines_notice", linePerMessage: true });
+    // A sticker: still out of scope, so it answers with the notice rather than running.
     await fake.lastConnection().fire({
       chatId: "oc_notice",
       chatType: "p2p",
       messageId: "om_notice",
-      messageType: "image",
-      content: JSON.stringify({ image_key: "img_1" }),
+      messageType: "sticker",
+      content: JSON.stringify({}),
     });
     await waitFor(() => fake.allSends().length > 0);
     // One send carrying the notice whole. The notices are single-line by construction, so
@@ -1068,17 +1302,19 @@ describe("messaging binding routes and bridge", () => {
       content: JSON.stringify({ text: "summarize" }),
     });
     await waitFor(() => t.deps.manager.statusOf(SID2) === "idle");
-    expect(fake.allSends().map((s) => s.text)).toEqual(["the actual answer"]);
+    expect(fake.allTexts().map((s) => s.text)).toEqual(["the actual answer"]);
   });
 
-  it("non-text messages get the bilingual text-only reply and start no task", async () => {
+  it("a message that is neither text nor image gets the bilingual notice and starts no task", async () => {
     await bindEnabled(SID);
+    // A file: inbound documents are deliberately out of scope, so they keep answering with
+    // the notice — as do stickers, voice and video.
     await fake.lastConnection().fire({
       chatId: "oc_chat_1",
       chatType: "p2p",
       messageId: "om_2",
-      messageType: "image",
-      content: JSON.stringify({ image_key: "img_1" }),
+      messageType: "file",
+      content: JSON.stringify({ file_key: "file_1", file_name: "notes.pdf" }),
     });
     await waitFor(() => fake.allSends().length > 0);
     expect(fake.allSends()).toContainEqual({
@@ -1089,6 +1325,166 @@ describe("messaging binding routes and bridge", () => {
     expect(runs).toHaveLength(0);
     // Even a rejected type teaches the bridge where the user is.
     expect(t.deps.messagingRepo.find(SID, "feishu")?.lastChatId).toBe("oc_chat_1");
+  });
+
+  // —— Inbound images ————————————————————————————————————————————————————————
+  // A picture pasted into the chat has to reach the model as the web composer's own input
+  // shape: a base64 data URL in an `image_url` part. The download is lazy (a redelivery is
+  // dropped before it happens) and capped by the server's inline-image ceiling.
+
+  it("an inbound image becomes an image_url part carrying the downloaded bytes", async () => {
+    await bindEnabled(SID);
+    await fake.lastConnection().fire({
+      chatId: "oc_chat_1",
+      chatType: "p2p",
+      messageId: "om_img_1",
+      messageType: "image",
+      content: JSON.stringify({ image_key: "img_v2_abc" }),
+    });
+    await waitFor(() => runs.length === 1);
+    // Image only: no accompanying text is invented — a Feishu image message has no caption.
+    expect(runs[0]).toHaveLength(1);
+    const part = runs[0]![0]!;
+    expect(part.type).toBe("image_url");
+    expect(part.role).toBe("user");
+    expect(part.image_url).toBe(`data:image/png;base64,${IMAGE_BYTES.toString("base64")}`);
+    // Downloaded from the message that carried it, under the shared inline-image ceiling.
+    expect(fake.allImageFetches()).toEqual([
+      { messageId: "om_img_1", fileKey: "img_v2_abc", maxBytes: INLINE_IMAGE_MAX_BYTES },
+    ]);
+    // Nothing about the picture is announced back to the chat; the reply mirrors as usual.
+    await waitFor(() => fake.allSends().length > 0);
+    expect(fake.allTexts().map((s) => s.text)).toEqual(["Reply text"]);
+  });
+
+  it("an image the channel will not hand over reports the channel's OWN reason", async () => {
+    await bindEnabled(SID);
+    // The case that actually shipped broken: a Feishu app without the resource-read scope
+    // refuses every image. The chat has to say THAT, not "too large or the download failed"
+    // — one of those is a scope to go and grant, the other is unactionable.
+    fake.failImageFetch = "Access denied. app has no permission to access resource (code 99991672)";
+    await fake.lastConnection().fire({
+      chatId: "oc_chat_1",
+      chatType: "p2p",
+      messageId: "om_img_2",
+      messageType: "image",
+      content: JSON.stringify({ image_key: "img_v2_gone" }),
+    });
+    await waitFor(() => fake.allSends().length > 0);
+    const notice = fake.allTexts().at(-1)!.text;
+    expect(notice).toBe(
+      messagingImageFailedNotice(
+        "Access denied. app has no permission to access resource (code 99991672)",
+      ),
+    );
+    expect(notice).toContain("no permission to access resource");
+    // A failure is somebody's fault and belongs in the error log, not only in a chat
+    // bubble — with the channel's reason, so it is diagnosable from the dashboard.
+    const recorded = imageFetchErrors();
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0]).toContain("no permission to access resource");
+    expect(runs).toHaveLength(0);
+  });
+
+  it("an image over the inline-image cap says so, with the limit, and is not an error record", async () => {
+    await bindEnabled(SID);
+    // One byte past the ceiling: the cap refuses it, and the user fixes that by sending
+    // something smaller — a different notice from a failure, and nobody's fault.
+    fake.imageBytes = Buffer.alloc(INLINE_IMAGE_MAX_BYTES + 1, 0x41);
+    await fake.lastConnection().fire({
+      chatId: "oc_chat_1",
+      chatType: "p2p",
+      messageId: "om_img_3",
+      messageType: "image",
+      content: JSON.stringify({ image_key: "img_v2_huge" }),
+    });
+    await waitFor(() => fake.allSends().length > 0);
+    expect(fake.allTexts().at(-1)!.text).toBe(messagingImageTooLargeNotice());
+    expect(messagingImageTooLargeNotice()).toContain("20MB");
+    // Nobody's fault: the chat notice is the whole report, and the error log stays clean.
+    expect(imageFetchErrors()).toHaveLength(0);
+    expect(runs).toHaveLength(0);
+  });
+
+  it("an image the app has no permission to download says which scope to grant, and where", async () => {
+    await bindEnabled(SID);
+    // The same live failure as the upload side, inbound: receiving a message and reading
+    // the files in it are separate permissions on Feishu, so an app can take the message
+    // and be refused the picture. The scope name and the console link are the whole fix.
+    fake.failImageFetchWith = new MessagingPermissionError(
+      ["im:resource"],
+      "https://open.feishu.cn/app/cli_x/auth?q=im:resource",
+      "Access denied (code 99991672)",
+    );
+    await fake.lastConnection().fire({
+      chatId: "oc_chat_1",
+      chatType: "p2p",
+      messageId: "om_img_scope",
+      messageType: "image",
+      content: JSON.stringify({ image_key: "img_v2_denied" }),
+    });
+    await waitFor(() => fake.allSends().length > 0);
+    expect(fake.allTexts().at(-1)!.text).toBe(
+      messagingImagePermissionNotice(
+        ["im:resource"],
+        "https://open.feishu.cn/app/cli_x/auth?q=im:resource",
+      ),
+    );
+    // Still an error record: somebody has to grant it, and the dashboard is where that is
+    // noticed when nobody is watching the chat.
+    expect(imageFetchErrors()).toHaveLength(1);
+    expect(runs).toHaveLength(0);
+  });
+
+  it("bounds inbound imagery per binding, refusing the overflow with its own notice", async () => {
+    // Per image the ceiling is the inline-image limit; in aggregate there was nothing. Every
+    // accepted image is written into the conversation as base64 and read back whole on every
+    // history page and every resume, so a pile of them is a Session that never recovers —
+    // and this path has no authentication at all.
+    await boot({ messagingInboundImageBudgetBytes: IMAGE_BYTES.length * 2 });
+    await bindEnabled(SID);
+    const sendImage = async (n: number) => {
+      await fake.lastConnection().fire({
+        chatId: "oc_chat_1",
+        chatType: "p2p",
+        messageId: `om_budget_${n}`,
+        messageType: "image",
+        content: JSON.stringify({ image_key: `img_v2_${n}` }),
+      });
+    };
+    await sendImage(1);
+    await waitFor(() => runs.length === 1);
+    await sendImage(2);
+    await waitFor(() => runs.length === 2);
+    // The budget is spent: the third is refused, and refused BEFORE the transfer — the
+    // download that would blow the window never happens.
+    await sendImage(3);
+    await waitFor(() => fake.allSends().some((x) => x.kind === "send"));
+    await settle(80);
+    expect(fake.allImageFetches()).toHaveLength(2);
+    expect(runs).toHaveLength(2);
+    expect(fake.allTexts().at(-1)!.text).toBe(messagingImageBudgetNotice());
+    // And it is NOT the size notice: nothing is wrong with the picture, there have just
+    // been too many, and the fix is to wait rather than to send a smaller one.
+    expect(messagingImageBudgetNotice()).not.toBe(messagingImageTooLargeNotice());
+  });
+
+  it("a redelivered image is dropped before anything is downloaded", async () => {
+    await bindEnabled(SID);
+    const image = {
+      chatId: "oc_chat_1",
+      chatType: "p2p",
+      messageId: "om_img_replay",
+      messageType: "image",
+      content: JSON.stringify({ image_key: "img_v2_replay" }),
+    };
+    await fake.lastConnection().fire(image);
+    await waitFor(() => runs.length === 1);
+    await fake.lastConnection().fire(image);
+    await settle(80);
+    // The whole point of a lazy handle: the replay costs no image transfer at all.
+    expect(fake.allImageFetches()).toHaveLength(1);
+    expect(runs).toHaveLength(1);
   });
 
   it("an approval_request sends the waiting-for-approval notice", async () => {
@@ -1105,7 +1501,7 @@ describe("messaging binding routes and bridge", () => {
       content: JSON.stringify({ text: "do something risky" }),
     });
     await waitFor(() =>
-      fake.allSends().some((s) => s.text === MESSAGING_APPROVAL_NOTICE && s.target === "oc_chat_2"),
+      fake.allTexts().some((s) => s.text === MESSAGING_APPROVAL_NOTICE && s.target === "oc_chat_2"),
     );
     t.deps.manager.decideApproval(SID2, "tc-feishu", "allow");
     await waitFor(() => t.deps.manager.statusOf(SID2) === "idle");
@@ -1259,10 +1655,10 @@ describe("messaging binding routes and bridge", () => {
       chatId: "oc_chat_1",
       chatType: "p2p",
       messageId: "om_sticker",
-      messageType: "image",
-      content: JSON.stringify({ image_key: "img_1" }),
+      messageType: "sticker",
+      content: JSON.stringify({}),
     });
-    await waitFor(() => fake.allSends().some((x) => x.text === MESSAGING_TEXT_ONLY_NOTICE));
+    await waitFor(() => fake.allTexts().some((x) => x.text === MESSAGING_TEXT_ONLY_NOTICE));
     const status = await statusOf(SID);
     // The question this line answers is whether the channel is delivering anything, and a
     // sticker answers it. Stamping only what starts a Task would report a mute bot for a
@@ -1361,7 +1757,7 @@ describe("messaging binding routes and bridge", () => {
       content: JSON.stringify({ text: "again" }),
     });
     await waitFor(() => runs.length === 2);
-    await waitFor(() => fake.allSends().some((x) => x.text === "Reply text"));
+    await waitFor(() => fake.allTexts().some((x) => x.text === "Reply text"));
 
     // The record stands, whole. Clearing it on success would erase every failure that comes
     // and goes — a send right revoked for a minute, a rate limit — as soon as the next
@@ -1459,7 +1855,7 @@ describe("messaging binding routes and bridge", () => {
     await waitFor(() => runs.length === 1);
     expect(runs[0]![0]!.text).toBe("帮我看看 build 好了没 🚀");
     // The run's own reply mirrors back; what must NOT appear is the no-words notice.
-    expect(fake.allSends().some((x) => x.text === MESSAGING_TEXT_ONLY_NOTICE)).toBe(false);
+    expect(fake.allTexts().some((x) => x.text === MESSAGING_TEXT_ONLY_NOTICE)).toBe(false);
   });
 
   it("a message that is nothing but a mention starts no Task", async () => {
@@ -1474,7 +1870,7 @@ describe("messaging binding routes and bridge", () => {
     // Nothing but the mention: no words to run a Task on, so it takes the same branch a
     // sticker does rather than spending a turn on a bare placeholder.
     await waitFor(() => fake.allSends().length === 1);
-    expect(fake.allSends()[0]!.text).toBe(MESSAGING_TEXT_ONLY_NOTICE);
+    expect(fake.allTexts()[0]!.text).toBe(MESSAGING_TEXT_ONLY_NOTICE);
     expect(runs).toHaveLength(0);
   });
 
@@ -1558,6 +1954,316 @@ describe("messaging binding routes and bridge", () => {
     expect(runs[0]![0]!.text).toBe("@PenguinHarness status?");
   });
 
+  // —— Outbound files ————————————————————————————————————————————————————————
+  // When a run ends, the files its reply MENTIONED follow the text into the chat — the Web
+  // App's file card rule, applied to the chat: inline-code paths that resolve inside the
+  // Workspace and actually exist. Containment and existence come from the same service the
+  // Files panel reads through, so an escape is refused there, not by a second copy of the
+  // rules living in the bridge.
+
+  /** A real Workspace directory for the second Session (WorkspaceFilesService does real IO). */
+  const makeWorkspace = (): Promise<string> => fs.mkdtemp(path.join(t.root, "ws-"));
+
+  /** Binds a second Session over that Workspace, replying with a fixed text. */
+  const bindWithWorkspace = async (
+    workspace: string,
+    reply: string,
+    appId: string,
+  ): Promise<void> => {
+    const row = sessionRowOf(SID2, projectId);
+    row.workspace = workspace;
+    t.deps.sessionsRepo.insert(row);
+    t.deps.manager.adopt(row, echoFakeSession(SID2, runs, reply));
+    await bindEnabled(SID2, { ...PUT_BODY, appId });
+  };
+
+  /**
+   * Messages of the image-download failures recorded for this app. Read straight off the
+   * table: the bridge records with no Project (it knows a Session id), which is exactly the
+   * shape ErrorsRepo's project-scoped queries filter out.
+   */
+  const imageFetchErrors = (): string[] =>
+    t.deps.db
+      .prepare("SELECT message FROM error_records WHERE code = 'messaging_image_fetch_failed'")
+      .all()
+      .map((r) => r.message as string);
+
+  let asks = 0;
+  /** Message the bound Session from the chat, and wait for the run to start AND finish. */
+  const askAndSettle = async (): Promise<void> => {
+    const before = runs.length;
+    asks += 1;
+    await fake.lastConnection().fire({
+      chatId: "oc_chat_files",
+      chatType: "p2p",
+      messageId: `om_files_${asks}`,
+      messageType: "text",
+      content: JSON.stringify({ text: "do the thing" }),
+    });
+    await waitFor(() => runs.length > before);
+    await waitFor(() => t.deps.manager.statusOf(SID2) === "idle");
+  };
+
+  it("sends the files the reply mentions, after its text, pictures as pictures", async () => {
+    const ws = await makeWorkspace();
+    await fs.mkdir(path.join(ws, "out"), { recursive: true });
+    await fs.writeFile(path.join(ws, "out/chart.png"), IMAGE_BYTES);
+    await fs.writeFile(path.join(ws, "notes.md"), "hello");
+    await bindWithWorkspace(
+      ws,
+      "Done — the chart is `out/chart.png` and the write-up is `notes.md`.",
+      "cli_files",
+    );
+    await askAndSettle();
+    await waitFor(() => fake.allSends().length === 3);
+    // Text first, then the files in the order the reply named them; a .png rides as an
+    // image so it renders, everything else as an attachment.
+    expect(fake.allSends()).toEqual([
+      {
+        kind: "send",
+        target: "oc_chat_files",
+        text: "Done — the chart is `out/chart.png` and the write-up is `notes.md`.",
+      },
+      { kind: "image", target: "oc_chat_files", fileName: "chart.png", bytes: IMAGE_BYTES.length },
+      { kind: "file", target: "oc_chat_files", fileName: "notes.md", bytes: 5 },
+    ]);
+  });
+
+  it("delivers a file the reply names in a plain sentence, with no inline code", async () => {
+    // The end-to-end shape of the bug a user hit: everything downstream of extraction was
+    // right, and a reply phrased the way models actually phrase it produced nothing.
+    const ws = await makeWorkspace();
+    await fs.writeFile(path.join(ws, "chart.png"), IMAGE_BYTES);
+    await bindWithWorkspace(ws, "已经把图表保存为 chart.png，请查收。", "cli_bare_path");
+    await askAndSettle();
+    await waitFor(() => fake.allSends().length === 2);
+    expect(fake.allSends()[1]).toEqual({
+      kind: "image",
+      target: "oc_chat_files",
+      fileName: "chart.png",
+      bytes: IMAGE_BYTES.length,
+    });
+  });
+
+  it("mentions the same file twice and sends it once, however it is spelled", async () => {
+    const ws = await makeWorkspace();
+    await fs.writeFile(path.join(ws, "report.csv"), "a,b\n");
+    // Once relative, once absolute: one file, so one send — deduplication is keyed on the
+    // normalized path, not on the spelling.
+    await bindWithWorkspace(
+      ws,
+      `See \`report.csv\` — full path \`${ws}/report.csv\`.`,
+      "cli_files_dupe",
+    );
+    await askAndSettle();
+    await waitFor(() => fake.allSends().length === 2);
+    expect(fake.allSends().filter((s): s is SentMedia => s.kind === "file")).toEqual([
+      { kind: "file", target: "oc_chat_files", fileName: "report.csv", bytes: 4 },
+    ]);
+  });
+
+  it("names a mentioned path that does not exist rather than dropping it in silence", async () => {
+    await bindWithWorkspace(
+      await makeWorkspace(),
+      "I would have written `out/missing.png`, but the run failed.",
+      "cli_ghost",
+    );
+    await askAndSettle();
+    await waitFor(() => fake.allSends().length === 2);
+    await settle(80);
+    // Existence is still the rule and nothing exists, so no file goes. What changed is
+    // that the chat is told: a name in the reply that never arrives, with nothing anywhere
+    // to say why, is how this feature reads as broken.
+    expect(fake.allSends().map((s) => s.kind)).toEqual(["send", "send"]);
+    expect(fake.allTexts().at(-1)!.text).toBe(messagingFilesMissingNotice(["out/missing.png"]));
+  });
+
+  it("says nothing at all about a reply that named no file", async () => {
+    // The ordinary reply. The notice above must not become a line under every answer.
+    await bindWithWorkspace(await makeWorkspace(), "All done, nothing to hand over.", "cli_quiet");
+    await askAndSettle();
+    await settle(80);
+    expect(fake.allSends().map((s) => s.kind)).toEqual(["send"]);
+  });
+
+  it("sends a file the run wrote and stays silent about one that was already there", async () => {
+    const ws = await makeWorkspace();
+    await fs.writeFile(path.join(ws, "secrets.json"), "{}");
+    await fs.writeFile(path.join(ws, "chart.png"), IMAGE_BYTES);
+    // The file the run did not write is dated well before it started. The mention rule
+    // alone would upload it: the reply is steerable by anyone in the chat, so "what is in
+    // secrets.json?" answered with "I will not paste secrets.json here" would have made
+    // the refusal itself the disclosure.
+    const longAgo = new Date(Date.now() - 3_600_000);
+    await fs.utimes(path.join(ws, "secrets.json"), longAgo, longAgo);
+    await bindWithWorkspace(
+      ws,
+      "I won't paste `secrets.json` here. The chart is `chart.png`.",
+      "cli_fresh",
+    );
+    await askAndSettle();
+    await waitFor(() => fake.allSends().length === 2);
+    await settle(80);
+    // The chart rides along; the pre-existing file is not sent AND not announced — a reply
+    // that mentions a file it read is the ordinary case, and naming every one of those
+    // would bury the notices that matter.
+    expect(fake.allSends()).toEqual([
+      {
+        kind: "send",
+        target: "oc_chat_files",
+        text: "I won't paste `secrets.json` here. The chart is `chart.png`.",
+      },
+      { kind: "image", target: "oc_chat_files", fileName: "chart.png", bytes: IMAGE_BYTES.length },
+    ]);
+  });
+
+  it("refuses a path that leaves the Workspace, by `..` or through a symlink", async () => {
+    const ws = await makeWorkspace();
+    await fs.writeFile(path.join(ws, "..", "outside.txt"), "secret");
+    // A symlink is the case a lexical check alone would miss: the name is inside the
+    // Workspace and only its canonical target leaves. WorkspaceFilesService resolves it.
+    // Creating one needs a privilege Windows does not always grant; without it the link
+    // simply does not exist, and the two lexical escapes still carry the test there.
+    await fs
+      .symlink(path.join(ws, "..", "outside.txt"), path.join(ws, "linked.txt"))
+      .catch(() => undefined);
+    await bindWithWorkspace(
+      ws,
+      "Look at `../outside.txt`, `/etc/hostname` and `linked.txt`.",
+      "cli_escape",
+    );
+    await askAndSettle();
+    await waitFor(() => fake.allSends().length === 2);
+    await settle(80);
+    // Nothing leaves the Workspace; the escapes are reported as what they are here — paths
+    // with no file behind them — in the reply's own spelling, never a normalization of it.
+    expect(fake.allSends().map((s) => s.kind)).toEqual(["send", "send"]);
+    // Both escapes are named, in the reply's own spelling: the lexical one, which never
+    // resolves, and the symlink, which resolves to a name the file service then refuses.
+    // (`/etc/hostname` carries no extension, so it is never a candidate in the first place.)
+    expect(fake.allTexts().at(-1)!.text).toContain("../outside.txt");
+    expect(fake.allTexts().at(-1)!.text).toContain("linked.txt");
+  });
+
+  it("classifies by the file the read reached, not by the name the reply spelled", async () => {
+    const ws = await makeWorkspace();
+    await fs.writeFile(path.join(ws, "report.pdf"), "%PDF-1.4");
+    // The everyday "latest" pattern, entirely inside the Workspace: the mentioned name ends
+    // in .png, the file behind it is a PDF. Classified by the mention, it would go to the
+    // image endpoint under the image ceiling and arrive named report.pdf — which Telegram
+    // refuses outright.
+    const linked = await fs
+      .symlink(path.join(ws, "report.pdf"), path.join(ws, "report.png"))
+      .then(() => true)
+      .catch(() => false);
+    if (!linked) return; // a Windows runner without the create-symlink privilege
+    await bindWithWorkspace(ws, "The latest render is `report.png`.", "cli_symlink");
+    await askAndSettle();
+    await waitFor(() => fake.allSends().length === 2);
+    expect(fake.allSends()[1]).toEqual({
+      kind: "file",
+      target: "oc_chat_files",
+      fileName: "report.pdf",
+      bytes: 8,
+    });
+  });
+
+  it("names an upload the app has no permission for, with the scopes and the grant link", async () => {
+    const ws = await makeWorkspace();
+    await fs.writeFile(path.join(ws, "notes.md"), "hi");
+    await bindWithWorkspace(ws, "Written up in `notes.md`.", "cli_scope");
+    // The live failure: an app that receives messages happily is refused the upload until
+    // a resource scope is granted. That reached `error_records` and nowhere the person in
+    // the chat could look, so the feature simply appeared not to work.
+    fake.failMediaSendWith = new MessagingPermissionError(
+      ["im:resource:upload", "im:resource"],
+      "https://open.feishu.cn/app/cli_scope/auth?q=im:resource:upload",
+      "Access denied (code 99991672)",
+    );
+    await askAndSettle();
+    await waitFor(() => fake.allSends().length === 2);
+    const notice = fake.allTexts().at(-1)!.text;
+    expect(notice).toBe(
+      messagingFilePermissionNotice(
+        "notes.md",
+        ["im:resource:upload", "im:resource"],
+        "https://open.feishu.cn/app/cli_scope/auth?q=im:resource:upload",
+      ),
+    );
+    // Both halves are what the user acts on: what to grant, and where.
+    expect(notice).toContain("im:resource:upload");
+    expect(notice).toContain("https://open.feishu.cn/app/cli_scope/auth");
+  });
+
+  it("caps the batch by count and names how many were left behind", async () => {
+    const names = ["a.md", "b.md", "c.md", "d.md", "e.md", "f.md", "g.md"];
+    const ws = await makeWorkspace();
+    for (const name of names) await fs.writeFile(path.join(ws, name), name);
+    await bindWithWorkspace(ws, `Wrote ${names.map((n) => `\`${n}\``).join(", ")}.`, "cli_many");
+    await askAndSettle();
+    await waitFor(() => fake.allSends().length === MESSAGING_OUTBOUND_FILE_MAX_COUNT + 2);
+    const sent = fake.allSends().filter((s): s is SentMedia => s.kind === "file");
+    expect(sent).toHaveLength(MESSAGING_OUTBOUND_FILE_MAX_COUNT);
+    expect(sent.map((s) => s.fileName)).toEqual(names.slice(0, MESSAGING_OUTBOUND_FILE_MAX_COUNT));
+    // The remainder is counted in the chat — a cap that drops things quietly is a bug.
+    expect(fake.allSends().at(-1)).toEqual({
+      kind: "send",
+      target: "oc_chat_files",
+      text: messagingFilesSkippedNotice(names.length - MESSAGING_OUTBOUND_FILE_MAX_COUNT),
+    });
+  });
+
+  it("names an oversize file instead of sending it, and keeps sending the rest", async () => {
+    const ws = await makeWorkspace();
+    await fs.writeFile(
+      path.join(ws, "huge.png"),
+      Buffer.alloc(MESSAGING_OUTBOUND_IMAGE_MAX_BYTES + 1),
+    );
+    await fs.writeFile(path.join(ws, "small.md"), "ok");
+    await bindWithWorkspace(ws, "Both `huge.png` and `small.md` are ready.", "cli_huge");
+    await askAndSettle();
+    await waitFor(() => fake.allSends().length === 3);
+    expect(fake.allSends()[1]).toEqual({
+      kind: "send",
+      target: "oc_chat_files",
+      text: messagingFileTooLargeNotice("huge.png", MESSAGING_OUTBOUND_IMAGE_MAX_BYTES),
+    });
+    // One refusal does not cancel the batch behind it.
+    expect(fake.allSends()[2]).toEqual({
+      kind: "file",
+      target: "oc_chat_files",
+      fileName: "small.md",
+      bytes: 2,
+    });
+  });
+
+  it("a failing upload is recorded, not thrown, and the next file still goes", async () => {
+    const ws = await makeWorkspace();
+    await fs.writeFile(path.join(ws, "one.md"), "1");
+    await fs.writeFile(path.join(ws, "two.md"), "2");
+    await bindWithWorkspace(ws, "`one.md` and `two.md`.", "cli_upload_fail");
+    // Only the first upload fails: the batch behind it must carry on rather than unwind.
+    fake.failMediaSends = 1;
+    await askAndSettle();
+    await waitFor(() => fake.allSends().length === 3);
+    await settle(80);
+    // The failure is named in the chat, with the channel's own reason: `error_records` is
+    // not somewhere the person in the chat can look, so an upload that failed was the one
+    // drop they could not see at all.
+    expect(fake.allSends()[1]).toEqual({
+      kind: "send",
+      target: "oc_chat_files",
+      text: messagingFileFailedNotice("one.md", "upload rejected"),
+    });
+    // And the batch behind it carries on rather than unwinding.
+    expect(fake.allSends()[2]).toEqual({
+      kind: "file",
+      target: "oc_chat_files",
+      fileName: "two.md",
+      bytes: 1,
+    });
+  });
+
   // —— Inbound deduplication ————————————————————————————————————————————————
   // A channel can hand the bridge the same message twice: a Feishu long connection
   // replays across a reconnect, and any connector that resumes an unconfirmed stream can
@@ -1615,7 +2321,7 @@ describe("messaging binding routes and bridge", () => {
     await waitFor(() => fake.allSends().length === 1);
     await fake.lastConnection().fire(sticker);
     await settle(80);
-    expect(fake.allSends().filter((x) => x.text === MESSAGING_TEXT_ONLY_NOTICE)).toHaveLength(1);
+    expect(fake.allTexts().filter((x) => x.text === MESSAGING_TEXT_ONLY_NOTICE)).toHaveLength(1);
   });
 
   it("bounds what it remembers: an id far enough back is forgotten rather than kept forever", async () => {
@@ -1725,11 +2431,11 @@ describe("messaging binding routes and bridge", () => {
       await successor.start();
       await fake.lastConnection().fire(sticker);
       await settle(80);
-      expect(fake.allSends().filter((x) => x.text === MESSAGING_TEXT_ONLY_NOTICE)).toHaveLength(1);
+      expect(fake.allTexts().filter((x) => x.text === MESSAGING_TEXT_ONLY_NOTICE)).toHaveLength(1);
       // Control: a sticker the binding has never seen still gets its notice.
       await fake.lastConnection().fire({ ...sticker, messageId: "om_sticker_after_restart" });
       await waitFor(
-        () => fake.allSends().filter((x) => x.text === MESSAGING_TEXT_ONLY_NOTICE).length === 2,
+        () => fake.allTexts().filter((x) => x.text === MESSAGING_TEXT_ONLY_NOTICE).length === 2,
       );
     } finally {
       successor.stop();
@@ -1894,7 +2600,7 @@ describe("a redelivered inbound message", () => {
   let t: TestApp;
   let api: ReturnType<typeof apiClient>;
   let fake: FakeSdk;
-  let runs: TextPayload[][];
+  let runs: InputPayload[][];
   let clock: number;
 
   beforeEach(async () => {
