@@ -201,9 +201,11 @@ What that route may do is bounded a second time: it stores the code on the flow 
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | /api/plugins | Plugin index for the Plugins page: `{plugins: PluginIndexEntry[]}` — the merged index of every configured registry (currently the builtin one) |
+| GET | /api/plugins | Plugin index for the Plugins page: `{plugins: PluginIndexEntry[], failures: {source, error}[]}` — the builtin index merged with the published one; `failures` names any source that could not be read |
 
 The index format follows typst/packages' `index.json` schema: a flat array of per-version entries (`name`, `version`, `description`, `authors`, `license`, plus optional `repository` / `homepage` / `keywords` / `categories` / `updatedAt`). Discovery only — installing an entry stays the operator-side `plugins.json` edit; this endpoint never imports plugin code.
+
+Two sources are merged: the index embedded in the server package, and the one published by the index repository — a release asset on a fixed tag (`releases/download/nightly/index.json`), fetched at most every 30 minutes, whose content a six-hourly workflow replaces. A source that cannot be read shortens the listing rather than emptying it and is named in `failures`; within one document, though, a single malformed entry still fails the whole index. `PENGUIN_PLUGIN_INDEX=off` disables the published lookup (no outbound request); any other value replaces its URL.
 
 ### Agents
 

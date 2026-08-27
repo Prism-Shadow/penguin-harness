@@ -3176,6 +3176,12 @@ export interface PluginIndexEntry {
 /** GET /api/plugins: the merged index of every configured registry (currently the builtin one). */
 export interface PluginIndexResponse {
   plugins: PluginIndexEntry[];
+  /**
+   * Sources that could not be read, by `source` and reason. Present and empty when every
+   * source answered. A remote index that is down shortens the listing rather than emptying
+   * it, so the page needs to be able to say so instead of silently showing less.
+   */
+  failures: { source: string; error: string }[];
 }
 
 /** GET /api/plugins/readme — long-form docs for one entry; `readme` is null when none exists. */
