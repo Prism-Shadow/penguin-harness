@@ -76,6 +76,14 @@ import {
   requireString,
 } from "../validate.js";
 import type { AppDeps } from "../../app.js";
+import {
+  commonBindingFields,
+  deliveryPatchOf,
+  maskedSecretField,
+  resolveSecret,
+} from "./messaging-channels.js";
+import type { MessagingChannelSpec } from "./messaging-channels.js";
+import type { MessagingChannel } from "../../runtime/messaging/connector.js";
 
 /** The stored feishu config, tolerated loosely (a malformed document reads as blanks). */
 function feishuFieldsOf(row: MessagingBindingRow): {
@@ -106,66 +114,71 @@ function qqFieldsOf(row: MessagingBindingRow): { appId: string; appSecret: strin
   };
 }
 
-function toFeishuInfo(row: MessagingBindingRow): FeishuBindingInfo {
-  const fields = feishuFieldsOf(row);
-  return {
+/**
+ * The three channels, each saying only what it does not share (see messaging-channels.ts).
+ * Everything written against this table — the read, the state toggle, the delete, the test
+ * message, the enable gate's credential check — is written once.
+ *
+ * A `Record` keyed by the discriminant rather than an array: every lookup here starts from a
+ * channel already in hand, and a stored row's channel is untrusted text, so `?? null` on a
+ * miss is the shape both callers want.
+ */
+const CHANNEL_SPECS: Readonly<Record<MessagingChannel, MessagingChannelSpec>> = {
+  feishu: {
     channel: "feishu",
-    sessionId: row.sessionId,
-    appId: fields.appId,
-    // A cleared/never-entered secret has no mask: the field's absence is what tells the
-    // editor to render "not configured" instead of a masked placeholder.
-    ...(fields.appSecret !== "" ? { appSecretMasked: maskApiKey(fields.appSecret) } : {}),
-    baseDomain: fields.baseDomain,
-    enabled: row.enabled,
-    linePerMessage: row.linePerMessage,
-    finalReplyOnly: row.finalReplyOnly,
-    renderMarkdown: row.renderMarkdown,
-    lastChatKnown: row.lastChatId !== null,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-  };
-}
-
-function toTelegramInfo(row: MessagingBindingRow): TelegramBindingInfo {
-  const { botToken } = telegramFieldsOf(row);
-  return {
+    label: "Feishu",
+    storedSecret: (row) => feishuFieldsOf(row).appSecret,
+    secretRequiredCode: "feishu_secret_required",
+    toInfo: (row) => {
+      const fields = feishuFieldsOf(row);
+      return {
+        channel: "feishu",
+        ...commonBindingFields(row),
+        appId: fields.appId,
+        ...maskedSecretField("appSecretMasked", fields.appSecret),
+        baseDomain: fields.baseDomain,
+      };
+    },
+  },
+  telegram: {
     channel: "telegram",
-    sessionId: row.sessionId,
-    botId: row.accountId,
-    ...(botToken !== "" ? { botTokenMasked: maskApiKey(botToken) } : {}),
-    enabled: row.enabled,
-    linePerMessage: row.linePerMessage,
-    finalReplyOnly: row.finalReplyOnly,
-    renderMarkdown: row.renderMarkdown,
-    lastChatKnown: row.lastChatId !== null,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-  };
-}
-
-function toQQInfo(row: MessagingBindingRow): QQBindingInfo {
-  const fields = qqFieldsOf(row);
-  return {
+    label: "Telegram",
+    storedSecret: (row) => telegramFieldsOf(row).botToken,
+    secretRequiredCode: "telegram_token_required",
+    toInfo: (row) => ({
+      channel: "telegram",
+      ...commonBindingFields(row),
+      // The bot id is the row's account identity rather than a config field: it survives a
+      // cleared token, because the half in front of a token's colon never changes for a bot.
+      botId: row.accountId,
+      ...maskedSecretField("botTokenMasked", telegramFieldsOf(row).botToken),
+    }),
+  },
+  qq: {
     channel: "qq",
-    sessionId: row.sessionId,
-    appId: fields.appId,
-    ...(fields.appSecret !== "" ? { appSecretMasked: maskApiKey(fields.appSecret) } : {}),
-    enabled: row.enabled,
-    linePerMessage: row.linePerMessage,
-    finalReplyOnly: row.finalReplyOnly,
-    renderMarkdown: row.renderMarkdown,
-    lastChatKnown: row.lastChatId !== null,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-  };
+    label: "QQ",
+    storedSecret: (row) => qqFieldsOf(row).appSecret,
+    secretRequiredCode: "qq_secret_required",
+    toInfo: (row) => {
+      const fields = qqFieldsOf(row);
+      return {
+        channel: "qq",
+        ...commonBindingFields(row),
+        appId: fields.appId,
+        ...maskedSecretField("appSecretMasked", fields.appSecret),
+      };
+    },
+  },
+};
+
+/** The spec for a stored row's channel, or null on an unknown discriminator (skipped defensively, like the bridge does). */
+function specOf(channel: string): MessagingChannelSpec | null {
+  return CHANNEL_SPECS[channel as MessagingChannel] ?? null;
 }
 
-/** Whatever channel the row is: its masked view, or null on an unknown discriminator (skipped defensively, like the bridge does). */
+/** Whatever channel the row is: its masked view, or null on an unknown discriminator. */
 function toBindingInfo(row: MessagingBindingRow): MessagingBindingInfo | null {
-  if (row.channel === "feishu") return toFeishuInfo(row);
-  if (row.channel === "telegram") return toTelegramInfo(row);
-  if (row.channel === "qq") return toQQInfo(row);
-  return null;
+  return specOf(row.channel)?.toInfo(row) ?? null;
 }
 
 /** Normalizes a domain input: blank → the default; anything else must be an http(s) origin. */
@@ -212,29 +225,25 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
     return row;
   };
 
-  const feishuResponse = (sessionId: string): FeishuBindingResponse => {
-    const row = deps.messagingRepo.find(sessionId, "feishu");
+  /**
+   * One channel's saved config plus its live connection status — the body every endpoint on
+   * this router answers with, so a caller never has to ask twice to see the effect of what it
+   * just did. Typed by the channel's own response so each route keeps its exact wire contract.
+   */
+  const bindingResponse = (sessionId: string, spec: MessagingChannelSpec) => {
+    const row = deps.messagingRepo.find(sessionId, spec.channel);
     return {
-      binding: row ? toFeishuInfo(row) : null,
-      status: deps.messaging.statusOf(sessionId, "feishu"),
+      binding: row ? spec.toInfo(row) : null,
+      status: deps.messaging.statusOf(sessionId, spec.channel),
     };
   };
 
-  const telegramResponse = (sessionId: string): TelegramBindingResponse => {
-    const row = deps.messagingRepo.find(sessionId, "telegram");
-    return {
-      binding: row ? toTelegramInfo(row) : null,
-      status: deps.messaging.statusOf(sessionId, "telegram"),
-    };
-  };
-
-  const qqResponse = (sessionId: string): QQBindingResponse => {
-    const row = deps.messagingRepo.find(sessionId, "qq");
-    return {
-      binding: row ? toQQInfo(row) : null,
-      status: deps.messaging.statusOf(sessionId, "qq"),
-    };
-  };
+  const feishuResponse = (sessionId: string): FeishuBindingResponse =>
+    bindingResponse(sessionId, CHANNEL_SPECS.feishu) as FeishuBindingResponse;
+  const telegramResponse = (sessionId: string): TelegramBindingResponse =>
+    bindingResponse(sessionId, CHANNEL_SPECS.telegram) as TelegramBindingResponse;
+  const qqResponse = (sessionId: string): QQBindingResponse =>
+    bindingResponse(sessionId, CHANNEL_SPECS.qq) as QQBindingResponse;
 
   /**
    * The one-connection-per-account rule, on its own because two paths need it: the enable,
@@ -279,20 +288,16 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
       );
     }
     guardAccountFree(sessionId, channel, row.accountId);
-    const secret =
-      channel === "feishu"
-        ? feishuFieldsOf(row).appSecret
-        : channel === "qq"
-          ? qqFieldsOf(row).appSecret
-          : telegramFieldsOf(row).botToken;
-    if (secret === "") {
-      const code =
-        channel === "feishu"
-          ? "feishu_secret_required"
-          : channel === "qq"
-            ? "qq_secret_required"
-            : "telegram_token_required";
-      throw new HttpError(400, code, "The stored config has no credential: save one first.");
+    // An unknown discriminator cannot be enabled: nothing can connect it, and the spec table
+    // is what says so. It is reachable only from a row written by a build that had a channel
+    // this one does not.
+    const spec = specOf(channel);
+    if (spec === null || spec.storedSecret(row) === "") {
+      throw new HttpError(
+        400,
+        spec?.secretRequiredCode ?? "messaging_channel_unknown",
+        "The stored config has no credential: save one first.",
+      );
     }
   };
 
@@ -311,11 +316,79 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
   });
 
   // —— Feishu ————————————————————————————————————————————————————————————————
+  /**
+   * The four endpoints every channel serves the same way, registered from the spec table so a
+   * channel contributes a name to them and nothing else.
+   *
+   * They were written three times each, and what varied across the copies was the channel
+   * literal and a `<channel>_` error-code prefix — which is to say nothing. What is NOT here
+   * is as deliberate: the PUT and the credential test stay hand-written below, because their
+   * inputs differ in more than a name and a table would only hide that.
+   */
+  const registerChannelRoutes = (spec: MessagingChannelSpec): void => {
+    const base = `/:sessionId/messaging/${spec.channel}`;
+    const notBound = (): never => {
+      throw new HttpError(
+        404,
+        `${spec.channel}_not_bound`,
+        `This Session has no ${spec.label} binding.`,
+      );
+    };
+    const boundOr404 = (sessionId: string): MessagingBindingRow =>
+      deps.messagingRepo.find(sessionId, spec.channel) ?? notBound();
 
-  app.get("/:sessionId/messaging/feishu", (c) => {
-    const row = resolveSession(c);
-    return c.json(feishuResponse(row.sessionId));
-  });
+    app.get(base, (c) => c.json(bindingResponse(resolveSession(c).sessionId, spec)));
+
+    // The state toggle: enabling connects with the STORED credentials, disabling terminates
+    // the connection. Separate from PUT on purpose — saving and connecting are different
+    // intents, and the toggle must work without re-submitting any credential.
+    app.post(`${base}/state`, async (c) => {
+      const row = resolveSession(c);
+      deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
+      const enabled = await readStateBody(c);
+      const binding = boundOr404(row.sessionId);
+      if (enabled) guardEnable(row.sessionId, spec.channel, binding);
+      deps.messagingRepo.setEnabled(row.sessionId, spec.channel, enabled);
+      await deps.messaging.sync(row.sessionId);
+      return c.json(bindingResponse(row.sessionId, spec));
+    });
+
+    // Full removal of the channel's config. Kept for API completeness: the web UI's removal
+    // affordance is the per-field clear (PUT clear flag), not this.
+    app.delete(base, (c) => {
+      const row = resolveSession(c);
+      deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
+      deps.messaging.unbind(row.sessionId, spec.channel);
+      return c.body(null, 204);
+    });
+
+    // Short fixed text into the binding's last known chat: proves the outbound leg end to
+    // end. Before any inbound message no chat is known — the UI explains that the user must
+    // message the bot once in the channel first.
+    app.post(`${base}/test-message`, async (c) => {
+      const row = resolveSession(c);
+      const binding = boundOr404(row.sessionId);
+      if (binding.lastChatId === null) {
+        throw new HttpError(
+          409,
+          `${spec.channel}_no_chat`,
+          `No ${spec.label} chat is known yet: message the bot once in ${spec.label} first.`,
+        );
+      }
+      try {
+        await deps.messaging.sendTestMessage(binding);
+      } catch (err) {
+        throw new HttpError(
+          502,
+          `${spec.channel}_send_failed`,
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+      return c.json({ ok: true } satisfies MessagingTestMessageResponse);
+    });
+  };
+
+  for (const spec of Object.values(CHANNEL_SPECS)) registerChannelRoutes(spec);
 
   app.put("/:sessionId/messaging/feishu", async (c) => {
     const row = resolveSession(c);
@@ -323,35 +396,16 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
     const body = await readJson(c);
     const appId = requireString(body, "appId", { minLen: 1, maxLen: 200 }).trim();
     if (appId === "") throw badRequest("appId must not be blank.");
-    const secretInput = optionalString(body, "appSecret", { maxLen: 500 })?.trim();
-    const clearSecret = (body as { clearAppSecret?: unknown }).clearAppSecret === true;
     const baseDomain = parseBaseDomain(optionalString(body, "baseDomain", { maxLen: 500 }));
-    const linePerMessage = optionalBoolean(body, "linePerMessage");
-    const finalReplyOnly = optionalBoolean(body, "finalReplyOnly");
-    const renderMarkdown = optionalBoolean(body, "renderMarkdown");
     const existing = deps.messagingRepo.find(row.sessionId, "feishu");
-    const typed = secretInput !== undefined && secretInput !== "" ? secretInput : undefined;
-    // Blank keeps the stored secret; the clear flag (models idiom — a typed secret wins
-    // over it) drops it, refused while the binding is enabled: a live connection must
-    // never be running on a credential the store no longer has.
-    let appSecret: string;
-    if (typed !== undefined) appSecret = typed;
-    else if (clearSecret && existing !== null) {
-      if (existing.enabled) {
-        throw new HttpError(
-          409,
-          "messaging_disable_before_clear",
-          "Disable the connection before clearing its credential.",
-        );
-      }
-      appSecret = "";
-    } else {
-      const stored = existing !== null ? feishuFieldsOf(existing).appSecret : "";
-      if (stored === "") {
-        throw new HttpError(400, "feishu_secret_required", "appSecret is required to bind.");
-      }
-      appSecret = stored;
-    }
+    const { secret: appSecret } = resolveSecret({
+      typed: optionalString(body, "appSecret", { maxLen: 500 })?.trim(),
+      clear: (body as { clearAppSecret?: unknown }).clearAppSecret === true,
+      existing,
+      stored: existing !== null ? feishuFieldsOf(existing).appSecret : "",
+      requiredCode: "feishu_secret_required",
+      requiredMessage: "appSecret is required to bind.",
+    });
     // A save never enables — but an ENABLED binding re-pointed at another app keeps its
     // connection and restarts it below, which would stand two Sessions on one app without
     // ever passing the enable gate. Exclusivity is therefore asked here too, of the app
@@ -363,9 +417,7 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
       channel: "feishu",
       accountId: appId,
       config: { appId, appSecret, baseDomain },
-      ...(linePerMessage !== undefined ? { linePerMessage } : {}),
-      ...(finalReplyOnly !== undefined ? { finalReplyOnly } : {}),
-      ...(renderMarkdown !== undefined ? { renderMarkdown } : {}),
+      ...deliveryPatchOf(body),
     });
     // Save persists credentials only and never flips the connection — with one deliberate
     // exception: an ENABLED binding's connector restarts with the new credentials, so the
@@ -373,32 +425,6 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
     // whoever else has the same app saved or even connected: only the enable is exclusive.
     if (saved.enabled) await deps.messaging.sync(row.sessionId);
     return c.json(feishuResponse(row.sessionId));
-  });
-
-  // The state toggle: enabling connects with the STORED credentials, disabling terminates
-  // the connection. Separate from PUT on purpose — saving and connecting are different
-  // intents, and the toggle must work without re-submitting any credential.
-  app.post("/:sessionId/messaging/feishu/state", async (c) => {
-    const row = resolveSession(c);
-    deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
-    const enabled = await readStateBody(c);
-    const binding = deps.messagingRepo.find(row.sessionId, "feishu");
-    if (binding === null) {
-      throw new HttpError(404, "feishu_not_bound", "This Session has no Feishu binding.");
-    }
-    if (enabled) guardEnable(row.sessionId, "feishu", binding);
-    deps.messagingRepo.setEnabled(row.sessionId, "feishu", enabled);
-    await deps.messaging.sync(row.sessionId);
-    return c.json(feishuResponse(row.sessionId));
-  });
-
-  // Full removal of the channel's config. Kept for API completeness: the web UI's removal
-  // affordance is the per-field clear (PUT clear flag), not this.
-  app.delete("/:sessionId/messaging/feishu", (c) => {
-    const row = resolveSession(c);
-    deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
-    deps.messaging.unbind(row.sessionId, "feishu");
-    return c.body(null, 204);
   });
 
   // Credential test with the request's draft values, each falling back to the stored
@@ -429,59 +455,26 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
     } satisfies FeishuTestResponse);
   });
 
-  // Short fixed text into the binding's last known chat: proves the outbound leg
-  // end to end. Before any inbound message no chat is known — the UI explains that the
-  // user must message the bot once in Feishu first.
-  app.post("/:sessionId/messaging/feishu/test-message", async (c) => {
-    const row = resolveSession(c);
-    const binding = deps.messagingRepo.find(row.sessionId, "feishu");
-    if (!binding) {
-      throw new HttpError(404, "feishu_not_bound", "This Session has no Feishu binding.");
-    }
-    if (binding.lastChatId === null) {
-      throw new HttpError(
-        409,
-        "feishu_no_chat",
-        "No Feishu chat is known yet: message the bot once in Feishu first.",
-      );
-    }
-    try {
-      await deps.messaging.sendTestMessage(binding);
-    } catch (err) {
-      throw new HttpError(
-        502,
-        "feishu_send_failed",
-        err instanceof Error ? err.message : String(err),
-      );
-    }
-    return c.json({ ok: true } satisfies MessagingTestMessageResponse);
-  });
-
-  // —— Telegram ——————————————————————————————————————————————————————————————
-
-  app.get("/:sessionId/messaging/telegram", (c) => {
-    const row = resolveSession(c);
-    return c.json(telegramResponse(row.sessionId));
-  });
-
   app.put("/:sessionId/messaging/telegram", async (c) => {
     const row = resolveSession(c);
     deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
     const body = await readJson(c);
-    const tokenInput = optionalString(body, "botToken", { maxLen: 200 })?.trim();
-    const clearToken = (body as { clearBotToken?: unknown }).clearBotToken === true;
-    const linePerMessage = optionalBoolean(body, "linePerMessage");
-    const finalReplyOnly = optionalBoolean(body, "finalReplyOnly");
-    const renderMarkdown = optionalBoolean(body, "renderMarkdown");
     const existing = deps.messagingRepo.find(row.sessionId, "telegram");
-    const typed = tokenInput !== undefined && tokenInput !== "" ? tokenInput : undefined;
-    // Same ladder as the Feishu PUT: typed wins, then the clear flag (disable first),
-    // then the stored token; a first bind must carry one. A cleared config keeps its bot
-    // identity — the token half in front of the colon never changes for a bot.
-    let botToken: string;
+    const { secret: botToken, fromRequest } = resolveSecret({
+      typed: optionalString(body, "botToken", { maxLen: 200 })?.trim(),
+      clear: (body as { clearBotToken?: unknown }).clearBotToken === true,
+      existing,
+      stored: existing !== null ? telegramFieldsOf(existing).botToken : "",
+      requiredCode: "telegram_token_required",
+      requiredMessage: "botToken is required to bind.",
+    });
+    // The one channel whose account identity comes out of the credential rather than out of a
+    // field of its own, so it is re-derived exactly when a new token arrives. Every other
+    // branch keeps the row's identity: the half in front of a token's colon never changes for
+    // a bot, so a cleared config still knows which bot it was.
     let botId: string;
-    if (typed !== undefined) {
-      const id = telegramBotIdOf(typed);
+    if (fromRequest) {
+      const id = telegramBotIdOf(botToken);
       if (id === null) {
         throw new HttpError(
           400,
@@ -489,25 +482,9 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
           "botToken must look like <numeric bot id>:<secret> (as issued by @BotFather).",
         );
       }
-      botToken = typed;
       botId = id;
-    } else if (clearToken && existing !== null) {
-      if (existing.enabled) {
-        throw new HttpError(
-          409,
-          "messaging_disable_before_clear",
-          "Disable the connection before clearing its credential.",
-        );
-      }
-      botToken = "";
-      botId = existing.accountId;
     } else {
-      const stored = existing !== null ? telegramFieldsOf(existing).botToken : "";
-      if (stored === "" || existing === null) {
-        throw new HttpError(400, "telegram_token_required", "botToken is required to bind.");
-      }
-      botToken = stored;
-      botId = existing.accountId;
+      botId = existing!.accountId;
     }
     // Same reason as the Feishu PUT: a token swap on an enabled binding would carry the
     // live connection onto another bot without passing the enable gate.
@@ -517,34 +494,11 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
       channel: "telegram",
       accountId: botId,
       config: { botToken },
-      ...(linePerMessage !== undefined ? { linePerMessage } : {}),
-      ...(finalReplyOnly !== undefined ? { finalReplyOnly } : {}),
-      ...(renderMarkdown !== undefined ? { renderMarkdown } : {}),
+      ...deliveryPatchOf(body),
     });
     // Same save/enable split as Feishu: only an enabled binding restarts its connector.
     if (saved.enabled) await deps.messaging.sync(row.sessionId);
     return c.json(telegramResponse(row.sessionId));
-  });
-
-  app.post("/:sessionId/messaging/telegram/state", async (c) => {
-    const row = resolveSession(c);
-    deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
-    const enabled = await readStateBody(c);
-    const binding = deps.messagingRepo.find(row.sessionId, "telegram");
-    if (binding === null) {
-      throw new HttpError(404, "telegram_not_bound", "This Session has no Telegram binding.");
-    }
-    if (enabled) guardEnable(row.sessionId, "telegram", binding);
-    deps.messagingRepo.setEnabled(row.sessionId, "telegram", enabled);
-    await deps.messaging.sync(row.sessionId);
-    return c.json(telegramResponse(row.sessionId));
-  });
-
-  app.delete("/:sessionId/messaging/telegram", (c) => {
-    const row = resolveSession(c);
-    deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
-    deps.messaging.unbind(row.sessionId, "telegram");
-    return c.body(null, 204);
   });
 
   // Credential test: the draft token, falling back to the stored one — and the success
@@ -574,76 +528,21 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
     } satisfies TelegramTestResponse);
   });
 
-  app.post("/:sessionId/messaging/telegram/test-message", async (c) => {
-    const row = resolveSession(c);
-    const binding = deps.messagingRepo.find(row.sessionId, "telegram");
-    if (!binding) {
-      throw new HttpError(404, "telegram_not_bound", "This Session has no Telegram binding.");
-    }
-    if (binding.lastChatId === null) {
-      throw new HttpError(
-        409,
-        "telegram_no_chat",
-        "No Telegram chat is known yet: message the bot once in Telegram first.",
-      );
-    }
-    try {
-      await deps.messaging.sendTestMessage(binding);
-    } catch (err) {
-      throw new HttpError(
-        502,
-        "telegram_send_failed",
-        err instanceof Error ? err.message : String(err),
-      );
-    }
-    return c.json({ ok: true } satisfies MessagingTestMessageResponse);
-  });
-
-  // —— QQ ————————————————————————————————————————————————————————————————————
-  //
-  // Same verb set and the same save/enable split as the two channels above; the config is
-  // the App ID / App Secret pair from the QQ developer console, and the App ID is the
-  // account identity (the QQ analogue of the Feishu app id: stable, non-secret, and
-  // unchanged by rotating the secret).
-
-  app.get("/:sessionId/messaging/qq", (c) => {
-    const row = resolveSession(c);
-    return c.json(qqResponse(row.sessionId));
-  });
-
   app.put("/:sessionId/messaging/qq", async (c) => {
     const row = resolveSession(c);
     deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
     const body = await readJson(c);
     const appId = requireString(body, "appId", { minLen: 1, maxLen: 200 }).trim();
     if (appId === "") throw badRequest("appId must not be blank.");
-    const secretInput = optionalString(body, "appSecret", { maxLen: 500 })?.trim();
-    const clearSecret = (body as { clearAppSecret?: unknown }).clearAppSecret === true;
-    const linePerMessage = optionalBoolean(body, "linePerMessage");
-    const finalReplyOnly = optionalBoolean(body, "finalReplyOnly");
-    const renderMarkdown = optionalBoolean(body, "renderMarkdown");
     const existing = deps.messagingRepo.find(row.sessionId, "qq");
-    const typed = secretInput !== undefined && secretInput !== "" ? secretInput : undefined;
-    // The same ladder as the other two channels: typed wins, then the clear flag (disable
-    // first), then the stored secret; a first bind must carry one.
-    let appSecret: string;
-    if (typed !== undefined) appSecret = typed;
-    else if (clearSecret && existing !== null) {
-      if (existing.enabled) {
-        throw new HttpError(
-          409,
-          "messaging_disable_before_clear",
-          "Disable the connection before clearing its credential.",
-        );
-      }
-      appSecret = "";
-    } else {
-      const stored = existing !== null ? qqFieldsOf(existing).appSecret : "";
-      if (stored === "") {
-        throw new HttpError(400, "qq_secret_required", "appSecret is required to bind.");
-      }
-      appSecret = stored;
-    }
+    const { secret: appSecret } = resolveSecret({
+      typed: optionalString(body, "appSecret", { maxLen: 500 })?.trim(),
+      clear: (body as { clearAppSecret?: unknown }).clearAppSecret === true,
+      existing,
+      stored: existing !== null ? qqFieldsOf(existing).appSecret : "",
+      requiredCode: "qq_secret_required",
+      requiredMessage: "appSecret is required to bind.",
+    });
     // Same reason as the Feishu and Telegram PUTs: an enabled binding re-pointed at another
     // App ID keeps its connection and restarts it below, which would stand two Sessions on
     // one bot's single gateway without either passing the enable gate.
@@ -653,35 +552,10 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
       channel: "qq",
       accountId: appId,
       config: { appId, appSecret },
-      ...(linePerMessage !== undefined ? { linePerMessage } : {}),
-      ...(finalReplyOnly !== undefined ? { finalReplyOnly } : {}),
-      ...(renderMarkdown !== undefined ? { renderMarkdown } : {}),
+      ...deliveryPatchOf(body),
     });
     if (saved.enabled) await deps.messaging.sync(row.sessionId);
     return c.json(qqResponse(row.sessionId));
-  });
-
-  app.post("/:sessionId/messaging/qq/state", async (c) => {
-    const row = resolveSession(c);
-    deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
-    const enabled = await readStateBody(c);
-    const binding = deps.messagingRepo.find(row.sessionId, "qq");
-    if (binding === null) {
-      throw new HttpError(404, "qq_not_bound", "This Session has no QQ binding.");
-    }
-    if (enabled) guardEnable(row.sessionId, "qq", binding);
-    deps.messagingRepo.setEnabled(row.sessionId, "qq", enabled);
-    await deps.messaging.sync(row.sessionId);
-    return c.json(qqResponse(row.sessionId));
-  });
-
-  app.delete("/:sessionId/messaging/qq", (c) => {
-    const row = resolveSession(c);
-    deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
-    deps.messaging.unbind(row.sessionId, "qq");
-    // A scan still in flight would land on a config that has just been removed.
-    deps.qqScan.cancelSession(row.sessionId);
-    return c.body(null, 204);
   });
 
   // —— QQ scan-to-connect ————————————————————————————————————————————————————
@@ -761,7 +635,7 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
     return c.json({
       status: "completed",
       appId: result.bot.appId,
-      binding: toQQInfo(saved),
+      binding: CHANNEL_SPECS.qq.toInfo(saved) as QQBindingInfo,
     } satisfies QQScanPollResponse);
   });
 
@@ -796,32 +670,6 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
       ...(result.error !== undefined ? { error: result.error } : {}),
     } satisfies QQTestResponse);
   });
-
-  // The one test endpoint that means something different here. On Feishu and Telegram a
-  // known chat is enough to send into; on QQ a message may only be sent as a reply to one
-  // the user sent minutes ago, so the 409 below is the weaker of two gates and the send can
-  // still fail with 502 `qq_send_failed` naming the window. The message text says so.
-  app.post("/:sessionId/messaging/qq/test-message", async (c) => {
-    const row = resolveSession(c);
-    const binding = deps.messagingRepo.find(row.sessionId, "qq");
-    if (!binding) {
-      throw new HttpError(404, "qq_not_bound", "This Session has no QQ binding.");
-    }
-    if (binding.lastChatId === null) {
-      throw new HttpError(
-        409,
-        "qq_no_chat",
-        "No QQ chat is known yet: message the bot once in QQ first.",
-      );
-    }
-    try {
-      await deps.messaging.sendTestMessage(binding);
-    } catch (err) {
-      throw new HttpError(502, "qq_send_failed", err instanceof Error ? err.message : String(err));
-    }
-    return c.json({ ok: true } satisfies MessagingTestMessageResponse);
-  });
-
   return app;
 }
 

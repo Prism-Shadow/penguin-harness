@@ -1703,10 +1703,58 @@ export interface MessagingRuntimeStatus {
   lastConnectionError?: { at: string; detail: string };
 }
 
-/** The stored Feishu config, secret masked (plaintext never leaves the server). */
-export interface FeishuBindingInfo {
-  channel: "feishu";
+/**
+ * What a messaging binding carries whatever channel it is: the connection intent, the three
+ * delivery preferences, whether a chat is known, and the row's identity and timestamps.
+ *
+ * Split out because this is the half that grows. Three delivery preferences arrived in one
+ * release, and each would otherwise have been written into three interfaces — the credential
+ * slice is the only thing a channel genuinely differs in, and it is what stays per-channel.
+ *
+ * `channel` is NOT here: a discriminated union discriminates on a literal the member itself
+ * declares, so each interface keeps its own.
+ *
+ * A channel may RE-DECLARE a field below when it has more to say about it — QQ does, for all
+ * three preferences, because the platform's passive-reply budget and its expiring window
+ * change what setting one costs there. The re-declared type must be identical, which the
+ * compiler enforces, so the redeclaration can only add documentation and never a contract.
+ */
+export interface MessagingBindingCommon {
   sessionId: string;
+  /** Connection INTENT (the state toggle's value); new bindings start disabled, and at most one of a Session's channels is enabled. */
+  enabled: boolean;
+  /**
+   * Send each non-blank line of a relayed assistant reply as its own message instead of one
+   * message per reply. Off by default; off is the original one-message-per-reply behaviour.
+   */
+  linePerMessage: boolean;
+  /**
+   * Relay only the LAST completed assistant message of a run, delivered when the run ends,
+   * instead of mirroring each completed message as it completes. Off by default; off is the
+   * original every-message behaviour. Independent of `linePerMessage`, which then applies to
+   * that one final message. The approval notice is not a reply and is unaffected.
+   */
+  finalReplyOnly: boolean;
+  /**
+   * Render a relayed reply's Markdown in this channel's own markup instead of sending its
+   * characters as written. ON by default. Each channel shows what it can — Telegram has no
+   * headings, lists or tables, QQ has no code or tables, Feishu has all of them — and a
+   * rendering the channel refuses falls back to the plain source, so this can cost
+   * formatting and never a message.
+   */
+  renderMarkdown: boolean;
+  /**
+   * Whether an inbound chat is known (the bot has been messaged at least once). Replies and
+   * test messages target that chat; until it exists nothing can be sent.
+   */
+  lastChatKnown: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** The stored Feishu config, secret masked (plaintext never leaves the server). */
+export interface FeishuBindingInfo extends MessagingBindingCommon {
+  channel: "feishu";
   appId: string;
   /**
    * Masked app secret (site-wide mask rule: `***`, or `first4…last4` for long values);
@@ -1715,41 +1763,11 @@ export interface FeishuBindingInfo {
    */
   appSecretMasked?: string;
   baseDomain: string;
-  /** Connection INTENT (the state toggle's value); new bindings start disabled, and at most one of a Session's channels is enabled. */
-  enabled: boolean;
-  /**
-   * Send each non-blank line of a relayed assistant reply as its own message instead of one
-   * message per reply. Off by default; off is the original one-message-per-reply behaviour.
-   */
-  linePerMessage: boolean;
-  /**
-   * Relay only the LAST completed assistant message of a run, delivered when the run ends,
-   * instead of mirroring each completed message as it completes. Off by default; off is the
-   * original every-message behaviour. Independent of `linePerMessage`, which then applies to
-   * that one final message. The approval notice is not a reply and is unaffected.
-   */
-  finalReplyOnly: boolean;
-  /**
-   * Render a relayed reply's Markdown in this channel's own markup instead of sending its
-   * characters as written. ON by default. Each channel shows what it can — Telegram has no
-   * headings, lists or tables, QQ has no code or tables, Feishu has all of them — and a
-   * rendering the channel refuses falls back to the plain source, so this can cost
-   * formatting and never a message.
-   */
-  renderMarkdown: boolean;
-  /**
-   * Whether an inbound Feishu chat is known (the bot has been messaged at least once).
-   * Replies and test messages target that chat; until it exists nothing can be sent.
-   */
-  lastChatKnown: boolean;
-  createdAt: string;
-  updatedAt: string;
 }
 
 /** The stored Telegram config, token masked (plaintext never leaves the server). */
-export interface TelegramBindingInfo {
+export interface TelegramBindingInfo extends MessagingBindingCommon {
   channel: "telegram";
-  sessionId: string;
   /** The numeric bot id (the token's half before the colon) — the channel-scoped account identity, never secret. */
   botId: string;
   /**
@@ -1758,41 +1776,16 @@ export interface TelegramBindingInfo {
    * is saved.
    */
   botTokenMasked?: string;
-  /** Connection INTENT (the state toggle's value); new bindings start disabled, and at most one of a Session's channels is enabled. */
-  enabled: boolean;
-  /**
-   * Send each non-blank line of a relayed assistant reply as its own message instead of one
-   * message per reply. Off by default; off is the original one-message-per-reply behaviour.
-   */
-  linePerMessage: boolean;
-  /**
-   * Relay only the LAST completed assistant message of a run, delivered when the run ends,
-   * instead of mirroring each completed message as it completes. Off by default; off is the
-   * original every-message behaviour. Independent of `linePerMessage`, which then applies to
-   * that one final message. The approval notice is not a reply and is unaffected.
-   */
-  finalReplyOnly: boolean;
-  /**
-   * Render a relayed reply's Markdown in this channel's own markup instead of sending its
-   * characters as written. ON by default. Each channel shows what it can — Telegram has no
-   * headings, lists or tables, QQ has no code or tables, Feishu has all of them — and a
-   * rendering the channel refuses falls back to the plain source, so this can cost
-   * formatting and never a message.
-   */
-  renderMarkdown: boolean;
-  /**
-   * Whether an inbound Telegram chat is known (the bot has been messaged at least once).
-   * Replies and test messages target that chat; until it exists nothing can be sent.
-   */
-  lastChatKnown: boolean;
-  createdAt: string;
-  updatedAt: string;
 }
 
-/** The stored QQ config, secret masked (plaintext never leaves the server). */
-export interface QQBindingInfo {
+/**
+ * The stored QQ config, secret masked (plaintext never leaves the server).
+ *
+ * The three preference fields are re-declared unchanged: every one of them costs something
+ * different here, and the platform's reply budget is what a reader setting one needs to know.
+ */
+export interface QQBindingInfo extends MessagingBindingCommon {
   channel: "qq";
-  sessionId: string;
   /** The bot's App ID — the channel-scoped account identity, never secret. */
   appId: string;
   /**
@@ -1801,8 +1794,6 @@ export interface QQBindingInfo {
    * enabled until one is saved.
    */
   appSecretMasked?: string;
-  /** Connection INTENT (the state toggle's value); new bindings start disabled, and at most one of a Session's channels is enabled. */
-  enabled: boolean;
   /**
    * Send each non-blank line of a relayed assistant reply as its own message instead of one
    * message per reply. Off by default. On QQ the split is additionally capped at the
@@ -1811,10 +1802,8 @@ export interface QQBindingInfo {
    */
   linePerMessage: boolean;
   /**
-   * Relay only the LAST completed assistant message of a run, delivered when the run ends,
-   * instead of mirroring each completed message as it completes. Off by default; off is the
-   * original every-message behaviour. Independent of `linePerMessage`, which then applies to
-   * that one final message. The approval notice is not a reply and is unaffected.
+   * Relay only the LAST completed assistant message of a run, delivered when the run ends.
+   * Off by default.
    *
    * On QQ it cuts both ways, which is worth knowing before setting it here. It spends the
    * least of the platform's passive-reply budget a run can spend — one message, where an
@@ -1825,22 +1814,19 @@ export interface QQBindingInfo {
    */
   finalReplyOnly: boolean;
   /**
-   * Render a relayed reply's Markdown in this channel's own markup instead of sending its
-   * characters as written. ON by default. QQ's own subset is the widest for prose and the
-   * narrowest for code: headings, lists, blockquotes and rules render, while inline code,
-   * fenced code and tables have no syntax at all here — a code block arrives as plain
-   * escaped lines. A rendering the platform refuses falls back to the plain source, at the
-   * cost of one more slot from the passive-reply budget.
+   * Render a relayed reply's Markdown in this channel's own markup. ON by default. QQ's own
+   * subset is the widest for prose and the narrowest for code: headings, lists, blockquotes
+   * and rules render, while inline code, fenced code and tables have no syntax at all here —
+   * a code block arrives as plain escaped lines. A rendering the platform refuses falls back
+   * to the plain source, at the cost of one more slot from the passive-reply budget.
    */
   renderMarkdown: boolean;
   /**
-   * Whether an inbound QQ chat is known (the bot has been messaged at least once).
-   * Weaker than it looks on this channel: QQ accepts only replies to a recent message, so a
-   * known chat is necessary but not sufficient for anything to be deliverable right now.
+   * Whether an inbound QQ chat is known (the bot has been messaged at least once). Weaker
+   * than it looks on this channel: QQ accepts only replies to a recent message, so a known
+   * chat is necessary but not sufficient for anything to be deliverable right now.
    */
   lastChatKnown: boolean;
-  createdAt: string;
-  updatedAt: string;
 }
 
 /** A Session's saved config for one messaging channel (`channel` is the discriminant). */
@@ -1885,7 +1871,23 @@ export interface QQBindingResponse {
  * (exception: an enabled binding's connector restarts with the new credentials so stored
  * config and live connection never diverge). The connection toggle is POST …/state.
  */
-export interface FeishuBindingPutRequest {
+/**
+ * The delivery preferences any channel's PUT may set. Each is optional and each behaves the
+ * same way on every channel: an omitted field keeps the stored value, so a client that knows
+ * about one preference can save it without having to send the others back. Their meanings are
+ * on {@link MessagingBindingCommon}, and where a channel charges differently for one, on that
+ * channel's own `*BindingInfo`.
+ *
+ * The defaults a binding created without them starts from: `linePerMessage` off,
+ * `finalReplyOnly` off, `renderMarkdown` ON.
+ */
+export interface MessagingDeliveryPatch {
+  linePerMessage?: boolean;
+  finalReplyOnly?: boolean;
+  renderMarkdown?: boolean;
+}
+
+export interface FeishuBindingPutRequest extends MessagingDeliveryPatch {
   appId: string;
   /** Omitted or blank keeps the stored secret (the masked value never round-trips). */
   appSecret?: string;
@@ -1896,21 +1898,6 @@ export interface FeishuBindingPutRequest {
    * it). Refused with 409 `messaging_disable_before_clear` while the binding is enabled.
    */
   clearAppSecret?: boolean;
-  /**
-   * Delivery preference (see `FeishuBindingInfo.linePerMessage`). Omitted keeps the stored
-   * value; a binding created without it starts with it off.
-   */
-  linePerMessage?: boolean;
-  /**
-   * Delivery preference (see `FeishuBindingInfo.finalReplyOnly`). Omitted keeps the stored
-   * value; a binding created without it starts with it off.
-   */
-  finalReplyOnly?: boolean;
-  /**
-   * Delivery preference (see `FeishuBindingInfo.renderMarkdown`). Omitted keeps the stored
-   * value; a binding created without it starts with it ON.
-   */
-  renderMarkdown?: boolean;
 }
 
 /**
@@ -1919,7 +1906,7 @@ export interface FeishuBindingPutRequest {
  * POST …/state). Saving never conflicts across Sessions: the same bot may sit saved on
  * several, and only enabling it is exclusive.
  */
-export interface TelegramBindingPutRequest {
+export interface TelegramBindingPutRequest extends MessagingDeliveryPatch {
   /** Omitted or blank keeps the stored token (the masked value never round-trips). */
   botToken?: string;
   /**
@@ -1928,21 +1915,6 @@ export interface TelegramBindingPutRequest {
    * `messaging_disable_before_clear` while the binding is enabled.
    */
   clearBotToken?: boolean;
-  /**
-   * Delivery preference (see `TelegramBindingInfo.linePerMessage`). Omitted keeps the stored
-   * value; a binding created without it starts with it off.
-   */
-  linePerMessage?: boolean;
-  /**
-   * Delivery preference (see `TelegramBindingInfo.finalReplyOnly`). Omitted keeps the stored
-   * value; a binding created without it starts with it off.
-   */
-  finalReplyOnly?: boolean;
-  /**
-   * Delivery preference (see `TelegramBindingInfo.renderMarkdown`). Omitted keeps the stored
-   * value; a binding created without it starts with it ON.
-   */
-  renderMarkdown?: boolean;
 }
 
 /**
@@ -1951,7 +1923,7 @@ export interface TelegramBindingPutRequest {
  * is POST …/state). The App ID is the account identity, so changing it rebinds the row to
  * a different bot and drops the remembered chat.
  */
-export interface QQBindingPutRequest {
+export interface QQBindingPutRequest extends MessagingDeliveryPatch {
   appId: string;
   /** Omitted or blank keeps the stored secret (the masked value never round-trips). */
   appSecret?: string;
@@ -1960,21 +1932,6 @@ export interface QQBindingPutRequest {
    * it). Refused with 409 `messaging_disable_before_clear` while the binding is enabled.
    */
   clearAppSecret?: boolean;
-  /**
-   * Delivery preference (see `QQBindingInfo.linePerMessage`). Omitted keeps the stored
-   * value; a binding created without it starts with it off.
-   */
-  linePerMessage?: boolean;
-  /**
-   * Delivery preference (see `QQBindingInfo.finalReplyOnly`). Omitted keeps the stored
-   * value; a binding created without it starts with it off.
-   */
-  finalReplyOnly?: boolean;
-  /**
-   * Delivery preference (see `QQBindingInfo.renderMarkdown`). Omitted keeps the stored
-   * value; a binding created without it starts with it ON.
-   */
-  renderMarkdown?: boolean;
 }
 
 /**
