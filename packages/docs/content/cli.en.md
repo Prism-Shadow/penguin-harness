@@ -330,6 +330,19 @@ penguin server status
 
 This is what the Machines page runs over ssh to ask a machine what it is doing, which is why the output is JSON rather than prose.
 
+### penguin server stop
+
+Stops the server on this data root and reports the outcome as one line of JSON:
+
+```bash
+penguin server stop
+# {"ok":true,"pid":41233}
+```
+
+A `SIGTERM` and a wait, never a `SIGKILL`: the server holds a database and may be finishing a task, and a caller deciding to destroy that on a timeout is not its call to make. A root with nothing serving it answers `{"ok":true}` — that is the outcome asked for, not a failure.
+
+The Machines page runs this over ssh when it restarts a machine. It is a command rather than a request to the server itself because the machine that needs stopping is usually the one whose platform is behind, and a platform route only exists once the machine already runs the build that has it.
+
 ## penguin version
 
 Reports which build is running. The version number alone cannot answer that — every build made from a checkout between two releases also calls itself `0.2.3` — so a release and a source build identify themselves differently.

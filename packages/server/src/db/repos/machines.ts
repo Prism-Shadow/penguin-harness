@@ -1,23 +1,29 @@
 /**
- * What this server remembers about machines: its own identity, the tunnel it holds to each
- * machine, which machines each Project uses, and the Model config last handed to each.
- *
- * In web.db rather than in files beside it. A hot swap or a restart reads back exactly what
- * the last generation wrote, with no parser per file and no partial write to guard against.
+ * What this server remembers about machines: its own identity, one row per machine it has
+ * installed on or reached (what is installed there, the forward held to it), and which
+ * machines each Project uses. All in web.db, so a hot swap or a restart reads back exactly
+ * what the last generation wrote.
  */
 import type { DatabaseSync } from "node:sqlite";
 import { randomBytes } from "node:crypto";
 
-/** The tunnel this server holds to a machine, as the connect flow records it. */
-export interface ConnectState {
-  /** Local (= remote) port the tunnel forwards. */
-  port: number;
+export interface MachineRow {
+  /** `ssh:<alias>` */
+  address: string;
   /** That machine's own id, once heard. */
-  machineId?: string;
-  /** The ssh child holding the tunnel, while one is believed alive. */
-  tunnelPid?: number;
-  connectedAt?: string;
+  machineId: string | null;
+  /** What this server last installed there; null when it never has. */
+  version: string | null;
+  installedAt: string | null;
+  /** The local port of the forward held to it, and the ssh child holding it, while alive. */
+  forwardPort: number | null;
+  forwardPid: number | null;
+  /** The port its server was bound to over there when the forward was raised. */
+  remotePort: number | null;
 }
+
+/** Everything but the address may be patched; absent fields keep their value. */
+type MachinePatch = Partial<Omit<MachineRow, "address">>;
 
 /**
  * 12 random bytes as base64url: 16 characters a person can read in a tooltip, 96 bits
@@ -47,35 +53,46 @@ export class MachinesRepo {
     return minted;
   }
 
-  connect(address: string): ConnectState | null {
-    const row = this.db.prepare("SELECT * FROM machine_connect WHERE address = ?").get(address) as
-      Record<string, unknown> | undefined;
-    return row === undefined ? null : toConnect(row);
+  get(address: string): MachineRow | null {
+    const row = this.db.prepare("SELECT * FROM machines WHERE address = ?").get(address);
+    return row === undefined ? null : toRow(row);
   }
 
-  connects(): Record<string, ConnectState> {
-    const out: Record<string, ConnectState> = {};
-    for (const row of this.db.prepare("SELECT * FROM machine_connect").all()) {
-      out[row.address as string] = toConnect(row as Record<string, unknown>);
-    }
-    return out;
+  byMachineId(machineId: string): MachineRow | null {
+    const row = this.db.prepare("SELECT * FROM machines WHERE machine_id = ?").get(machineId);
+    return row === undefined ? null : toRow(row);
   }
 
-  setConnect(address: string, state: ConnectState | null): void {
-    if (state === null) {
-      this.db.prepare("DELETE FROM machine_connect WHERE address = ?").run(address);
-      return;
-    }
+  all(): MachineRow[] {
+    return this.db.prepare("SELECT * FROM machines").all().map(toRow);
+  }
+
+  /** Writes the fields given, creating the row when there is none. */
+  patch(address: string, patch: MachinePatch): void {
+    const next: MachineRow = {
+      ...(this.get(address) ?? {
+        address,
+        machineId: null,
+        version: null,
+        installedAt: null,
+        forwardPort: null,
+        forwardPid: null,
+        remotePort: null,
+      }),
+      ...patch,
+    };
     this.db
       .prepare(
-        "INSERT OR REPLACE INTO machine_connect (address, port, machine_id, tunnel_pid, connected_at) VALUES (?, ?, ?, ?, ?)",
+        "INSERT OR REPLACE INTO machines (address, machine_id, version, installed_at, forward_port, forward_pid, remote_port) VALUES (?, ?, ?, ?, ?, ?, ?)",
       )
       .run(
         address,
-        state.port,
-        state.machineId ?? null,
-        state.tunnelPid ?? null,
-        state.connectedAt ?? null,
+        next.machineId,
+        next.version,
+        next.installedAt,
+        next.forwardPort,
+        next.forwardPid,
+        next.remotePort,
       );
   }
 
@@ -92,29 +109,16 @@ export class MachinesRepo {
       .prepare("INSERT OR REPLACE INTO machine_project (project_id, addresses) VALUES (?, ?)")
       .run(projectId, JSON.stringify(addresses));
   }
-
-  /** Fingerprint of the Model config a machine last received for a Project, or null. */
-  syncPrint(address: string, projectId: string): string | null {
-    const row = this.db
-      .prepare("SELECT fingerprint FROM machine_model_sync WHERE address = ? AND project_id = ?")
-      .get(address, projectId);
-    return row ? (row.fingerprint as string) : null;
-  }
-
-  setSyncPrint(address: string, projectId: string, fingerprint: string): void {
-    this.db
-      .prepare(
-        "INSERT OR REPLACE INTO machine_model_sync (address, project_id, fingerprint) VALUES (?, ?, ?)",
-      )
-      .run(address, projectId, fingerprint);
-  }
 }
 
-function toConnect(row: Record<string, unknown>): ConnectState {
+function toRow(row: Record<string, unknown>): MachineRow {
   return {
-    port: row.port as number,
-    ...(row.machine_id === null ? {} : { machineId: row.machine_id as string }),
-    ...(row.tunnel_pid === null ? {} : { tunnelPid: row.tunnel_pid as number }),
-    ...(row.connected_at === null ? {} : { connectedAt: row.connected_at as string }),
+    address: row.address as string,
+    machineId: (row.machine_id as string | null) ?? null,
+    version: (row.version as string | null) ?? null,
+    installedAt: (row.installed_at as string | null) ?? null,
+    forwardPort: (row.forward_port as number | null) ?? null,
+    forwardPid: (row.forward_pid as number | null) ?? null,
+    remotePort: (row.remote_port as number | null) ?? null,
   };
 }

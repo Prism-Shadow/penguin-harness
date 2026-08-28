@@ -3,24 +3,20 @@
  *
  * A start is one command on the shared shell — `nohup penguin server … &` — and then the
  * status probe, on that same shell, until the server answers. A stop is a request to the
- * server's own shutdown endpoint over the forward this side holds, then watching that port
+ * server's own shutdown endpoint, over the forward this side holds, then watching that port
  * go quiet. Neither costs a handshake.
  *
  * The remote server is a plain `penguin server` process, never supervised from here. A
  * machine that reboots simply reads as "not running" on the next probe.
  */
-import { SERVER_LOG_TAIL, startServerCommand } from "./commands.js";
+import { REMOTE_PENGUIN, SERVER_LOG_TAIL, startServerCommand } from "./commands.js";
 import type { RemoteTarget } from "./commands.js";
 import type { ExecResult } from "./exec.js";
 import { probeServerState } from "./server-state.js";
-import { forwardTo } from "./forward.js";
-import { machineApi } from "./machine-api.js";
+import { jsonAnswer } from "./answer.js";
 
 /** How long a freshly started server gets to answer on its port. */
 const START_TIMEOUT_MS = 30_000;
-
-/** How long a server asked to shut down gets to let go of its port. */
-const STOP_TIMEOUT_MS = 10_000;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -48,34 +44,22 @@ export async function startRemoteServer(
   return { ok: false, detail: tail || "it did not answer within 30s." };
 }
 
-/** Asks the remote server to shut down and waits for its port to stop answering. */
-export async function stopRemoteServer(opts: {
-  address: string;
-  target: RemoteTarget;
-  remotePort: number;
-  livePort?: number | null;
-  cookie: string;
-}): Promise<boolean> {
-  let port = opts.livePort ?? null;
-  if (port === null) {
-    const forward = await forwardTo(opts);
-    if (!forward.ok) return false;
-    port = forward.port;
-  }
-  const api = machineApi(port, opts.cookie);
-  try {
-    if ((await api.request("POST", "/api/version/shutdown", {})).status !== 202) return false;
-  } catch {
-    return false;
-  }
-  const deadline = Date.now() + STOP_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    try {
-      await api.request("GET", "/api/version");
-    } catch {
-      return true; // The forward's far end refuses now: the port is free.
-    }
-    await sleep(250);
-  }
-  return false;
+/**
+ * Stops the remote server, over its own CLI.
+ *
+ * `penguin server stop` and not a request to the server itself: the machine that needs
+ * stopping is usually the one whose PLATFORM is behind, and a platform route only exists
+ * once it is already running the build that has it. The CLI comes from the store this side
+ * pushed (commands.ts's REMOTE_PENGUIN), so it speaks the current protocol whatever the
+ * running platform is.
+ */
+export async function stopRemoteServer(
+  target: RemoteTarget,
+  exec: (target: RemoteTarget, command: string) => Promise<ExecResult>,
+): Promise<{ ok: true } | { ok: false; detail: string }> {
+  const result = await exec(target, `${REMOTE_PENGUIN} server stop 2>&1`);
+  const answer = jsonAnswer<{ ok: boolean; detail?: string }>(result.stdout, "ok");
+  if (answer?.ok === true) return { ok: true };
+  const said = answer?.detail ?? result.stdout.trim();
+  return { ok: false, detail: said === "" ? "the machine said nothing." : said };
 }

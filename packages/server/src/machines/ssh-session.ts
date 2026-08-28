@@ -178,8 +178,3 @@ export function closeShell(machineAddress: string): void {
   shells.get(machineAddress)?.close();
   shells.delete(machineAddress);
 }
-
-/** Lets go of every connection. */
-export function closeAllShells(): void {
-  for (const address of [...shells.keys()]) closeShell(address);
-}

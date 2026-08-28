@@ -155,33 +155,6 @@ export const logout = () => apiFetch<void>("/api/auth/logout", { method: "POST",
  */
 export const getInstall = () => apiFetch<InstallResponse>("/api/install");
 
-/**
- * Signs in ON another machine, through the proxy. Its server issues the session and the
- * proxy renames the cookie into that machine's namespace, so several servers' sessions
- * coexist in one browser without seeing each other.
- *
- * A separate sign-in per machine because it IS a separate server with its own accounts —
- * the local session is not a credential over there, and sending one would be this server
- * vouching for a person it cannot vouch for.
- */
-export const loginOnMachine = (machineId: string, body: AuthLoginRequest) =>
-  apiFetch<AuthResponse>("/api/auth/login", { method: "POST", body, server: machineId });
-
-/**
- * Signs this browser in on that machine WITHOUT anyone typing its password: the machine
- * mints the session itself over ssh and only the cookie comes back. Fails when its admin
- * password was changed — the manual sign-in is the fallback for exactly that.
- */
-export const autoSignInOnMachine = (projectId: string, machineId: string) =>
-  apiFetch<{ signedIn: true }>(
-    `/api/projects/${encodeURIComponent(projectId)}/machines/${encodeURIComponent(machineId)}/signin`,
-    { method: "POST", body: {} },
-  );
-
-/** Whether this browser already holds a session on that machine. */
-export const meOnMachine = (machineId: string) =>
-  apiFetch<MeResponse>("/api/me", { server: machineId });
-
 export const getMe = () => apiFetch<MeResponse>("/api/me");
 
 export const changePassword = (body: PasswordChangeRequest) =>
@@ -1206,11 +1179,9 @@ export const probeMachines = (projectId: string) =>
   });
 
 /**
- * Starts an install (202, long-running); the returned body already carries the new job.
- *
- * `replaceProgram` answers a job that came back asking for it: a hot update the machine's
- * runtime could not claim, which only replacing the program over there — and restarting it —
- * can fix. Never sent by default, because that restart interrupts whoever is on that machine.
+ * Starts an install on a machine and gives it to this Project; answers the list with the
+ * running job. `replaceProgram` answers a job that came back asking for it — installing the
+ * program over there even though its version already matches, and restarting it.
  */
 export const installOnMachine = (projectId: string, machineId: string, replaceProgram = false) =>
   apiFetch<MachinesResponse>(
@@ -1225,16 +1196,6 @@ export const connectMachine = (projectId: string, machineId: string) =>
     { method: "POST", body: {} },
   );
 
-/**
- * Takes a machine this server already installed into this Project — no ssh, no transfer.
- * The program over there is the same program; what this Project lacked was the membership.
- */
-export const adoptMachine = (projectId: string, machineId: string) =>
-  apiFetch<MachinesResponse>(
-    `/api/projects/${encodeURIComponent(projectId)}/machines/${encodeURIComponent(machineId)}/adopt`,
-    { method: "POST", body: {} },
-  );
-
 /** Drops a machine from this Project. The install stays — another Project may be using it. */
 export const releaseMachine = (projectId: string, machineId: string) =>
   apiFetch<MachinesResponse>(
@@ -1243,6 +1204,13 @@ export const releaseMachine = (projectId: string, machineId: string) =>
   );
 
 /** Drops the tunnel; the remote server keeps running. */
+/** Restarts that machine's server so what runs there matches what is on its disk. */
+export const restartMachine = (projectId: string, machineId: string) =>
+  apiFetch<MachinesResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/machines/${encodeURIComponent(machineId)}/restart`,
+    { method: "POST", body: {} },
+  );
+
 export const disconnectMachine = (projectId: string, machineId: string) =>
   apiFetch<MachinesResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/machines/${encodeURIComponent(machineId)}/disconnect`,

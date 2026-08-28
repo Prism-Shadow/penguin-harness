@@ -25,7 +25,7 @@ export function readServerStateCommand(): string {
 /** Long enough for a slow link, short enough that a dead host does not hold a refresh open. */
 const PROBE_TIMEOUT_MS = 20_000;
 
-export type MachineServerState =
+type MachineServerState =
   /** The machine answered and a server owns its data root: it is up on that port. */
   | { kind: "running"; port: number; pid: number }
   /** The machine answered; nothing is serving there. The program is installed either way. */

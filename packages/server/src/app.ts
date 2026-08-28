@@ -1087,21 +1087,22 @@ export function createApp(
   // For that reason /api/install is deliberately absent from RUNTIME_PREFIXES above — the
   // platform must serve it, not decline it.
   app.route("/api/install", installRoutes(deps));
-  // `/server/<machineId>/api/…` — a connected machine's API, forwarded down its tunnel,
-  // addressed by the machine's OWN id so a re-aliased host keeps its URLs and its browser
-  // session. Mounted
-  // BEFORE the auth middleware and deliberately outside it: the remote authenticates every
-  // forwarded request with its own cookies (renamed per machine on the way through), so a
-  // local session is not a credential over there and requiring one would mean two logins
-  // for one window. The tunnel port it forwards to is already reachable from this machine,
-  // so the route adds no exposure the tunnel had not.
-  const serverProxy = machinesProxy(async (machineId) =>
-    deps.machines.tunnelPortForMachine(machineId),
+  // `/server/<machineId>/api/…` — a connected machine's API, forwarded over the forward held
+  // to it and addressed by the machine's OWN id. Admins only: the request is made over there
+  // as that machine's admin, with a session this server minted over the ssh access that
+  // installed it, so this server's admin session is the one credential involved.
+  const serverProxy = machinesProxy((machineId) => deps.machines.proxyTarget(machineId));
+  app.all(
+    `${SERVER_PROXY_PREFIX}*`,
+    authMiddleware(deps.authService, deps.config.trustProxy),
+    async (c) => {
+      if (!c.var.user.isAdmin) {
+        throw new HttpError(403, "admin_required", "Only an admin can reach a machine's API.");
+      }
+      const answer = await serverProxy(c.req.raw);
+      return answer ?? c.notFound();
+    },
   );
-  app.all(`${SERVER_PROXY_PREFIX}*`, async (c) => {
-    const answer = await serverProxy(c.req.raw);
-    return answer ?? c.notFound();
-  });
 
   // Protected routes: cookie -> auth_session -> user, over the runtime's auth service.
   app.use("/api/*", authMiddleware(deps.authService, deps.config.trustProxy));

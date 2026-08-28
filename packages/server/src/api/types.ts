@@ -3241,12 +3241,10 @@ export interface MachineInfo {
    */
   local: boolean;
   /**
-   * Origin of a live tunnel to that machine, when one is up — `http://localhost:<port>`,
-   * this server's own loopback. Null when nothing is connected. The Web App does not
-   * navigate there: it keeps its own origin and re-points API calls at
-   * `/server/<id>/api/…`, which this server forwards down the tunnel.
+   * True while this server holds a forward to that machine, so its API answers at
+   * `/server/<id>/api/…` and its directories can be browsed. Always true for `local`.
    */
-  origin: string | null;
+  connected: boolean;
   /**
    * Whether a server is up over there, as of the last probe. Null means "not probed yet";
    * the page probes on a widening schedule rather than at list time, because each probe is
@@ -3271,60 +3269,35 @@ export interface MachineServerStatus {
 }
 
 /**
- * The running or last install, polled by GET /api/machines while one runs. `log` carries the
- * far side's own words where there are any: ssh's diagnostics and the remote installer's
- * output say more about a refused key or an unusable Node than a paraphrase would.
+ * The running or last job on a machine — an install, or a connect — polled by GET
+ * /api/machines while one runs. One at a time. `log` carries the far side's own words where
+ * there are any: ssh's diagnostics and the remote installer's output say more about a
+ * refused key or an unusable Node than a paraphrase would.
  */
-export interface MachineInstallJob {
+export interface MachineJob {
+  kind: "install" | "connect" | "restart";
   machineId: string;
   alias: string;
   running: boolean;
   log: string[];
   result:
     | null
-    | { ok: true; kind: "installed" | "already-installed"; version: string | null }
+    | { ok: true; installed: "installed" | "already-installed"; version: string | null }
+    | { ok: true; connected: true }
     | {
         ok: false;
         step: string;
         message: string;
         /**
          * The failure has a next step this side can take, and it needs saying yes to:
-         * replacing the PROGRAM over there and restarting it. Set when a hot update was
-         * refused by a runtime too old to run what it was handed — the one failure a
-         * reinstall answers, and the one thing a push deliberately never does on its own,
-         * since it stops a server somebody else may be using.
+         * installing the PROGRAM over there and restarting it. Set when a hot update could
+         * not be handed over — the machine's store holds no CLI this server can talk to, and
+         * installing is what replicates one. Offered rather than done, because it restarts a
+         * server this Project does not own alone.
          */
         canReplaceProgram?: true;
       };
 }
-
-/**
- * A connect in flight: bringing a machine's server up and holding a tunnel to it. Same job
- * shape as an install — it takes minutes in the bad case, so POST starts it and the page
- * polls — but a separate slot, because connecting somewhere must not cancel an install
- * running elsewhere.
- */
-export interface MachineConnectJob {
-  machineId: string;
-  alias: string;
-  running: boolean;
-  log: string[];
-  result:
-    | null
-    | { ok: true; origin: string }
-    | { ok: false; code?: MachineConnectFailure; message: string };
-}
-
-/** Connect failures that are a condition rather than a message: the page renders each. */
-export type MachineConnectFailure =
-  /** No local port left to forward on. */
-  | "port-conflict"
-  /** A Windows remote, where the detached-start mechanism does not exist. */
-  | "not-supported"
-  /** Nothing installed there yet. */
-  | "not-installed"
-  /** That machine is the one this server runs on. */
-  | "self";
 
 /** GET /api/machines, and the 202 body of POST /api/machines/:machineId/install. */
 export interface MachinesResponse {
@@ -3335,7 +3308,5 @@ export interface MachinesResponse {
    * checkout, which stands on no release the remote could download.
    */
   imageVersion: string | null;
-  job: MachineInstallJob | null;
-  /** The running or last connect; null before the first one. Separate slot from `job`. */
-  connect: MachineConnectJob | null;
+  job: MachineJob | null;
 }
