@@ -413,7 +413,15 @@ export function UsagePage() {
         {/* Errors (a single full-width panel: stats + a recent-errors table) */}
         {data && (
           <ChartCard title={S.usage.errors}>
-            <ErrorsPanel errors={data.errors} projectId={projectId} filters={errorFilters} />
+            <ErrorsPanel
+              errors={data.errors}
+              projectId={projectId}
+              filters={errorFilters}
+              // Clearing the log is a Project-level management operation, gated on the owner
+              // by the route; a member reads the panel without the action.
+              canClear={currentProject?.role === "owner"}
+              onCleared={() => void load()}
+            />
           </ChartCard>
         )}
 

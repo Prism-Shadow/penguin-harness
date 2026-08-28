@@ -218,6 +218,25 @@ export class ErrorsRepo {
     }));
   }
 
+  /**
+   * Deletes the rows a matching read would have returned, and answers how many went.
+   *
+   * The WHERE comes from the same `conds` the SELECTs use, so the delete can never reach a row
+   * the caller's own reads could not: narrowing a filter narrows both halves together, and
+   * there is no second expression to drift.
+   *
+   * `includeGlobal` is deliberately not accepted. Unattributed rows belong to no Project and
+   * appear in EVERY Project's admin view, so a Project-scoped clear that took them would empty
+   * them out of every other Project's panel as well — the same line deleteByProject and
+   * deleteByAgent already draw. Clearing them is an admin-wide act and needs an admin-wide
+   * surface, not a side effect of tidying one Project.
+   */
+  deleteFiltered(projectId: string, f: Omit<ErrorFilter, "includeGlobal"> = {}): number {
+    const { where, params } = this.conds(projectId, f);
+    const res = this.db.prepare(`DELETE FROM error_records WHERE ${where}`).run(params);
+    return Number(res.changes);
+  }
+
   /** Cascading cleanup on Agent deletion (unattributed errors carry no agent_id and are unaffected). */
   deleteByAgent(projectId: string, agentId: string): void {
     this.db

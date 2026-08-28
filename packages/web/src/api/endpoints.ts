@@ -123,6 +123,7 @@ import type {
   UpdateRunResponse,
   DesktopUpdateStatusResponse,
   UsageErrorKind,
+  UsageErrorsClearResponse,
   UsageErrorsPage,
   UsageGranularity,
   UsageGroupBy,
@@ -841,6 +842,23 @@ export const getUsageErrors = (
       kind: params.kind,
     },
   });
+
+/**
+ * Empties the cost center's error table for the filter the panel is showing — the same
+ * date/agent pair the reads take, so what goes is what was on screen. Owner only, and errors
+ * with no Project attribution are never included. Answers how many rows were deleted.
+ */
+export const clearUsageErrors = (
+  projectId: string,
+  params: { from?: string; to?: string; agentId?: string },
+) =>
+  apiFetch<UsageErrorsClearResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/usage/errors`,
+    {
+      method: "DELETE",
+      query: { from: params.from, to: params.to, agentId: params.agentId },
+    },
+  );
 
 export const getUsage = (
   projectId: string,

@@ -2656,6 +2656,19 @@ export interface UsageErrorsPage {
   total: number;
 }
 
+/**
+ * DELETE /api/projects/:projectId/usage/errors — empties the error table for the filter the
+ * panel is showing (its date range and Agent), Project owner only.
+ *
+ * Scoped to the filter rather than the Project's whole history, so a clear takes exactly the
+ * rows on screen. Errors with no Project attribution are never included, whoever asks: they
+ * belong to no Project and are surfaced in every Project's admin view.
+ */
+export interface UsageErrorsClearResponse {
+  /** How many rows were deleted, so the caller can say what went instead of guessing. */
+  deleted: number;
+}
+
 export interface UsageResponse {
   summary: {
     today: UsageBucket;

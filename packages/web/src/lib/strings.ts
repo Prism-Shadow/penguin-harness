@@ -2090,6 +2090,15 @@ Benchmark：
     errorsOlder: "更早",
     errorsPageOf: (page: number, pages: number, total: number) =>
       `第 ${page} / ${pages} 页 · 共 ${total} 条`,
+    /** Clearing the table: the action, and the confirm that must name exactly what goes. */
+    errorsClear: "清空",
+    errorsClearTitle: "清空错误记录",
+    errorsClearScope: (count: number, from: string, to: string): string =>
+      `将删除本 Project 在 ${from} 至 ${to} 区间内的 ${count} 条错误记录，其余时间段的记录保留。`,
+    errorsClearScopeAgent: (count: number, from: string, to: string, agentId: string): string =>
+      `将删除本 Project 中 Agent「${agentId}」在 ${from} 至 ${to} 区间内的 ${count} 条错误记录，其他 Agent 与其余时间段的记录保留。`,
+    errorsClearIrreversible: "此操作不可恢复。",
+    errorsClearDone: (count: number): string => `已删除 ${count} 条错误记录`,
   },
 
   /** The Trace panel's own view of a Trace file (trace-file-view / timeline-chart); the standalone browsing page these once also served is gone. */

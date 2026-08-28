@@ -23,7 +23,9 @@
  * this feature has — and this record is the only place it surfaces.
  *
  * The rule is deliberately a small allowlist of TYPED failures at NAMED capture points rather
- * than a message match. Anything the connectors have not classified stays `unexpected`, which
+ * than a message match, plus one typed failure that arrives carrying its own verdict — a
+ * connection the platform closed, where whether anything stayed broken is protocol state only
+ * the connector holds. Anything the connectors have not classified stays `unexpected`, which
  * is the safe direction: a real fault miscounted as routine is invisible, while routine noise
  * miscounted as a fault is merely loud.
  */
@@ -33,6 +35,7 @@ import {
   MessagingPermissionError,
   MessagingUnsupportedError,
 } from "./media.js";
+import { MessagingConnectionClosedError } from "./qq-api.js";
 
 /**
  * The capture points that put the refusal in front of the person in the chat.
@@ -77,8 +80,20 @@ const CODES_EXPLAINED_IN_CHAT = new Set([
  * Everything else — a network failure, a 5xx from the platform, a bug here — is `unexpected`
  * and keeps its place on the dashboard, and so is any of the three caught where the chat hears
  * nothing: a refusal nobody was told about is still a refusal somebody has to notice.
+ *
+ * {@link MessagingConnectionClosedError} is the one `expected` case the chat is NOT told
+ * about, and it answers the criterion the other way round: nobody needs telling, because
+ * nothing stayed broken. A platform that expires a long-lived socket, or hits its own
+ * internal error, is answered by the connector's next handshake within the backoff, and the
+ * only trace is a record nobody can act on. It is `expected` only when the connector says the
+ * close is one of those — `recovers` is decided where the reconnect is, and a close that
+ * leaves the binding down until a credential or a console setting changes reports
+ * `recovers: false` and stays a defect.
  */
 export function messagingErrorKind(err: unknown, code: string): ErrorKind {
+  if (err instanceof MessagingConnectionClosedError) {
+    return err.recovers ? "expected" : "unexpected";
+  }
   if (!CODES_EXPLAINED_IN_CHAT.has(code)) return "unexpected";
   if (
     err instanceof MessagingPermissionError ||

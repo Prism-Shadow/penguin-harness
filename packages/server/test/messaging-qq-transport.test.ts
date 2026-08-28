@@ -23,6 +23,7 @@ import type {
 import {
   QQ_API_BASE,
   QQ_INTENT_GROUP_AND_C2C,
+  MessagingConnectionClosedError,
   QQApiError,
   createQQTransport,
 } from "../src/runtime/messaging/qq-api.js";
@@ -521,6 +522,47 @@ describe("the QQ gateway session", () => {
         conn.close();
       }
     });
+  });
+
+  it("types every close it reports, and calls only the self-clearing ones recovering", async () => {
+    // The dashboard's "needs a human" count is read off `recovers` (error-kind.ts), and the
+    // reconnect decision behind it lives here — so the verdict is asserted at the socket
+    // rather than on a hand-built error, which would only prove the classifier can read a
+    // boolean somebody else typed in.
+    const verdictOf = async (code: number): Promise<MessagingConnectionClosedError> => {
+      let closed: MessagingConnectionClosedError | undefined;
+      await withFetch(defaults, async () => {
+        const h = harnessOf();
+        const conn = await h.open();
+        try {
+          handshake(h.sockets[0]!, "gw-1");
+          h.sockets[0]!.drop(code);
+          await waitFor(() => h.errors.length > 0);
+          const err = h.errors[0];
+          expect(err).toBeInstanceOf(MessagingConnectionClosedError);
+          closed = err as MessagingConnectionClosedError;
+          expect(closed.closeCode).toBe(code);
+        } finally {
+          conn.close();
+        }
+      });
+      return closed!;
+    };
+
+    // The platform expiring a long-lived connection, and its own internal-error band: the
+    // session is back inside one backoff step with nothing changed anywhere.
+    expect((await verdictOf(4009)).recovers).toBe(true);
+    expect((await verdictOf(4900)).recovers).toBe(true);
+    expect((await verdictOf(4913)).recovers).toBe(true);
+    // A rejected token and an intent the bot was never granted reconnect just as eagerly and
+    // meet the identical refusal every time, so retrying is not recovery.
+    expect((await verdictOf(4004)).recovers).toBe(false);
+    expect((await verdictOf(4014)).recovers).toBe(false);
+    // A refused session handle recovers only by identifying fresh, which loses whatever
+    // arrived in the gap; a delisted bot stops the session outright.
+    expect((await verdictOf(4006)).recovers).toBe(false);
+    expect((await verdictOf(4007)).recovers).toBe(false);
+    expect((await verdictOf(4914)).recovers).toBe(false);
   });
 
   it("drops a socket that stops acknowledging heartbeats", async () => {

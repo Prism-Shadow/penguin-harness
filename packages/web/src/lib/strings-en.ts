@@ -2137,6 +2137,15 @@ Scenarios:
     errorsOlder: "Older",
     errorsPageOf: (page: number, pages: number, total: number) =>
       `Page ${page} / ${pages} · ${total} total`,
+    /** Clearing the table: the action, and the confirm that must name exactly what goes. */
+    errorsClear: "Clear",
+    errorsClearTitle: "Clear error records",
+    errorsClearScope: (count: number, from: string, to: string): string =>
+      `Deletes this Project's ${count} error records between ${from} and ${to}. Records outside that range are kept.`,
+    errorsClearScopeAgent: (count: number, from: string, to: string, agentId: string): string =>
+      `Deletes this Project's ${count} error records for agent ${agentId} between ${from} and ${to}. Other agents and other dates are kept.`,
+    errorsClearIrreversible: "This cannot be undone.",
+    errorsClearDone: (count: number): string => `Deleted ${count} error records`,
   },
 
   /** The Trace panel's own view of a Trace file (trace-file-view / timeline-chart); the standalone browsing page these once also served is gone. */
