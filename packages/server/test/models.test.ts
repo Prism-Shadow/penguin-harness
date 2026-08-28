@@ -597,37 +597,20 @@ describe("model-reference rekeying and the connectivity test", () => {
     expect(toml).not.toContain("openai/gpt-5.5");
   });
 
-  it("a peak/off-peak row is costed at the rate in force, from the one stable price on disk", async () => {
-    // Beijing is UTC+8: 2026-08-31 is a Monday, so 01:30Z is 09:30 there (peak) and 12:00Z is
-    // 20:00 (off-peak). The number on disk is the same in both cases — that is the point.
+  it("a scheduled row answers with both of its rates, from the one stable price on disk", async () => {
+    // No clock is passed and none is wanted: which tier a given request ran in is decided from
+    // that record's own timestamp when the usage is aggregated, so the price lookup's whole job
+    // is to say what the two tiers are. The number on disk is the peak one either way.
     const svc = new ProjectConfigService(t.root);
-    const peak = await svc.getPricing(
-      projectId,
-      "deepseek",
-      "deepseek-v4-flash",
-      new Date("2026-08-31T01:30:00Z"),
-    );
-    const off = await svc.getPricing(
-      projectId,
-      "deepseek",
-      "deepseek-v4-flash",
-      new Date("2026-08-31T12:00:00Z"),
-    );
+    const rates = await svc.getPricing(projectId, "deepseek", "deepseek-v4-flash");
     const catalogPeak = catalogEntryFor("deepseek", "deepseek-v4-flash")!.pricing!;
-    expect(peak!.output).toBe(catalogPeak.output);
-    expect(off!.output).toBeCloseTo(catalogPeak.output / 2, 5);
-
-    // Sunday: off-peak all day, including what would be a peak hour on a weekday.
-    const weekend = await svc.getPricing(
-      projectId,
-      "deepseek",
-      "deepseek-v4-flash",
-      new Date("2026-09-06T01:30:00Z"),
-    );
-    expect(weekend!.output).toBeCloseTo(catalogPeak.output / 2, 5);
+    expect(rates!.peak.output).toBe(catalogPeak.output);
+    expect(rates!.offPeak.output).toBeCloseTo(catalogPeak.output / 2, 5);
+    expect(rates!.peak.cacheRead).toBe(catalogPeak.cache_read);
+    expect(rates!.offPeak.cacheRead).toBeCloseTo(catalogPeak.cache_read / 2, 6);
   });
 
-  it("a hand-edited price on a scheduled row is billed as typed, at every hour", async () => {
+  it("a hand-edited price on a scheduled row is billed as typed, in both tiers", async () => {
     const body = (await (await api.get(url())).json()) as ModelsResponse;
     const entries = body.models.map((m) => ({
       provider: m.provider,
@@ -647,11 +630,13 @@ describe("model-reference rekeying and the connectivity test", () => {
     }));
     await api.put(url(), { models: entries });
     const svc = new ProjectConfigService(t.root);
-    // Nothing here knows whether 3 is a peak rate, so halving it would invent a discount.
-    for (const at of ["2026-08-31T01:30:00Z", "2026-08-31T12:00:00Z"]) {
-      const rates = await svc.getPricing(projectId, "deepseek", "deepseek-v4-flash", new Date(at));
-      expect(rates, at).toEqual({ cacheRead: 1, cacheWrite: 2, output: 3 });
-    }
+    // Nothing here knows whether 3 is a peak rate, so halving it would invent a discount: the
+    // two tiers collapse to the typed number and the split costs a row and changes nothing.
+    const typed = { cacheRead: 1, cacheWrite: 2, output: 3 };
+    expect(await svc.getPricing(projectId, "deepseek", "deepseek-v4-flash")).toEqual({
+      peak: typed,
+      offPeak: typed,
+    });
   });
 
   it("clearing a preset model's display name sticks: it falls back to the id, not back to the catalog", async () => {

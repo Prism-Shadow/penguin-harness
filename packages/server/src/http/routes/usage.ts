@@ -90,11 +90,6 @@ export function usageRoutes(deps: AppDeps): Hono<AppEnv> {
     );
   });
 
-  // One page of the error detail table, newest first. The dashboard response above already
-  // carries the first page; this serves "show me earlier ones" without refetching the whole
-  // aggregate. Takes the date/agent filter only — the model filter never applied to errors
-  // (HTTP and process errors have no Model dimension), so accepting it here would imply a
-  // narrowing the summary above does not do.
   // Lifetime Token total per Model, for the models page's per-card figure. Takes no filters at
   // all: the number answers "how much has this model been used", which has no range, and the
   // page showing it offers none. One grouped scan, so it stays a cheap second request rather
@@ -105,6 +100,11 @@ export function usageRoutes(deps: AppDeps): Hono<AppEnv> {
     return c.json(deps.usageService.modelTotals(projectId));
   });
 
+  // One page of the error detail table, newest first. The dashboard response above already
+  // carries the first page; this serves "show me earlier ones" without refetching the whole
+  // aggregate. Takes the date/agent filter only — the model filter never applied to errors
+  // (HTTP and process errors have no Model dimension), so accepting it here would imply a
+  // narrowing the summary above does not do.
   app.get("/errors", (c) => {
     const projectId = requireValidId(c, "projectId");
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);

@@ -772,15 +772,9 @@ export function buildAppDeps(
   const usageService = new UsageService(
     usageRepo,
     errorsRepo,
-    // The clock reaches the lookup too: a catalog row on a peak/off-peak schedule is billed at
-    // the rate in force at this instant, and tests that pin a time must pin it on both sides.
-    (projectId, provider, modelId) =>
-      projectConfigService.getPricing(
-        projectId,
-        provider,
-        modelId,
-        (overrides.now ?? (() => new Date()))(),
-      ),
+    // No clock here: a scheduled row's two rates come back together and each aggregation half
+    // is priced at the tier its own records ran in, which the query decides from their `ts`.
+    (projectId, provider, modelId) => projectConfigService.getPricing(projectId, provider, modelId),
     overrides.now ?? (() => new Date()),
   );
   const updateCheck =

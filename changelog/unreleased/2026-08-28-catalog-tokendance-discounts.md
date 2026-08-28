@@ -2,7 +2,7 @@
 
 - **Date:** 2026-08-28
 - **Type:** feature
-- **Scope:** `model-catalog`, `core`, `server`, `web`, `cli`, `docs`
+- **Scope:** `model-catalog`, `server`, `web`, `cli`, `docs`
 - **PR:** [#531](https://github.com/Prism-Shadow/penguin-harness/pull/531)
 
 [中文版](2026-08-28-catalog-tokendance-discounts.zh.md)
@@ -129,6 +129,14 @@ without the field behaves exactly as it did. An older build reading a newer conf
 empty string as absent and shows the catalog's name again — the cleared name reappears, and
 nothing else changes.
 
+## How a scheduled row is billed
+
+A row on a peak/off-peak schedule stores its peak price, and the cost center decides the tier
+from **each usage record's own timestamp** rather than from the hour the page is opened. The
+aggregation splits by tier before it prices anything, so a range that straddles a boundary is
+billed at the rate each request actually ran at, and a finished week reports the same number
+whenever it is read.
+
 ## Chinese price labels
 
 The three price buckets read `缓存命中` / `缓存未命中` / `输出` in the Chinese UI — on the
@@ -142,6 +150,10 @@ Presets are copied into `.project_config.toml` when a Project is created and not
 them afterwards, so none of the price changes above reach an existing Project on their own.
 They arrive only through the models page's **sync presets**, which lowers the six promoted
 TokenDance rows to the rate they are billed at; the corrected DeepSeek list prices likewise
-reach an existing Project only if it syncs. The default group order and the first-visit
+reach an existing Project only if it syncs. Because the prices moved, every Project holding
+catalog rows sees the preset-update badge and its page notice until it either syncs or dismisses
+them, and accepting the sync changes the cost the cost center reports for usage that already
+happened — those figures have always been priced against current pricing rather than against the
+rate in force when each request ran. The default group order and the first-visit
 expanded group are defaults: a Project that has ever dragged a group header, or toggled a
 group open, keeps its own arrangement untouched.

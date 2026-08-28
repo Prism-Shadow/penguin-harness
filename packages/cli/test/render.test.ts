@@ -68,13 +68,17 @@ function usage(req: number, sess: number) {
 }
 
 describe("humanizeTokens", () => {
-  it("abbreviates with k / M and trims .0", () => {
+  it("abbreviates with k / M / B and trims .0", () => {
     expect(humanizeTokens(0)).toBe("0");
     expect(humanizeTokens(999)).toBe("999");
     expect(humanizeTokens(1000)).toBe("1k");
     expect(humanizeTokens(1234)).toBe("1.2k");
     expect(humanizeTokens(32000)).toBe("32k");
     expect(humanizeTokens(1_500_000)).toBe("1.5M");
+    // A lifetime total reaches this tier; the web formatter it is meant to match already had it.
+    expect(humanizeTokens(999_999_999)).toBe("1000M");
+    expect(humanizeTokens(2_000_000_000)).toBe("2B");
+    expect(humanizeTokens(2_500_000_000)).toBe("2.5B");
   });
 });
 

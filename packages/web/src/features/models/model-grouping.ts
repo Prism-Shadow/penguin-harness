@@ -236,7 +236,11 @@ export function discountedPrice(
   if (entry?.pricing === undefined) return undefined;
   const schedule = entry.offPeakDiscount;
   const rate = schedule?.rate ?? entry.discount;
-  if (rate === undefined) return undefined;
+  // A fraction off, so only (0, 1) says anything: `effectivePricing` already ignores 0, and a
+  // badge built from a value outside that range reads as `-0%`, `-100%` beside a "Free" tag, or
+  // `--20%`. A stray 0 is the plausible one — the field's own doc says a lapsed promotion is one
+  // field to delete, and deleting a digit is the near miss.
+  if (rate === undefined || rate <= 0 || rate >= 1) return undefined;
   const expected = schedule !== undefined ? entry.pricing : effectivePricing(entry);
   if (expected === undefined) return undefined;
   const same =

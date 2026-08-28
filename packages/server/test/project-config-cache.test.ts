@@ -45,17 +45,18 @@ describe("project-config read cache", () => {
     await fs.rm(root, { recursive: true, force: true });
   });
 
+  /** This fixture's model has no schedule, so both tiers are the one price it stores. */
+  const RATES = { cacheRead: 1, cacheWrite: 2, output: 3 };
+
   it("repeat reads cost one readFile: pricing, name and the typed loadConfig view share the cached parse", async () => {
     const reads = vi.spyOn(fs, "readFile");
     expect(await svc.getPricing(P, "custom", "m1")).toEqual({
-      cacheRead: 1,
-      cacheWrite: 2,
-      output: 3,
+      peak: RATES,
+      offPeak: RATES,
     });
     expect(await svc.getPricing(P, "custom", "m1")).toEqual({
-      cacheRead: 1,
-      cacheWrite: 2,
-      output: 3,
+      peak: RATES,
+      offPeak: RATES,
     });
     expect(await svc.getName(P)).toBe("cached");
     expect((await svc.loadConfig(P)).models.map((m) => m.model_id)).toEqual(["m1"]);
@@ -69,9 +70,8 @@ describe("project-config read cache", () => {
     const reads = vi.spyOn(fs, "readFile");
     expect(await svc.getName(P)).toBe("renamed");
     expect(await svc.getPricing(P, "custom", "m1")).toEqual({
-      cacheRead: 1,
-      cacheWrite: 2,
-      output: 3,
+      peak: RATES,
+      offPeak: RATES,
     });
     expect(reads).toHaveBeenCalledTimes(1);
   });

@@ -303,13 +303,6 @@ function usd(cacheRead: number, cacheWrite: number, output: number): ModelPricin
 }
 
 /**
- * What the seller actually bills for an entry: its list `pricing` less any running
- * `discount`, on every bucket. Rounded to the six decimals cny() already stores at, so a
- * promotional rate is written into a Project as a price rather than as a float artifact.
- * An entry with no discount (or no pricing at all) is returned untouched, which is why every
- * caller can use this in place of `.pricing` without asking whether a promotion is live.
- */
-/**
  * A weekly peak/off-peak billing schedule, written in a fixed-offset zone.
  *
  * Only fixed offsets are expressible, which is the whole of what the catalog needs: the vendors
@@ -354,6 +347,42 @@ export const DEEPSEEK_OFF_PEAK: OffPeakDiscount = {
   ],
 };
 
+/**
+ * The catalog's time-based schedules, each with the references that carry it.
+ *
+ * The cost center needs this to split an aggregation by tier before it prices anything: the
+ * rate a request ran at is a fact about when it ran, and only the catalog knows which rows have
+ * two rates at all. Grouped by schedule so a second vendor's windows cost one entry, not a
+ * second query.
+ */
+export function offPeakScheduledRefs(): Array<{
+  schedule: OffPeakDiscount;
+  refs: Array<{ provider: string; modelId: string }>;
+}> {
+  const bySchedule = new Map<
+    OffPeakDiscount,
+    { schedule: OffPeakDiscount; refs: Array<{ provider: string; modelId: string }> }
+  >();
+  for (const entry of MODEL_CATALOG) {
+    const schedule = entry.offPeakDiscount;
+    if (schedule === undefined) continue;
+    const group = bySchedule.get(schedule) ?? { schedule, refs: [] };
+    group.refs.push({ provider: entry.provider, modelId: entry.modelId });
+    bySchedule.set(schedule, group);
+  }
+  return [...bySchedule.values()];
+}
+
+/**
+ * What the seller actually bills for an entry: its list `pricing` less any running `discount`,
+ * on every bucket. Rounded to the six decimals cny() already stores at, so a promotional rate is
+ * written into a Project as a price rather than as a float artifact. An entry with no discount
+ * (or no pricing at all) is returned untouched.
+ *
+ * A row on a SCHEDULE is a deliberate exception: `presetModelEntries` writes its peak price,
+ * because which tier a request ran in is decided from that request's own timestamp when the
+ * usage is aggregated, not from what a Project happened to store.
+ */
 export function effectivePricing(
   entry: ModelCatalogEntry,
   now: Date = new Date(),

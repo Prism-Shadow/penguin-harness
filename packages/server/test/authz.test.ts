@@ -46,8 +46,19 @@ describe("authz", () => {
     expect((await outsider.get(`/api/projects/${projectId}/members`)).status).toBe(404);
     expect((await outsider.get(`/api/projects/${projectId}/usage`)).status).toBe(404);
     // The error table's paging route is checked separately from /usage: it is the one place a
-    // reader can walk past the dashboard's first page, so it must refuse the same way.
+    // reader can walk past the dashboard's first page, so it must refuse the same way. The
+    // per-Model totals are the other route off /usage that answers without any filter at all.
     expect((await outsider.get(`/api/projects/${projectId}/usage/errors`)).status).toBe(404);
+    expect((await outsider.get(`/api/projects/${projectId}/usage/model-totals`)).status).toBe(404);
+  });
+
+  it("a member reads the per-Model totals: it is a read, not a management operation", async () => {
+    // The models page shows every viewer what each model has spent, so this one is not
+    // owner-gated the way a write is — but it is still Project-scoped, which the line above
+    // pins from the other side.
+    const res = await member.get(`/api/projects/${projectId}/usage/model-totals`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ totals: [] });
   });
 
   it("member can read models (masked) but not write; owner can write", async () => {

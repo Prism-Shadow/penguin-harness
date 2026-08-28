@@ -1161,4 +1161,13 @@ describe("off-peak schedules", () => {
       0.15, 4.5, 13.5,
     ]);
   });
+  it("no entry declares both a flat discount and a schedule", () => {
+    // effectivePricing, discountedPrice and presetModelEntries all silently prefer the schedule,
+    // so a row declaring both would be billed at its list price during peak with nothing failing.
+    // The rule is stated in the field's doc; this is what makes it true.
+    const both = MODEL_CATALOG.filter(
+      (m) => m.discount !== undefined && m.offPeakDiscount !== undefined,
+    ).map((m) => `${m.provider}/${m.modelId}`);
+    expect(both).toEqual([]);
+  });
 });
