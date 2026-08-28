@@ -317,6 +317,19 @@ penguin server reset-admin-password
 
 内置 `admin` 会被恢复成未认领状态——密码随机生成且无人见过，admin 的全部会话一并吊销。重新启动服务，打开它打印的首次登录链接即可设置新密码；整个过程无需记下任何东西。其他账号由管理员在用户管理页重置，本命令只作用于 `admin`。数据根目录照常由 `PENGUIN_HOME` 决定。
 
+### penguin server status
+
+以单行 JSON 打印本数据根目录的服务状态与本机 id。无论服务是否在运行都能回答——数据来源是数据根目录本身，而不是某个活着的进程：
+
+```bash
+penguin server status
+# {"running":true,"port":7364,"pid":41233,"machineId":"LNrJdHAZJ91G58i0"}
+```
+
+`running` 要求记录的 pid 存活**且**其端口能接受连接，因此被回收的 pid 不会被当成活着的服务。`machineId` 在本机至少启动过一次服务之前为 `null`——该 id 在首次启动时铸造，此后永不改变。数据根目录一如既往由 `PENGUIN_HOME` 选定。
+
+Machines 页面正是通过 ssh 执行这条命令来询问一台机器的状况，输出是 JSON 而非散文正是为此。
+
 ## penguin version
 
 报告当前运行的是哪个构建。仅凭版本号回答不了这个问题——两次发布之间由源码 checkout 构建出来的每一个版本也都自称 `0.2.3`——因此发布版与源码构建给出的身份并不相同。

@@ -30,6 +30,10 @@
       "types": "./dist/reset-admin-password.d.ts",
       "import": "./dist/reset-admin-password.js"
     },
+    "./machine-status": {
+      "types": "./dist/machine-status.d.ts",
+      "import": "./dist/machine-status.js"
+    },
     "./hmr/manifest": {
       "types": "./dist/hmr/manifest.d.ts",
       "import": "./dist/hmr/manifest.js"

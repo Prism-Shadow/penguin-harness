@@ -30,14 +30,14 @@ export function serverLockPath(root: string): string {
   return path.join(root, "server.lock");
 }
 
-/** Reads the lock file; a missing or malformed file reads as "no lock". */
-export function readServerLock(root: string): ServerLock | null {
-  let raw: string;
-  try {
-    raw = fs.readFileSync(serverLockPath(root), "utf8");
-  } catch {
-    return null;
-  }
+/**
+ * The lock's text, parsed; anything that is not one reads as "no lock".
+ *
+ * Exported because a lock is also read where the file is not: a controller looking at
+ * ANOTHER machine gets this same text back from an ssh `cat` (machines/server-state.ts). The
+ * shape is defined once here so the two readers cannot drift apart.
+ */
+export function parseServerLock(raw: string): ServerLock | null {
   try {
     const parsed = JSON.parse(raw) as Partial<ServerLock>;
     if (
@@ -49,6 +49,15 @@ export function readServerLock(root: string): ServerLock | null {
       return null;
     }
     return { pid: parsed.pid, port: parsed.port, startedAt: String(parsed.startedAt ?? "") };
+  } catch {
+    return null;
+  }
+}
+
+/** Reads the lock file; a missing or malformed file reads as "no lock". */
+export function readServerLock(root: string): ServerLock | null {
+  try {
+    return parseServerLock(fs.readFileSync(serverLockPath(root), "utf8"));
   } catch {
     return null;
   }
