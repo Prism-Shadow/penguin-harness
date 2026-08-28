@@ -11,7 +11,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm -r test",
+    "test": "pnpm -r --workspace-concurrency=1 test",
     "test:e2e": "pnpm --filter @prismshadow/penguin-core test:e2e",
     "build": "pnpm -r build && pnpm link:cli",
     "link:cli": "pnpm --dir packages/cli link --global || echo '[link:cli] pnpm global directory not configured; skipping the global penguin link (run pnpm setup once first)'",

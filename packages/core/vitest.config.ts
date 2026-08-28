@@ -31,9 +31,11 @@
  * keeps 0 so a flake introduced there is seen the first time.
  */
 import { defineConfig } from "vitest/config";
+import { boundedPool } from "../../vitest.shared.js";
 
 export default defineConfig({
   test: {
+    ...boundedPool,
     environment: "node",
     testTimeout: process.platform === "win32" ? 120_000 : 5_000,
     retry: process.platform === "win32" ? 2 : process.platform === "darwin" ? 1 : 0,

@@ -5,6 +5,7 @@
  * environment with no plugins suffices.
  */
 import { defineConfig } from "vitest/config";
+import { boundedPool } from "../../vitest.shared.js";
 
 export default defineConfig({
   test: { environment: "node" },

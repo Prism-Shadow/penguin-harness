@@ -4,9 +4,11 @@
  * plugin types, and tests don't need the plugin anyway.
  */
 import { defineConfig } from "vitest/config";
+import { boundedPool } from "../../vitest.shared.js";
 
 export default defineConfig({
   test: {
+    ...boundedPool,
     environment: "node",
     // Only run unit tests under test/; e2e/ (Playwright, has its own test:e2e) is excluded from vitest.
     include: ["test/**/*.test.ts"],

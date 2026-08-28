@@ -38,9 +38,11 @@
  * would otherwise stay installed for every later file in the same worker.
  */
 import { defineConfig } from "vitest/config";
+import { boundedPool } from "../../vitest.shared.js";
 
 export default defineConfig({
   test: {
+    ...boundedPool,
     environment: "node",
     isolate: false,
     restoreMocks: true,
