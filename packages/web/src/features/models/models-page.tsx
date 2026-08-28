@@ -187,8 +187,11 @@ const TONE_CLASS: Record<SpeedTone, string> = {
   red: toneInk.danger,
 };
 
-/** In-page key for one model's speed result. */
-const speedKey = (provider: string, modelId: string) => `${provider}\u0000${modelId}`;
+/**
+ * In-page Map key for a paired reference — the same NUL-separated shape the server uses, and
+ * never persisted. Keys every per-model side table the page holds: speed results, spend totals.
+ */
+const refMapKey = (provider: string, modelId: string) => `${provider}\u0000${modelId}`;
 
 /** Default context window (tokens) for custom models when left unset. */
 const CUSTOM_CONTEXT_DEFAULT = 128000;
@@ -633,7 +636,9 @@ export function ModelsPage() {
     }
     try {
       const totals = await api.getUsageModelTotals(projectId);
-      setUsedTokens(new Map(totals.totals.map((t) => [speedKey(t.provider, t.modelId), t.tokens])));
+      setUsedTokens(
+        new Map(totals.totals.map((t) => [refMapKey(t.provider, t.modelId), t.tokens])),
+      );
     } catch {
       // Fail-soft, and deliberately silent: the page's job is configuring models, and a figure
       // that could not be read is shown as absent rather than as an error the user cannot act on.
@@ -740,7 +745,7 @@ export function ModelsPage() {
     setSpeedRunning(providerId);
     try {
       for (const row of targets) {
-        const key = speedKey(row.provider, row.modelId);
+        const key = refMapKey(row.provider, row.modelId);
         setSpeedResults((prev) => new Map(prev).set(key, "pending"));
         try {
           const res = await api.testModel(projectId, {
@@ -1196,8 +1201,8 @@ export function ModelsPage() {
                                 currency={currency}
                                 isDefault={sameModelRef(rowRef(row), defaultModel)}
                                 isVisionModel={sameModelRef(rowRef(row), visionModel)}
-                                speed={speedResults.get(speedKey(row.provider, row.modelId))}
-                                usedTokens={usedTokens.get(speedKey(row.provider, row.modelId))}
+                                speed={speedResults.get(refMapKey(row.provider, row.modelId))}
+                                usedTokens={usedTokens.get(refMapKey(row.provider, row.modelId))}
                                 onOpen={() => setEditing(rowRef(row))}
                               />
                             ))
