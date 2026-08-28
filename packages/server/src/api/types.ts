@@ -702,6 +702,13 @@ export interface ModelOAuthStatusResponse {
   status: "pending" | "done" | "error";
   /** The provider group the flow mints a key for. */
   provider: string;
+  /**
+   * How many models the minted key was written to — set on the `done` answer, the way
+   * {@link ModelOAuthCodeResponse} sets it on a redemption. The dialog reports this number, so
+   * it has to be the server's own: the caller's model table can outlive a rejected save and
+   * would otherwise name a count the server never wrote.
+   */
+  applied?: number;
   error?: ModelOAuthErrorCode;
 }
 

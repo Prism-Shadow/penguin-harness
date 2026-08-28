@@ -596,6 +596,8 @@ export function ModelsPage() {
   const [groupKeyFor, setGroupKeyFor] = useState<string | null>(null);
   /** Vendor group (provider id) whose authorization dialog is open (groups that publish a key-minting flow only). */
   const [oauthFor, setOauthFor] = useState<string | null>(null);
+  /** Whether the open authorization actually wrote a key — see the dialog's `onClose`. */
+  const keyLanded = useRef(false);
   /** User-defined group (provider id) whose delete confirmation is open (built-in groups never offer this). */
   const [deleteGroupFor, setDeleteGroupFor] = useState<string | null>(null);
   /** "Add group" popup (user-defined group): create-only hands off to that group's add-model dialog, import mode fills the group from its endpoint (see AddGroupDialog). */
@@ -1230,18 +1232,20 @@ export function ModelsPage() {
           count={rows?.filter((r) => r.provider === oauthFor).length ?? 0}
           onClose={() => {
             setOauthFor(null);
-            // The reload waits for the dismissal rather than racing the open dialog. The key
-            // was written server-side, so the table in hand is stale in exactly one place:
-            // reload rather than patch, and the masked key comes back with it. Unconditional —
-            // a cancelled flow reloads a table that has not changed, which costs one request
-            // and cannot be wrong.
-            void load();
+            // The reload waits for the dismissal rather than racing the open dialog: the key
+            // was written server-side, so the table in hand is stale in exactly one place, and
+            // reloading brings the masked key back. Gated on a key having landed, because
+            // `load` also drops this Project's speed results — measurements that cost real API
+            // quota and live only in page memory — and a cancelled flow changed nothing.
+            if (keyLanded.current) void load();
+            keyLanded.current = false;
           }}
           onApplied={() => {
-            // Nothing to do here: the dialog stays open and reports the outcome itself (its
-            // `done` phase), because the authorization ran in another tab and a toast would be
-            // announced to a window nobody is looking at. Kept as a seam so a caller that does
-            // need to react to the key landing has one.
+            // The dialog stays open and reports the outcome itself (its `done` phase), because
+            // the authorization ran in another tab and a toast would be announced to a window
+            // nobody is looking at. All this seam does is record that the dismissal has a
+            // reload to do.
+            keyLanded.current = true;
           }}
         />
       )}
@@ -3167,9 +3171,12 @@ function ModelOAuthDialog({
         const res = await api.getModelOAuthStatus(projectId, flow.flowId);
         if (stopped) return;
         if (res.status === "done") {
-          setApplied(count);
+          // The server's own count, not the table in hand: `rows` is kept through a rejected
+          // save so the user can fix and retry, so it can name models the server never wrote.
+          const n = res.applied ?? count;
+          setApplied(n);
           setPhase("done");
-          onAppliedRef.current(count);
+          onAppliedRef.current(n);
           return;
         }
         if (res.status === "error") {
@@ -3244,9 +3251,7 @@ function ModelOAuthDialog({
         // Done is an outcome, not a choice: a "cancel" beside it would offer to undo a key that
         // is already written.
         phase === "done" ? (
-          <Button variant="primary" onClick={onClose}>
-            {S.common.close}
-          </Button>
+          <Button onClick={onClose}>{S.common.close}</Button>
         ) : (
           <>
             <Button onClick={onClose}>{S.common.cancel}</Button>
@@ -3261,11 +3266,9 @@ function ModelOAuthDialog({
             {S.models.oauthAppliedBody(provider.label, applied)}
           </p>
         ) : (
-          <>
-            <p className="text-sm text-gray-700 dark:text-gray-300">
-              {S.models.oauthIntro(provider.label, count)}
-            </p>
-          </>
+          <p className="text-sm text-gray-700 dark:text-gray-300">
+            {S.models.oauthIntro(provider.label, count)}
+          </p>
         )}
         {phase !== "done" && manual && (
           <>

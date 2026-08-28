@@ -2,7 +2,8 @@
 
 - **Date:** 2026-08-28
 - **Type:** fix
-- **Scope:** `web`
+- **Scope:** `web`, `server`
+- **PR:** [#532](https://github.com/Prism-Shadow/penguin-harness/pull/532)
 
 [中文版](2026-08-28-oauth-outcome-dialog.zh.md)
 
@@ -16,21 +17,18 @@ models the key was written to, and is dismissed deliberately.
 
 ## Details
 
-- The dialog gained a `done` phase, reached by both paths a key can land through — the redirect
+- Gave the dialog a `done` phase, reached by both paths a key can land through — the redirect
   flow's poll seeing `status: "done"`, and a manually pasted code answering `ok`. The flow's
   controls and the manual/redirect switch leave with it, so what remains is the sentence and one
-  button.
-- Done is an outcome rather than a choice, so the footer is a single dismissal: a cancel beside
-  it would offer to undo a key the server has already stored.
-- The model table reloads when the dialog is dismissed, not when the key lands, and the
-  dialog does not render behind the table's own loaded-rows guard. Reloading blanks the rows
-  for the length of a request, so a dialog gated on them would be unmounted mid-flow by the
-  very success it was reporting — and remounting starts a fresh authorization, handing the
-  user back the page they had just finished. Waiting for the dismissal keeps the masked key
-  arriving with the reload and keeps the outcome on screen until it is read.
-- `test/model-oauth-outcome.test.ts` pins the rule rather than leaving it to memory: both success
-  paths settle into `done`, neither the dialog nor its caller toasts the outcome, the sentence
-  carries the provider and the count in both dictionaries, the done footer offers no cancel, and
-  the dialog is neither gated on the loaded rows nor reloaded from the success handler.
-  It reads the real source — the dialog is module-private, and exporting it so a test could mount
-  it would widen the module's surface to check a rule about its own text.
+  button, which dismisses.
+- Added `applied` to the flow-status response, so both paths report the count the server wrote
+  rather than one of them counting the table in hand. The redemption route already answered with
+  it; the status route computed it and dropped it.
+- Moved the model table's reload from the moment the key lands to the dismissal, and stopped
+  rendering the dialog behind the table's loaded-rows guard. The reload runs only when a key
+  actually landed, because it also drops the Project's speed-test measurements.
+- Removed the toast string the flow no longer uses.
+- Pinned the rule in `test/model-oauth-outcome.test.ts`: both success paths settle into `done`,
+  neither the dialog nor its caller toasts the outcome, the sentence carries the provider and the
+  count in both dictionaries, the done footer offers no cancel, and the dialog is neither gated on
+  the loaded rows nor reloaded from the success handler.

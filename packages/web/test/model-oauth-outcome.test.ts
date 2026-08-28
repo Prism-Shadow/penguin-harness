@@ -23,11 +23,19 @@ const SOURCE = readFileSync(
   "utf8",
 );
 
-/** The body of `KeyAuthorizeDialog`, from its phase type to the end of the file. */
+/**
+ * The body of `ModelOAuthDialog`, from its phase type to the end of that component.
+ *
+ * Bounded rather than run to end of file: the component happens to be last today, so an
+ * unbounded slice would quietly sweep anything appended after it into these assertions and
+ * fail for a reason that has nothing to do with this dialog.
+ */
 function dialogSource(): string {
   const start = SOURCE.indexOf("type OAuthPhase");
   expect(start).toBeGreaterThan(0);
-  return SOURCE.slice(start);
+  const body = SOURCE.slice(start);
+  const end = body.indexOf("\nfunction ", body.indexOf("function ModelOAuthDialog"));
+  return end === -1 ? body : body.slice(0, end);
 }
 
 describe("the key-authorization dialog's outcome", () => {
@@ -43,7 +51,12 @@ describe("the key-authorization dialog's outcome", () => {
   it("never toasts the outcome from the dialog or its caller", () => {
     // The caller used to close the dialog and toast. Either half coming back reintroduces the
     // bug: a toast is missed, and closing removes the surface that would have said anything.
-    expect(SOURCE).not.toContain("S.models.oauthApplied(");
+    // Asserted on the caller's own handler rather than on a dictionary key going unused — a
+    // string the code no longer references is exactly the thing someone deletes as dead, and
+    // that deletion would make this pass forever.
+    const call = SOURCE.slice(SOURCE.indexOf("<ModelOAuthDialog"));
+    const onApplied = call.slice(call.indexOf("onApplied="), call.indexOf("/>"));
+    expect(onApplied).not.toContain("toastSuccess");
     expect(dialogSource()).not.toContain("toastSuccess");
   });
 
@@ -55,6 +68,10 @@ describe("the key-authorization dialog's outcome", () => {
       expect(body).toContain("TokenDance");
       expect(body).toContain("7");
     }
+    // Keys and arity are compile-enforced by `en: Strings`; the plural branch is the one thing
+    // in these two strings that runs, and it is where the dictionaries differ in shape.
+    expect(en.models.oauthAppliedBody("TokenDance", 1)).toContain("1 model ");
+    expect(en.models.oauthAppliedBody("TokenDance", 2)).toContain("2 models ");
   });
 
   it("survives the table reload, which is what let a finished flow offer itself again", () => {

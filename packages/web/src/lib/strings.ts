@@ -809,7 +809,6 @@ export const zh = {
       `将在你的 ${label} 账户下新建一个 API key，并写入该分组下全部 ${n} 个模型，覆盖它们当前的 key。`,
     oauthAuthorize: "打开授权页",
     oauthWaiting: "等待在新标签页中完成授权…",
-    oauthApplied: (n: number): string => `已为 ${n} 个模型配置新的 API key`,
     /**
      * The dialog's own report once the key has landed. It says the provider as well as the
      * count, because the user is reading it after a trip to another tab and may not remember
