@@ -21,7 +21,9 @@ import {
   scpArgs,
   shQuote,
   sshArgs,
+  forwardArgs,
 } from "../src/machines/commands.js";
+import { refusalDetail } from "../src/machines/upgrade.js";
 import { resolvePushPlan } from "../src/machines/install-server.js";
 
 describe("parseHostAliases", () => {
@@ -193,6 +195,38 @@ describe("ssh / scp invocations", () => {
   it("selects the account on the command line, never by writing the ssh config", () => {
     expect(sshArgs(target, "true")).toContain("User=deploy");
     expect(sshArgs({ alias: "build-box", user: "" }, "true").join(" ")).not.toContain("User=");
+  });
+
+  it("forwards a machine's API on any free local port, unlike the browser's same-numbered tunnel", () => {
+    // tunnelArgs must keep both ends equal because preview URLs carry the server's own bound
+    // port. Nothing built from THIS forward reaches a browser, so it takes what is free here
+    // — which is what lets a machine on the default port be reached by a controller on it.
+    const args = forwardArgs(target, 49152, 7364).join(" ");
+    expect(args).toContain("-L 49152:127.0.0.1:7364");
+    // Or "local port taken" would be a silent forward to nowhere instead of an exit.
+    expect(args).toContain("ExitOnForwardFailure=yes");
+  });
+
+  it("refuses to build a forward around a port that is not one", () => {
+    expect(() => forwardArgs(target, 0, 7364)).toThrow(/bad port/);
+    expect(() => forwardArgs(target, 7364, 70000)).toThrow(/bad port/);
+  });
+
+  it("repeats the machine's own words when it refuses a build", () => {
+    // The endpoint answers the API error envelope, and its message is the actionable half —
+    // a runtime that cannot claim this platform names itself there.
+    expect(
+      refusalDetail(
+        409,
+        JSON.stringify({ error: { code: "hmr_refused", message: "this runtime is too old" } }),
+      ),
+    ).toBe("this runtime is too old");
+  });
+
+  it("falls back to whatever it did say, rather than inventing a reason", () => {
+    // Not every refusal comes from the API: a reverse proxy or a wrong port answers HTML.
+    expect(refusalDetail(502, "<html>Bad Gateway</html>")).toBe("<html>Bad Gateway</html>");
+    expect(refusalDetail(403, "   ")).toContain("403");
   });
 
   it("leaves the scp destination unquoted — modern scp transfers over SFTP, taking it literally", () => {

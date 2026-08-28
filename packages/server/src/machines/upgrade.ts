@@ -1,0 +1,152 @@
+/**
+ * Sending THIS server's hot-pushed build to a machine, and applying it there.
+ *
+ * The same three artifacts the local server was pushed — platform, cli, web (plus any native
+ * assets) — are re-packed into the body `/api/hmr/upgrade` takes and POSTed to the machine's
+ * OWN copy of that endpoint, through the connection this side already holds to it.
+ *
+ * That connection is the whole design. This side keeps a shared shell to every machine it
+ * probes and a forward beside it (forward.ts), so reaching a machine's API costs nothing per
+ * operation — no handshake, no program that has to exist over there to receive the bytes, no
+ * shell protocol to write and parse. What the far side answers is the endpoint's own JSON,
+ * with its own error codes, exactly as the local push reads it.
+ *
+ * It used to be an applier scp'd into a scratch directory with a job file beside it, then a
+ * `penguin server apply` subcommand fed on ssh's stdin. Both existed to work around not
+ * having an HTTP way in; both paid a fresh handshake per upgrade, which on a distant host is
+ * most of the operation and is paid again for every machine on every push.
+ *
+ * The result is a hot swap: seconds, no restart, and nothing that machine was running dies.
+ * That is the difference between this and reinstalling, which replaces the program on disk
+ * and needs the server bounced to take effect.
+ */
+import fs from "node:fs";
+import path from "node:path";
+import zlib from "node:zlib";
+import { forwardTo } from "./forward.js";
+import { machineApi } from "./machine-api.js";
+import type { RemoteTarget } from "./commands.js";
+
+/** Long enough for 8 MB over a slow link, plus the unpack, boot and commit on the far side. */
+const APPLY_TIMEOUT_MS = 10 * 60_000;
+
+export type UpgradeOutcome =
+  | { kind: "upgraded"; detail: string }
+  /** The machine answered, and said no — a refused body, a runtime that cannot take it. */
+  | { kind: "refused"; detail: string }
+  /** Nothing to send: this server has never been pushed to. */
+  | { kind: "no-build" }
+  /** Could not reach it, or it never answered; `detail` is its own words where there are any. */
+  | { kind: "failed"; step: string; detail: string };
+
+/**
+ * The upgrade body, rebuilt from this server's own hmr store: exactly what it was pushed,
+ * forwarded unchanged. Null when nothing has been pushed here — a server running its
+ * packaged build has no bundle to hand on, and pretending otherwise would send a machine
+ * something that never existed as a version.
+ */
+export function readPushedBuild(dataRoot: string): Buffer | null {
+  try {
+    const hmrDir = path.join(dataRoot, "hmr");
+    const manifest = JSON.parse(fs.readFileSync(path.join(hmrDir, "harness.json"), "utf8")) as {
+      platform?: { bundle?: string };
+      cli?: { bundle?: string };
+      web?: { manifest?: string };
+    };
+    if (
+      typeof manifest.platform?.bundle !== "string" ||
+      typeof manifest.cli?.bundle !== "string" ||
+      typeof manifest.web?.manifest !== "string"
+    ) {
+      return null;
+    }
+    const platform = fs.readFileSync(path.join(hmrDir, manifest.platform.bundle), "utf8");
+    const cli = fs.readFileSync(path.join(hmrDir, manifest.cli.bundle), "utf8");
+    // The web artifact is stored as gzip(JSON.stringify({ files })) — the same shape the
+    // upgrade body carries, so it is unwrapped once here rather than re-encoded.
+    const web = JSON.parse(
+      zlib.gunzipSync(fs.readFileSync(path.join(hmrDir, manifest.web.manifest))).toString("utf8"),
+    ) as { files: Record<string, string> };
+    return zlib.gzipSync(Buffer.from(JSON.stringify({ platform, cli, web })));
+  } catch {
+    return null; // No store, a partial record, or damage: nothing safe to forward.
+  }
+}
+
+/**
+ * The machine's own words for a refusal. The endpoint answers `{error:{code,message}}`, and
+ * its message is what a person can act on — a body it would not take, a runtime too old to
+ * claim this platform. Anything unparseable falls back to the raw text, trimmed.
+ */
+export function refusalDetail(status: number, text: string): string {
+  try {
+    const body = JSON.parse(text) as { error?: { message?: string } };
+    const message = body.error?.message;
+    if (typeof message === "string" && message !== "") return message;
+  } catch {
+    // Not the API's error envelope; the text itself is the best there is.
+  }
+  const said = text.trim();
+  return said === "" ? `it refused with ${status} and said nothing` : said;
+}
+
+/**
+ * Applies this server's build on `target`. Never throws: every failure is one of the outcomes
+ * above, carrying the machine's own words where there are any.
+ *
+ * `port` is where its API is reachable from HERE — the connect tunnel's port when the machine
+ * is connected, so a browsing session and this share one forward; otherwise the caller passes
+ * none and one is opened and kept (forward.ts).
+ */
+export async function upgradeRemote(opts: {
+  /** Registry key for the kept forward — the machine's ssh address. */
+  address: string;
+  target: RemoteTarget;
+  /** Where its server is bound over there; what a forward points at. */
+  remotePort: number;
+  /** A live tunnel's local port when there is one, so no second forward is opened. */
+  livePort?: number | null;
+  /** A session on that machine, as its own cookie (`penguin_session=…`). */
+  cookie: string;
+  dataRoot: string;
+  onProgress?: (line: string) => void;
+}): Promise<UpgradeOutcome> {
+  const say = opts.onProgress ?? (() => {});
+  const payload = readPushedBuild(opts.dataRoot);
+  if (payload === null) return { kind: "no-build" };
+
+  let port = opts.livePort ?? null;
+  if (port === null) {
+    const forward = await forwardTo({
+      address: opts.address,
+      target: opts.target,
+      remotePort: opts.remotePort,
+    });
+    if (!forward.ok) return { kind: "failed", step: "reach", detail: forward.detail.slice(0, 400) };
+    port = forward.port;
+  }
+
+  say(`Sending this build (${(payload.byteLength / 1048576).toFixed(1)} MB)…`);
+  let answer: { status: number; text: string };
+  try {
+    answer = await machineApi(port, opts.cookie).postBytes(
+      "/api/hmr/upgrade",
+      "application/gzip",
+      payload,
+      APPLY_TIMEOUT_MS,
+    );
+  } catch (err) {
+    return {
+      kind: "failed",
+      step: "apply",
+      detail: (err instanceof Error ? err.message : String(err)).slice(0, 400),
+    };
+  }
+
+  // A refusal is an ANSWER: the machine was reached and said no. That is not the same as
+  // failing to reach it, and the page offers different things for the two.
+  if (answer.status < 200 || answer.status >= 300) {
+    return { kind: "refused", detail: refusalDetail(answer.status, answer.text).slice(0, 400) };
+  }
+  return { kind: "upgraded", detail: answer.text.trim().slice(0, 400) };
+}
