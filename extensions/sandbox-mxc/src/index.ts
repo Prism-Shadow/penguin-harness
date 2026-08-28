@@ -2,9 +2,9 @@
  * @prismshadow/penguin-extension-sandbox-mxc — a Windows sandbox backend over Microsoft
  * MXC (Microsoft eXecution Containers).
  *
- * A PLUGIN PACKAGE, not part of the platform: a deployment lists it in extensions.json and
+ * AN EXTENSION PACKAGE, not part of the platform: a deployment lists it in extensions.json and
  * the harness resolves it from the installation. It compiles against the type-only
- * `@prismshadow/penguin-server/extension` surface and has no runtime dependency on the
+ * `@prismshadow/penguin-core/extension` surface and has no runtime dependency on the
  * harness or on any other backend.
  *
  * WHY THIS EXISTS: Windows has no bubblewrap and no sandbox-exec, and the DSH adaptor's
@@ -43,7 +43,7 @@ import type {
   ExtensionContext,
   SandboxPolicy,
   SandboxProvider,
-} from "@prismshadow/penguin-server/extension";
+} from "@prismshadow/penguin-core/extension";
 
 /** Default probe budget; a probe that hangs must not hang the first spawn forever. */
 const PROBE_TIMEOUT_MS = 5_000;

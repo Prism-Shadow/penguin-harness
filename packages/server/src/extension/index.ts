@@ -1,5 +1,6 @@
 /**
- * The harness's extension surface — the `@prismshadow/penguin-server/extension` subpath.
+ * What this harness offers an extension BEYOND the contract — the
+ * `@prismshadow/penguin-server/extension` subpath.
  *
  * The contract is `@prismshadow/penguin-core/extension` and is CLOSED: this module does not
  * reopen it by declaration merging. Augmenting it would put `terminals` into the contract
@@ -12,10 +13,10 @@
  * (`ctx as HarnessContext`) and thereby states, at the point of use, that it depends on
  * running inside this harness rather than on any embedder.
  *
- * `sandbox` needs none of that: it is part of the contract in core, because a backend is
- * written against the sandbox vocabulary and nothing else.
- *
- * Re-exported here so an extension package has one import site for every half.
+ * Nor does this module re-export the contract. An extension imports the contract from core
+ * and this subpath only for what its name promises, so a package's import sites say which
+ * of the two it actually needs: a sandbox backend, written against the sandbox vocabulary
+ * and nothing else, names core alone and does not depend on this package at all.
  */
 import type { PenguinContext } from "@prismshadow/penguin-core/extension";
 import type { TerminalManager } from "../terminal/manager.js";
@@ -27,28 +28,3 @@ import type { TerminalManager } from "../terminal/manager.js";
 export interface HarnessContext extends PenguinContext {
   terminals: TerminalManager;
 }
-
-export type {
-  Disposable,
-  PenguinContext,
-  PenguinInterface,
-  Extension,
-  ExtensionContext,
-  ExtensionEvents,
-  ToolFactory,
-  WorkflowFactory,
-  WorkflowInstance,
-  WorkflowInstances,
-  ConfinedArgv,
-  ConfinedSandboxMode,
-  RunnerFailureRule,
-  SandboxControl,
-  SandboxDimension,
-  SandboxEnforcement,
-  SandboxMode,
-  SandboxPolicy,
-  SandboxProvider,
-  SandboxProviderRegistry,
-  SandboxProviderSource,
-  SandboxSettings,
-} from "@prismshadow/penguin-core/extension";

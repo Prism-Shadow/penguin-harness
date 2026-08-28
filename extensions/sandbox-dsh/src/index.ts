@@ -2,7 +2,7 @@
  * @prismshadow/penguin-extension-sandbox-dsh — the DeepSeek Harness sandbox ecosystem
  * behind this harness's own sandbox interface.
  *
- * A PLUGIN PACKAGE, not part of the platform: a deployment lists it in extensions.json and
+ * AN EXTENSION PACKAGE, not part of the platform: a deployment lists it in extensions.json and
  * the harness resolves it from the installation (see the server's extension/loader.ts).
  * The DSH dependencies live HERE, in this package — the harness itself does not depend
  * on them, which is what "extensions are configuration, not built-in capability" means in
@@ -25,7 +25,7 @@ import type {
   ConfinedArgv,
   ExtensionContext,
   SandboxProvider,
-} from "@prismshadow/penguin-server/extension";
+} from "@prismshadow/penguin-core/extension";
 
 /** Mount the stock DSH chain on a bare cordis Context — exactly how DSH's own tests mount it. */
 export async function loadDshAdaptor(): Promise<SandboxProvider | null> {

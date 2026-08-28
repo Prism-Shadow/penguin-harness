@@ -106,7 +106,7 @@ platformImpl.create
 - **事件词汇表有类型且只有一处**：`ExtensionEvents` 把每个事件名映射到它的载荷——加一个事件，平台的 emit 端和所有 handler 同时获得类型。
 - **约束是同代接线**：confiner 作为 `buildAppDeps` 的普通参数进入 core，经它 spawn 的 session 随所属 App 硬停——跨过 swap 的是寄存上下文上的生效设置，因此一次推送无法悄悄解除一个部署的约束。
 
-扩展契约（`Extension` / `ExtensionContext` / `ExtensionEvents` / `PenguinInterface` / `PenguinContext`）声明在 SDK 里，即 `@prismshadow/penguin-core/extension`。`PenguinContext` 与 `PenguinInterface` 是开放的：harness 通过对该模块做声明合并，贡献自己拥有的成员——`terminals`——并从 `@prismshadow/penguin-server/extension` 一并再导出。两个子路径都只产出类型。哪些扩展存在由部署的 `<root>/extensions.json` 决定，harness 自身不 import 任何扩展。
+扩展契约（`Extension` / `ExtensionContext` / `ExtensionEvents` / `PenguinInterface` / `PenguinContext`，以及后端所针对编写的沙箱词汇）声明在 SDK 里，即 `@prismshadow/penguin-core/extension`。`PenguinContext` 与 `PenguinInterface` 是封闭的：它们写明扩展可以依赖的每一个成员，不再被声明合并重新打开。`terminals` 不可能位列其中——它是 harness 的类——因此它被命名在继承契约的 `HarnessContext` 上，而 `HarnessContext` 就是 `@prismshadow/penguin-server/extension` 的全部；读取它的扩展需写 `ctx as HarnessContext`，从而在使用处表明自己依赖这个宿主。不需要宿主专属成员的扩展只引用 core：本仓库的每个沙箱后端都是如此，都不依赖 server 包。两个子路径都只产出类型。哪些扩展存在由部署的 `<root>/extensions.json` 决定，harness 自身不 import 任何扩展。
 
 ## 子系统一览
 
