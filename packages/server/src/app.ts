@@ -1048,8 +1048,12 @@ export function createApp(
   // local session is not a credential over there and requiring one would mean two logins
   // for one window. The tunnel port it forwards to is already reachable from this machine,
   // so the route adds no exposure the tunnel had not.
-  const serverProxy = machinesProxy(async (machineId) =>
-    deps.machines.tunnelPortForMachine(machineId),
+  // The second argument is what makes one sign-in serve both sides: a machine's login answer
+  // passes through here, and the session it carries is kept for the work this server does on
+  // that machine (see machines/service.ts's #sessions). The password never touches this side.
+  const serverProxy = machinesProxy(
+    async (machineId) => deps.machines.tunnelPortForMachine(machineId),
+    (machineId, token) => deps.machines.rememberSession(machineId, token),
   );
   app.all(`${SERVER_PROXY_PREFIX}*`, async (c) => {
     const answer = await serverProxy(c.req.raw);

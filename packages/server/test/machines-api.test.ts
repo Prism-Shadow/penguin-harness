@@ -871,6 +871,26 @@ describe("machines API", () => {
       expect(await res.text()).toContain("ssh vanished mid-handshake");
     });
 
+    it("hands the work on that machine the session the sign-in obtained", async () => {
+      // Signing in is ONE act with two consumers: the browser gets its cookie, and this side
+      // keeps the same session for the work it does on that machine. Without that the model
+      // sync and the hot update have to obtain a credential of their own — which is exactly
+      // what they cannot do on a machine whose admin password a person has set.
+      let handed: string | undefined;
+      await identified({
+        install: async () => ({ kind: "state-only", identity: IDENTITY }),
+        upgrade: async (opts: { session?: string }) => {
+          handed = opts.session;
+          return { kind: "upgraded", detail: "" };
+        },
+      });
+      await admin.post(`/api/projects/default_project/machines/${ID}/signin`);
+      await admin.post("/api/projects/default_project/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+
+      expect(handed).toBe("remote-token");
+    });
+
     it("distinguishes a machine that could not be reached from one that refused", async () => {
       await identified({ signIn: async () => ({ kind: "failed", detail: "no route to host" }) });
       expect((await admin.post(`/api/projects/default_project/machines/${ID}/signin`)).status).toBe(

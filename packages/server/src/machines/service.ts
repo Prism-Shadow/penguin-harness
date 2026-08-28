@@ -47,6 +47,7 @@ import { DIR_LIST_MARK, listDirsCommand } from "./commands.js";
 import { upgradeRemote } from "./upgrade.js";
 import { signInOnRemote } from "./signin.js";
 import { mintTokenOnRemote } from "./remote-token.js";
+import { sessionTokenOf } from "./proxy.js";
 import { closeShell, runOnShell } from "./ssh-session.js";
 import { machineApi, syncModelsToMachine } from "./models-sync.js";
 import type { LocalModels } from "./models-sync.js";
@@ -189,6 +190,30 @@ export class MachinesService {
       now: () => new Date(),
       ...effects,
     };
+  }
+
+  /**
+   * A session this side holds on a machine, by machine id — the token, not a password.
+   *
+   * Signing in to a machine is ONE act with two consumers. The browser gets its cookie; this
+   * side keeps the same session for the work it does on that machine (the model sync, the hot
+   * update), which otherwise has to obtain a credential of its own and cannot on a machine
+   * whose admin password a person has set. Recorded wherever a session is issued: the proxy
+   * sees a hand sign-in go past, and signInOn keeps what it obtained instead of discarding it.
+   *
+   * In memory, for this process only. It is a credential, and nothing auth-shaped rests on
+   * disk here — the same rule the session tokens themselves are held under. A restart costs
+   * one sign-in.
+   */
+  readonly #sessions = new Map<string, string>();
+
+  /**
+   * Records a session a machine issued, from wherever it was issued. Called by the proxy for
+   * a sign-in a person performed through the browser: this side never learns the password,
+   * only what that password bought.
+   */
+  rememberSession(machineId: string, token: string): void {
+    this.#sessions.set(machineId, token);
   }
 
   /** Where the install records live — beside the other per-machine state in the data root. */
@@ -656,11 +681,14 @@ export class MachinesService {
           // runtime that cannot claim this platform REFUSES, in words, instead of restarting
           // into a silent fallback nobody over here would ever see.
           say("Handing this build to its own update channel…");
+          const held =
+            machine.machineId === null ? undefined : this.#sessions.get(machine.machineId);
           const pushed = await this.#effects.upgrade({
             target: { alias: machine.alias, user: resolved.settings.user },
             dataRoot: this.dataRoot,
             assets: this.#assets,
             runOn: (t, command) => this.#effects.runOn(t, command),
+            ...(held === undefined ? {} : { session: held }),
           });
           if (pushed.kind !== "upgraded") {
             job.result = {
@@ -1125,10 +1153,17 @@ export class MachinesService {
     if (resolved === null) {
       return { kind: "failed", detail: "ssh could not resolve that host." };
     }
-    return await this.#effects.signIn({
+    const signedIn = await this.#effects.signIn({
       target: { alias: machine.alias, user: resolved.settings.user },
       assets: this.#assets,
     });
+    if (signedIn.kind === "signed-in") {
+      for (const line of signedIn.setCookie) {
+        const token = sessionTokenOf(line);
+        if (token !== null) this.#sessions.set(machineId, token);
+      }
+    }
+    return signedIn;
   }
 
   /** Runs `work` with this machine's slot held, or returns null when it is already busy. */
@@ -1158,12 +1193,14 @@ export class MachinesService {
         if (resolved === null) continue;
         // Skipped rather than queued when the machine is busy: this is automatic work, and
         // the next push runs it again. A person's install must never wait behind it.
+        const held = machine.machineId === null ? undefined : this.#sessions.get(machine.machineId);
         const outcome = await this.#withMachine(machine.id, () =>
           this.#effects.upgrade({
             target: { alias: machine.alias, user: resolved.settings.user },
             dataRoot: this.dataRoot,
             assets: this.#assets,
             runOn: (t, command) => this.#effects.runOn(t, command),
+            ...(held === undefined ? {} : { session: held }),
           }),
         );
         if (outcome === null || outcome.kind !== "upgraded") continue;

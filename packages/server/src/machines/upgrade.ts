@@ -91,6 +91,13 @@ export async function upgradeRemote(opts: {
    * silently stop receiving hot updates.
    */
   runOn?: (target: RemoteTarget, command: string) => Promise<ExecResult>;
+  /**
+   * A session this side already holds on that machine (machines/service.ts). Preferred over
+   * minting one: it is the session a person's own sign-in produced, so it works on exactly
+   * the machines minting cannot serve — the ones whose admin password was set by hand and
+   * whose CLI is too old to mint. Proving who you are once is meant to be enough.
+   */
+  session?: string;
 }): Promise<UpgradeOutcome> {
   const say = opts.onProgress ?? (() => {});
   const payload = readPushedBuild(opts.dataRoot);
@@ -99,11 +106,13 @@ export async function upgradeRemote(opts: {
   // Asked BEFORE anything is copied: it is one command over a connection that already exists,
   // and a machine that cannot authenticate should not first be sent 8 MB.
   const minted =
-    opts.runOn === undefined
-      ? null
-      : await mintTokenOnRemote(opts.target, opts.runOn).then((outcome) =>
-          outcome.kind === "minted" ? outcome.token : null,
-        );
+    opts.session !== undefined && opts.session !== ""
+      ? opts.session
+      : opts.runOn === undefined
+        ? null
+        : await mintTokenOnRemote(opts.target, opts.runOn).then((outcome) =>
+            outcome.kind === "minted" ? outcome.token : null,
+          );
 
   const scratchName = `penguin-upgrade-${randomBytes(6).toString("hex")}`;
   const made = await run("ssh", sshArgs(opts.target, makeScratchCommand("linux", scratchName)), {

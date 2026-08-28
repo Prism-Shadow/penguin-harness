@@ -32,6 +32,7 @@
  */
 import http from "node:http";
 import { Readable } from "node:stream";
+import { SESSION_COOKIE } from "../auth/middleware.js";
 
 /** Path prefix of the proxy, chosen by the user's design: `/server/<id>/api/…`. */
 export const SERVER_PROXY_PREFIX = "/server/";
@@ -89,6 +90,23 @@ export function rewriteSetCookie(header: string, machineId: string): string {
   return `${cookieMarker(machineId)}${header}`;
 }
 
+/**
+ * The session token in a Set-Cookie from a machine, or null when the line is about anything
+ * else. `SESSION_COOKIE` deliberately, by name: a machine's login answers with the cookie its
+ * own browser session rides in, and that value IS a session on that machine — the same one
+ * `penguin auth login` stores. Reading it here is how one sign-in serves both sides.
+ */
+export function sessionTokenOf(header: string): string | null {
+  const eq = header.indexOf("=");
+  if (eq <= 0 || header.slice(0, eq).trim() !== SESSION_COOKIE) return null;
+  const value =
+    header
+      .slice(eq + 1)
+      .split(";")[0]
+      ?.trim() ?? "";
+  return value === "" ? null : value;
+}
+
 /** An absolute-path Location from the remote, re-rooted under the proxy prefix. */
 export function rewriteLocation(header: string, machineId: string): string {
   return header.startsWith("/")
@@ -107,7 +125,12 @@ const DROP_RESPONSE_HEADERS = new Set(["set-cookie", "location", "connection", "
  * host (`localhost:<port>`) while the connection goes to 127.0.0.1, and fetch ignores an
  * explicit host header.
  */
-export function proxyToTunnel(request: Request, path: ProxyPath, port: number): Promise<Response> {
+export function proxyToTunnel(
+  request: Request,
+  path: ProxyPath,
+  port: number,
+  onSession?: (machineId: string, token: string) => void,
+): Promise<Response> {
   return new Promise((resolve) => {
     const url = new URL(request.url);
     const headers: Record<string, string> = {};
@@ -133,6 +156,13 @@ export function proxyToTunnel(request: Request, path: ProxyPath, port: number): 
           out.set(name, Array.isArray(value) ? value.join(", ") : value);
         }
         for (const cookie of res.headers["set-cookie"] ?? []) {
+          // A person signing in to that machine — by hand, with a password this side never
+          // sees — is the machine issuing a session. Kept for THIS side's own work on it, so
+          // that proving who you are once is enough: the model sync and the hot update stop
+          // having to obtain a credential of their own, which is what they cannot do on a
+          // machine whose password was set by a person.
+          const token = sessionTokenOf(cookie);
+          if (token !== null) onSession?.(path.machineId, token);
           out.append("set-cookie", rewriteSetCookie(cookie, path.machineId));
         }
         if (res.headers.location !== undefined) {
@@ -177,6 +207,7 @@ export function proxyToTunnel(request: Request, path: ProxyPath, port: number): 
  */
 export function machinesProxy(
   portFor: (machineId: string) => Promise<number | null>,
+  onSession?: (machineId: string, token: string) => void,
 ): (request: Request) => Promise<Response | null> {
   return async (request) => {
     const path = parseProxyPath(new URL(request.url).pathname);
@@ -193,6 +224,6 @@ export function machinesProxy(
         { status: 503 },
       );
     }
-    return proxyToTunnel(request, path, port);
+    return proxyToTunnel(request, path, port, onSession);
   };
 }
