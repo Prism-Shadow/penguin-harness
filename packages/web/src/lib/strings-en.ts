@@ -254,9 +254,10 @@ export const en: Strings = {
   },
 
   /**
-   * The three DISMISSIBLE badge trails (Skill library / model library / cost center) and the
-   * controls that clear them. One sentence per trail, carried unchanged from the dot's tooltip
-   * down to the notice on the page it leads to — the same discipline the kernel trail keeps.
+   * The four DISMISSIBLE badge trails (Agents / Skill library / model library / cost center),
+   * the controls that clear them and the control that acts on all of one at once. The tooltip
+   * sentences below are what each dot says; the page notice restates the same count in its own
+   * `changes*` wording, since a block that can act needs to say what it would act on.
    */
   todo: {
     skillUpdates: (n: number) => (n === 1 ? "1 skill update" : `${n} skill updates`),
@@ -289,10 +290,12 @@ export const en: Strings = {
       "Updating reinstalls the library copy over each agent's installed files — any local edits to the installed skill are lost. Export a backup first if you need them.",
     /** Bulk preset sync confirmation; the body reuses models.syncCatalogHint verbatim. */
     modelsConfirmTitle: (n: number): string => `Sync ${n} preset model(s)`,
-    /** Every target of the batch was written. */
-    bulkDone: (ok: number): string => `${ok} updated`,
+    /** Every target of the batch was written. Counted in agents: both pages that use this
+     * send one request per agent, and the partial-failure line below names agents too. */
+    bulkDone: (ok: number): string => `${ok} agent${ok === 1 ? "" : "s"} updated`,
     /** Some targets were written and some were not — the failed ones are named, never just counted. */
-    bulkPartial: (ok: number, failed: string): string => `${ok} updated; these did not: ${failed}`,
+    bulkPartial: (ok: number, failed: string): string =>
+      `${ok} agent${ok === 1 ? "" : "s"} updated; these did not: ${failed}`,
     /** Separator between named targets in the two strings above. */
     listSeparator: ", ",
   },

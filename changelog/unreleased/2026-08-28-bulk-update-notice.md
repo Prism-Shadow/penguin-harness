@@ -28,8 +28,10 @@ single press instead of leaving the user to update the objects one at a time.
   ones whole; a Skill update is an overwriting reinstall that drops local edits; a preset sync
   rewrites the catalog-owned fields and leaves locally added models and API keys alone. Every
   dialog lists exactly which objects the batch would write to.
-- A partial failure now names the targets that did not take the write, rather than reporting the
-  first error alone.
+- A partial failure of one of the new bulk actions names the Agents that did not take the
+  write, rather than reporting the first error alone. The per-item controls are unchanged.
+- The control that clears the notice is now labelled "Dismiss" on all four pages, where it read
+  "Mark as handled" before. The Cost Center's "mark as read" is unchanged.
 - The per-item paths are unchanged: "sync presets", the per-card Skill update buttons and the
   per-Agent kernel update in settings all still do what they did.
 

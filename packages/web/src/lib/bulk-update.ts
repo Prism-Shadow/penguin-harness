@@ -33,13 +33,6 @@ export function noticeCounts(todo: Todo): NoticeCounts {
   return { added: todo.breakdown.added, updated: todo.breakdown.updated };
 }
 
-/** One target of a bulk write, paired with whether its own request succeeded. */
-export interface BulkTarget {
-  /** How the target is named to the user — an Agent's display name, a Skill's name. */
-  label: string;
-  ok: boolean;
-}
-
 /** How a bulk write went, in the terms the toast reports it in. */
 export interface BulkOutcome {
   /** Everything landed. */
@@ -73,6 +66,22 @@ export function bulkOutcome(
     else failed.push(labels[i] ?? String(i));
   });
   return { allOk: failed.length === 0, ok, failed };
+}
+
+/**
+ * How many failed targets the toast names before it stops listing.
+ *
+ * Naming them is the point of the partial-failure report, but a batch of twenty turns a
+ * six-second toast into a wall of text nobody finishes reading. The overflow is reported as a
+ * count rather than dropped silently: the reader still knows the list is not the whole of it.
+ */
+const MAX_NAMED_FAILURES = 8;
+
+/** The failed labels as one string, capped. `+N` stands for the ones past the cap. */
+export function failedList(failed: readonly string[], separator: string): string {
+  if (failed.length <= MAX_NAMED_FAILURES) return failed.join(separator);
+  const named = failed.slice(0, MAX_NAMED_FAILURES).join(separator);
+  return `${named}${separator}+${failed.length - MAX_NAMED_FAILURES}`;
 }
 
 /** The first rejection's reason, for the error text appended to a partial-failure report. */

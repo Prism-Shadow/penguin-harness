@@ -50,7 +50,7 @@ import { formatRelativeDate } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useUpdateBadges } from "../../lib/use-update-badges";
 import { dismissTodo } from "../../lib/todo-dismissals";
-import { bulkOutcome, firstFailure, noticeCounts } from "../../lib/bulk-update";
+import { bulkOutcome, failedList, firstFailure, noticeCounts } from "../../lib/bulk-update";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
@@ -303,13 +303,21 @@ export function SkillsPage() {
     if (outcome.allOk) toastSuccess(S.todo.bulkDone(outcome.ok));
     else {
       toastError(
-        `${S.todo.bulkPartial(outcome.ok, outcome.failed.join(S.todo.listSeparator))} — ${apiErrorText(firstFailure(results))}`,
+        `${S.todo.bulkPartial(outcome.ok, failedList(outcome.failed, S.todo.listSeparator))} — ${apiErrorText(firstFailure(results))}`,
       );
     }
-    // Runs after a partial failure too — some Agent moved, and the gate has to see it.
-    await reloadAgents();
-    setBulkRunning(false);
-    setPendingBulk(null);
+    // Runs after a partial failure too — some Agent moved, and the gate has to see it. Guarded,
+    // because `reloadAgents` rejects on a failed list read and the busy flag disables every
+    // control here, the dialog's Cancel included: a reload that failed after the writes landed
+    // would otherwise leave the page frozen with nothing saying why.
+    try {
+      await reloadAgents();
+    } catch (e) {
+      toastError(apiErrorText(e));
+    } finally {
+      setBulkRunning(false);
+      setPendingBulk(null);
+    }
   };
 
   /**
@@ -476,7 +484,7 @@ export function SkillsPage() {
           <div className="space-y-3">
             <p className="text-sm text-gray-600 dark:text-gray-300">{S.todo.skillsConfirmBody}</p>
             <p className="text-xs text-gray-500 dark:text-gray-400">{S.todo.willTouch}</p>
-            <ul className="divide-y divide-gray-100 overflow-hidden rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
+            <ul className="max-h-60 divide-y divide-gray-100 overflow-y-auto rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
               {pendingBulk.skills.map((name) => (
                 <li key={name} className="px-3 py-1.5 font-mono text-xs">
                   {name}
@@ -670,7 +678,7 @@ function SkillCard({
               {S.skills.updateConfirmWarning(skill.name)}
             </p>
             {/* Per-agent old → new version, so it's clear exactly which installs get overwritten. */}
-            <ul className="divide-y divide-gray-100 overflow-hidden rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
+            <ul className="max-h-60 divide-y divide-gray-100 overflow-y-auto rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
               {pendingUpdate.map((agentId) => {
                 const oldVersion = installed.get(agentId)?.get(skill.name);
                 const target = agents.find((a) => a.agentId === agentId);

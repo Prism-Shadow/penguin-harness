@@ -28,7 +28,7 @@ import { formatDateTime, formatRelativeDays } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useUpdateBadges } from "../../lib/use-update-badges";
 import { dismissTodo } from "../../lib/todo-dismissals";
-import { bulkOutcome, firstFailure, noticeCounts } from "../../lib/bulk-update";
+import { bulkOutcome, failedList, firstFailure, noticeCounts } from "../../lib/bulk-update";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
@@ -377,14 +377,22 @@ export function AgentsPage() {
     if (outcome.allOk) toastSuccess(S.todo.bulkDone(outcome.ok));
     else {
       toastError(
-        `${S.todo.bulkPartial(outcome.ok, outcome.failed.join(S.todo.listSeparator))} — ${apiErrorText(firstFailure(results))}`,
+        `${S.todo.bulkPartial(outcome.ok, failedList(outcome.failed, S.todo.listSeparator))} — ${apiErrorText(firstFailure(results))}`,
       );
     }
     // The gate reads `AgentSummary.kernelOutdated` off the Project's Agent list, so the dot only
     // goes down once that list is re-read. Runs after a partial failure too — some Agent moved.
-    await reloadAgents();
-    setKernelRunning(false);
-    setKernelConfirmOpen(false);
+    // Guarded, because `reloadAgents` rejects on a failed list read and the busy flag disables
+    // every control on this page, the dialog's Cancel included: a reload that failed after the
+    // writes landed would otherwise leave the page frozen with nothing saying why.
+    try {
+      await reloadAgents();
+    } catch (e) {
+      toastError(apiErrorText(e));
+    } finally {
+      setKernelRunning(false);
+      setKernelConfirmOpen(false);
+    }
   };
 
   return (

@@ -704,6 +704,11 @@ export function ModelsPage() {
     const merged = syncRowsWithCatalog(rows);
     if (merged.added === 0 && merged.updated === 0) {
       toastInfo(S.models.syncUpToDate);
+      // Re-probe here too: the badge is gated on a cached probe, and an entry brought back into
+      // line by a hand edit leaves that probe claiming a change this sync has just found none
+      // of. Without it the notice keeps offering a button that can only answer "already
+      // up to date" — a loop the user gets out of only by dismissing or reloading.
+      refreshProjectTodos(projectId);
       return;
     }
     await persist(
@@ -950,7 +955,11 @@ export function ModelsPage() {
               The toolbar's "sync presets" button is unchanged and still runs it directly. */}
           {isOwner && todo && syncCounts && (
             <TodoNotice
-              text={S.todo.changesWithAdded(syncCounts.added ?? 0, syncCounts.updated)}
+              text={
+                syncCounts.added === null
+                  ? S.todo.changesUpgradable(syncCounts.updated)
+                  : S.todo.changesWithAdded(syncCounts.added, syncCounts.updated)
+              }
               actionLabel={S.todo.updateNow}
               busy={syncing}
               onAction={() => setSyncConfirmOpen(true)}

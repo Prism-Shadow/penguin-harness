@@ -258,9 +258,10 @@ export const zh = {
   },
 
   /**
-   * The three DISMISSIBLE badge trails (Skill library / model library / cost center) and the
-   * controls that clear them. One sentence per trail, carried unchanged from the dot's tooltip
-   * down to the notice on the page it leads to — the same discipline the kernel trail keeps.
+   * The four DISMISSIBLE badge trails (Agents / Skill library / model library / cost center),
+   * the controls that clear them and the control that acts on all of one at once. The tooltip
+   * sentences below are what each dot says; the page notice restates the same count in its own
+   * `changes*` wording, since a block that can act needs to say what it would act on.
    */
   todo: {
     skillUpdates: (n: number) => `${n} 个技能有更新`,
@@ -292,10 +293,12 @@ export const zh = {
       "更新会把库内当前副本重装到各 Agent，覆盖其已安装的文件——对已装技能的本地改动会丢失，如有需要请先导出备份。",
     /** Bulk preset sync confirmation; the body reuses models.syncCatalogHint verbatim. */
     modelsConfirmTitle: (n: number): string => `同步 ${n} 个预置模型`,
-    /** Every target of the batch was written. */
-    bulkDone: (ok: number): string => `已更新 ${ok} 个`,
+    /** Every target of the batch was written. Counted in Agents: both pages that use this
+     * send one request per Agent, and the partial-failure line below names Agents too. */
+    bulkDone: (ok: number): string => `已更新 ${ok} 个 Agent`,
     /** Some targets were written and some were not — the failed ones are named, never just counted. */
-    bulkPartial: (ok: number, failed: string): string => `已更新 ${ok} 个；以下未成功：${failed}`,
+    bulkPartial: (ok: number, failed: string): string =>
+      `已更新 ${ok} 个 Agent；以下未成功：${failed}`,
     /** Separator between named targets in the two strings above. */
     listSeparator: "、",
   },
