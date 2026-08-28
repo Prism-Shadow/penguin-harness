@@ -176,15 +176,19 @@ posixOnly("installOnRemote", () => {
     expect(log.some((line) => line.includes('mkdir "%TEMP%'))).toBe(false);
   });
 
-  it("a matching base skips the installer and only streams the store", async () => {
+  it("a matching base is a hot update to hand on, not an install to perform", async () => {
+    // Same release, different pushed state. Nothing to install — and streaming the store over
+    // and restarting the process would swap the code under a server without asking whether it
+    // can claim it: a runtime older than the pushed platform warns, falls back to its packaged
+    // default and keeps serving, so from here the restart reads as a success. The caller sends
+    // this down the machine's own update channel, which answers.
     writeStubs({
       probe: 'Linux x86_64\\n---penguin---\\n{"version":"0.2.4"}\\n---penguin---\\n',
     });
     const outcome = await installOnRemote({ target, plan: plan(), assets });
-    expect(outcome).toMatchObject({ kind: "installed" });
-    const log = calls();
-    expect(log.some((line) => line.includes("install.sh"))).toBe(false);
-    expect(log.some((line) => line.includes("tar -xzf -"))).toBe(true);
+    expect(outcome).toMatchObject({ kind: "state-only" });
+    // The probe, and nothing else: no installer, and no store stream either.
+    expect(calls()).toHaveLength(1);
   });
 
   it("does nothing when the remote already matches base AND pushed state", async () => {

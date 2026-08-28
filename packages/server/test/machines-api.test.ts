@@ -274,6 +274,31 @@ describe("machines API", () => {
       });
     });
 
+    it("a machine that refuses this build says so, instead of reporting an install", async () => {
+      // Same release, different pushed state: a hot update, sent down the machine's own
+      // channel. A runtime too old to claim the platform refuses IN WORDS — and that refusal
+      // is the whole point of asking. Copying the files over and restarting instead would let
+      // it warn, fall back to its packaged default, and keep serving, which from here is
+      // indistinguishable from success — and the record would then say the machine is on a
+      // build it is not running, which is what excludes it from the sweep that would retry.
+      await boot({
+        install: async () => ({ kind: "state-only", identity: IDENTITY }),
+        upgrade: async () => ({
+          kind: "refused",
+          detail: "this runtime publishes no business capabilities this platform can claim",
+        }),
+      });
+      await admin.post("/api/projects/default_project/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(t.deps.machines.job()?.result).toMatchObject({
+        ok: false,
+        step: "hand over the pushed build",
+      });
+      expect((t.deps.machines.job()?.result as { message: string }).message).toContain(
+        "no business capabilities",
+      );
+    });
+
     it("a throw from the push path still ends the job", async () => {
       await boot({
         install: () => {

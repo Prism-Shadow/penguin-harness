@@ -650,6 +650,33 @@ export class MachinesService {
           job.result = { ok: false, step: outcome.step, message: outcome.detail };
           return;
         }
+        if (outcome.kind === "state-only") {
+          // Nothing to install; the difference is the pushed state. Over the machine's own
+          // update channel, which runs on the far side and POSTs to its loopback — so a
+          // runtime that cannot claim this platform REFUSES, in words, instead of restarting
+          // into a silent fallback nobody over here would ever see.
+          say("Handing this build to its own update channel…");
+          const pushed = await this.#effects.upgrade({
+            target: { alias: machine.alias, user: resolved.settings.user },
+            dataRoot: this.dataRoot,
+            assets: this.#assets,
+            runOn: (t, command) => this.#effects.runOn(t, command),
+          });
+          if (pushed.kind !== "upgraded") {
+            job.result = {
+              ok: false,
+              step: "hand over the pushed build",
+              message:
+                pushed.kind === "no-build"
+                  ? "this server stands on no build to hand over."
+                  : pushed.kind === "refused"
+                    ? `that machine refused this build: ${pushed.detail}`
+                    : pushed.detail,
+            };
+            return;
+          }
+          say(pushed.detail === "" ? "Update accepted." : pushed.detail);
+        }
         const version = outcome.kind === "already-installed" ? outcome.version : plan.version;
         // Installing replaced the program ON DISK; the process over there is still running
         // the code it loaded at start. Without this the machine reports the new version and
@@ -678,7 +705,13 @@ export class MachinesService {
         // in the same breath as the record: a machine installed but belonging to nobody would
         // read as "installed elsewhere" on the very page that just installed it.
         this.#setMember(projectId, machineId, true);
-        job.result = { ok: true, kind: outcome.kind, version };
+        // A hot update reports as an install: from the page's side the machine was brought to
+        // this build, and which channel carried it is not the reader's question.
+        job.result = {
+          ok: true,
+          kind: outcome.kind === "state-only" ? "installed" : outcome.kind,
+          version,
+        };
       } catch (err) {
         job.result = {
           ok: false,
