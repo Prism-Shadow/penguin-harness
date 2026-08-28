@@ -138,6 +138,46 @@ export const MIGRATIONS: readonly Migration[] = [
       db.exec("ALTER TABLE messaging_bindings DROP COLUMN final_reply_only");
     },
   },
+  {
+    version: 3,
+    name: "machines",
+    // Three new tables, nothing existing touched: a platform rolled back to one without
+    // machines never queries them.
+    swapSafe: true,
+    up(db) {
+      // Frozen copy of the DDL as of the machines feature; do not re-derive from schema.ts.
+      // IF NOT EXISTS because the declarative track may already have created them (ADOPTION).
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS machine (
+          singleton  INTEGER PRIMARY KEY CHECK (singleton = 1),
+          machine_id TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS machines (
+          address      TEXT PRIMARY KEY,
+          machine_id   TEXT,
+          version      TEXT,
+          installed_at TEXT,
+          forward_port INTEGER,
+          forward_pid  INTEGER,
+          remote_port  INTEGER
+        );
+        CREATE TABLE IF NOT EXISTS machine_project (
+          project_id TEXT PRIMARY KEY,
+          addresses  TEXT NOT NULL
+        );
+      `);
+    },
+    // LOSES this server's own machine id (every stored reference to it on other machines
+    // then points at nothing), what was installed where, the forwards held, and which
+    // machines each Project used.
+    down(db) {
+      db.exec(`
+        DROP TABLE IF EXISTS machine_project;
+        DROP TABLE IF EXISTS machines;
+        DROP TABLE IF EXISTS machine;
+      `);
+    },
+  },
 ];
 
 /** The highest version this build knows how to reach. */

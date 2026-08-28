@@ -94,7 +94,7 @@ describe("migration mechanism", () => {
       const r = migrate(db);
       expect(r.from).toBe(0);
       expect(r.to).toBe(LATEST_VERSION);
-      expect(r.applied).toEqual(["messaging-bindings", "messaging-delivery-flags"]);
+      expect(r.applied).toEqual(["messaging-bindings", "messaging-delivery-flags", "machines"]);
       expect(schemaVersion(db)).toBe(LATEST_VERSION);
     } finally {
       db.close();
@@ -152,6 +152,7 @@ describe("the swap path refuses what a rollback could not survive", () => {
       expect(migrate(db, { swapPath: true }).applied).toEqual([
         "messaging-bindings",
         "messaging-delivery-flags",
+        "machines",
       ]);
     } finally {
       db.close();
@@ -180,6 +181,7 @@ describe("the swap path refuses what a rollback could not survive", () => {
         expect(migrate(db).applied).toEqual([
           "messaging-bindings",
           "messaging-delivery-flags",
+          "machines",
           "narrows-something",
         ]);
       } finally {
@@ -255,12 +257,14 @@ describe("rollbackTo", () => {
       const r = rollbackTo(db, LATEST_VERSION - 1);
       expect(r.from).toBe(LATEST_VERSION);
       expect(r.to).toBe(LATEST_VERSION - 1);
-      expect(r.reverted).toEqual(["messaging-delivery-flags"]);
-      const cols = (
-        db.prepare("PRAGMA table_info(messaging_bindings)").all() as { name: string }[]
-      ).map((c) => c.name);
-      expect(cols).not.toContain("render_markdown");
-      expect(cols).not.toContain("final_reply_only");
+      expect(r.reverted).toEqual(["machines"]);
+      const tables = (
+        db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as {
+          name: string;
+        }[]
+      ).map((t) => t.name);
+      expect(tables).not.toContain("machines");
+      expect(tables).not.toContain("machine_project");
     } finally {
       db.close();
     }
@@ -290,7 +294,7 @@ describe("rollbackTo", () => {
     try {
       migrate(db);
       const r = rollbackTo(db, 0);
-      expect(r.reverted).toEqual(["messaging-delivery-flags", "messaging-bindings"]);
+      expect(r.reverted).toEqual(["machines", "messaging-delivery-flags", "messaging-bindings"]);
       expect(
         db
           .prepare(
