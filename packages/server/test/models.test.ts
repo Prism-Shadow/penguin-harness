@@ -97,7 +97,10 @@ describe("models preset & catalog enrichment", () => {
     const res = await api.get(url());
     expect(res.status).toBe(200);
     const body = (await res.json()) as ModelsResponse;
-    expect(body.defaultModel).toEqual({ provider: "deepseek", modelId: "deepseek-v4-flash" });
+    expect(body.defaultModel).toEqual({
+      provider: "deepseek",
+      modelId: "deepseek-v4-flash-vision-exp",
+    });
     expect(body.models.map(pairKey)).toEqual(catalogPairs);
 
     const sonnet = pick(body, "anthropic", "claude-sonnet-4-6");
@@ -115,7 +118,7 @@ describe("models preset & catalog enrichment", () => {
     const deepseek = pick(body, "deepseek", "deepseek-v4-pro");
     expect(deepseek.vision).toBe(false);
     expect(deepseek.envKey).toBe("DEEPSEEK_API_KEY");
-    expect(pick(body, "deepseek", "deepseek-v4-flash").isDefault).toBe(true);
+    expect(pick(body, "deepseek", "deepseek-v4-flash-vision-exp").isDefault).toBe(true);
 
     // OpenRouter gateway model: the upstream id contains `/`, but under column storage it's just a
     // plain string; openai-chat protocol + a preset base URL inlined on the entry (no secret).
@@ -417,7 +420,10 @@ describe("default_project presets", () => {
     const res = await api.get("/api/projects/default_project/models");
     expect(res.status).toBe(200);
     const body = (await res.json()) as ModelsResponse;
-    expect(body.defaultModel).toEqual({ provider: "deepseek", modelId: "deepseek-v4-flash" });
+    expect(body.defaultModel).toEqual({
+      provider: "deepseek",
+      modelId: "deepseek-v4-flash-vision-exp",
+    });
     expect(body.models.map(pairKey)).toEqual(catalogPairs);
 
     // The point of presets is "works out of the box": creating a Session should succeed without passing a model ref.
@@ -428,7 +434,7 @@ describe("default_project presets", () => {
     expect(created.status).toBe(201);
     const { session } = (await created.json()) as SessionCreateResponse;
     expect(session.provider).toBe("deepseek");
-    expect(session.modelId).toBe("deepseek-v4-flash");
+    expect(session.modelId).toBe("deepseek-v4-flash-vision-exp");
   });
 
   it("a default_project that already has models configured is left untouched (existing CLI config is not overwritten)", async () => {

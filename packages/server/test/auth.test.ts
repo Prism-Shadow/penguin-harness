@@ -93,7 +93,7 @@ describe("auth", () => {
     );
     expect(toml).toContain('name = "bob"');
     expect(toml).toContain(
-      'default_model = { provider = "deepseek", model_id = "deepseek-v4-flash" }',
+      'default_model = { provider = "deepseek", model_id = "deepseek-v4-flash-vision-exp" }',
     );
   });
 
