@@ -3,6 +3,7 @@
 - **Date:** 2026-08-27
 - **Type:** refactor
 - **Scope:** `server`
+- **PR:** [#525](https://github.com/Prism-Shadow/penguin-harness/pull/525)
 
 [中文版](2026-08-27-messaging-channel-spec.zh.md)
 

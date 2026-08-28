@@ -3,6 +3,7 @@
 - **Date:** 2026-08-28
 - **Type:** process
 - **Scope:** `skills`
+- **PR:** [#536](https://github.com/Prism-Shadow/penguin-harness/pull/536)
 
 [中文版](2026-08-28-dev-skill-review-notes.zh.md)
 
