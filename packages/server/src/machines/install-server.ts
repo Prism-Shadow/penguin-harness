@@ -295,7 +295,34 @@ export async function installOnRemote(opts: {
       output.push(`Pushed version replicated (${plan.version}).`);
     }
 
-    return { kind: "installed", output: output.join("\n").trim(), identity };
+    // ASK THE MACHINE what it now has, rather than reporting what we meant to put there.
+    // Every step above answers for itself — the installer exited 0, the store unpacked — and
+    // none of them answers the only question that matters, which is whether the thing on
+    // disk over there is now this version. An install that ran cleanly and changed nothing
+    // (wrong home, a package manager that declined, a path the installer did not own) would
+    // otherwise be recorded as a success at OUR version, and that record is what
+    // syncOutOfDate filters on: the machine is then excluded from the very sweep that would
+    // have tried again. A false success here does not just mislead, it seals itself in.
+    say("Checking what it ended up with…");
+    const after = await detectRemote(target);
+    if ("error" in after) {
+      return {
+        kind: "failed",
+        step: "verify the install",
+        detail: `the install ran, but the machine could not be asked what it now has: ${after.error}`,
+      };
+    }
+    if (after.identity.installedVersion !== plan.baseVersion) {
+      return {
+        kind: "failed",
+        step: "verify the install",
+        detail:
+          `the install reported success, but the machine still has ` +
+          `${after.identity.installedVersion ?? "no install"} where ${plan.baseVersion} was expected.`,
+      };
+    }
+
+    return { kind: "installed", output: output.join("\n").trim(), identity: after.identity };
   } finally {
     // Nothing to clean on a POSIX remote: the installer was never a file there. A Windows
     // one deletes its own copy as part of the install command; this is the local original.
