@@ -1650,7 +1650,7 @@ export interface SessionProcessesResponse {
 // ---------------------------------------------------------------------------
 
 /** Messaging channels a Session can bind to. */
-export type MessagingChannel = "feishu" | "telegram" | "qq";
+export type MessagingChannel = "feishu" | "telegram" | "qq" | "wechat";
 
 /** Event-connection runtime state of one binding (kept in memory, not persisted). */
 export type MessagingRuntimeState = "disconnected" | "connecting" | "connected" | "error";
@@ -1745,7 +1745,8 @@ export interface MessagingBindingCommon {
   /**
    * Render a relayed reply's Markdown in this channel's own markup instead of sending its
    * characters as written. ON by default. Each channel shows what it can — Telegram has no
-   * headings, lists or tables, QQ has no code or tables, Feishu has all of them — and a
+   * headings, lists or tables, QQ has no code or tables, Feishu has all of them, and WeChat
+   * reads Markdown itself so the render is a subtraction rather than a translation — and a
    * rendering the channel refuses falls back to the plain source, so this can cost
    * formatting and never a message.
    */
@@ -1836,8 +1837,29 @@ export interface QQBindingInfo extends MessagingBindingCommon {
   lastChatKnown: boolean;
 }
 
+/**
+ * The stored WeChat config, token masked (plaintext never leaves the server).
+ *
+ * No preference field is re-declared. The three delivery preferences cost exactly what they
+ * cost on Feishu and Telegram here — this channel has no reply budget and no expiring reply
+ * window — and re-declaring a field to say nothing new about it would only invite the next
+ * reader to look for the difference.
+ */
+export interface WeChatBindingInfo extends MessagingBindingCommon {
+  channel: "wechat";
+  /** The bot id a scan issued — the channel-scoped account identity, never secret. */
+  botId: string;
+  /**
+   * Masked bot token (site-wide mask rule: `***`, or `first4…last4` for long values);
+   * absent when none is stored (cleared, or a scan that never completed) — the binding
+   * cannot be enabled until a scan saves one.
+   */
+  botTokenMasked?: string;
+}
+
 /** A Session's saved config for one messaging channel (`channel` is the discriminant). */
-export type MessagingBindingInfo = FeishuBindingInfo | TelegramBindingInfo | QQBindingInfo;
+export type MessagingBindingInfo =
+  FeishuBindingInfo | TelegramBindingInfo | QQBindingInfo | WeChatBindingInfo;
 
 /** One saved channel config with its event-connection runtime status. */
 export interface MessagingChannelState {
@@ -1870,6 +1892,12 @@ export interface TelegramBindingResponse {
 /** GET / PUT …/messaging/qq response (the QQ narrowing of the same envelope). */
 export interface QQBindingResponse {
   binding: QQBindingInfo | null;
+  status: MessagingRuntimeStatus;
+}
+
+/** GET / PUT …/messaging/wechat response (the WeChat narrowing of the same envelope). */
+export interface WeChatBindingResponse {
+  binding: WeChatBindingInfo | null;
   status: MessagingRuntimeStatus;
 }
 
@@ -1939,6 +1967,24 @@ export interface QQBindingPutRequest extends MessagingDeliveryPatch {
    * it). Refused with 409 `messaging_disable_before_clear` while the binding is enabled.
    */
   clearAppSecret?: boolean;
+}
+
+/**
+ * PUT …/messaging/wechat — the delivery preferences ONLY.
+ *
+ * The one PUT on this router that carries no credential, because there is none to carry: a
+ * WeChat bot token exists only where a scan put it, and there is no console to copy one out
+ * of. Saving therefore presupposes a binding — a PUT before any scan answers 400
+ * `wechat_token_required` rather than creating an empty row — and the connection toggle
+ * stays POST …/state, as on every channel.
+ */
+export interface WeChatBindingPutRequest extends MessagingDeliveryPatch {
+  /**
+   * Drops the STORED token (the models-page clear idiom). Refused with 409
+   * `messaging_disable_before_clear` while the binding is enabled. The row and its bot
+   * identity stay; only a fresh scan can make it connectable again.
+   */
+  clearBotToken?: boolean;
 }
 
 /**
@@ -2039,6 +2085,94 @@ export interface QQScanPollResponse {
   appId?: string;
   /** The saved binding, present on `completed` so the editor refreshes without a second GET. */
   binding?: QQBindingInfo;
+}
+
+/**
+ * WeChat credential-test outcome. There is no request body and no draft to probe: this
+ * channel's credential exists only where a scan put it, so the test always probes the STORED
+ * binding. It answers 400 `wechat_token_required` when there is none.
+ *
+ * No account label, for the same reason QQ has none: the probe (`getconfig`) reports the
+ * bot's settings and names neither the bot nor the person.
+ */
+export interface WeChatTestResponse {
+  ok: boolean;
+  latencyMs?: number;
+  error?: string;
+}
+
+/**
+ * POST …/messaging/wechat/scan — starts a scan-to-connect flow, which on this channel is the
+ * ONLY way to bind: the bot token has no console to be copied out of.
+ *
+ * The server registers a code and answers with what the browser may know. The platform's own
+ * poll handle is absent from this type on purpose — it is what collects the bot token, so it
+ * never leaves the server, and `taskId` is a handle this server mints in its place.
+ */
+export interface WeChatScanStartResponse {
+  /** Opaque scan handle, passed back to the poll, verify and cancel endpoints. */
+  taskId: string;
+  /** The URL to ENCODE into a QR code. It is opened by WeChat, never fetched by the browser. */
+  qrUrl: string;
+  /** How often to poll, in milliseconds. */
+  pollMs: number;
+}
+
+/**
+ * Where a WeChat scan stands. Richer than QQ's four states because the flow is: WeChat
+ * separates scanning from confirming, and may interpose a pairing code shown on the phone.
+ *
+ * - `pending` — the code is up and nothing has happened; keep polling.
+ * - `scanned` — scanned; the phone is showing the confirmation prompt.
+ * - `need_verify_code` — the phone is showing digits that must be sent to the verify
+ *   endpoint before the bind proceeds.
+ * - `blocked` — too many wrong pairing codes; the code is spent and a new scan is needed.
+ * - `expired` — the code lapsed before it was used; show a new one.
+ * - `already_bound` — this bot is already bound to this server, so no new credentials were
+ *   issued and nothing was saved. Not a failure: the existing binding still works.
+ * - `completed` — the server has already SAVED the binding; `botId` names the bot.
+ */
+export type WeChatScanStatus =
+  | "pending"
+  | "scanned"
+  | "need_verify_code"
+  | "blocked"
+  | "expired"
+  | "already_bound"
+  | "completed";
+
+/**
+ * POST …/messaging/wechat/scan/poll — one step of the scan.
+ *
+ * `completed` means the server has decrypted nothing and stored everything: the credentials
+ * went from the platform into storage without passing through the browser. Saving is all it
+ * does — enabling the connection stays the separate, exclusive act it is on every channel. A
+ * task id that is unknown, belongs to another Session, or was already resolved answers 404
+ * `wechat_scan_task_unknown`.
+ *
+ * Unlike QQ's poll, an overlapping request answers `pending` rather than 404: the upstream
+ * call is a LONG poll, so one of them spans several of the client's intervals, and that
+ * overlap is the normal rhythm rather than a replay.
+ */
+export interface WeChatScanPollResponse {
+  status: WeChatScanStatus;
+  /** The bound bot's id; present only on `completed`. Never the token. */
+  botId?: string;
+  /** The saved binding, present on `completed` so the editor refreshes without a second GET. */
+  binding?: WeChatBindingInfo;
+}
+
+/**
+ * POST …/messaging/wechat/scan/verify — the digits WeChat showed on the phone.
+ *
+ * They ride the NEXT poll rather than a request of their own, because the platform takes the
+ * pairing code as a parameter of the status call: this endpoint records them and answers
+ * 204. A wrong code is not reported here — the next poll asks for one again, which is how
+ * the platform reports it.
+ */
+export interface WeChatScanVerifyRequest {
+  taskId: string;
+  verifyCode: string;
 }
 
 /**

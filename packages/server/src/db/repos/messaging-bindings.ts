@@ -1,5 +1,5 @@
 /**
- * Repo for Session ↔ messaging-channel bot bindings (Feishu, Telegram and QQ today).
+ * Repo for Session ↔ messaging-channel bot bindings (Feishu, Telegram, QQ and WeChat today).
  *
  * A Session keeps at most one saved config PER channel — the `(session_id, channel)`
  * primary key — and both channels' credentials may sit saved side by side. Which of them
@@ -31,11 +31,11 @@ import type { DatabaseSync } from "node:sqlite";
 
 export interface MessagingBindingRow {
   sessionId: string;
-  /** Messaging channel discriminator (`feishu` | `telegram` | `qq`). */
+  /** Messaging channel discriminator (`feishu` | `telegram` | `qq` | `wechat`). */
   channel: string;
-  /** Channel-scoped bot/app identity (feishu: the app_id; telegram: the bot token's numeric id; qq: the App ID); never secret. */
+  /** Channel-scoped bot/app identity (feishu: the app_id; telegram: the bot token's numeric id; qq: the App ID; wechat: the scanned bot id); never secret. */
   accountId: string;
-  /** Channel-specific config document (feishu: appId/appSecret/baseDomain; telegram: botToken; qq: appId/appSecret). */
+  /** Channel-specific config document (feishu: appId/appSecret/baseDomain; telegram: botToken; qq: appId/appSecret; wechat: botId/botToken/baseUrl/userId). */
   config: Record<string, unknown>;
   /**
    * INTENT state: whether the binding should hold a live connection (the connection's

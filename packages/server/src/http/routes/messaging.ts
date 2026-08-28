@@ -3,7 +3,8 @@
  * editor's and the Messaging dock panel's shared surface. A Session keeps at most one
  * saved config PER channel (all of them may sit saved side by side); the channel-agnostic
  * GET returns them all, and each channel owns a subtree with its own config shape —
- * /feishu, /telegram and /qq carry the same verb set, and a further channel adds its own.
+ * /feishu, /telegram, /qq and /wechat carry the same verb set, and a further channel adds
+ * its own.
  *
  * ENABLING the connection IS the binding, and disabling it is the unbind. Saving
  * credentials therefore never conflicts across Sessions — any number of Sessions may keep
@@ -20,11 +21,15 @@
  * and run the two tests; the secret-mutating writes — PUT, the state toggle and DELETE —
  * are Project-owner-only.
  *
- * QQ additionally offers a scan-to-connect flow (`/qq/scan…`): the server holds the bind
- * task and the AES key that decrypts the App Secret, polls on the browser's behalf, and
- * stores the result. The browser only ever learns the task handle, the URL to render as a QR
- * code, and the App ID that came back — the same never-round-trip-the-secret rule the PUT
- * handlers follow, applied to a secret that arrives from outside instead of from the user.
+ * Two channels offer a scan-to-connect flow, and the server holds what makes it safe in both:
+ * QQ's (`/qq/scan…`) keeps the AES key that decrypts the App Secret, WeChat's
+ * (`/wechat/scan…`) keeps the poll handle that collects the bot token. Each polls on the
+ * browser's behalf and stores the result; the browser only ever learns a task handle, the URL
+ * to render as a QR code, and the non-secret account id that came back — the same
+ * never-round-trip-the-secret rule the PUT handlers follow, applied to a secret that arrives
+ * from outside instead of from the user. On WeChat the scan is not the convenient path but
+ * the ONLY one: there is no console to copy a token out of, so its PUT carries preferences
+ * alone.
  *
  * A PUT also carries the three saved fields that are not credentials: `linePerMessage`
  * (whether a relayed reply is delivered one message per non-blank line), `finalReplyOnly`
@@ -60,6 +65,11 @@ import type {
   TelegramBindingInfo,
   TelegramBindingResponse,
   TelegramTestResponse,
+  WeChatBindingInfo,
+  WeChatBindingResponse,
+  WeChatScanPollResponse,
+  WeChatScanStartResponse,
+  WeChatTestResponse,
 } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { MessagingBindingRow } from "../../db/repos/messaging-bindings.js";
@@ -115,7 +125,22 @@ function qqFieldsOf(row: MessagingBindingRow): { appId: string; appSecret: strin
 }
 
 /**
- * The three channels, each saying only what it does not share (see messaging-channels.ts).
+ * The stored wechat config, tolerated loosely (a malformed document reads as blanks).
+ *
+ * `baseUrl` and `userId` are not projected anywhere: the first is an infrastructure detail a
+ * scan chose, and the second identifies the person who scanned. Neither is something the
+ * editor renders or a caller may set, so they stay inside the document the connector reads.
+ */
+function wechatFieldsOf(row: MessagingBindingRow): { botId: string; botToken: string } {
+  const { botId, botToken } = row.config;
+  return {
+    botId: typeof botId === "string" ? botId : row.accountId,
+    botToken: typeof botToken === "string" ? botToken : "",
+  };
+}
+
+/**
+ * The four channels, each saying only what it does not share (see messaging-channels.ts).
  * Everything written against this table — the read, the state toggle, the delete, the test
  * message, the enable gate's credential check — is written once.
  *
@@ -166,6 +191,23 @@ const CHANNEL_SPECS: Readonly<Record<MessagingChannel, MessagingChannelSpec>> = 
         ...commonBindingFields(row),
         appId: fields.appId,
         ...maskedSecretField("appSecretMasked", fields.appSecret),
+      };
+    },
+  },
+  wechat: {
+    channel: "wechat",
+    label: "WeChat",
+    storedSecret: (row) => wechatFieldsOf(row).botToken,
+    secretRequiredCode: "wechat_token_required",
+    toInfo: (row) => {
+      const fields = wechatFieldsOf(row);
+      return {
+        channel: "wechat",
+        ...commonBindingFields(row),
+        // The bot id is the row's account identity as well as a config field: a cleared
+        // token leaves the row still knowing which bot it was bound to.
+        botId: fields.botId,
+        ...maskedSecretField("botTokenMasked", fields.botToken),
       };
     },
   },
@@ -244,6 +286,8 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
     bindingResponse(sessionId, CHANNEL_SPECS.telegram) as TelegramBindingResponse;
   const qqResponse = (sessionId: string): QQBindingResponse =>
     bindingResponse(sessionId, CHANNEL_SPECS.qq) as QQBindingResponse;
+  const wechatResponse = (sessionId: string): WeChatBindingResponse =>
+    bindingResponse(sessionId, CHANNEL_SPECS.wechat) as WeChatBindingResponse;
 
   /**
    * The one-connection-per-account rule, on its own because two paths need it: the enable,
@@ -299,6 +343,46 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
         "The stored config has no credential: save one first.",
       );
     }
+  };
+
+  /**
+   * The disable-first rule both scan flows start with. A server rule rather than a greyed-out
+   * button: a scan rewrites the whole credential and would point a live connector at whatever
+   * account was scanned, which the PUT's account guard exists to prevent it doing silently.
+   */
+  const guardScanStart = (sessionId: string, channel: MessagingChannel): void => {
+    if (deps.messagingRepo.find(sessionId, channel)?.enabled === true) {
+      throw new HttpError(
+        409,
+        "messaging_disable_before_scan",
+        "Disable the connection before rebinding it by scan.",
+      );
+    }
+  };
+
+  /**
+   * Storing what a completed scan produced — identical on both channels that have one, which
+   * is why it is here rather than written twice.
+   *
+   * It stores only: enabling stays the separate act it is everywhere, because enabling is
+   * what binds the account and is exclusive. The account guard runs because the start refused
+   * an enabled binding and this fires anyway when the connection was switched on WHILE the
+   * scan was in flight — an enabled binding re-pointed at an account another Session holds
+   * would stand two connections on one bot's single event stream without either passing the
+   * enable gate. The restart of an enabled connector is the same never-diverge rule the PUTs
+   * follow.
+   */
+  const saveScanResult = async (
+    sessionId: string,
+    channel: MessagingChannel,
+    accountId: string,
+    config: Record<string, unknown>,
+  ): Promise<MessagingBindingRow> => {
+    const bound = deps.messagingRepo.find(sessionId, channel);
+    if (bound !== null && bound.enabled) guardAccountFree(sessionId, channel, accountId);
+    const saved = deps.messagingRepo.upsert({ sessionId, channel, accountId, config });
+    if (saved.enabled) await deps.messaging.sync(sessionId);
+    return saved;
   };
 
   // The channel-agnostic read: every saved channel config with its runtime status. The
@@ -573,16 +657,7 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
   app.post("/:sessionId/messaging/qq/scan", async (c) => {
     const row = resolveSession(c);
     deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
-    // Disable-first is a server rule, not just a greyed-out button: a scan rewrites BOTH
-    // halves of the credential and would point a live connector at whatever account was
-    // scanned, which the PUT's account guard exists to prevent it doing silently.
-    if (deps.messagingRepo.find(row.sessionId, "qq")?.enabled === true) {
-      throw new HttpError(
-        409,
-        "messaging_disable_before_scan",
-        "Disable the connection before rebinding it by scan.",
-      );
-    }
+    guardScanStart(row.sessionId, "qq");
     let started: { taskId: string; qrUrl: string; pollMs: number };
     try {
       started = await deps.qqScan.start(row.sessionId);
@@ -615,23 +690,11 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
     if (result.status !== "completed" || result.bot === undefined) {
       return c.json({ status: result.status } satisfies QQScanPollResponse);
     }
-    // The scan landed: store it exactly as the PUT would, including the never-diverge
-    // restart of an enabled connector. It stores only — enabling stays the separate act it
-    // is on every channel, because enabling is what binds the account and is exclusive.
-    //
-    // The start refused an enabled binding, so this only fires when the connection was
-    // switched on WHILE the scan was in flight. Same guard as the PUT then: an enabled
-    // binding re-pointed at an account another Session holds would stand two connections on
-    // one bot's single gateway without either passing the enable gate.
-    const bound = deps.messagingRepo.find(row.sessionId, "qq");
-    if (bound !== null && bound.enabled) guardAccountFree(row.sessionId, "qq", result.bot.appId);
-    const saved = deps.messagingRepo.upsert({
-      sessionId: row.sessionId,
-      channel: "qq",
-      accountId: result.bot.appId,
-      config: { appId: result.bot.appId, appSecret: result.bot.appSecret },
+    // The scan landed: store it exactly as the PUT would (see saveScanResult).
+    const saved = await saveScanResult(row.sessionId, "qq", result.bot.appId, {
+      appId: result.bot.appId,
+      appSecret: result.bot.appSecret,
     });
-    if (saved.enabled) await deps.messaging.sync(row.sessionId);
     return c.json({
       status: "completed",
       appId: result.bot.appId,
@@ -670,6 +733,178 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
       ...(result.error !== undefined ? { error: result.error } : {}),
     } satisfies QQTestResponse);
   });
+  // —— WeChat ————————————————————————————————————————————————————————————————
+  //
+  // The channel with no credential to type. A bot token exists only where a scan put it —
+  // there is no developer console for this channel and no pair of fields to fall back to —
+  // so the PUT below carries the delivery preferences and nothing else, and the scan routes
+  // are the whole of how a binding comes to exist.
+
+  /**
+   * Saves the delivery preferences. It presupposes a binding rather than creating one: with
+   * no credential in the request there is nothing a first PUT could store, and a row written
+   * without one could never be enabled.
+   */
+  app.put("/:sessionId/messaging/wechat", async (c) => {
+    const row = resolveSession(c);
+    deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
+    const body = await readJson(c);
+    const existing = deps.messagingRepo.find(row.sessionId, "wechat");
+    if (existing === null) {
+      throw new HttpError(
+        400,
+        "wechat_token_required",
+        "Bind by scanning a QR code first: there is no saved WeChat config to update.",
+      );
+    }
+    // The same ladder every channel climbs, entered one rung down: there is no typed
+    // credential here, so it decides only between the clear flag and the stored token.
+    const { secret: botToken } = resolveSecret({
+      typed: undefined,
+      clear: (body as { clearBotToken?: unknown }).clearBotToken === true,
+      existing,
+      stored: wechatFieldsOf(existing).botToken,
+      requiredCode: "wechat_token_required",
+      requiredMessage: "Bind by scanning a QR code first.",
+    });
+    const saved = deps.messagingRepo.upsert({
+      sessionId: row.sessionId,
+      channel: "wechat",
+      accountId: existing.accountId,
+      // The stored document carried forward with only the token replaced: it also holds the
+      // API host the scan assigned and the id of the person who scanned, neither of which
+      // this request knows and both of which the connector needs.
+      config: { ...existing.config, botToken },
+      ...deliveryPatchOf(body),
+    });
+    // Same save/enable split as every other channel: only an enabled binding restarts its
+    // connector, so the stored config and the live connection never diverge.
+    if (saved.enabled) await deps.messaging.sync(row.sessionId);
+    return c.json(wechatResponse(row.sessionId));
+  });
+
+  // —— WeChat scan-to-connect ————————————————————————————————————————————————
+  //
+  // Four routes rather than QQ's three: WeChat may interpose a pairing code shown on the
+  // phone, and the digits need somewhere to arrive. They ride the next poll rather than a
+  // request of their own, because the platform takes the code as a parameter of its status
+  // call — so `verify` records them and answers 204.
+  //
+  // Owner-only throughout, like every other write here: the flow ends in a stored credential,
+  // so it is a credential write however little of it the caller types.
+
+  app.post("/:sessionId/messaging/wechat/scan", async (c) => {
+    const row = resolveSession(c);
+    deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
+    guardScanStart(row.sessionId, "wechat");
+    let started: { taskId: string; qrUrl: string; pollMs: number };
+    try {
+      started = await deps.wechatScan.start(row.sessionId);
+    } catch (err) {
+      throw new HttpError(
+        502,
+        "wechat_scan_failed",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+    return c.json(started satisfies WeChatScanStartResponse);
+  });
+
+  app.post("/:sessionId/messaging/wechat/scan/poll", async (c) => {
+    const row = resolveSession(c);
+    deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
+    const body = await readJson(c);
+    const taskId = requireString(body, "taskId", { minLen: 1, maxLen: 500 });
+    let result: Awaited<ReturnType<typeof deps.wechatScan.poll>>;
+    try {
+      result = await deps.wechatScan.poll(row.sessionId, taskId);
+    } catch (err) {
+      throw new HttpError(
+        502,
+        "wechat_scan_failed",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+    // Unknown, another Session's, or already resolved. An overlapping poll is NOT this — the
+    // upstream call is a long poll and the scan service answers those `pending` (see
+    // wechat-scan.ts), so a client whose interval outpaces the platform is not an error.
+    if (result === null) {
+      throw new HttpError(
+        404,
+        "wechat_scan_task_unknown",
+        "This scan is no longer in progress: start a new one.",
+      );
+    }
+    if (result.status !== "completed" || result.bot === undefined) {
+      return c.json({ status: result.status } satisfies WeChatScanPollResponse);
+    }
+    const { botId, botToken, baseUrl, userId } = result.bot;
+    const saved = await saveScanResult(row.sessionId, "wechat", botId, {
+      botId,
+      botToken,
+      baseUrl,
+      userId,
+    });
+    return c.json({
+      status: "completed",
+      botId,
+      binding: CHANNEL_SPECS.wechat.toInfo(saved) as WeChatBindingInfo,
+    } satisfies WeChatScanPollResponse);
+  });
+
+  app.post("/:sessionId/messaging/wechat/scan/verify", async (c) => {
+    const row = resolveSession(c);
+    deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
+    const body = await readJson(c);
+    const taskId = requireString(body, "taskId", { minLen: 1, maxLen: 500 });
+    // The platform shows a short numeric code; the bound is generous rather than exact
+    // because the length is not documented and a rejected digit is the platform's answer to
+    // give, not this route's.
+    const verifyCode = requireString(body, "verifyCode", { minLen: 1, maxLen: 32 }).trim();
+    if (verifyCode === "") throw badRequest("verifyCode must not be blank.");
+    if (!deps.wechatScan.submitVerifyCode(row.sessionId, taskId, verifyCode)) {
+      throw new HttpError(
+        404,
+        "wechat_scan_task_unknown",
+        "This scan is no longer in progress: start a new one.",
+      );
+    }
+    return c.body(null, 204);
+  });
+
+  app.post("/:sessionId/messaging/wechat/scan/cancel", async (c) => {
+    const row = resolveSession(c);
+    deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
+    const body = await readJson(c);
+    deps.wechatScan.cancel(
+      row.sessionId,
+      requireString(body, "taskId", { minLen: 1, maxLen: 500 }),
+    );
+    return c.body(null, 204);
+  });
+
+  /**
+   * Credential probe. The only test on this router that takes no draft values: nothing here
+   * is typed, so the stored binding is the only thing there is to probe.
+   */
+  app.post("/:sessionId/messaging/wechat/test", async (c) => {
+    const row = resolveSession(c);
+    const stored = deps.messagingRepo.find(row.sessionId, "wechat");
+    if (stored === null || wechatFieldsOf(stored).botToken === "") {
+      throw new HttpError(
+        400,
+        "wechat_token_required",
+        "Bind by scanning a QR code first: there is no credential to test.",
+      );
+    }
+    const result = await deps.messaging.testCredentials("wechat", stored.config);
+    return c.json({
+      ok: result.ok,
+      ...(result.latencyMs !== undefined ? { latencyMs: result.latencyMs } : {}),
+      ...(result.error !== undefined ? { error: result.error } : {}),
+    } satisfies WeChatTestResponse);
+  });
+
   return app;
 }
 

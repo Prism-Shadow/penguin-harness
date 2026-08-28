@@ -29,7 +29,7 @@ import {
   sessionRowMenuItem,
 } from "../src/components/ui/session-row-menu";
 import type { SessionRowAction } from "../src/components/ui/session-row-menu";
-import { MESSAGING_ICON } from "../src/components/ui/icons";
+import { MESSAGING_RELAY_ICON } from "../src/components/ui/icons";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 
@@ -127,7 +127,9 @@ describe("sessionRowMenuItem", () => {
       (a) => sessionRowMenuItem(a, RESTING).icon,
     );
     expect(new Set(icons).size).toBe(icons.length);
-    expect(icons).toEqual([PIN_ICON, PENCIL_ICON, MESSAGING_ICON, ARCHIVE_ICON, TRASH_ICON]);
+    // Remote control wears the same paper plane the session row flies while it is relaying:
+    // the action and the mark it produces are one feature.
+    expect(icons).toEqual([PIN_ICON, PENCIL_ICON, MESSAGING_RELAY_ICON, ARCHIVE_ICON, TRASH_ICON]);
   });
 
   it("flips archive's label and glyph on an archived row", () => {

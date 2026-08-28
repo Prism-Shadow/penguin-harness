@@ -86,6 +86,11 @@ import { QQConnector } from "./runtime/messaging/qq-connector.js";
 import { createQQTransport } from "./runtime/messaging/qq-api.js";
 import type { QQTransport } from "./runtime/messaging/qq-api.js";
 import { QQScanService, createQQScanTransport } from "./runtime/messaging/qq-scan.js";
+import { WeChatConnector } from "./runtime/messaging/wechat-connector.js";
+import { createWeChatTransport } from "./runtime/messaging/wechat-api.js";
+import type { WeChatTransport } from "./runtime/messaging/wechat-api.js";
+import { WeChatScanService, createWeChatScanTransport } from "./runtime/messaging/wechat-scan.js";
+import type { WeChatScanTransport } from "./runtime/messaging/wechat-scan.js";
 import type { QQScanTransport } from "./runtime/messaging/qq-scan.js";
 import { TitleGenerator, TitleNotifier } from "./runtime/title-generator.js";
 import { AdminService } from "./services/admin-service.js";
@@ -191,6 +196,8 @@ export interface AppDeps {
   messaging: MessagingBridge;
   /** QQ scan-to-connect: the in-flight bind tasks and the AES keys that never leave the server. */
   qqScan: QQScanService;
+  /** WeChat scan-to-connect: the in-flight codes and the poll handles that never leave the server. */
+  wechatScan: WeChatScanService;
   scheduler: Scheduler;
   channels: ChannelHub;
   manager: SessionManager;
@@ -242,6 +249,12 @@ export interface BuildDepsOverrides {
   messagingInboundImageBudgetBytes?: number;
   /** Test double: the QQ scan-to-connect transport (avoids real q.qq.com requests). */
   qqScanTransport?: QQScanTransport;
+  /** Test double: the WeChat connector's long-poll + CDN transport (avoids real WeChat network). */
+  wechatTransport?: WeChatTransport;
+  /** Test hook: the WeChat poll loop's backoff (tests collapse it to zero). */
+  wechatRetryDelayMs?: (failures: number) => number;
+  /** Test double: the WeChat scan-to-connect transport (avoids real ilinkai.weixin.qq.com requests). */
+  wechatScanTransport?: WeChatScanTransport;
   /** Test double: machines service whose ssh effects are faked (the real one reads ~/.ssh/config and spawns ssh). */
   machines?: MachinesService;
   /**
@@ -864,6 +877,10 @@ export function buildAppDeps(
         ...(overrides.qqTailFlushMs !== undefined ? { tailFlushMs: overrides.qqTailFlushMs } : {}),
         ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}),
       }),
+      new WeChatConnector(
+        overrides.wechatTransport ?? createWeChatTransport(),
+        overrides.wechatRetryDelayMs ? { retryDelayMs: overrides.wechatRetryDelayMs } : {},
+      ),
     ],
     errors,
     log,
@@ -880,6 +897,12 @@ export function buildAppDeps(
   const qqScan = new QQScanService(overrides.qqScanTransport ?? createQQScanTransport(), {
     ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}),
   });
+  // Same reasoning as above: what this one holds is the handle that collects a bot token
+  // rather than a key that decrypts a secret, and it is equally not worth persisting.
+  const wechatScan = new WeChatScanService(
+    overrides.wechatScanTransport ?? createWeChatScanTransport(),
+    { ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}) },
+  );
   const sessionService = new SessionService({
     root: config.root,
     sessions: sessionsRepo,
@@ -895,7 +918,10 @@ export function buildAppDeps(
     messagingChannel: (sessionId) => {
       const enabled = messagingRepo.findEnabled(sessionId);
       return enabled !== null &&
-        (enabled.channel === "feishu" || enabled.channel === "telegram" || enabled.channel === "qq")
+        (enabled.channel === "feishu" ||
+          enabled.channel === "telegram" ||
+          enabled.channel === "qq" ||
+          enabled.channel === "wechat")
         ? enabled.channel
         : null;
     },
@@ -945,6 +971,7 @@ export function buildAppDeps(
     errorsRepo,
     messagingRepo,
     qqScan,
+    wechatScan,
     messaging,
     scheduler,
     channels,

@@ -104,6 +104,11 @@ import type {
   QQScanStartResponse,
   QQTestRequest,
   QQTestResponse,
+  WeChatBindingPutRequest,
+  WeChatBindingResponse,
+  WeChatScanPollResponse,
+  WeChatScanStartResponse,
+  WeChatTestResponse,
   RecalledMessageResponse,
   RetryNowResponse,
   SteerRequest,
@@ -550,6 +555,16 @@ export const putQQBinding = (sessionId: string, body: QQBindingPutRequest) =>
     body,
   });
 
+/**
+ * Saves the WeChat delivery preferences. No credential rides along: this channel's token
+ * comes only from a scan, so a PUT before one answers 400 `wechat_token_required`.
+ */
+export const putWeChatBinding = (sessionId: string, body: WeChatBindingPutRequest) =>
+  apiFetch<WeChatBindingResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/messaging/wechat`,
+    { method: "PUT", body },
+  );
+
 /** The connection toggle, which is also the bind/unbind: enable connects with the STORED credentials (409 `another_channel_enabled` while the other channel is enabled, 409 `account_enabled_elsewhere` while another conversation has this bot enabled), disable releases the account. */
 export const setMessagingBindingState = (
   sessionId: string,
@@ -601,6 +616,48 @@ export const cancelQQScan = (sessionId: string, taskId: string) =>
     method: "POST",
     body: { taskId },
   });
+
+/**
+ * Starts a WeChat scan-to-connect flow — the ONLY way to bind this channel. The response
+ * carries the URL to render as a QR code and a task handle; the platform's own poll handle,
+ * which is what collects the bot token, stays on the server.
+ */
+export const startWeChatScan = (sessionId: string) =>
+  apiFetch<WeChatScanStartResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/messaging/wechat/scan`,
+    { method: "POST", body: {} },
+  );
+
+/** One poll of a scan. `completed` means the server has already SAVED the credential. */
+export const pollWeChatScan = (sessionId: string, taskId: string) =>
+  apiFetch<WeChatScanPollResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/messaging/wechat/scan/poll`,
+    { method: "POST", body: { taskId } },
+  );
+
+/**
+ * Submits the pairing code WeChat showed on the phone. It rides the NEXT poll rather than a
+ * request of its own, so this only records it — a wrong code surfaces as the poll asking again.
+ */
+export const verifyWeChatScan = (sessionId: string, taskId: string, verifyCode: string) =>
+  apiFetch<void>(`/api/sessions/${encodeURIComponent(sessionId)}/messaging/wechat/scan/verify`, {
+    method: "POST",
+    body: { taskId, verifyCode },
+  });
+
+/** Drops a scan the user walked away from, so its handle is forgotten rather than left to expire. */
+export const cancelWeChatScan = (sessionId: string, taskId: string) =>
+  apiFetch<void>(`/api/sessions/${encodeURIComponent(sessionId)}/messaging/wechat/scan/cancel`, {
+    method: "POST",
+    body: { taskId },
+  });
+
+/** WeChat credential probe of the STORED binding; there is no draft to send and no account label back. */
+export const testWeChatBinding = (sessionId: string) =>
+  apiFetch<WeChatTestResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/messaging/wechat/test`,
+    { method: "POST", body: {} },
+  );
 
 /** QQ credential probe (the access-token exchange); the platform names no account, so success carries no label. */
 export const testQQBinding = (sessionId: string, body: QQTestRequest) =>

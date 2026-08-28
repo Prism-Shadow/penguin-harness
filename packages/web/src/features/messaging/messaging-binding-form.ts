@@ -6,7 +6,9 @@
  * and only its fields are validated or submitted.
  *
  * QQ's sub-state mirrors Feishu's minus the domain field: the platform has one host, so
- * there is nothing for a domain to switch between.
+ * there is nothing for a domain to switch between. WeChat's has no credential at all — its
+ * token comes only from a scan, which writes it server-side — so its sub-state is the
+ * delivery preferences plus the clear checkbox, and its submit can never fail validation.
  *
  * Not every field is a credential: `linePerMessage` (send a reply one message per non-blank
  * line), `finalReplyOnly` (send only a run's last reply, when the run ends) and
@@ -28,6 +30,7 @@ import type {
   QQTestRequest,
   TelegramBindingPutRequest,
   TelegramTestRequest,
+  WeChatBindingPutRequest,
 } from "@prismshadow/penguin-server/api";
 
 /** Default Feishu open-platform domain (shown prefilled; Lark tenants overwrite it). */
@@ -67,6 +70,17 @@ export interface QQFormFields extends MessagingDeliveryFields {
   clearSecret: boolean;
 }
 
+/**
+ * WeChat's editable state: the delivery preferences, and the clear checkbox.
+ *
+ * No credential field, because there is nothing to type — the bot token arrives from a scan
+ * and is stored without ever passing through this form.
+ */
+export interface WeChatFormFields extends MessagingDeliveryFields {
+  /** The stored-token clear checkbox (models idiom): applied on save. */
+  clearToken: boolean;
+}
+
 export interface TelegramFormFields extends MessagingDeliveryFields {
   /** Always starts empty; a non-empty value replaces the stored token on save. */
   botToken: string;
@@ -80,6 +94,7 @@ export interface MessagingFormState {
   feishu: FeishuFormFields;
   telegram: TelegramFormFields;
   qq: QQFormFields;
+  wechat: WeChatFormFields;
 }
 
 export type MessagingFormField = "appId" | "appSecret" | "baseDomain" | "botToken";
@@ -93,12 +108,15 @@ export type MessagingFormResult =
   | { ok: true; channel: "feishu"; body: FeishuBindingPutRequest }
   | { ok: true; channel: "telegram"; body: TelegramBindingPutRequest }
   | { ok: true; channel: "qq"; body: QQBindingPutRequest }
+  | { ok: true; channel: "wechat"; body: WeChatBindingPutRequest }
   | { ok: false; errors: MessagingFormErrors };
 
 export type MessagingTestRequestByChannel =
   | { channel: "feishu"; body: FeishuTestRequest }
   | { channel: "telegram"; body: TelegramTestRequest }
-  | { channel: "qq"; body: QQTestRequest };
+  | { channel: "qq"; body: QQTestRequest }
+  /** WeChat's probe carries no body: nothing on its form is a credential to send. */
+  | { channel: "wechat" };
 
 export function emptyMessagingForm(channel: MessagingChannel = "feishu"): MessagingFormState {
   return {
@@ -129,6 +147,12 @@ export function emptyMessagingForm(channel: MessagingChannel = "feishu"): Messag
       finalReplyOnly: false,
       renderMarkdown: true,
     },
+    wechat: {
+      clearToken: false,
+      linePerMessage: false,
+      finalReplyOnly: false,
+      renderMarkdown: true,
+    },
   };
 }
 
@@ -148,6 +172,15 @@ export function bindingsToForm(bindings: MessagingBindingInfo[]): MessagingFormS
         appSecret: "",
         baseDomain: info.baseDomain,
         clearSecret: false,
+        linePerMessage: info.linePerMessage,
+        finalReplyOnly: info.finalReplyOnly,
+        renderMarkdown: info.renderMarkdown,
+      };
+    } else if (info.channel === "wechat") {
+      // Nothing but preferences loads: this channel's only credential is the token, which
+      // the form never holds.
+      form.wechat = {
+        clearToken: false,
         linePerMessage: info.linePerMessage,
         finalReplyOnly: info.finalReplyOnly,
         renderMarkdown: info.renderMarkdown,
@@ -218,6 +251,20 @@ export function formToPut(form: MessagingFormState, hasStoredSecret: boolean): M
       },
     };
   }
+  if (form.channel === "wechat") {
+    // The one submit that cannot fail: there is no field to leave blank or to mistype.
+    return {
+      ok: true,
+      channel: "wechat",
+      body: {
+        ...(form.wechat.clearToken && hasStoredSecret ? { clearBotToken: true } : {}),
+        // Always sent, for the same reason as the other channels': an omitted flag means "keep".
+        linePerMessage: form.wechat.linePerMessage,
+        finalReplyOnly: form.wechat.finalReplyOnly,
+        renderMarkdown: form.wechat.renderMarkdown,
+      },
+    };
+  }
   if (form.channel === "qq") {
     const appId = form.qq.appId.trim();
     if (appId === "") errors.appId = "required";
@@ -273,6 +320,8 @@ export function formToTest(form: MessagingFormState): MessagingTestRequestByChan
     const botToken = form.telegram.botToken.trim();
     return { channel: "telegram", body: { ...(botToken !== "" ? { botToken } : {}) } };
   }
+  // No draft to send: this channel's probe reads the stored binding.
+  if (form.channel === "wechat") return { channel: "wechat" };
   if (form.channel === "qq") {
     const appId = form.qq.appId.trim();
     const appSecret = form.qq.appSecret.trim();
@@ -313,6 +362,14 @@ export function formDirty(form: MessagingFormState, baseline: MessagingFormState
       form.telegram.renderMarkdown !== baseline.telegram.renderMarkdown
     );
   }
+  if (form.channel === "wechat") {
+    return (
+      form.wechat.clearToken ||
+      form.wechat.linePerMessage !== baseline.wechat.linePerMessage ||
+      form.wechat.finalReplyOnly !== baseline.wechat.finalReplyOnly ||
+      form.wechat.renderMarkdown !== baseline.wechat.renderMarkdown
+    );
+  }
   if (form.channel === "qq") {
     return (
       form.qq.appId !== baseline.qq.appId ||
@@ -343,6 +400,8 @@ export function formTestable(form: MessagingFormState, secretConfigured: boolean
   if (form.channel === "telegram") {
     return form.telegram.botToken.trim() !== "" || secretConfigured;
   }
+  // WeChat has no draft to probe: only a stored token can be tested.
+  if (form.channel === "wechat") return secretConfigured;
   if (form.channel === "qq") {
     return (form.qq.appId.trim() !== "" && form.qq.appSecret.trim() !== "") || secretConfigured;
   }

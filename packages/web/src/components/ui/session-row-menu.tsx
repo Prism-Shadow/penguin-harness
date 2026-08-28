@@ -22,7 +22,7 @@ import type { AnchorRect } from "../../lib/context-menu";
 import { S } from "../../lib/strings";
 import { GlyphIcon } from "./glyph-icon";
 import { Icon } from "./group-list";
-import { MESSAGING_ICON } from "./icons";
+import { MESSAGING_RELAY_ICON } from "./icons";
 
 /** Pushpin (lucide pin: head + body + stem), the group-header pin toggle / pinned indicator. */
 export const PIN_ICON =
@@ -111,7 +111,10 @@ export function sessionRowMenuItem(
     case "rename":
       return { label: S.chat.renameSession, icon: PENCIL_ICON, danger: false };
     case "messaging":
-      return { label: S.messaging.bindAction, icon: MESSAGING_ICON, danger: false };
+      // Same paper plane the session row flies when it is actually relaying: the menu entry
+      // and the mark it produces are one feature, and a reader should not have to learn two
+      // shapes for it.
+      return { label: S.messaging.bindAction, icon: MESSAGING_RELAY_ICON, danger: false };
     case "archive":
       return {
         label: state.archived ? S.chat.unarchiveSession : S.chat.archiveSession,

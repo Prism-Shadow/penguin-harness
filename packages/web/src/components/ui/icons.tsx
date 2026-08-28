@@ -164,13 +164,14 @@ export function CloseButton({
 /** Info circle: the app's 9-radius status circle with a bar and a dot inside it. */
 export const INFO_ICON = "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5m0-8h.01";
 
-/** Chat bubble: the messaging binding's channel-neutral mark (dock panel tab, row-menu action). */
+/** Chat bubble: the messaging binding's channel-neutral mark (dock panel tab). */
 export const MESSAGING_ICON = "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z";
 
 /**
- * Paper plane: the session-row mark for a Session that is relaying through a messaging
- * channel. One shape for every channel — shape alone is not the carrier, so the row
- * pairs it with the channel's name in a tooltip and in sr-only text.
+ * Paper plane: remote control — the session-row mark for a Session that is relaying through
+ * a messaging channel, and the row menu's action that sets one up. One shape for every
+ * channel — shape alone is not the carrier, so the row pairs it with the channel's name in
+ * a tooltip and in sr-only text, and the menu entry is labelled.
  */
 export const MESSAGING_RELAY_ICON = "M22 2 11 13M22 2l-7 20-4-9-9-4z";
 
