@@ -1,9 +1,16 @@
 /**
- * The sandbox capability: the harness's own sandbox INTERFACE and the service that
- * routes policies to whatever backend implements them. Reached from hmr/platform.ts,
- * so it rides the platform bundle — a deployment changes it by one hot push.
+ * The sandbox capability: the service that routes each spawn's policy to whatever backend
+ * implements it. Reached from hmr/platform.ts, so it rides the platform bundle — a
+ * deployment changes it by one hot push.
  *
- * No backend is part of it. Backends are PLUGIN PACKAGES a deployment configures
+ * The vocabulary it routes ON is not here. `SandboxPolicy`, `SandboxProvider`,
+ * `ConfinedArgv` and the mode/dimension unions belong to the extension contract in
+ * `@prismshadow/penguin-core/extension`, because a backend is written against those names
+ * and nothing else. What this directory holds is the embedder's half: which policy reaches
+ * which backend, the settings behind it, and the fail-closed behaviour when nothing covers
+ * the request.
+ *
+ * No backend is part of it. Backends are EXTENSION PACKAGES a deployment configures
  * (../extension/loader.ts), which is why nothing here imports one and why the harness does
  * not depend on the DSH ecosystem at all:
  *
@@ -24,18 +31,4 @@
  * quietly confining less than was asked.
  */
 export { SandboxService } from "./service.js";
-export {
-  SANDBOX_DIMENSIONS,
-  providerDimensions,
-  requestedDimensions,
-  type ConfinedArgv,
-  type ConfinedSandboxMode,
-  type RunnerFailureRule,
-  type SandboxDimension,
-  type SandboxEnforcement,
-  type SandboxMode,
-  type SandboxPolicy,
-  type SandboxProvider,
-  type SandboxProviderSource,
-  type SandboxSettings,
-} from "./types.js";
+export { SANDBOX_DIMENSIONS, providerDimensions, requestedDimensions } from "./dimensions.js";

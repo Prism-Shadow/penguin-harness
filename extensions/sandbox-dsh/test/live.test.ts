@@ -13,7 +13,7 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { CommandSessionManager } from "@prismshadow/penguin-core";
-import type { SandboxProvider } from "@prismshadow/penguin-server/extension";
+import type { SandboxProvider } from "@prismshadow/penguin-core/extension";
 import { loadDshAdaptor } from "../src/index.js";
 
 const ws = mkdtempSync(path.join(tmpdir(), "penguin-dsh-live-"));

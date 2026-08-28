@@ -1,30 +1,16 @@
 /**
- * Runtime helpers over the sandbox vocabulary, plus a re-export of it.
+ * Runtime helpers over the sandbox vocabulary.
  *
  * The vocabulary itself is `@prismshadow/penguin-core/extension` — a backend compiles
  * against those names, so they belong with the rest of the extension contract rather than
  * inside the harness that routes them. What stays here is the code that READS those
- * shapes, which is the embedder's business and must not become a runtime dependency of
- * every extension package.
+ * shapes: which dimensions a provider covers and which a settings object requires, the two
+ * questions service.ts routes on. That is the embedder's business, and keeping it out of
+ * the contract is what stops it becoming a runtime dependency of every extension package.
  */
 import type {
   SandboxDimension,
   SandboxProvider,
-  SandboxSettings,
-} from "@prismshadow/penguin-core/extension";
-
-export type {
-  ConfinedArgv,
-  ConfinedSandboxMode,
-  RunnerFailureRule,
-  SandboxControl,
-  SandboxDimension,
-  SandboxEnforcement,
-  SandboxMode,
-  SandboxPolicy,
-  SandboxProvider,
-  SandboxProviderRegistry,
-  SandboxProviderSource,
   SandboxSettings,
 } from "@prismshadow/penguin-core/extension";
 

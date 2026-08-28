@@ -18,8 +18,8 @@ import type {
   SandboxProvider,
   SandboxProviderSource,
   SandboxSettings,
-} from "./types.js";
-import { providerDimensions, requestedDimensions } from "./types.js";
+} from "@prismshadow/penguin-core/extension";
+import { providerDimensions, requestedDimensions } from "./dimensions.js";
 
 interface MountedProvider {
   name: string;

@@ -31,7 +31,6 @@
   "devDependencies": {
     "@microsoft/mxc-sdk": "0.7.0",
     "@prismshadow/penguin-core": "workspace:*",
-    "@prismshadow/penguin-server": "workspace:*",
     "tsup": "^8.3.0",
     "vitest": "^3.2.6"
   }
