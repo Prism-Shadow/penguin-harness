@@ -174,6 +174,35 @@ export function tunnelArgs(target: RemoteTarget, port: number): string[] {
   ];
 }
 
+/**
+ * `ssh -N -L <local>:127.0.0.1:<remote> <alias>` — a forward this side uses itself, never a
+ * browser.
+ *
+ * The two ports DIFFER here, where tunnelArgs keeps them equal. That equality exists for one
+ * reason: a browsing session follows preview URLs, and those are built from the server's own
+ * bound port (preview-token.ts). Nothing built from this forward is ever shown to a browser,
+ * so it takes whatever this side has free — which is what lets a machine sitting on the
+ * default port be reached by a controller that is itself on the default port.
+ */
+export function forwardArgs(target: RemoteTarget, localPort: number, remotePort: number): string[] {
+  for (const port of [localPort, remotePort]) {
+    if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`bad port ${port}`);
+  }
+  return [
+    ...connectionOptions(target),
+    "-N",
+    "-o",
+    "ExitOnForwardFailure=yes",
+    "-o",
+    "ServerAliveInterval=15",
+    "-o",
+    "ServerAliveCountMax=4",
+    "-L",
+    `${localPort}:127.0.0.1:${remotePort}`,
+    target.alias,
+  ];
+}
+
 /** Marker separating the resolved path from the entries in a directory listing. */
 export const DIR_LIST_MARK = "---penguin-dirs---";
 
