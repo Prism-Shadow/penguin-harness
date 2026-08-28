@@ -9,6 +9,7 @@
  */
 import { S } from "../lib/strings";
 import { apiUrl } from "../lib/server-context";
+import { machineForPath } from "../lib/session-machines";
 
 /** Unified API error: carries the HTTP status code and server error code (server error body {error:{code,message}}). */
 export class ApiError extends Error {
@@ -42,9 +43,12 @@ export interface ApiFetchOptions {
   /** Query parameters (undefined values are skipped). */
   query?: Record<string, string | number | undefined>;
   /**
-   * Which machine answers this call. Omitted or `null` is this server — the window never
-   * moves — and a machine id sends just this request down that machine's tunnel. Browsing
-   * another machine's directories to pick a workspace on it is the case this exists for.
+   * Which machine answers this call, when the caller knows and the path does not say.
+   *
+   * Omitted, a Session-scoped path routes itself to the machine that Session lives on (see
+   * lib/session-machines.ts) and everything else stays here. Pass `null` to force this
+   * server, or an id to send one request down that machine's tunnel — browsing another
+   * machine's directories to pick a workspace on it is the case that needs it.
    */
   server?: string | null;
 }
@@ -72,9 +76,10 @@ export async function apiFetchWithMeta<T>(
   path: string,
   options: ApiFetchOptions = {},
 ): Promise<{ data: T } & ApiFetchMeta> {
-  // The one routing rule: a call that names a machine goes down that machine's tunnel;
-  // everything else stays here (see lib/server-context.ts).
-  let url = apiUrl(path, options.server ?? null);
+  // Two routing rules, in order: an explicit `server` wins, otherwise a Session-scoped path
+  // goes to the machine that Session lives on. Everything else stays here.
+  const target = "server" in options ? (options.server ?? null) : machineForPath(path);
+  let url = apiUrl(path, target);
   if (options.query) {
     const params = new URLSearchParams();
     for (const [key, value] of Object.entries(options.query)) {
@@ -110,11 +115,11 @@ export async function apiFetchWithMeta<T>(
     } catch {
       // Non-JSON error body: fall back to the default message.
     }
-    // A 401 from ANOTHER machine is that machine's answer, not this server's: it means we
-    // are not signed in over there, which says nothing about the session here. Treating it
-    // as a local logout is how clicking a remote host in a picker bounced the window to the
-    // login page of a server it was still perfectly signed in to.
-    const fromThisServer = (options.server ?? null) === null;
+    // A 401 from ANOTHER machine is that machine's answer, not this server's — it says the
+    // session this server minted over there was refused, which says nothing about the session
+    // here. Treating it as a local logout is how clicking a remote host in a picker bounced
+    // the window to the login page of a server it was still perfectly signed in to.
+    const fromThisServer = target === null;
     if (response.status === 401 && fromThisServer && !isAuthEndpoint(path)) onUnauthorized?.();
     throw new ApiError(response.status, code, message);
   }
