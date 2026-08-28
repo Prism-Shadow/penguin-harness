@@ -61,12 +61,14 @@ test("a quota-403 retries with a live countdown; 'retry now' skips the wait and 
   await page.getByPlaceholder(/输入消息/).fill("quota retry test");
   await page.getByRole("button", { name: "发送" }).click();
 
-  // Early retries flip fast (250/500ms waits — below the 2s countdown floor they keep the
-  // plain waiting/retried text).
-  await expect(page.locator("p.text-amber-600", { hasText: "已发起第 1 次重试" })).toBeVisible({
-    timeout: 20000,
-  });
-  await expect(page.locator("p.text-amber-600", { hasText: "已发起第 2 次重试" })).toBeVisible();
+  // One line for the whole ladder, advancing through the ordinals rather than stacking: the
+  // early retries flip fast (250/500ms waits — below the 2s countdown floor they keep the plain
+  // waiting/retried text), so asserting any single early ordinal is a race against the stream
+  // model's commit throttle. What is stable is that there is exactly ONE retry line, and that it
+  // has reached at least attempt 2 by the time the countdown below appears.
+  const ladder = page.locator("p.text-amber-600", { hasText: "[重试]" });
+  await expect(ladder).toHaveCount(1, { timeout: 20000 });
+  await expect(ladder).toHaveText(/第 [2-9] 次重试/, { timeout: 20000 });
 
   // The 4s wait before retry #5: a live countdown (whole seconds, ticking down).
   const countdown = page.locator("p.text-amber-600", { hasText: /第 5 次重试，\d+ 秒后发起/ });
