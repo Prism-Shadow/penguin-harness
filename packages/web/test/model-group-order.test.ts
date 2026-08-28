@@ -185,6 +185,35 @@ describe("groupModelRows with a manual group order", () => {
     ]);
   });
 
+  it("a stored order survives a change to the catalog's DEFAULT sequence", () => {
+    // A drop materialises every group key, so any Project that has ever reordered its
+    // groups holds a full arrangement — and re-curating MODEL_PROVIDERS cannot move a
+    // single group for that user. Only a Project with nothing stored follows the default.
+    const dropped = commitModelGroupOrder([], allGroupKeys(rows), "minimax", "anthropic", false);
+    expect(dropped).toEqual(expect.arrayContaining(CATALOG_IDS));
+    const before = groupModelRows(rows, "", dropped).map((g) => g.provider.id);
+    // Simulate a later release promoting some group to the front of the catalog order: the
+    // stored array pins every key, so the rendered order is unchanged.
+    const recurated = [
+      CATALOG_IDS.at(-2)!,
+      ...CATALOG_IDS.filter((id) => id !== CATALOG_IDS.at(-2)),
+    ];
+    expect(recurated).not.toEqual(CATALOG_IDS);
+    const after = orderModelGroups(
+      recurated.map((id) => ({ id })),
+      (g) => g.id,
+      dropped,
+    ).map((g) => g.id);
+    expect(after).toEqual(
+      orderModelGroups(
+        CATALOG_IDS.map((id) => ({ id })),
+        (g) => g.id,
+        dropped,
+      ).map((g) => g.id),
+    );
+    expect(before).toEqual(groupModelRows(rows, "", dropped).map((g) => g.provider.id));
+  });
+
   it("stale keys are inert — a stored group that no longer exists changes nothing", () => {
     expect(idsOf(["gone-vendor", "minimax", "also-gone"])).toEqual(idsOf(["minimax"]));
   });

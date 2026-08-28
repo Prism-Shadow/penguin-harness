@@ -16,7 +16,11 @@
  * the identity, so a profile that has never dragged a group sees exactly the catalog
  * order. Storage stays out of this module: the caller loads the array and passes it in.
  */
-import { MODEL_PROVIDERS } from "@prismshadow/penguin-core/model-catalog";
+import {
+  MODEL_PROVIDERS,
+  catalogEntryFor,
+  effectivePricing,
+} from "@prismshadow/penguin-core/model-catalog";
 import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
 
 import { orderModelGroups } from "./model-group-order";
@@ -171,6 +175,65 @@ export function isFreeModel(
   return [pricing.cacheRead, pricing.cacheWrite, pricing.output].every((b) =>
     typeof b === "string" ? b.trim() !== "" && Number(b) === 0 : b === 0,
   );
+}
+
+/**
+ * The three price buckets as the page carries them: the DTO's numbers, or the model page's
+ * string-typed edit fields ("" = unpriced) — the same pair of shapes isFreeModel accepts.
+ */
+export interface PricingBucketsLike {
+  cacheRead?: number | string;
+  cacheWrite?: number | string;
+  output?: number | string;
+}
+
+/** A row's list price and the rate off it, for the discount decoration on the model card. */
+export interface DiscountedPrice {
+  /** Whole-percent rate off list, as the badge shows it (50 for a half-price row). */
+  percent: number;
+  /** What the row would cost without the promotion, in USD per million tokens. */
+  list: { cacheRead: number; cacheWrite: number; output: number };
+}
+
+/** One bucket as a finite number, or undefined for an unpriced ("" / absent) field. */
+function bucketValue(v: number | string | undefined): number | undefined {
+  if (typeof v === "number") return Number.isFinite(v) ? v : undefined;
+  if (v === undefined || v.trim() === "") return undefined;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+/**
+ * The discount decoration for one model row, or undefined for a row that carries none.
+ *
+ * A row qualifies only when its (provider, modelId) names a catalog entry on a promotion AND
+ * its stored price is still exactly the discounted price that entry generates. Prices are
+ * editable, and a hand-typed number has nothing to do with the seller's list price — striking
+ * the catalog's figure through beside it would invent a saving the user is not getting. The
+ * same guard covers a Project that has not run "sync presets" yet: its rows still hold
+ * whatever price they were created with, so they stay undecorated until they carry the rate
+ * they are actually billed at.
+ */
+export function discountedPrice(
+  row: ModelRowLike & PricingBucketsLike,
+): DiscountedPrice | undefined {
+  const entry = catalogEntryFor(row.provider, row.modelId);
+  if (entry?.discount === undefined || entry.pricing === undefined) return undefined;
+  const billed = effectivePricing(entry);
+  if (billed === undefined) return undefined;
+  const same =
+    bucketValue(row.cacheRead) === billed.cache_read &&
+    bucketValue(row.cacheWrite) === billed.cache_write &&
+    bucketValue(row.output) === billed.output;
+  if (!same) return undefined;
+  return {
+    percent: Math.round(entry.discount * 100),
+    list: {
+      cacheRead: entry.pricing.cache_read,
+      cacheWrite: entry.pricing.cache_write,
+      output: entry.pricing.output,
+    },
+  };
 }
 
 export interface VisibleChatModelsOptions {

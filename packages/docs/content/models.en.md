@@ -55,10 +55,11 @@ For a model tagged `vision = false` (e.g. the DeepSeek series), images from conv
 
 ## Built-in provider groups
 
-Built-in groups and their env-var fallbacks (catalog source: `packages/core/src/state/model-catalog.ts`); each group also has a `_BASE_URL` variant (e.g. `ANTHROPIC_BASE_URL`):
+Built-in groups and their env-var fallbacks (catalog source: `packages/core/src/state/model-catalog.ts`); each group also has a `_BASE_URL` variant (e.g. `ANTHROPIC_BASE_URL`). The models page lists the groups in this order by default and opens the first one; drag a group header to arrange them yourself, and that arrangement is stored per Project and is what you see from then on.
 
 | Provider | API key env var | Notes |
 | --- | --- | --- |
+| tokendance | `OPENAI_API_KEY` | The recommended group, listed first by default. OpenAI-compatible gateway, preset base URL `https://tokendance.space/gateway/v1`; model ids are bare, with no vendor prefix (e.g. `glm-5.3`, `kimi-k3`); pricing is the gateway's own CNY rates, several of them currently discounted |
 | deepseek | `DEEPSEEK_API_KEY` | Group of the default model |
 | openrouter | `OPENAI_API_KEY` | OpenAI-compatible gateway, preset base URL `https://openrouter.ai/api/v1` |
 | fireworks | `OPENAI_API_KEY` | Fireworks AI (OpenAI-compatible), preset base URL `https://api.fireworks.ai/inference/v1`; API model ids look like `accounts/fireworks/models/<slug>` |
@@ -66,7 +67,6 @@ Built-in groups and their env-var fallbacks (catalog source: `packages/core/src/
 | openai | `OPENAI_API_KEY` | |
 | anthropic | `ANTHROPIC_API_KEY` | |
 | siliconflow | `OPENAI_API_KEY` | OpenAI-compatible gateway, preset base URL `https://api.siliconflow.cn/v1` |
-| tokendance | `OPENAI_API_KEY` | OpenAI-compatible gateway, preset base URL `https://tokendance.space/gateway/v1`; model ids are bare, with no vendor prefix (e.g. `glm-5.3`, `kimi-k3`); pricing is the gateway's own CNY rates |
 | zhipu | `ZAI_API_KEY` | |
 | moonshot | `MOONSHOT_API_KEY` | |
 | minimax | `MINIMAX_API_KEY` | Direct MiniMax M3 Responses client (`client_type = "minimax-m3"`): `MiniMax-M3` with a 1,000,000-token context window and vision; preset base URL `https://api.minimax.io/v1`; accepts a Token Plan Subscription Key or pay-as-you-go API key |
@@ -78,7 +78,9 @@ The gateway groups (openrouter / fireworks / siliconflow / tokendance / qwen-pay
 
 The preset catalog also carries OpenRouter's free tier: the `:free` model variant `nvidia/nemotron-3-ultra-550b-a55b:free` and the `openrouter/free` unified Free Models Router. They cost nothing, but are subject to OpenRouter's free-tier rate limits and data policy.
 
-Some models in the preset catalog: deepseek-v4-pro / deepseek-v4-flash / deepseek-v4-flash-vision-exp (the DeepSeek group's only vision-capable model), MiniMax-M3, gemini-3.7-flash, claude-opus-5 / claude-opus-4-8 / claude-sonnet-5, gpt-5.6 / gpt-5.5, glm-5.3 / glm-5.3-flash, kimi-k3, qwen3.8-max / qwen3.8-flash (not exhaustive). The whole OpenAI line-up is listed twice — directly (your own OpenAI key, list prices) and on OpenRouter as `openai/<id>` (the gateway's rates, which follow its running promotions). DeepSeek's direct-group prices record the official off-peak tier (peak hours, Beijing 9:00–12:00 and 14:00–18:00, bill double). `glm-5.3-flash` appears three times, and all three rows accept images: AgentHub's GLM client forwards image parts for this one GLM id (every other GLM id refuses them), while the OpenRouter row `z-ai/glm-5.3-flash` and the TokenDance row go through the generic OpenAI-compatible client, which carries them for any id. What the three rows do not share is the price — the direct row records Z.AI's list price, the TokenDance row TokenDance's, and the OpenRouter row the discounted rate that gateway bills, so they disagree while a promotion is running.
+Some models in the preset catalog: deepseek-v4-pro / deepseek-v4-flash / deepseek-v4-flash-vision-exp (the DeepSeek group's only vision-capable model), MiniMax-M3, gemini-3.7-flash, claude-opus-5 / claude-opus-4-8 / claude-sonnet-5, gpt-5.6 / gpt-5.5, glm-5.3 / glm-5.3-flash, kimi-k3, qwen3.8-max / qwen3.8-flash (not exhaustive). The whole OpenAI line-up is listed twice — directly (your own OpenAI key, list prices) and on OpenRouter as `openai/<id>` (the gateway's rates, which follow its running promotions). DeepSeek's direct-group prices record the official off-peak tier (peak hours, Beijing 9:00–12:00 and 14:00–18:00, bill double). `glm-5.3-flash` appears three times, and all three rows accept images: AgentHub's GLM client forwards image parts for this one GLM id (every other GLM id refuses them), while the OpenRouter row `z-ai/glm-5.3-flash` and the TokenDance row go through the generic OpenAI-compatible client, which carries them for any id. What the three rows do not share is the price: each records what its own seller charges, so they disagree while a promotion is running.
+
+TokenDance rows record the gateway's list price and, where a promotion is running, the rate off it. Six models are discounted today — `deepseek-v4-flash-0731`, `deepseek-v4-pro-0813` and `glm-5.3-flash` at 50% off, `kimi-k3` at 20%, `glm-5.3` and `qwen3.8-max` at 10%. Their model cards show the discounted price with the list price struck through beside it and the rate as a badge, and a Project is preset with the **discounted** price, so the cost center charges what the gateway charges. Prices you edit yourself keep the discount decoration off the card: the figure is then yours, not the gateway's.
 
 ## App attribution
 

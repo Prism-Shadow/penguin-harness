@@ -39,6 +39,7 @@ describe("protocolPathForModel", () => {
       "openrouter",
       "fireworks",
       "siliconflow",
+      "tokendance",
       "qwen-token-plan",
       "qwen-pay-as-you-go",
     ]) {

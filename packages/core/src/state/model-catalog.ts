@@ -4,9 +4,10 @@
  * Data verified as of 2026-07-10 (Qwen Token Plan entries: 2026-07-20; MiniMax: 2026-08-03;
  * DeepSeek, Gemini 3.7, GLM-5.3 and the whole OpenAI line-up (direct + OpenRouter):
  * 2026-08-18; the direct Anthropic group: 2026-08-20; the DeepSeek V4 Flash Vision Exp rows:
- * 2026-08-21; the TokenDance group: 2026-08-25, its glm-5.3-flash row: 2026-08-26 and its
- * qwen3.8-flash row: 2026-08-27; the GLM-5.3 Flash rows (direct + OpenRouter) and the
- * direct qwen3.8-flash: 2026-08-26 — per each provider's docs).
+ * 2026-08-21; the TokenDance group: 2026-08-25, its glm-5.3-flash row: 2026-08-26, its
+ * qwen3.8-flash row: 2026-08-27 and its running promotions plus the hy4-preview rows
+ * (TokenDance + OpenRouter): 2026-08-28; the GLM-5.3 Flash rows (direct + OpenRouter) and
+ * the direct qwen3.8-flash: 2026-08-26 — per each provider's docs).
  * Docs: packages/docs/content/models.{zh,en}.md (site path /docs/models) documents the
  * provider groups and credential resolution described here.
  *
@@ -91,6 +92,12 @@ export interface ModelProviderInfo {
    * every provider whose keys are only obtainable from its console.
    */
   oauth?: ModelProviderOAuth;
+  /**
+   * The group the product recommends, captioned as such on the models page. It marks the
+   * GROUP, not a position: a user who drags the group elsewhere keeps the caption with it,
+   * and the default sequence below is what places it first for everyone else.
+   */
+  recommended?: boolean;
 }
 
 /** A single built-in model's catalog entry (`modelId` is the upstream id; paired with `provider` it forms the catalog's unique key). */
@@ -101,6 +108,14 @@ export interface ModelCatalogEntry {
   provider: string;
   contextWindow?: number;
   pricing?: ModelPricing;
+  /**
+   * Fraction off the list price the seller is currently running (0.5 = 50% off), applied to
+   * every bucket. `pricing` stays the LIST price whatever promotion is live, so a lapsed
+   * promotion is one field to delete rather than three numbers to reconstruct;
+   * effectivePricing is the rate actually billed, and presetModelEntries writes THAT into a
+   * Project so the cost center charges what the seller charges.
+   */
+  discount?: number;
   /** Whether image input (vision modality) is supported. */
   supportsVision: boolean;
   /** AgentHub client protocol: required when an id cannot be auto-routed or a shared protocol must be pinned. */
@@ -120,10 +135,14 @@ const TOKENDANCE_BASE_URL = "https://tokendance.space/gateway/v1";
 const MINIMAX_BASE_URL = "https://api.minimax.io/v1";
 
 /**
- * Provider list (web model page groups in this order). The sequence is a hand-curated
- * display order: DeepSeek leads as the default model's provider and custom (custom
- * OpenAI-protocol models) is always last; in between, gateways and first-party vendors are
- * interleaved by expected use rather than sorted by kind.
+ * Provider list (web model page groups in this order BY DEFAULT — a user's dragged
+ * arrangement is stored per Project and wins over this sequence; see the web's
+ * model-group-order.ts). The sequence is a hand-curated display order: TokenDance leads as
+ * the recommended group, DeepSeek follows as the default model's provider, and custom
+ * (custom OpenAI-protocol models) is always last; in between, gateways and first-party
+ * vendors are interleaved by expected use rather than sorted by kind. Only this default
+ * moves when the curation changes: a Project that has ever reordered its groups has every
+ * key stored already, so it keeps the arrangement its user built.
  *
  * The six gateway groups — OpenRouter, Fireworks AI, SiliconFlow, TokenDance, Qwen
  * Pay-As-You-Go and Qwen Token Plan — reach their models through one of AgentHub's generic
@@ -133,6 +152,22 @@ const MINIMAX_BASE_URL = "https://api.minimax.io/v1";
  * the OPENAI_* pair and the env fallback hint the frontend shows is accurate either way.
  */
 export const MODEL_PROVIDERS: ModelProviderInfo[] = [
+  {
+    id: "tokendance",
+    label: "TokenDance",
+    envKey: "OPENAI_API_KEY",
+    envBaseUrlKey: "OPENAI_BASE_URL",
+    apiKeyUrl: "https://tokendance.space/keys",
+    modelsUrl: "https://tokendance.space/models",
+    gatewayBaseUrl: TOKENDANCE_BASE_URL,
+    recommended: true,
+    // https://tokendance.space/docs/api-key-oauth
+    oauth: {
+      authorizeUrl: "https://tokendance.space/auth",
+      exchangeUrl: "https://tokendance.space/portal/api/v1/auth/keys",
+      keyName: "PenguinHarness",
+    },
+  },
   {
     id: "deepseek",
     label: "DeepSeek",
@@ -191,21 +226,6 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     apiKeyUrl: "https://cloud.siliconflow.cn/me/account/ak",
     modelsUrl: "https://cloud.siliconflow.cn/models",
     gatewayBaseUrl: SILICONFLOW_BASE_URL,
-  },
-  {
-    id: "tokendance",
-    label: "TokenDance",
-    envKey: "OPENAI_API_KEY",
-    envBaseUrlKey: "OPENAI_BASE_URL",
-    apiKeyUrl: "https://tokendance.space/keys",
-    modelsUrl: "https://tokendance.space/models",
-    gatewayBaseUrl: TOKENDANCE_BASE_URL,
-    // https://tokendance.space/docs/api-key-oauth
-    oauth: {
-      authorizeUrl: "https://tokendance.space/auth",
-      exchangeUrl: "https://tokendance.space/portal/api/v1/auth/keys",
-      keyName: "PenguinHarness",
-    },
   },
   {
     id: "zhipu",
@@ -271,10 +291,34 @@ function usd(cacheRead: number, cacheWrite: number, output: number): ModelPricin
 }
 
 /**
+ * What the seller actually bills for an entry: its list `pricing` less any running
+ * `discount`, on every bucket. Rounded to the six decimals cny() already stores at, so a
+ * promotional rate is written into a Project as a price rather than as a float artifact.
+ * An entry with no discount (or no pricing at all) is returned untouched, which is why every
+ * caller can use this in place of `.pricing` without asking whether a promotion is live.
+ */
+export function effectivePricing(entry: ModelCatalogEntry): ModelPricing | undefined {
+  const { pricing, discount } = entry;
+  if (pricing === undefined || discount === undefined) return pricing;
+  const off = (v: number): number => Math.round(v * (1 - discount) * 1e6) / 1e6;
+  return {
+    unit: pricing.unit,
+    cache_read: off(pricing.cache_read),
+    cache_write: off(pricing.cache_write),
+    output: off(pricing.output),
+  };
+}
+
+/**
  * Built-in model catalog, clustered by provider. Within each provider, entries are in
  * dictionary order by model id, except that newer versions of the same series come first
  * (e.g. gpt-5.6-* before gpt-5.5, claude-opus-4.8 before 4.7, glm-5.2 before glm-5). The
  * order is precomputed by hand right here — no runtime sorting anywhere.
+ *
+ * The clusters run in their own sequence, which is the row order a new Project's
+ * `[[models]]` table is written in. It is not MODEL_PROVIDERS' display order and does not
+ * have to track it: nothing renders a catalog row outside its provider group, and the page
+ * takes the group sequence from MODEL_PROVIDERS.
  */
 export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // -- DeepSeek (official CNY pricing: cache hit / cache miss / output). Re-read 2026-08-18
@@ -693,6 +737,21 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
+    // Tencent's Hy4 preview, read 2026-08-28 from its OpenRouter page and the models API:
+    // $0.834 input / $2.501 output with a published $0.042 input_cache_read, a 1,048,576
+    // context window, and text-only modalities in and out. The same upstream model is sold
+    // in the TokenDance group at that gateway's own CNY rate; the two rows are priced by
+    // their sellers and are not copies of one another.
+    modelId: "tencent/hy4-preview",
+    displayName: "Hy4 preview",
+    provider: "openrouter",
+    contextWindow: 1048576,
+    pricing: usd(0.042, 0.834, 2.501),
+    supportsVision: false,
+    clientType: "openai-chat",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
     modelId: "tencent/hy3",
     displayName: "Hy3",
     provider: "openrouter",
@@ -945,28 +1004,35 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     clientType: "openai-chat",
     baseUrl: SILICONFLOW_BASE_URL,
   },
-  // -- TokenDance (gateway: OpenAI-compatible protocol, preset base URL). Context windows and
-  // vision flags from the public catalog API (GET https://tokendance.space/gateway/v1/models,
-  // no credential required); prices are the gateway's own CNY rates from each model's detail
-  // page, read 2026-08-25 (the detail pages need a signed-in session, so they cannot be
-  // re-read anonymously). TokenDance publishes an input price and a cache-hit price with no
-  // separate cache-write fee, so cache_write carries the input price.
+  // -- TokenDance (gateway: OpenAI-compatible protocol, preset base URL). Context windows,
+  // vision flags and supported protocols from the public catalog API (GET
+  // https://tokendance.space/gateway/v1/models, no credential required; re-read 2026-08-28);
+  // prices are the gateway's own CNY rates from each model's detail page, read 2026-08-25
+  // (the detail pages need a signed-in session, so they cannot be re-read anonymously).
+  // TokenDance publishes an input price and a cache-hit price with no separate cache-write
+  // fee, so cache_write carries the input price.
   //
   // Discounts: every row here stores the official LIST price, the convention of the two Qwen
-  // groups below. Two promotions are running, so the group currently over-states what those
-  // two rows really cost: glm-5.3-flash is on a 2-week 50% off (running at the 2026-08-26
-  // read, so it ends by 2026-09-09 at the latest — 2x the billed rate until then), and
-  // qwen3.8-max on a limited-time 20% off with no published end date (1.25x). Both are
-  // machine-checkable without a credential: the catalog API opens a discounted model's
-  // `description` with a bracketed 限时 ("limited-time") tag naming the rate, so the same
-  // anonymous request the context windows come from also says which promotions still run.
-  // No other row is discounted, so list price and billed rate coincide for the rest. --
+  // groups below, and a promoted row declares its rate in `discount` rather than having its
+  // price rewritten — a promotion that lapses is then one field to delete, with the rate to
+  // return to still on the row. effectivePricing() applies it and presetModelEntries writes
+  // that billed rate into a Project, so the cost center charges what the gateway charges.
+  // Six rows are promoted: deepseek-v4-flash-0731, deepseek-v4-pro-0813 and glm-5.3-flash at
+  // 50% off, kimi-k3 at 20%, glm-5.3 and qwen3.8-max at 10%. The rest carry no discount, so
+  // for them list price and billed rate coincide.
+  //
+  // A running promotion usually also shows up without a credential: the catalog API opens
+  // such a model's `description` with a bracketed 限时 ("limited-time") tag, so the same
+  // anonymous request the context windows come from is a cheap first check on whether one is
+  // still live. It is neither exhaustive nor authoritative on the rate — the rates above are
+  // the ones the seller confirmed. --
   {
     modelId: "deepseek-v4-flash-0731",
     displayName: "DeepSeek V4 Flash 0731",
     provider: "tokendance",
     contextWindow: 1048576,
-    pricing: cny(0.05, 1.5, 4.5),
+    pricing: cny(0.1, 3, 9),
+    discount: 0.5,
     supportsVision: false,
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
@@ -986,7 +1052,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     displayName: "DeepSeek V4 Pro 0813",
     provider: "tokendance",
     contextWindow: 1000000,
-    pricing: cny(0.15, 4.5, 13.5),
+    pricing: cny(0.3, 9, 27),
+    discount: 0.5,
     supportsVision: false,
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
@@ -997,6 +1064,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     provider: "tokendance",
     contextWindow: 1000000,
     pricing: cny(2, 8, 28),
+    discount: 0.1,
     supportsVision: false,
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
@@ -1011,7 +1079,28 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     provider: "tokendance",
     contextWindow: 1000000,
     pricing: cny(0.23, 0.8, 2.8),
+    discount: 0.5,
     supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: TOKENDANCE_BASE_URL,
+  },
+  {
+    // The same upstream model as the OpenRouter `tencent/hy4-preview` row above, reached
+    // through a second seller: each row records what its own seller charges, so the two must
+    // not be made to agree (the qwen3.8-flash pair below states the same rule). TokenDance
+    // sells it at CNY 6 input / 18 output / 0.3 cache hit, undiscounted, over a 1,024,000
+    // context window — both figures its own, neither copied from the OpenRouter listing.
+    //
+    // Text-only: the catalog entry advertises no image modality, matching the OpenRouter
+    // listing's text-in/text-out. Its supported_protocols are openai:chat-completions and
+    // openai:responses, so the openai-chat pin is this group's convention rather than the
+    // only shape the id serves — unlike glm-5.3-flash above, where it is forced.
+    modelId: "hy4-preview",
+    displayName: "Hy4 preview",
+    provider: "tokendance",
+    contextWindow: 1024000,
+    pricing: cny(0.3, 6, 18),
+    supportsVision: false,
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
   },
@@ -1021,6 +1110,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     provider: "tokendance",
     contextWindow: 1048576,
     pricing: cny(2, 20, 100),
+    discount: 0.2,
     supportsVision: true,
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
@@ -1036,8 +1126,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     // it is forced. Natively multimodal per the catalog entry, and this group's openai-chat
     // client forwards image_url parts, so image input works on this path.
     //
-    // Not discounted: unlike qwen3.8-max below, its catalog `description` carries no
-    // bracketed 限时 tag, so list price and billed rate coincide.
+    // Undiscounted, so its list price and its billed rate coincide — unlike the
+    // qwen3.8-max row below, which is on 10% off.
     modelId: "qwen3.8-flash",
     displayName: "Qwen 3.8 Flash",
     provider: "tokendance",
@@ -1053,6 +1143,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     provider: "tokendance",
     contextWindow: 1000000,
     pricing: cny(1.5, 12, 36),
+    discount: 0.1,
     supportsVision: true,
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
@@ -1636,20 +1727,29 @@ export function fastModeProtocol(
  * always pin a client_type — openai-chat, or openai-responses for the OpenRouter openai/*
  * rows — and inline a preset base_url. The direct MiniMax M3 entry also pins its protocol and
  * endpoint. No secrets are included, so only an API key is needed.
+ *
+ * Pricing is written as the EFFECTIVE rate (effectivePricing: list less any running
+ * discount), not the list price the catalog records. A Project's stored pricing is the only
+ * thing the cost center ever prices against, so writing anything but what the seller bills
+ * would report a cost nobody was charged; the list price and the promotion that produced the
+ * difference stay in the catalog, where they can be read and restored.
  */
 export function presetModelEntries(): ModelEntry[] {
-  return MODEL_CATALOG.map((m) => ({
-    provider: m.provider,
-    model_id: m.modelId,
-    ...(m.contextWindow !== undefined ? { context_window: m.contextWindow } : {}),
-    ...(m.clientType !== undefined ? { client_type: m.clientType } : {}),
-    ...(m.pricing ? { pricing: { ...m.pricing } } : {}),
-    // ModelEntry.vision defaults to supported: only models that don't support images
-    // explicitly persist false (drives the read_image / describe_image choice and input
-    // image hand-off, see project-config.ts).
-    ...(m.supportsVision ? {} : { vision: false }),
-    ...(m.baseUrl !== undefined ? { base_url: m.baseUrl } : {}),
-  }));
+  return MODEL_CATALOG.map((m) => {
+    const pricing = effectivePricing(m);
+    return {
+      provider: m.provider,
+      model_id: m.modelId,
+      ...(m.contextWindow !== undefined ? { context_window: m.contextWindow } : {}),
+      ...(m.clientType !== undefined ? { client_type: m.clientType } : {}),
+      ...(pricing ? { pricing: { ...pricing } } : {}),
+      // ModelEntry.vision defaults to supported: only models that don't support images
+      // explicitly persist false (drives the read_image / describe_image choice and input
+      // image hand-off, see project-config.ts).
+      ...(m.supportsVision ? {} : { vision: false }),
+      ...(m.baseUrl !== undefined ? { base_url: m.baseUrl } : {}),
+    };
+  });
 }
 
 /**

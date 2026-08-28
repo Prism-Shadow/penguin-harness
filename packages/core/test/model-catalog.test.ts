@@ -11,6 +11,7 @@ import {
   modelHomepageUrl,
   catalogEntryFor,
   attributionHeaders,
+  effectivePricing,
   presetModelEntries,
   providerInfo,
   fastModeProtocol,
@@ -26,9 +27,12 @@ describe("model-catalog", () => {
     expect(new Set(pairs).size).toBe(pairs.length);
     const ids = MODEL_CATALOG.map((m) => m.modelId);
     expect(MODEL_CATALOG[0]!.provider).toBe("deepseek");
-    // Group order is hand-curated, interleaving gateways and first-party vendors: DeepSeek
-    // first (the default model's provider) and custom always last.
+    // Group order is hand-curated, interleaving gateways and first-party vendors: TokenDance
+    // first (the recommended group), DeepSeek next (the default model's provider) and custom
+    // always last. This is the page's DEFAULT only — a Project that has reordered its groups
+    // stores every key and keeps its own arrangement (web's model-group-order.ts).
     expect(MODEL_PROVIDERS.map((p) => p.id)).toEqual([
+      "tokendance",
       "deepseek",
       "openrouter",
       "fireworks",
@@ -36,7 +40,6 @@ describe("model-catalog", () => {
       "openai",
       "anthropic",
       "siliconflow",
-      "tokendance",
       "zhipu",
       "moonshot",
       "minimax",
@@ -44,6 +47,10 @@ describe("model-catalog", () => {
       "qwen-token-plan",
       "custom",
     ]);
+    // Exactly one group is marked recommended, and it is the one that leads the default
+    // order: the caption and the placement are two statements of the same curation.
+    expect(MODEL_PROVIDERS.filter((p) => p.recommended).map((p) => p.id)).toEqual(["tokendance"]);
+    expect(MODEL_PROVIDERS[0]!.recommended).toBe(true);
     expect(providerInfo("siliconflow")!.label).toBe("SiliconFlow");
     expect(providerInfo("minimax")!.label).toBe("MiniMax");
     expect(providerInfo("minimax")!.envKey).toBe("MINIMAX_API_KEY");
@@ -170,7 +177,9 @@ describe("model-catalog", () => {
       expect(entry.provider).toBe(cat.provider);
       expect(entry.model_id).toBe(cat.modelId);
       expect(entry.context_window).toBe(cat.contextWindow);
-      expect(entry.pricing).toEqual(cat.pricing);
+      // A Project stores the BILLED rate, not the catalog's list price: the cost center
+      // prices only against what is written here, so a promoted row must arrive discounted.
+      expect(entry.pricing, entry.model_id).toEqual(effectivePricing(cat));
       expect(entry.vision).toBe(cat.supportsVision ? undefined : false);
       // Gateway and direct MiniMax presets pin a client protocol; other direct models auto-route.
       expect(entry.client_type).toBe(cat.clientType);
@@ -218,6 +227,7 @@ describe("model-catalog", () => {
       "qwen/qwen3.8-max",
       "qwen/qwen3.6-35b-a3b",
       "stepfun/step-3.7-flash",
+      "tencent/hy4-preview",
       "tencent/hy3",
       "thinkingmachines/inkling",
       "x-ai/grok-4.6",
@@ -302,6 +312,7 @@ describe("model-catalog", () => {
       ["deepseek-v4-pro-0813", 1000000, false],
       ["glm-5.3", 1000000, false],
       ["glm-5.3-flash", 1000000, true],
+      ["hy4-preview", 1024000, false],
       ["kimi-k3", 1048576, true],
       ["qwen3.8-flash", 1000000, true],
       ["qwen3.8-max", 1000000, true],
@@ -310,15 +321,54 @@ describe("model-catalog", () => {
       expect(m.clientType).toBe("openai-chat");
       expect(m.baseUrl).toBe("https://tokendance.space/gateway/v1");
     }
-    // The gateway's own CNY LIST rates throughout, promotion or not: qwen3.8-max at
-    // 1.5 / 12 / 36 CNY while a 20% off runs, glm-5.3-flash at 0.23 / 0.8 / 2.8 CNY while a
-    // 50% off runs; no other row carries a promotion, so list price and billed rate coincide
-    // for the rest.
+    // The gateway's own CNY LIST rates throughout, promotion or not; a promoted row carries
+    // its rate in `discount` and the billed price is DERIVED from the two, never pasted
+    // beside them. Reading the CNY prices back out of effectivePricing is what pins that:
+    // change a list price or a discount alone and the recovered rate stops matching what
+    // TokenDance publishes. cache_write carries the input price (no separate cache-write fee
+    // on this gateway), so the published input / output / cache-hit triple is NOT in the
+    // catalog's cny(cacheRead, cacheWrite, output) argument order.
+    const CNY_PER_USD = 7;
+    const billedCny = (modelId: string): [number, number, number] => {
+      const billed = effectivePricing(td.find((m) => m.modelId === modelId)!)!;
+      // input, output, cache hit — the order TokenDance's own price list uses.
+      return [
+        billed.cache_write * CNY_PER_USD,
+        billed.output * CNY_PER_USD,
+        billed.cache_read * CNY_PER_USD,
+      ];
+    };
+    const discounted: Array<[string, number, [number, number, number]]> = [
+      ["glm-5.3-flash", 0.5, [0.4, 1.4, 0.115]],
+      ["glm-5.3", 0.1, [7.2, 25.2, 1.8]],
+      ["deepseek-v4-pro-0813", 0.5, [4.5, 13.5, 0.15]],
+      ["deepseek-v4-flash-0731", 0.5, [1.5, 4.5, 0.05]],
+      ["kimi-k3", 0.2, [16, 80, 1.6]],
+      ["qwen3.8-max", 0.1, [10.8, 32.4, 1.35]],
+    ];
+    for (const [modelId, discount, cnyBilled] of discounted) {
+      const entry = td.find((m) => m.modelId === modelId)!;
+      expect(entry.discount, modelId).toBe(discount);
+      const [input, output, cacheHit] = billedCny(modelId);
+      expect(input, `${modelId} input`).toBeCloseTo(cnyBilled[0], 4);
+      expect(output, `${modelId} output`).toBeCloseTo(cnyBilled[1], 4);
+      expect(cacheHit, `${modelId} cache hit`).toBeCloseTo(cnyBilled[2], 4);
+    }
+    // Exactly those six are promoted; every other row bills its list price unchanged.
+    expect(
+      td
+        .filter((m) => m.discount !== undefined)
+        .map((m) => m.modelId)
+        .sort(),
+    ).toEqual(discounted.map(([id]) => id).sort());
+    for (const m of td.filter((x) => x.discount === undefined)) {
+      expect(effectivePricing(m), m.modelId).toEqual(m.pricing);
+    }
+    // The stored list prices themselves, in the catalog's own argument order.
     const tdQwen = td.find((m) => m.modelId === "qwen3.8-max")!.pricing!;
     expect([tdQwen.cache_read, tdQwen.cache_write, tdQwen.output]).toEqual([
       0.214286, 1.714286, 5.142857,
     ]);
-    // cache_write carries the input price: TokenDance charges no separate cache-write fee.
     const tdFlash = td.find((m) => m.modelId === "glm-5.3-flash")!.pricing!;
     expect([tdFlash.cache_read, tdFlash.cache_write, tdFlash.output]).toEqual([
       0.032857, 0.114286, 0.4,
@@ -337,6 +387,25 @@ describe("model-catalog", () => {
     expect(payggFlash.cache_write).toBeGreaterThan(tdQwenFlash.cache_write);
     expect(payggFlash.output).toBeGreaterThan(tdQwenFlash.output);
     expect(payggFlash.cache_read).toEqual(tdQwenFlash.cache_read);
+    // hy4-preview is the same upstream model as OpenRouter's tencent/hy4-preview, sold twice.
+    // Same rule as the qwen3.8-flash pair: each row carries its own seller's price and its own
+    // published context window, so the two must stay apart rather than converge on one number.
+    const tdHy4 = td.find((m) => m.modelId === "hy4-preview")!;
+    expect(tdHy4.discount).toBeUndefined();
+    expect(billedCny("hy4-preview")[0]).toBeCloseTo(6, 4);
+    expect(billedCny("hy4-preview")[1]).toBeCloseTo(18, 4);
+    expect(billedCny("hy4-preview")[2]).toBeCloseTo(0.3, 4);
+    const orHy4 = catalogEntryFor("openrouter", "tencent/hy4-preview")!;
+    expect([orHy4.pricing!.cache_read, orHy4.pricing!.cache_write, orHy4.pricing!.output]).toEqual([
+      0.042, 0.834, 2.501,
+    ]);
+    expect(tdHy4.pricing!.cache_write).toBeGreaterThan(orHy4.pricing!.cache_write);
+    expect(tdHy4.pricing!.output).toBeGreaterThan(orHy4.pricing!.output);
+    expect(tdHy4.pricing!.cache_read).toBeGreaterThan(orHy4.pricing!.cache_read);
+    expect(tdHy4.contextWindow).not.toBe(orHy4.contextWindow);
+    // Text-only on both sellers, and neither is on a promotion.
+    expect([tdHy4.supportsVision, orHy4.supportsVision]).toEqual([false, false]);
+    expect(orHy4.discount).toBeUndefined();
     const qpayg = MODEL_CATALOG.filter((m) => m.provider === "qwen-pay-as-you-go");
     expect(qpayg.map((m) => [m.modelId, m.supportsVision])).toEqual([
       ["deepseek-v4-flash-0731", false],

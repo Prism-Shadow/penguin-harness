@@ -29,8 +29,8 @@
  * Saving does a PUT full-table replace (models not present are deleted; an empty apiKey
  * means keep the existing value); only the owner can edit.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { DragEvent as ReactDragEvent } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { DragEvent as ReactDragEvent, ReactNode } from "react";
 import type {
   CredentialInfo,
   ModelProtocolDetectRequest,
@@ -78,6 +78,7 @@ import {
 import type { FastModeProtocol, ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
 import {
   allGroupKeys,
+  discountedPrice,
   groupModelRows,
   hasConfiguredKey,
   isFreeModel,
@@ -971,6 +972,15 @@ export function ModelsPage() {
                 // Absolutely positioned, so it costs no layout width and cannot push the
                 // header's up-to-five actions out of a narrow page.
                 <div key={group.provider.id} className="relative">
+                  {/* Caption for the group the catalog recommends. It sits above the section
+                      rather than inside the header row, which already carries up to five
+                      actions and truncates its own title on a narrow page. It is a property
+                      of the group, so it travels with it when the group is dragged. */}
+                  {group.provider.recommended && (
+                    <p className="mb-1 px-0.5 text-[11px] font-medium text-gray-500 dark:text-gray-400">
+                      {S.models.recommendedGroup}
+                    </p>
+                  )}
                   {drag.dropEdge !== null && (
                     <div
                       aria-hidden
@@ -1676,16 +1686,35 @@ function ModelCard({
   onOpen: () => void;
 }) {
   const priced = row.cacheRead || row.cacheWrite || row.output;
-  const meta = [
+  // A promoted catalog row: the stored price is what the seller bills, so it stays the live
+  // figure and the list price it undercuts is struck through beside it (discountedPrice
+  // returns nothing once the price has been edited away from the catalog's).
+  const discount = discountedPrice(row);
+  const priceLine = (a: string, b: string, c: string): string =>
+    `${displayPrice(a, currency)} / ${displayPrice(b, currency)} / ${displayPrice(c, currency)}`;
+  const meta: ReactNode[] = [
     row.contextWindow ? humanizeTokens(Number(row.contextWindow)) : null,
     // Three prices (cache read / cache write / output); units are explained in the config dialog, not repeated on the card.
-    priced
-      ? `${displayPrice(row.cacheRead, currency)} / ${displayPrice(row.cacheWrite, currency)} / ${displayPrice(row.output, currency)}`
-      : null,
+    priced ? (
+      <span>
+        {priceLine(row.cacheRead, row.cacheWrite, row.output)}
+        {/* The strike is the whole signal, so the list price keeps the meta line's own ink
+            rather than fading below it. */}
+        {discount && (
+          <s className="ml-1.5" title={S.models.listPriceTitle}>
+            {priceLine(
+              String(discount.list.cacheRead),
+              String(discount.list.cacheWrite),
+              String(discount.list.output),
+            )}
+          </s>
+        )}
+      </span>
+    ) : null,
     // Key status (see keyStatusText): the stored mask, a detected env fallback's mask, a plain
     // "configured" for a key typed but not yet saved, or "not configured".
     keyStatusText(row),
-  ].filter((v): v is string => v !== null);
+  ].filter((v) => v !== null);
 
   const speedBadges =
     speed === "pending" ? (
@@ -1734,6 +1763,14 @@ function ModelCard({
             light-yellow badge so zero-cost models stand out at a glance (informational, kept
             distinct from the amber warning tone the proxy-vision badge uses). */}
         {isFreeModel(row) && <Badge tone="yellow">{S.models.freeBadge}</Badge>}
+        {/* Discounted rows: the rate off list, so a promotional price is legible as one
+            rather than read as the model's normal cost. Yellow like the free badge — both
+            are informational tags about price, neither a warning. */}
+        {discount && (
+          <span title={S.models.discountTitle(discount.percent)}>
+            <Badge tone="yellow">{S.models.discountBadge(discount.percent)}</Badge>
+          </span>
+        )}
         {row.vision && <Badge tone="green">{S.models.visionBadge}</Badge>}
         {isVisionModel && <Badge tone="amber">{S.models.visionModelBadge}</Badge>}
         {/* Fast mode moves the model onto a premium price list that the recorded prices do not
@@ -1753,7 +1790,12 @@ function ModelCard({
           non-shrinking slot on the right so the numbers never wrap or get pushed out. */}
       <span className="flex w-full items-center gap-1.5">
         <span className="min-w-0 flex-1 truncate text-[11px] text-gray-400 dark:text-gray-500">
-          {meta.join(" · ")}
+          {meta.map((part, i) => (
+            <Fragment key={i}>
+              {i > 0 && " · "}
+              {part}
+            </Fragment>
+          ))}
         </span>
         {speedBadges}
       </span>

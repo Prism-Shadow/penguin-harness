@@ -13,7 +13,12 @@ import type { AddressInfo } from "node:net";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { MODEL_CATALOG, userText } from "@prismshadow/penguin-core";
+import {
+  MODEL_CATALOG,
+  catalogEntryFor,
+  effectivePricing,
+  userText,
+} from "@prismshadow/penguin-core";
 import type {
   ModelsResponse,
   ModelTestResponse,
@@ -123,6 +128,25 @@ describe("models preset & catalog enrichment", () => {
     expect(mimo.clientType).toBe("openai-chat");
     expect(mimo.credential?.baseUrl).toBe("https://openrouter.ai/api/v1");
     expect(mimo.credential?.apiKeyMasked).toBeUndefined();
+
+    // A catalog row on a promotion is preset at the rate the seller BILLS, not at the list
+    // price the catalog records. The cost center prices only against what is written into
+    // the Project, so anything else here would report a cost nobody was charged.
+    const promoted = catalogEntryFor("tokendance", "glm-5.3-flash")!;
+    const billed = effectivePricing(promoted)!;
+    expect(pick(body, "tokendance", "glm-5.3-flash").pricing).toEqual({
+      cacheRead: billed.cache_read,
+      cacheWrite: billed.cache_write,
+      output: billed.output,
+    });
+    expect(billed.output).toBeLessThan(promoted.pricing!.output);
+    // An undiscounted row is preset at its list price, unchanged.
+    const plain = catalogEntryFor("tokendance", "hy4-preview")!;
+    expect(pick(body, "tokendance", "hy4-preview").pricing).toEqual({
+      cacheRead: plain.pricing!.cache_read,
+      cacheWrite: plain.pricing!.cache_write,
+      output: plain.pricing!.output,
+    });
   });
 
   it("masks the env fallback for first-party official entries only, and never leaks the value", async () => {

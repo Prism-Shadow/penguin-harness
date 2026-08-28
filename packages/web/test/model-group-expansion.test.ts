@@ -34,12 +34,16 @@ function memStorage(): ExpansionStorage & { map: Map<string, string> } {
   };
 }
 
+/** The group the catalog puts first, which is the one the page opens on with nothing stored. */
+const LEAD_GROUP = MODEL_PROVIDERS[0]!.id;
+
 describe("defaultExpandedProviders", () => {
-  it("contains exactly deepseek, the first provider of the catalog", () => {
-    expect([...defaultExpandedProviders()]).toEqual(["deepseek"]);
-    // The default leans on the catalog ordering promise (DeepSeek first): pin it here so a
-    // reordering shows up as this failure instead of a silently odd default.
-    expect(MODEL_PROVIDERS[0]?.id).toBe("deepseek");
+  it("contains exactly the leading catalog group, and follows it when the curation changes", () => {
+    expect([...defaultExpandedProviders()]).toEqual([MODEL_PROVIDERS[0]!.id]);
+    // The group that leads is a product decision, so it is spelled out once here: the page
+    // opens on the recommended group rather than on whichever id used to be hard-coded.
+    expect(MODEL_PROVIDERS[0]!.id).toBe("tokendance");
+    expect(MODEL_PROVIDERS[0]!.recommended).toBe(true);
   });
 
   it("returns a fresh set per call (React state must not share one mutable instance)", () => {
@@ -55,7 +59,7 @@ describe("isGroupExpanded", () => {
   const expanded = defaultExpandedProviders();
 
   it("without a search query, only members of the expanded set are open", () => {
-    expect(isGroupExpanded(expanded, "deepseek", false)).toBe(true);
+    expect(isGroupExpanded(expanded, LEAD_GROUP, false)).toBe(true);
     expect(isGroupExpanded(expanded, "anthropic", false)).toBe(false);
     expect(isGroupExpanded(expanded, "custom", false)).toBe(false);
     // User-defined groups are decided by the same membership rule — collapsed until toggled.
@@ -84,7 +88,7 @@ describe("isGroupExpanded", () => {
     // Clearing the query falls back to the stored set: the same groups collapse again.
     for (const g of groups) {
       expect(isGroupExpanded(defaultExpandedProviders(), g.provider.id, false)).toBe(
-        g.provider.id === "deepseek",
+        g.provider.id === LEAD_GROUP,
       );
     }
   });
@@ -95,21 +99,21 @@ describe("toggleExpandedProvider", () => {
     const initial = defaultExpandedProviders();
     const withAnthropic = toggleExpandedProvider(initial, "anthropic");
     expect(withAnthropic.has("anthropic")).toBe(true);
-    expect(withAnthropic.has("deepseek")).toBe(true);
+    expect(withAnthropic.has(LEAD_GROUP)).toBe(true);
     expect(initial.has("anthropic")).toBe(false); // input untouched (React state discipline)
 
-    const withoutDeepseek = toggleExpandedProvider(withAnthropic, "deepseek");
-    expect(withoutDeepseek.has("deepseek")).toBe(false);
-    expect(withoutDeepseek.has("anthropic")).toBe(true);
-    expect(withAnthropic.has("deepseek")).toBe(true);
+    const withoutLead = toggleExpandedProvider(withAnthropic, LEAD_GROUP);
+    expect(withoutLead.has(LEAD_GROUP)).toBe(false);
+    expect(withoutLead.has("anthropic")).toBe(true);
+    expect(withAnthropic.has(LEAD_GROUP)).toBe(true);
   });
 });
 
 describe("persisted expansion (per-Project localStorage)", () => {
-  it("nothing stored — or no Project yet — falls back to the DeepSeek-only default", () => {
+  it("nothing stored — or no Project yet — falls back to the leading group alone", () => {
     const s = memStorage();
-    expect([...loadExpandedProviders("p1", s)]).toEqual(["deepseek"]);
-    expect([...loadExpandedProviders(null, s)]).toEqual(["deepseek"]);
+    expect([...loadExpandedProviders("p1", s)]).toEqual([LEAD_GROUP]);
+    expect([...loadExpandedProviders(null, s)]).toEqual([LEAD_GROUP]);
     expect(s.map.size).toBe(0); // load never writes; save without a Project is a no-op
     saveExpandedProviders(null, new Set(["openai"]), s);
     expect(s.map.size).toBe(0);
@@ -119,7 +123,7 @@ describe("persisted expansion (per-Project localStorage)", () => {
     const s = memStorage();
     let set = loadExpandedProviders("p1", s);
     set = toggleExpandedProvider(set, "anthropic"); // open anthropic
-    set = toggleExpandedProvider(set, "deepseek"); // close deepseek
+    set = toggleExpandedProvider(set, LEAD_GROUP); // close the group that opens by default
     saveExpandedProviders("p1", set, s);
     const restored = loadExpandedProviders("p1", s);
     expect(restored).toEqual(new Set(["anthropic"]));
@@ -136,7 +140,7 @@ describe("persisted expansion (per-Project localStorage)", () => {
     const s = memStorage();
     for (const raw of ["{not json", '"deepseek"', "42", "null", "{}", ""]) {
       s.map.set(expandedGroupsKey("p1"), raw);
-      expect([...loadExpandedProviders("p1", s)]).toEqual(["deepseek"]);
+      expect([...loadExpandedProviders("p1", s)]).toEqual([LEAD_GROUP]);
     }
     // An array survives element-level junk: non-strings are filtered, strings kept.
     s.map.set(expandedGroupsKey("p1"), '["anthropic", 7, null, {"x": 1}]');
@@ -150,7 +154,7 @@ describe("persisted expansion (per-Project localStorage)", () => {
     expect([...loadExpandedProviders("p1", s)]).toEqual(["openai"]);
     expect(loadExpandedProviders("p2", s)).toEqual(new Set(["moonshot", "my-proxy"]));
     // A third Project is untouched by the writes above and opens on the default.
-    expect([...loadExpandedProviders("p3", s)]).toEqual(["deepseek"]);
+    expect([...loadExpandedProviders("p3", s)]).toEqual([LEAD_GROUP]);
   });
 
   it("stale ids of since-deleted groups are harmless and survive round-trips", () => {
@@ -178,6 +182,6 @@ describe("persisted expansion (per-Project localStorage)", () => {
       },
     };
     expect(() => saveExpandedProviders("p1", new Set(["openai"]), broken)).not.toThrow();
-    expect([...loadExpandedProviders("p1", broken)]).toEqual(["deepseek"]);
+    expect([...loadExpandedProviders("p1", broken)]).toEqual([LEAD_GROUP]);
   });
 });
