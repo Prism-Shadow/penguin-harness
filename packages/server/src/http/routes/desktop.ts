@@ -64,8 +64,9 @@ export function desktopRoutes(deps: AppDeps): Hono {
  * only in desktop mode). Restricted to the shell's own window (`sessionVia === "desktop"`,
  * the same two-field rule as the change-password gate, inverted): a browser signed into
  * the same desktop-mode server must not read the machine's updater state or restart its
- * GUI app. Install consent is collected by the page's confirm dialog before the POST —
- * the shell then installs only what its updater already downloaded and verified.
+ * GUI app. Consent is collected by the page's update modal before each POST: `download`
+ * fetches only the release the shell has offered, and `install` restarts only into what
+ * its updater already downloaded and verified.
  */
 export function desktopUpdateRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
@@ -91,6 +92,14 @@ export function desktopUpdateRoutes(deps: AppDeps): Hono<AppEnv> {
   app.post("/check", (c) => {
     const desktop = requireShellSession(c);
     if (!desktop.requestUpdateCommand("check")) {
+      throw new HttpError(503, "shell_unreachable", "The desktop shell is not listening.");
+    }
+    return c.body(null, 202);
+  });
+
+  app.post("/download", (c) => {
+    const desktop = requireShellSession(c);
+    if (!desktop.requestUpdateCommand("download")) {
       throw new HttpError(503, "shell_unreachable", "The desktop shell is not listening.");
     }
     return c.body(null, 202);

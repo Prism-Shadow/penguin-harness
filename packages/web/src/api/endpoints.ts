@@ -125,7 +125,8 @@ import type {
   TraceImportResponse,
   UiPrefs,
   UpdateCheckResponse,
-  UpdateRunResponse,
+  UpdateJobStatus,
+  RestartResponse,
   DesktopUpdateStatusResponse,
   UsageErrorKind,
   UsageErrorsClearResponse,
@@ -1172,9 +1173,16 @@ export const getVersion = () => apiFetch<VersionResponse>("/api/version");
 export const checkUpdate = (force = false) =>
   apiFetch<UpdateCheckResponse>(`/api/version/update-check${force ? "?force=1" : ""}`);
 
-/** Admin only: runs `penguin update` on the server host (long request — up to 10 minutes). */
-export const runUpdate = () =>
-  apiFetch<UpdateRunResponse>("/api/version/update", { method: "POST", body: {} });
+/** Admin only: the self-update job's status — polled while it runs. */
+export const getUpdateJob = () => apiFetch<UpdateJobStatus>("/api/version/update");
+
+/** Admin only: starts the self-update job (`penguin update` on the server host, in the background) and answers with its status. */
+export const startUpdateJob = () =>
+  apiFetch<UpdateJobStatus>("/api/version/update", { method: "POST", body: {} });
+
+/** Admin only: asks the supervised server process to restart into the installed release. */
+export const restartServer = () =>
+  apiFetch<RestartResponse>("/api/version/restart", { method: "POST", body: {} });
 
 // Desktop client update (desktop-shell sessions only) ----------------------------------
 
@@ -1182,6 +1190,9 @@ export const getDesktopUpdate = () => apiFetch<DesktopUpdateStatusResponse>("/ap
 
 export const desktopUpdateCheck = () =>
   apiFetch<void>("/api/desktop/update/check", { method: "POST", body: {} });
+
+export const desktopUpdateDownload = () =>
+  apiFetch<void>("/api/desktop/update/download", { method: "POST", body: {} });
 
 export const desktopUpdateInstall = () =>
   apiFetch<void>("/api/desktop/update/install", { method: "POST", body: {} });

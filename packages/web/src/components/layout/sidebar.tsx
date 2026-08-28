@@ -158,14 +158,9 @@ import {
 } from "../../features/chat/draft-sessions";
 import type { DraftSessionEntry } from "../../features/chat/draft-sessions";
 import { CreateProjectDialog, ProjectSettingsDialog } from "./project-dialogs";
-import { DesktopUpdateRow } from "../account/desktop-update-row";
-import { ServerUpdateRow } from "../account/server-update-row";
-import { UpdateDialog } from "../account/update-dialog";
-import { offersClientUpdate } from "../../lib/desktop-update";
-import { requestClientInstall, useDesktopUpdate } from "../../lib/use-desktop-update";
-import { forceUpdateCheck, updateCheckOutcome, useVersionInfo } from "../../lib/use-version-info";
+import { UpdateRow } from "../account/update-row";
+import { openUpdateModal } from "../../lib/use-update-flow";
 import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
-import { releaseUpdate } from "../../lib/update-badges";
 import { SettingsDialog } from "../../features/settings/settings-dialog";
 import { ICON_SIZE } from "../../lib/icon-scale";
 
@@ -349,38 +344,8 @@ export function Sidebar({
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  // Client update (desktop shell window only): the snapshot and the armed-check flag live
-  // at module level in use-desktop-update.ts; this always-mounted hook instance drives the
-  // polling, so a check armed in the menu still settles after the menu closes.
-  const clientUpdateOffered = offersClientUpdate({ desktopMode, sessionVia });
-  const clientUpdate = useDesktopUpdate(clientUpdateOffered, userOpen);
-  /** Install confirmation (restarting interrupts running tasks — same consent as the shell's native prompt). */
-  const [clientInstallOpen, setClientInstallOpen] = useState(false);
-  // Server update: the app layout already ran the one check per session; keeping the dropdown
-  // as an activation only costs a retry after a failed one.
-  const { version, update } = useVersionInfo(userOpen);
-  /**
-   * The two update badges (use-update-badges.ts). Not the same gate as `newVersion` below,
-   * which drives the ROW: a badge only appears where the trail ends in a control this mode
-   * actually offers, so in the shell's own window the avatar marks the client build waiting
-   * to install rather than a server release the menu never shows here.
-   */
+  /** The badges over the update and to-do trails (use-update-badges.ts); the avatar's dot follows the update flow's offer / restart states. */
   const badges = useUpdateBadges();
-  /**
-   * The newer release's version string, or null while none is known — the single update row's
-   * whole state machine. A resolved version is required, not just the boolean: the row's label
-   * names it, so a would-be "available but unnamed" result stays on the check action rather
-   * than rendering a versionless reminder.
-   */
-  const newVersion = releaseUpdate(update);
-  /** Release announcement + admin self-update, opened from the update row once a release is known. */
-  const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
-  /**
-   * A manual server-update check is in flight. Held here rather than in the row, which
-   * unmounts with the menu: a check clicked and then dismissed must still settle, and the
-   * spinner must still be there when the menu is reopened mid-flight.
-   */
-  const [updateChecking, setUpdateChecking] = useState(false);
   const currentProjectId = currentProject?.projectId ?? null;
   /** This Project's read markers; re-renders the rows whenever one is stamped. */
   const sessionSeen = useSessionSeen(currentProjectId);
@@ -930,29 +895,6 @@ export function Sidebar({
     isLoadedFor,
     loadMoreFor,
   ]);
-
-  /**
-   * Manual server-update check, from the menu's update row: forces a lookup past the
-   * server's TTL cache and pushes the result into the shared version-info store, so the
-   * row turns into the update entry and the avatar's reminder dot appears at once. Every
-   * outcome toasts — the check is fail-soft (a failed lookup arrives as the `error` field,
-   * not an exception; the catch handles our own server being unreachable).
-   */
-  const runUpdateCheck = async () => {
-    if (updateChecking) return;
-    setUpdateChecking(true);
-    try {
-      const outcome = updateCheckOutcome(await forceUpdateCheck());
-      if (outcome.kind === "disabled") toastInfo(S.update.checkDisabled);
-      else if (outcome.kind === "failed") toastError(S.update.checkFailed);
-      else if (outcome.kind === "found") toastSuccess(S.update.foundNew(outcome.latestVersion));
-      else toastSuccess(S.update.upToDate);
-    } catch (e) {
-      toastError(apiErrorText(e));
-    } finally {
-      setUpdateChecking(false);
-    }
-  };
 
   /** Archive / unarchive: persists immediately and updates in place (fails silently; the next list refresh self-corrects). */
   const toggleArchive = async (s: SessionInfo) => {
@@ -2207,41 +2149,20 @@ export function Sidebar({
             >
               {S.settings.systemSettings}
             </button>
-            {/* Update row, directly under the settings entry rather than on a page inside
-                it: the check is one click from the menu, and the same row turns into the
-                update entry once the lazy check (menu open) names a newer release. Desktop
-                mode never checks here — updating is the shell's job. */}
-            {!desktopMode && (
-              <ServerUpdateRow
-                version={version?.version ?? null}
-                newVersion={newVersion}
-                checking={updateChecking}
-                menuItemClass={menuItemClass}
-                onCheck={() => void runUpdateCheck()}
-                onOpenDialog={() => {
-                  setUserOpen(false);
-                  setUpdateDialogOpen(true);
-                }}
-              />
-            )}
-            {/* Desktop stand-in for the row above, in the shell's own window only:
-                the same slot updates the CLIENT through the shell's own updater (relayed
-                via /api/desktop/update) — which is what "updating is the shell's job"
-                means for someone sitting in front of the app. A browser signed into the
-                same desktop-mode server gets neither row: it can't run the CLI self-update
-                there, nor restart someone else's GUI app (offersClientUpdate mirrors the
-                gate the routes enforce). */}
-            {clientUpdateOffered && (
-              <DesktopUpdateRow
-                status={clientUpdate.status}
-                checkPending={clientUpdate.checkPending}
-                menuItemClass={menuItemClass}
-                onInstallRequest={() => {
-                  setUserOpen(false);
-                  setClientInstallOpen(true);
-                }}
-              />
-            )}
+            {/* Update entry, directly under the settings entry rather than on a page inside
+                it: one row for both backends (the server release here, the shell's own
+                updater in the desktop window), naming where the update flow stands and
+                opening the update modal — where the flow is explained and acted on. The
+                modal is mounted by the app layout, so it outlives this menu. Hidden where
+                this session can update nothing (a browser signed into a desktop-mode
+                server, see updateModeFor). */}
+            <UpdateRow
+              menuItemClass={menuItemClass}
+              onOpen={() => {
+                setUserOpen(false);
+                openUpdateModal();
+              }}
+            />
             {/* Hidden in desktop mode: the window IS the session — logging out would
                 strand the user on a login page whose password was never shown. */}
             {!desktopMode && (
@@ -2261,39 +2182,6 @@ export function Sidebar({
       </div>
 
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
-
-      {/* Release announcement, release-notes link and the admin-only self-update. Mounted
-          here rather than in the row, which unmounts as the menu closes on the click that
-          opens this. */}
-      <UpdateDialog
-        open={updateDialogOpen}
-        onClose={() => setUpdateDialogOpen(false)}
-        latestVersion={newVersion}
-        releaseUrl={update?.releaseUrl ?? null}
-        canUpdate={user?.isAdmin === true}
-        /* A finished self-update makes the known release stale — re-check silently so the
-           row stops offering the version that is now running. */
-        onRunFinished={() => void forceUpdateCheck().catch(() => undefined)}
-      />
-
-      {/* Client-update install consent: restarting interrupts running tasks, the same
-          warning the shell's native prompt carries — the web row must not be the one
-          path that kills work without asking. */}
-      <ConfirmModal
-        open={clientInstallOpen}
-        title={S.update.clientInstallConfirmTitle}
-        onClose={() => setClientInstallOpen(false)}
-        onConfirm={() => {
-          setClientInstallOpen(false);
-          void requestClientInstall();
-        }}
-        confirmLabel={S.update.clientInstallConfirmAction}
-        tone="primary"
-      >
-        <p className="text-sm text-gray-600 dark:text-gray-300">
-          {S.update.clientInstallConfirmBody}
-        </p>
-      </ConfirmModal>
 
       <CreateProjectDialog
         open={createProjectOpen}

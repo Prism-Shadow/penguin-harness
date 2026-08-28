@@ -307,6 +307,8 @@ penguin web
 
 Port / host priority: command-line option > the `PORT` / `HOST` env vars (including `.env`) > defaults.
 
+Both run the service as a child process and stay behind as its supervisor: the terminal's Ctrl+C reaches the service, the command exits with the service's exit code, and when the service asks to be restarted — the Web App's **Restart and update** after `penguin update` has replaced the install — the supervisor relaunches it on the new release, printing a line as it does. A dev run through `tsx` cannot be relaunched by plain node and runs the service in-process instead; the Web App then tells the admin to restart by hand.
+
 ### penguin server reset-admin-password
 
 Offline rescue when the Web admin password is forgotten. Run it with the server stopped — it refuses while one is running on the data root:

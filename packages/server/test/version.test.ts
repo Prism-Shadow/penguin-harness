@@ -11,7 +11,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { VERSION } from "@prismshadow/penguin-core";
 import { versionReport } from "../src/version-report.js";
-import type { UpdateCheckResponse, UpdateRunResponse, VersionResponse } from "../src/api/types.js";
+import type {
+  RestartResponse,
+  UpdateCheckResponse,
+  UpdateJobStatus,
+  UpdateRunResponse,
+  VersionResponse,
+} from "../src/api/types.js";
 import {
   FAILURE_TTL_MS,
   SUCCESS_TTL_MS,
@@ -298,13 +304,53 @@ describe("POST /api/version/update", () => {
     const admin = await loginAdmin(t.app);
     const res = await apiClient(t.app, admin.cookie).post("/api/version/update", {});
     expect(res.status).toBe(200);
-    const body = (await res.json()) as UpdateRunResponse;
-    expect(body).toEqual({
+    const body = (await res.json()) as UpdateJobStatus;
+    expect(body.state).toBe("done");
+    expect(body.result).toEqual({
       status: "unsupported",
       reason: "not_launched_via_cli",
       output: "",
       needsRestart: false,
+    } satisfies UpdateRunResponse);
+    // The finished status stays readable at GET until the next start.
+    const again = await apiClient(t.app, admin.cookie).get("/api/version/update");
+    expect(((await again.json()) as UpdateJobStatus).result?.status).toBe("unsupported");
+  });
+
+  it("GET /api/version/update is admin-only and idle before any run", async () => {
+    const user = await provisionUser(t.app, "regular_user");
+    expect((await apiClient(t.app, user.cookie).get("/api/version/update")).status).toBe(403);
+    const admin = await loginAdmin(t.app);
+    const res = await apiClient(t.app, admin.cookie).get("/api/version/update");
+    expect(res.status).toBe(200);
+    expect((await res.json()) as UpdateJobStatus).toEqual({
+      state: "idle",
+      targetVersion: null,
+      output: "",
     });
+  });
+});
+
+describe("POST /api/version/restart", () => {
+  it("is admin-only, and refuses when nothing supervises the process", async () => {
+    // Tests boot unsupervised (PENGUIN_SUPERVISED unset): exiting would stop a service nobody
+    // brings back, so the route says so instead of leaving.
+    const t = await createTestApp();
+    try {
+      const user = await provisionUser(t.app, "regular_user");
+      expect((await apiClient(t.app, user.cookie).post("/api/version/restart", {})).status).toBe(
+        403,
+      );
+      const admin = await loginAdmin(t.app);
+      const res = await apiClient(t.app, admin.cookie).post("/api/version/restart", {});
+      expect(res.status).toBe(200);
+      expect((await res.json()) as RestartResponse).toEqual({
+        restarting: false,
+        reason: "no_supervisor",
+      });
+    } finally {
+      await t.cleanup();
+    }
   });
 });
 

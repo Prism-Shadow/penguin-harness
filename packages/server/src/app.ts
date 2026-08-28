@@ -35,6 +35,7 @@ import {
   RUNTIME_CONFIG_RESOURCE_ID,
   RUNTIME_DB_RESOURCE_ID,
   RUNTIME_DESKTOP_RESOURCE_ID,
+  RUNTIME_LIFECYCLE_RESOURCE_ID,
   RUNTIME_HMR_RESOURCE_ID,
   RUNTIME_OVERRIDES_RESOURCE_ID,
   RUNTIME_PROXY_RESOURCE_ID,
@@ -95,6 +96,7 @@ import type { QQScanTransport } from "./runtime/messaging/qq-scan.js";
 import { TitleGenerator, TitleNotifier } from "./runtime/title-generator.js";
 import { AdminService } from "./services/admin-service.js";
 import { DesktopService } from "./services/desktop-service.js";
+import { LifecycleService } from "./services/lifecycle-service.js";
 import { desktopRoutes, desktopUpdateRoutes } from "./http/routes/desktop.js";
 import { AgentConfigService } from "./services/agent-config-service.js";
 import { MemoryService } from "./services/memory-service.js";
@@ -108,6 +110,7 @@ import { SessionService } from "./services/session-service.js";
 import { TraceIndexService } from "./services/trace-index.js";
 import { TraceService } from "./services/trace-service.js";
 import { UpdateCheckService } from "./services/update-check-service.js";
+import { UpdateJobService } from "./services/update-job.js";
 import { UsageService } from "./services/usage-service.js";
 import { WorkspaceFilesService } from "./services/workspace-files-service.js";
 import { HmrHost } from "./hmr/host.js";
@@ -182,6 +185,8 @@ export interface AppDeps {
   usageService: UsageService;
   /** GitHub latest-release lookup for the web UI's update reminder (cached, fail-soft). */
   updateCheck: UpdateCheckService;
+  /** The admin self-update run in the background (`penguin update --yes`), with its progress for the update modal. */
+  updateJob: UpdateJobService;
   workspaceFiles: WorkspaceFilesService;
   /** Signs/verifies short-lived Workspace preview tokens (separate preview origin). */
   previewTokens: PreviewTokenSigner;
@@ -207,6 +212,8 @@ export interface AppDeps {
   errors: ErrorRecorder;
   /** Desktop mode (PENGUIN_DESKTOP_TOKEN): one-shot login + shutdown token holder; null outside desktop mode. */
   desktop: DesktopService | null;
+  /** Process lifecycle: whether a supervisor relaunches this process, and the restart trigger (the "restart to update" step). */
+  lifecycle: LifecycleService;
   /**
    * Installing this build on a machine from the server's own `~/.ssh/config` (the Machines
    * page). Business, not runtime: spawning ssh and packing an image are in-process effects,
@@ -233,6 +240,8 @@ export interface BuildDepsOverrides {
   titles?: TitleNotifier;
   /** Test double: update-check service with a stubbed fetch/clock (avoids real network calls). */
   updateCheck?: UpdateCheckService;
+  /** Tests: a job service over a scripted runner, so no real `penguin update` is ever spawned. */
+  updateJob?: UpdateJobService;
   /** Test double: the Feishu connector's SDK factory (avoids real Lark network / long connections). */
   feishuSdk?: FeishuSdk;
   /** Test double: the Telegram connector's Bot API transport (avoids real Telegram network / long polls). */
@@ -329,6 +338,7 @@ export async function bootAppDeps(
   hmr.resources.register(RUNTIME_OVERRIDES_RESOURCE_ID, overrides);
   const desktop = config.desktopToken !== null ? new DesktopService(config.desktopToken) : null;
   hmr.resources.register(RUNTIME_DESKTOP_RESOURCE_ID, desktop);
+  hmr.resources.register(RUNTIME_LIFECYCLE_RESOURCE_ID, new LifecycleService(config.supervised));
   // The registry sweep only STARTS extension disposal (its disposers are sync) — the
   // fallback for exit paths that skip the graceful shutdown. The graceful path awaits
   // host.dispose() itself, bounded (index.ts); dispose is idempotent, so both may fire.
@@ -779,6 +789,7 @@ export function buildAppDeps(
   );
   const updateCheck =
     overrides.updateCheck ?? new UpdateCheckService(overrides.now ? { now: overrides.now } : {});
+  const updateJob = overrides.updateJob ?? new UpdateJobService();
 
   const recorder = new UsageRecorder(usageRepo, overrides.now ?? (() => new Date()));
   const errors = new ErrorRecorder(errorsRepo, overrides.now ?? (() => new Date()));
@@ -964,6 +975,7 @@ export function buildAppDeps(
     traceIndex,
     usageService,
     updateCheck,
+    updateJob,
     workspaceFiles,
     previewTokens,
     benchmarks,
@@ -981,6 +993,7 @@ export function buildAppDeps(
     sessionSources,
     errors,
     desktop: caps.desktop,
+    lifecycle: caps.lifecycle,
     // Anchored at the data root: that is where the hmr store the pushable image comes from
     // lives, and where verified Node runtime downloads are cached between installs.
     machines: overrides.machines ?? new MachinesService(config.root, {}, () => hmr.assetsDir()),

@@ -61,6 +61,8 @@ import { Dropdown } from "../../components/ui/dropdown";
 import { PenguinLogo } from "../../components/ui/penguin-logo";
 import { toastError } from "../../components/ui/toast";
 import { useVersionInfo } from "../../lib/use-version-info";
+import { versionBadgeFor } from "../../lib/update-flow";
+import { openUpdateModal, useUpdateFlow } from "../../lib/use-update-flow";
 import { ChatInput } from "./chat-input";
 import type { ComposerControl } from "./chat-input";
 import { adoptDockScope } from "../dock/dock-state";
@@ -845,16 +847,16 @@ const versionBadgeClass =
  * the running version's release
  * date, stamped into core's BUILD_DATE at build time — displayed as-is, no network;
  * dev builds and releases that predate the stamping (v0.1.2 and earlier) carry null
- * and show the version alone. When the update check knows a newer release, a small
- * superscript badge follows, linking to the release page (this surface's affordance; the
- * sidebar user menu instead routes its single update row into the update dialog).
+ * and show the version alone. When the update flow has something waiting — a release
+ * offered, a download in the background, a restart pending — a small superscript badge
+ * follows, a button into the update modal (the same modal the sidebar's update row opens).
  * Fetching starts on mount — useVersionInfo caches at module level, so after the first
  * resolution anywhere in the app this renders instantly and never refetches. Nothing
  * renders until the version resolves (no placeholder flicker under the brand).
  */
 function VersionLine() {
   const { locale } = useLocale();
-  const { version, update } = useVersionInfo(true);
+  const { version } = useVersionInfo(true);
   if (version === null) return null;
   const date = version.buildDate;
   return (
@@ -862,24 +864,44 @@ function VersionLine() {
       {`v${version.version}${
         date !== null ? ` · ${S.update.lastUpdated(formatMonthDay(date, locale))}` : ""
       }`}
-      {update !== null &&
-        update.updateAvailable &&
-        update.latestVersion !== null &&
-        (update.releaseUrl !== null ? (
-          <a
-            href={update.releaseUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            title={S.update.newVersion(update.latestVersion)}
-            aria-label={S.update.newVersion(update.latestVersion)}
-            className={`${versionBadgeClass} hover:underline`}
-          >
-            {S.update.newVersionBadge}
-          </a>
-        ) : (
-          <span className={versionBadgeClass}>{S.update.newVersionBadge}</span>
-        ))}
+      <VersionBadge />
     </p>
+  );
+}
+
+/**
+ * The superscript on the version line: a button into the update modal, worded by where the
+ * flow stands. Its title and accessible name carry the update row's own sentence, so the
+ * two surfaces say the same thing about the same release.
+ */
+function VersionBadge() {
+  const { mode, flow } = useUpdateFlow();
+  const badge = versionBadgeFor(flow);
+  if (mode === "none" || badge === null) return null;
+  const text =
+    badge === "available"
+      ? S.update.newVersionBadge
+      : badge === "downloading"
+        ? S.update.badgeDownloading
+        : S.update.badgeReady;
+  const note =
+    flow.kind === "available"
+      ? S.update.newVersion(flow.version)
+      : flow.kind === "downloading"
+        ? S.update.rowDownloading(flow.version, flow.percent)
+        : flow.kind === "ready"
+          ? S.update.restartToUpdate(flow.version)
+          : text;
+  return (
+    <button
+      type="button"
+      onClick={openUpdateModal}
+      title={note}
+      aria-label={note}
+      className={`${versionBadgeClass} hover:underline`}
+    >
+      {text}
+    </button>
   );
 }
 

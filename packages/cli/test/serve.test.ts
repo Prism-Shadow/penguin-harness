@@ -11,6 +11,7 @@ import {
   describeReadinessFailure,
   registerServeCommands,
   resolvePort,
+  supervisorDecision,
   waitForReady,
 } from "../src/commands/serve.js";
 import { getMessages } from "../src/i18n.js";
@@ -93,6 +94,36 @@ describe("cliEntryFor (the entry advertised for the web self-update)", () => {
     expect(cliEntryFor("/repo/packages/cli/src/index.ts")).toBeNull();
     expect(cliEntryFor(undefined)).toBeNull();
     expect(cliEntryFor("")).toBeNull();
+  });
+});
+
+describe("supervisorDecision (the service child's exit → respawn or exit)", () => {
+  it("relaunches the service only on the restart code, and only while not stopping", () => {
+    expect(supervisorDecision({ code: 75, signal: null }, false)).toEqual({ action: "respawn" });
+    // The supervisor was told to stop (Ctrl+C reached it too): the child's last word is moot.
+    expect(supervisorDecision({ code: 75, signal: null }, true)).toEqual({
+      action: "exit",
+      code: 75,
+    });
+  });
+
+  it("passes every other exit through, and reads a signal death as failure", () => {
+    expect(supervisorDecision({ code: 0, signal: null }, false)).toEqual({
+      action: "exit",
+      code: 0,
+    });
+    expect(supervisorDecision({ code: 3, signal: null }, false)).toEqual({
+      action: "exit",
+      code: 3,
+    });
+    expect(supervisorDecision({ code: null, signal: "SIGKILL" }, false)).toEqual({
+      action: "exit",
+      code: 1,
+    });
+    expect(supervisorDecision({ code: null, signal: null }, true)).toEqual({
+      action: "exit",
+      code: 0,
+    });
   });
 });
 

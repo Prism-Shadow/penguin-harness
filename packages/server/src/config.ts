@@ -62,6 +62,12 @@ export interface ServerConfig {
    */
   desktopToken: string | null;
   /**
+   * Whether `penguin server|web` supervises this process (PENGUIN_SUPERVISED=1) and relaunches
+   * it when it exits with core's SERVER_RESTART_EXIT_CODE — what makes the web UI's "restart
+   * to update" possible. False under a direct server start, a dev run, or the desktop shell.
+   */
+  supervised: boolean;
+  /**
    * Port announcement file (PENGUIN_PORT_FILE): after the listener is up, the actual
    * bound port is written here — the supervising process's way to learn the port when
    * it starts the server with PORT=0.
@@ -145,5 +151,6 @@ export function resolveServerConfig(env: NodeJS.ProcessEnv = process.env): Serve
     desktopToken,
     portFile: env.PENGUIN_PORT_FILE?.trim() || null,
     trustProxy: env.PENGUIN_TRUST_PROXY === "1",
+    supervised: env.PENGUIN_SUPERVISED === "1",
   };
 }
