@@ -23,9 +23,15 @@ import { S } from "./strings";
 import { offersClientUpdate } from "./desktop-update";
 import { refreshDesktopUpdate, useDesktopUpdate } from "./use-desktop-update";
 import { useVersionInfo } from "./use-version-info";
-import { anyKernelOutdated, badgeNote, softwareUpdate } from "./update-badges";
+import { badgeNote, softwareUpdate } from "./update-badges";
 import type { BadgeSource, SoftwareUpdate, UpdateBadgeNote } from "./update-badges";
-import { presetUpdateTodo, raisedTodo, skillUpdateTodo, unexpectedErrorTodo } from "./todo-badges";
+import {
+  kernelUpdateTodo,
+  presetUpdateTodo,
+  raisedTodo,
+  skillUpdateTodo,
+  unexpectedErrorTodo,
+} from "./todo-badges";
 import type { Todo, TodoKey } from "./todo-badges";
 import { useTodoDismissals } from "./todo-dismissals";
 import { useProjectTodos } from "./use-project-todos";
@@ -75,7 +81,7 @@ export function useUpdateBadges(eager = false): UpdateBadges {
     update,
     clientStatus: status,
   });
-  const kernel = anyKernelOutdated(agents);
+
   // Memoized on the cached response's identity: this walks the whole built-in catalog, and the
   // hook re-runs on every render of the pages that read it (a keystroke in the model search box).
   const presetTodo = useMemo(
@@ -86,6 +92,9 @@ export function useUpdateBadges(eager = false): UpdateBadges {
   // moment later, on a trail the user had already dealt with, is worse than a late dot.
   const raise = (todo: Todo | null, key: TodoKey): Todo | null =>
     dismissed === null ? null : raisedTodo(todo, dismissed[key] ?? null);
+  // The kernel trail is dismissible like the other three: an Agent can be deliberately left on
+  // the generation it was tuned against, and the page notice that says so needs a way down.
+  const kernelTodo = raise(kernelUpdateTodo(agents), "agents");
   const skills = raise(skillUpdateTodo(agents), "skills");
   const models = raise(presetTodo, "models");
   const errors = raise(
@@ -97,13 +106,13 @@ export function useUpdateBadges(eager = false): UpdateBadges {
   // the per-route map below is what each individual anchor says.
   const sources: BadgeSource[] = [];
   if (software !== null) sources.push(software);
-  if (kernel) sources.push({ kind: "kernel" });
+  if (kernelTodo !== null) sources.push({ kind: "kernel" });
   if (skills !== null) sources.push({ kind: "skills", count: skills.count });
   if (models !== null) sources.push({ kind: "models", count: models.count });
   if (errors !== null) sources.push({ kind: "errors", count: errors.count });
 
   const navNotes: Partial<Record<BadgedRoute, string>> = {};
-  if (kernel) navNotes["/agents"] = S.agent.kernelOutdatedHint;
+  if (kernelTodo !== null) navNotes["/agents"] = S.agent.kernelOutdatedHint;
   if (skills !== null) navNotes["/skills"] = S.todo.skillUpdates(skills.count);
   if (models !== null) navNotes["/models"] = S.todo.presetUpdates(models.count);
   if (errors !== null) navNotes["/usage"] = S.todo.unexpectedErrors(errors.count);
@@ -113,6 +122,7 @@ export function useUpdateBadges(eager = false): UpdateBadges {
     softwareNote: software === null ? null : noteText(software),
     navNotes,
     todos: {
+      ...(kernelTodo !== null ? { agents: kernelTodo } : {}),
       ...(skills !== null ? { skills } : {}),
       ...(models !== null ? { models } : {}),
       ...(errors !== null ? { errors } : {}),

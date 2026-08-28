@@ -1,5 +1,5 @@
 /**
- * "I have dealt with this" markers for the three dismissible badge trails, per Project.
+ * "I have dealt with this" markers for the four dismissible badge trails, per Project.
  *
  * What is stored is not a hidden flag but the SIGNATURE the trail carried when it was
  * dismissed (`todo-badges.ts` explains why): the badge stays down while what is waiting is
@@ -36,8 +36,16 @@ export type TodoDismissals = Partial<Record<TodoKey, string>>;
 /** Every Project's markers, keyed by Project id — the shape held under {@link TODO_PREFS_KEY}. */
 export type TodoDismissMap = Record<string, TodoDismissals>;
 
-/** The three keys, listed once so parsing cannot drift from the union. */
-const TODO_KEYS: readonly TodoKey[] = ["skills", "models", "errors"];
+/**
+ * The four keys, listed once so parsing cannot drift from the union.
+ *
+ * `agents` is the newest of them, and a stored map written before it existed simply has no such
+ * key: {@link parseTodoDismissMap} reads that as "nothing dismissed", which shows a dot the user
+ * can clear again. That is the same direction every other malformed case degrades in, so the
+ * markers already on disk need no migration and nothing is lost by an older client writing the
+ * map back without it.
+ */
+const TODO_KEYS: readonly TodoKey[] = ["agents", "skills", "models", "errors"];
 
 const EMPTY: TodoDismissals = {};
 

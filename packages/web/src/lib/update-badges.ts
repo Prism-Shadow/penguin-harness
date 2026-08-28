@@ -1,12 +1,12 @@
 /**
  * What raises an update notification badge, and what the anchor carrying it says.
  *
- * Two independent trails end in two different controls, so they are two independent gates:
- * a *software* update, actionable in the sidebar user menu, and an *Agent kernel* update,
- * actionable on the Agent settings page. The outermost chrome (the mobile menu button) shows
- * one dot for either — and, since `todo-badges.ts` joined them, for the three dismissible
- * trails as well; `badgeNote` at the bottom is what every anchor covering more than one of
- * them speaks through.
+ * One gate lives here: the *software* update, actionable in the sidebar user menu. The other
+ * four trails are all dismissible and live in `todo-badges.ts` — the Agent kernel one moved
+ * there when its page grew a notice with a way down, since a gate that can be waved away has to
+ * produce a signature and not just a boolean. The outermost chrome (the mobile menu button)
+ * shows one dot for any of the five; `badgeNote` at the bottom is what every anchor covering
+ * more than one of them speaks through.
  *
  * Every gate here is written as "is there a control the user can reach": a badge over a path
  * with nothing actionable at the end of it is worse than no badge. That is why the software
@@ -17,11 +17,7 @@
  * Pure decisions only (vitest runs node-only here, so nothing renders) — `use-update-badges.ts`
  * wires them to the live stores and turns a note into localized copy.
  */
-import type {
-  AgentSummary,
-  DesktopUpdateStatus,
-  UpdateCheckResponse,
-} from "@prismshadow/penguin-server/api";
+import type { DesktopUpdateStatus, UpdateCheckResponse } from "@prismshadow/penguin-server/api";
 import { clientUpdateRow } from "./desktop-update";
 
 /** A software update the running mode can act on, and the version the offer names. */
@@ -68,20 +64,10 @@ export function softwareUpdate(input: SoftwareUpdateInput): SoftwareUpdate | nul
 }
 
 /**
- * Whether any Agent in the current Project carries an outdated kernel — the gate for the
- * Agents nav entries, which lead to the list where the individual cards say which ones. The
- * flag rides along on the Project's Agent list, so this costs no request of its own.
- */
-export function anyKernelOutdated(
-  agents: ReadonlyArray<Pick<AgentSummary, "kernelOutdated">>,
-): boolean {
-  return agents.some((a) => a.kernelOutdated);
-}
-
-/**
- * One thing a dot can stand for. The first two are the self-clearing trails above; the last
- * three are the dismissible ones in `todo-badges.ts`, which carry a count because the anchors
- * that name them have room to say how many.
+ * One thing a dot can stand for. The first is the self-clearing trail above; the rest are the
+ * dismissible ones in `todo-badges.ts`. Three of those carry a count because the anchors that
+ * name them have room to say how many; `kernel` does not, because the Agents nav entry says
+ * "kernel update available" without a number and always has.
  */
 export type BadgeSource =
   | SoftwareUpdate

@@ -37,7 +37,11 @@
  */
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
-import type { SkillGroupItem, SkillMetadataItem } from "@prismshadow/penguin-server/api";
+import type {
+  AgentSummary,
+  SkillGroupItem,
+  SkillMetadataItem,
+} from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
@@ -46,6 +50,7 @@ import { formatRelativeDate } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useUpdateBadges } from "../../lib/use-update-badges";
 import { dismissTodo } from "../../lib/todo-dismissals";
+import { bulkOutcome, firstFailure, noticeCounts } from "../../lib/bulk-update";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
@@ -95,6 +100,37 @@ export function outdatedAgentIds(
   });
 }
 
+/**
+ * What updating EVERY outdated Skill on this page would write, grouped the way it is sent.
+ *
+ * Read off `AgentSummary.skillUpdates` — the same field the Skills gate counts — so the plan and
+ * the notice above the button cannot describe different work. One request per Agent rather than
+ * one per (Agent, Skill): the install endpoint already takes a list of names, and an Agent behind
+ * on four Skills is one overwrite of its skills directory either way.
+ *
+ * `skills` is the distinct library Skills across the whole plan, sorted, which is what the
+ * confirmation lists and what the notice counts — the page shows the library once, so an update
+ * touching five Agents is still one Skill to the reader.
+ */
+export interface SkillUpdatePlan {
+  perAgent: { agentId: string; names: string[] }[];
+  skills: string[];
+}
+
+export function skillUpdatePlan(
+  agents: ReadonlyArray<Pick<AgentSummary, "agentId" | "skillUpdates">>,
+): SkillUpdatePlan {
+  const perAgent: { agentId: string; names: string[] }[] = [];
+  const skills = new Set<string>();
+  for (const agent of agents) {
+    const names = (agent.skillUpdates ?? []).map((u) => u.name).sort();
+    if (names.length === 0) continue;
+    perAgent.push({ agentId: agent.agentId, names });
+    for (const name of names) skills.add(name);
+  }
+  return { perAgent, skills: [...skills].sort() };
+}
+
 export function SkillsPage() {
   useDocumentTitle(S.nav.skills);
   const navigate = useNavigate();
@@ -103,8 +139,11 @@ export function SkillsPage() {
   const { currentProject, agents, currentAgent, setCurrentAgentId, reloadAgents } = useProject();
   const projectId = currentProject?.projectId ?? null;
 
-  /** The Skills trail's raised badge, or undefined — the notice under the title clears it. */
+  /** The Skills trail's raised badge, or undefined — the notice under the title acts on it or clears it. */
   const todo = useUpdateBadges().todos.skills;
+  /** The bulk update's confirmation is open (null = closed); it holds the plan it will run. */
+  const [pendingBulk, setPendingBulk] = useState<SkillUpdatePlan | null>(null);
+  const [bulkRunning, setBulkRunning] = useState(false);
 
   const [groups, setGroups] = useState<SkillGroupItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -236,6 +275,44 @@ export function SkillsPage() {
   };
 
   /**
+   * The notice's bulk action: reinstall the library copy of every outdated Skill, on every Agent
+   * behind on it — the per-card update, over the whole page. The per-card and per-Agent controls
+   * are untouched and remain the way to update just one.
+   *
+   * `Promise.allSettled` over one request per Agent, the shape the per-Skill update already
+   * uses, and the same reload afterwards: the gate reads `AgentSummary.skillUpdates`, which this
+   * page's install map does not feed, so without it the dot would survive the very update it led
+   * the user to. What is new is that a partial failure NAMES the Agents that did not take it —
+   * on a control whose whole point is "all of them at once", a first-error toast leaves the user
+   * unable to tell which half they are looking at.
+   */
+  const runBulkUpdate = async (plan: SkillUpdatePlan) => {
+    if (!projectId || plan.perAgent.length === 0) return;
+    setBulkRunning(true);
+    const labels = plan.perAgent.map(({ agentId }) => {
+      const agent = agents.find((a) => a.agentId === agentId);
+      return agent ? agentDisplayName(agent) : agentId;
+    });
+    const results = await Promise.allSettled(
+      plan.perAgent.map(async ({ agentId, names }) => {
+        const res = await api.installAgentSkills(projectId, agentId, names);
+        calibrateAgent(agentId, res.skills);
+      }),
+    );
+    const outcome = bulkOutcome(labels, results);
+    if (outcome.allOk) toastSuccess(S.todo.bulkDone(outcome.ok));
+    else {
+      toastError(
+        `${S.todo.bulkPartial(outcome.ok, outcome.failed.join(S.todo.listSeparator))} — ${apiErrorText(firstFailure(results))}`,
+      );
+    }
+    // Runs after a partial failure too — some Agent moved, and the gate has to see it.
+    await reloadAgents();
+    setBulkRunning(false);
+    setPendingBulk(null);
+  };
+
+  /**
    * Quick invoke: pre-selects the skill in the draft cache (the `skills`
    * field, used by ChatInput as its initial selection on mount), pre-fills
    * the invocation text per UI language (overwriting any existing draft
@@ -273,12 +350,18 @@ export function SkillsPage() {
           {S.skills.pageTitle}
           <InfoPopover label={S.skills.pageTitle}>{S.skills.pageDesc}</InfoPopover>
         </h1>
-        {/* Last stop on the Skills trail: what the sidebar's dot was pointing at, in its own
-            wording, plus the way to clear it for someone who has looked and decided to stay on
-            the installed copies. The per-card update buttons below are the action itself. */}
+        {/* Last stop on the Skills trail: what the sidebar's dot was pointing at, the control
+            that takes all of it in one press, and the way to clear it for someone who has looked
+            and decided to stay on the installed copies. A Skill is never NEW here — one nobody
+            has installed is not waiting for anyone — so the line states the upgradable count
+            alone rather than padding it with a zero. The per-card update buttons below remain
+            the way to take just one. */}
         {todo && (
           <TodoNotice
-            text={S.todo.skillUpdates(todo.count)}
+            text={S.todo.changesUpgradable(noticeCounts(todo).updated)}
+            actionLabel={S.todo.updateNow}
+            busy={bulkRunning}
+            onAction={() => setPendingBulk(skillUpdatePlan(agents))}
             dismissLabel={S.todo.dismiss}
             onDismiss={() => dismissTodo(projectId, "skills", todo.signature)}
           />
@@ -375,6 +458,34 @@ export function SkillsPage() {
           </div>
         )}
       </div>
+
+      {/* Bulk update confirmation. Same warning as the per-Skill confirm — an update is an
+          overwriting reinstall — and the same primary (overwrite) tone, with the list naming
+          every Skill the batch would rewrite. Confirm-first is the point of the button: it
+          overwrites many installs in one press, and a single one already asks. */}
+      {pendingBulk !== null && (
+        <ConfirmModal
+          open
+          title={S.todo.skillsConfirmTitle(pendingBulk.skills.length)}
+          tone="primary"
+          confirmLabel={S.skills.updateAction}
+          busy={bulkRunning}
+          onClose={() => setPendingBulk(null)}
+          onConfirm={() => void runBulkUpdate(pendingBulk)}
+        >
+          <div className="space-y-3">
+            <p className="text-sm text-gray-600 dark:text-gray-300">{S.todo.skillsConfirmBody}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">{S.todo.willTouch}</p>
+            <ul className="divide-y divide-gray-100 overflow-hidden rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
+              {pendingBulk.skills.map((name) => (
+                <li key={name} className="px-3 py-1.5 font-mono text-xs">
+                  {name}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </ConfirmModal>
+      )}
     </div>
   );
 }

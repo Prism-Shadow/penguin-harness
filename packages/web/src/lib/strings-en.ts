@@ -266,9 +266,35 @@ export const en: Strings = {
     /** Combined anchor whose trails are not all updates — an unexpected error is not one. */
     pending: "Something needs attention",
     /** Clears an update the user has decided not to take now (a later one raises the badge again). */
-    dismiss: "Mark as handled",
+    dismiss: "Dismiss",
     /** The cost center's wording: nothing is being updated there, the errors are simply read. */
     markRead: "Mark as read",
+
+    // —— The page notice's own line and its bulk action (components/ui/todo-notice.tsx) ——
+
+    /** The notice line where the trail can separate genuinely new things from upgradable ones (Models only). */
+    changesWithAdded: (added: number, updated: number): string =>
+      `Changes detected: ${added} new, ${updated} to upgrade`,
+    /** The same line where the trail has only one honest count — no padded zero (Agents, Skills). */
+    changesUpgradable: (updated: number): string => `Changes detected: ${updated} to upgrade`,
+    /** Updates every object the notice counts, behind the page's own confirmation. */
+    updateNow: "Update now",
+    /** Heading of the confirmation's list of exactly what the batch would write to. */
+    willTouch: "This will touch:",
+    /** Bulk kernel update confirmation; the body reuses agent.kernelUpdateConfirmBody verbatim. */
+    agentsConfirmTitle: (n: number): string => `Update the kernel of ${n} agent(s)`,
+    /** Bulk Skill update confirmation. Same warning as the per-Skill confirm, with no single subject. */
+    skillsConfirmTitle: (n: number): string => `Update ${n} skill(s)`,
+    skillsConfirmBody:
+      "Updating reinstalls the library copy over each agent's installed files — any local edits to the installed skill are lost. Export a backup first if you need them.",
+    /** Bulk preset sync confirmation; the body reuses models.syncCatalogHint verbatim. */
+    modelsConfirmTitle: (n: number): string => `Sync ${n} preset model(s)`,
+    /** Every target of the batch was written. */
+    bulkDone: (ok: number): string => `${ok} updated`,
+    /** Some targets were written and some were not — the failed ones are named, never just counted. */
+    bulkPartial: (ok: number, failed: string): string => `${ok} updated; these did not: ${failed}`,
+    /** Separator between named targets in the two strings above. */
+    listSeparator: ", ",
   },
 
   /** Desktop task-completion notifications (window unfocused; desktop-shell sessions only). */

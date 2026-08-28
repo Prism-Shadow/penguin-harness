@@ -269,9 +269,35 @@ export const zh = {
     /** Combined anchor whose trails are not all updates — an unexpected error is not one. */
     pending: "有待处理事项",
     /** Clears an update the user has decided not to take now (a later one raises the badge again). */
-    dismiss: "标记为已处理",
+    dismiss: "忽略",
     /** The cost center's wording: nothing is being updated there, the errors are simply read. */
     markRead: "标记为已读",
+
+    // —— The page notice's own line and its bulk action (components/ui/todo-notice.tsx) ——
+
+    /** The notice line where the trail can separate genuinely new things from upgradable ones (Models only). */
+    changesWithAdded: (added: number, updated: number): string =>
+      `检测到变更：${added} 个新增，${updated} 个可升级`,
+    /** The same line where the trail has only one honest count — no padded zero (Agents, Skills). */
+    changesUpgradable: (updated: number): string => `检测到变更：${updated} 个可升级`,
+    /** Updates every object the notice counts, behind the page's own confirmation. */
+    updateNow: "现在升级",
+    /** Heading of the confirmation's list of exactly what the batch would write to. */
+    willTouch: "将影响以下对象：",
+    /** Bulk kernel update confirmation; the body reuses agent.kernelUpdateConfirmBody verbatim. */
+    agentsConfirmTitle: (n: number): string => `更新 ${n} 个 Agent 的内核`,
+    /** Bulk Skill update confirmation. Same warning as the per-Skill confirm, with no single subject. */
+    skillsConfirmTitle: (n: number): string => `更新 ${n} 个技能`,
+    skillsConfirmBody:
+      "更新会把库内当前副本重装到各 Agent，覆盖其已安装的文件——对已装技能的本地改动会丢失，如有需要请先导出备份。",
+    /** Bulk preset sync confirmation; the body reuses models.syncCatalogHint verbatim. */
+    modelsConfirmTitle: (n: number): string => `同步 ${n} 个预置模型`,
+    /** Every target of the batch was written. */
+    bulkDone: (ok: number): string => `已更新 ${ok} 个`,
+    /** Some targets were written and some were not — the failed ones are named, never just counted. */
+    bulkPartial: (ok: number, failed: string): string => `已更新 ${ok} 个；以下未成功：${failed}`,
+    /** Separator between named targets in the two strings above. */
+    listSeparator: "、",
   },
 
   /** Desktop task-completion notifications (window unfocused; desktop-shell sessions only). */
