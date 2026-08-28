@@ -1,4 +1,4 @@
-/** Segmented control (for 2-3-way choices like theme/language): small grayscale style. Shared by the sidebar user menu and the login page. */
+/** Segmented control (for 2- to 4-way choices like theme/language/messaging channel): small grayscale style. Shared by the sidebar user menu, the login page and the binding editor. */
 export function Segmented<T extends string>({
   options,
   value,
@@ -8,11 +8,13 @@ export function Segmented<T extends string>({
   options: ReadonlyArray<{ value: T; label: string }>;
   value: T;
   onChange: (v: T) => void;
-  cols?: 2 | 3;
+  cols?: 2 | 3 | 4;
 }) {
   return (
     <div
-      className={`grid ${cols === 2 ? "grid-cols-2" : "grid-cols-3"} gap-0.5 rounded-md bg-gray-100 p-0.5 dark:bg-gray-800`}
+      // Spelled out rather than interpolated: Tailwind scans for whole class names, and a
+      // `grid-cols-${n}` built at runtime is never emitted into the stylesheet.
+      className={`grid ${cols === 2 ? "grid-cols-2" : cols === 4 ? "grid-cols-4" : "grid-cols-3"} gap-0.5 rounded-md bg-gray-100 p-0.5 dark:bg-gray-800`}
     >
       {options.map((opt) => (
         <button

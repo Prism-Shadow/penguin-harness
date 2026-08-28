@@ -30,9 +30,11 @@
  * screen: the switch carries it as its tooltip and the "what binding does" fold states it
  * in full. Deleting a stored credential remains a separate act — the per-field clear.
  *
- * QQ additionally leads its section with scan-to-connect (`qq-scan-connect.tsx`): a QR code
- * scanned in the QQ app, after which the server holds the credentials without them ever
- * passing through this browser. The typed fields stay below it as the fallback.
+ * Two channels lead their section with scan-to-connect, after which the server holds the
+ * credentials without them ever passing through this browser. On QQ (`qq-scan-connect.tsx`)
+ * the typed fields stay below the QR as the fallback; on WeChat
+ * (`wechat-scan-connect.tsx`) there are no fields at all, because the bot token has no other
+ * source — so that channel's section is the QR, the stored-token row, and nothing else.
  *
  * The GET is re-polled while the host shows the editor (the hook's `poll` flag) so
  * connect/error flips show up live.
@@ -61,6 +63,7 @@ import { Segmented } from "../../components/ui/segmented";
 import { Switch } from "../../components/ui/switch";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { QQScanConnect } from "./qq-scan-connect";
+import { WeChatScanConnect } from "./wechat-scan-connect";
 import {
   bindingsToForm,
   emptyMessagingForm,
@@ -81,8 +84,12 @@ const STATUS_POLL_MS = 3000;
  * the credential (field corner). The second is a developer console for some channels and a
  * chat with a bot for others, so its label belongs to the channel — only the ones that do
  * have a console reach for the shared `S.messaging.console` wording.
+ *
+ * A channel may have NEITHER, which is why the entry is nullable: WeChat's bot is authorized
+ * by a scan and has no public console and no walkthrough to point at, and inventing a URL
+ * would send a reader to a page that does not answer them.
  */
-const CHANNEL_LINKS: Record<MessagingChannel, { tutorial: string; credentialSource: string }> = {
+const CHANNEL_LINKS = {
   feishu: {
     // Feishu's own echo-bot walkthrough: creating a self-built app and its long connection.
     tutorial: "https://open.feishu.cn/document/develop-an-echo-bot/introduction",
@@ -112,7 +119,11 @@ const CHANNEL_LINKS: Record<MessagingChannel, { tutorial: string; credentialSour
     // because the retired hash-route app still redirects out of it.
     credentialSource: "https://q.qq.com/qqbot/dashboard/",
   },
-};
+  wechat: null,
+} as const satisfies Record<
+  MessagingChannel,
+  { tutorial: string; credentialSource: string } | null
+>;
 
 const STATUS_TONE: Record<MessagingRuntimeStatus["state"], Tone> = {
   disconnected: "muted",
@@ -154,7 +165,13 @@ function factsOf(
   status: MessagingRuntimeStatus,
 ): MessagingChannelFacts {
   if (binding === null) return { ...EMPTY_FACTS, status };
-  const masked = binding.channel === "telegram" ? binding.botTokenMasked : binding.appSecretMasked;
+  // The two token channels name the field `botTokenMasked`; the two App-Secret ones name it
+  // `appSecretMasked`. Both are the same fact — a credential is stored — under the name its
+  // own channel gives it.
+  const masked =
+    binding.channel === "telegram" || binding.channel === "wechat"
+      ? binding.botTokenMasked
+      : binding.appSecretMasked;
   return {
     secretConfigured: masked !== undefined,
     secretMasked: masked ?? null,
@@ -165,7 +182,12 @@ function factsOf(
 }
 
 function factsFromList(res: MessagingBindingsResponse): ChannelFactsMap {
-  const map: ChannelFactsMap = { feishu: EMPTY_FACTS, telegram: EMPTY_FACTS, qq: EMPTY_FACTS };
+  const map: ChannelFactsMap = {
+    feishu: EMPTY_FACTS,
+    telegram: EMPTY_FACTS,
+    qq: EMPTY_FACTS,
+    wechat: EMPTY_FACTS,
+  };
   for (const entry of res.bindings) {
     map[entry.binding.channel] = factsOf(entry.binding, entry.status);
   }
@@ -197,7 +219,7 @@ export interface MessagingBindingEditorState {
   /** Why the switch is gated, when a reason is worth showing (null otherwise). */
   toggleHint: string | null;
   /**
-   * A flow OUTSIDE the form saved this channel's binding — QQ's scan-to-connect, whose
+   * A flow OUTSIDE the form saved this channel's binding — either scan-to-connect, whose
    * credentials never pass through the browser. Folds the result into that channel's facts
    * and the form baseline, exactly as a Save would.
    */
@@ -264,6 +286,7 @@ export function useMessagingBinding(
     feishu: EMPTY_FACTS,
     telegram: EMPTY_FACTS,
     qq: EMPTY_FACTS,
+    wechat: EMPTY_FACTS,
   });
   const [fieldErrors, setFieldErrors] = useState<MessagingFormErrors>({});
   const [busy, setBusy] = useState(false);
@@ -338,7 +361,9 @@ export function useMessagingBinding(
       ? "telegram"
       : channels.qq.enabled
         ? "qq"
-        : null;
+        : channels.wechat.enabled
+          ? "wechat"
+          : null;
   const otherEnabled = enabledChannel !== null && enabledChannel !== selected;
   const dirty = form !== null && baseline !== null && formDirty(form, baseline);
 
@@ -356,7 +381,9 @@ export function useMessagingBinding(
           ? { feishu: fresh.feishu }
           : channel === "qq"
             ? { qq: fresh.qq }
-            : { telegram: fresh.telegram };
+            : channel === "wechat"
+              ? { wechat: fresh.wechat }
+              : { telegram: fresh.telegram };
       setForm((prev) => (prev ? { ...prev, ...sub } : prev));
       setBaseline((prev) => (prev ? { ...prev, ...sub } : prev));
     }
@@ -376,6 +403,11 @@ export function useMessagingBinding(
         }
       } else if (draft.channel === "qq") {
         const res = await api.testQQBinding(sessionId, draft.body);
+        if (res.ok) toastSuccess(S.messaging.testOk(res.latencyMs ?? 0));
+        else toastError(S.messaging.testFail(res.error ?? S.common.unknownError));
+      } else if (draft.channel === "wechat") {
+        // No body: this channel's probe reads the stored binding, there being no draft.
+        const res = await api.testWeChatBinding(sessionId);
         if (res.ok) toastSuccess(S.messaging.testOk(res.latencyMs ?? 0));
         else toastError(S.messaging.testFail(res.error ?? S.common.unknownError));
       } else {
@@ -417,7 +449,9 @@ export function useMessagingBinding(
           ? await api.putTelegramBinding(sessionId, built.body)
           : built.channel === "qq"
             ? await api.putQQBinding(sessionId, built.body)
-            : await api.putFeishuBinding(sessionId, built.body);
+            : built.channel === "wechat"
+              ? await api.putWeChatBinding(sessionId, built.body)
+              : await api.putFeishuBinding(sessionId, built.body);
       applyChannel(built.channel, res.binding, res.status);
       toastSuccess(S.common.saved);
     } catch (e) {
@@ -615,19 +649,26 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
   if (!form) return null;
   const channel = form.channel;
   const facts = b.channels[channel];
-  const links = CHANNEL_LINKS[channel];
   // The delivery preferences of the selected channel, and the patch that writes one back.
-  // All three sub-states carry the same two, so resolving the channel once here keeps the
+  // Every sub-state carries the same three, so resolving the channel once here keeps the
   // rows at the bottom free of a selector they have nothing to say about.
   const delivery =
-    channel === "telegram" ? form.telegram : channel === "qq" ? form.qq : form.feishu;
+    channel === "telegram"
+      ? form.telegram
+      : channel === "qq"
+        ? form.qq
+        : channel === "wechat"
+          ? form.wechat
+          : form.feishu;
   const patchDelivery = (patch: Partial<MessagingDeliveryFields>) =>
     b.patchForm(
       channel === "telegram"
         ? { telegram: { ...form.telegram, ...patch } }
         : channel === "qq"
           ? { qq: { ...form.qq, ...patch } }
-          : { feishu: { ...form.feishu, ...patch } },
+          : channel === "wechat"
+            ? { wechat: { ...form.wechat, ...patch } }
+            : { feishu: { ...form.feishu, ...patch } },
     );
   return (
     <div className="space-y-3">
@@ -635,11 +676,12 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
           switches forms rather than locking (the mcp transport idiom). */}
       <div role="group" aria-label={S.messaging.channelLabel}>
         <Segmented
-          cols={3}
+          cols={4}
           options={[
             { value: "feishu" as MessagingChannel, label: S.messaging.channelName.feishu },
             { value: "telegram" as MessagingChannel, label: S.messaging.channelName.telegram },
             { value: "qq" as MessagingChannel, label: S.messaging.channelName.qq },
+            { value: "wechat" as MessagingChannel, label: S.messaging.channelName.wechat },
           ]}
           value={channel}
           onChange={(v) => b.selectChannel(v)}
@@ -765,7 +807,9 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
                     ? S.telegram.testMessageNoChat
                     : channel === "qq"
                       ? S.qq.testMessageNoChat
-                      : S.feishu.testMessageNoChat,
+                      : channel === "wechat"
+                        ? S.wechat.testMessageNoChat
+                        : S.feishu.testMessageNoChat,
               }
             : {})}
           onClick={() => void b.sendTestMessage()}
@@ -791,7 +835,12 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
             // the reader looking for a web page Telegram has never had. The label names the
             // thing the click actually reaches — Telegram's own page for it is titled
             // "Launch @BotFather".
-            link={<ExternalLink href={links.credentialSource} label={S.telegram.openBotFather} />}
+            link={
+              <ExternalLink
+                href={CHANNEL_LINKS.telegram.credentialSource}
+                label={S.telegram.openBotFather}
+              />
+            }
           >
             <PasswordInput
               size="sm"
@@ -833,7 +882,9 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
           <CornerLinkedField
             label={S.qq.appId}
             required
-            link={<ExternalLink href={links.credentialSource} label={S.messaging.console} />}
+            link={
+              <ExternalLink href={CHANNEL_LINKS.qq.credentialSource} label={S.messaging.console} />
+            }
           >
             <Input
               size="sm"
@@ -875,12 +926,43 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
               same height across channels. */}
           <p className="text-xs text-gray-500 dark:text-gray-400">{S.qq.repliesOnly}</p>
         </>
+      ) : channel === "wechat" ? (
+        <>
+          {/* The whole credential form: there is nothing to type on this channel, so the QR
+              is not the easy path but the only one. */}
+          <WeChatScanConnect
+            sessionId={b.sessionId}
+            enabled={facts.enabled}
+            bound={facts.secretConfigured}
+            onBound={(binding) => b.adoptBinding(binding)}
+          />
+          {facts.secretMasked !== null && (
+            <StoredSecretRow
+              masked={facts.secretMasked}
+              clearLabel={S.wechat.clearToken}
+              checked={form.wechat.clearToken}
+              enabled={facts.enabled}
+              onChange={(checked) =>
+                b.patchForm({ wechat: { ...form.wechat, clearToken: checked } })
+              }
+            />
+          )}
+          {/* This channel's rule that cannot wait for a collapsed fold: it carries direct
+              chats only, so a user who binds it and then writes in a group sees nothing
+              arrive and concludes the binding is broken. */}
+          <p className="text-xs text-gray-500 dark:text-gray-400">{S.wechat.directOnly}</p>
+        </>
       ) : (
         <>
           <CornerLinkedField
             label={S.feishu.appId}
             required
-            link={<ExternalLink href={links.credentialSource} label={S.messaging.console} />}
+            link={
+              <ExternalLink
+                href={CHANNEL_LINKS.feishu.credentialSource}
+                label={S.messaging.console}
+              />
+            }
           >
             <Input
               size="sm"
@@ -978,7 +1060,9 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
             ? S.messaging.renderMarkdownHelpTelegram
             : channel === "qq"
               ? S.messaging.renderMarkdownHelpQQ
-              : S.messaging.renderMarkdownHelpFeishu
+              : channel === "wechat"
+                ? S.messaging.renderMarkdownHelpWeChat
+                : S.messaging.renderMarkdownHelpFeishu
         }
         checked={delivery.renderMarkdown}
         onChange={(v) => patchDelivery({ renderMarkdown: v })}
@@ -994,7 +1078,14 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
  * form itself opening on the channel selector and the connection controls.
  */
 export function MessagingBindingHelp({ channel }: { channel: MessagingChannel }) {
-  const per = channel === "telegram" ? S.telegram : channel === "qq" ? S.qq : S.feishu;
+  const per =
+    channel === "telegram"
+      ? S.telegram
+      : channel === "qq"
+        ? S.qq
+        : channel === "wechat"
+          ? S.wechat
+          : S.feishu;
   const links = CHANNEL_LINKS[channel];
   return (
     <div className="space-y-2 border-t border-gray-200 pt-3 dark:border-gray-800">
@@ -1008,9 +1099,15 @@ export function MessagingBindingHelp({ channel }: { channel: MessagingChannel })
             Disclosed here rather than parked beside the button, which is a control and so
             cannot be the title a standing sentence would need. */}
         {channel === "qq" && <p className="mt-1.5">{S.qq.scanHint}</p>}
-        <p className="mt-1.5">
-          <ExternalLink href={links.tutorial} label={S.messaging.tutorial} />
-        </p>
+        {/* Why this channel's form has no fields, said where a reader looking for them
+            arrives. */}
+        {channel === "wechat" && <p className="mt-1.5">{S.wechat.scanOnly}</p>}
+        {/* Absent for a channel with nowhere public to send the reader (see CHANNEL_LINKS). */}
+        {links !== null && (
+          <p className="mt-1.5">
+            <ExternalLink href={links.tutorial} label={S.messaging.tutorial} />
+          </p>
+        )}
       </HelpFold>
       <HelpFold title={S.messaging.faqWhatTitle}>
         <p>{per.intro}</p>
@@ -1019,6 +1116,9 @@ export function MessagingBindingHelp({ channel }: { channel: MessagingChannel })
         {/* QQ's reply budget belongs to "what binding does" rather than troubleshooting:
             it is not a fault, it is how the channel delivers a long answer. */}
         {channel === "qq" && <p className="mt-1.5">{S.qq.replyBudget}</p>}
+        {/* What actually travels on this channel, which is more than on any other here and
+            is the question its users ask first. */}
+        {channel === "wechat" && <p className="mt-1.5">{S.wechat.media}</p>}
         <p className="mt-1.5">{S.messaging.faqWhatBinding}</p>
       </HelpFold>
       <HelpFold title={S.messaging.faqTroubleTitle}>
@@ -1028,6 +1128,7 @@ export function MessagingBindingHelp({ channel }: { channel: MessagingChannel })
           {channel === "telegram" && <li>{S.messaging.troubleOnePoller}</li>}
           {channel === "telegram" && <li>{S.messaging.troubleGroupPrivacy}</li>}
           {channel === "qq" && <li>{S.messaging.troubleQQPassive}</li>}
+          {channel === "wechat" && <li>{S.messaging.troubleWeChatDirect}</li>}
           {channel === "telegram" && <li>{S.messaging.troubleNoGroupInbound}</li>}
         </ul>
       </HelpFold>

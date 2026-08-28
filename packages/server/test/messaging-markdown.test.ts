@@ -1,8 +1,8 @@
 /**
- * The Markdown conversion the three messaging channels relay a reply through: the shared
+ * The Markdown conversion the four messaging channels relay a reply through: the shared
  * parse and chunking (markdown.ts), and each channel's own renderer.
  *
- * Three renderers rather than one because the three platforms accept three different
+ * Four renderers rather than one because the four platforms accept four different
  * subsets, and the tests are organized to say so: every construct the model actually writes
  * is asserted per channel, including the ones a channel CANNOT show, because how a missing
  * construct degrades is the part a reader of a chat notices. The escaping cases are grouped
@@ -11,8 +11,8 @@
  *
  * Delivery — that a rendered send actually goes out with the right `parse_mode` / `msg_type`,
  * and that a refused one falls back to plain text — is proven against each channel's own
- * wire fake in messaging.test.ts, messaging-telegram.test.ts, messaging-qq.test.ts and
- * messaging-wire.test.ts. Nothing here sends anything.
+ * wire fake in messaging.test.ts, messaging-telegram.test.ts, messaging-qq.test.ts,
+ * messaging-wechat.test.ts and messaging-wire.test.ts. Nothing here sends anything.
  */
 import { describe, expect, it } from "vitest";
 import { attachedFileLine } from "@prismshadow/penguin-core";
@@ -21,6 +21,7 @@ import { chunkMarkdown, isSafeUrl, parseMarkdown } from "../src/runtime/messagin
 import { feishuCardOf, feishuMarkdownOf } from "../src/runtime/messaging/feishu-card.js";
 import { qqMarkdownOf } from "../src/runtime/messaging/qq-markdown.js";
 import { telegramHtmlOf } from "../src/runtime/messaging/telegram-html.js";
+import { wechatMarkdownOf } from "../src/runtime/messaging/wechat-markdown.js";
 
 describe("parseMarkdown", () => {
   it("reads GFM, so tables and task lists are constructs rather than punctuation", () => {
@@ -248,6 +249,88 @@ describe("qqMarkdownOf", () => {
 });
 
 // ---------------------------------------------------------------------------
+
+describe("wechatMarkdownOf", () => {
+  it("keeps the constructs WeChat reads, which is the most of the four", () => {
+    expect(wechatMarkdownOf("## Two")).toBe("## Two");
+    expect(wechatMarkdownOf("**b** ~~s~~")).toBe("**b** ~~s~~");
+    expect(wechatMarkdownOf("- a\n    - b")).toBe("- a\n    - b");
+    expect(wechatMarkdownOf("1. one\n2. two")).toBe("1. one\n2. two");
+    expect(wechatMarkdownOf("> quoted")).toBe("> quoted");
+    expect(wechatMarkdownOf("[l](https://x.com)")).toBe("[l](https://x.com)");
+    expect(wechatMarkdownOf("---")).toBe("---");
+  });
+
+  it("keeps code as code, fence and language and all — the reason this channel is the widest", () => {
+    // The renderer here subtracts rather than translates: what WeChat reads is emitted as
+    // the model wrote it, and only what it cannot read loses its markers.
+    expect(wechatMarkdownOf("```python\n# a comment\nx = a ** b\n```")).toBe(
+      "```python\n# a comment\nx = a ** b\n```",
+    );
+    expect(wechatMarkdownOf("use `read_file` first")).toBe("use `read_file` first");
+  });
+
+  it("widens a fence past the backticks its own content holds", () => {
+    // A three-backtick fence around content containing three would close at the content.
+    expect(wechatMarkdownOf("````\n```\n````")).toBe("````\n```\n````");
+    // A span whose CONTENT holds a backtick: one delimiter would close at it.
+    expect(wechatMarkdownOf("use `` a`b `` here")).toBe("use ``a`b`` here");
+  });
+
+  it("keeps a table as a table, delimiter row included", () => {
+    expect(wechatMarkdownOf("| a | b |\n| - | - |\n| 1 | 2 |")).toBe(
+      "| a | b |\n| --- | --- |\n| 1 | 2 |",
+    );
+    // A pipe inside a cell would open a column that is not there.
+    expect(wechatMarkdownOf("| a |\n| - |\n| x \\| y |")).toContain("| x \\| y |");
+  });
+
+  it("drops the markers of a heading deeper than the client's scale", () => {
+    // Five `#` would arrive as five literal characters; the text becomes the paragraph it
+    // was already going to look like.
+    expect(wechatMarkdownOf("#### Four")).toBe("#### Four");
+    expect(wechatMarkdownOf("##### Five")).toBe("Five");
+    expect(wechatMarkdownOf("###### Six")).toBe("Six");
+  });
+
+  it("keeps Latin emphasis and drops the asterisks around CJK, which do not render", () => {
+    // The markers need a word boundary, and a CJK run has none — `*中文*` would arrive as
+    // asterisks around Chinese.
+    expect(wechatMarkdownOf("*stress*")).toBe("*stress*");
+    expect(wechatMarkdownOf("*重要*")).toBe("重要");
+    expect(wechatMarkdownOf("*mixed 中文*")).toBe("mixed 中文");
+    // Bold is unaffected: `**` renders on both sides of the boundary question.
+    expect(wechatMarkdownOf("**重要**")).toBe("**重要**");
+  });
+
+  it("turns an inline image into a link rather than dropping the URL it named", () => {
+    expect(wechatMarkdownOf("![a chart](https://x.com/c.png)")).toBe(
+      "[a chart](https://x.com/c.png)",
+    );
+    // Nameless: the URL is its own label, which is better than an empty one.
+    expect(wechatMarkdownOf("![](https://x.com/c.png)")).toBe(
+      "[https://x.com/c.png](https://x.com/c.png)",
+    );
+  });
+
+  it("escapes literal markup outside code, and never inside it", () => {
+    expect(wechatMarkdownOf("literal * and _ and ~ and [x]")).toBe(
+      "literal \\* and \\_ and \\~ and \\[x\\]",
+    );
+    // `#` means something only at the head of a line.
+    expect(wechatMarkdownOf("issue \\#12 and a > b")).toBe("issue #12 and a > b");
+    expect(wechatMarkdownOf("\\# not a heading")).toBe("\\# not a heading");
+    // Inside a fence the markers ARE what makes the content literal: a backslash there
+    // would land in code the reader is meant to copy.
+    expect(wechatMarkdownOf("```\nrm -rf *_[x]\n```")).toBe("```\nrm -rf *_[x]\n```");
+  });
+
+  it("keeps an unopenable link's label and drops only its clickability", () => {
+    expect(wechatMarkdownOf("[click](javascript:alert(1))")).toBe("click");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Inbound file paths quoted back out
 // ---------------------------------------------------------------------------
 
@@ -389,6 +472,7 @@ describe("chunkMarkdown", () => {
       expect(() => telegramHtmlOf(chunk)).not.toThrow();
       expect(() => feishuMarkdownOf(chunk)).not.toThrow();
       expect(() => qqMarkdownOf(chunk)).not.toThrow();
+      expect(() => wechatMarkdownOf(chunk)).not.toThrow();
     }
   });
 });

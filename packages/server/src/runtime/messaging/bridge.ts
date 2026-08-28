@@ -1,6 +1,6 @@
 /**
  * Messaging bridge: a Web server runtime component connecting Sessions to external chat
- * platforms through channel connectors (Feishu, Telegram and QQ today — see
+ * platforms through channel connectors (Feishu, Telegram, QQ and WeChat today — see
  * feishu-connector.ts / telegram-connector.ts / qq-connector.ts). Started by the platform next to the
  * Scheduler, stopped when the
  * App is disposed — a hot swap hard-stops it like the scheduler. A Session may keep a

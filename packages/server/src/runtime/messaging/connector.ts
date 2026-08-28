@@ -1,6 +1,6 @@
 /**
  * The messaging-channel connector seam: what the MessagingBridge needs from one chat
- * platform (Feishu, Telegram and QQ today; further channels implement the same interface
+ * platform (Feishu, Telegram, QQ and WeChat today; further channels implement the same interface
  * and register in app assembly). A connector owns everything channel-specific — credential
  * shape, wire protocol, event normalization — and hands the bridge a channel-neutral
  * view: a client for outbound sends and credential checks, and a long-lived event
@@ -13,7 +13,7 @@
  */
 
 /** Known messaging channels (the DB stores the discriminator as text; unknown values are skipped defensively). */
-export type MessagingChannel = "feishu" | "telegram" | "qq";
+export type MessagingChannel = "feishu" | "telegram" | "qq" | "wechat";
 
 /** One inbound image's bytes, once fetched, with the MIME type the bridge needs for its data URL. */
 export interface MessagingInboundImageData {
