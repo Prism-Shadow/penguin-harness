@@ -1,6 +1,6 @@
 {
   "name": "@prismshadow/penguin-core",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "type": "module",
   "engines": {
     "node": ">=24"
