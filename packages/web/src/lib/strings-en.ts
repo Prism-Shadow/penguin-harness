@@ -819,7 +819,19 @@ export const en: Strings = {
     fastModeBadge: "Fast",
     visionBadge: "Vision",
     freeBadge: "Free",
+    /**
+     * Rides the group's own collapse bar, which on this group carries five actions — the most
+     * crowded row on the page. One word, because the vendor name beside it is what a reader
+     * needs first and is the element that truncates.
+     */
+    recommendedGroup: "Recommended",
+    discountBadge: (pct: number): string => `-${pct}%`,
+    discountTitle: (pct: number): string => `Promotion: ${pct}% off the list price`,
+    offPeakTitle: (pct: number): string =>
+      `Off-peak rate: ${pct}% off list. Peak hours bill at list price — 09:00–12:00 and 14:00–18:00 Beijing time, Monday to Friday`,
     visionModelBadge: "Proxy vision",
+    usedTokens: (v: string) => `${v} toks`,
+    usedTokensTitle: "Tokens this model has used, all time",
     setVisionModel: "Set as proxy vision model",
     visionModelHint: "Describes images via describe_image for models without vision",
     priceUnitShort: "/M tok",

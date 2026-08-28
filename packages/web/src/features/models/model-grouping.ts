@@ -16,7 +16,12 @@
  * the identity, so a profile that has never dragged a group sees exactly the catalog
  * order. Storage stays out of this module: the caller loads the array and passes it in.
  */
-import { MODEL_PROVIDERS } from "@prismshadow/penguin-core/model-catalog";
+import {
+  MODEL_PROVIDERS,
+  catalogEntryFor,
+  effectivePricing,
+  offPeakAt,
+} from "@prismshadow/penguin-core/model-catalog";
 import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
 
 import { orderModelGroups } from "./model-group-order";
@@ -171,6 +176,90 @@ export function isFreeModel(
   return [pricing.cacheRead, pricing.cacheWrite, pricing.output].every((b) =>
     typeof b === "string" ? b.trim() !== "" && Number(b) === 0 : b === 0,
   );
+}
+
+/**
+ * The three price buckets as the page carries them: the DTO's numbers, or the model page's
+ * string-typed edit fields ("" = unpriced) — the same pair of shapes isFreeModel accepts.
+ */
+export interface PricingBucketsLike {
+  cacheRead?: number | string;
+  cacheWrite?: number | string;
+  output?: number | string;
+}
+
+/** The discount decoration for one model card, and the price it makes the row cost right now. */
+export interface DiscountedPrice {
+  /** Whole-percent rate off list, as the badge shows it (50 for a half-price row). */
+  percent: number;
+  /**
+   * What the seller bills for this row right now, in USD per million tokens — the figure the
+   * card prints. For a flat promotion this is the stored price, already discounted at sync
+   * time; for a scheduled one the stored price is the peak price and this is the reduced rate.
+   */
+  billed: { cacheRead: number; cacheWrite: number; output: number };
+  /** True when the rate is a time-of-day one, so the badge can explain when it applies. */
+  scheduled: boolean;
+}
+
+/** One bucket as a finite number, or undefined for an unpriced ("" / absent) field. */
+function bucketValue(v: number | string | undefined): number | undefined {
+  if (typeof v === "number") return Number.isFinite(v) ? v : undefined;
+  if (v === undefined || v.trim() === "") return undefined;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+/**
+ * The discount decoration for one model row, or undefined for a row that carries none.
+ *
+ * A row qualifies only when its (provider, modelId) names a catalog entry on a promotion AND
+ * its stored price is still exactly the price that entry expects to be stored. Prices are
+ * editable, and a hand-typed number has nothing to do with the seller's list price — marking it
+ * would invent a saving the user is not getting. The same guard covers a Project that has not
+ * run "sync presets" yet: its rows still hold whatever price they were created with.
+ *
+ * Which price that is differs by promotion kind, and the difference is the point:
+ *
+ * - A **flat** promotion is a single rate the seller bills until it lapses, so `sync presets`
+ *   bakes it in and the stored number is already the discounted one.
+ * - A **scheduled** one changes twice a day. Baking it in would put a number on disk that meant
+ *   something different an hour later, and would make re-syncing rewrite prices by the clock —
+ *   so the peak price is stored and the reduction is applied here, against `now`. Inside the
+ *   peak windows the row is simply at list price and carries no mark at all.
+ */
+export function discountedPrice(
+  row: ModelRowLike & PricingBucketsLike,
+  now: Date = new Date(),
+): DiscountedPrice | undefined {
+  const entry = catalogEntryFor(row.provider, row.modelId);
+  if (entry?.pricing === undefined) return undefined;
+  const schedule = entry.offPeakDiscount;
+  const rate = schedule?.rate ?? entry.discount;
+  // A fraction off, so only (0, 1) says anything: `effectivePricing` already ignores 0, and a
+  // badge built from a value outside that range reads as `-0%`, `-100%` beside a "Free" tag, or
+  // `--20%`. A stray 0 is the plausible one — the field's own doc says a lapsed promotion is one
+  // field to delete, and deleting a digit is the near miss.
+  if (rate === undefined || rate <= 0 || rate >= 1) return undefined;
+  const expected = schedule !== undefined ? entry.pricing : effectivePricing(entry);
+  if (expected === undefined) return undefined;
+  const same =
+    bucketValue(row.cacheRead) === expected.cache_read &&
+    bucketValue(row.cacheWrite) === expected.cache_write &&
+    bucketValue(row.output) === expected.output;
+  if (!same) return undefined;
+  if (schedule !== undefined && !offPeakAt(schedule, now)) return undefined;
+  const billed = effectivePricing(entry, now);
+  if (billed === undefined) return undefined;
+  return {
+    percent: Math.round(rate * 100),
+    billed: {
+      cacheRead: billed.cache_read,
+      cacheWrite: billed.cache_write,
+      output: billed.output,
+    },
+    scheduled: schedule !== undefined,
+  };
 }
 
 export interface VisibleChatModelsOptions {

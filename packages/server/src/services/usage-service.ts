@@ -25,10 +25,12 @@ import type {
   UsageGroupBy,
   UsageGroupRow,
   UsageModelSeries,
+  UsageModelTotals,
   UsageResponse,
   UsageSeriesPoint,
 } from "../api/types.js";
 import type { ErrorFilter, ErrorsRepo } from "../db/repos/errors.js";
+import { offPeakScheduledRefs } from "@prismshadow/penguin-core/model-catalog";
 import type {
   UsageRepo,
   UsageModelSums,
@@ -36,6 +38,7 @@ import type {
   UsageSeriesModelSums,
   UsageAgentBucketCount,
   UsageFilter,
+  PeakTier,
 } from "../db/repos/usage.js";
 import {
   enumerateBuckets,
@@ -60,11 +63,24 @@ export interface PricingRates {
   output: number;
 }
 
+/**
+ * What one Model costs, in the tiers it can be billed in.
+ *
+ * `offPeak` differs from `peak` only for a catalog row on a time-based schedule whose stored
+ * price is still the catalog's own. Both are returned together because a query spans time: a
+ * week that straddles the boundary contains Tokens of both kinds, and each half is priced at
+ * the rate it actually ran at rather than at whichever tier is in force when it is read.
+ */
+export interface TieredRates {
+  peak: PricingRates;
+  offPeak: PricingRates;
+}
+
 export type PricingLookup = (
   projectId: string,
   provider: string,
   modelId: string,
-) => Promise<PricingRates | undefined>;
+) => Promise<TieredRates | undefined>;
 
 export interface UsageQuery {
   from?: string;
@@ -114,8 +130,9 @@ export interface UsageErrorsClearQuery {
   agentId?: string;
 }
 
-/** Cost formula: sum of the three buckets, in USD per million Tokens. */
-function costOf(sums: UsageModelSums, rates: PricingRates): number {
+/** Cost formula: sum of the three buckets at the tier these Tokens ran in, USD per million. */
+function costOf(sums: UsageModelSums, tiered: TieredRates): number {
+  const rates = sums.peak ? tiered.peak : tiered.offPeak;
   return (
     (sums.cacheRead * rates.cacheRead +
       sums.cacheWrite * rates.cacheWrite +
@@ -136,6 +153,23 @@ export class UsageService {
     private readonly lookupPricing: PricingLookup,
     private readonly now: () => Date = () => new Date(),
   ) {}
+
+  /**
+   * The catalog's time-based schedules, as the aggregations want them.
+   *
+   * Split by the SCHEDULE, not by whether this Project is on the catalog's price: a Project
+   * that edited the price gets one rate for both halves from {@link lookupPricing}, so the extra
+   * dimension costs a row and changes no number. Doing it the other way round would need the
+   * config read before the query that discovers which references occur.
+   */
+  private tiers(): PeakTier[] {
+    return offPeakScheduledRefs().map(({ schedule, refs }) => ({
+      refs,
+      utcOffsetMinutes: schedule.utcOffsetMinutes,
+      peakDays: schedule.peakDays,
+      peakHours: schedule.peakHours,
+    }));
+  }
 
   async query(projectId: string, q: UsageQuery): Promise<UsageResponse> {
     const today = formatLocalDate(this.now());
@@ -158,13 +192,20 @@ export class UsageService {
       ...(q.fromTs !== undefined ? { fromTs: q.fromTs } : {}),
       ...(q.toTs !== undefined ? { toTs: q.toTs } : {}),
     };
-    const todayRows = this.usage.bucketByModel(projectId, win(today, today));
-    const last7dRows = this.usage.bucketByModel(projectId, win(localDateMinusDays(this.now(), 6)));
-    const totalRows = this.usage.bucketByModel(projectId, { ...win(q.from, q.to), ...ts });
-    const groupRows = this.usage.groupsByModel(projectId, q.groupBy, {
-      ...win(q.from, q.to),
-      ...ts,
-    });
+    const tiers = this.tiers();
+    const todayRows = this.usage.bucketByModel(projectId, win(today, today), tiers);
+    const last7dRows = this.usage.bucketByModel(
+      projectId,
+      win(localDateMinusDays(this.now(), 6)),
+      tiers,
+    );
+    const totalRows = this.usage.bucketByModel(projectId, { ...win(q.from, q.to), ...ts }, tiers);
+    const groupRows = this.usage.groupsByModel(
+      projectId,
+      q.groupBy,
+      { ...win(q.from, q.to), ...ts },
+      tiers,
+    );
     // Time series at the requested precision, zero-filled over the requested
     // range, defaulting to the last 30 days when no range is given.
     const granularity = q.granularity ?? "day";
@@ -192,10 +233,12 @@ export class UsageService {
         "Date range too wide for this granularity; narrow the range or coarsen the granularity.",
       );
     }
-    const seriesRows = this.usage.seriesByModel(projectId, granularity, {
-      ...win(seriesFrom, seriesTo),
-      ...ts,
-    });
+    const seriesRows = this.usage.seriesByModel(
+      projectId,
+      granularity,
+      { ...win(seriesFrom, seriesTo), ...ts },
+      tiers,
+    );
     // Per-Agent and per-Model series: each drops its own dimension's filter (its
     // chart draws that dimension's whole breakdown) but honors the other
     // dimension plus the selected range.
@@ -233,7 +276,7 @@ export class UsageService {
     };
 
     // Each paired reference that occurs is looked up for its current price only once.
-    const rates = new Map<string, PricingRates | undefined>();
+    const rates = new Map<string, TieredRates | undefined>();
     const allRefs = new Map<string, { provider: string; modelId: string }>();
     for (const r of [...todayRows, ...last7dRows, ...totalRows, ...groupRows, ...seriesRows]) {
       allRefs.set(refKey(r.provider, r.modelId), { provider: r.provider, modelId: r.modelId });
@@ -327,9 +370,26 @@ export class UsageService {
     };
   }
 
+  /**
+   * Lifetime Token totals per Model — one grouped scan of `usage_records`, no filters. The
+   * models page shows each configured model what it has actually spent, and that figure is not
+   * scoped to a range the way the cost center's is; a model with no records is simply absent,
+   * so the caller renders nothing rather than a zero.
+   */
+  modelTotals(projectId: string): UsageModelTotals {
+    return {
+      totals: this.usage.bucketByModel(projectId).map((r) => ({
+        provider: r.provider,
+        modelId: r.modelId,
+        tokens: r.total,
+        requests: r.requests,
+      })),
+    };
+  }
+
   private foldBucket(
     rows: UsageModelSums[],
-    rates: Map<string, PricingRates | undefined>,
+    rates: Map<string, TieredRates | undefined>,
   ): UsageBucket {
     let total = 0;
     let requests = 0;
@@ -347,7 +407,7 @@ export class UsageService {
 
   private foldGroups(
     rows: UsageGroupModelSums[],
-    rates: Map<string, PricingRates | undefined>,
+    rates: Map<string, TieredRates | undefined>,
     groupBy: UsageGroupBy,
   ): UsageGroupRow[] {
     // The model dimension folds by paired reference (a shared model_id name across providers is split into separate rows); other dimensions fold by their group key.
@@ -395,7 +455,7 @@ export class UsageService {
   private foldSeries(
     keys: string[],
     rows: UsageSeriesModelSums[],
-    rates: Map<string, PricingRates | undefined>,
+    rates: Map<string, TieredRates | undefined>,
   ): UsageSeriesPoint[] {
     const byKey = new Map<string, UsageSeriesPoint>(
       keys.map((bucket) => [

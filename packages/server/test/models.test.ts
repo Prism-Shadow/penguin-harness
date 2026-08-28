@@ -13,7 +13,12 @@ import type { AddressInfo } from "node:net";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { MODEL_CATALOG, userText } from "@prismshadow/penguin-core";
+import {
+  MODEL_CATALOG,
+  catalogEntryFor,
+  effectivePricing,
+  userText,
+} from "@prismshadow/penguin-core";
 import type {
   ModelsResponse,
   ModelTestResponse,
@@ -126,6 +131,25 @@ describe("models preset & catalog enrichment", () => {
     expect(mimo.clientType).toBe("openai-chat");
     expect(mimo.credential?.baseUrl).toBe("https://openrouter.ai/api/v1");
     expect(mimo.credential?.apiKeyMasked).toBeUndefined();
+
+    // A catalog row on a promotion is preset at the rate the seller BILLS, not at the list
+    // price the catalog records. The cost center prices only against what is written into
+    // the Project, so anything else here would report a cost nobody was charged.
+    const promoted = catalogEntryFor("tokendance", "glm-5.3-flash")!;
+    const billed = effectivePricing(promoted)!;
+    expect(pick(body, "tokendance", "glm-5.3-flash").pricing).toEqual({
+      cacheRead: billed.cache_read,
+      cacheWrite: billed.cache_write,
+      output: billed.output,
+    });
+    expect(billed.output).toBeLessThan(promoted.pricing!.output);
+    // An undiscounted row is preset at its list price, unchanged.
+    const plain = catalogEntryFor("tokendance", "hy4-preview")!;
+    expect(pick(body, "tokendance", "hy4-preview").pricing).toEqual({
+      cacheRead: plain.pricing!.cache_read,
+      cacheWrite: plain.pricing!.cache_write,
+      output: plain.pricing!.output,
+    });
   });
 
   it("masks the env fallback for first-party official entries only, and never leaks the value", async () => {
@@ -571,6 +595,89 @@ describe("model-reference rekeying and the connectivity test", () => {
     expect(toml).toContain('display_name = "My GPT"');
     expect(toml).toContain('provider = "openai"');
     expect(toml).not.toContain("openai/gpt-5.5");
+  });
+
+  it("a scheduled row answers with both of its rates, from the one stable price on disk", async () => {
+    // No clock is passed and none is wanted: which tier a given request ran in is decided from
+    // that record's own timestamp when the usage is aggregated, so the price lookup's whole job
+    // is to say what the two tiers are. The number on disk is the peak one either way.
+    const svc = new ProjectConfigService(t.root);
+    const rates = await svc.getPricing(projectId, "deepseek", "deepseek-v4-flash");
+    const catalogPeak = catalogEntryFor("deepseek", "deepseek-v4-flash")!.pricing!;
+    expect(rates!.peak.output).toBe(catalogPeak.output);
+    expect(rates!.offPeak.output).toBeCloseTo(catalogPeak.output / 2, 5);
+    expect(rates!.peak.cacheRead).toBe(catalogPeak.cache_read);
+    expect(rates!.offPeak.cacheRead).toBeCloseTo(catalogPeak.cache_read / 2, 6);
+  });
+
+  it("a hand-edited price on a scheduled row is billed as typed, in both tiers", async () => {
+    const body = (await (await api.get(url())).json()) as ModelsResponse;
+    const entries = body.models.map((m) => ({
+      provider: m.provider,
+      modelId: m.modelId,
+      ...(m.pricing
+        ? {
+            pricing:
+              m.provider === "deepseek" && m.modelId === "deepseek-v4-flash"
+                ? { cacheRead: 1, cacheWrite: 2, output: 3 }
+                : {
+                    cacheRead: m.pricing.cacheRead,
+                    cacheWrite: m.pricing.cacheWrite,
+                    output: m.pricing.output,
+                  },
+          }
+        : {}),
+    }));
+    await api.put(url(), { models: entries });
+    const svc = new ProjectConfigService(t.root);
+    // Nothing here knows whether 3 is a peak rate, so halving it would invent a discount: the
+    // two tiers collapse to the typed number and the split costs a row and changes nothing.
+    const typed = { cacheRead: 1, cacheWrite: 2, output: 3 };
+    expect(await svc.getPricing(projectId, "deepseek", "deepseek-v4-flash")).toEqual({
+      peak: typed,
+      offPeak: typed,
+    });
+  });
+
+  it("clearing a preset model's display name sticks: it falls back to the id, not back to the catalog", async () => {
+    // Only provider and modelId are required, so an entry sent without a display name is the
+    // user having cleared it. Writing nothing would leave the field absent, which reads as
+    // "inherit from the catalog" — the deleted name would be handed straight back on reload.
+    await api.put(url(), { models: [{ provider: "openai", modelId: "gpt-5.5" }] });
+    const body = (await (await api.get(url())).json()) as ModelsResponse;
+    expect(pick(body, "openai", "gpt-5.5").displayName).toBeUndefined();
+    // The empty string is what records the deletion, and it survives a second full-table PUT
+    // that likewise carries no name.
+    const toml = await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
+    expect(toml).toContain('display_name = ""');
+    await api.put(url(), { models: [{ provider: "openai", modelId: "gpt-5.5" }] });
+    const again = (await (await api.get(url())).json()) as ModelsResponse;
+    expect(pick(again, "openai", "gpt-5.5").displayName).toBeUndefined();
+  });
+
+  it("a cleared name is restorable, and clearing a model the catalog does not name writes nothing", async () => {
+    await api.put(url(), { models: [{ provider: "openai", modelId: "gpt-5.5" }] });
+    // Naming it again drops the marker rather than leaving both on disk.
+    await api.put(url(), {
+      models: [{ provider: "openai", modelId: "gpt-5.5", displayName: "Renamed" }],
+    });
+    const body = (await (await api.get(url())).json()) as ModelsResponse;
+    expect(pick(body, "openai", "gpt-5.5").displayName).toBe("Renamed");
+    let toml = await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
+    expect(toml).not.toContain('display_name = ""');
+
+    // A model outside the catalog has no name to inherit, so absence already says "no name"
+    // and the marker would be noise in the file.
+    await api.put(url(), {
+      models: [
+        { provider: "openai", modelId: "gpt-5.5", displayName: "Renamed" },
+        { provider: "custom", modelId: "my-own-model" },
+      ],
+    });
+    toml = await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
+    expect(toml).not.toContain('display_name = ""');
+    const after = (await (await api.get(url())).json()) as ModelsResponse;
+    expect(pick(after, "custom", "my-own-model").displayName).toBeUndefined();
   });
 
   it("an invalid renamedFrom is 400; rekeying without renamedFrom equals delete-old-then-create-new (the credential does not migrate)", async () => {

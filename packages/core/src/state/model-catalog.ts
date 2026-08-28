@@ -4,9 +4,10 @@
  * Data verified as of 2026-07-10 (Qwen Token Plan entries: 2026-07-20; MiniMax: 2026-08-03;
  * DeepSeek, Gemini 3.7, GLM-5.3 and the whole OpenAI line-up (direct + OpenRouter):
  * 2026-08-18; the direct Anthropic group: 2026-08-20; the DeepSeek V4 Flash Vision Exp rows:
- * 2026-08-21; the TokenDance group: 2026-08-25, its glm-5.3-flash row: 2026-08-26 and its
- * qwen3.8-flash row: 2026-08-27; the GLM-5.3 Flash rows (direct + OpenRouter) and the
- * direct qwen3.8-flash: 2026-08-26 — per each provider's docs).
+ * 2026-08-21; the TokenDance group: 2026-08-25, its glm-5.3-flash row: 2026-08-26, its
+ * qwen3.8-flash row: 2026-08-27 and its running promotions plus the hy4-preview rows
+ * (TokenDance + OpenRouter): 2026-08-28; the GLM-5.3 Flash rows (direct + OpenRouter) and
+ * the direct qwen3.8-flash: 2026-08-26 — per each provider's docs).
  * Docs: packages/docs/content/models.{zh,en}.md (site path /docs/models) documents the
  * provider groups and credential resolution described here.
  *
@@ -91,6 +92,12 @@ export interface ModelProviderInfo {
    * every provider whose keys are only obtainable from its console.
    */
   oauth?: ModelProviderOAuth;
+  /**
+   * The group the product recommends, captioned as such on the models page. It marks the
+   * GROUP, not a position: a user who drags the group elsewhere keeps the caption with it,
+   * and the default sequence below is what places it first for everyone else.
+   */
+  recommended?: boolean;
 }
 
 /** A single built-in model's catalog entry (`modelId` is the upstream id; paired with `provider` it forms the catalog's unique key). */
@@ -101,6 +108,26 @@ export interface ModelCatalogEntry {
   provider: string;
   contextWindow?: number;
   pricing?: ModelPricing;
+  /**
+   * Fraction off the list price the seller is currently running (0.5 = 50% off), applied to
+   * every bucket. `pricing` stays the LIST price whatever promotion is live, so a lapsed
+   * promotion is one field to delete rather than three numbers to reconstruct;
+   * effectivePricing is the rate actually billed, and presetModelEntries writes THAT into a
+   * Project so the cost center charges what the seller charges.
+   */
+  discount?: number;
+  /**
+   * A discount that is only live outside a weekly set of peak windows — a vendor billing
+   * cheaper off-hours. `pricing` holds the PEAK price, the one billed inside the windows, and
+   * the rate applies everywhere else.
+   *
+   * Unlike `discount`, this one changes twice a day, so it is never baked into a Project:
+   * `presetModelEntries` writes the peak price and the rate is applied when a price is read.
+   * A number on disk that silently meant something different at 09:00 than at 08:00 would be
+   * unreadable, and re-syncing presets would rewrite prices by the clock. Mutually exclusive
+   * with `discount`; an entry declaring both is a catalog error.
+   */
+  offPeakDiscount?: OffPeakDiscount;
   /** Whether image input (vision modality) is supported. */
   supportsVision: boolean;
   /** AgentHub client protocol: required when an id cannot be auto-routed or a shared protocol must be pinned. */
@@ -120,10 +147,14 @@ const TOKENDANCE_BASE_URL = "https://tokendance.space/gateway/v1";
 const MINIMAX_BASE_URL = "https://api.minimax.io/v1";
 
 /**
- * Provider list (web model page groups in this order). The sequence is a hand-curated
- * display order: DeepSeek leads as the default model's provider and custom (custom
- * OpenAI-protocol models) is always last; in between, gateways and first-party vendors are
- * interleaved by expected use rather than sorted by kind.
+ * Provider list (web model page groups in this order BY DEFAULT — a user's dragged
+ * arrangement is stored per Project and wins over this sequence; see the web's
+ * model-group-order.ts). The sequence is a hand-curated display order: TokenDance leads as
+ * the recommended group, DeepSeek follows as the default model's provider, and custom
+ * (custom OpenAI-protocol models) is always last; in between, gateways and first-party
+ * vendors are interleaved by expected use rather than sorted by kind. Only this default
+ * moves when the curation changes: a Project that has ever reordered its groups has every
+ * key stored already, so it keeps the arrangement its user built.
  *
  * The six gateway groups — OpenRouter, Fireworks AI, SiliconFlow, TokenDance, Qwen
  * Pay-As-You-Go and Qwen Token Plan — reach their models through one of AgentHub's generic
@@ -133,6 +164,22 @@ const MINIMAX_BASE_URL = "https://api.minimax.io/v1";
  * the OPENAI_* pair and the env fallback hint the frontend shows is accurate either way.
  */
 export const MODEL_PROVIDERS: ModelProviderInfo[] = [
+  {
+    id: "tokendance",
+    label: "TokenDance",
+    envKey: "OPENAI_API_KEY",
+    envBaseUrlKey: "OPENAI_BASE_URL",
+    apiKeyUrl: "https://tokendance.space/keys",
+    modelsUrl: "https://tokendance.space/models",
+    gatewayBaseUrl: TOKENDANCE_BASE_URL,
+    recommended: true,
+    // https://tokendance.space/docs/api-key-oauth
+    oauth: {
+      authorizeUrl: "https://tokendance.space/auth",
+      exchangeUrl: "https://tokendance.space/portal/api/v1/auth/keys",
+      keyName: "PenguinHarness",
+    },
+  },
   {
     id: "deepseek",
     label: "DeepSeek",
@@ -191,21 +238,6 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     apiKeyUrl: "https://cloud.siliconflow.cn/me/account/ak",
     modelsUrl: "https://cloud.siliconflow.cn/models",
     gatewayBaseUrl: SILICONFLOW_BASE_URL,
-  },
-  {
-    id: "tokendance",
-    label: "TokenDance",
-    envKey: "OPENAI_API_KEY",
-    envBaseUrlKey: "OPENAI_BASE_URL",
-    apiKeyUrl: "https://tokendance.space/keys",
-    modelsUrl: "https://tokendance.space/models",
-    gatewayBaseUrl: TOKENDANCE_BASE_URL,
-    // https://tokendance.space/docs/api-key-oauth
-    oauth: {
-      authorizeUrl: "https://tokendance.space/auth",
-      exchangeUrl: "https://tokendance.space/portal/api/v1/auth/keys",
-      keyName: "PenguinHarness",
-    },
   },
   {
     id: "zhipu",
@@ -271,24 +303,135 @@ function usd(cacheRead: number, cacheWrite: number, output: number): ModelPricin
 }
 
 /**
+ * A weekly peak/off-peak billing schedule, written in a fixed-offset zone.
+ *
+ * Only fixed offsets are expressible, which is the whole of what the catalog needs: the vendors
+ * that bill this way publish their windows in a single national zone that does not observe DST
+ * (Beijing is UTC+8 year round). A vendor on a DST zone would need a real tz database, and the
+ * honest move then is to add one rather than to approximate.
+ */
+export interface OffPeakDiscount {
+  /** Fraction off the peak price outside the windows below (0.5 = half price). */
+  rate: number;
+  /** Minutes east of UTC the windows are written in (Beijing = 480). */
+  utcOffsetMinutes: number;
+  /** Days the windows apply to, ISO numbering: 1 = Monday … 7 = Sunday. Days not listed are off-peak all day. */
+  peakDays: readonly number[];
+  /** Peak windows as [startHour, endHour) in the zone's local hours — end-exclusive, so 12:00 is already off-peak. */
+  peakHours: readonly (readonly [number, number])[];
+}
+
+/**
+ * Whether `now` falls outside every peak window, i.e. whether the discount is live.
+ *
+ * Computed in UTC arithmetic rather than through the host's local time: the schedule belongs to
+ * the vendor's zone, and a server in Los Angeles must reach the same answer as one in Shanghai.
+ */
+export function offPeakAt(schedule: OffPeakDiscount, now: Date): boolean {
+  const local = new Date(now.getTime() + schedule.utcOffsetMinutes * 60_000);
+  // getUTCDay is 0 = Sunday; the ISO numbering the schedule uses puts Sunday at 7.
+  const isoDay = local.getUTCDay() === 0 ? 7 : local.getUTCDay();
+  if (!schedule.peakDays.includes(isoDay)) return true;
+  const hour = local.getUTCHours() + local.getUTCMinutes() / 60;
+  return !schedule.peakHours.some(([from, to]) => hour >= from && hour < to);
+}
+
+/** DeepSeek's official off-peak tier: half price outside Beijing weekday 09:00–12:00 and 14:00–18:00. */
+export const DEEPSEEK_OFF_PEAK: OffPeakDiscount = {
+  rate: 0.5,
+  utcOffsetMinutes: 480,
+  peakDays: [1, 2, 3, 4, 5],
+  peakHours: [
+    [9, 12],
+    [14, 18],
+  ],
+};
+
+/**
+ * The catalog's time-based schedules, each with the references that carry it.
+ *
+ * The cost center needs this to split an aggregation by tier before it prices anything: the
+ * rate a request ran at is a fact about when it ran, and only the catalog knows which rows have
+ * two rates at all. Grouped by schedule so a second vendor's windows cost one entry, not a
+ * second query.
+ */
+export function offPeakScheduledRefs(): Array<{
+  schedule: OffPeakDiscount;
+  refs: Array<{ provider: string; modelId: string }>;
+}> {
+  const bySchedule = new Map<
+    OffPeakDiscount,
+    { schedule: OffPeakDiscount; refs: Array<{ provider: string; modelId: string }> }
+  >();
+  for (const entry of MODEL_CATALOG) {
+    const schedule = entry.offPeakDiscount;
+    if (schedule === undefined) continue;
+    const group = bySchedule.get(schedule) ?? { schedule, refs: [] };
+    group.refs.push({ provider: entry.provider, modelId: entry.modelId });
+    bySchedule.set(schedule, group);
+  }
+  return [...bySchedule.values()];
+}
+
+/**
+ * What the seller actually bills for an entry: its list `pricing` less any running `discount`,
+ * on every bucket. Rounded to the six decimals cny() already stores at, so a promotional rate is
+ * written into a Project as a price rather than as a float artifact. An entry with no discount
+ * (or no pricing at all) is returned untouched.
+ *
+ * A row on a SCHEDULE is a deliberate exception: `presetModelEntries` writes its peak price,
+ * because which tier a request ran in is decided from that request's own timestamp when the
+ * usage is aggregated, not from what a Project happened to store.
+ */
+export function effectivePricing(
+  entry: ModelCatalogEntry,
+  now: Date = new Date(),
+): ModelPricing | undefined {
+  const { pricing } = entry;
+  if (pricing === undefined) return pricing;
+  // A scheduled discount bills the list price during its peak windows and the reduced rate
+  // outside them; a flat one always bills the reduced rate.
+  const rate =
+    entry.offPeakDiscount !== undefined
+      ? offPeakAt(entry.offPeakDiscount, now)
+        ? entry.offPeakDiscount.rate
+        : 0
+      : entry.discount;
+  if (rate === undefined || rate === 0) return pricing;
+  const off = (v: number): number => Math.round(v * (1 - rate) * 1e6) / 1e6;
+  return {
+    unit: pricing.unit,
+    cache_read: off(pricing.cache_read),
+    cache_write: off(pricing.cache_write),
+    output: off(pricing.output),
+  };
+}
+
+/**
  * Built-in model catalog, clustered by provider. Within each provider, entries are in
  * dictionary order by model id, except that newer versions of the same series come first
  * (e.g. gpt-5.6-* before gpt-5.5, claude-opus-4.8 before 4.7, glm-5.2 before glm-5). The
  * order is precomputed by hand right here — no runtime sorting anywhere.
+ *
+ * The clusters run in their own sequence, which is the row order a new Project's
+ * `[[models]]` table is written in. It is not MODEL_PROVIDERS' display order and does not
+ * have to track it: nothing renders a catalog row outside its provider group, and the page
+ * takes the group sequence from MODEL_PROVIDERS.
  */
 export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // -- DeepSeek (official CNY pricing: cache hit / cache miss / output). Re-read 2026-08-18
   // from api-docs.deepseek.com/quick_start/pricing after the official price increase
-  // introduced time-based tiers: the rows store the OFF-PEAK tier (the lower published
-  // price, issue #313's display choice); peak hours (Beijing 9:00-12:00 and 14:00-18:00)
-  // bill exactly double every bucket, so peak usage is underestimated 2x (same single-rate
-  // limitation as the long-context surcharges in the file header). --
+  // introduced time-based tiers. The rows store the PEAK tier and declare
+  // DEEPSEEK_OFF_PEAK, which halves every bucket outside Beijing weekday 09:00-12:00 and
+  // 14:00-18:00 — so both tiers are billed at the rate actually in force, rather than one of
+  // them being approximated by the other. --
   {
     modelId: "deepseek-v4-flash",
     displayName: "DeepSeek V4 Flash",
     provider: "deepseek",
     contextWindow: 1000000,
-    pricing: cny(0.05, 1.5, 4.5),
+    pricing: cny(0.1, 3, 9),
+    offPeakDiscount: DEEPSEEK_OFF_PEAK,
     supportsVision: false,
   },
   {
@@ -298,7 +441,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     displayName: "DeepSeek V4 Flash Vision Exp",
     provider: "deepseek",
     contextWindow: 1000000,
-    pricing: cny(0.05, 1.5, 4.5),
+    pricing: cny(0.1, 3, 9),
+    offPeakDiscount: DEEPSEEK_OFF_PEAK,
     supportsVision: true,
   },
   {
@@ -306,7 +450,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     displayName: "DeepSeek V4 Pro",
     provider: "deepseek",
     contextWindow: 1000000,
-    pricing: cny(0.15, 4.5, 13.5),
+    pricing: cny(0.3, 9, 27),
+    offPeakDiscount: DEEPSEEK_OFF_PEAK,
     supportsVision: false,
   },
   // -- OpenRouter (gateway: OpenAI-compatible protocol, preset base URL). Prices re-read in
@@ -693,6 +838,21 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
+    // Tencent's Hy4 preview, read 2026-08-28 from its OpenRouter page and the models API:
+    // $0.834 input / $2.501 output with a published $0.042 input_cache_read, a 1,048,576
+    // context window, and text-only modalities in and out. The same upstream model is sold
+    // in the TokenDance group at that gateway's own CNY rate; the two rows are priced by
+    // their sellers and are not copies of one another.
+    modelId: "tencent/hy4-preview",
+    displayName: "Hy4 preview",
+    provider: "openrouter",
+    contextWindow: 1048576,
+    pricing: usd(0.042, 0.834, 2.501),
+    supportsVision: false,
+    clientType: "openai-chat",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
     modelId: "tencent/hy3",
     displayName: "Hy3",
     provider: "openrouter",
@@ -945,28 +1105,35 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     clientType: "openai-chat",
     baseUrl: SILICONFLOW_BASE_URL,
   },
-  // -- TokenDance (gateway: OpenAI-compatible protocol, preset base URL). Context windows and
-  // vision flags from the public catalog API (GET https://tokendance.space/gateway/v1/models,
-  // no credential required); prices are the gateway's own CNY rates from each model's detail
-  // page, read 2026-08-25 (the detail pages need a signed-in session, so they cannot be
-  // re-read anonymously). TokenDance publishes an input price and a cache-hit price with no
-  // separate cache-write fee, so cache_write carries the input price.
+  // -- TokenDance (gateway: OpenAI-compatible protocol, preset base URL). Context windows,
+  // vision flags and supported protocols from the public catalog API (GET
+  // https://tokendance.space/gateway/v1/models, no credential required; re-read 2026-08-28);
+  // prices are the gateway's own CNY rates from each model's detail page, read 2026-08-25
+  // (the detail pages need a signed-in session, so they cannot be re-read anonymously).
+  // TokenDance publishes an input price and a cache-hit price with no separate cache-write
+  // fee, so cache_write carries the input price.
   //
   // Discounts: every row here stores the official LIST price, the convention of the two Qwen
-  // groups below. Two promotions are running, so the group currently over-states what those
-  // two rows really cost: glm-5.3-flash is on a 2-week 50% off (running at the 2026-08-26
-  // read, so it ends by 2026-09-09 at the latest — 2x the billed rate until then), and
-  // qwen3.8-max on a limited-time 20% off with no published end date (1.25x). Both are
-  // machine-checkable without a credential: the catalog API opens a discounted model's
-  // `description` with a bracketed 限时 ("limited-time") tag naming the rate, so the same
-  // anonymous request the context windows come from also says which promotions still run.
-  // No other row is discounted, so list price and billed rate coincide for the rest. --
+  // groups below, and a promoted row declares its rate in `discount` rather than having its
+  // price rewritten — a promotion that lapses is then one field to delete, with the rate to
+  // return to still on the row. effectivePricing() applies it and presetModelEntries writes
+  // that billed rate into a Project, so the cost center charges what the gateway charges.
+  // Six rows are promoted: deepseek-v4-flash-0731, deepseek-v4-pro-0813 and glm-5.3-flash at
+  // 50% off, kimi-k3 at 20%, glm-5.3 and qwen3.8-max at 10%. The rest carry no discount, so
+  // for them list price and billed rate coincide.
+  //
+  // A running promotion usually also shows up without a credential: the catalog API opens
+  // such a model's `description` with a bracketed 限时 ("limited-time") tag, so the same
+  // anonymous request the context windows come from is a cheap first check on whether one is
+  // still live. It is neither exhaustive nor authoritative on the rate — the rates above are
+  // the ones the seller confirmed. --
   {
     modelId: "deepseek-v4-flash-0731",
     displayName: "DeepSeek V4 Flash 0731",
     provider: "tokendance",
     contextWindow: 1048576,
-    pricing: cny(0.05, 1.5, 4.5),
+    pricing: cny(0.1, 3, 9),
+    discount: 0.5,
     supportsVision: false,
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
@@ -986,7 +1153,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     displayName: "DeepSeek V4 Pro 0813",
     provider: "tokendance",
     contextWindow: 1000000,
-    pricing: cny(0.15, 4.5, 13.5),
+    pricing: cny(0.3, 9, 27),
+    discount: 0.5,
     supportsVision: false,
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
@@ -997,6 +1165,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     provider: "tokendance",
     contextWindow: 1000000,
     pricing: cny(2, 8, 28),
+    discount: 0.1,
     supportsVision: false,
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
@@ -1011,7 +1180,28 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     provider: "tokendance",
     contextWindow: 1000000,
     pricing: cny(0.23, 0.8, 2.8),
+    discount: 0.5,
     supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: TOKENDANCE_BASE_URL,
+  },
+  {
+    // The same upstream model as the OpenRouter `tencent/hy4-preview` row above, reached
+    // through a second seller: each row records what its own seller charges, so the two must
+    // not be made to agree (the qwen3.8-flash pair below states the same rule). TokenDance
+    // sells it at CNY 6 input / 18 output / 0.3 cache hit, undiscounted, over a 1,024,000
+    // context window — both figures its own, neither copied from the OpenRouter listing.
+    //
+    // Text-only: the catalog entry advertises no image modality, matching the OpenRouter
+    // listing's text-in/text-out. Its supported_protocols are openai:chat-completions and
+    // openai:responses, so the openai-chat pin is this group's convention rather than the
+    // only shape the id serves — unlike glm-5.3-flash above, where it is forced.
+    modelId: "hy4-preview",
+    displayName: "Hy4 preview",
+    provider: "tokendance",
+    contextWindow: 1024000,
+    pricing: cny(0.3, 6, 18),
+    supportsVision: false,
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
   },
@@ -1021,6 +1211,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     provider: "tokendance",
     contextWindow: 1048576,
     pricing: cny(2, 20, 100),
+    discount: 0.2,
     supportsVision: true,
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
@@ -1036,8 +1227,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     // it is forced. Natively multimodal per the catalog entry, and this group's openai-chat
     // client forwards image_url parts, so image input works on this path.
     //
-    // Not discounted: unlike qwen3.8-max below, its catalog `description` carries no
-    // bracketed 限时 tag, so list price and billed rate coincide.
+    // Undiscounted, so its list price and its billed rate coincide — unlike the
+    // qwen3.8-max row below, which is on 10% off.
     modelId: "qwen3.8-flash",
     displayName: "Qwen 3.8 Flash",
     provider: "tokendance",
@@ -1053,6 +1244,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     provider: "tokendance",
     contextWindow: 1000000,
     pricing: cny(1.5, 12, 36),
+    discount: 0.1,
     supportsVision: true,
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
@@ -1636,20 +1828,32 @@ export function fastModeProtocol(
  * always pin a client_type — openai-chat, or openai-responses for the OpenRouter openai/*
  * rows — and inline a preset base_url. The direct MiniMax M3 entry also pins its protocol and
  * endpoint. No secrets are included, so only an API key is needed.
+ *
+ * Pricing is written as the EFFECTIVE rate (effectivePricing: list less any running
+ * discount), not the list price the catalog records. A Project's stored pricing is the only
+ * thing the cost center ever prices against, so writing anything but what the seller bills
+ * would report a cost nobody was charged; the list price and the promotion that produced the
+ * difference stay in the catalog, where they can be read and restored.
  */
 export function presetModelEntries(): ModelEntry[] {
-  return MODEL_CATALOG.map((m) => ({
-    provider: m.provider,
-    model_id: m.modelId,
-    ...(m.contextWindow !== undefined ? { context_window: m.contextWindow } : {}),
-    ...(m.clientType !== undefined ? { client_type: m.clientType } : {}),
-    ...(m.pricing ? { pricing: { ...m.pricing } } : {}),
-    // ModelEntry.vision defaults to supported: only models that don't support images
-    // explicitly persist false (drives the read_image / describe_image choice and input
-    // image hand-off, see project-config.ts).
-    ...(m.supportsVision ? {} : { vision: false }),
-    ...(m.baseUrl !== undefined ? { base_url: m.baseUrl } : {}),
-  }));
+  return MODEL_CATALOG.map((m) => {
+    // A scheduled discount writes the PEAK price, which is the same number whatever hour the
+    // Project is created or re-synced in. What is on disk has to be stable: the off-peak rate
+    // is applied when the price is read, by the models page and by the cost center alike.
+    const pricing = m.offPeakDiscount !== undefined ? m.pricing : effectivePricing(m);
+    return {
+      provider: m.provider,
+      model_id: m.modelId,
+      ...(m.contextWindow !== undefined ? { context_window: m.contextWindow } : {}),
+      ...(m.clientType !== undefined ? { client_type: m.clientType } : {}),
+      ...(pricing ? { pricing: { ...pricing } } : {}),
+      // ModelEntry.vision defaults to supported: only models that don't support images
+      // explicitly persist false (drives the read_image / describe_image choice and input
+      // image hand-off, see project-config.ts).
+      ...(m.supportsVision ? {} : { vision: false }),
+      ...(m.baseUrl !== undefined ? { base_url: m.baseUrl } : {}),
+    };
+  });
 }
 
 /**

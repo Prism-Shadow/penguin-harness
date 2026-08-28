@@ -1139,8 +1139,8 @@ const zh: Messages = {
     addNoFastMode: "关闭快速模式（缺省即关闭）；两者都不给则保留原值",
     fastModeUnsupported: (ref: string): string =>
       `警告：${ref} 不支持快速模式——AgentHub 为它选用的 client 会拒绝该参数，其请求都会失败。请用 --no-fast-mode 重新执行以关闭。`,
-    addPriceCacheRead: "每百万 token 价格：缓存读取（USD）",
-    addPriceCacheWrite: "每百万 token 价格：缓存写入（USD）",
+    addPriceCacheRead: "每百万 token 价格：缓存命中（USD）",
+    addPriceCacheWrite: "每百万 token 价格：缓存未命中（USD）",
     addPriceOutput: "每百万 token 价格：输出（USD）",
     addSetDefault: "同时设为该 Project 的默认模型",
     defaultDesc: "设置 Project 的默认模型",

@@ -772,6 +772,8 @@ export function buildAppDeps(
   const usageService = new UsageService(
     usageRepo,
     errorsRepo,
+    // No clock here: a scheduled row's two rates come back together and each aggregation half
+    // is priced at the tier its own records ran in, which the query decides from their `ts`.
     (projectId, provider, modelId) => projectConfigService.getPricing(projectId, provider, modelId),
     overrides.now ?? (() => new Date()),
   );

@@ -45,6 +45,13 @@ describe("humanizeTokens", () => {
     expect(humanizeTokens(2_000_000)).toBe("2M");
   });
 
+  it("billions abbreviated — a lifetime model total reaches them", () => {
+    expect(humanizeTokens(1_000_000_000)).toBe("1B");
+    expect(humanizeTokens(17_700_000_000)).toBe("17.7B");
+    // The boundary belongs to M, so the two tiers cannot both claim it.
+    expect(humanizeTokens(999_900_000)).toBe("999.9M");
+  });
+
   it("negatives keep the sign (context shrink)", () => {
     expect(humanizeTokens(-1200)).toBe("-1.2k");
     expect(humanizeTokens(-500)).toBe("-500");

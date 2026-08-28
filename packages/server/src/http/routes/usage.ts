@@ -8,7 +8,8 @@
  * GET /api/projects/:p/usage/errors?offset&limit&from&to&agentId&kind — one page of the error
  * detail table, for paging back past the first page the dashboard already returns;
  * DELETE /api/projects/:p/usage/errors?from&to&agentId — empties that table for the filter
- * the panel is showing (owner only).
+ * the panel is showing (owner only);
+ * GET /api/projects/:p/usage/model-totals — lifetime Token total per Model, unfiltered.
  */
 import { Hono } from "hono";
 import type {
@@ -87,6 +88,16 @@ export function usageRoutes(deps: AppDeps): Hono<AppEnv> {
         ...(modelId !== undefined && modelId !== "" ? { modelId } : {}),
       }),
     );
+  });
+
+  // Lifetime Token total per Model, for the models page's per-card figure. Takes no filters at
+  // all: the number answers "how much has this model been used", which has no range, and the
+  // page showing it offers none. One grouped scan, so it stays a cheap second request rather
+  // than a reason to widen the models response with telemetry.
+  app.get("/model-totals", (c) => {
+    const projectId = requireValidId(c, "projectId");
+    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    return c.json(deps.usageService.modelTotals(projectId));
   });
 
   // One page of the error detail table, newest first. The dashboard response above already

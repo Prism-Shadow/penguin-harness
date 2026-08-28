@@ -59,6 +59,8 @@ The local server suite drops a few tests under full parallel load — they time 
 
 Once the evidence you chose passes, commit and push to the current branch without asking. Force-pushes and reverting someone else's commits still need confirmation.
 
+**On a conflicting PR, waiting for CI is waiting for nothing.** The workflows run against the merge commit GitHub builds from the branch and `main`, and it does not build one while the two conflict — the checks never start, so polling `statusCheckRollup` returns the same pending or empty list forever. Read the state before the checks: `gh pr view <n> --json mergeable,mergeStateStatus` answers `CONFLICTING` / `DIRTY`. Merge `origin/main` into the branch, resolve, push, and only then expect checks. Two more things that pass silently and are worth checking in the same pass: an auto-merged file is not a correct file, so read the merged result where two PRs touched one region; and a test constant pinned to a count the other PR changed fails for a reason that has nothing to do with either change — derive the count instead of re-pinning it.
+
 ## Record and ship
 
 Every change ships a changelog entry, in both languages, in `changelog/unreleased/`:
@@ -97,6 +99,8 @@ Release screenshots are captured, not mocked up: drive the app through the Playw
 
 - Pricing is three buckets in USD per million tokens: `cache_read` (the vendor's cache-hit price), `cache_write` (the vendor's cache-write price, or the standard input price where the vendor charges no write premium), `output`. `cny(...)` converts official CNY list prices at the 7:1 display convention.
 - A vendor with **tiered** pricing gets its base tier recorded, and the tier boundary noted in the section comment — OpenAI above 272K input, Gemini 3.1 Pro above 200K, MiniMax M3 above 512K. Long-context use is then knowingly under-costed; that is the convention, not an oversight.
+- A **promotion** is a `discount` fraction beside the list `pricing`, never a discounted number written into `pricing`: `effectivePricing()` derives the billed rate, and a lapsed promotion is one field to delete with the rate to return to still on the row. `presetModelEntries()` writes the effective rate, so what a Project stores is what the gateway charges.
+- A **time-based** tier is an `offPeakDiscount` schedule instead, and it is never baked into a Project. The row stores its peak price, and the cost center decides the tier from each usage record's own `ts` — the aggregation splits by tier before pricing. Deciding it at read time instead would move a finished week's cost every time the boundary passed.
 - Uniqueness is the `(provider, model_id)` pair, never the bare id — gateways resell vendor models under their upstream ids.
 - Set `client_type` only when the id cannot be auto-routed or a protocol must be pinned, and inline `baseUrl` with it. Everything else is auto-routed by AgentHub.
 - A provider group is split only when the vendor genuinely has separate endpoints or billing paths (Qwen Token Plan vs Pay-As-You-Go). One endpoint serving several key types is one group.

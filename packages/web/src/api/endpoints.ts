@@ -132,6 +132,7 @@ import type {
   UsageErrorsPage,
   UsageGranularity,
   UsageGroupBy,
+  UsageModelTotals,
   UsageResponse,
   VaultResponse,
   VaultUpdateRequest,
@@ -916,6 +917,14 @@ export const clearUsageErrors = (
       query: { from: params.from, to: params.to, agentId: params.agentId },
     },
   );
+
+/**
+ * Lifetime Token total per Model, unfiltered. The models page shows each card what it has
+ * spent; it is a separate request from the model list so a stats failure costs the figure and
+ * not the page.
+ */
+export const getUsageModelTotals = (projectId: string) =>
+  apiFetch<UsageModelTotals>(`/api/projects/${encodeURIComponent(projectId)}/usage/model-totals`);
 
 export const getUsage = (
   projectId: string,

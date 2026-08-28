@@ -151,7 +151,7 @@ function callTag(toolCallId: string, origin?: readonly MessageOrigin[]): string 
   return origin && origin.length > 0 ? `agent-${shortId(origin[origin.length - 1]!)}-${tid}` : tid;
 }
 
-/** Converts a token count to a human-readable abbreviation: 1234->1.2k, 1500000->1.5M, <1000 unchanged. */
+/** Converts a token count to a human-readable abbreviation: 1234->1.2k, 1500000->1.5M, 2e9->2B, <1000 unchanged. */
 export function humanizeTokens(n: number): string {
   const abs = Math.abs(n);
   if (abs < 1000) return `${n}`;
@@ -159,8 +159,12 @@ export function humanizeTokens(n: number): string {
     const v = n / 1000;
     return `${trimZero(v)}k`;
   }
-  const v = n / 1_000_000;
-  return `${trimZero(v)}M`;
+  if (abs < 1_000_000_000) {
+    const v = n / 1_000_000;
+    return `${trimZero(v)}M`;
+  }
+  const v = n / 1_000_000_000;
+  return `${trimZero(v)}B`;
 }
 
 /** Keeps one decimal place but drops a trailing `.0`. */

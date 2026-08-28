@@ -10,7 +10,7 @@
  *
  * The list is purely for "finding a model": grouped by vendor (group header = logo + vendor
  * name + count, collapsible), with one card per model within a group — the card shows only
- * the display name + upstream id + status badges (default / vision / proxy-read), while
+ * the display name + status badges (default / vision / proxy-read), while
  * context, pricing, and key status are folded into a single line of small text. Clicking a
  * card opens the config dialog (credentials, context, pricing, vision toggle, plus set as
  * default / set as vision model / delete); the "add model" entry point lives in each group
@@ -29,8 +29,8 @@
  * Saving does a PUT full-table replace (models not present are deleted; an empty apiKey
  * means keep the existing value); only the owner can edit.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { DragEvent as ReactDragEvent } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { DragEvent as ReactDragEvent, ReactNode } from "react";
 import type {
   CredentialInfo,
   ModelProtocolDetectRequest,
@@ -59,7 +59,6 @@ import { Segmented } from "../../components/ui/segmented";
 import { Select } from "../../components/ui/select";
 import { Switch } from "../../components/ui/switch";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
-import { Badge } from "../../components/ui/badge";
 import { Chevron } from "../../components/ui/chevron";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { ProviderLogo } from "../../components/ui/provider-logo";
@@ -78,6 +77,7 @@ import {
 import type { FastModeProtocol, ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
 import {
   allGroupKeys,
+  discountedPrice,
   groupModelRows,
   hasConfiguredKey,
   isFreeModel,
@@ -187,8 +187,11 @@ const TONE_CLASS: Record<SpeedTone, string> = {
   red: toneInk.danger,
 };
 
-/** In-page key for one model's speed result. */
-const speedKey = (provider: string, modelId: string) => `${provider}\u0000${modelId}`;
+/**
+ * In-page Map key for a paired reference — the same NUL-separated shape the server uses, and
+ * never persisted. Keys every per-model side table the page holds: speed results, spend totals.
+ */
+const refMapKey = (provider: string, modelId: string) => `${provider}\u0000${modelId}`;
 
 /** Default context window (tokens) for custom models when left unset. */
 const CUSTOM_CONTEXT_DEFAULT = 128000;
@@ -367,6 +370,72 @@ export function keyStatusText(row: RowState): string {
   if (row.credential?.apiKeyMasked && !row.clearApiKey) return row.credential.apiKeyMasked;
   if (row.apiKeyInput.trim() !== "") return S.models.keyConfigured;
   return row.envKeyMasked ?? S.models.keyConfigured;
+}
+
+/**
+ * A counter that advances on every clock hour, for prices that change with the time of day.
+ *
+ * DeepSeek's off-peak rate starts and ends on the hour, and every window a catalog schedule can
+ * express is hour-aligned, so waking once an hour is enough to keep a card honest — a page left
+ * open at 08:59 would otherwise still be promising half price at 09:05. It re-aims at the next
+ * hour each time rather than running on a fixed interval, so it neither drifts nor fires 60
+ * times to catch one transition.
+ */
+function useHourTick(): number {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const schedule = (): void => {
+      const now = new Date();
+      const next = new Date(now);
+      next.setMinutes(0, 0, 0);
+      next.setHours(next.getHours() + 1);
+      timer = setTimeout(() => {
+        setTick((n) => n + 1);
+        schedule();
+      }, next.getTime() - now.getTime());
+    };
+    schedule();
+    return () => clearTimeout(timer);
+  }, []);
+  return tick;
+}
+
+/**
+ * What to call a model in prose — its display name, or its upstream id when it has none.
+ *
+ * The blank test is `trim()`, not `!== undefined`: the display name is optional and the dialog
+ * clears it to an empty string, so `displayName ?? modelId` would quote an empty name back at
+ * the user — which is how a save confirmation came to read 「」.
+ */
+export function modelLabelOf(displayName: string | undefined, modelId: string): string {
+  return displayName?.trim() || modelId;
+}
+
+/**
+ * What to store for one price bucket on submit: the value as typed, or — when the field still
+ * holds exactly what was loaded into it — the stored number byte for byte.
+ *
+ * Loading rounds the stored USD to four decimals so it is typeable (`usdToInput`), so
+ * re-encoding an untouched field would commit that rounding as the new price: a silent edit of
+ * a number nobody changed. Small, but not nothing — a catalog row billed at CNY 0.05 per
+ * million lands on $0.0071 instead of $0.00714285…, enough to move a promoted row off the
+ * figure its seller bills and drop the discount mark that says so. Editing the field is what
+ * makes the typed value authoritative.
+ */
+export function priceToSubmit(
+  formValue: string,
+  storedUsd: string | undefined,
+  currency: Currency,
+): string {
+  if (
+    storedUsd !== undefined &&
+    storedUsd !== "" &&
+    formValue.trim() === usdToInput(storedUsd, currency)
+  ) {
+    return storedUsd;
+  }
+  return inputToUsd(formValue, currency);
 }
 
 /** DTO -> row edit state (exported for unit tests): provider and modelId are both entry fields, never decomposed. */
@@ -614,6 +683,15 @@ export function ModelsPage() {
   // Currency follows the user setting (toggled in sidebar settings).
   const { currency } = useTheme();
 
+  /**
+   * Lifetime Token total per model, keyed by the paired reference. Fetched on its own rather
+   * than folded into the model list: it is telemetry hanging off a configuration page, and a
+   * stats failure must cost the figure, not the page — so the failure path just leaves the map
+   * empty and every card renders without its number.
+   */
+  const [usedTokens, setUsedTokens] = useState<Map<string, number>>(new Map());
+  const hourTick = useHourTick();
+
   const load = useCallback(async () => {
     if (!projectId) return;
     setRows(null);
@@ -629,6 +707,16 @@ export function ModelsPage() {
       setVisionModel(res.visionModel);
     } catch (e) {
       setLoadError(apiErrorText(e));
+    }
+    try {
+      const totals = await api.getUsageModelTotals(projectId);
+      setUsedTokens(
+        new Map(totals.totals.map((t) => [refMapKey(t.provider, t.modelId), t.tokens])),
+      );
+    } catch {
+      // Fail-soft, and deliberately silent: the page's job is configuring models, and a figure
+      // that could not be read is shown as absent rather than as an error the user cannot act on.
+      setUsedTokens(new Map());
     }
   }, [projectId]);
 
@@ -736,7 +824,7 @@ export function ModelsPage() {
     setSpeedRunning(providerId);
     try {
       for (const row of targets) {
-        const key = speedKey(row.provider, row.modelId);
+        const key = refMapKey(row.provider, row.modelId);
         setSpeedResults((prev) => new Map(prev).set(key, "pending"));
         try {
           const res = await api.testModel(projectId, {
@@ -1026,15 +1114,46 @@ export function ModelsPage() {
                           provider={group.provider.id}
                           className="h-5 w-5 shrink-0 text-gray-700 dark:text-gray-300"
                         />
-                        {/* Vendor name can truncate (min-w-0): the actions on the right must not
-                          shrink, otherwise on narrow screens it would get pushed out of the
-                          button box and overlap the action text. */}
+                        {/* The vendor name is the only thing in this row allowed to take the
+                            remaining space, and the only one that truncates. Giving it a
+                            minimum width is what made a narrow row overlap: the items beside
+                            it never shrink, so once their widths plus that floor exceeded the
+                            button, the whole group overflowed the box and ran under the
+                            actions. The floor is gone; what gives way instead is the two marks
+                            after it, which drop out on a narrow row (below, and the actions'
+                            labels do the same at @3xl). The name then always has the leftovers
+                            to itself and truncates inside them, so nothing can overlap. */}
                         <span className="min-w-0 truncate text-sm font-semibold">
                           {group.provider.label}
                         </span>
-                        <span className="shrink-0 whitespace-nowrap font-mono text-xs text-gray-400">
+                        <span className="hidden shrink-0 whitespace-nowrap font-mono text-xs text-gray-400 @xl:inline">
                           {S.models.modelCount(group.rows.length)}
                         </span>
+                        {/* The recommendation rides the collapse bar itself, so it is read with
+                            the group's name rather than as a caption floating above the
+                            section. `shrink-0` keeps it whole: the vendor name beside it is
+                            the element allowed to truncate on a narrow page. */}
+                        {group.provider.recommended && (
+                          // Not a `Badge`: its `brand` tone is deliberately gray — neutral
+                          // emphasis outside the status vocabulary — and an endorsement is
+                          // neither a status nor neutral, which is the category tone.ts keeps
+                          // out on purpose. Unfilled, like the card marks below it: an outline
+                          // is enough to make it a pill, and a block of colour on the collapse
+                          // bar competes with the vendor name it is endorsing. It holds on
+                          // longer than the model count beside it and gives way before the
+                          // name does.
+                          //
+                          // Gold, and the darker end of it: `yellow-700` (#a16207) is the last
+                          // rung that still clears 4.5:1 against this bar's gray-50 — 11px bold
+                          // is not WCAG "large text", so the brighter golds above it are not
+                          // available in light mode. Dark mode takes yellow-400, the bright
+                          // gold, which clears it comfortably on this app's near-black. The
+                          // ring is the text's own hue at 40%, in both themes: a ring brighter
+                          // than the words it encloses reads as a highlighter, not as gold.
+                          <span className="hidden shrink-0 whitespace-nowrap rounded-full border border-yellow-700/40 px-2 py-0.5 text-[11px] font-semibold text-yellow-700 @lg:inline dark:border-yellow-400/40 dark:text-yellow-400">
+                            {S.models.recommendedGroup}
+                          </span>
+                        )}
                       </button>
                       {isOwner && (
                         // Add-model entry point: present on every group header (including
@@ -1183,7 +1302,9 @@ export function ModelsPage() {
                                 currency={currency}
                                 isDefault={sameModelRef(rowRef(row), defaultModel)}
                                 isVisionModel={sameModelRef(rowRef(row), visionModel)}
-                                speed={speedResults.get(speedKey(row.provider, row.modelId))}
+                                speed={speedResults.get(refMapKey(row.provider, row.modelId))}
+                                usedTokens={usedTokens.get(refMapKey(row.provider, row.modelId))}
+                                hourTick={hourTick}
                                 onOpen={() => setEditing(rowRef(row))}
                               />
                             ))
@@ -1729,7 +1850,36 @@ function AddGroupDialog({
 // ---------------------------------------------------------------------------
 
 /**
- * Card: display name + upstream id + status badges; context / pricing / key status folded
+ * Card tag palette. Every mark wears one small neutral pill — the same faint surface and border
+ * whatever it says — and the hue survives only in the text. Six marks filling six coloured
+ * chips turned a row of tags into confetti; on a page whose job is scanning names, the marks
+ * are meant to be noticed second.
+ *
+ * Three inks, so the row groups instead of enumerating: what the model IS (its default status),
+ * what it CAN do, and what it COSTS. Identity is carried by the words in every case — the ink
+ * only sorts them at a glance, and never alone says which mark this is.
+ *
+ * These are identities, not judgements, which is why they are spelled here instead of in
+ * `lib/tone.ts`, whose five tones each rate a thing's state — the same reason
+ * `category-colors.ts` and `update-dot.tsx` keep their own colours. Contrast against the
+ * surfaces a card sits on (white and gray-50 in light; this app's overridden gray-950 `#000000`
+ * and gray-900 `#0d0d0d` in dark) clears 4.5:1 for every ink; the shared border is decorative,
+ * so it is not held to 3:1.
+ */
+/** The pill itself: no fill at all, so a row of marks sits on the card rather than on top of it. */
+const TAG_SHAPE =
+  "whitespace-nowrap rounded-full border border-gray-200 px-1.5 text-[10px] font-medium leading-[15px] dark:border-gray-700";
+const TAG_INK = {
+  /** This model's standing in the Project. */
+  status: "text-brand-700 dark:text-brand-300",
+  /** What it can do. */
+  capability: "text-emerald-700 dark:text-emerald-400",
+  /** What it costs. */
+  price: "text-amber-700 dark:text-amber-400",
+} as const;
+
+/**
+ * Card: display name + lifetime Token spend + status badges; context / pricing / key status folded
  * into one line of small text; group speed-test results (TTFT / TPS, tone-colored) ride the
  * title row's right edge. The whole card is clickable (the model homepage link lives in the
  * config dialog).
@@ -1740,6 +1890,8 @@ function ModelCard({
   isDefault,
   isVisionModel,
   speed,
+  usedTokens,
+  hourTick,
   onOpen,
 }: {
   row: RowState;
@@ -1747,19 +1899,118 @@ function ModelCard({
   isDefault: boolean;
   isVisionModel: boolean;
   speed?: SpeedResult | "pending";
+  /** Lifetime Tokens spent on this model; absent for a model that has never run. */
+  usedTokens?: number;
+  /** Bumped on the hour (see useHourTick): the cue to re-read a time-of-day price. */
+  hourTick: number;
   onOpen: () => void;
 }) {
   const priced = row.cacheRead || row.cacheWrite || row.output;
-  const meta = [
+  /**
+   * A promoted catalog row. `discountedPrice` returns nothing once the price has been edited
+   * away from the catalog's, and nothing for a row on a time-of-day schedule while it is inside
+   * its peak windows — at peak it is simply at list price, which is what is stored.
+   *
+   * `hourTick` is in the dependency list for that second case: a scheduled row's price changes
+   * on the hour with nobody touching the page, and a card left open would otherwise keep
+   * printing a rate that stopped applying.
+   */
+  const discount = useMemo(() => discountedPrice(row), [row, hourTick]);
+  // The buckets to print: what the seller bills right now. They differ from the stored numbers
+  // only for a scheduled discount, whose stored price is the peak one.
+  const shownPrice = discount
+    ? {
+        cacheRead: String(discount.billed.cacheRead),
+        cacheWrite: String(discount.billed.cacheWrite),
+        output: String(discount.billed.output),
+      }
+    : { cacheRead: row.cacheRead, cacheWrite: row.cacheWrite, output: row.output };
+  /**
+   * Every standing mark this row carries, in one horizontal row of its own.
+   *
+   * They had been sharing the title's line, where each was width the model's NAME had to give
+   * up — a long name truncated to make room for a mark that could have been read anywhere. A
+   * row of their own costs one line and gives the name the whole of the first.
+   *
+   * Order is fixed rather than by which happen to be true, so the eye can learn where to look:
+   * what this Project chose (default, vision proxy) before what the model is (vision, fast,
+   * free) before what it costs today (the discount).
+   */
+  const tags: Array<{ key: string; label: string; title?: string; className: string }> = [
+    ...(isDefault
+      ? [
+          {
+            key: "default",
+            label: S.models.default,
+            className: TAG_INK.status,
+          },
+        ]
+      : []),
+    ...(row.vision
+      ? [
+          {
+            key: "vision",
+            label: S.models.visionBadge,
+            className: TAG_INK.capability,
+          },
+        ]
+      : []),
+    ...(isVisionModel
+      ? [
+          {
+            key: "visionModel",
+            label: S.models.visionModelBadge,
+            className: TAG_INK.capability,
+          },
+        ]
+      : []),
+    ...(row.fastMode
+      ? [
+          {
+            key: "fastMode",
+            label: S.models.fastModeBadge,
+            className: TAG_INK.capability,
+          },
+        ]
+      : []),
+    ...(isFreeModel(row)
+      ? [
+          {
+            key: "free",
+            label: S.models.freeBadge,
+            className: TAG_INK.price,
+          },
+        ]
+      : []),
+    ...(discount
+      ? [
+          {
+            key: "discount",
+            label: S.models.discountBadge(discount.percent),
+            title: discount.scheduled
+              ? S.models.offPeakTitle(discount.percent)
+              : S.models.discountTitle(discount.percent),
+            className: TAG_INK.price,
+          },
+        ]
+      : []),
+  ];
+
+  const priceLine = (a: string, b: string, c: string): string =>
+    `${displayPrice(a, currency)} / ${displayPrice(b, currency)} / ${displayPrice(c, currency)}`;
+  const meta: ReactNode[] = [
     row.contextWindow ? humanizeTokens(Number(row.contextWindow)) : null,
     // Three prices (cache read / cache write / output); units are explained in the config dialog, not repeated on the card.
-    priced
-      ? `${displayPrice(row.cacheRead, currency)} / ${displayPrice(row.cacheWrite, currency)} / ${displayPrice(row.output, currency)}`
-      : null,
+    // One price, the one being billed right now. What the row would cost without the promotion
+    // answers no question a reader of this list is asking, and spending the meta line's width
+    // on it pushes out the figures that do.
+    priced ? (
+      <span>{priceLine(shownPrice.cacheRead, shownPrice.cacheWrite, shownPrice.output)}</span>
+    ) : null,
     // Key status (see keyStatusText): the stored mask, a detected env fallback's mask, a plain
     // "configured" for a key typed but not yet saved, or "not configured".
     keyStatusText(row),
-  ].filter((v): v is string => v !== null);
+  ].filter((v) => v !== null);
 
   const speedBadges =
     speed === "pending" ? (
@@ -1799,35 +2050,51 @@ function ModelCard({
     <button
       type="button"
       onClick={onOpen}
-      className="flex w-full flex-col gap-0.5 rounded-md border border-gray-200 px-3 py-2.5 text-left transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:hover:border-gray-700 dark:hover:bg-gray-800/40"
+      className="flex w-full flex-col gap-1 rounded-md border border-gray-200 px-3 py-2.5 text-left transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:hover:border-gray-700 dark:hover:bg-gray-800/40"
     >
-      <span className="flex flex-wrap items-center gap-1.5">
-        <span className="text-sm font-medium">{row.displayName ?? row.modelId}</span>
-        {isDefault && <Badge tone="brand">{S.models.default}</Badge>}
-        {/* Free rows (all three price buckets 0, e.g. :free variants / openrouter/free): a
-            light-yellow badge so zero-cost models stand out at a glance (informational, kept
-            distinct from the amber warning tone the proxy-vision badge uses). */}
-        {isFreeModel(row) && <Badge tone="yellow">{S.models.freeBadge}</Badge>}
-        {row.vision && <Badge tone="green">{S.models.visionBadge}</Badge>}
-        {isVisionModel && <Badge tone="amber">{S.models.visionModelBadge}</Badge>}
-        {/* Fast mode moves the model onto a premium price list that the recorded prices do not
-            reflect, so it has to be visible without opening the dialog (amber, like the other
-            badge that flags a standing cost/behavior choice). */}
-        {row.fastMode && <Badge tone="amber">{S.models.fastModeBadge}</Badge>}
-      </span>
-      {/* Upstream id in small text (grouping already separates by group, no composite id is
-          shown anymore); when there's no display name, the main line is already the
-          upstream id, so it isn't repeated on a second line. */}
-      {row.displayName !== undefined && (
-        <span className="truncate font-mono text-[11px] text-gray-500 dark:text-gray-400">
-          {row.modelId}
+      {/* 1. What the model is called — the name alone. The upstream id used to share this row,
+          but it is a detail you go looking for rather than one you scan by, and it is a click
+          away in the config dialog; the width it was taking now belongs to the name. */}
+      <span className="flex w-full min-w-0 items-baseline gap-2">
+        <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
+          {modelLabelOf(row.displayName, row.modelId)}
         </span>
-      )}
-      {/* Meta line: the truncating text takes the flexible space; speed badges keep their own
+        {/* What this model has spent over its whole life, on the row's right edge. Recessive by
+            design — grey and a size below the meta line: it is context for a name you are
+            scanning past, not a figure the page is about. A model that has never run shows
+            nothing rather than a zero, which would read as a measurement instead of an
+            absence. */}
+        {usedTokens !== undefined && usedTokens > 0 && (
+          <span
+            className="shrink-0 text-[10px] tabular-nums text-gray-400 dark:text-gray-500"
+            title={S.models.usedTokensTitle}
+          >
+            {S.models.usedTokens(humanizeTokens(usedTokens))}
+          </span>
+        )}
+      </span>
+      {/* 2. Every standing mark, on one row of its own (see `tags`). The row is rendered even
+          when empty: most models carry no mark at all, and letting it collapse would leave the
+          grid ragged — cards in the same row of a two-column grid stretch to the tallest, so an
+          absent line shows up as uneven padding rather than as a shorter card. Its height is
+          the tags' own, so a card with marks and a card without are exactly as tall. */}
+      <span className="flex min-h-[17px] w-full flex-wrap items-center gap-1">
+        {tags.map((tag) => (
+          <span key={tag.key} title={tag.title} className={`${TAG_SHAPE} ${tag.className}`}>
+            {tag.label}
+          </span>
+        ))}
+      </span>
+      {/* 3. Meta line: the truncating text takes the flexible space; speed badges keep their own
           non-shrinking slot on the right so the numbers never wrap or get pushed out. */}
       <span className="flex w-full items-center gap-1.5">
         <span className="min-w-0 flex-1 truncate text-[11px] text-gray-400 dark:text-gray-500">
-          {meta.join(" · ")}
+          {meta.map((part, i) => (
+            <Fragment key={i}>
+              {i > 0 && " · "}
+              {part}
+            </Fragment>
+          ))}
         </span>
         {speedBadges}
       </span>
@@ -2224,6 +2491,8 @@ function ModelDialog({
   const suffixLabel =
     showProtocolPicker && protocolChoice === null ? S.models.protocolUnset : protocolPath;
 
+  const modelLabel = modelLabelOf(form.displayName, form.modelId);
+
   const validated = (): RowState | null => {
     const modelId = form.modelId.trim();
     const ref: ModelRefDto = { provider: form.provider, modelId };
@@ -2274,9 +2543,9 @@ function ModelDialog({
       // Custom models with an empty context window fall back to the default value (preset models left empty just mean "unknown", not auto-filled).
       contextWindow:
         !preset && !contextWindow ? String(CUSTOM_CONTEXT_DEFAULT) : form.contextWindow,
-      cacheRead: inputToUsd(form.cacheRead, currency),
-      cacheWrite: inputToUsd(form.cacheWrite, currency),
-      output: inputToUsd(form.output, currency),
+      cacheRead: priceToSubmit(form.cacheRead, row?.cacheRead, currency),
+      cacheWrite: priceToSubmit(form.cacheWrite, row?.cacheWrite, currency),
+      output: priceToSubmit(form.output, row?.output, currency),
     };
   };
 
@@ -2520,26 +2789,44 @@ function ModelDialog({
       }
     >
       <div className="space-y-3">
-        {/* Header: logo + display name + badges + upstream id (existing model); the model
-            homepage entry lives here as a small secondary button on the right (moved out of
-            the form body — it's a property of the model, not an input). */}
+        {/* Header: the logo, and beside it one line each for the name, the upstream id and the
+            marks. The marks used to share the name's line, where they pushed a long name into
+            wrapping under them and left the header two ragged lines tall; on a line of their
+            own the name keeps the width it needs. Same pills the cards wear, so the list and
+            the dialog agree about what a mark looks like. The model homepage entry stays a
+            small secondary button on the right — a property of the model, not an input. */}
         {!isNew && (
           <div className="flex items-center gap-2.5 rounded-md bg-gray-50 px-3 py-2 dark:bg-gray-800/60">
             <ProviderLogo
               provider={form.provider}
               className="h-6 w-6 shrink-0 text-gray-700 dark:text-gray-300"
             />
-            <div className="flex min-w-0 flex-1 flex-col">
-              <span className="flex flex-wrap items-center gap-1.5 text-sm font-medium">
-                {form.displayName ?? form.modelId}
-                {isDefault && <Badge tone="brand">{S.models.default}</Badge>}
-                {form.vision && <Badge tone="green">{S.models.visionBadge}</Badge>}
-                {isVisionModel && <Badge tone="amber">{S.models.visionModelBadge}</Badge>}
-              </span>
-              {/* Upstream id in small text: when there's no display name, the main line is already showing it, so don't repeat. */}
-              {form.displayName !== undefined && (
+            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <span className="truncate text-sm font-medium">{modelLabel}</span>
+              {/* Upstream id in small text: when there's no display name the line above is
+                  already showing it, so don't repeat. Tested on the trimmed value, not on
+                  `undefined`: clearing the field leaves an empty string, which is just as
+                  nameless. */}
+              {form.displayName?.trim() && (
                 <span className="truncate font-mono text-xs text-gray-500 dark:text-gray-400">
                   {form.modelId}
+                </span>
+              )}
+              {(isDefault || form.vision || isVisionModel) && (
+                <span className="flex flex-wrap items-center gap-1 pt-0.5">
+                  {isDefault && (
+                    <span className={`${TAG_SHAPE} ${TAG_INK.status}`}>{S.models.default}</span>
+                  )}
+                  {form.vision && (
+                    <span className={`${TAG_SHAPE} ${TAG_INK.capability}`}>
+                      {S.models.visionBadge}
+                    </span>
+                  )}
+                  {isVisionModel && (
+                    <span className={`${TAG_SHAPE} ${TAG_INK.capability}`}>
+                      {S.models.visionModelBadge}
+                    </span>
+                  )}
                 </span>
               )}
             </div>
@@ -3051,7 +3338,7 @@ function ModelDialog({
           }}
         >
           <p className="text-sm text-gray-700 dark:text-gray-300">
-            {CONFIRM_BODY[confirming](form.displayName ?? form.modelId)}
+            {CONFIRM_BODY[confirming](modelLabel)}
           </p>
         </ConfirmModal>
       )}

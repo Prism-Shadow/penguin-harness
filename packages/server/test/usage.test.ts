@@ -113,8 +113,13 @@ describe("usage-service (cost computed on the fly)", () => {
   /** Mutable pricing table: simulates a "price added later" — change the price after inserting a record, and the query reflects it immediately. */
   let pricing: Record<string, PricingRates | undefined>;
 
-  // The pricing lookup callback takes three params (projectId, provider, modelId): locates the price via the paired reference.
-  const lookup = async (_p: string, _provider: string, modelId: string) => pricing[modelId];
+  // The pricing lookup callback takes three params (projectId, provider, modelId): locates the
+  // price via the paired reference. These fixtures use models with no schedule, so both tiers
+  // are the one rate — a scheduled model's two tiers are exercised in the peak-split test below.
+  const lookup = async (_p: string, _provider: string, modelId: string) => {
+    const rates = pricing[modelId];
+    return rates === undefined ? undefined : { peak: rates, offPeak: rates };
+  };
 
   beforeEach(() => {
     db = openDatabase(":memory:");
@@ -145,6 +150,31 @@ describe("usage-service (cost computed on the fly)", () => {
       ...opts,
     });
   }
+
+  it("a scheduled model is priced per record, and the total does not move with the clock", async () => {
+    // The defect this pins: pricing the whole table at whichever tier is in force when the page
+    // is opened made a finished week's cost double at 09:00 Beijing and halve at 12:00. The tier
+    // is a fact about when each request ran, so it is decided from that record's own `ts`.
+    //
+    // 2026-08-31 is a Monday. 01:30Z is 09:30 in Beijing (peak); 12:00Z is 20:00 (off-peak).
+    const REF = { provider: "deepseek", modelId: "deepseek-v4-flash" };
+    insert("2026-08-31", { ...REF, ts: "2026-08-31T01:30:00.000Z" });
+    insert("2026-08-31", { ...REF, ts: "2026-08-31T12:00:00.000Z" });
+    pricing["deepseek-v4-flash"] = { cacheRead: 1, cacheWrite: 2, output: 4 };
+    const tiered = async () => ({
+      peak: { cacheRead: 1, cacheWrite: 2, output: 4 },
+      offPeak: { cacheRead: 0.5, cacheWrite: 1, output: 2 },
+    });
+    // One row's Tokens are cacheRead 10 / cacheWrite 1 / output 5, so the peak record costs
+    // (10*1 + 1*2 + 5*4)/1e6 and the off-peak one exactly half of that.
+    const peakCost = (10 * 1 + 1 * 2 + 5 * 4) / 1e6;
+    const expected = peakCost + peakCost / 2;
+    for (const at of ["2026-08-31T01:30:00Z", "2026-08-31T12:00:00Z", "2026-09-06T01:30:00Z"]) {
+      const svc = new UsageService(repo, new ErrorsRepo(db), tiered, () => new Date(at));
+      const res = await svc.query("p1", { groupBy: "date", from: "2026-08-31", to: "2026-08-31" });
+      expect(res.summary.total.cost, at).toBeCloseTo(expected, 10);
+    }
+  });
 
   it("summary cards: today / last 7 days / cumulative; Models without pricing flag hasUncosted", async () => {
     const now = new Date("2026-07-06T10:00:00");
@@ -309,12 +339,71 @@ describe("usage-service (cost computed on the fly)", () => {
   });
 });
 
+describe("usage-service model totals (unfiltered, for the models page)", () => {
+  let db: DatabaseSync;
+  let repo: UsageRepo;
+  let service: UsageService;
+  const lookup = async () => undefined;
+
+  beforeEach(() => {
+    db = openDatabase(":memory:");
+    repo = new UsageRepo(db);
+    service = new UsageService(repo, new ErrorsRepo(db), lookup);
+  });
+  afterEach(() => db.close());
+
+  function insert(date: string, opts: Partial<Parameters<UsageRepo["insert"]>[0]> = {}): void {
+    repo.insert({
+      ts: `${date}T00:00:00.000Z`,
+      date,
+      projectId: "p1",
+      agentId: "a1",
+      sessionId: "s1",
+      originSessionId: null,
+      modelId: "m1",
+      provider: "custom",
+      cacheRead: 10,
+      cacheWrite: 1,
+      output: 5,
+      total: 100,
+      ...opts,
+    });
+  }
+
+  it("sums every record a Model ever wrote, with no date or Agent window", () => {
+    insert("2026-01-01");
+    insert("2026-07-06");
+    // A different Agent, and a date far outside any range the cost center offers: both count.
+    insert("2020-03-02", { agentId: "a2" });
+    const totals = service.modelTotals("p1").totals;
+    expect(totals).toEqual([{ provider: "custom", modelId: "m1", tokens: 300, requests: 3 }]);
+  });
+
+  it("keys by the paired reference, so one id under two providers stays two entries", () => {
+    insert("2026-07-06");
+    insert("2026-07-06", { provider: "gateway" });
+    const totals = service.modelTotals("p1").totals;
+    expect(totals).toHaveLength(2);
+    expect(totals.map((t) => t.provider).sort()).toEqual(["custom", "gateway"]);
+  });
+
+  it("is scoped to the Project, and a Model that never ran is absent rather than zero", () => {
+    insert("2026-07-06");
+    insert("2026-07-06", { projectId: "p2", modelId: "m-elsewhere" });
+    const totals = service.modelTotals("p1").totals;
+    expect(totals.map((t) => t.modelId)).toEqual(["m1"]);
+  });
+});
+
 describe("usage-service series (zero-filled time-series buckets)", () => {
   let db: DatabaseSync;
   let repo: UsageRepo;
   let service: (now: Date) => UsageService;
   let pricing: Record<string, PricingRates | undefined>;
-  const lookup = async (_p: string, _provider: string, modelId: string) => pricing[modelId];
+  const lookup = async (_p: string, _provider: string, modelId: string) => {
+    const rates = pricing[modelId];
+    return rates === undefined ? undefined : { peak: rates, offPeak: rates };
+  };
 
   beforeEach(() => {
     db = openDatabase(":memory:");

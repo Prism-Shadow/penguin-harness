@@ -796,7 +796,21 @@ export const zh = {
     visionBadge: "视觉",
     /** Light-yellow badge on zero-cost models (all three price buckets 0, e.g. the :free variants and openrouter/free). */
     freeBadge: "免费",
+    /**
+     * Caption above a provider group the catalog marks as recommended. It travels with the
+     * group, so a user who drags that group elsewhere still sees why it is called out.
+     */
+    recommendedGroup: "官方推荐",
+    /** Badge on a row the seller is currently discounting: the rate off its list price. */
+    discountBadge: (pct: number): string => `-${pct}%`,
+    discountTitle: (pct: number): string => `促销价：已在牌价基础上打 ${pct}% 折扣`,
+    /** Same badge as a flat promotion; only the explanation differs, because this rate comes and goes with the clock. */
+    offPeakTitle: (pct: number): string =>
+      `空闲时段价：比牌价低 ${pct}%。高峰时段按牌价计费——北京时间周一至周五 9:00–12:00、14:00–18:00`,
     visionModelBadge: "视觉代理",
+    /** Card's right-edge figure: what this model has spent over its whole life. The unit stays English and is abbreviated the way the rest of the page abbreviates it — `tok/s`, `/M tok`. */
+    usedTokens: (v: string) => `${v} toks`,
+    usedTokensTitle: "该模型累计消耗的 Token（不限时间范围）",
     setVisionModel: "设为视觉代理模型",
     visionModelHint: "供不支持图片的模型经 describe_image 代读图片",
     priceUnitShort: "/M tok",
@@ -804,8 +818,8 @@ export const zh = {
     testing: "测试中…",
     testOk: (ms: number): string => `连通正常（${ms} ms）`,
     testFailed: (msg: string): string => `连通失败：${msg}`,
-    priceCacheRead: "缓存读取价格",
-    priceCacheWrite: "缓存写入价格",
+    priceCacheRead: "缓存命中价格",
+    priceCacheWrite: "缓存未命中价格",
     priceOutput: "输出价格",
     currency: "币种",
     currencyUsd: "美元 $",
@@ -2154,9 +2168,9 @@ Benchmark：
     requests: "Requests",
     from: "起始日期",
     to: "结束日期",
-    colCacheRead: "cache_read",
-    colCacheWrite: "cache_write",
-    colOutput: "output",
+    colCacheRead: "缓存命中",
+    colCacheWrite: "缓存未命中",
+    colOutput: "输出",
     uncostedNote: "* 只计入配置了价格的模型成本",
     filterAllAgents: "全部 Agent",
     filterAllModels: "全部模型",

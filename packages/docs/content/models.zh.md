@@ -55,10 +55,11 @@ api_key = "sk-..."
 
 ## 内置 Provider 分组
 
-内置分组及其环境变量回退(目录源：`packages/core/src/state/model-catalog.ts`)；每个分组同时存在 `_BASE_URL` 变体(如 `ANTHROPIC_BASE_URL`):
+内置分组及其环境变量回退(目录源：`packages/core/src/state/model-catalog.ts`)；每个分组同时存在 `_BASE_URL` 变体(如 `ANTHROPIC_BASE_URL`)。模型页默认按此顺序排列分组并展开第一个；拖动分组标题即可自行调整，该排列按 Project 保存，此后一直生效。
 
 | Provider | API Key 环境变量 | 说明 |
 | --- | --- | --- |
+| tokendance | `OPENAI_API_KEY` | 官方推荐分组，默认排在首位。OpenAI 兼容网关，预置 base URL `https://tokendance.space/gateway/v1`；模型 id 为不带厂商前缀的裸 id(如 `glm-5.3`、`kimi-k3`)；价格取该网关自己的 CNY 牌价，其中若干条目当前处于折扣中 |
 | deepseek | `DEEPSEEK_API_KEY` | 默认模型所在分组 |
 | openrouter | `OPENAI_API_KEY` | OpenAI 兼容网关，预置 base URL `https://openrouter.ai/api/v1` |
 | fireworks | `OPENAI_API_KEY` | Fireworks AI(OpenAI 兼容)，预置 base URL `https://api.fireworks.ai/inference/v1`；API 模型 id 形如 `accounts/fireworks/models/<slug>` |
@@ -66,7 +67,6 @@ api_key = "sk-..."
 | openai | `OPENAI_API_KEY` | |
 | anthropic | `ANTHROPIC_API_KEY` | |
 | siliconflow | `OPENAI_API_KEY` | OpenAI 兼容网关，预置 base URL `https://api.siliconflow.cn/v1` |
-| tokendance | `OPENAI_API_KEY` | OpenAI 兼容网关，预置 base URL `https://tokendance.space/gateway/v1`；模型 id 为不带厂商前缀的裸 id(如 `glm-5.3`、`kimi-k3`)；价格取该网关自己的 CNY 牌价 |
 | zhipu | `ZAI_API_KEY` | |
 | moonshot | `MOONSHOT_API_KEY` | |
 | minimax | `MINIMAX_API_KEY` | 直连 MiniMax M3 Responses 客户端（`client_type = "minimax-m3"`）：`MiniMax-M3` 支持 1,000,000 Token 上下文和视觉输入；预置 base URL `https://api.minimax.io/v1`；接受 Token Plan Subscription Key 或按量付费 API Key |
@@ -78,7 +78,9 @@ api_key = "sk-..."
 
 预置目录还收录了 OpenRouter 的免费档：`:free` 模型变体 `nvidia/nemotron-3-ultra-550b-a55b:free` 与统一路由 `openrouter/free`(Free Models Router)，零成本可用，但受 OpenRouter 免费档速率限制与数据政策约束。
 
-预置目录中的部分模型：deepseek-v4-pro / deepseek-v4-flash / deepseek-v4-flash-vision-exp(DeepSeek 分组中唯一支持图像输入的模型)、MiniMax-M3、gemini-3.7-flash、claude-opus-5 / claude-opus-4-8 / claude-sonnet-5、gpt-5.6 / gpt-5.5、glm-5.3 / glm-5.3-flash、kimi-k3、qwen3.8-max / qwen3.8-flash 等(非完整清单)。OpenAI 全系列都收录了两份——直连(用自己的 OpenAI Key，记牌价)与 OpenRouter 上的 `openai/<id>`(记网关实际计费价，会随其促销浮动)。DeepSeek 直连分组的价格记录官方低谷时段档(高峰时段——北京时间 9:00–12:00、14:00–18:00——按双倍计费)。`glm-5.3-flash` 收录了三份，三条都支持图像输入：AgentHub 的 GLM 客户端只为这一个 GLM id 转发图像部件(其余 GLM id 一律拒绝)，而 OpenRouter 上的 `z-ai/glm-5.3-flash` 与 TokenDance 分组的同名条目走通用 OpenAI 兼容客户端，对任何 id 都能携带图片。三条不一致的是价格——直连条目记 Z.AI 牌价，TokenDance 条目记 TokenDance 牌价，OpenRouter 条目记该网关实际计费的折后价，因此促销期间三者不同。
+预置目录中的部分模型：deepseek-v4-pro / deepseek-v4-flash / deepseek-v4-flash-vision-exp(DeepSeek 分组中唯一支持图像输入的模型)、MiniMax-M3、gemini-3.7-flash、claude-opus-5 / claude-opus-4-8 / claude-sonnet-5、gpt-5.6 / gpt-5.5、glm-5.3 / glm-5.3-flash、kimi-k3、qwen3.8-max / qwen3.8-flash 等(非完整清单)。OpenAI 全系列都收录了两份——直连(用自己的 OpenAI Key，记牌价)与 OpenRouter 上的 `openai/<id>`(记网关实际计费价，会随其促销浮动)。DeepSeek 直连分组的条目记录官方高峰档，并声明其空闲时段规则：在北京时间周一至周五 9:00–12:00、14:00–18:00 之外，各档价格减半——模型页以 `-50%` 标记，成本中心按此计价。存盘的始终是高峰价，因此磁盘上的数字不会随 Project 创建或同步预置的时刻而变。`glm-5.3-flash` 收录了三份，三条都支持图像输入：AgentHub 的 GLM 客户端只为这一个 GLM id 转发图像部件(其余 GLM id 一律拒绝)，而 OpenRouter 上的 `z-ai/glm-5.3-flash` 与 TokenDance 分组的同名条目走通用 OpenAI 兼容客户端，对任何 id 都能携带图片。三条不一致的是价格：每一条都记录各自卖家的收费，因此促销期间三者不同。
+
+TokenDance 分组的条目记录该网关的牌价，并在有促销时记录折扣率。当前有六个模型处于折扣中——`deepseek-v4-flash-0731`、`deepseek-v4-pro-0813` 与 `glm-5.3-flash` 五折，`kimi-k3` 八折，`glm-5.3` 与 `qwen3.8-max` 九折。它们的模型卡片显示当前实际计费的那个价格，并以徽标标出折扣率；新建 Project 预置的是**折后价**，因此成本中心按网关实际收费计价。自行修改过价格的条目不再显示折扣标记：此时那个数字属于你，而不是网关。
 
 ## 应用归因
 

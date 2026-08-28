@@ -13,7 +13,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { APP_URL, providerInfo } from "@prismshadow/penguin-core/model-catalog";
+import { APP_URL, presetModelEntries, providerInfo } from "@prismshadow/penguin-core/model-catalog";
 import type {
   ModelOAuthCodeResponse,
   ModelOAuthStartResponse,
@@ -37,6 +37,12 @@ import type { TestApp } from "./helpers.js";
 
 /** The catalog group under test; the flow exists only because this entry declares it. */
 const TOKENDANCE = providerInfo("tokendance")!;
+
+/**
+ * How many models the minted key lands on — derived from the catalog rather than pinned, so
+ * adding a row to this group does not fail three assertions that are not about the count.
+ */
+const TOKENDANCE_MODELS = presetModelEntries().filter((m) => m.provider === "tokendance").length;
 
 /** A JSON reply from the exchange endpoint, without touching the network. */
 function jsonResponse(status: number, body: unknown): Response {
@@ -458,7 +464,7 @@ describe("model-oauth routes", () => {
     const status = (await (
       await owner.get(`${base()}/${started.flowId}`)
     ).json()) as ModelOAuthStatusResponse;
-    expect(status).toEqual({ status: "done", provider: "tokendance", applied: 8 });
+    expect(status).toEqual({ status: "done", provider: "tokendance", applied: TOKENDANCE_MODELS });
 
     // The exchange spoke the documented protocol, with a verifier this side never published.
     expect(exchanges).toHaveLength(1);
@@ -677,7 +683,11 @@ describe("model-oauth callback without a session", () => {
     expect(await groupHasKey()).toBe(false);
 
     // The owner's own poll is what spends the code and lands the key.
-    expect(await poll(flowId)).toEqual({ status: "done", provider: "tokendance", applied: 8 });
+    expect(await poll(flowId)).toEqual({
+      status: "done",
+      provider: "tokendance",
+      applied: TOKENDANCE_MODELS,
+    });
     expect(exchanges).toBe(1);
     expect(await groupHasKey()).toBe(true);
   });
@@ -689,7 +699,11 @@ describe("model-oauth callback without a session", () => {
     const browser = await owner.get(callback(flowId, "auth-code-2"));
     expect(browser.status).toBe(200);
     expect(await browser.text()).toContain("Authorization received");
-    expect(await poll(flowId)).toEqual({ status: "done", provider: "tokendance", applied: 8 });
+    expect(await poll(flowId)).toEqual({
+      status: "done",
+      provider: "tokendance",
+      applied: TOKENDANCE_MODELS,
+    });
     expect(exchanges).toBe(1);
     expect(await groupHasKey()).toBe(true);
   });
