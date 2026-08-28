@@ -80,3 +80,7 @@ directions, which none of the other three manage.
 - The Session row's messaging action, its dialog and the dock panel's tab are now labelled
   **Remote control** (`远程控制`). Only the labels changed; the route, the keys and every
   identifier are the same.
+- That row-menu action now wears the paper plane the Session row already flies while it is
+  relaying, in place of the chat bubble. The entry and the mark it produces are one feature, and
+  a reader should not have to learn two shapes for it; the dock panel's tab keeps the bubble,
+  which marks the panel rather than the relay.
