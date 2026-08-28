@@ -57,6 +57,26 @@ describe("the key-authorization dialog's outcome", () => {
     }
   });
 
+  it("survives the table reload, which is what let a finished flow offer itself again", () => {
+    // The bug this pins: `load()` blanks `rows` on its first line, and the dialog used to be
+    // rendered behind a `rows &&` guard, so reloading on success unmounted it — and its mount
+    // effect opens a NEW authorization. The user finished authorizing and was handed the
+    // authorize page again, with no way to reach the outcome.
+    //
+    // Two facts keep that shut, and both are structural rather than timing-dependent: the
+    // dialog is not gated on `rows`, and the reload waits for the dismissal.
+    const call = SOURCE.slice(SOURCE.indexOf("<ModelOAuthDialog"));
+    const guard = SOURCE.slice(0, SOURCE.indexOf("<ModelOAuthDialog"));
+    // The line that renders it must not require rows.
+    const openingGuard = guard.slice(guard.lastIndexOf("{", guard.lastIndexOf("(")));
+    expect(openingGuard).not.toContain("rows &&");
+    // onApplied must not reload; onClose must.
+    const onApplied = call.slice(call.indexOf("onApplied="), call.indexOf("/>"));
+    expect(onApplied).not.toContain("load()");
+    const onClose = call.slice(call.indexOf("onClose="), call.indexOf("onApplied="));
+    expect(onClose).toContain("load()");
+  });
+
   it("offers one dismissal once the key is written, not a cancel beside it", () => {
     // Done is an outcome, not a choice: a "cancel" next to it would offer to undo a key that
     // the server has already stored.

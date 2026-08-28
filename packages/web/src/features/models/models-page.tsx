@@ -1217,21 +1217,31 @@ export function ModelsPage() {
         />
       )}
 
-      {rows && projectId && oauthFor !== null && (
+      {/* NOT gated on `rows`, unlike its neighbours. This dialog outlives a table reload: it
+          stays open after the key lands to report the outcome, and `load()` blanks `rows` on
+          its first line, so gating it there would unmount it mid-flow — and its mount effect
+          opens a NEW authorization, which is how a completed authorization ended up offering
+          itself again. `count` is only read while the flow is still running, so a reload's
+          momentary absence of rows reads as zero and is never seen. */}
+      {projectId && oauthFor !== null && (
         <ModelOAuthDialog
           projectId={projectId}
           provider={MODEL_PROVIDERS.find((p) => p.id === oauthFor) ?? userProviderInfo(oauthFor)}
-          count={rows.filter((r) => r.provider === oauthFor).length}
-          onClose={() => setOauthFor(null)}
-          onApplied={() => {
-            // The dialog stays open and reports the outcome itself (its `done` phase): the
-            // authorization ran in another tab, so a toast would be announced to a window
-            // nobody is looking at and be gone by the time they came back. Closing is the
-            // user's own dismissal.
-            //
-            // The key was written server-side, so the table in hand is stale in exactly one
-            // place: reload rather than patch, and the masked key comes back with it.
+          count={rows?.filter((r) => r.provider === oauthFor).length ?? 0}
+          onClose={() => {
+            setOauthFor(null);
+            // The reload waits for the dismissal rather than racing the open dialog. The key
+            // was written server-side, so the table in hand is stale in exactly one place:
+            // reload rather than patch, and the masked key comes back with it. Unconditional —
+            // a cancelled flow reloads a table that has not changed, which costs one request
+            // and cannot be wrong.
             void load();
+          }}
+          onApplied={() => {
+            // Nothing to do here: the dialog stays open and reports the outcome itself (its
+            // `done` phase), because the authorization ran in another tab and a toast would be
+            // announced to a window nobody is looking at. Kept as a seam so a caller that does
+            // need to react to the key landing has one.
           }}
         />
       )}

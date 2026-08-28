@@ -22,9 +22,15 @@ models the key was written to, and is dismissed deliberately.
   button.
 - Done is an outcome rather than a choice, so the footer is a single dismissal: a cancel beside
   it would offer to undo a key the server has already stored.
-- The model table still reloads on success, which is what brings back the masked key.
+- The model table reloads when the dialog is dismissed, not when the key lands, and the
+  dialog does not render behind the table's own loaded-rows guard. Reloading blanks the rows
+  for the length of a request, so a dialog gated on them would be unmounted mid-flow by the
+  very success it was reporting — and remounting starts a fresh authorization, handing the
+  user back the page they had just finished. Waiting for the dismissal keeps the masked key
+  arriving with the reload and keeps the outcome on screen until it is read.
 - `test/model-oauth-outcome.test.ts` pins the rule rather than leaving it to memory: both success
   paths settle into `done`, neither the dialog nor its caller toasts the outcome, the sentence
-  carries the provider and the count in both dictionaries, and the done footer offers no cancel.
+  carries the provider and the count in both dictionaries, the done footer offers no cancel, and
+  the dialog is neither gated on the loaded rows nor reloaded from the success handler.
   It reads the real source — the dialog is module-private, and exporting it so a test could mount
   it would widen the module's surface to check a rule about its own text.
