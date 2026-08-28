@@ -34,6 +34,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useUpdateBadges } from "../../lib/use-update-badges";
 import { dismissTodo } from "../../lib/todo-dismissals";
+import { refreshProjectTodos } from "../../lib/use-project-todos";
 import { TodoNotice } from "../../components/ui/todo-notice";
 import { formatMoney, humanizeTokens } from "../../lib/format";
 import { catalogEntryFor } from "@prismshadow/penguin-core/model-catalog";
@@ -168,6 +169,17 @@ export function UsagePage() {
     setTo(nextTo);
   };
   const [data, setData] = useState<UsageResponse | null>(null);
+  /**
+   * The date window the dashboard actually READ, which is not always the one the picker holds.
+   * A trailing preset computes its window at load time and deliberately leaves `from`/`to` on
+   * whatever the last calendar preset put there, so the two diverge the moment "last hour" is
+   * chosen. The error panel pages against this window and, for an owner, DELETES against it —
+   * so it has to be the window whose rows are on screen, never the stale pair behind them.
+   * Kept as two primitives so the memo below holds its identity across a reload that changes
+   * nothing (the panel's fetch effect depends on that identity).
+   */
+  const [loadedFrom, setLoadedFrom] = useState(from);
+  const [loadedTo, setLoadedTo] = useState(to);
   const [error, setError] = useState<string | null>(null);
   // The legend / control state that lives in the card headers (ChartCard's
   // extra) while the marks live inside the cards, lifted to this level.
@@ -192,6 +204,8 @@ export function UsagePage() {
         ...(modelFilter ? { provider: modelFilter.provider, modelId: modelFilter.modelId } : {}),
       });
       setData(res);
+      setLoadedFrom(range.from);
+      setLoadedTo(range.to);
     } catch (e) {
       setError(apiErrorText(e));
     }
@@ -205,10 +219,12 @@ export function UsagePage() {
   // The error panel pages against this filter and depends on the object's identity, so it is
   // built once per filter value rather than fresh on every render — a new object each render
   // would refetch the current page on any unrelated state change (hovering a chart bucket).
+  // Built from the window the dashboard read (see loadedFrom/loadedTo), not from the picker's
+  // state: the panel's rows, its later pages and its clear all have to name one same set.
   // The model filter is deliberately absent: it never applied to errors.
   const errorFilters = useMemo(
-    () => ({ from, to, ...(agentFilter ? { agentId: agentFilter } : {}) }),
-    [from, to, agentFilter],
+    () => ({ from: loadedFrom, to: loadedTo, ...(agentFilter ? { agentId: agentFilter } : {}) }),
+    [loadedFrom, loadedTo, agentFilter],
   );
 
   if (!projectId) return null;
@@ -420,7 +436,13 @@ export function UsagePage() {
               // Clearing the log is a Project-level management operation, gated on the owner
               // by the route; a member reads the panel without the action.
               canClear={currentProject?.role === "owner"}
-              onCleared={() => void load()}
+              // The badge and the notice above are gated on a probe cached per Project for the
+              // browser session, not on this response — without the re-probe an emptied table
+              // would sit under a dot still pointing at the rows that just went.
+              onCleared={() => {
+                refreshProjectTodos(projectId);
+                void load();
+              }}
             />
           </ChartCard>
         )}

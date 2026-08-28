@@ -2141,11 +2141,12 @@ Scenarios:
     errorsClear: "Clear",
     errorsClearTitle: "Clear error records",
     errorsClearScope: (count: number, from: string, to: string): string =>
-      `Deletes this Project's ${count} error records between ${from} and ${to}. Records outside that range are kept.`,
+      `Deletes this Project's ${count} error record${count === 1 ? "" : "s"} between ${from} and ${to}. Records outside that range are kept.`,
     errorsClearScopeAgent: (count: number, from: string, to: string, agentId: string): string =>
-      `Deletes this Project's ${count} error records for agent ${agentId} between ${from} and ${to}. Other agents and other dates are kept.`,
+      `Deletes this Project's ${count} error record${count === 1 ? "" : "s"} for agent ${agentId} between ${from} and ${to}. Other agents and other dates are kept.`,
     errorsClearIrreversible: "This cannot be undone.",
-    errorsClearDone: (count: number): string => `Deleted ${count} error records`,
+    errorsClearDone: (count: number): string =>
+      `Deleted ${count} error record${count === 1 ? "" : "s"}`,
   },
 
   /** The Trace panel's own view of a Trace file (trace-file-view / timeline-chart); the standalone browsing page these once also served is gone. */

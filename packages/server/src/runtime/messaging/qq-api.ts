@@ -575,8 +575,17 @@ class GatewaySession {
   private handshakeTimer: ReturnType<typeof setTimeout> | null = null;
   /** When the last HEARTBEAT_ACK arrived, against which the heartbeat tick measures silence. */
   private lastAckAt = 0;
-  /** This outage already reported; the retries stay quiet until a handshake succeeds. */
-  private reported = false;
+  /**
+   * What this outage has already reported; the retries stay quiet until a handshake succeeds.
+   *
+   * One report per outage is what keeps a backoff loop from filling the error table. A routine
+   * close is now filed `expected`, though, so letting it claim the slot outright would silence
+   * the outage behind it: a socket the platform expires at 4009 followed by an auth refusal on
+   * every retry would leave the dashboard reading zero defects for a binding that is down until
+   * a person acts. So a routine report is spent once more — by the first failure that is not
+   * routine — and only then does the outage go quiet.
+   */
+  private reported: "none" | "routine" | "defect" = "none";
 
   constructor(
     private readonly client: ProductionClient,
@@ -761,7 +770,7 @@ class GatewaySession {
   private onHandshake(): void {
     this.disarmHandshake();
     this.failures = 0;
-    this.reported = false;
+    this.reported = "none";
     this.handlers.onReady?.();
   }
 
@@ -827,12 +836,17 @@ class GatewaySession {
     }
   }
 
-  /** One report per outage, then retry with backoff — the Telegram poll loop's contract. */
+  /**
+   * One report per outage, then retry with backoff — the Telegram poll loop's contract, with
+   * the one exception `reported` documents: a routine close does not get to be the whole story
+   * of an outage that turns out to need a person.
+   */
   private fail(err: unknown): void {
     if (this.closed) return;
     this.failures += 1;
-    if (!this.reported) {
-      this.reported = true;
+    const routine = err instanceof MessagingConnectionClosedError && err.recovers;
+    if (this.reported === "none" || (this.reported === "routine" && !routine)) {
+      this.reported = routine ? "routine" : "defect";
       this.handlers.onError?.(err);
     }
     this.retryTimer = setTimeout(() => {

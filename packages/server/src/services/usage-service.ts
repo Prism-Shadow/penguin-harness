@@ -314,6 +314,13 @@ export class UsageService {
     const { total, unexpected } = this.errors.summary(projectId, f);
     return {
       total,
+      // Counted the way deleteFiltered selects — without the unattributed rows an admin's read
+      // includes — so the clear confirmation states what will really go rather than what is on
+      // screen. Identical to `total` for everyone whose read did not include them.
+      clearable:
+        f.includeGlobal === true
+          ? this.errors.summary(projectId, { ...f, includeGlobal: false }).total
+          : total,
       unexpected,
       topCode: this.errors.topCode(projectId, f),
       recent: this.errors.recent(projectId, f, ERROR_RECENT_N),

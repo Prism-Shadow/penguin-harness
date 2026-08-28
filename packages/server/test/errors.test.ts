@@ -1131,6 +1131,11 @@ describe("HTTP onError persistence (integration)", () => {
     expect(adminBody.errors.total).toBe(1);
     expect(adminBody.errors.topCode).toMatchObject({ source: "http", code: "invalid_credentials" });
     expect(adminBody.errors.recent[0]).toMatchObject({ code: "invalid_credentials" });
+    // …but not clear it. The clear confirmation states `clearable`, so what it promises is what
+    // the delete can really take: the read reaches this row, no Project-scoped delete does.
+    expect(adminBody.errors.clearable).toBe(0);
+    // A member's read never included them, so the two numbers are the same one.
+    expect(plainBody.errors.clearable).toBe(0);
   });
 
   it("the paged error route pages inside the caller's own tenant, at every offset", async () => {

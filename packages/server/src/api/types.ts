@@ -2633,6 +2633,15 @@ export interface UsageErrorItem {
  */
 export interface UsageErrors {
   total: number;
+  /**
+   * How many of {@link total} a clear would actually take (see {@link UsageErrorsClearResponse}).
+   *
+   * The same as `total` for an ordinary member, and smaller for an admin, whose reads include
+   * unattributed rows that no Project-scoped clear removes. The confirmation is the only place
+   * this matters, and it is the place it matters most: an irreversible delete has to name the
+   * number that will really go, not the number on screen.
+   */
+  clearable: number;
   /** Count of unexpected ones (500 / runtime exceptions) among them — the part the frontend highlights. */
   unexpected: number;
   /** The most frequent source · code (null when there are no errors). */

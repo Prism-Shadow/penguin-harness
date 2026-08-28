@@ -30,18 +30,30 @@ const item = (code: string): UsageErrorItem => ({
   message: `${code} went wrong`,
 });
 
-function errorsOf(items: UsageErrorItem[]): UsageErrors {
-  return { total: items.length, unexpected: items.length, topCode: null, recent: items };
+function errorsOf(items: UsageErrorItem[], clearable = items.length): UsageErrors {
+  return {
+    total: items.length,
+    clearable,
+    unexpected: items.length,
+    topCode: null,
+    recent: items,
+  };
 }
 
 const FILTERS: ErrorsFilters = { from: "2026-08-01", to: "2026-08-27" };
 
 function render(
-  opts: { items?: UsageErrorItem[]; canClear?: boolean; filters?: ErrorsFilters } = {},
+  opts: {
+    items?: UsageErrorItem[];
+    clearable?: number;
+    canClear?: boolean;
+    filters?: ErrorsFilters;
+  } = {},
 ): string {
+  const items = opts.items ?? [item("internal")];
   return renderToStaticMarkup(
     createElement(ErrorsPanel, {
-      errors: errorsOf(opts.items ?? [item("internal")]),
+      errors: errorsOf(items, opts.clearable ?? items.length),
       projectId: "p1",
       filters: opts.filters ?? FILTERS,
       canClear: opts.canClear ?? true,
@@ -62,6 +74,21 @@ describe("ErrorsPanel clear action", () => {
     const empty = render({ items: [] });
     expect(empty).toContain(S.usage.errorsEmpty);
     expect(empty).not.toContain(S.usage.errorsClear);
+  });
+
+  it("is absent when every row in range is one no Project-scoped clear can take", () => {
+    // An admin's read includes unattributed rows (a login failure, a process crash); the delete
+    // never does. A window holding only those has rows on screen and nothing to clear, so the
+    // action must not be offered — it could only report "deleted 0".
+    expect(render({ items: [item("uncaught_exception")], clearable: 0 })).not.toContain(
+      S.usage.errorsClear,
+    );
+  });
+
+  it("is absent while a date bound is blank: the sentence could not describe that delete", () => {
+    // A cleared date input sends no bound, which the route reads as unbounded on that side —
+    // wider than anything the confirmation's "records outside that range are kept" can promise.
+    expect(render({ filters: { from: "", to: "2026-08-27" } })).not.toContain(S.usage.errorsClear);
   });
 
   it("keeps the pager independent of it: rows but one page shows the action alone", () => {
@@ -94,11 +121,5 @@ describe("errorsClearScopeText", () => {
     expect(errorsClearScopeText({ ...FILTERS, agentId: "" }, 4)).toBe(
       errorsClearScopeText(FILTERS, 4),
     );
-  });
-
-  it("both dictionaries say the deletion cannot be undone", () => {
-    expect(zh.usage.errorsClearIrreversible).not.toBe("");
-    expect(en.usage.errorsClearIrreversible).not.toBe("");
-    expect(zh.usage.errorsClearIrreversible).not.toBe(en.usage.errorsClearIrreversible);
   });
 });

@@ -48,6 +48,19 @@ export function errorsClearScopeText(filters: ErrorsFilters, count: number): str
     : S.usage.errorsClearScope(count, from, to);
 }
 
+/**
+ * Whether the filter on screen is one a clear may be offered for.
+ *
+ * Both bounds have to be real dates. A custom range with an emptied date input sends no bound
+ * at all, which the route reads as "unbounded on that side" — so the delete would reach past
+ * every row the reader saw while the sentence above still promised that records outside the
+ * range are kept. Refusing to offer the action is the honest answer; the picker is one click
+ * from a range that has both ends.
+ */
+export function clearableFilter(filters: ErrorsFilters): boolean {
+  return Boolean(filters.from) && Boolean(filters.to);
+}
+
 /** Copy: S is a runtime live binding (switching language remounts the whole tree), so it must be read at render time. */
 function kindLabel(key: ErrorKindKey): string {
   return key === "unexpected" ? S.usage.errorsUnexpected : S.usage.errorsExpected;
@@ -139,7 +152,7 @@ export function ErrorsPanel({
   /** Reload the dashboard after a clear — the stats above the table are the caller's data. */
   onCleared: () => void;
 }) {
-  const { total, unexpected, topCode, recent } = errors;
+  const { total, clearable, unexpected, topCode, recent } = errors;
   // Page size is read off the first page rather than duplicating the server's ERROR_RECENT_N:
   // whenever a second page exists at all, `recent` is exactly that many rows, so the two cannot
   // drift apart into skipping or repeating rows. (Empty means a single empty page anyway.)
@@ -314,7 +327,10 @@ export function ErrorsPanel({
           The pager itself still appears only once there is more than one page. */}
       {(items.length > 0 || page > 0) && (
         <div className="mt-2 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-          {canClear && items.length > 0 && (
+          {/* Offered on what the clear can really take: `clearable` excludes the unattributed
+              rows an admin's read includes but no Project-scoped delete removes, so a window
+              holding only those shows no button rather than one that deletes nothing. */}
+          {canClear && clearable > 0 && clearableFilter(filters) && (
             <button
               type="button"
               disabled={clearing}
@@ -359,7 +375,7 @@ export function ErrorsPanel({
         onConfirm={() => void runClear()}
       >
         <div className="space-y-1.5 text-sm text-gray-700 dark:text-gray-300">
-          <p className="break-words">{errorsClearScopeText(filters, pagedTotal)}</p>
+          <p className="break-words">{errorsClearScopeText(filters, clearable)}</p>
           <p className="text-xs text-gray-500 dark:text-gray-400">
             {S.usage.errorsClearIrreversible}
           </p>

@@ -16,7 +16,9 @@ Project owner can empty the table the panel is showing.
 The QQ gateway session now reports a close as a typed `MessagingConnectionClosedError`, carrying
 the platform's close code and whether the next handshake restores the connection with nothing
 changed. `error-kind.ts` reads that verdict — never the message text, so the count does not
-depend on how a platform words its own close.
+depend on how a platform words its own close. One outage still reports once, with one
+exception: a routine close does not keep the slot, so an expired socket followed by a refusal
+that repeats forever still records the refusal.
 
 - `expected`: close code 4009 (the platform expiring a long-lived connection, which stays
   resumable, so the session replays from its sequence number) and the 4900–4913 internal-error
@@ -35,15 +37,20 @@ errors recorded from here on.
 `DELETE /api/projects/:projectId/usage/errors` empties the table for the filter the panel is
 showing, and the panel's footer offers it behind a confirmation.
 
-- **Scope**: the date range and Agent currently selected, the same filter the panel's reads
-  take. Rows outside it are kept, and the confirmation states the range, the Agent when one is
-  selected, and how many rows will go.
+- **Scope**: the date range and Agent the panel actually read, the same window its rows and its
+  later pages come from — the trailing presets compute theirs at load time rather than from the
+  date pair the picker holds, so the clear follows what is on screen rather than what was picked
+  before it. Rows outside it are kept, and the confirmation states the range, the Agent when one
+  is selected, and how many rows will go. It is offered only where both bounds are real dates,
+  since an open-ended range is wider than the sentence can promise.
 - **Authorization**: Project owner only, the rule Agent deletion already applies to error rows.
   A member can read the panel and gets 403 on the delete; the panel does not show the action to
   one.
 - Errors with no Project attribution — login failures, process crashes — are outside every
   clear, whoever asks. They belong to no Project and appear in every Project's admin view, so
-  the delete's reach stays strictly narrower than any caller's read.
+  the delete's reach stays strictly narrower than any caller's read. The dashboard's error block
+  gained a `clearable` count for exactly this: an admin's read includes those rows and the
+  confirmation must not, or it would promise a number larger than what goes.
 - `ErrorsRepo.deleteFiltered` builds its `WHERE` from the same clause the reads use, so a
   clear cannot select a row a matching read would not have returned.
 

@@ -230,9 +230,14 @@ export class ErrorsRepo {
    * them out of every other Project's panel as well — the same line deleteByProject and
    * deleteByAgent already draw. Clearing them is an admin-wide act and needs an admin-wide
    * surface, not a side effect of tidying one Project.
+   *
+   * The `Omit` on the parameter says that, but it does not enforce it: excess-property checking
+   * only fires on a fresh object literal, so a caller already holding an `ErrorFilter` could
+   * forward one carrying `includeGlobal: true` and compile clean. Hence the explicit `false`
+   * below — the guard is in the query, where a future caller cannot get around it.
    */
   deleteFiltered(projectId: string, f: Omit<ErrorFilter, "includeGlobal"> = {}): number {
-    const { where, params } = this.conds(projectId, f);
+    const { where, params } = this.conds(projectId, { ...f, includeGlobal: false });
     const res = this.db.prepare(`DELETE FROM error_records WHERE ${where}`).run(params);
     return Number(res.changes);
   }
