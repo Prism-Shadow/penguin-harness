@@ -3,6 +3,7 @@
 - **Date:** 2026-08-28
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#538](https://github.com/Prism-Shadow/penguin-harness/pull/538)
 
 [English](2026-08-28-rail-last-conversation-clock.md)
 
