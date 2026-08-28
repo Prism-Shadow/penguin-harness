@@ -12,6 +12,7 @@
  * server. These cases pin that nothing crosses.
  */
 import { describe, expect, it } from "vitest";
+import { sessionInCookieHeader, sessionTokenOf } from "../src/machines/proxy.js";
 import {
   SERVER_PROXY_PREFIX,
   cookieMarker,
@@ -129,5 +130,25 @@ describe("keying on the machine rather than the alias", () => {
     // Both resolve to the same machine id, so both find the same cookie.
     const viaFirstAlias = rewriteSetCookie("penguin_session=abc", A).split(";")[0]!;
     expect(rewriteRequestCookies(viaFirstAlias, A)).toBe("penguin_session=abc");
+  });
+});
+
+describe("reading the session a machine's own cookies carry", () => {
+  it("finds it in a Set-Cookie the machine issued", () => {
+    expect(sessionTokenOf("penguin_session=abc123; Path=/; HttpOnly; SameSite=Lax")).toBe("abc123");
+  });
+
+  it("ignores every other cookie the machine sets", () => {
+    expect(sessionTokenOf("penguin_prefs=dark; Path=/")).toBeNull();
+    expect(sessionTokenOf("penguin_session_other=abc; Path=/")).toBeNull();
+    expect(sessionTokenOf("penguin_session=; Path=/")).toBeNull();
+  });
+
+  it("finds it in a Cookie header the browser is already presenting", () => {
+    // The half that serves a machine signed in to BEFORE this side kept sessions: the
+    // browser sends it on every request, so there is nothing to ask anyone to redo.
+    expect(sessionInCookieHeader("penguin_prefs=dark; penguin_session=abc123")).toBe("abc123");
+    expect(sessionInCookieHeader("penguin_prefs=dark")).toBeNull();
+    expect(sessionInCookieHeader(null)).toBeNull();
   });
 });

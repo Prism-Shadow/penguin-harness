@@ -91,6 +91,23 @@ export function rewriteSetCookie(header: string, machineId: string): string {
 }
 
 /**
+ * The session token in a Cookie header bound for a machine, or null when it carries none.
+ *
+ * The browser sends it on every proxied request, so a machine somebody signed in to earlier
+ * is already presenting a usable session — no second sign-in, and none to ask for. This is
+ * the half that makes the held session work for the machines that are ALREADY signed in,
+ * rather than only for the next one.
+ */
+export function sessionInCookieHeader(header: string | null): string | null {
+  if (header === null) return null;
+  for (const part of header.split(";")) {
+    const token = sessionTokenOf(part.trim());
+    if (token !== null) return token;
+  }
+  return null;
+}
+
+/**
  * The session token in a Set-Cookie from a machine, or null when the line is about anything
  * else. `SESSION_COOKIE` deliberately, by name: a machine's login answers with the cookie its
  * own browser session rides in, and that value IS a session on that machine — the same one
@@ -139,7 +156,16 @@ export function proxyToTunnel(
     });
     headers["host"] = `localhost:${port}`;
     const forwardedCookies = rewriteRequestCookies(request.headers.get("cookie"), path.machineId);
-    if (forwardedCookies !== null) headers["cookie"] = forwardedCookies;
+    if (forwardedCookies !== null) {
+      headers["cookie"] = forwardedCookies;
+      // What the browser is presenting IS a session on that machine, and it presents it on
+      // every request — so a machine signed in to before this side ever kept one is already
+      // handing it over. Recorded from the request rather than waiting for the next
+      // Set-Cookie, which would mean asking somebody to sign in again to a machine they are
+      // demonstrably signed in to.
+      const token = sessionInCookieHeader(forwardedCookies);
+      if (token !== null) onSession?.(path.machineId, token);
+    }
 
     const upstream = http.request(
       {
