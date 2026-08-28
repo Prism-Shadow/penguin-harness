@@ -3,6 +3,7 @@
 - **Date:** 2026-08-28
 - **Type:** feature
 - **Scope:** `core`, `docs`
+- **PR:** [#539](https://github.com/Prism-Shadow/penguin-harness/pull/539)
 - **Breaking:** yes — `SessionConfig.createLLM` / `ContextEngineDeps.createLLM` became `openContext`, returning the new LLM together with the context's `session_meta`
 
 [中文版](2026-08-28-system-prompt-per-context.zh.md)
