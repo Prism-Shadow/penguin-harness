@@ -972,15 +972,6 @@ export function ModelsPage() {
                 // Absolutely positioned, so it costs no layout width and cannot push the
                 // header's up-to-five actions out of a narrow page.
                 <div key={group.provider.id} className="relative">
-                  {/* Caption for the group the catalog recommends. It sits above the section
-                      rather than inside the header row, which already carries up to five
-                      actions and truncates its own title on a narrow page. It is a property
-                      of the group, so it travels with it when the group is dragged. */}
-                  {group.provider.recommended && (
-                    <p className="mb-1 px-0.5 text-[11px] font-medium text-gray-500 dark:text-gray-400">
-                      {S.models.recommendedGroup}
-                    </p>
-                  )}
                   {drag.dropEdge !== null && (
                     <div
                       aria-hidden
@@ -1015,12 +1006,26 @@ export function ModelsPage() {
                         {/* Vendor name can truncate (min-w-0): the actions on the right must not
                           shrink, otherwise on narrow screens it would get pushed out of the
                           button box and overlap the action text. */}
-                        <span className="min-w-0 truncate text-sm font-semibold">
+                        <span className="min-w-[5rem] truncate text-sm font-semibold">
                           {group.provider.label}
                         </span>
                         <span className="shrink-0 whitespace-nowrap font-mono text-xs text-gray-400">
                           {S.models.modelCount(group.rows.length)}
                         </span>
+                        {/* The recommendation rides the collapse bar itself, so it is read with
+                            the group's name rather than as a caption floating above the
+                            section. `shrink-0` keeps it whole: the vendor name beside it is
+                            the element allowed to truncate on a narrow page. */}
+                        {group.provider.recommended && (
+                          // Not a `Badge`: its `brand` tone is deliberately gray — neutral
+                          // emphasis outside the status vocabulary — and an endorsement is
+                          // neither a status nor neutral. The brand palette says "this one"
+                          // without borrowing a severity, which is the category tone.ts keeps
+                          // out on purpose.
+                          <span className="shrink-0 whitespace-nowrap rounded-full bg-brand-100 px-2 py-0.5 text-[11px] font-semibold text-brand-800 dark:bg-brand-950 dark:text-brand-200">
+                            {S.models.recommendedGroup}
+                          </span>
+                        )}
                       </button>
                       {isOwner && (
                         // Add-model entry point: present on every group header (including
@@ -1695,22 +1700,11 @@ function ModelCard({
   const meta: ReactNode[] = [
     row.contextWindow ? humanizeTokens(Number(row.contextWindow)) : null,
     // Three prices (cache read / cache write / output); units are explained in the config dialog, not repeated on the card.
-    priced ? (
-      <span>
-        {priceLine(row.cacheRead, row.cacheWrite, row.output)}
-        {/* The strike is the whole signal, so the list price keeps the meta line's own ink
-            rather than fading below it. */}
-        {discount && (
-          <s className="ml-1.5" title={S.models.listPriceTitle}>
-            {priceLine(
-              String(discount.list.cacheRead),
-              String(discount.list.cacheWrite),
-              String(discount.list.output),
-            )}
-          </s>
-        )}
-      </span>
-    ) : null,
+    // The stored price is what the seller bills, discount included, so it is the only price
+    // shown. What the row would have cost without the promotion answers no question a reader
+    // of this list is asking, and spending the meta line's width on it pushes out the figures
+    // that do.
+    priced ? <span>{priceLine(row.cacheRead, row.cacheWrite, row.output)}</span> : null,
     // Key status (see keyStatusText): the stored mask, a detected env fallback's mask, a plain
     // "configured" for a key typed but not yet saved, or "not configured".
     keyStatusText(row),
@@ -1754,29 +1748,61 @@ function ModelCard({
     <button
       type="button"
       onClick={onOpen}
-      className="flex w-full flex-col gap-0.5 rounded-md border border-gray-200 px-3 py-2.5 text-left transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:hover:border-gray-700 dark:hover:bg-gray-800/40"
+      // `relative` so the discount tag can hang on the card's own corner; it creates no
+      // stacking context of its own (styles.css's rule), so nothing above the list is affected.
+      className="relative flex w-full flex-col gap-0.5 rounded-md border border-gray-200 px-3 py-2.5 text-left transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:hover:border-gray-700 dark:hover:bg-gray-800/40"
     >
-      <span className="flex flex-wrap items-center gap-1.5">
-        <span className="text-sm font-medium">{row.displayName ?? row.modelId}</span>
-        {isDefault && <Badge tone="brand">{S.models.default}</Badge>}
+      {/* The discount rides the card's top-right corner, flush to the border and sharing its
+          radius, so the promotional rate is legible as one at a glance rather than competing
+          for room in the badge row.
+
+          Two things keep the card exactly as tall as it was. The tag is absolutely positioned,
+          so it occupies no line of its own; and the title row below reserves room for it and
+          stops wrapping, so a long name or a full set of badges truncates instead of pushing
+          the row onto a second line and under the tag. */}
+      {discount && (
+        <span
+          title={S.models.discountTitle(discount.percent)}
+          className="absolute right-0 top-0 rounded-bl-md rounded-tr-md bg-yellow-100 px-1.5 py-0.5 text-[11px] font-semibold text-yellow-800 dark:bg-yellow-950 dark:text-yellow-300"
+        >
+          {S.models.discountBadge(discount.percent)}
+        </span>
+      )}
+      <span className={`flex min-w-0 items-center gap-1.5 ${discount ? "pr-12" : ""}`}>
+        <span className="min-w-0 truncate text-sm font-medium">
+          {row.displayName ?? row.modelId}
+        </span>
+        {isDefault && (
+          <span className="shrink-0">
+            <Badge tone="brand">{S.models.default}</Badge>
+          </span>
+        )}
         {/* Free rows (all three price buckets 0, e.g. :free variants / openrouter/free): a
             light-yellow badge so zero-cost models stand out at a glance (informational, kept
             distinct from the amber warning tone the proxy-vision badge uses). */}
-        {isFreeModel(row) && <Badge tone="yellow">{S.models.freeBadge}</Badge>}
-        {/* Discounted rows: the rate off list, so a promotional price is legible as one
-            rather than read as the model's normal cost. Yellow like the free badge — both
-            are informational tags about price, neither a warning. */}
-        {discount && (
-          <span title={S.models.discountTitle(discount.percent)}>
-            <Badge tone="yellow">{S.models.discountBadge(discount.percent)}</Badge>
+        {isFreeModel(row) && (
+          <span className="shrink-0">
+            <Badge tone="yellow">{S.models.freeBadge}</Badge>
           </span>
         )}
-        {row.vision && <Badge tone="green">{S.models.visionBadge}</Badge>}
-        {isVisionModel && <Badge tone="amber">{S.models.visionModelBadge}</Badge>}
+        {row.vision && (
+          <span className="shrink-0">
+            <Badge tone="green">{S.models.visionBadge}</Badge>
+          </span>
+        )}
+        {isVisionModel && (
+          <span className="shrink-0">
+            <Badge tone="amber">{S.models.visionModelBadge}</Badge>
+          </span>
+        )}
         {/* Fast mode moves the model onto a premium price list that the recorded prices do not
             reflect, so it has to be visible without opening the dialog (amber, like the other
             badge that flags a standing cost/behavior choice). */}
-        {row.fastMode && <Badge tone="amber">{S.models.fastModeBadge}</Badge>}
+        {row.fastMode && (
+          <span className="shrink-0">
+            <Badge tone="amber">{S.models.fastModeBadge}</Badge>
+          </span>
+        )}
       </span>
       {/* Upstream id in small text (grouping already separates by group, no composite id is
           shown anymore); when there's no display name, the main line is already the

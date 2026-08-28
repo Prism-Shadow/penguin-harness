@@ -776,7 +776,6 @@ export const zh = {
     discountBadge: (pct: number): string => `-${pct}%`,
     discountTitle: (pct: number): string => `促销价：已在牌价基础上打 ${pct}% 折扣`,
     /** Hover text on the struck-out price beside a discounted row's live price. */
-    listPriceTitle: "牌价",
     visionModelBadge: "视觉代理",
     setVisionModel: "设为视觉代理模型",
     visionModelHint: "供不支持图片的模型经 describe_image 代读图片",

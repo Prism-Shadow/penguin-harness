@@ -790,10 +790,14 @@ export const en: Strings = {
     fastModeBadge: "Fast",
     visionBadge: "Vision",
     freeBadge: "Free",
-    recommendedGroup: "Officially recommended",
+    /**
+     * Rides the group's own collapse bar, which on this group carries five actions — the most
+     * crowded row on the page. One word, because the vendor name beside it is what a reader
+     * needs first and is the element that truncates.
+     */
+    recommendedGroup: "Recommended",
     discountBadge: (pct: number): string => `-${pct}%`,
     discountTitle: (pct: number): string => `Promotion: ${pct}% off the list price`,
-    listPriceTitle: "List price",
     visionModelBadge: "Proxy vision",
     setVisionModel: "Set as proxy vision model",
     visionModelHint: "Describes images via describe_image for models without vision",

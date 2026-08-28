@@ -35,11 +35,19 @@ Chinese UI renamed the three price buckets.
 ## The models page
 
 - TokenDance is marked as the recommended provider group: it leads the default group order,
-  carries an "Officially recommended" caption above it, and is the group the page opens
-  expanded on a first visit.
-- A discounted model card shows the discounted price with the list price struck through
-  beside it and the rate as a badge. A row whose price has been edited away from the
-  catalog's shows neither.
+  wears a "Recommended" pill on its own collapse bar, and is the group the page opens expanded
+  on a first visit. The pill takes the brand palette directly rather than `Badge`'s `brand`
+  tone, which is deliberately gray — neutral emphasis outside the status vocabulary — and an
+  endorsement is neither a status nor neutral. Its English label is one word because this is
+  the one group carrying five actions, making its row the most crowded on the page, and the
+  vendor name beside it is what a reader needs first.
+- A discounted model card shows the **billed** price alone. What the row would have cost
+  without the promotion answers no question a reader of this list is asking, and spending the
+  meta line's width on it pushes out the figures that do. The rate off list hangs on the card's
+  own top-right corner instead, flush to the border and sharing its radius. The card stays
+  exactly as tall as it was: the tag is absolutely positioned so it takes no line of its own,
+  and the title row reserves room for it and truncates rather than wrapping under it. A row
+  whose price has been edited away from the catalog's shows neither.
 
 ## Chinese price labels
 
