@@ -317,6 +317,19 @@ penguin server reset-admin-password
 
 The built-in `admin` is returned to the unclaimed state — a random password nobody ever sees, and every one of admin's sessions revoked. Start the server again and open the first-login link it prints to set a new password; nothing is written down in the meantime. Other accounts are reset by the admin on the user-management page; this command only touches `admin`. The data root is selected by `PENGUIN_HOME` as usual.
 
+### penguin server status
+
+Prints this data root's server state and the machine's own id, as one line of JSON. It answers whether or not a server is running — the data root is the source, not a live process:
+
+```bash
+penguin server status
+# {"running":true,"port":7364,"pid":41233,"machineId":"LNrJdHAZJ91G58i0"}
+```
+
+`running` requires both that the recorded pid is alive and that its port accepts a connection, so a recycled pid does not read as a live server. `machineId` is `null` until a server has started here at least once — the id is minted on first boot and never changes afterwards. The data root is selected by `PENGUIN_HOME` as usual.
+
+This is what the Machines page runs over ssh to ask a machine what it is doing, which is why the output is JSON rather than prose.
+
 ## penguin version
 
 Reports which build is running. The version number alone cannot answer that — every build made from a checkout between two releases also calls itself `0.2.3` — so a release and a source build identify themselves differently.

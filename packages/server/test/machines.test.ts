@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { machineIdentity, parseHostAliases, parseSshSettings } from "../src/machines/ssh-config.js";
 import { parseProbeOutput, POSIX_PROBE, WINDOWS_PROBE } from "../src/machines/detect.js";
+import { parseProbe } from "../src/machines/server-state.js";
 import {
   cmdQuote,
   runInstallScriptCommand,
@@ -340,5 +341,35 @@ describe("shipping the installers", () => {
     if (!fs.existsSync(built)) return; // Not built in this run; `pnpm build` covers it in CI.
     const source = path.resolve(__dirname, "..", "..", "..", name);
     expect(fs.readFileSync(built, "utf8")).toBe(fs.readFileSync(source, "utf8"));
+  });
+});
+
+describe("reading what `penguin server status` answered", () => {
+  const answer = (o: Record<string, unknown>) => JSON.stringify(o);
+
+  it("takes the state and the id out of the machine's own JSON", () => {
+    expect(
+      parseProbe(answer({ running: true, port: 7364, pid: 42, machineId: "LNrJdHAZJ91G58i0" })),
+    ).toEqual({ state: { kind: "running", port: 7364, pid: 42 }, machineId: "LNrJdHAZJ91G58i0" });
+  });
+
+  it("reads a machine with nothing serving, and one that has no id yet", () => {
+    expect(parseProbe(answer({ running: false, port: null, pid: null, machineId: null }))).toEqual({
+      state: { kind: "stopped" },
+      machineId: null,
+    });
+  });
+
+  it("finds the answer under a login shell's own banner", () => {
+    // sshd runs this in a shell that may greet, warn about updates, or print an MOTD.
+    const said = `Welcome to build-box!\n{ not json }\n${answer({ running: false })}\n`;
+    expect(parseProbe(said).state).toEqual({ kind: "stopped" });
+  });
+
+  it("says it cannot tell rather than 'stopped' when there is no answer at all", () => {
+    // A build too old for the subcommand. Reporting "stopped" would make it indistinguishable
+    // from a healthy machine that simply is not running — and it would never be looked at.
+    const said = "error: unknown command 'status'";
+    expect(parseProbe(said).state).toEqual({ kind: "unreachable", detail: said });
   });
 });

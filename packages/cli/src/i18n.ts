@@ -320,6 +320,10 @@ export interface Messages {
     noServer(root: string): string;
     failed(detail: string): string;
   };
+  serverStatus: {
+    /** One-line description in `penguin server --help`. */
+    desc: string;
+  };
   resetPassword: {
     desc: string;
     /** Refusal while a live server owns the data root (stop it first, then retry). */
@@ -845,6 +849,9 @@ const en: Messages = {
       `${root} has no web.db — no server has ever run on this data root, so there is no account to mint for.`,
     failed: (detail) => `Could not mint a token: ${detail}`,
   },
+  serverStatus: {
+    desc: "Print this data root's server state and machine id as one line of JSON",
+  },
   resetPassword: {
     desc: "Reset the Web admin password to a fresh initial password (the server must be stopped)",
     serverRunning: (url) =>
@@ -1348,6 +1355,9 @@ const zh: Messages = {
     badTtl: "--ttl-seconds 必须是正整数。",
     noServer: (root) => `${root} 上没有 web.db——该数据根上从未运行过服务，因此没有可签发的账号。`,
     failed: (detail) => `签发失败：${detail}`,
+  },
+  serverStatus: {
+    desc: "以单行 JSON 打印本数据根目录的服务状态与本机 id",
   },
   resetPassword: {
     desc: "把 Web 管理员密码重置为新的初始密码（须先停止服务）",
