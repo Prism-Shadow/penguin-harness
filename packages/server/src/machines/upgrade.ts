@@ -3,13 +3,9 @@
  *
  * The same three artifacts the local server was pushed — platform, cli, web (plus any native
  * assets) — are re-packed into the body `/api/hmr/upgrade` takes and POSTed to the machine's
- * OWN copy of that endpoint, through the connection this side already holds to it.
- *
- * That connection is the whole design. This side keeps a shared shell to every machine it
- * probes and a forward beside it (forward.ts), so reaching a machine's API costs nothing per
- * operation — no handshake, no program that has to exist over there to receive the bytes, no
- * shell protocol to write and parse. What the far side answers is the endpoint's own JSON,
- * with its own error codes, exactly as the local push reads it.
+ * OWN copy of that endpoint, through the forward this side holds to it. What the far side
+ * answers is the endpoint's own JSON, with its own error codes, exactly as the local push
+ * reads it.
  *
  * The result is a hot swap: seconds, no restart, and nothing that machine was running dies.
  * That is the difference between this and reinstalling, which replaces the program on disk
@@ -18,9 +14,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
-import { forwardTo } from "./forward.js";
 import { machineApi } from "./machine-api.js";
-import type { RemoteTarget } from "./commands.js";
 
 /** Long enough for 8 MB over a slow link, plus the unpack, boot and commit on the far side. */
 const APPLY_TIMEOUT_MS = 10 * 60_000;
@@ -31,14 +25,19 @@ export type UpgradeOutcome =
   | { kind: "refused"; detail: string }
   /** Nothing to send: this server has never been pushed to. */
   | { kind: "no-build" }
+  /**
+   * Nothing to update: no server is running over there. A hot swap replaces the code a
+   * RUNNING server is serving, so this is not a failure — whatever is on its disk is what it
+   * will load when it next starts.
+   */
+  | { kind: "no-server" }
   /** Could not reach it, or it never answered; `detail` is its own words where there are any. */
   | { kind: "failed"; step: string; detail: string };
 
 /**
  * The upgrade body, rebuilt from this server's own hmr store: exactly what it was pushed,
  * forwarded unchanged. Null when nothing has been pushed here — a server running its
- * packaged build has no bundle to hand on, and pretending otherwise would send a machine
- * something that never existed as a version.
+ * packaged build has no bundle to hand on.
  */
 export function readPushedBuild(dataRoot: string): Buffer | null {
   try {
@@ -68,11 +67,7 @@ export function readPushedBuild(dataRoot: string): Buffer | null {
   }
 }
 
-/**
- * The machine's own words for a refusal. The endpoint answers `{error:{code,message}}`, and
- * its message is what a person can act on — a body it would not take, a runtime too old to
- * claim this platform. Anything unparseable falls back to the raw text, trimmed.
- */
+/** The machine's own words for a refusal: the API error envelope's message, else the text. */
 export function refusalDetail(status: number, text: string): string {
   try {
     const body = JSON.parse(text) as { error?: { message?: string } };
@@ -85,46 +80,21 @@ export function refusalDetail(status: number, text: string): string {
   return said === "" ? `it refused with ${status} and said nothing` : said;
 }
 
-/**
- * Applies this server's build on `target`. Never throws: every failure is one of the outcomes
- * above, carrying the machine's own words where there are any.
- *
- * `port` is where its API is reachable from HERE — the connect tunnel's port when the machine
- * is connected, so a browsing session and this share one forward; otherwise the caller passes
- * none and one is opened and kept (forward.ts).
- */
+/** Applies this server's build on the machine reachable at `port`. Never throws. */
 export async function upgradeRemote(opts: {
-  /** Registry key for the kept forward — the machine's ssh address. */
-  address: string;
-  target: RemoteTarget;
-  /** Where its server is bound over there; what a forward points at. */
-  remotePort: number;
-  /** A live tunnel's local port when there is one, so no second forward is opened. */
-  livePort?: number | null;
+  /** The forward's local port. */
+  port: number;
   /** A session on that machine, as its own cookie (`penguin_session=…`). */
   cookie: string;
   dataRoot: string;
   onProgress?: (line: string) => void;
 }): Promise<UpgradeOutcome> {
-  const say = opts.onProgress ?? (() => {});
   const payload = readPushedBuild(opts.dataRoot);
   if (payload === null) return { kind: "no-build" };
-
-  let port = opts.livePort ?? null;
-  if (port === null) {
-    const forward = await forwardTo({
-      address: opts.address,
-      target: opts.target,
-      remotePort: opts.remotePort,
-    });
-    if (!forward.ok) return { kind: "failed", step: "reach", detail: forward.detail.slice(0, 400) };
-    port = forward.port;
-  }
-
-  say(`Sending this build (${(payload.byteLength / 1048576).toFixed(1)} MB)…`);
+  opts.onProgress?.(`Sending this build (${(payload.byteLength / 1048576).toFixed(1)} MB)…`);
   let answer: { status: number; text: string };
   try {
-    answer = await machineApi(port, opts.cookie).postBytes(
+    answer = await machineApi(opts.port, opts.cookie).postBytes(
       "/api/hmr/upgrade",
       "application/gzip",
       payload,
@@ -137,7 +107,6 @@ export async function upgradeRemote(opts: {
       detail: (err instanceof Error ? err.message : String(err)).slice(0, 400),
     };
   }
-
   // A refusal is an ANSWER: the machine was reached and said no. That is not the same as
   // failing to reach it, and the page offers different things for the two.
   if (answer.status < 200 || answer.status >= 300) {

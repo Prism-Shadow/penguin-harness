@@ -17,7 +17,7 @@ const machine = (over: Partial<MachineInfo> & { alias: string }): MachineInfo =>
   machineId: null,
   installed: null,
   local: false,
-  origin: null,
+  connected: false,
   status: null,
   ...over,
 });
@@ -26,7 +26,6 @@ const state = (machines: MachineInfo[]): MachinesResponse => ({
   machines,
   imageVersion: "9.9.9",
   job: null,
-  connect: null,
 });
 
 const INSTALL = { version: "9.9.9", at: "2026-08-24T12:00:00.000Z" };
@@ -39,7 +38,7 @@ const here = machine({
 const connected = machine({
   alias: "far-box",
   machineId: "noeSE0FFHhNXl2J5",
-  origin: "http://localhost:7364",
+  connected: true,
   installed: INSTALL,
 });
 
@@ -51,7 +50,7 @@ describe("workspaceMachines", () => {
   });
   const connectedNameless = machine({
     alias: "ghost",
-    origin: "http://localhost:7365",
+    connected: true,
     installed: INSTALL,
   });
   const neverInstalled = machine({ alias: "just-an-ssh-host" });

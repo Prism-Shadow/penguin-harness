@@ -198,11 +198,13 @@ export async function installOnRemote(opts: {
   /** The hmr capability's assetsDir accessor: where a pushed bundle's assets were unpacked. */
   assets?: () => string | null;
   /**
-   * Run the installer even when the base release over there already matches. For the one
-   * case the short-circuits get wrong: a machine whose PROGRAM is the right version and
-   * whose running process cannot claim what is being pushed at it. Nothing about the
-   * versions says so — only the machine's own refusal does — so this is asked for, never
-   * inferred.
+   * Run the installer even when the release over there already matches.
+   *
+   * For the case the short-circuit below gets wrong: a machine whose PROGRAM is the right
+   * version and whose hmr store this server cannot reach — an empty store, or one holding a
+   * build that cannot receive an update. Nothing about the versions says so, so this is asked
+   * for and never inferred. The installer replicates the store on its way through, which is
+   * what puts the machine back within reach.
    */
   forceInstaller?: boolean;
 }): Promise<RemoteInstallOutcome> {

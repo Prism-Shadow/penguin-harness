@@ -324,6 +324,10 @@ export interface Messages {
     /** One-line description in `penguin server --help`. */
     desc: string;
   };
+  /** `penguin server stop`: help text. */
+  serverStop: {
+    desc: string;
+  };
   resetPassword: {
     desc: string;
     /** Refusal while a live server owns the data root (stop it first, then retry). */
@@ -852,6 +856,9 @@ const en: Messages = {
   serverStatus: {
     desc: "Print this data root's server state and machine id as one line of JSON",
   },
+  serverStop: {
+    desc: "Stop the server running on this data root and report the outcome as JSON",
+  },
   resetPassword: {
     desc: "Reset the Web admin password to a fresh initial password (the server must be stopped)",
     serverRunning: (url) =>
@@ -1358,6 +1365,9 @@ const zh: Messages = {
   },
   serverStatus: {
     desc: "以单行 JSON 打印本数据根目录的服务状态与本机 id",
+  },
+  serverStop: {
+    desc: "停止本数据根目录上运行的服务，并以 JSON 报告结果",
   },
   resetPassword: {
     desc: "把 Web 管理员密码重置为新的初始密码（须先停止服务）",

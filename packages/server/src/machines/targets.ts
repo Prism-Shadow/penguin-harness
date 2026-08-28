@@ -79,11 +79,6 @@ export type ResolvedTarget = { alias: string; settings: SshSettings; machine: st
 const RESOLVE_TTL_MS = 60_000;
 const resolved = new Map<string, { at: number; value: ResolvedTarget | null }>();
 
-/** Forgets cached resolutions — for a config that is known to have changed. */
-export function forgetResolvedTargets(): void {
-  resolved.clear();
-}
-
 export async function resolveTarget(alias: string): Promise<ResolvedTarget | null> {
   const hit = resolved.get(alias);
   if (hit !== undefined && Date.now() - hit.at < RESOLVE_TTL_MS) return hit.value;

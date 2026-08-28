@@ -61,17 +61,14 @@ export const zh = {
     behind: "版本不一致",
     upToDate: "已是最新",
     /** Bringing a machine's server up and holding a tunnel to it. */
+    replaceProgram: "在那边安装程序并重启",
+    replaceProgramWhy:
+      "那台机器上的 PenguinHarness 接不了这次更新——本服务端推送过的东西还没到它那里。安装会把一份放上去并重启它的服务，正在用它的人会被打断。",
+    restart: "重启",
+    restarting: "重启中\u2026",
     connect: "连接",
     connecting: "连接中…",
     disconnect: "断开",
-    /** Each machine is a separate server with its own accounts; this browser signs in per machine. */
-    signIn: "登录",
-    replaceProgram: "替换那边的程序并重启",
-    replaceProgramWhy:
-      "它的 runtime 比这个构建旧，而推送从不替换 runtime。这会在那台机器上安装程序并重启它的服务，正在使用它的人会被打断。",
-    signingIn: "登录中…",
-    signedIn: "已登录",
-    signInTo: (alias: string) => `登录到 ${alias}`,
     /** A connected machine: its filesystem and API can be reached from here. */
     reachable: "可访问",
     /** Manual re-probe, for when you already know something changed. */
@@ -91,9 +88,9 @@ export const zh = {
     /** Terminal states of a finished job. */
     installed: (version: string) => `已安装 ${version}。`,
     alreadyInstalled: (version: string) => `已经是 ${version}，无需安装。`,
-    failedAt: (step: string) => `安装失败（${step}）。`,
+    failedAt: (step: string) => `失败于「${step}」。`,
     /** The progress log's own heading, so the block is not an unlabelled wall of text. */
-    output: "安装输出",
+    output: "输出",
     adminOnly: "只有管理员可以安装到机器上。",
   },
 

@@ -59,17 +59,14 @@ export const en: Strings = {
     behind: "Out of sync",
     upToDate: "Up to date",
     /** Bringing a machine's server up and holding a tunnel to it. */
+    replaceProgram: "Install the program there and restart",
+    replaceProgramWhy:
+      "Its own copy of PenguinHarness cannot receive this update — nothing this server pushed is on it yet. Installing puts one there and restarts its server, which interrupts anyone using it.",
+    restart: "Restart",
+    restarting: "Restarting\u2026",
     connect: "Connect",
     connecting: "Connecting\u2026",
     disconnect: "Disconnect",
-    /** Each machine is a separate server with its own accounts; this browser signs in per machine. */
-    signIn: "Sign in",
-    replaceProgram: "Replace the program there and restart",
-    replaceProgramWhy:
-      "Its runtime is older than this build, and a push never replaces a runtime. This installs the program over there and restarts its server, which interrupts anyone using it.",
-    signingIn: "Signing in\u2026",
-    signedIn: "signed in",
-    signInTo: (alias: string) => `Sign in to ${alias}`,
     /** A connected machine: its filesystem and API can be reached from here. */
     reachable: "Reachable",
     /** Manual re-probe, for when you already know something changed. */
@@ -89,9 +86,9 @@ export const en: Strings = {
     /** Terminal states of a finished job. */
     installed: (version: string) => `Installed ${version}.`,
     alreadyInstalled: (version: string) => `Already on ${version} \u2014 nothing to install.`,
-    failedAt: (step: string) => `The install failed while trying to ${step}.`,
+    failedAt: (step: string) => `It failed while trying to ${step}.`,
     /** The progress log's own heading, so the block is not an unlabelled wall of text. */
-    output: "Install output",
+    output: "Output",
     adminOnly: "Only an admin can install on a machine.",
   },
 

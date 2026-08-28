@@ -15,7 +15,6 @@
  * masked. Ours win on a collision.
  */
 import type { MachineApi } from "./machine-api.js";
-import { createHash } from "node:crypto";
 import type { ModelEntry, ModelRef } from "@prismshadow/penguin-core";
 import type {
   ModelInfo,
@@ -34,13 +33,8 @@ export interface LocalModels {
   name?: string;
 }
 
-/** What a machine is remembered as having received: a digest of the whole local table. */
-export function fingerprintLocal(local: LocalModels): string {
-  return createHash("sha256").update(JSON.stringify(local)).digest("hex").slice(0, 32);
-}
-
 /** What a sync did, in the words the connect log shows. */
-export type ModelSyncOutcome =
+type ModelSyncOutcome =
   | {
       kind: "synced";
       /** Projects whose model table was written on that machine (empty = nothing needed it). */
