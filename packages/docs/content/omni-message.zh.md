@@ -43,7 +43,7 @@ interface SessionMetaPayload {
 }
 ```
 
-session_meta 只承载**会话级不变量**——模型、系统提示词、Workspace 在 Session 生命周期内不可变；恢复 Session 时引擎直接以 Trace 中的这条消息为运行时配置，见 [Session 与 Trace](/sessions-and-traces)。思考等级是逐轮参数（随每次 Task 下发），不记录在此；旧版 Trace 的 meta 里可能仍带 `thinking_level` 字段，恢复时会被忽略——恢复后的 Session 直接读取 Agent 当前配置。
+session_meta 描述**一个模型上下文**：模型与 Workspace 在 Session 生命周期内不可变，系统提示词则按上下文固定——压缩轮转出的新文件以携带新上下文重新组装后提示词的 `session_meta` 开头（见[上下文压缩](/agent-loop)）；恢复 Session 时引擎直接以最新文件中的这条消息为运行时配置，见 [Session 与 Trace](/sessions-and-traces)。思考等级是逐轮参数（随每次 Task 下发），不记录在此；旧版 Trace 的 meta 里可能仍带 `thinking_level` 字段，恢复时会被忽略——恢复后的 Session 直接读取 Agent 当前配置。
 
 工具 schema **不在 meta 里**：工具集要等 MCP Server 连接完成才可知，而 meta 不应等待——完整工具定义在首次 run 时以独立的 `tool_list_ready` 事件下发（见 event_msg）。拆分前的旧版 Trace 在 meta 里内嵌 `tools` 字段，该字段已明确不再读取（旧 Trace 的工具记录不再展示）。
 

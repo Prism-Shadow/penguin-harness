@@ -100,10 +100,14 @@ export interface ToolDefinition {
 }
 
 /**
- * Session metadata. Holds **per-session invariants only** — values fixed for the Session's
- * lifetime (model reference, assembled system prompt, tool schemas, paths, origin). Per-turn
- * parameters (e.g. the thinking level, passed with each run) never belong here; a
- * `thinking_level` field still present in a legacy Trace's meta is ignored on resume.
+ * Session metadata: the runtime configuration of one **model context**. One `session_meta`
+ * opens every Trace file — the Session's first, and each file a compaction's rotation starts.
+ * The model reference, the paths and the origin are fixed for the Session's lifetime; the
+ * assembled system prompt is fixed per context — a compaction opens its new context with the
+ * prompt re-assembled from the current Agent State (`AGENTS.md` and the other data
+ * placeholders re-read), so each file's meta carries the prompt its context actually ran
+ * with. Per-turn parameters (e.g. the thinking level, passed with each run) never belong
+ * here; a `thinking_level` field still present in a legacy Trace's meta is ignored on resume.
  */
 export interface SessionMetaPayload {
   session_id: string;
@@ -112,7 +116,7 @@ export interface SessionMetaPayload {
   /** The session model's upstream model_id (the request id sent to AgentHub; paired with `provider`). */
   model_id: string;
   model_context_window: number | string;
-  /** The system prompt actually used by this Session (the assembled result with environment placeholders already substituted). */
+  /** The system prompt this context runs with (the assembled result, placeholders already substituted). */
   system_prompt: string;
   // The tool definitions were embedded here (`tools`) before the tool_list_ready split (see
   // ToolListReadyPayload): the toolset is only known after MCP servers connect, and meta

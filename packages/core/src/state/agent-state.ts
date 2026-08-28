@@ -101,6 +101,7 @@ export interface AgentState {
   agentId: string;
   stateDir: string;
   systemConfig: SystemConfig;
+  /** `AGENTS.md` as read when the State was loaded. Sessions do not run on this snapshot: every model context is opened with the file re-read (see `readAgentsMd`). */
   agentsMd: string;
 }
 
@@ -120,6 +121,22 @@ export interface SessionEnvironmentValues {
   /** The shell command sessions run in (system Prompt placeholder {{SHELL}}; e.g. "bash", "pwsh") — tells the model which command syntax exec_command speaks. */
   shell: string;
   date: string;
+}
+
+/**
+ * Reads the Agent's `AGENTS.md` as it is on disk right now; a missing file reads as the default
+ * content, the same as at load time. Every model-context opener reads it here — Session
+ * creation, the rebuild after a completed compaction, and a resume that finds its context
+ * closed — so an edit lands in the next context rather than the next Session.
+ * Docs: /docs/agent-loop § "Compaction".
+ */
+export async function readAgentsMd(
+  root: string,
+  projectId: string,
+  agentId: string,
+): Promise<string> {
+  const mdPath = agentsMdPath(root, projectId, agentId);
+  return (await fileExists(mdPath)) ? await fs.readFile(mdPath, "utf8") : defaultAgentsMd();
 }
 
 /**
@@ -169,7 +186,7 @@ export async function loadOrInitAgentState(opts?: {
       );
     }
     systemConfig = parsed as SystemConfig;
-    agentsMd = (await fileExists(mdPath)) ? await fs.readFile(mdPath, "utf8") : defaultAgentsMd();
+    agentsMd = await readAgentsMd(root, projectId, agentId);
   } else {
     // Init path: create the directory structure and write default config (preset only takes effect here).
     await Promise.all([

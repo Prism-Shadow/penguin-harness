@@ -104,6 +104,18 @@ export interface CompactionSettings {
   prompt: string;
 }
 
+/**
+ * A model context opened by {@link ContextEngineDeps.openContext} after a completed compaction:
+ * the fresh LLM object, and — when the context's runtime configuration differs from the one
+ * before it (a system prompt re-assembled from the current Agent State) — the `session_meta`
+ * the rotated Trace file opens with, so that file's head describes the context it records.
+ * Without `sessionMeta`, the rotated file opens with the previous context's meta.
+ */
+export interface OpenedContext {
+  llm: LLMInterface;
+  sessionMeta?: OmniMessage;
+}
+
 /** Result of one compaction run: a StopReason terminal state (completed / aborted / retryable — abandoned, made up at the next trigger / fatal — needs a config change first); carries the summary message when summarize succeeds. */
 interface CompactionResult {
   status: StopReason;
@@ -207,15 +219,22 @@ export interface ContextEngineDeps {
    */
   compactionMaxReconnects?: number;
   /**
-   * Creates a new LLM object after compaction (a fresh model context); the argument is the
-   * current Session cumulative token counts, for the new object to carry forward
-   * (token_usage.session stays continuous across compaction). Context compaction is
-   * unavailable if this is not provided.
+   * Opens a fresh model context after compaction: the new LLM object, carrying forward the
+   * Session cumulative token counts passed in (token_usage.session stays continuous across
+   * compaction), plus — when the new context's runtime configuration differs from the one
+   * before it — the session_meta the rotated Trace file opens with (see {@link OpenedContext}).
+   * May read the Agent State, hence possibly async. Context compaction is unavailable if this
+   * is not provided.
    */
-  createLLM?: (sessionTokens: TokenCounts) => LLMInterface;
-  /** Context compaction settings; only takes effect if provided together with `createLLM`. */
+  openContext?: (sessionTokens: TokenCounts) => OpenedContext | Promise<OpenedContext>;
+  /** Context compaction settings; only takes effect if provided together with `openContext`. */
   compaction?: CompactionSettings;
-  /** This Session's session_meta message; written at the start of the new Trace file after compaction splits it. */
+  /**
+   * The first context's session_meta message: written at the start of each Trace file a
+   * compaction's rotation opens, until an `openContext` result brings the meta of the context
+   * it opened — from then on that one is written, so every file's head describes its own
+   * context.
+   */
   sessionMeta?: OmniMessage;
   /**
    * This Session's tool_list_ready event (the resolved toolset). Written once right after
@@ -448,8 +467,14 @@ export class ContextEngine {
   private readonly compactionMaxReconnects: number;
   /** Interruption cleanup: content to resend generated when the previous run was aborted, held on the engine across runs. */
   private pendingCarryOver: OmniMessage[] = [];
-  /** Current LLM object; swapped for a new one created by `createLLM` after a successful compaction (a fresh model context). */
+  /** Current LLM object; swapped for the one `openContext` returns after a successful compaction (a fresh model context). */
   private llm: LLMInterface;
+  /**
+   * session_meta of the current context, written at the head of the Trace file the deferred
+   * rotation opens (see `write`): the first context's at construction, then whatever meta each
+   * `openContext` result brings — a context that brought none keeps the previous one.
+   */
+  private contextMeta: OmniMessage | undefined;
   /** Session cumulative turn count: counted per LLM Request that produces token_usage, across Tasks; reset to zero after compaction completes. */
   private sessionTurns = 0;
   /** Whether the current context was produced by a compaction (`startNewContext`); this flag becomes meaningless once a new completed turn occurs. */
@@ -517,6 +542,7 @@ export class ContextEngine {
     this.reconnectBackoffMaxMs = deps.reconnectBackoffMaxMs ?? 30_000;
     this.compactionMaxReconnects = deps.compactionMaxReconnects ?? this.maxReconnects;
     this.llm = deps.llm;
+    this.contextMeta = deps.sessionMeta;
     // Session resumption: apply the initial state derived from replay.
     const init = deps.initialState;
     if (init) {
@@ -954,14 +980,14 @@ export class ContextEngine {
    */
   compactability(): CompactAvailability {
     return compactAvailability({
-      configured: Boolean(this.deps.compaction && this.deps.createLLM),
+      configured: Boolean(this.deps.compaction && this.deps.openContext),
       sessionTurns: this.sessionTurns,
       fromCompaction: this.fromCompaction,
     });
   }
 
   async *compact(opts?: { signal?: AbortSignal }): AsyncGenerator<OmniMessage> {
-    if (!this.deps.compaction || !this.deps.createLLM) return;
+    if (!this.deps.compaction || !this.deps.openContext) return;
     // The current context has no completed LLM turns: nothing to compact, return immediately.
     // This also guards against two /compact calls in a row — the new context is empty right
     // after the previous compaction, so running again would overwrite the not-yet-consumed
@@ -1363,7 +1389,7 @@ export class ContextEngine {
    */
   private compactionTrigger(): CompactionReason | null {
     const settings = this.deps.compaction;
-    if (!settings || !this.deps.createLLM) return null;
+    if (!settings || !this.deps.openContext) return null;
     if (settings.maxContextLength > 0 && this.lastRequestTotal >= settings.maxContextLength) {
       return "context";
     }
@@ -1749,15 +1775,19 @@ export class ContextEngine {
   }
 
   /**
-   * Opens a new model context after successful compaction: swaps in a new LLM object (carrying
-   * forward the Session cumulative token counts), resets the Session turn count and context
-   * usage counter. Trace **does not** split files immediately — that's deferred until the next
-   * message that needs writing, when it rotates and opens with a session_meta (see `write`),
-   * avoiding an empty file if no further messages follow the compaction.
+   * Opens a new model context after successful compaction: swaps in the LLM object
+   * `openContext` returns (carrying forward the Session cumulative token counts), adopts the
+   * session_meta it brings — if any — for the rotated Trace file's head, and resets the Session
+   * turn count and context usage counter. Trace **does not** split files immediately — that's
+   * deferred until the next message that needs writing, when it rotates and opens with the
+   * context's session_meta (see `write`), avoiding an empty file if no further messages follow
+   * the compaction.
    */
   private async startNewContext(): Promise<void> {
     this.pendingTraceRotation = true;
-    this.llm = this.deps.createLLM!(this.lastSessionTokens);
+    const opened = await this.deps.openContext!(this.lastSessionTokens);
+    this.llm = opened.llm;
+    if (opened.sessionMeta) this.contextMeta = opened.sessionMeta;
     this.sessionTurns = 0;
     this.lastRequestTotal = 0;
     // Lets compactability() distinguish "just compacted" from "hasn't chatted yet" — both have
@@ -1927,7 +1957,8 @@ export class ContextEngine {
   /**
    * Trace writes are **best-effort**: observability should never interrupt the ReAct
    * loop, so write failures only warn rather than throw. The first write after compaction first
-   * performs the deferred Trace rotation: splitting the file and opening it with session_meta.
+   * performs the deferred Trace rotation: splitting the file and opening it with the current
+   * context's session_meta.
    */
   private async write(msg: OmniMessage): Promise<void> {
     if (!this.deps.trace) return;
@@ -1935,7 +1966,7 @@ export class ContextEngine {
       this.pendingTraceRotation = false;
       try {
         if (this.deps.trace.rotate) await this.deps.trace.rotate();
-        if (this.deps.sessionMeta) await this.deps.trace.write(this.deps.sessionMeta);
+        if (this.contextMeta) await this.deps.trace.write(this.contextMeta);
         if (this.deps.toolList) await this.deps.trace.write(this.deps.toolList);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

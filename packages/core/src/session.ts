@@ -57,12 +57,13 @@ import type {
   CompactAvailability,
   CompactionSettings,
   EngineInitialState,
+  OpenedContext,
   RunOptions,
   TraceSink,
 } from "./engine/context-engine.js";
 
 export interface SessionConfig {
-  /** Session metadata — per-session invariants only (session_id / provider / model_id / model_context_window / system_prompt / agent_state / workspace / source); the toolset travels separately as the first run's tool_list_ready event. */
+  /** Session metadata: the first context's runtime configuration (session_id / provider / model_id / model_context_window / system_prompt / agent_state / workspace / source) — a context a compaction opens brings its own through `openContext`; the toolset travels separately as the first run's tool_list_ready event. */
   meta: SessionMetaPayload;
   /**
    * Lazy session bootstrap, run at the start of the first run: resolves the toolset —
@@ -86,15 +87,21 @@ export interface SessionConfig {
   trace?: TraceSink;
   /** Maximum LLM turns per Task; -1 removes the cap. Omitted means -1 too — the agent-config default and the SDK fallback agree (unlimited). */
   maxTurns?: number;
-  /** Creates a new LLM object after compaction (carries over the Session's accumulated Token count); context compaction is unavailable if not provided. */
-  createLLM?: (sessionTokens: TokenCounts) => LLMInterface;
+  /**
+   * Opens a fresh model context after compaction (see ContextEngineDeps.openContext): the new
+   * LLM object carrying over the Session's accumulated Token count, with the session_meta of
+   * the context it opened when the composition layer re-assembled the system prompt — the
+   * Session adopts that meta as its current one (`metaMessage`) and the engine writes it at
+   * the head of the rotated Trace file. Context compaction is unavailable if not provided.
+   */
+  openContext?: (sessionTokens: TokenCounts) => OpenedContext | Promise<OpenedContext>;
   /**
    * Factory for the bare LLM used by out-of-band, one-off requests (same Model/credential as
    * the session; no tools, no system prompt, thinking off): used for meta-requests such as
    * `generateTitle`; if not provided, `generateTitle` returns null.
    */
   createBareLLM?: () => LLMInterface;
-  /** Context compaction settings (defaults are filled in by the composition layer); only takes effect when provided together with `createLLM`. */
+  /** Context compaction settings (defaults are filled in by the composition layer); only takes effect when provided together with `openContext`. */
   compaction?: CompactionSettings;
   /** Session resume: `session_meta` is already in the original Trace file, so it isn't written again on the first run (avoids duplication). */
   metaAlreadyWritten?: boolean;
@@ -269,7 +276,8 @@ export class Session {
   >;
   private readonly environment: EnvironmentInterface;
   private readonly trace?: TraceSink;
-  private readonly meta: OmniMessage;
+  /** session_meta of the context that is running: the first context's at construction, re-stamped by each context `openContext` opens (see `metaMessage`). */
+  private meta: OmniMessage;
   private readonly createBareLLM?: () => LLMInterface;
   private readonly imagesDir: string;
   private readonly modelHasVision: boolean;
@@ -329,9 +337,19 @@ export class Session {
       environment: config.environment,
       ...(config.trace ? { trace: config.trace } : {}),
       ...(config.maxTurns !== undefined ? { maxTurns: config.maxTurns } : {}),
-      // Context compaction: new LLM factory + resolved settings + writes session_meta (and
-      // tool_list_ready) at the start of the new Trace file after splitting.
-      ...(config.createLLM ? { createLLM: config.createLLM } : {}),
+      // Context compaction: the new-context factory + resolved settings; the engine writes the
+      // context's session_meta (and tool_list_ready) at the start of the new Trace file after
+      // splitting. The factory is wrapped so the Session's own meta follows the opened context:
+      // `metaMessage` must describe the context that is running, not the one that was.
+      ...(config.openContext
+        ? {
+            openContext: async (sessionTokens: TokenCounts): Promise<OpenedContext> => {
+              const opened = await config.openContext!(sessionTokens);
+              if (opened.sessionMeta) this.meta = opened.sessionMeta;
+              return opened;
+            },
+          }
+        : {}),
       ...(config.compaction ? { compaction: config.compaction } : {}),
       ...(config.initialEngineState ? { initialState: config.initialEngineState } : {}),
       // The engine assembles one input of its own — a steering message with images — and folds
@@ -741,7 +759,7 @@ export class Session {
     // nothing to compact (the server renders this reason as a 409 `nothing_to_compact`).
     const init = this.engineDeps.initialState;
     return compactAvailability({
-      configured: Boolean(this.engineDeps.compaction && this.engineDeps.createLLM),
+      configured: Boolean(this.engineDeps.compaction && this.engineDeps.openContext),
       sessionTurns: init?.sessionTurns ?? 0,
       fromCompaction: init?.fromCompaction ?? false,
     });
@@ -800,7 +818,7 @@ export class Session {
     return this.environment.toolPermission(name);
   }
 
-  /** This Session's session_meta message (used e.g. by host tools to forward nested-session metadata to a parent session). */
+  /** The running context's session_meta message — the first context's until a compaction opens another (used e.g. by host tools to forward nested-session metadata to a parent session). */
   get metaMessage(): OmniMessage {
     return this.meta;
   }

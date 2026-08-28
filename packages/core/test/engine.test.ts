@@ -1074,7 +1074,7 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
       environment,
       maxReconnects: 1,
       reconnectBackoffMs: 1,
-      createLLM: () => llm,
+      openContext: () => ({ llm: llm }),
       compaction: { maxContextLength: 10, maxSessionTurns: -1, mode: "summarize", prompt: "SUM" },
     });
 
@@ -2969,7 +2969,7 @@ describe("ContextEngine mid-run steering ([user_steering])", () => {
     const engine = new ContextEngine({
       llm: oldLLM,
       environment: steeringEnvironment(),
-      createLLM: () => newLLM,
+      openContext: () => ({ llm: newLLM }),
       compaction: {
         maxContextLength: 1000,
         maxSessionTurns: -1,

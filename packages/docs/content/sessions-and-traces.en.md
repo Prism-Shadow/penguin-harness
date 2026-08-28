@@ -81,14 +81,14 @@ When tool output exceeds `maxOutputLength`, Trace records the same bounded head,
 The Trace is the single source of truth for recovery — there is no separate session database to keep in sync. `resumeSession` works as follows:
 
 1. Locate the highest-index Trace file of the Session;
-2. Read the runtime configuration from its `session_meta` — model, system prompt, Workspace — all immutable for the lifetime of the Session;
+2. Read the runtime configuration from its `session_meta` — the model and the Workspace, immutable for the lifetime of the Session, and the system prompt that context ran with;
 3. Replay the committed history into a fresh LLM context;
 4. Reconstruct the carry-over (undelivered tool outputs, interruption markers) plus turn and Token counters;
 5. Continue appending to the same Trace file.
 
 Recovery requires that the Workspace and the model still exist. What recovery guarantees is structural legality: only committed turns are replayed, with `tool_call` / `tool_call_output` pairing intact; incomplete model output (thinking, text) is allowed to be lost. A truncated last line left by an abnormal process exit is tolerated and ignored; a malformed line in the middle of a file (e.g. in a file damaged before writer appends were serialized) is skipped with a diagnostic on stderr, and every parseable record is kept. See `packages/core/src/trace/resume.ts`.
 
-Special case: if the latest Trace file ends with a completed compaction, that context is closed as a whole — resume starts from an empty context; in summarize mode the `[context_summary]` is reconstructed and prepended to the first input after resume (old Traces using the earlier angle-bracket `<summary>` form are still understood).
+Special case: if the latest Trace file ends with a completed compaction, that context is closed as a whole — resume starts from an empty context; in summarize mode the `[context_summary]` is reconstructed and prepended to the first input after resume (old Traces using the earlier angle-bracket `<summary>` form are still understood). That empty context is opened like any context a compaction opens: with the system prompt re-assembled from the current Agent State rather than the closed file's recorded one (see [Compaction](/agent-loop)).
 
 ## Model switch (/model)
 

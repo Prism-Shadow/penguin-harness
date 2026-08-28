@@ -79,14 +79,14 @@ Trace 是 append-only 的 JSON Lines 文件，每行一个 OmniMessage 信封（
 Trace 是恢复的唯一事实来源，没有独立的会话数据库需要与之对齐。`resumeSession` 的流程：
 
 1. 定位该 Session 索引最大的 Trace 文件；
-2. 从文件内的 `session_meta` 读取运行配置——模型、系统提示词、Workspace，三者在 Session 生命周期内不可变；
+2. 从文件内的 `session_meta` 读取运行配置——模型与 Workspace（二者在 Session 生命周期内不可变）以及该上下文所用的系统提示词；
 3. 将已提交的历史回放进一份全新的 LLM 上下文；
 4. 重建 carry-over（未送达的工具输出、中断标记）与轮数、Token 计数器；
 5. 继续追加写入同一个 Trace 文件。
 
 恢复的前提是 Workspace 与模型仍然存在。恢复保证的是结构合法性：只回放已提交的轮次，`tool_call` 与 `tool_call_output` 配对完整；未完成的模型输出（thinking、文本）允许丢失。异常退出留下的截断末行会被容忍并忽略；文件中间的损坏行（如写入器追加串行化之前受损的存量文件）会被跳过并在 stderr 给出诊断，其余可解析的记录全部保留。实现见 `packages/core/src/trace/resume.ts`。
 
-特殊情形：若最新 Trace 文件以一次完成的压缩收尾，则该上下文已整体关闭——恢复从空上下文开始；summarize 模式下会重建 `[context_summary]` 摘要，前置到恢复后第一轮输入中（旧 Trace 中早期的尖括号 `<summary>` 形式仍可识别）。
+特殊情形：若最新 Trace 文件以一次完成的压缩收尾，则该上下文已整体关闭——恢复从空上下文开始；summarize 模式下会重建 `[context_summary]` 摘要，前置到恢复后第一轮输入中（旧 Trace 中早期的尖括号 `<summary>` 形式仍可识别）。这个空上下文与压缩开启的上下文一样开启：系统提示词从当前 Agent State 重新组装，而不是沿用已关闭文件里记录的那份（见[上下文压缩](/agent-loop)）。
 
 ## 模型切换（/model）
 

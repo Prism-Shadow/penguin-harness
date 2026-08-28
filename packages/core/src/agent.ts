@@ -24,6 +24,7 @@ import {
   loadProjectConfig,
   projectDir,
   goalFilePath,
+  readAgentsMd,
   resolveSessionMemory,
   resolveModelRef,
   sessionScratchpadDir,
@@ -48,17 +49,18 @@ import {
   formatSessionId,
   sessionEnvironment,
 } from "./internal/session-support.js";
-import { compactionEnd, userText, withOrigin } from "./omnimessage/index.js";
+import { compactionEnd, sessionMeta, userText, withOrigin } from "./omnimessage/index.js";
 import type {
   McpServerConnectResult,
   MessageOrigin,
   OmniMessage,
+  SessionMetaPayload,
   TokenCounts,
   ToolCallPayload,
 } from "./omnimessage/index.js";
 import { SUBAGENT_NAME } from "./environment/tools/run-subagent.js";
 import { INPUT_SUBAGENT_NAME } from "./environment/tools/input-subagent.js";
-import type { CompactionSettings } from "./engine/context-engine.js";
+import type { CompactionSettings, OpenedContext } from "./engine/context-engine.js";
 import type {
   GenerativeModelConfig,
   ProxyEnvPolicy,
@@ -204,6 +206,65 @@ export class Agent {
   }
 
   /**
+   * Assembles the system prompt a model context opens with, from the Agent State as it is on
+   * disk **now**: the editable `AGENTS.md`, the installed Skills' metadata, the Memory indexes
+   * and the schedule roster are read at this moment, and the Environment values (the date
+   * included) are taken now. Every context opener goes through here — createSession, the
+   * rebuild after a completed compaction (buildRuntime's openContext) and a resume that finds
+   * its context closed — so an `AGENTS.md` edit made during one context lands in the next,
+   * not in the next Session.
+   *
+   * What stays as the Session loaded it: the template and the feature toggles —
+   * `system_config.yaml` is baked per Session, and it also drives the toolset and the
+   * compaction settings, which do not follow it mid-session — and the vault key list, which
+   * names the keys the Session's Environment actually carries (the vault is injected into
+   * command environments once, at creation or resume), so the caller passes it in.
+   *
+   * The vault only injects **key names** into the prompt (so the model knows which API keys
+   * are available); values only go into the subprocess environment. Skills only inject
+   * metadata (name and description); the model reads the body on demand via shell. Memory
+   * likewise injects only its index; topic bodies are read on demand. Schedules inject only
+   * task names.
+   * Docs: /docs/agent-loop § "Compaction".
+   */
+  private async assembleSessionPrompt(args: {
+    sessionId: string;
+    workspaceDir: string;
+    modelEntry: ModelEntry;
+    /** Key names of the vault the Session's Environment carries (names only enter the prompt). */
+    vaultKeys: string[];
+  }): Promise<string> {
+    const { root, projectId, agentId } = this.state;
+    const agentsMd = await readAgentsMd(root, projectId, agentId);
+    const installedSkills = await listInstalledSkills(root, projectId, agentId);
+    // Schedule task names for the {{SCHEDULES}} roster (names only; the files' contents are
+    // the server-side scheduler's concern).
+    const scheduleNames = await listScheduleNames(root, projectId, agentId);
+    // Memory for this Session: null when the Agent has Memory off; a temporary Workspace gets
+    // the user scope only (nothing written against it could ever be read back).
+    const memory = await resolveSessionMemory({
+      root,
+      projectId,
+      agentId,
+      workspaceDir: args.workspaceDir,
+      enabled: this.state.systemConfig.memory?.enabled !== false,
+    });
+    return assembleSystemPrompt(
+      { ...this.state, agentsMd },
+      sessionEnvironment(args.workspaceDir, args.sessionId, {
+        agentId,
+        projectDir: projectDir(root, projectId),
+        provider: args.modelEntry.provider,
+        modelId: args.modelEntry.model_id,
+      }),
+      args.vaultKeys,
+      installedSkills,
+      memory,
+      scheduleNames,
+    );
+  }
+
+  /**
    * Create a Session in the specified (or a temporary) Workspace.
    * Docs: /docs/sessions-and-traces § "Run model".
    */
@@ -278,50 +339,35 @@ export class Agent {
         ? undefined
         : (opts.thinkingLevel ?? this.configuredThinkingLevel());
 
-    // Agent-level vault (agent_state/.vault.toml) and installed Skills: read the current values each time a Session is created.
+    // Agent-level vault (agent_state/.vault.toml): read at Session creation; its values go into
+    // the command subprocess environment for the Session's lifetime, and its key names (never
+    // values) into the system prompt — assembleSessionPrompt says what the prompt re-reads per
+    // context and why the key list is not among it.
     const vault = await loadAgentVault(this.state.root, this.state.projectId, this.state.agentId);
-    const installedSkills = await listInstalledSkills(
-      this.state.root,
-      this.state.projectId,
-      this.state.agentId,
-    );
-    // Schedule task names for the {{SCHEDULES}} roster: read fresh like the vault and Skills
-    // above (names only; the files' contents are the server-side scheduler's concern).
-    const scheduleNames = await listScheduleNames(
-      this.state.root,
-      this.state.projectId,
-      this.state.agentId,
-    );
-    // Memory for this Session: null when the Agent has Memory off; a temporary Workspace gets
-    // the user scope only (nothing written against it could ever be read back). Reads the
-    // current indexes every time, like the vault and Skills above.
-    const memory = await resolveSessionMemory({
-      root: this.state.root,
-      projectId: this.state.projectId,
-      agentId: this.state.agentId,
+    // The assembled system prompt goes both to the LLM and into session_meta (so the Trace can
+    // audit the actual effective value).
+    const systemPrompt = await this.assembleSessionPrompt({
+      sessionId,
       workspaceDir,
-      enabled: this.state.systemConfig.memory?.enabled !== false,
+      modelEntry,
+      vaultKeys: Object.keys(vault),
     });
 
-    // The assembled system prompt goes both to the LLM and into session_meta (so the
-    // Trace can audit the actual effective value). The vault only injects **key names**
-    // into the prompt (so the model knows which API keys are available); values only
-    // go into the subprocess environment. Skills only inject metadata (name and
-    // description); the model reads the body on demand via shell. Memory likewise injects
-    // only its index; topic bodies are read on demand. Schedules inject only task names.
-    const systemPrompt = assembleSystemPrompt(
-      this.state,
-      sessionEnvironment(workspaceDir, sessionId, {
-        agentId: this.state.agentId,
-        projectDir: projectDir(this.state.root, this.state.projectId),
-        provider: modelEntry.provider,
-        modelId: modelEntry.model_id,
-      }),
-      Object.keys(vault),
-      installedSkills,
-      memory,
-      scheduleNames,
-    );
+    // session_meta: the first context's runtime configuration — a compaction opens later
+    // contexts with their own (see buildRuntime's openContext). The thinking level is a
+    // per-turn run parameter (RunOptions.thinkingLevel) and is deliberately not recorded here;
+    // the toolset travels as the first run's tool_list_ready event (it is only known after
+    // the MCP connect the bootstrap performs).
+    const meta: SessionMetaPayload = {
+      session_id: sessionId,
+      provider: modelEntry.provider,
+      model_id: modelEntry.model_id,
+      model_context_window: modelEntry.context_window ?? "unknown",
+      system_prompt: systemPrompt,
+      agent_state: this.state.stateDir,
+      workspace: workspaceDir,
+      ...(opts.source !== undefined ? { source: opts.source } : {}),
+    };
 
     const rt = await this.buildRuntime({
       sessionId,
@@ -329,7 +375,7 @@ export class Agent {
       modelEntry,
       apiKey,
       baseUrl,
-      systemPrompt,
+      meta,
       thinkingLevel,
       subagentDepth,
       vault,
@@ -341,26 +387,13 @@ export class Agent {
     });
 
     return new Session({
-      // session_meta holds per-session invariants only: the thinking level is a per-turn
-      // run parameter (RunOptions.thinkingLevel) and is deliberately not recorded here;
-      // the toolset travels as the first run's tool_list_ready event (it is only known
-      // after the MCP connect the bootstrap performs).
-      meta: {
-        session_id: sessionId,
-        provider: modelEntry.provider,
-        model_id: modelEntry.model_id,
-        model_context_window: modelEntry.context_window ?? "unknown",
-        system_prompt: systemPrompt,
-        agent_state: this.state.stateDir,
-        workspace: workspaceDir,
-        ...(opts.source !== undefined ? { source: opts.source } : {}),
-      },
+      meta,
       bootstrap: rt.bootstrap,
       cancelBootstrap: () => rt.environment.cancelMcpConnect(),
       mcpServers: rt.environment.mcpServerNames(),
       environment: rt.environment,
       trace,
-      createLLM: rt.createLLM,
+      openContext: rt.openContext,
       createBareLLM: rt.createBareLLM,
       compaction: rt.compaction,
       // Where an input image lands when it becomes a path line (see SessionConfig.imagesDir).
@@ -455,11 +488,15 @@ export class Agent {
     const baseUrl = opts.baseUrl ?? modelEntry.base_url;
 
     // Tools and Environment are reassembled from the current Agent State (tool
-    // definitions are passed with every Request and aren't part of the history); the
-    // system prompt uses the original text recorded in the Trace (identical to the
-    // original history); the vault uses current values (it's injected into the
-    // subprocess environment, not the history, so a resumed Session should get the
-    // latest keys too).
+    // definitions are passed with every Request and aren't part of the history); the vault
+    // uses current values (it's injected into the subprocess environment, not the history,
+    // so a resumed Session should get the latest keys too). The system prompt follows the
+    // context: an open context keeps the text recorded in the Trace — the history replayed
+    // into it was produced under that text — while a context a completed compaction closed is
+    // opened here for the first time, nothing produced under any prompt yet, so it gets the
+    // prompt assembled from the current Agent State, exactly as the compaction would have
+    // opened it (assembleSessionPrompt); the rotation deferred to the first write records it
+    // at the new Trace file's head.
     // The default thinking level comes from the current config chain only (Agent explicit >
     // Project default_chat > built-in "medium", the same configuredThinkingLevel chain
     // createSession uses): session_meta no longer records one (it became a per-turn run
@@ -467,6 +504,29 @@ export class Agent {
     // deliberately ignored — a resumed legacy subagent session falls back to this Agent's
     // configured level instead of keeping the level it inherited at spawn time.
     const thinkingLevel = this.configuredThinkingLevel();
+    const vault = await loadAgentVault(this.state.root, this.state.projectId, this.state.agentId);
+    const systemPrompt = resumed.contextClosed
+      ? await this.assembleSessionPrompt({
+          sessionId,
+          workspaceDir,
+          modelEntry,
+          vaultKeys: Object.keys(vault),
+        })
+      : meta.system_prompt;
+    // Invariants only — meta writes never contain a thinking level. The origin carries over
+    // from the original session_meta (a resumed scheduled/subagent Session stays marked). The
+    // on-disk value is untrusted: only the exact known origins pass; junk written by a third
+    // party is dropped rather than cast through.
+    const contextMeta: SessionMetaPayload = {
+      session_id: sessionId,
+      provider: modelEntry.provider,
+      model_id: modelEntry.model_id,
+      model_context_window: modelEntry.context_window ?? "unknown",
+      system_prompt: systemPrompt,
+      agent_state: this.state.stateDir,
+      workspace: workspaceDir,
+      ...(meta.source === "subagent" || meta.source === "schedule" ? { source: meta.source } : {}),
+    };
 
     const rt = await this.buildRuntime({
       sessionId,
@@ -474,10 +534,10 @@ export class Agent {
       modelEntry,
       apiKey,
       baseUrl,
-      systemPrompt: meta.system_prompt,
+      meta: contextMeta,
       thinkingLevel,
       subagentDepth: 0,
-      vault: await loadAgentVault(this.state.root, this.state.projectId, this.state.agentId),
+      vault,
     });
 
     // History is injected once into the freshly built context object as part of the lazy
@@ -532,28 +592,13 @@ export class Agent {
     }
 
     return new Session({
-      // Invariants only — meta writes never contain a thinking level.
-      meta: {
-        session_id: sessionId,
-        provider: modelEntry.provider,
-        model_id: modelEntry.model_id,
-        model_context_window: modelEntry.context_window ?? "unknown",
-        system_prompt: meta.system_prompt,
-        agent_state: this.state.stateDir,
-        workspace: workspaceDir,
-        // The origin carries over from the original session_meta (a resumed scheduled/subagent
-        // Session stays marked). The on-disk value is untrusted: only the exact known origins
-        // pass; junk written by a third party is dropped rather than cast through.
-        ...(meta.source === "subagent" || meta.source === "schedule"
-          ? { source: meta.source }
-          : {}),
-      },
+      meta: contextMeta,
       bootstrap,
       cancelBootstrap: () => rt.environment.cancelMcpConnect(),
       mcpServers: rt.environment.mcpServerNames(),
       environment: rt.environment,
       trace,
-      createLLM: rt.createLLM,
+      openContext: rt.openContext,
       createBareLLM: rt.createBareLLM,
       compaction: rt.compaction,
       // Where an input image lands when it becomes a path line (see SessionConfig.imagesDir).
@@ -608,7 +653,7 @@ export class Agent {
   /**
    * Assemble a Session's runtime components (shared by createSession and
    * resumeSession): the child-Agent runner, Environment and tools, the LLM object
-   * and its post-compaction rebuild factory, and the compaction config.
+   * and the post-compaction context opener, and the compaction config.
    */
   private async buildRuntime(args: {
     sessionId: string;
@@ -617,7 +662,8 @@ export class Agent {
     modelEntry: ModelEntry;
     apiKey: string | undefined;
     baseUrl: string | undefined;
-    systemPrompt: string;
+    /** The context's session_meta payload: its `system_prompt` seeds the LLM config, and the post-compaction rebuild re-stamps the payload with the prompt it re-assembled. */
+    meta: SessionMetaPayload;
     /** The Session's effective thinking level: the caller resolves the explicit option against the Agent config. */
     thinkingLevel: ThinkingLevelName | undefined;
     subagentDepth: number;
@@ -636,7 +682,13 @@ export class Agent {
       llm: GenerativeModel;
       mcp: McpServerConnectResult[];
     }>;
-    createLLM: (sessionTokens: TokenCounts) => GenerativeModel;
+    /**
+     * Opens the context that follows a completed compaction (see ContextEngineDeps.openContext):
+     * the LLM object rebuilt from the bootstrap's config with a system prompt re-assembled
+     * from the current Agent State, and the session_meta recording that prompt for the
+     * rotated Trace file's head.
+     */
+    openContext: (sessionTokens: TokenCounts) => Promise<OpenedContext>;
     createBareLLM: () => GenerativeModel;
     compaction: CompactionSettings;
   }> {
@@ -646,7 +698,7 @@ export class Agent {
       modelEntry,
       apiKey,
       baseUrl,
-      systemPrompt,
+      meta,
       thinkingLevel,
       subagentDepth,
       vault,
@@ -926,18 +978,19 @@ export class Agent {
     // against e.g. a 32768-token window — setting the entry's `context_window` is enough.
     const maxTokens = modelEntry.max_tokens ?? this.state.systemConfig.model?.max_tokens;
 
-    // LLM constructor args are extracted into a shared object so they can be reused as-is
-    // when rebuilding a new LLM object after compaction (with a fresh model context) — the
-    // system prompt and tool definitions aren't part of the compacted history, so the new
-    // object keeps them unchanged. The model id sent to AgentHub is always the entry's
-    // upstream `model_id` (client_type inference/passing follows it); session_meta, Trace,
-    // usage, pricing, and catalog matching all use the (provider, model_id) pair as the
-    // primary key. The tool_call_id uniqueness registry is shared with the new LLM rebuilt
-    // from llmConfig after compaction: its uniqueness scope is the Session's whole render
-    // span, so same-named tool calls after compaction don't collide with earlier cards' ids.
+    // LLM constructor args are extracted into a shared object so the object rebuilt after
+    // compaction (a fresh model context) reuses them: the tool definitions aren't part of the
+    // compacted history and the new object keeps them unchanged, while the system prompt is
+    // re-assembled per context (see openContext below). The model id sent to AgentHub is
+    // always the entry's upstream `model_id` (client_type inference/passing follows it);
+    // session_meta, Trace, usage, pricing, and catalog matching all use the (provider,
+    // model_id) pair as the primary key. The tool_call_id uniqueness registry is shared with
+    // the new LLM rebuilt from llmConfig after compaction: its uniqueness scope is the
+    // Session's whole render span, so same-named tool calls after compaction don't collide
+    // with earlier cards' ids.
     //
     // The config is completed by `bootstrap` once the toolset is known (listTools may
-    // connect MCP Servers); `createLLM` only ever runs after the first run's bootstrap
+    // connect MCP Servers); `openContext` only ever runs after the first run's bootstrap
     // (compaction happens mid-run), so the assertion cannot fire in a legal sequence.
     let llmConfig: GenerativeModelConfig | null = null;
     const bootstrap = async (): Promise<{
@@ -953,7 +1006,7 @@ export class Agent {
         ...(baseUrl !== undefined ? { baseUrl } : {}),
         ...(modelEntry.client_type !== undefined ? { clientType: modelEntry.client_type } : {}),
         tools,
-        systemPrompt,
+        systemPrompt: meta.system_prompt,
         ...(modelEntry.context_window !== undefined
           ? { contextWindow: modelEntry.context_window }
           : {}),
@@ -971,14 +1024,36 @@ export class Agent {
       };
       return { tools, llm: new GenerativeModel(llmConfig), mcp: environment.mcpConnectResults() };
     };
-    const createLLM = (sessionTokens: TokenCounts): GenerativeModel => {
+    const openContext = async (sessionTokens: TokenCounts): Promise<OpenedContext> => {
       if (llmConfig === null) {
-        throw new Error("createLLM called before the session bootstrap resolved the toolset");
+        throw new Error("openContext called before the session bootstrap resolved the toolset");
       }
+      const base = llmConfig;
+      // The new context's prompt is assembled from the Agent State as it is now — an edit the
+      // model (or the user) made to AGENTS.md during the old context lands here. Fail-soft:
+      // the compaction that opens this context has already succeeded and its summary is in
+      // hand, so an Agent State that cannot be read at this moment keeps the previous prompt
+      // (still a correct prompt, only a stale one) rather than failing the compaction after
+      // the fact.
+      let systemPrompt = base.systemPrompt ?? meta.system_prompt;
+      try {
+        systemPrompt = await this.assembleSessionPrompt({
+          sessionId,
+          workspaceDir,
+          modelEntry,
+          vaultKeys: Object.keys(vault),
+        });
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        process.stderr.write(
+          `[session] system prompt refresh after compaction failed, keeping the previous prompt: ${detail}\n`,
+        );
+      }
+      llmConfig = { ...base, systemPrompt };
       const next = new GenerativeModel(llmConfig);
       // Carries over the Session's cumulative Token counts, so token_usage.session stays continuous across compaction.
       next.sessionTokens = sessionTokens;
-      return next;
+      return { llm: next, sessionMeta: sessionMeta({ ...meta, system_prompt: systemPrompt }) };
     };
     // Bare LLM for one-off out-of-band requests (meta requests like generateTitle):
     // same Model/credentials, no tools, no system prompt, thinking disabled, a small
@@ -1021,6 +1096,6 @@ export class Agent {
       prompt: compactionConfig?.prompt ?? DEFAULT_COMPACTION_PROMPT,
     };
 
-    return { environment, bootstrap, createLLM, createBareLLM, compaction };
+    return { environment, bootstrap, openContext, createBareLLM, compaction };
   }
 }

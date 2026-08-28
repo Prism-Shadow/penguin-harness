@@ -43,6 +43,7 @@ import type {
   CompactionBeginPayload,
   CompactionEndPayload,
   OmniMessage,
+  SessionMetaPayload,
   TextPayload,
   TokenCounts,
   TokenUsagePayload,
@@ -206,9 +207,9 @@ describe("context compaction", () => {
       trace,
       sessionMeta: metaMessage,
       compaction: settings(),
-      createLLM: (tokens) => {
+      openContext: (tokens) => {
         factoryTokens = tokens;
-        return llm2;
+        return { llm: llm2 };
       },
     });
     const oldPath = trace.currentPath();
@@ -269,11 +270,77 @@ describe("context compaction", () => {
     const newTrace = await readTrace(trace.currentPath());
     expect(trace.currentPath()).not.toBe(oldPath);
     expect(newTrace[0]!.type).toBe("session_meta");
+    // The opened context brought no meta of its own, so the new file repeats the first one's.
+    expect(newTrace[0]!.payload).toEqual(metaMessage.payload);
     expect(
       newTrace.some((m) =>
         ((m.payload as { text?: string }).text ?? "").startsWith("[context_summary]"),
       ),
     ).toBe(true);
+  });
+
+  it("the rotated Trace file opens with the meta the new context was opened with, and a later context without one keeps it", async () => {
+    // The composition layer re-assembles the system prompt for each context and hands the
+    // engine the session_meta recording it: that meta — not the Session's first — is what the
+    // rotated file must start with, so every file's head describes the context it records.
+    const llm1 = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer one"), usage(150, 150)] },
+        { messages: [assistantText("[summary]one[/summary]"), usage(160, 310)] },
+      ],
+      "llm1",
+    );
+    const llm2 = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer two"), usage(150, 460)] },
+        { messages: [assistantText("[summary]two[/summary]"), usage(160, 620)] },
+      ],
+      "llm2",
+    );
+    const llm3 = new ScriptedLLM(
+      [{ messages: [assistantText("answer three"), usage(20, 640)] }],
+      "llm3",
+    );
+    const refreshed = sessionMeta({
+      ...(metaMessage.payload as SessionMetaPayload),
+      system_prompt: "sp re-assembled for context two",
+    });
+    const trace = new Writer({ tracesDir: traces, sessionId: "sess_meta_rotation" });
+    let opened = 0;
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: fakeEnvironment,
+      trace,
+      sessionMeta: metaMessage,
+      compaction: settings(),
+      // Context two brings its meta; context three brings none (an opener that could not
+      // re-assemble) and must inherit context two's, not fall back to the Session's first.
+      openContext: async () => {
+        opened += 1;
+        return opened === 1 ? { llm: llm2, sessionMeta: refreshed } : { llm: llm3 };
+      },
+    });
+    const firstPath = trace.currentPath();
+
+    await collect(engine.run([userText("task one")], { approve: allowAll }));
+    await collect(engine.run([userText("task two")], { approve: allowAll }));
+    const secondPath = trace.currentPath();
+    expect(secondPath).not.toBe(firstPath);
+    const second = await readTrace(secondPath);
+    expect(second[0]!.type).toBe("session_meta");
+    expect((second[0]!.payload as SessionMetaPayload).system_prompt).toBe(
+      "sp re-assembled for context two",
+    );
+
+    await collect(engine.run([userText("task three")], { approve: allowAll }));
+    const thirdPath = trace.currentPath();
+    expect(thirdPath).not.toBe(secondPath);
+    const third = await readTrace(thirdPath);
+    expect(third[0]!.type).toBe("session_meta");
+    expect((third[0]!.payload as SessionMetaPayload).system_prompt).toBe(
+      "sp re-assembled for context two",
+    );
+    expect(opened).toBe(2);
   });
 
   it("summarize mid-task: tool outputs pair into the compaction request, summary alone feeds the new LLM", async () => {
@@ -297,7 +364,7 @@ describe("context compaction", () => {
       environment: fakeEnvironment,
       sessionMeta: metaMessage,
       compaction: settings(),
-      createLLM: () => llm2,
+      openContext: () => ({ llm: llm2 }),
     });
 
     const out = await collect(engine.run([userText("do task")], { approve: allowAll }));
@@ -351,9 +418,9 @@ describe("context compaction", () => {
       trace,
       sessionMeta: metaMessage,
       compaction: settings(),
-      createLLM: () => {
+      openContext: () => {
         created += 1;
-        return llm2;
+        return { llm: llm2 };
       },
     });
     const oldPath = trace.currentPath();
@@ -413,7 +480,7 @@ describe("context compaction", () => {
       trace,
       sessionMeta: metaMessage,
       compaction: settings(),
-      createLLM: () => llm2,
+      openContext: () => ({ llm: llm2 }),
     });
     const oldPath = trace.currentPath();
 
@@ -446,7 +513,7 @@ describe("context compaction", () => {
       llm: llm1,
       environment: fakeEnvironment,
       compaction: settings(),
-      createLLM: () => llm1,
+      openContext: () => ({ llm: llm1 }),
       compactionMaxReconnects: 1,
       reconnectBackoffMs: 1,
     });
@@ -488,7 +555,7 @@ describe("context compaction", () => {
       llm: llm1,
       environment: fakeEnvironment,
       compaction: settings(),
-      createLLM: () => llm2,
+      openContext: () => ({ llm: llm2 }),
       maxReconnects: 4,
       reconnectBackoffMs: 1,
     });
@@ -520,7 +587,7 @@ describe("context compaction", () => {
       llm: llm1,
       environment: fakeEnvironment,
       compaction: settings(),
-      createLLM: () => llm2,
+      openContext: () => ({ llm: llm2 }),
       compactionMaxReconnects: 2,
       reconnectBackoffMs: 1,
     });
@@ -557,7 +624,7 @@ describe("context compaction", () => {
       llm: llm1,
       environment: fakeEnvironment,
       compaction: settings(),
-      createLLM: () => llm1,
+      openContext: () => ({ llm: llm1 }),
       maxReconnects: 8,
       compactionMaxReconnects: 2,
       reconnectBackoffMs: 1,
@@ -620,9 +687,9 @@ describe("context compaction", () => {
       trace,
       sessionMeta: metaMessage,
       compaction: settings(),
-      createLLM: () => {
+      openContext: () => {
         created += 1;
-        return new ScriptedLLM([], "llm2");
+        return { llm: new ScriptedLLM([], "llm2") };
       },
       compactionMaxReconnects: 4,
       reconnectBackoffMs: 1,
@@ -710,9 +777,9 @@ describe("context compaction", () => {
       trace,
       sessionMeta: metaMessage,
       compaction: settings(),
-      createLLM: () => {
+      openContext: () => {
         created += 1;
-        return new ScriptedLLM([], "llm2");
+        return { llm: new ScriptedLLM([], "llm2") };
       },
       compactionMaxReconnects: 4,
       reconnectBackoffMs: 1,
@@ -803,9 +870,9 @@ describe("context compaction", () => {
       llm: llm1,
       environment: fakeEnvironment,
       compaction: settings(),
-      createLLM: (tokens) => {
+      openContext: (tokens) => {
         factoryTokens = tokens;
-        return llm2;
+        return { llm: llm2 };
       },
       compactionMaxReconnects: 4,
       reconnectBackoffMs: 1,
@@ -871,7 +938,7 @@ describe("context compaction", () => {
       trace,
       sessionMeta: metaMessage,
       compaction: settings(),
-      createLLM: () => llm2,
+      openContext: () => ({ llm: llm2 }),
       reconnectBackoffMs: 1,
     });
     const oldPath = trace.currentPath();
@@ -942,7 +1009,7 @@ describe("context compaction", () => {
       trace,
       sessionMeta: metaMessage,
       compaction: settings(),
-      createLLM: () => llm2,
+      openContext: () => ({ llm: llm2 }),
     });
     const oldPath = trace.currentPath();
 
@@ -1000,9 +1067,9 @@ describe("context compaction", () => {
       trace,
       sessionMeta: metaMessage,
       compaction: settings(),
-      createLLM: () => {
+      openContext: () => {
         created += 1;
-        return new ScriptedLLM([], "llm2");
+        return { llm: new ScriptedLLM([], "llm2") };
       },
       compactionMaxReconnects: 4,
       reconnectBackoffMs: 1,
@@ -1066,7 +1133,7 @@ describe("context compaction", () => {
       llm: llm1,
       environment: fakeEnvironment,
       compaction: settings(),
-      createLLM: () => new ScriptedLLM([], "llm2"),
+      openContext: () => ({ llm: new ScriptedLLM([], "llm2") }),
       compactionMaxReconnects: 4,
       reconnectBackoffMs: 1,
     });
@@ -1113,7 +1180,7 @@ describe("context compaction", () => {
       llm: llm1,
       environment: fakeEnvironment,
       compaction: settings(),
-      createLLM: () => new ScriptedLLM([], "llm2"),
+      openContext: () => ({ llm: new ScriptedLLM([], "llm2") }),
       compactionMaxReconnects: 1,
       reconnectBackoffMs: 1,
     });
@@ -1152,7 +1219,7 @@ describe("context compaction", () => {
       llm: llm1,
       environment: fakeEnvironment,
       compaction: settings(),
-      createLLM: () => new ScriptedLLM([], "llm2"),
+      openContext: () => ({ llm: new ScriptedLLM([], "llm2") }),
       reconnectBackoffMs: 1,
     });
 
@@ -1223,7 +1290,7 @@ describe("context compaction", () => {
       llm: model,
       environment: fakeEnvironment,
       compaction: settings(),
-      createLLM: () => new ScriptedLLM([], "llm2"),
+      openContext: () => ({ llm: new ScriptedLLM([], "llm2") }),
     });
 
     const out = await collect(engine.run([userText("go")], { approve: allowAll }));
@@ -1258,7 +1325,7 @@ describe("context compaction", () => {
       llm: llm1,
       environment: fakeEnvironment,
       compaction: settings({ maxContextLength: -1, maxSessionTurns: 2 }),
-      createLLM: () => llm2,
+      openContext: () => ({ llm: llm2 }),
     });
 
     // Triggers right at task 1's wrap-up (compacts as soon as the threshold is reached, without waiting for the next task); the summary request goes to the old instance.
@@ -1292,7 +1359,7 @@ describe("context compaction", () => {
       llm: llm1,
       environment: fakeEnvironment,
       compaction: settings(),
-      createLLM: () => llm2,
+      openContext: () => ({ llm: llm2 }),
     });
 
     const out = await collect(engine.run([userText("go")], { approve: allowAll }));
@@ -1325,7 +1392,7 @@ describe("context compaction", () => {
       trace,
       sessionMeta: metaMessage,
       compaction: settings({ mode: "discard" }),
-      createLLM: () => llm2,
+      openContext: () => ({ llm: llm2 }),
     });
     const oldPath = trace.currentPath();
 
@@ -1362,7 +1429,7 @@ describe("context compaction", () => {
       llm: llm1,
       environment: fakeEnvironment,
       compaction: settings(),
-      createLLM: () => llm2,
+      openContext: () => ({ llm: llm2 }),
     });
 
     await collect(engine.run([userText("go")], { approve: allowAll }));
@@ -1393,7 +1460,7 @@ describe("context compaction", () => {
       llm: llm1,
       environment: fakeEnvironment,
       compaction: settings(),
-      createLLM: () => llm2,
+      openContext: () => ({ llm: llm2 }),
       reconnectBackoffMs: 1,
     });
 
@@ -1427,7 +1494,7 @@ describe("context compaction", () => {
       llm: llm1,
       environment: fakeEnvironment,
       compaction: settings(),
-      createLLM: () => llm2,
+      openContext: () => ({ llm: llm2 }),
     });
 
     await collect(engine.run([userText("hi")], { approve: allowAll }));
@@ -1463,7 +1530,7 @@ describe("context compaction", () => {
       llm: llm1,
       environment: fakeEnvironment,
       compaction: settings(),
-      createLLM: () => new ScriptedLLM([], "llm2"),
+      openContext: () => ({ llm: new ScriptedLLM([], "llm2") }),
       compactionMaxReconnects: 1,
       reconnectBackoffMs: 1,
     });
@@ -1512,7 +1579,7 @@ describe("context compaction", () => {
       llm: llm1,
       environment: fakeEnvironment,
       compaction: settings(),
-      createLLM: () => new ScriptedLLM([], "llm2"),
+      openContext: () => ({ llm: new ScriptedLLM([], "llm2") }),
       compactionMaxReconnects: 4,
       reconnectBackoffMs: 1,
     });
@@ -1542,7 +1609,7 @@ describe("context compaction", () => {
     expect(textOf(run3[1]!)).toBe("run3");
   });
 
-  it("no compaction capability (createLLM missing) means thresholds never fire and compact() is a no-op", async () => {
+  it("no compaction capability (openContext missing) means thresholds never fire and compact() is a no-op", async () => {
     const llm1 = new ScriptedLLM(
       [{ messages: [assistantText("big"), usage(999999, 999999)] }],
       "llm1",
@@ -1568,7 +1635,7 @@ describe("context compaction", () => {
     // have sessionTurns == 0, but they're two completely different messages to the user: telling
     // someone who just finished compacting that there's "no completed conversation turn yet" is
     // effectively saying nothing useful.
-    // The compaction request goes to the **current** LLM (the script's second entry); createLLM
+    // The compaction request goes to the **current** LLM (the script's second entry); openContext
     // supplies the LLM used for the new context after compaction.
     const llm1 = new ScriptedLLM(
       [
@@ -1580,7 +1647,7 @@ describe("context compaction", () => {
     );
     const llm2 = new ScriptedLLM([{ messages: [assistantText("after"), usage(5, 20)] }], "llm2");
 
-    // (1) No compaction capability configured (no compaction / createLLM).
+    // (1) No compaction capability configured (no compaction / openContext).
     const noCap = new ContextEngine({ llm: llm1, environment: fakeEnvironment });
     expect(noCap.compactability()).toBe("unsupported");
 
@@ -1589,7 +1656,7 @@ describe("context compaction", () => {
       llm: llm1,
       environment: fakeEnvironment,
       compaction: settings(),
-      createLLM: () => llm2,
+      openContext: () => ({ llm: llm2 }),
     });
     expect(engine.compactability()).toBe("empty");
     expect(await collect(engine.compact())).toHaveLength(0);
@@ -1617,7 +1684,7 @@ describe("context compaction", () => {
       llm: new ScriptedLLM([]),
       environment: fakeEnvironment,
       compaction: settings(),
-      createLLM: () => new ScriptedLLM([]),
+      openContext: () => ({ llm: new ScriptedLLM([]) }),
       initialState: { sessionTurns: 4 },
     });
     expect(withTurns.compactability()).toBe("ok");
@@ -1627,7 +1694,7 @@ describe("context compaction", () => {
       llm: new ScriptedLLM([]),
       environment: fakeEnvironment,
       compaction: settings(),
-      createLLM: () => new ScriptedLLM([]),
+      openContext: () => ({ llm: new ScriptedLLM([]) }),
       initialState: { sessionTurns: 0, fromCompaction: true },
     });
     expect(justCompacted.compactability()).toBe("just_compacted");
@@ -1651,7 +1718,7 @@ describe("context compaction", () => {
           written.push(msg);
         },
       },
-      createLLM: () => newContextLLM,
+      openContext: () => ({ llm: newContextLLM }),
       compaction: settings(),
       // What agent.resumeSession derives from the Trace: three completed turns of history.
       metaAlreadyWritten: true,
@@ -1692,7 +1759,7 @@ describe("context compaction", () => {
           written.push(msg);
         },
       },
-      createLLM: () => new ScriptedLLM([]),
+      openContext: () => ({ llm: new ScriptedLLM([]) }),
       compaction: settings(),
       imagesDir: "/tmp/penguin-test-scratch",
       modelHasVision: true,
@@ -1720,7 +1787,7 @@ describe("context compaction", () => {
       llm: llm1,
       environment: fakeEnvironment,
       compaction: settings(),
-      createLLM: () => llm1,
+      openContext: () => ({ llm: llm1 }),
     });
     // The abort signal is already pending before the compaction request: the fake LLM finishes straight to aborted.
     const approveThenAbort: ApproveFn = async () => "allow";
@@ -1787,7 +1854,7 @@ describe("compaction summary streaming (issue #290)", () => {
       trace,
       sessionMeta: metaMessage,
       compaction: settings(),
-      createLLM: () => new ScriptedLLM([], "llm2"),
+      openContext: () => ({ llm: new ScriptedLLM([], "llm2") }),
     });
     const oldPath = trace.currentPath();
 
@@ -1832,7 +1899,7 @@ describe("compaction summary streaming (issue #290)", () => {
       environment: fakeEnvironment,
       sessionMeta: metaMessage,
       compaction: settings(),
-      createLLM: () => new ScriptedLLM([], "llm2"),
+      openContext: () => ({ llm: new ScriptedLLM([], "llm2") }),
     });
 
     const out = await collect(engine.run([userText("task one")], { approve: allowAll }));
@@ -1955,7 +2022,7 @@ describe("mid-task compaction runs the tools first (issue #288)", () => {
       environment: fakeEnvironment,
       sessionMeta: metaMessage,
       compaction: settings(),
-      createLLM: () => llm2,
+      openContext: () => ({ llm: llm2 }),
     });
 
     const out = await collect(engine.run([userText("go")], { approve: allowAll }));
@@ -2004,7 +2071,9 @@ describe("mid-task compaction runs the tools first (issue #288)", () => {
       environment: env,
       sessionMeta: metaMessage,
       compaction: settings(),
-      createLLM: () => new ScriptedLLM([{ messages: [assistantText("done"), usage(1, 1)] }], "l2"),
+      openContext: () => ({
+        llm: new ScriptedLLM([{ messages: [assistantText("done"), usage(1, 1)] }], "l2"),
+      }),
     });
 
     const gen = engine.run([userText("go")], { approve: allowAll });
@@ -2064,7 +2133,9 @@ describe("mid-task compaction runs the tools first (issue #288)", () => {
       environment: failingEnv,
       sessionMeta: metaMessage,
       compaction: settings(),
-      createLLM: () => new ScriptedLLM([{ messages: [assistantText("ok"), usage(1, 1)] }], "l2"),
+      openContext: () => ({
+        llm: new ScriptedLLM([{ messages: [assistantText("ok"), usage(1, 1)] }], "l2"),
+      }),
     });
 
     await collect(engine.run([userText("go")], { approve: allowAll }));
@@ -2088,7 +2159,9 @@ describe("mid-task compaction runs the tools first (issue #288)", () => {
       environment: fakeEnvironment,
       sessionMeta: metaMessage,
       compaction: settings(),
-      createLLM: () => new ScriptedLLM([{ messages: [assistantText("ok"), usage(1, 1)] }], "l2"),
+      openContext: () => ({
+        llm: new ScriptedLLM([{ messages: [assistantText("ok"), usage(1, 1)] }], "l2"),
+      }),
     });
 
     await collect(engine.run([userText("go")], { approve: async () => "deny" }));
@@ -2111,7 +2184,7 @@ describe("mid-task compaction runs the tools first (issue #288)", () => {
       environment: fakeEnvironment,
       sessionMeta: metaMessage,
       compaction: settings({ maxContextLength: 100000 }),
-      createLLM: () => new ScriptedLLM([], "llm2"),
+      openContext: () => ({ llm: new ScriptedLLM([], "llm2") }),
     });
     await collect(engine.run([userText("hi")], { approve: allowAll }));
     await collect(engine.compact());

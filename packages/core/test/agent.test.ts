@@ -14,7 +14,9 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { OmniMessage } from "../src/omnimessage/index.js";
+import type { OmniMessage, TokenCounts } from "../src/omnimessage/index.js";
+import type { OpenedContext } from "../src/index.js";
+import { agentsMdPath } from "../src/state/paths.js";
 import {
   addModel,
   createAgent,
@@ -844,6 +846,88 @@ describe("Agent.createSession skill metadata injection", () => {
       expect(meta.system_prompt).not.toContain("SKILL_BODY_NOT_IN_PROMPT");
       expect(meta.system_prompt).not.toContain("{{SKILL_METADATA}}");
     } finally {
+      session.dispose();
+    }
+  });
+});
+
+describe("Agent system prompt per model context (AGENTS.md is re-read at every context open)", () => {
+  const ZERO: TokenCounts = { cache_read: 0, cache_write: 0, output: 0, total: 0 };
+  const promptOf = (session: { metaMessage: OmniMessage }): string =>
+    (session.metaMessage.payload as { system_prompt: string }).system_prompt;
+  const mdFile = () => agentsMdPath(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
+  /** The engine-facing context opener (the Session's wrapper around the Agent's factory), reachable once the first-run bootstrap has resolved the toolset. */
+  const openerOf = (session: unknown) =>
+    (
+      session as {
+        engine: { deps: { openContext: (tokens: TokenCounts) => Promise<OpenedContext> } };
+      }
+    ).engine.deps.openContext;
+  /** The system prompt the most recently constructed GenerativeModel was given. */
+  const lastBuiltPrompt = (): string | undefined =>
+    (capturedLLMConfigs.list.at(-1) as { systemPrompt?: string } | undefined)?.systemPrompt;
+
+  it("createSession reads AGENTS.md from disk, not the Agent's load-time snapshot", async () => {
+    const agent = await createAgent();
+    await fs.writeFile(mdFile(), "EDITED AFTER LOAD", "utf8");
+    const ws = path.join(tmpRoot, "ws-md-disk");
+    await fs.mkdir(ws, { recursive: true });
+
+    const session = await agent.createSession({ workspaceDir: ws });
+    try {
+      expect(promptOf(session)).toContain("EDITED AFTER LOAD");
+      // The Agent object's copy is the load-time snapshot; no Session runs on it.
+      expect(agent.state.agentsMd).not.toContain("EDITED AFTER LOAD");
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("the context opened after compaction carries AGENTS.md as it is then; its session_meta and the Session's meta record it", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-md-rotate");
+    await fs.mkdir(ws, { recursive: true });
+    const session = await agent.createSession({ workspaceDir: ws });
+    try {
+      await bootstrapped(session);
+      expect(promptOf(session)).not.toContain("EDITED DURING THE OLD CONTEXT");
+      await fs.writeFile(mdFile(), "EDITED DURING THE OLD CONTEXT", "utf8");
+
+      const opened = await openerOf(session)(ZERO);
+
+      // The new LLM object was built with the re-assembled prompt…
+      expect(lastBuiltPrompt()).toContain("EDITED DURING THE OLD CONTEXT");
+      // …the meta the rotated Trace file opens with records exactly that prompt, and the
+      // Session's own meta (metaMessage) follows the running context.
+      const recorded = (opened.sessionMeta!.payload as { system_prompt: string }).system_prompt;
+      expect(recorded).toBe(lastBuiltPrompt());
+      expect(promptOf(session)).toBe(recorded);
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("keeps the previous prompt, with a warning, when the Agent State cannot be read at context open", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-md-failsoft");
+    await fs.mkdir(ws, { recursive: true });
+    const session = await agent.createSession({ workspaceDir: ws });
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      await bootstrapped(session);
+      const before = promptOf(session);
+      // A directory where AGENTS.md should be: passes the existence probe, fails the read.
+      await fs.rm(mdFile());
+      await fs.mkdir(mdFile());
+
+      const opened = await openerOf(session)(ZERO);
+
+      expect((opened.sessionMeta!.payload as { system_prompt: string }).system_prompt).toBe(before);
+      expect(lastBuiltPrompt()).toBe(before);
+      expect(promptOf(session)).toBe(before);
+      expect(stderr).toHaveBeenCalledWith(expect.stringContaining("keeping the previous prompt"));
+    } finally {
+      stderr.mockRestore();
       session.dispose();
     }
   });
