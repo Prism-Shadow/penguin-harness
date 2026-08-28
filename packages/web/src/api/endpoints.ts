@@ -141,6 +141,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import { apiFetch, apiFetchWithMeta } from "./client";
+import { rememberSessionMachine } from "../lib/session-machines";
 
 // Auth & user -----------------------------------------------------------------
 
@@ -156,6 +157,15 @@ export const logout = () => apiFetch<void>("/api/auth/logout", { method: "POST",
 export const getInstall = () => apiFetch<InstallResponse>("/api/install");
 
 export const getMe = () => apiFetch<MeResponse>("/api/me");
+
+/**
+ * Whether a machine's API answers right now, asked through the proxy — the cheapest request
+ * that exercises the whole path: a live forward, and the session this server mints on that
+ * machine. Being listed as connected is not the same answer: a forward can be up while the
+ * server behind it is not.
+ */
+export const meOnMachine = (machineId: string) =>
+  apiFetch<MeResponse>("/api/me", { server: machineId });
 
 export const changePassword = (body: PasswordChangeRequest) =>
   apiFetch<void>("/api/me/password", { method: "PUT", body });
@@ -414,8 +424,15 @@ export const importMemoryScope = (
 
 // Agent & its configuration ----------------------------------------------------------------
 
-export const listAgents = (projectId: string) =>
-  apiFetch<AgentsResponse>(`/api/projects/${encodeURIComponent(projectId)}/agents`);
+/**
+ * A project's Agents. With a machine, THAT machine's — Agents are per-server, so a Session
+ * created on one can only name an Agent that exists there.
+ */
+export const listAgents = (projectId: string, machineId?: string | null) =>
+  apiFetch<AgentsResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents`,
+    machineId === undefined ? {} : { server: machineId },
+  );
 
 export const createAgent = (projectId: string, body: AgentCreateRequest) =>
   apiFetch<AgentCreateResponse>(`/api/projects/${encodeURIComponent(projectId)}/agents`, {
@@ -478,6 +495,12 @@ export const listSessions = (
     workspaceGroup?: string;
     withCounts?: boolean;
   },
+  /**
+   * Which machine to ask. This path is NOT session-scoped, so nothing about it can be routed
+   * from the id — it asks a server which Sessions IT has, and only the caller knows which
+   * servers are worth asking. Omitted (or null) means this one.
+   */
+  machineId?: string | null,
 ) => {
   const qs = opts
     ? `?limit=${opts.limit}&offset=${opts.offset}` +
@@ -487,6 +510,7 @@ export const listSessions = (
     : "";
   return apiFetch<SessionsResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/sessions${qs}`,
+    { server: machineId ?? null },
   );
 };
 
@@ -514,11 +538,31 @@ export const listDirectorySkills = (projectId: string, path: string) =>
     `/api/projects/${encodeURIComponent(projectId)}/dir-skills?path=${encodeURIComponent(path)}`,
   );
 
-export const createSession = (projectId: string, agentId: string, body: SessionCreateRequest) =>
-  apiFetch<SessionCreateResponse>(
+/**
+ * Creates a Session on the machine that owns its workspace.
+ *
+ * The Session is created THERE because that is where its workspace is: that server runs the
+ * agent, holds the messages, writes the trace. The id it hands back is recorded against that
+ * machine, so every later call about the Session routes itself without any call site knowing
+ * (see lib/session-machines.ts).
+ *
+ * `machineId` is the workspace's, not a preference — a path names a different directory on
+ * every machine, so creating a Session for `/srv/app` on the wrong one is not a degraded
+ * result, it is a different request.
+ */
+export const createSession = async (
+  projectId: string,
+  agentId: string,
+  body: SessionCreateRequest,
+  machineId?: string | null,
+) => {
+  const created = await apiFetch<SessionCreateResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/sessions`,
-    { method: "POST", body },
+    { method: "POST", body, server: machineId ?? null },
   );
+  rememberSessionMachine(created.session.sessionId, machineId ?? null);
+  return created;
+};
 
 export const forkSession = (sessionId: string, body: SessionForkRequest) =>
   apiFetch<SessionForkResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/fork`, {
