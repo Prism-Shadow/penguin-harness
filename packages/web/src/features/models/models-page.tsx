@@ -602,6 +602,8 @@ export function ModelsPage() {
   const [groupKeyFor, setGroupKeyFor] = useState<string | null>(null);
   /** Vendor group (provider id) whose authorization dialog is open (groups that publish a key-minting flow only). */
   const [oauthFor, setOauthFor] = useState<string | null>(null);
+  /** Whether the open authorization actually wrote a key — see the dialog's `onClose`. */
+  const keyLanded = useRef(false);
   /** User-defined group (provider id) whose delete confirmation is open (built-in groups never offer this). */
   const [deleteGroupFor, setDeleteGroupFor] = useState<string | null>(null);
   /** "Add group" popup (user-defined group): create-only hands off to that group's add-model dialog, import mode fills the group from its endpoint (see AddGroupDialog). */
@@ -1239,18 +1241,33 @@ export function ModelsPage() {
         />
       )}
 
-      {rows && projectId && oauthFor !== null && (
+      {/* NOT gated on `rows`, unlike its neighbours. This dialog outlives a table reload: it
+          stays open after the key lands to report the outcome, and `load()` blanks `rows` on
+          its first line, so gating it there would unmount it mid-flow — and its mount effect
+          opens a NEW authorization, which is how a completed authorization ended up offering
+          itself again. `count` is only read while the flow is still running, so a reload's
+          momentary absence of rows reads as zero and is never seen. */}
+      {projectId && oauthFor !== null && (
         <ModelOAuthDialog
           projectId={projectId}
           provider={MODEL_PROVIDERS.find((p) => p.id === oauthFor) ?? userProviderInfo(oauthFor)}
-          count={rows.filter((r) => r.provider === oauthFor).length}
-          onClose={() => setOauthFor(null)}
-          onApplied={(applied) => {
+          count={rows?.filter((r) => r.provider === oauthFor).length ?? 0}
+          onClose={() => {
             setOauthFor(null);
-            toastSuccess(S.models.oauthApplied(applied));
-            // The key was written server-side, so the table in hand is stale in exactly one
-            // place: reload rather than patch, and the masked key comes back with it.
-            void load();
+            // The reload waits for the dismissal rather than racing the open dialog: the key
+            // was written server-side, so the table in hand is stale in exactly one place, and
+            // reloading brings the masked key back. Gated on a key having landed, because
+            // `load` also drops this Project's speed results — measurements that cost real API
+            // quota and live only in page memory — and a cancelled flow changed nothing.
+            if (keyLanded.current) void load();
+            keyLanded.current = false;
+          }}
+          onApplied={() => {
+            // The dialog stays open and reports the outcome itself (its `done` phase), because
+            // the authorization ran in another tab and a toast would be announced to a window
+            // nobody is looking at. All this seam does is record that the dismissal has a
+            // reload to do.
+            keyLanded.current = true;
           }}
         />
       )}
@@ -3124,7 +3141,14 @@ function GroupKeyDialog({
 // ---------------------------------------------------------------------------
 
 /** Where the dialog is: opening a flow, holding one, waiting on an outcome, or reporting a failure. */
-type OAuthPhase = "starting" | "ready" | "waiting" | "failed";
+/**
+ * `done` exists because the authorization happens in ANOTHER TAB. A toast fired at the moment
+ * the poll sees the key would be announced to a window the user is not looking at, and by the
+ * time they switch back it has faded — the outcome of the one step they left the app for is the
+ * one thing they must not have to guess at. So the dialog stays put and says it instead, and is
+ * dismissed deliberately.
+ */
+type OAuthPhase = "starting" | "ready" | "waiting" | "failed" | "done";
 
 /** How often the redirect flow's outcome is asked for while the user is in the other tab. */
 const OAUTH_POLL_MS = 2000;
@@ -3156,6 +3180,8 @@ function ModelOAuthDialog({
   const [flow, setFlow] = useState<{ flowId: string; authorizeUrl: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [code, setCode] = useState("");
+  /** How many models the key was written to — the sentence the `done` phase reports. */
+  const [applied, setApplied] = useState(0);
   /** Bumped to reopen a flow after a failure; switching modes reopens one too (the URL differs). */
   const [attempt, setAttempt] = useState(0);
   // Latest-callback ref: the parent passes an inline arrow, and depending on its identity
@@ -3202,7 +3228,12 @@ function ModelOAuthDialog({
         const res = await api.getModelOAuthStatus(projectId, flow.flowId);
         if (stopped) return;
         if (res.status === "done") {
-          onAppliedRef.current(count);
+          // The server's own count, not the table in hand: `rows` is kept through a rejected
+          // save so the user can fix and retry, so it can name models the server never wrote.
+          const n = res.applied ?? count;
+          setApplied(n);
+          setPhase("done");
+          onAppliedRef.current(n);
           return;
         }
         if (res.status === "error") {
@@ -3235,7 +3266,10 @@ function ModelOAuthDialog({
     try {
       const res = await api.submitModelOAuthCode(projectId, flow.flowId, code.trim());
       if (res.ok) {
-        onAppliedRef.current(res.applied ?? count);
+        const n = res.applied ?? count;
+        setApplied(n);
+        setPhase("done");
+        onAppliedRef.current(n);
         return;
       }
       setError(res.error ? S.models.oauthErrors[res.error] : S.models.oauthTimedOut);
@@ -3271,17 +3305,29 @@ function ModelOAuthDialog({
       title={S.models.oauthTitle(provider.label)}
       onClose={onClose}
       footer={
-        <>
-          <Button onClick={onClose}>{S.common.cancel}</Button>
-          {primary}
-        </>
+        // Done is an outcome, not a choice: a "cancel" beside it would offer to undo a key that
+        // is already written.
+        phase === "done" ? (
+          <Button onClick={onClose}>{S.common.close}</Button>
+        ) : (
+          <>
+            <Button onClick={onClose}>{S.common.cancel}</Button>
+            {primary}
+          </>
+        )
       }
     >
       <div className="space-y-3">
-        <p className="text-sm text-gray-700 dark:text-gray-300">
-          {S.models.oauthIntro(provider.label, count)}
-        </p>
-        {manual && (
+        {phase === "done" ? (
+          <p className="text-sm text-gray-700 dark:text-gray-300">
+            {S.models.oauthAppliedBody(provider.label, applied)}
+          </p>
+        ) : (
+          <p className="text-sm text-gray-700 dark:text-gray-300">
+            {S.models.oauthIntro(provider.label, count)}
+          </p>
+        )}
+        {phase !== "done" && manual && (
           <>
             <Button variant="ghost" disabled={flow === null} onClick={openAuthorizePage}>
               <GlyphIcon d={SIGN_IN_ICON} size={13} />
@@ -3305,13 +3351,15 @@ function ModelOAuthDialog({
           </p>
         )}
         {error !== null && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
-        <button
-          type="button"
-          onClick={() => setManual((v) => !v)}
-          className="text-xs text-brand-600 underline-offset-2 hover:underline dark:text-brand-300"
-        >
-          {manual ? S.models.oauthCallbackSwitch : S.models.oauthManualSwitch}
-        </button>
+        {phase !== "done" && (
+          <button
+            type="button"
+            onClick={() => setManual((v) => !v)}
+            className="text-xs text-brand-600 underline-offset-2 hover:underline dark:text-brand-300"
+          >
+            {manual ? S.models.oauthCallbackSwitch : S.models.oauthManualSwitch}
+          </button>
+        )}
       </div>
     </Modal>
   );

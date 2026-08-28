@@ -458,7 +458,7 @@ describe("model-oauth routes", () => {
     const status = (await (
       await owner.get(`${base()}/${started.flowId}`)
     ).json()) as ModelOAuthStatusResponse;
-    expect(status).toEqual({ status: "done", provider: "tokendance" });
+    expect(status).toEqual({ status: "done", provider: "tokendance", applied: 8 });
 
     // The exchange spoke the documented protocol, with a verifier this side never published.
     expect(exchanges).toHaveLength(1);
@@ -677,7 +677,7 @@ describe("model-oauth callback without a session", () => {
     expect(await groupHasKey()).toBe(false);
 
     // The owner's own poll is what spends the code and lands the key.
-    expect(await poll(flowId)).toEqual({ status: "done", provider: "tokendance" });
+    expect(await poll(flowId)).toEqual({ status: "done", provider: "tokendance", applied: 8 });
     expect(exchanges).toBe(1);
     expect(await groupHasKey()).toBe(true);
   });
@@ -689,7 +689,7 @@ describe("model-oauth callback without a session", () => {
     const browser = await owner.get(callback(flowId, "auth-code-2"));
     expect(browser.status).toBe(200);
     expect(await browser.text()).toContain("Authorization received");
-    expect(await poll(flowId)).toEqual({ status: "done", provider: "tokendance" });
+    expect(await poll(flowId)).toEqual({ status: "done", provider: "tokendance", applied: 8 });
     expect(exchanges).toBe(1);
     expect(await groupHasKey()).toBe(true);
   });

@@ -838,7 +838,13 @@ export const zh = {
       `将在你的 ${label} 账户下新建一个 API key，并写入该分组下全部 ${n} 个模型，覆盖它们当前的 key。`,
     oauthAuthorize: "打开授权页",
     oauthWaiting: "等待在新标签页中完成授权…",
-    oauthApplied: (n: number): string => `已为 ${n} 个模型配置新的 API key`,
+    /**
+     * The dialog's own report once the key has landed. It says the provider as well as the
+     * count, because the user is reading it after a trip to another tab and may not remember
+     * which authorization they just finished.
+     */
+    oauthAppliedBody: (provider: string, n: number): string =>
+      `已完成授权：${provider} 的 API key 已配置到 ${n} 个模型上，可以直接使用了。`,
     oauthManualSwitch: "授权页跳不回来？改为手动填写授权码",
     oauthCallbackSwitch: "改回自动跳转",
     oauthManualHint: "先打开授权页，再把页面上显示的一次性授权码粘贴到这里。",
