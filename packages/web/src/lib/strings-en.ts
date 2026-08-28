@@ -254,9 +254,10 @@ export const en: Strings = {
   },
 
   /**
-   * The three DISMISSIBLE badge trails (Skill library / model library / cost center) and the
-   * controls that clear them. One sentence per trail, carried unchanged from the dot's tooltip
-   * down to the notice on the page it leads to — the same discipline the kernel trail keeps.
+   * The four DISMISSIBLE badge trails (Agents / Skill library / model library / cost center),
+   * the controls that clear them and the control that acts on all of one at once. The tooltip
+   * sentences below are what each dot says; the page notice restates the same count in its own
+   * `changes*` wording, since a block that can act needs to say what it would act on.
    */
   todo: {
     skillUpdates: (n: number) => (n === 1 ? "1 skill update" : `${n} skill updates`),
@@ -266,9 +267,37 @@ export const en: Strings = {
     /** Combined anchor whose trails are not all updates — an unexpected error is not one. */
     pending: "Something needs attention",
     /** Clears an update the user has decided not to take now (a later one raises the badge again). */
-    dismiss: "Mark as handled",
+    dismiss: "Dismiss",
     /** The cost center's wording: nothing is being updated there, the errors are simply read. */
     markRead: "Mark as read",
+
+    // —— The page notice's own line and its bulk action (components/ui/todo-notice.tsx) ——
+
+    /** The notice line where the trail can separate genuinely new things from upgradable ones (Models only). */
+    changesWithAdded: (added: number, updated: number): string =>
+      `Changes detected: ${added} new, ${updated} to upgrade`,
+    /** The same line where the trail has only one honest count — no padded zero (Agents, Skills). */
+    changesUpgradable: (updated: number): string => `Changes detected: ${updated} to upgrade`,
+    /** Updates every object the notice counts, behind the page's own confirmation. */
+    updateNow: "Update now",
+    /** Heading of the confirmation's list of exactly what the batch would write to. */
+    willTouch: "This will touch:",
+    /** Bulk kernel update confirmation; the body reuses agent.kernelUpdateConfirmBody verbatim. */
+    agentsConfirmTitle: (n: number): string => `Update the kernel of ${n} agent(s)`,
+    /** Bulk Skill update confirmation. Same warning as the per-Skill confirm, with no single subject. */
+    skillsConfirmTitle: (n: number): string => `Update ${n} skill(s)`,
+    skillsConfirmBody:
+      "Updating reinstalls the library copy over each agent's installed files — any local edits to the installed skill are lost. Export a backup first if you need them.",
+    /** Bulk preset sync confirmation; the body reuses models.syncCatalogHint verbatim. */
+    modelsConfirmTitle: (n: number): string => `Sync ${n} preset model(s)`,
+    /** Every target of the batch was written. Counted in agents: both pages that use this
+     * send one request per agent, and the partial-failure line below names agents too. */
+    bulkDone: (ok: number): string => `${ok} agent${ok === 1 ? "" : "s"} updated`,
+    /** Some targets were written and some were not — the failed ones are named, never just counted. */
+    bulkPartial: (ok: number, failed: string): string =>
+      `${ok} agent${ok === 1 ? "" : "s"} updated; these did not: ${failed}`,
+    /** Separator between named targets in the two strings above. */
+    listSeparator: ", ",
   },
 
   /** Desktop task-completion notifications (window unfocused; desktop-shell sessions only). */

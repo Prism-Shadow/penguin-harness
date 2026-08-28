@@ -352,11 +352,13 @@ export function UsagePage() {
           </div>
         </div>
 
-        {/* Last stop on the Cost Center trail, in the one shape all three dismissible trails
+        {/* Last stop on the Cost Center trail, in the one shape all four dismissible trails
             use: directly under the title, not down against the errors table. It counts the
             probe's own trailing window (use-project-todos.ts), which is not the filters above
             it, so it states what the badge is about rather than what any one panel is showing.
-            "Read", not "done" — nothing is being updated here, the user has simply looked. */}
+            "Read", not "done" — nothing is being updated here, the user has simply looked, and
+            this is the one of the four that offers no bulk action: a past error cannot be
+            updated, so the block renders the dismiss control alone. */}
         {todo && (
           <TodoNotice
             text={S.todo.unexpectedErrors(todo.count)}

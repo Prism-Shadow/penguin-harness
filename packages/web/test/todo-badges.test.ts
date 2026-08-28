@@ -1,5 +1,5 @@
 /**
- * Gate + dismissal unit tests for the three DISMISSIBLE badge trails.
+ * Gate + dismissal unit tests for the four DISMISSIBLE badge trails.
  *
  * The rule every case here defends is the one that makes a dismissal safe: what the badge is
  * dismissed against is WHAT is waiting, not the fact that something was. So dismissing hides
@@ -10,6 +10,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentSummary, UsageErrorsPage } from "@prismshadow/penguin-server/api";
 import {
+  kernelUpdateTodo,
   presetUpdateTodo,
   raisedTodo,
   skillUpdateTodo,
@@ -56,6 +57,10 @@ describe("skillUpdateTodo", () => {
     });
   });
 
+  it("reports no added/upgradable split: an uninstalled Skill is not waiting for anyone", () => {
+    expect(skillUpdateTodo([agent({ name: "a", version: 2 })])!.breakdown).toBeUndefined();
+  });
+
   it("is order-independent, so two loads of the same state dismiss alike", () => {
     const a = skillUpdateTodo([agent({ name: "b", version: 1 }, { name: "a", version: 2 })]);
     const b = skillUpdateTodo([agent({ name: "a", version: 2 }), agent({ name: "b", version: 1 })]);
@@ -93,7 +98,16 @@ describe("presetUpdateTodo", () => {
       items: ["anthropic/claude-opus-5", "openai/gpt-5"],
       count: 2,
       match: "set",
+      breakdown: { added: 1, updated: 1 },
     });
+  });
+
+  it("carries the delta's own added/updated split, and it always sums to the count", () => {
+    // The page notice states these two numbers under a dot raised from `count`. If the split
+    // could disagree with the total, the block and the badge would be describing different work.
+    const todo = presetUpdateTodo({ added: 2, updated: 3, refs: ["a", "b", "c", "d", "e"] })!;
+    expect(todo.breakdown).toEqual({ added: 2, updated: 3 });
+    expect(todo.breakdown!.added + todo.breakdown!.updated).toBe(todo.count);
   });
 
   it("separates two deltas of the same size, so a different model still raises the dot", () => {
@@ -101,6 +115,78 @@ describe("presetUpdateTodo", () => {
     const second = presetUpdateTodo({ added: 1, updated: 0, refs: ["b/two"] });
     expect(first!.count).toBe(second!.count);
     expect(first!.signature).not.toBe(second!.signature);
+  });
+});
+
+describe("kernelUpdateTodo", () => {
+  it("is null when every Agent is on the current defaults generation", () => {
+    expect(
+      kernelUpdateTodo([
+        { agentId: "a", kernelOutdated: false },
+        { agentId: "b", kernelOutdated: false },
+      ]),
+    ).toBeNull();
+  });
+
+  it("is null for an empty or not-yet-loaded Agent list", () => {
+    expect(kernelUpdateTodo([])).toBeNull();
+  });
+
+  it("names the outdated Agents and counts them, ignoring the current ones", () => {
+    expect(
+      kernelUpdateTodo([
+        { agentId: "beta", kernelOutdated: true },
+        { agentId: "alpha", kernelOutdated: true },
+        { agentId: "gamma", kernelOutdated: false },
+      ]),
+    ).toEqual({
+      signature: "alpha,beta",
+      items: ["alpha", "beta"],
+      count: 2,
+      match: "set",
+    });
+  });
+
+  it("is order-independent, so two loads of the same state dismiss alike", () => {
+    const a = kernelUpdateTodo([
+      { agentId: "b", kernelOutdated: true },
+      { agentId: "a", kernelOutdated: true },
+    ]);
+    const b = kernelUpdateTodo([
+      { agentId: "a", kernelOutdated: true },
+      { agentId: "b", kernelOutdated: true },
+    ]);
+    expect(a).toEqual(b);
+  });
+
+  it("reports no added/upgradable split: an Agent's kernel is never new", () => {
+    // The notice on that page shows one count for this reason. A `breakdown: {added: 0}` would
+    // be an answer to a question the page never asks.
+    expect(kernelUpdateTodo([{ agentId: "a", kernelOutdated: true }])!.breakdown).toBeUndefined();
+  });
+
+  it("stays down for the Agents already waved away, and comes back up for a new one", () => {
+    const first = kernelUpdateTodo([{ agentId: "alpha", kernelOutdated: true }])!;
+    expect(raisedTodo(first, first.signature)).toBeNull();
+    const later = kernelUpdateTodo([
+      { agentId: "alpha", kernelOutdated: true },
+      { agentId: "beta", kernelOutdated: true },
+    ])!;
+    expect(raisedTodo(later, first.signature)).toBe(later);
+  });
+
+  it("stays down when a dismissed Agent is updated and the rest of the batch is not", () => {
+    // Containment, not equality: dealing with one of two dismissed Agents must not resurrect
+    // the dot over the other, which is the one the user waved away.
+    const both = kernelUpdateTodo([
+      { agentId: "alpha", kernelOutdated: true },
+      { agentId: "beta", kernelOutdated: true },
+    ])!;
+    const after = kernelUpdateTodo([
+      { agentId: "alpha", kernelOutdated: false },
+      { agentId: "beta", kernelOutdated: true },
+    ])!;
+    expect(raisedTodo(after, both.signature)).toBeNull();
   });
 });
 

@@ -113,6 +113,7 @@ import { clearDraftModelRef } from "../chat/draft-cache";
 import { syncRowsWithCatalog } from "./catalog-sync";
 import { useUpdateBadges } from "../../lib/use-update-badges";
 import { dismissTodo } from "../../lib/todo-dismissals";
+import { noticeCounts } from "../../lib/bulk-update";
 import { refreshProjectTodos } from "../../lib/use-project-todos";
 import { UpdateDot } from "../../components/ui/update-dot";
 import { TodoNotice } from "../../components/ui/todo-notice";
@@ -538,6 +539,11 @@ export function ModelsPage() {
   const todo = useUpdateBadges().todos.models;
   /** What the trail says, read at render time: `S` is a live binding swapped on locale change. */
   const syncNote = todo ? S.todo.presetUpdates(todo.count) : "";
+  /** The notice's two counts, both off the delta the sync action itself computes. */
+  const syncCounts = todo ? noticeCounts(todo) : null;
+  /** The notice's sync confirmation is open (it lists the refs the delta named). */
+  const [syncConfirmOpen, setSyncConfirmOpen] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const userId = useAuth().user?.userId ?? null;
   /** Per-model speed results (in-memory, reset on every project switch; "pending" while that model's turn is running). */
   const [speedResults, setSpeedResults] = useState<Map<string, SpeedResult | "pending">>(new Map());
@@ -698,6 +704,11 @@ export function ModelsPage() {
     const merged = syncRowsWithCatalog(rows);
     if (merged.added === 0 && merged.updated === 0) {
       toastInfo(S.models.syncUpToDate);
+      // Re-probe here too: the badge is gated on a cached probe, and an entry brought back into
+      // line by a hand edit leaves that probe claiming a change this sync has just found none
+      // of. Without it the notice keeps offering a button that can only answer "already
+      // up to date" — a loop the user gets out of only by dismissing or reloading.
+      refreshProjectTodos(projectId);
       return;
     }
     await persist(
@@ -935,12 +946,23 @@ export function ModelsPage() {
               )}
             </div>
           </div>
-          {/* Last stop on the Models trail, in the one shape all three dismissible trails use:
-              directly under the title, naming what is waiting and carrying the way down for
-              someone who has looked and decided to stay off the catalog. */}
-          {isOwner && todo && (
+          {/* Last stop on the Models trail, in the one shape all four dismissible trails use:
+              directly under the title, naming what is waiting, carrying the sync itself, and
+              carrying the way down for someone who has looked and decided to stay off the
+              catalog. This is the one page whose two counts are both real — the catalog is a
+              list of entries, so an entry the table lacks is genuinely new — and both come off
+              the delta the sync action itself computes (catalog-sync.ts), never a second count.
+              The toolbar's "sync presets" button is unchanged and still runs it directly. */}
+          {isOwner && todo && syncCounts && (
             <TodoNotice
-              text={syncNote}
+              text={
+                syncCounts.added === null
+                  ? S.todo.changesUpgradable(syncCounts.updated)
+                  : S.todo.changesWithAdded(syncCounts.added, syncCounts.updated)
+              }
+              actionLabel={S.todo.updateNow}
+              busy={syncing}
+              onAction={() => setSyncConfirmOpen(true)}
               dismissLabel={S.todo.dismiss}
               onDismiss={() => dismissTodo(projectId, "models", todo.signature)}
             />
@@ -1261,6 +1283,41 @@ export function ModelsPage() {
               rows.filter((r) => r.provider === deleteGroupFor).length,
             )}
           </p>
+        </ConfirmModal>
+      )}
+
+      {/* The notice's bulk sync. Same union the toolbar button runs (syncPresets), but
+          confirm-first: the button on the notice is reached from a block announcing a batch, and
+          a sync rewrites the catalog-owned fields of every entry it names. The body is the
+          toolbar button's own description of those semantics, verbatim — the wording that has
+          always stated what a sync keeps and what it overwrites. */}
+      {todo && syncConfirmOpen && (
+        <ConfirmModal
+          open
+          title={S.todo.modelsConfirmTitle(todo.count)}
+          tone="primary"
+          confirmLabel={S.models.syncCatalog}
+          busy={syncing}
+          onClose={() => setSyncConfirmOpen(false)}
+          onConfirm={() => {
+            setSyncing(true);
+            void syncPresets().finally(() => {
+              setSyncing(false);
+              setSyncConfirmOpen(false);
+            });
+          }}
+        >
+          <div className="space-y-3">
+            <p className="text-sm text-gray-600 dark:text-gray-300">{S.models.syncCatalogHint}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">{S.todo.willTouch}</p>
+            <ul className="max-h-60 divide-y divide-gray-100 overflow-y-auto rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
+              {todo.items.map((ref) => (
+                <li key={ref} className="px-3 py-1.5 font-mono text-xs">
+                  {ref}
+                </li>
+              ))}
+            </ul>
+          </div>
         </ConfirmModal>
       )}
 

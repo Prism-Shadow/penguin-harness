@@ -1,13 +1,14 @@
 /**
- * The three DISMISSIBLE badge trails, and what a dismissal is stamped against.
+ * The four DISMISSIBLE badge trails, and what a dismissal is stamped against.
  *
- * `update-badges.ts` next door covers the two trails that clear themselves — a software
- * release and an Agent kernel — where there is nothing to dismiss: the badge is gone the
- * moment the update is installed. These three are different in one way that decides the
- * whole design: the user may reasonably look at what is waiting and choose to leave it
- * there. A model table deliberately kept off the catalog, a Skill deliberately pinned to an
- * older copy, an error already read and understood — none of those should keep a red dot lit
- * forever, and none of them changes any state a gate could read.
+ * `update-badges.ts` next door covers the one trail that clears itself — a software release —
+ * where there is nothing to dismiss: the badge is gone the moment the update is installed.
+ * These four are different in one way that decides the whole design: the user may reasonably
+ * look at what is waiting and choose to leave it there. A model table deliberately kept off
+ * the catalog, a Skill deliberately pinned to an older copy, an Agent deliberately left on the
+ * defaults generation it was tuned against, an error already read and understood — none of
+ * those should keep a red dot lit forever, and none of them changes any state a gate could
+ * read.
  *
  * So each trail produces a **signature**: a string naming exactly WHAT is waiting. Dismissing
  * stores that string (`todo-dismissals.ts`); the badge is raised again only when what is
@@ -26,8 +27,8 @@
 import type { AgentSummary, UsageErrorsPage } from "@prismshadow/penguin-server/api";
 import type { CatalogDelta } from "../features/models/catalog-sync";
 
-/** The three trails, in sidebar order. Also the key each dismissal is stored under. */
-export type TodoKey = "skills" | "models" | "errors";
+/** The four trails, in sidebar order. Also the key each dismissal is stored under. */
+export type TodoKey = "agents" | "skills" | "models" | "errors";
 
 /**
  * How a dismissal is compared against what is waiting now.
@@ -40,6 +41,22 @@ export type TodoKey = "skills" | "models" | "errors";
  *   that moved DOWN is not news.
  */
 export type TodoMatch = "set" | "watermark";
+
+/**
+ * The two kinds of change a trail can be carrying, where it can tell them apart. Only the
+ * Models trail can: the catalog is a list of entries, so an entry the table lacks is genuinely
+ * NEW and one whose fields have moved is an upgrade, and `catalogDelta` already separates them
+ * for the sync action itself. The other three cannot, and say so by leaving this absent rather
+ * than reporting a zero — a Skill nobody has installed is not waiting for anyone, and an
+ * Agent's kernel is never new, so "0 added" on those pages would be an answer to a question
+ * that was never asked.
+ */
+export interface TodoBreakdown {
+  /** Things the Project does not have at all yet. */
+  added: number;
+  /** Things it has an older form of. */
+  updated: number;
+}
 
 /** What one trail has waiting. */
 export interface Todo {
@@ -55,6 +72,40 @@ export interface Todo {
   count: number;
   /** Which containment rule {@link raisedTodo} applies to this trail. */
   match: TodoMatch;
+  /**
+   * The added/upgradable split where the trail can honestly make one, absent where it cannot
+   * (see {@link TodoBreakdown}). It always sums to {@link count}, so the page notice and the
+   * nav dot cannot report different totals.
+   */
+  breakdown?: TodoBreakdown;
+}
+
+/**
+ * Agents in this Project whose config is behind the current defaults generation. The flag rides
+ * along on the Project's Agent list, so this costs no request of its own.
+ *
+ * **The signature is the set of outdated Agent ids, not id-plus-generation**, which makes this
+ * the one trail whose dismissal is coarser than the others: a later defaults generation does
+ * NOT raise the dot again for an Agent already waved away, the way a later Skill version or a
+ * different catalog entry does. That is a deliberate limit rather than an oversight — the
+ * generation stamp a signature would need (`KERNEL_VERSION`) lives in core's `state/`
+ * alongside `node:crypto`, and pulling it into the browser bundle to sharpen a dismissal is a
+ * bad trade. What makes the coarse form safe is that dismissing here silences only the page
+ * notice and the nav dot: every outdated Agent keeps its own capsule on the list card and its
+ * own update button in settings, so nothing the user waved away becomes unreachable. A NEW
+ * Agent falling behind still raises it, which is the case a per-Project mute would lose.
+ *
+ * Counted by Agent, because that is what the page lists and what the update acts on one of.
+ */
+export function kernelUpdateTodo(
+  agents: ReadonlyArray<Pick<AgentSummary, "agentId" | "kernelOutdated">>,
+): Todo | null {
+  const items = agents
+    .filter((a) => a.kernelOutdated)
+    .map((a) => a.agentId)
+    .sort();
+  if (items.length === 0) return null;
+  return { signature: items.join(","), items, count: items.length, match: "set" };
 }
 
 /**
@@ -91,6 +142,10 @@ export function skillUpdateTodo(
  * The signature is the list of references that would change, so syncing part of the table by
  * hand and dismissing the rest behaves the way the user would expect, and a catalog release
  * touching a different model raises the badge again even when the count happens to match.
+ *
+ * The added/updated split is carried straight off the delta rather than recounted here, for the
+ * same reason the count is: the notice on the page and the sync action behind its button have to
+ * be describing one calculation, not two that agree today.
  */
 export function presetUpdateTodo(delta: CatalogDelta): Todo | null {
   if (delta.refs.length === 0) return null;
@@ -99,6 +154,7 @@ export function presetUpdateTodo(delta: CatalogDelta): Todo | null {
     items: [...delta.refs],
     count: delta.refs.length,
     match: "set",
+    breakdown: { added: delta.added, updated: delta.updated },
   };
 }
 
