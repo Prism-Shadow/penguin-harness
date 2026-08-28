@@ -48,12 +48,20 @@ Chinese UI renamed the three price buckets.
   exactly as tall as it was: the tag is absolutely positioned so it takes no line of its own,
   and the title row reserves room for it and truncates rather than wrapping under it. A row
   whose price has been edited away from the catalog's shows neither.
-- The card's other standing marks — default, vision, vision proxy — join it there, stacked
-  downward and flush to each other. The title row's job is the model's NAME, and every badge in
-  it was width the name had to give up. `freeBadge` and `fastModeBadge` stay put: four marks is
-  what fits in a corner the height of three text rows, and six would make the stack decide the
-  card's height. The rows the stack reaches reserve room for it — the title row always, the meta
-  row once the stack is three deep.
+- **The model card is three rows now**: its name (a size down) with the upstream id beside it,
+  then every standing mark on a row of its own — default, vision, vision proxy, fast, free,
+  discount, in that fixed order so the eye learns where to look — then the price line as
+  before. The marks had been sharing the title's line, where each was width the model's name
+  had to give up. The mark row renders even when empty, at the tags' own height: most models
+  carry no mark, and cards in one row of a two-column grid stretch to the tallest, so a
+  collapsing row would show up as uneven padding rather than as a shorter card.
+- **A narrow group header can no longer overlap its own actions.** The vendor name is the one
+  element that takes the leftover space and the one that truncates; giving it a minimum width
+  was what caused the overlap, since the marks beside it never shrink, so once their widths plus
+  that floor exceeded the button the whole group overflowed and ran under the actions. The floor
+  is gone and the model count and the recommendation drop out on a narrow row instead — the same
+  rule the actions' own labels already followed. Verified with no overflow at nine widths from
+  1500px down to 400px.
 
 ## Chinese price labels
 

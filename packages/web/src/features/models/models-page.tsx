@@ -1003,13 +1003,19 @@ export function ModelsPage() {
                           provider={group.provider.id}
                           className="h-5 w-5 shrink-0 text-gray-700 dark:text-gray-300"
                         />
-                        {/* Vendor name can truncate (min-w-0): the actions on the right must not
-                          shrink, otherwise on narrow screens it would get pushed out of the
-                          button box and overlap the action text. */}
-                        <span className="min-w-[5rem] truncate text-sm font-semibold">
+                        {/* The vendor name is the only thing in this row allowed to take the
+                            remaining space, and the only one that truncates. Giving it a
+                            minimum width is what made a narrow row overlap: the items beside
+                            it never shrink, so once their widths plus that floor exceeded the
+                            button, the whole group overflowed the box and ran under the
+                            actions. The floor is gone; what gives way instead is the two marks
+                            after it, which drop out on a narrow row (below, and the actions'
+                            labels do the same at @3xl). The name then always has the leftovers
+                            to itself and truncates inside them, so nothing can overlap. */}
+                        <span className="min-w-0 truncate text-sm font-semibold">
                           {group.provider.label}
                         </span>
-                        <span className="shrink-0 whitespace-nowrap font-mono text-xs text-gray-400">
+                        <span className="hidden shrink-0 whitespace-nowrap font-mono text-xs text-gray-400 @xl:inline">
                           {S.models.modelCount(group.rows.length)}
                         </span>
                         {/* The recommendation rides the collapse bar itself, so it is read with
@@ -1019,10 +1025,10 @@ export function ModelsPage() {
                         {group.provider.recommended && (
                           // Not a `Badge`: its `brand` tone is deliberately gray — neutral
                           // emphasis outside the status vocabulary — and an endorsement is
-                          // neither a status nor neutral. The brand palette says "this one"
-                          // without borrowing a severity, which is the category tone.ts keeps
-                          // out on purpose.
-                          <span className="shrink-0 whitespace-nowrap rounded-full bg-brand-100 px-2 py-0.5 text-[11px] font-semibold text-brand-800 dark:bg-brand-950 dark:text-brand-200">
+                          // neither a status nor neutral, which is the category tone.ts keeps
+                          // out on purpose. It holds on longer than the model count beside it
+                          // and gives way before the name does.
+                          <span className="hidden shrink-0 whitespace-nowrap rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800 @lg:inline dark:bg-emerald-950 dark:text-emerald-300">
                             {S.models.recommendedGroup}
                           </span>
                         )}
@@ -1696,25 +1702,17 @@ function ModelCard({
   // returns nothing once the price has been edited away from the catalog's).
   const discount = discountedPrice(row);
   /**
-   * The marks that ride the card's top-right corner, stacked downward, flush to the border and
-   * to each other.
+   * Every standing mark this row carries, in one horizontal row of its own.
    *
-   * They sit here rather than in the title row because that row's job is the model's NAME, and
-   * every badge in it was width the name had to give up — a long name truncated to make room
-   * for a mark that could have been read anywhere. The corner is empty space the card already
-   * owned.
+   * They had been sharing the title's line, where each was width the model's NAME had to give
+   * up — a long name truncated to make room for a mark that could have been read anywhere. A
+   * row of their own costs one line and gives the name the whole of the first.
    *
-   * At most four can be true at once (default, vision, vision proxy, discount), which is what
-   * keeps the stack inside the card's three text rows: the tags are absolutely positioned, so
-   * they add no line, but a taller stack than the card would grow it. `freeBadge` and
-   * `fastModeBadge` therefore stay in the title row — moving them too would put six marks in a
-   * corner sized for four.
-   *
-   * The rows the stack reaches reserve room for it: the title row always, and the meta row once
-   * the stack is three deep. Padding every row unconditionally would indent a card carrying one
-   * tag for no reason.
+   * Order is fixed rather than by which happen to be true, so the eye can learn where to look:
+   * what this Project chose (default, vision proxy) before what the model is (vision, fast,
+   * free) before what it costs today (the discount).
    */
-  const cornerTags: Array<{ key: string; label: string; title?: string; className: string }> = [
+  const tags: Array<{ key: string; label: string; title?: string; className: string }> = [
     ...(isDefault
       ? [
           {
@@ -1742,6 +1740,24 @@ function ModelCard({
           },
         ]
       : []),
+    ...(row.fastMode
+      ? [
+          {
+            key: "fastMode",
+            label: S.models.fastModeBadge,
+            className: "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+          },
+        ]
+      : []),
+    ...(isFreeModel(row)
+      ? [
+          {
+            key: "free",
+            label: S.models.freeBadge,
+            className: "bg-yellow-100 text-yellow-800 dark:bg-yellow-950 dark:text-yellow-300",
+          },
+        ]
+      : []),
     ...(discount
       ? [
           {
@@ -1753,6 +1769,7 @@ function ModelCard({
         ]
       : []),
   ];
+
   const priceLine = (a: string, b: string, c: string): string =>
     `${displayPrice(a, currency)} / ${displayPrice(b, currency)} / ${displayPrice(c, currency)}`;
   const meta: ReactNode[] = [
@@ -1806,71 +1823,41 @@ function ModelCard({
     <button
       type="button"
       onClick={onOpen}
-      // `relative` so the discount tag can hang on the card's own corner; it creates no
-      // stacking context of its own (styles.css's rule), so nothing above the list is affected.
-      className="relative flex w-full flex-col gap-0.5 rounded-md border border-gray-200 px-3 py-2.5 text-left transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:hover:border-gray-700 dark:hover:bg-gray-800/40"
+      className="flex w-full flex-col gap-1 rounded-md border border-gray-200 px-3 py-2.5 text-left transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:hover:border-gray-700 dark:hover:bg-gray-800/40"
     >
-      {/* The discount rides the card's top-right corner, flush to the border and sharing its
-          radius, so the promotional rate is legible as one at a glance rather than competing
-          for room in the badge row.
-
-          Two things keep the card exactly as tall as it was. The tag is absolutely positioned,
-          so it occupies no line of its own; and the title row below reserves room for it and
-          stops wrapping, so a long name or a full set of badges truncates instead of pushing
-          the row onto a second line and under the tag. */}
-      {cornerTags.length > 0 && (
-        <span className="absolute right-0 top-0 flex flex-col items-end">
-          {cornerTags.map((tag, i) => (
-            <span
-              key={tag.key}
-              title={tag.title}
-              // Flush to each other as well as to the border, so the stack reads as one mark on
-              // the corner rather than as scattered chips. Only the first carries the card's
-              // own top-right radius; the rest continue straight down from it.
-              // `leading-tight`: four stacked tags at the default line height are a pixel
-              // taller than the card's three text rows, and the stack must never be what
-              // decides the card's height.
-              className={`whitespace-nowrap rounded-bl-md px-1.5 py-0.5 text-[11px] font-semibold leading-tight ${
-                i === 0 ? "rounded-tr-md" : ""
-              } ${tag.className}`}
-            >
-              {tag.label}
-            </span>
-          ))}
-        </span>
-      )}
-      <span className={`flex min-w-0 items-center gap-1.5 ${cornerTags.length > 0 ? "pr-16" : ""}`}>
-        <span className="min-w-0 truncate text-sm font-medium">
+      {/* 1. What the model is called. The name takes what it needs and the upstream id gives
+          way first: the id is a detail you go looking for, the name is what you scan by. */}
+      <span className="flex w-full min-w-0 items-baseline gap-1.5">
+        <span className="max-w-full shrink-0 truncate text-[13px] font-medium">
           {row.displayName ?? row.modelId}
         </span>
-        {/* Free rows (all three price buckets 0, e.g. :free variants / openrouter/free): a
-            light-yellow badge so zero-cost models stand out at a glance (informational, kept
-            distinct from the amber warning tone the proxy-vision badge uses). */}
-        {isFreeModel(row) && (
-          <span className="shrink-0">
-            <Badge tone="yellow">{S.models.freeBadge}</Badge>
-          </span>
-        )}
-        {/* Fast mode moves the model onto a premium price list that the recorded prices do not
-            reflect, so it has to be visible without opening the dialog (amber, like the other
-            badge that flags a standing cost/behavior choice). */}
-        {row.fastMode && (
-          <span className="shrink-0">
-            <Badge tone="amber">{S.models.fastModeBadge}</Badge>
+        {/* When there is no display name the first line already IS the upstream id, so it is
+            not repeated. */}
+        {row.displayName !== undefined && (
+          <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-gray-500 dark:text-gray-400">
+            {row.modelId}
           </span>
         )}
       </span>
-      {/* Upstream id in small text (grouping already separates by group, no composite id is
-          shown anymore); when there's no display name, the main line is already the
-          upstream id, so it isn't repeated on a second line. */}
-      {row.displayName !== undefined && (
-        <span className="truncate font-mono text-[11px] text-gray-500 dark:text-gray-400">
-          {row.modelId}
-        </span>
-      )}
-      {/* Meta line: the truncating text takes the flexible space; speed badges keep their own
+      {/* 2. Every standing mark, on one row of its own (see `tags`). The row is rendered even
+          when empty: most models carry no mark at all, and letting it collapse would leave the
+          grid ragged — cards in the same row of a two-column grid stretch to the tallest, so an
+          absent line shows up as uneven padding rather than as a shorter card. Its height is
+          the tags' own, so a card with marks and a card without are exactly as tall. */}
+      <span className="flex min-h-[17px] w-full flex-wrap items-center gap-1">
+        {tags.map((tag) => (
+          <span
+            key={tag.key}
+            title={tag.title}
+            className={`whitespace-nowrap rounded px-1.5 py-px text-[11px] font-semibold leading-tight ${tag.className}`}
+          >
+            {tag.label}
+          </span>
+        ))}
+      </span>
+      {/* 3. Meta line: the truncating text takes the flexible space; speed badges keep their own
           non-shrinking slot on the right so the numbers never wrap or get pushed out. */}
-      <span className={`flex w-full items-center gap-1.5 ${cornerTags.length >= 3 ? "pr-16" : ""}`}>
+      <span className="flex w-full items-center gap-1.5">
         <span className="min-w-0 flex-1 truncate text-[11px] text-gray-400 dark:text-gray-500">
           {meta.map((part, i) => (
             <Fragment key={i}>
