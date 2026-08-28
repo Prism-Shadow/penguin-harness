@@ -229,6 +229,7 @@ On Session creation, `modelId` and `provider` are both-or-neither: send the comp
 | --- | --- | --- |
 | GET | /usage | Usage statistics; query parameters `from`, `to`, `fromTs`/`toTs` (ISO timestamps bounding a trailing window, given together; required for `minute`), `groupBy`, `granularity` (`minute` / `hour` / `day` / `week` / `month` time-series precision, default `day`; oversized range × precision combinations are rejected), `agentId`, `provider`, `modelId` |
 | GET | /usage/errors | One page of the error detail table (newest first): `offset`, `limit`, plus the same `from` / `to` / `agentId` filter and an optional `kind` (`unexpected` / `expected`) → `{items, total}` |
+| DELETE | /usage/errors | Empties the error table for the filter on screen: `from` / `to` / `agentId`, the same pair the reads take (no `kind` — the panel offers no such control) → `{deleted}`. Project owner only; errors with no Project attribution are outside every clear, admin included |
 | GET | /agents/:agentId/traces | Date → Session drill-down structure of Trace files |
 | GET | /agents/:agentId/traces/:sessionId/:index | Read Trace events (`offset` / `limit` pagination) |
 | GET | /agents/:agentId/traces/:sessionId/:index/analysis | Trace performance analysis |

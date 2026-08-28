@@ -16,6 +16,7 @@ import {
   MessagingPermissionError,
   MessagingUnsupportedError,
 } from "../src/runtime/messaging/media.js";
+import { MessagingConnectionClosedError } from "../src/runtime/messaging/qq-api.js";
 
 /** Feishu's 99991672, which every one of its calls throws alike — the point of the code half. */
 const scopeDenial = (): MessagingPermissionError =>
@@ -62,5 +63,46 @@ describe("messagingErrorKind", () => {
       ),
     ).toBe("unexpected");
     expect(messagingErrorKind(undefined, "messaging_connect_failed")).toBe("unexpected");
+  });
+
+  it("a platform close is read from its own verdict, not from the capture point", () => {
+    // The one expected case the chat is never told about, and the one that crosses a capture
+    // point the set above deliberately excludes: nobody needs telling because the connector's
+    // next handshake already put the connection back.
+    expect(
+      messagingErrorKind(
+        new MessagingConnectionClosedError("gateway connection closed (code 4009)", 4009, true),
+        "messaging_connect_failed",
+      ),
+    ).toBe("expected");
+    // A close that leaves the binding down until a person changes a credential or a console
+    // setting keeps its place on the dashboard, whatever number it carries.
+    expect(
+      messagingErrorKind(
+        new MessagingConnectionClosedError("gateway connection closed (code 4004)", 4004, false),
+        "messaging_connect_failed",
+      ),
+    ).toBe("unexpected");
+    expect(
+      messagingErrorKind(
+        new MessagingConnectionClosedError("gateway refused this bot", 4914, false),
+        "messaging_connect_failed",
+      ),
+    ).toBe("unexpected");
+    // The verdict travels with the type, so it holds wherever the failure is caught.
+    expect(
+      messagingErrorKind(
+        new MessagingConnectionClosedError("gateway connection closed (code 4009)", 4009, true),
+        "messaging_inbound_failed",
+      ),
+    ).toBe("expected");
+    // And a plain Error that merely quotes the code is not one: matching on wording would tie
+    // the count to how a platform phrases its own close.
+    expect(
+      messagingErrorKind(
+        new Error("gateway connection closed (code 4009)"),
+        "messaging_connect_failed",
+      ),
+    ).toBe("unexpected");
   });
 });

@@ -102,6 +102,18 @@ export interface UsageErrorsQuery {
   includeGlobalErrors?: boolean;
 }
 
+/**
+ * What a clear removes (see {@link UsageService.clearErrors}): the panel's own date range and
+ * Agent, and nothing else. No `kind` — the panel offers no such control, so a clear has no
+ * narrowing the reader could have seen — and no `includeGlobalErrors`, since unattributed rows
+ * are never a Project's to delete.
+ */
+export interface UsageErrorsClearQuery {
+  from?: string;
+  to?: string;
+  agentId?: string;
+}
+
 /** Cost formula: sum of the three buckets, in USD per million Tokens. */
 function costOf(sums: UsageModelSums, rates: PricingRates): number {
   return (
@@ -277,11 +289,38 @@ export class UsageService {
     };
   }
 
+  /**
+   * Empties the error table for the filter the panel is showing, and answers how many rows went.
+   *
+   * The filter is the same date range and Agent the dashboard and the paged route take, so a
+   * clear removes exactly the set the caller was looking at and never a row outside it: a
+   * reader who has narrowed to one Agent and one week does not lose the rest of the year to a
+   * button that said "clear".
+   *
+   * Unattributed rows are outside every clear (see ErrorsRepo.deleteFiltered): they carry no
+   * Project, so they are not this Project's to remove, and the delete's scope is therefore
+   * strictly narrower than what any caller — admin included — is allowed to read.
+   */
+  clearErrors(projectId: string, q: UsageErrorsClearQuery): number {
+    return this.errors.deleteFiltered(projectId, {
+      ...(q.agentId !== undefined ? { agentId: q.agentId } : {}),
+      ...(q.from !== undefined ? { from: q.from } : {}),
+      ...(q.to !== undefined ? { to: q.to } : {}),
+    });
+  }
+
   /** Error statistics: summary info (total / unexpected / most common error code) + the last N entries, all filtered by the selected range. */
   private foldErrors(projectId: string, f: ErrorFilter): UsageErrors {
     const { total, unexpected } = this.errors.summary(projectId, f);
     return {
       total,
+      // Counted the way deleteFiltered selects — without the unattributed rows an admin's read
+      // includes — so the clear confirmation states what will really go rather than what is on
+      // screen. Identical to `total` for everyone whose read did not include them.
+      clearable:
+        f.includeGlobal === true
+          ? this.errors.summary(projectId, { ...f, includeGlobal: false }).total
+          : total,
       unexpected,
       topCode: this.errors.topCode(projectId, f),
       recent: this.errors.recent(projectId, f, ERROR_RECENT_N),

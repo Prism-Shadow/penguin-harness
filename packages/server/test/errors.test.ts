@@ -36,6 +36,8 @@ import {
   ErrorRecorder,
   MESSAGE_MAX,
 } from "../src/runtime/error-recorder.js";
+import { messagingErrorKind } from "../src/runtime/messaging/error-kind.js";
+import { MessagingConnectionClosedError } from "../src/runtime/messaging/qq-api.js";
 import { StreamErrorWatcher } from "../src/runtime/stream-error-watcher.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -146,6 +148,43 @@ describe("errors-repo", () => {
     expect(rows[0]!.project_id).toBeNull();
   });
 
+  it("deleteFiltered: takes exactly the rows the same filter would have read", () => {
+    repo.insert(row("2026-07-05", { message: "before-range" }));
+    repo.insert(row("2026-07-06", { agentId: "a1", message: "in-range-a1" }));
+    repo.insert(row("2026-07-06", { agentId: "a2", message: "in-range-a2" }));
+    repo.insert(row("2026-07-07", { message: "after-range" }));
+
+    // Narrowed to one Agent inside the range: everything the reader could not see survives.
+    expect(repo.deleteFiltered("p1", { from: "2026-07-06", to: "2026-07-06", agentId: "a1" })).toBe(
+      1,
+    );
+    expect(repo.recent("p1").map((r) => r.message)).toEqual([
+      "after-range",
+      "in-range-a2",
+      "before-range",
+    ]);
+
+    // The range alone still spares the dates outside it.
+    expect(repo.deleteFiltered("p1", { from: "2026-07-06", to: "2026-07-06" })).toBe(1);
+    expect(repo.recent("p1").map((r) => r.message)).toEqual(["after-range", "before-range"]);
+  });
+
+  it("deleteFiltered: never reaches unattributed rows or another Project's", () => {
+    // Unattributed rows appear in EVERY Project's admin view, so a Project-scoped clear that
+    // took them would empty them out of every other Project's panel as well.
+    repo.insert(row("2026-07-06", { projectId: null, source: "process", message: "crash" }));
+    repo.insert(row("2026-07-06", { projectId: "p-other", message: "other tenant" }));
+    repo.insert(row("2026-07-06", { message: "mine" }));
+
+    expect(repo.deleteFiltered("p1")).toBe(1);
+    expect(
+      db
+        .prepare("SELECT message FROM error_records ORDER BY id")
+        .all()
+        .map((r) => r.message),
+    ).toEqual(["crash", "other tenant"]);
+  });
+
   // —— Row cap (the second line of defense against error storms; the first is ErrorRecorder's short-window dedup) ——
 
   const messages = () =>
@@ -254,6 +293,34 @@ describe("error-recorder", () => {
     const rows = db.prepare("SELECT kind, source, status FROM error_records ORDER BY id").all();
     expect(rows[0]).toMatchObject({ kind: "expected", source: "llm", status: null });
     expect(rows[1]).toMatchObject({ kind: "unexpected", source: "llm", status: null });
+  });
+
+  it("a gateway close is filed by its own verdict: the routine one leaves the count alone", () => {
+    // The path the messaging bridge takes for a dropped connection: the connector's typed
+    // close, classified by messagingErrorKind, persisted under `messaging_connect_failed`.
+    // Both rows land — the log keeps everything — but only the one a person has to act on
+    // reaches the unexpected count the cost center highlights.
+    const rec = new ErrorRecorder(repo, now);
+    const closed = (message: string, code: number, recovers: boolean) =>
+      new MessagingConnectionClosedError(message, code, recovers);
+    for (const err of [
+      closed("gateway connection closed (code 4009)", 4009, true),
+      closed("gateway connection closed (code 4004)", 4004, false),
+    ]) {
+      rec.record({
+        source: "messaging",
+        err,
+        code: "messaging_connect_failed",
+        kind: messagingErrorKind(err, "messaging_connect_failed"),
+        // Distinct Projects so the recorder's short-window dedup does not swallow the second.
+        ctx: { projectId: err.recovers ? "p-routine" : "p-fault" },
+      });
+    }
+    const rows = db.prepare("SELECT kind, code, message FROM error_records ORDER BY id").all();
+    expect(rows[0]).toMatchObject({ kind: "expected", code: "messaging_connect_failed" });
+    expect(rows[1]).toMatchObject({ kind: "unexpected", code: "messaging_connect_failed" });
+    expect(repo.summary("p-routine")).toEqual({ total: 1, unexpected: 0 });
+    expect(repo.summary("p-fault")).toEqual({ total: 1, unexpected: 1 });
   });
 
   // —— Short-window dedup (the first line of defense against error storms) ——
@@ -1064,6 +1131,11 @@ describe("HTTP onError persistence (integration)", () => {
     expect(adminBody.errors.total).toBe(1);
     expect(adminBody.errors.topCode).toMatchObject({ source: "http", code: "invalid_credentials" });
     expect(adminBody.errors.recent[0]).toMatchObject({ code: "invalid_credentials" });
+    // …but not clear it. The clear confirmation states `clearable`, so what it promises is what
+    // the delete can really take: the read reaches this row, no Project-scoped delete does.
+    expect(adminBody.errors.clearable).toBe(0);
+    // A member's read never included them, so the two numbers are the same one.
+    expect(plainBody.errors.clearable).toBe(0);
   });
 
   it("the paged error route pages inside the caller's own tenant, at every offset", async () => {
@@ -1168,6 +1240,111 @@ describe("HTTP onError persistence (integration)", () => {
       await api.get(`/api/projects/${projectId}/usage/errors?offset=0&limit=20`)
     ).json()) as UsageErrorsPage;
     expect(all.total).toBe(4);
+  });
+
+  /** Seeds one row straight into the table, so a batch's dates and Agents are exact. */
+  const seedRow = (o: Partial<ErrorRecordInsert> & { date: string; code: string }) =>
+    new ErrorsRepo(t.deps.db).insert({
+      ts: `${o.date}T00:00:00.000Z`,
+      projectId,
+      agentId: null,
+      sessionId: null,
+      source: "http",
+      kind: "expected",
+      status: 404,
+      message: o.code,
+      ...o,
+    });
+
+  it("clearing errors takes the filter on screen and nothing outside it", async () => {
+    seedRow({ date: "2026-07-05", code: "before_range" });
+    seedRow({ date: "2026-07-06", code: "in_range_a1", agentId: "a1" });
+    seedRow({ date: "2026-07-06", code: "in_range_a2", agentId: "a2" });
+    seedRow({ date: "2026-07-08", code: "after_range" });
+
+    // Narrowed to one Agent inside the range: exactly the rows that filter reads.
+    const narrow = await api.delete(
+      `/api/projects/${projectId}/usage/errors?from=2026-07-06&to=2026-07-06&agentId=a1`,
+    );
+    expect(narrow.status).toBe(200);
+    expect(await narrow.json()).toEqual({ deleted: 1 });
+    expect(errorRows().map((r) => r.code)).toEqual(["before_range", "in_range_a2", "after_range"]);
+
+    // The range on its own still spares the dates the reader was not looking at.
+    const ranged = await api.delete(
+      `/api/projects/${projectId}/usage/errors?from=2026-07-06&to=2026-07-07`,
+    );
+    expect(await ranged.json()).toEqual({ deleted: 1 });
+    expect(errorRows().map((r) => r.code)).toEqual(["before_range", "after_range"]);
+
+    // No filter clears the Project's whole history, which is what an unfiltered panel showed.
+    expect(await (await api.delete(`/api/projects/${projectId}/usage/errors`)).json()).toEqual({
+      deleted: 2,
+    });
+    expect(errorRows()).toHaveLength(0);
+  });
+
+  it("a member cannot clear the log, so it is no route to the unattributed rows", async () => {
+    seedRow({ date: "2026-07-06", code: "project_row" });
+    seedRow({ date: "2026-07-06", code: "unattributed_row", projectId: null, source: "process" });
+
+    // The refusals below are recorded by app.onError like any other, so the seeded rows are
+    // read back by code rather than by counting the table.
+    const seeded = () =>
+      errorRows()
+        .map((r) => r.code as string)
+        .filter((c) => c === "project_row" || c === "unattributed_row");
+
+    const member = await provisionUser(t.app, "member_user");
+    expect(member.user.isAdmin).toBe(false);
+    const added = await api.post(`/api/projects/${projectId}/members`, { userId: "member_user" });
+    expect(added.status).toBe(201);
+    const memberApi = apiClient(t.app, member.cookie);
+
+    // Reading the panel is a member's right; emptying it is the owner's, like deleting an Agent.
+    expect((await memberApi.get(`/api/projects/${projectId}/usage/errors?offset=0`)).status).toBe(
+      200,
+    );
+    const refused = await memberApi.delete(`/api/projects/${projectId}/usage/errors`);
+    expect(refused.status).toBe(403);
+    expect(((await refused.json()) as { error: { code: string } }).error.code).toBe(
+      "owner_required",
+    );
+    expect(seeded()).toEqual(["project_row", "unattributed_row"]);
+
+    // A non-member is not told the Project exists, let alone allowed to empty it.
+    const outsider = await provisionUser(t.app, "outsider_user");
+    const outsiderApi = apiClient(t.app, outsider.cookie);
+    expect((await outsiderApi.delete(`/api/projects/${projectId}/usage/errors`)).status).toBe(404);
+    expect(seeded()).toEqual(["project_row", "unattributed_row"]);
+  });
+
+  it("unattributed rows survive every clear, including an admin's own", async () => {
+    // They belong to no Project and show in EVERY Project's admin view, so a Project-scoped
+    // clear taking them would empty them out of every other Project's panel too. That keeps
+    // the delete strictly narrower than any caller's read, admin included.
+    const adminApi = apiClient(t.app, (await loginAdmin(t.app)).cookie);
+    new ErrorsRepo(t.deps.db).insert({
+      ts: "2026-07-06T00:00:00.000Z",
+      date: "2026-07-06",
+      projectId: null,
+      agentId: null,
+      sessionId: null,
+      source: "process",
+      kind: "unexpected",
+      code: "uncaught_exception",
+      status: null,
+      message: "crash",
+    });
+    // The admin can see it from their own Project, which is exactly the view being cleared.
+    const before = (await (
+      await adminApi.get(`/api/projects/default_project/usage/errors?offset=0&limit=20`)
+    ).json()) as UsageErrorsPage;
+    expect(before.items.map((e) => e.code)).toEqual(["uncaught_exception"]);
+
+    const cleared = await adminApi.delete(`/api/projects/default_project/usage/errors`);
+    expect(await cleared.json()).toEqual({ deleted: 0 });
+    expect(errorRows().filter((r) => r.project_id === null)).toHaveLength(1);
   });
 
   it("Project deletion cascade-cleans that Project's error records", async () => {

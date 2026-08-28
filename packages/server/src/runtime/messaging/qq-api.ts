@@ -215,6 +215,60 @@ function closeCodeIsFatal(code: number): boolean {
 }
 
 /**
+ * Close codes the next handshake clears on its own, with nothing for anyone to change.
+ *
+ * 4009 is the platform expiring a long-lived connection — its documented handling is
+ * "reconnect", and it is the one drop that stays RESUMABLE (see closeCodeInvalidatesSession),
+ * so the next HELLO replays from `seq` and no inbound event is missed. 4900-4913 is the
+ * platform's own internal-error band, whose documented handling is the fresh identify this
+ * session already performs; nothing an operator holds could have prevented it or can speed it
+ * up.
+ *
+ * Deliberately narrower than "reconnects": nearly every close reconnects here, including the
+ * ones that will never come up again. A rejected token (4004), an intent the bot was never
+ * granted (4014) and a delisted or banned bot (4914 / 4915) all retry just as eagerly and
+ * repeat the identical refusal until a human changes a credential or a console setting. 4006
+ * and 4007 stay out too: they say the session state this client presented was refused, which
+ * a fresh identify papers over — at the cost of whatever arrived during the gap — and which,
+ * repeating, points at this client's own sequence bookkeeping.
+ */
+function closeCodeIsRoutine(code: number): boolean {
+  return code === 4009 || (code >= 4900 && code <= 4913);
+}
+
+/**
+ * A connection the platform itself closed, carrying the code it closed with.
+ *
+ * Its own class so the error recorder can tell a socket the gateway cycled from one that is
+ * down until someone acts, WITHOUT reading the message text: a wording match would tie the
+ * dashboard's "needs a human" count to how a platform phrases itself. error-kind.ts reads
+ * `recovers` and nothing else.
+ *
+ * `recovers` carries the answer rather than the raw code because the reconnect decision is
+ * protocol state this file already owns and nothing above it holds (see GatewaySession). It
+ * is true only where the next handshake restores the connection with nothing changed
+ * (closeCodeIsRoutine), and false where retrying repeats the same refusal or the session has
+ * stopped for good.
+ *
+ * It lives beside the gateway rather than in a shared module because the gateway is the only
+ * connection in this product that learns WHY it was closed: the Feishu long connection is the
+ * vendor SDK's own reconnect loop and surfaces a plain failure, and Telegram's transport is a
+ * long poll with no connection to close.
+ */
+export class MessagingConnectionClosedError extends Error {
+  constructor(
+    message: string,
+    /** The platform's own WebSocket close code. */
+    readonly closeCode: number,
+    /** Whether the next handshake brings the connection back with nothing changed. */
+    readonly recovers: boolean,
+  ) {
+    super(message);
+    this.name = "MessagingConnectionClosedError";
+  }
+}
+
+/**
  * How long a socket has to finish its handshake before it is dropped and retried.
  *
  * A socket that opened and then went quiet — a proxy that accepted the upgrade and
@@ -521,8 +575,17 @@ class GatewaySession {
   private handshakeTimer: ReturnType<typeof setTimeout> | null = null;
   /** When the last HEARTBEAT_ACK arrived, against which the heartbeat tick measures silence. */
   private lastAckAt = 0;
-  /** This outage already reported; the retries stay quiet until a handshake succeeds. */
-  private reported = false;
+  /**
+   * What this outage has already reported; the retries stay quiet until a handshake succeeds.
+   *
+   * One report per outage is what keeps a backoff loop from filling the error table. A routine
+   * close is now filed `expected`, though, so letting it claim the slot outright would silence
+   * the outage behind it: a socket the platform expires at 4009 followed by an auth refusal on
+   * every retry would leave the dashboard reading zero defects for a binding that is down until
+   * a person acts. So a routine report is spent once more — by the first failure that is not
+   * routine — and only then does the outage go quiet.
+   */
+  private reported: "none" | "routine" | "defect" = "none";
 
   constructor(
     private readonly client: ProductionClient,
@@ -612,13 +675,21 @@ class GatewaySession {
       if (closeCodeIsFatal(evt.code)) {
         this.closed = true;
         this.handlers.onError?.(
-          new Error(
+          new MessagingConnectionClosedError(
             `gateway refused this bot (close code ${evt.code}) — it is delisted or banned on the QQ open platform`,
+            evt.code,
+            false,
           ),
         );
         return;
       }
-      this.fail(new Error(`gateway connection closed (code ${evt.code})`));
+      this.fail(
+        new MessagingConnectionClosedError(
+          `gateway connection closed (code ${evt.code})`,
+          evt.code,
+          closeCodeIsRoutine(evt.code),
+        ),
+      );
     });
   }
 
@@ -699,7 +770,7 @@ class GatewaySession {
   private onHandshake(): void {
     this.disarmHandshake();
     this.failures = 0;
-    this.reported = false;
+    this.reported = "none";
     this.handlers.onReady?.();
   }
 
@@ -765,12 +836,17 @@ class GatewaySession {
     }
   }
 
-  /** One report per outage, then retry with backoff — the Telegram poll loop's contract. */
+  /**
+   * One report per outage, then retry with backoff — the Telegram poll loop's contract, with
+   * the one exception `reported` documents: a routine close does not get to be the whole story
+   * of an outage that turns out to need a person.
+   */
   private fail(err: unknown): void {
     if (this.closed) return;
     this.failures += 1;
-    if (!this.reported) {
-      this.reported = true;
+    const routine = err instanceof MessagingConnectionClosedError && err.recovers;
+    if (this.reported === "none" || (this.reported === "routine" && !routine)) {
+      this.reported = routine ? "routine" : "defect";
       this.handlers.onError?.(err);
     }
     this.retryTimer = setTimeout(() => {
