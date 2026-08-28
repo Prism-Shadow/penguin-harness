@@ -702,14 +702,55 @@ describe("approvals and events", () => {
     pushMessage(m, requestEnd("completed"));
     expect(items(m)).toHaveLength(1);
     pushMessage(m, requestBegin());
-    pushMessage(m, requestEnd("retryable", { attempt: 1 }));
+    pushMessage(m, requestEnd("retryable", { attempt: 1, retryInMs: 2000 }));
     expect(items(m)).toHaveLength(2);
     expect((items(m)[1] as ReconnectItem).attempt).toBe(1);
-    // A Trace written before the field existed lacks it: rendered as attempt 1 — and since it
-    // never climbs, such a ladder never collapses and replays exactly as it always did.
+    // A Trace written before the field existed lacks it: rendered as attempt 1. The line above
+    // is still waiting rather than gave-up, so it is the ORDINAL that decides here — 1 does not
+    // climb past 1, so nothing is superseded and the replay is exactly what it always was.
     pushMessage(m, requestBegin());
-    pushMessage(m, requestEnd("retryable"));
+    pushMessage(m, requestEnd("retryable", { retryInMs: 2000 }));
+    expect(items(m)).toHaveLength(3);
     expect((items(m)[2] as ReconnectItem).attempt).toBe(1);
+  });
+
+  it("a ladder with no attempt ordinal at all never collapses: one line per attempt, as before", () => {
+    // "Written before the ordinal existed" means the field is ABSENT, not that it is 1. Every
+    // rung then reads as attempt 1, the ordinal never climbs, and nothing is ever superseded —
+    // the safe direction for a record this model cannot re-derive.
+    const legacyEnd = (status: string) => requestEnd(status as Parameters<typeof requestEnd>[0]);
+    const m = createStreamModel();
+    for (const status of ["timeout", "failed", "malformed"]) {
+      pushMessage(m, requestBegin());
+      pushMessage(m, legacyEnd(status));
+    }
+    expect((items(m) as ReconnectItem[]).map((i) => [i.status, i.attempt])).toEqual([
+      ["timeout", 1],
+      ["failed", 1],
+      ["malformed", 1],
+    ]);
+  });
+
+  it("an attempt that already streamed output breaks the ladder's adjacency, so it does not collapse", () => {
+    // The collapse only ever supersedes the item directly before it. An attempt cut off after it
+    // had produced text leaves that text between the rungs, so the ladder renders one line per
+    // attempt exactly as it did before — the conservative direction, since deciding where a
+    // replacement belongs among the content it skipped is a question this model cannot answer.
+    const m = createStreamModel();
+    for (const attempt of [1, 2]) {
+      pushMessage(m, requestBegin());
+      pushMessage(m, partialText("start"));
+      pushMessage(m, partialText("delta", "Let me "));
+      pushMessage(m, partialText("stop"));
+      pushMessage(m, assistantText("Let me "));
+      pushMessage(m, requestEnd("retryable", { attempt, retryInMs: 2000 }));
+    }
+    expect(items(m).map((i) => i.kind)).toEqual([
+      "assistant_text",
+      "reconnect",
+      "assistant_text",
+      "reconnect",
+    ]);
   });
 
   it("a ladder that gave up keeps its line: the next failure opens a new one", () => {

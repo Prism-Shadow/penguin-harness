@@ -3,6 +3,7 @@
 - **Date:** 2026-08-28
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#528](https://github.com/Prism-Shadow/penguin-harness/pull/528)
 
 [中文版](2026-08-28-retry-line-collapse.zh.md)
 
@@ -10,15 +11,15 @@ Every retryable request end added its own line, so a request that retried four t
 of them stacked in the conversation:
 
 ```
-[重试]连接超时或网络中断，已发起第 1 次重试
-[重试]连接超时或网络中断，已发起第 2 次重试
-[重试]网络或服务暂时不可用，已发起第 3 次重试
-[重试]连接超时或网络中断，已发起第 4 次重试
+[Retry] Connection timed out; retry #1 sent
+[Retry] Connection timed out; retry #2 sent
+[Retry] Network or service temporarily unavailable; retry #3 sent
+[Retry] Connection timed out; retry #4 sent
 ```
 
 A later attempt now replaces the one before it, so the ladder reads as one line that counts up
-to `已发起第 4 次重试`. The count was always in the line, so nothing about how many attempts ran
-is lost from the transcript.
+to `retry #4 sent`. The count was always in the line, so nothing about how many attempts ran is
+lost from the transcript.
 
 ## Details
 
@@ -26,15 +27,17 @@ is lost from the transcript.
   **The Trace is untouched**: it still records every attempt as its own event, and the Trace
   panel builds from those raw events rather than from this model, so the full ladder is still
   readable there. The engine's retry behaviour is unchanged.
-- A ladder's attempts climb and its items are adjacent — nothing is pushed between them, since
-  the `request_begin` that resends only marks the waiting item. So "the last item is a reconnect"
-  is necessary but not sufficient: a request that succeeded pushes nothing, so the next failure's
-  item is adjacent to the previous ladder's last one while belonging to a different incident.
-  That one restarts at attempt 1, which is what separates the two cases.
+- A ladder whose failed attempts produced no output collapses; one whose attempts had already
+  streamed thinking or text does not, because that content sits between the rungs. Those ladders
+  render one line per attempt exactly as before.
+- A new incident opens its own line rather than overwriting the previous ladder's: attempts
+  climb within one incident and restart at 1 in the next.
 - **A ladder that gave up keeps its line.** It carries the final failure and its detail, which is
   the one retry line worth keeping on screen; a later incident opens its own.
 - The superseded item's id is kept through the replacement, so the rendered row updates instead
-  of remounting and replaying its entry animation as though it were a new failure.
+  of remounting and replaying its entry animation as though it were a new failure. The line's
+  per-attempt state is reset alongside it, so "retry now" and "give up" stay usable on every
+  countdown in the ladder.
 - Traces written before the attempt ordinal existed read as attempt 1 throughout, so they never
   collapse and replay exactly as they always did.
 

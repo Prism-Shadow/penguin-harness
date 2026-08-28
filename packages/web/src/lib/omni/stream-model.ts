@@ -1725,11 +1725,11 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
           // and their exhaustion is marked by the abort event instead.
           item.gaveUp = true;
         }
-        // One line per LADDER, not per attempt: a later attempt replaces the one before it,
-        // so a request that retries four times reads "已发起第 4 次重试" on a single line
-        // instead of stacking four. The count is already in the line, so nothing is lost from
-        // the transcript — and the Trace is untouched, keeping every attempt as its own event
-        // for the Trace panel, which builds from the raw events rather than from this model.
+        // One line per LADDER, not per attempt: a later attempt replaces the one before it, so
+        // a request that retries four times reads 已发起第 4 次重试 / "retry #4 sent" on a single
+        // line instead of stacking four. The count is already in the line, so nothing is lost
+        // from the transcript — and the Trace is untouched, keeping every attempt as its own
+        // event for the Trace panel, which builds from the raw events rather than from this model.
         const continues = continuedLadder(model, item);
         if (continues !== null) {
           // The previous item's id is kept so the rendered line UPDATES rather than being
@@ -1800,12 +1800,19 @@ function isWrapUpCompaction(model: StreamModel): boolean {
 /**
  * The reconnect item this one supersedes, or null when it opens a new line.
  *
- * A ladder's attempts climb (1, 2, 3, …) and its items are adjacent, because nothing else is
- * pushed in between — the `request_begin` that resends only marks the waiting item. So the
- * last item being a reconnect is necessary but NOT sufficient: a request that succeeded pushes
- * nothing, so the next failure's item is adjacent to the previous ladder's last one while
- * belonging to a different incident. That one restarts at attempt 1, which is what separates
- * the two cases.
+ * A ladder's attempts climb (1, 2, 3, …), and they are adjacent WHEN THE FAILED ATTEMPTS
+ * PRODUCED NOTHING — the `request_begin` that resends only marks the waiting item, so nothing
+ * is pushed between two such rungs. An attempt cut off after it had already streamed thinking
+ * or text pushes that content in between, and the ladder simply does not collapse: it renders
+ * one line per attempt, exactly as it did before. That is the conservative direction, and the
+ * reason this looks only at the tail rather than scanning back the way
+ * {@link findLastWaitingReconnect} does — a scan would have to decide where the replacement
+ * belongs among the content it skipped over.
+ *
+ * So the last item being a reconnect is necessary but NOT sufficient: a request that succeeded
+ * pushes nothing, so the next failure's item is adjacent to the previous ladder's last one
+ * while belonging to a different incident. That one restarts at attempt 1, which is what
+ * separates the two cases.
  *
  * A ladder that gave up is closed and is never superseded: its line carries the final failure
  * and its detail, which is the one retry line worth keeping on screen.
