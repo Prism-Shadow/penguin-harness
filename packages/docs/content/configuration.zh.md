@@ -73,13 +73,13 @@ openrouter、fireworks、siliconflow、tokendance、qwen-pay-as-you-go、qwen-to
 | `created_at` | `api_key` 写入时间（ISO 8601，界面维护的展示字段） |
 
 ```toml
-default_model = { provider = "deepseek", model_id = "deepseek-v4-flash" }
+default_model = { provider = "deepseek", model_id = "deepseek-v4-flash-vision-exp" }
 
 [[models]]
 provider = "deepseek"
-model_id = "deepseek-v4-flash"
+model_id = "deepseek-v4-flash-vision-exp"
 context_window = 1000000
-vision = false
+vision = true
 api_key = "sk-..."
 
 [models.pricing]

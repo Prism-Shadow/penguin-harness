@@ -30,17 +30,17 @@ description: 经 AgentHub 单一网关接入模型，以 (provider, model_id) �
 | `pricing` | 三档价格(单位 `usd_per_mtok`,USD 每百万 Token):`cache_read` / `cache_write` / `output` |
 | `api_key` / `base_url` | 内联凭证，可留空；留空时 AgentHub 回退读环境变量 |
 
-新建 Project 的默认模型是 deepseek-v4-flash。另可配置一条 `vision_model`，作为 text-only 模型使用 `describe_image` 时的代读模型(见 [工具与审批](/tools))；默认不配置。
+新建 Project 的默认模型是 deepseek-v4-flash-vision-exp，它自己就能读图。另可配置一条 `vision_model`，作为 text-only 模型使用 `describe_image` 时的代读模型(见 [工具与审批](/tools))；默认不配置。
 
 文件形态(示意):
 
 ```toml
-default_model = { provider = "deepseek", model_id = "deepseek-v4-flash" }
+default_model = { provider = "deepseek", model_id = "deepseek-v4-flash-vision-exp" }
 vision_model = { provider = "google", model_id = "gemini-3.1-pro-preview" }
 
 [[models]]
 provider = "deepseek"
-model_id = "deepseek-v4-flash"
+model_id = "deepseek-v4-flash-vision-exp"
 context_window = 1000000
 
 [[models]]
@@ -51,7 +51,7 @@ base_url = "https://llm.example.com/v1"
 api_key = "sk-..."
 ```
 
-对标注 `vision = false` 的模型(如 DeepSeek 系列)：对话输入中的图片会保存到 Session scratchpad，以文件路径形式拼入文本；读图工具切换为 `describe_image`。
+对标注 `vision = false` 的模型(如 `deepseek-v4-flash`，即默认模型的纯文本同族)：对话输入中的图片会保存到 Session scratchpad，以文件路径形式拼入文本；读图工具切换为 `describe_image`。
 
 ## 内置 Provider 分组
 
