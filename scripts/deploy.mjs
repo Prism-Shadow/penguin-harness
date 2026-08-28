@@ -224,6 +224,17 @@ async function readNativeAssets() {
   for (const name of ["install.sh", "install.ps1"]) {
     files[name] = (await fsp.readFile(path.join(ROOT, name))).toString("base64");
   }
+  // ...and the two scripts that RUN on the far side: the hot-update applier and the sign-in.
+  // Both are resolved beside the module that spawns them, which for a pushed bundle means the
+  // assets directory — so a push that omits them leaves a server that cannot upgrade a machine
+  // or sign in to one, failing with an ENOENT naming a path inside its own store. The packaged
+  // build copies the same four into dist/ (packages/server/tsup.config.ts); these two lists are
+  // the same invariant, produced twice, and shipping half of it is the bug this line closes.
+  for (const name of ["remote-upgrade.cjs", "remote-signin.cjs"]) {
+    files[name] = (
+      await fsp.readFile(path.join(ROOT, "packages", "server", "src", "machines", name))
+    ).toString("base64");
+  }
   return { files, exec };
 }
 
