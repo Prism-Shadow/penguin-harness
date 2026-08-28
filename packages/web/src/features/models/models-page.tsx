@@ -1223,9 +1223,12 @@ export function ModelsPage() {
           provider={MODEL_PROVIDERS.find((p) => p.id === oauthFor) ?? userProviderInfo(oauthFor)}
           count={rows.filter((r) => r.provider === oauthFor).length}
           onClose={() => setOauthFor(null)}
-          onApplied={(applied) => {
-            setOauthFor(null);
-            toastSuccess(S.models.oauthApplied(applied));
+          onApplied={() => {
+            // The dialog stays open and reports the outcome itself (its `done` phase): the
+            // authorization ran in another tab, so a toast would be announced to a window
+            // nobody is looking at and be gone by the time they came back. Closing is the
+            // user's own dismissal.
+            //
             // The key was written server-side, so the table in hand is stale in exactly one
             // place: reload rather than patch, and the masked key comes back with it.
             void load();
@@ -3067,7 +3070,14 @@ function GroupKeyDialog({
 // ---------------------------------------------------------------------------
 
 /** Where the dialog is: opening a flow, holding one, waiting on an outcome, or reporting a failure. */
-type OAuthPhase = "starting" | "ready" | "waiting" | "failed";
+/**
+ * `done` exists because the authorization happens in ANOTHER TAB. A toast fired at the moment
+ * the poll sees the key would be announced to a window the user is not looking at, and by the
+ * time they switch back it has faded — the outcome of the one step they left the app for is the
+ * one thing they must not have to guess at. So the dialog stays put and says it instead, and is
+ * dismissed deliberately.
+ */
+type OAuthPhase = "starting" | "ready" | "waiting" | "failed" | "done";
 
 /** How often the redirect flow's outcome is asked for while the user is in the other tab. */
 const OAUTH_POLL_MS = 2000;
@@ -3099,6 +3109,8 @@ function ModelOAuthDialog({
   const [flow, setFlow] = useState<{ flowId: string; authorizeUrl: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [code, setCode] = useState("");
+  /** How many models the key was written to — the sentence the `done` phase reports. */
+  const [applied, setApplied] = useState(0);
   /** Bumped to reopen a flow after a failure; switching modes reopens one too (the URL differs). */
   const [attempt, setAttempt] = useState(0);
   // Latest-callback ref: the parent passes an inline arrow, and depending on its identity
@@ -3145,6 +3157,8 @@ function ModelOAuthDialog({
         const res = await api.getModelOAuthStatus(projectId, flow.flowId);
         if (stopped) return;
         if (res.status === "done") {
+          setApplied(count);
+          setPhase("done");
           onAppliedRef.current(count);
           return;
         }
@@ -3178,7 +3192,10 @@ function ModelOAuthDialog({
     try {
       const res = await api.submitModelOAuthCode(projectId, flow.flowId, code.trim());
       if (res.ok) {
-        onAppliedRef.current(res.applied ?? count);
+        const n = res.applied ?? count;
+        setApplied(n);
+        setPhase("done");
+        onAppliedRef.current(n);
         return;
       }
       setError(res.error ? S.models.oauthErrors[res.error] : S.models.oauthTimedOut);
@@ -3214,17 +3231,33 @@ function ModelOAuthDialog({
       title={S.models.oauthTitle(provider.label)}
       onClose={onClose}
       footer={
-        <>
-          <Button onClick={onClose}>{S.common.cancel}</Button>
-          {primary}
-        </>
+        // Done is an outcome, not a choice: a "cancel" beside it would offer to undo a key that
+        // is already written.
+        phase === "done" ? (
+          <Button variant="primary" onClick={onClose}>
+            {S.common.close}
+          </Button>
+        ) : (
+          <>
+            <Button onClick={onClose}>{S.common.cancel}</Button>
+            {primary}
+          </>
+        )
       }
     >
       <div className="space-y-3">
-        <p className="text-sm text-gray-700 dark:text-gray-300">
-          {S.models.oauthIntro(provider.label, count)}
-        </p>
-        {manual && (
+        {phase === "done" ? (
+          <p className="text-sm text-gray-700 dark:text-gray-300">
+            {S.models.oauthAppliedBody(provider.label, applied)}
+          </p>
+        ) : (
+          <>
+            <p className="text-sm text-gray-700 dark:text-gray-300">
+              {S.models.oauthIntro(provider.label, count)}
+            </p>
+          </>
+        )}
+        {phase !== "done" && manual && (
           <>
             <Button variant="ghost" disabled={flow === null} onClick={openAuthorizePage}>
               <GlyphIcon d={SIGN_IN_ICON} size={13} />
@@ -3248,13 +3281,15 @@ function ModelOAuthDialog({
           </p>
         )}
         {error !== null && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
-        <button
-          type="button"
-          onClick={() => setManual((v) => !v)}
-          className="text-xs text-brand-600 underline-offset-2 hover:underline dark:text-brand-300"
-        >
-          {manual ? S.models.oauthCallbackSwitch : S.models.oauthManualSwitch}
-        </button>
+        {phase !== "done" && (
+          <button
+            type="button"
+            onClick={() => setManual((v) => !v)}
+            className="text-xs text-brand-600 underline-offset-2 hover:underline dark:text-brand-300"
+          >
+            {manual ? S.models.oauthCallbackSwitch : S.models.oauthManualSwitch}
+          </button>
+        )}
       </div>
     </Modal>
   );

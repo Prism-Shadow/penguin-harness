@@ -832,6 +832,13 @@ export const en: Strings = {
     oauthAuthorize: "Open authorization page",
     oauthWaiting: "Waiting for the authorization to finish in the other tab…",
     oauthApplied: (n: number): string => `New API key set for ${n} models`,
+    /**
+     * The dialog's own report once the key has landed. It names the provider as well as the
+     * count, because the user is reading it after a trip to another tab and may not remember
+     * which authorization they just finished.
+     */
+    oauthAppliedBody: (provider: string, n: number): string =>
+      `Authorized. ${provider}'s API key is set on ${n} model${n === 1 ? "" : "s"} and ready to use.`,
     oauthManualSwitch: "Page can't redirect back? Enter the code by hand",
     oauthCallbackSwitch: "Go back to the automatic redirect",
     oauthManualHint: "Open the authorization page, then paste the one-time code it shows you here.",
