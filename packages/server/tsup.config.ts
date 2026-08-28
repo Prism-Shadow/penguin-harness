@@ -24,6 +24,7 @@ export default defineConfig({
     "initial-password": "src/initial-password.ts",
     "reset-admin-password": "src/reset-admin-password.ts",
     "auth-token": "src/auth-token.ts",
+    "machine-status": "src/machine-status.ts",
     "secret-file": "src/secret-file.ts",
     "hmr/manifest": "src/hmr/manifest.ts",
     "version-report": "src/version-report.ts",
