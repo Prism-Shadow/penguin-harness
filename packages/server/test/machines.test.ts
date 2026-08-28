@@ -106,8 +106,6 @@ describe("parseSshSettings", () => {
 
 describe("machineIdentity", () => {
   it("is <user>@<alias>: the Linux account is part of the machine, the alias is the name", () => {
-    // Two accounts on one host are two machines — each has its own ~/.penguin, hence its
-    // own server and its own user table.
     expect(machineIdentity("build-box", "deploy")).toBe("deploy@build-box");
     expect(machineIdentity("build-box", "root")).toBe("root@build-box");
     expect(machineIdentity("build-box", "")).toBe("build-box");
@@ -116,8 +114,6 @@ describe("machineIdentity", () => {
 
 describe("identity probe", () => {
   it("asks in each shell's own dialect — sh cannot read the Windows one and vice versa", () => {
-    // POSIX: `;` chains, $VAR expands, `cat` reads. Windows cmd: `&` chains, %VAR% expands,
-    // `type` reads. One command cannot do both, which is why there are two.
     expect(POSIX_PROBE).toContain("uname -s -m");
     expect(POSIX_PROBE).toContain('"$HOME/.penguin/lib/package.json"');
     expect(POSIX_PROBE).toContain(".penguin/data/hmr/harness.json");
@@ -198,12 +194,8 @@ describe("ssh / scp invocations", () => {
   });
 
   it("forwards a machine's API on any free local port, unlike the browser's same-numbered tunnel", () => {
-    // tunnelArgs must keep both ends equal because preview URLs carry the server's own bound
-    // port. Nothing built from THIS forward reaches a browser, so it takes what is free here
-    // — which is what lets a machine on the default port be reached by a controller on it.
     const args = forwardArgs(target, 49152, 7364).join(" ");
     expect(args).toContain("-L 49152:127.0.0.1:7364");
-    // Or "local port taken" would be a silent forward to nowhere instead of an exit.
     expect(args).toContain("ExitOnForwardFailure=yes");
   });
 
@@ -213,8 +205,6 @@ describe("ssh / scp invocations", () => {
   });
 
   it("repeats the machine's own words when it refuses a build", () => {
-    // The endpoint answers the API error envelope, and its message is the actionable half —
-    // a runtime that cannot claim this platform names itself there.
     expect(
       refusalDetail(
         409,
@@ -224,7 +214,6 @@ describe("ssh / scp invocations", () => {
   });
 
   it("falls back to whatever it did say, rather than inventing a reason", () => {
-    // Not every refusal comes from the API: a reverse proxy or a wrong port answers HTML.
     expect(refusalDetail(502, "<html>Bad Gateway</html>")).toBe("<html>Bad Gateway</html>");
     expect(refusalDetail(403, "   ")).toContain("403");
   });
@@ -237,13 +226,10 @@ describe("ssh / scp invocations", () => {
   it("quotes per shell: single quotes for sh, double for cmd.exe", () => {
     expect(shQuote("/tmp/it's here")).toBe(`'/tmp/it'\\''s here'`);
     expect(cmdQuote("C:\\Users\\First Last\\tmp")).toBe('"C:\\Users\\First Last\\tmp"');
-    // cmd.exe has no escape for a quote inside a quoted string: refuse rather than mangle.
     expect(() => cmdQuote('C:\\weird"path')).toThrow();
   });
 
   it("takes the installer on stdin, so a POSIX install costs ONE ssh handshake", () => {
-    // No path anywhere in it: nothing was copied, so nothing has to be placed or cleaned up.
-    // scriptOnStdin is the other half — the command alone would run an empty `sh -s`.
     expect(runInstallScriptCommand("v0.2.4", { platform: "linux" })).toEqual({
       command: "PENGUIN_VERSION='v0.2.4' sh -s",
       scriptOnStdin: true,
@@ -251,9 +237,6 @@ describe("ssh / scp invocations", () => {
   });
 
   it("runs a Windows remote's copy from a path, and deletes it in the same command", () => {
-    // PowerShell cannot take a param()-carrying script on stdin, so the file is real there —
-    // but the delete rides the same connection rather than costing another handshake, and the
-    // path is required to build the command at all rather than defaulting to an empty one.
     expect(
       runInstallScriptCommand("v0.2.4", {
         platform: "win32",
@@ -331,7 +314,6 @@ describe("resolvePushPlan", () => {
   it("packaged desktop app: its own manifest names the release it shipped under", () => {
     const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-plan-"));
     try {
-      // What the app forks: <resources>/app/dist/server.js, one bundled file, asar off.
       const appDir = path.join(work, "resources", "app");
       fs.mkdirSync(path.join(appDir, "dist"), { recursive: true });
       fs.writeFileSync(
@@ -399,14 +381,11 @@ describe("reading what `penguin server status` answered", () => {
   });
 
   it("finds the answer under a login shell's own banner", () => {
-    // sshd runs this in a shell that may greet, warn about updates, or print an MOTD.
     const said = `Welcome to build-box!\n{ not json }\n${answer({ running: false })}\n`;
     expect(parseProbe(said).state).toEqual({ kind: "stopped" });
   });
 
   it("says it cannot tell rather than 'stopped' when there is no answer at all", () => {
-    // A build too old for the subcommand. Reporting "stopped" would make it indistinguishable
-    // from a healthy machine that simply is not running — and it would never be looked at.
     const said = "error: unknown command 'status'";
     expect(parseProbe(said).state).toEqual({ kind: "unreachable", detail: said });
   });

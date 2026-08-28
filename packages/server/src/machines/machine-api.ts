@@ -1,16 +1,12 @@
 /**
- * A client for one machine's own API, over a forward this side already holds.
+ * A client for one machine's own API, over a forward this side already holds. Every piece
+ * of work this server does ON a machine goes through here — the hot update, the model sync.
  *
- * Every piece of work this server does ON a machine goes through here — the hot update, the
- * model sync, a sign-out — because the machine's server is the thing that knows how to do it.
- * The alternative each of those had was a program on the far side to receive the request and
- * a shell protocol to carry the answer back, which is three implementations of one endpoint.
- *
- * node:http rather than fetch, for the reason the proxy gives: the Host header has to be the
- * canonical app host (`localhost:<port>`) while the connection goes to 127.0.0.1, and fetch
- * ignores an explicit host header. On a loopback bind the App answers on ONE loopback name
- * and serves previews on the other (app.ts's canonical-host guard), so a request addressed to
- * `127.0.0.1` is refused as a preview-host call to /api — a 401 with nothing wrong with it.
+ * node:http rather than fetch: the Host header has to be the canonical app host
+ * (`localhost:<port>`) while the connection goes to 127.0.0.1, and fetch ignores an explicit
+ * host header. On a loopback bind the App answers on ONE loopback name and serves previews
+ * on the other (app.ts's canonical-host guard), so a request addressed to `127.0.0.1` is
+ * refused as a preview-host call to /api.
  */
 import http from "node:http";
 
@@ -34,11 +30,7 @@ export interface MachineApi {
   ): Promise<{ status: number; text: string }>;
 }
 
-/**
- * A client for one machine's tunnel port. node:http rather than fetch, for the reason the
- * proxy gives: the Host header has to be the canonical app host (`localhost:<port>`) while
- * the connection goes to 127.0.0.1, and fetch ignores an explicit host header.
- */
+/** One client per (port, session). */
 export function machineApi(port: number, cookie: string): MachineApi {
   /** One request, answered whole — so both shapes agree on Host, cookie and what a failure is. */
   const send = (

@@ -123,8 +123,6 @@ describe("installButtonState", () => {
   });
 
   it("picking ANOTHER host mid-install refuses without claiming that host is installing", () => {
-    // The job belongs to ssh:nas; the picker moved to ssh:build-box. One job at a time, so
-    // the button is disabled — but it must not say "installing" about a host that is not.
     expect(installButtonState(fresh("build-box"), response(job()), false)).toEqual({
       action: "install",
       disabled: true,
@@ -139,8 +137,6 @@ describe("installButtonState", () => {
   });
 
   it("a machine carrying the program offers a reinstall — from its record, not the job", () => {
-    // No job at all: this is the page after a restart, which is exactly the case that used
-    // to read as "never installed".
     expect(installButtonState(carrying("nas"), response(null), false)).toEqual({
       action: "reinstall",
       disabled: false,
@@ -158,7 +154,6 @@ describe("installButtonState", () => {
       action: "reinstall",
       disabled: false,
     });
-    // ...and the machine that job belongs to reads as installed off its own record too.
     expect(installButtonState(carrying("build-box"), response(elsewhere), false).action).toBe(
       "reinstall",
     );
@@ -294,7 +289,6 @@ describe("connectAction", () => {
 
   it("shows the running connect on ITS machine only", () => {
     expect(connectAction(carrying("nas"), job(), null)).toBe("connecting");
-    // A connect elsewhere must not make this row claim to be connecting.
     expect(connectAction(carrying("build-box"), job(), null)).toBe("connect");
   });
 
@@ -312,14 +306,11 @@ describe("outOfDate", () => {
   });
 
   it("is true for ANY difference — hmr versions are content hashes and do not order", () => {
-    // `0.0.0-hmr.<cli>.<web>`: there is no newer/older to compare, only same or not.
     expect(outOfDate(carrying9, "10.0.0")).toBe(true);
     expect(outOfDate(carrying9, "0.0.0-hmr.abc.def")).toBe(true);
   });
 
   it("never claims a machine is behind when the local image is unknown", () => {
-    // A development checkout with nothing pushed has no image; saying "out of sync" there
-    // would be a guess dressed as a fact.
     expect(outOfDate(carrying9, null)).toBe(false);
   });
 
@@ -356,8 +347,6 @@ describe("canSignIn", () => {
   });
 
   it("is false without an identity — the proxy is addressed by it", () => {
-    // A sign-in with no machine id has nowhere to be namespaced to, so the cookie could
-    // never be sent back to the right server.
     expect(canSignIn({ ...connected(), machineId: null })).toBe(false);
   });
 

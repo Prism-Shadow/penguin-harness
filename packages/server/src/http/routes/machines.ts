@@ -1,6 +1,5 @@
 /**
- * Machines routes, under a Project (admin only, 403 for non-admins). Every path below is
- * relative to `/api/projects/:projectId/machines`:
+ * Machines routes, under a Project (admin only). Relative to `/api/projects/:projectId/machines`:
  *
  * GET  /                        — this machine and the ssh config's host aliases, the version
  *                                 this server would install, the last status probed for each,
@@ -15,29 +14,15 @@
  * POST /:machineId/connect      — bring that machine's server up and hold a tunnel to it; 202,
  *                                 or 409 when a connect already runs.
  * POST /:machineId/disconnect   — drop the tunnel (the remote server stays up).
- * POST /:machineId/signout      — end this browser's session on that machine, and this
- *                                 side's with it.
- * GET  /:machineId/dirs?path=   — browse that machine's directories over ssh, so picking a
- *                                 workspace on it needs no second login to that machine.
+ * GET  /:machineId/dirs?path=   — browse that machine's directories over ssh.
  *
- * UNDER A PROJECT because the page is: Machines sits in the same nav group as Agents, Skills
- * and Models, under the Project switcher, and every other row there changes when the Project
- * does. It follows that this Project's Model credentials go to this Project's machines and no
- * others (see machines/models-sync.ts) — which is the reason it is worth the path.
+ * Under a Project because the page is, and because this Project's Model credentials go to
+ * this Project's machines and no others (machines/models-sync.ts). The machine itself is not
+ * project-scoped: connect, disconnect and dirs act on one host, shared by every Project using
+ * it; what a Project owns is the membership.
  *
- * The machine ITSELF is not project-scoped, and the routes reflect that: connect, disconnect
- * and dirs act on one host, whose tunnel and installed program are shared by every Project
- * using it. What a Project owns is the membership (machines/membership.ts), not the host.
- *
- * Admin rather than any logged-in user, on a multi-user server as much as a personal one:
- * installing spawns ssh with the SERVER ACCOUNT's keys and writes a program directory on
- * another machine. That is an owner's capability, not a visitor's, and the account whose
- * keys are used is not the account making the request.
- *
- * The install is a job because it can take minutes (see ../../machines/service.ts); this
- * route only starts it and reports it. Progress arrives by polling GET rather than over the
- * event channel — the log lines belong to one page that is open while it waits, and a job
- * that dies with its App has nothing to replay to a reconnecting subscriber.
+ * Admin rather than any logged-in user: installing spawns ssh with the SERVER ACCOUNT's keys
+ * and writes a program directory on another machine — an owner's capability, not a visitor's.
  */
 import { Hono } from "hono";
 import type { Context } from "hono";
@@ -192,25 +177,6 @@ export function machinesRoutes(deps: AppDeps): Hono<AppEnv> {
       c.header("set-cookie", rewriteSetCookie(cookie, machineId), { append: true });
     }
     return c.json({ signedIn: true });
-  });
-
-  /**
-   * Ends the session on that machine: the machine's own logout down the tunnel, this side's
-   * held copy, and the browser's cookie — the three places one sign-in put a session.
-   *
-   * The cookie is expired under the SAME per-machine name the proxy renames into, so the
-   * browser drops that machine's session and no other. Answers 200 either way, saying
-   * whether the machine itself was reached: a tunnel that is down cannot be told, and
-   * refusing to sign out until it comes back would leave a credential in place precisely
-   * when the machine is least reachable.
-   */
-  app.post("/:machineId/signout", async (c) => {
-    const machineId = c.req.param("machineId");
-    const { endedThere } = await deps.machines.signOutOn(machineId);
-    c.header("set-cookie", rewriteSetCookie(`${SESSION_COOKIE}=; Path=/; Max-Age=0`, machineId), {
-      append: true,
-    });
-    return c.json({ signedOut: true, endedThere });
   });
 
   /**

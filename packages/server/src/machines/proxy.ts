@@ -2,33 +2,19 @@
  * The same-origin server proxy: `/server/<machineId>/api/…` on THIS server forwards to that
  * machine's server through its tunnel.
  *
- * Addressed by the MACHINE'S OWN id (`/server/QS7J4YVgSovi-Z2c/api/me`), not by the ssh
- * alias it was reached through. An alias is a line in one config file: rename it and every
- * URL and cookie below would change identity, silently logging the user out of a machine
- * that never moved, and two aliases for one host would open two tunnels and two sessions to
- * one server. The machine id is minted by that machine and never changes — and being
- * base64url, it needs no percent-encoding to sit in a path. The window never leaves the local origin — the web
- * app stays served from here and re-points its API (and SSE) calls by prefix, so no
- * navigation gate, no origin switch, no per-origin storage split. Platform code on the
- * seam, like everything else in this module: the whole capability ships by hot push.
+ * Addressed by the machine's OWN id, not the ssh alias it was reached through: an alias is a
+ * line in one config file, and renaming it would change every URL and cookie below, while
+ * two aliases for one host would open two sessions to one server. Only `/api/` paths are
+ * forwarded — the frontend stays local and re-points its API calls by prefix.
  *
- * Only `/api/` paths under the prefix are forwarded: the frontend is deliberately LOCAL
- * (that is the point of the design), so a remote's pages are never proxied.
+ * Cookies: remote sessions live in the browser under the LOCAL origin, so the proxy renames
+ * them per machine — a remote's `penguin_session` becomes `penguin_s_<hex(id)>_penguin_session`
+ * on the way in, and only cookies carrying this machine's prefix go out, renamed back, with
+ * every local cookie stripped.
  *
- * Cookies are the subtle part. Remote sessions must live in the browser under the LOCAL
- * origin without colliding with the local server's own cookies or another remote's, so
- * the proxy renames them per machine: a remote's `penguin_session` becomes
- * `penguin_s_<hex(id)>_penguin_session` on the way in (Set-Cookie), and only cookies
- * carrying this machine's prefix are forwarded on the way out — renamed back, with every
- * local cookie stripped. Each server's whole cookie world (active session, parked jar)
- * then coexists under one origin, per machine.
- *
- * The proxy itself does no auth: the remote authenticates every forwarded request with
- * its own (renamed-back) cookies, exactly as if the browser sat on its origin — and the
- * tunnel port this forwards to is already reachable from this machine, so the route adds
- * no exposure the tunnel had not. It therefore mounts OUTSIDE this server\'s auth
- * middleware; a local session is not a credential over there, and requiring one would mean
- * two logins for one window.
+ * The proxy does no auth of its own: the remote authenticates every forwarded request with
+ * its own cookies, and the tunnel port is already reachable from this machine, so the route
+ * adds no exposure. It mounts OUTSIDE this server's auth middleware.
  */
 import http from "node:http";
 import { Readable } from "node:stream";
@@ -90,40 +76,6 @@ export function rewriteSetCookie(header: string, machineId: string): string {
   return `${cookieMarker(machineId)}${header}`;
 }
 
-/**
- * The session token in a Cookie header bound for a machine, or null when it carries none.
- *
- * The browser sends it on every proxied request, so a machine somebody signed in to earlier
- * is already presenting a usable session — no second sign-in, and none to ask for. This is
- * the half that makes the held session work for the machines that are ALREADY signed in,
- * rather than only for the next one.
- */
-export function sessionInCookieHeader(header: string | null): string | null {
-  if (header === null) return null;
-  for (const part of header.split(";")) {
-    const token = sessionTokenOf(part.trim());
-    if (token !== null) return token;
-  }
-  return null;
-}
-
-/**
- * The session token in a Set-Cookie from a machine, or null when the line is about anything
- * else. `SESSION_COOKIE` deliberately, by name: a machine's login answers with the cookie its
- * own browser session rides in, and that value IS a session on that machine — the same one
- * `penguin auth login` stores. Reading it here is how one sign-in serves both sides.
- */
-export function sessionTokenOf(header: string): string | null {
-  const eq = header.indexOf("=");
-  if (eq <= 0 || header.slice(0, eq).trim() !== SESSION_COOKIE) return null;
-  const value =
-    header
-      .slice(eq + 1)
-      .split(";")[0]
-      ?.trim() ?? "";
-  return value === "" ? null : value;
-}
-
 /** An absolute-path Location from the remote, re-rooted under the proxy prefix. */
 export function rewriteLocation(header: string, machineId: string): string {
   return header.startsWith("/")
@@ -142,12 +94,7 @@ const DROP_RESPONSE_HEADERS = new Set(["set-cookie", "location", "connection", "
  * host (`localhost:<port>`) while the connection goes to 127.0.0.1, and fetch ignores an
  * explicit host header.
  */
-export function proxyToTunnel(
-  request: Request,
-  path: ProxyPath,
-  port: number,
-  onSession?: (machineId: string, token: string) => void,
-): Promise<Response> {
+export function proxyToTunnel(request: Request, path: ProxyPath, port: number): Promise<Response> {
   return new Promise((resolve) => {
     const url = new URL(request.url);
     const headers: Record<string, string> = {};
@@ -158,13 +105,6 @@ export function proxyToTunnel(
     const forwardedCookies = rewriteRequestCookies(request.headers.get("cookie"), path.machineId);
     if (forwardedCookies !== null) {
       headers["cookie"] = forwardedCookies;
-      // What the browser is presenting IS a session on that machine, and it presents it on
-      // every request — so a machine signed in to before this side ever kept one is already
-      // handing it over. Recorded from the request rather than waiting for the next
-      // Set-Cookie, which would mean asking somebody to sign in again to a machine they are
-      // demonstrably signed in to.
-      const token = sessionInCookieHeader(forwardedCookies);
-      if (token !== null) onSession?.(path.machineId, token);
     }
 
     const upstream = http.request(
@@ -182,13 +122,6 @@ export function proxyToTunnel(
           out.set(name, Array.isArray(value) ? value.join(", ") : value);
         }
         for (const cookie of res.headers["set-cookie"] ?? []) {
-          // A person signing in to that machine — by hand, with a password this side never
-          // sees — is the machine issuing a session. Kept for THIS side's own work on it, so
-          // that proving who you are once is enough: the model sync and the hot update stop
-          // having to obtain a credential of their own, which is what they cannot do on a
-          // machine whose password was set by a person.
-          const token = sessionTokenOf(cookie);
-          if (token !== null) onSession?.(path.machineId, token);
           out.append("set-cookie", rewriteSetCookie(cookie, path.machineId));
         }
         if (res.headers.location !== undefined) {
@@ -233,7 +166,6 @@ export function proxyToTunnel(
  */
 export function machinesProxy(
   portFor: (machineId: string) => Promise<number | null>,
-  onSession?: (machineId: string, token: string) => void,
 ): (request: Request) => Promise<Response | null> {
   return async (request) => {
     const path = parseProxyPath(new URL(request.url).pathname);
@@ -250,6 +182,6 @@ export function machinesProxy(
         { status: 503 },
       );
     }
-    return proxyToTunnel(request, path, port, onSession);
+    return proxyToTunnel(request, path, port);
   };
 }

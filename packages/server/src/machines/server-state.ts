@@ -1,18 +1,10 @@
 /**
- * Is the server this build installed on that machine actually running, and which machine is
- * it?
+ * Is the server this build installed on that machine running, and which machine is it?
  *
  * One ssh round trip answers both: `penguin server status` over there prints one line of
- * JSON (machine-status.ts), and this reads it. Nothing is recovered from the shape of a
- * shell's output any more — the far side has Node, so the far side does the formatting, and
- * this side does not carry a parser for a format nobody defined.
- *
- * The remote server is a plain `penguin server` process, never supervised from here and
- * found again through its own data root. A machine that rebooted simply reads as "not
- * running" on the next probe; nothing is maintained on the far side between probes.
- *
- * ssh's own failure is not a separate condition to report — it IS the answer "cannot reach
- * this machine", carrying OpenSSH's diagnostic so a refused key or a dead host says why.
+ * JSON (machine-status.ts). The far side has Node, so the far side formats; this side
+ * carries no parser for a shell's output. ssh's own failure is not a separate condition —
+ * it IS the answer "cannot reach this machine", carrying OpenSSH's diagnostic.
  */
 import { REMOTE_PENGUIN, sshArgs } from "./commands.js";
 import { jsonAnswer } from "./answer.js";
@@ -22,15 +14,6 @@ import type { ExecResult } from "./exec.js";
 import type { MachineStatus } from "../machine-status.js";
 
 /**
- * Asks the machine what it is doing, in its own words: `penguin server status` prints one
- * line of JSON with the server state and the machine's id (machine-status.ts over there).
- *
- * This used to be a shell script — `cat` the lock, `sed` the pid out of it, `kill -0`, then
- * `cat` a second file for the id — which bought two problems and no advantage. It needed a
- * parser HERE for a format defined nowhere, and it could not run on Windows at all, `kill -0`
- * having no cmd.exe equivalent. The far side has Node; asking it to answer in JSON puts the
- * work on the side that already has the tools for it.
- *
  * `2>&1` so the far side's own complaint (an old build with no such subcommand, a launcher
  * that is not there) comes back as text rather than being swallowed by the shared shell,
  * which merges the streams and reports an empty stderr.

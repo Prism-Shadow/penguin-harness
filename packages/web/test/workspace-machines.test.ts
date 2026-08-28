@@ -76,8 +76,6 @@ describe("workspaceMachines", () => {
   });
 
   it("offers an installed machine even with no tunnel — browsing goes over ssh", () => {
-    // A tunnel is for reaching that machine's own API. Picking a workspace does not do
-    // that, so requiring a connect first made one a prerequisite for a directory listing.
     const [, cold] = workspaceMachines(state([here, installedNotConnected]));
     expect(cold).toMatchObject({ label: "cold", selectable: true });
     expect(cold?.reason).toBeUndefined();
@@ -96,8 +94,6 @@ describe("workspaceMachines", () => {
   });
 
   it("still leaves out plain ssh hosts — 45 config entries are not 45 failures", () => {
-    // Nothing was ever installed on these; listing them as problems would bury the ones
-    // that matter.
     const listed = workspaceMachines(state([here, neverInstalled, machine({ alias: "another" })]));
     expect(listed.map((m) => m.label)).toEqual(["workstation"]);
   });
@@ -112,15 +108,12 @@ describe("machineLabel", () => {
   });
 
   it("falls back to the raw id for a machine that is gone, rather than inventing a name", () => {
-    // A workspace can outlive the connection it was picked over; showing the id is honest.
     expect(machineLabel(machines, "GONEaaaaaaaaaaaa")).toBe("GONEaaaaaaaaaaaa");
   });
 });
 
 describe("isElsewhere", () => {
   it("treats absent and null alike — an entry with no machine is one picked here", () => {
-    // Every entry registered before workspaces could name a machine has no machineId, and
-    // must keep reading as local rather than as unknown.
     expect(isElsewhere(null)).toBe(false);
     expect(isElsewhere(undefined)).toBe(false);
   });

@@ -144,11 +144,6 @@ export function unpackStoreCommand(platform: RemotePlatform): string {
  * (scripts/launchers/penguin). A remote's own override of that variable is not visible over
  * a non-interactive ssh, so the default is the only thing this side can assume — the same
  * assumption detect.ts makes to find the manifest.
- *
- * One constant because this was written three times and two of them named
- * `$XDG_DATA_HOME/penguin`, a directory nothing in the repo creates: starting a remote
- * server could not work at all, and the upgrade applier only ever ran through its bare-node
- * fallback — on machines that carry their own runtime precisely so they need no system node.
  */
 export const REMOTE_PROGRAM_DIR = "$HOME/.penguin";
 
@@ -173,41 +168,30 @@ export const REMOTE_PROGRAM_DIR = "$HOME/.penguin";
  */
 export const REMOTE_PENGUIN = `"${REMOTE_PROGRAM_DIR}/node/bin/node" "${REMOTE_PROGRAM_DIR}/lib/dist/penguin-hmr.js"`;
 
+/**
+ * Starts the installed server in the background and returns at once; readiness is the
+ * caller's probe. `nohup` and the redirections are what let it outlive the shell that ran it,
+ * and the log is the far side's own words when it comes up and dies.
+ */
+export function startServerCommand(port: number): string {
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`bad port ${port}`);
+  const log = `"${REMOTE_PROGRAM_DIR}/data/server.log"`;
+  return `mkdir -p "${REMOTE_PROGRAM_DIR}/data" && nohup ${REMOTE_PENGUIN} server --port ${port} >> ${log} 2>&1 < /dev/null &`;
+}
+
+/** The last lines of that log, for a start that did not answer. */
+export const SERVER_LOG_TAIL = `tail -n 20 "${REMOTE_PROGRAM_DIR}/data/server.log" 2>/dev/null`;
+
 // --- tunnelling to that server ---------------------------------------------------------------
 
 /**
- * `ssh -N -L <port>:127.0.0.1:<port> <alias>` — the tunnel that makes the remote server a
- * loopback origin here. Local and remote port are the SAME number by design: preview URLs
- * are built from the server's own bound port (preview-token.ts), so the two must stay equal.
- * ExitOnForwardFailure turns "local port taken" into an exit instead of a silent no-op
- * tunnel, and the keepalives surface a dead link within a minute.
- */
-export function tunnelArgs(target: RemoteTarget, port: number): string[] {
-  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`bad port ${port}`);
-  return [
-    ...connectionOptions(target),
-    "-N",
-    "-o",
-    "ExitOnForwardFailure=yes",
-    "-o",
-    "ServerAliveInterval=15",
-    "-o",
-    "ServerAliveCountMax=4",
-    "-L",
-    `${port}:127.0.0.1:${port}`,
-    target.alias,
-  ];
-}
-
-/**
- * `ssh -N -L <local>:127.0.0.1:<remote> <alias>` — a forward this side uses itself, never a
- * browser.
+ * `ssh -N -L <local>:127.0.0.1:<remote> <alias>` — a forward that makes the remote server a
+ * loopback origin here. ExitOnForwardFailure turns "local port taken" into an exit instead of
+ * a silent no-op tunnel, and the keepalives surface a dead link within a minute.
  *
- * The two ports DIFFER here, where tunnelArgs keeps them equal. That equality exists for one
- * reason: a browsing session follows preview URLs, and those are built from the server's own
- * bound port (preview-token.ts). Nothing built from this forward is ever shown to a browser,
- * so it takes whatever this side has free — which is what lets a machine sitting on the
- * default port be reached by a controller that is itself on the default port.
+ * The browser's tunnel keeps both ports EQUAL: preview URLs are built from the server's own
+ * bound port (preview-token.ts), so a browsing session must reach it on the same number. A
+ * forward only this server uses (forward.ts) has no such constraint and takes what is free.
  */
 export function forwardArgs(target: RemoteTarget, localPort: number, remotePort: number): string[] {
   for (const port of [localPort, remotePort]) {

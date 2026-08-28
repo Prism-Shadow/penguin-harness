@@ -178,19 +178,6 @@ export const autoSignInOnMachine = (projectId: string, machineId: string) =>
     { method: "POST", body: {} },
   );
 
-/**
- * Ends the session on that machine — there, here, and in this browser.
- *
- * Not a proxied call: it goes to THIS server, which holds a session of its own for the work
- * it does on that machine (the model sync, the hot update). Signing out has to reach all
- * three places one sign-in put a session, and only this side can reach its own.
- */
-export const signOutOnMachine = (projectId: string, machineId: string) =>
-  apiFetch<{ signedOut: true; endedThere: boolean }>(
-    `/api/projects/${encodeURIComponent(projectId)}/machines/${encodeURIComponent(machineId)}/signout`,
-    { method: "POST", body: {} },
-  );
-
 /** Whether this browser already holds a session on that machine. */
 export const meOnMachine = (machineId: string) =>
   apiFetch<MeResponse>("/api/me", { server: machineId });

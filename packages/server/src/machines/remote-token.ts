@@ -1,20 +1,10 @@
 /**
  * Getting a session on a machine by asking its own CLI for one.
  *
- * The older way (signin.ts) reads that machine's SEEDED admin password off its disk and logs
- * in over loopback. It works exactly until somebody sets a real admin password there — which
- * is what a person setting a machine up properly does — and then never again, leaving a
- * machine that is connected, healthy, and impossible for this server to configure.
- *
- * This asks instead: `penguin auth token` mints a short-lived session from the data
- * root the ssh account already owns. What authorizes it is that access, not a secret — anyone
- * who can run it can already read every credential on that machine by hand. And the token is
- * the better artifact in every direction: an hour long, one row to revoke, and it leaves the
- * admin password where it belongs.
- *
- * ONE COMMAND over the shared connection, where the password path needed a scratch directory,
- * two scp'd files and a Node process. That is why this is tried first even on a machine where
- * both would work.
+ * `penguin auth token` mints a short-lived session from the data root the ssh account
+ * already owns. What authorizes it is that access, not a secret — anyone who can run it can
+ * already read every credential on that machine by hand — so it keeps working on a machine
+ * whose admin password a person has set. One command over the shared connection.
  */
 import { execFailureText } from "./exec.js";
 import { REMOTE_PENGUIN } from "./commands.js";
@@ -26,10 +16,7 @@ const TOKEN_MARK = "---penguin-auth-token---";
 
 export type RemoteTokenOutcome =
   | { kind: "minted"; token: string }
-  /**
-   * The machine could not mint one — most often an installed build older than the command.
-   * Separate from a failure because the caller has another way to try (signin.ts).
-   */
+  /** The machine could not mint one — most often a build older than the command. Not a failure: the page offers a sign-in by hand. */
   | { kind: "unsupported"; detail: string }
   | { kind: "failed"; detail: string };
 
