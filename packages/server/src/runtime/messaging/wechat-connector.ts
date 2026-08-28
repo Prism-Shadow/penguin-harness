@@ -10,17 +10,40 @@
  * The platform holds `getupdates` open until a message arrives, and the client passes back
  * the opaque cursor it was last given. Nothing in the flow wants a publicly reachable URL —
  * the property that made Telegram's `getUpdates` and QQ's gateway usable here, and QQ's
- * webhook mode not. The loop's lifecycle mirrors telegram-connector's: failures back off,
- * report once per outage, and a recovered poll fires `onReady` again so the bridge's status
- * tracks the outage.
+ * webhook mode not. The loop's lifecycle mirrors telegram-connector's: failures back off and
+ * report once per outage, and a recovery fires `onReady` again so the bridge's status tracks
+ * the outage.
  *
- * ## The first poll is a DRAIN
+ * A window that closes with nothing to report is the ORDINARY case on a long poll, not a
+ * failure — the transport resolves it as an empty answer on an unchanged cursor, and a loop
+ * that treated it as an outage would flap the connection into `error` every quiet minute.
+ *
+ * ## Readiness is proven by the credential probe, never by a poll
+ *
+ * A poll is not an event that arrives: it is a request held open until one does. So a
+ * connection reported ready only when a poll came back would sit at `connecting` for the
+ * whole window on an idle bot — usable the entire time, and saying so nowhere, which is
+ * exactly the "works but reports nothing" failure the binding panel exists to kill.
+ *
+ * Each cycle therefore opens with `checkCredentials`, which answers at once and proves what
+ * `connected` means here: the host resolves, the transport works, and the stored token
+ * authenticates. Telegram takes the opposite choice for a reason that does not apply here —
+ * its one-poller-per-token conflict is visible only on `getUpdates`, so `getMe` cannot prove
+ * its connection. This platform has no such rule, and a second connection on one bot is
+ * already refused a binding away (409 `account_enabled_elsewhere`).
+ *
+ * ## The first poll is a DRAIN, and asks for a short deadline
  *
  * An empty cursor means "start from the beginning", so the first poll of a connection can
  * return everything sent while nothing was connected. Its messages are dropped and only its
  * cursor is kept — the same choice telegram-connector makes with `offset: -1`, for the same
  * reason: a binding switched on after a week dark must not replay that week as a task flood.
  * A blip is not affected, because a reconnect keeps the cursor it already had.
+ *
+ * The short deadline is what keeps that from eating a live message. A drain parked for the
+ * long-poll window returns not the backlog but the first thing a user sends AFTER enabling —
+ * and then discards it as backlog. Asking only for what the platform is already holding makes
+ * "before this connection" and "after it" the two different things they are meant to be.
  *
  * ## Direct chats only, because that is the whole channel
  *
@@ -279,7 +302,7 @@ export class WeChatConnector implements MessagingChannelConnector {
     signal: AbortSignal,
     isClosed: () => boolean,
   ): Promise<void> {
-    /** A poll has succeeded since the last failure, and onReady fired for that up-streak. */
+    /** The credential probe has answered since the last failure, and onReady fired for it. */
     let ready = false;
     /** The backlog drain runs once per connection, never again after an outage (see the module doc). */
     let drained = false;
@@ -287,14 +310,34 @@ export class WeChatConnector implements MessagingChannelConnector {
     let cursor = "";
     while (!isClosed()) {
       try {
-        const { messages, cursor: next } = await bot.getUpdates({ cursor, signal });
-        if (isClosed()) return;
-        cursor = next;
         if (!ready) {
+          // Readiness is proven HERE and not by a poll, because a poll is not an event: a
+          // long poll with nothing to report holds its request open for the whole window, so
+          // a connection reported ready only once one came back would sit at `connecting` for
+          // half a minute on an idle bot while being perfectly usable. This call answers at
+          // once and proves what "connected" means on this channel — the host resolves, the
+          // transport works, and the stored token authenticates.
+          //
+          // It runs again ahead of every recovery attempt, like telegram-connector's, so a
+          // token revoked during an outage stops the loop with the right reason rather than
+          // as an endless poll failure.
+          await bot.checkCredentials();
+          if (isClosed()) return;
           ready = true;
           failures = 0;
           handlers.onReady?.();
         }
+        // The first call of a connection is a DRAIN, and asks for a short deadline: it wants
+        // whatever the platform is already holding, not whatever arrives next. Parked for the
+        // long-poll window it would instead return the first message a user sends after
+        // enabling — and then drop it as backlog.
+        const { messages, cursor: next } = await bot.getUpdates({
+          cursor,
+          signal,
+          ...(drained ? {} : { drain: true }),
+        });
+        if (isClosed()) return;
+        cursor = next;
         if (!drained) {
           // The cursor above is kept; these messages are not. Everything from before the
           // connection existed is confirmed rather than relayed.

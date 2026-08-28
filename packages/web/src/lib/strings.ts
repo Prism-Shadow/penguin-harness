@@ -1945,7 +1945,7 @@ Benchmark：
    * `qq`).
    */
   messaging: {
-    panelTitle: "消息软件",
+    panelTitle: "远程控制",
     /** Session-row context-menu action (the trailing ellipsis marks that a dialog follows). */
     bindAction: "远程控制…",
     dialogTitle: "远程控制",

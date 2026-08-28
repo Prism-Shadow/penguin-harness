@@ -89,6 +89,8 @@ class FakeWeChatClient implements WeChatBotClient {
   readonly sends: Send[] = [];
   readonly cursors: string[] = [];
   readonly fetches: Array<{ ref: WeChatMediaRef; maxBytes: number; what: string }> = [];
+  /** Whether each poll asked for a drain, in order — the first should and no later one may. */
+  readonly drains: boolean[] = [];
   credentialChecks = 0;
   polls = 0;
   /** Batches waiting to be served, oldest first. */
@@ -108,17 +110,22 @@ class FakeWeChatClient implements WeChatBotClient {
   async getUpdates({
     cursor,
     signal,
+    drain = false,
   }: {
     cursor: string;
     signal: AbortSignal;
+    drain?: boolean;
   }): Promise<WeChatUpdates> {
     this.polls += 1;
     this.cursors.push(cursor);
+    this.drains.push(drain);
     if (this.t.failPoll !== null) throw new Error(this.t.failPoll);
     const queued = this.queue.shift();
     if (queued !== undefined) return { messages: queued, cursor: `cursor-${this.polls}` };
-    // The first poll must come back for the connection to read as ready — it is the drain.
-    if (this.polls === 1) return { messages: [], cursor: "cursor-1" };
+    // A drain asks only for what the platform is already holding, so it comes back at once —
+    // empty when there is nothing. A long poll PARKS, which is what production does and what
+    // makes the readiness test below meaningful.
+    if (drain && !this.t.stallPolls) return { messages: [], cursor: `cursor-${this.polls}` };
     await new Promise<void>((resolve) => {
       this.wake = resolve;
       signal.addEventListener("abort", () => resolve(), { once: true });
@@ -163,6 +170,8 @@ class FakeWeChatTransport implements WeChatTransport {
   failAuth: string | null = null;
   failSend: string | null = null;
   failPoll: string | null = null;
+  /** Every poll parks, the drain included — an idle bot, which is the readiness case. */
+  stallPolls = false;
   oversizedMedia = false;
 
   createClient(creds: WeChatCredentials): FakeWeChatClient {
@@ -470,6 +479,49 @@ describe("wechat binding routes and the long poll", () => {
 
   // —— The long poll ————————————————————————————————————————————————————————
 
+  it("reports the connection ready before any poll has answered", async () => {
+    // The reported bug: a long poll is a request held open until something arrives, so a
+    // connection reported ready only when one came back sat at `connecting` for the whole
+    // window on an idle bot — usable throughout, and saying so nowhere.
+    fake.stallPolls = true;
+    t.deps.messagingRepo.upsert({
+      sessionId: SID,
+      channel: "wechat",
+      accountId: BOT_ID,
+      config: SCANNED_CONFIG,
+    });
+    expect((await api.post(`${BASE(SID)}/state`, { enabled: true })).status).toBe(200);
+    await waitFor(() => t.deps.messaging.statusOf(SID, "wechat").state === "connected");
+    // Ready on the probe, with the poll behind it still parked and having returned nothing.
+    const client = fake.poller();
+    expect(client.credentialChecks).toBeGreaterThan(0);
+    expect(client.polls).toBeGreaterThan(0);
+  });
+
+  it("asks for a drain on the first poll of a connection and on no later one", async () => {
+    await bindEnabled(SID);
+    const client = fake.poller();
+    client.push(inboundText("hello", "m-0"));
+    await waitFor(() => client.drains.length >= 2);
+    expect(client.drains[0]).toBe(true);
+    expect(client.drains.slice(1).every((d) => d === false)).toBe(true);
+  });
+
+  it("stops with the credential's own reason when the token is refused", async () => {
+    // The probe runs ahead of the poll, so a revoked token reports what is actually wrong
+    // instead of an endless poll failure.
+    fake.failAuth = "invalid bot token";
+    t.deps.messagingRepo.upsert({
+      sessionId: SID,
+      channel: "wechat",
+      accountId: BOT_ID,
+      config: SCANNED_CONFIG,
+    });
+    expect((await api.post(`${BASE(SID)}/state`, { enabled: true })).status).toBe(200);
+    await waitFor(() => t.deps.messaging.statusOf(SID, "wechat").state === "error");
+    expect(t.deps.messaging.statusOf(SID, "wechat").lastError).toContain("invalid bot token");
+  });
+
   it("drops the first poll's backlog and keeps only its cursor", async () => {
     // A binding switched on after a week dark must not replay that week as a task flood.
     fake.createClient = ((creds: WeChatCredentials) => {
@@ -551,10 +603,9 @@ describe("wechat binding routes and the long poll", () => {
     // The loop is parked on a long poll, so waking it is what makes it call again and fail.
     client.push();
     await waitFor(() => t.deps.messaging.statusOf(SID, "wechat").state === "error");
-    // Recovery needs an answer to come back: with the failure cleared the loop would
-    // otherwise park on an empty queue and never fire onReady.
+    // Recovery needs nothing to arrive: the probe at the top of the cycle reports it, so the
+    // connection comes back while the poll behind it is still parked.
     fake.failPoll = null;
-    client.push();
     await waitFor(() => t.deps.messaging.statusOf(SID, "wechat").state === "connected");
   });
 

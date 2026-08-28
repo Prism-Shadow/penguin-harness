@@ -17,7 +17,10 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 import { MessagingMediaTooLargeError } from "../src/runtime/messaging/media.js";
 import type { WeChatCredentials } from "../src/runtime/messaging/wechat-api.js";
 import {
+  DRAIN_TIMEOUT_MS,
+  LONG_POLL_TIMEOUT_MS,
   WECHAT_API_BASE,
+  WECHAT_STALE_TOKEN_CODE,
   WECHAT_VIDEO_FILE_NAME,
   WeChatApiError,
   createWeChatTransport,
@@ -144,11 +147,81 @@ describe("the WeChat request envelope", () => {
     );
   });
 
-  it("refuses to probe a binding with no scanned user identity rather than sending a blank one", async () => {
+  it("probes even without a scanned user identity: the auth layer is what it reads", async () => {
+    // The user id belongs to the call BEHIND the credential, and that call's outcome is not
+    // what this probe reports (see the credential-probe suite below).
     await withFetch(defaults, async (calls) => {
       const bare = createWeChatTransport().createClient({ ...CREDS, userId: "" });
-      await expect(bare.checkCredentials()).rejects.toThrow(/scanned user identity/);
-      expect(calls).toHaveLength(0);
+      await expect(bare.checkCredentials()).resolves.toBeUndefined();
+      expect(calls).toHaveLength(1);
+    });
+  });
+});
+
+describe("the credential probe", () => {
+  it("passes on a good token whose typing-ticket call has no conversation to work with", async () => {
+    // The reported bug. `getconfig` mints a typing ticket for a CONVERSATION, so a bot nobody
+    // has messaged yet answers this even though its token is fine and its sends work. Reading
+    // that as a bad credential sent the user to re-scan a token that was never the problem.
+    await withFetch(
+      () => jsonResponse({ ret: 1, errmsg: "GetTypingTicket rpc failed" }),
+      async () => {
+        await expect(client().checkCredentials()).resolves.toBeUndefined();
+      },
+    );
+  });
+
+  it("fails when the credential itself is refused", async () => {
+    for (const status of [401, 403]) {
+      await withFetch(
+        () => new Response("invalid bot token", { status }),
+        async () => {
+          const err = await client()
+            .checkCredentials()
+            .catch((e: unknown) => e);
+          expect(err).toBeInstanceOf(WeChatApiError);
+          expect((err as WeChatApiError).authenticated).toBe(false);
+          expect((err as Error).message).toContain(String(status));
+        },
+      );
+    }
+  });
+
+  it("fails on a stale token, which arrives as a business code rather than a status", async () => {
+    // The one non-zero envelope code that IS about the credential: everything else means the
+    // request got past it.
+    await withFetch(
+      () => jsonResponse({ errcode: WECHAT_STALE_TOKEN_CODE, errmsg: "session timeout" }),
+      async () => {
+        const err = await client()
+          .checkCredentials()
+          .catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(WeChatApiError);
+        expect((err as WeChatApiError).authenticated).toBe(false);
+      },
+    );
+  });
+
+  it("fails when the request never arrived, which proves nothing either way", async () => {
+    const original = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      throw new Error("getaddrinfo ENOTFOUND");
+    }) as typeof fetch;
+    try {
+      await expect(client().checkCredentials()).rejects.toThrow(/ENOTFOUND/);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  it("never probes with the update poll, which would eat a message", async () => {
+    // `getupdates` would prove the credential too, and advance the cursor the connector is
+    // about to read — so the messages it returned would be dropped and never delivered.
+    await withFetch(defaults, async (calls) => {
+      await client().checkCredentials();
+      expect(calls).toHaveLength(1);
+      expect(calls[0]!.url).toContain("/getconfig");
+      expect(calls.some((c) => c.url.includes("getupdates"))).toBe(false);
     });
   });
 });
@@ -184,6 +257,67 @@ describe("the long poll", () => {
         ]);
       },
     );
+  });
+
+  it("resolves a quiet window as empty rather than as an outage", async () => {
+    // A long poll with nothing to report holds its request until the window closes. Treating
+    // that as a failure would put the connection into `error` every quiet minute — and the
+    // cursor is unchanged, so the next call simply asks again from where this one started.
+    const original = globalThis.fetch;
+    // The window closing, as fetch reports it — no real timer is waited on here.
+    globalThis.fetch = (async () => {
+      const err = new Error("The operation was aborted due to timeout");
+      err.name = "TimeoutError";
+      throw err;
+    }) as typeof fetch;
+    try {
+      const res = await client().getUpdates({ cursor: "cursor-7", signal: live() });
+      expect(res).toEqual({ messages: [], cursor: "cursor-7" });
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  it("still reports a transport fault, which is not a quiet window", async () => {
+    const original = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      throw new Error("getaddrinfo ENOTFOUND");
+    }) as typeof fetch;
+    try {
+      await expect(client().getUpdates({ cursor: "c", signal: live() })).rejects.toThrow(
+        /ENOTFOUND/,
+      );
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  it("rethrows when the CALLER closed the connection, which is not a quiet window", async () => {
+    // A disable aborts the same way a deadline does, and must reach the poll loop as the end
+    // of the connection rather than as one more empty answer.
+    const controller = new AbortController();
+    const original = globalThis.fetch;
+    globalThis.fetch = (async (_input: unknown, init?: RequestInit) => {
+      controller.abort();
+      const err = new Error("aborted");
+      err.name = "AbortError";
+      void init;
+      throw err;
+    }) as typeof fetch;
+    try {
+      await expect(
+        client().getUpdates({ cursor: "c", signal: controller.signal }),
+      ).rejects.toThrow();
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  it("gives the drain a shorter deadline than a long poll, so it cannot swallow a live message", async () => {
+    // A drain asks for what the platform is already HOLDING. Parked for the long-poll window
+    // it would instead return the first message a user sends after enabling — which the
+    // connector then discards as backlog.
+    expect(DRAIN_TIMEOUT_MS).toBeLessThan(LONG_POLL_TIMEOUT_MS);
   });
 
   it("keeps the old cursor when the response carries none, rather than starting over", async () => {

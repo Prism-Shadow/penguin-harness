@@ -1997,7 +1997,7 @@ Scenarios:
    * `qq`).
    */
   messaging: {
-    panelTitle: "Messaging",
+    panelTitle: "Remote control",
     /** Session-row context-menu action (the trailing ellipsis marks that a dialog follows). */
     bindAction: "Remote control…",
     dialogTitle: "Remote control",

@@ -25,9 +25,25 @@ directions, which none of the other three manage.
   is a dependency, because both own the process's message loop, carry one account, and render
   their login QR to a terminal.
 - The channel policy landed in `wechat-connector.ts`. The poll loop backs off on failure and
-  reports once per outage, and its FIRST answer is a drain: an empty cursor means "from the
-  beginning", so a binding switched on after a week dark confirms that week rather than
-  replaying it as a flood of Tasks.
+  reports once per outage, and its FIRST call is a drain on a short deadline: an empty cursor
+  means "from the beginning", so a binding switched on after a week dark confirms that week
+  rather than replaying it as a flood of Tasks — and asking only for what the platform is
+  already holding keeps the drain from swallowing the first message a user sends after
+  enabling. A window that closes with nothing to report is the ordinary quiet case on a long
+  poll and resolves empty rather than reading as an outage.
+- **Readiness is reported by the credential probe, never by a poll.** A poll is a request held
+  open until something arrives, so a connection reported ready only when one came back would
+  sit at "connecting" for the whole window on an idle bot — usable throughout, and saying so
+  nowhere. Each cycle opens with a probe that answers at once, and it runs again ahead of every
+  recovery, so a token revoked during an outage stops the loop with the right reason.
+- **The credential probe reads the authentication layer and nothing else.** Every authenticated
+  endpoint here shares one auth layer and then does something with a side condition a
+  freshly-scanned binding cannot satisfy — `getconfig` wants a live conversation to mint a
+  typing ticket for, `getuploadurl` a peer and a file, `getupdates` a long-poll window it would
+  park for. So a non-zero business code on an accepted request reports the credential as GOOD,
+  while an HTTP 401/403 and the platform's stale-token code (-14) report it as bad. Test
+  connection therefore passes on a bot nobody has messaged yet, and says only that the token
+  signs in — not that the bot can deliver.
 - **Scan-to-connect is the whole credential form.** `wechat-scan.ts` holds the in-flight
   codes and the platform's poll handles — the thing that turns into a bot token — in memory
   only, scoped to the Session that started them and bounded per Session. The browser is given
@@ -61,5 +77,6 @@ directions, which none of the other three manage.
   binding type re-declares nothing.
 - The binding editor's channel selector gained a fourth option, and WeChat arrived with its
   own scan panel, setup steps, media note and troubleshooting entry in both dictionaries.
-- The Session row's messaging action and its dialog are now labelled **Remote control**
-  (`远程控制`). Only the label changed; the route, the keys and every identifier are the same.
+- The Session row's messaging action, its dialog and the dock panel's tab are now labelled
+  **Remote control** (`远程控制`). Only the labels changed; the route, the keys and every
+  identifier are the same.

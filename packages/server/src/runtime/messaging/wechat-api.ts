@@ -79,7 +79,7 @@ const CALL_TIMEOUT_MS = 15_000;
  * come back. The abort signal is what actually ends it promptly; this is the backstop for
  * a connection that is hung rather than closed.
  */
-const LONG_POLL_TIMEOUT_MS = 30_000;
+export const LONG_POLL_TIMEOUT_MS = 30_000;
 
 /**
  * Deadline for a media transfer in either direction. Far longer than a method call: these
@@ -87,6 +87,14 @@ const LONG_POLL_TIMEOUT_MS = 30_000;
  * that was on its way perfectly well (the same number telegram-api.ts uses).
  */
 const TRANSFER_TIMEOUT_MS = 60_000;
+
+/**
+ * How long the connection's FIRST poll may take. It is a drain, not a wait: it asks for
+ * whatever the platform is already holding, and anything that has not arrived by here is a
+ * live message the loop is about to read properly rather than backlog to discard. Parking it
+ * for the full long-poll window would drop the first message a user sends after enabling.
+ */
+export const DRAIN_TIMEOUT_MS = 5_000;
 
 /** The bot-channel `bot_type` the QR calls are made under. */
 export const WECHAT_BOT_TYPE = "3";
@@ -207,13 +215,32 @@ export interface WeChatUpdates {
 
 export interface WeChatBotClient {
   /**
-   * Credential probe. `getconfig` is the only authenticated call that reads rather than
-   * writes and does not consume the update cursor — polling would advance what the connector
-   * is about to read, and a probe that eats a message is not a probe.
+   * Credential probe: resolves when the token AUTHENTICATES, and throws when it does not.
+   *
+   * What it deliberately does not prove is that the bot can deliver anything. No call on this
+   * platform can prove both: every authenticated endpoint shares one auth layer and then does
+   * something with a side condition a freshly-scanned binding cannot satisfy — `getconfig`
+   * wants a live conversation to mint a typing ticket for, `getuploadurl` wants a peer and a
+   * file, `sendtyping` wants a ticket, and `getupdates` is a long poll that would park for its
+   * whole window. So the probe reads the layer that has no side conditions and reports only
+   * that, which is the honest answer rather than a green light for something it did not test.
    */
   checkCredentials(): Promise<void>;
-  /** One long poll. `signal` ends it at once, which is what a disable needs. */
-  getUpdates(args: { cursor: string; signal: AbortSignal }): Promise<WeChatUpdates>;
+  /**
+   * One poll. `signal` ends it at once, which is what a disable needs.
+   *
+   * A window that closes with nothing to report resolves EMPTY rather than throwing: on a long
+   * poll that is the ordinary quiet case, and treating it as a failure would flap the
+   * connection into `error` every time a conversation went quiet.
+   *
+   * `drain: true` asks for a short deadline instead of the long-poll window — see
+   * DRAIN_TIMEOUT_MS.
+   */
+  getUpdates(args: {
+    cursor: string;
+    signal: AbortSignal;
+    drain?: boolean;
+  }): Promise<WeChatUpdates>;
   sendText(args: WeChatSendArgs): Promise<void>;
   /** Uploads the bytes to the CDN, then sends the item that references them. */
   sendImage(args: WeChatSendArgs & { file: WeChatOutboundFile }): Promise<void>;
@@ -232,22 +259,54 @@ export interface WeChatTransport {
 }
 
 /**
+ * The code the platform answers with when the bot token is stale or revoked. It arrives with
+ * an HTTP 200 and a non-zero envelope, so it is the one business-level code that has to be
+ * read as an authentication failure rather than as one of the call behind it.
+ */
+export const WECHAT_STALE_TOKEN_CODE = -14;
+
+/**
  * A call the platform answered with a failure of its own, as opposed to one that never
  * arrived. `ret` is the protocol's numeric code where it returned one.
  */
 export class WeChatApiError extends Error {
+  /**
+   * The request was ACCEPTED — it authenticated, and the failure came from the call behind
+   * the credential rather than from the credential.
+   *
+   * This distinction is the whole of the credential probe: every authenticated endpoint on
+   * this platform shares one auth layer and then does something that needs state a
+   * freshly-bound bot does not have, so the only thing a probe can honestly read is which of
+   * the two layers refused it (see checkCredentials).
+   */
+  readonly authenticated: boolean;
+  /**
+   * The request was given up on at a deadline rather than answered or refused. On a long poll
+   * that is the ordinary quiet case and not a failure at all, which is what `getUpdates` reads
+   * it for; nothing else here distinguishes it from a network fault.
+   */
+  readonly timedOut: boolean;
+
   constructor(
     readonly ret: number | undefined,
     message: string,
+    flags: { authenticated?: boolean; timedOut?: boolean } = {},
   ) {
     super(message);
     this.name = "WeChatApiError";
+    this.authenticated = flags.authenticated ?? false;
+    this.timedOut = flags.timedOut ?? false;
   }
 }
 
 // ---------------------------------------------------------------------------
 // Production adapter over fetch
 // ---------------------------------------------------------------------------
+
+/** Whether a fetch rejection is a deadline or a cancellation rather than a transport fault. */
+function isAbortLike(err: unknown): boolean {
+  return err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
+}
 
 /** Readable failure text out of fetch's throw shapes. Never echoes a URL (see fetchMedia). */
 export function wechatFetchErrorText(err: unknown): string {
@@ -310,7 +369,11 @@ function checkEnvelope(label: string, status: number, raw: string): Record<strin
   // being non-zero is a failure, and neither being present is a success.
   const code = env.ret !== undefined && env.ret !== 0 ? env.ret : env.errcode;
   if (code !== undefined && code !== 0) {
-    throw new WeChatApiError(code, `${label} failed: ${env.errmsg ?? `code ${code}`}`);
+    // The request reached the platform and got past its credential check — a stale token
+    // being the one code that says otherwise.
+    throw new WeChatApiError(code, `${label} failed: ${env.errmsg ?? `code ${code}`}`, {
+      authenticated: code !== WECHAT_STALE_TOKEN_CODE,
+    });
   }
   return body;
 }
@@ -491,12 +554,20 @@ export function createWeChatTransport(): WeChatTransport {
             signal: opts.signal ?? AbortSignal.timeout(opts.timeoutMs),
           });
         } catch (err) {
-          throw new WeChatApiError(undefined, `${opts.label} failed: ${wechatFetchErrorText(err)}`);
+          throw new WeChatApiError(
+            undefined,
+            `${opts.label} failed: ${wechatFetchErrorText(err)}`,
+            {
+              timedOut: isAbortLike(err),
+            },
+          );
         }
         const raw = await res.text().catch(() => "");
         if (!res.ok) {
           // The body is the platform's own diagnosis and is the only thing that distinguishes
-          // a revoked token from a wrong host; it carries no credential of ours.
+          // a revoked token from a wrong host; it carries no credential of ours. Every status
+          // here leaves `authenticated` false: a 401/403 IS the credential being refused, and
+          // for anything else the request never got far enough to say the credential is good.
           throw new WeChatApiError(
             undefined,
             `${opts.label} failed: HTTP ${res.status}${raw === "" ? "" : ` ${raw.slice(0, 300)}`}`,
@@ -597,32 +668,51 @@ export function createWeChatTransport(): WeChatTransport {
 
       return {
         async checkCredentials(): Promise<void> {
-          if (creds.userId === "") {
-            throw new WeChatApiError(
-              undefined,
-              "this binding has no scanned user identity to probe with: bind it again by scanning",
+          try {
+            // The cheapest authenticated call that reads rather than writes, and the only one
+            // that consumes nothing: `getupdates` would park for its window, and a probe that
+            // advanced the cursor the poll loop is about to read would eat a user's message.
+            await post(
+              "ilink/bot/getconfig",
+              { ilink_user_id: creds.userId },
+              { timeoutMs: CALL_TIMEOUT_MS, label: "wechat credential check" },
             );
+          } catch (err) {
+            // The call behind the credential failed, which says nothing about the credential:
+            // `getconfig` mints a typing ticket for a CONVERSATION, and a bot nobody has
+            // messaged yet has none — so a binding whose sends work perfectly answers
+            // "GetTypingTicket rpc failed" here. Reporting that as a bad credential sends the
+            // user to re-scan a token that was never the problem.
+            if (err instanceof WeChatApiError && err.authenticated) return;
+            throw err;
           }
-          await post(
-            "ilink/bot/getconfig",
-            { ilink_user_id: creds.userId },
-            { timeoutMs: CALL_TIMEOUT_MS, label: "wechat credential check" },
-          );
         },
 
-        async getUpdates({ cursor, signal }): Promise<WeChatUpdates> {
+        async getUpdates({ cursor, signal, drain = false }): Promise<WeChatUpdates> {
           // Two deadlines, combined: the caller's (a disable, which must end the poll now)
           // and this call's own window. Whichever fires first ends the request.
-          const timeout = AbortSignal.timeout(LONG_POLL_TIMEOUT_MS);
-          const body = await post(
-            "ilink/bot/getupdates",
-            { get_updates_buf: cursor },
-            {
-              timeoutMs: LONG_POLL_TIMEOUT_MS,
-              signal: AbortSignal.any([signal, timeout]),
-              label: "wechat getUpdates",
-            },
-          );
+          const windowMs = drain ? DRAIN_TIMEOUT_MS : LONG_POLL_TIMEOUT_MS;
+          let body: Record<string, unknown>;
+          try {
+            body = await post(
+              "ilink/bot/getupdates",
+              { get_updates_buf: cursor },
+              {
+                timeoutMs: windowMs,
+                signal: AbortSignal.any([signal, AbortSignal.timeout(windowMs)]),
+                label: "wechat getUpdates",
+              },
+            );
+          } catch (err) {
+            // A close is a close and must reach the loop; this window closing is not a
+            // failure at all. A long poll that has nothing to say holds the request until it
+            // expires, so treating that as an outage would put the connection into `error`
+            // every quiet minute — and the cursor is unchanged, so the next call simply asks
+            // again from where this one started.
+            if (signal.aborted) throw err;
+            if (err instanceof WeChatApiError && err.timedOut) return { messages: [], cursor };
+            throw err;
+          }
           const raw = Array.isArray(body.msgs) ? (body.msgs as WireMessage[]) : [];
           const messages: WeChatInboundEvent[] = [];
           for (const msg of raw) {
