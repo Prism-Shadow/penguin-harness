@@ -3,6 +3,7 @@
 - **Date:** 2026-08-28
 - **Type:** feature
 - **Scope:** `server`, `web`
+- **PR:** [#530](https://github.com/Prism-Shadow/penguin-harness/pull/530)
 
 [English](2026-08-28-error-noise-and-clear.md)
 
