@@ -46,11 +46,10 @@ const ADMIN_ONLY_NAV_KEYS: ReadonlySet<NavGroupKey> = new Set<NavGroupKey>(["mac
  * not put in front of anyone, so releasing one is deleting its name from this set rather than
  * restoring code.
  *
- * `machines` installs this build onto another host over ssh with the server account's keys.
- * That is a capability worth shipping deliberately rather than as a row that happens to appear,
- * so it waits for a release that means to introduce it.
+ * Empty today. It is kept because the mechanism is the point: a page can land, be exercised,
+ * and wait here for the release that means to introduce it.
  */
-const UNRELEASED_NAV_KEYS: ReadonlySet<NavGroupKey> = new Set<NavGroupKey>(["machines"]);
+const UNRELEASED_NAV_KEYS: ReadonlySet<NavGroupKey> = new Set<NavGroupKey>();
 
 /** The manifest as this user sees it. */
 export function navKeysFor(isAdmin: boolean): readonly NavGroupKey[] {

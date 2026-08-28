@@ -46,6 +46,36 @@ export const en: Strings = {
     noMatch: "No host matches that.",
     /** How many matches the visible rows leave out — a silent truncation would read as "not in my config". */
     more: (count: number) => `${count} more \u2014 keep typing to narrow it down.`,
+    /** Heading of the entry for the machine this server itself runs on. */
+    localTitle: "This machine",
+    /** A machine's server state as of the last probe; `statusUnknown` = not probed yet. */
+    statusRunning: "Running",
+    statusRunningOn: (port: number) => `Running on port ${port}`,
+    statusStopped: "Not running",
+    statusUnreachable: "Unreachable",
+    statusUnknown: "Not checked",
+    /** A machine carrying a different build from the one this server would install. */
+    update: "Update",
+    behind: "Out of sync",
+    upToDate: "Up to date",
+    /** Bringing a machine's server up and holding a tunnel to it. */
+    connect: "Connect",
+    connecting: "Connecting\u2026",
+    disconnect: "Disconnect",
+    /** Each machine is a separate server with its own accounts; this browser signs in per machine. */
+    signIn: "Sign in",
+    signOut: "Sign out",
+    replaceProgram: "Replace the program there and restart",
+    replaceProgramWhy:
+      "Its runtime is older than this build, and a push never replaces a runtime. This installs the program over there and restarts its server, which interrupts anyone using it.",
+    signingIn: "Signing in\u2026",
+    signedIn: "signed in",
+    signInTo: (alias: string) => `Sign in to ${alias}`,
+    /** A connected machine: its filesystem and API can be reached from here. */
+    reachable: "Reachable",
+    /** Manual re-probe, for when you already know something changed. */
+    refresh: "Refresh",
+    checking: "Checking\u2026",
     /** Heading of the standing list of machines this server has installed on. */
     installedTitle: (count: number) => `Installed machines (${count})`,
     /** What the selected machine already carries, remembered on the server across restarts. */
@@ -53,6 +83,10 @@ export const en: Strings = {
     install: "Install",
     installing: "Installing\u2026",
     reinstall: "Reinstall",
+    /** This server already installed there for another project: taking it costs no transfer. */
+    adopt: "Add to this project",
+    installedElsewhere: (version: string) =>
+      `${version} is already installed there, for another project \u2014 adding it here sends nothing.`,
     /** Terminal states of a finished job. */
     installed: (version: string) => `Installed ${version}.`,
     alreadyInstalled: (version: string) => `Already on ${version} \u2014 nothing to install.`,
@@ -1254,6 +1288,13 @@ export const en: Strings = {
       `Context compacted; thinking level switched to "${to}".`,
     thinkingSwitchCompactFailed:
       "The compaction did not finish; the thinking level was switched anyway.",
+    /** The machine a workspace lives on; the row only shows when more than one is reachable. */
+    workspaceMachine: "Machine",
+    workspaceHere: "here",
+    /** Why a listed machine cannot be picked — shown ON its row, where the question is asked. */
+    workspaceMachineWhy: {
+      "no-identity": "not identified",
+    },
     workspaceUseThis: "Use this dir",
     workspaceUp: "Parent dir",
     workspaceNoSubdirs: "No subdirectories",

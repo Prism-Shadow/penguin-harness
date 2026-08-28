@@ -1102,8 +1102,8 @@ export function Sidebar({
    * already there. Otherwise, past ten groups, the freshly added Workspace would sit on a
    * page the user is not looking at and the click would read as a no-op.
    */
-  const addWorkspace = (path: string) => {
-    const next = registerWorkspace(registeredWorkspaces, path);
+  const addWorkspace = (path: string, machineId?: string | null) => {
+    const next = registerWorkspace(registeredWorkspaces, path, machineId ?? undefined);
     if (next === registeredWorkspaces) return;
     applyRegistryChange(next);
     const key = workspaceGroupKey(path);
@@ -1875,6 +1875,10 @@ export function Sidebar({
                 projectId={currentProjectId ?? ""}
                 workspace=""
                 onChange={addWorkspace}
+                // The sidebar's + is where a workspace is CREATED, so it is where the
+                // machine is chosen; the draft and settings pickers edit a workspace that
+                // already has one.
+                chooseMachine
                 trigger={(open, toggle) => (
                   <button
                     type="button"
