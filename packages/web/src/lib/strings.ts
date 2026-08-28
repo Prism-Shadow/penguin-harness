@@ -66,7 +66,6 @@ export const zh = {
     disconnect: "断开",
     /** Each machine is a separate server with its own accounts; this browser signs in per machine. */
     signIn: "登录",
-    signOut: "退出登录",
     replaceProgram: "替换那边的程序并重启",
     replaceProgramWhy:
       "它的 runtime 比这个构建旧，而推送从不替换 runtime。这会在那台机器上安装程序并重启它的服务，正在使用它的人会被打断。",

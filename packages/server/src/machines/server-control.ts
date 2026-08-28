@@ -1,69 +1,81 @@
 /**
- * Starting and stopping the INSTALLED server on a remote machine — the half of connect that
- * talks to the far side.
+ * Starting and stopping the INSTALLED server on a remote machine.
  *
- * One command each, and the machine does the waiting. It used to be done from here: `nohup …
- * &` to start it, then a fresh ssh probe every second for thirty seconds to find out whether
- * it came up — up to thirty round trips to learn one fact the machine knew the moment it
- * happened. `penguin server start` waits on the spot and answers once, so a start that takes
- * twenty seconds costs one connection instead of twenty.
+ * A start is one command on the shared shell — `nohup penguin server … &` — and then the
+ * status probe, on that same shell, until the server answers. A stop is a request to the
+ * server's own shutdown endpoint over the forward this side holds, then watching that port
+ * go quiet. Neither costs a handshake.
  *
  * The remote server is a plain `penguin server` process, never supervised from here. A
- * machine that reboots simply reads as "not running" on the next probe; nothing is maintained
- * on the far side between calls.
+ * machine that reboots simply reads as "not running" on the next probe.
  */
-import { REMOTE_PENGUIN, sshArgs } from "./commands.js";
+import { SERVER_LOG_TAIL, startServerCommand } from "./commands.js";
 import type { RemoteTarget } from "./commands.js";
-import { run } from "./exec.js";
-import { jsonAnswer } from "./answer.js";
+import type { ExecResult } from "./exec.js";
+import { probeServerState } from "./server-state.js";
+import { forwardTo } from "./forward.js";
+import { machineApi } from "./machine-api.js";
 
-/** Generous: the far side is doing the waiting, and this only has to outlast it. */
-const CALL_TIMEOUT_MS = 60_000;
+/** How long a freshly started server gets to answer on its port. */
+const START_TIMEOUT_MS = 30_000;
 
-/** What `penguin server start` / `stop` answer with. */
-interface LifecycleResult {
-  ok: boolean;
-  port?: number;
-  pid?: number;
-  detail?: string;
-}
+/** How long a server asked to shut down gets to let go of its port. */
+const STOP_TIMEOUT_MS = 10_000;
 
-/**
- * Runs one lifecycle command and reads its verdict (answer.ts). Output with no verdict in it
- * is a FAILURE carrying whatever the far side did say — a build too old for the subcommand
- * says so there, and reporting success because nothing contradicted us would be worse.
- */
-async function lifecycle(
-  target: RemoteTarget,
-  command: string,
-): Promise<{ ok: true; port?: number; pid?: number } | { ok: false; detail: string }> {
-  const result = await run("ssh", sshArgs(target, `${REMOTE_PENGUIN} server ${command} 2>&1`), {
-    timeoutMs: CALL_TIMEOUT_MS,
-  });
-  const answer = jsonAnswer<LifecycleResult>(result.stdout, "ok");
-  if (answer !== null) {
-    return answer.ok
-      ? { ok: true, port: answer.port, pid: answer.pid }
-      : { ok: false, detail: answer.detail ?? "the machine refused without saying why" };
-  }
-  const said = (result.stderr.trim() || result.stdout.trim()).trim();
-  return { ok: false, detail: said === "" ? "the machine said nothing." : said };
-}
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * Starts the remote server on the given port and waits until it answers there. Failure
- * carries the far side's own words — its server log's last lines when the process came up and
- * died, which say far more about a port collision or a broken install than "it did not start".
+ * carries the far side's own words — its server log's last lines when the process came up
+ * and died, which say more about a port collision or a broken install than "did not start".
  */
-export function startRemoteServer(
+export async function startRemoteServer(
   target: RemoteTarget,
   port: number,
+  exec: (target: RemoteTarget, command: string) => Promise<ExecResult>,
 ): Promise<{ ok: true } | { ok: false; detail: string }> {
-  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`bad port ${port}`);
-  return lifecycle(target, `start --port ${port}`).then((r) => (r.ok ? { ok: true as const } : r));
+  const started = await exec(target, startServerCommand(port));
+  if (started.code !== 0) {
+    return { ok: false, detail: started.stdout.trim() || "the machine could not start it." };
+  }
+  const deadline = Date.now() + START_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    await sleep(500);
+    const probed = await probeServerState(target, exec);
+    if (probed.state.kind === "running") return { ok: true };
+  }
+  const tail = (await exec(target, SERVER_LOG_TAIL)).stdout.trim();
+  return { ok: false, detail: tail || "it did not answer within 30s." };
 }
 
-/** Stops the remote server and waits for it to let go. Already stopped counts as stopped. */
-export async function stopRemoteServer(target: RemoteTarget): Promise<boolean> {
-  return (await lifecycle(target, "stop")).ok;
+/** Asks the remote server to shut down and waits for its port to stop answering. */
+export async function stopRemoteServer(opts: {
+  address: string;
+  target: RemoteTarget;
+  remotePort: number;
+  livePort?: number | null;
+  cookie: string;
+}): Promise<boolean> {
+  let port = opts.livePort ?? null;
+  if (port === null) {
+    const forward = await forwardTo(opts);
+    if (!forward.ok) return false;
+    port = forward.port;
+  }
+  const api = machineApi(port, opts.cookie);
+  try {
+    if ((await api.request("POST", "/api/version/shutdown", {})).status !== 202) return false;
+  } catch {
+    return false;
+  }
+  const deadline = Date.now() + STOP_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    try {
+      await api.request("GET", "/api/version");
+    } catch {
+      return true; // The forward's far end refuses now: the port is free.
+    }
+    await sleep(250);
+  }
+  return false;
 }

@@ -16,7 +16,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { openExistingDatabase } from "./db/database.js";
-import { MachineRepo } from "./db/repos/machine.js";
+import { MachinesRepo } from "./db/repos/machines.js";
 import { liveServerLock } from "./lock.js";
 
 /** What `penguin server status` prints, as one line of JSON. */
@@ -66,7 +66,7 @@ function readMachineId(dbPath: string): string | null {
   if (!fs.existsSync(dbPath)) return null;
   const db = openExistingDatabase(dbPath);
   try {
-    return new MachineRepo(db).peek();
+    return new MachinesRepo(db).peekOwnId();
   } catch {
     return null;
   } finally {

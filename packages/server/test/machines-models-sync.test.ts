@@ -111,11 +111,9 @@ describe("planModelSync", () => {
       }),
     );
     const theirs = plan.models.find((m) => m.modelId === "claude-opus-5");
-    // Present, so the whole-table replace does not delete it...
     expect(theirs).toBeDefined();
     expect(theirs?.contextWindow).toBe(200000);
     expect(theirs?.baseUrl).toBe("https://theirs.example");
-    // ...and carrying no key, which is what makes the server keep the real one.
     expect(theirs).not.toHaveProperty("apiKey");
     expect(JSON.stringify(plan)).not.toContain("…");
   });
@@ -139,8 +137,6 @@ describe("planModelSync", () => {
   });
 
   it("omits a key we do not have, rather than clearing theirs", () => {
-    // An entry configured here to read this machine's ANTHROPIC_API_KEY: the variable is not
-    // ours to carry, and the machine may hold its own key for the same pair.
     const plan = planModelSync(
       { models: [local({ api_key: undefined, base_url: "https://gw.example" })] },
       remoteTable(),
@@ -151,10 +147,6 @@ describe("planModelSync", () => {
   });
 
   it("points the machine's default at ours, even when it already had one", () => {
-    // A Project with this id over there IS this Project. A default left pointing elsewhere is
-    // how a Session started without an explicit model quietly runs on the wrong one — and a
-    // freshly created Project is always seeded with a default, so "only if it has none" would
-    // never once have fired.
     const mine: LocalModels = {
       models: [local()],
       defaultModel: { provider: "deepseek", model_id: "deepseek-v4-flash" },
@@ -166,8 +158,6 @@ describe("planModelSync", () => {
   });
 
   it("does not name a pointer that is not in the table it sends", () => {
-    // Unsatisfiable, so left as theirs: omitting the field is what keeps their value, and
-    // naming a pair we are not sending would be rejected by the endpoint anyway.
     const plan = planModelSync(
       {
         models: [local()],
@@ -193,8 +183,6 @@ function fakeMachine(answers: Record<string, { status: number; body: unknown }>)
     calls,
     puts,
     api: {
-      // Never called by the model sync: the byte-bodied POST is the hot update's, and the
-      // machine it goes to is not this fake's business.
       postBytes: async () => ({ status: 500, text: "not used by the model sync" }),
       request: async (method, path, body) => {
         calls.push({ method, path, ...(body === undefined ? {} : { body }) });
@@ -215,8 +203,6 @@ describe("syncModelsToMachine, against a running server", () => {
     const machine = await createTestApp();
     const { server, port } = await listening(machine.app.fetch);
     try {
-      // That machine's own model, configured over there by somebody else. Its key must come
-      // through this untouched: the GET we merge from reports it masked.
       await machine.deps.projectConfigService.updateModels("default_project", {
         models: [
           { provider: "anthropic", modelId: "claude-opus-5", apiKey: "sk-theirs-9876543210" },
@@ -240,7 +226,6 @@ describe("syncModelsToMachine, against a running server", () => {
       });
       expect(outcome).toEqual({ kind: "synced", projects: ["default_project"], created: [] });
 
-      // Read from that machine's own config, plaintext: the endpoint masks, the file does not.
       const config = await machine.deps.projectConfigService.loadConfig("default_project");
       const ours = config.models.find((m) => m.model_id === "deepseek-v4-flash");
       const theirs = config.models.find((m) => m.model_id === "claude-opus-5");
@@ -277,13 +262,10 @@ describe("syncModelsToMachine, against a running server", () => {
         created: ["field_work"],
       });
 
-      // Created for real: the DB row, the display name, and the built-in agents a Session
-      // over there will be started against — not just a directory with a config in it.
       const listed = await machine.deps.projectService.listProjects("admin");
       expect(listed.find((entry) => entry.projectId === "field_work")?.name).toBe("Field work");
       expect((await machine.deps.agentService.listAgents("field_work")).length).toBeGreaterThan(0);
 
-      // And the id resolves the model the way a Session started from here would ask it to.
       const config = await machine.deps.projectConfigService.loadConfig("field_work");
       expect(config.default_model).toEqual({ provider: "deepseek", model_id: "deepseek-v4-flash" });
       expect(config.models.find((m) => m.model_id === "deepseek-v4-flash")?.api_key).toBe(

@@ -1,39 +1,21 @@
 /**
  * Handing this server's Projects, and their Model config, to a machine they were given to.
  *
- * An Agent running over there calls the model endpoint from over there: that machine's own
- * process opens the connection, so that machine needs the credential. Nothing about running
- * the conversation remotely changes where the API key has to be. Without this, picking a
- * model here and starting the Session there fails on the far side with "Model is not in the
- * Project config" — the pair was never configured on the machine that had to use it.
+ * An Agent running over there calls the model endpoint from over there, so that machine
+ * needs the credential. Without this, picking a model here and starting the Session there
+ * fails with "Model is not in the Project config".
  *
- * WHAT TRAVELS, AND WHY THAT IS DIFFERENT FROM THE ADMIN PASSWORD. The admin password is
- * never sent to a machine, because it never has to be: the far-side scripts read that
- * machine's OWN password off its OWN disk. A model credential has no such local source — the
- * key exists here and the request happens there. So it goes, inside the ssh tunnel, to an
- * endpoint that writes it to `.project_config.toml` at mode 0600. Whoever can run this
- * already has ssh to that machine and can read that file; this spends that access rather
- * than widening it.
+ * The key travels inside the tunnel to the machine's own `PUT /models`, which writes it to
+ * `.project_config.toml` at mode 0600 — whoever can run this already has ssh to that machine
+ * and can read that file. An ordinary authenticated call rather than a far-side script: the
+ * endpoint validates, invalidates cached runtimes and tells open tabs.
  *
- * THROUGH THE TUNNEL, NOT OVER SSH. The machine's server is already a loopback origin here
- * and already has a session (machines/signin.ts), so this is an ordinary authenticated call
- * to its own API — which validates, invalidates its cached runtimes, and tells its open tabs.
- * A far-side script writing TOML would have to re-implement the config writer, and the CLI's
- * `config model add` would put the key in argv, where `ps` can read it.
- *
- * MERGED, NOT REPLACED. `PUT /models` is a whole-table replace, so a machine's own entries
- * have to be carried across it or they would be deleted along with their credentials. Two
- * halves of that, and both are quiet when wrong:
- *
- * - Every remote-only entry is **re-sent**, so it survives the replace.
- * - Re-sent WITHOUT `apiKey`, because omitting it is exactly what keeps the stored value. A
- *   GET reports keys masked, so sending back what we read would overwrite a real credential
- *   with `sk-1…abcd`.
- *
- * Ours win on a collision: the pair is the same model, and this side is the one the person
- * is configuring.
+ * MERGED, NOT REPLACED. `PUT /models` is a whole-table replace, so every remote-only entry is
+ * re-sent — WITHOUT `apiKey`, since omitting it keeps the stored value and a GET reports keys
+ * masked. Ours win on a collision.
  */
 import type { MachineApi } from "./machine-api.js";
+import { createHash } from "node:crypto";
 import type { ModelEntry, ModelRef } from "@prismshadow/penguin-core";
 import type {
   ModelInfo,
@@ -50,6 +32,11 @@ export interface LocalModels {
   visionModel?: ModelRef;
   /** Display name, so a Project created on the machine reads as the same Project it is. */
   name?: string;
+}
+
+/** What a machine is remembered as having received: a digest of the whole local table. */
+export function fingerprintLocal(local: LocalModels): string {
+  return createHash("sha256").update(JSON.stringify(local)).digest("hex").slice(0, 32);
 }
 
 /** What a sync did, in the words the connect log shows. */

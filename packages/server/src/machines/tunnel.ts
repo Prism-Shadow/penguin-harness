@@ -8,8 +8,9 @@
  * exactly the failures — a dropped link, a rebooted machine — the user needs to see.
  */
 import { spawn } from "node:child_process";
+import { DEFAULT_SERVER_PORT } from "@prismshadow/penguin-core";
 import net from "node:net";
-import { tunnelArgs } from "./commands.js";
+import { forwardArgs } from "./commands.js";
 import type { RemoteTarget } from "./commands.js";
 
 export interface Tunnel {
@@ -54,10 +55,12 @@ export function localPortBusy(port: number, timeoutMs = 500): Promise<boolean> {
  */
 export function openTunnel(opts: {
   target: RemoteTarget;
+  /** Local port. Also the remote one unless `remotePort` says otherwise (see forwardArgs). */
   port: number;
+  remotePort?: number;
   onExit: (code: number | null) => void;
 }): Tunnel & { exited: () => boolean } {
-  const child = spawn("ssh", tunnelArgs(opts.target, opts.port), {
+  const child = spawn("ssh", forwardArgs(opts.target, opts.port, opts.remotePort ?? opts.port), {
     stdio: ["ignore", "ignore", "pipe"],
   });
   let stderr = "";
@@ -116,4 +119,28 @@ export async function waitForTunneledHttp(
     if (Date.now() >= deadline) return { ok: false, detail: "no HTTP answer through the tunnel" };
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
+}
+
+/** How far past the well-known port the search goes before giving up. */
+const PORT_SEARCH_SPAN = 20;
+
+/**
+ * The port a machine's tunnel should try: its remembered port first, then the well-known
+ * port and the numbers after it, skipping whatever is busy locally. The remote side is not
+ * asked — its server start is the authoritative check, and a collision surfaces as that
+ * start's failure.
+ */
+export async function pickTunnelPort(opts: {
+  remembered: number | undefined;
+  busy: (port: number) => Promise<boolean>;
+}): Promise<number | null> {
+  const candidates: number[] = [];
+  if (opts.remembered !== undefined) candidates.push(opts.remembered);
+  for (let port = DEFAULT_SERVER_PORT; port < DEFAULT_SERVER_PORT + PORT_SEARCH_SPAN; port++) {
+    if (!candidates.includes(port)) candidates.push(port);
+  }
+  for (const port of candidates) {
+    if (!(await opts.busy(port))) return port;
+  }
+  return null;
 }

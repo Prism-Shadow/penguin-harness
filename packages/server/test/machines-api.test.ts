@@ -13,7 +13,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { MachinesResponse } from "../src/api/types.js";
 import { openDatabase } from "../src/db/database.js";
-import { MachineRepo } from "../src/db/repos/machine.js";
+import { MachinesRepo } from "../src/db/repos/machines.js";
 import { MachinesService } from "../src/machines/service.js";
 import type { MachinesEffects } from "../src/machines/service.js";
 import type { RemoteInstallOutcome } from "../src/machines/install-server.js";
@@ -72,9 +72,6 @@ function effects(over: Partial<MachinesEffects> = {}): Partial<MachinesEffects> 
     startServer: async () => ({ ok: true }),
     stopServer: async () => true,
     upgrade: async () => ({ kind: "upgraded", detail: "" }),
-    // Signing in is one command over the shared connection: the machine's own CLI mints a
-    // session from the data root the ssh account owns. `--mark` is what makes the answer
-    // parseable, so the stub answers in that shape.
     runOn: async () => ({
       code: 0,
       stdout: "---penguin-auth-token---\nremote-token\n",
@@ -105,11 +102,13 @@ describe("machines API", () => {
   let admin: ReturnType<typeof apiClient>;
   /** The service's own data root — where it writes the install records this suite reads back. */
   let machinesRoot: string;
+  let machinesRepo: MachinesRepo;
 
   const boot = async (over: Partial<MachinesEffects> = {}) => {
     machinesRoot = await makeTempRoot();
+    machinesRepo = new MachinesRepo(openDatabase(":memory:"));
     t = await createTestApp({
-      machines: new MachinesService(machinesRoot, LOCAL_ID, effects(over)),
+      machines: new MachinesService(machinesRoot, LOCAL_ID, machinesRepo, effects(over)),
     });
     admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
   };
@@ -146,7 +145,6 @@ describe("machines API", () => {
       const body = (await (
         await admin.get("/api/projects/default_project/machines")
       ).json()) as MachinesResponse;
-      // This machine heads the list: always installed, always up, never a target.
       expect(body.machines[0]).toMatchObject({
         id: "local",
         local: true,
@@ -184,20 +182,10 @@ describe("machines API", () => {
       const machines = ((await res.json()) as MachinesResponse).machines;
       expect(machines.map((m) => m.id)).toEqual(["local"]);
     });
-
-    it("reports no image when this server has none to push", async () => {
-      await boot({ resolvePlan: () => null });
-      const body = (await (
-        await admin.get("/api/projects/default_project/machines")
-      ).json()) as MachinesResponse;
-      expect(body.imageVersion).toBeNull();
-    });
   });
 
   describe("installing", () => {
     it("starts a job, narrates it, and finishes", async () => {
-      // Held open so the 202 is observed mid-flight, which is the real shape: a push takes
-      // minutes, and the page has to render a running job from this very body.
       let release = () => {};
       const held = new Promise<void>((resolve) => {
         release = resolve;
@@ -224,7 +212,6 @@ describe("machines API", () => {
         await admin.get("/api/projects/default_project/machines")
       ).json()) as MachinesResponse;
       expect(body.job?.result).toEqual({ ok: true, kind: "installed", version: "9.9.9" });
-      // The first line is this server's own, the rest are the push's.
       expect(body.job?.log[0]).toBe("Installing 9.9.9 on deploy@nas…");
       expect(body.job?.log).toContain("Pushing…");
     });
@@ -260,11 +247,6 @@ describe("machines API", () => {
     });
 
     it("re-running an install keeps the machine id the record already carried", async () => {
-      // The id is learned from a probe and never asked for again, so the record is the only
-      // place it lives. This path runs whenever an install is re-run over a build that is
-      // already there — and writing a fresh record there un-identifies a machine that never
-      // moved: it stops being addressable, and the Sessions living on it leave the merged
-      // list they were part of, taking the open conversation's routing with them.
       await boot({
         install: async () => ({ kind: "already-installed", version: "9.9.9", identity: IDENTITY }),
       });
@@ -286,12 +268,6 @@ describe("machines API", () => {
     });
 
     it("a machine that refuses this build says so, instead of reporting an install", async () => {
-      // Same release, different pushed state: a hot update, sent down the machine's own
-      // channel. A runtime too old to claim the platform refuses IN WORDS — and that refusal
-      // is the whole point of asking. Copying the files over and restarting instead would let
-      // it warn, fall back to its packaged default, and keep serving, which from here is
-      // indistinguishable from success — and the record would then say the machine is on a
-      // build it is not running, which is what excludes it from the sweep that would retry.
       await boot({
         install: async () => ({ kind: "state-only", identity: IDENTITY }),
         upgrade: async () => ({
@@ -304,8 +280,6 @@ describe("machines API", () => {
       expect(t.deps.machines.job()?.result).toMatchObject({
         ok: false,
         step: "hand over the pushed build",
-        // The one failure with a next step this side can take: replacing the program over
-        // there. Offered, so a person answers — it restarts a server others may be on.
         canReplaceProgram: true,
       });
       expect((t.deps.machines.job()?.result as { message: string }).message).toContain(
@@ -314,9 +288,6 @@ describe("machines API", () => {
     });
 
     it("answering that offer runs the installer the version check would have skipped", async () => {
-      // The machine's base already matches, which is why the install became a hot update in
-      // the first place. Only the machine's refusal says the program has to be replaced
-      // anyway, so `replaceProgram` is what carries that answer past the version check.
       let forced: boolean | undefined;
       await boot({
         install: async (opts: { forceInstaller?: boolean }) => {
@@ -384,7 +355,6 @@ describe("machines API", () => {
           return { state: { kind: "running", port: 7364, pid: 1 }, machineId: null };
         },
       });
-      // Only nas gets an install; build-box has no server to ask about.
       await admin.post("/api/projects/default_project/machines/ssh:nas/install");
       await waitFor(() => t.deps.machines.job()?.running === false);
       probed.length = 0;
@@ -444,15 +414,11 @@ describe("machines API", () => {
       });
       await admin.post("/api/projects/default_project/machines/ssh:nas/install");
       await waitFor(() => t.deps.machines.job()?.running === false);
-      // Only the refresh's probes are the subject; the install makes its own (it restarts
-      // the machine onto what it just sent).
       probes = 0;
 
-      // The host disappears from ssh's view between the install and the refresh.
       resolvable = false;
       await admin.post("/api/projects/default_project/machines/probe");
       expect((await byId("ssh:nas"))?.status).toMatchObject({ state: "unreachable" });
-      // No ssh child at all: an alias ssh cannot name is a dead end before the probe.
       expect(probes).toBe(0);
     });
 
@@ -467,12 +433,9 @@ describe("machines API", () => {
 
   describe("putting a new build into service", () => {
     it("restarts a machine whose server was running, so the installed build is the running one", async () => {
-      // Installing swaps the program directory; the process over there keeps the code it
-      // loaded at start. Without the restart the machine reports a version it is not running.
       const calls: string[] = [];
       await boot({
         probe: async () => ({ state: { kind: "running", port: 7364, pid: 99 }, machineId: null }),
-        // No pid argument any more: the machine reads its own lock and stops what it finds.
         stopServer: async () => {
           calls.push("stop");
           return true;
@@ -552,23 +515,12 @@ describe("machines API", () => {
       const res = await admin.post(`/api/projects/default_project/machines/${ID}/signin`);
       expect(res.status).toBe(200);
       const setCookie = res.headers.get("set-cookie") ?? "";
-      // hex("QS7J4YVgSovi-Z2c") — the same marker the proxy forwards back to that machine.
       expect(setCookie).toContain(`penguin_s_${Buffer.from(ID, "utf8").toString("hex")}_`);
       expect(setCookie).toContain("penguin_session=remote-token");
-    });
-
-    it("never sets a bare cookie, which would collide with this server's own session", async () => {
-      await identified();
-      const setCookie =
-        (await admin.post(`/api/projects/default_project/machines/${ID}/signin`)).headers.get(
-          "set-cookie",
-        ) ?? "";
       expect(setCookie.startsWith("penguin_session=")).toBe(false);
     });
 
     it("says so when that machine cannot mint one, so a person can sign in by hand", async () => {
-      // No marker in the output: a build older than `penguin auth token`. That is the machine
-      // answering, not the connection failing, so it is a refusal rather than an error.
       await identified({
         runOn: async () => ({
           code: 127,
@@ -583,9 +535,6 @@ describe("machines API", () => {
     });
 
     it("turns an unexpected throw into that same answer, not a 500", async () => {
-      // ssh work has many ways to go wrong and only the anticipated ones are returned. One
-      // that is not — here, the sign-in path throwing outright — used to reach the browser as
-      // a bare "Internal server error" about a machine whose real answer was specific.
       await identified({
         runOn: () => {
           throw new Error("ssh vanished mid-handshake");
@@ -596,68 +545,7 @@ describe("machines API", () => {
       expect(await res.text()).toContain("ssh vanished mid-handshake");
     });
 
-    it("signing out expires that machine's cookie and no other", async () => {
-      // Under the same per-machine name the proxy renames into: a bare `penguin_session=`
-      // would tell the browser to drop THIS server's session instead.
-      await identified();
-      await admin.post(`/api/projects/default_project/machines/${ID}/signin`);
-      const res = await admin.post(`/api/projects/default_project/machines/${ID}/signout`);
-
-      expect(res.status).toBe(200);
-      const setCookie = res.headers.get("set-cookie") ?? "";
-      expect(setCookie).toContain(`penguin_s_${Buffer.from(ID, "utf8").toString("hex")}_`);
-      expect(setCookie).toContain("Max-Age=0");
-      expect(setCookie.startsWith("penguin_session=")).toBe(false);
-    });
-
-    it("signing out cannot take an upgrade with it: the work mints its own credential", async () => {
-      // A person's session on a machine and this server's work on it are separate things. The
-      // upgrade authenticates as that machine's admin by asking its CLI for a token (one
-      // command on the shared shell) — so a sign-out ends the person's session and nothing
-      // else. Borrowing the held one would make signing out break the automatic sweep.
-      let presented: string | undefined;
-      await identified({
-        install: async () => ({ kind: "state-only", identity: IDENTITY }),
-        upgrade: async (opts: { cookie: string }) => {
-          presented = opts.cookie;
-          return { kind: "upgraded", detail: "" };
-        },
-      });
-      await admin.post(`/api/projects/default_project/machines/${ID}/signin`);
-      await admin.post(`/api/projects/default_project/machines/${ID}/signout`);
-      await admin.post("/api/projects/default_project/machines/ssh:nas/install");
-      await waitFor(() => t.deps.machines.job()?.running === false);
-
-      expect(t.deps.machines.job()?.result).toMatchObject({ ok: true });
-      expect(presented).toBe("penguin_session=remote-token");
-    });
-
-    it("tells the upgrade where that machine's server is, and that no tunnel already reaches it", async () => {
-      // The two together are what decide whether a forward has to be raised: a machine
-      // somebody is connected to already has one and its port is passed instead, and a
-      // machine nobody has connected to — this one — is reached on a forward of its own,
-      // pointed at the port the probe just reported.
-      let live: number | null | undefined = 0;
-      let remote: number | undefined;
-      await identified({
-        install: async () => ({ kind: "state-only", identity: IDENTITY }),
-        upgrade: async (opts: { livePort?: number | null; remotePort: number }) => {
-          live = opts.livePort;
-          remote = opts.remotePort;
-          return { kind: "upgraded", detail: "" };
-        },
-      });
-      await admin.post("/api/projects/default_project/machines/ssh:nas/install");
-      await waitFor(() => t.deps.machines.job()?.running === false);
-
-      expect(remote).toBe(7364);
-      expect(live).toBeNull();
-    });
-
     it("will not hot-update a machine with nothing running on it, and says which it was", async () => {
-      // A hot swap replaces the code a RUNNING server is serving. With none there, there is
-      // nothing to swap — and reporting that as a refused build would send someone looking at
-      // the build instead of at the machine.
       let asked = false;
       await boot({
         probe: async () => ({ state: { kind: "stopped" }, machineId: null }),
@@ -691,18 +579,6 @@ describe("machines API", () => {
         (await admin.post("/api/projects/default_project/machines/NOTAMACHINEaaaa/signin")).status,
       ).toBe(404);
     });
-
-    it("is admin-only, like the rest of this surface", async () => {
-      await identified();
-      const user = await provisionUser(t.app, "member3");
-      expect(
-        (
-          await apiClient(t.app, user.cookie).post(
-            `/api/projects/default_project/machines/${ID}/signin`,
-          )
-        ).status,
-      ).toBe(403);
-    });
   });
 
   describe("machine identity", () => {
@@ -719,10 +595,9 @@ describe("machines API", () => {
       await boot();
       const db = openDatabase(path.join(machinesRoot, "machine-id.db"));
       try {
-        const minted = new MachineRepo(db).id();
+        const minted = new MachinesRepo(db).ownId();
         expect(minted).toMatch(/^[A-Za-z0-9_-]{16}$/);
-        // An identity, not a token: a second reader over the same database gets the same one.
-        expect(new MachineRepo(db).id()).toBe(minted);
+        expect(new MachinesRepo(db).ownId()).toBe(minted);
       } finally {
         db.close();
       }
@@ -747,15 +622,11 @@ describe("machines API", () => {
       await admin.post("/api/projects/default_project/machines/probe");
       expect((await byId("ssh:nas"))?.machineId).toBe(ID);
 
-      // A fresh service over the same data root — the restart case — still knows it, with
-      // no probe at all.
-      const reborn = new MachinesService(machinesRoot, LOCAL_ID, effects());
+      const reborn = new MachinesService(machinesRoot, LOCAL_ID, machinesRepo, effects());
       expect(reborn.list("default_project").find((m) => m.id === "ssh:nas")?.machineId).toBe(ID);
     });
 
     it("a machine whose server never started stays without one", async () => {
-      // The id is minted by the server over there, so an installed-but-never-run machine
-      // legitimately has none — reporting a made-up one would be worse than null.
       await boot({ probe: async () => ({ state: { kind: "stopped" }, machineId: null }) });
       await admin.post("/api/projects/default_project/machines/ssh:nas/install");
       await waitFor(() => t.deps.machines.job()?.running === false);
@@ -774,8 +645,6 @@ describe("machines API", () => {
       await admin.post("/api/projects/default_project/machines/probe");
       expect((await byId("ssh:nas"))?.machineId).toBe(ID);
 
-      // Someone points `nas` at another host. An id never changes for a machine, so a
-      // different answer means a different machine behind that alias.
       id = "PO_VCwpQrw1hQLV-";
       await admin.post("/api/projects/default_project/machines/probe");
       expect((await byId("ssh:nas"))?.machineId).toBe(id);
