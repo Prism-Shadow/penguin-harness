@@ -29,6 +29,7 @@ import { fileURLToPath } from "node:url";
 import { unsafePlaintextTarget } from "./deploy-target-safety.mjs";
 import { buildGitDefine, checkoutFacts, originUrl } from "./build-git-stamp.mjs";
 import { ESM_CJS_BANNER } from "./esm-cjs-banner.mjs";
+import { FAR_SIDE_SCRIPTS } from "./far-side-scripts.mjs";
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -219,21 +220,12 @@ async function readNativeAssets() {
       exec.push(target);
     }
   }
-  // The ordinary installers: the machines push scp's one to the far side and runs it there
-  // against the payload, so they have to exist as files on the pushing side too.
-  for (const name of ["install.sh", "install.ps1"]) {
-    files[name] = (await fsp.readFile(path.join(ROOT, name))).toString("base64");
-  }
-  // ...and the two scripts that RUN on the far side: the hot-update applier and the sign-in.
-  // Both are resolved beside the module that spawns them, which for a pushed bundle means the
-  // assets directory — so a push that omits them leaves a server that cannot upgrade a machine
-  // or sign in to one, failing with an ENOENT naming a path inside its own store. The packaged
-  // build copies the same four into dist/ (packages/server/tsup.config.ts); these two lists are
-  // the same invariant, produced twice, and shipping half of it is the bug this line closes.
-  for (const name of ["remote-upgrade.cjs", "remote-signin.cjs"]) {
-    files[name] = (
-      await fsp.readFile(path.join(ROOT, "packages", "server", "src", "machines", name))
-    ).toString("base64");
+  // The scripts that run on the FAR side — the release installers a remote install feeds over,
+  // and the appliers a hot upgrade and a sign-in execute there. A pushed bundle resolves them
+  // from its own assets directory, so a push that omits one leaves a server that cannot do
+  // that operation at all. Same set the packaged build copies into dist/; see the module.
+  for (const { name, from } of FAR_SIDE_SCRIPTS) {
+    files[name] = (await fsp.readFile(path.join(ROOT, from))).toString("base64");
   }
   return { files, exec };
 }
