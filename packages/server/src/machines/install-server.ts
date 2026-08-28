@@ -26,7 +26,7 @@ import { runInstallScriptCommand, scpArgs, sshArgs, unpackStoreCommand } from ".
 import type { RemoteTarget } from "./commands.js";
 import { parseProbeOutput, POSIX_PROBE, WINDOWS_PROBE } from "./detect.js";
 import type { RemoteIdentity, RemotePlatform } from "./detect.js";
-import { looksLikeAuthFailure, run, runPiped, runWithInput } from "./exec.js";
+import { execFailureText, looksLikeAuthFailure, run, runPiped, runWithInput } from "./exec.js";
 
 /** Which installer runs the far side; also the asset keys deploy.mjs pushes. */
 const installerFileFor = (platform: RemotePlatform): string =>
@@ -173,6 +173,14 @@ export async function detectRemote(
 
 export type RemoteInstallOutcome =
   | { kind: "already-installed"; version: string; identity: RemoteIdentity }
+  /**
+   * The base release over there already matches; only the pushed state differs. Nothing to
+   * INSTALL — this is a hot update, and the machine has a channel for it that answers
+   * (machines/upgrade.ts). The caller routes it there rather than this path copying the
+   * store over and restarting the process, which replaces a running server without ever
+   * asking whether it can run what it was handed.
+   */
+  | { kind: "state-only"; identity: RemoteIdentity }
   | { kind: "installed"; output: string; identity: RemoteIdentity }
   | { kind: "failed"; step: string; detail: string };
 
@@ -189,6 +197,14 @@ export async function installOnRemote(opts: {
   identity?: RemoteIdentity;
   /** The hmr capability's assetsDir accessor: where a pushed bundle's assets were unpacked. */
   assets?: () => string | null;
+  /**
+   * Run the installer even when the base release over there already matches. For the one
+   * case the short-circuits get wrong: a machine whose PROGRAM is the right version and
+   * whose running process cannot claim what is being pushed at it. Nothing about the
+   * versions says so — only the machine's own refusal does — so this is asked for, never
+   * inferred.
+   */
+  forceInstaller?: boolean;
 }): Promise<RemoteInstallOutcome> {
   const { target, plan } = opts;
   const say = opts.onProgress ?? (() => {});
@@ -202,9 +218,19 @@ export async function installOnRemote(opts: {
     say(`${identity.platform}-${identity.arch}.`);
   }
 
-  const baseCurrent = identity.installedVersion === plan.baseVersion;
+  const baseCurrent =
+    identity.installedVersion === plan.baseVersion && opts.forceInstaller !== true;
   if (baseCurrent && identity.harness === plan.harness) {
     return { kind: "already-installed", version: plan.version, identity };
+  }
+  if (baseCurrent) {
+    // Same release, different pushed state: a hot update, not an install. Handing it over
+    // as files and restarting the process would swap the code under a server that may not
+    // be able to claim it — a runtime older than the pushed platform warns, falls back to
+    // its packaged default, and carries on serving, so the restart looks like a success
+    // from here and the machine is recorded at a version it is not running. The update
+    // channel asks the machine itself and comes back with its answer, refusals included.
+    return { kind: "state-only", identity };
   }
 
   // Release tags are v-prefixed semver; a base that does not spell one cannot be pinned —
@@ -295,7 +321,34 @@ export async function installOnRemote(opts: {
       output.push(`Pushed version replicated (${plan.version}).`);
     }
 
-    return { kind: "installed", output: output.join("\n").trim(), identity };
+    // ASK THE MACHINE what it now has, rather than reporting what we meant to put there.
+    // Every step above answers for itself — the installer exited 0, the store unpacked — and
+    // none of them answers the only question that matters, which is whether the thing on
+    // disk over there is now this version. An install that ran cleanly and changed nothing
+    // (wrong home, a package manager that declined, a path the installer did not own) would
+    // otherwise be recorded as a success at OUR version, and that record is what
+    // syncOutOfDate filters on: the machine is then excluded from the very sweep that would
+    // have tried again. A false success here does not just mislead, it seals itself in.
+    say("Checking what it ended up with…");
+    const after = await detectRemote(target);
+    if ("error" in after) {
+      return {
+        kind: "failed",
+        step: "verify the install",
+        detail: `the install ran, but the machine could not be asked what it now has: ${after.error}`,
+      };
+    }
+    if (after.identity.installedVersion !== plan.baseVersion) {
+      return {
+        kind: "failed",
+        step: "verify the install",
+        detail:
+          `the install reported success, but the machine still has ` +
+          `${after.identity.installedVersion ?? "no install"} where ${plan.baseVersion} was expected.`,
+      };
+    }
+
+    return { kind: "installed", output: output.join("\n").trim(), identity: after.identity };
   } finally {
     // Nothing to clean on a POSIX remote: the installer was never a file there. A Windows
     // one deletes its own copy as part of the install command; this is the local original.
