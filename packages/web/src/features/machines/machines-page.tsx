@@ -27,8 +27,9 @@
  * looking installed the moment anything else was installed or the server restarted.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { MachinesResponse } from "@prismshadow/penguin-server/api";
+import type { MachineInfo, MachinesResponse } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
+import { useProject } from "../../state/project";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
@@ -37,18 +38,43 @@ import { toneInk, toneStrip } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
 import { ICON_SIZE } from "../../lib/icon-scale";
 import { Button } from "../../components/ui/button";
+import { Modal } from "../../components/ui/modal";
+import { Input } from "../../components/ui/input";
+import { PasswordInput } from "../../components/ui/password-input";
 import { Dropdown } from "../../components/ui/dropdown";
 import { EmptyState } from "../../components/ui/empty-state";
 import { InfoPopover } from "../../components/ui/info-popover";
 import { Skeleton } from "../../components/ui/skeleton";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { ChevronDown, NAV_ICONS } from "../../components/ui/icons";
-import { installButtonState, installedMachines, verdictOf } from "./machines-view";
-import type { MachineVerdict } from "./machines-view";
+import {
+  canSignIn,
+  connectAction,
+  installButtonState,
+  installedMachines,
+  localMachine,
+  outOfDate,
+  statusTone,
+  verdictOf,
+} from "./machines-view";
+import type { MachineSignIn, MachineVerdict } from "./machines-view";
 import { MAX_VISIBLE_MACHINES, highlightSegments, matchMachines } from "./machines-match";
+import { probeDelayMs, probeFingerprint } from "./probe-schedule";
 
 /** How often a running job is re-read. Slow enough to be free, fast enough that a step reads as progress. */
 const POLL_MS = 1500;
+
+/** One machine's server state as a line of text, or null when it has not been probed yet. */
+function statusText(machine: MachineInfo): string | null {
+  const status = machine.status;
+  if (status === null) return null;
+  if (status.state === "running") {
+    return status.port === undefined
+      ? S.machines.statusRunning
+      : S.machines.statusRunningOn(status.port);
+  }
+  return status.state === "stopped" ? S.machines.statusStopped : S.machines.statusUnreachable;
+}
 
 /** A finished job's one-line verdict, and the tone that carries it. */
 function verdictLine(verdict: MachineVerdict): { text: string; tone: Tone } {
@@ -67,6 +93,11 @@ function verdictLine(verdict: MachineVerdict): { text: string; tone: Tone } {
 
 export function MachinesPage() {
   useDocumentTitle(S.machines.pageTitle);
+  // Machines belong to the Project, like every other row in this nav group: switching
+  // Projects switches which machines are listed, and installing here gives the machine to
+  // THIS Project — the same one whose Model credentials it will be handed.
+  const { currentProject } = useProject();
+  const projectId = currentProject?.projectId ?? null;
   const [state, setState] = useState<MachinesResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** True while a POST has not come back yet — the server has no job to report in that window. */
@@ -82,13 +113,14 @@ export function MachinesPage() {
   };
 
   const load = useCallback(async () => {
+    if (projectId === null) return; // No Project chosen yet: there is nothing to list machines for.
     try {
-      setState(await api.getMachines());
+      setState(await api.getMachines(projectId));
       setError(null);
     } catch (err) {
       setError(apiErrorText(err));
     }
-  }, []);
+  }, [projectId]);
 
   useEffect(() => {
     void load();
@@ -96,7 +128,7 @@ export function MachinesPage() {
 
   // Poll only while a job runs. Chained timeouts rather than an interval: a slow response
   // must not stack requests behind itself.
-  const running = state?.job?.running === true;
+  const running = state?.job?.running === true || state?.connect?.running === true;
   const loadRef = useRef(load);
   loadRef.current = load;
   useEffect(() => {
@@ -119,16 +151,183 @@ export function MachinesPage() {
 
   const machines = useMemo(() => state?.machines ?? [], [state]);
   const installed = useMemo(() => (state === null ? [] : installedMachines(state)), [state]);
-  const matched = useMemo(() => matchMachines(machines, query), [machines, query]);
+  const local = useMemo(() => (state === null ? null : localMachine(state)), [state]);
+  /** The machine whose connect POST is in flight — the server has no job to report yet. */
+  const [connecting, setConnecting] = useState<string | null>(null);
+  /**
+   * Which machines this browser holds a session on. A machine is a separate server with its
+   * own accounts, so the local session says nothing about it — the only way to know is to
+   * ask. Being signed out is not a prompt: for a machine this server installed, the sign-in
+   * settles itself over ssh, and only a machine that refuses that asks a person.
+   */
+  const [signedIn, setSignedIn] = useState<Record<string, MachineSignIn>>({});
+  const [signInTo, setSignInTo] = useState<MachineInfo | null>(null);
+  const [signInUser, setSignInUser] = useState("admin");
+  const [signInPassword, setSignInPassword] = useState("");
+  const [signInError, setSignInError] = useState<string | null>(null);
+  const [signingIn, setSigningIn] = useState(false);
+  /** Aliases the picker offers: everything except this machine, which is not a target. */
+  const pickable = useMemo(() => machines.filter((machine) => !machine.local), [machines]);
+  const matched = useMemo(() => matchMachines(pickable, query), [pickable, query]);
   const visible = matched.slice(0, MAX_VISIBLE_MACHINES);
   const hiddenCount = matched.length - visible.length;
   const selected = machines.find((machine) => machine.id === selectedId) ?? null;
 
-  const install = async () => {
-    if (selectedId === null) return;
+  /**
+   * Re-probe the installed servers on a widening schedule (probe-schedule.ts). Separate from
+   * the job poll above: that one follows an install and stops when it settles, this one
+   * watches machines nobody is touching and has to stay cheap for hours.
+   */
+  const [probing, setProbing] = useState(false);
+  const settledRounds = useRef(0);
+  const lastPrint = useRef<string | null>(null);
+  const probe = useCallback(async () => {
+    if (projectId === null) return;
+    setProbing(true);
+    try {
+      const next = await api.probeMachines(projectId);
+      const print = probeFingerprint(next.machines);
+      // A round that changed nothing widens the interval; anything moving resets it.
+      settledRounds.current = print === lastPrint.current ? settledRounds.current + 1 : 0;
+      lastPrint.current = print;
+      setState(next);
+      setError(null);
+    } catch (err) {
+      setError(apiErrorText(err));
+    } finally {
+      setProbing(false);
+    }
+  }, []);
+
+  const probeRef = useRef(probe);
+  probeRef.current = probe;
+  /** Nothing installed anywhere: there is no server to ask about, so no timer runs at all. */
+  const hasInstalled = installed.length > 0;
+  useEffect(() => {
+    if (!hasInstalled) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const arm = (delay: number) => {
+      timer = setTimeout(() => {
+        void probeRef.current().finally(() => {
+          if (!cancelled) arm(probeDelayMs(settledRounds.current));
+        });
+      }, delay);
+    };
+    // The first probe is immediate: opening the page is itself a reason to look.
+    arm(0);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [hasInstalled]);
+
+  const connect = async (machineId: string) => {
+    if (projectId === null) return;
+    setConnecting(machineId);
+    try {
+      setState(await api.connectMachine(projectId, machineId));
+      setError(null);
+    } catch (err) {
+      setError(apiErrorText(err));
+    } finally {
+      setConnecting(null);
+    }
+  };
+
+  const disconnect = async (machineId: string) => {
+    if (projectId === null) return;
+    try {
+      setState(await api.disconnectMachine(projectId, machineId));
+      setError(null);
+    } catch (err) {
+      setError(apiErrorText(err));
+    }
+  };
+
+  // Ask each connected machine whether we are signed in there. Cheap (one /api/me each),
+  // and only for machines that can answer at all.
+  const connectedIds = machines
+    .filter((machine) => canSignIn(machine))
+    .map((machine) => machine.machineId!)
+    .join(",");
+  useEffect(() => {
+    if (connectedIds === "" || projectId === null) return;
+    let cancelled = false;
+    for (const machineId of connectedIds.split(",")) {
+      void (async () => {
+        try {
+          await api.meOnMachine(machineId);
+          if (!cancelled) setSignedIn((prev) => ({ ...prev, [machineId]: "signed-in" }));
+          return;
+        } catch {
+          // Not signed in there yet — which for a machine this server installed is
+          // something it can settle itself, without anyone typing that machine's password.
+        }
+        try {
+          await api.autoSignInOnMachine(projectId, machineId);
+          if (!cancelled) setSignedIn((prev) => ({ ...prev, [machineId]: "signed-in" }));
+        } catch {
+          // Its admin password was changed, or it could not be reached: the manual sign-in
+          // is the fallback, and the row offers it.
+          if (!cancelled) setSignedIn((prev) => ({ ...prev, [machineId]: "signed-out" }));
+        }
+      })();
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [connectedIds, projectId]);
+
+  /**
+   * Ends the session on a machine. The row goes back to offering Sign in — deliberately not
+   * re-probed: the auto sign-in effect would take a machine it CAN sign in to straight back
+   * to signed-in, and a control that undoes itself is not one.
+   */
+  const signOut = async (machineId: string) => {
+    if (projectId === null) return;
+    try {
+      await api.signOutOnMachine(projectId, machineId);
+      setSignedIn((prev) => ({ ...prev, [machineId]: "signed-out" }));
+      setError(null);
+    } catch (err) {
+      setError(apiErrorText(err));
+    }
+  };
+
+  const submitSignIn = async () => {
+    if (signInTo?.machineId == null) return;
+    const machineId = signInTo.machineId;
+    setSigningIn(true);
+    setSignInError(null);
+    try {
+      await api.loginOnMachine(machineId, { userId: signInUser, password: signInPassword });
+      setSignedIn((prev) => ({ ...prev, [machineId]: "signed-in" }));
+      setSignInTo(null);
+      setSignInPassword("");
+    } catch (err) {
+      setSignInError(apiErrorText(err));
+    } finally {
+      setSigningIn(false);
+    }
+  };
+
+  /**
+   * Starts an install, or adopts when this server already installed there for another
+   * Project — one button, because from where the person stands both answer "make this
+   * machine usable here" and only one of them costs a transfer.
+   */
+  const install = async (machineId = selectedId, replaceProgram = false) => {
+    if (machineId === null || projectId === null) return;
     setStarting(true);
     try {
-      setState(await api.installOnMachine(selectedId));
+      setState(
+        // The adopt shortcut is about the SELECTED row; answering a job's request to replace
+        // a program names its machine and is always a real install.
+        button.action === "adopt" && !replaceProgram
+          ? await api.adoptMachine(projectId, machineId)
+          : await api.installOnMachine(projectId, machineId, replaceProgram),
+      );
       setError(null);
     } catch (err) {
       setError(apiErrorText(err));
@@ -276,11 +475,21 @@ export function MachinesPage() {
                 >
                   {button.action === "installing"
                     ? S.machines.installing
-                    : button.action === "reinstall"
-                      ? S.machines.reinstall
-                      : S.machines.install}
+                    : button.action === "adopt"
+                      ? S.machines.adopt
+                      : button.action === "update"
+                        ? S.machines.update
+                        : button.action === "reinstall"
+                          ? S.machines.reinstall
+                          : S.machines.install}
                 </Button>
               </div>
+            )}
+
+            {selected?.elsewhere != null && (
+              <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                {S.machines.installedElsewhere(selected.elsewhere.version)}
+              </p>
             )}
 
             {selected?.installed != null && (
@@ -292,41 +501,138 @@ export function MachinesPage() {
               </p>
             )}
 
+            {/* This machine, first and on its own: it is where the page is being served
+                from, always up by definition, and never something to install onto. */}
+            {local !== null && (
+              <section className="mt-6">
+                <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400">
+                  {S.machines.localTitle}
+                </h2>
+                <div className="mt-2 flex items-center gap-3 rounded-md border border-gray-200 bg-white px-3 py-2.5 dark:border-gray-800 dark:bg-gray-900">
+                  <span className="shrink-0 text-gray-500 dark:text-gray-400">
+                    <GlyphIcon d={NAV_ICONS.machines} size={ICON_SIZE.rowLead} />
+                  </span>
+                  <span
+                    className="min-w-0 flex-1 truncate text-sm font-medium"
+                    title={local.machineId ?? undefined}
+                  >
+                    {local.alias}
+                  </span>
+                  {local.installed !== null && (
+                    <span className={`shrink-0 text-xs ${toneInk.success}`}>
+                      {local.installed.version}
+                    </span>
+                  )}
+                  <span className={`shrink-0 text-xs ${toneInk[statusTone(local.status?.state)]}`}>
+                    {statusText(local) ?? S.machines.statusRunning}
+                  </span>
+                </div>
+              </section>
+            )}
+
             {/* What this server has already installed, standing on the page rather than
                 only inside the picker: it is the answer to "what did I do", which a panel
                 that has to be opened one row at a time cannot give. */}
             {installed.length > 0 && (
               <section className="mt-6">
-                <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400">
-                  {S.machines.installedTitle(installed.length)}
-                </h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="min-w-0 flex-1 text-sm font-semibold text-gray-500 dark:text-gray-400">
+                    {S.machines.installedTitle(installed.length)}
+                  </h2>
+                  {/* The schedule widens on its own (probe-schedule.ts); this is for when
+                      you already know something changed and do not want to wait for it. */}
+                  <Button size="sm" variant="ghost" disabled={probing} onClick={() => void probe()}>
+                    {probing ? S.machines.checking : S.machines.refresh}
+                  </Button>
+                </div>
                 <div className="mt-2 divide-y divide-gray-200 overflow-hidden rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
-                  {installed.map((machine) => (
-                    <button
-                      key={machine.id}
-                      type="button"
-                      onClick={() => setSelectedId(machine.id)}
-                      aria-current={machine.id === selectedId ? "true" : undefined}
-                      className={`flex w-full min-w-0 items-center gap-3 px-3 py-2.5 text-left transition-colors duration-150 ${
-                        machine.id === selectedId
-                          ? "bg-gray-100 dark:bg-gray-800"
-                          : "bg-white hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800/70"
-                      }`}
-                    >
-                      <span className="shrink-0 text-gray-500 dark:text-gray-400">
-                        <GlyphIcon d={NAV_ICONS.machines} size={ICON_SIZE.rowLead} />
-                      </span>
-                      <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                        {machine.alias}
-                      </span>
-                      <span className={`shrink-0 text-xs ${toneInk.success}`}>
-                        {machine.installed!.version}
-                      </span>
-                      <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
-                        {formatDateTime(machine.installed!.at)}
-                      </span>
-                    </button>
-                  ))}
+                  {installed.map((machine) => {
+                    const action = connectAction(machine, state.connect, connecting);
+                    return (
+                      <div
+                        key={machine.id}
+                        className={`flex min-w-0 items-center gap-3 px-3 py-2.5 ${
+                          machine.id === selectedId
+                            ? "bg-gray-100 dark:bg-gray-800"
+                            : "bg-white dark:bg-gray-900"
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setSelectedId(machine.id)}
+                          aria-current={machine.id === selectedId ? "true" : undefined}
+                          className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                        >
+                          <span className="shrink-0 text-gray-500 dark:text-gray-400">
+                            <GlyphIcon d={NAV_ICONS.machines} size={ICON_SIZE.rowLead} />
+                          </span>
+                          {/* The alias is the label — it is what someone chose and recognises.
+                          The machine's own id is the identity, kept to the tooltip. */}
+                          <span
+                            className="min-w-0 flex-1 truncate text-sm font-medium"
+                            title={machine.machineId ?? undefined}
+                          >
+                            {machine.alias}
+                          </span>
+                          <span className={`shrink-0 text-xs ${toneInk.success}`}>
+                            {machine.installed!.version}
+                          </span>
+                          {/* The server over there, as of the last probe. Never colour alone:
+                          the state is named in words, and unprobed says so too. */}
+                          <span
+                            className={`shrink-0 text-xs ${statusText(machine) === null ? "text-gray-400 dark:text-gray-500" : toneInk[statusTone(machine.status?.state)]}`}
+                            title={machine.status?.detail}
+                          >
+                            {statusText(machine) ?? S.machines.statusUnknown}
+                          </span>
+                        </button>
+                        {/* Connected means its filesystem and API are reachable from here —
+                          through the workspace picker, and anything else that names a
+                          machine. There is nothing to "enter": the window never moves. */}
+                        {action === "connected" ? (
+                          <>
+                            <span className={`shrink-0 text-xs ${toneInk.success}`}>
+                              {S.machines.reachable}
+                            </span>
+                            {/* A machine is a separate server with its own accounts, so
+                                being connected is not being signed in. Shown per machine,
+                                because there is nothing here that could vouch for you
+                                there. */}
+                            {machine.machineId !== null &&
+                              (signedIn[machine.machineId] === "signed-in" ? (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => void signOut(machine.machineId!)}
+                                >
+                                  {S.machines.signOut}
+                                </Button>
+                              ) : (
+                                <Button size="sm" onClick={() => setSignInTo(machine)}>
+                                  {S.machines.signIn}
+                                </Button>
+                              ))}
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => void disconnect(machine.id)}
+                            >
+                              {S.machines.disconnect}
+                            </Button>
+                          </>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            disabled={action !== "connect" || state.connect?.running === true}
+                            onClick={() => void connect(machine.id)}
+                          >
+                            {action === "connecting" ? S.machines.connecting : S.machines.connect}
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </section>
             )}
@@ -362,6 +668,23 @@ export function MachinesPage() {
                         {verdict.message}
                       </pre>
                     )}
+                    {/* The one failure with a next step this side can take. Offered rather
+                        than taken: it restarts a server other people may be on. */}
+                    {verdict?.kind === "failed" && verdict.canReplaceProgram === true && (
+                      <div className="mt-3">
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          {S.machines.replaceProgramWhy}
+                        </p>
+                        <Button
+                          size="sm"
+                          className="mt-2"
+                          disabled={running}
+                          onClick={() => void install(job.machineId, true)}
+                        >
+                          {S.machines.replaceProgram}
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 )}
               </section>
@@ -369,6 +692,41 @@ export function MachinesPage() {
           </>
         )}
       </div>
+
+      {/* Signing in to another server. Its own accounts, its own password — this server has
+          no way to vouch for anyone there, which is exactly why it asks. */}
+      <Modal
+        open={signInTo !== null}
+        title={S.machines.signInTo(signInTo?.alias ?? "")}
+        onClose={() => setSignInTo(null)}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setSignInTo(null)}>
+              {S.common.cancel}
+            </Button>
+            <Button variant="primary" disabled={signingIn} onClick={() => void submitSignIn()}>
+              {signingIn ? S.machines.signingIn : S.machines.signIn}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <Input
+            label={S.common.username}
+            value={signInUser}
+            onChange={(e) => setSignInUser(e.target.value)}
+          />
+          <PasswordInput
+            label={S.auth.password}
+            value={signInPassword}
+            onChange={(e) => setSignInPassword(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void submitSignIn();
+            }}
+          />
+          {signInError !== null && <p className={`text-sm ${toneInk.danger}`}>{signInError}</p>}
+        </div>
+      </Modal>
     </div>
   );
 }

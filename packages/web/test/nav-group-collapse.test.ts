@@ -73,10 +73,8 @@ describe("navKeysFor", () => {
     // /api/machines is admin-gated server-side (it spawns ssh with the server account's
     // keys), so offering a member the row would only ever produce a 403.
     expect([...navKeysFor(false)]).toEqual(["agents", "skills", "models", "usage", "benchmark"]);
-    // An admin sees the manifest minus what is built but not yet offered — `machines` today,
-    // which is why neither answer contains it and the two are equal for now.
-    expect([...navKeysFor(true)]).toEqual(["agents", "skills", "models", "usage", "benchmark"]);
-    expect(NAV_GROUP_KEYS as readonly string[]).toContain("machines");
+    // An admin sees the whole manifest, machines included — the row it hides from a member.
+    expect([...navKeysFor(true)]).toEqual([...NAV_GROUP_KEYS]);
   });
 });
 
