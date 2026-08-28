@@ -293,10 +293,32 @@ describe("machines API", () => {
       expect(t.deps.machines.job()?.result).toMatchObject({
         ok: false,
         step: "hand over the pushed build",
+        // The one failure with a next step this side can take: replacing the program over
+        // there. Offered, so a person answers — it restarts a server others may be on.
+        canReplaceProgram: true,
       });
       expect((t.deps.machines.job()?.result as { message: string }).message).toContain(
         "no business capabilities",
       );
+    });
+
+    it("answering that offer runs the installer the version check would have skipped", async () => {
+      // The machine's base already matches, which is why the install became a hot update in
+      // the first place. Only the machine's refusal says the program has to be replaced
+      // anyway, so `replaceProgram` is what carries that answer past the version check.
+      let forced: boolean | undefined;
+      await boot({
+        install: async (opts: { forceInstaller?: boolean }) => {
+          forced = opts.forceInstaller;
+          return { kind: "installed", output: "", identity: IDENTITY };
+        },
+      });
+      await admin.post("/api/projects/default_project/machines/ssh:nas/install", {
+        replaceProgram: true,
+      });
+      await waitFor(() => t.deps.machines.job()?.running === false);
+
+      expect(forced).toBe(true);
     });
 
     it("a throw from the push path still ends the job", async () => {

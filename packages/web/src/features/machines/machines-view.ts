@@ -23,7 +23,7 @@ import type {
 export type MachineVerdict =
   | { kind: "installed"; version: string | null }
   | { kind: "already-installed"; version: string | null }
-  | { kind: "failed"; step: string; message: string };
+  | { kind: "failed"; step: string; message: string; canReplaceProgram?: true };
 
 /** How a machine's server reads right now, for the row that renders it. */
 export type StatusTone = "busy" | "success" | "attention" | "danger" | "muted";
@@ -53,7 +53,12 @@ export interface InstallButtonState {
 export function verdictOf(job: MachineInstallJob): MachineVerdict | null {
   if (job.result === null) return null;
   if (job.result.ok) return { kind: job.result.kind, version: job.result.version };
-  return { kind: "failed", step: job.result.step, message: job.result.message };
+  return {
+    kind: "failed",
+    step: job.result.step,
+    message: job.result.message,
+    ...(job.result.canReplaceProgram === true ? { canReplaceProgram: true as const } : {}),
+  };
 }
 
 /**

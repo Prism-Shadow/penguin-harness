@@ -83,9 +83,14 @@ export function machinesRoutes(deps: AppDeps): Hono<AppEnv> {
   });
 
   app.post("/:machineId/install", async (c) => {
+    // `replaceProgram`: the answer to a job that came back saying it needs one (see the job's
+    // canReplaceProgram). Read leniently — an absent body is the ordinary install.
+    const body = await c.req.json().catch(() => ({}) as Record<string, unknown>);
+    const replaceProgram = (body as Record<string, unknown>).replaceProgram === true;
     const started = await deps.machines.startInstall(
       requireValidId(c, "projectId"),
       c.req.param("machineId") ?? "",
+      replaceProgram,
     );
     if (!started.ok) {
       // Each refusal is its own code: the page renders a sentence per case, and "no image"

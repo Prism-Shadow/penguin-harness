@@ -65,6 +65,9 @@ export const en: Strings = {
     /** Each machine is a separate server with its own accounts; this browser signs in per machine. */
     signIn: "Sign in",
     signOut: "Sign out",
+    replaceProgram: "Replace the program there and restart",
+    replaceProgramWhy:
+      "Its runtime is older than this build, and a push never replaces a runtime. This installs the program over there and restarts its server, which interrupts anyone using it.",
     signingIn: "Signing in\u2026",
     signedIn: "signed in",
     signInTo: (alias: string) => `Sign in to ${alias}`,

@@ -654,6 +654,12 @@ export class MachinesService {
   async startInstall(
     projectId: string,
     machineId: string,
+    /**
+     * Replace the PROGRAM over there even when its version already matches, and restart it.
+     * Asked for by a person answering the one failure that needs it — see the job's
+     * `canReplaceProgram`. Never inferred: it stops a server other people may be using.
+     */
+    replaceProgram = false,
   ): Promise<{ ok: true } | { ok: false; why: InstallRefusal }> {
     if (this.#job?.running === true) return { ok: false, why: "busy" };
 
@@ -695,6 +701,7 @@ export class MachinesService {
           plan,
           onProgress: say,
           assets: this.#assets,
+          ...(replaceProgram ? { forceInstaller: true } : {}),
         });
         if (outcome.kind === "failed") {
           job.result = { ok: false, step: outcome.step, message: outcome.detail };
@@ -716,6 +723,12 @@ export class MachinesService {
             ...(held === undefined ? {} : { session: held }),
           });
           if (pushed.kind !== "upgraded") {
+            // A refusal that names the RUNTIME is the one this side can still act on: the
+            // program over there is what a push never replaces, and replacing it is exactly
+            // what the machine is asking for. Offered rather than done, because it restarts
+            // a server this Project does not own alone.
+            const runtimeTooOld =
+              pushed.kind === "refused" && /runtime|installation itself/i.test(pushed.detail);
             job.result = {
               ok: false,
               step: "hand over the pushed build",
@@ -725,6 +738,7 @@ export class MachinesService {
                   : pushed.kind === "refused"
                     ? `that machine refused this build — ${pushed.detail}`
                     : pushed.detail,
+              ...(runtimeTooOld && !replaceProgram ? { canReplaceProgram: true as const } : {}),
             };
             return;
           }

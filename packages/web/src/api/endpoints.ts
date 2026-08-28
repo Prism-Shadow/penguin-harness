@@ -1134,11 +1134,17 @@ export const probeMachines = (projectId: string) =>
     body: {},
   });
 
-/** Starts an install (202, long-running); the returned body already carries the new job. */
-export const installOnMachine = (projectId: string, machineId: string) =>
+/**
+ * Starts an install (202, long-running); the returned body already carries the new job.
+ *
+ * `replaceProgram` answers a job that came back asking for it: a hot update the machine's
+ * runtime could not claim, which only replacing the program over there — and restarting it —
+ * can fix. Never sent by default, because that restart interrupts whoever is on that machine.
+ */
+export const installOnMachine = (projectId: string, machineId: string, replaceProgram = false) =>
   apiFetch<MachinesResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/machines/${encodeURIComponent(machineId)}/install`,
-    { method: "POST", body: {} },
+    { method: "POST", body: replaceProgram ? { replaceProgram: true } : {} },
   );
 
 /** Brings that machine's server up and holds a tunnel to it (202, long-running). */

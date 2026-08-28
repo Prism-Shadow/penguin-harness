@@ -317,14 +317,16 @@ export function MachinesPage() {
    * Project — one button, because from where the person stands both answer "make this
    * machine usable here" and only one of them costs a transfer.
    */
-  const install = async () => {
-    if (selectedId === null || projectId === null) return;
+  const install = async (machineId = selectedId, replaceProgram = false) => {
+    if (machineId === null || projectId === null) return;
     setStarting(true);
     try {
       setState(
-        button.action === "adopt"
-          ? await api.adoptMachine(projectId, selectedId)
-          : await api.installOnMachine(projectId, selectedId),
+        // The adopt shortcut is about the SELECTED row; answering a job's request to replace
+        // a program names its machine and is always a real install.
+        button.action === "adopt" && !replaceProgram
+          ? await api.adoptMachine(projectId, machineId)
+          : await api.installOnMachine(projectId, machineId, replaceProgram),
       );
       setError(null);
     } catch (err) {
@@ -665,6 +667,23 @@ export function MachinesPage() {
                       >
                         {verdict.message}
                       </pre>
+                    )}
+                    {/* The one failure with a next step this side can take. Offered rather
+                        than taken: it restarts a server other people may be on. */}
+                    {verdict?.kind === "failed" && verdict.canReplaceProgram === true && (
+                      <div className="mt-3">
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          {S.machines.replaceProgramWhy}
+                        </p>
+                        <Button
+                          size="sm"
+                          className="mt-2"
+                          disabled={running}
+                          onClick={() => void install(job.machineId, true)}
+                        >
+                          {S.machines.replaceProgram}
+                        </Button>
+                      </div>
                     )}
                   </div>
                 )}

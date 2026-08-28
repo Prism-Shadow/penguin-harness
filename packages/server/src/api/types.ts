@@ -3104,7 +3104,19 @@ export interface MachineInstallJob {
   result:
     | null
     | { ok: true; kind: "installed" | "already-installed"; version: string | null }
-    | { ok: false; step: string; message: string };
+    | {
+        ok: false;
+        step: string;
+        message: string;
+        /**
+         * The failure has a next step this side can take, and it needs saying yes to:
+         * replacing the PROGRAM over there and restarting it. Set when a hot update was
+         * refused by a runtime too old to run what it was handed — the one failure a
+         * reinstall answers, and the one thing a push deliberately never does on its own,
+         * since it stops a server somebody else may be using.
+         */
+        canReplaceProgram?: true;
+      };
 }
 
 /**
