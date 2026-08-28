@@ -687,21 +687,43 @@ describe("approvals and events", () => {
     // Retry request sent: the notice is marked as retrying.
     pushMessage(m, requestBegin());
     expect(retry.retrying).toBe(true);
-    // Retry fails again: a second notice, carrying the next ordinal.
+    // Retry fails again: the SAME line advances rather than a second one appearing — one line
+    // per ladder, carrying the latest ordinal (see continuedLadder).
     pushMessage(m, requestEnd("retryable", { attempt: 2, retryInMs: 4000 }));
-    const retry2 = items(m)[1] as ReconnectItem;
-    expect(retry2).toMatchObject({ kind: "reconnect", status: "retryable", attempt: 2 });
-    // Retry succeeds: no new entry; the next round's failure carries attempt 1 again.
+    expect(items(m)).toHaveLength(1);
+    expect(items(m)[0]).toMatchObject({ kind: "reconnect", status: "retryable", attempt: 2 });
+    // The id is kept through the replacement, so the rendered row updates instead of
+    // remounting and replaying its entry animation as if it were a new failure.
+    expect((items(m)[0] as ReconnectItem).id).toBe(retry.id);
+    // Retry succeeds: no new entry. The next round's failure restarts at attempt 1, which is
+    // what tells it apart from a continuation — it opens its own line even though the previous
+    // ladder's line is still the last item, nothing having been pushed in between.
     pushMessage(m, requestBegin());
     pushMessage(m, requestEnd("completed"));
-    expect(items(m)).toHaveLength(2);
+    expect(items(m)).toHaveLength(1);
     pushMessage(m, requestBegin());
     pushMessage(m, requestEnd("retryable", { attempt: 1 }));
-    expect((items(m)[2] as ReconnectItem).attempt).toBe(1);
-    // A Trace written before the field existed lacks it: rendered as attempt 1.
+    expect(items(m)).toHaveLength(2);
+    expect((items(m)[1] as ReconnectItem).attempt).toBe(1);
+    // A Trace written before the field existed lacks it: rendered as attempt 1 — and since it
+    // never climbs, such a ladder never collapses and replays exactly as it always did.
     pushMessage(m, requestBegin());
     pushMessage(m, requestEnd("retryable"));
-    expect((items(m)[3] as ReconnectItem).attempt).toBe(1);
+    expect((items(m)[2] as ReconnectItem).attempt).toBe(1);
+  });
+
+  it("a ladder that gave up keeps its line: the next failure opens a new one", () => {
+    // The gave-up line carries the final failure and its detail, which is the one retry line
+    // worth keeping on screen — a later incident must not overwrite it.
+    const m = createStreamModel();
+    pushMessage(m, requestBegin());
+    pushMessage(m, requestEnd("retryable", { attempt: 4, errorMessage: "socket hang up" }));
+    expect(items(m)).toHaveLength(1);
+    expect(items(m)[0]).toMatchObject({ gaveUp: true, attempt: 4 });
+    pushMessage(m, requestBegin());
+    pushMessage(m, requestEnd("retryable", { attempt: 5, retryInMs: 2000 }));
+    expect(items(m)).toHaveLength(2);
+    expect((items(m)[0] as ReconnectItem).errorMessage).toBe("socket hang up");
   });
 
   it("a terminal retryable (no retry planned) settles as gave-up at creation, detail attached", () => {
@@ -765,17 +787,20 @@ describe("approvals and events", () => {
     pushMessage(m, legacyEnd("failed", { errorMessage: "502 bad gateway", attempt: 2 }));
     pushMessage(m, requestBegin());
     pushMessage(m, legacyEnd("malformed", { attempt: 3 }));
+    // One ladder, one line, carrying the latest attempt and ITS spelling. The finer
+    // pre-convergence statuses still render — the line shows whichever one the ladder is on —
+    // but a superseded attempt's cause leaves the transcript with it. That is the trade the
+    // collapse makes, and the attempt count is what survives it.
     expect((items(m) as ReconnectItem[]).map((i) => [i.status, i.attempt])).toEqual([
-      ["timeout", 1],
-      ["failed", 2],
       ["malformed", 3],
     ]);
-    // After a normal finish the next run's first failure is stamped #1 again.
+    // After a normal finish the next run's first failure is stamped #1 again, so it opens its
+    // own line rather than continuing the ladder above.
     pushMessage(m, requestBegin());
     pushMessage(m, requestEnd("completed"));
     pushMessage(m, requestBegin());
     pushMessage(m, legacyEnd("failed", { attempt: 1 }));
-    expect((items(m)[3] as ReconnectItem).attempt).toBe(1);
+    expect((items(m)[1] as ReconnectItem).attempt).toBe(1);
   });
 
   it("request_end(fatal) stays out of the ladder: terminal, so no retry notice", () => {

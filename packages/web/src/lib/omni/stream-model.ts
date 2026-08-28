@@ -1725,7 +1725,20 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
           // and their exhaustion is marked by the abort event instead.
           item.gaveUp = true;
         }
-        model.items.push(item);
+        // One line per LADDER, not per attempt: a later attempt replaces the one before it,
+        // so a request that retries four times reads "已发起第 4 次重试" on a single line
+        // instead of stacking four. The count is already in the line, so nothing is lost from
+        // the transcript — and the Trace is untouched, keeping every attempt as its own event
+        // for the Trace panel, which builds from the raw events rather than from this model.
+        const continues = continuedLadder(model, item);
+        if (continues !== null) {
+          // The previous item's id is kept so the rendered line UPDATES rather than being
+          // replaced: a new key would remount the row and replay its entry animation, which
+          // reads as a new failure rather than the same one progressing.
+          model.items[model.items.length - 1] = { ...item, id: continues.id };
+        } else {
+          model.items.push(item);
+        }
       }
       return;
     }
@@ -1782,6 +1795,30 @@ function appendCompactionSummaryText(model: StreamModel, text: string): void {
 function isWrapUpCompaction(model: StreamModel): boolean {
   if (!model.taskOpen || model.turnToolOutputs) return false;
   return model.items[model.items.length - 1]?.kind === "assistant_text";
+}
+
+/**
+ * The reconnect item this one supersedes, or null when it opens a new line.
+ *
+ * A ladder's attempts climb (1, 2, 3, …) and its items are adjacent, because nothing else is
+ * pushed in between — the `request_begin` that resends only marks the waiting item. So the
+ * last item being a reconnect is necessary but NOT sufficient: a request that succeeded pushes
+ * nothing, so the next failure's item is adjacent to the previous ladder's last one while
+ * belonging to a different incident. That one restarts at attempt 1, which is what separates
+ * the two cases.
+ *
+ * A ladder that gave up is closed and is never superseded: its line carries the final failure
+ * and its detail, which is the one retry line worth keeping on screen.
+ *
+ * Traces written before the attempt ordinal existed read as attempt 1 throughout, so they never
+ * collapse and render exactly as they always did — the safe direction for a record this cannot
+ * re-derive.
+ */
+function continuedLadder(model: StreamModel, next: ReconnectItem): ReconnectItem | null {
+  const last = model.items[model.items.length - 1];
+  if (last === undefined || last.kind !== "reconnect") return null;
+  if (last.gaveUp === true) return null;
+  return next.attempt > last.attempt ? last : null;
 }
 
 function findLastWaitingReconnect(model: StreamModel): ReconnectItem | null {
