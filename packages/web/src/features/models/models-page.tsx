@@ -10,7 +10,7 @@
  *
  * The list is purely for "finding a model": grouped by vendor (group header = logo + vendor
  * name + count, collapsible), with one card per model within a group — the card shows only
- * the display name + upstream id + status badges (default / vision / proxy-read), while
+ * the display name + status badges (default / vision / proxy-read), while
  * context, pricing, and key status are folded into a single line of small text. Clicking a
  * card opens the config dialog (credentials, context, pricing, vision toggle, plus set as
  * default / set as vision model / delete); the "add model" entry point lives in each group
@@ -607,6 +607,14 @@ export function ModelsPage() {
   // Currency follows the user setting (toggled in sidebar settings).
   const { currency } = useTheme();
 
+  /**
+   * Lifetime Token total per model, keyed by the paired reference. Fetched on its own rather
+   * than folded into the model list: it is telemetry hanging off a configuration page, and a
+   * stats failure must cost the figure, not the page — so the failure path just leaves the map
+   * empty and every card renders without its number.
+   */
+  const [usedTokens, setUsedTokens] = useState<Map<string, number>>(new Map());
+
   const load = useCallback(async () => {
     if (!projectId) return;
     setRows(null);
@@ -622,6 +630,14 @@ export function ModelsPage() {
       setVisionModel(res.visionModel);
     } catch (e) {
       setLoadError(apiErrorText(e));
+    }
+    try {
+      const totals = await api.getUsageModelTotals(projectId);
+      setUsedTokens(new Map(totals.totals.map((t) => [speedKey(t.provider, t.modelId), t.tokens])));
+    } catch {
+      // Fail-soft, and deliberately silent: the page's job is configuring models, and a figure
+      // that could not be read is shown as absent rather than as an error the user cannot act on.
+      setUsedTokens(new Map());
     }
   }, [projectId]);
 
@@ -1181,6 +1197,7 @@ export function ModelsPage() {
                                 isDefault={sameModelRef(rowRef(row), defaultModel)}
                                 isVisionModel={sameModelRef(rowRef(row), visionModel)}
                                 speed={speedResults.get(speedKey(row.provider, row.modelId))}
+                                usedTokens={usedTokens.get(speedKey(row.provider, row.modelId))}
                                 onOpen={() => setEditing(rowRef(row))}
                               />
                             ))
@@ -1676,7 +1693,33 @@ function AddGroupDialog({
 // ---------------------------------------------------------------------------
 
 /**
- * Card: display name + upstream id + status badges; context / pricing / key status folded
+ * Card tag palette. Every mark on a card wears one shape — a pale wash, a border one step
+ * stronger in the same hue, and text a step darker again — so the row reads as a set of tags
+ * rather than as competing highlights, and the hue is left to say which mark it is.
+ *
+ * These are identities, not judgements: "default", "vision", "free" say what a model *is*, and
+ * nothing here is better or worse than its neighbour. That is why they are spelled locally
+ * instead of in `lib/tone.ts`, whose five tones each rate a thing's state — the same reason
+ * `category-colors.ts` and `update-dot.tsx` keep their own colours.
+ *
+ * Contrast, measured against the surfaces a card actually sits on (white and gray-50 in light;
+ * this app's overridden gray-950 `#000000` and gray-900 `#0d0d0d` in dark): the text/wash pairs
+ * clear 4.5:1 at every hue, and the borders are decorative — the tag never relies on its edge
+ * to be read, so they are not held to 3:1.
+ */
+const TAG_CLASS = {
+  brand:
+    "border-brand-200 bg-brand-50 text-brand-700 dark:border-brand-800/60 dark:bg-brand-950/40 dark:text-brand-300",
+  emerald:
+    "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300",
+  amber:
+    "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300",
+  yellow:
+    "border-yellow-200 bg-yellow-50 text-yellow-700 dark:border-yellow-900 dark:bg-yellow-950/40 dark:text-yellow-300",
+} as const;
+
+/**
+ * Card: display name + lifetime Token spend + status badges; context / pricing / key status folded
  * into one line of small text; group speed-test results (TTFT / TPS, tone-colored) ride the
  * title row's right edge. The whole card is clickable (the model homepage link lives in the
  * config dialog).
@@ -1687,6 +1730,7 @@ function ModelCard({
   isDefault,
   isVisionModel,
   speed,
+  usedTokens,
   onOpen,
 }: {
   row: RowState;
@@ -1694,6 +1738,8 @@ function ModelCard({
   isDefault: boolean;
   isVisionModel: boolean;
   speed?: SpeedResult | "pending";
+  /** Lifetime Tokens spent on this model; absent for a model that has never run. */
+  usedTokens?: number;
   onOpen: () => void;
 }) {
   const priced = row.cacheRead || row.cacheWrite || row.output;
@@ -1718,7 +1764,7 @@ function ModelCard({
           {
             key: "default",
             label: S.models.default,
-            className: "bg-brand-100 text-brand-800 dark:bg-brand-950 dark:text-brand-200",
+            className: TAG_CLASS.brand,
           },
         ]
       : []),
@@ -1727,7 +1773,7 @@ function ModelCard({
           {
             key: "vision",
             label: S.models.visionBadge,
-            className: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
+            className: TAG_CLASS.emerald,
           },
         ]
       : []),
@@ -1736,7 +1782,7 @@ function ModelCard({
           {
             key: "visionModel",
             label: S.models.visionModelBadge,
-            className: "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+            className: TAG_CLASS.amber,
           },
         ]
       : []),
@@ -1745,7 +1791,7 @@ function ModelCard({
           {
             key: "fastMode",
             label: S.models.fastModeBadge,
-            className: "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+            className: TAG_CLASS.amber,
           },
         ]
       : []),
@@ -1754,7 +1800,7 @@ function ModelCard({
           {
             key: "free",
             label: S.models.freeBadge,
-            className: "bg-yellow-100 text-yellow-800 dark:bg-yellow-950 dark:text-yellow-300",
+            className: TAG_CLASS.yellow,
           },
         ]
       : []),
@@ -1764,7 +1810,7 @@ function ModelCard({
             key: "discount",
             label: S.models.discountBadge(discount.percent),
             title: S.models.discountTitle(discount.percent),
-            className: "bg-yellow-100 text-yellow-800 dark:bg-yellow-950 dark:text-yellow-300",
+            className: TAG_CLASS.yellow,
           },
         ]
       : []),
@@ -1825,17 +1871,24 @@ function ModelCard({
       onClick={onOpen}
       className="flex w-full flex-col gap-1 rounded-md border border-gray-200 px-3 py-2.5 text-left transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:hover:border-gray-700 dark:hover:bg-gray-800/40"
     >
-      {/* 1. What the model is called. The name takes what it needs and the upstream id gives
-          way first: the id is a detail you go looking for, the name is what you scan by. */}
-      <span className="flex w-full min-w-0 items-baseline gap-1.5">
-        <span className="max-w-full shrink-0 truncate text-[13px] font-medium">
+      {/* 1. What the model is called — the name alone. The upstream id used to share this row,
+          but it is a detail you go looking for rather than one you scan by, and it is a click
+          away in the config dialog; the width it was taking now belongs to the name. */}
+      <span className="flex w-full min-w-0 items-baseline gap-2">
+        <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
           {row.displayName ?? row.modelId}
         </span>
-        {/* When there is no display name the first line already IS the upstream id, so it is
-            not repeated. */}
-        {row.displayName !== undefined && (
-          <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-gray-500 dark:text-gray-400">
-            {row.modelId}
+        {/* What this model has spent over its whole life, on the row's right edge. Recessive by
+            design — grey and a size below the meta line: it is context for a name you are
+            scanning past, not a figure the page is about. A model that has never run shows
+            nothing rather than a zero, which would read as a measurement instead of an
+            absence. */}
+        {usedTokens !== undefined && usedTokens > 0 && (
+          <span
+            className="shrink-0 text-[10px] tabular-nums text-gray-400 dark:text-gray-500"
+            title={S.models.usedTokensTitle}
+          >
+            {S.models.usedTokens(humanizeTokens(usedTokens))}
           </span>
         )}
       </span>
@@ -1849,7 +1902,7 @@ function ModelCard({
           <span
             key={tag.key}
             title={tag.title}
-            className={`whitespace-nowrap rounded px-1.5 py-px text-[11px] font-semibold leading-tight ${tag.className}`}
+            className={`whitespace-nowrap rounded border px-1.5 py-px text-[11px] font-medium leading-tight ${tag.className}`}
           >
             {tag.label}
           </span>

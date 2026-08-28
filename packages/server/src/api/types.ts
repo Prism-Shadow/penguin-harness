@@ -2600,6 +2600,25 @@ export interface UsageModelSeries extends UsageEntitySeriesCounts {
 }
 
 /**
+ * Lifetime Token total for one Model, keyed by the (provider, modelId) pair. Deliberately
+ * unfiltered — no date range, no Agent: it answers "how much has this model been used", a
+ * question with no window attached, and the models page that shows it carries no filters of its
+ * own to honour. Models never used are absent rather than zero.
+ */
+export interface UsageModelTotal {
+  provider: string;
+  modelId: string;
+  /** The three buckets summed (cache read + cache write + output), matching the cost center's Token figure. */
+  tokens: number;
+  requests: number;
+}
+
+/** Response of `GET /usage/model-totals`. */
+export interface UsageModelTotals {
+  totals: UsageModelTotal[];
+}
+
+/**
  * The two categories an error record is filed under: `unexpected` is a 500 or an unforeseen
  * runtime exception, `expected` an HttpError / business 4xx. The panel separates them by
  * colour, and `GET /usage/errors` takes one of them as its `kind` filter.

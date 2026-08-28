@@ -2,7 +2,7 @@
  * Human-friendly formatting utilities.
  *
  * Token and duration abbreviation conventions exactly match the CLI
- * (packages/cli/src/render.ts): `4k`, `1.2k`, `1.5M`, `820ms`, `5.1s`,
+ * (packages/cli/src/render.ts): `4k`, `1.2k`, `1.5M`, `17.7B`, `820ms`, `5.1s`,
  * `2m10s`; deltas are explicitly signed (`+1k` / `-1k`). Also provides
  * display formats for cost (USD), byte counts, and dates, reused by the
  * stats page and Trace page.
@@ -14,12 +14,13 @@ function trimZero(v: number): string {
   return s.endsWith(".0") ? s.slice(0, -2) : s;
 }
 
-/** Abbreviate a token count for humans: 1234→1.2k, 1500000→1.5M, <1000 unchanged. */
+/** Abbreviate a token count for humans: 1234→1.2k, 1500000→1.5M, 1.77e10→17.7B, <1000 unchanged. */
 export function humanizeTokens(n: number): string {
   const abs = Math.abs(n);
   if (abs < 1000) return `${n}`;
   if (abs < 1_000_000) return `${trimZero(n / 1000)}k`;
-  return `${trimZero(n / 1_000_000)}M`;
+  if (abs < 1_000_000_000) return `${trimZero(n / 1_000_000)}M`;
+  return `${trimZero(n / 1_000_000_000)}B`;
 }
 
 /**

@@ -25,6 +25,7 @@ import type {
   UsageGroupBy,
   UsageGroupRow,
   UsageModelSeries,
+  UsageModelTotals,
   UsageResponse,
   UsageSeriesPoint,
 } from "../api/types.js";
@@ -285,6 +286,23 @@ export class UsageService {
       unexpected,
       topCode: this.errors.topCode(projectId, f),
       recent: this.errors.recent(projectId, f, ERROR_RECENT_N),
+    };
+  }
+
+  /**
+   * Lifetime Token totals per Model — one grouped scan of `usage_records`, no filters. The
+   * models page shows each configured model what it has actually spent, and that figure is not
+   * scoped to a range the way the cost center's is; a model with no records is simply absent,
+   * so the caller renders nothing rather than a zero.
+   */
+  modelTotals(projectId: string): UsageModelTotals {
+    return {
+      totals: this.usage.bucketByModel(projectId).map((r) => ({
+        provider: r.provider,
+        modelId: r.modelId,
+        tokens: r.total,
+        requests: r.requests,
+      })),
     };
   }
 

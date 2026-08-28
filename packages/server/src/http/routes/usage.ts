@@ -6,7 +6,8 @@
  * trailing window down to instants — required for minute — and must be given
  * together);
  * GET /api/projects/:p/usage/errors?offset&limit&from&to&agentId&kind — one page of the error
- * detail table, for paging back past the first page the dashboard already returns.
+ * detail table, for paging back past the first page the dashboard already returns;
+ * GET /api/projects/:p/usage/model-totals — lifetime Token total per Model, unfiltered.
  */
 import { Hono } from "hono";
 import type { UsageErrorKind, UsageGranularity, UsageGroupBy } from "../../api/types.js";
@@ -87,6 +88,16 @@ export function usageRoutes(deps: AppDeps): Hono<AppEnv> {
   // aggregate. Takes the date/agent filter only — the model filter never applied to errors
   // (HTTP and process errors have no Model dimension), so accepting it here would imply a
   // narrowing the summary above does not do.
+  // Lifetime Token total per Model, for the models page's per-card figure. Takes no filters at
+  // all: the number answers "how much has this model been used", which has no range, and the
+  // page showing it offers none. One grouped scan, so it stays a cheap second request rather
+  // than a reason to widen the models response with telemetry.
+  app.get("/model-totals", (c) => {
+    const projectId = requireValidId(c, "projectId");
+    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    return c.json(deps.usageService.modelTotals(projectId));
+  });
+
   app.get("/errors", (c) => {
     const projectId = requireValidId(c, "projectId");
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);

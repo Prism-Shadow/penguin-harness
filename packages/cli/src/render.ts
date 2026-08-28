@@ -159,8 +159,12 @@ export function humanizeTokens(n: number): string {
     const v = n / 1000;
     return `${trimZero(v)}k`;
   }
-  const v = n / 1_000_000;
-  return `${trimZero(v)}M`;
+  if (abs < 1_000_000_000) {
+    const v = n / 1_000_000;
+    return `${trimZero(v)}M`;
+  }
+  const v = n / 1_000_000_000;
+  return `${trimZero(v)}B`;
 }
 
 /** Keeps one decimal place but drops a trailing `.0`. */

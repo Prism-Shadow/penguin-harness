@@ -309,6 +309,62 @@ describe("usage-service (cost computed on the fly)", () => {
   });
 });
 
+describe("usage-service model totals (unfiltered, for the models page)", () => {
+  let db: DatabaseSync;
+  let repo: UsageRepo;
+  let service: UsageService;
+  const lookup = async () => undefined;
+
+  beforeEach(() => {
+    db = openDatabase(":memory:");
+    repo = new UsageRepo(db);
+    service = new UsageService(repo, new ErrorsRepo(db), lookup);
+  });
+  afterEach(() => db.close());
+
+  function insert(date: string, opts: Partial<Parameters<UsageRepo["insert"]>[0]> = {}): void {
+    repo.insert({
+      ts: `${date}T00:00:00.000Z`,
+      date,
+      projectId: "p1",
+      agentId: "a1",
+      sessionId: "s1",
+      originSessionId: null,
+      modelId: "m1",
+      provider: "custom",
+      cacheRead: 10,
+      cacheWrite: 1,
+      output: 5,
+      total: 100,
+      ...opts,
+    });
+  }
+
+  it("sums every record a Model ever wrote, with no date or Agent window", () => {
+    insert("2026-01-01");
+    insert("2026-07-06");
+    // A different Agent, and a date far outside any range the cost center offers: both count.
+    insert("2020-03-02", { agentId: "a2" });
+    const totals = service.modelTotals("p1").totals;
+    expect(totals).toEqual([{ provider: "custom", modelId: "m1", tokens: 300, requests: 3 }]);
+  });
+
+  it("keys by the paired reference, so one id under two providers stays two entries", () => {
+    insert("2026-07-06");
+    insert("2026-07-06", { provider: "gateway" });
+    const totals = service.modelTotals("p1").totals;
+    expect(totals).toHaveLength(2);
+    expect(totals.map((t) => t.provider).sort()).toEqual(["custom", "gateway"]);
+  });
+
+  it("is scoped to the Project, and a Model that never ran is absent rather than zero", () => {
+    insert("2026-07-06");
+    insert("2026-07-06", { projectId: "p2", modelId: "m-elsewhere" });
+    const totals = service.modelTotals("p1").totals;
+    expect(totals.map((t) => t.modelId)).toEqual(["m1"]);
+  });
+});
+
 describe("usage-service series (zero-filled time-series buckets)", () => {
   let db: DatabaseSync;
   let repo: UsageRepo;

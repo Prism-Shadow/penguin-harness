@@ -2,15 +2,16 @@
 
 - **Date:** 2026-08-28
 - **Type:** feature
-- **Scope:** `model-catalog`, `core`, `web`, `cli`, `docs`
+- **Scope:** `model-catalog`, `core`, `server`, `web`, `cli`, `docs`
 - **PR:** [#531](https://github.com/Prism-Shadow/penguin-harness/pull/531)
 
 [中文版](2026-08-28-catalog-tokendance-discounts.zh.md)
 
 Tencent's Hy4 preview joined the catalog through both of its sellers, six TokenDance rows
 gained a declared discount that the models page now shows and the cost center now bills at,
-TokenDance became the recommended provider group and leads the page by default, and the
-Chinese UI renamed the three price buckets.
+TokenDance became the recommended provider group and leads the page by default, the model card
+was rebuilt around three fixed rows and now says what each model has spent, and the Chinese UI
+renamed the three price buckets.
 
 ## The catalog
 
@@ -35,26 +36,38 @@ Chinese UI renamed the three price buckets.
 ## The models page
 
 - TokenDance is marked as the recommended provider group: it leads the default group order,
-  wears a "Recommended" pill on its own collapse bar, and is the group the page opens expanded
-  on a first visit. The pill takes the brand palette directly rather than `Badge`'s `brand`
-  tone, which is deliberately gray — neutral emphasis outside the status vocabulary — and an
-  endorsement is neither a status nor neutral. Its English label is one word because this is
-  the one group carrying five actions, making its row the most crowded on the page, and the
-  vendor name beside it is what a reader needs first.
+  wears a green "Recommended" pill on its own collapse bar, and is the group the page opens
+  expanded on a first visit. The pill is spelled in emerald rather than through `Badge`'s
+  `brand` tone, which is deliberately gray — neutral emphasis outside the status vocabulary —
+  and an endorsement is neither a status nor neutral. Its English label is one word because
+  this is the one group carrying five actions, making its row the most crowded on the page, and
+  the vendor name beside it is what a reader needs first.
+- **The model card is three fixed rows.** Its name, one size down, with what the model has
+  spent on the right edge; then every standing mark on a row of its own — default, vision,
+  vision proxy, fast, free, discount, in that order, so the eye learns where to look; then the
+  price line. The marks had been sharing the title's line, where each was width the model's
+  name had to give up. The mark row renders even when empty, at the tags' own height: most
+  models carry no mark, and cards in one row of a two-column grid stretch to the tallest, so a
+  collapsing row would show as uneven padding rather than as a shorter card.
+- **The upstream id has left the card.** It is a detail you go looking for rather than one you
+  scan by, and it is one click away in the config dialog; the width it was taking now belongs
+  to the name and to the spend figure.
+- **Each card says what that model has cost in Tokens** — `17.7B tokens`, grey and a size below
+  the price line, on the title row's right edge. It is a lifetime figure with no date or Agent
+  window, which is why it comes from its own `GET /usage/model-totals` rather than from the
+  cost center's filtered aggregate, and its own request rather than the model list: a stats
+  failure costs the figure, not the page. A model that has never run shows nothing rather than
+  a zero, which would read as a measurement instead of an absence. `humanizeTokens` gained a
+  billions tier for it, in the Web App and in the CLI that shares its conventions.
+- **The card's tags wear one shape**: a pale wash, a border a step stronger in the same hue,
+  and text darker again, so the row reads as a set of tags rather than as competing highlights
+  and the hue is left to say which mark it is. They are spelled in the models page rather than
+  in `lib/tone.ts` because they are identities, not judgements — "default", "vision", "free"
+  say what a model *is*, and none ranks above its neighbour.
 - A discounted model card shows the **billed** price alone. What the row would have cost
   without the promotion answers no question a reader of this list is asking, and spending the
-  meta line's width on it pushes out the figures that do. The rate off list hangs on the card's
-  own top-right corner instead, flush to the border and sharing its radius. The card stays
-  exactly as tall as it was: the tag is absolutely positioned so it takes no line of its own,
-  and the title row reserves room for it and truncates rather than wrapping under it. A row
-  whose price has been edited away from the catalog's shows neither.
-- **The model card is three rows now**: its name (a size down) with the upstream id beside it,
-  then every standing mark on a row of its own — default, vision, vision proxy, fast, free,
-  discount, in that fixed order so the eye learns where to look — then the price line as
-  before. The marks had been sharing the title's line, where each was width the model's name
-  had to give up. The mark row renders even when empty, at the tags' own height: most models
-  carry no mark, and cards in one row of a two-column grid stretch to the tallest, so a
-  collapsing row would show up as uneven padding rather than as a shorter card.
+  price line's width on it pushes out the figures that do; the rate off list is one of the tags
+  instead. A row whose price has been edited away from the catalog's shows neither.
 - **A narrow group header can no longer overlap its own actions.** The vendor name is the one
   element that takes the leftover space and the one that truncates; giving it a minimum width
   was what caused the overlap, since the marks beside it never shrink, so once their widths plus

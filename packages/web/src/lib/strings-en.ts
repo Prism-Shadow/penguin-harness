@@ -799,6 +799,8 @@ export const en: Strings = {
     discountBadge: (pct: number): string => `-${pct}%`,
     discountTitle: (pct: number): string => `Promotion: ${pct}% off the list price`,
     visionModelBadge: "Proxy vision",
+    usedTokens: (v: string) => `${v} tokens`,
+    usedTokensTitle: "Tokens this model has used, all time",
     setVisionModel: "Set as proxy vision model",
     visionModelHint: "Describes images via describe_image for models without vision",
     priceUnitShort: "/M tok",
