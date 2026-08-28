@@ -21,7 +21,7 @@ If this machine has no model configured yet, the shortest path is to install the
 
 ```bash
 npm install -g @prismshadow/penguin-cli
-penguin config model add --provider deepseek --model-id deepseek-v4-flash --api-key sk-... --set-default
+penguin config model add --provider deepseek --model-id deepseek-v4-flash-vision-exp --api-key sk-... --set-default
 ```
 
 You can also keep credentials off disk entirely: when a model entry has no inline api_key, AgentHub (the LLM gateway library) reads environment variables such as `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and `GEMINI_API_KEY`. A `.env` file in the working directory is loaded automatically.

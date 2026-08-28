@@ -205,7 +205,13 @@ export interface ProjectConfig {
  */
 export function defaultProjectConfig(): ProjectConfig {
   return {
-    default_model: { provider: "deepseek", model_id: "deepseek-v4-flash" },
+    // The vision revision rather than the base model: it is the same context window at the
+    // same published price, with image input on top — a strict superset, so defaulting to the
+    // text-only sibling only meant a new Project could not read a pasted screenshot until
+    // someone noticed why. A Project's default is copied in at creation and owned by it from
+    // then on, so this reaches new Projects alone; an existing one keeps whatever it stored,
+    // and "sync presets" never touches the stored default.
+    default_model: { provider: "deepseek", model_id: "deepseek-v4-flash-vision-exp" },
     // The factory command-policy rules are seeded like the model presets: copied into the
     // new project's config and owned by it from then on — later factory changes never
     // rewrite an existing file. Spread to keep the module-level constant frozen.

@@ -21,7 +21,7 @@ SDK 与其他两条路线读同一个数据目录 `~/.penguin/data`，所以在[
 
 ```bash
 npm install -g @prismshadow/penguin-cli
-penguin config model add --provider deepseek --model-id deepseek-v4-flash --api-key sk-... --set-default
+penguin config model add --provider deepseek --model-id deepseek-v4-flash-vision-exp --api-key sk-... --set-default
 ```
 
 也可以完全不落盘：模型条目没有内联 api_key 时，LLM 网关库 AgentHub 会读取 `DEEPSEEK_API_KEY`、`ANTHROPIC_API_KEY`、`OPENAI_API_KEY`、`GEMINI_API_KEY` 等环境变量；工作目录下的 `.env` 会被自动加载。

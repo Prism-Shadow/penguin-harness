@@ -73,13 +73,13 @@ Model entry (`[[models]]`) fields:
 | `created_at` | Write timestamp of `api_key` (ISO 8601; a display field maintained by the interface layer) |
 
 ```toml
-default_model = { provider = "deepseek", model_id = "deepseek-v4-flash" }
+default_model = { provider = "deepseek", model_id = "deepseek-v4-flash-vision-exp" }
 
 [[models]]
 provider = "deepseek"
-model_id = "deepseek-v4-flash"
+model_id = "deepseek-v4-flash-vision-exp"
 context_window = 1000000
-vision = false
+vision = true
 api_key = "sk-..."
 
 [models.pricing]

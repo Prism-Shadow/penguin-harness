@@ -1310,9 +1310,20 @@ describe("project-config round trip", () => {
     expect(entry?.vision).toBeUndefined();
   });
 
-  it("default config presets the full model catalog (default = deepseek deepseek-v4-flash)", () => {
+  it("default config presets the full model catalog (default = deepseek deepseek-v4-flash-vision-exp)", () => {
     const cfg = defaultProjectConfig();
-    expect(cfg.default_model).toEqual({ provider: "deepseek", model_id: "deepseek-v4-flash" });
+    expect(cfg.default_model).toEqual({
+      provider: "deepseek",
+      model_id: "deepseek-v4-flash-vision-exp",
+    });
+    // The default has to be a model that can actually read an image: a new Project's first
+    // pasted screenshot goes to it, and the text-only sibling would decline one for a reason
+    // nothing on screen explains.
+    const chosen = MODEL_CATALOG.find(
+      (m) =>
+        m.provider === cfg.default_model!.provider && m.modelId === cfg.default_model!.model_id,
+    );
+    expect(chosen?.supportsVision).toBe(true);
     // The catalog is presented in full: provider and model_id are separate columns, model_id
     // being the plain upstream id (vision is only persisted as false for models that don't
     // support images).
