@@ -12,8 +12,10 @@
       "import": "./dist/index.js"
     }
   },
+  "license": "Apache-2.0",
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
