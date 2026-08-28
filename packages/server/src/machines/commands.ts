@@ -9,11 +9,14 @@
  * itself is the ordinary one (install.sh, install.ps1), downloading the pinned release from
  * the remote's own network.
  *
- * COUNT THE HANDSHAKES. Every one of these is a separate ssh connection, and a handshake to
- * a distant or loaded host costs tens of seconds — so a step that can ride an existing
- * connection must. A POSIX install is one call: the installer goes in on ssh's stdin, the
- * same shape as the documented `curl … | sh`, which is what lets the scratch directory, the
- * scp and the cleanup disappear entirely.
+ * COUNT THE HANDSHAKES. A handshake to a distant or loaded host costs tens of seconds — so a
+ * step that can ride an existing connection must, and a connection worth having is HELD. Both
+ * halves are answered elsewhere: ssh-session.ts keeps one shell per machine for the small
+ * commands, forward.ts keeps one forward per machine for everything reached over HTTP. What
+ * is left here is the invocations that cannot ride either, and there is one rule for them —
+ * a POSIX install is ONE call, the installer going in on ssh's stdin, the same shape as the
+ * documented `curl … | sh`, which is what lets the scratch directory, the scp and the cleanup
+ * disappear entirely.
  *
  * Two further rules encoded here:
  * - **BatchMode.** A GUI app has no terminal: an ssh that decides to ask for a password or a
@@ -47,6 +50,11 @@ export interface RemoteTarget {
   alias: string;
   /** Login account. Empty means "whatever ssh resolves", i.e. no -o User override. */
   user: string;
+}
+
+/** The connection flags every ssh/scp here shares; exported for the shared-shell channel. */
+export function connectionOptionsFor(target: RemoteTarget): string[] {
+  return connectionOptions(target);
 }
 
 function connectionOptions(target: RemoteTarget): string[] {
@@ -107,15 +115,111 @@ export function runInstallScriptCommand(
 
 /**
  * Unpacks the replicated hmr state (harness.json + store/), streamed to ssh's stdin as one
- * tar.gz, into the remote's default data root — where a server this page installed will look
- * for it on boot (hmr/host.ts's restore). `tar` reads stdin with `-f -` on both sides;
+ * tar.gz, into the remote's HMR DIRECTORY. `tar` reads stdin with `-f -` on both sides;
  * Windows 10+ ships bsdtar.
+ *
+ * `<data root>/hmr`, not the data root itself: the members are named relative to the sending
+ * side's own hmr directory (install-server.ts tars `-C <root>/hmr harness.json store`), so
+ * the two `-C` arguments have to name the same layer. Extracting one directory too high
+ * writes a `harness.json` and a `store/` that nothing reads — hmr/host.ts fixes the layout at
+ * `<root>/hmr` — and the machine goes on answering with whatever it held before, so the
+ * replication reports success and achieves nothing.
  */
 export function unpackStoreCommand(platform: RemotePlatform): string {
   if (platform === "win32") {
-    const root = "%USERPROFILE%\\.penguin\\data";
+    const root = "%USERPROFILE%\\.penguin\\data\\hmr";
     return `(if not exist ${cmdQuote(root)} mkdir ${cmdQuote(root)}) & tar -xzf - -C ${cmdQuote(root)}`;
   }
-  const root = "$HOME/.penguin/data";
+  const root = "$HOME/.penguin/data/hmr";
   return `mkdir -p "${root}" && tar -xzf - -C "${root}"`;
+}
+
+/**
+ * The far side's program directory, and the launcher inside it that everything here runs.
+ * Absolute, because sshd's non-login shell has no `~/.local/bin` on PATH — the symlink the
+ * installer drops there is for a person at a terminal, not for us.
+ *
+ * `$HOME/.penguin` is where install.sh puts it (`PENGUIN_INSTALL_DIR`, defaulting there),
+ * laid out as bin/ lib/ web/ node/, with the launcher exec'ing `node/bin/node lib/dist/…`
+ * (scripts/launchers/penguin). A remote's own override of that variable is not visible over
+ * a non-interactive ssh, so the default is the only thing this side can assume — the same
+ * assumption detect.ts makes to find the manifest.
+ *
+ * One constant because this was written three times and two of them named
+ * `$XDG_DATA_HOME/penguin`, a directory nothing in the repo creates: starting a remote
+ * server could not work at all, and the upgrade applier only ever ran through its bare-node
+ * fallback — on machines that carry their own runtime precisely so they need no system node.
+ */
+export const REMOTE_PROGRAM_DIR = "$HOME/.penguin";
+
+/**
+ * The CLI these commands run on a machine: the one PUSHED to it, not the one installed.
+ *
+ * `bin/penguin` is the released program, and a release only carries the subcommands this
+ * side asks for (`server status`, `auth token`, `server --detach`) once a release has
+ * shipped them. Reaching a machine would then be impossible until the next release —
+ * including for the build that introduces reaching machines at all.
+ *
+ * `dist/penguin-hmr.js` is the entry that loads the CLI out of that machine's own hmr store
+ * (packages/cli/src/penguin-hmr.ts), which is the CLI this server pushed there. It has
+ * shipped in the archive since long before any of this, so a machine installed by any
+ * release can run the current CLI. What it cannot do is run one that was never pushed: a
+ * machine with an empty store answers `no CLI pushed to <root>`, and the remedy is to
+ * install — which replicates the store on its way through (install-server.ts).
+ *
+ * Invoked through the bundled runtime rather than the launcher, because there is no
+ * launcher for this entry. Machines installed from here always carry that runtime: the
+ * install runs install.sh without `--universal`, which is the only mode that omits it.
+ */
+export const REMOTE_PENGUIN = `"${REMOTE_PROGRAM_DIR}/node/bin/node" "${REMOTE_PROGRAM_DIR}/lib/dist/penguin-hmr.js"`;
+
+// --- tunnelling to that server ---------------------------------------------------------------
+
+/**
+ * `ssh -N -L <port>:127.0.0.1:<port> <alias>` — the tunnel that makes the remote server a
+ * loopback origin here. Local and remote port are the SAME number by design: preview URLs
+ * are built from the server's own bound port (preview-token.ts), so the two must stay equal.
+ * ExitOnForwardFailure turns "local port taken" into an exit instead of a silent no-op
+ * tunnel, and the keepalives surface a dead link within a minute.
+ */
+export function tunnelArgs(target: RemoteTarget, port: number): string[] {
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`bad port ${port}`);
+  return [
+    ...connectionOptions(target),
+    "-N",
+    "-o",
+    "ExitOnForwardFailure=yes",
+    "-o",
+    "ServerAliveInterval=15",
+    "-o",
+    "ServerAliveCountMax=4",
+    "-L",
+    `${port}:127.0.0.1:${port}`,
+    target.alias,
+  ];
+}
+
+/** Marker separating the resolved path from the entries in a directory listing. */
+export const DIR_LIST_MARK = "---penguin-dirs---";
+
+/**
+ * Lists the subdirectories of `dir` on the far side, plus the path it actually resolved to.
+ *
+ * An empty `dir` means that machine's home, which is the picker's starting point. The path
+ * is resolved over THERE (`cd` + `pwd -P`) because only that machine can say what `~` or a
+ * symlink means on it — resolving here would be this machine answering a question about
+ * another one's filesystem.
+ *
+ * Hidden directories are dropped, matching what the local browser shows, and everything is
+ * quoted for the remote shell by the caller's quoting rules.
+ */
+export function listDirsCommand(dir: string): string {
+  const target = dir === "" ? '"$HOME"' : shQuote(dir);
+  return [
+    `cd ${target} 2>/dev/null || exit 3`,
+    `pwd -P`,
+    `echo ${DIR_LIST_MARK}`,
+    // -1 one per line, trailing slash marks directories, then keep only those.
+    `ls -1p 2>/dev/null | grep '/$' | sed 's:/$::' | grep -v '^\\.' || true`,
+  ].join("; ");
 }
