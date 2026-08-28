@@ -831,6 +831,21 @@ describe("machines API", () => {
       expect(((await res.json()) as { error: { code: string } }).error.code).toBe("signin_refused");
     });
 
+    it("turns an unexpected throw into that same answer, not a 500", async () => {
+      // ssh work has many ways to go wrong and only the anticipated ones are returned. One
+      // that is not — here, the sign-in path throwing outright — used to reach the browser as
+      // a bare "Internal server error" about a machine whose real answer was specific.
+      await identified({
+        runOn: async () => ({ code: 0, stdout: "", stderr: "", timedOut: false }),
+        signIn: () => {
+          throw new Error("ssh vanished mid-handshake");
+        },
+      });
+      const res = await admin.post(`/api/projects/default_project/machines/${ID}/signin`);
+      expect(res.status).toBe(502);
+      expect(await res.text()).toContain("ssh vanished mid-handshake");
+    });
+
     it("distinguishes a machine that could not be reached from one that refused", async () => {
       await identified({ signIn: async () => ({ kind: "failed", detail: "no route to host" }) });
       expect((await admin.post(`/api/projects/default_project/machines/${ID}/signin`)).status).toBe(

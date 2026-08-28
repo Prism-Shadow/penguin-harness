@@ -1071,6 +1071,19 @@ export class MachinesService {
    * turns that into a 404 rather than reaching for something.
    */
   async signInOn(machineId: string): Promise<SignInOutcome | null> {
+    try {
+      return await this.#signInOn(machineId);
+    } catch (err) {
+      // The contract is an OUTCOME, and every caller reads one: the route turns `failed` into
+      // a 502 carrying this text, and the page shows it. A throw escaping here instead reaches
+      // the browser as a bare 500 — "Internal server error", about a machine whose real answer
+      // was something specific and actionable. ssh work has many ways to go wrong and only the
+      // ones anticipated are returned; this makes the rest returnable too.
+      return { kind: "failed", detail: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  async #signInOn(machineId: string): Promise<SignInOutcome | null> {
     const machine = this.#allMachines().find(
       (entry) => entry.machineId === machineId && !entry.local,
     );
