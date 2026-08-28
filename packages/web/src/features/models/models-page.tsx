@@ -1118,7 +1118,15 @@ export function ModelsPage() {
                           // bar competes with the vendor name it is endorsing. It holds on
                           // longer than the model count beside it and gives way before the
                           // name does.
-                          <span className="hidden shrink-0 whitespace-nowrap rounded-full border border-emerald-300 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 @lg:inline dark:border-emerald-800 dark:text-emerald-400">
+                          //
+                          // Gold, and the darker end of it: `yellow-700` (#a16207) is the last
+                          // rung that still clears 4.5:1 against this bar's gray-50 — 11px bold
+                          // is not WCAG "large text", so the brighter golds above it are not
+                          // available in light mode. Dark mode takes yellow-400, the bright
+                          // gold, which clears it comfortably on this app's near-black. The
+                          // ring is the text's own hue at 40%, in both themes: a ring brighter
+                          // than the words it encloses reads as a highlighter, not as gold.
+                          <span className="hidden shrink-0 whitespace-nowrap rounded-full border border-yellow-700/40 px-2 py-0.5 text-[11px] font-semibold text-yellow-700 @lg:inline dark:border-yellow-400/40 dark:text-yellow-400">
                             {S.models.recommendedGroup}
                           </span>
                         )}

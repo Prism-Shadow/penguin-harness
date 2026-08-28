@@ -50,10 +50,10 @@ renamed the three price buckets.
 ## The models page
 
 - TokenDance is marked as the recommended provider group: it leads the default group order,
-  wears a green "Recommended" pill on its own collapse bar, and is the group the page opens
-  expanded on a first visit. The pill is spelled in emerald rather than through `Badge`'s
-  `brand` tone, which is deliberately gray — neutral emphasis outside the status vocabulary —
-  and an endorsement is neither a status nor neutral. Its English label is one word because
+  wears a gold "Recommended" pill on its own collapse bar, and is the group the page opens
+  expanded on a first visit. The pill is spelled in gold rather than through `Badge`'s `brand`
+  tone, which is deliberately gray — neutral emphasis outside the status vocabulary — and an
+  endorsement is neither a status nor neutral. Its English label is one word because
   this is the one group carrying five actions, making its row the most crowded on the page, and
   the vendor name beside it is what a reader needs first.
 - **The model card is three fixed rows.** Its name, one size down, with what the model has
