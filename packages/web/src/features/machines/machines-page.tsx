@@ -1,30 +1,15 @@
 /**
- * Machines page: pick a host out of the SERVER's own `~/.ssh/config` and install this build
- * on it.
+ * Machines page: pick a host out of the SERVER's own `~/.ssh/config`, install this build on
+ * it, connect to it, sign in to it.
  *
- * The host list is a PICKER, not a rendered list, because an ssh config routinely declares
- * hundreds of entries: the panel shows a few rows, a fuzzy query reaches the rest, and the
- * matched characters are highlighted so a subsequence hit (`gpu1` → `gpu-01`) reads as a
- * match rather than as a wrong result. A counter names how many rows the current view leaves
- * out — silent truncation would read as "that host is not in my config".
+ * The host list is a picker, not a rendered list: an ssh config routinely declares hundreds
+ * of entries, so the panel shows a few rows, a fuzzy query reaches the rest, and a counter
+ * names how many rows the view leaves out.
  *
- * The list itself is the config text; the server does no `ssh -G` and no network to produce
- * it, so hundreds of hosts cost one file read and a row carries nothing but its alias.
- *
- * An install is a job on the server, not a request that finishes: it probes the machine,
- * may fetch a Node runtime, copies an image over scp and runs an installer there. POST
- * starts it and the page polls while it runs. The progress lines are the far side's own
- * words wherever there are any, so they are rendered verbatim in a monospace block rather
- * than interpreted here — a refused key or an unusable Node explains itself better than any
- * status enum could.
- *
- * One job exists at a time server-side, so the panel below follows THE JOB and names the
- * alias it belongs to, while the button follows the SELECTION: picking another host while
- * one installs must not hide the install that is running.
- *
- * Which hosts already carry this program comes from each machine's own persisted record,
- * not from the job — the job is one slot, so reading "installed" off it made a host stop
- * looking installed the moment anything else was installed or the server restarted.
+ * An install is a job on the server: POST starts it and the page polls while it runs. The
+ * progress lines are the far side's own words, rendered verbatim in a monospace block. One
+ * job exists at a time server-side, so the panel follows THE JOB and names the alias it
+ * belongs to, while the button follows the selection.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MachineInfo, MachinesResponse } from "@prismshadow/penguin-server/api";
@@ -278,22 +263,6 @@ export function MachinesPage() {
       cancelled = true;
     };
   }, [connectedIds, projectId]);
-
-  /**
-   * Ends the session on a machine. The row goes back to offering Sign in — deliberately not
-   * re-probed: the auto sign-in effect would take a machine it CAN sign in to straight back
-   * to signed-in, and a control that undoes itself is not one.
-   */
-  const signOut = async (machineId: string) => {
-    if (projectId === null) return;
-    try {
-      await api.signOutOnMachine(projectId, machineId);
-      setSignedIn((prev) => ({ ...prev, [machineId]: "signed-out" }));
-      setError(null);
-    } catch (err) {
-      setError(apiErrorText(err));
-    }
-  };
 
   const submitSignIn = async () => {
     if (signInTo?.machineId == null) return;
@@ -599,19 +568,11 @@ export function MachinesPage() {
                                 because there is nothing here that could vouch for you
                                 there. */}
                             {machine.machineId !== null &&
-                              (signedIn[machine.machineId] === "signed-in" ? (
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => void signOut(machine.machineId!)}
-                                >
-                                  {S.machines.signOut}
-                                </Button>
-                              ) : (
+                              signedIn[machine.machineId] !== "signed-in" && (
                                 <Button size="sm" onClick={() => setSignInTo(machine)}>
                                   {S.machines.signIn}
                                 </Button>
-                              ))}
+                              )}
                             <Button
                               size="sm"
                               variant="ghost"

@@ -1,19 +1,11 @@
 /**
  * Which machines a workspace can be picked on, and how each is labelled.
  *
- * A workspace is a directory ON a machine, so choosing one means choosing where the path
- * has to exist. Only a machine whose filesystem is reachable right now can be BROWSED: this
- * one always, and any other with a live tunnel. One that is merely installed has no route to
- * browse over.
- *
- * Every machine is LISTED regardless — the ones that cannot be browsed are shown disabled,
- * each carrying its own reason. Filtering them out, or summarising them as a count at the
- * bottom, both fail the same way: the question "why can I not pick that machine?" is asked
- * at the row, so that is where the answer has to be. A list that silently omits its answer
- * is indistinguishable from a broken feature.
- *
- * Identified by machine id and labelled by ssh alias, the same split as everywhere else:
- * the alias is what someone recognises, the id is what gets stored.
+ * A workspace is a directory ON a machine. Only one whose filesystem is reachable right now
+ * can be browsed: this one always, and any other with a live tunnel. Every installed machine
+ * is LISTED regardless, the unreachable ones disabled with their reason at the row — a list
+ * that silently omits its answer is indistinguishable from a broken feature. Identified by
+ * machine id and labelled by ssh alias.
  */
 import type { MachineInfo, MachinesResponse } from "@prismshadow/penguin-server/api";
 

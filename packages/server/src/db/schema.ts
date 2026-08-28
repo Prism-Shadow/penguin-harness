@@ -155,9 +155,26 @@ CREATE TABLE IF NOT EXISTS server_settings (   -- admin-level server-global sett
   key   TEXT PRIMARY KEY,                     -- setting name, e.g. 'proxy_for_app'
   value TEXT NOT NULL                         -- JSON-encoded value; an absent row means the setting's built-in default
 );
-CREATE TABLE IF NOT EXISTS machine (           -- this server's OWN identity, minted here and never assigned from outside (machines/machine-id.ts publishes it for probes)
+CREATE TABLE IF NOT EXISTS machine (           -- this server's OWN identity, minted here and never assigned from outside (what 'penguin server status' reports)
   singleton  INTEGER PRIMARY KEY CHECK (singleton = 1),  -- exactly one row, enforced by the schema rather than by convention
   machine_id TEXT NOT NULL                    -- 16 base64url characters; what every stored reference to this machine points at
+);
+CREATE TABLE IF NOT EXISTS machine_connect (   -- the tunnel this server holds to each machine (machines/service.ts); what a successor App adopts after a hot swap
+  address      TEXT PRIMARY KEY,               -- 'ssh:<alias>'
+  port         INTEGER NOT NULL,               -- local = remote port the tunnel forwards
+  machine_id   TEXT,                           -- that machine's own id, once heard
+  tunnel_pid   INTEGER,                        -- the ssh child, while one is believed alive
+  connected_at TEXT
+);
+CREATE TABLE IF NOT EXISTS machine_project (   -- which machines a Project uses; no row = the Project never had a list (service.ts's inheritance rule)
+  project_id TEXT PRIMARY KEY,
+  addresses  TEXT NOT NULL                     -- JSON array of 'ssh:<alias>'
+);
+CREATE TABLE IF NOT EXISTS machine_model_sync ( -- fingerprint of the Model config last handed to a machine, per Project
+  address     TEXT NOT NULL,
+  project_id  TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  PRIMARY KEY (address, project_id)
 );
 CREATE TABLE IF NOT EXISTS trace_files (       -- DERIVED CACHE of the on-disk Trace tree (services/trace-index.ts): the directories stay the single source of truth, every row is rebuildable from disk, and a row is never authority for absence — consumers reconcile + retry on a miss, so a stale index costs one extra scan, never a false 404
   project_id TEXT NOT NULL,

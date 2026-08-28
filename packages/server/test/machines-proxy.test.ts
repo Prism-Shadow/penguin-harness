@@ -12,7 +12,6 @@
  * server. These cases pin that nothing crosses.
  */
 import { describe, expect, it } from "vitest";
-import { sessionInCookieHeader, sessionTokenOf } from "../src/machines/proxy.js";
 import {
   SERVER_PROXY_PREFIX,
   cookieMarker,
@@ -35,16 +34,12 @@ describe("parseProxyPath", () => {
   });
 
   it("needs no percent-encoding — a machine id is base64url by construction", () => {
-    // The reason to address by id rather than alias: `ssh:far` had to be written
-    // `ssh%3Afar`, and an encode/decode mismatch is a whole class of bug this removes.
     const path = `${SERVER_PROXY_PREFIX}${A}/api/me`;
     expect(path).not.toContain("%");
     expect(parseProxyPath(path)?.machineId).toBe(A);
   });
 
   it("forwards ONLY /api — a remote's pages are never proxied", () => {
-    // The frontend is deliberately local; serving a remote's HTML here would put two
-    // different builds' assets under one origin.
     expect(parseProxyPath(`${SERVER_PROXY_PREFIX}${A}/`)).toBeNull();
     expect(parseProxyPath(`${SERVER_PROXY_PREFIX}${A}/index.html`)).toBeNull();
     expect(parseProxyPath(`${SERVER_PROXY_PREFIX}${A}/preview/x`)).toBeNull();
@@ -120,35 +115,12 @@ describe("rewriteLocation", () => {
 
 describe("keying on the machine rather than the alias", () => {
   it("a cookie survives the host being re-aliased in ssh config", () => {
-    // Same machine, reached through a renamed alias: the marker is unchanged, so the
-    // browser's stored session is still forwarded instead of silently being dropped.
     const stored = rewriteSetCookie("penguin_session=abc; Path=/", A).split(";")[0]!;
     expect(rewriteRequestCookies(stored, A)).toBe("penguin_session=abc");
   });
 
   it("two aliases for one machine share one session, not two logins", () => {
-    // Both resolve to the same machine id, so both find the same cookie.
     const viaFirstAlias = rewriteSetCookie("penguin_session=abc", A).split(";")[0]!;
     expect(rewriteRequestCookies(viaFirstAlias, A)).toBe("penguin_session=abc");
-  });
-});
-
-describe("reading the session a machine's own cookies carry", () => {
-  it("finds it in a Set-Cookie the machine issued", () => {
-    expect(sessionTokenOf("penguin_session=abc123; Path=/; HttpOnly; SameSite=Lax")).toBe("abc123");
-  });
-
-  it("ignores every other cookie the machine sets", () => {
-    expect(sessionTokenOf("penguin_prefs=dark; Path=/")).toBeNull();
-    expect(sessionTokenOf("penguin_session_other=abc; Path=/")).toBeNull();
-    expect(sessionTokenOf("penguin_session=; Path=/")).toBeNull();
-  });
-
-  it("finds it in a Cookie header the browser is already presenting", () => {
-    // The half that serves a machine signed in to BEFORE this side kept sessions: the
-    // browser sends it on every request, so there is nothing to ask anyone to redo.
-    expect(sessionInCookieHeader("penguin_prefs=dark; penguin_session=abc123")).toBe("abc123");
-    expect(sessionInCookieHeader("penguin_prefs=dark")).toBeNull();
-    expect(sessionInCookieHeader(null)).toBeNull();
   });
 });

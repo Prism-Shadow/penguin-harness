@@ -47,7 +47,7 @@ import { MessagingBindingsRepo } from "./db/repos/messaging-bindings.js";
 import { GoalsRepo } from "./db/repos/goals.js";
 import { SchedulesRepo } from "./db/repos/schedules.js";
 import { ServerSettingsRepo } from "./db/repos/server-settings.js";
-import { MachineRepo } from "./db/repos/machine.js";
+import { MachinesRepo } from "./db/repos/machines.js";
 import { SessionsRepo } from "./db/repos/sessions.js";
 import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
 import { UsersRepo } from "./db/repos/users.js";
@@ -919,6 +919,7 @@ export function buildAppDeps(
     ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}),
   });
 
+  const machinesRepo = new MachinesRepo(db);
   return {
     config,
     db,
@@ -958,7 +959,9 @@ export function buildAppDeps(
     // lives, and where verified Node runtime downloads are cached between installs.
     machines:
       overrides.machines ??
-      new MachinesService(config.root, new MachineRepo(db).id(), {}, () => hmr.assetsDir()),
+      new MachinesService(config.root, machinesRepo.ownId(), machinesRepo, {}, () =>
+        hmr.assetsDir(),
+      ),
     hmr,
     proxyControl: caps.proxyControl,
     log,
@@ -1056,12 +1059,8 @@ export function createApp(
   // local session is not a credential over there and requiring one would mean two logins
   // for one window. The tunnel port it forwards to is already reachable from this machine,
   // so the route adds no exposure the tunnel had not.
-  // The second argument is what makes one sign-in serve both sides: a machine's login answer
-  // passes through here, and the session it carries is kept for the work this server does on
-  // that machine (see machines/service.ts's #sessions). The password never touches this side.
-  const serverProxy = machinesProxy(
-    async (machineId) => deps.machines.tunnelPortForMachine(machineId),
-    (machineId, token) => deps.machines.rememberSession(machineId, token),
+  const serverProxy = machinesProxy(async (machineId) =>
+    deps.machines.tunnelPortForMachine(machineId),
   );
   app.all(`${SERVER_PROXY_PREFIX}*`, async (c) => {
     const answer = await serverProxy(c.req.raw);

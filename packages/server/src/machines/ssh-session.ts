@@ -1,37 +1,22 @@
 /**
  * One long-lived shell per machine, so small commands stop paying for a connection.
  *
- * Every ssh invocation is a TCP connect, a key exchange and an authentication — hundreds of
- * milliseconds before the command runs, and the commands here are tiny: read a lock file,
- * list a directory. A status probe and a directory browser spending that per click is the
- * lag this removes.
- *
- * OpenSSH can do this itself with ControlMaster, and Win32 OpenSSH cannot — it has no
- * support for the control socket. Since a controller may well be a Windows machine, the
- * multiplexing is done here instead: `ssh -T <alias> sh` is held open and commands are fed
- * to its stdin. Doing it ourselves also means one mechanism on every controller instead of
- * two, and no ssh option a reader has to go and look up.
+ * Every ssh invocation is a TCP connect, a key exchange and an authentication before the
+ * command runs, and the commands here are tiny: read a lock file, list a directory. Win32
+ * OpenSSH has no ControlMaster, so the multiplexing is done here: `ssh -T <alias> sh` is held
+ * open and commands are fed to its stdin — one mechanism on every controller.
  *
  * FRAMING. Each command is wrapped so its end is unambiguous:
  *
  *     ( <command> ) 2>&1 ; printf '\n<mark> %s\n' "$?"
  *
- * A SUBSHELL, not a group: a command containing `exit` — which the directory browser's does
- * on a missing path — would otherwise end the shell itself, and the exit code would never
- * come back at all. It also keeps a `cd` from leaking into the next command.
+ * A SUBSHELL, so a command containing `exit` cannot end the shell and a `cd` cannot leak. The
+ * mark is random per session, so nothing a command prints can forge it. Output and errors are
+ * MERGED — separating them over one pipe needs temp files — and that is in the type: the
+ * result is `output`, not `stdout`/`stderr`. Commands queue on the one pipe.
  *
- * The mark is random per session, so nothing a command prints can forge it. Output and
- * errors are MERGED on purpose — separating them over one pipe needs temp files or bashisms,
- * and the commands routed here are ones whose own markers delimit what matters and whose
- * failures are read from the exit code. That is a real limitation, so it is in the type: the
- * result is `output`, not `stdout`/`stderr`.
- *
- * SERIALIZED. One pipe, so commands queue. That is not a cost worth avoiding: they are
- * milliseconds once the connection exists, and interleaving them would make the framing a
- * lie.
- *
- * UNSUPERVISED, like the tunnels. A shell that dies is dropped and the next command opens a
- * new one; a caller never sees the difference beyond that one command's latency.
+ * UNSUPERVISED, like the tunnels: a shell that dies is dropped and the next command opens a
+ * new one.
  */
 import { spawn } from "node:child_process";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";

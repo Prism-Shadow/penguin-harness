@@ -152,5 +152,20 @@ export function versionRoutes(deps: AppDeps): Hono<AppEnv> {
     return c.json(await inflightRun);
   });
 
+  /**
+   * Graceful shutdown on request: exactly what SIGTERM does, reachable over HTTP because a
+   * signal cannot be delivered to a Windows process. A controller restarting a machine onto
+   * a build it just installed asks here, then starts the server over ssh.
+   */
+  app.post("/shutdown", (c) => {
+    if (!c.var.user.isAdmin) {
+      throw new HttpError(403, "admin_required", "Only an admin can perform this operation.");
+    }
+    // Emitted in-process: index.ts's SIGTERM listener IS the shutdown, and nothing has to be
+    // delivered by the OS. A beat later, so this answer is not cut off by the closing listener.
+    setTimeout(() => process.emit("SIGTERM", "SIGTERM"), 50).unref();
+    return c.body(null, 202);
+  });
+
   return app;
 }

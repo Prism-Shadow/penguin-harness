@@ -1,16 +1,10 @@
 /**
  * What the Machines page's install control offers, decided as data rather than in JSX.
  *
- * The server keeps ONE install job at a time, so the button is governed by two things that
- * are not the same: which machine is SELECTED in the picker, and which machine the job (if
- * any) belongs to. They come apart the moment someone picks a second host while the first
- * is still installing — the button must refuse, but the running job's log still belongs on
- * screen, under the alias it is actually installing to. That is why the job panel renders
- * from `state.job` directly and only the button consults the selection.
- *
- * "Already installed" is a THIRD thing, and it comes from the machine's own persisted
- * record rather than from the job: the job is one slot, so deriving it from there made an
- * installed machine vanish as soon as anything else was installed or the server restarted.
+ * The server keeps ONE install job at a time, so the button is governed by which machine is
+ * SELECTED and which machine the job belongs to — they come apart when someone picks a second
+ * host while the first installs. "Already installed" comes from the machine's own persisted
+ * record, not from the job.
  */
 import type {
   MachineConnectJob,

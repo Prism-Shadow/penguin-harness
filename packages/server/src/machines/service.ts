@@ -1,23 +1,12 @@
 /**
  * The machines service: this server's own `~/.ssh/config` as a list of targets, and putting
- * this build on one of them.
+ * this build on one of them, connecting to it, and keeping it configured.
  *
- * An install is a JOB, not a request. It probes the far side, has it download and install
- * this server's base release, and streams the hmr state across — minutes, in the bad case —
- * so POST starts it and the Web App polls for the progress lines. One at a time: the
- * surface is a person installing on one machine.
- *
- * The JOB is not persisted. It lives in this App's memory and dies with it (see the park
- * list in ../hmr/platform.ts — it is on the SUSPENDED side): a hot push during an install
- * loses the progress log, and the recovery is to run it again, which is safe because every
- * step is idempotent — the far side's installer stages, smoke-tests and swaps, and an
- * unchanged version is a no-op.
- *
- * The RESULT is. Which machines carry this program is not a property of the last job — it
- * has to outlive the job, the process and the next install somewhere else — so a successful
- * install is written to `<data root>/machines-installs.json` (installs.ts) and read back
- * into every list(). Without it "installed" would blink out the moment anything else
- * happened, which is exactly what it did before this file wrote anything down.
+ * An install is a JOB, not a request: POST starts it and the Web App polls for the progress
+ * lines. The job lives in this App's memory and dies with it (a hot push mid-install loses
+ * the log; re-running is safe, every step is idempotent). Its RESULT is persisted — which
+ * machines carry this program has to outlive the job and the process — as install records
+ * in `<data root>/machines-installs.json` (installs.ts), read back into every list().
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -36,30 +25,24 @@ import { SESSION_COOKIE } from "../auth/middleware.js";
 import { listHostAliases, resolveTarget } from "./targets.js";
 import { machineIdentity } from "./ssh-config.js";
 import type { RemoteTarget } from "./commands.js";
-import { sshArgs } from "./commands.js";
-import { run } from "./exec.js";
 import type { ExecResult } from "./exec.js";
 import { installOnRemote, resolvePushPlan } from "./install-server.js";
 import { parseInstallRecords, withInstallRecord } from "./installs.js";
-import { parseMembers, withMember } from "./membership.js";
-import { fingerprintLocal, parseModelSyncState, withModelSyncState } from "./models-sync-state.js";
 import type { InstallRecord } from "./installs.js";
 import { probeServerState } from "./server-state.js";
 import { DIR_LIST_MARK, listDirsCommand } from "./commands.js";
 import { upgradeRemote } from "./upgrade.js";
 import type { UpgradeOutcome } from "./upgrade.js";
 import { mintTokenOnRemote } from "./remote-token.js";
-import { sessionTokenOf } from "./proxy.js";
 import { closeShell, runOnShell } from "./ssh-session.js";
 import { closeForward } from "./forward.js";
-import { syncModelsToMachine } from "./models-sync.js";
+import { fingerprintLocal, syncModelsToMachine } from "./models-sync.js";
 import { machineApi } from "./machine-api.js";
 import type { LocalModels } from "./models-sync.js";
-import { localPortBusy, openTunnel, waitForTunneledHttp } from "./tunnel.js";
+import { localPortBusy, openTunnel, pickTunnelPort, waitForTunneledHttp } from "./tunnel.js";
 import type { Tunnel } from "./tunnel.js";
 import { startRemoteServer, stopRemoteServer } from "./server-control.js";
-import { parseConnectState, pickTunnelPort, withConnectState } from "./connect-state.js";
-import type { ConnectState } from "./connect-state.js";
+import type { ConnectState, MachinesRepo } from "../db/repos/machines.js";
 
 /**
  * What signing in to a machine can answer. `refused` is the machine saying no — most often a
@@ -88,7 +71,7 @@ export interface MachinesEffects {
   probe: typeof probeServerState;
   /** One command on a machine — the seam the directory browser and any future reader share. */
   runOn: (target: { alias: string; user: string }, command: string) => Promise<ExecResult>;
-  startServer: typeof startRemoteServer;
+  startServer: (target: RemoteTarget, port: number) => ReturnType<typeof startRemoteServer>;
   stopServer: typeof stopRemoteServer;
   upgrade: typeof upgradeRemote;
   /** This server's own Project config, credentials in plaintext — the source of a model sync. */
@@ -166,6 +149,7 @@ export class MachinesService {
   constructor(
     private readonly dataRoot: string,
     machineId: string,
+    private readonly repo: MachinesRepo,
     effects: Partial<MachinesEffects> = {},
     assets: () => string | null = () => null,
   ) {
@@ -185,7 +169,7 @@ export class MachinesService {
         const result = await runOnShell(`ssh:${target.alias}`, target, command);
         return { code: result.code, stdout: result.output, stderr: "", timedOut: false };
       },
-      startServer: startRemoteServer,
+      startServer: (target, port) => startRemoteServer(target, port, this.#effects.runOn),
       stopServer: stopRemoteServer,
       upgrade: upgradeRemote,
       loadConfig: (projectId) => loadProjectConfig(dataRoot, projectId),
@@ -195,61 +179,6 @@ export class MachinesService {
       now: () => new Date(),
       ...effects,
     };
-  }
-
-  /**
-   * A session this side holds on a machine, by machine id — the token, not a password.
-   *
-   * Kept so that signing OUT can mean something. The browser is handed the cookie and would
-   * otherwise be the only holder; dropping our copy would leave the token valid on that
-   * machine for its whole term, which is not a sign-out. Recorded wherever a session is
-   * issued: the proxy sees a hand sign-in go past, and signInOn keeps what it obtained.
-   *
-   * Nothing else on this side reads it. The model sync and the hot update both authenticate
-   * as a machine's admin too, but each MINTS its own (`penguin auth token`, one command on the
-   * shared shell) rather than borrowing this one: a person's session and this server's work
-   * on a machine are separate things, and signing out must not take an upgrade down with it.
-   * What authorizes the mint is the ssh account's access to that data root, not a password
-   * this side has ever seen.
-   *
-   * In memory, for this process only. It is a credential, and nothing auth-shaped rests on
-   * disk here — the same rule the session tokens themselves are held under. A restart costs
-   * one sign-in.
-   */
-  readonly #sessions = new Map<string, string>();
-
-  /**
-   * Ends this side's session on a machine, and asks the machine to end it too.
-   *
-   * Forgetting the token here would leave it valid over there for its whole term — a sign-out
-   * that only stops us from using a credential is not a sign-out. So the machine's own logout
-   * is called first, down the tunnel the session was being used through; a machine with no
-   * tunnel is told nothing and the token is dropped anyway, because the alternative is a
-   * sign-out that fails when the thing it protects against is least reachable.
-   *
-   * Answers whether the machine was reached, so the page can say which of the two happened.
-   */
-  async signOutOn(machineId: string): Promise<{ endedThere: boolean }> {
-    const token = this.#sessions.get(machineId);
-    this.#sessions.delete(machineId);
-    const port = this.tunnelPortForMachine(machineId);
-    if (token === undefined || port === null) return { endedThere: false };
-    try {
-      const api = machineApi(port, `${SESSION_COOKIE}=${token}`);
-      const res = await api.request("POST", "/api/auth/logout", {});
-      return { endedThere: res.status >= 200 && res.status < 300 };
-    } catch {
-      return { endedThere: false }; // Unreachable: the token is gone from here regardless.
-    }
-  }
-
-  /**
-   * Records a session a machine issued, from wherever it was issued. Called by the proxy for
-   * a sign-in a person performed through the browser: this side never learns the password,
-   * only what that password bought.
-   */
-  rememberSession(machineId: string, token: string): void {
-    this.#sessions.set(machineId, token);
   }
 
   /**
@@ -284,40 +213,24 @@ export class MachinesService {
     }
   }
 
-  /** Where a Project's machine list lives — beside that Project's own config. */
-  #membersFile(projectId: string): string {
-    return path.join(this.dataRoot, projectId, "machines.json");
-  }
-
   /**
-   * The addresses a Project uses.
-   *
-   * A file that is ABSENT is not the same as one holding an empty list. Machines were a
-   * property of the server before they were a property of a Project, so the first read for
-   * the default Project adopts what this server already had — the machines you installed
-   * keep working, in the Project your admin account already works in. An empty file means
-   * somebody emptied it, and is left exactly as they left it.
+   * The addresses a Project uses. A Project with no list yet is not one with an empty list:
+   * machines were a property of the server before they were a property of a Project, so the
+   * default Project's first read adopts what this server already had. An emptied list stays
+   * exactly as somebody left it.
    */
   #members(projectId: string): string[] {
-    let raw: string | null;
-    try {
-      raw = fs.readFileSync(this.#membersFile(projectId), "utf8");
-    } catch {
-      raw = null;
-    }
-    if (raw !== null) return parseMembers(raw);
-    if (projectId !== DEFAULT_PROJECT_ID) return [];
-    return Object.keys(this.#records());
+    const listed = this.repo.members(projectId);
+    if (listed !== null) return listed;
+    return projectId === DEFAULT_PROJECT_ID ? Object.keys(this.#records()) : [];
   }
 
-  /** Adds or removes one address from a Project's list. */
   #setMember(projectId: string, address: string, member: boolean): void {
-    const file = this.#membersFile(projectId);
-    // Seeded first: writing straight to an absent file would drop the machines the default
-    // Project inherits, since withMember would start from nothing.
-    const current = JSON.stringify({ machines: this.#members(projectId) });
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, withMember(current, address, member));
+    const current = this.#members(projectId);
+    this.repo.setMembers(
+      projectId,
+      member ? [...new Set([...current, address])] : current.filter((entry) => entry !== address),
+    );
   }
 
   /**
@@ -412,65 +325,32 @@ export class MachinesService {
     this.#setMember(projectId, address, false);
   }
 
-  /** Where the "what did we last send there" prints live, beside the other machine state. */
-  get #syncStateFile(): string {
-    return path.join(this.dataRoot, "machines-models-sync.json");
-  }
-
-  #readSyncState(): string | null {
-    try {
-      return fs.readFileSync(this.#syncStateFile, "utf8");
-    } catch {
-      return null;
-    }
-  }
-
   /** Writes down what a machine now has, so an unchanged config costs nothing next boot. */
   async #rememberSynced(address: string, projects: string[]): Promise<void> {
-    if (projects.length === 0) return;
-    const prints: Record<string, string> = {};
     for (const projectId of projects) {
       const local = await this.#localModels(projectId);
-      if (local !== null) prints[projectId] = fingerprintLocal(local);
-    }
-    try {
-      fs.writeFileSync(
-        this.#syncStateFile,
-        withModelSyncState(this.#readSyncState(), address, prints),
-      );
-    } catch {
-      // Unwritable: the next boot syncs again, which is wasteful but correct. Losing the
-      // ability to sync over losing the ability to remember would be the wrong trade.
+      if (local !== null) this.repo.setSyncPrint(address, projectId, fingerprintLocal(local));
     }
   }
 
   /**
    * Whether anything this side holds for that machine has changed since it last received it.
-   *
-   * Answered from local disk alone, on purpose: signing in on a machine costs a connection
-   * and an scp, and a boot happens on every hot push. Spending that to discover there was
-   * nothing to do is the cost this exists to avoid.
+   * Answered from local state alone: a boot happens on every hot push, and spending a
+   * connection to discover there was nothing to do is the cost this exists to avoid.
    */
   async #needsModelSync(address: string, projects: string[]): Promise<boolean> {
-    const sent = parseModelSyncState(this.#readSyncState())[address] ?? {};
     for (const projectId of projects) {
       const local = await this.#localModels(projectId);
       if (local === null || local.models.length === 0) continue;
-      if (sent[projectId] !== fingerprintLocal(local)) return true;
+      if (this.repo.syncPrint(address, projectId) !== fingerprintLocal(local)) return true;
     }
     return false;
   }
 
   /**
    * Brings every already-connected machine up to date with this server's Model config.
-   *
-   * Called when an App boots, which is what a hot push produces — the same hook syncOutOfDate
-   * uses, and for the same reason. Connecting is what used to carry credentials across, and a
-   * tunnel deliberately outlives a push, so a machine connected before a key was added here
-   * would never have received it: autoConnect skips it (it already has a tunnel), and nothing
-   * else asked. That is invisible from the page, since the machine looks connected and well
-   * the entire time.
-   *
+   * Called when an App boots (what a hot push produces): a tunnel outlives a push, so a
+   * machine connected before a key was added here would otherwise never receive it.
    * Machines whose fingerprints all match are skipped before any ssh happens.
    */
   async syncConnectedModels(): Promise<void> {
@@ -618,35 +498,6 @@ export class MachinesService {
     return this.#connect;
   }
 
-  /** Where the tunnel ports and pids live — beside the install records in the data root. */
-  get #connectFile(): string {
-    return path.join(this.dataRoot, "machines-connect.json");
-  }
-
-  #readConnectState(): string | null {
-    try {
-      return fs.readFileSync(this.#connectFile, "utf8");
-    } catch {
-      return null;
-    }
-  }
-
-  #writeConnectState(machineId: string, state: ConnectState | null): void {
-    const next = withConnectState(this.#readConnectState(), machineId, state);
-    const tmp = `${this.#connectFile}.tmp-${process.pid}`;
-    try {
-      fs.mkdirSync(path.dirname(this.#connectFile), { recursive: true });
-      fs.writeFileSync(tmp, next);
-      fs.renameSync(tmp, this.#connectFile);
-    } catch {
-      try {
-        fs.rmSync(tmp, { force: true });
-      } catch {
-        /* the temp file is litter at worst */
-      }
-    }
-  }
-
   /**
    * The port a machine's tunnel is live on, or null. "Live" is checked against the PROCESS,
    * not the file: a recorded pid that is gone is stale state, and answering with its port
@@ -656,10 +507,10 @@ export class MachinesService {
    * the ssh child is a separate process and kept forwarding while we were replaced.
    */
   tunnelPortFor(machineId: string): number | null {
-    const entry = parseConnectState(this.#readConnectState())[machineId];
+    const entry = this.repo.connect(machineId);
     if (entry?.tunnelPid === undefined) return null;
     if (!pidAlive(entry.tunnelPid)) {
-      this.#writeConnectState(machineId, { ...entry, tunnelPid: undefined });
+      this.repo.setConnect(machineId, { ...entry, tunnelPid: undefined });
       return null;
     }
     return entry.port;
@@ -761,8 +612,7 @@ export class MachinesService {
         // the code it loaded at start. Without this the machine reports the new version and
         // behaves like the old one, which is the worst of both — so a machine whose server
         // was up is restarted onto what was just installed.
-        if (outcome.kind === "installed")
-          await this.#restartAfterInstall(target.alias, target.user, say);
+        if (outcome.kind === "installed") await this.#restartAfterInstall(machineId, target, say);
         // Remember it BEFORE the job settles, so the first poll that sees `running: false`
         // already sees the machine marked installed — otherwise the page would flash the
         // verdict and a still-uninstalled row in the same frame.
@@ -814,7 +664,7 @@ export class MachinesService {
    * the one tunnel instead of two.
    */
   tunnelPortForMachine(machineId: string): number | null {
-    for (const [address, entry] of Object.entries(parseConnectState(this.#readConnectState()))) {
+    for (const [address, entry] of Object.entries(this.repo.connects())) {
       if (entry.machineId !== machineId) continue;
       // Liveness goes through the same address-keyed check, so a dead pid is cleared here
       // exactly as it is anywhere else.
@@ -910,7 +760,7 @@ export class MachinesService {
     let machineId = probed.machineId;
     this.#rememberMachineId(id, machineId);
 
-    const remembered = parseConnectState(this.#readConnectState())[id];
+    const remembered = this.repo.connect(id);
     // A server already up over there keeps its port — it is bound to it, and we forward the
     // same number on both ends. Otherwise pick one that is free HERE and start it there.
     const port =
@@ -951,12 +801,12 @@ export class MachinesService {
         // Not restarted here: a dropped link or a rebooted machine is exactly what the
         // person needs to see, and a silent reconnect would hide it.
         this.#tunnels.delete(id);
-        const entry = parseConnectState(this.#readConnectState())[id];
-        if (entry !== undefined) this.#writeConnectState(id, { ...entry, tunnelPid: undefined });
+        const entry = this.repo.connect(id);
+        if (entry !== null) this.repo.setConnect(id, { ...entry, tunnelPid: undefined });
       },
     });
     this.#tunnels.set(id, tunnel);
-    this.#writeConnectState(id, {
+    this.repo.setConnect(id, {
       port,
       ...(machineId === null ? {} : { machineId }),
       ...(tunnel.pid === null ? {} : { tunnelPid: tunnel.pid }),
@@ -968,7 +818,7 @@ export class MachinesService {
     if (!ready.ok) {
       tunnel.close();
       this.#tunnels.delete(id);
-      this.#writeConnectState(id, { port });
+      this.repo.setConnect(id, { port });
       const said = tunnel.stderr().trim();
       job.result = { ok: false, message: said === "" ? ready.detail : said };
       return;
@@ -1130,11 +980,10 @@ export class MachinesService {
    * is more honest than leaving a version number that lies about what is executing.
    */
   async #restartAfterInstall(
-    alias: string,
-    user: string,
+    address: string,
+    target: RemoteTarget,
     say: (line: string) => void,
   ): Promise<void> {
-    const target = { alias, user };
     const before = await this.#effects.probe(target);
     if (before.state.kind !== "running") {
       say("Its server was not running; the new build will be used when it next starts.");
@@ -1142,7 +991,18 @@ export class MachinesService {
     }
     const port = before.state.port;
     say(`Restarting its server on port ${port} onto the new build…`);
-    await this.#effects.stopServer(target);
+    const session = await this.#sessionOn(target);
+    if (!("cookie" in session)) {
+      say(`Installed, but it could not be restarted from here — ${session.detail}`);
+      return;
+    }
+    await this.#effects.stopServer({
+      address,
+      target,
+      remotePort: port,
+      livePort: this.tunnelPortFor(address),
+      cookie: session.cookie,
+    });
     const started = await this.#effects.startServer(target, port);
     say(
       started.ok
@@ -1242,7 +1102,6 @@ export class MachinesService {
         : { kind: "refused", detail: minted.detail };
     }
     // Kept, not just handed on: this is the same session the work on this machine needs.
-    this.#sessions.set(machineId, minted.token);
     // Synthesized as the Set-Cookie that machine's own login would have sent: the caller's job
     // is to rename one into the machine's namespace, and it should not have to know this one
     // was minted rather than issued. No Secure — the browser is talking to THIS origin through
@@ -1352,8 +1211,8 @@ export class MachinesService {
     }
     this.#tunnels.get(machineId)?.close();
     this.#tunnels.delete(machineId);
-    const entry = parseConnectState(this.#readConnectState())[machineId];
-    if (entry !== undefined) this.#writeConnectState(machineId, { ...entry, tunnelPid: undefined });
+    const entry = this.repo.connect(machineId);
+    if (entry !== null) this.repo.setConnect(machineId, { ...entry, tunnelPid: undefined });
   }
 
   /**

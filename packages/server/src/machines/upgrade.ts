@@ -11,11 +11,6 @@
  * shell protocol to write and parse. What the far side answers is the endpoint's own JSON,
  * with its own error codes, exactly as the local push reads it.
  *
- * It used to be an applier scp'd into a scratch directory with a job file beside it, then a
- * `penguin server apply` subcommand fed on ssh's stdin. Both existed to work around not
- * having an HTTP way in; both paid a fresh handshake per upgrade, which on a distant host is
- * most of the operation and is paid again for every machine on every push.
- *
  * The result is a hot swap: seconds, no restart, and nothing that machine was running dies.
  * That is the difference between this and reinstalling, which replaces the program on disk
  * and needs the server bounced to take effect.
