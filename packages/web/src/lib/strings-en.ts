@@ -798,6 +798,8 @@ export const en: Strings = {
     recommendedGroup: "Recommended",
     discountBadge: (pct: number): string => `-${pct}%`,
     discountTitle: (pct: number): string => `Promotion: ${pct}% off the list price`,
+    offPeakTitle: (pct: number): string =>
+      `Off-peak rate: ${pct}% off list. Peak hours bill at list price — 09:00–12:00 and 14:00–18:00 Beijing time, Monday to Friday`,
     visionModelBadge: "Proxy vision",
     usedTokens: (v: string) => `${v} toks`,
     usedTokensTitle: "Tokens this model has used, all time",

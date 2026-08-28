@@ -775,6 +775,9 @@ export const zh = {
     /** Badge on a row the seller is currently discounting: the rate off its list price. */
     discountBadge: (pct: number): string => `-${pct}%`,
     discountTitle: (pct: number): string => `促销价：已在牌价基础上打 ${pct}% 折扣`,
+    /** Same badge as a flat promotion; only the explanation differs, because this rate comes and goes with the clock. */
+    offPeakTitle: (pct: number): string =>
+      `空闲时段价：比牌价低 ${pct}%。高峰时段按牌价计费——北京时间周一至周五 9:00–12:00、14:00–18:00`,
     /** Hover text on the struck-out price beside a discounted row's live price. */
     visionModelBadge: "视觉代理",
     /** Card's right-edge figure: what this model has spent over its whole life. The unit stays English and is abbreviated the way the rest of the page abbreviates it — `tok/s`, `/M tok`. */

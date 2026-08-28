@@ -116,6 +116,18 @@ export interface ModelCatalogEntry {
    * Project so the cost center charges what the seller charges.
    */
   discount?: number;
+  /**
+   * A discount that is only live outside a weekly set of peak windows — a vendor billing
+   * cheaper off-hours. `pricing` holds the PEAK price, the one billed inside the windows, and
+   * the rate applies everywhere else.
+   *
+   * Unlike `discount`, this one changes twice a day, so it is never baked into a Project:
+   * `presetModelEntries` writes the peak price and the rate is applied when a price is read.
+   * A number on disk that silently meant something different at 09:00 than at 08:00 would be
+   * unreadable, and re-syncing presets would rewrite prices by the clock. Mutually exclusive
+   * with `discount`; an entry declaring both is a catalog error.
+   */
+  offPeakDiscount?: OffPeakDiscount;
   /** Whether image input (vision modality) is supported. */
   supportsVision: boolean;
   /** AgentHub client protocol: required when an id cannot be auto-routed or a shared protocol must be pinned. */
@@ -297,10 +309,67 @@ function usd(cacheRead: number, cacheWrite: number, output: number): ModelPricin
  * An entry with no discount (or no pricing at all) is returned untouched, which is why every
  * caller can use this in place of `.pricing` without asking whether a promotion is live.
  */
-export function effectivePricing(entry: ModelCatalogEntry): ModelPricing | undefined {
-  const { pricing, discount } = entry;
-  if (pricing === undefined || discount === undefined) return pricing;
-  const off = (v: number): number => Math.round(v * (1 - discount) * 1e6) / 1e6;
+/**
+ * A weekly peak/off-peak billing schedule, written in a fixed-offset zone.
+ *
+ * Only fixed offsets are expressible, which is the whole of what the catalog needs: the vendors
+ * that bill this way publish their windows in a single national zone that does not observe DST
+ * (Beijing is UTC+8 year round). A vendor on a DST zone would need a real tz database, and the
+ * honest move then is to add one rather than to approximate.
+ */
+export interface OffPeakDiscount {
+  /** Fraction off the peak price outside the windows below (0.5 = half price). */
+  rate: number;
+  /** Minutes east of UTC the windows are written in (Beijing = 480). */
+  utcOffsetMinutes: number;
+  /** Days the windows apply to, ISO numbering: 1 = Monday … 7 = Sunday. Days not listed are off-peak all day. */
+  peakDays: readonly number[];
+  /** Peak windows as [startHour, endHour) in the zone's local hours — end-exclusive, so 12:00 is already off-peak. */
+  peakHours: readonly (readonly [number, number])[];
+}
+
+/**
+ * Whether `now` falls outside every peak window, i.e. whether the discount is live.
+ *
+ * Computed in UTC arithmetic rather than through the host's local time: the schedule belongs to
+ * the vendor's zone, and a server in Los Angeles must reach the same answer as one in Shanghai.
+ */
+export function offPeakAt(schedule: OffPeakDiscount, now: Date): boolean {
+  const local = new Date(now.getTime() + schedule.utcOffsetMinutes * 60_000);
+  // getUTCDay is 0 = Sunday; the ISO numbering the schedule uses puts Sunday at 7.
+  const isoDay = local.getUTCDay() === 0 ? 7 : local.getUTCDay();
+  if (!schedule.peakDays.includes(isoDay)) return true;
+  const hour = local.getUTCHours() + local.getUTCMinutes() / 60;
+  return !schedule.peakHours.some(([from, to]) => hour >= from && hour < to);
+}
+
+/** DeepSeek's official off-peak tier: half price outside Beijing weekday 09:00–12:00 and 14:00–18:00. */
+export const DEEPSEEK_OFF_PEAK: OffPeakDiscount = {
+  rate: 0.5,
+  utcOffsetMinutes: 480,
+  peakDays: [1, 2, 3, 4, 5],
+  peakHours: [
+    [9, 12],
+    [14, 18],
+  ],
+};
+
+export function effectivePricing(
+  entry: ModelCatalogEntry,
+  now: Date = new Date(),
+): ModelPricing | undefined {
+  const { pricing } = entry;
+  if (pricing === undefined) return pricing;
+  // A scheduled discount bills the list price during its peak windows and the reduced rate
+  // outside them; a flat one always bills the reduced rate.
+  const rate =
+    entry.offPeakDiscount !== undefined
+      ? offPeakAt(entry.offPeakDiscount, now)
+        ? entry.offPeakDiscount.rate
+        : 0
+      : entry.discount;
+  if (rate === undefined || rate === 0) return pricing;
+  const off = (v: number): number => Math.round(v * (1 - rate) * 1e6) / 1e6;
   return {
     unit: pricing.unit,
     cache_read: off(pricing.cache_read),
@@ -323,16 +392,17 @@ export function effectivePricing(entry: ModelCatalogEntry): ModelPricing | undef
 export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // -- DeepSeek (official CNY pricing: cache hit / cache miss / output). Re-read 2026-08-18
   // from api-docs.deepseek.com/quick_start/pricing after the official price increase
-  // introduced time-based tiers: the rows store the OFF-PEAK tier (the lower published
-  // price, issue #313's display choice); peak hours (Beijing 9:00-12:00 and 14:00-18:00)
-  // bill exactly double every bucket, so peak usage is underestimated 2x (same single-rate
-  // limitation as the long-context surcharges in the file header). --
+  // introduced time-based tiers. The rows store the PEAK tier and declare
+  // DEEPSEEK_OFF_PEAK, which halves every bucket outside Beijing weekday 09:00-12:00 and
+  // 14:00-18:00 — so both tiers are billed at the rate actually in force, rather than one of
+  // them being approximated by the other. --
   {
     modelId: "deepseek-v4-flash",
     displayName: "DeepSeek V4 Flash",
     provider: "deepseek",
     contextWindow: 1000000,
-    pricing: cny(0.05, 1.5, 4.5),
+    pricing: cny(0.1, 3, 9),
+    offPeakDiscount: DEEPSEEK_OFF_PEAK,
     supportsVision: false,
   },
   {
@@ -342,7 +412,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     displayName: "DeepSeek V4 Flash Vision Exp",
     provider: "deepseek",
     contextWindow: 1000000,
-    pricing: cny(0.05, 1.5, 4.5),
+    pricing: cny(0.1, 3, 9),
+    offPeakDiscount: DEEPSEEK_OFF_PEAK,
     supportsVision: true,
   },
   {
@@ -350,7 +421,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     displayName: "DeepSeek V4 Pro",
     provider: "deepseek",
     contextWindow: 1000000,
-    pricing: cny(0.15, 4.5, 13.5),
+    pricing: cny(0.3, 9, 27),
+    offPeakDiscount: DEEPSEEK_OFF_PEAK,
     supportsVision: false,
   },
   // -- OpenRouter (gateway: OpenAI-compatible protocol, preset base URL). Prices re-read in
@@ -1736,7 +1808,10 @@ export function fastModeProtocol(
  */
 export function presetModelEntries(): ModelEntry[] {
   return MODEL_CATALOG.map((m) => {
-    const pricing = effectivePricing(m);
+    // A scheduled discount writes the PEAK price, which is the same number whatever hour the
+    // Project is created or re-synced in. What is on disk has to be stable: the off-peak rate
+    // is applied when the price is read, by the models page and by the cost center alike.
+    const pricing = m.offPeakDiscount !== undefined ? m.pricing : effectivePricing(m);
     return {
       provider: m.provider,
       model_id: m.modelId,

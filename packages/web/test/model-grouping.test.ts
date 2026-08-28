@@ -337,9 +337,13 @@ describe("isFreeModel", () => {
   });
 });
 describe("discountedPrice", () => {
-  /** A row carrying exactly what "sync presets" would write for a catalog entry. */
+  /**
+   * A row carrying exactly what "sync presets" would write for a catalog entry: the discounted
+   * price for a flat promotion, the peak price for a scheduled one (which is never baked in).
+   */
   const syncedRow = (provider: string, modelId: string) => {
-    const billed = effectivePricing(catalogEntryFor(provider, modelId)!)!;
+    const entry = catalogEntryFor(provider, modelId)!;
+    const billed = (entry.offPeakDiscount !== undefined ? entry.pricing : effectivePricing(entry))!;
     return {
       provider,
       modelId,
@@ -349,21 +353,43 @@ describe("discountedPrice", () => {
     };
   };
 
-  it("a synced row on a promotion reports the rate and the list price it undercuts", () => {
-    const entry = catalogEntryFor("tokendance", "glm-5.3-flash")!;
-    const found = discountedPrice(syncedRow("tokendance", "glm-5.3-flash"))!;
+  it("a synced row on a flat promotion reports the rate, and bills at the stored price", () => {
+    const row = syncedRow("tokendance", "glm-5.3-flash");
+    const found = discountedPrice(row)!;
     expect(found.percent).toBe(50);
-    // The list price comes from the catalog entry, so the struck-out figure and the stored
-    // one can never drift into disagreeing about which is which.
-    expect(found.list).toEqual({
-      cacheRead: entry.pricing!.cache_read,
-      cacheWrite: entry.pricing!.cache_write,
-      output: entry.pricing!.output,
+    expect(found.scheduled).toBe(false);
+    // A flat promotion is baked in at sync time, so what is billed is what is stored.
+    expect(found.billed).toEqual({
+      cacheRead: Number(row.cacheRead),
+      cacheWrite: Number(row.cacheWrite),
+      output: Number(row.output),
     });
-    // Every bucket of the live price really is below its list counterpart.
-    expect(found.list.cacheWrite).toBeGreaterThan(
-      Number(syncedRow("tokendance", "glm-5.3-flash").cacheWrite),
-    );
+    // And it really is below the catalog's list price.
+    const entry = catalogEntryFor("tokendance", "glm-5.3-flash")!;
+    expect(entry.pricing!.cache_write).toBeGreaterThan(found.billed.cacheWrite);
+  });
+
+  // Beijing is UTC+8, so 01:00Z is 09:00 there. 2026-08-31 is a Monday.
+  const PEAK = new Date("2026-08-31T01:30:00Z");
+  const OFF_PEAK = new Date("2026-08-31T05:00:00Z");
+
+  it("a scheduled row is marked and halved off-peak, and left at list price at peak", () => {
+    const row = syncedRow("deepseek", "deepseek-v4-flash");
+    const entry = catalogEntryFor("deepseek", "deepseek-v4-flash")!;
+
+    const off = discountedPrice(row, OFF_PEAK)!;
+    expect(off.percent).toBe(50);
+    expect(off.scheduled).toBe(true);
+    expect(off.billed.output).toBeCloseTo(entry.pricing!.output / 2, 6);
+
+    // At peak the row carries no mark at all: the stored price is the price.
+    expect(discountedPrice(row, PEAK)).toBeUndefined();
+  });
+
+  it("a scheduled row whose price was edited is never halved, at either hour", () => {
+    const row = { ...syncedRow("deepseek", "deepseek-v4-pro"), output: "1.234" };
+    expect(discountedPrice(row, OFF_PEAK)).toBeUndefined();
+    expect(discountedPrice(row, PEAK)).toBeUndefined();
   });
 
   it("undiscounted catalog rows, off-catalog rows and unpriced rows report nothing", () => {

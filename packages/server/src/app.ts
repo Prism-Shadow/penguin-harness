@@ -759,7 +759,15 @@ export function buildAppDeps(
   const usageService = new UsageService(
     usageRepo,
     errorsRepo,
-    (projectId, provider, modelId) => projectConfigService.getPricing(projectId, provider, modelId),
+    // The clock reaches the lookup too: a catalog row on a peak/off-peak schedule is billed at
+    // the rate in force at this instant, and tests that pin a time must pin it on both sides.
+    (projectId, provider, modelId) =>
+      projectConfigService.getPricing(
+        projectId,
+        provider,
+        modelId,
+        (overrides.now ?? (() => new Date()))(),
+      ),
     overrides.now ?? (() => new Date()),
   );
   const updateCheck =

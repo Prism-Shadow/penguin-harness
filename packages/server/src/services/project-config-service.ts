@@ -37,6 +37,7 @@ import {
   canonicalClientType,
   listEndpointModels as coreListEndpointModels,
   catalogEntryFor,
+  offPeakAt,
   defaultProjectConfig,
   imageUrlMessage,
   projectConfigFromTable,
@@ -143,6 +144,42 @@ function asArray(v: unknown): RawTable[] {
 
 function optNum(v: unknown): number | undefined {
   return typeof v === "number" && Number.isFinite(v) ? v : undefined;
+}
+
+/**
+ * Apply a catalog row's off-peak schedule to the price read from a Project's config.
+ *
+ * A scheduled row stores its PEAK price — the one number that is true whatever hour it is
+ * written — so the reduction has to happen on the way out. Costs in this app are already priced
+ * against current pricing at query time rather than against the rate in force when each request
+ * ran, so reading "the rate in force now" is the same contract, not a new one.
+ *
+ * Applied only while the stored price is still exactly the catalog's peak price: once the user
+ * has typed their own number, nothing here knows whether it is a peak rate, and halving it
+ * would invent a discount. The models page's badge bails on the same condition, so the two
+ * always agree about what this row costs.
+ */
+function applyOffPeak(
+  provider: string,
+  modelId: string,
+  rates: PricingRates,
+  now: Date,
+): PricingRates {
+  const entry = catalogEntryFor(provider, modelId);
+  const schedule = entry?.offPeakDiscount;
+  if (schedule === undefined || entry?.pricing === undefined) return rates;
+  const peak = entry.pricing;
+  const untouched =
+    rates.cacheRead === peak.cache_read &&
+    rates.cacheWrite === peak.cache_write &&
+    rates.output === peak.output;
+  if (!untouched || !offPeakAt(schedule, now)) return rates;
+  const off = (v: number): number => Math.round(v * (1 - schedule.rate) * 1e6) / 1e6;
+  return {
+    cacheRead: off(rates.cacheRead),
+    cacheWrite: off(rates.cacheWrite),
+    output: off(rates.output),
+  };
 }
 
 function optStr(v: unknown): string | undefined {
@@ -499,6 +536,7 @@ export class ProjectConfigService {
     projectId: string,
     provider: string,
     modelId: string,
+    now: Date = new Date(),
   ): Promise<PricingRates | undefined> {
     const raw = await this.readRaw(projectId);
     const entry = asArray(raw.models).find((m) => entryMatches(m, provider, modelId));
@@ -509,7 +547,8 @@ export class ProjectConfigService {
     if (cacheRead === undefined && cacheWrite === undefined && output === undefined) {
       return undefined;
     }
-    return { cacheRead: cacheRead ?? 0, cacheWrite: cacheWrite ?? 0, output: output ?? 0 };
+    const rates = { cacheRead: cacheRead ?? 0, cacheWrite: cacheWrite ?? 0, output: output ?? 0 };
+    return applyOffPeak(provider, modelId, rates, now);
   }
 
   /**

@@ -20,6 +20,7 @@ import {
   MODEL_PROVIDERS,
   catalogEntryFor,
   effectivePricing,
+  offPeakAt,
 } from "@prismshadow/penguin-core/model-catalog";
 import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
 
@@ -187,12 +188,18 @@ export interface PricingBucketsLike {
   output?: number | string;
 }
 
-/** A row's list price and the rate off it, for the discount decoration on the model card. */
+/** The discount decoration for one model card, and the price it makes the row cost right now. */
 export interface DiscountedPrice {
   /** Whole-percent rate off list, as the badge shows it (50 for a half-price row). */
   percent: number;
-  /** What the row would cost without the promotion, in USD per million tokens. */
-  list: { cacheRead: number; cacheWrite: number; output: number };
+  /**
+   * What the seller bills for this row right now, in USD per million tokens — the figure the
+   * card prints. For a flat promotion this is the stored price, already discounted at sync
+   * time; for a scheduled one the stored price is the peak price and this is the reduced rate.
+   */
+  billed: { cacheRead: number; cacheWrite: number; output: number };
+  /** True when the rate is a time-of-day one, so the badge can explain when it applies. */
+  scheduled: boolean;
 }
 
 /** One bucket as a finite number, or undefined for an unpriced ("" / absent) field. */
@@ -207,32 +214,47 @@ function bucketValue(v: number | string | undefined): number | undefined {
  * The discount decoration for one model row, or undefined for a row that carries none.
  *
  * A row qualifies only when its (provider, modelId) names a catalog entry on a promotion AND
- * its stored price is still exactly the discounted price that entry generates. Prices are
- * editable, and a hand-typed number has nothing to do with the seller's list price — striking
- * the catalog's figure through beside it would invent a saving the user is not getting. The
- * same guard covers a Project that has not run "sync presets" yet: its rows still hold
- * whatever price they were created with, so they stay undecorated until they carry the rate
- * they are actually billed at.
+ * its stored price is still exactly the price that entry expects to be stored. Prices are
+ * editable, and a hand-typed number has nothing to do with the seller's list price — marking it
+ * would invent a saving the user is not getting. The same guard covers a Project that has not
+ * run "sync presets" yet: its rows still hold whatever price they were created with.
+ *
+ * Which price that is differs by promotion kind, and the difference is the point:
+ *
+ * - A **flat** promotion is a single rate the seller bills until it lapses, so `sync presets`
+ *   bakes it in and the stored number is already the discounted one.
+ * - A **scheduled** one changes twice a day. Baking it in would put a number on disk that meant
+ *   something different an hour later, and would make re-syncing rewrite prices by the clock —
+ *   so the peak price is stored and the reduction is applied here, against `now`. Inside the
+ *   peak windows the row is simply at list price and carries no mark at all.
  */
 export function discountedPrice(
   row: ModelRowLike & PricingBucketsLike,
+  now: Date = new Date(),
 ): DiscountedPrice | undefined {
   const entry = catalogEntryFor(row.provider, row.modelId);
-  if (entry?.discount === undefined || entry.pricing === undefined) return undefined;
-  const billed = effectivePricing(entry);
-  if (billed === undefined) return undefined;
+  if (entry?.pricing === undefined) return undefined;
+  const schedule = entry.offPeakDiscount;
+  const rate = schedule?.rate ?? entry.discount;
+  if (rate === undefined) return undefined;
+  const expected = schedule !== undefined ? entry.pricing : effectivePricing(entry);
+  if (expected === undefined) return undefined;
   const same =
-    bucketValue(row.cacheRead) === billed.cache_read &&
-    bucketValue(row.cacheWrite) === billed.cache_write &&
-    bucketValue(row.output) === billed.output;
+    bucketValue(row.cacheRead) === expected.cache_read &&
+    bucketValue(row.cacheWrite) === expected.cache_write &&
+    bucketValue(row.output) === expected.output;
   if (!same) return undefined;
+  if (schedule !== undefined && !offPeakAt(schedule, now)) return undefined;
+  const billed = effectivePricing(entry, now);
+  if (billed === undefined) return undefined;
   return {
-    percent: Math.round(entry.discount * 100),
-    list: {
-      cacheRead: entry.pricing.cache_read,
-      cacheWrite: entry.pricing.cache_write,
-      output: entry.pricing.output,
+    percent: Math.round(rate * 100),
+    billed: {
+      cacheRead: billed.cache_read,
+      cacheWrite: billed.cache_write,
+      output: billed.output,
     },
+    scheduled: schedule !== undefined,
   };
 }
 

@@ -59,7 +59,6 @@ import { Segmented } from "../../components/ui/segmented";
 import { Select } from "../../components/ui/select";
 import { Switch } from "../../components/ui/switch";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
-import { Badge } from "../../components/ui/badge";
 import { Chevron } from "../../components/ui/chevron";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { ProviderLogo } from "../../components/ui/provider-logo";
@@ -373,6 +372,35 @@ export function keyStatusText(row: RowState): string {
 }
 
 /**
+ * A counter that advances on every clock hour, for prices that change with the time of day.
+ *
+ * DeepSeek's off-peak rate starts and ends on the hour, and every window a catalog schedule can
+ * express is hour-aligned, so waking once an hour is enough to keep a card honest — a page left
+ * open at 08:59 would otherwise still be promising half price at 09:05. It re-aims at the next
+ * hour each time rather than running on a fixed interval, so it neither drifts nor fires 60
+ * times to catch one transition.
+ */
+function useHourTick(): number {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const schedule = (): void => {
+      const now = new Date();
+      const next = new Date(now);
+      next.setMinutes(0, 0, 0);
+      next.setHours(next.getHours() + 1);
+      timer = setTimeout(() => {
+        setTick((n) => n + 1);
+        schedule();
+      }, next.getTime() - now.getTime());
+    };
+    schedule();
+    return () => clearTimeout(timer);
+  }, []);
+  return tick;
+}
+
+/**
  * What to call a model in prose — its display name, or its upstream id when it has none.
  *
  * The blank test is `trim()`, not `!== undefined`: the display name is optional and the dialog
@@ -654,6 +682,7 @@ export function ModelsPage() {
    * empty and every card renders without its number.
    */
   const [usedTokens, setUsedTokens] = useState<Map<string, number>>(new Map());
+  const hourTick = useHourTick();
 
   const load = useCallback(async () => {
     if (!projectId) return;
@@ -1084,9 +1113,12 @@ export function ModelsPage() {
                           // Not a `Badge`: its `brand` tone is deliberately gray — neutral
                           // emphasis outside the status vocabulary — and an endorsement is
                           // neither a status nor neutral, which is the category tone.ts keeps
-                          // out on purpose. It holds on longer than the model count beside it
-                          // and gives way before the name does.
-                          <span className="hidden shrink-0 whitespace-nowrap rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800 @lg:inline dark:bg-emerald-950 dark:text-emerald-300">
+                          // out on purpose. Unfilled, like the card marks below it: an outline
+                          // is enough to make it a pill, and a block of colour on the collapse
+                          // bar competes with the vendor name it is endorsing. It holds on
+                          // longer than the model count beside it and gives way before the
+                          // name does.
+                          <span className="hidden shrink-0 whitespace-nowrap rounded-full border border-emerald-300 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 @lg:inline dark:border-emerald-800 dark:text-emerald-400">
                             {S.models.recommendedGroup}
                           </span>
                         )}
@@ -1240,6 +1272,7 @@ export function ModelsPage() {
                                 isVisionModel={sameModelRef(rowRef(row), visionModel)}
                                 speed={speedResults.get(refMapKey(row.provider, row.modelId))}
                                 usedTokens={usedTokens.get(refMapKey(row.provider, row.modelId))}
+                                hourTick={hourTick}
                                 onOpen={() => setEditing(rowRef(row))}
                               />
                             ))
@@ -1751,7 +1784,9 @@ function AddGroupDialog({
  * and gray-900 `#0d0d0d` in dark) clears 4.5:1 for every ink; the shared border is decorative,
  * so it is not held to 3:1.
  */
-const TAG_SURFACE = "border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900";
+/** The pill itself: no fill at all, so a row of marks sits on the card rather than on top of it. */
+const TAG_SHAPE =
+  "whitespace-nowrap rounded-full border border-gray-200 px-1.5 text-[10px] font-medium leading-[15px] dark:border-gray-700";
 const TAG_INK = {
   /** This model's standing in the Project. */
   status: "text-brand-700 dark:text-brand-300",
@@ -1774,6 +1809,7 @@ function ModelCard({
   isVisionModel,
   speed,
   usedTokens,
+  hourTick,
   onOpen,
 }: {
   row: RowState;
@@ -1783,13 +1819,30 @@ function ModelCard({
   speed?: SpeedResult | "pending";
   /** Lifetime Tokens spent on this model; absent for a model that has never run. */
   usedTokens?: number;
+  /** Bumped on the hour (see useHourTick): the cue to re-read a time-of-day price. */
+  hourTick: number;
   onOpen: () => void;
 }) {
   const priced = row.cacheRead || row.cacheWrite || row.output;
-  // A promoted catalog row: the stored price is what the seller bills, so it stays the live
-  // figure and the list price it undercuts is struck through beside it (discountedPrice
-  // returns nothing once the price has been edited away from the catalog's).
-  const discount = discountedPrice(row);
+  /**
+   * A promoted catalog row. `discountedPrice` returns nothing once the price has been edited
+   * away from the catalog's, and nothing for a row on a time-of-day schedule while it is inside
+   * its peak windows — at peak it is simply at list price, which is what is stored.
+   *
+   * `hourTick` is in the dependency list for that second case: a scheduled row's price changes
+   * on the hour with nobody touching the page, and a card left open would otherwise keep
+   * printing a rate that stopped applying.
+   */
+  const discount = useMemo(() => discountedPrice(row), [row, hourTick]);
+  // The buckets to print: what the seller bills right now. They differ from the stored numbers
+  // only for a scheduled discount, whose stored price is the peak one.
+  const shownPrice = discount
+    ? {
+        cacheRead: String(discount.billed.cacheRead),
+        cacheWrite: String(discount.billed.cacheWrite),
+        output: String(discount.billed.output),
+      }
+    : { cacheRead: row.cacheRead, cacheWrite: row.cacheWrite, output: row.output };
   /**
    * Every standing mark this row carries, in one horizontal row of its own.
    *
@@ -1852,7 +1905,9 @@ function ModelCard({
           {
             key: "discount",
             label: S.models.discountBadge(discount.percent),
-            title: S.models.discountTitle(discount.percent),
+            title: discount.scheduled
+              ? S.models.offPeakTitle(discount.percent)
+              : S.models.discountTitle(discount.percent),
             className: TAG_INK.price,
           },
         ]
@@ -1864,11 +1919,12 @@ function ModelCard({
   const meta: ReactNode[] = [
     row.contextWindow ? humanizeTokens(Number(row.contextWindow)) : null,
     // Three prices (cache read / cache write / output); units are explained in the config dialog, not repeated on the card.
-    // The stored price is what the seller bills, discount included, so it is the only price
-    // shown. What the row would have cost without the promotion answers no question a reader
-    // of this list is asking, and spending the meta line's width on it pushes out the figures
-    // that do.
-    priced ? <span>{priceLine(row.cacheRead, row.cacheWrite, row.output)}</span> : null,
+    // One price, the one being billed right now. What the row would cost without the promotion
+    // answers no question a reader of this list is asking, and spending the meta line's width
+    // on it pushes out the figures that do.
+    priced ? (
+      <span>{priceLine(shownPrice.cacheRead, shownPrice.cacheWrite, shownPrice.output)}</span>
+    ) : null,
     // Key status (see keyStatusText): the stored mask, a detected env fallback's mask, a plain
     // "configured" for a key typed but not yet saved, or "not configured".
     keyStatusText(row),
@@ -1942,11 +1998,7 @@ function ModelCard({
           the tags' own, so a card with marks and a card without are exactly as tall. */}
       <span className="flex min-h-[17px] w-full flex-wrap items-center gap-1">
         {tags.map((tag) => (
-          <span
-            key={tag.key}
-            title={tag.title}
-            className={`whitespace-nowrap rounded-full border px-1.5 text-[10px] font-medium leading-[15px] ${TAG_SURFACE} ${tag.className}`}
-          >
+          <span key={tag.key} title={tag.title} className={`${TAG_SHAPE} ${tag.className}`}>
             {tag.label}
           </span>
         ))}
@@ -2655,28 +2707,44 @@ function ModelDialog({
       }
     >
       <div className="space-y-3">
-        {/* Header: logo + display name + badges + upstream id (existing model); the model
-            homepage entry lives here as a small secondary button on the right (moved out of
-            the form body — it's a property of the model, not an input). */}
+        {/* Header: the logo, and beside it one line each for the name, the upstream id and the
+            marks. The marks used to share the name's line, where they pushed a long name into
+            wrapping under them and left the header two ragged lines tall; on a line of their
+            own the name keeps the width it needs. Same pills the cards wear, so the list and
+            the dialog agree about what a mark looks like. The model homepage entry stays a
+            small secondary button on the right — a property of the model, not an input. */}
         {!isNew && (
           <div className="flex items-center gap-2.5 rounded-md bg-gray-50 px-3 py-2 dark:bg-gray-800/60">
             <ProviderLogo
               provider={form.provider}
               className="h-6 w-6 shrink-0 text-gray-700 dark:text-gray-300"
             />
-            <div className="flex min-w-0 flex-1 flex-col">
-              <span className="flex flex-wrap items-center gap-1.5 text-sm font-medium">
-                {modelLabel}
-                {isDefault && <Badge tone="brand">{S.models.default}</Badge>}
-                {form.vision && <Badge tone="green">{S.models.visionBadge}</Badge>}
-                {isVisionModel && <Badge tone="amber">{S.models.visionModelBadge}</Badge>}
-              </span>
-              {/* Upstream id in small text: when there's no display name the main line is already
-                  showing it, so don't repeat. Tested on the trimmed value, not on `undefined`:
-                  clearing the field leaves an empty string, which is just as nameless. */}
+            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <span className="truncate text-sm font-medium">{modelLabel}</span>
+              {/* Upstream id in small text: when there's no display name the line above is
+                  already showing it, so don't repeat. Tested on the trimmed value, not on
+                  `undefined`: clearing the field leaves an empty string, which is just as
+                  nameless. */}
               {form.displayName?.trim() && (
                 <span className="truncate font-mono text-xs text-gray-500 dark:text-gray-400">
                   {form.modelId}
+                </span>
+              )}
+              {(isDefault || form.vision || isVisionModel) && (
+                <span className="flex flex-wrap items-center gap-1 pt-0.5">
+                  {isDefault && (
+                    <span className={`${TAG_SHAPE} ${TAG_INK.status}`}>{S.models.default}</span>
+                  )}
+                  {form.vision && (
+                    <span className={`${TAG_SHAPE} ${TAG_INK.capability}`}>
+                      {S.models.visionBadge}
+                    </span>
+                  )}
+                  {isVisionModel && (
+                    <span className={`${TAG_SHAPE} ${TAG_INK.capability}`}>
+                      {S.models.visionModelBadge}
+                    </span>
+                  )}
                 </span>
               )}
             </div>

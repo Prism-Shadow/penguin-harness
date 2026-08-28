@@ -12,6 +12,8 @@ import {
   catalogEntryFor,
   attributionHeaders,
   effectivePricing,
+  offPeakAt,
+  DEEPSEEK_OFF_PEAK,
   presetModelEntries,
   providerInfo,
   fastModeProtocol,
@@ -179,7 +181,12 @@ describe("model-catalog", () => {
       expect(entry.context_window).toBe(cat.contextWindow);
       // A Project stores the BILLED rate, not the catalog's list price: the cost center
       // prices only against what is written here, so a promoted row must arrive discounted.
-      expect(entry.pricing, entry.model_id).toEqual(effectivePricing(cat));
+      // The exception is a row on a peak/off-peak schedule, which stores the PEAK price: the
+      // rate changes twice a day, so baking one in would make the number on disk depend on the
+      // hour the Project happened to be created or re-synced in.
+      expect(entry.pricing, entry.model_id).toEqual(
+        cat.offPeakDiscount !== undefined ? cat.pricing : effectivePricing(cat),
+      );
       expect(entry.vision).toBe(cat.supportsVision ? undefined : false);
       // Gateway and direct MiniMax presets pin a client protocol; other direct models auto-route.
       expect(entry.client_type).toBe(cat.clientType);
@@ -690,15 +697,16 @@ describe("model-catalog", () => {
 
   it("DeepSeek and Kimi are initialized from official CNY prices (stored in USD; x7 recovers the official price)", () => {
     const cnyOf = (usdV: number) => Math.round(usdV * 7 * 1000) / 1000;
-    // DeepSeek rows carry the official OFF-PEAK tier (the lower published price; peak hours
-    // bill double) — re-read 2026-08-18 after the official price increase (issue #313).
+    // DeepSeek rows carry the official PEAK tier — re-read 2026-08-18 after the official price
+    // increase introduced time-based tiers. The off-peak tier is exactly half, and is applied
+    // from the row's schedule rather than stored (see the off-peak schedules block below).
     const flash = catalogEntryFor("deepseek", "deepseek-v4-flash")!.pricing!;
     expect([cnyOf(flash.cache_read), cnyOf(flash.cache_write), cnyOf(flash.output)]).toEqual([
-      0.05, 1.5, 4.5,
+      0.1, 3, 9,
     ]);
     const pro = catalogEntryFor("deepseek", "deepseek-v4-pro")!.pricing!;
     expect([cnyOf(pro.cache_read), cnyOf(pro.cache_write), cnyOf(pro.output)]).toEqual([
-      0.15, 4.5, 13.5,
+      0.3, 9, 27,
     ]);
     const k3 = MODEL_CATALOG.find(
       (m) => m.provider === "moonshot" && m.modelId === "kimi-k3",
@@ -1082,5 +1090,75 @@ describe("attributionHeaders (how the harness names itself to the gateways that 
         expect(headers, `${m.provider}/${m.modelId}`).toBeUndefined();
       }
     }
+  });
+});
+
+describe("off-peak schedules", () => {
+  const S = DEEPSEEK_OFF_PEAK;
+  /** Beijing is UTC+8 with no DST, so a Beijing wall clock is the UTC one minus 8 hours. */
+  const beijing = (iso: string): Date => new Date(`${iso}+08:00`);
+
+  it("the DeepSeek rows store the peak price and declare the schedule", () => {
+    const rows = MODEL_CATALOG.filter((m) => m.provider === "deepseek");
+    expect(rows.length).toBeGreaterThan(0);
+    for (const m of rows) {
+      expect(m.offPeakDiscount, m.modelId).toBe(S);
+      // Peak is exactly double the off-peak tier DeepSeek publishes. Compared at 1e-5: both
+      // sides round to six decimals independently, so the last digit can differ by one.
+      expect(effectivePricing(m, beijing("2026-08-31T22:00"))!.output * 2).toBeCloseTo(
+        m.pricing!.output,
+        5,
+      );
+    }
+    // The published peak figures themselves: CNY 0.1 / 3 / 9 per million, at the catalog's 7:1
+    // display convention, which is DeepSeek's off-peak 0.05 / 1.5 / 4.5 doubled.
+    const flash = MODEL_CATALOG.find((m) => m.modelId === "deepseek-v4-flash")!.pricing!;
+    expect([flash.cache_read, flash.cache_write, flash.output]).toEqual([
+      0.014286, 0.428571, 1.285714,
+    ]);
+  });
+
+  it("peak is Monday to Friday, 09:00-12:00 and 14:00-18:00 Beijing", () => {
+    // 2026-08-31 is a Monday.
+    expect(offPeakAt(S, beijing("2026-08-31T09:00"))).toBe(false);
+    expect(offPeakAt(S, beijing("2026-08-31T11:59"))).toBe(false);
+    expect(offPeakAt(S, beijing("2026-08-31T14:00"))).toBe(false);
+    expect(offPeakAt(S, beijing("2026-08-31T17:59"))).toBe(false);
+    // Outside them, including the lunch gap and both ends of the day.
+    expect(offPeakAt(S, beijing("2026-08-31T08:59"))).toBe(true);
+    expect(offPeakAt(S, beijing("2026-08-31T13:00"))).toBe(true);
+    expect(offPeakAt(S, beijing("2026-08-31T18:00"))).toBe(true);
+    expect(offPeakAt(S, beijing("2026-08-31T03:00"))).toBe(true);
+    // The window ends are exclusive, so noon and 18:00 are already off-peak.
+    expect(offPeakAt(S, beijing("2026-08-31T12:00"))).toBe(true);
+  });
+
+  it("weekends are off-peak all day", () => {
+    // 2026-09-05 is a Saturday, 2026-09-06 a Sunday — the ISO day 7 the schedule must not
+    // confuse with getUTCDay's 0.
+    expect(offPeakAt(S, beijing("2026-09-05T10:00"))).toBe(true);
+    expect(offPeakAt(S, beijing("2026-09-06T10:00"))).toBe(true);
+    expect(offPeakAt(S, beijing("2026-09-07T10:00"))).toBe(false);
+  });
+
+  it("the answer is the vendor's clock, not the host's", () => {
+    // One instant, asked in two ways: 01:30 UTC is 09:30 in Beijing, i.e. peak, whatever zone
+    // the server runs in. The Date is absolute, so this pins that no local-time call is used.
+    expect(offPeakAt(S, new Date("2026-08-31T01:30:00Z"))).toBe(false);
+    expect(offPeakAt(S, new Date("2026-08-31T16:30:00Z"))).toBe(true);
+  });
+
+  it("effectivePricing halves every bucket off-peak and leaves them at peak", () => {
+    const m = MODEL_CATALOG.find((x) => x.modelId === "deepseek-v4-pro")!;
+    expect(effectivePricing(m, beijing("2026-08-31T10:00"))).toEqual(m.pricing);
+    const off = effectivePricing(m, beijing("2026-08-31T20:00"))!;
+    for (const k of ["cache_read", "cache_write", "output"] as const) {
+      expect(off[k], k).toBeCloseTo(m.pricing![k] / 2, 5);
+    }
+    // And the concrete off-peak figures, which are DeepSeek's published CNY 0.15 / 4.5 / 13.5.
+    const cnyOf = (usdV: number): number => Math.round(usdV * 7 * 1000) / 1000;
+    expect([cnyOf(off.cache_read), cnyOf(off.cache_write), cnyOf(off.output)]).toEqual([
+      0.15, 4.5, 13.5,
+    ]);
   });
 });

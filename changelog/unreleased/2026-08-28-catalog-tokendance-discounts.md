@@ -32,6 +32,20 @@ renamed the three price buckets.
   reproduces the rate TokenDance bills.
 - `presetModelEntries()` now writes the effective price into a Project rather than the list
   price, so a promoted row is costed at the rate it is billed at.
+- **DeepSeek's direct rows follow its peak/off-peak tiers.** They recorded the off-peak tier
+  and treated peak usage as costing the same, which under-counted it by half. They now record
+  the **peak** price — CNY 0.1 / 3 / 9 for the two V4 Flash rows, CNY 0.3 / 9 / 27 for V4 Pro —
+  and declare `offPeakDiscount`, a weekly schedule that halves every bucket outside Beijing
+  weekday 09:00–12:00 and 14:00–18:00. The models page marks an off-peak row `-50%` and prints
+  the reduced figure; at peak it prints the stored price and carries no mark; the cost center
+  bills at whichever is in force.
+- Catalog entries gained `offPeakDiscount` alongside `discount`, and the two differ in where
+  the rate is applied. A flat promotion is one rate until it lapses, so `sync presets` bakes it
+  into the Project. A scheduled one changes twice a day, so **nothing is baked in**: the peak
+  price is what goes on disk, and the reduction is applied when a price is read. A number in
+  `.project_config.toml` that meant something different an hour later would be unreadable, and
+  re-syncing would rewrite prices by the clock. `effectivePricing` and `offPeakAt` take the
+  instant to judge, so the answer is the vendor's clock rather than the host's timezone.
 
 ## The models page
 
@@ -60,14 +74,18 @@ renamed the three price buckets.
   a zero, which would read as a measurement instead of an absence. `humanizeTokens` gained a
   billions tier for it, in the Web App and in the CLI that shares its conventions. The unit is
   abbreviated the way the rest of the page already abbreviates it — `tok/s`, `/M tok`.
-- **The card's marks are small neutral pills** — one faint surface and border whatever the mark
-  says, with the hue surviving only in the text. Six marks filling six coloured chips turned the
-  row into confetti; on a page whose job is scanning names, the marks are meant to be noticed
-  second. Three inks group them rather than enumerate them: what the model is, what it can do,
-  what it costs. They are spelled in the models page rather than in `lib/tone.ts` because they
-  are identities, not judgements — "default", "vision", "free" say what a model *is*, and none
-  ranks above its neighbour; the words carry the identity in every case, so the ink only sorts
-  them at a glance.
+- **The page's marks are small unfilled pills** — a hairline border, no fill at all, and the hue
+  surviving only in the text. Six marks filling six coloured chips turned the row into confetti;
+  on a page whose job is scanning names, the marks are meant to be noticed second. Three inks
+  group them rather than enumerate them: what the model is, what it can do, what it costs. They
+  are spelled in the models page rather than in `lib/tone.ts` because they are identities, not
+  judgements — "default", "vision", "free" say what a model *is*, and none ranks above its
+  neighbour; the words carry the identity in every case, so the ink only sorts them at a glance.
+  The group header's recommendation pill is unfilled on the same reasoning.
+- **The config dialog's header is three lines**: the name, the upstream id, then the marks. They
+  had shared the name's line, where a long name wrapped underneath them and left the header
+  ragged. They are the same pills the cards wear, so the list and the dialog agree about what a
+  mark looks like.
 - A discounted model card shows the **billed** price alone. What the row would have cost
   without the promotion answers no question a reader of this list is asking, and spending the
   price line's width on it pushes out the figures that do; the rate off list is one of the tags
@@ -79,6 +97,10 @@ renamed the three price buckets.
   is gone and the model count and the recommendation drop out on a narrow row instead — the same
   rule the actions' own labels already followed. Verified with no overflow at nine widths from
   1500px down to 400px.
+
+- **A scheduled row's price is re-read on the hour.** Every window a schedule can express is
+  hour-aligned, so the page re-aims a timer at the next hour rather than polling: a card left
+  open at 08:59 would otherwise still promise half price at 09:05.
 
 ## Three fixes the card work turned up
 
