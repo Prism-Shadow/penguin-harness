@@ -18,6 +18,7 @@ import { Drawer } from "../ui/drawer";
 import { GlyphIcon } from "../ui/glyph-icon";
 import { UpdateDot } from "../ui/update-dot";
 import { CloseIcon, NAV_ICONS } from "../ui/icons";
+import { CLOCK_ICON } from "../ui/group-list";
 import { NEW_CHAT_ICON, Sidebar } from "./sidebar";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
 import { parkActiveDraft } from "../../features/chat/draft-sessions";
@@ -25,9 +26,6 @@ import { ChangePasswordDialog } from "../account/change-password-dialog";
 import { TerminalDockRuntime } from "../../features/terminal/terminal-view-pool";
 import { setDockScope } from "../../features/dock/dock-state";
 import { toneStrip } from "../../lib/tone";
-
-/** "Last conversation" glyph (chat lines + resume arrow), used only by the rail. */
-const LAST_CHAT_ICON = "M8 10h8M8 14h5M21 12a9 9 0 1 1-4.2-7.6L21 4v5h-5";
 
 /** Shared look of rail entries (icon buttons and NavLinks alike): solid gray fill when active, gray hover otherwise. `relative` so an entry can anchor an update badge on its corner (no z-index, so it still creates no stacking context). */
 const railItemClass = (active: boolean) =>
@@ -105,9 +103,12 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
           growing the document. Scrollbar hidden — at 48px wide it would cost a third of the
           rail's width. */}
       <nav className="no-scrollbar mt-1 flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto">
-        {/* 1. Last conversation: lit on any non-draft conversation. Dimmed/disabled (tooltip kept) only
-            once the list has settled with no non-archived Session — while it is still loading the
-            entry keeps its normal look (no flash) and a click is a graceful no-op. */}
+        {/* 1. Last conversation: the clock the session list's "most recent" sort wears — the entry
+            IS recency, and one mark for one meaning holds across the two surfaces (nothing else
+            on this rail is time-shaped, so it cannot be mistaken for a sibling here). Lit on any
+            non-draft conversation. Dimmed/disabled (tooltip kept) only once the list has settled
+            with no non-archived Session — while it is still loading the entry keeps its normal
+            look (no flash) and a click is a graceful no-op. */}
         <button
           type="button"
           title={S.nav.lastConversation}
@@ -120,7 +121,7 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
               : "flex h-8 w-8 cursor-not-allowed items-center justify-center rounded-md text-gray-300 dark:text-gray-700"
           }
         >
-          <GlyphIcon d={LAST_CHAT_ICON} size={18} />
+          <GlyphIcon d={CLOCK_ICON} size={18} />
         </button>
         {/* 2. New chat: shows the same gray active fill while on the draft page (pinned-sidebar convention). */}
         <button
