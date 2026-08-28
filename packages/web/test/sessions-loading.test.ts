@@ -23,4 +23,21 @@ describe("sessions store loading", () => {
     // an empty state over a list that was merely not known yet.
     expect(store.getState().loading).toBe(true);
   });
+
+  it("a refresh over rows already on screen does not raise it", async () => {
+    // `loading` means "nothing to show yet", not "a fetch is in flight". The chat page draws
+    // a skeleton IN PLACE OF the open conversation while it is true, and the list refetches
+    // whenever the machine set moves — so a refresh that raised it blanked the conversation
+    // being read, over and over for a machine that flaps.
+    const store = createSessionsStore();
+    store.setState({
+      projectId: "proj",
+      agentIds: ["default_agent"],
+      loading: false,
+      sessions: [{ sessionId: "s1" } as never],
+    });
+    const settled = store.getState().reload();
+    expect(store.getState().loading).toBe(false);
+    await settled.catch(() => undefined);
+  });
 });
