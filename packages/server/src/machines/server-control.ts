@@ -3,7 +3,7 @@
  *
  * A start is one command on the shared shell — `nohup penguin server … &` — and then the
  * status probe, on that same shell, until the server answers. A stop is a request to the
- * server's own shutdown endpoint over the forward this side holds, then watching that port
+ * server's own shutdown endpoint, over the forward this side holds, then watching that port
  * go quiet. Neither costs a handshake.
  *
  * The remote server is a plain `penguin server` process, never supervised from here. A
@@ -13,7 +13,6 @@ import { SERVER_LOG_TAIL, startServerCommand } from "./commands.js";
 import type { RemoteTarget } from "./commands.js";
 import type { ExecResult } from "./exec.js";
 import { probeServerState } from "./server-state.js";
-import { forwardTo } from "./forward.js";
 import { machineApi } from "./machine-api.js";
 
 /** How long a freshly started server gets to answer on its port. */
@@ -48,21 +47,9 @@ export async function startRemoteServer(
   return { ok: false, detail: tail || "it did not answer within 30s." };
 }
 
-/** Asks the remote server to shut down and waits for its port to stop answering. */
-export async function stopRemoteServer(opts: {
-  address: string;
-  target: RemoteTarget;
-  remotePort: number;
-  livePort?: number | null;
-  cookie: string;
-}): Promise<boolean> {
-  let port = opts.livePort ?? null;
-  if (port === null) {
-    const forward = await forwardTo(opts);
-    if (!forward.ok) return false;
-    port = forward.port;
-  }
-  const api = machineApi(port, opts.cookie);
+/** Asks the server reachable at `port` to shut down and waits for it to stop answering. */
+export async function stopRemoteServer(port: number, cookie: string): Promise<boolean> {
+  const api = machineApi(port, cookie);
   try {
     if ((await api.request("POST", "/api/version/shutdown", {})).status !== 202) return false;
   } catch {

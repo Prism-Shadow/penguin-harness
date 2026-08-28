@@ -9,14 +9,8 @@
  * stop looking installed as soon as anything else was installed.
  */
 import { describe, expect, it } from "vitest";
-import type {
-  MachineConnectJob,
-  MachineInfo,
-  MachineInstallJob,
-  MachinesResponse,
-} from "@prismshadow/penguin-server/api";
+import type { MachineInfo, MachineJob, MachinesResponse } from "@prismshadow/penguin-server/api";
 import {
-  canSignIn,
   connectAction,
   installButtonState,
   installedMachines,
@@ -34,7 +28,7 @@ const fresh = (alias: string): MachineInfo => ({
   machineId: null,
   installed: null,
   local: false,
-  origin: null,
+  connected: false,
   status: null,
 });
 const carrying = (alias: string): MachineInfo => ({ ...fresh(alias), installed: INSTALLED });
@@ -45,24 +39,24 @@ const here = (): MachineInfo => ({
   machineId: "LNrJdHAZJ91G58i0",
   installed: INSTALLED,
   local: true,
-  origin: null,
+  connected: false,
   status: { state: "running", checkedAt: INSTALLED.at, port: 7364 },
 });
 
 function response(
-  job: MachineInstallJob | null,
+  job: MachineJob | null,
   opts: { imageVersion?: string | null; machines?: MachineInfo[] } = {},
 ): MachinesResponse {
   return {
     machines: opts.machines ?? [fresh("build-box"), fresh("nas")],
     imageVersion: opts.imageVersion === undefined ? "9.9.9" : opts.imageVersion,
     job,
-    connect: null,
   };
 }
 
-function job(over: Partial<MachineInstallJob> = {}): MachineInstallJob {
+function job(over: Partial<MachineJob> = {}): MachineJob {
   return {
+    kind: "install",
     machineId: "ssh:nas",
     alias: "nas",
     running: true,
@@ -72,7 +66,10 @@ function job(over: Partial<MachineInstallJob> = {}): MachineInstallJob {
   };
 }
 
-const done = job({ running: false, result: { ok: true, kind: "installed", version: "9.9.9" } });
+const done = job({
+  running: false,
+  result: { ok: true, installed: "installed", version: "9.9.9" },
+});
 
 describe("verdictOf", () => {
   it("is null while the job runs", () => {
@@ -83,7 +80,10 @@ describe("verdictOf", () => {
     expect(verdictOf(done)).toEqual({ kind: "installed", version: "9.9.9" });
     expect(
       verdictOf(
-        job({ running: false, result: { ok: true, kind: "already-installed", version: "9.9.9" } }),
+        job({
+          running: false,
+          result: { ok: true, installed: "already-installed", version: "9.9.9" },
+        }),
       ),
     ).toEqual({ kind: "already-installed", version: "9.9.9" });
   });
@@ -148,7 +148,7 @@ describe("installButtonState", () => {
       machineId: "ssh:build-box",
       alias: "build-box",
       running: false,
-      result: { ok: true, kind: "installed", version: "9.9.9" },
+      result: { ok: true, installed: "installed", version: "9.9.9" },
     });
     expect(installButtonState(carrying("nas"), response(elsewhere), false)).toEqual({
       action: "reinstall",
@@ -260,9 +260,10 @@ describe("connectAction", () => {
   const connected = (alias: string): MachineInfo => ({
     ...carrying(alias),
     machineId: "noeSE0FFHhNXl2J5",
-    origin: "http://localhost:7364",
+    connected: true,
   });
-  const job = (over: Partial<MachineConnectJob> = {}): MachineConnectJob => ({
+  const job = (over: Partial<MachineJob> = {}): MachineJob => ({
+    kind: "connect",
     machineId: "ssh:nas",
     alias: "nas",
     running: true,
@@ -283,7 +284,7 @@ describe("connectAction", () => {
     expect(connectAction(carrying("nas"), null, null)).toBe("connect");
   });
 
-  it("reads as connected once there is an origin", () => {
+  it("reads as connected once a forward is up", () => {
     expect(connectAction(connected("nas"), null, null)).toBe("connected");
   });
 
@@ -328,29 +329,5 @@ describe("installButtonState, once a machine is behind", () => {
 
   it("still says reinstall when the two ends agree", () => {
     expect(installButtonState(carrying("nas"), response(null), false).action).toBe("reinstall");
-  });
-});
-
-describe("canSignIn", () => {
-  const connected = (): MachineInfo => ({
-    ...carrying("nas"),
-    machineId: "noeSE0FFHhNXl2J5",
-    origin: "http://localhost:7364",
-  });
-
-  it("is true for a connected machine with an identity", () => {
-    expect(canSignIn(connected())).toBe(true);
-  });
-
-  it("is false without a tunnel — the sign-in has nothing to travel through", () => {
-    expect(canSignIn({ ...connected(), origin: null })).toBe(false);
-  });
-
-  it("is false without an identity — the proxy is addressed by it", () => {
-    expect(canSignIn({ ...connected(), machineId: null })).toBe(false);
-  });
-
-  it("is false for this machine, which needs no second sign-in", () => {
-    expect(canSignIn(here())).toBe(false);
   });
 });

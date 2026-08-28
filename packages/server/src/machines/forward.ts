@@ -1,31 +1,36 @@
 /**
- * The HTTP way in to a machine's own server, held open per machine.
+ * The one forward per machine: `ssh -N -L <local>:127.0.0.1:<remote>`, held as a child
+ * process, making that machine's server a loopback origin here.
  *
- * A connection to a machine is a given on this side, not a cost paid per operation — the
- * same bargain ssh-session.ts strikes for small commands. Holding one is what lets work on a
- * machine be an ordinary authenticated request to that machine's own API, the hot update
- * included, instead of a program that has to exist on the far side to receive it.
+ * Everything this server does over HTTP to a machine goes through it — the proxy for the
+ * browser, the model sync, the hot update, a restart. The local port is whatever is free:
+ * nothing built from it is shown to a browser as a URL, so it never has to match the far
+ * side's number.
  *
- * Not the connect tunnel: that one is the browser's (same-numbered ports, a state file, an
- * entry in the UI). This one is this server's own, on whatever local port is free, and a
- * machine may have either, both, or neither. A caller with a live connect tunnel passes its
- * port instead of opening one of these.
+ * Held rather than opened per operation: a handshake to a distant host costs seconds, and
+ * the connection is a given on this side, not a cost paid per request. The child's pid is
+ * what the service persists, so a hot-swapped or restarted platform adopts a forward it did
+ * not spawn — the process outlives this module's objects.
  *
- * Unsupervised, like the shell and the tunnel: a forward that dies is dropped and the next
- * caller opens another. Idle ones are let go, on a window long enough to outlive the gap
- * between hot pushes — reaped sooner, every push would pay a handshake per machine again.
+ * Unsupervised, like the shared shell: a forward that dies is dropped, and the next caller
+ * opens another. A dropped link is what the person needs to see.
  */
+import { spawn } from "node:child_process";
 import net from "node:net";
-import { openTunnel, waitForTunneledHttp } from "./tunnel.js";
+import type { ChildProcessByStdio } from "node:child_process";
+import type { Readable } from "node:stream";
+import { forwardArgs } from "./commands.js";
 import type { RemoteTarget } from "./commands.js";
 
-const IDLE_MS = 60 * 60_000;
+/** How long the far server has to answer through a fresh forward before it is called dead. */
 const READY_TIMEOUT_MS = 20_000;
 
 interface Forward {
-  tunnel: ReturnType<typeof openTunnel>;
+  child: ChildProcessByStdio<null, null, Readable>;
+  port: number;
   remotePort: number;
-  idle: NodeJS.Timeout | null;
+  exited: boolean;
+  stderr: string;
 }
 
 const forwards = new Map<string, Forward>();
@@ -43,68 +48,87 @@ function freeLocalPort(): Promise<number | null> {
   });
 }
 
-function drop(address: string, forward: Forward): void {
-  if (forward.idle !== null) clearTimeout(forward.idle);
-  forward.tunnel.close();
-  if (forwards.get(address) === forward) forwards.delete(address);
-}
-
 /**
- * Restarts the idle countdown. The timer is also what collects a forward a hot push orphans:
- * the bundle is re-imported cache-busted (hmr/host.ts) and this map starts empty, but a
- * scheduled timeout belongs to the process and still closes the child it was made for.
+ * Polls the origin until any HTTP answer arrives. Before the remote server listens, the
+ * forward accepts and immediately drops the connection — that reads as a fetch failure and
+ * the loop just tries again.
  */
-function touch(address: string, forward: Forward): void {
-  if (forward.idle !== null) clearTimeout(forward.idle);
-  forward.idle = setTimeout(() => drop(address, forward), IDLE_MS);
-  forward.idle.unref();
+async function waitForHttp(port: number, gone: () => boolean): Promise<string | null> {
+  const deadline = Date.now() + READY_TIMEOUT_MS;
+  for (;;) {
+    if (gone()) return "the forward exited";
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/`, {
+        redirect: "manual",
+        signal: AbortSignal.timeout(1000),
+      });
+      void res.body?.cancel();
+      return null;
+    } catch {
+      // Not answering yet.
+    }
+    if (Date.now() >= deadline) return "no HTTP answer through the forward";
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
 }
 
 /**
- * The local port a machine's server can be reached on, opening a forward if there is none —
- * or if the one there is points at a port the server has since moved away from.
+ * The local port a machine's server can be reached on, raising a forward when this module
+ * holds none. `pid` is for the caller to persist; a forward this module does not know of but
+ * whose pid is alive is still forwarding, and the caller uses its recorded port directly.
  */
 export async function forwardTo(opts: {
   /** Registry key: the machine's ssh address, as ssh-session.ts keys its shells. */
   address: string;
   target: RemoteTarget;
-  /** The port its server is bound to over there. */
   remotePort: number;
-}): Promise<{ ok: true; port: number } | { ok: false; detail: string }> {
+}): Promise<{ ok: true; port: number; pid: number | null } | { ok: false; detail: string }> {
   const existing = forwards.get(opts.address);
   if (existing !== undefined) {
-    if (!existing.tunnel.exited() && existing.remotePort === opts.remotePort) {
-      touch(opts.address, existing);
-      return { ok: true, port: existing.tunnel.port };
+    if (!existing.exited && existing.remotePort === opts.remotePort) {
+      return { ok: true, port: existing.port, pid: existing.child.pid ?? null };
     }
-    drop(opts.address, existing);
+    closeForward(opts.address);
   }
-  const localPort = await freeLocalPort();
-  if (localPort === null) return { ok: false, detail: "no free local port to forward on" };
+  const port = await freeLocalPort();
+  if (port === null) return { ok: false, detail: "no free local port to forward on" };
 
-  const tunnel = openTunnel({
-    target: opts.target,
-    port: localPort,
-    remotePort: opts.remotePort,
-    onExit: () => {},
+  const child = spawn("ssh", forwardArgs(opts.target, port, opts.remotePort), {
+    stdio: ["ignore", "ignore", "pipe"],
   });
-  const forward: Forward = { tunnel, remotePort: opts.remotePort, idle: null };
+  const forward: Forward = { child, port, remotePort: opts.remotePort, exited: false, stderr: "" };
+  child.stderr.on("data", (chunk: Buffer) => {
+    forward.stderr = (forward.stderr + String(chunk)).slice(-4096);
+  });
+  child.on("exit", () => {
+    forward.exited = true;
+  });
+  child.on("error", () => {
+    forward.exited = true; // No ssh binary at all reads as an immediate exit.
+  });
   forwards.set(opts.address, forward);
-  const ready = await waitForTunneledHttp(
-    `http://127.0.0.1:${localPort}`,
-    () => tunnel.exited(),
-    READY_TIMEOUT_MS,
-  );
-  if (!ready.ok) {
-    drop(opts.address, forward);
-    return { ok: false, detail: tunnel.stderr().trim() || ready.detail };
+
+  const failure = await waitForHttp(port, () => forward.exited);
+  if (failure !== null) {
+    closeForward(opts.address);
+    return { ok: false, detail: forward.stderr.trim() || failure }; // ssh's words beat ours.
   }
-  touch(opts.address, forward);
-  return { ok: true, port: localPort };
+  return { ok: true, port, pid: child.pid ?? null };
 }
 
-/** Lets go of a machine's forward — a disconnect, or a machine that went away. */
-export function closeForward(address: string): void {
+/**
+ * Lets go of a machine's forward — this module's child, or by pid one a previous platform
+ * generation spawned and recorded.
+ */
+export function closeForward(address: string, pid?: number | null): void {
   const forward = forwards.get(address);
-  if (forward !== undefined) drop(address, forward);
+  forwards.delete(address);
+  if (forward !== undefined && !forward.exited) forward.child.kill();
+  if (pid != null && forward?.child.pid !== pid) {
+    try {
+      process.kill(pid);
+    } catch {
+      // Already gone.
+    }
+  }
 }

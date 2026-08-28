@@ -14,7 +14,7 @@ import type { ExecResult } from "./exec.js";
 /** Precedes the token on its own line — the same mark the CLI prints (cli/commands/auth.ts). */
 const TOKEN_MARK = "---penguin-auth-token---";
 
-export type RemoteTokenOutcome =
+type RemoteTokenOutcome =
   | { kind: "minted"; token: string }
   /** The machine could not mint one — most often a build older than the command. Not a failure: the page offers a sign-in by hand. */
   | { kind: "unsupported"; detail: string }

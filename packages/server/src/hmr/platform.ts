@@ -308,11 +308,9 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     let drained: Promise<void> | undefined;
     ctx.effect(() => {
       terminals.quiesce();
-      // Tunnels are DELIVERED, not suspended: the ssh children are separate processes that
-      // keep forwarding across the swap, and the successor finds them again through the
-      // state file's pid + port. Detach rather than close, so this generation stops firing
-      // exit handlers on children it no longer owns without killing a live connection.
-      if (business !== null) business.machines.detachTunnels();
+      // Forwards to machines are DELIVERED, not suspended: the ssh children are separate
+      // processes that keep forwarding across the swap, and the successor adopts them by the
+      // pid recorded in web.db (machines/service.ts).
       const drains: Promise<unknown>[] = [];
       if (business !== null) {
         business.scheduler.stop();

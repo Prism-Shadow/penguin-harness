@@ -42,9 +42,6 @@ export function cmdQuote(value: string): string {
   return `"${value}"`;
 }
 
-export const quoteFor = (platform: RemotePlatform, value: string): string =>
-  platform === "win32" ? cmdQuote(value) : shQuote(value);
-
 export interface RemoteTarget {
   /** Alias as written in ~/.ssh/config — what the user picked. */
   alias: string;

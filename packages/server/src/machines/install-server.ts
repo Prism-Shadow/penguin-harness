@@ -197,14 +197,6 @@ export async function installOnRemote(opts: {
   identity?: RemoteIdentity;
   /** The hmr capability's assetsDir accessor: where a pushed bundle's assets were unpacked. */
   assets?: () => string | null;
-  /**
-   * Run the installer even when the base release over there already matches. For the one
-   * case the short-circuits get wrong: a machine whose PROGRAM is the right version and
-   * whose running process cannot claim what is being pushed at it. Nothing about the
-   * versions says so — only the machine's own refusal does — so this is asked for, never
-   * inferred.
-   */
-  forceInstaller?: boolean;
 }): Promise<RemoteInstallOutcome> {
   const { target, plan } = opts;
   const say = opts.onProgress ?? (() => {});
@@ -218,8 +210,7 @@ export async function installOnRemote(opts: {
     say(`${identity.platform}-${identity.arch}.`);
   }
 
-  const baseCurrent =
-    identity.installedVersion === plan.baseVersion && opts.forceInstaller !== true;
+  const baseCurrent = identity.installedVersion === plan.baseVersion;
   if (baseCurrent && identity.harness === plan.harness) {
     return { kind: "already-installed", version: plan.version, identity };
   }

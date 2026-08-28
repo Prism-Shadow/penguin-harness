@@ -62,14 +62,6 @@ export const en: Strings = {
     connect: "Connect",
     connecting: "Connecting\u2026",
     disconnect: "Disconnect",
-    /** Each machine is a separate server with its own accounts; this browser signs in per machine. */
-    signIn: "Sign in",
-    replaceProgram: "Replace the program there and restart",
-    replaceProgramWhy:
-      "Its runtime is older than this build, and a push never replaces a runtime. This installs the program over there and restarts its server, which interrupts anyone using it.",
-    signingIn: "Signing in\u2026",
-    signedIn: "signed in",
-    signInTo: (alias: string) => `Sign in to ${alias}`,
     /** A connected machine: its filesystem and API can be reached from here. */
     reachable: "Reachable",
     /** Manual re-probe, for when you already know something changed. */

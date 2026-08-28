@@ -38,20 +38,6 @@ const IDENTITY: RemoteIdentity = {
   harness: null,
 };
 
-/**
- * A tunnel that reads as live. `process.pid` deliberately: tunnelPortFor checks the pid
- * against the real process table, so a made-up number would (correctly) read as a dead
- * tunnel and no origin — which is its own test further down.
- */
-const liveTunnel = (port = 7364) => ({
-  port,
-  pid: process.pid,
-  exited: () => false,
-  stderr: () => "",
-  close: () => {},
-  detach: () => {},
-});
-
 /** An effects set that names two hosts and installs successfully, with the parts a test cares about overridden. */
 function effects(over: Partial<MachinesEffects> = {}): Partial<MachinesEffects> {
   return {
@@ -78,16 +64,9 @@ function effects(over: Partial<MachinesEffects> = {}): Partial<MachinesEffects> 
       stderr: "",
       timedOut: false,
     }),
-    portBusy: async () => false,
-    waitForHttp: async () => ({ ok: true }),
-    openTunnel: () => ({
-      port: 7364,
-      pid: process.pid,
-      exited: () => false,
-      stderr: () => "",
-      close: () => {},
-      detach: () => {},
-    }),
+    // A forward that reads as live: `process.pid` because liveness is checked against the
+    // real process table, so a made-up pid would (correctly) read as a dead forward.
+    forward: async () => ({ ok: true, port: 7364, pid: process.pid }),
     probe: async () => ({ state: { kind: "running", port: 7364, pid: 4242 }, machineId: null }),
     install: async (opts): Promise<RemoteInstallOutcome> => {
       opts.onProgress?.("Pushing…");
@@ -112,10 +91,6 @@ describe("machines API", () => {
     });
     admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
   };
-
-  /** The records file as the service left it on disk. */
-  const recordsOnDisk = (): unknown =>
-    JSON.parse(fs.readFileSync(path.join(machinesRoot, "machines-installs.json"), "utf8"));
 
   afterEach(async () => {
     await t.cleanup();
@@ -158,7 +133,7 @@ describe("machines API", () => {
           machineId: null,
           installed: null,
           local: false,
-          origin: null,
+          connected: false,
           status: null,
         },
         {
@@ -167,7 +142,7 @@ describe("machines API", () => {
           machineId: null,
           installed: null,
           local: false,
-          origin: null,
+          connected: false,
           status: null,
         },
       ]);
@@ -211,7 +186,7 @@ describe("machines API", () => {
       const body = (await (
         await admin.get("/api/projects/default_project/machines")
       ).json()) as MachinesResponse;
-      expect(body.job?.result).toEqual({ ok: true, kind: "installed", version: "9.9.9" });
+      expect(body.job?.result).toEqual({ ok: true, installed: "installed", version: "9.9.9" });
       expect(body.job?.log[0]).toBe("Installing 9.9.9 on deploy@nas…");
       expect(body.job?.log).toContain("Pushing…");
     });
@@ -241,7 +216,7 @@ describe("machines API", () => {
       await waitFor(() => t.deps.machines.job()?.running === false);
       expect(t.deps.machines.job()?.result).toEqual({
         ok: true,
-        kind: "already-installed",
+        installed: "already-installed",
         version: "9.9.9",
       });
     });
@@ -250,21 +225,14 @@ describe("machines API", () => {
       await boot({
         install: async () => ({ kind: "already-installed", version: "9.9.9", identity: IDENTITY }),
       });
-      fs.writeFileSync(
-        path.join(machinesRoot, "machines-installs.json"),
-        JSON.stringify({
-          "ssh:nas": {
-            version: "9.9.9",
-            at: "2026-08-01T00:00:00.000Z",
-            machineId: "kUkIyqU-1GOfXgKD",
-          },
-        }),
-      );
+      machinesRepo.patch("ssh:nas", {
+        version: "9.9.9",
+        installedAt: "2026-08-01T00:00:00.000Z",
+        machineId: "kUkIyqU-1GOfXgKD",
+      });
       await admin.post("/api/projects/default_project/machines/ssh:nas/install");
       await waitFor(() => t.deps.machines.job()?.running === false);
-      expect(recordsOnDisk()).toMatchObject({
-        "ssh:nas": { machineId: "kUkIyqU-1GOfXgKD" },
-      });
+      expect(machinesRepo.get("ssh:nas")?.machineId).toBe("kUkIyqU-1GOfXgKD");
     });
 
     it("a machine that refuses this build says so, instead of reporting an install", async () => {
@@ -280,27 +248,29 @@ describe("machines API", () => {
       expect(t.deps.machines.job()?.result).toMatchObject({
         ok: false,
         step: "hand over the pushed build",
-        canReplaceProgram: true,
       });
       expect((t.deps.machines.job()?.result as { message: string }).message).toContain(
         "no business capabilities",
       );
     });
 
-    it("answering that offer runs the installer the version check would have skipped", async () => {
-      let forced: boolean | undefined;
+    it("will not hot-update a machine with nothing running on it, and says which it was", async () => {
+      let asked = false;
       await boot({
-        install: async (opts: { forceInstaller?: boolean }) => {
-          forced = opts.forceInstaller;
-          return { kind: "installed", output: "", identity: IDENTITY };
+        probe: async () => ({ state: { kind: "stopped" }, machineId: null }),
+        install: async () => ({ kind: "state-only", identity: IDENTITY }),
+        upgrade: async () => {
+          asked = true;
+          return { kind: "upgraded", detail: "" };
         },
       });
-      await admin.post("/api/projects/default_project/machines/ssh:nas/install", {
-        replaceProgram: true,
-      });
+      await admin.post("/api/projects/default_project/machines/ssh:nas/install");
       await waitFor(() => t.deps.machines.job()?.running === false);
 
-      expect(forced).toBe(true);
+      expect(asked).toBe(false);
+      expect((t.deps.machines.job()?.result as { message: string }).message).toContain(
+        "no server is running",
+      );
     });
 
     it("a throw from the push path still ends the job", async () => {
@@ -447,7 +417,7 @@ describe("machines API", () => {
       });
       await admin.post("/api/projects/default_project/machines/ssh:nas/install");
       await waitFor(() => t.deps.machines.job()?.running === false);
-      expect(t.deps.machines.job()?.result).toMatchObject({ ok: true, kind: "installed" });
+      expect(t.deps.machines.job()?.result).toMatchObject({ ok: true, installed: "installed" });
       expect(calls).toEqual(["stop", "start:7364"]);
       expect(t.deps.machines.job()?.log.join(" ")).toContain("Restarting its server");
     });
@@ -494,90 +464,6 @@ describe("machines API", () => {
       await admin.post("/api/projects/default_project/machines/ssh:nas/install");
       await waitFor(() => t.deps.machines.job()?.running === false);
       expect(t.deps.machines.job()?.log.join(" ")).toContain("did not come back up");
-    });
-  });
-
-  describe("signing in to a machine without its password crossing the wire", () => {
-    const ID = "QS7J4YVgSovi-Z2c";
-    const identified = async (over = {}) => {
-      await boot({
-        probe: async () => ({ state: { kind: "running", port: 7364, pid: 1 }, machineId: ID }),
-        openTunnel: () => liveTunnel(),
-        ...over,
-      });
-      await admin.post("/api/projects/default_project/machines/ssh:nas/install");
-      await waitFor(() => t.deps.machines.job()?.running === false);
-      await admin.post("/api/projects/default_project/machines/probe");
-    };
-
-    it("hands back that machine's cookie, renamed into its own namespace", async () => {
-      await identified();
-      const res = await admin.post(`/api/projects/default_project/machines/${ID}/signin`);
-      expect(res.status).toBe(200);
-      const setCookie = res.headers.get("set-cookie") ?? "";
-      expect(setCookie).toContain(`penguin_s_${Buffer.from(ID, "utf8").toString("hex")}_`);
-      expect(setCookie).toContain("penguin_session=remote-token");
-      expect(setCookie.startsWith("penguin_session=")).toBe(false);
-    });
-
-    it("says so when that machine cannot mint one, so a person can sign in by hand", async () => {
-      await identified({
-        runOn: async () => ({
-          code: 127,
-          stdout: "penguin: unknown command 'auth'",
-          stderr: "",
-          timedOut: false,
-        }),
-      });
-      const res = await admin.post(`/api/projects/default_project/machines/${ID}/signin`);
-      expect(res.status).toBe(409);
-      expect(((await res.json()) as { error: { code: string } }).error.code).toBe("signin_refused");
-    });
-
-    it("turns an unexpected throw into that same answer, not a 500", async () => {
-      await identified({
-        runOn: () => {
-          throw new Error("ssh vanished mid-handshake");
-        },
-      });
-      const res = await admin.post(`/api/projects/default_project/machines/${ID}/signin`);
-      expect(res.status).toBe(502);
-      expect(await res.text()).toContain("ssh vanished mid-handshake");
-    });
-
-    it("will not hot-update a machine with nothing running on it, and says which it was", async () => {
-      let asked = false;
-      await boot({
-        probe: async () => ({ state: { kind: "stopped" }, machineId: null }),
-        install: async () => ({ kind: "state-only", identity: IDENTITY }),
-        upgrade: async () => {
-          asked = true;
-          return { kind: "upgraded", detail: "" };
-        },
-      });
-      await admin.post("/api/projects/default_project/machines/ssh:nas/install");
-      await waitFor(() => t.deps.machines.job()?.running === false);
-
-      expect(asked).toBe(false);
-      expect((t.deps.machines.job()?.result as { message: string }).message).toContain(
-        "no server is running",
-      );
-    });
-
-    it("distinguishes a machine that could not be reached from one that refused", async () => {
-      await identified({
-        runOn: async () => ({ code: 255, stdout: "", stderr: "no route to host", timedOut: true }),
-      });
-      expect((await admin.post(`/api/projects/default_project/machines/${ID}/signin`)).status).toBe(
-        502,
-      );
-    });
-
-    it("404s a machine it does not know", async () => {
-      await boot();
-      expect(
-        (await admin.post("/api/projects/default_project/machines/NOTAMACHINEaaaa/signin")).status,
-      ).toBe(404);
     });
   });
 

@@ -122,15 +122,15 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 `installed` 是**本服务端**最近一次在该机器上完成的安装——`{version, at}`，从未安装过则为 `null`。它持久化在数据根目录下，因此能跨重启、跨热推、跨「在别的机器上安装」而保留；它记录的是本端做过什么，而非对远端的实地探查，所以被手工清空的远端仍显示为已安装，直到下一次安装将其修正。安装失败不写入任何记录。
 
-`machineId` 是该机器**自身**的 id——由运行在那里的服务端铸造的 16 位 base64url 字符（`<数据根目录>/machine-id`），跨改名、改别名与重装都保持不变，是所有存储引用应当指向的东西。该机器上的服务端尚未启动过时为 `null`，因为还没有任何东西铸造过它；它与 `status` 在同一次往返中获取，并记录在安装记录旁。同一主机的两个别名会报告相同的 `machineId`。
+`machineId` 是该机器**自身**的 id——由运行在那里的服务端铸造的 16 位 base64url 字符（其 `machine` 表），跨改名、改别名与重装都保持不变，是所有存储引用应当指向的东西。该机器上的服务端尚未启动过时为 `null`，因为还没有任何东西铸造过它；它与 `status` 在同一次往返中获取，并记录在安装记录旁。同一主机的两个别名会报告相同的 `machineId`。
 
 `local` 标记服务端自身所在的机器。它始终出现在列表中、始终是已安装、始终在运行——它就是正在应答的那一个——并且永远不是安装目标：对它 `POST …/install` 返回 `409` `self_install`。
 
 `status` 为 `{state, checkedAt, port?, detail?}`，`state` 取 `running` / `stopped` / `unreachable` 之一；该机器尚未被探测时为 `null`。没有单独的 ssh 状态：ssh 是传输方式，因此连不上的机器就是 `unreachable`，并在 `detail` 中保留 OpenSSH 自己的原话。`GET` 从不发起探测——它只报告最近一次的答案——因为一次探测是每台机器一次 ssh 往返，而列表本身只是配置文件的文本。真正花费这些往返的是 `POST /api/machines/probe`，且只针对安装过的机器。
 
-已连接机器的 API 可通过本源上的 `/server/<machineId>/api/…` 访问，经由其隧道转发。以机器自身的 id 而非它被访问时所用的 ssh 别名寻址：别名只存在于某一份配置文件中，若以它为键，一旦有人重命名主机，该机器的 URL 与 cookie 名就会随之改变；而 id 是 base64url，放在路径中无需任何百分号编码。该路由位于本服务端认证中间件之外——远端用它自己的 cookie 认证每一个被转发的请求，这些 cookie 按机器改名（`penguin_s_<hex(machineId)>_…`），因此多个服务端的会话可以共存于同一个源而互不串扰。只有 `/api` 会被转发——前端始终是本地的。
+已连接机器的 API 可通过本源上的 `/server/<machineId>/api/…` 访问，经由本服务端持有的 `ssh -N -L` 转发送达。以机器自身的 id 而非它被访问时所用的 ssh 别名寻址：别名只存在于某一份配置文件中，若以它为键，一旦有人重命名主机，该机器的 URL 就会随之改变；而 id 是 base64url，放在路径中无需任何百分号编码。**仅限管理员**，且只有一个身份：请求在对端以那台机器的管理员身份发出，会话由本服务端通过自己的 ssh 权限铸造（在机器上执行 `penguin auth token`）——浏览器的 cookie 不会过去，机器的 cookie 也不会回来。只有 `/api` 会被转发——前端始终是本地的。
 
-安装是任务而非请求：它要探测对端，可能下载并校验一份 Node 运行时，再经 scp 复制镜像——最坏情况以分钟计。`POST` 启动后立即返回，客户端轮询 `GET` 读取 `job.log`，其中是对端自己的原话（ssh 的诊断、远端安装器的输出）。运行期间 `job.result` 为 `null`，结束后为 `{ok: true, kind: "installed" | "already-installed", version}` 或 `{ok: false, step, message}`。同一时刻只允许一个任务；任务存于内存，热推与重启都不保留，重跑即是恢复手段——每一步都是幂等的。
+安装是任务而非请求：它要探测对端，可能下载并校验一份 Node 运行时，再经 scp 复制镜像——最坏情况以分钟计。`POST` 启动后立即返回，客户端轮询 `GET` 读取 `job.log`，其中是对端自己的原话（ssh 的诊断、远端安装器的输出）。连接（`POST …/connect`）是同一形状的任务，以 `job.kind` 区分。运行期间 `job.result` 为 `null`，结束后安装为 `{ok: true, installed: "installed" | "already-installed", version}`、连接为 `{ok: true, origin}`，失败为 `{ok: false, step, message}`。同一时刻只允许一个任务；任务存于内存，热推与重启都不保留，重跑即是恢复手段——每一步都是幂等的。
 
 在任何 ssh 运行之前就能判定的拒绝各有错误码：`409` `install_running`、`404` `unknown_machine`、`409` `no_install_image`、`502` `unresolvable_host`。
 
