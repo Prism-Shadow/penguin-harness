@@ -48,6 +48,12 @@ Chinese UI renamed the three price buckets.
   exactly as tall as it was: the tag is absolutely positioned so it takes no line of its own,
   and the title row reserves room for it and truncates rather than wrapping under it. A row
   whose price has been edited away from the catalog's shows neither.
+- The card's other standing marks — default, vision, vision proxy — join it there, stacked
+  downward and flush to each other. The title row's job is the model's NAME, and every badge in
+  it was width the name had to give up. `freeBadge` and `fastModeBadge` stay put: four marks is
+  what fits in a corner the height of three text rows, and six would make the stack decide the
+  card's height. The rows the stack reaches reserve room for it — the title row always, the meta
+  row once the stack is three deep.
 
 ## Chinese price labels
 
