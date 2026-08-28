@@ -111,10 +111,18 @@ export async function upgradeRemote(opts: {
   });
   const scratch = made.stdout.trim().split("\n").pop()?.trim() ?? "";
   if (made.code !== 0 || scratch === "") {
+    // Everything the attempt has, in the order it is likely to be useful. "no scratch
+    // directory" alone was a dead end: the ONE case it does not cover is ssh saying nothing
+    // at all, which is exactly when a reader most needs the exit code — and a remote shell
+    // that rejects the command tends to answer on stdout, which was being dropped too.
     return {
       kind: "failed",
       step: "connect",
-      detail: made.stderr.trim() || "no scratch directory",
+      detail: made.timedOut
+        ? "the machine did not answer in time"
+        : made.stderr.trim() ||
+          made.stdout.trim() ||
+          `no scratch directory came back, and ssh exited ${made.code} with nothing to say`,
     };
   }
 
