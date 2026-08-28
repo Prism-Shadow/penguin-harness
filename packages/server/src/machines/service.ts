@@ -20,15 +20,58 @@
  * happened, which is exactly what it did before this file wrote anything down.
  */
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
-import type { MachineInfo, MachineInstallJob } from "../api/types.js";
+import { DEFAULT_PROJECT_ID, VERSION, loadProjectConfig } from "@prismshadow/penguin-core";
+import type { ProjectConfig } from "@prismshadow/penguin-core";
+import type {
+  MachineConnectFailure,
+  MachineConnectJob,
+  MachineInfo,
+  MachineInstallJob,
+  MachineServerStatus,
+} from "../api/types.js";
+import { readServerLock } from "../lock.js";
+import { SESSION_COOKIE } from "../auth/middleware.js";
 import { listHostAliases, resolveTarget } from "./targets.js";
+import { machineIdentity } from "./ssh-config.js";
+import type { RemoteTarget } from "./commands.js";
+import { sshArgs } from "./commands.js";
+import { run } from "./exec.js";
+import type { ExecResult } from "./exec.js";
 import { installOnRemote, resolvePushPlan } from "./install-server.js";
 import { parseInstallRecords, withInstallRecord } from "./installs.js";
+import { parseMembers, withMember } from "./membership.js";
+import { fingerprintLocal, parseModelSyncState, withModelSyncState } from "./models-sync-state.js";
 import type { InstallRecord } from "./installs.js";
+import { probeServerState } from "./server-state.js";
+import { DIR_LIST_MARK, listDirsCommand } from "./commands.js";
+import { upgradeRemote } from "./upgrade.js";
+import type { UpgradeOutcome } from "./upgrade.js";
+import { mintTokenOnRemote } from "./remote-token.js";
+import { sessionTokenOf } from "./proxy.js";
+import { closeShell, runOnShell } from "./ssh-session.js";
+import { closeForward } from "./forward.js";
+import { syncModelsToMachine } from "./models-sync.js";
+import { machineApi } from "./machine-api.js";
+import type { LocalModels } from "./models-sync.js";
+import { localPortBusy, openTunnel, waitForTunneledHttp } from "./tunnel.js";
+import type { Tunnel } from "./tunnel.js";
+import { startRemoteServer, stopRemoteServer } from "./server-control.js";
+import { parseConnectState, pickTunnelPort, withConnectState } from "./connect-state.js";
+import type { ConnectState } from "./connect-state.js";
+
+/**
+ * What signing in to a machine can answer. `refused` is the machine saying no — most often a
+ * build too old to mint a session for itself; `failed` is not having reached it.
+ */
+export type SignInOutcome =
+  | { kind: "signed-in"; setCookie: string[] }
+  | { kind: "refused"; detail: string }
+  | { kind: "failed"; detail: string };
 
 /** Why a start was refused before any ssh ran. */
-export type InstallRefusal = "busy" | "unknown-machine" | "unresolvable" | "no-image";
+export type InstallRefusal = "busy" | "unknown-machine" | "unresolvable" | "no-image" | "self";
 
 /**
  * The three things this service does to the world, injectable as a set. Production passes
@@ -42,12 +85,68 @@ export interface MachinesEffects {
   resolveTarget: typeof resolveTarget;
   resolvePlan: typeof resolvePushPlan;
   install: typeof installOnRemote;
+  probe: typeof probeServerState;
+  /** One command on a machine — the seam the directory browser and any future reader share. */
+  runOn: (target: { alias: string; user: string }, command: string) => Promise<ExecResult>;
+  startServer: typeof startRemoteServer;
+  stopServer: typeof stopRemoteServer;
+  upgrade: typeof upgradeRemote;
+  /** This server's own Project config, credentials in plaintext — the source of a model sync. */
+  loadConfig: (projectId: string) => Promise<ProjectConfig>;
+  openTunnel: typeof openTunnel;
+  portBusy: typeof localPortBusy;
+  waitForHttp: typeof waitForTunneledHttp;
   /** Injected so a test can pin the recorded timestamp instead of asserting around the clock. */
   now: () => Date;
 }
 
+/** The id of the entry standing for the machine this server runs on. */
+export const LOCAL_MACHINE_ID = "local";
+
+/** True when a pid names a process this account can see (EPERM still means it is there). */
+function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+/**
+ * How many machines are probed at once. A probe is an ssh child; someone with fifty
+ * installed machines should not have fifty of them spawned in one breath, and the page is
+ * waiting on the slowest one anyway.
+ */
+const PROBE_CONCURRENCY = 5;
+
 export class MachinesService {
   #job: MachineInstallJob | null = null;
+  /**
+   * Last probe per machine id. In memory on purpose: a status is only true for the moment it
+   * was taken, so carrying it across a restart would be reporting a fact nobody checked.
+   */
+  readonly #statuses = new Map<string, MachineServerStatus>();
+  /**
+   * Tunnels this App spawned, by machine address. The ssh CHILD is the durable thing (it
+   * outlives a hot swap); this map is only the current App's grip on it, and the state file
+   * is what a successor reads to find one it did not spawn.
+   */
+  readonly #tunnels = new Map<string, Tunnel>();
+  /**
+   * Machines with a heavy ssh operation in flight — an install, or the automatic sync.
+   *
+   * Both copy tens of megabytes over the same connection, and running them at once against
+   * one host is how a 30-second command ends up timing out with nothing to say. This exists
+   * because the automatic sync fires on every App boot: without it, a push landing while
+   * someone was installing had two transfers racing for one machine, and the loser reported
+   * a refusal it never received.
+   *
+   * Deliberately NOT taken by the probe or the directory browser: those are single short
+   * commands, and making a picker wait behind a 30 MB transfer would be its own bug.
+   */
+  readonly #busy = new Set<string>();
+  #connect: MachineConnectJob | null = null;
   readonly #effects: MachinesEffects;
 
   /**
@@ -56,21 +155,119 @@ export class MachinesService {
    */
   /** Where a pushed bundle's assets were unpacked; null in a packaged server (hmr.assetsDir). */
   readonly #assets: () => string | null;
+  /**
+   * This machine's id, out of the `machine` table (db/repos/machine.ts) — handed in rather
+   * than read here, because nothing on this side publishes it anywhere: a controller looking
+   * at THIS machine gets it by running `penguin server status` over ssh, which reads the same
+   * row. There is one copy of it, and it is in the database.
+   */
+  readonly #machineId: string;
 
   constructor(
     private readonly dataRoot: string,
+    machineId: string,
     effects: Partial<MachinesEffects> = {},
     assets: () => string | null = () => null,
   ) {
     this.#assets = assets;
+    this.#machineId = machineId;
     this.#effects = {
       listAliases: listHostAliases,
       resolveTarget,
       resolvePlan: resolvePushPlan,
       install: installOnRemote,
+      probe: probeServerState,
+      // Over the machine's SHARED shell, not a fresh connection: a probe every few minutes
+      // and a directory listing per click should not each pay for a handshake. Merged
+      // streams are fine for both — their own markers delimit what matters, and failure is
+      // read from the exit code (see ssh-session.ts).
+      runOn: async (target, command) => {
+        const result = await runOnShell(`ssh:${target.alias}`, target, command);
+        return { code: result.code, stdout: result.output, stderr: "", timedOut: false };
+      },
+      startServer: startRemoteServer,
+      stopServer: stopRemoteServer,
+      upgrade: upgradeRemote,
+      loadConfig: (projectId) => loadProjectConfig(dataRoot, projectId),
+      openTunnel,
+      portBusy: localPortBusy,
+      waitForHttp: waitForTunneledHttp,
       now: () => new Date(),
       ...effects,
     };
+  }
+
+  /**
+   * A session this side holds on a machine, by machine id — the token, not a password.
+   *
+   * Kept so that signing OUT can mean something. The browser is handed the cookie and would
+   * otherwise be the only holder; dropping our copy would leave the token valid on that
+   * machine for its whole term, which is not a sign-out. Recorded wherever a session is
+   * issued: the proxy sees a hand sign-in go past, and signInOn keeps what it obtained.
+   *
+   * Nothing else on this side reads it. The model sync and the hot update both authenticate
+   * as a machine's admin too, but each MINTS its own (`penguin auth token`, one command on the
+   * shared shell) rather than borrowing this one: a person's session and this server's work
+   * on a machine are separate things, and signing out must not take an upgrade down with it.
+   * What authorizes the mint is the ssh account's access to that data root, not a password
+   * this side has ever seen.
+   *
+   * In memory, for this process only. It is a credential, and nothing auth-shaped rests on
+   * disk here — the same rule the session tokens themselves are held under. A restart costs
+   * one sign-in.
+   */
+  readonly #sessions = new Map<string, string>();
+
+  /**
+   * Ends this side's session on a machine, and asks the machine to end it too.
+   *
+   * Forgetting the token here would leave it valid over there for its whole term — a sign-out
+   * that only stops us from using a credential is not a sign-out. So the machine's own logout
+   * is called first, down the tunnel the session was being used through; a machine with no
+   * tunnel is told nothing and the token is dropped anyway, because the alternative is a
+   * sign-out that fails when the thing it protects against is least reachable.
+   *
+   * Answers whether the machine was reached, so the page can say which of the two happened.
+   */
+  async signOutOn(machineId: string): Promise<{ endedThere: boolean }> {
+    const token = this.#sessions.get(machineId);
+    this.#sessions.delete(machineId);
+    const port = this.tunnelPortForMachine(machineId);
+    if (token === undefined || port === null) return { endedThere: false };
+    try {
+      const api = machineApi(port, `${SESSION_COOKIE}=${token}`);
+      const res = await api.request("POST", "/api/auth/logout", {});
+      return { endedThere: res.status >= 200 && res.status < 300 };
+    } catch {
+      return { endedThere: false }; // Unreachable: the token is gone from here regardless.
+    }
+  }
+
+  /**
+   * Records a session a machine issued, from wherever it was issued. Called by the proxy for
+   * a sign-in a person performed through the browser: this side never learns the password,
+   * only what that password bought.
+   */
+  rememberSession(machineId: string, token: string): void {
+    this.#sessions.set(machineId, token);
+  }
+
+  /**
+   * That machine's ssh target, or null when ssh cannot name the host any more.
+   *
+   * Every operation on a machine starts here — resolve the alias, then address the host by
+   * what `ssh -G` said rather than by the alias itself. The two lines were written out at
+   * each of nine call sites, along with the same `{ alias, user }` literal; what differs
+   * between them is only what a failure means there, which is what stays at the call site.
+   */
+  async #targetOf(alias: string): Promise<RemoteTarget | null> {
+    const resolved = await this.#effects.resolveTarget(alias);
+    return resolved === null ? null : { alias, user: resolved.settings.user };
+  }
+
+  /** The install records as they are on disk right now; re-read per use, never cached. */
+  #records(): Record<string, InstallRecord> {
+    return parseInstallRecords(this.#readRecords());
   }
 
   /** Where the install records live — beside the other per-machine state in the data root. */
@@ -87,16 +284,319 @@ export class MachinesService {
     }
   }
 
+  /** Where a Project's machine list lives — beside that Project's own config. */
+  #membersFile(projectId: string): string {
+    return path.join(this.dataRoot, projectId, "machines.json");
+  }
+
   /**
-   * The ssh config's host aliases, each carrying what this server last installed there.
-   * Empty when there is no config, which is not an error.
+   * The addresses a Project uses.
+   *
+   * A file that is ABSENT is not the same as one holding an empty list. Machines were a
+   * property of the server before they were a property of a Project, so the first read for
+   * the default Project adopts what this server already had — the machines you installed
+   * keep working, in the Project your admin account already works in. An empty file means
+   * somebody emptied it, and is left exactly as they left it.
    */
-  list(): MachineInfo[] {
-    const records = parseInstallRecords(this.#readRecords());
-    return this.#effects.listAliases().map((alias) => {
+  #members(projectId: string): string[] {
+    let raw: string | null;
+    try {
+      raw = fs.readFileSync(this.#membersFile(projectId), "utf8");
+    } catch {
+      raw = null;
+    }
+    if (raw !== null) return parseMembers(raw);
+    if (projectId !== DEFAULT_PROJECT_ID) return [];
+    return Object.keys(this.#records());
+  }
+
+  /** Adds or removes one address from a Project's list. */
+  #setMember(projectId: string, address: string, member: boolean): void {
+    const file = this.#membersFile(projectId);
+    // Seeded first: writing straight to an absent file would drop the machines the default
+    // Project inherits, since withMember would start from nothing.
+    const current = JSON.stringify({ machines: this.#members(projectId) });
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, withMember(current, address, member));
+  }
+
+  /**
+   * This machine, first: always installed (it is running), always up (it is answering), and
+   * never a target — a server does not push itself onto its own machine. Its version and
+   * port are read directly rather than probed, since both are right here.
+   */
+  #localMachine(): MachineInfo {
+    const lock = readServerLock(this.dataRoot);
+    return {
+      id: LOCAL_MACHINE_ID,
+      alias: os.hostname(),
+      // Our own id comes from the same file a remote's does — this server IS the server
+      // that mints it here, so there is nothing to probe.
+      machineId: this.#machineId,
+      // No tunnel to where you already are: this server IS the origin serving the page.
+      origin: null,
+      installed: { version: VERSION, at: lock?.startedAt ?? this.#effects.now().toISOString() },
+      local: true,
+      status: {
+        state: "running",
+        checkedAt: this.#effects.now().toISOString(),
+        ...(lock === null ? {} : { port: lock.port }),
+      },
+    };
+  }
+
+  /**
+   * This machine, then the ssh config's host aliases, each carrying what this server last
+   * installed there and the last status probed for it. An empty or missing config is not an
+   * error — it just leaves the local entry alone in the list.
+   */
+  #allMachines(): MachineInfo[] {
+    const records = this.#records();
+    const remotes = this.#effects.listAliases().map((alias): MachineInfo => {
       const id = `ssh:${alias}`;
-      return { id, alias, installed: records[id] ?? null };
+      const record = records[id] ?? null;
+      const port = this.tunnelPortFor(id);
+      return {
+        id,
+        alias,
+        machineId: record?.machineId ?? null,
+        installed: record,
+        local: false,
+        origin: port === null ? null : `http://localhost:${port}`,
+        status: this.#statuses.get(id) ?? null,
+      };
     });
+    return [this.#localMachine(), ...remotes];
+  }
+
+  /**
+   * The same machines as this server knows, answered for one Project: `installed` means
+   * installed FOR THIS PROJECT.
+   *
+   * A host this server has installed but that this Project does not use is reported through
+   * `elsewhere` rather than as a blank row. The difference is the whole reason the split
+   * exists — one is a machine to install on, the other is a machine to adopt, and a page that
+   * showed them identically would send someone to spend 30 MB on a line of JSON.
+   */
+  list(projectId: string): MachineInfo[] {
+    const members = new Set(this.#members(projectId));
+    return this.#allMachines().map((machine) => {
+      if (machine.local) return machine;
+      const mine = members.has(machine.id);
+      return {
+        ...machine,
+        installed: mine ? machine.installed : null,
+        // Absent, not null, when there is nothing to say: every row would otherwise carry a
+        // field about a state it is not in.
+        ...(!mine && machine.installed !== null ? { elsewhere: machine.installed } : {}),
+      };
+    });
+  }
+
+  /**
+   * Takes a machine this server already installed into a Project, without reinstalling it.
+   *
+   * The program on that host is the same program: what a second Project lacks is the line
+   * saying it uses it. Sending 30 MB over ssh to write that line would be a transfer that
+   * changes nothing on the far side.
+   */
+  adopt(projectId: string, address: string): boolean {
+    const record = this.#records()[address];
+    if (record === undefined) return false; // Nothing installed there: this is an install, not an adoption.
+    this.#setMember(projectId, address, true);
+    return true;
+  }
+
+  /** Drops a machine from a Project. The program stays installed; only the membership goes. */
+  release(projectId: string, address: string): void {
+    this.#setMember(projectId, address, false);
+  }
+
+  /** Where the "what did we last send there" prints live, beside the other machine state. */
+  get #syncStateFile(): string {
+    return path.join(this.dataRoot, "machines-models-sync.json");
+  }
+
+  #readSyncState(): string | null {
+    try {
+      return fs.readFileSync(this.#syncStateFile, "utf8");
+    } catch {
+      return null;
+    }
+  }
+
+  /** Writes down what a machine now has, so an unchanged config costs nothing next boot. */
+  async #rememberSynced(address: string, projects: string[]): Promise<void> {
+    if (projects.length === 0) return;
+    const prints: Record<string, string> = {};
+    for (const projectId of projects) {
+      const local = await this.#localModels(projectId);
+      if (local !== null) prints[projectId] = fingerprintLocal(local);
+    }
+    try {
+      fs.writeFileSync(
+        this.#syncStateFile,
+        withModelSyncState(this.#readSyncState(), address, prints),
+      );
+    } catch {
+      // Unwritable: the next boot syncs again, which is wasteful but correct. Losing the
+      // ability to sync over losing the ability to remember would be the wrong trade.
+    }
+  }
+
+  /**
+   * Whether anything this side holds for that machine has changed since it last received it.
+   *
+   * Answered from local disk alone, on purpose: signing in on a machine costs a connection
+   * and an scp, and a boot happens on every hot push. Spending that to discover there was
+   * nothing to do is the cost this exists to avoid.
+   */
+  async #needsModelSync(address: string, projects: string[]): Promise<boolean> {
+    const sent = parseModelSyncState(this.#readSyncState())[address] ?? {};
+    for (const projectId of projects) {
+      const local = await this.#localModels(projectId);
+      if (local === null || local.models.length === 0) continue;
+      if (sent[projectId] !== fingerprintLocal(local)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Brings every already-connected machine up to date with this server's Model config.
+   *
+   * Called when an App boots, which is what a hot push produces — the same hook syncOutOfDate
+   * uses, and for the same reason. Connecting is what used to carry credentials across, and a
+   * tunnel deliberately outlives a push, so a machine connected before a key was added here
+   * would never have received it: autoConnect skips it (it already has a tunnel), and nothing
+   * else asked. That is invisible from the page, since the machine looks connected and well
+   * the entire time.
+   *
+   * Machines whose fingerprints all match are skipped before any ssh happens.
+   */
+  async syncConnectedModels(): Promise<void> {
+    const connected = this.#allMachines().filter(
+      (machine) => !machine.local && this.tunnelPortFor(machine.id) !== null,
+    );
+    for (const machine of connected) {
+      const port = this.tunnelPortFor(machine.id);
+      if (port === null) continue; // Dropped while we were working through the list.
+      const projects = this.projectsUsing(machine.id);
+      if (projects.length === 0) continue;
+      if (!(await this.#needsModelSync(machine.id, projects))) continue;
+      const target = await this.#targetOf(machine.alias);
+      if (target === null) continue;
+      // Silent: nobody asked for this, and there is no job log to write to. A failure here is
+      // the same failure the next connect reports, on the row, where it can be seen.
+      await this.#syncModels(machine.id, target, port, () => undefined, projects);
+    }
+  }
+
+  /** Every Project on this server that uses a given machine — who its credentials belong to. */
+  projectsUsing(address: string): string[] {
+    let dirs: string[] = [];
+    try {
+      dirs = fs
+        .readdirSync(this.dataRoot, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name);
+    } catch {
+      dirs = []; // Unreadable data root: fall through to the default Project alone.
+    }
+    // The default Project is always a candidate, directory or not: every server seeds it, and
+    // it is the one that INHERITS this server's pre-Project machines (see #members). Deciding
+    // entitlement from directories alone would miss exactly the machines that were installed
+    // before machines belonged to Projects at all.
+    const candidates = dirs.includes(DEFAULT_PROJECT_ID) ? dirs : [...dirs, DEFAULT_PROJECT_ID];
+    return candidates.filter((projectId) => this.#members(projectId).includes(address));
+  }
+
+  /**
+   * The subdirectories of `dir` on a machine, over ssh.
+   *
+   * Over SSH rather than through the tunnel and that machine's API, because picking a
+   * workspace must not require signing in to another server. ssh is already the trust
+   * relationship — this server installed the program there — and the browsing is the local
+   * admin's, authenticated by the local session like the rest of this surface. Asking the
+   * remote's HTTP API instead would 401 until the person logged in over there, which is a
+   * second login for a directory listing.
+   */
+  async listDirs(
+    machineId: string,
+    dir: string,
+  ): Promise<{
+    path: string;
+    parent: string | null;
+    entries: { name: string; path: string }[];
+  } | null> {
+    const machine = this.#allMachines().find(
+      (entry) => entry.machineId === machineId && !entry.local,
+    );
+    if (machine === undefined) return null;
+    const target = await this.#targetOf(machine.alias);
+    if (target === null) return null;
+    const result = await this.#effects.runOn(target, listDirsCommand(dir));
+    if (result.code !== 0) return null;
+    const [head, rest] = result.stdout.split(DIR_LIST_MARK);
+    const path = (head ?? "").trim().split("\n").pop()?.trim() ?? "";
+    if (path === "") return null;
+    const names = (rest ?? "")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line !== "");
+    const join = (name: string) => (path.endsWith("/") ? `${path}${name}` : `${path}/${name}`);
+    return {
+      path,
+      parent: path === "/" ? null : path.slice(0, path.lastIndexOf("/")) || "/",
+      entries: names.sort((a, b) => a.localeCompare(b)).map((name) => ({ name, path: join(name) })),
+    };
+  }
+
+  /**
+   * Probes the machines this server has installed on, refreshing their statuses. Only those:
+   * the ssh config can declare hundreds of hosts, and a host nothing was ever installed on
+   * has no server to ask about. The local entry needs no probe — it answers by existing.
+   *
+   * Failures are states, not errors (see server-state.ts), so this always resolves and
+   * always leaves every probed machine with an answer.
+   */
+  async probeInstalled(projectId: string): Promise<void> {
+    const targets = this.list(projectId).filter(
+      (machine) => !machine.local && machine.installed !== null,
+    );
+    const queue = [...targets];
+    const workers = Array.from({ length: Math.min(PROBE_CONCURRENCY, queue.length) }, async () => {
+      for (let machine = queue.shift(); machine !== undefined; machine = queue.shift()) {
+        const resolved = await this.#effects.resolveTarget(machine.alias);
+        const checkedAt = this.#effects.now().toISOString();
+        if (resolved === null) {
+          // ssh itself cannot name the host any more — the alias is in the config but
+          // unresolvable, which is the same dead end as a refused connection.
+          this.#statuses.set(machine.id, {
+            state: "unreachable",
+            checkedAt,
+            detail: "ssh could not resolve that host.",
+          });
+          continue;
+        }
+        const probe = await this.#effects.probe(
+          { alias: machine.alias, user: resolved.settings.user },
+          (target, command) => this.#effects.runOn(target, command),
+        );
+        const state = probe.state;
+        this.#statuses.set(machine.id, {
+          state: state.kind,
+          checkedAt,
+          ...(state.kind === "running" ? { port: state.port } : {}),
+          ...(state.kind === "unreachable" ? { detail: state.detail } : {}),
+        });
+        // A machine that just told us who it is: write it down, so the identity outlives
+        // this process without another round trip. An id NEVER changes for a machine, so a
+        // probe that answers a different one means a different machine behind that alias —
+        // the alias was repointed — and the newer answer is the true one.
+        this.#rememberMachineId(machine.id, probe.machineId);
+      }
+    });
+    await Promise.all(workers);
   }
 
   /**
@@ -108,9 +608,61 @@ export class MachinesService {
     return this.#effects.resolvePlan(this.dataRoot)?.version ?? null;
   }
 
-  /** The running or last job; null before the first one. */
+  /** The running or last install job; null before the first one. */
   job(): MachineInstallJob | null {
     return this.#job;
+  }
+
+  /** The running or last connect; null before the first one. */
+  connectJob(): MachineConnectJob | null {
+    return this.#connect;
+  }
+
+  /** Where the tunnel ports and pids live — beside the install records in the data root. */
+  get #connectFile(): string {
+    return path.join(this.dataRoot, "machines-connect.json");
+  }
+
+  #readConnectState(): string | null {
+    try {
+      return fs.readFileSync(this.#connectFile, "utf8");
+    } catch {
+      return null;
+    }
+  }
+
+  #writeConnectState(machineId: string, state: ConnectState | null): void {
+    const next = withConnectState(this.#readConnectState(), machineId, state);
+    const tmp = `${this.#connectFile}.tmp-${process.pid}`;
+    try {
+      fs.mkdirSync(path.dirname(this.#connectFile), { recursive: true });
+      fs.writeFileSync(tmp, next);
+      fs.renameSync(tmp, this.#connectFile);
+    } catch {
+      try {
+        fs.rmSync(tmp, { force: true });
+      } catch {
+        /* the temp file is litter at worst */
+      }
+    }
+  }
+
+  /**
+   * The port a machine's tunnel is live on, or null. "Live" is checked against the PROCESS,
+   * not the file: a recorded pid that is gone is stale state, and answering with its port
+   * would send the proxy at a number nothing is forwarding.
+   *
+   * This is also how a hot-swapped or restarted platform adopts a tunnel it never spawned —
+   * the ssh child is a separate process and kept forwarding while we were replaced.
+   */
+  tunnelPortFor(machineId: string): number | null {
+    const entry = parseConnectState(this.#readConnectState())[machineId];
+    if (entry?.tunnelPid === undefined) return null;
+    if (!pidAlive(entry.tunnelPid)) {
+      this.#writeConnectState(machineId, { ...entry, tunnelPid: undefined });
+      return null;
+    }
+    return entry.port;
   }
 
   /**
@@ -120,18 +672,28 @@ export class MachinesService {
    * start" from "started and failed" without reading the log.
    */
   async startInstall(
+    projectId: string,
     machineId: string,
+    /**
+     * Replace the PROGRAM over there even when its version already matches, and restart it.
+     * Asked for by a person answering the one failure that needs it — see the job's
+     * `canReplaceProgram`. Never inferred: it stops a server other people may be using.
+     */
+    replaceProgram = false,
   ): Promise<{ ok: true } | { ok: false; why: InstallRefusal }> {
     if (this.#job?.running === true) return { ok: false, why: "busy" };
 
-    const machine = this.list().find((entry) => entry.id === machineId);
+    const machine = this.#allMachines().find((entry) => entry.id === machineId);
     if (machine === undefined) return { ok: false, why: "unknown-machine" };
+    // The local entry is a view of this very process, not a target: installing would push
+    // this build over its own program directory while running from it.
+    if (machine.local) return { ok: false, why: "self" };
 
     const plan = this.#effects.resolvePlan(this.dataRoot);
     if (plan === null) return { ok: false, why: "no-image" };
 
-    const resolved = await this.#effects.resolveTarget(machine.alias);
-    if (resolved === null) return { ok: false, why: "unresolvable" };
+    const target = await this.#targetOf(machine.alias);
+    if (target === null) return { ok: false, why: "unresolvable" };
 
     const job: MachineInstallJob = {
       machineId,
@@ -150,25 +712,85 @@ export class MachinesService {
     // path does not turn into a `failed` outcome itself.
     void (async () => {
       try {
-        say(`Installing ${plan.version} on ${resolved.machine}…`);
+        this.#busy.add(machineId);
+        say(`Installing ${plan.version} on ${machineIdentity(target.alias, target.user)}…`);
         // No identity passed: installOnRemote runs the probe itself as its first step and
         // narrates it, so the page shows what the machine turned out to be.
         const outcome = await this.#effects.install({
-          target: { alias: machine.alias, user: resolved.settings.user },
+          target,
           plan,
           onProgress: say,
           assets: this.#assets,
+          ...(replaceProgram ? { forceInstaller: true } : {}),
         });
         if (outcome.kind === "failed") {
           job.result = { ok: false, step: outcome.step, message: outcome.detail };
           return;
         }
+        if (outcome.kind === "state-only") {
+          // Nothing to install; the difference is the pushed state. Over the machine's own
+          // update channel, which runs on the far side and POSTs to its loopback — so a
+          // runtime that cannot claim this platform REFUSES, in words, instead of restarting
+          // into a silent fallback nobody over here would ever see.
+          say("Handing this build to its own update channel…");
+          const pushed = await this.#handOverBuild(machineId, target, say);
+          if (pushed.kind !== "upgraded") {
+            // A refusal that names the RUNTIME is the one this side can still act on: the
+            // program over there is what a push never replaces, and replacing it is exactly
+            // what the machine is asking for. Offered rather than done, because it restarts
+            // a server this Project does not own alone.
+            const runtimeTooOld =
+              pushed.kind === "refused" && /runtime|installation itself/i.test(pushed.detail);
+            job.result = {
+              ok: false,
+              step: "hand over the pushed build",
+              message:
+                pushed.kind === "no-build"
+                  ? "this server stands on no build to hand over."
+                  : pushed.kind === "refused"
+                    ? `that machine refused this build — ${pushed.detail}`
+                    : pushed.detail,
+              ...(runtimeTooOld && !replaceProgram ? { canReplaceProgram: true as const } : {}),
+            };
+            return;
+          }
+          say(pushed.detail === "" ? "Update accepted." : pushed.detail);
+        }
         const version = outcome.kind === "already-installed" ? outcome.version : plan.version;
+        // Installing replaced the program ON DISK; the process over there is still running
+        // the code it loaded at start. Without this the machine reports the new version and
+        // behaves like the old one, which is the worst of both — so a machine whose server
+        // was up is restarted onto what was just installed.
+        if (outcome.kind === "installed")
+          await this.#restartAfterInstall(target.alias, target.user, say);
         // Remember it BEFORE the job settles, so the first poll that sees `running: false`
         // already sees the machine marked installed — otherwise the page would flash the
         // verdict and a still-uninstalled row in the same frame.
-        this.#remember(machineId, { version, at: this.#effects.now().toISOString() });
-        job.result = { ok: true, kind: outcome.kind, version };
+        //
+        // Written OVER the existing record rather than in place of it. What the record holds
+        // besides the version is the machine's own id, learned from a probe and not asked for
+        // again — and this path runs on a machine that already has one, every time an install
+        // is re-run over a build that is already there. Dropping it there un-identifies a
+        // machine that never moved: it stops being addressable, its Sessions leave the list
+        // they were merged into, and the conversation open on it loses the only record of
+        // where it lives.
+        const previous = this.#records()[machineId];
+        this.#remember(machineId, {
+          ...previous,
+          version,
+          at: this.#effects.now().toISOString(),
+        });
+        // The Project that asked for the install is the Project that gets the machine. Written
+        // in the same breath as the record: a machine installed but belonging to nobody would
+        // read as "installed elsewhere" on the very page that just installed it.
+        this.#setMember(projectId, machineId, true);
+        // A hot update reports as an install: from the page's side the machine was brought to
+        // this build, and which channel carried it is not the reader's question.
+        job.result = {
+          ok: true,
+          kind: outcome.kind === "state-only" ? "installed" : outcome.kind,
+          version,
+        };
       } catch (err) {
         job.result = {
           ok: false,
@@ -176,11 +798,572 @@ export class MachinesService {
           message: err instanceof Error ? err.message : String(err),
         };
       } finally {
+        this.#busy.delete(machineId);
         job.running = false;
       }
     })();
 
     return { ok: true };
+  }
+
+  /**
+   * The live tunnel port for a machine addressed by its OWN id — what the proxy asks.
+   *
+   * A machine is looked up by identity rather than by the alias it happens to be reached
+   * through, so a re-aliased host keeps working and two aliases for one machine resolve to
+   * the one tunnel instead of two.
+   */
+  tunnelPortForMachine(machineId: string): number | null {
+    for (const [address, entry] of Object.entries(parseConnectState(this.#readConnectState()))) {
+      if (entry.machineId !== machineId) continue;
+      // Liveness goes through the same address-keyed check, so a dead pid is cleared here
+      // exactly as it is anywhere else.
+      const port = this.tunnelPortFor(address);
+      if (port !== null) return port;
+    }
+    return null;
+  }
+
+  /**
+   * Brings a machine's server up and holds a tunnel to it, as a job — the same shape as an
+   * install and for the same reason (a start plus a readiness wait is minutes in the bad
+   * case), in its own slot so connecting somewhere cannot cancel an install elsewhere.
+   *
+   * The steps are: refuse the obvious dead ends, adopt a tunnel that is already live, pick a
+   * port, start the server over there if nothing is serving, open the tunnel, and wait for
+   * an HTTP answer THROUGH it. Every one is idempotent, so a repeat is safe.
+   */
+  async startConnect(
+    machineId: string,
+  ): Promise<
+    { ok: true } | { ok: false; why: MachineConnectFailure | "busy" | "unknown-machine" }
+  > {
+    if (this.#connect?.running === true) return { ok: false, why: "busy" };
+
+    const machine = this.#allMachines().find((entry) => entry.id === machineId);
+    if (machine === undefined) return { ok: false, why: "unknown-machine" };
+    // Connecting to where you already are is a no-op with a failure mode: the tunnel would
+    // forward a port to itself. The machine's own id is what settles it — the same file read
+    // over ssh IS our file when the alias points back here.
+    if (machine.local || (machine.machineId !== null && machine.machineId === this.#machineId)) {
+      return { ok: false, why: "self" };
+    }
+    if (machine.installed === null) return { ok: false, why: "not-installed" };
+
+    const job: MachineConnectJob = {
+      machineId,
+      alias: machine.alias,
+      running: true,
+      log: [],
+      result: null,
+    };
+    this.#connect = job;
+    const say = (line: string) => {
+      job.log.push(line);
+    };
+
+    void (async () => {
+      try {
+        await this.#runConnect(machine.id, machine.alias, say, job);
+      } catch (err) {
+        job.result = { ok: false, message: err instanceof Error ? err.message : String(err) };
+      } finally {
+        job.running = false;
+      }
+    })();
+    return { ok: true };
+  }
+
+  async #runConnect(
+    id: string,
+    alias: string,
+    say: (line: string) => void,
+    job: MachineConnectJob,
+  ): Promise<void> {
+    // Already connected: adopting costs nothing and re-tunnelling would fight for the port.
+    const live = this.tunnelPortFor(id);
+    if (live !== null) {
+      say(`Already connected on port ${live}.`);
+      // Still synced: connecting again is how someone retries after a sync that failed (or
+      // after adding a model here), and re-declaring a live tunnel would be all this did.
+      const known = await this.#targetOf(alias);
+      if (known !== null) {
+        await this.#syncModels(id, known, live, say, this.projectsUsing(id));
+      }
+      job.result = { ok: true, origin: `http://localhost:${live}` };
+      return;
+    }
+
+    const target = await this.#targetOf(alias);
+    if (target === null) {
+      job.result = { ok: false, message: "ssh could not resolve that host." };
+      return;
+    }
+
+    say("Asking what is running there…");
+    const probed = await this.#effects.probe(target);
+    const state = probed.state;
+    if (state.kind === "unreachable") {
+      job.result = { ok: false, message: state.detail };
+      return;
+    }
+    let machineId = probed.machineId;
+    this.#rememberMachineId(id, machineId);
+
+    const remembered = parseConnectState(this.#readConnectState())[id];
+    // A server already up over there keeps its port — it is bound to it, and we forward the
+    // same number on both ends. Otherwise pick one that is free HERE and start it there.
+    const port =
+      state.kind === "running"
+        ? state.port
+        : await pickTunnelPort({
+            remembered: remembered?.port,
+            busy: (candidate) => this.#effects.portBusy(candidate),
+          });
+    if (port === null) {
+      job.result = {
+        ok: false,
+        code: "port-conflict",
+        message: "No free local port to forward on.",
+      };
+      return;
+    }
+    if (state.kind === "running") {
+      say(`Its server is already up on port ${port}.`);
+    } else {
+      say(`Starting its server on port ${port}…`);
+      const started = await this.#effects.startServer(target, port);
+      if (!started.ok) {
+        job.result = { ok: false, message: started.detail };
+        return;
+      }
+      // Ask again now that it is up: a machine mints its id when its server starts, so one
+      // that was down had none a moment ago — and the proxy addresses it by that id.
+      machineId = (await this.#effects.probe(target)).machineId ?? machineId;
+      this.#rememberMachineId(id, machineId);
+    }
+
+    say("Opening the tunnel…");
+    const tunnel = this.#effects.openTunnel({
+      target,
+      port,
+      onExit: () => {
+        // Not restarted here: a dropped link or a rebooted machine is exactly what the
+        // person needs to see, and a silent reconnect would hide it.
+        this.#tunnels.delete(id);
+        const entry = parseConnectState(this.#readConnectState())[id];
+        if (entry !== undefined) this.#writeConnectState(id, { ...entry, tunnelPid: undefined });
+      },
+    });
+    this.#tunnels.set(id, tunnel);
+    this.#writeConnectState(id, {
+      port,
+      ...(machineId === null ? {} : { machineId }),
+      ...(tunnel.pid === null ? {} : { tunnelPid: tunnel.pid }),
+      connectedAt: this.#effects.now().toISOString(),
+    });
+
+    const origin = `http://localhost:${port}`;
+    const ready = await this.#effects.waitForHttp(origin, () => tunnel.exited());
+    if (!ready.ok) {
+      tunnel.close();
+      this.#tunnels.delete(id);
+      this.#writeConnectState(id, { port });
+      const said = tunnel.stderr().trim();
+      job.result = { ok: false, message: said === "" ? ready.detail : said };
+      return;
+    }
+    say(`Connected on ${origin}.`);
+    // Before declaring it ready: an Agent started over there resolves its model against THAT
+    // machine's config, so a machine without our credentials is connected and unusable.
+    await this.#syncModels(id, target, port, say, this.projectsUsing(id));
+    job.result = { ok: true, origin };
+  }
+
+  /**
+   * Hands a machine the Model credentials an Agent over there needs to run at all.
+   *
+   * Failure is reported, never fatal: a machine whose seeded admin password was changed
+   * cannot be signed into from here (machines/signin.ts), and that is a machine you can
+   * still connect to, browse and read — just not one this side can configure. Saying so on
+   * the row beats a connect that fails for a reason nobody can see.
+   */
+  async #syncModels(
+    address: string,
+    target: { alias: string; user: string },
+    port: number,
+    say: (line: string) => void,
+    projects: string[],
+  ): Promise<void> {
+    // Nothing here uses this machine, so nothing here has credentials to put on it. Said out
+    // loud rather than skipped in silence: on a connect, "no models synced" with no reason is
+    // exactly the state that sends someone hunting through logs.
+    if (projects.length === 0) {
+      say("No models synced — no Project on this server uses that machine.");
+      return;
+    }
+    const session = await this.#sessionOn(target);
+    if (!("cookie" in session)) {
+      say(`Models not synced — ${session.detail}`);
+      return;
+    }
+    const outcome = await syncModelsToMachine({
+      api: machineApi(port, session.cookie),
+      loadLocal: (projectId) => this.#localModels(projectId),
+      projects,
+    });
+    if (outcome.kind === "failed") {
+      say(`Models not synced — ${outcome.detail}`);
+      return;
+    }
+    // Recorded only for what actually landed: a Project that failed must be retried, and a
+    // fingerprint written for it would say the machine has something it does not.
+    await this.#rememberSynced(address, outcome.projects);
+    // Creating a Project on somebody's machine is a thing done TO that machine, so it is
+    // named rather than folded into the count.
+    if (outcome.created.length > 0) say(`Created there: ${outcome.created.join(", ")}.`);
+    if (outcome.projects.length > 0) say(`Models synced: ${outcome.projects.join(", ")}.`);
+  }
+
+  /**
+   * A Cookie header for that machine's API, or why there is none.
+   *
+   * The reason is RETURNED rather than narrated: both callers reach a machine's API, and each
+   * phrases a failure in terms of the work it was doing — "models not synced", "could not
+   * hand over the build" — which a message written here could only be one of.
+   *
+   * The machine's own CLI first: it mints a short-lived token from the data root the ssh
+   * account owns, which needs no password and therefore keeps working on a machine whose
+   * admin password was set by a person. One command over the shared connection, where the
+   * fallback needed a scratch directory and two scp'd files.
+   *
+   * There is no second way any more. The one that existed read that machine's SEEDED admin
+   * password off its own disk — which only ever worked until somebody set a real one, and
+   * only on a machine whose CLI predates `auth token`. Those are the same builds that cannot
+   * be brought forward from here at all, so what it bought was a login to a machine nothing
+   * else could serve.
+   */
+  async #sessionOn(target: {
+    alias: string;
+    user: string;
+  }): Promise<{ cookie: string } | { detail: string }> {
+    const minted = await mintTokenOnRemote(target, (t, command) => this.#effects.runOn(t, command));
+    if (minted.kind === "minted") return { cookie: `${SESSION_COOKIE}=${minted.token}` };
+    return { detail: minted.detail };
+  }
+
+  /**
+   * Hands a machine this server's pushed build, over the connection this side already holds.
+   *
+   * Both of the things the upgrade needs are single commands on the shared shell, so neither
+   * costs a handshake: where its server is bound (the status probe) and a session on it (the
+   * token mint). A machine already connected passes its tunnel's port instead, so a browsing
+   * session and this share one forward rather than opening a second.
+   */
+  async #handOverBuild(
+    id: string,
+    target: { alias: string; user: string },
+    say: (line: string) => void,
+  ): Promise<UpgradeOutcome> {
+    const probed = await this.#effects.probe(target);
+    if (probed.state.kind !== "running") {
+      // Nothing to hot-update: a hot swap replaces the code a RUNNING server is serving, and
+      // there is no server there to serve it. Its own words, since it is the one that knows.
+      return {
+        kind: "failed",
+        step: "reach",
+        detail:
+          probed.state.kind === "unreachable"
+            ? probed.state.detail
+            : "no server is running on that machine",
+      };
+    }
+    const session = await this.#sessionOn(target);
+    if (!("cookie" in session)) return { kind: "failed", step: "sign in", detail: session.detail };
+    return this.#effects.upgrade({
+      address: `ssh:${target.alias}`,
+      target,
+      remotePort: probed.state.port,
+      // By ADDRESS, which is what the caller has here and what the tunnel map is keyed by;
+      // tunnelPortForMachine takes the machine's own minted id and is the proxy's question.
+      livePort: this.tunnelPortFor(id),
+      cookie: session.cookie,
+      dataRoot: this.dataRoot,
+      onProgress: say,
+    });
+  }
+
+  /**
+   * This side's model table for a Project, narrowed to the entries worth carrying: an entry
+   * with an inline key or its own base URL is something the machine cannot already have.
+   *
+   * A bare catalog entry is skipped on purpose. Every server seeds the same presets, so
+   * sending them back is at best a no-op — and when this Project has no config file at all,
+   * `loadProjectConfig` answers with exactly those presets, which would otherwise rewrite a
+   * machine's table on behalf of a Project nobody here has configured.
+   */
+  async #localModels(projectId: string): Promise<LocalModels | null> {
+    let config: ProjectConfig;
+    try {
+      config = await this.#effects.loadConfig(projectId);
+    } catch {
+      return null; // Unreadable or legacy-format config: not something to push anywhere.
+    }
+    const models = config.models.filter(
+      (entry) => (entry.api_key ?? "") !== "" || (entry.base_url ?? "") !== "",
+    );
+    return {
+      models,
+      ...(config.default_model !== undefined ? { defaultModel: config.default_model } : {}),
+      ...(config.vision_model !== undefined ? { visionModel: config.vision_model } : {}),
+      ...(config.name !== undefined ? { name: config.name } : {}),
+    };
+  }
+
+  /**
+   * Puts a freshly installed build into service. Only for a machine whose server was
+   * already running: one that was down is left down — starting it would be this side
+   * deciding that machine should be serving, which installing software does not imply.
+   *
+   * A restart is not free over there: whatever that server was running stops. It is what
+   * "update this machine" means, and doing it silently after an install the user asked for
+   * is more honest than leaving a version number that lies about what is executing.
+   */
+  async #restartAfterInstall(
+    alias: string,
+    user: string,
+    say: (line: string) => void,
+  ): Promise<void> {
+    const target = { alias, user };
+    const before = await this.#effects.probe(target);
+    if (before.state.kind !== "running") {
+      say("Its server was not running; the new build will be used when it next starts.");
+      return;
+    }
+    const port = before.state.port;
+    say(`Restarting its server on port ${port} onto the new build…`);
+    await this.#effects.stopServer(target);
+    const started = await this.#effects.startServer(target, port);
+    say(
+      started.ok
+        ? `Restarted on port ${port}.`
+        : `Installed, but its server did not come back up: ${started.detail}`,
+    );
+  }
+
+  /**
+   * Hands this server's build to every machine that is carrying a different one.
+   *
+   * Called when an App boots, which is what a hot push produces — so a push here becomes a
+   * push everywhere, without anyone asking twice. A plain restart also boots an App, and
+   * costs nothing: which machines are behind is decided from the install RECORDS against
+   * this server's own version, so a fleet already in step is a few string comparisons and
+   * no ssh at all.
+   *
+   * Best-effort and never awaited by boot. A machine that cannot be reached, or whose admin
+   * password was changed so the far side cannot log itself in, simply stays out of sync —
+   * and the Machines page already says so, with Update as the way to force it the slow way.
+   */
+  /**
+   * Opens a tunnel to every installed machine that has none, quietly.
+   *
+   * Called when an App boots, so the machines a person installed are reachable without
+   * anyone clicking Connect first — the tunnel is plumbing, and being asked to establish it
+   * by hand before a machine will answer is not a decision, it is a chore.
+   *
+   * It reuses the same steps a manual connect takes, INCLUDING starting a server that is
+   * down: a connect is exactly the decision that a machine should be serving, and making it
+   * automatic without that step would leave it succeeding at nothing. What it does not do is
+   * touch a machine that is already busy, or one whose server cannot be started — those stay
+   * as they were and the Machines page keeps showing it.
+   *
+   * The connect JOB slot is deliberately untouched: this is background work, and clobbering
+   * the log of a connect somebody is watching would be worse than not running at all.
+   */
+  async autoConnect(): Promise<void> {
+    const candidates = this.#allMachines().filter(
+      (machine) => !machine.local && machine.installed !== null && machine.origin === null,
+    );
+    const queue = [...candidates];
+    const workers = Array.from({ length: Math.min(2, queue.length) }, async () => {
+      for (let machine = queue.shift(); machine !== undefined; machine = queue.shift()) {
+        await this.#withMachine(machine.id, async () => {
+          const silent = () => {};
+          try {
+            await this.#runConnect(machine.id, machine.alias, silent, {
+              machineId: machine.id,
+              alias: machine.alias,
+              running: true,
+              log: [],
+              result: null,
+            });
+          } catch {
+            // Best effort: an unreachable machine stays unconnected, and the page says so.
+          }
+        });
+      }
+    });
+    await Promise.all(workers);
+  }
+
+  /**
+   * Mints a session on a machine and returns its Set-Cookie lines, or why it could not.
+   *
+   * The credential work happens over there (see signin.ts); this only names the machine and
+   * hands back what it said. `null` for a machine this server does not know — the caller
+   * turns that into a 404 rather than reaching for something.
+   */
+  async signInOn(machineId: string): Promise<SignInOutcome | null> {
+    try {
+      return await this.#signInOn(machineId);
+    } catch (err) {
+      // The contract is an OUTCOME, and every caller reads one: the route turns `failed` into
+      // a 502 carrying this text, and the page shows it. A throw escaping here instead reaches
+      // the browser as a bare 500 — "Internal server error", about a machine whose real answer
+      // was something specific and actionable. ssh work has many ways to go wrong and only the
+      // ones anticipated are returned; this makes the rest returnable too.
+      return { kind: "failed", detail: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  async #signInOn(machineId: string): Promise<SignInOutcome | null> {
+    const machine = this.#allMachines().find(
+      (entry) => entry.machineId === machineId && !entry.local,
+    );
+    if (machine === undefined) return null;
+    const target = await this.#targetOf(machine.alias);
+    if (target === null) {
+      return { kind: "failed", detail: "ssh could not resolve that host." };
+    }
+    const minted = await mintTokenOnRemote(target, (t, command) => this.#effects.runOn(t, command));
+    if (minted.kind !== "minted") {
+      return minted.kind === "failed"
+        ? { kind: "failed", detail: minted.detail }
+        : { kind: "refused", detail: minted.detail };
+    }
+    // Kept, not just handed on: this is the same session the work on this machine needs.
+    this.#sessions.set(machineId, minted.token);
+    // Synthesized as the Set-Cookie that machine's own login would have sent: the caller's job
+    // is to rename one into the machine's namespace, and it should not have to know this one
+    // was minted rather than issued. No Secure — the browser is talking to THIS origin through
+    // the proxy, not to the machine.
+    return {
+      kind: "signed-in",
+      setCookie: [`${SESSION_COOKIE}=${minted.token}; Path=/; HttpOnly; SameSite=Lax`],
+    };
+  }
+
+  /** Runs `work` with this machine's slot held, or returns null when it is already busy. */
+  async #withMachine<T>(id: string, work: () => Promise<T>): Promise<T | null> {
+    if (this.#busy.has(id)) return null;
+    this.#busy.add(id);
+    try {
+      return await work();
+    } finally {
+      this.#busy.delete(id);
+    }
+  }
+
+  async syncOutOfDate(): Promise<void> {
+    const plan = this.#effects.resolvePlan(this.dataRoot);
+    if (plan === null) return; // Nothing to hand on: this server stands on no release.
+    const behind = this.#allMachines().filter(
+      (machine) =>
+        !machine.local && machine.installed !== null && machine.installed.version !== plan.version,
+    );
+    if (behind.length === 0) return;
+
+    const queue = [...behind];
+    const workers = Array.from({ length: Math.min(PROBE_CONCURRENCY, queue.length) }, async () => {
+      for (let machine = queue.shift(); machine !== undefined; machine = queue.shift()) {
+        const target = await this.#targetOf(machine.alias);
+        if (target === null) continue;
+        // Skipped rather than queued when the machine is busy: this is automatic work, and
+        // the next push runs it again. A person's install must never wait behind it.
+        const outcome = await this.#withMachine(machine.id, () =>
+          this.#handOverBuild(machine.id, target, () => {}),
+        );
+        if (outcome === null || outcome.kind !== "upgraded") continue;
+        // It is running our build now; record that, so the next boot skips it.
+        const record = this.#records()[machine.id];
+        if (record !== undefined) {
+          this.#remember(machine.id, {
+            ...record,
+            version: plan.version,
+            at: this.#effects.now().toISOString(),
+          });
+        }
+      }
+    });
+    await Promise.all(workers);
+  }
+
+  /**
+   * Pushes a Project's models to every machine currently holding a tunnel.
+   *
+   * Called when the model config changes here: a key rotated on this machine is a key the
+   * remote Agents are still failing with until they get it, and asking someone to reconnect
+   * each machine after editing a credential is asking them to remember an invisible rule.
+   *
+   * Only connected machines, and only through their existing tunnel: this must not open ssh
+   * connections to a hundred hosts because a text field changed. The rest catch up when they
+   * next connect, which is when the credential first matters to them anyway.
+   */
+  async syncModelsEverywhere(projectId: string): Promise<void> {
+    // This Project's machines, not every machine: the credential belongs to this Project, and
+    // a machine another Project uses has no claim on it.
+    const connected = this.list(projectId).filter(
+      (machine) =>
+        !machine.local && machine.installed !== null && this.tunnelPortFor(machine.id) !== null,
+    );
+    for (const machine of connected) {
+      const port = this.tunnelPortFor(machine.id);
+      if (port === null) continue; // Dropped while we were working through the list.
+      const target = await this.#targetOf(machine.alias);
+      if (target === null) continue;
+      // Silent: nobody asked for this and there is no job log to write to. A failure here
+      // is the same failure the next connect reports, on the row, where it can be seen.
+      await this.#syncModels(machine.id, target, port, () => undefined, [projectId]);
+    }
+  }
+
+  /** Records an id a probe just heard, when there is one and a record to hang it on. */
+  #rememberMachineId(id: string, machineId: string | null): void {
+    if (machineId === null) return;
+    const record = this.#records()[id];
+    if (record === undefined || record.machineId === machineId) return;
+    this.#remember(id, { ...record, machineId });
+  }
+
+  /**
+   * Drops a machine's tunnel. The remote server is left RUNNING: it is that machine's own
+   * server, other people may be on it, and stopping it because one window looked away would
+   * be this side deciding something that is not its to decide.
+   */
+  disconnect(machineId: string): void {
+    // The shared shell and the forward go with the tunnel: keeping connections open to a
+    // machine somebody just disconnected from would be holding on to exactly what they let
+    // go of. Keyed by ADDRESS, which is what those two registries are keyed by — a machine id
+    // matches nothing in either, so passing one here let go of nothing at all.
+    const alias = this.#allMachines().find((machine) => machine.id === machineId)?.alias;
+    if (alias !== undefined) {
+      closeShell(`ssh:${alias}`);
+      closeForward(`ssh:${alias}`);
+    }
+    this.#tunnels.get(machineId)?.close();
+    this.#tunnels.delete(machineId);
+    const entry = parseConnectState(this.#readConnectState())[machineId];
+    if (entry !== undefined) this.#writeConnectState(machineId, { ...entry, tunnelPid: undefined });
+  }
+
+  /**
+   * Hot-swap handover: let go of the ssh children WITHOUT killing them. They are delivered
+   * to the successor through the state file (pid + port), so the processes must survive —
+   * but this App's exit handlers must stop firing on children it no longer owns.
+   */
+  detachTunnels(): void {
+    for (const tunnel of this.#tunnels.values()) tunnel.detach();
+    this.#tunnels.clear();
   }
 
   /**

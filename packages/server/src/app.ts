@@ -47,6 +47,7 @@ import { MessagingBindingsRepo } from "./db/repos/messaging-bindings.js";
 import { GoalsRepo } from "./db/repos/goals.js";
 import { SchedulesRepo } from "./db/repos/schedules.js";
 import { ServerSettingsRepo } from "./db/repos/server-settings.js";
+import { MachineRepo } from "./db/repos/machine.js";
 import { SessionsRepo } from "./db/repos/sessions.js";
 import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
 import { UsersRepo } from "./db/repos/users.js";
@@ -153,6 +154,7 @@ import { machinesRoutes } from "./http/routes/machines.js";
 import { UsageRecorder } from "./runtime/usage-recorder.js";
 import { previewRoutes } from "./http/routes/preview.js";
 import { MachinesService } from "./machines/service.js";
+import { SERVER_PROXY_PREFIX, machinesProxy } from "./machines/proxy.js";
 
 export interface AppDeps {
   config: ServerConfig;
@@ -954,7 +956,9 @@ export function buildAppDeps(
     desktop: caps.desktop,
     // Anchored at the data root: that is where the hmr store the pushable image comes from
     // lives, and where verified Node runtime downloads are cached between installs.
-    machines: overrides.machines ?? new MachinesService(config.root, {}, () => hmr.assetsDir()),
+    machines:
+      overrides.machines ??
+      new MachinesService(config.root, new MachineRepo(db).id(), {}, () => hmr.assetsDir()),
     hmr,
     proxyControl: caps.proxyControl,
     log,
@@ -1044,6 +1048,25 @@ export function createApp(
   // For that reason /api/install is deliberately absent from RUNTIME_PREFIXES above — the
   // platform must serve it, not decline it.
   app.route("/api/install", installRoutes(deps));
+  // `/server/<machineId>/api/…` — a connected machine's API, forwarded down its tunnel,
+  // addressed by the machine's OWN id so a re-aliased host keeps its URLs and its browser
+  // session. Mounted
+  // BEFORE the auth middleware and deliberately outside it: the remote authenticates every
+  // forwarded request with its own cookies (renamed per machine on the way through), so a
+  // local session is not a credential over there and requiring one would mean two logins
+  // for one window. The tunnel port it forwards to is already reachable from this machine,
+  // so the route adds no exposure the tunnel had not.
+  // The second argument is what makes one sign-in serve both sides: a machine's login answer
+  // passes through here, and the session it carries is kept for the work this server does on
+  // that machine (see machines/service.ts's #sessions). The password never touches this side.
+  const serverProxy = machinesProxy(
+    async (machineId) => deps.machines.tunnelPortForMachine(machineId),
+    (machineId, token) => deps.machines.rememberSession(machineId, token),
+  );
+  app.all(`${SERVER_PROXY_PREFIX}*`, async (c) => {
+    const answer = await serverProxy(c.req.raw);
+    return answer ?? c.notFound();
+  });
 
   // Protected routes: cookie -> auth_session -> user, over the runtime's auth service.
   app.use("/api/*", authMiddleware(deps.authService, deps.config.trustProxy));
@@ -1051,7 +1074,6 @@ export function createApp(
   app.route("/api/version", versionRoutes(deps));
   app.route("/api/admin/users", adminUsersRoutes(deps));
   app.route("/api/admin/settings", adminSettingsRoutes(deps));
-  app.route("/api/machines", machinesRoutes(deps));
   app.route("/api/events", eventsRoutes(deps));
   // Skill library listing: readable once logged in, not nested under a Project prefix.
   app.route("/api/skills", skillLibraryRoutes());
@@ -1059,6 +1081,7 @@ export function createApp(
   app.route("/api/projects/:projectId/members", membersRoutes(deps));
   app.route("/api/projects/:projectId/models", modelsRoutes(deps));
   app.route("/api/projects/:projectId/model-oauth", modelOAuthRoutes(deps));
+  app.route("/api/projects/:projectId/machines", machinesRoutes(deps));
   app.route("/api/projects/:projectId/chat-defaults", chatDefaultsRoutes(deps));
   app.route("/api/projects/:projectId/command-policy", commandPolicyRoutes(deps));
   app.route("/api/projects/:projectId/agents", agentsRoutes(deps));
