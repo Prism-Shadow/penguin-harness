@@ -3,6 +3,7 @@
 - **Date:** 2026-08-28
 - **Type:** feature
 - **Scope:** `model-catalog`, `core`, `web`, `cli`, `docs`
+- **PR:** [#531](https://github.com/Prism-Shadow/penguin-harness/pull/531)
 
 [中文版](2026-08-28-catalog-tokendance-discounts.zh.md)
 
