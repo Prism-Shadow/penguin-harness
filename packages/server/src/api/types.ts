@@ -3213,6 +3213,61 @@ export interface MachineInfo {
    * the config-text list exists to avoid.
    */
   installed: { version: string; at: string } | null;
+  /**
+   * Installed by this server, but for a DIFFERENT Project — so not this Project's machine,
+   * and not a host nobody has touched either. Absent in every other case, including when it
+   * IS this Project's (where `installed` carries the same record).
+   *
+   * Reported rather than folded into `installed` because the two lead to different actions:
+   * one is a machine to use, the other is a machine to adopt, which costs a line of JSON and
+   * no ssh. Reported rather than hidden because a row that silently looked uninstalled would
+   * send someone to spend a 30 MB transfer re-doing what is already done.
+   */
+  elsewhere?: { version: string; at: string };
+  /**
+   * The machine's OWN id — 16 base64url characters minted by the server that runs there,
+   * stable across renames, re-aliasing and reinstalls. Null until a server has started on
+   * that machine, since nothing has minted one yet.
+   *
+   * This is what anything stored should point at; `id` above is an address (`ssh:<alias>`),
+   * and `alias` is what people read. Two aliases for one host share a `machineId`.
+   */
+  machineId: string | null;
+  /**
+   * True for the machine this server itself runs on. It is listed because "where is this
+   * program running" is the same question the rest of the page answers, and it is the one
+   * entry that is always installed and always up — it is the thing serving the request.
+   * Never installable: a server does not push itself onto its own machine.
+   */
+  local: boolean;
+  /**
+   * Origin of a live tunnel to that machine, when one is up — `http://localhost:<port>`,
+   * this server's own loopback. Null when nothing is connected. The Web App does not
+   * navigate there: it keeps its own origin and re-points API calls at
+   * `/server/<id>/api/…`, which this server forwards down the tunnel.
+   */
+  origin: string | null;
+  /**
+   * Whether a server is up over there, as of the last probe. Null means "not probed yet";
+   * the page probes on a widening schedule rather than at list time, because each probe is
+   * an ssh round trip while the list itself is only the config's text.
+   */
+  status: MachineServerStatus | null;
+}
+
+/**
+ * One machine's server state. There is deliberately no separate "ssh" status: ssh is the
+ * transport, so a machine it cannot reach reads as `unreachable` with OpenSSH's own
+ * diagnostic in `detail` rather than as two statuses a reader has to combine.
+ */
+export interface MachineServerStatus {
+  state: "running" | "stopped" | "unreachable";
+  /** ISO timestamp of the probe this answer came from. */
+  checkedAt: string;
+  /** The port it is serving on (`running`). */
+  port?: number;
+  /** Why the machine could not be reached (`unreachable`) — ssh's own words. */
+  detail?: string;
 }
 
 /**
@@ -3228,8 +3283,48 @@ export interface MachineInstallJob {
   result:
     | null
     | { ok: true; kind: "installed" | "already-installed"; version: string | null }
-    | { ok: false; step: string; message: string };
+    | {
+        ok: false;
+        step: string;
+        message: string;
+        /**
+         * The failure has a next step this side can take, and it needs saying yes to:
+         * replacing the PROGRAM over there and restarting it. Set when a hot update was
+         * refused by a runtime too old to run what it was handed — the one failure a
+         * reinstall answers, and the one thing a push deliberately never does on its own,
+         * since it stops a server somebody else may be using.
+         */
+        canReplaceProgram?: true;
+      };
 }
+
+/**
+ * A connect in flight: bringing a machine's server up and holding a tunnel to it. Same job
+ * shape as an install — it takes minutes in the bad case, so POST starts it and the page
+ * polls — but a separate slot, because connecting somewhere must not cancel an install
+ * running elsewhere.
+ */
+export interface MachineConnectJob {
+  machineId: string;
+  alias: string;
+  running: boolean;
+  log: string[];
+  result:
+    | null
+    | { ok: true; origin: string }
+    | { ok: false; code?: MachineConnectFailure; message: string };
+}
+
+/** Connect failures that are a condition rather than a message: the page renders each. */
+export type MachineConnectFailure =
+  /** No local port left to forward on. */
+  | "port-conflict"
+  /** A Windows remote, where the detached-start mechanism does not exist. */
+  | "not-supported"
+  /** Nothing installed there yet. */
+  | "not-installed"
+  /** That machine is the one this server runs on. */
+  | "self";
 
 /** GET /api/machines, and the 202 body of POST /api/machines/:machineId/install. */
 export interface MachinesResponse {
@@ -3241,4 +3336,6 @@ export interface MachinesResponse {
    */
   imageVersion: string | null;
   job: MachineInstallJob | null;
+  /** The running or last connect; null before the first one. Separate slot from `job`. */
+  connect: MachineConnectJob | null;
 }
