@@ -251,6 +251,17 @@ describe("qqMarkdownOf", () => {
 // ---------------------------------------------------------------------------
 
 describe("wechatMarkdownOf", () => {
+  it("escapes a table cell's literal markers so it cannot open a construct inside the table", () => {
+    // A cell's formatting is flattened, but its LITERAL characters are still markdown to the
+    // client: only `|` was escaped before, so a lone `*` in one cell could pair with one in
+    // another and open emphasis straight through the table.
+    const out = wechatMarkdownOf("| a | b |\n| --- | --- |\n| 2*3 | 4*5 |");
+    expect(out).toContain("2\\*3");
+    expect(out).toContain("4\\*5");
+    // The flattening itself is unchanged: a cell's own emphasis still loses its markers.
+    expect(wechatMarkdownOf("| a |\n| --- |\n| *x* |")).toContain("| x |");
+  });
+
   it("keeps the constructs WeChat reads, which is the most of the four", () => {
     expect(wechatMarkdownOf("## Two")).toBe("## Two");
     expect(wechatMarkdownOf("**b** ~~s~~")).toBe("**b** ~~s~~");

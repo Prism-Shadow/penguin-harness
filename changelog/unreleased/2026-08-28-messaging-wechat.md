@@ -84,3 +84,14 @@ directions, which none of the other three manage.
   relaying, in place of the chat bubble. The entry and the mark it produces are one feature, and
   a reader should not have to learn two shapes for it; the dock panel's tab keeps the bubble,
   which marks the panel rather than the relay.
+- The backlog drain is spent only on a window the platform actually answered. A drain that
+  closes on its own deadline reports an empty list with the cursor it was given, so treating it
+  as drained left the cursor at the beginning and let the next ordinary poll relay a whole
+  backlog to the Agent as live traffic. It is retried instead, bounded, since an idle bot's poll
+  may park every time.
+- The poll loop's failure counter is cleared after a poll that returned, not beside the
+  credential probe. The probe and the poll are different endpoints, so a failure that only ever
+  hit the poll was zeroed by every recovery: the backoff never left its first step and one error
+  record was written per attempt.
+- A table cell's literal markers are escaped like any other text. Only `|` was escaped before,
+  so a lone `*` in one cell could pair with one in another and open emphasis through the table.

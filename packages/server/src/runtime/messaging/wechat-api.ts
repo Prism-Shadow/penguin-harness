@@ -211,6 +211,15 @@ export interface WeChatUpdates {
   messages: WeChatInboundEvent[];
   /** Opaque `get_updates_buf`; pass it back verbatim. */
   cursor: string;
+  /**
+   * The window closed with nothing rather than the platform answering.
+   *
+   * Both come back as an empty list with the cursor unchanged, and for an ordinary poll they
+   * are the same thing. The drain is where they differ: it must not be spent on a window that
+   * closed without the platform saying where it stands, or the cursor stays at the beginning
+   * and the next poll relays a whole backlog as live traffic.
+   */
+  timedOut: boolean;
 }
 
 export interface WeChatBotClient {
@@ -710,7 +719,9 @@ export function createWeChatTransport(): WeChatTransport {
             // every quiet minute — and the cursor is unchanged, so the next call simply asks
             // again from where this one started.
             if (signal.aborted) throw err;
-            if (err instanceof WeChatApiError && err.timedOut) return { messages: [], cursor };
+            if (err instanceof WeChatApiError && err.timedOut) {
+              return { messages: [], cursor, timedOut: true };
+            }
             throw err;
           }
           const raw = Array.isArray(body.msgs) ? (body.msgs as WireMessage[]) : [];
@@ -722,7 +733,11 @@ export function createWeChatTransport(): WeChatTransport {
           // A response that carried no cursor leaves the old one in place: sending `""` back
           // means "start over", which would replay everything this poll just consumed.
           const next = body.get_updates_buf;
-          return { messages, cursor: typeof next === "string" && next !== "" ? next : cursor };
+          return {
+            messages,
+            cursor: typeof next === "string" && next !== "" ? next : cursor,
+            timedOut: false,
+          };
         },
 
         sendText(args: WeChatSendArgs): Promise<void> {

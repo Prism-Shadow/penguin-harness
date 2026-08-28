@@ -1928,10 +1928,8 @@ Scenarios:
     /** The what-binding-does FAQ fold's body (this channel's flavor). */
     intro:
       "Once bound, messages sent to the bot in WeChat arrive in this conversation and the AI's replies go back to WeChat. Binding is a QR code scanned in WeChat — no public address, and no credential to apply for in any console.",
-    /** The stored-credential row's label. There is no field to type one into (see scanOnly). */
-    botToken: "Bot token",
     /** The stored-token row's clear checkbox (the models-page clear idiom). */
-    clearToken: "Clear stored bot token",
+    clearToken: "Clear stored Bot Token",
     /** Why this channel's form has no credential fields at all. */
     scanOnly:
       "A WeChat bot's credential comes only from scanning: there is no App ID or secret to fill in by hand.",
@@ -1973,7 +1971,7 @@ Scenarios:
       "Too many wrong pairing codes, so this scan is spent. Start a new one in a little while.",
     /** Not a failure: the bot is already bound here, so no new credential was issued. */
     scanAlreadyBound:
-      "This bot is already connected to this server; there is nothing to authorize again.",
+      "This bot is already bound, here or somewhere else, so no new token was issued. If this conversation is the one that should have it, unbind the bot where it is in use and scan again.",
     /** Why the scan button is gated while this channel holds the connection. */
     scanDisableFirst: "Disable the connection before rebinding it by scan",
     /** The pairing-code step: WeChat shows digits on the phone that must be typed here. */
@@ -2121,10 +2119,10 @@ Scenarios:
       "Telegram reports that another program is polling? A Bot Token serves exactly one program at a time — close the other PenguinHarness server or bot script using it, or give this conversation a bot of its own. A getUpdates you run by hand (a curl to see what Telegram has queued) is that other program too: disable the connection here before running one. Inspecting them by hand can also discard them — any call you pass an offset to confirms everything before it, and the app's own next connect drops the backlog — so retest with a freshly sent message rather than the ones you just looked at.",
     troubleGroupPrivacy:
       "The bot ignores everything you say in a Telegram group? Telegram's Group Privacy is on by default, and under it a bot that is not an administrator of the group receives only commands addressed to it (such as /start@your_bot) and replies to its own messages — ordinary group messages are never delivered at all, and the connection itself looks perfectly healthy. Making the bot an administrator of that group fixes it on its own, since administrators always receive every message. Otherwise turn Group Privacy off with /setprivacy in @BotFather, then remove the bot from the group and add it back — a group it is already in does not pick up the change.",
-    /** The QQ-only failure a user will otherwise read as "the bot is broken". */
     /** WeChat has no group inbound at all — the answer to "I @-ed it in a group and nothing happened". */
     troubleWeChatDirect:
       "The WeChat channel receives direct chats only: @-mentioning the bot in a group does nothing at all. Message it directly instead.",
+    /** The QQ-only failure a user will otherwise read as "the bot is broken". */
     troubleQQPassive:
       "No replies arriving in QQ? QQ only lets a bot answer a message you just sent: a turn started in the web app is not mirrored there, and replies stop being deliverable a few minutes after your last QQ message. Send another message in QQ to continue.",
     troubleNoGroupInbound:

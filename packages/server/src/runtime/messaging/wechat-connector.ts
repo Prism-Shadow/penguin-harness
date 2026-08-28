@@ -110,6 +110,17 @@ export interface WeChatBindingConfig extends Record<string, unknown> {
 }
 
 /**
+ * How many drains a connection asks for before it proceeds regardless.
+ *
+ * A drain that closed on its own deadline said nothing about where the platform stands, so
+ * spending it there is what lets a whole backlog through later (see the poll loop). But an idle
+ * bot's long poll may park until the deadline every time, so the retry has to be bounded: the
+ * window in which an arriving message is read as backlog and dropped is already one drain long,
+ * and this widens it by one more rather than leaving it open.
+ */
+const DRAIN_ATTEMPTS = 2;
+
+/**
  * How long the poll loop waits after a failure, doubling to a ceiling.
  *
  * The first step is short because the common failure is a single request lost to a network
@@ -306,6 +317,8 @@ export class WeChatConnector implements MessagingChannelConnector {
     let ready = false;
     /** The backlog drain runs once per connection, never again after an outage (see the module doc). */
     let drained = false;
+    /** Drains that closed on their deadline without the platform answering. */
+    let drainAttempts = 0;
     let failures = 0;
     let cursor = "";
     while (!isClosed()) {
@@ -324,14 +337,17 @@ export class WeChatConnector implements MessagingChannelConnector {
           await bot.checkCredentials();
           if (isClosed()) return;
           ready = true;
-          failures = 0;
           handlers.onReady?.();
         }
         // The first call of a connection is a DRAIN, and asks for a short deadline: it wants
         // whatever the platform is already holding, not whatever arrives next. Parked for the
         // long-poll window it would instead return the first message a user sends after
         // enabling — and then drop it as backlog.
-        const { messages, cursor: next } = await bot.getUpdates({
+        const {
+          messages,
+          cursor: next,
+          timedOut,
+        } = await bot.getUpdates({
           cursor,
           signal,
           ...(drained ? {} : { drain: true }),
@@ -341,9 +357,22 @@ export class WeChatConnector implements MessagingChannelConnector {
         if (!drained) {
           // The cursor above is kept; these messages are not. Everything from before the
           // connection existed is confirmed rather than relayed.
-          drained = true;
+          //
+          // A drain that hit its short deadline said nothing about where the platform stands,
+          // and its cursor is the one it was given — so spending it there would leave the
+          // cursor at the beginning and let the next ordinary poll relay a whole backlog as
+          // live traffic, which is the flood this exists to prevent. Retried instead, a few
+          // times: a bounded retry, because an idle bot whose long poll simply parks would
+          // otherwise ask forever, and after the bound the old behaviour is the safer of the
+          // two remaining wrongs — replaying a backlog beats discarding the first message a
+          // user sends after enabling.
+          if (!timedOut || ++drainAttempts >= DRAIN_ATTEMPTS) drained = true;
           continue;
         }
+        // Cleared here rather than beside the probe: the probe and the poll are different
+        // endpoints, so a failure that only ever hits the poll would otherwise be zeroed by
+        // every recovery, never walk the backoff up, and write one error record per attempt.
+        failures = 0;
         for (const evt of messages) {
           if (isClosed()) return;
           // The token is learned BEFORE the bridge is told, so the reply to this very

@@ -153,12 +153,18 @@ function phrasing(node: PhrasingContent): string {
   }
 }
 
-/** Inline content as unformatted text, for a table cell (whose content may not be a block). */
+/**
+ * Inline content as unformatted text, for a table cell (whose content may not be a block).
+ *
+ * Escaped like any other literal text: a cell is still markdown to the client, so a `*` or a
+ * backtick that arrived as content would open a construct inside the table rather than being
+ * shown. Only `|` was escaped here before, which closed the column hazard and left that one.
+ */
 function plainText(nodes: readonly PhrasingContent[]): string {
   return nodes
     .map((node) => {
       if (node.type === "text" || node.type === "inlineCode" || node.type === "html") {
-        return node.value;
+        return esc(node.value);
       }
       if (node.type === "break") return " ";
       if (node.type === "image") return node.alt ?? "";

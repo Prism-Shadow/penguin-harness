@@ -121,17 +121,21 @@ class FakeWeChatClient implements WeChatBotClient {
     this.drains.push(drain);
     if (this.t.failPoll !== null) throw new Error(this.t.failPoll);
     const queued = this.queue.shift();
-    if (queued !== undefined) return { messages: queued, cursor: `cursor-${this.polls}` };
-    // A drain asks only for what the platform is already holding, so it comes back at once —
-    // empty when there is nothing. A long poll PARKS, which is what production does and what
-    // makes the readiness test below meaningful.
-    if (drain && !this.t.stallPolls) return { messages: [], cursor: `cursor-${this.polls}` };
+    if (queued !== undefined) {
+      return { messages: queued, cursor: `cursor-${this.polls}`, timedOut: false };
+    }
+    // A drain asks only for what the platform is already holding, so it comes back at once.
+    // With nothing to hand over the production adapter's window CLOSES instead: an empty list,
+    // the cursor it was given, and `timedOut` — never an advanced cursor, which would tell the
+    // loop the platform had answered when it had not. A long poll PARKS, which is what
+    // production does and what makes the readiness test below meaningful.
+    if (drain && !this.t.stallPolls) return { messages: [], cursor, timedOut: true };
     await new Promise<void>((resolve) => {
       this.wake = resolve;
       signal.addEventListener("abort", () => resolve(), { once: true });
     });
     if (signal.aborted) throw new Error("connection closed");
-    return { messages: this.queue.shift() ?? [], cursor: `cursor-${this.polls}` };
+    return { messages: this.queue.shift() ?? [], cursor: `cursor-${this.polls}`, timedOut: false };
   }
 
   async sendText(args: WeChatSendArgs): Promise<void> {
@@ -498,13 +502,34 @@ describe("wechat binding routes and the long poll", () => {
     expect(client.polls).toBeGreaterThan(0);
   });
 
-  it("asks for a drain on the first poll of a connection and on no later one", async () => {
+  it("drains until the platform answers, then never again on that connection", async () => {
     await bindEnabled(SID);
     const client = fake.poller();
     client.push(inboundText("hello", "m-0"));
+    await waitFor(() => client.drains.includes(false));
+    // Every drain comes first and there are at most DRAIN_ATTEMPTS of them: a window that
+    // closed on its own deadline handed over no cursor, so spending the drain on it would
+    // leave the next ordinary poll to relay a whole backlog as live traffic. The retry is
+    // bounded because an idle bot's poll may park every time.
+    const drains = client.drains.slice(0, client.drains.indexOf(false));
+    expect(drains.length).toBeGreaterThan(0);
+    expect(drains.length).toBeLessThanOrEqual(2);
+    expect(drains.every((d) => d === true)).toBe(true);
+    expect(client.drains.slice(drains.length).every((d) => d === false)).toBe(true);
+  });
+
+  it("does not spend the drain on a window that closed without an answer", async () => {
+    // The hole this closes: the adapter reports a timed-out window as an empty list with the
+    // cursor it was GIVEN, so a drain spent there leaves the cursor at the beginning and the
+    // next ordinary poll hands the whole backlog to the Agent as live traffic.
+    await bindEnabled(SID);
+    const client = fake.poller();
     await waitFor(() => client.drains.length >= 2);
+    // The fake's empty drain times out exactly as production's does, so the second call is
+    // still a drain rather than an ordinary poll asking from the same unmoved cursor.
     expect(client.drains[0]).toBe(true);
-    expect(client.drains.slice(1).every((d) => d === false)).toBe(true);
+    expect(client.drains[1]).toBe(true);
+    expect(client.cursors[1]).toBe(client.cursors[0]);
   });
 
   it("stops with the credential's own reason when the token is refused", async () => {
@@ -656,6 +681,38 @@ describe("wechat binding routes and the long poll", () => {
     await waitFor(() => fake.texts().length > 0);
     expect(fake.texts()[0]!.text).toContain("limit");
     expect(runs).toHaveLength(0);
+  });
+
+  it("a failure that only ever hits the poll still backs off and reports once", async () => {
+    // The probe and the poll are different endpoints. A credential that keeps authenticating
+    // while `getupdates` keeps refusing — an endpoint-specific 5xx, a rate limit, a cursor the
+    // platform has started rejecting — must not zero the counter on every recovery: that walks
+    // the backoff nowhere and writes one error record per attempt, which for a token revoked
+    // overnight is what the loop exists not to do.
+    const delays: number[] = [];
+    const errors: unknown[] = [];
+    fake.failPoll = "getupdates refused";
+    const connector = new WeChatConnector(fake, {
+      // Non-zero so the loop yields to the macrotask queue between attempts; a zero delay
+      // resolves as a microtask and starves the poller below.
+      retryDelayMs: (failures) => {
+        delays.push(failures);
+        return 1;
+      },
+    });
+    const conn = await connector.connect(SCANNED_CONFIG, {
+      onMessage: async () => {},
+      onError: (err) => errors.push(err),
+    });
+    try {
+      await waitFor(() => delays.length >= 4);
+      // The counter climbs across attempts rather than resetting to 1 on every recovery…
+      expect(delays.slice(0, 4)).toEqual([1, 2, 3, 4]);
+      // …so the outage is one error record rather than one per attempt.
+      expect(errors).toHaveLength(1);
+    } finally {
+      conn.close();
+    }
   });
 
   it("sends a picture as a picture and any other file as an attachment", async () => {

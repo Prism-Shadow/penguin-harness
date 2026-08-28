@@ -272,7 +272,7 @@ describe("the long poll", () => {
     }) as typeof fetch;
     try {
       const res = await client().getUpdates({ cursor: "cursor-7", signal: live() });
-      expect(res).toEqual({ messages: [], cursor: "cursor-7" });
+      expect(res).toEqual({ messages: [], cursor: "cursor-7", timedOut: true });
     } finally {
       globalThis.fetch = original;
     }
