@@ -208,6 +208,31 @@ export class MachinesService {
   readonly #sessions = new Map<string, string>();
 
   /**
+   * Ends this side's session on a machine, and asks the machine to end it too.
+   *
+   * Forgetting the token here would leave it valid over there for its whole term — a sign-out
+   * that only stops us from using a credential is not a sign-out. So the machine's own logout
+   * is called first, down the tunnel the session was being used through; a machine with no
+   * tunnel is told nothing and the token is dropped anyway, because the alternative is a
+   * sign-out that fails when the thing it protects against is least reachable.
+   *
+   * Answers whether the machine was reached, so the page can say which of the two happened.
+   */
+  async signOutOn(machineId: string): Promise<{ endedThere: boolean }> {
+    const token = this.#sessions.get(machineId);
+    this.#sessions.delete(machineId);
+    const port = this.tunnelPortForMachine(machineId);
+    if (token === undefined || port === null) return { endedThere: false };
+    try {
+      const api = machineApi(port, `${SESSION_COOKIE}=${token}`);
+      const res = await api.request("POST", "/api/auth/logout", {});
+      return { endedThere: res.status >= 200 && res.status < 300 };
+    } catch {
+      return { endedThere: false }; // Unreachable: the token is gone from here regardless.
+    }
+  }
+
+  /**
    * Records a session a machine issued, from wherever it was issued. Called by the proxy for
    * a sign-in a person performed through the browser: this side never learns the password,
    * only what that password bought.

@@ -891,6 +891,39 @@ describe("machines API", () => {
       expect(handed).toBe("remote-token");
     });
 
+    it("signing out expires that machine's cookie and no other", async () => {
+      // Under the same per-machine name the proxy renames into: a bare `penguin_session=`
+      // would tell the browser to drop THIS server's session instead.
+      await identified();
+      await admin.post(`/api/projects/default_project/machines/${ID}/signin`);
+      const res = await admin.post(`/api/projects/default_project/machines/${ID}/signout`);
+
+      expect(res.status).toBe(200);
+      const setCookie = res.headers.get("set-cookie") ?? "";
+      expect(setCookie).toContain(`penguin_s_${Buffer.from(ID, "utf8").toString("hex")}_`);
+      expect(setCookie).toContain("Max-Age=0");
+      expect(setCookie.startsWith("penguin_session=")).toBe(false);
+    });
+
+    it("signing out drops the session this side was holding", async () => {
+      // The point of signing out: the work on that machine loses the credential too. Shown
+      // through the upgrade, which had been handed the held session while it existed.
+      let handed: string | undefined = "unset";
+      await identified({
+        install: async () => ({ kind: "state-only", identity: IDENTITY }),
+        upgrade: async (opts: { session?: string }) => {
+          handed = opts.session;
+          return { kind: "upgraded", detail: "" };
+        },
+      });
+      await admin.post(`/api/projects/default_project/machines/${ID}/signin`);
+      await admin.post(`/api/projects/default_project/machines/${ID}/signout`);
+      await admin.post("/api/projects/default_project/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+
+      expect(handed).toBeUndefined();
+    });
+
     it("distinguishes a machine that could not be reached from one that refused", async () => {
       await identified({ signIn: async () => ({ kind: "failed", detail: "no route to host" }) });
       expect((await admin.post(`/api/projects/default_project/machines/${ID}/signin`)).status).toBe(

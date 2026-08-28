@@ -279,6 +279,22 @@ export function MachinesPage() {
     };
   }, [connectedIds, projectId]);
 
+  /**
+   * Ends the session on a machine. The row goes back to offering Sign in — deliberately not
+   * re-probed: the auto sign-in effect would take a machine it CAN sign in to straight back
+   * to signed-in, and a control that undoes itself is not one.
+   */
+  const signOut = async (machineId: string) => {
+    if (projectId === null) return;
+    try {
+      await api.signOutOnMachine(projectId, machineId);
+      setSignedIn((prev) => ({ ...prev, [machineId]: "signed-out" }));
+      setError(null);
+    } catch (err) {
+      setError(apiErrorText(err));
+    }
+  };
+
   const submitSignIn = async () => {
     if (signInTo?.machineId == null) return;
     const machineId = signInTo.machineId;
@@ -582,9 +598,13 @@ export function MachinesPage() {
                                 there. */}
                             {machine.machineId !== null &&
                               (signedIn[machine.machineId] === "signed-in" ? (
-                                <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
-                                  {S.machines.signedIn}
-                                </span>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => void signOut(machine.machineId!)}
+                                >
+                                  {S.machines.signOut}
+                                </Button>
                               ) : (
                                 <Button size="sm" onClick={() => setSignInTo(machine)}>
                                   {S.machines.signIn}

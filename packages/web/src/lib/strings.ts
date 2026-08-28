@@ -66,6 +66,7 @@ export const zh = {
     disconnect: "断开",
     /** Each machine is a separate server with its own accounts; this browser signs in per machine. */
     signIn: "登录",
+    signOut: "退出登录",
     signingIn: "登录中…",
     signedIn: "已登录",
     signInTo: (alias: string) => `登录到 ${alias}`,

@@ -64,6 +64,7 @@ export const en: Strings = {
     disconnect: "Disconnect",
     /** Each machine is a separate server with its own accounts; this browser signs in per machine. */
     signIn: "Sign in",
+    signOut: "Sign out",
     signingIn: "Signing in\u2026",
     signedIn: "signed in",
     signInTo: (alias: string) => `Sign in to ${alias}`,

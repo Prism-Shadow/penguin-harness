@@ -15,6 +15,8 @@
  * POST /:machineId/connect      — bring that machine's server up and hold a tunnel to it; 202,
  *                                 or 409 when a connect already runs.
  * POST /:machineId/disconnect   — drop the tunnel (the remote server stays up).
+ * POST /:machineId/signout      — end this browser's session on that machine, and this
+ *                                 side's with it.
  * GET  /:machineId/dirs?path=   — browse that machine's directories over ssh, so picking a
  *                                 workspace on it needs no second login to that machine.
  *
@@ -43,6 +45,7 @@ import type { DirListResponse, MachinesResponse } from "../../api/types.js";
 import { HttpError } from "../errors.js";
 import { requireValidId } from "../validate.js";
 import type { AppEnv } from "../../auth/middleware.js";
+import { SESSION_COOKIE } from "../../auth/middleware.js";
 import type { AppDeps } from "../../app.js";
 import { rewriteSetCookie } from "../../machines/proxy.js";
 
@@ -184,6 +187,25 @@ export function machinesRoutes(deps: AppDeps): Hono<AppEnv> {
       c.header("set-cookie", rewriteSetCookie(cookie, machineId), { append: true });
     }
     return c.json({ signedIn: true });
+  });
+
+  /**
+   * Ends the session on that machine: the machine's own logout down the tunnel, this side's
+   * held copy, and the browser's cookie — the three places one sign-in put a session.
+   *
+   * The cookie is expired under the SAME per-machine name the proxy renames into, so the
+   * browser drops that machine's session and no other. Answers 200 either way, saying
+   * whether the machine itself was reached: a tunnel that is down cannot be told, and
+   * refusing to sign out until it comes back would leave a credential in place precisely
+   * when the machine is least reachable.
+   */
+  app.post("/:machineId/signout", async (c) => {
+    const machineId = c.req.param("machineId");
+    const { endedThere } = await deps.machines.signOutOn(machineId);
+    c.header("set-cookie", rewriteSetCookie(`${SESSION_COOKIE}=; Path=/; Max-Age=0`, machineId), {
+      append: true,
+    });
+    return c.json({ signedOut: true, endedThere });
   });
 
   /**
