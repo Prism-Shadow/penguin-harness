@@ -5,7 +5,7 @@
  * accident, which is what keeps it a self-contained library.
  */
 import type { Resources } from "@prismshadow/penguin-core/kernel";
-import type { Disposable, Extension, ExtensionEvents } from "./index.js";
+import type { Disposable, Extension, ExtensionEvents } from "@prismshadow/penguin-core/extension";
 
 interface ActivatedPlugin {
   handlers: { [E in keyof ExtensionEvents]?: Array<(payload: ExtensionEvents[E]) => void> };

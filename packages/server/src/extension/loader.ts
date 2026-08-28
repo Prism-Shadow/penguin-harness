@@ -15,7 +15,7 @@ import fs from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import type { Extension } from "./index.js";
+import type { Extension } from "@prismshadow/penguin-core/extension";
 
 /** The config file's name inside the data root. */
 export const EXTENSIONS_FILE = "extensions.json";

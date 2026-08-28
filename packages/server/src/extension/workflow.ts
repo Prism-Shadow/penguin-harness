@@ -2,7 +2,11 @@
  * Building the workflow instance view. The types are the SDK's contract
  * (`@prismshadow/penguin-core/extension`); this is the harness's implementation of it.
  */
-import type { WorkflowFactory, WorkflowInstance, WorkflowInstances } from "./index.js";
+import type {
+  WorkflowFactory,
+  WorkflowInstance,
+  WorkflowInstances,
+} from "@prismshadow/penguin-core/extension";
 
 /**
  * The Map handed to extensions at `"initialize"` — `iface.workflow` itself — with the one

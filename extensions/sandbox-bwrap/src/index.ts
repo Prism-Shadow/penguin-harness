@@ -1,9 +1,9 @@
 /**
  * @prismshadow/penguin-extension-sandbox-bwrap — a bubblewrap sandbox backend.
  *
- * A PLUGIN PACKAGE, not part of the platform: a deployment lists it in extensions.json and
+ * AN EXTENSION PACKAGE, not part of the platform: a deployment lists it in extensions.json and
  * the harness resolves it from the installation (see the server's extension/loader.ts).
- * It compiles against the type-only `@prismshadow/penguin-server/extension` surface and
+ * It compiles against the type-only `@prismshadow/penguin-core/extension` surface and
  * carries no runtime dependency on the harness — and none on the DSH ecosystem either:
  * it talks to `bwrap` directly and implements every dimension of the sandbox interface,
  * including the two DSH's vocabulary does not cover.
@@ -38,7 +38,7 @@ import type {
   ExtensionContext,
   SandboxPolicy,
   SandboxProvider,
-} from "@prismshadow/penguin-server/extension";
+} from "@prismshadow/penguin-core/extension";
 
 /** Default probe budget; a probe that hangs must not hang the first spawn forever. */
 const PROBE_TIMEOUT_MS = 5_000;

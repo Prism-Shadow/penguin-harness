@@ -9,10 +9,14 @@ import type { Json } from "@prismshadow/penguin-core/kernel";
 import { HotResources } from "../src/hmr/resources.js";
 import { PENGUIN_FAMILY, RUNTIME_INTERFACES_RESOURCE_ID } from "../src/hmr/capabilities.js";
 import { packagedPlatform } from "../src/hmr/platform.js";
-import type { PenguinContext } from "../src/extension/index.js";
+import type { PenguinContext } from "@prismshadow/penguin-core/extension";
 import { ExtensionHost, EXTENSIONS_RESOURCE_ID } from "../src/extension/host.js";
 import { SandboxService } from "../src/sandbox/index.js";
-import type { SandboxDimension, SandboxPolicy, SandboxProvider } from "../src/sandbox/index.js";
+import type {
+  SandboxDimension,
+  SandboxPolicy,
+  SandboxProvider,
+} from "@prismshadow/penguin-core/extension";
 
 const ARGV = ["bash", "-lc", "echo hi"] as const;
 const OPTS = { cwd: "/work/project/sub", workspaceDir: "/work/project" };
