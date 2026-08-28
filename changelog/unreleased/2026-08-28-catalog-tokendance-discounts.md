@@ -59,11 +59,14 @@ renamed the three price buckets.
   failure costs the figure, not the page. A model that has never run shows nothing rather than
   a zero, which would read as a measurement instead of an absence. `humanizeTokens` gained a
   billions tier for it, in the Web App and in the CLI that shares its conventions.
-- **The card's tags wear one shape**: a pale wash, a border a step stronger in the same hue,
-  and text darker again, so the row reads as a set of tags rather than as competing highlights
-  and the hue is left to say which mark it is. They are spelled in the models page rather than
-  in `lib/tone.ts` because they are identities, not judgements — "default", "vision", "free"
-  say what a model *is*, and none ranks above its neighbour.
+- **The card's marks are small neutral pills** — one faint surface and border whatever the mark
+  says, with the hue surviving only in the text. Six marks filling six coloured chips turned the
+  row into confetti; on a page whose job is scanning names, the marks are meant to be noticed
+  second. Three inks group them rather than enumerate them: what the model is, what it can do,
+  what it costs. They are spelled in the models page rather than in `lib/tone.ts` because they
+  are identities, not judgements — "default", "vision", "free" say what a model *is*, and none
+  ranks above its neighbour; the words carry the identity in every case, so the ink only sorts
+  them at a glance.
 - A discounted model card shows the **billed** price alone. What the row would have cost
   without the promotion answers no question a reader of this list is asking, and spending the
   price line's width on it pushes out the figures that do; the rate off list is one of the tags

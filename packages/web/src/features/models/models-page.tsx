@@ -1698,29 +1698,30 @@ function AddGroupDialog({
 // ---------------------------------------------------------------------------
 
 /**
- * Card tag palette. Every mark on a card wears one shape — a pale wash, a border one step
- * stronger in the same hue, and text a step darker again — so the row reads as a set of tags
- * rather than as competing highlights, and the hue is left to say which mark it is.
+ * Card tag palette. Every mark wears one small neutral pill — the same faint surface and border
+ * whatever it says — and the hue survives only in the text. Six marks filling six coloured
+ * chips turned a row of tags into confetti; on a page whose job is scanning names, the marks
+ * are meant to be noticed second.
  *
- * These are identities, not judgements: "default", "vision", "free" say what a model *is*, and
- * nothing here is better or worse than its neighbour. That is why they are spelled locally
- * instead of in `lib/tone.ts`, whose five tones each rate a thing's state — the same reason
- * `category-colors.ts` and `update-dot.tsx` keep their own colours.
+ * Three inks, so the row groups instead of enumerating: what the model IS (its default status),
+ * what it CAN do, and what it COSTS. Identity is carried by the words in every case — the ink
+ * only sorts them at a glance, and never alone says which mark this is.
  *
- * Contrast, measured against the surfaces a card actually sits on (white and gray-50 in light;
- * this app's overridden gray-950 `#000000` and gray-900 `#0d0d0d` in dark): the text/wash pairs
- * clear 4.5:1 at every hue, and the borders are decorative — the tag never relies on its edge
- * to be read, so they are not held to 3:1.
+ * These are identities, not judgements, which is why they are spelled here instead of in
+ * `lib/tone.ts`, whose five tones each rate a thing's state — the same reason
+ * `category-colors.ts` and `update-dot.tsx` keep their own colours. Contrast against the
+ * surfaces a card sits on (white and gray-50 in light; this app's overridden gray-950 `#000000`
+ * and gray-900 `#0d0d0d` in dark) clears 4.5:1 for every ink; the shared border is decorative,
+ * so it is not held to 3:1.
  */
-const TAG_CLASS = {
-  brand:
-    "border-brand-200 bg-brand-50 text-brand-700 dark:border-brand-800/60 dark:bg-brand-950/40 dark:text-brand-300",
-  emerald:
-    "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300",
-  amber:
-    "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300",
-  yellow:
-    "border-yellow-200 bg-yellow-50 text-yellow-700 dark:border-yellow-900 dark:bg-yellow-950/40 dark:text-yellow-300",
+const TAG_SURFACE = "border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900";
+const TAG_INK = {
+  /** This model's standing in the Project. */
+  status: "text-brand-700 dark:text-brand-300",
+  /** What it can do. */
+  capability: "text-emerald-700 dark:text-emerald-400",
+  /** What it costs. */
+  price: "text-amber-700 dark:text-amber-400",
 } as const;
 
 /**
@@ -1769,7 +1770,7 @@ function ModelCard({
           {
             key: "default",
             label: S.models.default,
-            className: TAG_CLASS.brand,
+            className: TAG_INK.status,
           },
         ]
       : []),
@@ -1778,7 +1779,7 @@ function ModelCard({
           {
             key: "vision",
             label: S.models.visionBadge,
-            className: TAG_CLASS.emerald,
+            className: TAG_INK.capability,
           },
         ]
       : []),
@@ -1787,7 +1788,7 @@ function ModelCard({
           {
             key: "visionModel",
             label: S.models.visionModelBadge,
-            className: TAG_CLASS.amber,
+            className: TAG_INK.capability,
           },
         ]
       : []),
@@ -1796,7 +1797,7 @@ function ModelCard({
           {
             key: "fastMode",
             label: S.models.fastModeBadge,
-            className: TAG_CLASS.amber,
+            className: TAG_INK.capability,
           },
         ]
       : []),
@@ -1805,7 +1806,7 @@ function ModelCard({
           {
             key: "free",
             label: S.models.freeBadge,
-            className: TAG_CLASS.yellow,
+            className: TAG_INK.price,
           },
         ]
       : []),
@@ -1815,7 +1816,7 @@ function ModelCard({
             key: "discount",
             label: S.models.discountBadge(discount.percent),
             title: S.models.discountTitle(discount.percent),
-            className: TAG_CLASS.yellow,
+            className: TAG_INK.price,
           },
         ]
       : []),
@@ -1907,7 +1908,7 @@ function ModelCard({
           <span
             key={tag.key}
             title={tag.title}
-            className={`whitespace-nowrap rounded border px-1.5 py-px text-[11px] font-medium leading-tight ${tag.className}`}
+            className={`whitespace-nowrap rounded-full border px-1.5 text-[10px] font-medium leading-[15px] ${TAG_SURFACE} ${tag.className}`}
           >
             {tag.label}
           </span>
