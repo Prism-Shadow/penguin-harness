@@ -51,6 +51,12 @@ Run the whole chain in exactly three cases: the change spans the repo widely eno
 
 `ci-windows` runs the same minus `format:check`, plus `scripts/test-installer.ps1`. Two failures there are known and are not your diff: a bare `Failed` worker crash, and an `environment.test.ts` truncation-timing assertion — rerun before debugging. An `EBUSY` on removing a directory that is some child process's cwd is real, not a flake.
 
+**A fake that is kinder than the real thing hides the bug it was written for.** Transports are faked at a seam here — `createSocket`, `createClient`, a stubbed `globalThis.fetch` — and the half that drifts is the failure contract, not the happy path. A fake that hands back a fresh cursor where the adapter returns the one it was given, or that resolves where production parks, passes a test whose subject is exactly that path. Write the fake's failure branches from the adapter's, not from what the assertions need.
+
+**A structural assertion that was already true at the base commit is not a test.** Reading source text in a test is house style here (20 web test files do it), which makes it easy to assert a shape the file already had. Replay each new assertion against `git show <base>:<path>` and keep the ones that fail there.
+
+The local server suite drops a few tests under full parallel load — they time out and pass on their own. Rerun the file alone before blaming the diff.
+
 Once the evidence you chose passes, commit and push to the current branch without asking. Force-pushes and reverting someone else's commits still need confirmation.
 
 ## Record and ship
@@ -61,6 +67,7 @@ Every change ships a changelog entry, in both languages, in `changelog/unrelease
 - H1, then the metadata block in fixed order — `Date` / `Type` / `Scope` / `PR` / `Issue` / `Breaking` — then the counterpart link, then a lead paragraph and bespoke sections. Field names and values stay English in both files so one `grep` covers the tree.
 - Omit an inapplicable field entirely. Placeholders are what stop `grep -rl 'Breaking:' changelog/` from being an exact query.
 - `Breaking` present ⇒ a `## Compatibility` / `## 兼容性` section stating what breaks and the migration step.
+- Section headings are translated, not carried across: `## Details` → `## 细节`, `## Compatibility` → `## 兼容性`, bespoke ones naturally, in the same order and count. An English heading in the `.zh.md` is the most common way the pair stops mirroring.
 
 `changelog/README.md` is the full spec. Read it rather than pattern-matching a neighbouring entry.
 
@@ -70,7 +77,7 @@ Every change ships a changelog entry, in both languages, in `changelog/unrelease
 
 **Numbers are links, and half of them are issues.** A bare `#N` does not render as a link in Markdown. Worse, this repository's bug reports and its PRs share one numbering space: `#83`, `#85`, `#102`, `#136`–`#140`, `#150`, `#170`, `#215`, `#218`, `#229`, `#239` are issues. Classify before writing — `gh api repos/Prism-Shadow/penguin-harness/issues/N --jq 'if .pull_request then "PR" else "ISSUE" end'` — and route them to `Issue`, not `PR`. A cross-repo reference names its repo: `agenthub [#162](https://github.com/Prism-Shadow/agenthub/pull/162)`.
 
-The PR number exists only once the PR is open: open it, then add the links in a follow-up commit on the same branch.
+The PR number exists only once the PR is open: open it, then add the links in a follow-up commit on the same branch. `PR` is the field that actually gets forgotten — `grep -L 'PR:' changelog/unreleased/*.md` before asking for review.
 
 An entry ships **inside the PR that makes the change** — there is no separate aggregate PR. Released version folders are frozen. `RELEASE.md` is written at release preparation and must be committed **before** the tag — the workflow reads it from the tag's own checkout.
 
@@ -95,6 +102,7 @@ Release screenshots are captured, not mocked up: drive the app through the Playw
 - A provider group is split only when the vendor genuinely has separate endpoints or billing paths (Qwen Token Plan vs Pay-As-You-Go). One endpoint serving several key types is one group.
 - `resolveModelEnv` mirrors AgentHub's exact routing; a lookalike id must stay unroutable.
 - Adding a model touches the catalog test's exact-order assertions, `packages/web/src/features/models/protocol-path.ts` when the client's request path is not `/chat/completions`, the provider glyph map, and the bilingual `models` / `configuration` docs.
+- **Moving the default reaches further than adding a model.** `defaultProjectConfig()` in `packages/core/src/state/project-config.ts` holds it, and six documented first-run commands pin it by hand — `README.md`, `README.zh.md`, and `quickstart-cli` / `quickstart-sdk` in both languages — each ending `--set-default`, which writes `default_model`. Leave them on the old id and the documented first run silently undoes the change on every fresh install. The `models` and `configuration` samples carry it in two places that must move together, the `default_model` line and the `[[models]]` row it names (a default naming no entry is rejected on load), and `packages/skills/skills/penguin-sdk/SKILL.md` states it in prose.
 
 Existing Projects never migrate automatically: presets are copied into `.project_config.toml` at creation and nothing rewrites them. Users pick changes up through the models page's explicit "sync presets", which appends and updates catalog-owned fields but never deletes and never touches the stored default. Say so in the entry.
 
