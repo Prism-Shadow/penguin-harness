@@ -3,6 +3,7 @@
 - **Date:** 2026-08-28
 - **Type:** feature
 - **Scope:** `web`, `server`, `desktop`, `cli`, `docs`
+- **PR:** [#540](https://github.com/Prism-Shadow/penguin-harness/pull/540)
 - **Breaking:** yes — `POST /api/version/update` answers with the job status instead of blocking until the run is over
 
 [中文版](2026-08-28-update-modal.zh.md)

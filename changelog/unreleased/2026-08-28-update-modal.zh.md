@@ -3,6 +3,7 @@
 - **Date:** 2026-08-28
 - **Type:** feature
 - **Scope:** `web`, `server`, `desktop`, `cli`, `docs`
+- **PR:** [#540](https://github.com/Prism-Shadow/penguin-harness/pull/540)
 - **Breaking:** yes — `POST /api/version/update` 改为立即返回任务状态，不再阻塞到整个更新结束
 
 [English](2026-08-28-update-modal.md)
