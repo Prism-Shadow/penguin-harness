@@ -23,6 +23,8 @@ import {
   detectedEnvKeys,
   digitsOnly,
   fastModeState,
+  modelLabelOf,
+  priceToSubmit,
   hasKey,
   keyStatusText,
   nextPointers,
@@ -30,6 +32,50 @@ import {
   toRow,
 } from "../src/features/models/models-page";
 import { S } from "../src/lib/strings";
+
+describe("priceToSubmit", () => {
+  // The catalog bills this row at CNY 0.05 per million, i.e. $0.00714285714... The form can
+  // only show four decimals, so the loaded field reads 0.0071.
+  const STORED = "0.007142857";
+
+  it("returns the stored number untouched when the field still holds what was loaded", () => {
+    expect(priceToSubmit("0.0071", STORED, "USD")).toBe(STORED);
+    // Same in CNY, where the round trip also passes through the x7 conversion.
+    expect(priceToSubmit("0.05", STORED, "CNY")).toBe(STORED);
+  });
+
+  it("takes the typed value once the field has actually been edited", () => {
+    expect(priceToSubmit("0.9", STORED, "USD")).toBe("0.9");
+    expect(priceToSubmit("7", STORED, "CNY")).toBe("1");
+  });
+
+  it("encodes normally when there is nothing stored to preserve", () => {
+    expect(priceToSubmit("0.0071", undefined, "USD")).toBe("0.0071");
+    expect(priceToSubmit("0.0071", "", "USD")).toBe("0.0071");
+  });
+
+  it("passes an emptied field through as empty, which clears the price", () => {
+    expect(priceToSubmit("", STORED, "USD")).toBe("");
+  });
+});
+
+describe("modelLabelOf", () => {
+  it("prefers the display name", () => {
+    expect(modelLabelOf("My GPT", "gpt-5.5")).toBe("My GPT");
+  });
+
+  it("falls back to the id when the name was cleared, not just when it was never set", () => {
+    // The dialog clears the field to "", so `?? modelId` would hand back an empty label — which
+    // is how a save confirmation came to quote an empty name.
+    expect(modelLabelOf(undefined, "gpt-5.5")).toBe("gpt-5.5");
+    expect(modelLabelOf("", "gpt-5.5")).toBe("gpt-5.5");
+    expect(modelLabelOf("   ", "gpt-5.5")).toBe("gpt-5.5");
+  });
+
+  it("keeps a name that merely has padding around it", () => {
+    expect(modelLabelOf("  My GPT  ", "gpt-5.5")).toBe("My GPT");
+  });
+});
 
 describe("digitsOnly (context window)", () => {
   it("keeps digits only", () => {

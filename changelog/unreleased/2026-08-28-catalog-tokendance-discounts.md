@@ -52,13 +52,14 @@ renamed the three price buckets.
 - **The upstream id has left the card.** It is a detail you go looking for rather than one you
   scan by, and it is one click away in the config dialog; the width it was taking now belongs
   to the name and to the spend figure.
-- **Each card says what that model has cost in Tokens** — `17.7B tokens`, grey and a size below
+- **Each card says what that model has cost in Tokens** — `17.7B toks`, grey and a size below
   the price line, on the title row's right edge. It is a lifetime figure with no date or Agent
   window, which is why it comes from its own `GET /usage/model-totals` rather than from the
   cost center's filtered aggregate, and its own request rather than the model list: a stats
   failure costs the figure, not the page. A model that has never run shows nothing rather than
   a zero, which would read as a measurement instead of an absence. `humanizeTokens` gained a
-  billions tier for it, in the Web App and in the CLI that shares its conventions.
+  billions tier for it, in the Web App and in the CLI that shares its conventions. The unit is
+  abbreviated the way the rest of the page already abbreviates it — `tok/s`, `/M tok`.
 - **The card's marks are small neutral pills** — one faint surface and border whatever the mark
   says, with the hue surviving only in the text. Six marks filling six coloured chips turned the
   row into confetti; on a page whose job is scanning names, the marks are meant to be noticed
@@ -78,6 +79,33 @@ renamed the three price buckets.
   is gone and the model count and the recommendation drop out on a narrow row instead — the same
   rule the actions' own labels already followed. Verified with no overflow at nine widths from
   1500px down to 400px.
+
+## Three fixes the card work turned up
+
+- **A model's display name can be cleared again.** Only provider and model id are required, and
+  the field says it defaults to the model id — but for a model the built-in catalog names, an
+  absent `display_name` on disk means "inherit the catalog's", so clearing the field wrote
+  nothing and the deleted name came back on the next load. The empty string now records the
+  deletion, and the read tells it apart from an absent field. A model the catalog does not name
+  keeps writing nothing, since absence already says "no name" there.
+- **A save confirmation names the model it is about.** It read `确定保存对「」的配置修改？`
+  after the name was cleared, because the label fell back to the id only when the name was
+  `undefined` — and clearing a field leaves `""`. The dialog header had the same gap, printing
+  an empty title and then repeating the id underneath.
+- **Re-saving a model no longer edits its price.** The form rounds the stored USD to four
+  decimals so it is typeable, and submitting re-encoded that rounding as the new price — so
+  opening a promoted row and pressing confirm without touching anything moved it off the figure
+  its seller bills and dropped the discount mark. A bucket still holding exactly what was loaded
+  into it is now written back unchanged; editing the field is what makes the typed value
+  authoritative.
+
+## On-disk configuration
+
+Clearing a display name writes `display_name = ""` into `.project_config.toml`, a value nothing
+wrote before. No migration is needed and nothing has to be done to an existing Project: a config
+without the field behaves exactly as it did. An older build reading a newer config treats the
+empty string as absent and shows the catalog's name again — the cleared name reappears, and
+nothing else changes.
 
 ## Chinese price labels
 

@@ -801,8 +801,12 @@ export class ProjectConfigService {
         const maxTokens = optNum(m.max_tokens);
         // Fast mode: TOML annotation only (user-owned); only `true` is reported — absent = off.
         const fastMode = m.fast_mode === true ? true : undefined;
-        // Display name: the explicit TOML field (user-edited) takes priority, then the built-in catalog.
-        const displayName = optStr(m.display_name) ?? cat?.displayName;
+        // Display name: the explicit TOML field (user-edited) takes priority, then the built-in
+        // catalog. An empty string is not the same as an absent field — absent means "inherit
+        // whatever the catalog calls this model", empty means the user cleared the name on a
+        // model the catalog does name, and inheriting there would hand the name straight back.
+        const displayName =
+          m.display_name === "" ? undefined : (optStr(m.display_name) ?? cat?.displayName);
         // credential is inlined on the entry: a credential block is emitted if either api_key or base_url is present.
         const apiKey = optStr(m.api_key);
         const credBaseUrl = optStr(m.base_url);
@@ -924,6 +928,12 @@ export class ProjectConfigService {
       const catNew = catalogEntryFor(entry.provider, entry.modelId);
       if (entry.displayName && entry.displayName !== catNew?.displayName) {
         next.display_name = entry.displayName;
+      } else if (!entry.displayName && catNew?.displayName !== undefined) {
+        // Cleared on a model the catalog names. Writing nothing would leave the field absent,
+        // which reads as "inherit" — so the name the user just deleted would come back on the
+        // next load. The empty string is what records the deletion. Only reached for a catalog
+        // model: a custom one has no name to inherit, so absence already says it.
+        next.display_name = "";
       }
       if (entry.contextWindow !== undefined) next.context_window = entry.contextWindow;
       // Stored canonically: a client sending the deprecated "openai" alias persists

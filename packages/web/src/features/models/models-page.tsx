@@ -372,6 +372,43 @@ export function keyStatusText(row: RowState): string {
   return row.envKeyMasked ?? S.models.keyConfigured;
 }
 
+/**
+ * What to call a model in prose — its display name, or its upstream id when it has none.
+ *
+ * The blank test is `trim()`, not `!== undefined`: the display name is optional and the dialog
+ * clears it to an empty string, so `displayName ?? modelId` would quote an empty name back at
+ * the user — which is how a save confirmation came to read 「」.
+ */
+export function modelLabelOf(displayName: string | undefined, modelId: string): string {
+  return displayName?.trim() || modelId;
+}
+
+/**
+ * What to store for one price bucket on submit: the value as typed, or — when the field still
+ * holds exactly what was loaded into it — the stored number byte for byte.
+ *
+ * Loading rounds the stored USD to four decimals so it is typeable (`usdToInput`), so
+ * re-encoding an untouched field would commit that rounding as the new price: a silent edit of
+ * a number nobody changed. Small, but not nothing — a catalog row billed at CNY 0.05 per
+ * million lands on $0.0071 instead of $0.00714285…, enough to move a promoted row off the
+ * figure its seller bills and drop the discount mark that says so. Editing the field is what
+ * makes the typed value authoritative.
+ */
+export function priceToSubmit(
+  formValue: string,
+  storedUsd: string | undefined,
+  currency: Currency,
+): string {
+  if (
+    storedUsd !== undefined &&
+    storedUsd !== "" &&
+    formValue.trim() === usdToInput(storedUsd, currency)
+  ) {
+    return storedUsd;
+  }
+  return inputToUsd(formValue, currency);
+}
+
 /** DTO -> row edit state (exported for unit tests): provider and modelId are both entry fields, never decomposed. */
 export function toRow(m: ModelsResponse["models"][number]): RowState {
   const row: RowState = {
@@ -1882,7 +1919,7 @@ function ModelCard({
           away in the config dialog; the width it was taking now belongs to the name. */}
       <span className="flex w-full min-w-0 items-baseline gap-2">
         <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
-          {row.displayName ?? row.modelId}
+          {modelLabelOf(row.displayName, row.modelId)}
         </span>
         {/* What this model has spent over its whole life, on the row's right edge. Recessive by
             design — grey and a size below the meta line: it is context for a name you are
@@ -2320,6 +2357,8 @@ function ModelDialog({
   const suffixLabel =
     showProtocolPicker && protocolChoice === null ? S.models.protocolUnset : protocolPath;
 
+  const modelLabel = modelLabelOf(form.displayName, form.modelId);
+
   const validated = (): RowState | null => {
     const modelId = form.modelId.trim();
     const ref: ModelRefDto = { provider: form.provider, modelId };
@@ -2370,9 +2409,9 @@ function ModelDialog({
       // Custom models with an empty context window fall back to the default value (preset models left empty just mean "unknown", not auto-filled).
       contextWindow:
         !preset && !contextWindow ? String(CUSTOM_CONTEXT_DEFAULT) : form.contextWindow,
-      cacheRead: inputToUsd(form.cacheRead, currency),
-      cacheWrite: inputToUsd(form.cacheWrite, currency),
-      output: inputToUsd(form.output, currency),
+      cacheRead: priceToSubmit(form.cacheRead, row?.cacheRead, currency),
+      cacheWrite: priceToSubmit(form.cacheWrite, row?.cacheWrite, currency),
+      output: priceToSubmit(form.output, row?.output, currency),
     };
   };
 
@@ -2627,13 +2666,15 @@ function ModelDialog({
             />
             <div className="flex min-w-0 flex-1 flex-col">
               <span className="flex flex-wrap items-center gap-1.5 text-sm font-medium">
-                {form.displayName ?? form.modelId}
+                {modelLabel}
                 {isDefault && <Badge tone="brand">{S.models.default}</Badge>}
                 {form.vision && <Badge tone="green">{S.models.visionBadge}</Badge>}
                 {isVisionModel && <Badge tone="amber">{S.models.visionModelBadge}</Badge>}
               </span>
-              {/* Upstream id in small text: when there's no display name, the main line is already showing it, so don't repeat. */}
-              {form.displayName !== undefined && (
+              {/* Upstream id in small text: when there's no display name the main line is already
+                  showing it, so don't repeat. Tested on the trimmed value, not on `undefined`:
+                  clearing the field leaves an empty string, which is just as nameless. */}
+              {form.displayName?.trim() && (
                 <span className="truncate font-mono text-xs text-gray-500 dark:text-gray-400">
                   {form.modelId}
                 </span>
@@ -3147,7 +3188,7 @@ function ModelDialog({
           }}
         >
           <p className="text-sm text-gray-700 dark:text-gray-300">
-            {CONFIRM_BODY[confirming](form.displayName ?? form.modelId)}
+            {CONFIRM_BODY[confirming](modelLabel)}
           </p>
         </ConfirmModal>
       )}

@@ -777,8 +777,8 @@ export const zh = {
     discountTitle: (pct: number): string => `促销价：已在牌价基础上打 ${pct}% 折扣`,
     /** Hover text on the struck-out price beside a discounted row's live price. */
     visionModelBadge: "视觉代理",
-    /** Card's right-edge figure: what this model has spent over its whole life. "tokens" stays English — it is the unit, and the cost center spells it the same way. */
-    usedTokens: (v: string) => `${v} tokens`,
+    /** Card's right-edge figure: what this model has spent over its whole life. The unit stays English and is abbreviated the way the rest of the page abbreviates it — `tok/s`, `/M tok`. */
+    usedTokens: (v: string) => `${v} toks`,
     usedTokensTitle: "该模型累计消耗的 Token（不限时间范围）",
     setVisionModel: "设为视觉代理模型",
     visionModelHint: "供不支持图片的模型经 describe_image 代读图片",
