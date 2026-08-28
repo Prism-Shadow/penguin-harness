@@ -723,7 +723,7 @@ export class MachinesService {
                 pushed.kind === "no-build"
                   ? "this server stands on no build to hand over."
                   : pushed.kind === "refused"
-                    ? `that machine refused this build: ${pushed.detail}`
+                    ? `that machine refused this build — ${pushed.detail}`
                     : pushed.detail,
             };
             return;

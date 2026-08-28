@@ -42,6 +42,25 @@ function fail(message) {
 }
 
 /**
+ * The sentence out of an error body, or "" when it is not one this server wrote.
+ *
+ * The refusal a reader needs is `error.message`; the envelope around it is machinery. Passing
+ * the raw JSON up means a person reads `{"error":{"code":…,"message":"…"}}` inside a sentence
+ * that has already told them who refused.
+ */
+function messageOf(text) {
+  try {
+    const parsed = JSON.parse(text);
+    const message = parsed && parsed.error && parsed.error.message;
+    return typeof message === "string" && message !== "" ? message : "";
+  } catch {
+    return String(text || "")
+      .trim()
+      .slice(0, 400);
+  }
+}
+
+/**
  * One request to this machine's own server. 127.0.0.1 with the Host header forced to the
  * canonical app host: the API answers only under that name (127.0.0.1 itself is the preview
  * surface), and a name could resolve to a DIFFERENT server on a machine running several.
@@ -138,7 +157,10 @@ async function main() {
     payload,
   );
   if (res.status < 200 || res.status >= 300) {
-    fail(`the upgrade was refused: ${res.status} ${res.text.slice(0, 400)}`);
+    // Its own words, unwrapped: the caller already says WHO refused and WHAT was handed
+    // over, so repeating either here reaches a reader as "refused: refused: {json}". The
+    // status carries when the body has nothing to say for itself.
+    fail(messageOf(res.text) || `the machine answered ${res.status}`);
     return;
   }
   say(OK);
