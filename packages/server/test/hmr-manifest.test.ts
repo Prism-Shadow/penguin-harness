@@ -7,7 +7,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { readHarnessInfo, resolveCliBundlePath } from "../src/hmr/manifest.js";
+import {
+  readHarnessInfo,
+  resolveCliBundlePath,
+  resolveRuntimeBundlePath,
+} from "../src/hmr/manifest.js";
 
 async function makeRoot(): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), "penguin-hmr-manifest-test-"));
@@ -178,5 +182,56 @@ describe("readHarnessInfo", () => {
     await fs.mkdir(hmrDir, { recursive: true });
     await fs.writeFile(path.join(hmrDir, "harness.json"), '{"cli": {"bundle":');
     await expect(readHarnessInfo(root)).resolves.toBeNull();
+  });
+});
+
+describe("resolveRuntimeBundlePath", () => {
+  const roots: string[] = [];
+  afterEach(async () => {
+    for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true });
+  });
+  const root = async (): Promise<string> => {
+    const dir = await makeRoot();
+    roots.push(dir);
+    return dir;
+  };
+
+  it("answers the pushed runtime's path", async () => {
+    const dir = await root();
+    await writeManifest(dir, { runtime: { bundle: "store/runtime/abc.mjs" } });
+    const file = path.join(dir, "hmr", "store", "runtime", "abc.mjs");
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, "export {}\n");
+
+    expect(await resolveRuntimeBundlePath(dir)).toBe(file);
+  });
+
+  it("answers null for a root with nothing pushed, so the launcher runs the packaged one", async () => {
+    expect(await resolveRuntimeBundlePath(await root())).toBeNull();
+  });
+
+  it("refuses a pointer that walks out of the store", async () => {
+    // The launcher imports what this returns, BEFORE anything else starts. A manifest that
+    // could name a path outside the store would be choosing what the server runs.
+    const dir = await root();
+    await writeManifest(dir, { runtime: { bundle: "../../../evil.mjs" } });
+    expect(await resolveRuntimeBundlePath(dir)).toBeNull();
+  });
+
+  it("answers null when the file is gone, rather than naming a path that is not there", async () => {
+    const dir = await root();
+    await writeManifest(dir, { runtime: { bundle: "store/runtime/pruned.mjs" } });
+    expect(await resolveRuntimeBundlePath(dir)).toBeNull();
+  });
+
+  it("is unaffected by the cli pointer, and leaves it unaffected", async () => {
+    const dir = await root();
+    await writeManifest(dir, { cli: { bundle: "store/cli/only.mjs" } });
+    const file = path.join(dir, "hmr", "store", "cli", "only.mjs");
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, "export {}\n");
+
+    expect(await resolveRuntimeBundlePath(dir)).toBeNull();
+    expect(await resolveCliBundlePath(dir)).toBe(file);
   });
 });

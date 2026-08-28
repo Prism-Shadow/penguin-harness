@@ -38,6 +38,14 @@ const PLATFORM_ENTRY = path.join(ROOT, "packages", "server", "src", "hmr", "entr
 const CLI_ENTRY = path.join(ROOT, "packages", "cli", "src", "index.ts");
 const PLATFORM_BUNDLE = path.join(os.tmpdir(), `penguin-deploy-platform-${process.pid}.mjs`);
 const CLI_BUNDLE = path.join(os.tmpdir(), `penguin-deploy-cli-${process.pid}.mjs`);
+// The RUNTIME: the server itself, compiled the same way the other two are. It cannot be
+// adopted by the process receiving it — that process IS a runtime — so it is committed to
+// the store and taken up at the next start (packages/server/src/hmr/launch.ts). Sending it
+// is what makes a push able to advance a machine's runtime at all; without it the runtime
+// only ever moved by reinstalling a published release, which is a road that does not reach
+// a machine whose release is older than the platform being pushed at it.
+const RUNTIME_ENTRY = path.join(ROOT, "packages", "server", "src", "index.ts");
+const RUNTIME_BUNDLE = path.join(os.tmpdir(), `penguin-deploy-runtime-${process.pid}.mjs`);
 
 const log = (msg) => console.log(`[deploy] ${msg}`);
 
@@ -247,6 +255,7 @@ async function main() {
   log("compiling platform + cli…");
   await compileEntry(PLATFORM_ENTRY, PLATFORM_BUNDLE);
   await compileEntry(CLI_ENTRY, CLI_BUNDLE);
+  await compileEntry(RUNTIME_ENTRY, RUNTIME_BUNDLE);
 
   const files = await readWebManifest();
   const assets = await readNativeAssets();
@@ -256,6 +265,7 @@ async function main() {
       JSON.stringify({
         platform: await fsp.readFile(PLATFORM_BUNDLE, "utf8"),
         cli: await fsp.readFile(CLI_BUNDLE, "utf8"),
+        runtime: await fsp.readFile(RUNTIME_BUNDLE, "utf8"),
         web: { files },
         assets,
         ...(source === null ? {} : { source }),
@@ -289,7 +299,10 @@ async function main() {
     return;
   }
   log(
-    `ok in ${seconds}s — impl ${outcome.impl}, mode ${outcome.mode}, web rev ${outcome.web?.rev}`,
+    `ok in ${seconds}s — impl ${outcome.impl}, mode ${outcome.mode}, web rev ${outcome.web?.rev}` +
+      // The one part of a push that is not live when the push returns: said here rather
+      // than left for somebody to notice their runtime did not change.
+      (outcome.restartRequired ? " — RESTART to take up the pushed runtime" : ""),
   );
   if (outcome.persisted === false) {
     // The live swap took effect, but the server could not write it to disk (see
@@ -308,5 +321,5 @@ main()
     process.exitCode = 1;
   })
   .finally(() => {
-    for (const f of [PLATFORM_BUNDLE, CLI_BUNDLE]) fs.rmSync(f, { force: true });
+    for (const f of [PLATFORM_BUNDLE, CLI_BUNDLE, RUNTIME_BUNDLE]) fs.rmSync(f, { force: true });
   });

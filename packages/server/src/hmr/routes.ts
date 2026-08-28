@@ -117,6 +117,7 @@ export function hmrRoutes(deps: AppDeps): Hono<AppEnv> {
     let payload: {
       platform?: string;
       cli?: string;
+      runtime?: string;
       web?: { files?: Record<string, string> };
       assets?: { files?: Record<string, string>; exec?: string[] };
       source?: { repo: string; revision: string };
@@ -150,6 +151,12 @@ export function hmrRoutes(deps: AppDeps): Hono<AppEnv> {
         platform: payload.platform,
         cli: payload.cli,
         web: payload.web.files,
+        // Optional, and typed rather than trusted: an older pusher sends none, and this one
+        // outlives the request in the store — a wrong-typed runtime would be committed and
+        // then imported by the next START, which is the one place a bad value costs a boot.
+        ...(typeof payload.runtime === "string" && payload.runtime.length > 0
+          ? { runtime: payload.runtime }
+          : {}),
         // Optional: a push that needs no real files on disk (no native module, no helper
         // binary) simply omits it, and older pushers keep working unchanged.
         ...(payload.assets?.files

@@ -25,6 +25,8 @@ import { resolveServerConfig, type ServerConfig } from "./config.js";
 import { clearInitialAdminPassword, renderFirstLoginNotice } from "./initial-password.js";
 import { applyProxySettings, installGlobalProxyDispatcher } from "./net/proxy.js";
 import { ExtensionHost } from "./extension/host.js";
+import { handOverToPushedRuntime } from "./hmr/launch.js";
+import { resolveRoot } from "@prismshadow/penguin-core";
 import { loadExtensions } from "./extension/loader.js";
 import { attachTerminalWebSocket } from "./terminal/ws.js";
 import { loopbackHostRoles } from "./services/preview-token.js";
@@ -414,4 +416,11 @@ function writePortFile(file: string, port: number): void {
 // Runs on import, which is what starting this server means. It is the last line of the
 // file because main() reaches PenguinServer, whose declaration has to have been evaluated
 // by the time the call happens.
-await main();
+//
+// Asked FIRST: a data root may name a runtime newer than this file, pushed here and waiting
+// for exactly this moment (see hmr/launch.ts). When it does, that bundle becomes the process
+// and main() below is never reached; when it does not — or when it fails to start — this is
+// the runtime, and starting it is what a failure falls back to.
+if (!(await handOverToPushedRuntime(resolveRoot()))) {
+  await main();
+}

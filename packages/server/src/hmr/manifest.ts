@@ -39,6 +39,20 @@ export interface Manifest {
    * never has to reach into `platform` at all.
    */
   cli?: { bundle: string };
+  /**
+   * The RUNTIME's own bundle pointer — the server this process is.
+   *
+   * Unlike the other three it is not adopted by the running process. A platform is
+   * imported into it, a cli is loaded per invocation, a web dist is served as bytes; the
+   * runtime is the thing doing all of that, and swapping it under itself is not a thing a
+   * process can do. So it is written here and taken up at the NEXT START, by the launcher
+   * that resolves it (resolveRuntimeBundlePath).
+   *
+   * That is the whole difference between this field and the others: committing it changes
+   * nothing until somebody restarts, which is why an upgrade carrying one reports that a
+   * restart is pending rather than that it is done.
+   */
+  runtime?: { bundle: string };
   /** One gzip(JSON.stringify({ files })) artifact, restored straight into memory. */
   web?: { manifest: string };
   /**
@@ -117,8 +131,29 @@ export async function readManifest(root: string): Promise<Manifest | null> {
  * nothing here ever throws for an ordinary unconfigured or malformed root.
  */
 export async function resolveCliBundlePath(root: string): Promise<string | null> {
+  return resolveBundlePath(root, (m) => m.cli?.bundle);
+}
+
+/**
+ * The pushed RUNTIME bundle's absolute path, or null when there is none to prefer.
+ *
+ * Read by the launcher before anything else starts, on exactly the same terms as the CLI's:
+ * null means "run the packaged one", and every malformed shape — missing entry, non-string,
+ * a path that resolves outside the store, a file since pruned — is a null rather than a
+ * throw. A launcher that threw here would turn a bad manifest into a machine with no server
+ * at all, which is the one outcome the whole hot-update design refuses to allow.
+ */
+export async function resolveRuntimeBundlePath(root: string): Promise<string | null> {
+  return resolveBundlePath(root, (m) => m.runtime?.bundle);
+}
+
+/** The shared resolution both readers stand on; see resolveCliBundlePath for the rules. */
+async function resolveBundlePath(
+  root: string,
+  pick: (manifest: Manifest) => string | undefined,
+): Promise<string | null> {
   const manifest = await readManifest(root);
-  const bundle = manifest?.cli?.bundle;
+  const bundle = manifest === null ? undefined : pick(manifest);
   if (typeof bundle !== "string" || bundle.length === 0) return null;
   const hmrDir = path.join(root, "hmr");
   const abs = path.resolve(hmrDir, bundle);

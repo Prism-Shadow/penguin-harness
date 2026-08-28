@@ -74,6 +74,8 @@ import type { Instance, Json } from "@prismshadow/penguin-core/kernel";
 import { boot, initialDoc, upgrade } from "@prismshadow/penguin-core/kernel";
 import { HotResources } from "./resources.js";
 import type { Manifest } from "./manifest.js";
+import { readManifest } from "./manifest.js";
+import { bootedRuntimePointer } from "./launch.js";
 import type { PlatformApi } from "../hmr/platform.js";
 import { packagedPlatform } from "../hmr/platform.js";
 import type { AnyIface, AnyImpl } from "@prismshadow/penguin-core/kernel";
@@ -121,6 +123,20 @@ export interface UpgradeAssets {
 export interface UpgradeAllTarget {
   platform: string;
   cli: string;
+  /**
+   * The server's own single-file ESM source, optional.
+   *
+   * The one artifact this process cannot adopt: it IS the runtime, and a process does not
+   * swap the code it is running out from under itself. Committed to the store like the
+   * others and taken up at the next start by the launcher (hmr/manifest.ts's
+   * resolveRuntimeBundlePath) — so a push carrying one is complete on disk and pending in
+   * effect, which the outcome says as `restartRequired`.
+   *
+   * Optional because a push from a client that has no runtime to send is still a whole
+   * version of the other three; the field is absent, and the committed runtime pointer —
+   * if an earlier push left one — is carried forward rather than dropped.
+   */
+  runtime?: string;
   web: Record<string, string>;
   assets?: UpgradeAssets;
   source?: GitSource;
@@ -149,6 +165,14 @@ export type UpgradeOutcome =
        * indistinguishable from a fully-durable push.
        */
       persisted: boolean;
+      /**
+       * A runtime was committed that this process is not running. Everything else in the
+       * push is live; this part is on disk and takes effect at the next start. Reported so
+       * a client can ASK for that restart rather than either pretending the push is
+       * complete or calling a successful push a failure — and never restart on its own,
+       * which would drop every connection this server is holding.
+       */
+      restartRequired: boolean;
     }
   | { status: "blocked"; dropped: string[]; missing: string[]; invalid: string[] };
 
@@ -263,7 +287,20 @@ export class HmrHost {
    * not a resumed state — state is never written to disk (see the module doc), so a
    * restart always resumes the pushed CODE with a clean slate, never last run's doc.
    */
+  /**
+   * The runtime pointer this process actually started from, read once at construction.
+   *
+   * Not "what the manifest says now": a push rewrites that, and the question this answers is
+   * whether the running process is behind it. Null when the process booted its packaged
+   * runtime, in which case any committed runtime is newer by definition.
+   */
+  private bootedRuntime: string | null = null;
+
   private async restore(): Promise<void> {
+    // What THIS process started from, asked once and before anything is committed over it:
+    // after a push the manifest names the new runtime, so reading it later would say the
+    // process is current when it is the one that needs restarting.
+    this.bootedRuntime = await bootedRuntimePointer(this.root);
     let manifest: Manifest;
     try {
       manifest = JSON.parse(await fsp.readFile(this.manifestPath, "utf8")) as Manifest;
@@ -403,6 +440,9 @@ export class HmrHost {
 
     const digest = filesDigest(target.web);
     const gz = zlib.gzipSync(Buffer.from(JSON.stringify({ files: target.web })));
+    // What the store already points at, so a push without a runtime carries the committed
+    // one forward — and so "did this push change the runtime" is answerable below.
+    const committedRuntime = (await readManifest(this.root))?.runtime?.bundle;
     const persisted = await this.persistVersion(
       platformSha,
       target.cli,
@@ -410,7 +450,17 @@ export class HmrHost {
       digest.slice(0, 16),
       assetsDir,
       source,
+      target.runtime ?? null,
+      committedRuntime,
     );
+    // A restart is pending exactly when the store now names a runtime this process is not
+    // running. Compared by CONTENT, through the pointer the commit produced: re-pushing an
+    // identical runtime writes the same content-addressed path, and asking somebody to
+    // restart into the build they are already running would be noise.
+    const runtimeNow = persisted
+      ? ((await readManifest(this.root))?.runtime?.bundle ?? null)
+      : null;
+    const restartRequired = runtimeNow !== null && runtimeNow !== this.bootedRuntime;
 
     return {
       status: "ok",
@@ -418,6 +468,7 @@ export class HmrHost {
       impl: bundle.id,
       source,
       web: { rev: digest.slice(0, 12) },
+      restartRequired,
       persisted,
     };
   }
@@ -590,6 +641,8 @@ export class HmrHost {
     webSha: string,
     assetsDir: string | null,
     source: GitSource | null,
+    runtimeContent: string | null,
+    previousRuntime: string | undefined,
   ): Promise<boolean> {
     try {
       // The platform bundle is already in the store: storePlatformBundle put it at its
@@ -604,9 +657,26 @@ export class HmrHost {
       await fsp.mkdir(webDir, { recursive: true });
       await writeStoreFile(path.join(webDir, `${webSha}.webz`), webGz);
 
+      // The runtime, when the push carried one. Its own subtree, content-addressed like the
+      // rest — and when it did not, whatever an earlier push committed is carried forward:
+      // dropping the pointer would silently return the machine to its packaged runtime at
+      // the next start, which is a downgrade nobody asked for.
+      let runtimePointer = previousRuntime;
+      if (runtimeContent !== null) {
+        const runtimeSha = sha1(runtimeContent).slice(0, 16);
+        const runtimeDir = path.join(this.storeDir, "runtime");
+        await fsp.mkdir(runtimeDir, { recursive: true });
+        await writeStoreFile(
+          path.join(runtimeDir, `${runtimeSha}.mjs`),
+          Buffer.from(runtimeContent, "utf8"),
+        );
+        runtimePointer = `store/runtime/${runtimeSha}.mjs`;
+      }
+
       await this.commitManifest(() => ({
         platform: { bundle: `store/platform/${platformSha}.mjs` },
         cli: { bundle: `store/cli/${cliSha}.mjs` },
+        ...(runtimePointer === undefined ? {} : { runtime: { bundle: runtimePointer } }),
         web: { manifest: `store/web/${webSha}.webz` },
         ...(assetsDir === null
           ? {}
