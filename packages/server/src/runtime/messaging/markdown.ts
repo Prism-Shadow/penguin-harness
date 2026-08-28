@@ -15,14 +15,16 @@
  * sensitive, and a substitution pass mangles exactly the replies (code containing
  * asterisks, nested emphasis, links with parentheses) that make the feature worth having.
  *
- * The RENDER is deliberately not shared. Three channels accept three different subsets —
+ * The RENDER is deliberately not shared. Four channels accept four different subsets —
  * Telegram has code and no headings, lists or tables; Feishu has all of them; QQ has
- * headings and lists but no code and no tables — over two different markups and three
- * different escaping rules. A printer parameterised over that would be a table of six
- * capability flags whose every branch belongs to exactly one channel, which is the
- * connector's own job under a name that hides it. So each channel renders this tree itself:
- * telegram-html.ts, feishu-card.ts and qq-markdown.ts, each beside the adapter that sends
- * its output. Nothing in this module knows any channel's markup.
+ * headings and lists but no code and no tables; WeChat reads Markdown itself, so its
+ * renderer subtracts what the client will not show rather than translating — over three
+ * different markups and four different escaping rules. A printer parameterised over that
+ * would be a table of capability flags whose every branch belongs to exactly one channel,
+ * which is the connector's own job under a name that hides it. So each channel renders this
+ * tree itself: telegram-html.ts, feishu-card.ts, qq-markdown.ts and wechat-markdown.ts, each
+ * beside the adapter that sends its output. Nothing in this module knows any channel's
+ * markup.
  */
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";

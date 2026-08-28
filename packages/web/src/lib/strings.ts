@@ -258,9 +258,10 @@ export const zh = {
   },
 
   /**
-   * The three DISMISSIBLE badge trails (Skill library / model library / cost center) and the
-   * controls that clear them. One sentence per trail, carried unchanged from the dot's tooltip
-   * down to the notice on the page it leads to — the same discipline the kernel trail keeps.
+   * The four DISMISSIBLE badge trails (Agents / Skill library / model library / cost center),
+   * the controls that clear them and the control that acts on all of one at once. The tooltip
+   * sentences below are what each dot says; the page notice restates the same count in its own
+   * `changes*` wording, since a block that can act needs to say what it would act on.
    */
   todo: {
     skillUpdates: (n: number) => `${n} 个技能有更新`,
@@ -269,9 +270,37 @@ export const zh = {
     /** Combined anchor whose trails are not all updates — an unexpected error is not one. */
     pending: "有待处理事项",
     /** Clears an update the user has decided not to take now (a later one raises the badge again). */
-    dismiss: "标记为已处理",
+    dismiss: "忽略",
     /** The cost center's wording: nothing is being updated there, the errors are simply read. */
     markRead: "标记为已读",
+
+    // —— The page notice's own line and its bulk action (components/ui/todo-notice.tsx) ——
+
+    /** The notice line where the trail can separate genuinely new things from upgradable ones (Models only). */
+    changesWithAdded: (added: number, updated: number): string =>
+      `检测到变更：${added} 个新增，${updated} 个可升级`,
+    /** The same line where the trail has only one honest count — no padded zero (Agents, Skills). */
+    changesUpgradable: (updated: number): string => `检测到变更：${updated} 个可升级`,
+    /** Updates every object the notice counts, behind the page's own confirmation. */
+    updateNow: "现在升级",
+    /** Heading of the confirmation's list of exactly what the batch would write to. */
+    willTouch: "将影响以下对象：",
+    /** Bulk kernel update confirmation; the body reuses agent.kernelUpdateConfirmBody verbatim. */
+    agentsConfirmTitle: (n: number): string => `更新 ${n} 个 Agent 的内核`,
+    /** Bulk Skill update confirmation. Same warning as the per-Skill confirm, with no single subject. */
+    skillsConfirmTitle: (n: number): string => `更新 ${n} 个技能`,
+    skillsConfirmBody:
+      "更新会把库内当前副本重装到各 Agent，覆盖其已安装的文件——对已装技能的本地改动会丢失，如有需要请先导出备份。",
+    /** Bulk preset sync confirmation; the body reuses models.syncCatalogHint verbatim. */
+    modelsConfirmTitle: (n: number): string => `同步 ${n} 个预置模型`,
+    /** Every target of the batch was written. Counted in Agents: both pages that use this
+     * send one request per Agent, and the partial-failure line below names Agents too. */
+    bulkDone: (ok: number): string => `已更新 ${ok} 个 Agent`,
+    /** Some targets were written and some were not — the failed ones are named, never just counted. */
+    bulkPartial: (ok: number, failed: string): string =>
+      `已更新 ${ok} 个 Agent；以下未成功：${failed}`,
+    /** Separator between named targets in the two strings above. */
+    listSeparator: "、",
   },
 
   /** Desktop task-completion notifications (window unfocused; desktop-shell sessions only). */
@@ -824,7 +853,13 @@ export const zh = {
       `将在你的 ${label} 账户下新建一个 API key，并写入该分组下全部 ${n} 个模型，覆盖它们当前的 key。`,
     oauthAuthorize: "打开授权页",
     oauthWaiting: "等待在新标签页中完成授权…",
-    oauthApplied: (n: number): string => `已为 ${n} 个模型配置新的 API key`,
+    /**
+     * The dialog's own report once the key has landed. It says the provider as well as the
+     * count, because the user is reading it after a trip to another tab and may not remember
+     * which authorization they just finished.
+     */
+    oauthAppliedBody: (provider: string, n: number): string =>
+      `已完成授权：${provider} 的 API key 已配置到 ${n} 个模型上，可以直接使用了。`,
     oauthManualSwitch: "授权页跳不回来？改为手动填写授权码",
     oauthCallbackSwitch: "改回自动跳转",
     oauthManualHint: "先打开授权页，再把页面上显示的一次性授权码粘贴到这里。",
@@ -1894,22 +1929,82 @@ Benchmark：
     ],
   },
 
+  /** WeChat-channel strings of the messaging binding editor (channel-neutral ones live under `messaging`). */
+  wechat: {
+    /** The what-binding-does FAQ fold's body (this channel's flavor). */
+    intro:
+      "绑定后，在微信中发给机器人的消息会进入本对话，AI 的回复会发回微信。用微信扫码授权即可完成绑定，无需公网地址，也无需在任何后台申请凭据。",
+    /** The stored-token row's clear checkbox (the models-page clear idiom). */
+    clearToken: "清除已存 Bot Token",
+    /** Why this channel's form has no credential fields at all. */
+    scanOnly: "微信机器人的凭据只能通过扫码授权获得，没有可手动填写的 App ID 或密钥。",
+    /** Why "send test message" is disabled before the bot has ever been messaged. */
+    testMessageNoChat: "先在微信中给机器人发一条消息，机器人才知道要发到哪个会话",
+    /**
+     * The channel's shape, stated below its controls rather than left in a collapsed fold:
+     * a user who binds it and then writes in a group sees nothing arrive.
+     */
+    directOnly: "这个渠道只支持与机器人的单聊，收不到群聊消息。",
+    /** What travels, and the one inbound kind that does not. */
+    media:
+      "文字、图片和文件都能双向传输。语音消息按微信自带的语音转文字结果进入对话，微信没能转写的语音则无法处理。",
+    /** Scan-to-connect: the button, and the states it moves through. */
+    scanStart: "扫码连接",
+    /** The same control once a binding exists: scanning again replaces the stored credential. */
+    scanRescan: "重新扫码",
+    scanStarting: "生成二维码…",
+    scanQrLabel: "微信机器人授权二维码",
+    scanWaiting: "等待在微信中扫码…",
+    scanSteps: "用手机微信扫描二维码，然后在手机上确认授权。",
+    /** Scanned but not yet confirmed: the phone is waiting, not this panel. */
+    scanScanned: "已扫码，请在手机上确认授权。",
+    /** Shown only after a code has actually lapsed and been replaced. */
+    scanRefreshed: "上一个二维码已过期，这是新的。",
+    /** Why the credential is safe to obtain this way — the question a careful user will ask. */
+    scanPrivacy: "凭据由服务端直接接收并保存，不会经过浏览器。",
+    scanDone: (botId: string): string => `已保存机器人 ${botId} 的凭据，可以启用连接了`,
+    scanFailed: (reason: string): string => `扫码连接失败：${reason}`,
+    /** Shown when replacing lapsed codes stopped being worth another round trip. */
+    scanExpiredRepeatedly: "二维码多次在扫描前就已过期。请稍后重新发起扫码。",
+    /** The platform stopped accepting pairing codes for this scan. */
+    scanBlocked: "配对码输入错误次数过多，本次扫码已作废。请稍后重新发起扫码。",
+    /** Not a failure: the bot is already bound here, so no new credential was issued. */
+    scanAlreadyBound:
+      "这个机器人已经被绑定——可能在本服务，也可能在别处，因此没有签发新的凭据。如果该由本会话持有它，请先在正在使用它的地方解绑，再重新扫码。",
+    /** Why the scan button is gated while this channel holds the connection. */
+    scanDisableFirst: "先停用连接，再重新扫码绑定",
+    /** The pairing-code step: WeChat shows digits on the phone that must be typed here. */
+    verifyPrompt: "手机上显示了一组数字，输入它以继续连接：",
+    verifyLabel: "配对码",
+    verifySubmit: "确认",
+    verifySubmitting: "提交中…",
+    /** The setup FAQ fold's steps. */
+    setupSteps: [
+      "点击上方的「扫码连接」，生成授权二维码",
+      "用手机微信扫描这个二维码",
+      "如果手机上显示了一组数字，把它输入到面板中",
+      "在手机上确认授权，凭据会自动保存",
+      "在微信中找到这个机器人，给它发一条消息",
+    ],
+  },
+
   /**
    * Session ↔ messaging-bot binding: the dock panel, the row action + dialog, and the
    * channel-neutral editor strings (per-channel fields live under `feishu` / `telegram` /
    * `qq`).
    */
   messaging: {
-    panelTitle: "消息软件",
+    panelTitle: "远程控制",
     /** Session-row context-menu action (the trailing ellipsis marks that a dialog follows). */
-    bindAction: "消息软件绑定…",
-    dialogTitle: "消息软件绑定",
+    bindAction: "远程控制…",
+    dialogTitle: "远程控制",
     /** The channel selector (always live: each channel's config is saved independently). */
     channelLabel: "渠道",
     channelName: {
       feishu: "飞书",
       telegram: "Telegram",
       qq: "QQ",
+      wechat: "微信",
     },
     /**
      * Shared link labels: the tutorial (in the setup FAQ fold) and, at the credential field's
@@ -1963,6 +2058,8 @@ Benchmark：
       "开启后，回复中的 Markdown 以排版形式到达，而不是显示为 `**字符**`。Telegram 支持粗体、斜体、删除线、链接、行内代码与代码块；它没有标题、列表和表格，因此标题渲染为一行粗体，列表符号作为文本的一部分保留，表格改以代码块发送。若 Telegram 拒绝该排版，回复会改以纯文本发出，不会丢失。",
     renderMarkdownHelpQQ:
       "开启后，回复中的 Markdown 以排版形式到达，而不是显示为 `**字符**`。QQ 支持标题、粗体、斜体、删除线、列表、引用、分割线和链接；它没有代码格式，也没有表格，因此代码块按普通文本行到达，表格按其行到达。若 QQ 拒绝该排版，回复会改以纯文本发出——这会多占用 QQ 对每条消息只允许的少数几条回复中的一条。",
+    renderMarkdownHelpWeChat:
+      "开启后，回复中的 Markdown 以排版形式到达，而不是显示为 `**字符**`。微信自己就读 Markdown，四个渠道里它支持得最全：标题、粗体、删除线、列表、引用、分割线、链接、行内代码、代码块和表格都能渲染。它不支持的部分会被去掉标记只留文字——五级以下的标题、中文两侧的斜体星号，以及行内图片（改为链接）。",
     /** The saved delivery option: one message per non-blank line of a reply. */
     linePerMessage: "每行一条消息",
     /** Its disclosure, beside the label: what the option does to a reply, and its two edges. */
@@ -1985,6 +2082,7 @@ Benchmark：
       feishu: "飞书连接已启用",
       telegram: "Telegram 连接已启用",
       qq: "QQ 连接已启用",
+      wechat: "微信连接已启用",
     },
     /**
      * Delivery observability under the toggle: has anything arrived, and did the last one get
@@ -2016,6 +2114,8 @@ Benchmark：
       "Telegram 提示已有其他程序在轮询？一个 Bot Token 同一时刻只能被一个程序使用——关闭正在占用它的另一个 PenguinHarness 服务端或机器人脚本，或为该会话单独建一个机器人。手动执行的 getUpdates（例如用 curl 查看 Telegram 那边积压了什么）同样算作「另一个程序」：跑它之前先在这里停用连接。而且手动查看也可能把它们丢掉——任何带 offset 的调用都会确认它之前的全部更新，应用自己的下一次连接也会清空积压——所以复测请重新发一条新消息，而不是指望刚才看到的那几条。",
     troubleGroupPrivacy:
       "在 Telegram 群里发消息，机器人毫无反应？Telegram 的 Group Privacy 默认开启，此时不担任该群管理员的机器人只能收到明确指向它的命令（如 /start@your_bot）和对它自己消息的回复，普通群消息根本不会送达，连接本身也没有任何异常。把机器人设为该群的管理员即可单独解决，管理员始终收到全部消息。也可以到 @BotFather 用 /setprivacy 关闭 Group Privacy，然后把机器人移出该群再重新拉入——已在的群不会自动生效。",
+    /** WeChat has no group inbound at all — the answer to "I @-ed it in a group and nothing happened". */
+    troubleWeChatDirect: "微信渠道只接收单聊消息：在群里 @机器人不会有任何反应，请直接私聊它。",
     /** The QQ-only failure a user will otherwise read as "the bot is broken". */
     troubleQQPassive:
       "QQ 里收不到回复？QQ 只允许机器人回复你刚发出的消息：在网页端发起的对话不会同步过去，距离你上一条 QQ 消息过去几分钟后也发不出。在 QQ 里再发一条消息即可继续。",
@@ -2105,6 +2205,15 @@ Benchmark：
     errorsOlder: "更早",
     errorsPageOf: (page: number, pages: number, total: number) =>
       `第 ${page} / ${pages} 页 · 共 ${total} 条`,
+    /** Clearing the table: the action, and the confirm that must name exactly what goes. */
+    errorsClear: "清空",
+    errorsClearTitle: "清空错误记录",
+    errorsClearScope: (count: number, from: string, to: string): string =>
+      `将删除本 Project 在 ${from} 至 ${to} 区间内的 ${count} 条错误记录，其余时间段的记录保留。`,
+    errorsClearScopeAgent: (count: number, from: string, to: string, agentId: string): string =>
+      `将删除本 Project 中 Agent「${agentId}」在 ${from} 至 ${to} 区间内的 ${count} 条错误记录，其他 Agent 与其余时间段的记录保留。`,
+    errorsClearIrreversible: "此操作不可恢复。",
+    errorsClearDone: (count: number): string => `已删除 ${count} 条错误记录`,
   },
 
   /** The Trace panel's own view of a Trace file (trace-file-view / timeline-chart); the standalone browsing page these once also served is gone. */

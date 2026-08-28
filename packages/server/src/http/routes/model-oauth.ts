@@ -276,6 +276,7 @@ export function modelOAuthRoutes(deps: AppDeps): Hono<AppEnv> {
     return c.json({
       status: state.status,
       provider: state.provider,
+      ...(state.applied !== undefined ? { applied: state.applied } : {}),
       ...(state.error !== undefined ? { error: state.error } : {}),
     } satisfies ModelOAuthStatusResponse);
   });

@@ -34,7 +34,7 @@ penguin -v
 可以在 Web UI 的模型页完成，也可以用 CLI：
 
 ```bash
-penguin config model add --provider deepseek --model-id deepseek-v4-flash --api-key sk-... --set-default
+penguin config model add --provider deepseek --model-id deepseek-v4-flash-vision-exp --api-key sk-... --set-default
 ```
 
 - 模型引用始终是 `(provider, model_id)` 二元组，因此 `--provider` 与 `--model-id` 均为必填——Provider 绝不由模型 id 推断。内置分组见[模型与 Provider](/models)。

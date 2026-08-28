@@ -16,11 +16,50 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { Badge } from "../../components/ui/badge";
+import { ConfirmModal } from "../../components/ui/confirm-modal";
+import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Empty } from "./usage-charts";
 import { toneInk } from "../../lib/tone";
 
 /** The two error categories. */
 type ErrorKindKey = "unexpected" | "expected";
+
+/** The date/agent filter the panel reads through, and that a clear deletes through. */
+export interface ErrorsFilters {
+  from?: string;
+  to?: string;
+  agentId?: string;
+}
+
+/**
+ * The one sentence the clear confirmation has to get right: exactly which rows will go.
+ *
+ * The delete is scoped to the filter on screen, so a dialog naming a wider set (the Project's
+ * whole history) or a narrower one (this page of rows) would misdescribe what the button does
+ * — which is the entire failure a confirmation exists to prevent. Pure and exported so that is
+ * asserted directly: this package's vitest runs in `node`, so an opened dialog is not
+ * something a test can inspect.
+ */
+export function errorsClearScopeText(filters: ErrorsFilters, count: number): string {
+  const from = filters.from ?? "";
+  const to = filters.to ?? "";
+  return filters.agentId !== undefined && filters.agentId !== ""
+    ? S.usage.errorsClearScopeAgent(count, from, to, filters.agentId)
+    : S.usage.errorsClearScope(count, from, to);
+}
+
+/**
+ * Whether the filter on screen is one a clear may be offered for.
+ *
+ * Both bounds have to be real dates. A custom range with an emptied date input sends no bound
+ * at all, which the route reads as "unbounded on that side" — so the delete would reach past
+ * every row the reader saw while the sentence above still promised that records outside the
+ * range are kept. Refusing to offer the action is the honest answer; the picker is one click
+ * from a range that has both ends.
+ */
+export function clearableFilter(filters: ErrorsFilters): boolean {
+  return Boolean(filters.from) && Boolean(filters.to);
+}
 
 /** Copy: S is a runtime live binding (switching language remounts the whole tree), so it must be read at render time. */
 function kindLabel(key: ErrorKindKey): string {
@@ -84,11 +123,18 @@ function Th({ children, className = "" }: { children: React.ReactNode; className
  * alone — the table never scrolls vertically (paging is the way past it). Its four columns need
  * a floor to stay legible, so on a viewport narrower than that floor the table scrolls
  * sideways inside its own box rather than dragging the page along with it.
+ *
+ * The footer under the table carries the pager and, for a Project owner, the clear action.
+ * Clearing deletes the rows the current filter selects — the set the reader is looking at,
+ * not the Project's whole history — and the confirmation says which set that is, because a
+ * deleted error record has no other copy anywhere.
  */
 export function ErrorsPanel({
   errors,
   projectId,
   filters,
+  canClear,
+  onCleared,
 }: {
   errors: UsageErrors;
   projectId: string;
@@ -96,9 +142,17 @@ export function ErrorsPanel({
    * The dashboard's own date/agent filter — a page must never widen what the summary counted.
    * Memoize it at the call site: the fetch effect depends on the object's identity.
    */
-  filters: { from?: string; to?: string; agentId?: string };
+  filters: ErrorsFilters;
+  /**
+   * Whether this viewer may empty the table (Project owner). A member can read the panel but
+   * not clear it, and the route enforces that on its own; hiding the button keeps the panel
+   * from offering an action that can only end in a 403.
+   */
+  canClear: boolean;
+  /** Reload the dashboard after a clear — the stats above the table are the caller's data. */
+  onCleared: () => void;
 }) {
-  const { total, unexpected, topCode, recent } = errors;
+  const { total, clearable, unexpected, topCode, recent } = errors;
   // Page size is read off the first page rather than duplicating the server's ERROR_RECENT_N:
   // whenever a second page exists at all, `recent` is exactly that many rows, so the two cannot
   // drift apart into skipping or repeating rows. (Empty means a single empty page anyway.)
@@ -155,6 +209,24 @@ export function ErrorsPanel({
   }, [page, pageSize, projectId, filters, recent, total]);
 
   const pageCount = Math.max(1, Math.ceil(pagedTotal / pageSize));
+  const [confirmingClear, setConfirmingClear] = useState(false);
+  const [clearing, setClearing] = useState(false);
+
+  const runClear = async () => {
+    setClearing(true);
+    try {
+      const res = await api.clearUsageErrors(projectId, filters);
+      setConfirmingClear(false);
+      toastSuccess(S.usage.errorsClearDone(res.deleted));
+      // The stats above the table are the dashboard's own numbers, so the whole response is
+      // refetched rather than patched here; that also restores page 0 from the new snapshot.
+      onCleared();
+    } catch (e) {
+      toastError(apiErrorText(e));
+    } finally {
+      setClearing(false);
+    }
+  };
   // Message rows expanded to their full text (index into the current page); one line each by default.
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(new Set());
   useEffect(() => setExpanded(new Set()), [items]);
@@ -247,28 +319,68 @@ export function ErrorsPanel({
         </div>
       )}
 
-      {/* Pager: once there is more than one page — and unconditionally while paged away from
-          the first, so a later page that came back empty or shrank below the page count still
-          offers the way back instead of stranding the reader on a bare table. Kept outside the
-          scroll box so it stays reachable without scrolling to the bottom of the rows. */}
-      {(pageCount > 1 || page > 0) && (
-        <div className="mt-2 flex items-center justify-end gap-2 text-xs text-gray-500 dark:text-gray-400">
-          {pageError !== null && <span className="mr-auto text-rose-500">{pageError}</span>}
-          <span className="tabular-nums">
-            {S.usage.errorsPageOf(page + 1, pageCount, pagedTotal)}
-          </span>
-          <PagerButton
-            label={S.usage.errorsNewer}
-            disabled={page === 0 || loading}
-            onClick={() => setPage((p) => Math.max(0, p - 1))}
-          />
-          <PagerButton
-            label={S.usage.errorsOlder}
-            disabled={page + 1 >= pageCount || loading}
-            onClick={() => setPage((p) => p + 1)}
-          />
+      {/* The table's own footer: the clear action on the left, the pager on the right. It is
+          rendered whenever there are rows to act on — and unconditionally while paged away
+          from the first page, so a later page that came back empty or shrank below the page
+          count still offers the way back instead of stranding the reader on a bare table.
+          Kept outside the scroll box so it stays reachable without scrolling past the rows.
+          The pager itself still appears only once there is more than one page. */}
+      {(items.length > 0 || page > 0) && (
+        <div className="mt-2 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+          {/* Offered on what the clear can really take: `clearable` excludes the unattributed
+              rows an admin's read includes but no Project-scoped delete removes, so a window
+              holding only those shows no button rather than one that deletes nothing. */}
+          {canClear && clearable > 0 && clearableFilter(filters) && (
+            <button
+              type="button"
+              disabled={clearing}
+              onClick={() => setConfirmingClear(true)}
+              className="rounded-md border border-gray-200 px-2 py-0.5 transition-colors duration-150 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-gray-200 disabled:hover:bg-transparent disabled:hover:text-gray-500 dark:border-gray-800 dark:hover:border-red-900 dark:hover:bg-red-950/50 dark:hover:text-red-400 dark:disabled:hover:border-gray-800 dark:disabled:hover:bg-transparent dark:disabled:hover:text-gray-400"
+            >
+              {S.usage.errorsClear}
+            </button>
+          )}
+          {pageError !== null && (
+            <span className="text-red-600 dark:text-red-400">{pageError}</span>
+          )}
+          {(pageCount > 1 || page > 0) && (
+            <>
+              <span className="ml-auto tabular-nums">
+                {S.usage.errorsPageOf(page + 1, pageCount, pagedTotal)}
+              </span>
+              <PagerButton
+                label={S.usage.errorsNewer}
+                disabled={page === 0 || loading}
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+              />
+              <PagerButton
+                label={S.usage.errorsOlder}
+                disabled={page + 1 >= pageCount || loading}
+                onClick={() => setPage((p) => p + 1)}
+              />
+            </>
+          )}
         </div>
       )}
+
+      {/* The confirm names the filtered set the delete will actually take, and says plainly
+          that nothing brings it back — the rows are the only record these errors ever had. */}
+      <ConfirmModal
+        open={confirmingClear}
+        tone="danger"
+        title={S.usage.errorsClearTitle}
+        confirmLabel={S.usage.errorsClear}
+        busy={clearing}
+        onClose={() => setConfirmingClear(false)}
+        onConfirm={() => void runClear()}
+      >
+        <div className="space-y-1.5 text-sm text-gray-700 dark:text-gray-300">
+          <p className="break-words">{errorsClearScopeText(filters, clearable)}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            {S.usage.errorsClearIrreversible}
+          </p>
+        </div>
+      </ConfirmModal>
     </div>
   );
 }

@@ -14,6 +14,7 @@ import type {
   FeishuBindingInfo,
   QQBindingInfo,
   TelegramBindingInfo,
+  WeChatBindingInfo,
 } from "@prismshadow/penguin-server/api";
 import {
   FEISHU_DEFAULT_DOMAIN,
@@ -72,6 +73,20 @@ const STORED_QQ: QQBindingInfo = {
   updatedAt: "2026-08-27T00:00:00.000Z",
 };
 
+const STORED_WECHAT: WeChatBindingInfo = {
+  channel: "wechat",
+  sessionId: "session-1",
+  botId: "bot_9001",
+  botTokenMasked: "scan…-XYZ",
+  enabled: false,
+  linePerMessage: true,
+  finalReplyOnly: false,
+  renderMarkdown: false,
+  lastChatKnown: true,
+  createdAt: "2026-08-28T00:00:00.000Z",
+  updatedAt: "2026-08-28T00:00:00.000Z",
+};
+
 describe("emptyMessagingForm / bindingsToForm", () => {
   it("starts empty forms on Feishu with the default domain, both channels blank", () => {
     expect(emptyMessagingForm()).toEqual({
@@ -97,6 +112,13 @@ describe("emptyMessagingForm / bindingsToForm", () => {
         appId: "",
         appSecret: "",
         clearSecret: false,
+        linePerMessage: false,
+        finalReplyOnly: false,
+        renderMarkdown: true,
+      },
+      // WeChat's sub-state is the preferences and the clear box: its token has no field.
+      wechat: {
+        clearToken: false,
         linePerMessage: false,
         finalReplyOnly: false,
         renderMarkdown: true,
@@ -137,8 +159,14 @@ describe("emptyMessagingForm / bindingsToForm", () => {
         finalReplyOnly: false,
         renderMarkdown: true,
       },
+      wechat: {
+        clearToken: false,
+        linePerMessage: false,
+        finalReplyOnly: false,
+        renderMarkdown: true,
+      },
     });
-    // All three coexist: every saved channel loads its own non-secret fields.
+    // All of them coexist: every saved channel loads its own non-secret fields.
     const all = bindingsToForm([STORED_FEISHU, STORED_TELEGRAM, STORED_QQ]);
     expect(all.feishu.appId).toBe("cli_abc");
     expect(all.qq.appId).toBe("102000001");
@@ -547,5 +575,68 @@ describe("the QQ channel", () => {
     expect(formTestable(half, false)).toBe(false);
     half.qq.appSecret = "s";
     expect(formTestable(half, false)).toBe(true);
+  });
+});
+
+describe("the WeChat channel", () => {
+  it("loads preferences and nothing else, having no credential field to load one into", () => {
+    const form = bindingsToForm([STORED_WECHAT]);
+    expect(form.channel).toBe("wechat");
+    expect(form.wechat).toEqual({
+      clearToken: false,
+      linePerMessage: true,
+      finalReplyOnly: false,
+      renderMarkdown: false,
+    });
+  });
+
+  it("submits preferences alone, and cannot fail validation because nothing is typed", () => {
+    const form = bindingsToForm([STORED_WECHAT]);
+    expect(formToPut(form, true)).toEqual({
+      ok: true,
+      channel: "wechat",
+      // Always sent, like the other channels': an omitted flag means "keep", which would
+      // leave no way to turn one back off.
+      body: { linePerMessage: true, finalReplyOnly: false, renderMarkdown: false },
+    });
+  });
+
+  it("sends the clear flag only when there is a stored token for it to drop", () => {
+    const form = bindingsToForm([STORED_WECHAT]);
+    form.wechat.clearToken = true;
+    expect(formToPut(form, true)).toEqual({
+      ok: true,
+      channel: "wechat",
+      body: {
+        clearBotToken: true,
+        linePerMessage: true,
+        finalReplyOnly: false,
+        renderMarkdown: false,
+      },
+    });
+    // A checked box on a binding with nothing stored asks the server to drop nothing.
+    expect(formToPut(form, false)).toEqual({
+      ok: true,
+      channel: "wechat",
+      body: { linePerMessage: true, finalReplyOnly: false, renderMarkdown: false },
+    });
+  });
+
+  it("routes its probe and its dirty/testable checks to its own fields", () => {
+    const form = bindingsToForm([STORED_WECHAT]);
+    // No body at all: the probe reads the stored binding, there being no draft to send.
+    expect(formToTest(form)).toEqual({ channel: "wechat" });
+
+    const baseline = bindingsToForm([STORED_WECHAT]);
+    expect(formDirty(form, baseline)).toBe(false);
+    form.wechat.renderMarkdown = !form.wechat.renderMarkdown;
+    expect(formDirty(form, baseline)).toBe(true);
+    const cleared = bindingsToForm([STORED_WECHAT]);
+    cleared.wechat.clearToken = true;
+    expect(formDirty(cleared, baseline)).toBe(true);
+
+    // Only a stored token is testable: this channel has no draft credential, ever.
+    expect(formTestable(emptyMessagingForm("wechat"), true)).toBe(true);
+    expect(formTestable(emptyMessagingForm("wechat"), false)).toBe(false);
   });
 });

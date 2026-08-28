@@ -10,6 +10,8 @@
 import { describe, expect, it } from "vitest";
 import type { ModelsResponse } from "@prismshadow/penguin-server/api";
 import { catalogDelta, syncRowsWithCatalog } from "../src/features/models/catalog-sync";
+import { presetUpdateTodo } from "../src/lib/todo-badges";
+import { noticeCounts } from "../src/lib/bulk-update";
 import { toRow } from "../src/features/models/models-page";
 import type { RowState } from "../src/features/models/models-page";
 
@@ -263,5 +265,22 @@ describe("catalogDelta", () => {
     const delta = catalogDelta([]);
     expect([delta.added, delta.updated]).toEqual([merged.added, merged.updated]);
     expect(delta.refs.length).toBeGreaterThan(30);
+  });
+
+  /**
+   * The page notice states "N new, M to upgrade" above a button that runs the merge. Those two
+   * numbers must be the merge's own, carried through the gate — not a third opinion computed for
+   * the block. This walks the same chain the page does: delta -> raised to-do -> notice counts.
+   */
+  it("hands the merge's own two numbers all the way to the page notice", () => {
+    const table = [
+      makeDto({ provider: "deepseek", modelId: "deepseek-v4-pro", contextWindow: 1000000 }),
+      makeDto({ provider: "custom", modelId: "my-own", contextWindow: 8192 }),
+    ];
+    const merged = syncRowsWithCatalog(table.map(toRow), PRESET);
+    const todo = presetUpdateTodo(catalogDelta(table, PRESET))!;
+    expect(noticeCounts(todo)).toEqual({ added: merged.added, updated: merged.updated });
+    // And the dot the notice sits under is raised from the same total.
+    expect((noticeCounts(todo).added ?? 0) + noticeCounts(todo).updated).toBe(todo.count);
   });
 });

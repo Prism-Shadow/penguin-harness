@@ -23,9 +23,11 @@ import type {
 import {
   QQ_API_BASE,
   QQ_INTENT_GROUP_AND_C2C,
+  MessagingConnectionClosedError,
   QQApiError,
   createQQTransport,
 } from "../src/runtime/messaging/qq-api.js";
+import { messagingErrorKind } from "../src/runtime/messaging/error-kind.js";
 import { waitFor } from "./helpers.js";
 
 const CREDS: QQCredentials = { appId: "102000001", appSecret: "qq-app-secret-ABCD-1234" };
@@ -517,6 +519,96 @@ describe("the QQ gateway session", () => {
         expect(h.sockets).toHaveLength(1);
         expect(h.errors).toHaveLength(1);
         expect(String(h.errors[0])).toContain("4914");
+      } finally {
+        conn.close();
+      }
+    });
+  });
+
+  it("types every close it reports, and calls only the self-clearing ones recovering", async () => {
+    // The dashboard's "needs a human" count is read off `recovers` (error-kind.ts), and the
+    // reconnect decision behind it lives here — so the verdict is asserted at the socket
+    // rather than on a hand-built error, which would only prove the classifier can read a
+    // boolean somebody else typed in.
+    const verdictOf = async (code: number): Promise<MessagingConnectionClosedError> => {
+      let closed: MessagingConnectionClosedError | undefined;
+      await withFetch(defaults, async () => {
+        const h = harnessOf();
+        const conn = await h.open();
+        try {
+          handshake(h.sockets[0]!, "gw-1");
+          h.sockets[0]!.drop(code);
+          await waitFor(() => h.errors.length > 0);
+          const err = h.errors[0];
+          expect(err).toBeInstanceOf(MessagingConnectionClosedError);
+          closed = err as MessagingConnectionClosedError;
+          expect(closed.closeCode).toBe(code);
+        } finally {
+          conn.close();
+        }
+      });
+      return closed!;
+    };
+
+    // The platform expiring a long-lived connection, and its own internal-error band: the
+    // session is back inside one backoff step with nothing changed anywhere.
+    expect((await verdictOf(4009)).recovers).toBe(true);
+    expect((await verdictOf(4900)).recovers).toBe(true);
+    expect((await verdictOf(4913)).recovers).toBe(true);
+    // A rejected token and an intent the bot was never granted reconnect just as eagerly and
+    // meet the identical refusal every time, so retrying is not recovery.
+    expect((await verdictOf(4004)).recovers).toBe(false);
+    expect((await verdictOf(4014)).recovers).toBe(false);
+    // A refused session handle recovers only by identifying fresh, which loses whatever
+    // arrived in the gap; a delisted bot stops the session outright.
+    expect((await verdictOf(4006)).recovers).toBe(false);
+    expect((await verdictOf(4007)).recovers).toBe(false);
+    expect((await verdictOf(4914)).recovers).toBe(false);
+  });
+
+  it("a routine close does not silence the outage that follows it", async () => {
+    // One report per outage keeps a backoff loop out of the error table, but a routine close is
+    // filed `expected` — so if it kept the slot, a socket the platform expires at 4009 followed
+    // by an auth refusal forever would leave the dashboard reading zero defects for a binding
+    // that is down until someone changes a credential.
+    await withFetch(defaults, async () => {
+      const h = harnessOf();
+      const conn = await h.open();
+      try {
+        handshake(h.sockets[0]!, "gw-1");
+        h.sockets[0]!.drop(4009);
+        await waitFor(() => h.errors.length === 1);
+        expect((h.errors[0] as MessagingConnectionClosedError).recovers).toBe(true);
+
+        // The retry meets a refusal that no reconnect clears: it gets its own record.
+        await waitFor(() => h.sockets.length === 2);
+        h.sockets[1]!.drop(4004);
+        await waitFor(() => h.errors.length === 2);
+        expect((h.errors[1] as MessagingConnectionClosedError).recovers).toBe(false);
+
+        // And there it stops: the outage has said what it needed to say.
+        await waitFor(() => h.sockets.length === 3);
+        h.sockets[2]!.drop(4004);
+        await settle(40);
+        expect(h.errors).toHaveLength(2);
+      } finally {
+        conn.close();
+      }
+    });
+  });
+
+  it("what the socket reports is what the recorder classifies, with no help in between", async () => {
+    // The two halves are each tested against this class; this is the seam. `messagingErrorKind`
+    // is handed the object the gateway raised, exactly as bridge.ts hands it over — so wrapping
+    // or re-throwing the error anywhere on that path fails here.
+    await withFetch(defaults, async () => {
+      const h = harnessOf();
+      const conn = await h.open();
+      try {
+        handshake(h.sockets[0]!, "gw-1");
+        h.sockets[0]!.drop(4009);
+        await waitFor(() => h.errors.length === 1);
+        expect(messagingErrorKind(h.errors[0], "messaging_connect_failed")).toBe("expected");
       } finally {
         conn.close();
       }

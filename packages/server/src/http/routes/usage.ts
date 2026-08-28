@@ -7,10 +7,17 @@
  * together);
  * GET /api/projects/:p/usage/errors?offset&limit&from&to&agentId&kind — one page of the error
  * detail table, for paging back past the first page the dashboard already returns;
+ * DELETE /api/projects/:p/usage/errors?from&to&agentId — empties that table for the filter
+ * the panel is showing (owner only);
  * GET /api/projects/:p/usage/model-totals — lifetime Token total per Model, unfiltered.
  */
 import { Hono } from "hono";
-import type { UsageErrorKind, UsageGranularity, UsageGroupBy } from "../../api/types.js";
+import type {
+  UsageErrorKind,
+  UsageErrorsClearResponse,
+  UsageGranularity,
+  UsageGroupBy,
+} from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { badRequest, optionalDateParam, paginationQuery, requireValidId } from "../validate.js";
 import type { AppDeps } from "../../app.js";
@@ -129,6 +136,32 @@ export function usageRoutes(deps: AppDeps): Hono<AppEnv> {
         ...(kindRaw !== undefined && kindRaw !== "" ? { kind: kindRaw } : {}),
       }),
     );
+  });
+
+  // Empties the error table for the filter the panel is showing. Takes the same date/agent
+  // filter as the two reads above and no other: a clear removes exactly the rows the caller
+  // was looking at, never the Project's whole history behind a narrowed view. `kind` is not
+  // accepted — the panel has no control for it, so a clear can offer no narrowing its reader
+  // could have seen on screen.
+  app.delete("/errors", (c) => {
+    const projectId = requireValidId(c, "projectId");
+    // Owner only, the rule Agent deletion applies to error rows already (it cascade-deletes
+    // them): membership is enough to READ the panel, but these rows are the Project's shared
+    // history and one member emptying them takes them from everyone.
+    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    const from = optionalDateParam(c.req.query("from"), "from");
+    const to = optionalDateParam(c.req.query("to"), "to");
+    const agentId = c.req.query("agentId");
+    // No `includeGlobalErrors` counterpart to the reads above, on purpose. Unattributed rows
+    // (login failures, process crashes) are admin-only to READ, and are excluded from every
+    // clear — so the delete's reach is strictly narrower than any caller's, and a clear can
+    // never become a way to remove a row its caller was not allowed to see.
+    const deleted = deps.usageService.clearErrors(projectId, {
+      ...(from !== undefined ? { from } : {}),
+      ...(to !== undefined ? { to } : {}),
+      ...(agentId !== undefined && agentId !== "" ? { agentId } : {}),
+    });
+    return c.json({ deleted } satisfies UsageErrorsClearResponse);
   });
 
   return app;

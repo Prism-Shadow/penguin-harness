@@ -111,6 +111,15 @@ function ReconnectLine({ item, ctx }: { item: ReconnectItem; ctx: StreamRenderCo
       : null;
   const [now, setNow] = useState(() => Date.now());
   const [acted, setActed] = useState(false);
+  // Both pieces of state belong to ONE attempt, and a ladder now reuses this component across
+  // all of them: the item keeps its id through the collapse (see stream-model's continuedLadder),
+  // so React keeps the instance rather than remounting it. Without this reset, one click on
+  // "retry now" would leave both controls disabled for every later attempt of the same ladder,
+  // and the first paint of each new countdown would render against the previous attempt's `now`.
+  useEffect(() => {
+    setActed(false);
+    setNow(Date.now());
+  }, [item.attempt]);
   useEffect(() => {
     if (target === null || Date.now() >= target) return;
     const timer = setInterval(() => {
@@ -119,7 +128,10 @@ function ReconnectLine({ item, ctx }: { item: ReconnectItem; ctx: StreamRenderCo
     }, 250);
     return () => clearInterval(timer);
   }, [target]);
-  const remainingMs = target !== null ? target - now : 0;
+  // Clamped to the wait the engine actually announced. The reset above runs after the commit,
+  // so the frame that first paints a superseded attempt still holds the previous one's `now` —
+  // unclamped that renders a countdown longer than any backoff this ladder can plan.
+  const remainingMs = target !== null ? Math.min(target - now, item.plannedDelayMs ?? 0) : 0;
   const live = target !== null && remainingMs > 0;
   const seconds = live ? Math.ceil(remainingMs / 1000) : undefined;
   const showControls =

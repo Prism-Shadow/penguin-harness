@@ -254,9 +254,10 @@ export const en: Strings = {
   },
 
   /**
-   * The three DISMISSIBLE badge trails (Skill library / model library / cost center) and the
-   * controls that clear them. One sentence per trail, carried unchanged from the dot's tooltip
-   * down to the notice on the page it leads to — the same discipline the kernel trail keeps.
+   * The four DISMISSIBLE badge trails (Agents / Skill library / model library / cost center),
+   * the controls that clear them and the control that acts on all of one at once. The tooltip
+   * sentences below are what each dot says; the page notice restates the same count in its own
+   * `changes*` wording, since a block that can act needs to say what it would act on.
    */
   todo: {
     skillUpdates: (n: number) => (n === 1 ? "1 skill update" : `${n} skill updates`),
@@ -266,9 +267,37 @@ export const en: Strings = {
     /** Combined anchor whose trails are not all updates — an unexpected error is not one. */
     pending: "Something needs attention",
     /** Clears an update the user has decided not to take now (a later one raises the badge again). */
-    dismiss: "Mark as handled",
+    dismiss: "Dismiss",
     /** The cost center's wording: nothing is being updated there, the errors are simply read. */
     markRead: "Mark as read",
+
+    // —— The page notice's own line and its bulk action (components/ui/todo-notice.tsx) ——
+
+    /** The notice line where the trail can separate genuinely new things from upgradable ones (Models only). */
+    changesWithAdded: (added: number, updated: number): string =>
+      `Changes detected: ${added} new, ${updated} to upgrade`,
+    /** The same line where the trail has only one honest count — no padded zero (Agents, Skills). */
+    changesUpgradable: (updated: number): string => `Changes detected: ${updated} to upgrade`,
+    /** Updates every object the notice counts, behind the page's own confirmation. */
+    updateNow: "Update now",
+    /** Heading of the confirmation's list of exactly what the batch would write to. */
+    willTouch: "This will touch:",
+    /** Bulk kernel update confirmation; the body reuses agent.kernelUpdateConfirmBody verbatim. */
+    agentsConfirmTitle: (n: number): string => `Update the kernel of ${n} agent(s)`,
+    /** Bulk Skill update confirmation. Same warning as the per-Skill confirm, with no single subject. */
+    skillsConfirmTitle: (n: number): string => `Update ${n} skill(s)`,
+    skillsConfirmBody:
+      "Updating reinstalls the library copy over each agent's installed files — any local edits to the installed skill are lost. Export a backup first if you need them.",
+    /** Bulk preset sync confirmation; the body reuses models.syncCatalogHint verbatim. */
+    modelsConfirmTitle: (n: number): string => `Sync ${n} preset model(s)`,
+    /** Every target of the batch was written. Counted in agents: both pages that use this
+     * send one request per agent, and the partial-failure line below names agents too. */
+    bulkDone: (ok: number): string => `${ok} agent${ok === 1 ? "" : "s"} updated`,
+    /** Some targets were written and some were not — the failed ones are named, never just counted. */
+    bulkPartial: (ok: number, failed: string): string =>
+      `${ok} agent${ok === 1 ? "" : "s"} updated; these did not: ${failed}`,
+    /** Separator between named targets in the two strings above. */
+    listSeparator: ", ",
   },
 
   /** Desktop task-completion notifications (window unfocused; desktop-shell sessions only). */
@@ -843,7 +872,13 @@ export const en: Strings = {
       `A new API key will be created on your ${label} account and written to all ${n} models in this group, replacing the key they use now.`,
     oauthAuthorize: "Open authorization page",
     oauthWaiting: "Waiting for the authorization to finish in the other tab…",
-    oauthApplied: (n: number): string => `New API key set for ${n} models`,
+    /**
+     * The dialog's own report once the key has landed. It names the provider as well as the
+     * count, because the user is reading it after a trip to another tab and may not remember
+     * which authorization they just finished.
+     */
+    oauthAppliedBody: (provider: string, n: number): string =>
+      `Authorized. ${provider}'s API key is set on ${n} model${n === 1 ? "" : "s"} and ready to use.`,
     oauthManualSwitch: "Page can't redirect back? Enter the code by hand",
     oauthCallbackSwitch: "Go back to the automatic redirect",
     oauthManualHint: "Open the authorization page, then paste the one-time code it shows you here.",
@@ -1935,22 +1970,89 @@ Scenarios:
     ],
   },
 
+  /** WeChat-channel strings of the messaging binding editor (channel-neutral ones live under `messaging`). */
+  wechat: {
+    /** The what-binding-does FAQ fold's body (this channel's flavor). */
+    intro:
+      "Once bound, messages sent to the bot in WeChat arrive in this conversation and the AI's replies go back to WeChat. Binding is a QR code scanned in WeChat — no public address, and no credential to apply for in any console.",
+    /** The stored-token row's clear checkbox (the models-page clear idiom). */
+    clearToken: "Clear stored Bot Token",
+    /** Why this channel's form has no credential fields at all. */
+    scanOnly:
+      "A WeChat bot's credential comes only from scanning: there is no App ID or secret to fill in by hand.",
+    /** Why "send test message" is disabled before the bot has ever been messaged. */
+    testMessageNoChat:
+      "Send the bot a message in WeChat first, so it knows which conversation to reply to",
+    /**
+     * The channel's shape, stated below its controls rather than left in a collapsed fold:
+     * a user who binds it and then writes in a group sees nothing arrive.
+     */
+    directOnly:
+      "This channel carries direct chats with the bot only; group messages never reach it.",
+    /** What travels, and the one inbound kind that does not. */
+    media:
+      "Text, images and files travel in both directions. A voice message arrives as WeChat's own transcription of it; a recording WeChat could not transcribe cannot be read.",
+    /** Scan-to-connect: the button, and the states it moves through. */
+    scanStart: "Connect by scanning",
+    /** The same control once a binding exists: scanning again replaces the stored credential. */
+    scanRescan: "Scan again",
+    scanStarting: "Generating the code…",
+    scanQrLabel: "WeChat bot authorization QR code",
+    scanWaiting: "Waiting for the code to be scanned in WeChat…",
+    scanSteps: "Scan the code with WeChat on your phone, then confirm the authorization there.",
+    /** Scanned but not yet confirmed: the phone is waiting, not this panel. */
+    scanScanned: "Scanned — confirm the authorization on your phone.",
+    /** Shown only after a code has actually lapsed and been replaced. */
+    scanRefreshed: "The previous code lapsed; this one is new.",
+    /** Why the credential is safe to obtain this way — the question a careful user will ask. */
+    scanPrivacy:
+      "The credential is received and stored by the server; it never reaches the browser.",
+    scanDone: (botId: string): string =>
+      `Saved the credential for bot ${botId} — the connection can be enabled now`,
+    scanFailed: (reason: string): string => `Connecting by scan failed: ${reason}`,
+    /** Shown when replacing lapsed codes stopped being worth another round trip. */
+    scanExpiredRepeatedly:
+      "The code lapsed before it was scanned several times over. Try again later.",
+    /** The platform stopped accepting pairing codes for this scan. */
+    scanBlocked:
+      "Too many wrong pairing codes, so this scan is spent. Start a new one in a little while.",
+    /** Not a failure: the bot is already bound here, so no new credential was issued. */
+    scanAlreadyBound:
+      "This bot is already bound, here or somewhere else, so no new token was issued. If this conversation is the one that should have it, unbind the bot where it is in use and scan again.",
+    /** Why the scan button is gated while this channel holds the connection. */
+    scanDisableFirst: "Disable the connection before rebinding it by scan",
+    /** The pairing-code step: WeChat shows digits on the phone that must be typed here. */
+    verifyPrompt: "Your phone is showing a number. Enter it to continue:",
+    verifyLabel: "Pairing code",
+    verifySubmit: "Confirm",
+    verifySubmitting: "Submitting…",
+    /** The setup FAQ fold's steps. */
+    setupSteps: [
+      "Press “Connect by scanning” above to generate the code",
+      "Scan it with WeChat on your phone",
+      "If your phone shows a number, type it into the panel",
+      "Confirm the authorization on your phone; the credential is saved automatically",
+      "Find the bot in WeChat and send it one message",
+    ],
+  },
+
   /**
    * Session ↔ messaging-bot binding: the dock panel, the row action + dialog, and the
    * channel-neutral editor strings (per-channel fields live under `feishu` / `telegram` /
    * `qq`).
    */
   messaging: {
-    panelTitle: "Messaging",
+    panelTitle: "Remote control",
     /** Session-row context-menu action (the trailing ellipsis marks that a dialog follows). */
-    bindAction: "Messaging binding…",
-    dialogTitle: "Messaging binding",
+    bindAction: "Remote control…",
+    dialogTitle: "Remote control",
     /** The channel selector (always live: each channel's config is saved independently). */
     channelLabel: "Channel",
     channelName: {
       feishu: "Feishu",
       telegram: "Telegram",
       qq: "QQ",
+      wechat: "WeChat",
     },
     /**
      * Shared link labels: the tutorial (in the setup FAQ fold) and, at the credential field's
@@ -2006,6 +2108,8 @@ Scenarios:
       "A reply's Markdown arrives as formatting instead of as `**characters**`. Telegram shows bold, italic, strikethrough, links, inline code and code blocks; it has no headings, lists or tables, so a heading becomes a bold line, list markers become part of the text, and a table arrives as a code block. If Telegram refuses the formatting, the reply is sent as plain text rather than lost.",
     renderMarkdownHelpQQ:
       "A reply's Markdown arrives as formatting instead of as `**characters**`. QQ shows headings, bold, italic, strikethrough, lists, quotes, rules and links; it has no code formatting and no tables, so a code block arrives as plain lines and a table as its rows. If QQ refuses the formatting, the reply is sent as plain text — which costs one more of the few replies QQ allows per message.",
+    renderMarkdownHelpWeChat:
+      "A reply's Markdown arrives as formatting instead of as `**characters**`. WeChat reads Markdown itself and shows the most of the four channels: headings, bold, strikethrough, lists, quotes, rules, links, inline code, code blocks and tables all render. What it cannot show keeps its words and loses its markers — headings past the fourth level, italics around Chinese text, and inline images, which become links.",
     /** The saved delivery option: one message per non-blank line of a reply. */
     linePerMessage: "One message per line",
     /** Its disclosure, beside the label: what the option does to a reply, and its two edges. */
@@ -2028,6 +2132,7 @@ Scenarios:
       feishu: "Feishu connection enabled",
       telegram: "Telegram connection enabled",
       qq: "QQ connection enabled",
+      wechat: "WeChat connection enabled",
     },
     /**
      * Delivery observability under the toggle: has anything arrived, and did the last one get
@@ -2061,6 +2166,9 @@ Scenarios:
       "Telegram reports that another program is polling? A Bot Token serves exactly one program at a time — close the other PenguinHarness server or bot script using it, or give this conversation a bot of its own. A getUpdates you run by hand (a curl to see what Telegram has queued) is that other program too: disable the connection here before running one. Inspecting them by hand can also discard them — any call you pass an offset to confirms everything before it, and the app's own next connect drops the backlog — so retest with a freshly sent message rather than the ones you just looked at.",
     troubleGroupPrivacy:
       "The bot ignores everything you say in a Telegram group? Telegram's Group Privacy is on by default, and under it a bot that is not an administrator of the group receives only commands addressed to it (such as /start@your_bot) and replies to its own messages — ordinary group messages are never delivered at all, and the connection itself looks perfectly healthy. Making the bot an administrator of that group fixes it on its own, since administrators always receive every message. Otherwise turn Group Privacy off with /setprivacy in @BotFather, then remove the bot from the group and add it back — a group it is already in does not pick up the change.",
+    /** WeChat has no group inbound at all — the answer to "I @-ed it in a group and nothing happened". */
+    troubleWeChatDirect:
+      "The WeChat channel receives direct chats only: @-mentioning the bot in a group does nothing at all. Message it directly instead.",
     /** The QQ-only failure a user will otherwise read as "the bot is broken". */
     troubleQQPassive:
       "No replies arriving in QQ? QQ only lets a bot answer a message you just sent: a turn started in the web app is not mirrored there, and replies stop being deliverable a few minutes after your last QQ message. Send another message in QQ to continue.",
@@ -2149,6 +2257,16 @@ Scenarios:
     errorsOlder: "Older",
     errorsPageOf: (page: number, pages: number, total: number) =>
       `Page ${page} / ${pages} · ${total} total`,
+    /** Clearing the table: the action, and the confirm that must name exactly what goes. */
+    errorsClear: "Clear",
+    errorsClearTitle: "Clear error records",
+    errorsClearScope: (count: number, from: string, to: string): string =>
+      `Deletes this Project's ${count} error record${count === 1 ? "" : "s"} between ${from} and ${to}. Records outside that range are kept.`,
+    errorsClearScopeAgent: (count: number, from: string, to: string, agentId: string): string =>
+      `Deletes this Project's ${count} error record${count === 1 ? "" : "s"} for agent ${agentId} between ${from} and ${to}. Other agents and other dates are kept.`,
+    errorsClearIrreversible: "This cannot be undone.",
+    errorsClearDone: (count: number): string =>
+      `Deleted ${count} error record${count === 1 ? "" : "s"}`,
   },
 
   /** The Trace panel's own view of a Trace file (trace-file-view / timeline-chart); the standalone browsing page these once also served is gone. */

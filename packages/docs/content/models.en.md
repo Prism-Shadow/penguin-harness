@@ -30,17 +30,17 @@ Each Project's available models are recorded in the hidden `.project_config.toml
 | `pricing` | Three price buckets (unit `usd_per_mtok`, USD per million tokens): `cache_read` / `cache_write` / `output` |
 | `api_key` / `base_url` | Inlined credentials, both optional; when blank, AgentHub falls back to environment variables |
 
-A fresh Project defaults to deepseek-v4-flash. A `vision_model` entry can additionally designate the proxy model that `describe_image` uses for text-only session models (see [Tools & Approval](/tools)); it is unset by default.
+A fresh Project defaults to deepseek-v4-flash-vision-exp, which reads images itself. A `vision_model` entry can additionally designate the proxy model that `describe_image` uses for text-only session models (see [Tools & Approval](/tools)); it is unset by default.
 
 File shape (illustrative):
 
 ```toml
-default_model = { provider = "deepseek", model_id = "deepseek-v4-flash" }
+default_model = { provider = "deepseek", model_id = "deepseek-v4-flash-vision-exp" }
 vision_model = { provider = "google", model_id = "gemini-3.1-pro-preview" }
 
 [[models]]
 provider = "deepseek"
-model_id = "deepseek-v4-flash"
+model_id = "deepseek-v4-flash-vision-exp"
 context_window = 1000000
 
 [[models]]
@@ -51,7 +51,7 @@ base_url = "https://llm.example.com/v1"
 api_key = "sk-..."
 ```
 
-For a model tagged `vision = false` (e.g. the DeepSeek series), images from conversation input are saved to the Session scratchpad and handed over as a file path spliced into the text, and the image-reading tool switches to `describe_image`.
+For a model tagged `vision = false` (e.g. `deepseek-v4-flash`, the text-only sibling of the default), images from conversation input are saved to the Session scratchpad and handed over as a file path spliced into the text, and the image-reading tool switches to `describe_image`.
 
 ## Built-in provider groups
 

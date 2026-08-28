@@ -210,7 +210,7 @@ cd penguin-install
 The same engine, scriptable — made to be driven by agents (and agents building agents):
 
 ```bash
-penguin config model add --provider deepseek --model-id deepseek-v4-flash --api-key sk-... --set-default
+penguin config model add --provider deepseek --model-id deepseek-v4-flash-vision-exp --api-key sk-... --set-default
 penguin run -m "Create hello.txt containing Hello, Penguin"   # one-shot task
 penguin chat       # interactive REPL (/compact, /clear, /exit, Ctrl-C to interrupt)
 penguin server     # headless service (same API the Web App uses)

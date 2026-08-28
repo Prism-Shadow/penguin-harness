@@ -3,15 +3,14 @@
  * several trails says. The rule every case here defends is that a dot must end in a control the user
  * can actually reach — so the release gate is closed wherever the sidebar does not offer the
  * release row, a fail-soft check raises nothing, and a download still in flight is not a badge.
+ *
+ * The Agent-kernel gate used to live here as `anyKernelOutdated`. It moved to `todo-badges.ts`
+ * (and is covered there, as `kernelUpdateTodo`) when its page grew a notice with a way down: a
+ * gate that can be dismissed has to name WHAT is waiting, not just whether something is.
  */
 import { describe, expect, it } from "vitest";
 import type { DesktopUpdateStatus, UpdateCheckResponse } from "@prismshadow/penguin-server/api";
-import {
-  anyKernelOutdated,
-  badgeNote,
-  releaseUpdate,
-  softwareUpdate,
-} from "../src/lib/update-badges";
+import { badgeNote, releaseUpdate, softwareUpdate } from "../src/lib/update-badges";
 
 function check(overrides: Partial<UpdateCheckResponse>): UpdateCheckResponse {
   return {
@@ -139,20 +138,6 @@ describe("softwareUpdate", () => {
         clientStatus: shell({ state: "downloaded", version: "0.3.0" }),
       }),
     ).toEqual({ kind: "release", version: "0.2.0" });
-  });
-});
-
-describe("anyKernelOutdated", () => {
-  it("is true when at least one Agent is behind", () => {
-    expect(anyKernelOutdated([{ kernelOutdated: false }, { kernelOutdated: true }])).toBe(true);
-  });
-
-  it("is false when every Agent is current", () => {
-    expect(anyKernelOutdated([{ kernelOutdated: false }, { kernelOutdated: false }])).toBe(false);
-  });
-
-  it("is false for an empty or not-yet-loaded Agent list", () => {
-    expect(anyKernelOutdated([])).toBe(false);
   });
 });
 

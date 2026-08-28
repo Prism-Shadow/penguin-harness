@@ -26,6 +26,9 @@ import { apiErrorText } from "../../lib/api-error";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
 import { formatDateTime, formatRelativeDays } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
+import { useUpdateBadges } from "../../lib/use-update-badges";
+import { dismissTodo } from "../../lib/todo-dismissals";
+import { bulkOutcome, failedList, firstFailure, noticeCounts } from "../../lib/bulk-update";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
@@ -35,12 +38,14 @@ import { FieldError, FieldHint, FieldLabel } from "../../components/ui/field";
 import { FormPicker } from "../../components/ui/form-picker";
 import { Modal } from "../../components/ui/modal";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
+import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Badge } from "../../components/ui/badge";
 import { Skeleton, SkeletonCard } from "../../components/ui/skeleton";
 import { EmptyState } from "../../components/ui/empty-state";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { UpdatePill } from "../../components/ui/update-dot";
+import { TodoNotice } from "../../components/ui/todo-notice";
 import { GEAR_ICON } from "../../components/ui/icons";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
@@ -99,6 +104,11 @@ export function AgentsPage() {
   const { locale } = useLocale();
   const { user } = useAuth();
   const { currentProject, agents, agentsLoading, reloadAgents, setCurrentAgentId } = useProject();
+  /** The kernel trail's raised badge, or undefined — the notice under the title acts on it or clears it. */
+  const kernelTodo = useUpdateBadges().todos.agents;
+  /** The bulk kernel update's confirmation is open. */
+  const [kernelConfirmOpen, setKernelConfirmOpen] = useState(false);
+  const [kernelRunning, setKernelRunning] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [agentId, setAgentId] = useState("");
   const [name, setName] = useState("");
@@ -343,6 +353,48 @@ export function AgentsPage() {
     }
   };
 
+  /**
+   * The notice's bulk action: run the kernel update on every Agent behind the current defaults
+   * generation. The per-Agent update on the settings overview is untouched and stays the way to
+   * take just one — which is what makes dismissing this notice safe, since nothing it silences
+   * becomes unreachable.
+   *
+   * `Promise.allSettled` with a named partial failure, the shape the Skills page's bulk update
+   * uses: a smart merge that lands on three Agents and fails on two must say WHICH two, or the
+   * user is left re-checking every card by hand.
+   */
+  const runKernelUpdates = async (targets: readonly string[]) => {
+    if (!projectId || targets.length === 0) return;
+    setKernelRunning(true);
+    const labels = targets.map((agentId) => {
+      const agent = agents.find((a) => a.agentId === agentId);
+      return agent ? agentDisplayName(agent) : agentId;
+    });
+    const results = await Promise.allSettled(
+      targets.map((agentId) => api.kernelUpdateAgentConfig(projectId, agentId)),
+    );
+    const outcome = bulkOutcome(labels, results);
+    if (outcome.allOk) toastSuccess(S.todo.bulkDone(outcome.ok));
+    else {
+      toastError(
+        `${S.todo.bulkPartial(outcome.ok, failedList(outcome.failed, S.todo.listSeparator))} — ${apiErrorText(firstFailure(results))}`,
+      );
+    }
+    // The gate reads `AgentSummary.kernelOutdated` off the Project's Agent list, so the dot only
+    // goes down once that list is re-read. Runs after a partial failure too — some Agent moved.
+    // Guarded, because `reloadAgents` rejects on a failed list read and the busy flag disables
+    // every control on this page, the dialog's Cancel included: a reload that failed after the
+    // writes landed would otherwise leave the page frozen with nothing saying why.
+    try {
+      await reloadAgents();
+    } catch (e) {
+      toastError(apiErrorText(e));
+    } finally {
+      setKernelRunning(false);
+      setKernelConfirmOpen(false);
+    }
+  };
+
   return (
     <div className="h-full overflow-y-auto p-4 md:p-6">
       <div className="mx-auto max-w-5xl">
@@ -352,6 +404,22 @@ export function AgentsPage() {
             {S.agent.create}
           </Button>
         </div>
+
+        {/* Last stop on the kernel trail, in the one shape all four dismissible trails use.
+            An Agent's kernel is never NEW — the Agent already exists and its config is simply
+            behind the defaults generation — so the line states the upgradable count alone
+            rather than padding it with a zero the page has no meaning for. The per-card capsule
+            below and the per-Agent update in settings are untouched. */}
+        {kernelTodo && (
+          <TodoNotice
+            text={S.todo.changesUpgradable(noticeCounts(kernelTodo).updated)}
+            actionLabel={S.todo.updateNow}
+            busy={kernelRunning}
+            onAction={() => setKernelConfirmOpen(true)}
+            dismissLabel={S.todo.dismiss}
+            onDismiss={() => dismissTodo(projectId ?? null, "agents", kernelTodo.signature)}
+          />
+        )}
 
         {agentsLoading ? (
           /* Same single-column row styling as the real list (space-y-3 + px-5 py-4), with a
@@ -757,6 +825,39 @@ export function AgentsPage() {
           )}
         </div>
       </Modal>
+
+      {/* Bulk kernel update confirmation. The body is the per-Agent confirm's own wording,
+          verbatim — a kernel update is a smart merge that advances the settings tabs the user
+          has not touched and leaves the customized ones whole — with the list naming every
+          Agent the batch would write to. Primary (overwrite) tone, like its per-Agent twin. */}
+      {kernelTodo && kernelConfirmOpen && (
+        <ConfirmModal
+          open
+          title={S.todo.agentsConfirmTitle(kernelTodo.count)}
+          tone="primary"
+          confirmLabel={S.agent.kernelUpdateAction}
+          busy={kernelRunning}
+          onClose={() => setKernelConfirmOpen(false)}
+          onConfirm={() => void runKernelUpdates(kernelTodo.items)}
+        >
+          <div className="space-y-3">
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              {S.agent.kernelUpdateConfirmBody}
+            </p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">{S.todo.willTouch}</p>
+            <ul className="max-h-60 divide-y divide-gray-100 overflow-y-auto rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
+              {kernelTodo.items.map((id) => {
+                const agent = agents.find((a) => a.agentId === id);
+                return (
+                  <li key={id} className="px-3 py-1.5 text-xs">
+                    {agent ? agentDisplayName(agent) : id}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </ConfirmModal>
+      )}
 
       {/* Delete confirmation (shared ConfirmModal) */}
       <ConfirmModal
