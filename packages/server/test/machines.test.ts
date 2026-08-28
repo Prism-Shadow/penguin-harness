@@ -232,12 +232,16 @@ describe("ssh / scp invocations", () => {
     });
   });
 
-  it("unpacks the streamed store into the default data root", () => {
+  it("unpacks the streamed store into the hmr directory, the layer it was tarred from", () => {
+    // install-server.ts tars `-C <root>/hmr harness.json store`, so the members are named
+    // from THERE. Extracting into the data root instead lands them one directory above where
+    // hmr/host.ts reads them: the machine keeps answering with whatever it already had, and
+    // the replication reports success while achieving nothing.
     expect(unpackStoreCommand("linux")).toBe(
-      'mkdir -p "$HOME/.penguin/data" && tar -xzf - -C "$HOME/.penguin/data"',
+      'mkdir -p "$HOME/.penguin/data/hmr" && tar -xzf - -C "$HOME/.penguin/data/hmr"',
     );
     expect(unpackStoreCommand("win32")).toBe(
-      '(if not exist "%USERPROFILE%\\.penguin\\data" mkdir "%USERPROFILE%\\.penguin\\data") & tar -xzf - -C "%USERPROFILE%\\.penguin\\data"',
+      '(if not exist "%USERPROFILE%\\.penguin\\data\\hmr" mkdir "%USERPROFILE%\\.penguin\\data\\hmr") & tar -xzf - -C "%USERPROFILE%\\.penguin\\data\\hmr"',
     );
   });
 });

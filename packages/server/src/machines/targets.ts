@@ -64,11 +64,38 @@ export function listHostAliases(): string[] {
  * inheritance included, because ssh does the resolving, not us. Null when ssh cannot be run
  * or refuses the alias.
  */
-export async function resolveTarget(
-  alias: string,
-): Promise<{ alias: string; settings: SshSettings; machine: string } | null> {
+export type ResolvedTarget = { alias: string; settings: SshSettings; machine: string };
+
+/**
+ * Resolutions, briefly. `ssh -G` never connects — it parses config — but it is still a
+ * process spawn, and it sits in front of every directory listing and every probe. Repeating
+ * it per click costs more than the command it precedes.
+ *
+ * Short-lived on purpose: ~/.ssh/config is a file a person edits, and a resolution that
+ * outlived their edit would keep sending work to the host they just repointed away from.
+ * A minute is long enough to cover a burst of browsing and short enough that an edit is
+ * noticed about as fast as it would have been anyway.
+ */
+const RESOLVE_TTL_MS = 60_000;
+const resolved = new Map<string, { at: number; value: ResolvedTarget | null }>();
+
+/** Forgets cached resolutions — for a config that is known to have changed. */
+export function forgetResolvedTargets(): void {
+  resolved.clear();
+}
+
+export async function resolveTarget(alias: string): Promise<ResolvedTarget | null> {
+  const hit = resolved.get(alias);
+  if (hit !== undefined && Date.now() - hit.at < RESOLVE_TTL_MS) return hit.value;
   const result = await run("ssh", ["-G", alias], { timeoutMs: 15_000 });
-  if (result.code !== 0 && result.stdout.trim() === "") return null;
+  if (result.code !== 0 && result.stdout.trim() === "") {
+    // A failure is cached too, briefly: an alias ssh cannot name will not start working
+    // within the minute, and re-asking per click makes a broken host the slowest one.
+    resolved.set(alias, { at: Date.now(), value: null });
+    return null;
+  }
   const settings = parseSshSettings(result.stdout, alias);
-  return { alias, settings, machine: machineIdentity(alias, settings.user) };
+  const value = { alias, settings, machine: machineIdentity(alias, settings.user) };
+  resolved.set(alias, { at: Date.now(), value });
+  return value;
 }

@@ -16,6 +16,13 @@ export interface ExecResult {
   code: number;
   stdout: string;
   stderr: string;
+  /**
+   * True when we killed it for running past its budget. Worth its own flag because a
+   * timeout is otherwise INDISTINGUISHABLE from a refusal: the child is killed before it
+   * says anything, so the result is a non-zero code with empty stderr — which reads as
+   * "the remote said no" when the truth is "the remote never answered in time".
+   */
+  timedOut: boolean;
 }
 
 /** Enough for a payload transfer over a slow link, short enough to not hang a menu forever. */
@@ -38,7 +45,15 @@ export function run(
             : error
               ? 1
               : 0;
-        resolve({ code, stdout: String(stdout), stderr: String(stderr) });
+        // execFile signals a timeout by killing the child: `killed` is set and there is no
+        // numeric exit code of its own.
+        const killed = (error as (Error & { killed?: boolean }) | null)?.killed === true;
+        resolve({
+          code,
+          stdout: String(stdout),
+          stderr: String(stderr),
+          timedOut: killed && error !== null,
+        });
       },
     );
   });
@@ -66,7 +81,11 @@ export function runWithInput(
     let stdout = "";
     let stderr = "";
     let pending = "";
-    const timer = setTimeout(() => child.kill(), opts.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill();
+    }, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS);
     child.stdout.on("data", (chunk: Buffer) => {
       const text = chunk.toString("utf8");
       stdout += text;
@@ -84,11 +103,11 @@ export function runWithInput(
       clearTimeout(timer);
       // Whatever the last chunk left without a newline is still a line the far side wrote.
       if (pending.trim() !== "") opts.onLine?.(pending.trim());
-      resolve({ code: code ?? 1, stdout, stderr });
+      resolve({ code: code ?? 1, stdout, stderr, timedOut });
     });
     child.on("error", (err) => {
       clearTimeout(timer);
-      resolve({ code: 1, stdout, stderr: `${stderr}${err.message}\n` });
+      resolve({ code: 1, stdout, stderr: `${stderr}${err.message}\n`, timedOut });
     });
     // A remote that never reads stdin (a refused connection) closes the pipe under us.
     child.stdin.on("error", () => {});
@@ -123,7 +142,9 @@ export function runPiped(
     let aCode: number | null = null;
     let bCode: number | null = null;
     let settled = false;
+    let timedOut = false;
     const timer = setTimeout(() => {
+      timedOut = true;
       a.kill();
       b.kill();
     }, timeoutMs);
@@ -131,7 +152,7 @@ export function runPiped(
       if (settled || aCode === null || bCode === null) return;
       settled = true;
       clearTimeout(timer);
-      resolve({ code: aCode !== 0 ? aCode : bCode, stdout, stderr });
+      resolve({ code: aCode !== 0 ? aCode : bCode, stdout, stderr, timedOut });
     };
     a.on("close", (code) => {
       aCode = code ?? 1;
@@ -152,6 +173,12 @@ export function runPiped(
       finish();
     });
   });
+}
+
+/** A result's own words, or a plain statement of what went wrong when it has none. */
+export function execFailureText(result: ExecResult, whenSilent: string): string {
+  if (result.timedOut) return "the machine did not answer in time";
+  return result.stderr.trim() || whenSilent;
 }
 
 /** True when the failure is "ssh could not authenticate without asking" — the BatchMode wall. */

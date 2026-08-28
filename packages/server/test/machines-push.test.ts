@@ -44,7 +44,19 @@ posixOnly("installOnRemote", () => {
   const assets = () => path.resolve(__dirname, "..", "..", "..");
 
   /** Stub ssh/scp that log every invocation and answer as the scenario dictates. */
-  const writeStubs = (opts: { probe: string; posixUnknown?: boolean; installExit?: number }) => {
+  const writeStubs = (opts: {
+    probe: string;
+    /**
+     * What the probe answers ONCE the installer has run. The install path asks twice, and the
+     * second answer is the machine reporting what it ended up with — a stub that said the same
+     * both times could not tell an install that took from one that ran cleanly and changed
+     * nothing, which is the case the second ask exists for.
+     */
+    afterInstall?: string;
+    posixUnknown?: boolean;
+    installExit?: number;
+  }) => {
+    const ranMarker = path.join(work, "installer-ran");
     fs.writeFileSync(
       path.join(stubBin, "ssh"),
       [
@@ -56,13 +68,13 @@ posixOnly("installOnRemote", () => {
         'case "$last" in',
         opts.posixUnknown
           ? `  *uname*) echo "'uname' is not recognized as an internal or external command" 1>&2; exit 1 ;;`
-          : `  *uname*) printf '%b' ${JSON.stringify(opts.probe)} ;;`,
-        `  *PROCESSOR_ARCHITECTURE*) printf '%b' ${JSON.stringify(opts.probe)} ;;`,
+          : `  *uname*) if [ -f ${JSON.stringify(ranMarker)} ]; then printf '%b' ${JSON.stringify(opts.afterInstall ?? opts.probe)}; else printf '%b' ${JSON.stringify(opts.probe)}; fi ;;`,
+        `  *PROCESSOR_ARCHITECTURE*) if [ -f ${JSON.stringify(ranMarker)} ]; then printf '%b' ${JSON.stringify(opts.afterInstall ?? opts.probe)}; else printf '%b' ${JSON.stringify(opts.probe)}; fi ;;`,
         "  *mktemp*) echo /tmp/remote-scratch ;;",
         // Single-quoted: sh's echo would otherwise eat the backslashes.
         "  *%TEMP%*) echo 'C:\\Temp\\penguin-scratch' ;;",
-        `  *sh\\ -s*) cat > /dev/null; echo "PenguinHarness 0.2.4 installed"; exit ${opts.installExit ?? 0} ;;`,
-        `  *install.ps1*) echo "PenguinHarness 0.2.4 installed"; exit ${opts.installExit ?? 0} ;;`,
+        `  *sh\\ -s*) cat > /dev/null; : > ${JSON.stringify(ranMarker)}; echo "PenguinHarness 0.2.4 installed"; exit ${opts.installExit ?? 0} ;;`,
+        `  *powershell*) : > ${JSON.stringify(ranMarker)}; echo "PenguinHarness 0.2.4 installed"; exit ${opts.installExit ?? 0} ;;`,
         // The store stream: swallow stdin so the local tar does not die on a broken pipe.
         "  *'tar -xzf -'*) cat > /dev/null ;;",
         "  *) : ;;",
@@ -97,7 +109,10 @@ posixOnly("installOnRemote", () => {
   const target = { alias: "build-box", user: "deploy" };
 
   it("probes, installs over ONE ssh call, then streams the store", async () => {
-    writeStubs({ probe: "Linux x86_64\\n---penguin---\\n---penguin---\\n" });
+    writeStubs({
+      probe: "Linux x86_64\\n---penguin---\\n---penguin---\\n",
+      afterInstall: 'Linux x86_64\\n---penguin---\\n{"version":"0.2.4"}\\n---penguin---\\n',
+    });
     const progress: string[] = [];
     const outcome = await installOnRemote({
       target,
@@ -108,13 +123,16 @@ posixOnly("installOnRemote", () => {
 
     expect(outcome).toMatchObject({ kind: "installed" });
     const log = calls();
-    // Three handshakes, and no scp, mktemp or rm anywhere: the installer went in on stdin.
-    expect(log).toHaveLength(3);
+    // Four handshakes, and no scp, mktemp or rm anywhere: the installer went in on stdin.
+    expect(log).toHaveLength(4);
     expect(log[0]).toContain("uname -s -m"); // identity first
     // The release is downloaded ON THE REMOTE, pinned to this server's own base.
     expect(log[1]).toContain("PENGUIN_VERSION='v0.2.4' sh -s");
-    // The hmr state crosses as a stream into the default data root.
-    expect(log[2]).toContain('tar -xzf - -C "$HOME/.penguin/data"');
+    // The hmr state crosses as a stream into the hmr directory it was tarred from.
+    expect(log[2]).toContain('tar -xzf - -C "$HOME/.penguin/data/hmr"');
+    // And the machine is asked what it ended up with, which is the only step that can tell
+    // an install that took from one that ran cleanly and changed nothing.
+    expect(log[3]).toContain("uname -s -m");
     expect(log.some((line) => line.startsWith("scp"))).toBe(false);
     expect(log.some((line) => line.includes("mktemp") || line.includes("rm -rf"))).toBe(false);
     expect(log.every((line) => line.includes("User=deploy"))).toBe(true);
@@ -124,9 +142,23 @@ posixOnly("installOnRemote", () => {
     expect(progress).toContain("PenguinHarness 0.2.4 installed");
   });
 
+  it("calls an install that ran cleanly and changed nothing a failure", async () => {
+    // The installer exits 0 and says it installed; the machine still has nothing. Every step
+    // answers for itself and none of them answers whether the thing on disk over there is now
+    // this version — so without asking afterwards this is a success recorded at OUR version,
+    // and syncOutOfDate filters on exactly that: the machine is excluded from the sweep that
+    // would have tried again. A false success here seals itself in.
+    writeStubs({ probe: "Linux x86_64\\n---penguin---\\n---penguin---\\n" });
+    const outcome = await installOnRemote({ target, plan: plan(), assets });
+
+    expect(outcome).toMatchObject({ kind: "failed", step: "verify the install" });
+    expect((outcome as { detail: string }).detail).toContain("still has no install");
+  });
+
   it("falls back to the Windows probe when the POSIX one is not understood", async () => {
     writeStubs({
       probe: "Windows_NT AMD64\\n---penguin---\\n---penguin---\\n",
+      afterInstall: 'Windows_NT AMD64\\n---penguin---\\n{"version":"0.2.4"}\\n---penguin---\\n',
       posixUnknown: true,
     });
     const outcome = await installOnRemote({ target, plan: plan(), assets });
@@ -144,15 +176,19 @@ posixOnly("installOnRemote", () => {
     expect(log.some((line) => line.includes('mkdir "%TEMP%'))).toBe(false);
   });
 
-  it("a matching base skips the installer and only streams the store", async () => {
+  it("a matching base is a hot update to hand on, not an install to perform", async () => {
+    // Same release, different pushed state. Nothing to install — and streaming the store over
+    // and restarting the process would swap the code under a server without asking whether it
+    // can claim it: a runtime older than the pushed platform warns, falls back to its packaged
+    // default and keeps serving, so from here the restart reads as a success. The caller sends
+    // this down the machine's own update channel, which answers.
     writeStubs({
       probe: 'Linux x86_64\\n---penguin---\\n{"version":"0.2.4"}\\n---penguin---\\n',
     });
     const outcome = await installOnRemote({ target, plan: plan(), assets });
-    expect(outcome).toMatchObject({ kind: "installed" });
-    const log = calls();
-    expect(log.some((line) => line.includes("install.sh"))).toBe(false);
-    expect(log.some((line) => line.includes("tar -xzf -"))).toBe(true);
+    expect(outcome).toMatchObject({ kind: "state-only" });
+    // The probe, and nothing else: no installer, and no store stream either.
+    expect(calls()).toHaveLength(1);
   });
 
   it("does nothing when the remote already matches base AND pushed state", async () => {
@@ -165,7 +201,10 @@ posixOnly("installOnRemote", () => {
   });
 
   it("a bare release plan streams nothing", async () => {
-    writeStubs({ probe: "Linux x86_64\\n---penguin---\\n---penguin---\\n" });
+    writeStubs({
+      probe: "Linux x86_64\\n---penguin---\\n---penguin---\\n",
+      afterInstall: 'Linux x86_64\\n---penguin---\\n{"version":"0.2.4"}\\n---penguin---\\n',
+    });
     const outcome = await installOnRemote({
       target,
       plan: plan({ harness: null, hmrDir: null, version: "0.2.4" }),
@@ -186,7 +225,10 @@ posixOnly("installOnRemote", () => {
   });
 
   it("refuses a base that cannot name a release", async () => {
-    writeStubs({ probe: "Linux x86_64\\n---penguin---\\n---penguin---\\n" });
+    writeStubs({
+      probe: "Linux x86_64\\n---penguin---\\n---penguin---\\n",
+      afterInstall: 'Linux x86_64\\n---penguin---\\n{"version":"0.2.4"}\\n---penguin---\\n',
+    });
     const outcome = await installOnRemote({
       target,
       plan: plan({ baseVersion: "0.0.0-hmr.cafe", version: "0.0.0-hmr.cafe" }),
