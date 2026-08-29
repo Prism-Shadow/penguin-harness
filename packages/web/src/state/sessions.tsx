@@ -50,7 +50,7 @@ import {
   rememberSessionMachine,
 } from "../lib/session-machines";
 import { workspaceMachines } from "../lib/workspace-machines";
-import { cachedMachineSessions, rememberMachineSessions } from "../lib/session-cache";
+import { cachedMachineSessions, rememberMachineSessions } from "../lib/machine-cache";
 import { ensureMachineConnected, onMachineAutoConnected } from "../lib/machine-autoconnect";
 import { openUserEvents } from "../api/sse";
 import { setMachineConnector } from "../api/client";

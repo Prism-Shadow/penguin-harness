@@ -1,5 +1,5 @@
 /**
- * A machine's Sessions survive a restart (lib/session-cache.ts).
+ * What a machine was last seen holding survives a restart (lib/machine-cache.ts).
  *
  * The forward does not survive one, so for the seconds it takes to raise again, a list built
  * only from what answers now is this server's Sessions alone — the remote half of someone's
@@ -9,14 +9,17 @@
  * call degrades to having no cache instead of taking the page down with it.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { SessionInfo } from "@prismshadow/penguin-server/api";
+import type { AgentSummary, SessionInfo } from "@prismshadow/penguin-server/api";
 import {
   CACHED_ROWS_PER_MACHINE,
+  cachedMachineAgents,
   cachedMachineSessions,
+  rememberMachineAgents,
   rememberMachineSessions,
-} from "../src/lib/session-cache";
+} from "../src/lib/machine-cache";
 
 const row = (sessionId: string) => ({ sessionId, title: sessionId }) as SessionInfo;
+const agent = (agentId: string) => ({ agentId, name: agentId }) as AgentSummary;
 
 /** vitest runs in Node here, with no DOM — the model-group-expansion.ts convention. */
 function installMemoryStorage(overrides: Partial<Storage> = {}): Map<string, string> {
@@ -87,6 +90,37 @@ describe("session cache", () => {
     expect(cachedMachineSessions("proj", "m1")).toEqual([]);
   });
 
+  it("gives a machine's Agents back after a restart", () => {
+    // Without these the composer offers nothing for a workspace that lives over there, and a
+    // draft with no Agent to run it cannot be started at all.
+    rememberMachineAgents("proj", "m1", [agent("a1"), agent("a2")]);
+    expect(cachedMachineAgents("proj", "m1").map((a) => a.agentId)).toEqual(["a1", "a2"]);
+  });
+
+  it("keeps Agents and Sessions apart, and both apart from another machine's", () => {
+    rememberMachineSessions("proj", "m1", [row("s1")]);
+    rememberMachineAgents("proj", "m1", [agent("a1")]);
+    rememberMachineAgents("proj", "m2", [agent("a2")]);
+    rememberMachineSessions("proj", "m1", []);
+    expect(cachedMachineAgents("proj", "m1").map((a) => a.agentId)).toEqual(["a1"]);
+    expect(cachedMachineAgents("proj", "m2").map((a) => a.agentId)).toEqual(["a2"]);
+    expect(cachedMachineSessions("proj", "m1")).toEqual([]);
+  });
+
+  it("an Agent deleted on the machine stops being offered", () => {
+    rememberMachineAgents("proj", "m1", [agent("a1"), agent("a2")]);
+    rememberMachineAgents("proj", "m1", [agent("a1")]);
+    expect(cachedMachineAgents("proj", "m1").map((a) => a.agentId)).toEqual(["a1"]);
+  });
+
+  it("drops an Agent with no id, which could be neither shown nor started", () => {
+    localStorage.setItem(
+      "penguin.machineAgents.proj:m1",
+      JSON.stringify([{ agentId: "a1" }, { name: "no id" }, null]),
+    );
+    expect(cachedMachineAgents("proj", "m1").map((a) => a.agentId)).toEqual(["a1"]);
+  });
+
   it("degrades to no cache when storage refuses, instead of throwing into the list", () => {
     installMemoryStorage({
       getItem: () => {
@@ -101,6 +135,8 @@ describe("session cache", () => {
     });
     expect(() => rememberMachineSessions("proj", "m1", [row("s1")])).not.toThrow();
     expect(() => rememberMachineSessions("proj", "m1", [])).not.toThrow();
+    expect(() => rememberMachineAgents("proj", "m1", [agent("a1")])).not.toThrow();
     expect(cachedMachineSessions("proj", "m1")).toEqual([]);
+    expect(cachedMachineAgents("proj", "m1")).toEqual([]);
   });
 });
