@@ -119,6 +119,21 @@ describe("connect-and-retry", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("leaves a call alone that asked not to raise anything", async () => {
+    // The reachability probe (endpoints.meOnMachine). Raising the forward here would change
+    // the very thing it measures: every machine would read as up, minutes later, and the
+    // Session list would never learn which machines to show from the cache.
+    const fetchMock = stubFetch(notConnected());
+    const connect = vi.fn(() => Promise.resolve(true));
+    setMachineConnector(connect);
+
+    await expect(apiFetch("/api/me", { server: "m1", raiseForward: false })).rejects.toMatchObject({
+      code: "not_connected",
+    });
+    expect(connect).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("with no connector registered, behaves as it did before there was one", async () => {
     const fetchMock = stubFetch(notConnected());
     setMachineConnector(null);
