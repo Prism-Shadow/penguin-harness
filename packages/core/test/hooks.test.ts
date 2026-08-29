@@ -10,6 +10,7 @@ import {
   createSkillSummaryHook,
   hookEvent,
   invokedSkills,
+  isEventMessage,
   runStopHooks,
   summaryWindow,
   tokenUsage,
@@ -159,7 +160,7 @@ describe("Session stop hooks", () => {
     ]);
     // The stream: the hook event, then the injected user input, then the second Task.
     const kinds = stream.map((m) =>
-      m.type === "event_msg" && m.payload.type === "hook"
+      isEventMessage(m) && m.payload.type === "hook"
         ? `hook:${(m.payload as HookPayload).decision}`
         : m.type === "model_msg" && (m.payload as { role?: string }).role === "user"
           ? `user:${(m.payload as { text: string }).text}`
@@ -167,7 +168,7 @@ describe("Session stop hooks", () => {
     );
     expect(kinds.filter(Boolean)).toEqual(["hook:continue", "user:again", "hook:stop"]);
     // Both hook events reached the Trace.
-    const hookWrites = writes.filter((m) => m.type === "event_msg" && m.payload.type === "hook");
+    const hookWrites = writes.filter((m) => isEventMessage(m) && m.payload.type === "hook");
     expect(hookWrites.map((m) => (m.payload as HookPayload).decision)).toEqual([
       "continue",
       "stop",
@@ -191,7 +192,7 @@ describe("Session stop hooks", () => {
     }
     expect(llm.inputs).toEqual(["hello"]);
     // The answer is still on record.
-    expect(stream.some((m) => m.type === "event_msg" && m.payload.type === "hook")).toBe(true);
+    expect(stream.some((m) => isEventMessage(m) && m.payload.type === "hook")).toBe(true);
   });
 });
 
