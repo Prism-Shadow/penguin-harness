@@ -447,7 +447,7 @@ export interface Messages {
     tokens?: { total: string; delta: string },
     errorMessage?: string,
   ): string;
-  /** mcp_connect_begin event: the first run is connecting the configured MCP servers. */
+  /** mcp_connect_begin event: the configured MCP servers are being connected (the first run, or a new context after compaction). */
   mcpConnectStart(servers: string[]): string;
   /** mcp_connect_end event, one line: total wall time; `failures` carries "server (reason)" per failed connect (empty = all ok); `aborted` = the user interrupted mid-connect. */
   mcpConnectStop(

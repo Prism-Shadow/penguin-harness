@@ -208,6 +208,72 @@ describe("Environment.executeTool — vault env injection", () => {
     env.dispose();
   });
 
+  it("reconfigure replaces the toolset and the vault as a whole; commands spawned afterwards see the new vault", async () => {
+    const env = new Environment({
+      workspaceDir: tmp,
+      toolConfig: makeToolConfig(),
+      vault: { PENGUIN_VAULT_TEST_KEY: "old-value" },
+    });
+    try {
+      expect((await env.listTools()).map((t) => t.name)).toEqual(["exec_command"]);
+
+      // A context without exec_command: the tool is neither listed nor executable.
+      env.reconfigure({ toolConfig: { customTools: [], mcpServers: [] } });
+      expect(await env.listTools()).toEqual([]);
+      expect(env.toolPermission("exec_command")).toBeUndefined();
+      const gone = await collect(
+        env.executeTool({
+          toolCall: toolCall({
+            name: "exec_command",
+            arguments: JSON.stringify({ cmd: "echo nope" }),
+            toolCallId: "call_gone",
+          }),
+        }),
+      );
+      expect((gone[gone.length - 1]!.payload as { output?: string }).output).toContain(
+        "Unknown tool: exec_command",
+      );
+
+      // Re-equipped with the tool and a new vault: a command spawned now carries the new
+      // values (and only those — the replaced entry is gone, not merged).
+      env.reconfigure({
+        toolConfig: makeToolConfig(),
+        vault: { PENGUIN_VAULT_TEST_KEY: "new-value", PENGUIN_VAULT_ADDED: "added" },
+      });
+      expect(env.toolPermission("exec_command")).toBe("rw");
+      const messages = await collect(
+        env.executeTool({
+          toolCall: toolCall({
+            name: "exec_command",
+            arguments: JSON.stringify({
+              cmd: 'echo "k=$PENGUIN_VAULT_TEST_KEY added=$PENGUIN_VAULT_ADDED"',
+            }),
+            toolCallId: "call_revault",
+          }),
+        }),
+      );
+      const last = messages[messages.length - 1]!.payload as { output?: string };
+      expect(last.output).toContain("k=new-value added=added");
+
+      // An omitted vault clears it.
+      env.reconfigure({ toolConfig: makeToolConfig() });
+      const cleared = await collect(
+        env.executeTool({
+          toolCall: toolCall({
+            name: "exec_command",
+            arguments: JSON.stringify({ cmd: 'echo "k=[$PENGUIN_VAULT_TEST_KEY]"' }),
+            toolCallId: "call_cleared",
+          }),
+        }),
+      );
+      expect((cleared[cleared.length - 1]!.payload as { output?: string }).output).toContain(
+        "k=[]",
+      );
+    } finally {
+      env.dispose();
+    }
+  });
+
   it("leaves the command env untouched when no vault is configured", async () => {
     const env = new Environment({
       workspaceDir: tmp,

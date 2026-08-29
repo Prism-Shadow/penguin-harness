@@ -37,6 +37,7 @@ import type {
   BackgroundTaskDoneEvent,
   EnvironmentConfig,
   EnvironmentInterface,
+  EnvironmentServices,
   SubagentMessageOptions,
   SubagentMessageOutcome,
   SubagentRunner,
@@ -137,32 +138,33 @@ function boundVisible(
 
 export class Environment implements EnvironmentInterface {
   private readonly workspaceDir: string;
-  private readonly toolConfig: ToolConfig;
+  /** The running model context's tool configuration; replaced as a whole by `reconfigure`. */
+  private toolConfig!: ToolConfig;
   /**
    * Truncated-output recovery, derived from the generic `sessionScratchpadDir` config; null for
    * standalone embedders without a Session directory (legacy truncation-only behavior).
    */
   private readonly truncatedToolOutputArchive: TruncatedToolOutputArchive | null;
-  /** Assembled built-in tools: tool name -> BuiltinTool. Only tools supported by the registry and present in config. */
-  private readonly tools: Map<string, BuiltinTool>;
-  /** MCP Server bridge (null when config lists no servers): lazily connects and exposes `mcp__<server>__<tool>` entries. */
-  private readonly mcp: McpToolProvider | null;
+  /** Assembled built-in tools of the running context: tool name -> BuiltinTool. Only tools supported by the registry and present in config. */
+  private tools!: Map<string, BuiltinTool>;
+  /** MCP Server bridge of the running context (null when its config lists no servers): lazily connects and exposes `mcp__<server>__<tool>` entries. */
+  private mcp!: McpToolProvider | null;
   /** Long-running command session registry: constructed within this Environment and shared between exec_command / input_command. */
   private readonly commandSessions: CommandSessionManager;
   /** Background subagent session registry: constructed within this Environment and shared between run_subagent / input_subagent. */
   private readonly subagentSessions: SubagentSessionManager;
   /** The injected child-agent runner (null for embedders without one): the host resume fallback needs it outside any tool call. */
   private readonly subagentRunner: SubagentRunner | null;
+  /** The runtime services every tool factory receives — Session-lifetime registries and sinks, so each context's toolset is assembled onto the same ones. */
+  private readonly services: EnvironmentServices;
 
   constructor(config: EnvironmentConfig) {
     this.workspaceDir = config.workspaceDir;
-    this.toolConfig = config.toolConfig;
     this.truncatedToolOutputArchive = config.sessionScratchpadDir
       ? new TruncatedToolOutputArchive({
           rootDir: path.join(config.sessionScratchpadDir, "truncated-tool-output"),
         })
       : null;
-    this.tools = new Map();
     // The background session registry is created alongside Environment (one per Session) and
     // injected into whichever tools need it; all sessions are finalized together on dispose.
     // The vault environment variables are injected into child processes by the command session
@@ -174,7 +176,7 @@ export class Environment implements EnvironmentInterface {
     });
     this.subagentSessions = new SubagentSessionManager();
     this.subagentRunner = config.services?.subagentRunner ?? null;
-    const services = {
+    this.services = {
       ...config.services,
       commandSessions: this.commandSessions,
       subagentSessions: this.subagentSessions,
@@ -184,22 +186,46 @@ export class Environment implements EnvironmentInterface {
       // Live-forwarded background-subagent messages, same single-consumer pattern.
       backgroundForward: (msg: OmniMessage) => this.emitBackgroundForward(msg),
     };
-    // Assemble the tools supported by config into BuiltinTool instances; unrecognized tool
-    // names are skipped (neither exposed to the LLM nor executable).
-    for (const def of config.toolConfig.customTools) {
+    this.equip(config.toolConfig);
+  }
+
+  /**
+   * Assembles the toolset of a model context from its configuration: the tools supported by
+   * the registry become BuiltinTool instances (unrecognized tool names are skipped — neither
+   * exposed to the LLM nor executable), and MCP Servers bridge in lazily — construction only
+   * records the config; connecting and tool discovery happen on the first
+   * listTools()/executeTool() (see McpToolProvider). The vault is deliberately not handed to
+   * the MCP bridge: server processes see only the SDK's safe env defaults plus the entry's
+   * own env.
+   */
+  private equip(toolConfig: ToolConfig): void {
+    this.toolConfig = toolConfig;
+    this.tools = new Map();
+    for (const def of toolConfig.customTools) {
       const factory = BUILTIN_TOOL_FACTORIES[def.name];
-      if (factory) this.tools.set(def.name, factory(def, services));
+      if (factory) this.tools.set(def.name, factory(def, this.services));
     }
-    // MCP Servers bridge in lazily: construction only records the config; connecting and
-    // tool discovery happen on the first listTools()/executeTool() (see McpToolProvider).
-    // The vault is deliberately not handed over: MCP server processes see only the SDK's
-    // safe env defaults plus the entry's own env.
     this.mcp =
-      config.toolConfig.mcpServers.length > 0
-        ? new McpToolProvider(config.toolConfig.mcpServers, {
-            workspaceDir: config.workspaceDir,
-          })
+      toolConfig.mcpServers.length > 0
+        ? new McpToolProvider(toolConfig.mcpServers, { workspaceDir: this.workspaceDir })
         : null;
+  }
+
+  /**
+   * Re-equips the Environment for a new model context (the composition layer calls it when a
+   * compaction opens one): the toolset — builtin entries and MCP Servers — and the vault are
+   * replaced as a whole with what the Agent State says now. The previous context's MCP
+   * clients are closed (stdio server processes included) and the new list connects lazily on
+   * the next listTools(), exactly as at Session creation; the vault reaches every command
+   * spawned from now on, while processes already running keep the environment they were
+   * started with. The Session-lifetime parts — background command processes, subagent child
+   * sessions, the listeners, the Workspace and the scratchpad — are untouched. Concrete-class
+   * surface, not part of EnvironmentInterface.
+   */
+  reconfigure(config: { toolConfig: ToolConfig; vault?: Record<string, string> }): void {
+    this.mcp?.closeQuietly();
+    this.equip(config.toolConfig);
+    this.commandSessions.setVault(config.vault ?? {});
   }
 
   /** Releases runtime resources held by Environment: finalizes all managed background sessions (command and subagent) and closes MCP clients (stdio server processes included). Idempotent. */

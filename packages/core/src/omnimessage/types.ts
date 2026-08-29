@@ -103,11 +103,12 @@ export interface ToolDefinition {
  * Session metadata: the runtime configuration of one **model context**. One `session_meta`
  * opens every Trace file — the Session's first, and each file a compaction's rotation starts.
  * The model reference, the paths and the origin are fixed for the Session's lifetime; the
- * assembled system prompt is fixed per context — a compaction opens its new context with the
- * prompt re-assembled from the current Agent State (`AGENTS.md` and the other data
- * placeholders re-read), so each file's meta carries the prompt its context actually ran
- * with. Per-turn parameters (e.g. the thinking level, passed with each run) never belong
- * here; a `thinking_level` field still present in a legacy Trace's meta is ignored on resume.
+ * assembled system prompt is fixed per context — a context is assembled from the Agent State
+ * as it is when it opens (the template, `AGENTS.md` and the other placeholders re-read), so
+ * each file's meta carries the prompt its context actually ran with; the context's toolset
+ * follows as the `tool_list_ready` record. Per-turn parameters (e.g. the thinking level,
+ * passed with each run) never belong here; a `thinking_level` field still present in a
+ * legacy Trace's meta is ignored on resume.
  */
 export interface SessionMetaPayload {
   session_id: string;

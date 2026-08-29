@@ -43,9 +43,9 @@ interface SessionMetaPayload {
 }
 ```
 
-session_meta describes **one model context**: the model and the Workspace are immutable for the Session's lifetime, while the system prompt is fixed per context — the file a compaction's rotation opens starts with a `session_meta` carrying the prompt re-assembled for the new context (see [Compaction](/agent-loop)); on resume, the engine takes the latest file's line as the runtime config. See [Sessions & Traces](/sessions-and-traces). The thinking level is a per-turn parameter (sent with each Task) and is not recorded here; a `thinking_level` field still present in a legacy Trace's meta is ignored on resume — the resumed Session reads the Agent's current config instead.
+session_meta describes **one model context**: the model and the Workspace are immutable for the Session's lifetime, while the system prompt is fixed per context — the file a compaction's rotation opens starts with a `session_meta` carrying the prompt assembled for the new context from the Agent State as it is then (see [Compaction](/agent-loop)); on resume, the engine takes the latest file's line as the runtime config. See [Sessions & Traces](/sessions-and-traces). The thinking level is a per-turn parameter (sent with each Task) and is not recorded here; a `thinking_level` field still present in a legacy Trace's meta is ignored on resume — the resumed Session reads the Agent's current config instead.
 
-The tool schema is **not in the meta**: the toolset is only known after MCP Servers connect, and the meta must not wait for that — the full tool definitions arrive as a standalone `tool_list_ready` event at the first run (see event_msg). Pre-split Traces embedded a `tools` field here; that field is explicitly no longer read (their tool record is not displayed).
+The tool schema is **not in the meta**: the toolset is only known after MCP Servers connect, and the meta must not wait for that — the full tool definitions arrive as a standalone `tool_list_ready` event at the first run and, for every context a compaction opens, right after that context's `session_meta` at the head of its Trace file (see event_msg). Pre-split Traces embedded a `tools` field here; that field is explicitly no longer read (their tool record is not displayed).
 
 ## model_msg: complete payloads
 

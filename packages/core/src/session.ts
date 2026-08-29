@@ -33,7 +33,7 @@ import type {
   TokenCounts,
   ToolDefinition,
 } from "./omnimessage/index.js";
-import { imagesToScratchpadPaths } from "./internal/session-support.js";
+import { imagesToScratchpadPaths, mcpConnectOutcome } from "./internal/session-support.js";
 import { runGoalLoop } from "./goal/goal-loop.js";
 import { goalFinishedOf } from "./goal/goal-stream.js";
 import type {
@@ -57,6 +57,7 @@ import type {
   CompactAvailability,
   CompactionSettings,
   EngineInitialState,
+  OpenContextOptions,
   OpenedContext,
   RunOptions,
   TraceSink,
@@ -81,27 +82,32 @@ export interface SessionConfig {
   }>;
   /** Cancels an in-flight bootstrap on user abort (the composition layer wires Environment.cancelMcpConnect). */
   cancelBootstrap?: () => void;
-  /** Names of the configured MCP Servers (config order): non-empty brackets the bootstrap in mcp_connect_begin/end events; empty emits none. */
+  /** Names of the first context's configured MCP Servers (config order): non-empty brackets the first-run bootstrap in mcp_connect_begin/end events; empty emits none. A later context's connect is bracketed by its opener (see `openContext`). */
   mcpServers: string[];
   environment: EnvironmentInterface;
   trace?: TraceSink;
-  /** Maximum LLM turns per Task; -1 removes the cap. Omitted means -1 too — the agent-config default and the SDK fallback agree (unlimited). */
+  /** Maximum LLM turns per Task in the first context; -1 removes the cap. Omitted means -1 too — the agent-config default and the SDK fallback agree (unlimited). A context `openContext` opens brings its own. */
   maxTurns?: number;
   /**
    * Opens a fresh model context after compaction (see ContextEngineDeps.openContext): the new
-   * LLM object carrying over the Session's accumulated Token count, with the session_meta of
-   * the context it opened when the composition layer re-assembled the system prompt — the
-   * Session adopts that meta as its current one (`metaMessage`) and the engine writes it at
+   * LLM object carrying over the Session's accumulated Token count, with the session_meta and
+   * engine settings of the context it opened — the composition layer assembles them from the
+   * Agent State as it is then — and the records it produced while opening (its MCP connect
+   * pair and tool_list_ready, through `opts.emit`). The Session adopts the meta as its current
+   * one (`metaMessage`); the engine yields the records live and writes meta and records at
    * the head of the rotated Trace file. Context compaction is unavailable if not provided.
    */
-  openContext?: (sessionTokens: TokenCounts) => OpenedContext | Promise<OpenedContext>;
+  openContext?: (
+    sessionTokens: TokenCounts,
+    opts: OpenContextOptions,
+  ) => OpenedContext | Promise<OpenedContext>;
   /**
    * Factory for the bare LLM used by out-of-band, one-off requests (same Model/credential as
    * the session; no tools, no system prompt, thinking off): used for meta-requests such as
    * `generateTitle`; if not provided, `generateTitle` returns null.
    */
   createBareLLM?: () => LLMInterface;
-  /** Context compaction settings (defaults are filled in by the composition layer); only takes effect when provided together with `openContext`. */
+  /** The first context's compaction settings (defaults are filled in by the composition layer); only takes effect when provided together with `openContext`, and a context that one opens brings its own. */
   compaction?: CompactionSettings;
   /** Session resume: `session_meta` is already in the original Trace file, so it isn't written again on the first run (avoids duplication). */
   metaAlreadyWritten?: boolean;
@@ -343,8 +349,11 @@ export class Session {
       // `metaMessage` must describe the context that is running, not the one that was.
       ...(config.openContext
         ? {
-            openContext: async (sessionTokens: TokenCounts): Promise<OpenedContext> => {
-              const opened = await config.openContext!(sessionTokens);
+            openContext: async (
+              sessionTokens: TokenCounts,
+              opts: OpenContextOptions,
+            ): Promise<OpenedContext> => {
+              const opened = await config.openContext!(sessionTokens, opts);
               if (opened.sessionMeta) this.meta = opened.sessionMeta;
               return opened;
             },
@@ -556,17 +565,7 @@ export class Session {
     }
     const { tools, llm, mcp } = outcome.value;
     if (this.mcpServers.length > 0) {
-      const failed = mcp.filter((r) => r.status !== "completed").map((r) => r.server);
-      const end = mcpConnectEnd({
-        status: failed.length > 0 ? "fatal" : "completed",
-        results: mcp,
-        ...(failed.length > 0
-          ? {
-              errorCode: "connect_failed" as const,
-              errorMessage: `unavailable: ${failed.join(", ")}`,
-            }
-          : {}),
-      });
+      const end = mcpConnectEnd(mcpConnectOutcome(mcp));
       yield end;
       records.push(end);
     }

@@ -106,14 +106,31 @@ export interface CompactionSettings {
 
 /**
  * A model context opened by {@link ContextEngineDeps.openContext} after a completed compaction:
- * the fresh LLM object, and — when the context's runtime configuration differs from the one
- * before it (a system prompt re-assembled from the current Agent State) — the `session_meta`
- * the rotated Trace file opens with, so that file's head describes the context it records.
- * Without `sessionMeta`, the rotated file opens with the previous context's meta.
+ * the fresh LLM object, plus what the opener re-read for it — the `session_meta` the rotated
+ * Trace file opens with (so that file's head describes the context it records) and the
+ * per-context engine settings. Every optional field absent means "the previous context's
+ * stays": an opener that could not re-read the Agent State returns the LLM alone.
  */
 export interface OpenedContext {
   llm: LLMInterface;
   sessionMeta?: OmniMessage;
+  /** Maximum LLM turns per Task in this context; -1 removes the cap. */
+  maxTurns?: number;
+  /** Compaction settings of this context (thresholds, mode, Prompt). */
+  compaction?: CompactionSettings;
+}
+
+/** What {@link ContextEngineDeps.openContext} is called with besides the token counts. */
+export interface OpenContextOptions {
+  /**
+   * Publishes a record the opener produces while opening — the `mcp_connect_begin` /
+   * `mcp_connect_end` pair bracketing its MCP connect, and the `tool_list_ready` carrying the
+   * context's toolset. The engine yields each one live, in call order, and writes them at the
+   * head of the rotated Trace file right after the context's `session_meta`, so the new file
+   * is self-contained; an opener that emits nothing leaves the previous context's toolset
+   * record in place there.
+   */
+  emit: (msg: OmniMessage) => void;
 }
 
 /** Result of one compaction run: a StopReason terminal state (completed / aborted / retryable — abandoned, made up at the next trigger / fatal — needs a config change first); carries the summary message when summarize succeeds. */
@@ -190,7 +207,7 @@ export interface ContextEngineDeps {
   trace?: TraceSink;
   /** Engine initial state (derived by replaying Trace on Session resumption). */
   initialState?: EngineInitialState;
-  /** Maximum LLM turns for a single Task; -1 removes the cap. Omitted means -1 too — the agent-config default and the SDK fallback agree (unlimited). */
+  /** Maximum LLM turns for a single Task in the first context; -1 removes the cap. Omitted means -1 too — the agent-config default and the SDK fallback agree (unlimited). A context `openContext` opens may bring its own. */
   maxTurns?: number;
   /**
    * Maximum automatic retries for LLM timeout/reconnect within a single run. Defaults
@@ -221,13 +238,17 @@ export interface ContextEngineDeps {
   /**
    * Opens a fresh model context after compaction: the new LLM object, carrying forward the
    * Session cumulative token counts passed in (token_usage.session stays continuous across
-   * compaction), plus — when the new context's runtime configuration differs from the one
-   * before it — the session_meta the rotated Trace file opens with (see {@link OpenedContext}).
-   * May read the Agent State, hence possibly async. Context compaction is unavailable if this
-   * is not provided.
+   * compaction), plus whatever the opener re-read for the new context — its session_meta and
+   * its engine settings (see {@link OpenedContext}) — and, through `opts.emit`, the records it
+   * produced while opening (see {@link OpenContextOptions}). May rebuild the toolset and
+   * connect MCP servers, hence possibly async and possibly slow; the engine yields the emitted
+   * records live meanwhile. Context compaction is unavailable if this is not provided.
    */
-  openContext?: (sessionTokens: TokenCounts) => OpenedContext | Promise<OpenedContext>;
-  /** Context compaction settings; only takes effect if provided together with `openContext`. */
+  openContext?: (
+    sessionTokens: TokenCounts,
+    opts: OpenContextOptions,
+  ) => OpenedContext | Promise<OpenedContext>;
+  /** The first context's compaction settings; only takes effect if provided together with `openContext`. A context `openContext` opens may bring its own. */
   compaction?: CompactionSettings;
   /**
    * The first context's session_meta message: written at the start of each Trace file a
@@ -237,11 +258,12 @@ export interface ContextEngineDeps {
    */
   sessionMeta?: OmniMessage;
   /**
-   * This Session's tool_list_ready event (the resolved toolset). Written once right after
-   * the first run's input (following `bootstrapRecords`), and rewritten right after
-   * sessionMeta on each post-compaction Trace file — every file's tool record stays
-   * self-contained. Held here alone; deliberately NOT part of `bootstrapRecords`, so the
-   * one message isn't carried twice.
+   * The first context's tool_list_ready event (the resolved toolset). Written once right
+   * after the first run's input (following `bootstrapRecords`), and again right after
+   * sessionMeta on each Trace file a compaction's rotation opens — until an `openContext`
+   * emits the records of the context it opened, which take its place there — so every
+   * file's tool record stays self-contained. Held here alone; deliberately NOT part of
+   * `bootstrapRecords`, so the one message isn't carried twice.
    */
   toolList?: OmniMessage;
   /**
@@ -460,7 +482,9 @@ export function reconnectDelayMs(base: number, max: number, attempt: number): nu
 }
 
 export class ContextEngine {
-  private readonly maxTurns: number;
+  /** Per-context settings: the first context's from the deps, then whatever each opened context brings (see `startNewContext`). */
+  private maxTurns: number;
+  private compaction: CompactionSettings | undefined;
   private readonly maxReconnects: number;
   private readonly reconnectBackoffMs: number;
   private readonly reconnectBackoffMaxMs: number;
@@ -475,6 +499,13 @@ export class ContextEngine {
    * `openContext` result brings — a context that brought none keeps the previous one.
    */
   private contextMeta: OmniMessage | undefined;
+  /**
+   * The records written right after `contextMeta` at that rotation — the context's toolset
+   * record and, when it connected MCP servers, the connect pair before it: the first context's
+   * `toolList` at construction, then what each `openContext` emitted — a context that emitted
+   * nothing keeps the previous records.
+   */
+  private contextRecords: OmniMessage[];
   /** Session cumulative turn count: counted per LLM Request that produces token_usage, across Tasks; reset to zero after compaction completes. */
   private sessionTurns = 0;
   /** Whether the current context was produced by a compaction (`startNewContext`); this flag becomes meaningless once a new completed turn occurs. */
@@ -541,8 +572,10 @@ export class ContextEngine {
     this.reconnectBackoffMs = deps.reconnectBackoffMs ?? 2000;
     this.reconnectBackoffMaxMs = deps.reconnectBackoffMaxMs ?? 30_000;
     this.compactionMaxReconnects = deps.compactionMaxReconnects ?? this.maxReconnects;
+    this.compaction = deps.compaction;
     this.llm = deps.llm;
     this.contextMeta = deps.sessionMeta;
+    this.contextRecords = deps.toolList ? [deps.toolList] : [];
     // Session resumption: apply the initial state derived from replay.
     const init = deps.initialState;
     if (init) {
@@ -844,7 +877,7 @@ export class ContextEngine {
       const midTask = turn.toolOutputs.length > 0;
       const compactionReason = this.compactionTrigger();
       if (compactionReason) {
-        const mode = this.deps.compaction!.mode;
+        const mode = this.compaction!.mode;
         if (mode === "discard") {
           // Once discarded, the current Task can't continue: defer until the Task really
           // ends (mid-Task, or steering/notices still queued that must continue the loop).
@@ -980,21 +1013,21 @@ export class ContextEngine {
    */
   compactability(): CompactAvailability {
     return compactAvailability({
-      configured: Boolean(this.deps.compaction && this.deps.openContext),
+      configured: Boolean(this.compaction && this.deps.openContext),
       sessionTurns: this.sessionTurns,
       fromCompaction: this.fromCompaction,
     });
   }
 
   async *compact(opts?: { signal?: AbortSignal }): AsyncGenerator<OmniMessage> {
-    if (!this.deps.compaction || !this.deps.openContext) return;
+    if (!this.compaction || !this.deps.openContext) return;
     // The current context has no completed LLM turns: nothing to compact, return immediately.
     // This also guards against two /compact calls in a row — the new context is empty right
     // after the previous compaction, so running again would overwrite the not-yet-consumed
     // pendingSummary with an "empty summary," permanently losing the only record of the prior
     // conversation.
     if (this.sessionTurns === 0) return;
-    if (this.deps.compaction.mode === "discard") {
+    if (this.compaction.mode === "discard") {
       this.pendingCarryOver = this.pendingCarryOver.filter(
         (m) => (m.payload as { type?: string }).type !== "tool_call_output",
       );
@@ -1388,7 +1421,7 @@ export class ContextEngine {
    * Docs: /docs/agent-loop § "Compaction".
    */
   private compactionTrigger(): CompactionReason | null {
-    const settings = this.deps.compaction;
+    const settings = this.compaction;
     if (!settings || !this.deps.openContext) return null;
     if (settings.maxContextLength > 0 && this.lastRequestTotal >= settings.maxContextLength) {
       return "context";
@@ -1418,7 +1451,7 @@ export class ContextEngine {
   private async *discardContext(reason: CompactionReason): AsyncGenerator<OmniMessage> {
     yield* this.emitCompactionBegin(reason, "discard");
     yield* this.emitCompactionEnd(reason, "discard", "completed");
-    await this.startNewContext();
+    yield* this.startNewContext();
   }
 
   /**
@@ -1454,7 +1487,7 @@ export class ContextEngine {
     pendingToolOutputs: OmniMessage[],
     signal?: AbortSignal,
   ): AsyncGenerator<OmniMessage, CompactionResult> {
-    const settings = this.deps.compaction!;
+    const settings = this.compaction!;
     yield* this.emitCompactionBegin(reason, "summarize");
 
     // Compaction request input: this turn's tool results (mid-Task) or leftover interruption
@@ -1533,7 +1566,7 @@ export class ContextEngine {
         if (summaryText !== "" && attempt.toolCalls.length === 0) {
           const summary = userText(buildContextSummaryText(summaryText));
           yield* this.emitCompactionEnd(reason, "summarize", "completed", { attempt: attempts });
-          await this.startNewContext();
+          yield* this.startNewContext();
           return { status: "completed", summary, committed };
         }
         // Not a summary — one more failed attempt, sharing the reconnect budget below. Tool
@@ -1776,18 +1809,46 @@ export class ContextEngine {
 
   /**
    * Opens a new model context after successful compaction: swaps in the LLM object
-   * `openContext` returns (carrying forward the Session cumulative token counts), adopts the
-   * session_meta it brings — if any — for the rotated Trace file's head, and resets the Session
-   * turn count and context usage counter. Trace **does not** split files immediately — that's
-   * deferred until the next message that needs writing, when it rotates and opens with the
-   * context's session_meta (see `write`), avoiding an empty file if no further messages follow
-   * the compaction.
+   * `openContext` returns (carrying forward the Session cumulative token counts), adopts
+   * whatever the opened context brings — its session_meta and toolset records for the rotated
+   * Trace file's head, its engine settings — and resets the Session turn count and context
+   * usage counter. The records the opener emits while opening (its MCP connect pair, its
+   * tool_list_ready) are yielded live as they come, so a slow connect is never a silent gap.
+   * Trace **does not** split files immediately — that's deferred until the next message that
+   * needs writing, when it rotates and opens with the context's session_meta and records (see
+   * `write`), avoiding an empty file if no further messages follow the compaction.
    */
-  private async startNewContext(): Promise<void> {
+  private async *startNewContext(): AsyncGenerator<OmniMessage> {
     this.pendingTraceRotation = true;
-    const opened = await this.deps.openContext!(this.lastSessionTokens);
+    // The opener publishes records through a callback; a merge queue turns them into this
+    // generator's live yields while the opener is still running.
+    const queue = new MergeQueue();
+    queue.addProducer();
+    const opening = (async (): Promise<OpenedContext> => {
+      try {
+        return await this.deps.openContext!(this.lastSessionTokens, {
+          emit: (msg) => queue.push(msg),
+        });
+      } finally {
+        queue.removeProducer();
+      }
+    })();
+    // A rejection is re-thrown by the await below; this branch only keeps it from being
+    // reported as unhandled while the queue is still being drained.
+    void opening.catch(() => {});
+    const records: OmniMessage[] = [];
+    for (;;) {
+      const msg = await queue.next();
+      if (msg === null) break;
+      records.push(msg);
+      yield msg;
+    }
+    const opened = await opening;
     this.llm = opened.llm;
     if (opened.sessionMeta) this.contextMeta = opened.sessionMeta;
+    if (records.length > 0) this.contextRecords = records;
+    if (opened.maxTurns !== undefined) this.maxTurns = opened.maxTurns;
+    if (opened.compaction) this.compaction = opened.compaction;
     this.sessionTurns = 0;
     this.lastRequestTotal = 0;
     // Lets compactability() distinguish "just compacted" from "hasn't chatted yet" — both have
@@ -1958,7 +2019,7 @@ export class ContextEngine {
    * Trace writes are **best-effort**: observability should never interrupt the ReAct
    * loop, so write failures only warn rather than throw. The first write after compaction first
    * performs the deferred Trace rotation: splitting the file and opening it with the current
-   * context's session_meta.
+   * context's session_meta and records (its MCP connect pair, if any, and its toolset).
    */
   private async write(msg: OmniMessage): Promise<void> {
     if (!this.deps.trace) return;
@@ -1967,7 +2028,7 @@ export class ContextEngine {
       try {
         if (this.deps.trace.rotate) await this.deps.trace.rotate();
         if (this.contextMeta) await this.deps.trace.write(this.contextMeta);
-        if (this.deps.toolList) await this.deps.trace.write(this.deps.toolList);
+        for (const record of this.contextRecords) await this.deps.trace.write(record);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         process.stderr.write(`[trace] rotate failed: ${message}\n`);

@@ -112,6 +112,53 @@ describe("renderCallToolResult", () => {
   });
 });
 
+describe("Environment.reconfigure with MCP Servers (a new model context's server list)", () => {
+  let dir: string;
+  let env: Environment;
+
+  beforeAll(async () => {
+    dir = await realpath(await mkdtemp(path.join(tmpdir(), "penguin-mcp-reconf-")));
+    env = new Environment({
+      workspaceDir: dir,
+      toolConfig: { customTools: [], mcpServers: [fixtureEntry()] },
+    });
+  });
+
+  afterAll(async () => {
+    env.dispose();
+    await rmEventually(dir);
+  }, 30_000);
+
+  it("closes the previous context's servers and connects the new list on the next listTools", async () => {
+    expect((await env.listTools()).map((t) => t.name)).toContain("mcp__fx__echo");
+    expect(env.mcpServerNames()).toEqual(["fx"]);
+
+    // A context without servers: nothing listed, the old tool names no longer resolve.
+    env.reconfigure({ toolConfig: { customTools: [], mcpServers: [] } });
+    expect(env.mcpServerNames()).toEqual([]);
+    expect(env.mcpConnectResults()).toEqual([]);
+    expect(await env.listTools()).toEqual([]);
+    const gone = finalPayload(await runTool(env, "mcp__fx__echo", { text: "x" }));
+    expect(gone.stop_reason).toBe("fatal");
+    expect(gone.output).toContain("Unknown tool: mcp__fx__echo");
+
+    // A context with the server under a new name: connected afresh, lazily, on listTools —
+    // the tools come back under the new prefix and execute.
+    env.reconfigure({
+      toolConfig: { customTools: [], mcpServers: [{ ...fixtureEntry(), name: "fx2" }] },
+    });
+    expect(env.mcpServerNames()).toEqual(["fx2"]);
+    expect(env.mcpConnectResults()).toEqual([]);
+    expect((await env.listTools()).map((t) => t.name)).toContain("mcp__fx2__echo");
+    expect(env.mcpConnectResults()).toEqual([
+      expect.objectContaining({ server: "fx2", status: "completed" }),
+    ]);
+    const echoed = finalPayload(await runTool(env, "mcp__fx2__echo", { text: "hi" }));
+    expect(echoed.stop_reason).toBe("completed");
+    expect(echoed.output).toBe("echo: hi");
+  }, 30_000);
+});
+
 describe("MCP over stdio through Environment", () => {
   let tmp: string;
   let env: Environment;

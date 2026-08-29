@@ -233,7 +233,7 @@ compaction:
 
 Windows 上注入的 `{{PROJECT_DIR}}` 与 `{{CWD}}` 统一使用正斜杠——与 core 产出的其他模型可见路径（附件行、Goal file 行、截断输出 recovery 路径）同一拼写。模型会把这些拼写原样带入 JSON 工具参数和 Shell 命令；正斜杠被 Node 的 fs API 与包内 (Git) Bash 工具 Shell 接受，也避免 JSON 反斜杠转义出错。
 
-`agent_state/AGENTS.md` 是开发者可编辑的指令文件，经 `{{AGENTS_MD}}` 注入系统提示词，缺省为空——它也是优化器最常改动的文件（见[自我进化](/self-improvement)）。每次模型上下文开启时都会重新读取它——Session 创建时一次，压缩开启下一个上下文时再一次——因此修改在运行中 Session 的下一次压缩即生效，不只作用于新 Session；包裹它的模板（`system_config.yaml`）则每个 Session 只读一次。
+`agent_state/AGENTS.md` 是开发者可编辑的指令文件，经 `{{AGENTS_MD}}` 注入系统提示词，缺省为空——它也是优化器最常改动的文件（见[自我进化](/self-improvement)）。与 Agent State 的其余部分（含 `system_config.yaml`）一样，它在每次模型上下文开启时重新读取——Session 创建时一次，压缩开启下一个上下文时再一次——因此修改在运行中 Session 的下一次压缩即生效，不只作用于新 Session，也绝不会作用于正在运行的上下文（见[上下文压缩](/agent-loop)）。
 
 Vault / 技能 / 记忆 / 定时任务四个小节均采用「段落占位符 + 开关 + 可编辑提示词」模式：模板只保留 `{{VAULT}}` / `{{SKILLS}}` / `{{MEMORY}}` / `{{SCHEDULES}}` 占位符，小节文本存于各自的 `*.prompt` 配置、在对应设置标签页编辑，`*.enabled` 关闭即整段为空。四个段落占位符在装配时**最后单趟展开**：展开产物不再被扫描，因此记忆索引或提示词正文里出现的占位符字样只会保持字面原样，不会引发二次替换。
 

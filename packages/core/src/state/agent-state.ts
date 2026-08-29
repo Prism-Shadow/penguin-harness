@@ -101,7 +101,7 @@ export interface AgentState {
   agentId: string;
   stateDir: string;
   systemConfig: SystemConfig;
-  /** `AGENTS.md` as read when the State was loaded. Sessions do not run on this snapshot: every model context is opened with the file re-read (see `readAgentsMd`). */
+  /** `AGENTS.md` as read when the State was loaded. A Session never runs on a State object it did not load itself: every model context is assembled from a fresh `loadAgentState` (see Agent.createSession). */
   agentsMd: string;
 }
 
@@ -123,13 +123,7 @@ export interface SessionEnvironmentValues {
   date: string;
 }
 
-/**
- * Reads the Agent's `AGENTS.md` as it is on disk right now; a missing file reads as the default
- * content, the same as at load time. Every model-context opener reads it here — Session
- * creation, the rebuild after a completed compaction, and a resume that finds its context
- * closed — so an edit lands in the next context rather than the next Session.
- * Docs: /docs/agent-loop § "Compaction".
- */
+/** Reads the Agent's `AGENTS.md` as it is on disk right now; a missing file reads as the default content (see `loadAgentState`). */
 export async function readAgentsMd(
   root: string,
   projectId: string,
@@ -137,6 +131,54 @@ export async function readAgentsMd(
 ): Promise<string> {
   const mdPath = agentsMdPath(root, projectId, agentId);
   return (await fileExists(mdPath)) ? await fs.readFile(mdPath, "utf8") : defaultAgentsMd();
+}
+
+/**
+ * Loads an initialized Agent State as it is on disk right now — `system_config.yaml` and
+ * `AGENTS.md` — and throws when the Agent is not initialized (no `system_config.yaml`) or the
+ * config is unusable. Every model context is assembled from a load made at the moment it
+ * opens — Session creation, the context a completed compaction opens, a resume that finds
+ * its context closed — so an edit to the Agent State lands in the next context and never in
+ * the one that is running; the snapshot a long-lived Agent object holds is not what a Session
+ * runs on. `loadOrInitAgentState` is the create-or-load entry point built on this.
+ * Docs: /docs/agent-loop § "Compaction".
+ */
+export async function loadAgentState(opts?: {
+  agentId?: string;
+  projectId?: string;
+  root?: string;
+}): Promise<AgentState> {
+  const root = opts?.root ?? resolveRoot();
+  const projectId = opts?.projectId ?? DEFAULT_PROJECT_ID;
+  const agentId = opts?.agentId ?? DEFAULT_AGENT_ID;
+  assertValidId("project_id", projectId);
+  assertValidId("agent_id", agentId);
+  const stateDir = agentStateDir(root, projectId, agentId);
+  const configPath = systemConfigPath(root, projectId, agentId);
+  if (!(await fileExists(configPath))) {
+    throw new Error(`Agent State is not initialized: ${configPath} does not exist.`);
+  }
+  const parsed = parseYaml(await fs.readFile(configPath, "utf8")) as unknown;
+  // Defensive check: if the file is empty/corrupted, parseYaml may return null/a non-object,
+  // or system_prompt may be missing — otherwise "undefined" would get spliced into the system
+  // Prompt. Throw a clear error when validation fails.
+  if (
+    parsed === null ||
+    typeof parsed !== "object" ||
+    typeof (parsed as SystemConfig).system_prompt !== "string"
+  ) {
+    throw new Error(
+      `Invalid Agent State config: ${configPath} is empty, corrupted, or missing the system_prompt field.`,
+    );
+  }
+  return {
+    root,
+    projectId,
+    agentId,
+    stateDir,
+    systemConfig: parsed as SystemConfig,
+    agentsMd: await readAgentsMd(root, projectId, agentId),
+  };
 }
 
 /**
@@ -170,23 +212,8 @@ export async function loadOrInitAgentState(opts?: {
   let agentsMd: string;
 
   if (await fileExists(configPath)) {
-    // Load path: read the existing system_config.yaml and AGENTS.md.
-    const rawConfig = await fs.readFile(configPath, "utf8");
-    const parsed = parseYaml(rawConfig) as unknown;
-    // Defensive check: if the file is empty/corrupted, parseYaml may return null/a non-object,
-    // or system_prompt may be missing — otherwise "undefined" would get spliced into the system
-    // Prompt. Throw a clear error when validation fails.
-    if (
-      parsed === null ||
-      typeof parsed !== "object" ||
-      typeof (parsed as SystemConfig).system_prompt !== "string"
-    ) {
-      throw new Error(
-        `Invalid Agent State config: ${configPath} is empty, corrupted, or missing the system_prompt field.`,
-      );
-    }
-    systemConfig = parsed as SystemConfig;
-    agentsMd = await readAgentsMd(root, projectId, agentId);
+    // Load path: the existing system_config.yaml and AGENTS.md, read by loadAgentState.
+    ({ systemConfig, agentsMd } = await loadAgentState({ root, projectId, agentId }));
   } else {
     // Init path: create the directory structure and write default config (preset only takes effect here).
     await Promise.all([

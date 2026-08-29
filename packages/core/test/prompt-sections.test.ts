@@ -9,6 +9,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { systemConfigPath } from "../src/state/paths.js";
 import {
   DEFAULT_AGENT_ID,
   DEFAULT_PROJECT_ID,
@@ -402,7 +404,12 @@ describe("Session prompt integration", () => {
 
   it("is left out of the Session prompt when the Agent config disables the section", async () => {
     const agent = await createAgent({ root });
-    agent.state.systemConfig.schedules = { enabled: false };
+    // On disk: a Session's context is assembled from the Agent State as it is on disk, never
+    // from the Agent object's load-time snapshot.
+    const configFile = systemConfigPath(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
+    const cfg = parseYaml(await fs.readFile(configFile, "utf8")) as SystemConfig;
+    cfg.schedules = { enabled: false };
+    await fs.writeFile(configFile, stringifyYaml(cfg), "utf8");
     const session = await agent.createSession();
     try {
       const meta = session.metaMessage.payload as { system_prompt: string };

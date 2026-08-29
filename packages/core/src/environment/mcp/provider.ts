@@ -6,13 +6,14 @@
  * flat tool namespace collision-free (builtin names never carry the prefix, and the server
  * name — validated to a safe alphabet — separates servers from each other).
  *
- * Lifecycle: connection and tool discovery are lazy and happen exactly once per Environment
- * (single-flight) — `Environment.listTools()` at Session assembly triggers it; all servers
- * connect in parallel, each bounded by its `connectTimeoutMs`. A server that fails to
- * connect (or an invalid config entry) is reported as a stderr warning and skipped — MCP
- * problems never break Session creation, matching Environment's stance on unrecognized
- * builtin tool names. Discovery is a session-lifetime snapshot: `tools/list_changed`
- * notifications are ignored.
+ * Lifecycle: connection and tool discovery are lazy and happen exactly once per provider
+ * (single-flight) — an Environment holds one provider per model context, and its
+ * `listTools()` triggers the connect; all servers connect in parallel, each bounded by its
+ * `connectTimeoutMs`. A server that fails to connect (or an invalid config entry) is
+ * reported as a stderr warning and skipped — MCP problems never break Session creation,
+ * matching Environment's stance on unrecognized builtin tool names. Discovery is a snapshot
+ * for the context: `tools/list_changed` notifications are ignored, and the next context's
+ * Environment reconfiguration builds a new provider from the then-current config.
  *
  * Execution: a call is bridged to `client.callTool` with the Environment-merged abort
  * signal passed through. The SDK's own per-request timeout is pushed out of the way

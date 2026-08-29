@@ -5,6 +5,12 @@
  * if the directory is empty, otherwise loads by agentId.
  * An Agent has exactly one Agent State and can run multiple times; the
  * Workspace is determined when a Session is created.
+ *
+ * A Session runs on **model contexts**, each assembled from the Agent State as it is on disk
+ * the moment the context opens — Session creation, the context a completed compaction opens,
+ * a resume that finds its context closed — and fixed until the context closes (see
+ * `assembleContext`). The Agent object's own `state` is the load-time snapshot, used for
+ * identity and initialization; no Session runs on it.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -19,12 +25,12 @@ import {
   getModel,
   listInstalledSkills,
   listScheduleNames,
+  loadAgentState,
   loadAgentVault,
   loadOrInitAgentState,
   loadProjectConfig,
   projectDir,
   goalFilePath,
-  readAgentsMd,
   resolveSessionMemory,
   resolveModelRef,
   sessionScratchpadDir,
@@ -47,9 +53,18 @@ import { Session } from "./session.js";
 import {
   createTempWorkspace,
   formatSessionId,
+  mcpConnectOutcome,
   sessionEnvironment,
 } from "./internal/session-support.js";
-import { compactionEnd, sessionMeta, userText, withOrigin } from "./omnimessage/index.js";
+import {
+  compactionEnd,
+  mcpConnectBegin,
+  mcpConnectEnd,
+  sessionMeta,
+  toolListReady,
+  userText,
+  withOrigin,
+} from "./omnimessage/index.js";
 import type {
   McpServerConnectResult,
   MessageOrigin,
@@ -60,13 +75,17 @@ import type {
 } from "./omnimessage/index.js";
 import { SUBAGENT_NAME } from "./environment/tools/run-subagent.js";
 import { INPUT_SUBAGENT_NAME } from "./environment/tools/input-subagent.js";
-import type { CompactionSettings, OpenedContext } from "./engine/context-engine.js";
 import type {
-  GenerativeModelConfig,
+  CompactionSettings,
+  OpenContextOptions,
+  OpenedContext,
+} from "./engine/context-engine.js";
+import type {
   ProxyEnvPolicy,
   SubagentHandle,
   SubagentRunner,
   ThinkingLevelName,
+  ToolConfig,
   ToolDefinition,
   VisionDescriberService,
 } from "./interfaces/index.js";
@@ -131,7 +150,8 @@ export interface CreateSessionOptions {
    * - a `ThinkingLevelName` pins the level;
    * - `undefined` (omitted) falls back to the config chain: the Agent's explicit
    *   `model.thinking_level` > the Project's `default_chat.thinking_level` > the built-in
-   *   `"medium"` (see `configuredThinkingLevel`);
+   *   `"medium"` (see `configuredThinkingLevel`), read again for every model context the
+   *   Session opens;
    * - `null` means "no thinking level": the config fallback is suppressed entirely
    *   (nothing goes into the LLM config; session_meta echoes `"default"`).
    * Subagent spawning passes the parent Session's effective level (its level, or `null`
@@ -155,6 +175,50 @@ export interface ResumeSessionOptions {
   /** Explicit credentials; if unspecified, falls back to credentials in the Project config, then to AgentHub reading environment variables. */
   apiKey?: string;
   baseUrl?: string;
+}
+
+/**
+ * The facts fixed for a Session's lifetime — every model context of the Session is opened
+ * against them. Everything else a context runs with comes from the Agent State as it is on
+ * disk when the context opens (see `Agent.assembleContext`).
+ */
+interface SessionSpec {
+  sessionId: string;
+  workspaceDir: string;
+  /** The Session's model entry as resolved from the Project config at creation (or recorded at resume): reference, credentials, window and per-model annotations. */
+  modelEntry: ModelEntry;
+  apiKey: string | undefined;
+  baseUrl: string | undefined;
+  /**
+   * The Session's thinking-level pin, the tri-state of {@link CreateSessionOptions.thinkingLevel}:
+   * a value pins every context; `null` runs every context without a level; `undefined` reads
+   * the Agent config's default when each context opens.
+   */
+  thinkingLevel: ThinkingLevelName | null | undefined;
+  subagentDepth: number;
+  source?: "subagent" | "schedule";
+}
+
+/**
+ * What one model context runs with, assembled from the Agent State as it was on disk at the
+ * moment the context opened; immutable for the context's lifetime.
+ */
+interface AssembledContext {
+  /** The Agent State the context was assembled from — a fresh load, never the Agent object's snapshot. */
+  state: AgentState;
+  systemPrompt: string;
+  /** The vault's values, for the Environment's command subprocesses; only the key names enter the prompt. */
+  vault: Record<string, string>;
+  toolConfig: ToolConfig;
+  /** The context's effective thinking level: the Session's pin, or the config default read now. */
+  thinkingLevel: ThinkingLevelName | undefined;
+  maxTokens: number | undefined;
+  requestTimeoutMs: number | undefined;
+  /** `system_config.max_turns`; the engine treats absent as unlimited (-1). */
+  maxTurns: number | undefined;
+  compaction: CompactionSettings;
+  /** The session_meta describing this context: the prompt it runs with, and the Session-fixed facts. */
+  meta: SessionMetaPayload;
 }
 
 // Compaction-threshold derivation (`effectiveMaxContextLength`) lives with the rest of the
@@ -192,76 +256,161 @@ export class Agent {
    * A Session's default thinking level when no explicit per-session level is given — the
    * resolution chain (the single rule, keep both sites on it): the Agent's explicit
    * `model.thinking_level` > the Project's `default_chat.thinking_level` > the built-in
-   * `"medium"` (the documented Agent default). Mirrored by the web draft picker's DISPLAY
-   * (web features/chat/thinking-level.ts `effectiveThinkingLevel`): the picker shows this
-   * effective value, and a pick writes through to the AGENT config — the project default
-   * is only ever a fallback, never overwritten from there.
+   * `"medium"` (the documented Agent default). Read against the Agent State a context is
+   * assembled from, so the default follows the config into each new context. Mirrored by
+   * the web draft picker's DISPLAY (web features/chat/thinking-level.ts
+   * `effectiveThinkingLevel`): the picker shows this effective value, and a pick writes
+   * through to the AGENT config — the project default is only ever a fallback, never
+   * overwritten from there.
    */
-  private configuredThinkingLevel(): ThinkingLevelName {
+  private configuredThinkingLevel(state: AgentState): ThinkingLevelName {
     return (
-      this.state.systemConfig.model?.thinking_level ??
+      state.systemConfig.model?.thinking_level ??
       this.projectConfig.default_chat?.thinking_level ??
       "medium"
     );
   }
 
   /**
-   * Assembles the system prompt a model context opens with, from the Agent State as it is on
-   * disk **now**: the editable `AGENTS.md`, the installed Skills' metadata, the Memory indexes
-   * and the schedule roster are read at this moment, and the Environment values (the date
-   * included) are taken now. Every context opener goes through here — createSession, the
-   * rebuild after a completed compaction (buildRuntime's openContext) and a resume that finds
-   * its context closed — so an `AGENTS.md` edit made during one context lands in the next,
-   * not in the next Session.
+   * Assembles what a model context runs with, from the Agent State as it is on disk **now**:
+   * `system_config.yaml` in full — the prompt template with its section prompts and toggles,
+   * the builtin tool entries and MCP Servers, the compaction settings, `max_turns`, the
+   * model defaults — plus `AGENTS.md`, the vault, the installed Skills' metadata, the Memory
+   * indexes, the schedule roster and the Environment values (the date included). Every
+   * context opener goes through here — createSession, the context a completed compaction
+   * opens (buildRuntime's openContext) and a resume that finds its context closed — so an
+   * edit made during one context, by the user or by the model working on its own
+   * configuration, lands in the next context and never in the one that is running. What
+   * stays fixed is the Session itself (`spec`): id, Workspace, model entry, origin, depth and
+   * the thinking-level pin.
    *
-   * What stays as the Session loaded it: the template and the feature toggles —
-   * `system_config.yaml` is baked per Session, and it also drives the toolset and the
-   * compaction settings, which do not follow it mid-session — and the vault key list, which
-   * names the keys the Session's Environment actually carries (the vault is injected into
-   * command environments once, at creation or resume), so the caller passes it in.
+   * The vault's values go to the Environment's command subprocesses and only its **key
+   * names** enter the prompt (so the model knows which API keys are available); Skills only
+   * inject metadata (name and description) and the model reads the body on demand via shell;
+   * Memory likewise injects only its index; Schedules inject only task names.
    *
-   * The vault only injects **key names** into the prompt (so the model knows which API keys
-   * are available); values only go into the subprocess environment. Skills only inject
-   * metadata (name and description); the model reads the body on demand via shell. Memory
-   * likewise injects only its index; topic bodies are read on demand. Schedules inject only
-   * task names.
+   * `systemPrompt`, when given, is used instead of assembling one: a resume of an open
+   * context keeps the prompt its Trace recorded, since the history replayed into it was
+   * produced under that text.
    * Docs: /docs/agent-loop § "Compaction".
    */
-  private async assembleSessionPrompt(args: {
-    sessionId: string;
-    workspaceDir: string;
-    modelEntry: ModelEntry;
-    /** Key names of the vault the Session's Environment carries (names only enter the prompt). */
-    vaultKeys: string[];
-  }): Promise<string> {
+  private async assembleContext(
+    spec: SessionSpec,
+    opts: { systemPrompt?: string } = {},
+  ): Promise<AssembledContext> {
     const { root, projectId, agentId } = this.state;
-    const agentsMd = await readAgentsMd(root, projectId, agentId);
-    const installedSkills = await listInstalledSkills(root, projectId, agentId);
-    // Schedule task names for the {{SCHEDULES}} roster (names only; the files' contents are
-    // the server-side scheduler's concern).
-    const scheduleNames = await listScheduleNames(root, projectId, agentId);
-    // Memory for this Session: null when the Agent has Memory off; a temporary Workspace gets
-    // the user scope only (nothing written against it could ever be read back).
-    const memory = await resolveSessionMemory({
-      root,
-      projectId,
-      agentId,
-      workspaceDir: args.workspaceDir,
-      enabled: this.state.systemConfig.memory?.enabled !== false,
-    });
-    return assembleSystemPrompt(
-      { ...this.state, agentsMd },
-      sessionEnvironment(args.workspaceDir, args.sessionId, {
+    const state = await loadAgentState({ root, projectId, agentId });
+    const vault = await loadAgentVault(root, projectId, agentId);
+    let systemPrompt = opts.systemPrompt;
+    if (systemPrompt === undefined) {
+      const installedSkills = await listInstalledSkills(root, projectId, agentId);
+      // Schedule task names for the {{SCHEDULES}} roster (names only; the files' contents are
+      // the server-side scheduler's concern).
+      const scheduleNames = await listScheduleNames(root, projectId, agentId);
+      // Memory for this Session: null when the Agent has Memory off; a temporary Workspace
+      // gets the user scope only (nothing written against it could ever be read back).
+      const memory = await resolveSessionMemory({
+        root,
+        projectId,
         agentId,
-        projectDir: projectDir(root, projectId),
-        provider: args.modelEntry.provider,
-        modelId: args.modelEntry.model_id,
-      }),
-      args.vaultKeys,
-      installedSkills,
-      memory,
-      scheduleNames,
-    );
+        workspaceDir: spec.workspaceDir,
+        enabled: state.systemConfig.memory?.enabled !== false,
+      });
+      systemPrompt = assembleSystemPrompt(
+        state,
+        sessionEnvironment(spec.workspaceDir, spec.sessionId, {
+          agentId,
+          projectDir: projectDir(root, projectId),
+          provider: spec.modelEntry.provider,
+          modelId: spec.modelEntry.model_id,
+        }),
+        Object.keys(vault),
+        installedSkills,
+        memory,
+        scheduleNames,
+      );
+    }
+
+    // Tool exposure is capped by depth: a (leaf) child Agent that has reached the max spawn
+    // depth no longer gets run_subagent or input_subagent (the latter depends on the
+    // subagent_id produced by the former, so exposing it alone is meaningless). Tool entries
+    // are also selected by the session model's type (marked via forModel: vision models use
+    // read_image, text-only models use describe_image; entries without this marker are
+    // unaffected).
+    const canSpawn = spec.subagentDepth < MAX_SUBAGENT_DEPTH;
+    const baseToolConfig = buildToolConfig(state);
+    const modelVision = spec.modelEntry.vision !== false;
+    let customTools = selectBuiltinToolsForModel(baseToolConfig.customTools, modelVision);
+    if (!canSpawn) {
+      customTools = customTools.filter(
+        (d) =>
+          d.name !== SUBAGENT_NAME &&
+          d.name !== INPUT_SUBAGENT_NAME &&
+          // Legacy entry still present in stale stored configs; the registry no longer
+          // assembles it, this just keeps the leaf filter symmetrical.
+          d.name !== "kill_subagent",
+      );
+    }
+    const toolConfig: ToolConfig = { ...baseToolConfig, customTools };
+
+    // Effective thinking level (the Session's tri-state pin): a value wins over every config;
+    // `null` — how subagent spawning says "the parent has none" — suppresses the config
+    // fallback entirely; only `undefined` (no pin) reads the config chain, against this
+    // context's State (Agent explicit > Project default_chat > built-in "medium", see
+    // configuredThinkingLevel).
+    const thinkingLevel =
+      spec.thinkingLevel === null
+        ? undefined
+        : (spec.thinkingLevel ?? this.configuredThinkingLevel(state));
+
+    // Compaction config: defaults are filled in here; an unknown mode falls back to
+    // summarize (the default).
+    const compactionConfig = state.systemConfig.compaction;
+    const compaction: CompactionSettings = {
+      maxContextLength: effectiveMaxContextLength(
+        compactionConfig?.max_context_length ?? DEFAULT_MAX_CONTEXT_LENGTH,
+        spec.modelEntry.context_window,
+      ),
+      maxSessionTurns: compactionConfig?.max_session_turns ?? -1,
+      mode: compactionConfig?.mode === "discard" ? "discard" : "summarize",
+      prompt: compactionConfig?.prompt ?? DEFAULT_COMPACTION_PROMPT,
+    };
+
+    // session_meta: this context's runtime configuration — the assembled prompt goes both to
+    // the LLM and in here, so the Trace can audit the actual effective value. The thinking
+    // level is a per-turn run parameter (RunOptions.thinkingLevel) and is deliberately not
+    // recorded here; the toolset travels as the tool_list_ready event (it is only known once
+    // the context's MCP Servers connected).
+    const meta: SessionMetaPayload = {
+      session_id: spec.sessionId,
+      provider: spec.modelEntry.provider,
+      model_id: spec.modelEntry.model_id,
+      model_context_window: spec.modelEntry.context_window ?? "unknown",
+      system_prompt: systemPrompt,
+      agent_state: state.stateDir,
+      workspace: spec.workspaceDir,
+      ...(spec.source !== undefined ? { source: spec.source } : {}),
+    };
+
+    return {
+      state,
+      systemPrompt,
+      vault,
+      toolConfig,
+      thinkingLevel,
+      // Configured output cap: the entry's per-model annotation wins over the Agent's
+      // system_config value; unset inherits the Agent value. This is a ceiling, not the
+      // literal wire value: GenerativeModel clamps each request's effective cap to what the
+      // entry's context window can still fit (see llm/context-limits.ts, issue #218), so the
+      // seeded per-Agent default (32000) no longer needs a manual per-model override to work
+      // against e.g. a 32768-token window — setting the entry's `context_window` is enough.
+      maxTokens: spec.modelEntry.max_tokens ?? state.systemConfig.model?.max_tokens,
+      requestTimeoutMs: state.systemConfig.model?.timeoutMs,
+      // Max turns is an Agent runtime parameter (system_config), not a Session option.
+      maxTurns: state.systemConfig.max_turns,
+      compaction,
+      meta,
+    };
   }
 
   /**
@@ -329,57 +478,21 @@ export class Agent {
       );
     }
     const sessionId = formatSessionId();
-    const subagentDepth = opts.subagentDepth ?? 0;
-    // Effective thinking level (tri-state option): a value wins over every config; `null` —
-    // how subagent spawning says "the parent has none" — suppresses the config fallback
-    // entirely; only `undefined` (no option) reads the config chain (Agent explicit >
-    // Project default_chat > built-in "medium", see configuredThinkingLevel).
-    const thinkingLevel =
-      opts.thinkingLevel === null
-        ? undefined
-        : (opts.thinkingLevel ?? this.configuredThinkingLevel());
-
-    // Agent-level vault (agent_state/.vault.toml): read at Session creation; its values go into
-    // the command subprocess environment for the Session's lifetime, and its key names (never
-    // values) into the system prompt — assembleSessionPrompt says what the prompt re-reads per
-    // context and why the key list is not among it.
-    const vault = await loadAgentVault(this.state.root, this.state.projectId, this.state.agentId);
-    // The assembled system prompt goes both to the LLM and into session_meta (so the Trace can
-    // audit the actual effective value).
-    const systemPrompt = await this.assembleSessionPrompt({
-      sessionId,
-      workspaceDir,
-      modelEntry,
-      vaultKeys: Object.keys(vault),
-    });
-
-    // session_meta: the first context's runtime configuration — a compaction opens later
-    // contexts with their own (see buildRuntime's openContext). The thinking level is a
-    // per-turn run parameter (RunOptions.thinkingLevel) and is deliberately not recorded here;
-    // the toolset travels as the first run's tool_list_ready event (it is only known after
-    // the MCP connect the bootstrap performs).
-    const meta: SessionMetaPayload = {
-      session_id: sessionId,
-      provider: modelEntry.provider,
-      model_id: modelEntry.model_id,
-      model_context_window: modelEntry.context_window ?? "unknown",
-      system_prompt: systemPrompt,
-      agent_state: this.state.stateDir,
-      workspace: workspaceDir,
-      ...(opts.source !== undefined ? { source: opts.source } : {}),
-    };
-
-    const rt = await this.buildRuntime({
+    const spec: SessionSpec = {
       sessionId,
       workspaceDir,
       modelEntry,
       apiKey,
       baseUrl,
-      meta,
-      thinkingLevel,
-      subagentDepth,
-      vault,
-    });
+      thinkingLevel: opts.thinkingLevel,
+      subagentDepth: opts.subagentDepth ?? 0,
+      ...(opts.source !== undefined ? { source: opts.source } : {}),
+    };
+    // The first context: assembled from the Agent State on disk now (never from this Agent
+    // object's load-time snapshot — a long-lived Agent, a self-spawned subagent's for
+    // instance, would otherwise start Sessions on stale configuration).
+    const context = await this.assembleContext(spec);
+    const rt = this.buildRuntime(spec, context);
 
     const trace = new Writer({
       tracesDir: tracesDir(this.state.root, this.state.projectId, this.state.agentId),
@@ -387,7 +500,7 @@ export class Agent {
     });
 
     return new Session({
-      meta,
+      meta: context.meta,
       bootstrap: rt.bootstrap,
       cancelBootstrap: () => rt.environment.cancelMcpConnect(),
       mcpServers: rt.environment.mcpServerNames(),
@@ -395,7 +508,7 @@ export class Agent {
       trace,
       openContext: rt.openContext,
       createBareLLM: rt.createBareLLM,
-      compaction: rt.compaction,
+      compaction: context.compaction,
       // Where an input image lands when it becomes a path line (see SessionConfig.imagesDir).
       imagesDir: sessionScratchpadDir(
         this.state.root,
@@ -412,10 +525,7 @@ export class Agent {
         this.state.agentId,
         sessionId,
       ),
-      // Max turns comes from the Agent's system_config (runtime parameters belong to the Agent config).
-      ...(this.state.systemConfig.max_turns !== undefined
-        ? { maxTurns: this.state.systemConfig.max_turns }
-        : {}),
+      ...(context.maxTurns !== undefined ? { maxTurns: context.maxTurns } : {}),
       // Sandbox command policy snapshot: Project-owned (never Agent State), read once per
       // Session so the running Session's copy cannot be edited from inside it. Absent
       // config means the factory rule set, on.
@@ -428,15 +538,16 @@ export class Agent {
   /**
    * Resume an existing Session and continue the conversation.
    *
-   * The resume source is the Session's **latest-index** Trace file: runtime config is
-   * read from its `session_meta` (Model, the original system prompt text, and the
-   * Workspace all carry over from the original Session and cannot be changed), while
-   * tools and Environment are reassembled from the current Agent State. The replayed,
-   * already-committed history is injected once via AgentHub's setHistory (used only on
-   * resume); any leftover input is rebuilt as carry-over (paired fallback placeholders
-   * are synthesized in memory only, never written to the Trace). Messages after resume
-   * continue in the original Trace file (the file follows the context, not the date),
-   * and Token / turn-count stats carry over from their original values.
+   * The resume source is the Session's **latest-index** Trace file: the Session-fixed facts
+   * are read from its `session_meta` (Model and Workspace carry over from the original
+   * Session and cannot be changed), and the context is assembled from the current Agent
+   * State — keeping the recorded system prompt when the file's context is still open (see
+   * below). The replayed, already-committed history is injected once via AgentHub's
+   * setHistory (used only on resume); any leftover input is rebuilt as carry-over (paired
+   * fallback placeholders are synthesized in memory only, never written to the Trace).
+   * Messages after resume continue in the original Trace file (the file follows the
+   * context, not the date), and Token / turn-count stats carry over from their original
+   * values.
    * Docs: /docs/sessions-and-traces § "Session recovery".
    */
   async resumeSession(opts: ResumeSessionOptions): Promise<Session> {
@@ -487,58 +598,39 @@ export class Agent {
     const apiKey = opts.apiKey ?? modelEntry.api_key;
     const baseUrl = opts.baseUrl ?? modelEntry.base_url;
 
-    // Tools and Environment are reassembled from the current Agent State (tool
-    // definitions are passed with every Request and aren't part of the history); the vault
-    // uses current values (it's injected into the subprocess environment, not the history,
-    // so a resumed Session should get the latest keys too). The system prompt follows the
-    // context: an open context keeps the text recorded in the Trace — the history replayed
-    // into it was produced under that text — while a context a completed compaction closed is
-    // opened here for the first time, nothing produced under any prompt yet, so it gets the
-    // prompt assembled from the current Agent State, exactly as the compaction would have
-    // opened it (assembleSessionPrompt); the rotation deferred to the first write records it
-    // at the new Trace file's head.
-    // The default thinking level comes from the current config chain only (Agent explicit >
-    // Project default_chat > built-in "medium", the same configuredThinkingLevel chain
-    // createSession uses): session_meta no longer records one (it became a per-turn run
-    // parameter), and a `thinking_level` still present in a legacy Trace's meta JSON is
-    // deliberately ignored — a resumed legacy subagent session falls back to this Agent's
-    // configured level instead of keeping the level it inherited at spawn time.
-    const thinkingLevel = this.configuredThinkingLevel();
-    const vault = await loadAgentVault(this.state.root, this.state.projectId, this.state.agentId);
-    const systemPrompt = resumed.contextClosed
-      ? await this.assembleSessionPrompt({
-          sessionId,
-          workspaceDir,
-          modelEntry,
-          vaultKeys: Object.keys(vault),
-        })
-      : meta.system_prompt;
-    // Invariants only — meta writes never contain a thinking level. The origin carries over
-    // from the original session_meta (a resumed scheduled/subagent Session stays marked). The
-    // on-disk value is untrusted: only the exact known origins pass; junk written by a third
-    // party is dropped rather than cast through.
-    const contextMeta: SessionMetaPayload = {
-      session_id: sessionId,
-      provider: modelEntry.provider,
-      model_id: modelEntry.model_id,
-      model_context_window: modelEntry.context_window ?? "unknown",
-      system_prompt: systemPrompt,
-      agent_state: this.state.stateDir,
-      workspace: workspaceDir,
-      ...(meta.source === "subagent" || meta.source === "schedule" ? { source: meta.source } : {}),
-    };
-
-    const rt = await this.buildRuntime({
+    // The thinking level comes from the current config chain only, read per context (the
+    // same chain createSession uses when no level is pinned): session_meta no longer records
+    // one (it became a per-turn run parameter), and a `thinking_level` still present in a
+    // legacy Trace's meta JSON is deliberately ignored — a resumed legacy subagent session
+    // falls back to this Agent's configured level instead of keeping the level it inherited
+    // at spawn time. The origin carries over from the original session_meta (a resumed
+    // scheduled/subagent Session stays marked); the on-disk value is untrusted: only the
+    // exact known origins pass, junk written by a third party is dropped rather than cast
+    // through.
+    const spec: SessionSpec = {
       sessionId,
       workspaceDir,
       modelEntry,
       apiKey,
       baseUrl,
-      meta: contextMeta,
-      thinkingLevel,
+      thinkingLevel: undefined,
       subagentDepth: 0,
-      vault,
-    });
+      ...(meta.source === "subagent" || meta.source === "schedule" ? { source: meta.source } : {}),
+    };
+    // The context follows the Trace. A context a completed compaction closed is opened here
+    // for the first time — nothing was produced under any configuration yet — so it is
+    // assembled from the current Agent State exactly as the compaction would have opened it,
+    // and the rotation deferred to the first write records its meta at the new file's head.
+    // An open context keeps the system prompt its file recorded — the history replayed into
+    // it was produced under that text — while its tools, Environment, vault and run
+    // parameters can only come from the current Agent State: the Trace records no executable
+    // configuration (tool definitions travel with every Request and are not part of the
+    // history).
+    const context = await this.assembleContext(
+      spec,
+      resumed.contextClosed ? {} : { systemPrompt: meta.system_prompt },
+    );
+    const rt = this.buildRuntime(spec, context);
 
     // History is injected once into the freshly built context object as part of the lazy
     // bootstrap (setHistory is only used on resume); Session cumulative Token counts carry
@@ -592,7 +684,7 @@ export class Agent {
     }
 
     return new Session({
-      meta: contextMeta,
+      meta: context.meta,
       bootstrap,
       cancelBootstrap: () => rt.environment.cancelMcpConnect(),
       mcpServers: rt.environment.mcpServerNames(),
@@ -600,7 +692,7 @@ export class Agent {
       trace,
       openContext: rt.openContext,
       createBareLLM: rt.createBareLLM,
-      compaction: rt.compaction,
+      compaction: context.compaction,
       // Where an input image lands when it becomes a path line (see SessionConfig.imagesDir).
       imagesDir: sessionScratchpadDir(
         this.state.root,
@@ -617,9 +709,7 @@ export class Agent {
         this.state.agentId,
         sessionId,
       ),
-      ...(this.state.systemConfig.max_turns !== undefined
-        ? { maxTurns: this.state.systemConfig.max_turns }
-        : {}),
+      ...(context.maxTurns !== undefined ? { maxTurns: context.maxTurns } : {}),
       // Same policy snapshot as createSession: a resumed Session re-reads the current
       // Project config, so a policy edit takes effect from the next load.
       ...(this.projectConfig.command_policy !== undefined
@@ -651,24 +741,16 @@ export class Agent {
   }
 
   /**
-   * Assemble a Session's runtime components (shared by createSession and
-   * resumeSession): the child-Agent runner, Environment and tools, the LLM object
-   * and the post-compaction context opener, and the compaction config.
+   * Assembles a Session's runtime components (shared by createSession and resumeSession)
+   * around the context it starts in: the child-Agent runner, the Environment — Session-lifetime,
+   * equipped with the initial context's toolset and vault — the lazy first-run bootstrap that
+   * builds the LLM object, the opener that assembles every later context, and the bare LLM
+   * factory for out-of-band requests.
    */
-  private async buildRuntime(args: {
-    sessionId: string;
-    workspaceDir: string;
-    /** This Session's Model entry: the caller (createSession / resumeSession) has already validated it exists in the config. */
-    modelEntry: ModelEntry;
-    apiKey: string | undefined;
-    baseUrl: string | undefined;
-    /** The context's session_meta payload: its `system_prompt` seeds the LLM config, and the post-compaction rebuild re-stamps the payload with the prompt it re-assembled. */
-    meta: SessionMetaPayload;
-    /** The Session's effective thinking level: the caller resolves the explicit option against the Agent config. */
-    thinkingLevel: ThinkingLevelName | undefined;
-    subagentDepth: number;
-    vault: Record<string, string>;
-  }): Promise<{
+  private buildRuntime(
+    spec: SessionSpec,
+    initial: AssembledContext,
+  ): {
     environment: Environment;
     /**
      * Lazy session bootstrap, run by Session at the start of the first run: resolves the
@@ -684,25 +766,17 @@ export class Agent {
     }>;
     /**
      * Opens the context that follows a completed compaction (see ContextEngineDeps.openContext):
-     * the LLM object rebuilt from the bootstrap's config with a system prompt re-assembled
-     * from the current Agent State, and the session_meta recording that prompt for the
-     * rotated Trace file's head.
+     * the whole configuration assembled anew from the Agent State, the Environment re-equipped
+     * with it, the connect phase and the toolset published as records, and the LLM object
+     * built from the result together with the session_meta recording it.
      */
-    openContext: (sessionTokens: TokenCounts) => Promise<OpenedContext>;
+    openContext: (sessionTokens: TokenCounts, opts: OpenContextOptions) => Promise<OpenedContext>;
     createBareLLM: () => GenerativeModel;
-    compaction: CompactionSettings;
-  }> {
-    const {
-      sessionId,
-      workspaceDir,
-      modelEntry,
-      apiKey,
-      baseUrl,
-      meta,
-      thinkingLevel,
-      subagentDepth,
-      vault,
-    } = args;
+  } {
+    const { sessionId, workspaceDir, modelEntry, apiKey, baseUrl, subagentDepth } = spec;
+    // The context the Session is running: the initial one, then whatever `openContext` last
+    // assembled (a rebuild that failed keeps the previous one, see there).
+    let current = initial;
     // Child-Agent runner: injected into the run_subagent tool so it doesn't need to
     // depend on Agent/Session (breaking a circular dependency). The model can
     // optionally choose agentId (omitted = call the current Agent), the child
@@ -763,14 +837,14 @@ export class Agent {
                 ...(provider !== undefined ? { provider } : {}),
               };
         // An explicit spawn-time level (run_subagent's `thinking_level`) pins the child;
-        // otherwise the parent Session's effective thinking level (`thinkingLevel` in scope)
-        // is passed down, as a tri-state: `null` when the parent has none, so the child never
-        // falls back to its own Agent config (which would otherwise apply on a cross-agent
-        // spawn).
+        // otherwise the parent Session's effective thinking level — that of the context it
+        // is running now — is passed down, as a tri-state: `null` when the parent has none,
+        // so the child never falls back to its own Agent config (which would otherwise
+        // apply on a cross-agent spawn).
         const childSession = await childAgent.createSession({
           workspaceDir,
           ...childModel,
-          thinkingLevel: spawnThinkingLevel ?? thinkingLevel ?? null,
+          thinkingLevel: spawnThinkingLevel ?? current.thinkingLevel ?? null,
           subagentDepth: subagentDepth + 1,
           source: "subagent",
         });
@@ -872,35 +946,12 @@ export class Agent {
       };
     }
 
-    // Tool exposure is capped by depth: a (leaf) child Agent that has reached the
-    // max spawn depth no longer gets run_subagent or input_subagent (the latter
-    // depends on the subagent_id produced by the former, so exposing it alone is
-    // meaningless).
-    const canSpawn = subagentDepth < MAX_SUBAGENT_DEPTH;
-    const baseToolConfig = buildToolConfig(this.state);
-    // Select tool entries by the session model's type (marked via forModel: vision
-    // models use read_image, text-only models use describe_image; entries without
-    // this marker are unaffected).
-    const modelVision = modelEntry.vision !== false;
-    let customTools = selectBuiltinToolsForModel(baseToolConfig.customTools, modelVision);
-    if (!canSpawn) {
-      customTools = customTools.filter(
-        (d) =>
-          d.name !== SUBAGENT_NAME &&
-          d.name !== INPUT_SUBAGENT_NAME &&
-          // Legacy entry still present in stale stored configs; the registry no longer
-          // assembles it, this just keeps the leaf filter symmetrical.
-          d.name !== "kill_subagent",
-      );
-    }
-    const toolConfig = { ...baseToolConfig, customTools };
-
     // When the session model doesn't support images (vision=false): inject a vision
-    // model service for describe_image (forModel: "text-only", selected by the filter
-    // above) — images are described by the Project config's vision_model (a paired
-    // reference), and the tool returns text. Even when unconfigured or invalid, it is
-    // still injected (modelId=null); the tool then finishes with a failed explanation,
-    // and images are never allowed into that session's history.
+    // model service for describe_image (forModel: "text-only", selected by the tool
+    // filter in assembleContext) — images are described by the Project config's
+    // vision_model (a paired reference), and the tool returns text. Even when unconfigured
+    // or invalid, it is still injected (modelId=null); the tool then finishes with a failed
+    // explanation, and images are never allowed into that session's history.
     let visionDescriber: VisionDescriberService | undefined;
     if (modelEntry.vision === false) {
       const visionRef = this.projectConfig.vision_model;
@@ -934,16 +985,17 @@ export class Agent {
       }
     }
 
-    // Environment binds the Workspace and tool config; the toolset is resolved lazily by
-    // the bootstrap below (Session's first run), not here — its first listTools connects
-    // any configured MCP Servers, and that wait belongs on the run stream (bracketed by
-    // mcp_connect events), not inside createSession. Vault environment variables are
-    // injected into command subprocesses (shared by createSession and resumeSession; the
-    // caller reads the current agent_state/.vault.toml); a child Agent loads **its
-    // own** vault via createAgent rather than inheriting the parent's.
+    // Environment binds the Workspace for the Session's lifetime and is equipped with the
+    // initial context's tool config and vault (a later context re-equips it, see
+    // openContext). The toolset is resolved lazily by the bootstrap below (Session's first
+    // run), not here — its first listTools connects any configured MCP Servers, and that
+    // wait belongs on the run stream (bracketed by mcp_connect events), not inside
+    // createSession. Vault environment variables are injected into command subprocesses; a
+    // child Agent loads **its own** vault via createAgent rather than inheriting the
+    // parent's.
     const environment = new Environment({
       workspaceDir,
-      toolConfig,
+      toolConfig: initial.toolConfig,
       // The Session's generic scratchpad root; Environment derives its truncated-tool-output
       // recovery directory from it.
       sessionScratchpadDir: sessionScratchpadDir(
@@ -953,7 +1005,7 @@ export class Agent {
         sessionId,
       ),
       services: { subagentRunner, ...(visionDescriber ? { visionDescriber } : {}) },
-      ...(Object.keys(vault).length > 0 ? { vault } : {}),
+      ...(Object.keys(initial.vault).length > 0 ? { vault: initial.vault } : {}),
       ...(this.proxyEnv ? { proxyEnv: this.proxyEnv } : {}),
       // The control-env policy is bound to THIS Session's coordinates here (sessionId is
       // final by now); the getter shape keeps it re-evaluated at every command spawn, so
@@ -970,90 +1022,101 @@ export class Agent {
         : {}),
     });
 
-    // Configured output cap: the entry's per-model annotation wins over the Agent's
-    // system_config value; unset inherits the Agent value. This is a ceiling, not the
-    // literal wire value: GenerativeModel clamps each request's effective cap to what the
-    // entry's context window can still fit (see llm/context-limits.ts, issue #218), so the
-    // seeded per-Agent default (32000) no longer needs a manual per-model override to work
-    // against e.g. a 32768-token window — setting the entry's `context_window` is enough.
-    const maxTokens = modelEntry.max_tokens ?? this.state.systemConfig.model?.max_tokens;
-
-    // LLM constructor args are extracted into a shared object so the object rebuilt after
-    // compaction (a fresh model context) reuses them: the tool definitions aren't part of the
-    // compacted history and the new object keeps them unchanged, while the system prompt is
-    // re-assembled per context (see openContext below). The model id sent to AgentHub is
-    // always the entry's upstream `model_id` (client_type inference/passing follows it);
+    // The tool_call_id uniqueness registry is shared by every context's LLM object: its
+    // uniqueness scope is the Session's whole render span, so same-named tool calls after
+    // compaction don't collide with earlier cards' ids.
+    const toolCallIds = new ToolCallIdAllocator();
+    // The LLM object of one context: the Session-fixed model entry and credentials, plus the
+    // context's prompt, toolset and model defaults. The model id sent to AgentHub is always
+    // the entry's upstream `model_id` (client_type inference/passing follows it);
     // session_meta, Trace, usage, pricing, and catalog matching all use the (provider,
-    // model_id) pair as the primary key. The tool_call_id uniqueness registry is shared with
-    // the new LLM rebuilt from llmConfig after compaction: its uniqueness scope is the
-    // Session's whole render span, so same-named tool calls after compaction don't collide
-    // with earlier cards' ids.
-    //
-    // The config is completed by `bootstrap` once the toolset is known (listTools may
-    // connect MCP Servers); `openContext` only ever runs after the first run's bootstrap
-    // (compaction happens mid-run), so the assertion cannot fire in a legal sequence.
-    let llmConfig: GenerativeModelConfig | null = null;
+    // model_id) pair as the primary key.
+    const buildLLM = (context: AssembledContext, tools: ToolDefinition[]): GenerativeModel =>
+      new GenerativeModel({
+        modelId: modelEntry.model_id,
+        toolCallIds,
+        ...(apiKey !== undefined ? { apiKey } : {}),
+        ...(baseUrl !== undefined ? { baseUrl } : {}),
+        ...(modelEntry.client_type !== undefined ? { clientType: modelEntry.client_type } : {}),
+        tools,
+        systemPrompt: context.systemPrompt,
+        ...(modelEntry.context_window !== undefined
+          ? { contextWindow: modelEntry.context_window }
+          : {}),
+        ...(context.maxTokens !== undefined ? { maxTokens: context.maxTokens } : {}),
+        // Fast mode is a session-request annotation: it rides every context's LLM object,
+        // while the bare/meta LLM below and the vision describer deliberately skip it — their
+        // background requests gain nothing user-facing from a premium tier, and skipping
+        // keeps them working (titles included) even while the annotation is enabled on a
+        // model that rejects it.
+        ...(modelEntry.fast_mode === true ? { fastMode: true } : {}),
+        ...(context.thinkingLevel !== undefined ? { thinkingLevel: context.thinkingLevel } : {}),
+        ...(context.requestTimeoutMs !== undefined
+          ? { requestTimeoutMs: context.requestTimeoutMs }
+          : {}),
+      });
+
+    // First-run bootstrap: the Environment's first listTools connects the initial context's
+    // MCP Servers (the Session brackets the wait with the mcp_connect events) and the LLM
+    // object is built from the resolved toolset.
     const bootstrap = async (): Promise<{
       tools: ToolDefinition[];
       llm: GenerativeModel;
       mcp: McpServerConnectResult[];
     }> => {
       const tools = await environment.listTools();
-      llmConfig = {
-        modelId: modelEntry.model_id,
-        toolCallIds: new ToolCallIdAllocator(),
-        ...(apiKey !== undefined ? { apiKey } : {}),
-        ...(baseUrl !== undefined ? { baseUrl } : {}),
-        ...(modelEntry.client_type !== undefined ? { clientType: modelEntry.client_type } : {}),
-        tools,
-        systemPrompt: meta.system_prompt,
-        ...(modelEntry.context_window !== undefined
-          ? { contextWindow: modelEntry.context_window }
-          : {}),
-        ...(maxTokens !== undefined ? { maxTokens } : {}),
-        // Fast mode is a session-request annotation: it rides llmConfig (and therefore the
-        // post-compaction rebuild), while the bare/meta LLM below and the vision describer
-        // deliberately skip it — their background requests gain nothing user-facing from a
-        // premium tier, and skipping keeps them working (titles included) even while the
-        // annotation is enabled on a model that rejects it.
-        ...(modelEntry.fast_mode === true ? { fastMode: true } : {}),
-        ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
-        ...(this.state.systemConfig.model?.timeoutMs !== undefined
-          ? { requestTimeoutMs: this.state.systemConfig.model.timeoutMs }
-          : {}),
-      };
-      return { tools, llm: new GenerativeModel(llmConfig), mcp: environment.mcpConnectResults() };
+      return { tools, llm: buildLLM(current, tools), mcp: environment.mcpConnectResults() };
     };
-    const openContext = async (sessionTokens: TokenCounts): Promise<OpenedContext> => {
-      if (llmConfig === null) {
-        throw new Error("openContext called before the session bootstrap resolved the toolset");
-      }
-      const base = llmConfig;
-      // The new context's prompt is assembled from the Agent State as it is now — an edit the
-      // model (or the user) made to AGENTS.md during the old context lands here. Fail-soft:
-      // the compaction that opens this context has already succeeded and its summary is in
-      // hand, so an Agent State that cannot be read at this moment keeps the previous prompt
-      // (still a correct prompt, only a stale one) rather than failing the compaction after
-      // the fact.
-      let systemPrompt = base.systemPrompt ?? meta.system_prompt;
+
+    // The context that follows a completed compaction: assembled anew from the Agent State
+    // as it is now — an edit the model (or the user) made during the old context to
+    // AGENTS.md, system_config.yaml, the vault, the Skills or the MCP Servers lands here.
+    // The Environment is re-equipped with the new toolset and vault, the MCP Servers
+    // reconnect from the new config (the connect phase is published as the same pair the
+    // first run brackets it with, then the toolset record — the engine yields them live and
+    // writes them at the head of the rotated Trace file), and the LLM object is built from
+    // the result.
+    const openContext = async (
+      sessionTokens: TokenCounts,
+      { emit }: OpenContextOptions,
+    ): Promise<OpenedContext> => {
+      let next: AssembledContext;
       try {
-        systemPrompt = await this.assembleSessionPrompt({
-          sessionId,
-          workspaceDir,
-          modelEntry,
-          vaultKeys: Object.keys(vault),
-        });
+        next = await this.assembleContext(spec);
       } catch (err) {
+        // Fail-soft: the compaction that opens this context has already succeeded and its
+        // summary is in hand, so an Agent State that cannot be read at this moment (a
+        // system_config.yaml or vault that no longer parses, say) keeps the previous
+        // context's whole configuration — still a correct configuration, only a stale one —
+        // rather than failing the compaction after the fact. The Environment stays as it
+        // is and nothing is emitted, so the engine keeps the previous meta and records too;
+        // listTools returns the already-connected toolset without reconnecting.
         const detail = err instanceof Error ? err.message : String(err);
         process.stderr.write(
-          `[session] system prompt refresh after compaction failed, keeping the previous prompt: ${detail}\n`,
+          `[session] context rebuild from the Agent State failed, keeping the previous context's configuration: ${detail}\n`,
         );
+        const llm = buildLLM(current, await environment.listTools());
+        llm.sessionTokens = sessionTokens;
+        return { llm };
       }
-      llmConfig = { ...base, systemPrompt };
-      const next = new GenerativeModel(llmConfig);
+      current = next;
+      environment.reconfigure({ toolConfig: next.toolConfig, vault: next.vault });
+      const servers = environment.mcpServerNames();
+      if (servers.length > 0) emit(mcpConnectBegin(servers));
+      const tools = await environment.listTools();
+      if (servers.length > 0) {
+        emit(mcpConnectEnd(mcpConnectOutcome(environment.mcpConnectResults())));
+      }
+      emit(toolListReady(tools));
+      const llm = buildLLM(next, tools);
       // Carries over the Session's cumulative Token counts, so token_usage.session stays continuous across compaction.
-      next.sessionTokens = sessionTokens;
-      return { llm: next, sessionMeta: sessionMeta({ ...meta, system_prompt: systemPrompt }) };
+      llm.sessionTokens = sessionTokens;
+      return {
+        llm,
+        sessionMeta: sessionMeta(next.meta),
+        maxTurns: next.maxTurns ?? -1,
+        compaction: next.compaction,
+      };
     };
     // Bare LLM for one-off out-of-band requests (meta requests like generateTitle):
     // same Model/credentials, no tools, no system prompt, thinking disabled, a small
@@ -1084,18 +1147,6 @@ export class Agent {
     // that throw here; the instance is discarded.
     createBareLLM();
 
-    // Compaction config: defaults are filled in here; an unknown mode falls back to summarize (the default).
-    const compactionConfig = this.state.systemConfig.compaction;
-    const compaction: CompactionSettings = {
-      maxContextLength: effectiveMaxContextLength(
-        compactionConfig?.max_context_length ?? DEFAULT_MAX_CONTEXT_LENGTH,
-        modelEntry.context_window,
-      ),
-      maxSessionTurns: compactionConfig?.max_session_turns ?? -1,
-      mode: compactionConfig?.mode === "discard" ? "discard" : "summarize",
-      prompt: compactionConfig?.prompt ?? DEFAULT_COMPACTION_PROMPT,
-    };
-
-    return { environment, bootstrap, openContext, createBareLLM, compaction };
+    return { environment, bootstrap, openContext, createBareLLM };
   }
 }
