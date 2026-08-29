@@ -53,6 +53,7 @@ import { workspaceMachines } from "../lib/workspace-machines";
 import { cachedMachineSessions, rememberMachineSessions } from "../lib/session-cache";
 import { ensureMachineConnected, onMachineAutoConnected } from "../lib/machine-autoconnect";
 import { openUserEvents } from "../api/sse";
+import { setMachineConnector } from "../api/client";
 import {
   FOLDER_CATEGORIES,
   SIDEBAR_PAGE_SIZE,
@@ -832,6 +833,20 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
    */
   const [machinesEpoch, setMachinesEpoch] = useState(0);
   useEffect(() => onMachineAutoConnected(() => setMachinesEpoch((epoch) => epoch + 1)), []);
+  /**
+   * Lets any call about a Session on a machine raise that machine's forward itself, rather
+   * than handing the reader a "connect to it first" they can do nothing with (api/client.ts).
+   * Registered from here because this is where the current Project is known, and the machine
+   * list is per Project.
+   */
+  useEffect(() => {
+    if (projectId === null) return;
+    setMachineConnector(
+      async (machineId) =>
+        (await ensureMachineConnected(projectId, machineId, { api })) === "connected",
+    );
+    return () => setMachineConnector(null);
+  }, [projectId]);
   useEffect(() => {
     if (projectId === null) {
       setMachineIdsKey("");

@@ -31,6 +31,21 @@ export function setUnauthorizedHandler(handler: (() => void) | null): void {
   onUnauthorized = handler;
 }
 
+/**
+ * Brings a machine's forward up, answering whether it came up (registered by SessionsProvider,
+ * which is where the current Project — and so the machine list — is known).
+ *
+ * Registered rather than imported: the connector reaches the machines API through this very
+ * module, and a direct import would close that circle.
+ */
+let connectMachine: ((machineId: string) => Promise<boolean>) | null = null;
+
+export function setMachineConnector(
+  connect: ((machineId: string) => Promise<boolean>) | null,
+): void {
+  connectMachine = connect;
+}
+
 /** 401/409 from auth endpoints themselves are business failures (e.g. wrong password) and must not trigger a global logout. */
 function isAuthEndpoint(path: string): boolean {
   return path.startsWith("/api/auth/");
@@ -89,46 +104,63 @@ export async function apiFetchWithMeta<T>(
     if (qs) url += `?${qs}`;
   }
 
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      method: options.method ?? "GET",
-      credentials: "same-origin",
-      ...(options.body !== undefined
-        ? {
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(options.body),
-          }
-        : {}),
-    });
-  } catch {
-    throw new ApiError(0, "network_error", S.errors.networkError);
-  }
-
-  if (!response.ok) {
-    let code = "http_error";
-    let message: string = S.common.unknownError;
+  // One retry, and only for a machine whose forward is not up yet — see the branch below.
+  for (let attempt = 0; ; attempt += 1) {
+    let response: Response;
     try {
-      const body = (await response.json()) as { error?: { code?: string; message?: string } };
-      if (body.error?.code) code = body.error.code;
-      if (body.error?.message) message = body.error.message;
+      response = await fetch(url, {
+        method: options.method ?? "GET",
+        credentials: "same-origin",
+        ...(options.body !== undefined
+          ? {
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(options.body),
+            }
+          : {}),
+      });
     } catch {
-      // Non-JSON error body: fall back to the default message.
+      throw new ApiError(0, "network_error", S.errors.networkError);
     }
-    // A 401 from ANOTHER machine is that machine's answer, not this server's — it says the
-    // session this server minted over there was refused, which says nothing about the session
-    // here. Treating it as a local logout is how clicking a remote host in a picker bounced
-    // the window to the login page of a server it was still perfectly signed in to.
-    const fromThisServer = target === null;
-    if (response.status === 401 && fromThisServer && !isAuthEndpoint(path)) onUnauthorized?.();
-    throw new ApiError(response.status, code, message);
+
+    if (!response.ok) {
+      let code = "http_error";
+      let message: string = S.common.unknownError;
+      try {
+        const body = (await response.json()) as { error?: { code?: string; message?: string } };
+        if (body.error?.code) code = body.error.code;
+        if (body.error?.message) message = body.error.message;
+      } catch {
+        // Non-JSON error body: fall back to the default message.
+      }
+      // That machine's forward is not up. A forward does not survive a restart, so this is
+      // the ORDINARY answer for the first call about a Session that lives elsewhere — one
+      // the reader can do nothing useful with ("connect to it first" is not their job). Raise
+      // it and ask again.
+      //
+      // Replaying is safe for every method, which is the whole reason this can live here:
+      // the machines proxy answers `not_connected` BEFORE forwarding anything, so the request
+      // never reached the machine and a retry cannot apply it twice.
+      //
+      // Once. The connector runs its own widening schedule and reports whether the machine
+      // came up, so a second failure is a real answer and belongs to the caller.
+      if (attempt === 0 && code === "not_connected" && target !== null && connectMachine !== null) {
+        if (await connectMachine(target)) continue;
+      }
+      // A 401 from ANOTHER machine is that machine's answer, not this server's — it says the
+      // session this server minted over there was refused, which says nothing about the
+      // session here. Treating it as a local logout is how clicking a remote host in a picker
+      // bounced the window to the login page of a server it was still perfectly signed in to.
+      const fromThisServer = target === null;
+      if (response.status === 401 && fromThisServer && !isAuthEndpoint(path)) onUnauthorized?.();
+      throw new ApiError(response.status, code, message);
+    }
+
+    const headerDate = Date.parse(response.headers.get("date") ?? "");
+    const serverNowMs = Number.isFinite(headerDate) ? headerDate : null;
+
+    if (response.status === 204) return { data: undefined as T, serverNowMs };
+    const text = await response.text();
+    if (!text) return { data: undefined as T, serverNowMs };
+    return { data: JSON.parse(text) as T, serverNowMs };
   }
-
-  const headerDate = Date.parse(response.headers.get("date") ?? "");
-  const serverNowMs = Number.isFinite(headerDate) ? headerDate : null;
-
-  if (response.status === 204) return { data: undefined as T, serverNowMs };
-  const text = await response.text();
-  if (!text) return { data: undefined as T, serverNowMs };
-  return { data: JSON.parse(text) as T, serverNowMs };
 }
