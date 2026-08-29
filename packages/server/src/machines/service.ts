@@ -559,6 +559,8 @@ export class MachinesService {
     if (live !== null) {
       // Connecting again is how someone retries a sync that failed, or picks up a new key.
       say(`Already connected on port ${live}.`);
+      const updated = await this.#updateOnConnect(address, target, live, say);
+      if (!updated.ok) return updated.result;
       await this.#syncModels(address, target, live, say, this.#projectsUsing(address));
       return { ok: true, connected: true };
     }
@@ -596,10 +598,69 @@ export class MachinesService {
     const forward = await this.#forward(address, target, remotePort);
     if (!forward.ok) return { ok: false, step: "connect", message: forward.detail };
     say(`Connected on local port ${forward.port}.`);
+    // The forward stays up whatever follows: the machine IS connected now, and a build it
+    // will not take is a reason to say so, not to tear the tunnel down again.
+    const updated = await this.#updateOnConnect(address, target, forward.port, say);
+    if (!updated.ok) return updated.result;
     // An Agent started over there resolves its model against THAT machine's config, so a
     // machine without our credentials is connected and unusable.
     await this.#syncModels(address, target, forward.port, say, this.#projectsUsing(address));
     return { ok: true, connected: true };
+  }
+
+  /**
+   * Hands a freshly connected machine this server's build when it carries a different one —
+   * connecting is the moment a machine that was down at boot (and so missed the boot-time
+   * sweep) becomes reachable at all. Over the forward just raised, so no second probe.
+   *
+   * Only the hot channel is automatic: a swap is seconds and kills nothing. A hand-over the
+   * machine cannot take is reported with the one step left — reinstalling the program — and
+   * that step stays a person's, because it restarts a server other people may be on.
+   */
+  async #updateOnConnect(
+    address: string,
+    target: RemoteTarget,
+    port: number,
+    say: (line: string) => void,
+  ): Promise<{ ok: true } | { ok: false; result: MachineJob["result"] }> {
+    const plan = this.#effects.resolvePlan(this.dataRoot);
+    const row = this.repo.get(address);
+    if (plan === null || row === null || row.version === plan.version) return { ok: true };
+    say(`It carries ${row.version ?? "an unknown build"}; handing over ${plan.version}…`);
+    const failed = (message: string): { ok: false; result: MachineJob["result"] } => ({
+      ok: false,
+      result: { ok: false, step: "update its build", message, canReplaceProgram: true },
+    });
+    const session = await this.#sessionOn(target);
+    if (!("cookie" in session)) return failed(session.detail);
+    const outcome = await this.#effects.upgrade({
+      port,
+      cookie: session.cookie,
+      dataRoot: this.dataRoot,
+      onProgress: say,
+    });
+    switch (outcome.kind) {
+      case "upgraded":
+        this.repo.patch(address, {
+          version: plan.version,
+          installedAt: this.#effects.now().toISOString(),
+        });
+        say(outcome.detail === "" ? "Update accepted." : outcome.detail);
+        return { ok: true };
+      case "no-server":
+        // The forward answered a moment ago; treat a vanished server as the far side's word.
+        return failed("its server stopped answering before the build could be handed over.");
+      case "no-build":
+        // The versions differ by BASE RELEASE, and a release is not something the hot
+        // channel carries: only the installer can bring that machine forward.
+        return failed(
+          `this server has no pushed build to hand over; ${plan.version} needs installing there.`,
+        );
+      case "refused":
+        return failed(`that machine refused this build — ${outcome.detail}`);
+      case "failed":
+        return failed(outcome.detail);
+    }
   }
 
   /**
