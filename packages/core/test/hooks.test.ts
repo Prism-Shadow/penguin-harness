@@ -293,7 +293,8 @@ describe("skill-summary hook", () => {
     expect(prompts[0]).toContain("Installed skills: web-design, penguin-cli");
     expect(prompts[0]).toContain("Skills invoked in this window: none");
     expect(prompts[0]).toContain("[user] ask 3");
-    expect(prompts[0]).toContain(path.join("agent_state", "skills"));
+    // The skills directory is spelled the model-visible way: forward slashes on every platform.
+    expect(prompts[0]).toContain("agent_state/skills");
     expect(disposed).toBe(1);
     // The Session records the event in the Trace; from there on the window restarts.
     await write([
