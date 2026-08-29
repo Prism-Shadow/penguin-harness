@@ -2,7 +2,7 @@
 
 - **Date:** 2026-08-28
 - **Type:** feature
-- **Scope:** `web`
+- **Scope:** `server`, `web`
 - **PR:** [#450](https://github.com/Prism-Shadow/penguin-harness/pull/450)
 
 [中文版](2026-08-28-machines-run-agent.zh.md)
@@ -26,6 +26,12 @@ Agents are per-server, so the composer offers the Agents that exist on the machi
 The sidebar's Session list is every machine's, merged: each server pages its own rows with its own offsets, so the merge walks one page from each and orders them together rather than sharing a cursor that would ask one machine for rows only another had reached.
 
 A machine that cannot be asked is recorded as such. That is what separates "this server has not got that Session" from "nobody who might have it answered" — so a Session on a machine that is down reads as out of reach rather than gone, and a machine that flaps does not empty the list.
+
+## Connected on first need, updated on connect
+
+Picking a workspace on an installed machine connects to that machine by itself: the composer asks it for its Agents, and a machine with no live forward is raised rather than reported. The attempt retries on a doubling schedule — 2 s, 4 s, … 64 s — and then gives up, once per machine per page load; the composer says which of the three it is in (connecting, reachable, beyond reach), and the Machines page is where a person takes over after that. The Session list re-asks which machines answer the moment one comes up, so its Sessions join the list without a reload.
+
+Connecting also hands the machine this server's build when it carries a different one — over the forward just raised, before the Model config is synced. Only the hot channel is automatic: a swap is seconds and stops nothing. A hand-over the machine will not take is reported as the connect job's failure, with the reinstall offered as the next step; the forward stays up, since the machine is connected either way. That step remains a person's, because it restarts a server other people may be on.
 
 ## Reach
 
