@@ -198,6 +198,25 @@ export interface SchedulesConfig {
   prompt?: string;
 }
 
+/**
+ * Hooks config (the `hooks` section of `system_config.yaml`): the built-in stop hooks the
+ * composition layer registers on every top-level Session. Absent = every hook at its
+ * defaults, so an Agent whose config predates the section runs them too.
+ * Docs: /docs/agent-loop § "Hooks".
+ */
+export interface HooksConfig {
+  /** The skill-summary hook: a background subagent folds a long session's findings into the Agent's skills. */
+  skill_summary?: {
+    /** Whether the hook is registered; defaults to true. */
+    enabled?: boolean;
+    /** Completed LLM turns a summary window must hold before the hook fires; defaults to {@link DEFAULT_SKILL_SUMMARY_MIN_TURNS}. */
+    min_turns?: number;
+  };
+}
+
+/** Default `hooks.skill_summary.min_turns`: one summary per twenty completed turns. */
+export const DEFAULT_SKILL_SUMMARY_MIN_TURNS = 20;
+
 /** Stands in for an index placeholder when the `MEMORY.md` does not exist yet or is blank — the model is told the store is empty rather than being handed nothing. */
 export const MEMORY_INDEX_EMPTY_NOTE = "(the index is empty — nothing has been saved yet)";
 
@@ -409,6 +428,8 @@ export interface SystemConfig {
   skills?: SkillsConfig;
   /** Scheduled-tasks section injection (enabled by default; only reaches the prompt through `{{SCHEDULES}}`). */
   schedules?: SchedulesConfig;
+  /** Stop hooks registered on the Agent's top-level Sessions (every hook on by default; see HooksConfig). */
+  hooks?: HooksConfig;
   tools?: {
     /** Built-in system tool configuration (per-entry fields incl. the `call_description` toggle live on ToolDefinitionConfig). */
     builtin?: ToolDefinitionConfig[];

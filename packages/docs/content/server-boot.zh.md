@@ -77,7 +77,7 @@ platformImpl.create
 │    terminals,
 │  })
 ├─ caps = claimRuntimeCapabilities(resources)   # db/auth/channels/config/proxy/desktop
-└─ 业务面组装（caps 齐全时）：buildAppDeps → scheduler.start() → 孤儿 Goal 回收
+└─ 业务面组装（caps 齐全时）：buildAppDeps → scheduler.start()
    → createApp（终端组 + 业务组注册进同一个 Hono app）
    → 一次注册表写入发布 {deps, app, shutdown} 指针 → ctx.effect 注册 swap 硬中止
 ```

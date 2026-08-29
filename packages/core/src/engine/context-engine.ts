@@ -88,6 +88,8 @@ export interface TraceSink {
   write(msg: OmniMessage): Promise<void>;
   /** Optional: start a new Trace file (index+1), used to record the new model context after compaction. */
   rotate?(): Promise<void>;
+  /** Optional: absolute path of the file the next `write` lands in (what stop hooks read the conversation from). */
+  currentPath?(): string;
 }
 
 /**
@@ -483,6 +485,11 @@ export class ContextEngine {
   private steeringQueue: OmniMessage[][] = [];
   /** Whether a `run` is currently in flight (gates `steer`; compaction does not count). */
   private taskRunning = false;
+
+  /** Session cumulative LLM turns so far (completed requests, carried across compactions and resumes). */
+  get turns(): number {
+    return this.sessionTurns;
+  }
 
   /** Whether a `run` is in flight (the Session's notice routing keys on this: a running task delivers notices at the next boundary; an idle one goes through the host). */
   get isTaskRunning(): boolean {

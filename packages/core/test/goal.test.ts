@@ -6,44 +6,39 @@ import { parse as parseYaml } from "yaml";
 import {
   UNLIMITED_BUDGET,
   Session,
-  abortEvent,
   assistantText,
   buildSkillsMessage,
-  compactionEnd,
   downgradeGoalInput,
-  emptyTokenCounts,
   goalFilePath,
-  goalFinishedOf,
+  goalOutcomeOf,
+  goalProgressOf,
   imageUrlMessage,
   isGoalRoundInput,
   modelVisiblePath,
   parseGoalMessage,
-  requestEnd,
+  readGoalFile,
   sessionScratchpadDir,
   stripConversationMarkers,
   tokenUsage,
-  toolCallOutput,
   userText,
   withOrigin,
 } from "../src/index.js";
 import type {
-  RunCutoff,
   EnvironmentInterface,
-  GoalOutcome,
   LLMInterface,
   LLMOutcome,
   OmniMessage,
   SessionMetaPayload,
+  StopHookInput,
   TokenCounts,
 } from "../src/index.js";
-// The file protocol, prompt composition and the loop are internal to `session.run` (not part
-// of the SDK barrel); tests reach them through their modules directly.
-import { readGoalStatus, serializeGoalFile, writeGoalFile } from "../src/goal/goal-file.js";
+// The file protocol, prompt composition and the goal hook are internal to `session.run`
+// (not part of the SDK barrel); tests reach them through their modules directly.
+import { serializeGoalFile, writeGoalFile } from "../src/goal/goal-file.js";
 import type { GoalFile } from "../src/goal/goal-file.js";
 import type { GoalPromptArgs } from "../src/goal/goal-prompts.js";
 import { goalRoundMessage, goalWrapUpMessage } from "../src/goal/goal-prompts.js";
-import { runGoalLoop } from "../src/goal/goal-loop.js";
-import type { GoalRoundRunner } from "../src/goal/goal-loop.js";
+import { GOAL_MAX_ROUNDS, startGoal } from "../src/goal/goal-hook.js";
 
 let dir: string;
 let file: string;
@@ -61,55 +56,38 @@ function usage(total: number, cacheRead = 0): TokenCounts {
   return { cache_read: cacheRead, cache_write: 0, output: 0, total };
 }
 
+/** An active goal file with sensible defaults. */
+function goalFile(objective: string, over: Partial<GoalFile> = {}): GoalFile {
+  return {
+    objective,
+    status: "active",
+    budget: UNLIMITED_BUDGET,
+    round: 1,
+    tokens_used: 0,
+    ...over,
+  };
+}
+
 /** Prompt-args builder: an active-goal round message with sensible defaults. */
 function roundArgs(objective: string, over: Partial<GoalPromptArgs> = {}): GoalPromptArgs {
   return {
-    objective,
+    goal: goalFile(objective),
     goalFilePath: "/tmp/GOAL.yaml",
-    round: 1,
-    tokensUsed: 0,
-    budget: UNLIMITED_BUDGET,
     body: objective,
     ...over,
   };
 }
 
-/**
- * Fake round runner: each run yields the given messages for that round, then invokes an
- * optional side effect (standing in for the model editing GOAL.yaml with shell tools).
- */
-function fakeSession(
-  rounds: Array<{ messages?: OmniMessage[]; then?: () => Promise<void>; cutoff?: RunCutoff }>,
-): GoalRoundRunner & { prompts: string[] } {
-  let i = 0;
-  const prompts: string[] = [];
+/** A stop-hook input as the Session would build it after one completed Task. */
+function stopInput(over: Partial<StopHookInput> = {}): StopHookInput {
   return {
-    prompts,
-    async *run(newMessages: OmniMessage[]) {
-      const round = rounds[i++];
-      if (!round) throw new Error("fake session ran out of rounds");
-      const p = newMessages[0]?.payload as { text?: string };
-      prompts.push(p.text ?? "");
-      for (const msg of round.messages ?? []) yield msg;
-      await round.then?.();
-      // Session.run's contract: the return value says whether the round was cut off.
-      return round.cutoff ?? null;
-    },
+    sessionId: "session-1",
+    stopReason: "completed",
+    tasks: 1,
+    tokensUsed: 0,
+    turns: 1,
+    ...over,
   };
-}
-
-/** Drains the goal loop, returning the yielded stream and the final goal_finished outcome. */
-async function drain(gen: AsyncGenerator<OmniMessage>) {
-  const messages: OmniMessage[] = [];
-  let outcome: GoalOutcome | null = null;
-  for await (const msg of gen) {
-    messages.push(msg);
-    outcome = goalFinishedOf(msg) ?? outcome;
-  }
-  // The terminal event is always the LAST message of the stream.
-  expect(messages.length).toBeGreaterThan(0);
-  expect(goalFinishedOf(messages[messages.length - 1]!)).toEqual(outcome);
-  return { messages, outcome };
 }
 
 async function setStatus(status: string): Promise<void> {
@@ -118,62 +96,64 @@ async function setStatus(status: string): Promise<void> {
 }
 
 describe("goal-file", () => {
-  it("writes objective + status only, creating the session directory", async () => {
-    await writeGoalFile(file, { objective: "obj", status: "active" });
-    expect(await readGoalStatus(file)).toBe("active");
-    const raw = await fs.readFile(file, "utf8");
-    const parsed = parseYaml(raw) as Record<string, unknown>;
-    expect(parsed).toEqual({ objective: "obj", status: "active" });
+  it("round-trips all five fields, creating the session directory", async () => {
+    const goal = goalFile("obj", { budget: 500, round: 3, tokens_used: 120 });
+    await writeGoalFile(file, goal);
+    expect(await readGoalFile(file)).toEqual(goal);
+    const parsed = parseYaml(await fs.readFile(file, "utf8")) as Record<string, unknown>;
+    expect(Object.keys(parsed)).toEqual(["objective", "status", "budget", "round", "tokens_used"]);
   });
 
-  it("normalizes a missing file, invalid YAML, and unknown statuses to blocked", async () => {
-    expect(await readGoalStatus(file)).toBe("blocked");
+  it("reads tolerantly: missing/invalid → null, unknown status → blocked, bad counters → zero", async () => {
+    expect(await readGoalFile(file)).toBeNull();
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, "status: [unclosed", "utf8");
-    expect(await readGoalStatus(file)).toBe("blocked");
-    await fs.writeFile(file, "status: done_i_guess\n", "utf8");
-    expect(await readGoalStatus(file)).toBe("blocked");
-    // Nothing writes budget_limited to disk: reading it back means the protocol was violated.
-    await fs.writeFile(file, "status: budget_limited\n", "utf8");
-    expect(await readGoalStatus(file)).toBe("blocked");
+    expect(await readGoalFile(file)).toBeNull();
+    await fs.writeFile(file, "- a list\n", "utf8");
+    expect(await readGoalFile(file)).toBeNull();
+    await fs.writeFile(file, "objective: o\nstatus: done_i_guess\nround: soon\n", "utf8");
+    expect(await readGoalFile(file)).toEqual({
+      objective: "o",
+      status: "blocked",
+      budget: UNLIMITED_BUDGET,
+      round: 0,
+      tokens_used: 0,
+    });
   });
 });
 
 describe("goal-prompts", () => {
-  it("prefixes a [goal] block embedding the file content and a budget line, the body after it", () => {
-    const text = goalRoundMessage(
-      roundArgs("Raise coverage to 80%", { round: 3, tokensUsed: 100, budget: 1000 }),
-    );
+  it("prefixes a [goal] block embedding the file content, the body after it", () => {
+    const goal = goalFile("Raise coverage to 80%", { round: 3, tokens_used: 100, budget: 1000 });
+    const text = goalRoundMessage(roundArgs("Raise coverage to 80%", { goal }));
     expect(text.startsWith("[goal]\nround: 3\n")).toBe(true);
-    // The embedded yaml is the exact serialization the file was created with.
-    expect(text).toContain(
-      serializeGoalFile({ objective: "Raise coverage to 80%", status: "active" }).trimEnd(),
-    );
+    // The embedded yaml is the exact serialization the file was written with.
+    expect(text).toContain(serializeGoalFile(goal).trimEnd());
     expect(text).toContain("/tmp/GOAL.yaml");
-    expect(text).toContain("Budget: 100 / 1000 tokens used (remaining: 900).");
     // The body follows the closing tag as a plain message body.
     expect(text).toMatch(/\n\[\/goal\]\n\nRaise coverage to 80%$/);
-    expect(text).not.toContain("unbounded");
-  });
-
-  it("renders an unlimited budget as unbounded", () => {
-    const text = goalRoundMessage(roundArgs("obj", { tokensUsed: 42 }));
-    expect(text).toContain("Budget: none (unbounded). Tokens used so far: 42.");
-    expect(text).not.toContain("-1");
   });
 
   it("the wrap-up block announces the exhausted budget", () => {
-    const wrap = goalWrapUpMessage(roundArgs("obj", { round: 2, tokensUsed: 120, budget: 100 }));
+    const goal = goalFile("obj", {
+      status: "wrapping_up",
+      round: 2,
+      tokens_used: 120,
+      budget: 100,
+    });
+    const wrap = goalWrapUpMessage(roundArgs("obj", { goal }));
     expect(wrap.startsWith("[goal]\nround: 2\n")).toBe(true);
     expect(wrap).toContain("reached its token budget");
     expect(wrap).toContain("budget_limited");
-    expect(wrap).toContain("Budget: 120 / 100 tokens used (remaining: 0).");
+    expect(wrap).toContain("status: wrapping_up");
   });
 });
 
 describe("[goal] marker parsing", () => {
   it("parses the round number and returns the body after the block", () => {
-    const text = goalRoundMessage(roundArgs("obj", { round: 7, body: "obj body" }));
+    const text = goalRoundMessage(
+      roundArgs("obj", { goal: goalFile("obj", { round: 7 }), body: "obj body" }),
+    );
     expect(parseGoalMessage(text)).toEqual({ round: 7, rest: "obj body" });
     expect(parseGoalMessage("plain user text")).toBeNull();
     expect(parseGoalMessage("[goal]\nno round line\n[/goal]\nx")).toBeNull();
@@ -202,7 +182,9 @@ describe("[goal] marker parsing", () => {
   });
 
   it("downgradeGoalInput strips the protocol, keeps the body, passes non-goal text through", () => {
-    const text = goalRoundMessage(roundArgs("fix the tests", { round: 4 }));
+    const text = goalRoundMessage(
+      roundArgs("fix the tests", { goal: goalFile("fix the tests", { round: 4 }) }),
+    );
     const downgraded = downgradeGoalInput(text);
     expect(downgraded).toContain("goal round 4 of an ended goal run");
     expect(downgraded).toContain("fix the tests");
@@ -233,275 +215,118 @@ describe("session scratchpad paths", () => {
   });
 });
 
-describe("runGoalLoop", () => {
-  it("loops until the model marks complete, injecting a [goal] round message each time", async () => {
-    const session = fakeSession([
-      { messages: [tokenUsage(usage(100), usage(100))] },
-      {
-        messages: [tokenUsage(usage(200), usage(50))],
-        then: () => setStatus("complete"),
-      },
-    ]);
-    const { messages, outcome } = await drain(
-      runGoalLoop(session, { text: "obj", goalFilePath: file }),
-    );
-    expect(outcome).toEqual({ outcome: "complete", rounds: 2, tokensUsed: 150 });
-    expect(session.prompts[0]).toContain("round: 1");
-    expect(session.prompts[1]).toContain("round: 2");
-    // The stream contains each round's injected user message followed by the round's output.
-    const userTexts = messages.filter(
-      (m) => m.type === "model_msg" && (m.payload as { role?: string }).role === "user",
-    );
-    expect(userTexts).toHaveLength(2);
-    expect(userTexts.every(isGoalRoundInput)).toBe(true);
-    expect(await readGoalStatus(file)).toBe("complete");
-  });
-
-  it("round 1 carries the caller's text verbatim; later rounds re-inject the stripped objective", async () => {
+describe("goal hook", () => {
+  it("starts with the file written and round 1 carrying the caller's text verbatim", async () => {
     const text = buildSkillsMessage(["web-design"], "Ship the landing page");
-    const session = fakeSession([{}, { then: () => setStatus("complete") }]);
-    await drain(runGoalLoop(session, { text, goalFilePath: file }));
+    const { input } = await startGoal({ text, goalFilePath: file, budget: 500 });
     // Round 1: the [use_skills] block rides after [goal], untouched.
-    expect(parseGoalMessage(session.prompts[0]!)?.rest).toBe(text);
-    // Round 2: the objective alone (leading marker blocks stripped).
-    expect(parseGoalMessage(session.prompts[1]!)?.rest).toBe("Ship the landing page");
+    expect(parseGoalMessage((input.payload as { text: string }).text)?.rest).toBe(text);
     // GOAL.yaml records the stripped objective, not the skills block.
-    const parsed = parseYaml(await fs.readFile(file, "utf8")) as { objective: string };
-    expect(parsed.objective).toBe("Ship the landing page");
+    expect(await readGoalFile(file)).toEqual({
+      objective: "Ship the landing page",
+      status: "active",
+      budget: 500,
+      round: 1,
+      tokens_used: 0,
+    });
   });
 
-  it("treats a round the engine cut off (failed final assistant text) as terminal", async () => {
-    // The max_turns cutoff: a final assistant notice with stop_reason "fatal", no abort
-    // event, and the model never reached the goal file — re-firing would loop forever.
-    const session = fakeSession([
-      { messages: [assistantText("[reached max turns (100); stopping]", "fatal")] },
-    ]);
-    const { outcome } = await drain(runGoalLoop(session, { text: "o", goalFilePath: file }));
-    expect(outcome).toEqual({ outcome: "aborted", rounds: 1, tokensUsed: 0 });
-    // The on-disk goal stays active: the workspace and goal file remain the resume point.
-    expect(await readGoalStatus(file)).toBe("active");
+  it("continues with the next round while the file stays active, refreshing the counters", async () => {
+    const { hook } = await startGoal({ text: "obj", goalFilePath: file });
+    const res = await hook.run(stopInput({ tasks: 1, tokensUsed: 150 }));
+    expect(res).toMatchObject({
+      decision: "continue",
+      output: { status: "active", round: 2, tokens_used: 150, budget: UNLIMITED_BUDGET },
+    });
+    // The injected input is round 2 with the objective alone as its body.
+    expect(parseGoalMessage(res!.input!)).toEqual({ round: 2, rest: "obj" });
+    expect(await readGoalFile(file)).toMatchObject({
+      status: "active",
+      round: 2,
+      tokens_used: 150,
+    });
   });
 
-  it("a mid-round failed notice followed by normal text does not end the goal", async () => {
-    const session = fakeSession([
-      {
-        messages: [assistantText("tool hiccup", "fatal"), assistantText("recovered, done")],
-        then: () => setStatus("complete"),
-      },
-    ]);
-    const { outcome } = await drain(runGoalLoop(session, { text: "o", goalFilePath: file }));
-    expect(outcome).toEqual({ outcome: "complete", rounds: 1, tokensUsed: 0 });
+  it("stops with the model's own verdict, keeping it in the file", async () => {
+    const { hook } = await startGoal({ text: "obj", goalFilePath: file });
+    await setStatus("complete");
+    const res = await hook.run(stopInput({ tasks: 2, tokensUsed: 90 }));
+    expect(res).toMatchObject({
+      decision: "stop",
+      output: { status: "complete", round: 2, tokens_used: 90 },
+    });
+    expect(res!.input).toBeUndefined();
+    expect(await readGoalFile(file)).toMatchObject({
+      status: "complete",
+      round: 2,
+      tokens_used: 90,
+    });
   });
 
-  it("stops at the round cap when the model never writes the goal file", async () => {
-    const session = fakeSession([{}, {}, {}]);
-    const { outcome } = await drain(
-      runGoalLoop(session, { text: "o", goalFilePath: file, maxRounds: 3 }),
-    );
-    expect(outcome).toEqual({ outcome: "aborted", rounds: 3, tokensUsed: 0 });
-    expect(session.prompts).toHaveLength(3);
-    expect(await readGoalStatus(file)).toBe("active");
+  it("re-asserts the objective and budget: the model owns status only", async () => {
+    const { hook } = await startGoal({ text: "obj", goalFilePath: file, budget: 1000 });
+    await fs.writeFile(file, "objective: something else\nstatus: active\nbudget: 5\n", "utf8");
+    const res = await hook.run(stopInput({ tokensUsed: 10 }));
+    expect(res?.decision).toBe("continue");
+    expect(await readGoalFile(file)).toMatchObject({
+      objective: "obj",
+      budget: 1000,
+      status: "active",
+    });
   });
 
-  it("an explicit maxRounds of -1 disables the backstop: the goal runs past 100 rounds", async () => {
-    // The default backstop stays 100; -1 is the explicit opt-out. Round 103 claims
-    // complete, which the default cap would have ended as `aborted` at round 100.
-    const behaviors = Array.from({ length: 103 }, (_, i) =>
-      i === 102 ? { then: () => setStatus("complete") } : {},
-    );
-    const session = fakeSession(behaviors);
-    const { outcome } = await drain(
-      runGoalLoop(session, { text: "o", goalFilePath: file, maxRounds: -1 }),
-    );
-    expect(outcome).toEqual({ outcome: "complete", rounds: 103, tokensUsed: 0 });
-    expect(session.prompts).toHaveLength(103);
+  it("a cut-off Task ends the goal as aborted without re-firing", async () => {
+    const { hook } = await startGoal({ text: "obj", goalFilePath: file });
+    for (const stopReason of ["aborted", "fatal"] as const) {
+      const res = await hook.run(stopInput({ stopReason }));
+      expect(res).toMatchObject({ decision: "stop", output: { status: "aborted" } });
+    }
+    expect((await readGoalFile(file))?.status).toBe("aborted");
   });
 
-  it("an abort landing between rounds stops the loop without a phantom round", async () => {
-    const ac = new AbortController();
-    // The signal aborts AFTER round 1's stream ends — no abort event ever hits the stream,
-    // which is exactly the window where a phantom round used to fire (and its [goal] input
-    // would leak into the user's next message as engine carry-over).
-    const session = fakeSession([
-      {
-        then: async () => {
-          ac.abort();
-        },
-      },
-    ]);
-    const { outcome } = await drain(
-      runGoalLoop(session, { text: "o", goalFilePath: file, signal: ac.signal }),
-    );
-    expect(outcome).toEqual({ outcome: "aborted", rounds: 1, tokensUsed: 0 });
-    expect(session.prompts).toHaveLength(1);
+  it("a broken file stops the goal as blocked and is left untouched", async () => {
+    const { hook } = await startGoal({ text: "obj", goalFilePath: file });
+    await fs.writeFile(file, "status: [unclosed", "utf8");
+    const res = await hook.run(stopInput());
+    expect(res).toMatchObject({ decision: "stop", output: { status: "blocked" } });
+    expect(await fs.readFile(file, "utf8")).toBe("status: [unclosed");
   });
 
-  it("stops when the model marks blocked (or breaks the file)", async () => {
-    const session = fakeSession([{ then: () => setStatus("blocked") }]);
-    const { outcome } = await drain(runGoalLoop(session, { text: "o", goalFilePath: file }));
-    expect(outcome).toEqual({ outcome: "blocked", rounds: 1, tokensUsed: 0 });
-
-    const corrupt = fakeSession([
-      { then: () => fs.writeFile(file, ":: not yaml ::\n\t{", "utf8") },
-    ]);
-    const second = await drain(runGoalLoop(corrupt, { text: "o", goalFilePath: file }));
-    expect(second.outcome).toEqual({ outcome: "blocked", rounds: 1, tokensUsed: 0 });
-  });
-
-  it("runs one wrap-up round and marks budget_limited when the budget is exhausted", async () => {
-    const session = fakeSession([
-      { messages: [tokenUsage(usage(120), usage(120))] },
-      { messages: [tokenUsage(usage(150), usage(30))] },
-    ]);
-    const { outcome } = await drain(
-      runGoalLoop(session, { text: "o", goalFilePath: file, budget: 100 }),
-    );
-    expect(outcome).toEqual({ outcome: "budget_limited", rounds: 2, tokensUsed: 150 });
-    expect(session.prompts[1]).toContain("reached its token budget");
-    // The wrap-up block's budget line carries the spent tokens.
-    expect(session.prompts[1]).toContain("Budget: 120 / 100 tokens used");
-    // The file keeps the model's last write (none here); the outcome rides goal_finished.
-    expect(await readGoalStatus(file)).toBe("active");
+  it("runs one wrap-up round once the budget is reached, then ends as budget_limited", async () => {
+    const { hook } = await startGoal({ text: "obj", goalFilePath: file, budget: 100 });
+    const wrap = await hook.run(stopInput({ tasks: 1, tokensUsed: 120 }));
+    expect(wrap).toMatchObject({
+      decision: "continue",
+      output: { status: "wrapping_up", round: 2 },
+    });
+    expect(wrap!.input).toContain("reached its token budget");
+    expect(wrap!.reason).toContain("wrap-up");
+    const end = await hook.run(stopInput({ tasks: 2, tokensUsed: 130 }));
+    expect(end).toMatchObject({
+      decision: "stop",
+      output: { status: "budget_limited", round: 2, tokens_used: 130 },
+    });
   });
 
   it("honors a truthful complete during the wrap-up round", async () => {
-    const session = fakeSession([
-      { messages: [tokenUsage(usage(120), usage(120))] },
-      { then: () => setStatus("complete") },
-    ]);
-    const { outcome } = await drain(
-      runGoalLoop(session, { text: "o", goalFilePath: file, budget: 100 }),
-    );
-    expect(outcome).toEqual({ outcome: "complete", rounds: 2, tokensUsed: 120 });
+    const { hook } = await startGoal({ text: "obj", goalFilePath: file, budget: 100 });
+    await hook.run(stopInput({ tasks: 1, tokensUsed: 120 }));
+    await setStatus("complete");
+    const end = await hook.run(stopInput({ tasks: 2, tokensUsed: 130 }));
+    expect(end).toMatchObject({ decision: "stop", output: { status: "complete" } });
   });
 
-  it("stops without re-firing when the main session aborts, leaving the goal active", async () => {
-    const session = fakeSession([
-      {
-        messages: [tokenUsage(usage(80), usage(80)), abortEvent()],
-        cutoff: { kind: "abort", errorCode: "user_abort" },
-      },
-    ]);
-    const { outcome } = await drain(runGoalLoop(session, { text: "o", goalFilePath: file }));
-    expect(outcome).toEqual({ outcome: "aborted", rounds: 1, tokensUsed: 80 });
-    expect(await readGoalStatus(file)).toBe("active");
-  });
-
-  it("stops without re-firing when the run returns an LLM-failure cutoff (no abort event)", async () => {
-    // A fatal end (and equally a retryable one with no retry planned) cuts the round;
-    // re-firing would loop the same failure forever. The run generator's return value
-    // carries the fact — the loop never re-derives it from the stream.
-    const session = fakeSession([
-      {
-        messages: [tokenUsage(usage(80), usage(80)), requestEnd("fatal", { errorMessage: "401" })],
-        cutoff: { kind: "llm_failure", errorCode: "auth", errorMessage: "401" },
-      },
-    ]);
-    const { outcome } = await drain(runGoalLoop(session, { text: "o", goalFilePath: file }));
-    expect(outcome).toEqual({ outcome: "aborted", rounds: 1, tokensUsed: 80 });
-    expect(await readGoalStatus(file)).toBe("active");
-  });
-
-  it("a retryable request_end that announces its retry does NOT stop the loop", async () => {
-    // Mid-ladder failures carry retry_in_ms; only the give-up (no retry planned) is terminal.
-    const session = fakeSession([
-      {
-        messages: [
-          requestEnd("retryable", { attempt: 1, retryInMs: 2000 }),
-          tokenUsage(usage(90), usage(90)),
-        ],
-        then: () => setStatus("complete"),
-      },
-    ]);
-    const { outcome } = await drain(runGoalLoop(session, { text: "o", goalFilePath: file }));
-    expect(outcome).toEqual({ outcome: "complete", rounds: 1, tokensUsed: 90 });
-  });
-
-  it("stops without re-firing when a mid-task compaction is given up (no abort event)", async () => {
-    // Tool outputs owed the model a follow-up turn; the compaction failure ended the run
-    // before that turn — the round is cut, not finished.
-    const session = fakeSession([
-      {
-        messages: [
-          tokenUsage(usage(70), usage(70)),
-          toolCallOutput({ output: "ok", toolCallId: "t1" }),
-          compactionEnd({ reason: "context", mode: "summarize", status: "retryable" }),
-        ],
-        cutoff: { kind: "compaction_failure" },
-      },
-    ]);
-    const { outcome } = await drain(runGoalLoop(session, { text: "o", goalFilePath: file }));
-    expect(outcome).toEqual({ outcome: "aborted", rounds: 1, tokensUsed: 70 });
-    expect(await readGoalStatus(file)).toBe("active");
-  });
-
-  it("a Task-boundary compaction failure is advisory: the loop keeps going", async () => {
-    // No tool outputs pending a follow-up turn when the compaction failed — the model
-    // finished its round; the standing trigger retries the compaction next opportunity.
-    const session = fakeSession([
-      {
-        messages: [
-          tokenUsage(usage(60), usage(60)),
-          compactionEnd({ reason: "context", mode: "summarize", status: "retryable" }),
-        ],
-        then: () => setStatus("complete"),
-      },
-    ]);
-    const { outcome } = await drain(runGoalLoop(session, { text: "o", goalFilePath: file }));
-    expect(outcome).toEqual({ outcome: "complete", rounds: 1, tokensUsed: 60 });
-  });
-
-  it("counts uncached input + output, including subagent (origin-marked) usage", async () => {
-    const childUsage = withOrigin(tokenUsage(usage(500, 200), usage(500, 200)), "child-session");
-    const childAbort = withOrigin(abortEvent(), "child-session");
-    const session = fakeSession([
-      {
-        // Main request: total 1000 with 400 cached → 600; child: total 500 with 200 cached → 300.
-        // A child abort must not end the goal loop.
-        messages: [tokenUsage(usage(1000, 400), usage(1000, 400)), childUsage, childAbort],
-        then: () => setStatus("complete"),
-      },
-    ]);
-    const { outcome } = await drain(runGoalLoop(session, { text: "o", goalFilePath: file }));
-    expect(outcome).toEqual({ outcome: "complete", rounds: 1, tokensUsed: 900 });
-  });
-
-  it("writes the file exactly once; only the model's own edits change it afterwards", async () => {
-    const session = fakeSession([
-      { messages: [tokenUsage(usage(70), usage(70))] },
-      { then: () => setStatus("complete") },
-    ]);
-    // Capture the file at the start of round 2: byte-identical to the creation write.
-    let initRaw = "";
-    let midRaw = "";
-    const orig = session.run.bind(session);
-    let call = 0;
-    session.run = async function* (msgs: OmniMessage[]) {
-      call++;
-      if (call === 1) initRaw = await fs.readFile(file, "utf8");
-      if (call === 2) midRaw = await fs.readFile(file, "utf8");
-      yield* orig(msgs);
-    };
-    await drain(runGoalLoop(session, { text: "o", goalFilePath: file }));
-    expect(initRaw).toBe("objective: o\nstatus: active\n");
-    expect(midRaw).toBe(initRaw);
-    // The final content is the model's setStatus edit, not a system rewrite.
-    expect(await fs.readFile(file, "utf8")).toBe("objective: o\nstatus: complete\n");
-  });
-
-  it("sanity: userText/emptyTokenCounts helpers exist for hosts", () => {
-    expect(userText("x").payload.text).toBe("x");
-    expect(emptyTokenCounts().total).toBe(0);
+  it("stops at the round cap when the model never writes the goal file", async () => {
+    const { hook } = await startGoal({ text: "obj", goalFilePath: file });
+    expect((await hook.run(stopInput({ tasks: GOAL_MAX_ROUNDS - 1 })))?.decision).toBe("continue");
+    expect(await hook.run(stopInput({ tasks: GOAL_MAX_ROUNDS }))).toMatchObject({
+      decision: "stop",
+      output: { status: "aborted", round: GOAL_MAX_ROUNDS },
+    });
   });
 });
 
-/**
- * The Session-level goal entry (`run(input, { goal })`): input validation and the image fold.
- * A goal objective folds its images to `[attached image: <path>]` lines on any model, unlike a
- * Prompt — it is re-injected as the text of each round's `[goal]` block, which leaves an image
- * message nowhere to sit. See Session.runGoal.
- */
-describe("Session.runGoal input", () => {
+describe("Session goal mode", () => {
   const PNG_DATA_URL =
     "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
@@ -514,7 +339,7 @@ describe("Session.runGoal input", () => {
     toolPermission: () => undefined,
   };
 
-  /** A model that answers each round with one final text, marking the goal complete on `completeOn`. */
+  /** A model that answers each round with one final text (and its usage), marking the goal complete on `completeOn`. */
   function fakeLLM(completeOn: number): LLMInterface {
     let round = 0;
     return {
@@ -522,13 +347,15 @@ describe("Session.runGoal input", () => {
         round++;
         if (round >= completeOn) await setStatus("complete");
         yield assistantText(`round ${round} done`);
+        yield tokenUsage(usage(100 * round), usage(100, 40));
         return { status: "completed" } satisfies LLMOutcome;
       },
     };
   }
 
   // `modelHasVision: true` throughout: the fold runs regardless, and a vision model is the case
-  // that would break if runGoal ever grew the `if (!this.modelHasVision)` the other paths have.
+  // that would break if the objective path ever grew the `if (!this.modelHasVision)` the other
+  // paths have.
   function makeSession(completeOn = 1): Session {
     const meta: SessionMetaPayload = {
       session_id: "session-1",
@@ -550,18 +377,37 @@ describe("Session.runGoal input", () => {
     });
   }
 
-  /** Drives the goal and returns the text of each round's injected `[goal]` input. */
-  async function roundInputs(session: Session, input: OmniMessage[]): Promise<string[]> {
-    const texts: string[] = [];
+  /** Drives the goal, returning the stream and the text of each round's injected `[goal]` input. */
+  async function drive(session: Session, input: OmniMessage[]) {
+    const messages: OmniMessage[] = [];
+    const rounds: string[] = [];
     for await (const msg of session.run(input, { goal: {} })) {
-      if (isGoalRoundInput(msg)) texts.push((msg.payload as { text: string }).text);
+      messages.push(msg);
+      if (isGoalRoundInput(msg)) rounds.push((msg.payload as { text: string }).text);
     }
-    return texts;
+    return { messages, rounds };
   }
 
+  it("loops rounds through the hook until the model marks complete, ending on the hook's stop event", async () => {
+    const { messages, rounds } = await drive(makeSession(2), [userText("obj")]);
+    expect(rounds).toHaveLength(2);
+    expect(parseGoalMessage(rounds[1]!)).toEqual({ round: 2, rest: "obj" });
+    // Every goal hook answer is on the stream: a continue after round 1, a stop after round 2.
+    const progress = messages.map(goalProgressOf).filter((p) => p !== null);
+    expect(progress.map((p) => p.decision)).toEqual(["continue", "stop"]);
+    // Uncached input + output (60 per request here) drives the counters.
+    expect(progress[0]).toMatchObject({ status: "active", round: 2, tokensUsed: 60 });
+    // The stop event is the stream's last message and carries the outcome.
+    expect(goalOutcomeOf(messages[messages.length - 1]!)).toEqual({
+      outcome: "complete",
+      rounds: 2,
+      tokensUsed: 120,
+    });
+    expect((await readGoalFile(file))?.status).toBe("complete");
+  });
+
   it("folds an attached image into the objective and re-injects it every round — vision model included", async () => {
-    const session = makeSession(2);
-    const rounds = await roundInputs(session, [
+    const { rounds } = await drive(makeSession(2), [
       userText("Match this mockup"),
       imageUrlMessage(PNG_DATA_URL),
     ]);
@@ -581,12 +427,12 @@ describe("Session.runGoal input", () => {
 
   it("rejects an objective with no text: an image alone states no goal", async () => {
     const session = makeSession();
-    await expect(roundInputs(session, [imageUrlMessage(PNG_DATA_URL)])).rejects.toThrow(
+    await expect(drive(session, [imageUrlMessage(PNG_DATA_URL)])).rejects.toThrow(
       /non-empty text objective/,
     );
     // A blank text is no better.
-    await expect(
-      roundInputs(session, [userText("   "), imageUrlMessage(PNG_DATA_URL)]),
-    ).rejects.toThrow(/non-empty text objective/);
+    await expect(drive(session, [userText("   "), imageUrlMessage(PNG_DATA_URL)])).rejects.toThrow(
+      /non-empty text objective/,
+    );
   });
 });

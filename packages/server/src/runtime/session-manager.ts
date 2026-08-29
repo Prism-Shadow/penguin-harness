@@ -31,8 +31,8 @@ import path from "node:path";
 import {
   createAgent,
   findLatestTraceFile,
-  goalFinishedOf,
-  goalTokenDelta,
+  goalOutcomeOf,
+  goalProgressOf,
   isGoalRoundInput,
   isSessionMeta,
   parseUserSteeringText,
@@ -62,7 +62,6 @@ import type {
 } from "../api/types.js";
 import type { RecallableFile } from "../services/task-attachments.js";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
-import type { GoalsRepo } from "../db/repos/goals.js";
 import type { SessionRow, SessionsRepo } from "../db/repos/sessions.js";
 import { ApprovalRegistry, makeApprove } from "./approvals.js";
 import type { PendingApproval } from "./approvals.js";
@@ -295,8 +294,6 @@ export interface SessionManagerDeps {
   /** Error persistence (optional: without it, only logs — same as before this was wired up). */
   errors?: ErrorSink;
   log?: (line: string) => void;
-  /** Goal run-state persistence (optional like `titles`: without it, goals run but leave no restorable record). */
-  goals?: GoalsRepo;
   /**
    * Publishes a Session-scoped event on the user-level channel of everyone who can see the
    * Project. The audience lookup (owner + members) and the `user:<id>` channel binding stay in
@@ -869,8 +866,8 @@ export class SessionManager {
    * Session stays `running` for the whole goal (every round), so the existing abort
    * endpoint interrupts the entire loop and schedules queue behind it as usual. Round
    * inputs are yielded by core and published like any streamed message; progress
-   * additionally goes out as goal_* server events and into goal_state (when a repo is
-   * wired).
+   * additionally goes out as goal_* server events (the run state itself lives in the
+   * Session's GOAL.yaml, which core's goal hook maintains).
    */
   async startGoal(
     sessionId: string,
@@ -894,7 +891,7 @@ export class SessionManager {
       // `isPlainText` leaves attached images out, so this copy carries no
       // `[attached image: <path>]` lines — which suits its readers, since a status card and a
       // generated title read better without absolute scratchpad paths. Core keeps its own
-      // folded copy (Session.runGoal) for what the rounds actually re-inject.
+      // folded copy (Session.goalObjectiveText) for what the rounds actually re-inject.
       const text = args.input
         .filter(isPlainText("user"))
         .map((m) => m.payload.text)
@@ -911,13 +908,6 @@ export class SessionManager {
       entry.pendingBootstrap = [];
       this.publishState(entry, "running");
       const approve = this.entryApprove(entry);
-      const goalId = this.deps.goals?.create({
-        sessionId: entry.sessionId,
-        projectId: entry.projectId,
-        agentId: entry.agentId,
-        objective,
-        budget: args.budget,
-      });
       this.publishEvent(entry, {
         type: "goal_started",
         sessionId: entry.sessionId,
@@ -932,7 +922,6 @@ export class SessionManager {
         ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
         approve,
         signal: ac.signal,
-        ...(goalId !== undefined ? { goalId } : {}),
       });
       // The objective doubles as the title material (same role as a task's input text).
       entry.running = this.drive(entry, gen, { userExcerpt: objective });
@@ -942,10 +931,11 @@ export class SessionManager {
 
   /**
    * Taps core's goal-mode stream for `drive`: round boundaries (the injected `[goal]`
-   * inputs) become goal_round events + goal_state refreshes, and the terminal
-   * `goal_finished` event message becomes the goal_finished server event + the run-state
-   * row's final status. Token numbers mirror core's own accounting (same
-   * `goalTokenDelta`), so the UI shows exactly what the budget check uses.
+   * inputs) become goal_round events, and the goal hook's `stop` event becomes the
+   * goal_finished server event. `used` is what the hook last recorded in its event's
+   * `output` — the same number its budget check used — so the UI never shows a different
+   * figure. A stream that ends without the hook's terminal event (a cut-off run, an
+   * infrastructure failure) closes as `aborted`.
    */
   private async *goalStream(
     entry: RuntimeEntry,
@@ -955,7 +945,6 @@ export class SessionManager {
       thinkingLevel?: ThinkingLevelName;
       approve: ApproveFn;
       signal: AbortSignal;
-      goalId?: number;
     },
   ): AsyncGenerator<OmniMessage> {
     const gen = entry.session.run(args.input, {
@@ -969,10 +958,8 @@ export class SessionManager {
     let finished = false;
     try {
       for await (const msg of gen) {
-        used += goalTokenDelta(msg);
         if (isGoalRoundInput(msg)) {
           round++;
-          if (args.goalId !== undefined) this.deps.goals?.progress(args.goalId, round, used);
           this.publishEvent(entry, {
             type: "goal_round",
             sessionId: entry.sessionId,
@@ -981,17 +968,11 @@ export class SessionManager {
             budget: args.budget,
           });
         }
-        const outcome = goalFinishedOf(msg);
+        const progress = goalProgressOf(msg);
+        if (progress) used = progress.tokensUsed;
+        const outcome = goalOutcomeOf(msg);
         if (outcome) {
           finished = true;
-          if (args.goalId !== undefined) {
-            this.deps.goals?.finish(
-              args.goalId,
-              outcome.outcome,
-              outcome.rounds,
-              outcome.tokensUsed,
-            );
-          }
           this.publishEvent(entry, {
             type: "goal_finished",
             sessionId: entry.sessionId,
@@ -1002,30 +983,18 @@ export class SessionManager {
         }
         yield msg;
       }
-      if (!finished) {
-        // Defensive: core always ends a goal stream with goal_finished; a stream that
-        // didn't is a cut-off run — close the row so the UI never shows a forever-active
-        // goal.
-        this.finishAborted(entry, args.goalId, round, used);
-      }
+      if (!finished) this.finishAborted(entry, round, used);
     } catch (err) {
-      // Core throws only on infrastructure failures (e.g. GOAL.yaml writes): close the
-      // run state as aborted, then let drive's defensive catch record the error. Guarded on
-      // `finished`: a throw after the terminal event must not overwrite the row's real
-      // outcome (repo.finish is an unconditional UPDATE) or publish a contradicting event.
-      if (!finished) this.finishAborted(entry, args.goalId, round, used);
+      // Core throws only on infrastructure failures (e.g. GOAL.yaml writes): close the goal
+      // as aborted, then let drive's defensive catch record the error. Guarded on
+      // `finished`: a throw after the terminal event must not publish a contradicting event.
+      if (!finished) this.finishAborted(entry, round, used);
       throw err;
     }
   }
 
-  /** Closes a goal's run state as aborted (stream cut off / infrastructure failure). */
-  private finishAborted(
-    entry: RuntimeEntry,
-    goalId: number | undefined,
-    round: number,
-    used: number,
-  ): void {
-    if (goalId !== undefined) this.deps.goals?.finish(goalId, "aborted", round, used);
+  /** Closes a goal as aborted for the UI (stream cut off / infrastructure failure). */
+  private finishAborted(entry: RuntimeEntry, round: number, used: number): void {
     this.publishEvent(entry, {
       type: "goal_finished",
       sessionId: entry.sessionId,

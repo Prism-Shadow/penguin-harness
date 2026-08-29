@@ -1,6 +1,6 @@
 /**
  * [goal] — the goal-mode round protocol block, prefixed to each round's user message by the
- * Session's goal loop (see goal/goal-prompts.ts for the block's composition).
+ * goal hook (see goal/goal-prompts.ts for the block's composition).
  *
  * Unlike the other markers, the closing tag is matched **line-anchored** (`\n[/goal]`),
  * because the block embeds the current GOAL.yaml verbatim and its `objective` value is user
@@ -44,8 +44,8 @@ export function parseGoalMessage(text: string): GoalRoundMessage | null {
 /**
  * Downgrades a goal round's input for carry-over reuse. A goal-round text can only land in
  * the engine's carry-over when its goal run has already ENDED — every path that holds
- * carry-over (user abort, LLM failure, reconnect exhaustion, max_turns) also terminates the
- * goal loop — so re-sending the protocol block with the next task would instruct the model
+ * carry-over (user abort, LLM failure, reconnect exhaustion, max_turns) also ends the goal
+ * (a cutoff is never continued) — so re-sending the protocol block with the next task would instruct the model
  * to keep pursuing a dead goal ("the system sends the next round automatically", the goal
  * file rules, the audits). The block is replaced with a one-line past-tense note and the
  * body (the user's own text) is kept as context; non-goal text passes through unchanged.

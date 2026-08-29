@@ -15,7 +15,7 @@
  * notice — the messages endpoint still holds the full history for `penguin logs`.
  */
 import {
-  goalFinishedOf,
+  goalOutcomeOf,
   isEventMessage,
   isGoalRoundInput,
   isModelMessage,
@@ -254,7 +254,7 @@ export async function watchTask(
         segmentStartedAt = Date.now();
         opts.goal.out.write(`${dim(t.goalRound(round))}\n`);
       }
-      outcome = goalFinishedOf(msg) ?? outcome;
+      outcome = goalOutcomeOf(msg) ?? outcome;
     }
     if (opts.onAssistantText && (msg.origin?.length ?? 0) === 0 && isModelMessage(msg)) {
       const p = msg.payload as { type?: string; role?: string; text?: string };

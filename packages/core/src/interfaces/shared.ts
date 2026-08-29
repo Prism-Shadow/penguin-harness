@@ -26,7 +26,7 @@ export type ThinkingLevelName = "none" | "low" | "medium" | "high" | "xhigh" | "
  * How a run was cut off early, returned as the **return value** of the run generators
  * (`ContextEngine.run` / `Session.run` / `SubagentHandle.run`): `null` means the run ran
  * to completion. The engine knows which exit it took, so consumers that must not treat a
- * cut-off run as finished (the goal loop deciding whether to re-fire a round, a subagent
+ * cut-off run as finished (the goal hook deciding whether to re-fire a round, a subagent
  * round reporting completion) read this instead of re-deriving it from the stream —
  * failures emit no abort event, only their terminal request_end / compaction_end records.
  * `abort` is a user interruption; `llm_failure` a terminal LLM request failure;

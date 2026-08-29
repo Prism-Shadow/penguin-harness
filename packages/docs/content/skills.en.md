@@ -84,3 +84,4 @@ The built-in Skills, by group (the group manifest is `SKILL_GROUPS` in `packages
 - Manual install: create a directory under `agent_state/skills/<name>/` and write a `SKILL.md`; the system scans `skills/` when assembling the system prompt and injects the metadata. A directory without a `SKILL.md` does not count as a Skill.
 - Uninstalling deletes the whole `skills/<name>/` directory and is idempotent.
 - An Agent can rewrite its own SKILL.md as part of a task — combined with Benchmark evaluation and optimization this closes the improvement loop, see [Self-Improvement](/self-improvement).
+- Long sessions feed back on their own: every 20 completed turns (configurable) the skill-summary stop hook hands a condensed excerpt of the session to a background subagent, which folds the durable findings into the relevant SKILL.md files — see [The Agent Loop](/agent-loop#stop-hooks).

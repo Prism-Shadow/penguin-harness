@@ -17,7 +17,7 @@ export const MARKER_TAGS = {
   summary: "summary",
   /** Mid-run user message delivered between turns (Session.steer). */
   userSteering: "user_steering",
-  /** Goal-mode round protocol block prefixed to each round's input (Session goal loop). */
+  /** Goal-mode round protocol block prefixed to each round's input (the goal hook). */
   goal: "goal",
   /** Skill invocation block prefixed to a user message (Web composer). */
   useSkills: "use_skills",

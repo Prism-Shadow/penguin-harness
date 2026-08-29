@@ -43,6 +43,9 @@ import {
   resumeTrace,
 } from "./trace/index.js";
 import { Session } from "./session.js";
+import { createSkillSummaryHook } from "./hooks/skill-summary-hook.js";
+import type { SessionHooks } from "./hooks/stop-hook.js";
+import { DEFAULT_SKILL_SUMMARY_MIN_TURNS } from "./state/default-config.js";
 import {
   createTempWorkspace,
   formatSessionId,
@@ -335,6 +338,12 @@ export class Agent {
       vault,
     });
 
+    const hooks = this.sessionHooks(
+      rt.subagentRunner,
+      sessionId,
+      subagentDepth > 0 || opts.source === "subagent",
+    );
+
     const trace = new Writer({
       tracesDir: tracesDir(this.state.root, this.state.projectId, this.state.agentId),
       sessionId,
@@ -379,6 +388,7 @@ export class Agent {
         this.state.agentId,
         sessionId,
       ),
+      ...(hooks ? { hooks } : {}),
       // Max turns comes from the Agent's system_config (runtime parameters belong to the Agent config).
       ...(this.state.systemConfig.max_turns !== undefined
         ? { maxTurns: this.state.systemConfig.max_turns }
@@ -504,6 +514,8 @@ export class Agent {
       return r;
     };
 
+    const hooks = this.sessionHooks(rt.subagentRunner, sessionId, meta.source === "subagent");
+
     // Continue writing to the original Trace file (the Trace only records real messages; synthesized paired placeholders are re-emitted in memory alongside carry-over).
     const trace = new Writer({
       tracesDir: dir,
@@ -572,6 +584,7 @@ export class Agent {
         this.state.agentId,
         sessionId,
       ),
+      ...(hooks ? { hooks } : {}),
       ...(this.state.systemConfig.max_turns !== undefined
         ? { maxTurns: this.state.systemConfig.max_turns }
         : {}),
@@ -639,6 +652,8 @@ export class Agent {
     createLLM: (sessionTokens: TokenCounts) => GenerativeModel;
     createBareLLM: () => GenerativeModel;
     compaction: CompactionSettings;
+    /** The child-Agent runner the Environment was built with (the Session's hooks spawn through it too). */
+    subagentRunner: SubagentRunner;
   }> {
     const {
       sessionId,
@@ -1021,6 +1036,34 @@ export class Agent {
       prompt: compactionConfig?.prompt ?? DEFAULT_COMPACTION_PROMPT,
     };
 
-    return { environment, bootstrap, createLLM, createBareLLM, compaction };
+    return { environment, bootstrap, createLLM, createBareLLM, compaction, subagentRunner };
+  }
+
+  /**
+   * The stop hooks of a top-level Session (see hooks/): today the skill-summary hook,
+   * registered unless `hooks.skill_summary.enabled` is false. Child Sessions — spawned or
+   * revived subagents — carry none: a subagent's work belongs to its parent's window, and
+   * a child could not spawn the summarizer anyway.
+   */
+  private sessionHooks(
+    runner: SubagentRunner,
+    sessionId: string,
+    child: boolean,
+  ): SessionHooks | undefined {
+    if (child) return undefined;
+    const cfg = this.state.systemConfig.hooks?.skill_summary;
+    if (cfg?.enabled === false) return undefined;
+    return {
+      stop: [
+        createSkillSummaryHook({
+          root: this.state.root,
+          projectId: this.state.projectId,
+          agentId: this.state.agentId,
+          sessionId,
+          minTurns: cfg?.min_turns ?? DEFAULT_SKILL_SUMMARY_MIN_TURNS,
+          runner,
+        }),
+      ],
+    };
   }
 }

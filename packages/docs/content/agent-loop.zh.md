@@ -3,7 +3,7 @@ title: Agent 运行循环
 description: context_engine 的总体流程图与逐环节拆解——审批、并发工具执行、中断补发、自动重连与上下文压缩。
 ---
 
-SDK 的唯一执行入口是 `session.run(newMessages, opts?)`：输入本次新增的 OmniMessage 列表(Prompt)，返回一个异步生成器，流式产出 [OmniMessage](/omni-message)。一次 `run` 自动跑完一个完整的 Task，直到模型给出不含工具调用的最终答复。
+SDK 的唯一执行入口是 `session.run(newMessages, opts?)`：输入本次新增的 OmniMessage 列表(Prompt)，返回一个异步生成器，流式产出 [OmniMessage](/omni-message)。一次 `run` 自动跑完一个完整的 Task，直到模型给出不含工具调用的最终答复——若有 [stop hook](#stop-hook) 要求继续，则接连跑多个 Task。
 
 本页先给出 context_engine 的总体流程，再逐环节拆解；逐条消息级的可见时序与顺序保证见[消息流转与时序](/message-flow)。源码：`packages/core/src/engine/context-engine.ts`。
 
@@ -81,6 +81,34 @@ Task 由若干连续的 Request(轮)组成，每轮：
 - **场景 B：模型输出未完成**——整轮压平为一段 `[turn_aborted]` 用户文本，携带已产生的部分输出。
 
 补发内容只进入模型上下文，不写入 Trace——Trace 永远只记录真实发生的消息。
+
+## Stop hook
+
+hook 是 Session 在循环固定点上执行的函数。目前只有一个点：**stop**——一个 Task 结束的那一刻（模型给出不含工具调用的最终答复，或被掐断：用户中断、LLM 故障、`max_turns` 上限）。hook 注册在 Session 上（`SessionConfig.hooks.stop`，一组由组装层按 Agent 的 `system_config.yaml` 构造的列表）；目标运行会把自己的 goal hook 排在它们前面，仅该次运行有效。
+
+每个 hook 拿到一份 `StopHookInput`：
+
+```ts
+interface StopHookInput {
+  sessionId: string;
+  tracePath?: string;      // 正在写入的 Trace 文件（当前分段；无 Trace 时缺省）
+  stopReason: StopReason;  // Task 的结束方式：completed / aborted / fatal（max_turns 截断计 fatal）
+  tasks: number;           // 本次 run 调用已驱动的 Task 数
+  tokensUsed: number;      // 本次 run 累计的非缓存 input + output，含子 Session
+  turns: number;           // Session 累计 LLM 轮次
+  approve?: ApproveFn;     // 本次运行的审批回调（hook 派生的子 Session 继承它）
+  signal?: AbortSignal;
+}
+```
+
+并返回一份 `StopHookResult`，或什么都不返回（无意见）：`decision`——`continue` 让运行继续、`input` 作为下一个 Task 的 user 文本，`stop` 让它结束；`reason`——一行给人看的说明；`output`——hook 自己的结构化记录（标量）。规则：
+
+- 每个 Task 结束后按注册顺序逐个执行；每个非空回答都记为一条 [`hook` 事件](/omni-message#event_msg)，推到流上并写入 Trace——注入的输入不在事件里，它是紧随其后的那条 user 消息；
+- 第一个 `continue` 生效：其输入先 yield 到流上（普通运行从不 yield 自己的输入，宿主据此渲染注入的那条），再在同一次 `run` 调用内驱动下一个 Task；无人 `continue` 则调用返回；
+- 被掐断之后、或 signal 已中止时，`continue` 只记录、不执行——用户的中断压过一切 hook；
+- hook 抛错时以错误信息为 `reason` 记录、按无意见处理，永远不会拖垮运行。
+
+随 harness 内置两个 hook。[目标模式](/goal-mode)是其一：读目标文件、判定、交回下一轮的 `[goal]` 消息。**skill_summary hook** 是另一个：由 `system_config.yaml` 的 `hooks.skill_summary` 配置（`enabled` 缺省 true；`min_turns` 缺省 20，见[配置](/configuration#agent-配置)），只注册在顶层 Session 上。当 Session 已运行 `min_turns` 个 LLM 轮次、*且*当前 Trace 文件里自上一条它记下的摘要事件以来又累积了这么多完成的轮次时触发（Trace 就是它唯一的状态：重启不影响，压缩换文件则从新文件重新计窗）。它把这个窗口浓缩成摘录——user 与 assistant 文本、工具调用与参数、工具输出，各自截断，不含思考与图片——交给同一 Agent 的一个后台子 Session（直接经 subagent runner 派生：不占 `run_subagent` 的槽位、不进面板、不回报完成通知，但有自己的 Trace），prompt 里给出 Skill 目录与窗口内调用过的 Skill 名，请它把值得沉淀的发现写进相关 `SKILL.md`，或什么都不改。hook 在自己的 `hook` 事件里记下子 Session id 与窗口轮数，从不要求继续。没有安装任何 Skill 的 Agent 不会触发。
 
 ## 运行中插话(Steering)
 

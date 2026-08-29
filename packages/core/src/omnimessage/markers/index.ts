@@ -13,7 +13,7 @@
  *     (Web composer, server scheduler) and collapsed into a banner when rendered;
  *   - **steering** (`steering.ts`): `[user_steering]`, a mid-run user message;
  *   - **goal** (`goal-block.ts`): `[goal]`, the goal-mode round protocol block prefixed to
- *     each round's input by the Session's goal loop (line-anchored close — see the module).
+ *     each round's input by the goal hook (line-anchored close — see the module).
  *
  * `attachment-lines.ts` is the one exception to the block form: `[attached image: …]` /
  * `[attached file: …]` are single lines **appended after** a user message, naming a file the

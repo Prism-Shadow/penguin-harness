@@ -15,8 +15,7 @@ import type {
   CompactionReason,
   EventMessage,
   Fidelity,
-  GoalFinishedPayload,
-  GoalOutcomeStatus,
+  HookPayload,
   ImageUrlPayload,
   InlineDataPayload,
   InlineThinkingPayload,
@@ -347,13 +346,9 @@ export function compactionEnd(args: {
   });
 }
 
-/** Goal terminal event: the last message of a goal-mode run (produced by the Session's goal loop). */
-export function goalFinished(
-  outcome: GoalOutcomeStatus,
-  rounds: number,
-  tokensUsed: number,
-): OmniMessage<GoalFinishedPayload> {
-  return event({ type: "goal_finished", outcome, rounds, tokens_used: tokensUsed });
+/** Hook result event: what one hook answered at a hook point (produced by the Session's hook loop; see hooks/stop-hook.ts). */
+export function hookEvent(payload: Omit<HookPayload, "type">): OmniMessage<HookPayload> {
+  return event({ type: "hook", ...payload });
 }
 
 /** subagent derivation pointer event: records only the direct child session's Session id (written to the parent Trace by context_engine). */

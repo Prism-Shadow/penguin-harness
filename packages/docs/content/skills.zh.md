@@ -84,3 +84,4 @@ Skill 库以 npm 包 `@prismshadow/penguin-skills` 发布，tarball 直接携带
 - 手工安装：在 `agent_state/skills/<name>/` 下建目录并写入 `SKILL.md` 即可，系统组装系统 Prompt 时扫描 `skills/` 注入元数据；没有 `SKILL.md` 的目录不计为 Skill。
 - 卸载即删除整个 `skills/<name>/` 目录，操作幂等。
 - Agent 可以在任务中直接改写自己的 SKILL.md——配合 Benchmark 评测与优化形成闭环，见 [自我进化](/self-improvement)。
+- 长会话会自己回流：每累积 20 个完成的轮次（可配置），skill_summary stop hook 把会话的浓缩摘录交给一个后台子 Session，由它把值得沉淀的发现写进相关 SKILL.md——见[运行循环](/agent-loop#stop-hook)。

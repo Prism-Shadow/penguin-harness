@@ -98,7 +98,7 @@ describe("penguin run", () => {
   });
 
   it("a goal run exits non-zero unless the goal completed", async () => {
-    // The fake emits no goal_finished event, which reads as "did not complete".
+    // The fake emits no goal hook stop event, which reads as "did not complete".
     const code = await cli(["run", "-m", "objective", "--goal", "500k"]);
     expect(code).toBe(1);
     const session = [...server.sessions.values()][0]!;

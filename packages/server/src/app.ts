@@ -44,7 +44,6 @@ import type { ProxyControl } from "./hmr/capabilities.js";
 import { openDatabase } from "./db/database.js";
 import { ErrorsRepo } from "./db/repos/errors.js";
 import { MessagingBindingsRepo } from "./db/repos/messaging-bindings.js";
-import { GoalsRepo } from "./db/repos/goals.js";
 import { SchedulesRepo } from "./db/repos/schedules.js";
 import { ServerSettingsRepo } from "./db/repos/server-settings.js";
 import { SessionsRepo } from "./db/repos/sessions.js";
@@ -188,7 +187,6 @@ export interface AppDeps {
   benchmarks: BenchmarkService;
   snapshots: SnapshotService;
   schedulesRepo: SchedulesRepo;
-  goalsRepo: GoalsRepo;
   errorsRepo: ErrorsRepo;
   /** Session ↔ messaging-channel bot bindings (stored; runtime connections live on `messaging`). */
   messagingRepo: MessagingBindingsRepo;
@@ -736,7 +734,6 @@ export function buildAppDeps(
     };
   };
   const schedulesRepo = new SchedulesRepo(db);
-  const goalsRepo = new GoalsRepo(db);
 
   const projectConfigService = new ProjectConfigService(config.root);
   // Per-App like the preview signer above: a flow holds a PKCE verifier and nothing durable,
@@ -821,7 +818,6 @@ export function buildAppDeps(
     errors,
     titles,
     log,
-    goals: goalsRepo,
     // Run-state flips reach the whole login session, not just the tab watching that one
     // conversation (see the shared publisher above for the audience).
     notifyProjectUsers,
@@ -838,7 +834,6 @@ export function buildAppDeps(
     usage: usageRepo,
     errors: errorsRepo,
     schedules: schedulesRepo,
-    goals: goalsRepo,
     projectConfig: projectConfigService,
     manager,
     traceIndex,
@@ -969,7 +964,6 @@ export function buildAppDeps(
     benchmarks,
     snapshots,
     schedulesRepo,
-    goalsRepo,
     errorsRepo,
     messagingRepo,
     qqScan,

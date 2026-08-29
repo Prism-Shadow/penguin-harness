@@ -10,7 +10,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { Hono } from "hono";
 import type { Context } from "hono";
-import { imageUrlMessage, scratchpadDir, userText } from "@prismshadow/penguin-core";
+import {
+  goalFilePath,
+  imageUrlMessage,
+  readGoalFile,
+  scratchpadDir,
+  userText,
+} from "@prismshadow/penguin-core";
 import type { OmniMessage, ThinkingLevelName } from "@prismshadow/penguin-core";
 import type {
   ApprovalMode,
@@ -706,7 +712,6 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
         { recursive: true, force: true },
       );
       deps.sessionsRepo.deleteById(row.sessionId);
-      deps.goalsRepo.deleteBySession(row.sessionId);
       // A bound Session takes its messaging bindings with it: close the channel
       // connection and drop every channel's row (no-op when unbound; bulk Agent/Project
       // deletes are reconciled by the bridge's next start()).
@@ -1076,21 +1081,35 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     );
   });
 
-  // The Session's most recent goal run (for restoring the chat page's goal banner on load).
-  app.get("/:sessionId/goal", (c) => {
+  // The Session's most recent goal run, read from its GOAL.yaml (for restoring the chat
+  // page's goal banner on load). A goal lives only inside its run: a file still `active`
+  // (or in its wrap-up round) while the Session is not running was left behind by a crash
+  // or a kill, and reads as `aborted`.
+  app.get("/:sessionId/goal", async (c) => {
     const row = resolveSession(c);
-    const g = deps.goalsRepo.latestForSession(row.sessionId);
+    const file = goalFilePath(deps.config.root, row.projectId, row.agentId, row.sessionId);
+    const g = await readGoalFile(file);
+    if (!g) return c.json({ goal: null } satisfies GoalResponse);
+    const running = deps.manager.statusOf(row.sessionId) === "running";
+    const status =
+      g.status === "active" || g.status === "wrapping_up"
+        ? running
+          ? "active"
+          : "aborted"
+        : g.status;
+    const updatedAt = await fs
+      .stat(file)
+      .then((s) => s.mtime.toISOString())
+      .catch(() => new Date().toISOString());
     return c.json({
-      goal: g
-        ? {
-            objective: g.objective,
-            status: g.status,
-            budget: g.budget,
-            used: g.used,
-            rounds: g.rounds,
-            updatedAt: g.updatedAt,
-          }
-        : null,
+      goal: {
+        objective: g.objective,
+        status,
+        budget: g.budget,
+        used: g.tokens_used,
+        rounds: g.round,
+        updatedAt,
+      },
     } satisfies GoalResponse);
   });
 

@@ -217,12 +217,6 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       // Messaging bridge: connect every enabled Session binding (channel event
       // streams); only active while this App is, like the scheduler.
       await deps.messaging.start();
-      // Goal mode runs only in SessionManager memory: a hard crash (SIGKILL, power loss)
-      // can leave goal_state rows stuck `active` with no runner behind them — and so can
-      // the previous App, whose manager a swap hard-aborts. Reconcile them to `aborted`
-      // now — nothing is running in THIS App yet — so the chat banner never restores a
-      // phantom "running" goal. GOAL.yaml on disk stays `active` as the resume point.
-      deps.goalsRepo.abortOrphanedActive();
       // Startup adoption sweep: fold Trace-only Sessions (legacy CLI-direct runs) into
       // the sessions index as client:'cli' rows, so every later list is pure SQLite.
       // Fire-and-forget — a broken trace shard must not block the boot — with failures
@@ -261,8 +255,8 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     //   - scheduler           stop() now; successor start() reconciles missed fires
     //   - messaging bridge    stop() closes the channel connections; successor start()
     //                         reconnects every enabled binding from the DB
-    //   - agent runs          approvals → deny, drives → abort; goal rows reconciled by
-    //                         the successor's abortOrphanedActive
+    //   - agent runs          approvals → deny, drives → abort; a goal's GOAL.yaml reads
+    //                         as aborted once its Session is idle (GET /goal)
     //   - session environments dispose() after the drive settles — kills background
     //                         commands (dev servers etc.) that would otherwise run on
     //                         orphaned and invisible to the successor's fresh Session

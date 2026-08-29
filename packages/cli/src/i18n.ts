@@ -467,6 +467,8 @@ export interface Messages {
     rounds: number,
     tokens: string,
   ): string;
+  /** Dim line for a hook's answer (any hook but goal, whose own lines cover it): name, decision, reason. */
+  hookEvent(name: string, decision: string | undefined, reason: string | undefined): string;
   /** `/goal` usage error (missing objective / malformed command). */
   goalUsage(): string;
   /** Invalid token-budget value (chat `/goal:<budget>` or run `--goal <budget>`). */
@@ -1014,6 +1016,8 @@ const en: Messages = {
     }[outcome];
     return `[goal] ${label} · ${rounds} round${rounds === 1 ? "" : "s"} · tokens ${tokens}`;
   },
+  hookEvent: (name, decision, reason) =>
+    `[hook] ${[name, decision, reason].filter(Boolean).join(" · ")}`,
   goalUsage: () => "Usage: /goal[:<budget>] <objective>  (e.g. /goal:500k fix all failing tests)",
   goalBudgetInvalid: (value) =>
     `Invalid token budget "${value}". Use a positive number with an optional k/m suffix (500k, 2m).`,
@@ -1507,6 +1511,8 @@ const zh: Messages = {
     }[outcome];
     return `[目标] ${label} · 共 ${rounds} 轮 · tokens ${tokens}`;
   },
+  hookEvent: (name, decision, reason) =>
+    `[钩子] ${[name, decision, reason].filter(Boolean).join(" · ")}`,
   goalUsage: () => "用法：/goal[:<预算>] <目标>（例如 /goal:500k 修复所有失败的测试）",
   goalBudgetInvalid: (value) =>
     `无效的 token 预算 "${value}"：应为正数，可带 k/m 后缀（500k、2m）。`,

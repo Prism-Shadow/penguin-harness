@@ -21,7 +21,7 @@ export const UNLIMITED_BUDGET = -1;
 export const GOAL_ICON =
   "M21 12A9 9 0 1 1 12 3M17 12A5 5 0 1 1 12 7M12 12L15 9V5L18 2V6H22L19 9H15";
 
-/** What the goal banner shows (fed from goal_* server events, or the goal_state row on load). */
+/** What the goal banner shows (fed from goal_* server events, or the Session's GOAL.yaml via GET /goal on load). */
 export interface GoalBannerState {
   objective: string;
   status: "active" | "complete" | "blocked" | "budget_limited" | "aborted";
