@@ -3,6 +3,7 @@
 - **Date:** 2026-08-29
 - **Type:** feature
 - **Scope:** `core`, `server`, `web`, `cli`, `docs`
+- **PR:** [#542](https://github.com/Prism-Shadow/penguin-harness/pull/542)
 - **Breaking:** yes
 
 [中文版](2026-08-29-stop-hook-goal-mode.zh.md)
