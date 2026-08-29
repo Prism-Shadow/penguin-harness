@@ -66,6 +66,15 @@ export interface ApiFetchOptions {
    * machine's directories to pick a workspace on it is the case that needs it.
    */
   server?: string | null;
+  /**
+   * Whether a machine with no live forward should have one raised before this call is
+   * answered. On by default — see the `not_connected` branch below.
+   *
+   * A call that ASKS whether a machine is up must set it false: raising the forward would
+   * change the very thing it is measuring, and the answer would come back minutes later and
+   * always be yes. Everything that reports reachability rather than using it belongs here.
+   */
+  raiseForward?: boolean;
 }
 
 /** Response metadata a caller may need alongside the parsed body. */
@@ -143,7 +152,13 @@ export async function apiFetchWithMeta<T>(
       //
       // Once. The connector runs its own widening schedule and reports whether the machine
       // came up, so a second failure is a real answer and belongs to the caller.
-      if (attempt === 0 && code === "not_connected" && target !== null && connectMachine !== null) {
+      if (
+        attempt === 0 &&
+        code === "not_connected" &&
+        target !== null &&
+        connectMachine !== null &&
+        options.raiseForward !== false
+      ) {
         if (await connectMachine(target)) continue;
       }
       // A 401 from ANOTHER machine is that machine's answer, not this server's — it says the

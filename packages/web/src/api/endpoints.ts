@@ -165,7 +165,11 @@ export const getMe = () => apiFetch<MeResponse>("/api/me");
  * server behind it is not.
  */
 export const meOnMachine = (machineId: string) =>
-  apiFetch<MeResponse>("/api/me", { server: machineId });
+  // Never raises the forward: this call is the measurement. Raising one here would make the
+  // answer always yes, minutes later, and the Session list — which asks this to decide which
+  // machines are out of reach, and so whose Sessions to show from the cache — would sit with
+  // an empty answer for the whole of someone's first look at the page.
+  apiFetch<MeResponse>("/api/me", { server: machineId, raiseForward: false });
 
 export const changePassword = (body: PasswordChangeRequest) =>
   apiFetch<void>("/api/me/password", { method: "PUT", body });
@@ -510,7 +514,12 @@ export const listSessions = (
     : "";
   return apiFetch<SessionsResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/sessions${qs}`,
-    { server: machineId ?? null },
+    // Does not raise a forward, though it uses one. The list asks every machine at once and
+    // waits for all of them, so one machine being down would hold the whole refresh — and
+    // this is the one call with somewhere better to go: the Session list already knows which
+    // machines did not answer, and shows their rows from the cache while the reachability
+    // round connects to them.
+    { server: machineId ?? null, raiseForward: false },
   );
 };
 
