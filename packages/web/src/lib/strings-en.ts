@@ -66,6 +66,8 @@ export const en: Strings = {
     restarting: "Restarting\u2026",
     connect: "Connect",
     connecting: "Connecting\u2026",
+    autoConnecting: "Connecting to that machine\u2026",
+    autoConnectFailed: "That machine could not be reached. Take it up on the Machines page.",
     disconnect: "Disconnect",
     /** A connected machine: its filesystem and API can be reached from here. */
     reachable: "Reachable",

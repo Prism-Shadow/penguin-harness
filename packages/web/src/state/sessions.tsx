@@ -50,6 +50,7 @@ import {
   rememberSessionMachine,
 } from "../lib/session-machines";
 import { workspaceMachines } from "../lib/workspace-machines";
+import { onMachineAutoConnected } from "../lib/machine-autoconnect";
 import { openUserEvents } from "../api/sse";
 import {
   FOLDER_CATEGORIES,
@@ -780,6 +781,13 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
    * Session gone, or merely out of reach" question differently.
    */
   const [machinesUnreachable, setMachinesUnreachable] = useState(false);
+  /**
+   * Bumped when a machine is connected on this page's behalf (lib/machine-autoconnect.ts):
+   * the one moment the reachable set is known to have moved without a Project change, and
+   * the Sessions that machine holds should join the list without a reload.
+   */
+  const [machinesEpoch, setMachinesEpoch] = useState(0);
+  useEffect(() => onMachineAutoConnected(() => setMachinesEpoch((epoch) => epoch + 1)), []);
   useEffect(() => {
     if (projectId === null) {
       setMachineIdsKey("");
@@ -822,7 +830,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
+  }, [projectId, machinesEpoch]);
 
   /**
    * The Project and its Agent set: what the list is OF. A change here invalidates every row
