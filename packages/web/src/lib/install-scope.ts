@@ -189,6 +189,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "family",
+    key: "penguin.machineSessions.",
+    scope: "install",
+    why: "The Sessions each machine was last seen holding, shown until its forward is back up. Project id and machine id in the key, Session ids in the value — a new root knows none of them.",
+  },
+  {
+    kind: "family",
     key: "penguin.sessionOrder.",
     scope: "install",
     why: "Manual Session order — an array of Session ids.",

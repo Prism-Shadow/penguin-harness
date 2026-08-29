@@ -270,6 +270,7 @@ export function ChatPage() {
     sessions,
     loading: sessionsLoading,
     machinesUnreachable,
+    offlineMachineIds,
     reload: reloadSessions,
     add: addSession,
     isDeleted: isSessionDeleted,
@@ -624,15 +625,21 @@ export function ChatPage() {
    * that was about to appear.
    */
   /**
-   * The probe asks whoever owns the Session — and when nothing has told us who that is, it
-   * asks THIS server (lib/session-machines.ts: absence means here). That answer settles the
-   * question only when this server is the one that could have it. A Session living on a
-   * machine drops out of the list the moment that machine stops answering, taking its owner
-   * entry with it, so the lookup then 404s HERE about a Session that is alive THERE — and
-   * reading that as "gone" is what drops the reader into the draft page mid-conversation.
+   * Nobody who could answer for this Session is answering, so a failed lookup settles nothing.
+   *
+   * Two shapes of that. Either no owner is recorded and some machine is out of reach — the
+   * probe then asks THIS server (lib/session-machines.ts: absence means here), which 404s
+   * about a Session that is alive THERE. Or the owner IS recorded and is itself one of the
+   * machines not answering, which is every row restored from the cache: the probe reaches
+   * the right machine and gets a 503 from a forward that is still being raised. Reading
+   * either as "gone" is what drops the reader into the draft page mid-conversation.
    */
+  const routeSessionOwner = routeSessionId ? machineForSession(routeSessionId) : null;
   const routeSessionUnowned =
-    !!routeSessionId && machineForSession(routeSessionId) === null && machinesUnreachable;
+    !!routeSessionId &&
+    (routeSessionOwner === null
+      ? machinesUnreachable
+      : offlineMachineIds.includes(routeSessionOwner));
   // Read from `listed`, never from `selected`: the held Session above keeps the conversation
   // on screen through a refetch, but it must not tell the probe that the row is loaded — a
   // Session that really is gone has to keep probing until the lookup fails and releases both.

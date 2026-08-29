@@ -50,7 +50,8 @@ import {
   rememberSessionMachine,
 } from "../lib/session-machines";
 import { workspaceMachines } from "../lib/workspace-machines";
-import { onMachineAutoConnected } from "../lib/machine-autoconnect";
+import { cachedMachineSessions, rememberMachineSessions } from "../lib/session-cache";
+import { ensureMachineConnected, onMachineAutoConnected } from "../lib/machine-autoconnect";
 import { openUserEvents } from "../api/sse";
 import {
   FOLDER_CATEGORIES,
@@ -103,6 +104,12 @@ interface SessionsContextValue {
    * conversation that is merely out of reach.
    */
   machinesUnreachable: boolean;
+  /**
+   * The Project's machines that did not answer this round, by machine id. Their rows on
+   * screen come from the cache (lib/session-cache.ts), so a caller that has to decide
+   * whether a Session is REACHABLE — not merely whether it is listed — asks this.
+   */
+  offlineMachineIds: string[];
   reload: () => Promise<void>;
   /** Fetches a category's first page for each given unloaded Agent and the next page for each loaded one with more (no-op otherwise); `workspaceGroup` pages that group's own stream instead of the Agent's whole one. */
   loadMoreFor: (
@@ -216,6 +223,8 @@ interface SessionsStoreState {
    * missing from the list (features/chat/chat-page.tsx).
    */
   machinesUnreachable: boolean;
+  /** Provider-synced: the machines of this Project that did not answer, by machine id. */
+  offlineMachineIds: string[];
 
   sessions: SessionInfo[];
   /**
@@ -290,6 +299,7 @@ export function createSessionsStore() {
       agentIds: [],
       machineIds: [],
       machinesUnreachable: false,
+      offlineMachineIds: [],
 
       sessions: [],
       deletedSessionIds: new Set(),
@@ -299,7 +309,7 @@ export function createSessionsStore() {
       loading: true,
 
       reload: async () => {
-        const { projectId, agentIds, machineIds } = get();
+        const { projectId, agentIds, machineIds, offlineMachineIds } = get();
         // No context to fetch against yet. `loading` is deliberately left alone rather than
         // cleared: nothing was loaded, so reporting "done" here would be a lie — and one the
         // empty state renders. The Provider's reset step raised it and a later reload,
@@ -370,6 +380,9 @@ export function createSessionsStore() {
           if (g !== gen) return;
           const nextSessions: SessionInfo[] = [];
           const seen = new Set<string>();
+          // What each machine answered, kept so it can be shown after the next restart while
+          // that machine's forward is being raised again (lib/session-cache.ts).
+          const rowsByMachine = new Map<string, SessionInfo[]>();
           const nextPageState = new Map<string, PagePosition>();
           const nextCounts = new Map<string, SessionCategoryCounts>();
           const nextWorkspaceCounts = new Map<
@@ -401,6 +414,8 @@ export function createSessionsStore() {
                 if (seen.has(s.sessionId)) continue;
                 seen.add(s.sessionId);
                 nextSessions.push(s);
+                if (r.source !== null)
+                  rowsByMachine.set(r.source, [...(rowsByMachine.get(r.source) ?? []), s]);
                 // Where this row lives, so the two dozen Session-scoped calls about it reach
                 // the machine that holds it. Rebuilt by the very list that displays them,
                 // which is why the map is in memory and this is the only place it is filled.
@@ -427,6 +442,30 @@ export function createSessionsStore() {
               if (merged) out[path] = merged;
             }
             nextWorkspaceCounts.set(agentId, out);
+          }
+          // Every machine that ANSWERED replaces what it is remembered as holding — including
+          // with nothing, which is how a Session deleted over there stops coming back from
+          // the cache. Machines that did not answer are left alone: their entry is the only
+          // record of their rows until they do.
+          for (const machineId of machineIds) {
+            rememberMachineSessions(projectId, machineId, rowsByMachine.get(machineId) ?? []);
+          }
+          // And the ones that did not answer contribute what they last held. `seen` still
+          // guards, so a live answer always wins over a remembered one. Their owner entries
+          // are recorded the same way, so opening such a Session addresses the machine that
+          // has it rather than this server — which would answer 404 about someone else's.
+          //
+          // Folder badges are NOT topped up from here: counts come from the servers that
+          // answered, so an out-of-reach machine's rows show without being counted. Better
+          // than the alternative — a count is a claim about what a server holds now, and the
+          // cache cannot make that claim.
+          for (const machineId of offlineMachineIds) {
+            for (const s of cachedMachineSessions(projectId, machineId)) {
+              if (seen.has(s.sessionId)) continue;
+              seen.add(s.sessionId);
+              nextSessions.push(s);
+              rememberSessionMachine(s.sessionId, machineId);
+            }
           }
           // Newest first across every source: each answered sorted, and concatenating sorted
           // lists does not give a sorted list.
@@ -782,6 +821,11 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
    */
   const [machinesUnreachable, setMachinesUnreachable] = useState(false);
   /**
+   * Which of them, by machine id — the ones whose rows come from the cache until they answer.
+   * A joined key rather than an array so an unchanged set does not re-run anything.
+   */
+  const [offlineMachineIdsKey, setOfflineMachineIdsKey] = useState("");
+  /**
    * Bumped when a machine is connected on this page's behalf (lib/machine-autoconnect.ts):
    * the one moment the reachable set is known to have moved without a Project change, and
    * the Sessions that machine holds should join the list without a reload.
@@ -792,6 +836,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     if (projectId === null) {
       setMachineIdsKey("");
       setMachinesUnreachable(false);
+      setOfflineMachineIdsKey("");
       return;
     }
     let cancelled = false;
@@ -824,8 +869,18 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       );
       if (cancelled) return;
       const answered = reachable.filter((id): id is string => id !== null);
+      const offline = ids.filter((_, i) => reachable[i] === null);
       setMachineIdsKey(answered.join(","));
-      setMachinesUnreachable(answered.length < ids.length);
+      setMachinesUnreachable(offline.length > 0);
+      setOfflineMachineIdsKey(offline.join(","));
+      // A forward does not survive a restart, so on a fresh page every machine of the
+      // Project is out of reach — and nothing else would raise one until someone visited
+      // the Machines page. Raise them here: this is the moment the list learns it is missing
+      // a machine's half of itself. ensureMachineConnected is once-per-machine for the
+      // page's lifetime, so a machine that keeps refusing is not re-attempted every round;
+      // when one comes up it bumps the epoch above, which re-runs this effect and lets the
+      // refetch replace that machine's cached rows with what it actually holds.
+      for (const machineId of offline) void ensureMachineConnected(projectId, machineId, { api });
     })();
     return () => {
       cancelled = true;
@@ -853,6 +908,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       agentIds: agentIdsKey === "" ? [] : agentIdsKey.split(","),
       machineIds: machineIdsKey === "" ? [] : machineIdsKey.split(","),
       machinesUnreachable,
+      offlineMachineIds: offlineMachineIdsKey === "" ? [] : offlineMachineIdsKey.split(","),
       // Cleared only when the CONTEXT changed. A machine appearing, or going unreachable and
       // dropping out, changes which servers are asked — not whether what is already on screen
       // is still true. reload() below rebuilds the list wholesale from whatever answers, so a
@@ -882,7 +938,15 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     // route at THIS server until the refetch lands.
     if (contextChanged) forgetSessionMachines();
     void store.getState().reload();
-  }, [store, projectId, agentIdsKey, machineIdsKey, machinesUnreachable, contextKey]);
+  }, [
+    store,
+    projectId,
+    agentIdsKey,
+    machineIdsKey,
+    machinesUnreachable,
+    offlineMachineIdsKey,
+    contextKey,
+  ]);
 
   // User-level event stream (/api/events); see applyUserEvent for what each event does. The
   // connection stays a single one for the whole login session and doesn't reconnect on Project
@@ -970,6 +1034,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       hasMoreFor,
       loading: state.loading,
       machinesUnreachable: state.machinesUnreachable,
+      offlineMachineIds: state.offlineMachineIds,
       reload: state.reload,
       loadMoreFor: state.loadMoreFor,
       add: state.add,
