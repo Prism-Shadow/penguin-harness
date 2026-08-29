@@ -15,6 +15,7 @@ Session 新增了 hook 机制——在 agent loop 的固定点上执行的函数
 - `SessionConfig.hooks.stop` 接收一组具名 hook。一次 `run` 调用的每个 Task 结束后，每个 hook 都拿到：正在写入的 Trace 文件、Task 的结束方式（`completed` / `aborted` / `fatal`）、本次运行的 Task 数与非缓存 token 花费（含子 Session）、Session 累计轮次，以及本次运行的审批回调。
 - hook 回答 `continue`（附下一个 Task 的 user 文本 `input`）、`stop`，或什么都不答。每个回答都成为一条 `hook` 事件消息——`hook`、`name`、`decision`、`reason` 与 hook 自己的标量 `output`——推到流上并写入 Trace；注入的输入不在事件里，它是紧随其后的那条 user 消息。第一个 `continue` 在同一次 `run` 调用内驱动下一个 Task；被掐断之后、或 signal 已中止时，`continue` 只记录、不执行。hook 抛错以错误信息为 reason 记录，拖不垮运行。
 - Trace 页把 `hook` 事件渲染为名称、决定、说明与记录；CLI 为每个 hook 回答打印一行暗色文字（goal hook 除外——它自己的轮次行与摘要行已经说明了决定）。
+- 设计规格已同步改写（[penguin-harness-design #86](https://github.com/Prism-Shadow/penguin-harness-design/pull/86)）。
 
 ## 作为 hook 的目标模式
 

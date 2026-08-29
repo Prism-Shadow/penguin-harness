@@ -15,6 +15,7 @@ The Session gained a hook mechanism — functions it runs at fixed points of the
 - `SessionConfig.hooks.stop` takes a list of named hooks. After every Task of a `run` call each one receives the Trace file being written, how the Task ended (`completed` / `aborted` / `fatal`), the run's Task count and uncached-token spend (subagent sessions included), the Session's cumulative turn count, and the run's approval callback.
 - A hook answers `continue` (with the next Task's user text as `input`), `stop`, or nothing. Every answer becomes one `hook` event message — `hook`, `name`, `decision`, `reason`, and the hook's own scalar `output` — streamed and written to the Trace; the injected input is not in the event, it is the user message that follows it. The first `continue` drives another Task inside the same `run` call; after a cutoff, or once the signal is aborted, a `continue` is recorded but never run. A throwing hook is recorded with the error as its reason and cannot take the run down.
 - The trace page renders `hook` events with their name, decision, reason and record; the CLI prints one dim line per hook answer (the goal hook's excluded — its own round and summary lines already say what it decided).
+- The design spec was updated to match ([penguin-harness-design #86](https://github.com/Prism-Shadow/penguin-harness-design/pull/86)).
 
 ## Goal mode as a hook
 
