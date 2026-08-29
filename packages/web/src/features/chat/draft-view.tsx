@@ -53,6 +53,7 @@ import { formatMonthDay } from "../../lib/format";
 import { apiErrorText } from "../../lib/api-error";
 import { rememberSessionMachine } from "../../lib/session-machines";
 import { ensureMachineConnected } from "../../lib/machine-autoconnect";
+import { cachedMachineAgents, rememberMachineAgents } from "../../lib/machine-cache";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
@@ -645,12 +646,21 @@ export function DraftView({
       return;
     }
     let cancelled = false;
-    setRemoteAgents([]);
+    // What this machine was last seen running, so the picker has something to offer while
+    // its forward is being raised. A restart drops every forward, so without this the FIRST
+    // thing a draft on a remote workspace shows is an Agent list with nothing in it — and a
+    // draft with no Agent cannot be started at all (lib/machine-cache.ts).
+    setRemoteAgents(cachedMachineAgents(projectId, workspaceMachine));
     setRemoteAgentsState("loading");
+    const answered = (agents: AgentSummary[]) => {
+      // The machine's own answer replaces the remembered one wholesale, including with
+      // nothing: an Agent deleted over there must stop being offered here.
+      rememberMachineAgents(projectId, workspaceMachine, agents);
+      if (!cancelled) setRemoteAgents(agents);
+    };
     void (async () => {
       try {
-        const res = await api.listAgents(projectId, workspaceMachine);
-        if (!cancelled) setRemoteAgents(res.agents);
+        answered((await api.listAgents(projectId, workspaceMachine)).agents);
         return;
       } catch {
         // Most likely no live forward: picking a workspace there is the first need this
@@ -663,15 +673,14 @@ export function DraftView({
       if (cancelled) return;
       if (outcome === "connected") {
         try {
-          const res = await api.listAgents(projectId, workspaceMachine);
-          if (!cancelled) setRemoteAgents(res.agents);
+          answered((await api.listAgents(projectId, workspaceMachine)).agents);
           return;
         } catch {
           // Connected, yet it will not answer: the same dead end as never connecting.
         }
       }
-      // Unreachable: the list stays empty and the composer says so, rather than offering
-      // an Agent the target cannot run.
+      // Out of reach. Whatever was remembered stays on offer — it is the best account of
+      // that machine anyone has, and it is what the picker was already showing.
       if (!cancelled) setRemoteAgentsState("unreachable");
     })();
     return () => {

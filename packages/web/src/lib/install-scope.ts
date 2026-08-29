@@ -195,6 +195,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "family",
+    key: "penguin.machineAgents.",
+    scope: "install",
+    why: "The Agents each machine was last seen running, offered by the composer until its forward is back up. Keyed by the same Project and machine a new root would not have.",
+  },
+  {
+    kind: "family",
     key: "penguin.sessionOrder.",
     scope: "install",
     why: "Manual Session order — an array of Session ids.",
