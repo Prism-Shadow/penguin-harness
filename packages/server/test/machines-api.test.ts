@@ -573,6 +573,81 @@ describe("machines API", () => {
       expect(starts).toEqual([]);
       expect(forwards).toEqual([]);
     });
+
+    it("hands this server's build to a machine carrying a different one, once the forward is up", async () => {
+      const upgrades: number[] = [];
+      await boot({
+        upgrade: async (opts) => {
+          upgrades.push(opts.port);
+          return { kind: "upgraded", detail: "" };
+        },
+      });
+      installed("9.9.8");
+      expect(
+        (await admin.post("/api/projects/default_project/machines/ssh:nas/connect")).status,
+      ).toBe(202);
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(t.deps.machines.job()?.result).toEqual({ ok: true, connected: true });
+      expect(upgrades).toEqual([7364]);
+      expect(machinesRepo.get("ssh:nas")).toMatchObject({
+        version: "9.9.9",
+        installedAt: "2026-08-24T12:00:00.000Z",
+      });
+      expect(t.deps.machines.job()?.log.join(" ")).toContain("handing over 9.9.9");
+    });
+
+    it("sends nothing to a machine already on this build", async () => {
+      let upgrades = 0;
+      await boot({
+        upgrade: async () => {
+          upgrades += 1;
+          return { kind: "upgraded", detail: "" };
+        },
+      });
+      installed("9.9.9");
+      await admin.post("/api/projects/default_project/machines/ssh:nas/connect");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(t.deps.machines.job()?.result).toEqual({ ok: true, connected: true });
+      expect(upgrades).toBe(0);
+    });
+
+    it("a refused hand-over is reported with the reinstall offer — and the machine stays connected", async () => {
+      await boot({
+        upgrade: async () => ({ kind: "refused", detail: "no business capabilities" }),
+      });
+      installed("9.9.8");
+      await admin.post("/api/projects/default_project/machines/ssh:nas/connect");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(t.deps.machines.job()?.result).toMatchObject({
+        ok: false,
+        step: "update its build",
+        canReplaceProgram: true,
+      });
+      expect((t.deps.machines.job()?.result as { message: string }).message).toContain(
+        "no business capabilities",
+      );
+      // The record keeps the version it really carries, and the forward it raised is kept.
+      expect(machinesRepo.get("ssh:nas")?.version).toBe("9.9.8");
+      const body = (await (
+        await admin.get("/api/projects/default_project/machines")
+      ).json()) as MachinesResponse;
+      expect(body.machines.find((m) => m.id === "ssh:nas")?.forward).not.toBeNull();
+    });
+
+    it("a release gap is not the hot channel's to close: it says the release needs installing", async () => {
+      await boot({ upgrade: async () => ({ kind: "no-build" }) });
+      installed("9.9.8");
+      await admin.post("/api/projects/default_project/machines/ssh:nas/connect");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(t.deps.machines.job()?.result).toMatchObject({
+        ok: false,
+        step: "update its build",
+        canReplaceProgram: true,
+      });
+      expect((t.deps.machines.job()?.result as { message: string }).message).toContain(
+        "9.9.9 needs installing",
+      );
+    });
   });
 
   describe("the api sighting", () => {
