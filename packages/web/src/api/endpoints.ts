@@ -141,7 +141,8 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import { apiFetch, apiFetchWithMeta } from "./client";
-import { rememberSessionMachine } from "../lib/session-machines";
+import { machineForSession, rememberSessionMachine } from "../lib/session-machines";
+import { apiUrl } from "../lib/server-context";
 
 // Auth & user -----------------------------------------------------------------
 
@@ -889,6 +890,12 @@ export const getTraceAnalysis = (sessionId: string, index: number) =>
 // page's directory tree comes from an Agent-level scan (including subagent child Sessions and
 // Sessions created by the CLI); details go through the Agent-level endpoint to avoid 404s for
 // unregistered sessions.
+//
+// These name a Session without SAYING so in a way the routing rule can read: it is a rule over
+// the path, and only `/api/sessions/<id>/…` declares its Session (lib/session-machines.ts). So
+// each of the three passes the owner explicitly. Without it they went to this server about a
+// Session that lives on a machine, which answers exactly as it should — no such Trace file —
+// and the panel reported the Trace as gone while it sat on the machine, intact.
 
 export const getAgentTraceEvents = (
   projectId: string,
@@ -901,7 +908,7 @@ export const getAgentTraceEvents = (
   apiFetch<TraceEventsResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
       `/traces/${encodeURIComponent(sessionId)}/${index}`,
-    { query: { offset, limit } },
+    { query: { offset, limit }, server: machineForSession(sessionId) },
   );
 
 export const getAgentTraceAnalysis = (
@@ -913,6 +920,7 @@ export const getAgentTraceAnalysis = (
   apiFetch<TraceAnalysisResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
       `/traces/${encodeURIComponent(sessionId)}/${index}/analysis`,
+    { server: machineForSession(sessionId) },
   );
 
 /** Trace file download URL: the server sets Content-Disposition attachment, usable directly in <a download>. */
@@ -922,8 +930,13 @@ export const agentTraceDownloadUrl = (
   sessionId: string,
   index: number,
 ): string =>
-  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
-  `/traces/${encodeURIComponent(sessionId)}/${index}/download`;
+  // A browser-followed URL, so the proxy prefix has to be IN it — there is no request here
+  // for the routing rule to act on.
+  apiUrl(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
+      `/traces/${encodeURIComponent(sessionId)}/${index}/download`,
+    machineForSession(sessionId),
+  );
 
 /** Imports a Trace JSONL file (owner only); the response says where the file landed (sessionId / index / date). */
 export const importAgentTrace = (projectId: string, agentId: string, body: TraceImportRequest) =>
