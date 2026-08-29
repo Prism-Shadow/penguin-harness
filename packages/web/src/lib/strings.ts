@@ -68,6 +68,10 @@ export const zh = {
     restarting: "重启中\u2026",
     connect: "连接",
     connecting: "连接中…",
+    /** The composer's Agent picker while the page connects to the workspace's machine on its own. */
+    autoConnecting: "正在连接这台机器…",
+    /** …and after every automatic attempt failed: the Machines page is where a person takes over. */
+    autoConnectFailed: "连不上这台机器。请到“机器”页处理。",
     disconnect: "断开",
     /** A connected machine: its filesystem and API can be reached from here. */
     reachable: "可访问",

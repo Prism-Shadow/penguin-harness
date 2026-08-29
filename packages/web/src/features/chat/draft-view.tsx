@@ -52,6 +52,7 @@ import { S } from "../../lib/strings";
 import { formatMonthDay } from "../../lib/format";
 import { apiErrorText } from "../../lib/api-error";
 import { rememberSessionMachine } from "../../lib/session-machines";
+import { ensureMachineConnected } from "../../lib/machine-autoconnect";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
@@ -159,6 +160,10 @@ export function DraftView({
    * below already treats as "not ready" rather than "none".
    */
   const [remoteAgents, setRemoteAgents] = useState<AgentSummary[]>([]);
+  /** Why the remote list is empty, for the composer's empty row: still asking, connecting first, or beyond reach. */
+  const [remoteAgentsState, setRemoteAgentsState] = useState<
+    "loading" | "connecting" | "unreachable"
+  >("loading");
   const { add } = useSessions();
   // The draft key includes a user dimension (#68 cross-account leakage). RequireAuth
   // guarantees the user is logged in here; on the off chance there's no user (the
@@ -641,16 +646,34 @@ export function DraftView({
     }
     let cancelled = false;
     setRemoteAgents([]);
-    void api
-      .listAgents(projectId, workspaceMachine)
-      .then((res) => {
+    setRemoteAgentsState("loading");
+    void (async () => {
+      try {
+        const res = await api.listAgents(projectId, workspaceMachine);
         if (!cancelled) setRemoteAgents(res.agents);
-      })
-      .catch(() => {
-        // Unreachable: the list stays empty and the composer says there is nothing to
-        // pick, rather than offering an Agent the target cannot run.
-        if (!cancelled) setRemoteAgents([]);
-      });
+        return;
+      } catch {
+        // Most likely no live forward: picking a workspace there is the first need this
+        // page has of that machine, so connect to it now rather than send someone to the
+        // Machines page to click Connect first (lib/machine-autoconnect.ts).
+      }
+      if (cancelled) return;
+      setRemoteAgentsState("connecting");
+      const outcome = await ensureMachineConnected(projectId, workspaceMachine, { api });
+      if (cancelled) return;
+      if (outcome === "connected") {
+        try {
+          const res = await api.listAgents(projectId, workspaceMachine);
+          if (!cancelled) setRemoteAgents(res.agents);
+          return;
+        } catch {
+          // Connected, yet it will not answer: the same dead end as never connecting.
+        }
+      }
+      // Unreachable: the list stays empty and the composer says so, rather than offering
+      // an Agent the target cannot run.
+      if (!cancelled) setRemoteAgentsState("unreachable");
+    })();
     return () => {
       cancelled = true;
     };
@@ -831,7 +854,18 @@ export function DraftView({
 
         {/* Ownership selection right below the card (small pill dropdowns, styled after ChatGPT's project picker button) */}
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <AgentSelect agents={agents} selected={selectedAgent} onSelect={selectAgent} />
+          <AgentSelect
+            agents={agents}
+            selected={selectedAgent}
+            onSelect={selectAgent}
+            empty={
+              workspaceMachine !== null && remoteAgentsState === "connecting"
+                ? S.machines.autoConnecting
+                : workspaceMachine !== null && remoteAgentsState === "unreachable"
+                  ? S.machines.autoConnectFailed
+                  : S.common.loading
+            }
+          />
           <WorkspaceSelect
             projectId={projectId}
             workspace={workspace}
@@ -967,10 +1001,13 @@ function AgentSelect({
   agents,
   selected,
   onSelect,
+  empty,
 }: {
   agents: AgentSummary[];
   selected: AgentSummary | null;
   onSelect: (agent: AgentSummary) => void;
+  /** The empty row's text — why there is nothing to pick yet. */
+  empty: string;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -1002,9 +1039,7 @@ function AgentSelect({
       }
     >
       <div className="max-h-56 overflow-y-auto">
-        {agents.length === 0 && (
-          <p className="px-3 py-1.5 text-xs text-gray-400">{S.common.loading}</p>
-        )}
+        {agents.length === 0 && <p className="px-3 py-1.5 text-xs text-gray-400">{empty}</p>}
         {agents.map((a) => {
           const active = a.agentId === selected?.agentId;
           return (
