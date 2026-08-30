@@ -87,7 +87,7 @@ describe("scheduler", () => {
     errors = [];
     let seq = 0;
     scheduler = wire(Scheduler, {
-      config: { root },
+      paths: { root },
       repo,
       projects,
       sessions,
@@ -106,7 +106,7 @@ describe("scheduler", () => {
           return { sessionId };
         },
       },
-      projectConfig: wire(ProjectConfigService, { config: { root } }),
+      projectConfig: wire(ProjectConfigService, { paths: { root } }),
       errors: { record: (args: ErrorRecordArgs) => void errors.push(args) },
       notify: (userId: string, event: ScheduleServerEvent) => void events.push({ userId, event }),
       now: () => nowMs,

@@ -72,23 +72,26 @@ import { ApprovalRegistry, makeApprove } from "./approvals.js";
 import { goalOutcomeOf, goalProgressOf } from "./goal-events.js";
 import type { PendingApproval } from "./approvals.js";
 import type { ChannelHub } from "./channel.js";
-import type { ErrorSink, ErrorRecorder } from "./error-recorder.js";
+import type { ErrorSink } from "./error-recorder.js";
 import { LiveTailTracker } from "./live-tail.js";
 import { asSessionSource } from "./session-sources.js";
 import type { SessionSources } from "./session-sources.js";
 import { StreamErrorWatcher } from "./stream-error-watcher.js";
 import type { TitleNotifier } from "./title-generator.js";
-import type { UsageContext, UsageRecorder } from "./usage-recorder.js";
-import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
+import type { UsageContext } from "./usage-recorder.js";
+import { Component, Interface } from "@prismshadow/penguin-core/kernel";
 import type { SessionService as SessionServiceImpl } from "../services/session-service.js";
-import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
-import { AuthState, Channels, Config, Log, Overrides, RuntimeModule } from "../hmr/capabilities.js";
-import { Sandbox, SandboxModule } from "../sandbox/service.js";
+import { Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
+import type { ClassCtx, Opaque } from "@prismshadow/penguin-core/kernel";
+import { Sandbox } from "../sandbox/service.js";
+import { SandboxModule } from "../sandbox/service.js";
 import { SessionService } from "../services/session-service.js";
 import { TitleGenerator } from "./title-generator.js";
 import { loopbackHostRoles } from "../services/preview-token.js";
 import { mergedNoProxy } from "../net/proxy.js";
 import { userChannelKey } from "../http/routes/events.js";
+import type { UsageRecorder } from "./usage-recorder.js";
+import type { ErrorRecorder } from "./error-recorder.js";
 import type { ProjectConfigService } from "../services/project-config-service.js";
 import type { TraceIndexService } from "../services/trace-index.js";
 import type { SandboxService } from "../sandbox/service.js";
@@ -96,6 +99,7 @@ import type { ServerSettingsRepo } from "../db/repos/server-settings.js";
 import type { MessagingBindingsRepo } from "../db/repos/messaging-bindings.js";
 import type { MembersRepo } from "../db/repos/members.js";
 import type { ProjectsRepo } from "../db/repos/projects.js";
+import type { AuthState, Channels, Clock, Config, Log } from "../hmr/capabilities.js";
 
 /**
  * 409 for when there's nothing to compact: give the specific reason rather than a
@@ -2248,11 +2252,13 @@ export abstract class SessionEnv extends Interface<{
 
 @Module()
 export class SessionsModule {
-  @Use(RuntimeModule) private readonly config!: Config;
-  @Use(RuntimeModule) private readonly channels!: Channels;
-  @Use(RuntimeModule) private readonly authState!: AuthState;
-  @Use(RuntimeModule) private readonly overrides!: Overrides;
-  @Use(RuntimeModule) private readonly log!: Log;
+  @Use() private readonly config!: Config;
+  @Use() private readonly channels!: Channels;
+  @Use() private readonly authState!: AuthState;
+  @Use() private readonly clock!: Clock;
+  @Use() private readonly sessionLoaders!: SessionLoaders;
+  @Use() private readonly titleGenerators!: TitleGenerators;
+  @Use() private readonly log!: Log;
   @Use() private readonly settings!: ServerSettingsRepo;
   @Use() private readonly sessionsRepo!: SessionsRepo;
   @Use() private readonly sources!: SessionSources;
@@ -2269,7 +2275,6 @@ export class SessionsModule {
   @Provide() env!: SessionEnv;
   setup() {
     const { config, settings, authState } = this;
-    const overrides = this.overrides.value();
     const log = (line: string) => this.log.line(line);
     const channels = this.channels as ChannelHub;
     const sessionsRepo = this.sessionsRepo;
@@ -2322,34 +2327,30 @@ export class SessionsModule {
         channels.peek(userChannelKey(userId))?.publish(event, "server_event");
       }
     };
-    const titles =
-      overrides.titles ??
-      new TitleGenerator({
-        sessions: sessionsRepo,
-        channels,
-        recorder,
-        errors,
-        log,
-        notifyProjectUsers,
-      });
+    const titles = this.titleGenerators.create({
+      sessions: sessionsRepo,
+      channels,
+      recorder,
+      errors,
+      log,
+      notifyProjectUsers,
+    });
     const manager = new SessionManager({
       sessions: sessionsRepo,
       channels,
-      loader:
-        overrides.loader ??
-        createCoreSessionLoader(config.root, sources, {
-          proxyEnv: env.proxyEnv,
-          controlEnv: env.controlEnv,
-          pathPrepend: env.pathPrepend,
-          confineSpawn: env.confineSpawn,
-        }),
+      loader: this.sessionLoaders.create(config.root, sources, {
+        proxyEnv: env.proxyEnv,
+        controlEnv: env.controlEnv,
+        pathPrepend: env.pathPrepend,
+        confineSpawn: env.confineSpawn,
+      }),
       sources,
       recorder,
       errors,
       titles,
       log,
       notifyProjectUsers,
-      ...(overrides.now ? { now: overrides.now } : {}),
+      now: () => this.clock.now(),
     });
     const sessionService = new SessionService({
       root: config.root,
@@ -2375,5 +2376,37 @@ export class SessionsModule {
     this.manager = manager;
     this.sessionService = sessionService;
     this.env = env;
+  }
+}
+
+/** Builds the loader a manager runs sessions through; a test stands in a fake session. */
+export abstract class SessionLoaders extends Interface<{
+  create(
+    root: string,
+    sources: Opaque<"SessionSources", SessionSources>,
+    env: Opaque<"SessionLoaderEnv", Parameters<typeof createCoreSessionLoader>[2]>,
+  ): Opaque<"SessionLoader", SessionLoader>;
+}>() {}
+@Component()
+export class CoreSessionLoaders implements SessionLoaders {
+  create(
+    root: string,
+    sources: SessionSources,
+    env: Parameters<typeof createCoreSessionLoader>[2],
+  ): SessionLoader {
+    return createCoreSessionLoader(root, sources, env);
+  }
+}
+
+/** Builds the title generator; a test stands in a notifier that never calls a model. */
+export abstract class TitleGenerators extends Interface<{
+  create(
+    deps: Opaque<"TitleGeneratorDeps", ConstructorParameters<typeof TitleGenerator>[0]>,
+  ): Opaque<"TitleNotifier", TitleNotifier>;
+}>() {}
+@Component()
+export class DefaultTitleGenerators implements TitleGenerators {
+  create(deps: ConstructorParameters<typeof TitleGenerator>[0]): TitleNotifier {
+    return new TitleGenerator(deps);
   }
 }

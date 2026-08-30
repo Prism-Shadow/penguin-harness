@@ -50,7 +50,7 @@ import type {
   TraceToolSpan,
   UsageTrendPointInTrace,
 } from "../api/types.js";
-import type { SessionRow, SessionsRepo } from "../db/repos/sessions.js";
+import type { SessionRow } from "../db/repos/sessions.js";
 import type { TraceFileRow, TraceSessionRow } from "../db/repos/trace-index.js";
 import { HttpError } from "../http/errors.js";
 import { formatLocalDate } from "../internal/dates.js";
@@ -78,7 +78,8 @@ import { buildContextBreakdown, emptyContextBreakdown } from "./context-breakdow
 import { sessionIdCreatedAt } from "./session-service.js";
 import { TraceIndexService, traceFilePath } from "./trace-index.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Config } from "../hmr/capabilities.js";
+import type { SessionsRepo } from "../db/repos/sessions.js";
+import type { Paths } from "../hmr/capabilities.js";
 
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
 
@@ -253,9 +254,9 @@ interface TraceSessionFacts {
 
 @Component()
 export class TraceService {
-  @Use() private readonly config!: Config;
+  @Use() private readonly paths!: Paths;
   private get root(): string {
-    return this.config.root;
+    return this.paths.root;
   }
   @Use() private readonly index!: TraceIndexService;
   /** DB rows supplying titles / archived / workspace / client (narrow tests may omit). */

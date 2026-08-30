@@ -49,7 +49,7 @@ import { asSessionSource } from "../runtime/session-sources.js";
 import type { SessionSources } from "../runtime/session-sources.js";
 import { fallbackTitle } from "../runtime/title-generator.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Config } from "../hmr/capabilities.js";
+import type { Paths } from "../hmr/capabilities.js";
 
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
 
@@ -125,9 +125,9 @@ export class TraceIndexService {
    */
   readonly counters = { gateStats: 0, dirScans: 0, headReads: 0 };
 
-  @Use() private readonly config!: Config;
+  @Use() private readonly paths!: Paths;
   private get root(): string {
-    return this.config.root;
+    return this.paths.root;
   }
   @Use() readonly repo!: TraceIndexRepo;
   /** Shared origin registry: registration-time classification publishes into it (single source of truth for `source`). */

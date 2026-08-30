@@ -1,8 +1,10 @@
-import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
-import type { Opaque, Slot, ClassCtx } from "@prismshadow/penguin-core/kernel";
+import { Interface } from "@prismshadow/penguin-core/kernel";
+import type { Opaque, Slot } from "@prismshadow/penguin-core/kernel";
 import { Hono } from "hono";
 import type { AppEnv } from "../auth/middleware.js";
-import { Config, Log, RuntimeModule } from "../hmr/capabilities.js";
+import { Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
+import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
+import { Config, Log } from "../hmr/capabilities.js";
 import type { MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { authMiddleware, jsonOnlyWrites } from "../auth/middleware.js";
@@ -42,8 +44,8 @@ const RUNTIME_PREFIXES = ["/api/auth", "/api/desktop", "/api/hmr"];
  */
 @Module()
 export class HttpModule {
-  @Use(RuntimeModule) private readonly config!: Config;
-  @Use(RuntimeModule) private readonly log!: Log;
+  @Use() private readonly config!: Config;
+  @Use() private readonly log!: Log;
   @Use() private readonly auth!: AuthService;
   @Use() private readonly errors!: ErrorRecorder;
   @Use() private readonly settings!: ServerSettingsRepo;
