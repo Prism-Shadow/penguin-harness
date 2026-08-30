@@ -102,8 +102,7 @@ import { Bind, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../../auth/middleware.js";
 import { Hono } from "hono";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
-import { WorkspaceModule } from "../../http/routes/preview.js";
-import { SessionsModule } from "../session-manager.js";
+
 import { FeishuMessaging } from "./feishu-connector.js";
 import { TelegramMessaging } from "./telegram-connector.js";
 import { QqMessaging } from "./qq-connector.js";
@@ -1921,7 +1920,7 @@ export class MessagingModule {
   @Use() private readonly sessionsRepo!: SessionIndex;
   @Use() private readonly workspaceFiles!: WorkspaceFiles;
   @Use() private readonly settings!: Settings;
-  @Use(SessionsModule) private readonly runner!: MessagingTaskRunner;
+  @Use() private readonly runner!: MessagingTaskRunner;
   @Use() private readonly errors!: Errors;
   @Use() private readonly access!: Access;
   @Provide() messaging!: Messaging;
