@@ -70,7 +70,15 @@ export function openSessionStream(sessionId: string, handlers: StreamHandlers): 
   return subscribe(apiUrl(path, machineForSession(sessionId)), handlers);
 }
 
-/** Subscribes to the user-level server event stream (GET /api/events; reserved for scheduled-task notifications). */
-export function openUserEvents(handlers: StreamHandlers): StreamConnection {
-  return subscribe("/api/events", handlers);
+/**
+ * Subscribes to the user-level server event stream (GET /api/events) — this server's, or a
+ * machine's through the same-origin proxy. A Session on a machine changes state on THAT
+ * machine's server, and only its stream says so; the list is assembled from every reachable
+ * machine, so its liveness has to be too.
+ */
+export function openUserEvents(
+  handlers: StreamHandlers,
+  machineId: string | null = null,
+): StreamConnection {
+  return subscribe(apiUrl("/api/events", machineId), handlers);
 }

@@ -23,6 +23,7 @@ import type {
   SessionCategoryCounts,
   SessionInfo,
   SessionSource,
+  ServerEvent,
 } from "../api/types.js";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
@@ -66,6 +67,14 @@ export interface SessionServiceDeps {
    * agents can drive the harness back through the CLI/API.
    */
   controlEnv?: (ctx: ControlEnvContext) => Record<string, string>;
+  /**
+   * Tells every user of a Project that a Session now exists. The list only ever learns
+   * about rows it did not create itself from this: a Session started by the CLI, by
+   * another tab, by a schedule, or by an agent spawning a child sat invisible until the
+   * next full reload without it. Optional so the service keeps unit-testing without a
+   * channel registry; absent means nobody is told.
+   */
+  notifyProjectUsers?: (projectId: string, event: ServerEvent) => void;
   /**
    * The channel of the Session's ENABLED messaging binding, or null when none is enabled
    * (SessionInfo.messagingChannel, the sidebar row's per-channel indicator — saved-but-
@@ -400,6 +409,17 @@ export class SessionService {
     };
     this.deps.sessions.insert(row);
     this.deps.manager.adopt(row, session);
+    // After the insert: a reader who reacts by fetching the list must find the row there.
+    this.deps.notifyProjectUsers?.(args.projectId, {
+      type: "session_created",
+      projectId: args.projectId,
+      agentId: args.agentId,
+      sessionId: row.sessionId,
+      ...(() => {
+        const source = this.deps.sources.get(session.sessionId);
+        return source ? { source } : {};
+      })(),
+    });
     return this.toInfo(row, false);
   }
 

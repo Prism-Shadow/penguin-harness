@@ -778,11 +778,24 @@ export function applyUserEvent(
   store: SessionsStore,
   ev: ServerEvent,
   onWebUpdated: () => void,
+  /** The machine the event came from; null for this server. */
+  source: string | null = null,
 ): void {
   // The served web assets were hot-swapped (dev watch-push / platform upgrade): reload so this
-  // window runs the new code.
+  // window runs the new code. Only this server's word counts: a machine's web being pushed is
+  // that machine's affair, and this window is not running it.
   if (ev.type === "web_updated") {
-    onWebUpdated();
+    if (source === null) onWebUpdated();
+    return;
+  }
+  // A Session now exists that this list did not create — the CLI, another tab, a schedule, an
+  // agent spawning a child, on this server or on a machine. Nothing short of a fetch can put
+  // the row in place with everything a row needs (title, workspace, counts), so reload; the
+  // same answer schedule_fired gives below, for the same reason.
+  if (ev.type === "session_created") {
+    if (source !== null || ev.projectId === store.getState().projectId) {
+      void store.getState().reload();
+    }
     return;
   }
   // A Session changed run state. This is what keeps every row honest: a tab subscribes to the
@@ -816,8 +829,12 @@ export function applyUserEvent(
   // so it appears immediately. schedule_queued doesn't change the list (the target Session
   // already exists), so it is ignored, as is every other Session-scoped event.
   if (ev.type !== "schedule_fired") return;
-  // The event carries projectId: a trigger from another Project is unrelated to the current list.
-  if (ev.projectId === store.getState().projectId) void store.getState().reload();
+  // The event carries projectId: a trigger from another Project is unrelated to the current
+  // list. A machine's Project ids are its own and never match this server's, so for a machine
+  // the reload is unconditional — its rows in this list are exactly what the trigger touched.
+  if (source !== null || ev.projectId === store.getState().projectId) {
+    void store.getState().reload();
+  }
 }
 
 export function SessionsProvider({ children }: { children: ReactNode }) {
@@ -1007,6 +1024,28 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
   }, [store]);
 
   const { pageState, countsByAgent, machineIds } = state;
+
+  // One more stream per reachable machine: a Session there changes state on that machine's
+  // server, and this server never hears of it. Keyed on the reachable set, so a machine that
+  // drops out has its stream closed and one that comes up gets one — the forward it rides on
+  // is raised by the same probe that publishes machineIds. EventSource reconnects on its own
+  // while a forward is briefly down.
+  const reachableKey = machineIds.join(",");
+  useEffect(() => {
+    const ids = reachableKey === "" ? [] : reachableKey.split(",");
+    const conns = ids.map((machineId) =>
+      openUserEvents(
+        {
+          onOmniMessage: () => undefined,
+          onServerEvent: (ev) => applyUserEvent(store, ev, () => undefined, machineId),
+        },
+        machineId,
+      ),
+    );
+    return () => {
+      for (const conn of conns) conn.close();
+    };
+  }, [store, reachableKey]);
   const sources = useMemo<(string | null)[]>(() => [null, ...machineIds], [machineIds]);
 
   // Loaded only when EVERY source has answered: one machine's first page arriving does not
