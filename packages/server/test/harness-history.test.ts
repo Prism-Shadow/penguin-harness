@@ -1,84 +1,97 @@
 /**
- * The harness history: every version persistVersion commits is appended to
- * <root>/hmr/history.json (newest first, HISTORY_KEEP entries), read back defensively,
- * and served with the current commit by GET /api/version/history.
+ * The harness history is kept by the platform: every boot records the runtime's current
+ * commit together with the booting platform's own interface table, under
+ * <root>/harness-history/ — so the record is complete on any runtime old enough to boot
+ * the platform, and never depends on the runtime knowing about it.
  */
 import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
-import {
-  HISTORY_KEEP,
-  appendHarnessHistory,
-  readHarnessHistory,
-  withCurrent,
-} from "../src/hmr/manifest.js";
-import type { VersionHistoryDiffResponse, VersionHistoryResponse } from "../src/api/types.js";
+import { wire } from "@prismshadow/penguin-core/kernel";
+import table from "../src/ifaces.json" with { type: "json" };
+import { HarnessHistoryStore, HISTORY_KEEP } from "../src/services/harness-history.js";
 import { diffIfaces } from "../src/hmr/ifaces-diff.js";
+import type { VersionHistoryDiffResponse, VersionHistoryResponse } from "../src/api/types.js";
 import { apiClient, createTestApp, loginAdmin, makeTempRoot, type TestApp } from "./helpers.js";
 
-const entry = (n: number, source: { repo: string; revision: string } | null = null) => ({
-  source,
-  pushedAt: new Date(Date.UTC(2026, 7, 30, 0, 0, n)).toISOString(),
-  bundles: {
-    platform: `store/platform/p${n}.mjs`,
-    cli: `store/cli/c${n}.mjs`,
-    web: `store/web/w${n}.webz`,
-  },
-  ifaces: null,
-});
+const OWN_HASH = (table as { hash: string }).hash;
 
-describe("harness history file", () => {
-  it("appends newest first and keeps HISTORY_KEEP entries", async () => {
-    const root = await makeTempRoot();
-    for (let i = 0; i < HISTORY_KEEP + 3; i++) await appendHarnessHistory(root, entry(i));
-    const entries = await readHarnessHistory(root);
-    expect(entries).toHaveLength(HISTORY_KEEP);
-    expect(entries[0]!.bundles.platform).toBe(`store/platform/p${HISTORY_KEEP + 2}.mjs`);
-    expect(entries[HISTORY_KEEP - 1]!.bundles.platform).toBe("store/platform/p3.mjs");
+/** A runtime commit record, as harness.json would carry it. */
+async function commit(
+  root: string,
+  n: number,
+  source: { repo: string; revision: string } | null = null,
+) {
+  await fs.mkdir(path.join(root, "hmr"), { recursive: true });
+  await fs.writeFile(
+    path.join(root, "hmr", "harness.json"),
+    JSON.stringify({
+      platform: { bundle: `store/platform/p${n}.mjs` },
+      cli: { bundle: `store/cli/c${n}.mjs` },
+      web: { manifest: `store/web/w${n}.webz` },
+      ...(source ? { source } : {}),
+      pushedAt: new Date(Date.UTC(2026, 7, 30, 0, 0, n)).toISOString(),
+    }),
+  );
+}
+
+const storeAt = (root: string) =>
+  wire(HarnessHistoryStore, {
+    paths: { root },
+    clock: { now: () => new Date("2026-08-30T12:00:00Z") },
   });
 
-  it("the committed version is folded in when the history lacks it (a runtime older than the record)", () => {
-    const current = {
-      source: null,
-      pushedAt: "2026-08-30T00:00:00.000Z",
-      bundles: entry(9).bundles,
-      ifaces: null,
-    };
-    expect(withCurrent([], current)).toEqual([
-      { source: null, pushedAt: current.pushedAt, bundles: current.bundles, ifaces: null },
-    ]);
-    expect(withCurrent([entry(9)], current)).toEqual([entry(9)]); // already recorded: not doubled
-    expect(withCurrent([entry(1)], current).map((e) => e.bundles.platform)).toEqual([
-      "store/platform/p9.mjs",
-      "store/platform/p1.mjs",
-    ]);
-    expect(withCurrent([entry(1)], null)).toEqual([entry(1)]);
-  });
-
-  it("a missing, corrupt, or partly malformed file degrades to what still parses", async () => {
+describe("harness history store", () => {
+  it("records a boot once per version, with this platform's own table, newest first", async () => {
     const root = await makeTempRoot();
-    expect(await readHarnessHistory(root)).toEqual([]);
-    await fs.mkdir(path.join(root, "hmr"), { recursive: true });
-    await fs.writeFile(path.join(root, "hmr", "history.json"), "{ not json");
-    expect(await readHarnessHistory(root)).toEqual([]);
-    await fs.writeFile(
-      path.join(root, "hmr", "history.json"),
-      JSON.stringify([
-        entry(1, { repo: "git@x:y.git", revision: "v0.2.9-3-gabc" }),
-        { pushedAt: "2026-01-01T00:00:00.000Z" }, // no artifact at all: not a version
-        { bundles: { platform: "store/platform/z.mjs" } }, // no time: a version that predates the stamp
-        { ...entry(2), source: { repo: "only-half" } }, // half a provenance names nothing
-      ]),
-    );
-    const entries = await readHarnessHistory(root);
+    const store = storeAt(root);
+    // Nothing committed yet: a packaged boot, identified by its table.
+    await store.record();
+    let entries = await store.entries();
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.bundles).toEqual({ platform: null, cli: null, web: null });
+    expect(entries[0]!.ifaces?.hash).toBe(OWN_HASH);
+    expect(entries[0]!.pushedAt).toBe("2026-08-30T12:00:00.000Z");
+    // The same version booting again is the same line, not a second one.
+    await store.record();
+    expect(await store.entries()).toHaveLength(1);
+    // A committed version: the runtime's record, plus the table.
+    await commit(root, 1, { repo: "r", revision: "v1" });
+    await store.record();
+    await commit(root, 2);
+    await store.record();
+    entries = await store.entries();
     expect(entries.map((e) => e.bundles.platform)).toEqual([
-      "store/platform/p1.mjs",
-      "store/platform/z.mjs",
       "store/platform/p2.mjs",
+      "store/platform/p1.mjs",
+      null,
     ]);
-    expect(entries[0]!.source).toEqual({ repo: "git@x:y.git", revision: "v0.2.9-3-gabc" });
-    expect(entries[1]!.pushedAt).toBeNull();
-    expect(entries[2]!.source).toBeNull();
+    expect(entries[1]!.source).toEqual({ repo: "r", revision: "v1" });
+    expect(entries[1]!.pushedAt).toBe(new Date(Date.UTC(2026, 7, 30, 0, 0, 1)).toISOString());
+    // The table itself is on disk under its hash, once.
+    const stored = (await store.table(OWN_HASH)) as { hash: string };
+    expect(stored.hash).toBe(OWN_HASH);
+    expect(await store.table("f".repeat(64))).toBeNull();
+    expect(await store.table("../../harness")).toBeNull();
+  });
+
+  it("keeps HISTORY_KEEP entries and degrades a corrupt file to what still parses", async () => {
+    const root = await makeTempRoot();
+    const store = storeAt(root);
+    for (let i = 0; i < HISTORY_KEEP + 3; i++) {
+      await commit(root, i);
+      await store.record();
+    }
+    expect(await store.entries()).toHaveLength(HISTORY_KEEP);
+    await fs.writeFile(path.join(root, "harness-history", "history.json"), "{ not json");
+    expect(await store.entries()).toEqual([]);
+    await fs.writeFile(
+      path.join(root, "harness-history", "history.json"),
+      JSON.stringify([{ pushedAt: "x" }, { bundles: { platform: "store/platform/z.mjs" } }]),
+    );
+    expect((await store.entries()).map((e) => e.bundles.platform)).toEqual([
+      "store/platform/z.mjs",
+    ]);
   });
 });
 
@@ -142,8 +155,7 @@ const TABLE_B = {
 describe("interface table diff", () => {
   it("names the nodes and interfaces that appeared, vanished, or changed, member by member", () => {
     const d = diffIfaces({ hash: "a", ...TABLE_A } as never, { hash: "b", ...TABLE_B } as never);
-    expect(d.from).toBe("a");
-    expect(d.to).toBe("b");
+    expect([d.from, d.to]).toEqual(["a", "b"]);
     expect(d.modules.map((m) => [m.name, m.change])).toEqual([
       ["SystemClock", "added"],
       ["UsersRepo", "changed"],
@@ -158,14 +170,12 @@ describe("interface table diff", () => {
       { name: "findById", change: "changed" },
     ]);
     expect(d.types).toEqual({ added: 1, removed: 0, changed: 1 });
-    // The other direction is the mirror, and a missing side is "everything appeared".
     expect(
       diffIfaces({ hash: "b", ...TABLE_B } as never, { hash: "a", ...TABLE_A } as never).modules[0],
     ).toMatchObject({ name: "SystemClock", change: "removed" });
     expect(diffIfaces(null, { hash: "a", ...TABLE_A } as never).ifaces).toEqual([
       { key: "@x#Users", change: "added", methods: [], fields: [], slots: [] },
     ]);
-    // Identical tables: nothing.
     const same = diffIfaces({ hash: "a", ...TABLE_A } as never, { hash: "a", ...TABLE_A } as never);
     expect(same.modules).toEqual([]);
     expect(same.ifaces).toEqual([]);
@@ -179,66 +189,43 @@ describe("GET /api/version/history", () => {
     t = null;
   });
 
-  it("serves the committed versions newest first, with the current commit", async () => {
-    t = await createTestApp({
-      beforeSeed: async (root) => {
-        await appendHarnessHistory(root, entry(1));
-        await appendHarnessHistory(root, entry(2, { repo: "r", revision: "v1" }));
-      },
-    });
-    const admin = await loginAdmin(t.app);
-    const res = await apiClient(t.app, admin.cookie).get("/api/version/history");
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as VersionHistoryResponse;
-    expect(body.current).toBeNull(); // nothing pushed to this root's store
-    expect(body.entries.map((e) => e.pushedAt)).toEqual([entry(2).pushedAt, entry(1).pushedAt]);
-    expect(body.entries[0]!.source).toEqual({ repo: "r", revision: "v1" });
-  });
-
-  it("serves a stored table by hash and the diff between two stored tables", async () => {
-    const hashA = "a".repeat(64);
-    const hashB = "b".repeat(64);
-    t = await createTestApp({
-      beforeSeed: async (root) => {
-        const dir = path.join(root, "hmr", "store", "ifaces");
-        await fs.mkdir(dir, { recursive: true });
-        await fs.writeFile(
-          path.join(dir, `${hashA}.json`),
-          JSON.stringify({ hash: hashA, ...TABLE_A }),
-        );
-        await fs.writeFile(
-          path.join(dir, `${hashB}.json`),
-          JSON.stringify({ hash: hashB, ...TABLE_B }),
-        );
-      },
-    });
+  it("a fresh root already has this platform's boot on record, with its table", async () => {
+    t = await createTestApp();
     const admin = await loginAdmin(t.app);
     const client = apiClient(t.app, admin.cookie);
-    const table = (await (await client.get(`/api/version/history/ifaces/${hashA}`)).json()) as {
+    const body = (await (
+      await client.get("/api/version/history")
+    ).json()) as VersionHistoryResponse;
+    expect(body.current).toBeNull(); // the runtime committed nothing
+    expect(body.entries).toHaveLength(1);
+    expect(body.entries[0]!.ifaces?.hash).toBe(OWN_HASH);
+    const stored = (await (await client.get(`/api/version/history/ifaces/${OWN_HASH}`)).json()) as {
       hash: string;
     };
-    expect(table.hash).toBe(hashA);
+    expect(stored.hash).toBe(OWN_HASH);
     expect((await client.get(`/api/version/history/ifaces/${"c".repeat(64)}`)).status).toBe(404);
     expect((await client.get("/api/version/history/ifaces/..%2F..%2Fharness")).status).toBe(404);
     const diff = (await (
-      await client.get(`/api/version/history/diff?from=${hashA}&to=${hashB}`)
+      await client.get(`/api/version/history/diff?from=none&to=${OWN_HASH}`)
     ).json()) as VersionHistoryDiffResponse;
-    expect(diff.modules.map((m) => m.name)).toEqual(["SystemClock", "UsersRepo"]);
-    const fromNothing = (await (
-      await client.get(`/api/version/history/diff?from=none&to=${hashA}`)
-    ).json()) as VersionHistoryDiffResponse;
-    expect(fromNothing.from).toBeNull();
-    expect(fromNothing.modules).toEqual([
-      expect.objectContaining({ name: "UsersRepo", change: "added" }),
-    ]);
+    expect(diff.from).toBeNull();
+    expect(diff.modules.length).toBeGreaterThan(0);
+    expect(diff.modules.every((m) => m.change === "added")).toBe(true);
   });
 
-  it("an empty root has no history and no current version", async () => {
-    t = await createTestApp();
+  it("a committed version is recorded with the runtime's provenance and shown current", async () => {
+    t = await createTestApp({
+      beforeSeed: (root) => commit(root, 7, { repo: "r", revision: "v7" }),
+    });
     const admin = await loginAdmin(t.app);
     const body = (await (
       await apiClient(t.app, admin.cookie).get("/api/version/history")
     ).json()) as VersionHistoryResponse;
-    expect(body).toEqual({ current: null, entries: [] });
+    expect(body.current?.bundles.platform).toBe("store/platform/p7.mjs");
+    expect(body.entries[0]).toMatchObject({
+      source: { repo: "r", revision: "v7" },
+      bundles: { platform: "store/platform/p7.mjs" },
+      ifaces: { hash: OWN_HASH },
+    });
   });
 });
