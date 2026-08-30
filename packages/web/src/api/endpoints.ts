@@ -1292,6 +1292,11 @@ export const rollbackWorkflow = (
     `${workflowsBase(projectId, agentId)}/${encodeURIComponent(workflowId)}/rollback`,
     { method: "POST", body: { revision } },
   );
+/** Delete the folder; its recorded versions stay on disk. */
+export const removeWorkflow = (projectId: string, agentId: string, workflowId: string) =>
+  apiFetch<void>(`${workflowsBase(projectId, agentId)}/${encodeURIComponent(workflowId)}`, {
+    method: "DELETE",
+  });
 
 // ---- The plugins a Project asks for, and the confinement agent commands run under ----
 /**
