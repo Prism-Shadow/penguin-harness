@@ -24,8 +24,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runInstallScriptCommand, unpackStoreCommand } from "./commands.js";
 import type { RemoteTarget } from "./commands.js";
-import { parseProbeOutput, POSIX_PROBE, WINDOWS_PROBE } from "./detect.js";
+import { parseProbeOutput, posixProbe, windowsProbe } from "./detect.js";
 import type { RemoteIdentity, RemotePlatform } from "./detect.js";
+import type { RemoteLayout } from "./layout.js";
 import { connectionTo, looksLikeAuthFailure, runBytes } from "./transport/index.js";
 import type { MachineChannel } from "./transport/index.js";
 
@@ -149,10 +150,11 @@ function baseReleaseVersion(argv1: string | undefined): string | null {
  */
 export async function detectRemote(
   target: RemoteTarget,
+  layout: RemoteLayout,
   channel?: MachineChannel,
 ): Promise<{ identity: RemoteIdentity } | { error: string }> {
   const conn = channel ?? connectionTo(target);
-  const posix = await conn.exec(POSIX_PROBE);
+  const posix = await conn.exec(posixProbe(layout));
   const identity = parseProbeOutput(posix.stdout);
   if (identity) return { identity };
   // The session's output is merged, so ssh's own words arrive as stdout.
@@ -162,7 +164,7 @@ export async function detectRemote(
       error: `${said}\n\nConnections use BatchMode: set up key or agent authentication for that host first.`,
     };
   }
-  const windows = await conn.oneShot(WINDOWS_PROBE, { timeoutMs: 30_000 });
+  const windows = await conn.oneShot(windowsProbe(layout), { timeoutMs: 30_000 });
   const identityWin = parseProbeOutput(windows.stdout);
   if (identityWin) return { identity: identityWin };
   if (windows.code !== 0 && looksLikeAuthFailure(windows)) {
@@ -216,15 +218,17 @@ export async function installOnRemote(opts: {
    * what puts the machine back within reach.
    */
   forceInstaller?: boolean;
+  /** Which installation on that machine this is: the profile's program directory and root. */
+  layout: RemoteLayout;
 }): Promise<RemoteInstallOutcome> {
-  const { target, plan } = opts;
+  const { target, plan, layout } = opts;
   const conn = opts.channel ?? connectionTo(target);
   const say = opts.onProgress ?? (() => {});
 
   let identity = opts.identity;
   if (identity === undefined) {
     say("Asking what that machine is…");
-    const detected = await detectRemote(target, conn);
+    const detected = await detectRemote(target, layout, conn);
     if ("error" in detected) return { kind: "failed", step: "connect", detail: detected.error };
     identity = detected.identity;
     say(`${identity.platform}-${identity.arch}.`);
@@ -297,7 +301,7 @@ export async function installOnRemote(opts: {
       } else {
         where = { platform: identity.platform };
       }
-      const step = runInstallScriptCommand(`v${plan.baseVersion}`, where);
+      const step = runInstallScriptCommand(`v${plan.baseVersion}`, where, layout);
       // The script rides the session's stdin as a heredoc, and the far side's own progress
       // is relayed as it arrives rather than after the minutes an install can take. A Windows
       // host runs its copied script on a connection of its own (no session to ride).
@@ -333,7 +337,7 @@ export async function installOnRemote(opts: {
           detail: packed.stderr.trim() || `tar exited ${packed.code}`,
         };
       }
-      const unpack = unpackStoreCommand(identity.platform);
+      const unpack = unpackStoreCommand(identity.platform, layout);
       const sync =
         identity.platform === "win32"
           ? await conn.oneShot(unpack, { input: packed.stdout })
@@ -358,7 +362,7 @@ export async function installOnRemote(opts: {
     // syncOutOfDate filters on: the machine is then excluded from the very sweep that would
     // have tried again. A false success here does not just mislead, it seals itself in.
     say("Checking what it ended up with…");
-    const after = await detectRemote(target, conn);
+    const after = await detectRemote(target, layout, conn);
     if ("error" in after) {
       return {
         kind: "failed",

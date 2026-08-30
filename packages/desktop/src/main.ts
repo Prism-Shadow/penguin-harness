@@ -188,6 +188,7 @@ async function startServerAndWindow(dataRoot: string): Promise<void> {
   const started = await startEmbeddedServer({
     dataRoot,
     webDist,
+    profile,
     portFile: path.join(app.getPath("userData"), "server-port"),
     preferredPortFile: path.join(app.getPath("userData"), "preferred-port"),
     log: (chunk) => process.stdout.write(`[server] ${chunk}`),
