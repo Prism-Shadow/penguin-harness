@@ -397,7 +397,7 @@ export default {
 
 `WorkflowHost` (published as module `Host`): `runAgent({ text, sessionId? })` sends text to this Agent — into that Session, or a new one — and returns `{ sessionId }`; `sessionStatus(sessionId)`; `getState()` / `setState(doc)` over `state.json`; `log(text)`. More modules may be listed in `penguin.modules` and named as `children` of `Workflow`, with their own `requires` between them — the tree is checked as a whole.
 
-HTTP, all under `/api/projects/:projectId/agents/:agentId/workflows` (Project members only): `GET /` lists the workflows with their `revision`, `uiRev` and current load `error`; `GET /:id/ui/*` serves the page (`index.html` for the bare path); any method on `/:id/api/*` reaches `handle` as JSON; `POST /:id/reload`; `GET /:id/history` lists recorded versions; `POST /:id/rollback { revision }` restores one (code only — `state.json` stays) and reloads. From the page, call your handler with a relative `fetch("api/…")`; the Web App shows the page in a tab and reloads it when `uiRev` changes.
+HTTP, all under `/api/projects/:projectId/agents/:agentId/workflows` (Project members only): `GET /` lists the workflows with their `revision`, `uiRev` and current load `error`; `GET /:id/ui/*` serves the page (`index.html` for the bare path); any method on `/:id/api/*` reaches `handle` as JSON; `POST /:id/reload`; `GET /:id/history` lists recorded versions; `POST /:id/rollback { revision }` restores one (code only — `state.json` stays) and reloads. From the page (served under `ui/`), call your handler with a relative `fetch("../api/…")`; the Web App shows the page in a tab and reloads it when `uiRev` changes.
 
 ## Verify before you hand over
 
