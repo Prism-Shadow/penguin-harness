@@ -3,6 +3,7 @@
 - **Date:** 2026-08-30
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#552](https://github.com/Prism-Shadow/penguin-harness/pull/552)
 
 [中文版](2026-08-30-terminal-tabs-survive-restart.zh.md)
 
