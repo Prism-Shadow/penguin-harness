@@ -21,8 +21,9 @@
  * | 7369 | `pnpm penguin web` (dev CLI)       | `~/.penguin/dev-data-cli`  | the root and cli `penguin` scripts   |
  *
  * The desktop app binds no fixed port in either form (PORT=0 with a per-instance sticky
- * preference); its release form shares `~/.penguin/data` with the CLI by design and its
- * dev form takes `~/.penguin/dev-data` (see `packages/desktop/src/app-identity.ts`). The
+ * preference); its release profile shares `~/.penguin/data` with the CLI by design and its
+ * dev profile — an unpackaged run, or any build launched with `--dev` — takes
+ * `~/.penguin/dev-data` (see `packages/desktop/src/app-identity.ts`). The
  * web e2e harness runs on 8930/8931 against a throwaway root (`packages/web/e2e/run.sh`).
  *
  * The development backend deliberately does **not** share 7364 with an installed one: the
