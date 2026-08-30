@@ -48,8 +48,12 @@ export interface AgentPackage {
 export interface PackagePreview {
   manifest: PackageManifest;
   bytes: number;
-  /** Where it came from, for display (a gist URL). */
+  /** Where it came from, for display (`gist:<id>`, `npm:<name>@<version>`, `github:o/r#ref`, …). */
   source: string;
+  /** How the source was read. */
+  kind: "gist" | "npm" | "github-release" | "github" | "git" | "url";
+  /** An id for the new Agent: the manifest's, or the source's name when there is no manifest. */
+  suggestedId: string;
 }
 
 export abstract class AgentPackages extends Interface<{
@@ -64,10 +68,20 @@ export abstract class AgentPackages extends Interface<{
     agentId: string,
     options: { gistId?: string; public: boolean },
   ): Promise<{ gistId: string; url: string; files: number; bytes: number }>;
-  /** Reads a gist and validates it as a package, without writing anything. */
-  preview(gist: string): Promise<PackagePreview>;
-  /** Installs a gist's package as a new Agent in the Project. */
-  install(projectId: string, gist: string, agentId: string): Promise<{ agentId: string }>;
+  /**
+   * Reads a source and validates it as a package, without writing anything. A source is a
+   * gist link or id, `npm:<name>[@version]`, a GitHub repository or release (URL or
+   * `github:o/r[#ref]` / `github-release:o/r[#tag]`), a git URL, or an http(s) URL of a
+   * tarball; `kind` forces one reading when the shape is ambiguous.
+   */
+  preview(source: string, kind?: string): Promise<PackagePreview>;
+  /** Installs a source's package as a new Agent in the Project. */
+  install(
+    projectId: string,
+    source: string,
+    agentId: string,
+    kind?: string,
+  ): Promise<{ agentId: string }>;
   /** Whether a GitHub token is configured (publishing needs one; reading a public gist does not). */
   canPublish(): boolean;
 }>() {}

@@ -168,3 +168,66 @@ export function gistIdOf(input: string): string {
   if (match) return match[1]!;
   throw new PackageFormatError(`"${input}" is not a gist URL or id.`);
 }
+
+/**
+ * A directory-shaped source (a tarball, a clone) as a package. With a manifest, every
+ * entry must be present — by its real path or its flattened name — and pass the same rules
+ * as a gist. Without one, the tree IS the Agent directory: whatever is packageable in it is
+ * the package, named after the source. That is what makes "a repository that is an Agent
+ * directory" installable with nothing added to it.
+ */
+export function packageFromTree(
+  files: ReadonlyMap<string, Buffer>,
+  fallback: { agentId: string; name: string; packagedBy: string },
+): { manifest: PackageManifest; files: PackageFile[]; bytes: number } {
+  const manifestRaw = files.get(MANIFEST_FILE);
+  if (manifestRaw !== undefined) {
+    // Look every manifest entry up by path first, then by its flattened name; the gist
+    // parser does the rest of the checking on the same shape.
+    const byName: Record<string, { content?: string; truncated?: boolean }> = {
+      [MANIFEST_FILE]: { content: manifestRaw.toString("utf8") },
+    };
+    let manifest: { files?: Array<{ path?: unknown; file?: unknown; encoding?: unknown }> };
+    try {
+      manifest = JSON.parse(manifestRaw.toString("utf8")) as typeof manifest;
+    } catch {
+      throw new PackageFormatError(`${MANIFEST_FILE} is not valid JSON.`);
+    }
+    for (const entry of manifest.files ?? []) {
+      if (typeof entry?.path !== "string" || typeof entry.file !== "string") continue;
+      const bytes = files.get(entry.path) ?? files.get(entry.file);
+      if (bytes === undefined) continue;
+      byName[entry.file] = {
+        content: entry.encoding === "base64" ? bytes.toString("base64") : bytes.toString("utf8"),
+      };
+    }
+    return parsePackage(byName);
+  }
+
+  const out: PackageFile[] = [];
+  let bytes = 0;
+  for (const [rel, content] of [...files.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+    if (!isPackagedPath(rel) || !isRoundTrippable(rel)) continue;
+    const encoding = encodingFor(content);
+    const text = encoding === "utf8" ? content.toString("utf8") : content.toString("base64");
+    bytes += Buffer.byteLength(text, "utf8");
+    out.push({ path: rel, file: flattenPath(rel), encoding, content: text });
+  }
+  if (out.length === 0) {
+    throw new PackageFormatError(
+      `The source is not an Agent: no ${MANIFEST_FILE}, and no agent_state/ or workflows/ folder.`,
+    );
+  }
+  if (bytes > MAX_PACKAGE_BYTES) {
+    throw new PackageFormatError(`Package exceeds the ${MAX_PACKAGE_BYTES / 1024 / 1024}MB limit.`);
+  }
+  const manifest = manifestOf(
+    fallback.agentId,
+    fallback.name,
+    "",
+    fallback.packagedBy,
+    new Date(0).toISOString(),
+    out,
+  );
+  return { manifest, files: out, bytes };
+}
