@@ -8,13 +8,14 @@
  * refetches when the server announces `workflow_updated` for this Agent, so an Agent
  * editing its own workflow sees the tab update (the iframe keys on `uiRev`).
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { WorkflowInfo, WorkflowVersion } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { Button } from "../../components/ui/button";
 import { formatDateTime } from "../../lib/format";
 import { S } from "../../lib/strings";
 import { toneInk, toneStrip } from "../../lib/tone";
+import { readDocumentTheme, themeWorkflowFrame } from "../../lib/workflow-theme";
 import {
   settleActiveTab,
   WORKFLOW_UPDATED_EVENT,
@@ -23,6 +24,7 @@ import {
   type WorkflowTab,
   type WorkflowUpdatedDetail,
 } from "../../lib/workflow-tabs";
+import { useTheme } from "../../state/theme";
 
 /** The Agent's workflow tabs, kept fresh by the server's `workflow_updated` events. */
 export function useWorkflowTabs(projectId: string | null, agentId: string | null) {
@@ -126,6 +128,8 @@ export function WorkflowFrame({
   /** The workflow was reloaded or restored; the caller refetches the list. */
   onChanged: (workflow: WorkflowInfo) => void;
 }) {
+  const { dark, accent, fontScale } = useTheme();
+  const frameRef = useRef<HTMLIFrameElement | null>(null);
   const [busy, setBusy] = useState<"reload" | "rollback" | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -168,6 +172,18 @@ export function WorkflowFrame({
       setBusy(null);
     }
   };
+
+  // The page is a separate document: the app's dark class, accent and root font size stop at
+  // the frame, so they are copied in (lib/workflow-theme.ts) on load and on every appearance
+  // change. Past the commit, because the provider that stamps them on the app's own document
+  // is an ancestor and its effect runs after this one's.
+  const applyTheme = useCallback(() => {
+    themeWorkflowFrame(frameRef.current, readDocumentTheme(document));
+  }, []);
+  useEffect(() => {
+    const id = requestAnimationFrame(applyTheme);
+    return () => cancelAnimationFrame(id);
+  }, [applyTheme, dark, accent, fontScale, tab.uiRev]);
 
   const historyId = `workflow-history-${tab.workflowId}`;
   return (
@@ -243,6 +259,8 @@ export function WorkflowFrame({
       </div>
       <iframe
         key={tab.uiRev}
+        ref={frameRef}
+        onLoad={applyTheme}
         title={tab.name}
         src={workflowUiUrl(projectId, agentId, tab)}
         className="min-h-0 flex-1 border-0 bg-white"
