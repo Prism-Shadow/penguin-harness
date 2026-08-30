@@ -14,4 +14,6 @@ Ctrl+P（macOS 上为 ⌘P）打开一个 VS Code 风格的命令面板：一个
 
 `GET /api/version/history` 连同运行时当前提交一起返回这份记录（最新 100 条）。
 
+**模块树。** 每个版本在"变化"旁边还有"模块树"视图：它记录的表所描述的整棵树——组、组下的模块与组件，以及任一节点需要什么（来自哪个模块）、提供或导出什么、投递什么。
+
 **回滚。** 运行时的 store 只为每种产物保留一份回滚副本；platform 自己在 `<root>/harness-history/versions/` 下保留最近五个完整版本（bundle、web 归档、带可执行位记录的原生资产）。任何保留了产物的版本都有"回滚到这个版本"按钮（管理员，两次点击）：platform 用本地 API token 把保留的产物经运行时自己的 `/api/hmr/upgrade` 推回去，在切换前先应答，页面轮询历史直到该版本成为当前版本。`POST /api/version/history/rollback { id }`。

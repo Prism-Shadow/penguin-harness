@@ -14,4 +14,6 @@ The one command today: an overlay over whatever you were doing — it fills the 
 
 `GET /api/version/history` serves the record (newest 100) with the runtime's current commit.
 
+**Module tree.** Each version has a *Module tree* view beside its changes: the whole tree its recorded table describes — groups, modules and components under them, and for any node what it requires (and from which module), provides or exports, and contributes.
+
 **Rollback.** The runtime's store keeps one rollback copy of each artifact; the platform keeps the whole last five versions under `<root>/harness-history/versions/` (bundles, web archive, native assets with their exec bits). Any kept version has a *Roll back to this version* button (admin; two clicks): the platform pushes the kept artifacts back through the runtime's own `/api/hmr/upgrade` with the local API token, answers before the swap, and the page polls the history until that version is current. `POST /api/version/history/rollback { id }`.

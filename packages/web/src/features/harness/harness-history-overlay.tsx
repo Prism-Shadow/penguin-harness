@@ -28,6 +28,7 @@ import { Skeleton } from "../../components/ui/skeleton";
 import { formatDateTime } from "../../lib/format";
 import { S } from "../../lib/strings";
 import { toneStrip } from "../../lib/tone";
+import { ModuleTreeView } from "./module-tree-view";
 
 /** The last path segment without its extension: `store/platform/1a2b….mjs` → `1a2b…`. */
 function shortSha(pointer: string | null): string {
@@ -128,6 +129,8 @@ export function HarnessHistoryOverlay({ open, onClose }: { open: boolean; onClos
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState(0);
   const [diff, setDiff] = useState<DiffLoad>({ state: "idle" });
+  // What the detail pane shows for the selected version: its changes, or its whole tree.
+  const [view, setView] = useState<"changes" | "tree">("changes");
   // Rollback: armed by the first click, sent by the second; then the history is polled
   // until the runtime's current commit is the target (the swap happens under us).
   const [rollback, setRollback] = useState<
@@ -383,61 +386,96 @@ export function HarnessHistoryOverlay({ open, onClose }: { open: boolean; onClos
                       </div>
                     ) : null}
 
-                    <h3 className="mt-6 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                      {previous
-                        ? t.changesSince(
-                            previous.source?.revision ?? previous.ifaces?.hash.slice(0, 8) ?? "—",
-                          )
-                        : t.changesFirst}
-                    </h3>
-                    {entry.ifaces === null ? (
-                      <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">{t.noTable}</p>
-                    ) : diff.state === "loading" || diff.state === "idle" ? (
-                      <Skeleton className="mt-2 h-9 w-full" />
-                    ) : diff.state === "error" ? (
-                      <div
-                        className={`mt-2 rounded-md border px-3 py-2 text-sm ${toneStrip.danger}`}
-                      >
-                        {diff.message}
-                      </div>
-                    ) : diff.diff.modules.length + diff.diff.ifaces.length === 0 &&
-                      diff.diff.types.added + diff.diff.types.removed + diff.diff.types.changed ===
-                        0 ? (
-                      <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">{t.noChanges}</p>
+                    <div className="mt-6 flex items-center gap-1 text-sm">
+                      {(["changes", "tree"] as const).map((v) => (
+                        <button
+                          key={v}
+                          type="button"
+                          onClick={() => setView(v)}
+                          aria-pressed={view === v}
+                          className={`rounded-md px-2.5 py-1 ${
+                            view === v
+                              ? "bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900"
+                              : "text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                          }`}
+                        >
+                          {v === "changes" ? t.viewChanges : t.viewTree}
+                        </button>
+                      ))}
+                    </div>
+                    {view === "tree" ? (
+                      entry.ifaces === null ? (
+                        <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">{t.noTable}</p>
+                      ) : (
+                        <ModuleTreeView hash={entry.ifaces.hash} />
+                      )
                     ) : (
-                      <div className="mt-2 flex flex-col gap-4">
-                        {diff.diff.modules.length > 0 ? (
-                          <div>
-                            <h4 className="mb-1 text-sm font-medium">
-                              {t.nodes(diff.diff.modules.length)}
-                            </h4>
-                            <ul className="flex flex-col gap-1">
-                              {diff.diff.modules.map((m) => (
-                                <ModuleRow key={m.name} m={m} />
-                              ))}
-                            </ul>
+                      <>
+                        <h3 className="mt-6 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                          {previous
+                            ? t.changesSince(
+                                previous.source?.revision ??
+                                  previous.ifaces?.hash.slice(0, 8) ??
+                                  "—",
+                              )
+                            : t.changesFirst}
+                        </h3>
+                        {entry.ifaces === null ? (
+                          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                            {t.noTable}
+                          </p>
+                        ) : diff.state === "loading" || diff.state === "idle" ? (
+                          <Skeleton className="mt-2 h-9 w-full" />
+                        ) : diff.state === "error" ? (
+                          <div
+                            className={`mt-2 rounded-md border px-3 py-2 text-sm ${toneStrip.danger}`}
+                          >
+                            {diff.message}
                           </div>
-                        ) : null}
-                        {diff.diff.ifaces.length > 0 ? (
-                          <div>
-                            <h4 className="mb-1 text-sm font-medium">
-                              {t.interfaces(diff.diff.ifaces.length)}
-                            </h4>
-                            <ul className="flex flex-col gap-1">
-                              {diff.diff.ifaces.map((i) => (
-                                <IfaceRow key={i.key} i={i} />
-                              ))}
-                            </ul>
+                        ) : diff.diff.modules.length + diff.diff.ifaces.length === 0 &&
+                          diff.diff.types.added +
+                            diff.diff.types.removed +
+                            diff.diff.types.changed ===
+                            0 ? (
+                          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                            {t.noChanges}
+                          </p>
+                        ) : (
+                          <div className="mt-2 flex flex-col gap-4">
+                            {diff.diff.modules.length > 0 ? (
+                              <div>
+                                <h4 className="mb-1 text-sm font-medium">
+                                  {t.nodes(diff.diff.modules.length)}
+                                </h4>
+                                <ul className="flex flex-col gap-1">
+                                  {diff.diff.modules.map((m) => (
+                                    <ModuleRow key={m.name} m={m} />
+                                  ))}
+                                </ul>
+                              </div>
+                            ) : null}
+                            {diff.diff.ifaces.length > 0 ? (
+                              <div>
+                                <h4 className="mb-1 text-sm font-medium">
+                                  {t.interfaces(diff.diff.ifaces.length)}
+                                </h4>
+                                <ul className="flex flex-col gap-1">
+                                  {diff.diff.ifaces.map((i) => (
+                                    <IfaceRow key={i.key} i={i} />
+                                  ))}
+                                </ul>
+                              </div>
+                            ) : null}
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                              {t.typesSummary(
+                                diff.diff.types.added,
+                                diff.diff.types.removed,
+                                diff.diff.types.changed,
+                              )}
+                            </p>
                           </div>
-                        ) : null}
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                          {t.typesSummary(
-                            diff.diff.types.added,
-                            diff.diff.types.removed,
-                            diff.diff.types.changed,
-                          )}
-                        </p>
-                      </div>
+                        )}
+                      </>
                     )}
                   </section>
                 )}
