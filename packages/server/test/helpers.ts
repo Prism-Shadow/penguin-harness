@@ -9,7 +9,7 @@ import path from "node:path";
 import type { Hono } from "hono";
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import { bootAppDeps, createRuntimeApp } from "../src/app.js";
-import type { BuildDepsOverrides, ServerBoot } from "../src/app.js";
+import type { ServerBoot } from "../src/app.js";
 import type { ModuleTree } from "@prismshadow/penguin-core/kernel";
 import type { DatabaseSync } from "node:sqlite";
 import type { HmrHost } from "../src/hmr/host.js";
@@ -26,7 +26,6 @@ import type { AgentConfigService } from "../src/services/agent-config-service.js
 import type { MemoryService } from "../src/services/memory-service.js";
 import type { SessionService } from "../src/services/session-service.js";
 import type { UsageService } from "../src/services/usage-service.js";
-import type { UpdateCheckService } from "../src/services/update-check-service.js";
 import type { WorkspaceFilesService } from "../src/services/workspace-files-service.js";
 import type { PreviewTokenSigner } from "../src/services/preview-token.js";
 import type { BenchmarkService } from "../src/services/benchmark-service.js";
@@ -54,6 +53,29 @@ import { ADMIN_USER_ID } from "../src/auth/service.js";
 import type { ServerConfig } from "../src/config.js";
 import type { UserInfo } from "../src/api/types.js";
 import { wire } from "@prismshadow/penguin-core/kernel";
+import type { ModuleClass } from "@prismshadow/penguin-core/kernel";
+import type { Replacements } from "../src/hmr/capabilities.js";
+import { ConsoleLog, SystemClock } from "../src/hmr/capabilities.js";
+import { hashPassword, ScryptHasher } from "../src/auth/password.js";
+import { CoreSessionLoaders, DefaultTitleGenerators } from "../src/runtime/session-manager.js";
+import type { SessionLoader } from "../src/runtime/session-manager.js";
+import type { TitleNotifier } from "../src/runtime/title-generator.js";
+import { UpdateCheckService } from "../src/services/update-check-service.js";
+import { DefaultMessagingTuning } from "../src/runtime/messaging/bridge.js";
+import { FeishuSdkProvider } from "../src/runtime/messaging/feishu-connector.js";
+import type { FeishuSdk } from "../src/runtime/messaging/feishu-sdk.js";
+import { TelegramTransportProvider } from "../src/runtime/messaging/telegram-connector.js";
+import type { TelegramTransport } from "../src/runtime/messaging/telegram-api.js";
+import { QQTransportProvider } from "../src/runtime/messaging/qq-connector.js";
+import type { QQTransport } from "../src/runtime/messaging/qq-api.js";
+import { QQScanTransportProvider } from "../src/runtime/messaging/qq-scan.js";
+import { WeChatTransportProvider } from "../src/runtime/messaging/wechat-connector.js";
+import type { WeChatTransport } from "../src/runtime/messaging/wechat-api.js";
+import { WeChatScanTransportProvider } from "../src/runtime/messaging/wechat-scan.js";
+import type { WeChatScanTransport } from "../src/runtime/messaging/wechat-scan.js";
+import type { QQScanTransport } from "../src/runtime/messaging/qq-scan.js";
+import { MachinesModule } from "../src/machines/service.js";
+import { machinesRoutes } from "../src/http/routes/machines.js";
 
 export async function makeTempRoot(): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), "penguin-server-test-"));
@@ -166,7 +188,7 @@ export function flattenForTests(boot: ServerBoot): TestDeps {
     traceService: api("TraceService", "TraceService"),
     traceIndex: api("TraceIndexService", "TraceIndexService"),
     usageService: api("UsageService", "UsageService"),
-    updateCheck: api("VersionModule", "updateCheck"),
+    updateCheck: api("UpdateCheckService", "UpdateCheckService"),
     workspaceFiles: api("WorkspaceFilesService", "WorkspaceFilesService"),
     previewTokens: api("WorkspaceModule", "previewTokens"),
     benchmarks: api("BenchmarkService", "BenchmarkService"),
@@ -193,11 +215,98 @@ export interface TestApp {
   cleanup(): Promise<void>;
 }
 
-export interface TestAppOptions extends BuildDepsOverrides {
+/**
+ * What a test stands in for, by the name it has always used; each becomes a node
+ * Replacement (the platform boots the given instance instead of the class it names).
+ */
+export interface TestAppOptions {
+  /** Test double: session-manager's underlying loader (avoids the real LLM/SDK path). */
+  loader?: SessionLoader;
+  /** Test double: Session title generator (avoids real LLM requests). */
+  titles?: TitleNotifier;
+  /** Test double: update-check service with a stubbed fetch/clock (avoids real network calls). */
+  updateCheck?: UpdateCheckService;
+  /** Test double: the Feishu connector's SDK (avoids real Lark network / long connections). */
+  feishuSdk?: FeishuSdk;
+  /** Test double: the Telegram connector's Bot API transport. */
+  telegramTransport?: TelegramTransport;
+  /** Test hook: the Telegram connector's poll backoff (tests collapse it to zero). */
+  telegramRetryDelayMs?: (failures: number) => number;
+  /** Test double: the QQ connector's OpenAPI + gateway transport. */
+  qqTransport?: QQTransport;
+  /** Test hook: how long the QQ connector withholds its coalesced tail. */
+  qqTailFlushMs?: number;
+  /** Test hook: the bridge's pace between a per-line reply's messages. */
+  messagingLineDelayMs?: number;
+  /** Test hook: one binding's inbound image budget. */
+  messagingInboundImageBudgetBytes?: number;
+  /** Test double: the QQ scan-to-connect transport. */
+  qqScanTransport?: QQScanTransport;
+  /** Test double: the WeChat connector's long-poll + CDN transport. */
+  wechatTransport?: WeChatTransport;
+  /** Test double: the WeChat scan-to-connect transport. */
+  wechatScanTransport?: WeChatScanTransport;
+  /** Test hook: the WeChat poll loop's backoff (tests collapse it to zero). */
+  wechatRetryDelayMs?: (failures: number) => number;
+  /** Test double: machines service whose ssh effects are faked. */
+  machines?: MachinesService;
+  /** Test double: the password work factor (scrypt at full strength is seconds per hash). */
+  passwordHashCost?: number;
+  log?: (line: string) => void;
+  now?: () => Date;
   /** Runs before seeding the admin (for scenarios pre-populating a default_project config as the CLI would). */
   beforeSeed?: (root: string) => Promise<void>;
   /** Overrides merged onto the default test ServerConfig (e.g. `previewOrigin`). */
   config?: Partial<ServerConfig>;
+}
+
+/** The node each option stands in for. */
+export function replacementsFor(o: TestAppOptions): Replacements {
+  const out: Array<readonly [ModuleClass, object]> = [];
+  if (o.log) out.push([ConsoleLog, { line: o.log }]);
+  if (o.now) out.push([SystemClock, { now: o.now }]);
+  if (o.passwordHashCost !== undefined) {
+    const cost = o.passwordHashCost;
+    out.push([ScryptHasher, { hash: (password: string) => hashPassword(password, cost) }]);
+  }
+  if (o.loader) {
+    const loader = o.loader;
+    out.push([CoreSessionLoaders, { create: () => loader }]);
+  }
+  if (o.titles) {
+    const titles = o.titles;
+    out.push([DefaultTitleGenerators, { create: () => titles }]);
+  }
+  if (o.updateCheck) out.push([UpdateCheckService, o.updateCheck]);
+  if (o.feishuSdk) out.push([FeishuSdkProvider, { feishuSdk: { sdk: o.feishuSdk } }]);
+  if (o.telegramTransport)
+    out.push([
+      TelegramTransportProvider,
+      { telegramTransport: { transport: o.telegramTransport } },
+    ]);
+  if (o.qqTransport) out.push([QQTransportProvider, { qqTransport: { transport: o.qqTransport } }]);
+  if (o.qqScanTransport)
+    out.push([QQScanTransportProvider, { qqScanTransport: { transport: o.qqScanTransport } }]);
+  if (o.wechatTransport)
+    out.push([WeChatTransportProvider, { wechatTransport: { transport: o.wechatTransport } }]);
+  if (o.wechatScanTransport)
+    out.push([
+      WeChatScanTransportProvider,
+      { wechatScanTransport: { transport: o.wechatScanTransport } },
+    ]);
+  const tuning: Record<string, unknown> = {};
+  if (o.messagingLineDelayMs !== undefined) tuning.lineDelayMs = o.messagingLineDelayMs;
+  if (o.messagingInboundImageBudgetBytes !== undefined)
+    tuning.inboundImageBudgetBytes = o.messagingInboundImageBudgetBytes;
+  if (o.qqTailFlushMs !== undefined) tuning.qqTailFlushMs = o.qqTailFlushMs;
+  if (o.telegramRetryDelayMs) tuning.retryDelayMs = o.telegramRetryDelayMs;
+  if (o.wechatRetryDelayMs) tuning.retryDelayMs = o.wechatRetryDelayMs;
+  if (Object.keys(tuning).length > 0) out.push([DefaultMessagingTuning, tuning]);
+  if (o.machines) {
+    const machines = o.machines;
+    out.push([MachinesModule, { machines, routes: machinesRoutes({ machines }) }]);
+  }
+  return out;
 }
 
 export async function createTestApp(options: TestAppOptions = {}): Promise<TestApp> {
@@ -205,14 +314,17 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
   const root = await makeTempRoot();
   if (beforeSeed) await beforeSeed(root);
   const finalConfig = { ...testConfig(root), ...config };
-  const boot = await bootAppDeps(finalConfig, {
-    log: () => {},
-    passwordHashCost: TEST_PASSWORD_HASH_COST,
-    // The bridge's per-line pace is a real wait in production; every test but the one
-    // about the pacing itself collapses it to nothing.
-    messagingLineDelayMs: 0,
-    ...overrides,
-  });
+  const boot = await bootAppDeps(
+    finalConfig,
+    replacementsFor({
+      log: () => {},
+      passwordHashCost: TEST_PASSWORD_HASH_COST,
+      // The bridge's per-line pace is a real wait in production; every test but the one
+      // about the pacing itself collapses it to nothing.
+      messagingLineDelayMs: 0,
+      ...overrides,
+    }),
+  );
   // Consistent with the startup entrypoint: seed the built-in admin (owning default_project).
   const deps = flattenForTests(boot);
   await deps.authService.seedAdmin();
@@ -343,13 +455,13 @@ export function makeTraceHarness(
   const db = openDatabase(":memory:");
   const sources = opts.sources ?? new SessionSources();
   const traceIndex = wire(TraceIndexService, {
-    config: { root },
+    paths: { root },
     repo: wire(TraceIndexRepo, { db }),
     sources,
   });
   const shardReads: string[] = [];
   const service = wire(TraceService, {
-    config: { root },
+    paths: { root },
     index: traceIndex,
     ...(opts.sessions !== undefined ? { sessions: opts.sessions } : {}),
     sources,
