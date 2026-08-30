@@ -6,6 +6,7 @@ import {
   DEFAULT_HOST,
   DEFAULT_PORT,
   browserCommand,
+  appPagePath,
   browserUrl,
   cliEntryFor,
   describeReadinessFailure,
@@ -219,6 +220,20 @@ describe("readiness probe diagnostics", () => {
       expect(timeout, lang).not.toBe(
         getMessages(lang).webProbeFailed(url, detail, "refused", 7364),
       );
+    }
+  });
+});
+
+describe("appPagePath (--app <project>/<agent>/<workflow>)", () => {
+  it("maps the spec to the Web App's full-page route, segments encoded", () => {
+    expect(appPagePath("default_project/default_agent/todo")).toBe(
+      "app/default_project/default_agent/todo",
+    );
+    expect(appPagePath("p 1/a/w")).toBe("app/p%201/a/w");
+  });
+  it("refuses anything but three non-empty segments", () => {
+    for (const bad of ["todo", "p/a", "p/a/w/x", "p//w", "/a/w"]) {
+      expect(() => appPagePath(bad)).toThrow(/Invalid --app/);
     }
   });
 });
