@@ -14,7 +14,7 @@ The business surface of the server — every service, every repo, every route gr
 
 A component's interface is its class, projected; anything else is an abstract class `extends Interface<…>()`, wherever it is declared. `pnpm gen:ifaces` projects every such interface into `packages/server/src/ifaces.json` — parameters and return types included, not just method names; named data types are emitted once and referenced, so a recursive type is a reference to itself. The table is generated, not committed: `typecheck`, `build`, `test` and the deploy script regenerate it. A requirement is satisfied by Go's rule: every method the consumer names exists on the provider with an assignable signature (parameters contravariant, returns covariant). A module may declare the narrow interface it needs where it consumes it; the scheduler's `ScheduleTaskRunner` is one, satisfied by the session runtime's wider `SessionManager`.
 
-Host objects (`AbortSignal`, `Request`, a class of this package written as `Opaque<"Name">`) compare by name only, and the generator says so rather than guessing.
+Host objects (`AbortSignal`, `Request`, a class of this package written as `Opaque<"Name">`) compare by name only — and the name is always qualified by the package that declares the type (`@types/node#Request`, `@prismshadow/penguin-core#Resources`), so the same word in two packages is two identities. Mapped types (`Pick<…>`, `Record<…>`) are projected as the shapes they are, an alias with methods as an interface under the alias's name.
 
 ## Contributions are manifest data
 
