@@ -26,10 +26,17 @@ import type {
   RestartResponse,
   UpdateJobStatus,
   UpdateRunResponse,
+  VersionHistoryDiffResponse,
   VersionHistoryResponse,
   VersionResponse,
 } from "../../api/types.js";
-import { readHarnessHistory, readHarnessInfo, withCurrent } from "../../hmr/manifest.js";
+import {
+  readHarnessHistory,
+  readHarnessInfo,
+  readIfacesTable,
+  withCurrent,
+} from "../../hmr/manifest.js";
+import { diffIfaces } from "../../hmr/ifaces-diff.js";
 import { HttpError } from "../errors.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { ServerConfig } from "../../config.js";
@@ -74,6 +81,23 @@ export function versionRoutes(deps: VersionRouteDeps): Hono<AppEnv> {
       current,
       entries: withCurrent(entries, current),
     } satisfies VersionHistoryResponse);
+  });
+
+  /** A stored interface table by hash — what a version was built from. */
+  app.get("/history/ifaces/:hash", async (c) => {
+    const table = await readIfacesTable(deps.config.root, c.req.param("hash"));
+    if (table === null) throw new HttpError(404, "not_found", "No interface table with that hash.");
+    return c.json(table);
+  });
+
+  /** What changed between two stored tables (`from` / `to` are hashes; either may be "none"). */
+  app.get("/history/diff", async (c) => {
+    const root = deps.config.root;
+    const load = async (q: string | undefined) =>
+      q === undefined || q === "none" ? null : await readIfacesTable(root, q);
+    const [from, to] = await Promise.all([load(c.req.query("from")), load(c.req.query("to"))]);
+    const asTable = (t: unknown) => t as Parameters<typeof diffIfaces>[0];
+    return c.json(diffIfaces(asTable(from), asTable(to)) satisfies VersionHistoryDiffResponse);
   });
 
   app.get("/update-check", async (c) => {

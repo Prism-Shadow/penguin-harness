@@ -193,10 +193,35 @@ export const en: Strings = {
   },
   harnessHistory: {
     title: "Harness history",
+    pageDesc:
+      "Every harness version this server committed through a hot update, newest first, and what each push changed in the module tree and its interfaces.",
     loading: "Loading…",
     empty: "No harness has been pushed to this server yet.",
     current: "current",
     noProvenance: "(no provenance recorded)",
+    pushedAt: "Committed",
+    bundles: "Bundles",
+    table: "Interface table",
+    tableCounts: (nodes: number, interfaces: number, types: number) =>
+      `${nodes} nodes · ${interfaces} interfaces · ${types} types`,
+    noTable: "This push carried no interface table.",
+    noTableShort: "no table",
+    changesSince: (previous: string) => `Changes since ${previous}`,
+    changesFirst: "Changes (first recorded table)",
+    noChanges: "No interface or tree changes.",
+    nodes: (n: number) => `Nodes (${n})`,
+    interfaces: (n: number) => `Interfaces (${n})`,
+    typesSummary: (added: number, removed: number, changed: number) =>
+      `Data types: ${added} added, ${removed} removed, ${changed} changed`,
+    change: { added: "added", removed: "removed", changed: "changed" },
+    requires: "requires",
+    provides: "provides",
+    contributes: "contributes",
+    children: "children",
+    exports: "exports",
+    methods: "methods",
+    fields: "fields",
+    slots: "slots",
   },
   /**
    * The software-update flow (lib/update-flow.ts): the one modal for both the server release

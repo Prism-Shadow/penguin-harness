@@ -19,7 +19,7 @@
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
-import type { HarnessHistoryEntry, HarnessInfo } from "@prismshadow/penguin-core";
+import type { HarnessHistoryEntry, HarnessInfo, IfacesSummary } from "@prismshadow/penguin-core";
 
 /**
  * The committed on-disk record: a runtime restart resumes exactly this CODE (platform,
@@ -65,6 +65,11 @@ export interface Manifest {
   source?: { repo: string; revision: string };
   /** When this version was committed to the store (ISO 8601). Absent on older records. */
   pushedAt?: string;
+  /**
+   * The interface table the pushed platform was built from (`store/ifaces/<sha256>.json`),
+   * with its summary, when the push carried one — what the history diffs.
+   */
+  ifaces?: { table: string; hash: string; nodes: number; interfaces: number; types: number };
 }
 
 /** A string field of an untrusted manifest, or null unless it is a non-empty string. */
@@ -98,7 +103,29 @@ export async function readHarnessInfo(root: string): Promise<HarnessInfo | null>
     source: repo !== null && revision !== null ? { repo, revision } : null,
     pushedAt: str(manifest.pushedAt),
     bundles,
+    ifaces: ifacesSummary(manifest.ifaces),
   };
+}
+
+/** A stored table's summary, or null unless every part of it is there. */
+function ifacesSummary(raw: unknown): IfacesSummary | null {
+  const i = (raw ?? {}) as Record<string, unknown>;
+  const hash = str(i.hash);
+  if (hash === null) return null;
+  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+  return { hash, nodes: num(i.nodes), interfaces: num(i.interfaces), types: num(i.types) };
+}
+
+/** A stored interface table by hash, parsed, or null when this root never stored it. */
+export async function readIfacesTable(root: string, hash: string): Promise<unknown | null> {
+  if (!/^[0-9a-f]{64}$/.test(hash)) return null;
+  try {
+    return JSON.parse(
+      await fsp.readFile(path.join(root, "hmr", "store", "ifaces", `${hash}.json`), "utf8"),
+    );
+  } catch {
+    return null;
+  }
 }
 
 /** Reads and parses `<root>/hmr/harness.json`; null when missing or corrupt (nothing committed yet). */
@@ -166,6 +193,7 @@ export async function readHarnessHistory(root: string): Promise<HarnessHistoryEn
       source: repo !== null && revision !== null ? { repo, revision } : null,
       pushedAt,
       bundles,
+      ifaces: ifacesSummary(e.ifaces),
     });
   }
   return entries;
@@ -187,7 +215,12 @@ export function withCurrent(
     e.bundles.web === current.bundles.web;
   if (entries.some(same)) return entries;
   return [
-    { source: current.source, pushedAt: current.pushedAt, bundles: current.bundles },
+    {
+      source: current.source,
+      pushedAt: current.pushedAt,
+      bundles: current.bundles,
+      ifaces: current.ifaces,
+    },
     ...entries,
   ];
 }
