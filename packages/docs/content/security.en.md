@@ -13,31 +13,31 @@ One principle carries every scenario:
 
 | Capability | Where |
 | --- | --- |
-| Claim a fresh server through a one-time link — no password exists yet, none is shown | The startup notice |
+| Claim a fresh server through a printed sign-in link — no password exists yet, none is shown | The startup notice |
 | Sign in with a password; storage is scrypt hashes, attempts are throttled | Web login page, `penguin auth login` |
 | The desktop app signs its own window in, silently | One-shot token at window open |
 | Mint a session from local ownership — no password involved | `penguin auth token` |
 | Manage machines over ssh with no password on the wire | The Machines page |
 | Sessions are server-side rows: individually revocable, surviving a restart, 30-day sliding renewal | Everywhere |
-| Every session records how it was established | The `via` claim: `password` / `desktop` / `setup` / `cli` |
+| Every session records how it was established | `via`: `password` (a typed password, or a session minted by `penguin auth token`) / `desktop` / `setup` / `token` (a request carrying the local API token as a Bearer header — no stored session) |
 | Revoke one session, or every session a user holds | Logout / admin password reset |
 | Recover a lost admin password from the machine itself | `penguin server reset-admin-password` |
 
 ## 1. Claiming a fresh server
 
-**Web.** A fresh server has no usable password: the seeded value is generated, hashed, and discarded unseen. To let you in anyway, every start prints a one-time sign-in link until a password is set:
+**Web.** A fresh server has no usable password: the seeded value is generated, hashed, and discarded unseen. To let you in anyway, every start prints a sign-in link until a password is set:
 
 ```
 +--------------------------------------------------------------------+
 |   This server has no admin password yet. Open this link to claim:   |
 |                                                                     |
-|     http://localhost:7364/api/auth/first-login?token=...            |
+|     http://localhost:7364/api/auth/claim?token=...                  |
 |                                                                     |
 |   The link works until a password is set, and changes on restart.   |
 +--------------------------------------------------------------------+
 ```
 
-Open it, land signed in, set a password. Three bounds make a link printable into a console:
+Open it, land signed in, set a password. The link is not one-shot — a mail client may fetch it before you do, and a second open must still work — so three other bounds make it printable into a console:
 
 - It works **only while the server is unclaimed**. Once a password exists it is refused, so a console scrollback is not a way in.
 - The value it is compared against lives **in memory and is re-minted on every restart**. A link from an earlier run is refused; if you miss the notice, restart and read the new one.
@@ -66,7 +66,7 @@ Scripts and the CLI never need a password, because local ownership already outra
 penguin auth token          # no password, no prompt: inserts a session row
 ```
 
-Being able to read and write that data root is the whole authorization, and it grants nothing new — the root already holds every credential the token could reach. It works whether or not a server is running, and safely alongside one. The token lives an hour by default (capped at the ordinary session term) and acts as an ordinary password session, never the desktop kind.
+Being able to read and write that data root is the whole authorization, and it grants nothing new — the root already holds every credential the token could reach. It works whether or not a server is running, and safely alongside one — on a root a server has started at least once, since the account it mints for lives in that root's `web.db`. The token lives an hour by default (`--ttl-seconds` sets another lifetime) and acts as an ordinary password session, never the desktop kind.
 
 On a multi-user machine that scoping is the point: the data root belongs to the OS account running the server, so only that account can mint. Everyone else signs in with a password — `penguin auth login --server <url>`.
 
