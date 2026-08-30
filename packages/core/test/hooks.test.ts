@@ -126,7 +126,8 @@ describe("script hooks", () => {
       unknown
     >;
     expect(out.got).toEqual({ hook: "stop", session_id: "s1" });
-    expect(out.cwd).toBe(dir);
+    // Real paths on both sides: macOS reports the temp dir through its /private symlink.
+    expect(await fs.realpath(out.cwd as string)).toBe(await fs.realpath(dir));
     const quiet = await write("quiet.mjs", "process.exit(0);\n");
     expect(await runHookScript(quiet, {})).toBeUndefined();
   });
