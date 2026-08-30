@@ -38,7 +38,10 @@ export async function startRemoteServer(
   }
   const deadline = Date.now() + START_TIMEOUT_MS;
   while (Date.now() < deadline) {
-    await sleep(500);
+    // Each probe is a full Node start on the far side (`penguin-hmr.js server status`), so
+    // the interval is what bounds the CPU this wait costs there; a server that is coming up
+    // takes a few seconds anyway.
+    await sleep(1500);
     const probed = await probeServerState(target, layout, exec);
     if (probed.state.kind === "running") return { ok: true };
   }
