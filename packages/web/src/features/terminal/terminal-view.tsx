@@ -18,7 +18,8 @@ import type { ITheme, Terminal as XTerminal } from "@xterm/xterm";
 import { TerminalOpcode, decodeFrame, encodeFrame, encodeResize } from "./terminal-frames";
 import { LinkClickTracker, openTerminalLink, positionFromPointer } from "./terminal-links";
 import { useTheme } from "../../state/theme";
-import { terminalUrl } from "../../lib/terminal-machines";
+import { machineForTerminal, terminalUrl } from "../../lib/terminal-machines";
+import { useAuth } from "../../state/auth";
 
 /**
  * xterm and its addons load lazily, on the first actual terminal render: their UMD
@@ -182,13 +183,17 @@ export async function probeJson<T>(
   return (await res.json()) as T;
 }
 
-function streamUrl(id: string, cols: number, rows: number): string {
+/**
+ * Always THIS server's stream. A pty on a machine is named in the id instead of the path —
+ * `<terminalId>@<machineId>@<userId>` — and this server's platform relays the socket over
+ * the forward it holds (server: machines/terminal-relay.ts). The user id is what the
+ * runtime's owner check reads; naming anyone else is refused there.
+ */
+function streamUrl(id: string, cols: number, rows: number, userId: string): string {
   const scheme = location.protocol === "https:" ? "wss:" : "ws:";
-  // Through the same-origin proxy when the pty is on a machine. The prefix has to be IN the
-  // URL: an upgrade carries no body and no routing hook, so the path is the whole address.
-  // The runtime tunnels it from there (machines/proxy-ws.ts).
-  const path = terminalUrl(`/api/terminals/${id}/stream`);
-  return `${scheme}//${location.host}${path}?cols=${cols}&rows=${rows}`;
+  const machine = machineForTerminal(id);
+  const ref = machine === null ? id : `${id}@${machine}@${userId}`;
+  return `${scheme}//${location.host}/api/terminals/${ref}/stream?cols=${cols}&rows=${rows}`;
 }
 
 export interface TerminalViewProps {
@@ -212,6 +217,7 @@ export function TerminalView({ ensure, onStatus, onInfo, onTitle, className }: T
   // (the view pool exists to keep exactly those alive). The ref is what lets the
   // once-per-mount effect below read the current appearance without depending on it.
   const { terminalDark } = useTheme();
+  const userId = useAuth().user?.userId ?? "";
   const darkRef = useRef(terminalDark);
   darkRef.current = terminalDark;
   const termRef = useRef<XTerminal | null>(null);
@@ -454,7 +460,7 @@ export function TerminalView({ ensure, onStatus, onInfo, onTitle, className }: T
           if (disposed) return;
           callbacks.current.onInfo?.(terminal);
 
-          socket = new WebSocket(streamUrl(terminal.id, term.cols, term.rows));
+          socket = new WebSocket(streamUrl(terminal.id, term.cols, term.rows, userId));
           socket.binaryType = "arraybuffer";
 
           socket.onopen = () => report("ready");

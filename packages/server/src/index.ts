@@ -26,8 +26,7 @@ import { clearInitialAdminPassword, renderFirstLoginNotice } from "./initial-pas
 import { applyProxySettings, installGlobalProxyDispatcher } from "./net/proxy.js";
 import { ExtensionHost } from "./extension/host.js";
 import { loadExtensions } from "./extension/loader.js";
-import { platformUpgradeRoute, terminalUpgradeRoute } from "./terminal/ws.js";
-import { attachUpgradeRoutes } from "./http-upgrade.js";
+import { attachTerminalWebSocket } from "./terminal/ws.js";
 import { loopbackHostRoles } from "./services/preview-token.js";
 import { acquireServerLock, liveServerLock, releaseServerLock } from "./lock.js";
 import { shellPortOf, wireShellUpdatePort } from "./services/desktop-update-port.js";
@@ -212,7 +211,7 @@ class PenguinServer {
       { fetch: this.app.fetch, hostname: this.config.host, port: this.config.port },
       (info) => this.onListening(info.port),
     );
-    attachUpgradeRoutes(this.httpServer as unknown as HttpServer, this.upgradeRoutes());
+    attachTerminalWebSocket(this.httpServer as unknown as HttpServer, this.terminalWebSocketDeps());
   }
 
   /**
@@ -349,35 +348,16 @@ class PenguinServer {
     // The terminal stream is a WebSocket upgrade, which never reaches the Hono fetch
     // handler — it has to be bound on each Node listener, this one included, or the
     // terminal only works on whichever address the browser happened to resolve.
-    attachUpgradeRoutes(loopback as unknown as HttpServer, this.upgradeRoutes());
+    attachTerminalWebSocket(loopback as unknown as HttpServer, this.terminalWebSocketDeps());
   }
 
-  /**
-   * WebSocket wiring, shared by every listener this process opens and by both upgrade
-   * handlers: the local terminal transport and the proxy that carries one to a machine.
-   * They want the same three things, and must agree about the credential.
-   */
+  /** Terminal WebSocket wiring, shared by every listener this process opens. */
   private terminalWebSocketDeps() {
     return {
       hmr: this.deps.hmr,
       authService: this.deps.authService,
       log: (line: string) => console.log(line),
     };
-  }
-
-  /**
-   * The upgrade routes, in order, built fresh per listener: the terminal transport holds a
-   * WebSocketServer of its own, and two listeners must not share one.
-   *
-   * Two, and only ever two. The terminal stream is the one socket the runtime serves itself
-   * (a WebSocket cannot cross the seam as a Response, so the handshake reaches the App
-   * through in-process members); everything else is offered to the platform, which claims
-   * what it owns. Adding a third route here for a new kind of socket would be the same
-   * mistake as adding a route per business API — the seam exists so that stays a push.
-   */
-  private upgradeRoutes() {
-    const deps = this.terminalWebSocketDeps();
-    return [terminalUpgradeRoute(deps), platformUpgradeRoute(deps)];
   }
 
   /**
