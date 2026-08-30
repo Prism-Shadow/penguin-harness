@@ -79,7 +79,9 @@ if (target === undefined) usage("[deploy] no target given.");
 const ADMIN_PASSWORD = process.env.PENGUIN_ADMIN_PASSWORD;
 const API_TOKEN = process.env.PENGUIN_API_TOKEN;
 if (!ADMIN_PASSWORD && !API_TOKEN)
-  usage("[deploy] set PENGUIN_ADMIN_PASSWORD or PENGUIN_API_TOKEN (the runtime's <root>/api-token).");
+  usage(
+    "[deploy] set PENGUIN_ADMIN_PASSWORD or PENGUIN_API_TOKEN (the runtime's <root>/api-token).",
+  );
 
 /** A bare port means this machine's loopback (typically an ssh -L tunnel to the real target). */
 const baseUrl = /^\d+$/.test(target) ? `http://127.0.0.1:${target}` : target.replace(/\/+$/, "");
