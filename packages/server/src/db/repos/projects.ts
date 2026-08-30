@@ -5,6 +5,7 @@
 import type { ProjectRole } from "../../api/types.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Db } from "../../hmr/capabilities.js";
+import type { Projects } from "../../mechanisms/projects.js";
 
 export interface ProjectRow {
   projectId: string;
@@ -25,7 +26,7 @@ function mapRow(r: Record<string, unknown>): ProjectRow {
 }
 
 @Component()
-export class ProjectsRepo {
+export class ProjectsRepo implements Projects {
   @Use() private readonly db!: Db;
 
   insert(row: ProjectRow): void {

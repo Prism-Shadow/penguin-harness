@@ -29,7 +29,7 @@ import type { ModelProviderOAuth } from "@prismshadow/penguin-core/model-catalog
 import { HttpError } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { ProjectConfigService } from "./project-config-service.js";
+import type { ModelOAuth, ProjectConfigStore } from "../mechanisms/projects.js";
 
 /** How the user gets the authorization code back to the harness. */
 export type ModelOAuthMode = "callback" | "manual";
@@ -204,9 +204,9 @@ export type ApplyGroupKey = (
 ) => Promise<number>;
 
 @Component()
-export class ModelOAuthService {
+export class ModelOAuthService implements ModelOAuth {
   private readonly flows = new Map<string, Flow>();
-  @Use() private readonly projectConfig!: ProjectConfigService;
+  @Use() private readonly projectConfig!: ProjectConfigStore;
   private applyGroupKey: ApplyGroupKey = (projectId, provider, apiKey) =>
     this.projectConfig.setGroupApiKey(projectId, provider, apiKey);
   /** Replaced in tests so they never reach the network. */

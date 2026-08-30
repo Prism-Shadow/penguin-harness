@@ -21,14 +21,14 @@ import type {
 import type { AppEnv } from "../../auth/middleware.js";
 import { badRequest, optionalString, readJson, requireValidId } from "../validate.js";
 import type { SessionManager } from "../../runtime/session-manager.js";
-import type { AgentConfigService } from "../../services/agent-config-service.js";
-import type { ProjectAccess } from "../../services/project-access.js";
+import type { AgentConfig } from "../../mechanisms/agents.js";
+import type { Access } from "../../mechanisms/projects.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface AgentConfigRouteDeps {
-  agentConfigService: AgentConfigService;
+  agentConfigService: AgentConfig;
   manager: SessionManager;
-  access: ProjectAccess;
+  access: Access;
 }
 
 /** Ceiling on a single mcp-test probe's connect budget (an entry may configure minutes). */

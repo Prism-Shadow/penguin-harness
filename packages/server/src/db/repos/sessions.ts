@@ -6,6 +6,7 @@ import type { ThinkingLevelName } from "@prismshadow/penguin-core/interfaces";
 import type { ApprovalMode } from "../../api/types.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Db } from "../../hmr/capabilities.js";
+import type { SessionIndex } from "../../mechanisms/sessions.js";
 
 export interface SessionRow {
   sessionId: string;
@@ -73,7 +74,7 @@ function mapRow(r: Record<string, unknown>): SessionRow {
 }
 
 @Component()
-export class SessionsRepo {
+export class SessionsRepo implements SessionIndex {
   @Use() private readonly db!: Db;
 
   insert(row: SessionRow): void {

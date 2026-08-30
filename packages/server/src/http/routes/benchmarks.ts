@@ -11,18 +11,17 @@
  */
 import { Hono, type Context } from "hono";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { AgentConfigService } from "../../services/agent-config-service.js";
-import type { BenchmarkService } from "../../services/benchmark-service.js";
-import type { ProjectAccess } from "../../services/project-access.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface BenchmarksRouteDeps {
-  agentConfigService: AgentConfigService;
-  benchmarks: BenchmarkService;
-  access: ProjectAccess;
+  agentConfigService: AgentConfig;
+  benchmarks: Benchmarks;
+  access: Access;
 }
 import type { CaseMaterial } from "../../api/types.js";
 import { requireValidId } from "../validate.js";
+import type { AgentConfig, Benchmarks } from "../../mechanisms/agents.js";
+import type { Access } from "../../mechanisms/projects.js";
 
 const TEXT_PREVIEW_BYTES = 256 * 1024;
 

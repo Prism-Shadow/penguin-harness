@@ -53,9 +53,9 @@
  */
 import { formatLocalDate } from "../internal/dates.js";
 import { HttpError } from "../http/errors.js";
-import type { ErrorsRepo } from "../db/repos/errors.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Clock } from "../hmr/capabilities.js";
+import type { ErrorLog, Errors } from "../mechanisms/observability.js";
 
 /** Capture-site source (maps one-to-one to error_records.source). */
 export type ErrorSource =
@@ -109,11 +109,11 @@ function messageOf(err: unknown): string {
 }
 
 @Component()
-export class ErrorRecorder {
+export class ErrorRecorder implements Errors {
   /** Dedup table: `source \0 code \0 projectId` → timestamp of the last **persist** (see file header). */
   private readonly lastSeen = new Map<string, number>();
 
-  @Use() private readonly errors!: ErrorsRepo;
+  @Use() private readonly errors!: ErrorLog;
   @Use() private readonly clock!: Clock;
 
   /** Record an error (synchronous, fails silently; same-window duplicates are dropped outright, see file header). */
