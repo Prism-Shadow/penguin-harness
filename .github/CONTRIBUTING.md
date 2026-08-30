@@ -83,7 +83,11 @@ second one on a scratch root — without a checkout. It runs the release's own c
 is a way to try the app against separate data, not a way to see uncommitted changes. A
 `--dev` instance does not update itself and does not repair the `penguin` command link;
 both belong to the one installation the two instances share, and the release instance
-does them.
+does them. The profile also reaches other machines: the shell passes it to its server as
+`PENGUIN_PROFILE`, and the Machines page then works with the machine's installation for
+that profile — `~/.penguin-dev` on port 7370 for dev, beside the release one — so a dev
+instance never touches the release server someone is using there
+(`packages/server/src/machines/layout.ts`).
 
 Two one-time moves came with that split. A bare `pnpm --dir packages/desktop start` used
 to run on `~/.penguin/data` (the release/CLI root) and now runs on `~/.penguin/dev-data`,

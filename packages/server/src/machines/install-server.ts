@@ -24,7 +24,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runInstallScriptCommand, scpArgs, sshArgs, unpackStoreCommand } from "./commands.js";
 import type { RemoteTarget } from "./commands.js";
-import { parseProbeOutput, POSIX_PROBE, WINDOWS_PROBE } from "./detect.js";
+import { parseProbeOutput, posixProbe, windowsProbe } from "./detect.js";
+import type { RemoteLayout } from "./layout.js";
 import type { RemoteIdentity, RemotePlatform } from "./detect.js";
 import { execFailureText, looksLikeAuthFailure, run, runPiped, runWithInput } from "./exec.js";
 
@@ -147,8 +148,9 @@ function baseReleaseVersion(argv1: string | undefined): string | null {
  */
 export async function detectRemote(
   target: RemoteTarget,
+  layout: RemoteLayout,
 ): Promise<{ identity: RemoteIdentity } | { error: string }> {
-  for (const probe of [POSIX_PROBE, WINDOWS_PROBE]) {
+  for (const probe of [posixProbe(layout), windowsProbe(layout)]) {
     const result = await run("ssh", sshArgs(target, probe), { timeoutMs: 30_000 });
     const identity = parseProbeOutput(result.stdout);
     if (identity) return { identity };
@@ -207,14 +209,16 @@ export async function installOnRemote(opts: {
    * what puts the machine back within reach.
    */
   forceInstaller?: boolean;
+  /** Which installation on that machine this is: the profile's program directory and root. */
+  layout: RemoteLayout;
 }): Promise<RemoteInstallOutcome> {
-  const { target, plan } = opts;
+  const { target, plan, layout } = opts;
   const say = opts.onProgress ?? (() => {});
 
   let identity = opts.identity;
   if (identity === undefined) {
     say("Asking what that machine is…");
-    const detected = await detectRemote(target);
+    const detected = await detectRemote(target, layout);
     if ("error" in detected) return { kind: "failed", step: "connect", detail: detected.error };
     identity = detected.identity;
     say(`${identity.platform}-${identity.arch}.`);
@@ -287,7 +291,7 @@ export async function installOnRemote(opts: {
       } else {
         where = { platform: identity.platform };
       }
-      const step = runInstallScriptCommand(`v${plan.baseVersion}`, where);
+      const step = runInstallScriptCommand(`v${plan.baseVersion}`, where, layout);
       // One connection when the script rides stdin, and the far side's own progress is
       // relayed as it arrives rather than after the minutes an install can take.
       const install = step.scriptOnStdin
@@ -311,7 +315,7 @@ export async function installOnRemote(opts: {
       // harness.json and store/ only: uploads/ is this machine's scratch, not state.
       const sync = await runPiped(
         { file: "tar", args: ["-czf", "-", "-C", plan.hmrDir, "harness.json", "store"] },
-        { file: "ssh", args: sshArgs(target, unpackStoreCommand(identity.platform)) },
+        { file: "ssh", args: sshArgs(target, unpackStoreCommand(identity.platform, layout)) },
       );
       if (sync.code !== 0) {
         return {
@@ -332,7 +336,7 @@ export async function installOnRemote(opts: {
     // syncOutOfDate filters on: the machine is then excluded from the very sweep that would
     // have tried again. A false success here does not just mislead, it seals itself in.
     say("Checking what it ended up with…");
-    const after = await detectRemote(target);
+    const after = await detectRemote(target, layout);
     if ("error" in after) {
       return {
         kind: "failed",

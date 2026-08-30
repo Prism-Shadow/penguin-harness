@@ -172,6 +172,7 @@ function wireUpdaterRelay(child: EmbeddedServer["child"]): void {
 async function startServerAndWindow(dataRoot: string): Promise<void> {
   const started = await startEmbeddedServer({
     dataRoot,
+    profile,
     portFile: path.join(app.getPath("userData"), "server-port"),
     preferredPortFile: path.join(app.getPath("userData"), "preferred-port"),
     log: (chunk) => process.stdout.write(`[server] ${chunk}`),

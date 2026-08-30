@@ -103,6 +103,8 @@ async function waitForHttp(origin: string, exited: () => boolean): Promise<void>
  */
 export async function startEmbeddedServer(opts: {
   dataRoot: string;
+  /** Which instance this is; the server reaches other machines' matching installation by it. */
+  profile: "release" | "dev";
   portFile: string;
   preferredPortFile: string;
   log: (chunk: string) => void;
@@ -121,6 +123,7 @@ export async function startEmbeddedServer(opts: {
       // The server's "use system HTTP proxy" switch then governs whether they are used.
       ...(await osProxyEnv()),
       PENGUIN_HOME: opts.dataRoot,
+      PENGUIN_PROFILE: opts.profile,
       HOST: "127.0.0.1",
       PORT: String(requestedPort),
       PENGUIN_DESKTOP_TOKEN: token,

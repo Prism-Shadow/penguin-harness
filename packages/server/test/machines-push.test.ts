@@ -13,7 +13,10 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { installOnRemote } from "../src/machines/install-server.js";
+import { remoteLayoutFor } from "../src/machines/layout.js";
 import type { PushPlan } from "../src/machines/install-server.js";
+
+const RELEASE = remoteLayoutFor("release");
 
 const posixOnly = process.platform === "win32" ? describe.skip : describe;
 
@@ -116,6 +119,7 @@ posixOnly("installOnRemote", () => {
     const progress: string[] = [];
     const outcome = await installOnRemote({
       target,
+      layout: RELEASE,
       plan: plan(),
       assets,
       onProgress: (line) => progress.push(line),
@@ -149,7 +153,7 @@ posixOnly("installOnRemote", () => {
     // and syncOutOfDate filters on exactly that: the machine is excluded from the sweep that
     // would have tried again. A false success here seals itself in.
     writeStubs({ probe: "Linux x86_64\\n---penguin---\\n---penguin---\\n" });
-    const outcome = await installOnRemote({ target, plan: plan(), assets });
+    const outcome = await installOnRemote({ target, plan: plan(), assets, layout: RELEASE });
 
     expect(outcome).toMatchObject({ kind: "failed", step: "verify the install" });
     expect((outcome as { detail: string }).detail).toContain("still has no install");
@@ -161,7 +165,7 @@ posixOnly("installOnRemote", () => {
       afterInstall: 'Windows_NT AMD64\\n---penguin---\\n{"version":"0.2.4"}\\n---penguin---\\n',
       posixUnknown: true,
     });
-    const outcome = await installOnRemote({ target, plan: plan(), assets });
+    const outcome = await installOnRemote({ target, plan: plan(), assets, layout: RELEASE });
 
     expect(outcome).toMatchObject({ kind: "installed" });
     const log = calls();
@@ -185,7 +189,7 @@ posixOnly("installOnRemote", () => {
     writeStubs({
       probe: 'Linux x86_64\\n---penguin---\\n{"version":"0.2.4"}\\n---penguin---\\n',
     });
-    const outcome = await installOnRemote({ target, plan: plan(), assets });
+    const outcome = await installOnRemote({ target, plan: plan(), assets, layout: RELEASE });
     expect(outcome).toMatchObject({ kind: "state-only" });
     // The probe, and nothing else: no installer, and no store stream either.
     expect(calls()).toHaveLength(1);
@@ -195,7 +199,7 @@ posixOnly("installOnRemote", () => {
     writeStubs({
       probe: `Linux x86_64\\n---penguin---\\n{"version":"0.2.4"}\\n---penguin---\\n${HARNESS}\\n`,
     });
-    const outcome = await installOnRemote({ target, plan: plan(), assets });
+    const outcome = await installOnRemote({ target, plan: plan(), assets, layout: RELEASE });
     expect(outcome).toMatchObject({ kind: "already-installed", version: "0.2.4+hmr.cafe01234567" });
     expect(calls()).toHaveLength(1); // the probe, and nothing else
   });
@@ -207,6 +211,7 @@ posixOnly("installOnRemote", () => {
     });
     const outcome = await installOnRemote({
       target,
+      layout: RELEASE,
       plan: plan({ harness: null, hmrDir: null, version: "0.2.4" }),
       assets,
     });
@@ -219,7 +224,7 @@ posixOnly("installOnRemote", () => {
       probe: 'Linux x86_64\\n---penguin---\\n{"version":"0.0.1"}\\n---penguin---\\n',
       installExit: 3,
     });
-    const outcome = await installOnRemote({ target, plan: plan(), assets });
+    const outcome = await installOnRemote({ target, plan: plan(), assets, layout: RELEASE });
     expect(outcome).toMatchObject({ kind: "failed", step: "install" });
     expect((outcome as { detail: string }).detail).toContain("PenguinHarness 0.2.4 installed");
   });
@@ -231,6 +236,7 @@ posixOnly("installOnRemote", () => {
     });
     const outcome = await installOnRemote({
       target,
+      layout: RELEASE,
       plan: plan({ baseVersion: "0.0.0-hmr.cafe", version: "0.0.0-hmr.cafe" }),
       assets,
     });
