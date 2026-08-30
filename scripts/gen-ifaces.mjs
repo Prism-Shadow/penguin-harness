@@ -33,7 +33,8 @@
  *   Promise<T> / PromiseLike<T>          → { promise }
  *   AsyncIterable<T> / AsyncGenerator<T> → { stream }
  *   void / undefined return              → { void }
- *   Opaque<"Name"> (core kernel/markers) → { opaque: "Name" } — the only by-name comparison
+ *   Opaque<"Name"> (core kernel/markers) → { opaque: "<package>#Name" } — the only by-name
+ *     comparison, and the name is always qualified by the declaring package
  *   <Name>Slots companion interface      → the slots of <Name>; a property typed Slot<D, C>
  *                                          declares a code half
  *   classes, Map/Set, generics, rest parameters, unions mixing data with non-data → error
@@ -586,11 +587,51 @@ for (const project of projects) {
     return null;
   }
 
-  function opaqueName(type) {
+  /**
+   * The package a declaration belongs to — the second half of an opaque identity. A
+   * by-name comparison is only safe when the name is qualified by who declared it: two
+   * packages may both declare a `Resources`, and they must not match.
+   */
+  const packageCache = new Map();
+  function packageOf(fileName) {
+    if (/\/lib\.[\w.]+\.d\.ts$/.test(fileName)) return "lib";
+    // pnpm nests `node_modules/.pnpm/<pkg>@<ver>/node_modules/<pkg>/…`: the LAST segment names the package.
+    const segments = [...fileName.matchAll(/node_modules\/(@[^/]+\/[^/]+|[^/@.][^/]*)/g)];
+    if (segments.length > 0) return segments[segments.length - 1][1];
+    let dir = path.dirname(fileName);
+    for (;;) {
+      if (packageCache.has(dir)) return packageCache.get(dir);
+      const pkg = path.join(dir, "package.json");
+      if (fs.existsSync(pkg)) {
+        const name = JSON.parse(fs.readFileSync(pkg, "utf8")).name;
+        packageCache.set(dir, name);
+        return name;
+      }
+      const parent = path.dirname(dir);
+      if (parent === dir) return "?";
+      dir = parent;
+    }
+  }
+  /** `<package>#<name>`: an opaque identity, never a bare name. */
+  const opaqueId = (name, fileName) => `${packageOf(fileName)}#${name}`;
+
+  /**
+   * The identity of an `Opaque<"Name", T>`: the name, qualified by the package declaring
+   * T (else the package writing the marker) — so the same word in two packages is two
+   * identities.
+   */
+  function opaqueName(type, atNode) {
     const prop = type.getProperty("__opaque");
     if (!prop) return null;
     const t = checker.getNonNullableType(checker.getTypeOfSymbol(prop));
-    return t.isStringLiteral() ? t.value : null;
+    if (!t.isStringLiteral()) return null;
+    const parts = type.isIntersection()
+      ? type.types.filter((x) => !x.getProperty("__opaque") || x.getProperties().length > 1)
+      : [type];
+    const declaring = parts
+      .map((x) => (x.aliasSymbol ?? x.getSymbol())?.declarations?.[0]?.getSourceFile()?.fileName)
+      .find((f) => f !== undefined);
+    return opaqueId(t.value, declaring ?? atNode.getSourceFile().fileName);
   }
 
   /** TypeExpr for any type in a signature position. */
@@ -598,7 +639,7 @@ for (const project of projects) {
     notData = "";
     const f = type.getFlags();
     if (f & ts.TypeFlags.Void) return { void: true };
-    const opaque = opaqueName(type);
+    const opaque = opaqueName(type, atNode);
     if (opaque !== null) return { opaque };
     const symbol = type.getSymbol();
     const name = symbol?.getName();
@@ -651,7 +692,17 @@ for (const project of projects) {
           `tuple '${checker.typeToString(type)}' holds a non-data element (${notData})`,
         );
       }
-      if (isHostDeclared(symbol)) return { opaque: name };
+      // A mapped or anonymous type (`Pick<…>`, `Record<…>`, an inline `{…}`) has the lib's
+      // `__type` symbol; it is a shape, not a host object. With methods and a name (a
+      // `type X = Pick<…>` alias) it is an interface keyed by the alias; otherwise its
+      // members are projected in place.
+      const anonymous = name === "__type" || name === "__object";
+      if (anonymous && type.aliasSymbol && hasMethods(type, atNode)) {
+        const aliasDecl = type.aliasSymbol.declarations?.[0];
+        if (aliasDecl) return { iface: keyOf(type.aliasSymbol, aliasDecl) };
+      }
+      if (!anonymous && isHostDeclared(symbol))
+        return { opaque: opaqueId(name, symbol.declarations[0].getSourceFile().fileName) };
       // A plain object shape some member of which is not data (a Buffer field, a callback
       // property): structured, compared member by member.
       if (
@@ -677,7 +728,13 @@ for (const project of projects) {
       // Inside a component's own surface, an interface with methods that is not an
       // interface class is a host object of that class's world, compared by name — the
       // component does not publish its dependencies' types as contracts.
-      if (lenient && hasMethods(type, atNode) && !isIfaceClass(symbol)) return { opaque: name };
+      if (lenient && hasMethods(type, atNode) && !isIfaceClass(symbol))
+        return {
+          opaque: opaqueId(
+            name,
+            symbol?.declarations?.[0]?.getSourceFile()?.fileName ?? atNode.getSourceFile().fileName,
+          ),
+        };
       if (hasMethods(type, atNode) || isIfaceClass(symbol)) {
         const decl = symbol?.declarations?.find(
           (d) =>
@@ -762,7 +819,9 @@ for (const project of projects) {
       warnings.push(
         `${where(prop.valueDeclaration ?? decl)}: component member '${prop.getName()}' is opaque in the contract (${why.join("; ")})`,
       );
-      return { opaque: `${symbol.getName()}.${prop.getName()}` };
+      return {
+        opaque: opaqueId(`${symbol.getName()}.${prop.getName()}`, decl.getSourceFile().fileName),
+      };
     };
     for (const prop of type.getProperties()) {
       if (component && isHiddenMember(prop)) continue;
