@@ -13,20 +13,15 @@ import { isValidId } from "@prismshadow/penguin-core";
 import type { ScheduleItem, ScheduleStatus, SchedulesResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { ServerConfig } from "../../config.js";
-import type { SchedulesRepo } from "../../db/repos/schedules.js";
-import type { Scheduler } from "../../runtime/scheduler.js";
-import type { AgentConfigService } from "../../services/agent-config-service.js";
-import type { ProjectAccess } from "../../services/project-access.js";
-import type { ProjectConfigService } from "../../services/project-config-service.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface SchedulesRouteDeps {
-  agentConfigService: AgentConfigService;
+  agentConfigService: AgentConfig;
   config: ServerConfig;
-  projectConfigService: ProjectConfigService;
-  access: ProjectAccess;
-  scheduler: Scheduler;
-  schedulesRepo: SchedulesRepo;
+  projectConfigService: ProjectConfigStore;
+  access: Access;
+  scheduler: Scheduling;
+  schedulesRepo: Schedules;
 }
 import { HttpError } from "../errors.js";
 import {
@@ -53,6 +48,9 @@ import {
 } from "../../runtime/schedule-store.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Config } from "../../hmr/capabilities.js";
+import type { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
+import type { Schedules, Scheduling } from "../../mechanisms/sessions.js";
+import type { AgentConfig } from "../../mechanisms/agents.js";
 
 /** Validate and shape the POST/PUT request body into file fields (semantic validation is left to parseScheduleFile). */
 function parseUpsertBody(body: Record<string, unknown>): {
@@ -291,11 +289,11 @@ async function readItem(
 })
 export class SchedulerRoutes {
   @Use() private readonly config!: Config;
-  @Use() private readonly agentConfig!: AgentConfigService;
-  @Use() private readonly projectConfig!: ProjectConfigService;
-  @Use() private readonly access!: ProjectAccess;
-  @Use() private readonly scheduler!: Scheduler;
-  @Use() private readonly schedulesRepo!: SchedulesRepo;
+  @Use() private readonly agentConfig!: AgentConfig;
+  @Use() private readonly projectConfig!: ProjectConfigStore;
+  @Use() private readonly access!: Access;
+  @Use() private readonly scheduler!: Scheduling;
+  @Use() private readonly schedulesRepo!: Schedules;
   @Bind("SchedulerRoutes.routes") routes!: Hono<AppEnv>;
   setup() {
     this.routes = scheduleRoutes({

@@ -29,6 +29,7 @@
  */
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Db } from "../../hmr/capabilities.js";
+import type { MessagingBindings } from "../../mechanisms/messaging.js";
 
 export interface MessagingBindingRow {
   sessionId: string;
@@ -118,7 +119,7 @@ function mapRow(r: Record<string, unknown>): MessagingBindingRow {
 }
 
 @Component()
-export class MessagingBindingsRepo {
+export class MessagingBindingsRepo implements MessagingBindings {
   @Use() private readonly db!: Db;
 
   /** The Session's saved config of ONE channel (null when that channel is not configured). */

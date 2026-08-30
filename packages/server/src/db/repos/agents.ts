@@ -3,6 +3,7 @@
  */
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Db } from "../../hmr/capabilities.js";
+import type { AgentIndex } from "../../mechanisms/projects.js";
 
 export interface AgentRow {
   projectId: string;
@@ -11,7 +12,7 @@ export interface AgentRow {
 }
 
 @Component()
-export class AgentsRepo {
+export class AgentsRepo implements AgentIndex {
   @Use() private readonly db!: Db;
 
   /** Idempotent insert: backfills an untracked Agent discovered via directory scan; shared with explicit creation. */

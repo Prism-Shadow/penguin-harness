@@ -461,15 +461,13 @@ export function makeTraceHarness(
 } {
   const db = openDatabase(":memory:");
   const sources = opts.sources ?? new SessionSources();
-  const traceIndex = wire(TraceIndexService, {
-    paths: { root },
-    repo: wire(TraceIndexRepo, { db }),
-    sources,
-  });
+  const repo = wire(TraceIndexRepo, { db });
+  const traceIndex = wire(TraceIndexService, { paths: { root }, repo, sources });
   const shardReads: string[] = [];
   const service = wire(TraceService, {
     paths: { root },
     index: traceIndex,
+    store: repo,
     ...(opts.sessions !== undefined ? { sessions: opts.sessions } : {}),
     ...(opts.lookupPricing !== undefined ? { lookupPricing: opts.lookupPricing } : {}),
     sources,
