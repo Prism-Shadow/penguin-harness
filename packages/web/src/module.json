@@ -73,17 +73,6 @@
         }
       },
       {
-        "id": "web.harness-history",
-        "key": "harness-history",
-        "path": "/harness/history",
-        "nav": "none",
-        "admin": false,
-        "released": true,
-        "renderer": {
-          "builtin": "HarnessHistoryPage"
-        }
-      },
-      {
         "id": "web.machines",
         "key": "machines",
         "path": "/machines",
