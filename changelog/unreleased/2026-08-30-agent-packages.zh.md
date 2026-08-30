@@ -1,4 +1,4 @@
-# Agent 的定义可发布为 GitHub gist，也可从 gist 安装
+# Agent 的定义可发布为 GitHub gist，并可从 gist、npm、GitHub、git 或链接安装
 
 - **Date:** 2026-08-30
 - **Type:** feature
@@ -18,10 +18,16 @@ gist 没有目录，因此路径被压平成文件名（`agent_state/skills/x/SK
 
 `GET /api/projects/:p/agents/:a/package` 展示将要发布的内容（清单、大小、服务器是否能发布）。`POST …/package/publish { gistId?, public? }`（owner）发布，或就地更新指定 gist，让重新发布的 Agent 保持同一个链接。`POST /api/agent-packages/preview { gist }` 读取并校验 gist、不写任何东西；`POST /api/agent-packages/install { gist, projectId, agentId }`（owner）安装。gist 可用链接或裸 id 指定。
 
+## 其他来源
+
+安装不只读 gist。来源可以是：gist 链接或 id；`npm:<包名>[@版本]`（取 registry 的 tarball）；GitHub 仓库——`https://github.com/o/r`、`…/tree/<ref>` 或 `github:o/r[#ref]`——取该 ref 的 tarball，未给出时为默认分支；GitHub release——`…/releases/latest`、`…/releases/tag/<tag>` 或 `github-release:o/r[#tag]`——有 `.tgz`/`.tar.gz` 资产则取之，否则取源码 tarball；git 地址（`git+…`、`git@…`、`ssh://`、以 `.git` 结尾，`#ref` 指定分支或标签）做浅克隆，需要服务器上有 `git`；以及任何其他 http(s) 链接，按 tarball 处理。类型按形状识别，也可用 `kind` 强制。tarball 惯有的单层顶级目录（`package/`、`owner-repo-sha/`）会被剥掉。
+
+目录形态的来源不需要清单：其中属于 Agent 定义的部分——`agent_state/`、`workflows/`，排除项同前——就是包，因此一个本身就是 Agent 目录的仓库可以原样安装。若带有 `penguin-agent.json`，则每一项都必须存在（按路径或压平名），并通过与 gist 相同的检查。文件树上限 2000 个文件。
+
 ## Token
 
 发布使用一个 GitHub token（`gist` 权限），存为服务器设置 `github_token`——与消息通道凭据、代理地址一样明文落盘，且在所有 API 表面只写不读：`GET /api/admin/settings` 返回 `githubTokenSet`，`PUT` 接受 `githubToken`（空串即清除）。读取公开 gist 不需要 token，未配置时安装照常可用。
 
 ## Web App
 
-设置新增 **分享** 页（管理员）用于配置 token。Agent 概览页在快照导出 / 导入旁多了 **发布到 gist**：对话框列出将要发送的内容与不包含的内容，提供上次发布的 gist（按 Agent 记忆）以便就地更新，并展示结果链接。Agent 列表页多了 **从 gist 安装**：粘贴链接，读取（名称、描述、文件数、大小、打包版本），选择新 Agent 的 id，安装。
+设置新增 **分享** 页（管理员）用于配置 token。Agent 概览页在快照导出 / 导入旁多了 **发布到 gist**：对话框列出将要发送的内容与不包含的内容，提供上次发布的 gist（按 Agent 记忆）以便就地更新，并展示结果链接。Agent 列表页多了 **安装 Agent**：粘贴任意来源（类型自动识别，也可用下拉强制），读取（名称、描述、解析后的来源、文件数、大小、打包版本），选择新 Agent 的 id——清单里的，或来源的名字——然后安装。

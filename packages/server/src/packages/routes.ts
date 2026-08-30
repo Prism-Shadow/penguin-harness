@@ -3,8 +3,11 @@
  *
  *   GET  /api/projects/:p/agents/:a/package          what would be published (manifest + sizes)
  *   POST /api/projects/:p/agents/:a/package/publish  publish or update a gist (owner; needs a token)
- *   POST /api/agent-packages/preview  { gist }       read a gist and validate it, writing nothing
- *   POST /api/agent-packages/install { gist, projectId, agentId }   install it as a new Agent (owner)
+ *   POST /api/agent-packages/preview  { source, kind? }   read a source and validate it, writing nothing
+ *   POST /api/agent-packages/install { source, kind?, projectId, agentId }   install it as a new Agent (owner)
+ *
+ * A source is a gist, `npm:<name>`, a GitHub repository or release, a git URL, or an http(s)
+ * URL of a tarball (packages/sources.ts); `gist` is accepted as an alias of `source`.
  *
  * The preview/install pair is Project-scoped through its body rather than its path: the
  * dialog that uses it reads a gist BEFORE the user has chosen where it lands.
@@ -16,6 +19,8 @@ import { HttpError } from "../http/errors.js";
 import { readJson, requireString, requireValidId } from "../http/validate.js";
 import type { AgentPackages } from "../mechanisms/packages.js";
 import type { Access } from "../mechanisms/projects.js";
+
+const SOURCE_KINDS = new Set(["gist", "npm", "github-release", "github", "git", "url"]);
 
 export interface PackageRouteDeps {
   access: Access;
@@ -58,19 +63,35 @@ export function agentPackageRoutes(deps: PackageRouteDeps): Hono<AppEnv> {
 export function packageRoutes(deps: PackageRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
+  const sourceOf = (
+    body: Record<string, unknown>,
+  ): { source: string; kind: string | undefined } => {
+    if (body.source === undefined && body.gist !== undefined) body.source = body.gist;
+    const source = requireString(body, "source", { minLen: 1, maxLen: 1000 });
+    const kind =
+      body.kind === undefined ? undefined : requireString(body, "kind", { minLen: 1, maxLen: 20 });
+    if (kind !== undefined && !SOURCE_KINDS.has(kind)) {
+      throw new HttpError(
+        400,
+        "bad_request",
+        `kind must be one of ${[...SOURCE_KINDS].join(", ")}.`,
+      );
+    }
+    return { source, kind };
+  };
+
   app.post("/preview", async (c) => {
-    const body = await readJson(c);
-    const gist = requireString(body, "gist", { minLen: 1, maxLen: 500 });
-    return c.json(await deps.packages.preview(gist));
+    const { source, kind } = sourceOf(await readJson(c));
+    return c.json(await deps.packages.preview(source, kind));
   });
 
   app.post("/install", async (c) => {
     const body = await readJson(c);
-    const gist = requireString(body, "gist", { minLen: 1, maxLen: 500 });
+    const { source, kind } = sourceOf(body);
     const projectId = requireString(body, "projectId", { minLen: 1, maxLen: 64 });
     const agentId = requireString(body, "agentId", { minLen: 1, maxLen: 64 });
     deps.access.requireProjectOwner(c.var.user.userId, projectId);
-    const installed = await deps.packages.install(projectId, gist, agentId);
+    const installed = await deps.packages.install(projectId, source, agentId, kind);
     return c.json(installed, 201);
   });
 
