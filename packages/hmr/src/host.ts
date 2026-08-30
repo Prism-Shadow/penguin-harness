@@ -89,15 +89,6 @@ export interface PlatformBundle {
   context: Json;
 }
 
-/** A stored interface table, as harness.json records it. */
-type StoredIfaces = {
-  table: string;
-  hash: string;
-  nodes: number;
-  interfaces: number;
-  types: number;
-};
-
 /** Optional provenance recorded with a pushed version (never executed here). */
 export interface GitSource {
   repo: string;
@@ -138,8 +129,6 @@ export interface UpgradeAllTarget {
   web: Record<string, string>;
   assets?: UpgradeAssets;
   source?: GitSource;
-  /** The pushed platform's interface table (ifaces.json text), recorded for the history. */
-  ifaces?: string;
 }
 
 export type UpgradeOutcome =
@@ -401,9 +390,6 @@ export class HmrHost<Api extends Park = Park> {
     );
     const bundle = await this.importBundleFile(platformPath);
     const source = target.source ?? null;
-    // The table is stored by its own content hash — recomputed here, so the record names
-    // the table that arrived, not the hash the pusher claimed for it.
-    const ifaces = target.ifaces === undefined ? null : await this.storeIfacesTable(target.ifaces);
 
     // Assets land BEFORE the boot: the platform's create() may load a native module out of
     // them. A failed boot puts the pointer back, so the surviving old platform keeps
@@ -477,7 +463,6 @@ export class HmrHost<Api extends Park = Park> {
       assetsDir,
       source,
       blobs,
-      ifaces,
     );
 
     return {
@@ -702,7 +687,6 @@ export class HmrHost<Api extends Park = Park> {
     assetsDir: string | null,
     source: GitSource | null,
     blobs: string[],
-    ifaces: StoredIfaces | null,
   ): Promise<boolean> {
     try {
       // The platform bundle is already in the store: storePlatformBundle put it at its
@@ -730,69 +714,12 @@ export class HmrHost<Api extends Park = Park> {
         ...(source === null ? {} : { source }),
         pushedAt: new Date().toISOString(),
         blobs,
-        ...(ifaces === null ? {} : { ifaces }),
       }));
-      // The history is a record beside the store, not part of the commit: a version is
-      // committed whether or not its line could be written.
-      try {
-        await appendHarnessHistory(this.root, {
-          source,
-          pushedAt: new Date().toISOString(),
-          bundles: {
-            platform: `store/platform/${platformSha}.mjs`,
-            cli: `store/cli/${cliSha}.mjs`,
-            web: `store/web/${webSha}.webz`,
-          },
-          ifaces:
-            ifaces === null
-              ? null
-              : {
-                  hash: ifaces.hash,
-                  nodes: ifaces.nodes,
-                  interfaces: ifaces.interfaces,
-                  types: ifaces.types,
-                },
-        });
-      } catch (err) {
-        this.warn(`harness history not recorded: ${errMsg(err)}`);
-      }
       return true;
     } catch (err) {
       this.warn(`update not persisted (filesystem unavailable?): ${errMsg(err)}`);
       return false;
     }
-  }
-
-  /**
-   * Stores a pushed interface table under its sha256 (`store/ifaces/<hash>.json`) and
-   * returns the manifest entry for it. The hash is computed over the table's canonical
-   * body exactly as gen-ifaces does, so a table's identity is the same on every machine.
-   */
-  private async storeIfacesTable(text: string): Promise<StoredIfaces> {
-    const parsed = JSON.parse(text) as {
-      hash?: unknown;
-      ifaces?: unknown;
-      types?: unknown;
-      modules?: unknown;
-    };
-    if (
-      typeof parsed !== "object" ||
-      parsed === null ||
-      typeof parsed.ifaces !== "object" ||
-      typeof parsed.modules !== "object"
-    ) {
-      throw new Error("`ifaces` is not an interface table ({ hash, ifaces, types, modules })");
-    }
-    const body = { ifaces: parsed.ifaces, types: parsed.types ?? {}, modules: parsed.modules };
-    const hash = crypto.createHash("sha256").update(JSON.stringify(body)).digest("hex");
-    const dir = path.join(this.storeDir, "ifaces");
-    await fsp.mkdir(dir, { recursive: true });
-    await writeStoreFile(
-      path.join(dir, `${hash}.json`),
-      Buffer.from(JSON.stringify({ hash, ...body }), "utf8"),
-    );
-    const summary = summarizeTable({ hash, ...body } as Parameters<typeof summarizeTable>[0]);
-    return { table: `store/ifaces/${hash}.json`, ...summary };
   }
 
   /** Writes and atomically replaces harness.json (the single commit point for a whole version). */
