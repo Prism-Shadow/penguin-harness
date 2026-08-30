@@ -32,6 +32,7 @@ import type {
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
+import { useWorkflowTabs, WorkflowFrame, WorkflowTabStrip } from "../workflows/workflow-tabs";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import {
@@ -263,6 +264,7 @@ export function ChatPage() {
   const { currentProject, currentAgent, setCurrentAgentId, reloadAgents, agents } = useProject();
   const projectId = currentProject?.projectId ?? null;
   const agentId = currentAgent?.agentId ?? null;
+  const workflowTabs = useWorkflowTabs(projectId, agentId);
   const {
     sessions,
     loading: sessionsLoading,
@@ -1662,7 +1664,25 @@ export function ChatPage() {
   return (
     // data-dock-host: the docks' edge bands, drop preview and the bottom dock's height
     // ratio all measure this column (dock-drag.tsx / dock-panel.tsx).
-    <div data-dock-host className="flex h-full flex-col bg-white dark:bg-gray-950">
+    <div data-dock-host className="relative flex h-full flex-col bg-white dark:bg-gray-950">
+      {/* Workflow tabs: the Agent's own pages beside the chat. A workflow tab covers the
+          chat (which stays mounted, so its state survives a look at the page) below the
+          strip; the strip is absent when the Agent has no workflow with a UI. */}
+      <WorkflowTabStrip
+        tabs={workflowTabs.tabs}
+        active={workflowTabs.active}
+        onSelect={workflowTabs.setActive}
+      />
+      {workflowTabs.activeTab !== null && projectId !== null && agentId !== null && (
+        <div className="absolute inset-x-0 bottom-0 top-9 z-10">
+          <WorkflowFrame
+            projectId={projectId}
+            agentId={agentId}
+            tab={workflowTabs.activeTab}
+            onChanged={() => void workflowTabs.refresh()}
+          />
+        </div>
+      )}
       {/* Thin top toolbar */}
       {selected && (
         <div className="flex shrink-0 items-center gap-2.5 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800">
