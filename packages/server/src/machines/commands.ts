@@ -96,7 +96,10 @@ export function remotePenguin(platform: RemotePlatform, layout: RemoteLayout): s
     return `set "PENGUIN_HOME=${layout.dataRoot.win}" & "${dir}\\node\\node.exe" "${dir}\\lib\\dist\\penguin-hmr.js"`;
   }
   const dir = layout.programDir.posix;
-  return `PENGUIN_HOME="${layout.dataRoot.posix}" "${dir}/node/bin/node" "${dir}/lib/dist/penguin-hmr.js"`;
+  // `env`, not a bare `VAR=value` prefix: startServerCommand puts `nohup` in front of this,
+  // and nohup takes the first word as the program — a bare assignment there is "no such
+  // command", and the server never starts.
+  return `env PENGUIN_HOME="${layout.dataRoot.posix}" "${dir}/node/bin/node" "${dir}/lib/dist/penguin-hmr.js"`;
 }
 
 /** `ssh <options> <alias> <remote command>`. */
