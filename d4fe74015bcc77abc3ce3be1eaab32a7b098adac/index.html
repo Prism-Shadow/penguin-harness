@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>module tree · 15aca4016ff4</title>
+<title>module tree · c8dfdd73556c</title>
 <style>
 :root { color-scheme: light dark; --ink: #1f2328; --muted: #6a737d; --line: #d0d7de; --bg: #fff; --panel: #f6f8fa; --accent: #0969da; --mod: #8250df; --comp: #1a7f37; }
 @media (prefers-color-scheme: dark) { :root { --ink: #e6edf3; --muted: #8b949e; --line: #30363d; --bg: #0d1117; --panel: #161b22; --accent: #58a6ff; --mod: #d2a8ff; --comp: #3fb950; } }
@@ -47,9 +47,9 @@ summary { cursor: pointer; color: var(--muted); }
 <body>
 <header>
   <h1>module tree</h1>
-  <span class="hash" title="sha256 of the interface table">15aca4016ff4f4f95831b3e39e818c9d52c5503ffdbd4863c8ef4ace0a18545b</span>
+  <span class="hash" title="sha256 of the interface table">c8dfdd73556c2a0fe2041590a1ee8c8211441941fb381f99e6c6a1fc712227b5</span>
   <a href="ifaces.json">ifaces.json</a>
-  <a href="https://github.com/Prism-Shadow/penguin-harness/commit/8e4edb2ea6655c548a7a4b0b4e952670fab294e7"><code>8e4edb2</code> 543/merge</a>
+  <a href="https://github.com/Prism-Shadow/penguin-harness/commit/0b18ebf062a7885adb018de43c449d2a577fddf7"><code>0b18ebf</code> 543/merge</a>
   <input id="q" type="search" placeholder="filter nodes and interfaces">
 </header>
 <main>
@@ -57,7 +57,7 @@ summary { cursor: pointer; color: var(--muted); }
   <section id="detail"><p class="muted">Pick a node or an interface.</p></section>
 </main>
 <script id="data" type="application/json">{
- "hash": "15aca4016ff4f4f95831b3e39e818c9d52c5503ffdbd4863c8ef4ace0a18545b",
+ "hash": "c8dfdd73556c2a0fe2041590a1ee8c8211441941fb381f99e6c6a1fc712227b5",
  "ifaces": {
   "@prismshadow/penguin-server#AdminRoutes": {
    "name": "AdminRoutes",
@@ -961,6 +961,20 @@ summary { cursor: pointer; color: var(--muted); }
    },
    "slots": {}
   },
+  "@prismshadow/penguin-server#Clock": {
+   "name": "Clock",
+   "methods": {
+    "now": {
+     "params": [],
+     "returns": {
+      "data": {
+       "$ref": "typescript#Date"
+      }
+     }
+    }
+   },
+   "slots": {}
+  },
   "@prismshadow/penguin-server#Config": {
    "name": "Config",
    "methods": {},
@@ -1004,6 +1018,133 @@ summary { cursor: pointer; color: var(--muted); }
    },
    "slots": {}
   },
+  "@prismshadow/penguin-server#ConfigPaths": {
+   "name": "ConfigPaths",
+   "methods": {},
+   "fields": {
+    "root": {
+     "data": "string"
+    }
+   },
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#ConsoleLog": {
+   "name": "ConsoleLog",
+   "methods": {
+    "line": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    }
+   },
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#CoreSessionLoaders": {
+   "name": "CoreSessionLoaders",
+   "methods": {
+    "create": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "iface": "@prismshadow/penguin-server#SessionSources"
+      },
+      {
+       "maybe": {
+        "object": {
+         "proxyEnv": {
+          "fn": {
+           "params": [],
+           "returns": {
+            "data": [
+             [
+              "null",
+              "|",
+              {
+               "mode": "'strip'"
+              }
+             ],
+             "|",
+             {
+              "mode": "'inject'",
+              "url": "string",
+              "noProxy": "string"
+             }
+            ]
+           }
+          }
+         },
+         "controlEnv": {
+          "fn": {
+           "params": [
+            {
+             "data": {
+              "$ref": "@prismshadow/penguin-core#ControlEnvContext"
+             }
+            }
+           ],
+           "returns": {
+            "data": {
+             "$ref": "typescript#Record<string,string>"
+            }
+           }
+          }
+         },
+         "confineSpawn": {
+          "fn": {
+           "params": [],
+           "returns": {
+            "maybe": {
+             "fn": {
+              "params": [
+               {
+                "data": {
+                 "$ref": "typescript#ReadonlyArray<string>"
+                }
+               },
+               {
+                "data": {
+                 "cwd": "string",
+                 "workspaceDir": "string"
+                }
+               }
+              ],
+              "returns": {
+               "data": {
+                "$ref": "typescript#ReadonlyArray<string>"
+               }
+              }
+             }
+            }
+           }
+          }
+         },
+         "assembly": {
+          "opaque": "AgentAssembly"
+         }
+        },
+        "optional": [
+         "proxyEnv",
+         "controlEnv",
+         "confineSpawn",
+         "assembly"
+        ]
+       }
+      }
+     ],
+     "returns": {
+      "opaque": "SessionLoader"
+     }
+    }
+   },
+   "slots": {}
+  },
   "@prismshadow/penguin-server#Db": {
    "name": "Db",
    "methods": {
@@ -1032,6 +1173,21 @@ summary { cursor: pointer; color: var(--muted); }
      "returns": {
       "void": true
      }
+    }
+   },
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#DefaultMessagingTuning": {
+   "name": "DefaultMessagingTuning",
+   "methods": {},
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#DefaultTitleGenerators": {
+   "name": "DefaultTitleGenerators",
+   "methods": {},
+   "fields": {
+    "create": {
+     "opaque": "DefaultTitleGenerators.create"
     }
    },
    "slots": {}
@@ -1190,6 +1346,39 @@ summary { cursor: pointer; color: var(--muted); }
   "@prismshadow/penguin-server#FeishuMessaging": {
    "name": "FeishuMessaging",
    "methods": {},
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#FeishuSdkHandle": {
+   "name": "FeishuSdkHandle",
+   "methods": {},
+   "fields": {
+    "sdk": {
+     "opaque": "FeishuSdk"
+    }
+   },
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#GlobalFetch": {
+   "name": "GlobalFetch",
+   "methods": {
+    "fetch": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "maybe": {
+        "opaque": "RequestInit"
+       }
+      }
+     ],
+     "returns": {
+      "promise": {
+       "opaque": "Response"
+      }
+     }
+    }
+   },
    "slots": {}
   },
   "@prismshadow/penguin-server#GoalsRepo": {
@@ -1411,6 +1600,29 @@ summary { cursor: pointer; color: var(--muted); }
      }
     }
    }
+  },
+  "@prismshadow/penguin-server#HttpFetch": {
+   "name": "HttpFetch",
+   "methods": {
+    "fetch": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "maybe": {
+        "opaque": "RequestInit"
+       }
+      }
+     ],
+     "returns": {
+      "promise": {
+       "opaque": "Response"
+      }
+     }
+    }
+   },
+   "slots": {}
   },
   "@prismshadow/penguin-server#InitialProjectProvisioner": {
    "name": "InitialProjectProvisioner",
@@ -2078,6 +2290,42 @@ summary { cursor: pointer; color: var(--muted); }
    },
    "slots": {}
   },
+  "@prismshadow/penguin-server#MessagingTuning": {
+   "name": "MessagingTuning",
+   "methods": {},
+   "fields": {
+    "lineDelayMs": {
+     "maybe": {
+      "data": "number"
+     }
+    },
+    "inboundImageBudgetBytes": {
+     "maybe": {
+      "data": "number"
+     }
+    },
+    "qqTailFlushMs": {
+     "maybe": {
+      "data": "number"
+     }
+    },
+    "retryDelayMs": {
+     "maybe": {
+      "fn": {
+       "params": [
+        {
+         "data": "number"
+        }
+       ],
+       "returns": {
+        "data": "number"
+       }
+      }
+     }
+    }
+   },
+   "slots": {}
+  },
   "@prismshadow/penguin-server#ModelOAuthService": {
    "name": "ModelOAuthService",
    "methods": {
@@ -2172,14 +2420,30 @@ summary { cursor: pointer; color: var(--muted); }
    },
    "slots": {}
   },
-  "@prismshadow/penguin-server#Overrides": {
-   "name": "Overrides",
+  "@prismshadow/penguin-server#PasswordHasher": {
+   "name": "PasswordHasher",
    "methods": {
-    "value": {
-     "params": [],
+    "hash": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
      "returns": {
-      "opaque": "BuildDepsOverrides"
+      "promise": {
+       "data": "string"
+      }
      }
+    }
+   },
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#Paths": {
+   "name": "Paths",
+   "methods": {},
+   "fields": {
+    "root": {
+     "data": "string"
     }
    },
    "slots": {}
@@ -3118,6 +3382,26 @@ summary { cursor: pointer; color: var(--muted); }
    },
    "slots": {}
   },
+  "@prismshadow/penguin-server#QQScanTransportHandle": {
+   "name": "QQScanTransportHandle",
+   "methods": {},
+   "fields": {
+    "transport": {
+     "opaque": "QQScanTransport"
+    }
+   },
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#QQTransportHandle": {
+   "name": "QQTransportHandle",
+   "methods": {},
+   "fields": {
+    "transport": {
+     "opaque": "QQTransport"
+    }
+   },
+   "slots": {}
+  },
   "@prismshadow/penguin-server#QqMessaging": {
    "name": "QqMessaging",
    "methods": {},
@@ -3596,6 +3880,24 @@ summary { cursor: pointer; color: var(--muted); }
    },
    "slots": {}
   },
+  "@prismshadow/penguin-server#ScryptHasher": {
+   "name": "ScryptHasher",
+   "methods": {
+    "hash": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": "string"
+      }
+     }
+    }
+   },
+   "slots": {}
+  },
   "@prismshadow/penguin-server#ServerSettingsRepo": {
    "name": "ServerSettingsRepo",
    "methods": {
@@ -3781,6 +4083,28 @@ summary { cursor: pointer; color: var(--muted); }
         }
        }
       }
+     }
+    }
+   },
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#SessionLoaders": {
+   "name": "SessionLoaders",
+   "methods": {
+    "create": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "opaque": "SessionSources"
+      },
+      {
+       "opaque": "SessionLoaderEnv"
+      }
+     ],
+     "returns": {
+      "opaque": "SessionLoader"
      }
     }
    },
@@ -4862,9 +5186,33 @@ summary { cursor: pointer; color: var(--muted); }
    "methods": {},
    "slots": {}
   },
+  "@prismshadow/penguin-server#SystemClock": {
+   "name": "SystemClock",
+   "methods": {
+    "now": {
+     "params": [],
+     "returns": {
+      "data": {
+       "$ref": "typescript#Date"
+      }
+     }
+    }
+   },
+   "slots": {}
+  },
   "@prismshadow/penguin-server#TelegramMessaging": {
    "name": "TelegramMessaging",
    "methods": {},
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#TelegramTransportHandle": {
+   "name": "TelegramTransportHandle",
+   "methods": {},
+   "fields": {
+    "transport": {
+     "opaque": "TelegramTransport"
+    }
+   },
    "slots": {}
   },
   "@prismshadow/penguin-server#Terminals": {
@@ -4976,6 +5324,22 @@ summary { cursor: pointer; color: var(--muted); }
      "params": [],
      "returns": {
       "void": true
+     }
+    }
+   },
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#TitleGenerators": {
+   "name": "TitleGenerators",
+   "methods": {
+    "create": {
+     "params": [
+      {
+       "opaque": "TitleGeneratorDeps"
+      }
+     ],
+     "returns": {
+      "opaque": "TitleNotifier"
      }
     }
    },
@@ -5655,6 +6019,26 @@ summary { cursor: pointer; color: var(--muted); }
    },
    "slots": {}
   },
+  "@prismshadow/penguin-server#UpdateCheckService": {
+   "name": "UpdateCheckService",
+   "methods": {
+    "check": {
+     "params": [
+      {
+       "data": "boolean|undefined"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#UpdateCheckResponse"
+       }
+      }
+     }
+    }
+   },
+   "slots": {}
+  },
   "@prismshadow/penguin-server#UsageRecorder": {
    "name": "UsageRecorder",
    "methods": {
@@ -5945,6 +6329,11 @@ summary { cursor: pointer; color: var(--muted); }
      }
     }
    },
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#VersionRoutes": {
+   "name": "VersionRoutes",
+   "methods": {},
    "slots": {}
   },
   "@prismshadow/penguin-server#WebShell": {
@@ -7663,6 +8052,140 @@ summary { cursor: pointer; color: var(--muted); }
    "missed": "boolean",
    "invalidReason": "null|string"
   },
+  "@prismshadow/penguin-server#ServerEvent": [
+   [
+    [
+     [
+      [
+       [
+        [
+         [
+          [
+           [
+            [
+             [
+              [
+               {
+                "type": "'approval_request'",
+                "toolCall": {
+                 "$ref": "@prismshadow/penguin-core#OmniMessage<ToolCallPayload>"
+                },
+                "origin?": {
+                 "$ref": "typescript#Array<string>"
+                }
+               },
+               "|",
+               {
+                "type": "'task_state'",
+                "state": {
+                 "$ref": "@prismshadow/penguin-server#SessionStatus"
+                },
+                "queued?": "number",
+                "pendingSteering?": {
+                 "$ref": "typescript#Array<PendingSteeringInfo>"
+                },
+                "pendingFollowUps?": {
+                 "$ref": "typescript#Array<PendingFollowUpInfo>"
+                },
+                "subagents?": {
+                 "$ref": "typescript#Array<SubagentRuntimeInfo>"
+                }
+               }
+              ],
+              "|",
+              {
+               "type": "'session_title'",
+               "sessionId": "string",
+               "title": "string"
+              }
+             ],
+             "|",
+             {
+              "type": "'session_state'",
+              "sessionId": "string",
+              "state": {
+               "$ref": "@prismshadow/penguin-server#SessionStatus"
+              },
+              "lastActiveAt": "string",
+              "hasTrace": "boolean"
+             }
+            ],
+            "|",
+            {
+             "type": "'resync_required'"
+            }
+           ],
+           "|",
+           {
+            "type": "'credentials_updated'"
+           }
+          ],
+          "|",
+          {
+           "type": "'hello'"
+          }
+         ],
+         "|",
+         {
+          "type": "'web_updated'",
+          "rev": "string"
+         }
+        ],
+        "|",
+        {
+         "type": "'session_created'",
+         "projectId": "string",
+         "agentId": "string",
+         "sessionId": "string",
+         "source": {
+          "$ref": "@prismshadow/penguin-server#SessionSource"
+         }
+        }
+       ],
+       "|",
+       {
+        "type": "'schedule_fired'",
+        "projectId": "string",
+        "agentId": "string",
+        "name": "string",
+        "sessionId": "string"
+       }
+      ],
+      "|",
+      {
+       "type": "'schedule_queued'",
+       "projectId": "string",
+       "agentId": "string",
+       "name": "string",
+       "sessionId": "string"
+      }
+     ],
+     "|",
+     {
+      "type": "'goal_started'",
+      "sessionId": "string",
+      "objective": "string",
+      "budget": "number"
+     }
+    ],
+    "|",
+    {
+     "type": "'goal_round'",
+     "sessionId": "string",
+     "round": "number",
+     "used": "number",
+     "budget": "number"
+    }
+   ],
+   "|",
+   {
+    "type": "'goal_finished'",
+    "sessionId": "string",
+    "outcome": "'aborted'|'complete'|'blocked'|'budget_limited'",
+    "rounds": "number",
+    "used": "number"
+   }
+  ],
   "@prismshadow/penguin-server#SessionCategory": "'subagent'|'schedule'|'active'|'archived'",
   "@prismshadow/penguin-server#SessionCategoryCounts": {
    "subagent": "number",
@@ -7741,6 +8264,11 @@ summary { cursor: pointer; color: var(--muted); }
   "@prismshadow/penguin-server#SkillUpdateRef": {
    "name": "string",
    "version": "number"
+  },
+  "@prismshadow/penguin-server#SubagentRuntimeInfo": {
+   "sessionId": "string",
+   "subagentId": "null|string",
+   "running": "boolean"
   },
   "@prismshadow/penguin-server#TerminalExitInfo": {
    "exitCode": "number",
@@ -8489,6 +9017,12 @@ summary { cursor: pointer; color: var(--muted); }
    },
    "[]"
   ],
+  "typescript#Array<SubagentRuntimeInfo>": [
+   {
+    "$ref": "@prismshadow/penguin-server#SubagentRuntimeInfo"
+   },
+   "[]"
+  ],
   "typescript#Array<TerminalSessionInfo>": [
    {
     "$ref": "@prismshadow/penguin-server#TerminalSessionInfo"
@@ -8773,8 +9307,11 @@ summary { cursor: pointer; color: var(--muted); }
      "iface": "@prismshadow/penguin-server#ProjectService",
      "from": "ProjectService"
     },
-    "overrides": {
-     "iface": "@prismshadow/penguin-server#Overrides"
+    "clock": {
+     "iface": "@prismshadow/penguin-server#Clock"
+    },
+    "hasher": {
+     "iface": "@prismshadow/penguin-server#PasswordHasher"
     }
    },
    "provides": {
@@ -8786,8 +9323,8 @@ summary { cursor: pointer; color: var(--muted); }
   "AgentConfigService": {
    "name": "AgentConfigService",
    "requires": {
-    "config": {
-     "iface": "@prismshadow/penguin-server#Config"
+    "paths": {
+     "iface": "@prismshadow/penguin-server#Paths"
     }
    },
    "provides": {
@@ -8799,8 +9336,8 @@ summary { cursor: pointer; color: var(--muted); }
   "AgentService": {
    "name": "AgentService",
    "requires": {
-    "config": {
-     "iface": "@prismshadow/penguin-server#Config"
+    "paths": {
+     "iface": "@prismshadow/penguin-server#Paths"
     },
     "agents": {
      "iface": "@prismshadow/penguin-server#AgentsRepo",
@@ -8854,8 +9391,11 @@ summary { cursor: pointer; color: var(--muted); }
     "config": {
      "iface": "@prismshadow/penguin-server#Config"
     },
-    "overrides": {
-     "iface": "@prismshadow/penguin-server#Overrides"
+    "clock": {
+     "iface": "@prismshadow/penguin-server#Clock"
+    },
+    "hasher": {
+     "iface": "@prismshadow/penguin-server#PasswordHasher"
     }
    },
    "provides": {
@@ -8880,8 +9420,8 @@ summary { cursor: pointer; color: var(--muted); }
   "BenchmarkService": {
    "name": "BenchmarkService",
    "requires": {
-    "config": {
-     "iface": "@prismshadow/penguin-server#Config"
+    "paths": {
+     "iface": "@prismshadow/penguin-server#Paths"
     },
     "workspaceFiles": {
      "iface": "@prismshadow/penguin-server#WorkspaceFilesService",
@@ -8894,6 +9434,60 @@ summary { cursor: pointer; color: var(--muted); }
    "contributes": {},
    "children": []
   },
+  "ConfigPaths": {
+   "name": "ConfigPaths",
+   "requires": {
+    "config": {
+     "iface": "@prismshadow/penguin-server#Config"
+    }
+   },
+   "provides": {
+    "ConfigPaths": "@prismshadow/penguin-server#ConfigPaths",
+    "Paths": "@prismshadow/penguin-server#Paths"
+   },
+   "contributes": {},
+   "children": []
+  },
+  "ConsoleLog": {
+   "name": "ConsoleLog",
+   "requires": {},
+   "provides": {
+    "ConsoleLog": "@prismshadow/penguin-server#ConsoleLog",
+    "Log": "@prismshadow/penguin-server#Log"
+   },
+   "contributes": {},
+   "children": []
+  },
+  "CoreSessionLoaders": {
+   "name": "CoreSessionLoaders",
+   "requires": {},
+   "provides": {
+    "CoreSessionLoaders": "@prismshadow/penguin-server#CoreSessionLoaders",
+    "SessionLoaders": "@prismshadow/penguin-server#SessionLoaders"
+   },
+   "contributes": {},
+   "children": []
+  },
+  "DefaultMessagingTuning": {
+   "name": "DefaultMessagingTuning",
+   "requires": {},
+   "provides": {
+    "DefaultMessagingTuning": "@prismshadow/penguin-server#DefaultMessagingTuning",
+    "MessagingTuning": "@prismshadow/penguin-server#MessagingTuning"
+   },
+   "contributes": {},
+   "children": []
+  },
+  "DefaultTitleGenerators": {
+   "name": "DefaultTitleGenerators",
+   "requires": {},
+   "provides": {
+    "DefaultTitleGenerators": "@prismshadow/penguin-server#DefaultTitleGenerators",
+    "TitleGenerators": "@prismshadow/penguin-server#TitleGenerators"
+   },
+   "contributes": {},
+   "children": []
+  },
   "ErrorRecorder": {
    "name": "ErrorRecorder",
    "requires": {
@@ -8901,8 +9495,8 @@ summary { cursor: pointer; color: var(--muted); }
      "iface": "@prismshadow/penguin-server#ErrorsRepo",
      "from": "ErrorsRepo"
     },
-    "overrides": {
-     "iface": "@prismshadow/penguin-server#Overrides"
+    "clock": {
+     "iface": "@prismshadow/penguin-server#Clock"
     }
    },
    "provides": {
@@ -8928,8 +9522,7 @@ summary { cursor: pointer; color: var(--muted); }
    "name": "EventsRoutes",
    "requires": {
     "channels": {
-     "iface": "@prismshadow/penguin-server#Channels",
-     "from": "RuntimeModule"
+     "iface": "@prismshadow/penguin-server#Channels"
     }
    },
    "provides": {
@@ -8950,9 +9543,8 @@ summary { cursor: pointer; color: var(--muted); }
   "FeishuMessaging": {
    "name": "FeishuMessaging",
    "requires": {
-    "overrides": {
-     "iface": "@prismshadow/penguin-server#Overrides",
-     "from": "RuntimeModule"
+    "feishu": {
+     "iface": "@prismshadow/penguin-server#FeishuSdkHandle"
     }
    },
    "provides": {
@@ -8966,6 +9558,25 @@ summary { cursor: pointer; color: var(--muted); }
      }
     ]
    },
+   "children": []
+  },
+  "FeishuSdkProvider": {
+   "name": "FeishuSdkProvider",
+   "requires": {},
+   "provides": {
+    "feishuSdk": "@prismshadow/penguin-server#FeishuSdkHandle"
+   },
+   "contributes": {},
+   "children": []
+  },
+  "GlobalFetch": {
+   "name": "GlobalFetch",
+   "requires": {},
+   "provides": {
+    "GlobalFetch": "@prismshadow/penguin-server#GlobalFetch",
+    "HttpFetch": "@prismshadow/penguin-server#HttpFetch"
+   },
+   "contributes": {},
    "children": []
   },
   "GoalsRepo": {
@@ -9055,12 +9666,10 @@ summary { cursor: pointer; color: var(--muted); }
    "name": "HttpModule",
    "requires": {
     "config": {
-     "iface": "@prismshadow/penguin-server#Config",
-     "from": "RuntimeModule"
+     "iface": "@prismshadow/penguin-server#Config"
     },
     "log": {
-     "iface": "@prismshadow/penguin-server#Log",
-     "from": "RuntimeModule"
+     "iface": "@prismshadow/penguin-server#Log"
     },
     "auth": {
      "iface": "@prismshadow/penguin-server#AuthService",
@@ -9089,8 +9698,7 @@ summary { cursor: pointer; color: var(--muted); }
    "name": "InstallRoutes",
    "requires": {
     "config": {
-     "iface": "@prismshadow/penguin-server#Config",
-     "from": "RuntimeModule"
+     "iface": "@prismshadow/penguin-server#Config"
     }
    },
    "provides": {
@@ -9111,17 +9719,11 @@ summary { cursor: pointer; color: var(--muted); }
   "MachinesModule": {
    "name": "MachinesModule",
    "requires": {
-    "config": {
-     "iface": "@prismshadow/penguin-server#Config",
-     "from": "RuntimeModule"
+    "paths": {
+     "iface": "@prismshadow/penguin-server#Paths"
     },
     "hmr": {
-     "iface": "@prismshadow/penguin-server#Hmr",
-     "from": "RuntimeModule"
-    },
-    "overrides": {
-     "iface": "@prismshadow/penguin-server#Overrides",
-     "from": "RuntimeModule"
+     "iface": "@prismshadow/penguin-server#Hmr"
     }
    },
    "provides": {
@@ -9143,12 +9745,10 @@ summary { cursor: pointer; color: var(--muted); }
    "name": "MeRoutes",
    "requires": {
     "config": {
-     "iface": "@prismshadow/penguin-server#Config",
-     "from": "RuntimeModule"
+     "iface": "@prismshadow/penguin-server#Config"
     },
     "desktop": {
-     "iface": "@prismshadow/penguin-server#Desktop",
-     "from": "RuntimeModule"
+     "iface": "@prismshadow/penguin-server#Desktop"
     },
     "auth": {
      "iface": "@prismshadow/penguin-server#AuthService",
@@ -9194,8 +9794,8 @@ summary { cursor: pointer; color: var(--muted); }
   "MemoryService": {
    "name": "MemoryService",
    "requires": {
-    "config": {
-     "iface": "@prismshadow/penguin-server#Config"
+    "paths": {
+     "iface": "@prismshadow/penguin-server#Paths"
     },
     "agentConfigService": {
      "iface": "@prismshadow/penguin-server#AgentConfigService",
@@ -9224,21 +9824,23 @@ summary { cursor: pointer; color: var(--muted); }
   "MessagingModule": {
    "name": "MessagingModule",
    "requires": {
-    "config": {
-     "iface": "@prismshadow/penguin-server#Config",
-     "from": "RuntimeModule"
+    "paths": {
+     "iface": "@prismshadow/penguin-server#Paths"
     },
     "channels": {
-     "iface": "@prismshadow/penguin-server#Channels",
-     "from": "RuntimeModule"
+     "iface": "@prismshadow/penguin-server#Channels"
     },
-    "overrides": {
-     "iface": "@prismshadow/penguin-server#Overrides",
-     "from": "RuntimeModule"
+    "clock": {
+     "iface": "@prismshadow/penguin-server#Clock"
+    },
+    "tuning": {
+     "iface": "@prismshadow/penguin-server#MessagingTuning"
+    },
+    "qqScanTransport": {
+     "iface": "@prismshadow/penguin-server#QQScanTransportHandle"
     },
     "log": {
-     "iface": "@prismshadow/penguin-server#Log",
-     "from": "RuntimeModule"
+     "iface": "@prismshadow/penguin-server#Log"
     },
     "messagingRepo": {
      "iface": "@prismshadow/penguin-server#MessagingBindingsRepo",
@@ -9309,7 +9911,27 @@ summary { cursor: pointer; color: var(--muted); }
    "provides": {},
    "contributes": {},
    "children": [
-    "RuntimeModule",
+    "RuntimeConfig",
+    "RuntimeDb",
+    "RuntimeChannels",
+    "RuntimeProxy",
+    "RuntimeHmr",
+    "RuntimeDesktop",
+    "RuntimeAuthState",
+    "RuntimeResourceGroups",
+    "ConsoleLog",
+    "SystemClock",
+    "ConfigPaths",
+    "ScryptHasher",
+    "DefaultMessagingTuning",
+    "FeishuSdkProvider",
+    "TelegramTransportProvider",
+    "QQTransportProvider",
+    "QQScanTransportProvider",
+    "CoreSessionLoaders",
+    "DefaultTitleGenerators",
+    "GlobalFetch",
+    "UpdateCheckService",
     "UsersRepo",
     "AuthSessionsRepo",
     "ServerSettingsRepo",
@@ -9354,7 +9976,7 @@ summary { cursor: pointer; color: var(--muted); }
     "ProjectAdminRoutes",
     "AdminRoutes",
     "MeRoutes",
-    "VersionModule",
+    "VersionRoutes",
     "InstallRoutes",
     "EventsRoutes",
     "SkillLibraryRoutes",
@@ -9422,8 +10044,8 @@ summary { cursor: pointer; color: var(--muted); }
   "ProjectConfigService": {
    "name": "ProjectConfigService",
    "requires": {
-    "config": {
-     "iface": "@prismshadow/penguin-server#Config"
+    "paths": {
+     "iface": "@prismshadow/penguin-server#Paths"
     }
    },
    "provides": {
@@ -9435,8 +10057,8 @@ summary { cursor: pointer; color: var(--muted); }
   "ProjectService": {
    "name": "ProjectService",
    "requires": {
-    "config": {
-     "iface": "@prismshadow/penguin-server#Config"
+    "paths": {
+     "iface": "@prismshadow/penguin-server#Paths"
     },
     "access": {
      "iface": "@prismshadow/penguin-server#ProjectAccess",
@@ -9538,12 +10160,35 @@ summary { cursor: pointer; color: var(--muted); }
    },
    "children": []
   },
+  "QQScanTransportProvider": {
+   "name": "QQScanTransportProvider",
+   "requires": {},
+   "provides": {
+    "qqScanTransport": "@prismshadow/penguin-server#QQScanTransportHandle"
+   },
+   "contributes": {},
+   "children": []
+  },
+  "QQTransportProvider": {
+   "name": "QQTransportProvider",
+   "requires": {},
+   "provides": {
+    "qqTransport": "@prismshadow/penguin-server#QQTransportHandle"
+   },
+   "contributes": {},
+   "children": []
+  },
   "QqMessaging": {
    "name": "QqMessaging",
    "requires": {
-    "overrides": {
-     "iface": "@prismshadow/penguin-server#Overrides",
-     "from": "RuntimeModule"
+    "qq": {
+     "iface": "@prismshadow/penguin-server#QQTransportHandle"
+    },
+    "tuning": {
+     "iface": "@prismshadow/penguin-server#MessagingTuning"
+    },
+    "clock": {
+     "iface": "@prismshadow/penguin-server#Clock"
     }
    },
    "provides": {
@@ -9559,19 +10204,73 @@ summary { cursor: pointer; color: var(--muted); }
    },
    "children": []
   },
-  "RuntimeModule": {
-   "name": "RuntimeModule",
+  "RuntimeAuthState": {
+   "name": "RuntimeAuthState",
    "requires": {},
    "provides": {
-    "config": "@prismshadow/penguin-server#Config",
-    "db": "@prismshadow/penguin-server#Db",
-    "channels": "@prismshadow/penguin-server#Channels",
-    "proxy": "@prismshadow/penguin-server#Proxy",
-    "hmr": "@prismshadow/penguin-server#Hmr",
-    "desktop": "@prismshadow/penguin-server#Desktop",
-    "authState": "@prismshadow/penguin-server#AuthState",
-    "overrides": "@prismshadow/penguin-server#Overrides",
-    "log": "@prismshadow/penguin-server#Log",
+    "authState": "@prismshadow/penguin-server#AuthState"
+   },
+   "contributes": {},
+   "children": []
+  },
+  "RuntimeChannels": {
+   "name": "RuntimeChannels",
+   "requires": {},
+   "provides": {
+    "channels": "@prismshadow/penguin-server#Channels"
+   },
+   "contributes": {},
+   "children": []
+  },
+  "RuntimeConfig": {
+   "name": "RuntimeConfig",
+   "requires": {},
+   "provides": {
+    "config": "@prismshadow/penguin-server#Config"
+   },
+   "contributes": {},
+   "children": []
+  },
+  "RuntimeDb": {
+   "name": "RuntimeDb",
+   "requires": {},
+   "provides": {
+    "db": "@prismshadow/penguin-server#Db"
+   },
+   "contributes": {},
+   "children": []
+  },
+  "RuntimeDesktop": {
+   "name": "RuntimeDesktop",
+   "requires": {},
+   "provides": {
+    "desktop": "@prismshadow/penguin-server#Desktop"
+   },
+   "contributes": {},
+   "children": []
+  },
+  "RuntimeHmr": {
+   "name": "RuntimeHmr",
+   "requires": {},
+   "provides": {
+    "hmr": "@prismshadow/penguin-server#Hmr"
+   },
+   "contributes": {},
+   "children": []
+  },
+  "RuntimeProxy": {
+   "name": "RuntimeProxy",
+   "requires": {},
+   "provides": {
+    "proxy": "@prismshadow/penguin-server#Proxy"
+   },
+   "contributes": {},
+   "children": []
+  },
+  "RuntimeResourceGroups": {
+   "name": "RuntimeResourceGroups",
+   "requires": {},
+   "provides": {
     "resourceGroups": "@prismshadow/penguin-server#ResourceGroups"
    },
    "contributes": {},
@@ -9599,8 +10298,8 @@ summary { cursor: pointer; color: var(--muted); }
   "Scheduler": {
    "name": "Scheduler",
    "requires": {
-    "config": {
-     "iface": "@prismshadow/penguin-server#Config"
+    "paths": {
+     "iface": "@prismshadow/penguin-server#Paths"
     },
     "repo": {
      "iface": "@prismshadow/penguin-server#SchedulesRepo",
@@ -9631,8 +10330,8 @@ summary { cursor: pointer; color: var(--muted); }
     "channels": {
      "iface": "@prismshadow/penguin-server#Channels"
     },
-    "overrides": {
-     "iface": "@prismshadow/penguin-server#Overrides"
+    "clock": {
+     "iface": "@prismshadow/penguin-server#Clock"
     }
    },
    "provides": {
@@ -9696,6 +10395,16 @@ summary { cursor: pointer; color: var(--muted); }
    "contributes": {},
    "children": []
   },
+  "ScryptHasher": {
+   "name": "ScryptHasher",
+   "requires": {},
+   "provides": {
+    "ScryptHasher": "@prismshadow/penguin-server#ScryptHasher",
+    "PasswordHasher": "@prismshadow/penguin-server#PasswordHasher"
+   },
+   "contributes": {},
+   "children": []
+  },
   "ServerSettingsRepo": {
    "name": "ServerSettingsRepo",
    "requires": {
@@ -9713,12 +10422,10 @@ summary { cursor: pointer; color: var(--muted); }
    "name": "SessionApiRoutes",
    "requires": {
     "config": {
-     "iface": "@prismshadow/penguin-server#Config",
-     "from": "RuntimeModule"
+     "iface": "@prismshadow/penguin-server#Config"
     },
     "channels": {
-     "iface": "@prismshadow/penguin-server#Channels",
-     "from": "RuntimeModule"
+     "iface": "@prismshadow/penguin-server#Channels"
     },
     "manager": {
      "iface": "@prismshadow/penguin-server#Sessions",
@@ -9885,24 +10592,25 @@ summary { cursor: pointer; color: var(--muted); }
    "name": "SessionsModule",
    "requires": {
     "config": {
-     "iface": "@prismshadow/penguin-server#Config",
-     "from": "RuntimeModule"
+     "iface": "@prismshadow/penguin-server#Config"
     },
     "channels": {
-     "iface": "@prismshadow/penguin-server#Channels",
-     "from": "RuntimeModule"
+     "iface": "@prismshadow/penguin-server#Channels"
     },
     "authState": {
-     "iface": "@prismshadow/penguin-server#AuthState",
-     "from": "RuntimeModule"
+     "iface": "@prismshadow/penguin-server#AuthState"
     },
-    "overrides": {
-     "iface": "@prismshadow/penguin-server#Overrides",
-     "from": "RuntimeModule"
+    "clock": {
+     "iface": "@prismshadow/penguin-server#Clock"
+    },
+    "sessionLoaders": {
+     "iface": "@prismshadow/penguin-server#SessionLoaders"
+    },
+    "titleGenerators": {
+     "iface": "@prismshadow/penguin-server#TitleGenerators"
     },
     "log": {
-     "iface": "@prismshadow/penguin-server#Log",
-     "from": "RuntimeModule"
+     "iface": "@prismshadow/penguin-server#Log"
     },
     "settings": {
      "iface": "@prismshadow/penguin-server#ServerSettingsRepo",
@@ -9999,8 +10707,8 @@ summary { cursor: pointer; color: var(--muted); }
   "SnapshotService": {
    "name": "SnapshotService",
    "requires": {
-    "config": {
-     "iface": "@prismshadow/penguin-server#Config"
+    "paths": {
+     "iface": "@prismshadow/penguin-server#Paths"
     }
    },
    "provides": {
@@ -10035,12 +10743,24 @@ summary { cursor: pointer; color: var(--muted); }
    "contributes": {},
    "children": []
   },
+  "SystemClock": {
+   "name": "SystemClock",
+   "requires": {},
+   "provides": {
+    "SystemClock": "@prismshadow/penguin-server#SystemClock",
+    "Clock": "@prismshadow/penguin-server#Clock"
+   },
+   "contributes": {},
+   "children": []
+  },
   "TelegramMessaging": {
    "name": "TelegramMessaging",
    "requires": {
-    "overrides": {
-     "iface": "@prismshadow/penguin-server#Overrides",
-     "from": "RuntimeModule"
+    "telegram": {
+     "iface": "@prismshadow/penguin-server#TelegramTransportHandle"
+    },
+    "tuning": {
+     "iface": "@prismshadow/penguin-server#MessagingTuning"
     }
    },
    "provides": {
@@ -10056,16 +10776,23 @@ summary { cursor: pointer; color: var(--muted); }
    },
    "children": []
   },
+  "TelegramTransportProvider": {
+   "name": "TelegramTransportProvider",
+   "requires": {},
+   "provides": {
+    "telegramTransport": "@prismshadow/penguin-server#TelegramTransportHandle"
+   },
+   "contributes": {},
+   "children": []
+  },
   "TerminalModule": {
    "name": "TerminalModule",
    "requires": {
     "hmr": {
-     "iface": "@prismshadow/penguin-server#Hmr",
-     "from": "RuntimeModule"
+     "iface": "@prismshadow/penguin-server#Hmr"
     },
     "resourceGroups": {
-     "iface": "@prismshadow/penguin-server#ResourceGroups",
-     "from": "RuntimeModule"
+     "iface": "@prismshadow/penguin-server#ResourceGroups"
     },
     "auth": {
      "iface": "@prismshadow/penguin-server#AuthService",
@@ -10109,8 +10836,8 @@ summary { cursor: pointer; color: var(--muted); }
   "TraceIndexService": {
    "name": "TraceIndexService",
    "requires": {
-    "config": {
-     "iface": "@prismshadow/penguin-server#Config"
+    "paths": {
+     "iface": "@prismshadow/penguin-server#Paths"
     },
     "repo": {
      "iface": "@prismshadow/penguin-server#TraceIndexRepo",
@@ -10130,8 +10857,8 @@ summary { cursor: pointer; color: var(--muted); }
   "TraceService": {
    "name": "TraceService",
    "requires": {
-    "config": {
-     "iface": "@prismshadow/penguin-server#Config"
+    "paths": {
+     "iface": "@prismshadow/penguin-server#Paths"
     },
     "index": {
      "iface": "@prismshadow/penguin-server#TraceIndexService",
@@ -10165,6 +10892,22 @@ summary { cursor: pointer; color: var(--muted); }
    "contributes": {},
    "children": []
   },
+  "UpdateCheckService": {
+   "name": "UpdateCheckService",
+   "requires": {
+    "http": {
+     "iface": "@prismshadow/penguin-server#HttpFetch"
+    },
+    "clock": {
+     "iface": "@prismshadow/penguin-server#Clock"
+    }
+   },
+   "provides": {
+    "UpdateCheckService": "@prismshadow/penguin-server#UpdateCheckService"
+   },
+   "contributes": {},
+   "children": []
+  },
   "UsageRecorder": {
    "name": "UsageRecorder",
    "requires": {
@@ -10172,8 +10915,8 @@ summary { cursor: pointer; color: var(--muted); }
      "iface": "@prismshadow/penguin-server#UsageRepo",
      "from": "UsageRepo"
     },
-    "overrides": {
-     "iface": "@prismshadow/penguin-server#Overrides"
+    "clock": {
+     "iface": "@prismshadow/penguin-server#Clock"
     }
    },
    "provides": {
@@ -10210,8 +10953,8 @@ summary { cursor: pointer; color: var(--muted); }
      "iface": "@prismshadow/penguin-server#ProjectConfigService",
      "from": "ProjectConfigService"
     },
-    "overrides": {
-     "iface": "@prismshadow/penguin-server#Overrides"
+    "clock": {
+     "iface": "@prismshadow/penguin-server#Clock"
     }
    },
    "provides": {
@@ -10233,20 +10976,18 @@ summary { cursor: pointer; color: var(--muted); }
    "contributes": {},
    "children": []
   },
-  "VersionModule": {
-   "name": "VersionModule",
+  "VersionRoutes": {
+   "name": "VersionRoutes",
    "requires": {
     "config": {
-     "iface": "@prismshadow/penguin-server#Config",
-     "from": "RuntimeModule"
+     "iface": "@prismshadow/penguin-server#Config"
     },
-    "overrides": {
-     "iface": "@prismshadow/penguin-server#Overrides",
-     "from": "RuntimeModule"
+    "updateCheck": {
+     "iface": "@prismshadow/penguin-server#UpdateCheck"
     }
    },
    "provides": {
-    "updateCheck": "@prismshadow/penguin-server#UpdateCheck"
+    "VersionRoutes": "@prismshadow/penguin-server#VersionRoutes"
    },
    "contributes": {
     "HttpModule.routes": [
