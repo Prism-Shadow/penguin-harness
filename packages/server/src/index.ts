@@ -86,7 +86,7 @@ class PenguinServer {
 
   /** The current App's auth service — resolved per call, since a hot swap replaces the App (see liveApi). */
   private auth(): Auth {
-    return liveApi<Auth>(this.deps, "AuthService", "AuthService");
+    return liveApi<Auth>(this.deps, "IdentityModule", "Auth");
   }
 
   /** `.env` may itself define HTTP_PROXY, so it is loaded before the dispatcher reads one. */
@@ -173,7 +173,7 @@ class PenguinServer {
    * handlers).
    */
   applyPersistedProxy(): void {
-    const settings = liveApi<Settings>(this.deps, "ServerSettingsRepo", "ServerSettingsRepo");
+    const settings = liveApi<Settings>(this.deps, "SettingsModule", "Settings");
     applyProxySettings({
       proxyForApp: settings.getProxyForApp(),
       proxyUrl: settings.getProxyUrl(),
@@ -260,7 +260,7 @@ class PenguinServer {
     // according to its nature.
     process.on("uncaughtException", (err) => {
       console.error(`[server] Uncaught exception: ${err.stack ?? err.message}`);
-      liveApi<Errors>(this.deps, "ErrorRecorder", "ErrorRecorder").record({
+      liveApi<Errors>(this.deps, "ObservabilityModule", "Errors").record({
         source: "process",
         err,
         code: "uncaught_exception",
@@ -276,7 +276,7 @@ class PenguinServer {
     process.on("unhandledRejection", (reason) => {
       const err = reason instanceof Error ? reason : new Error(String(reason));
       console.error(`[server] Unhandled promise rejection: ${err.stack ?? err.message}`);
-      liveApi<Errors>(this.deps, "ErrorRecorder", "ErrorRecorder").record({
+      liveApi<Errors>(this.deps, "ObservabilityModule", "Errors").record({
         source: "process",
         err,
         code: "unhandled_rejection",

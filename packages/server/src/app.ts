@@ -337,26 +337,26 @@ export function createRuntimeApp(boot: ServerBoot): Hono<AppEnv> {
   // is the current App's on the request that reads it (see liveApi).
   const errors = {
     record: (entry: Parameters<Errors["record"]>[0]) =>
-      liveApi<Errors>(boot, "ErrorRecorder", "ErrorRecorder").record(entry),
+      liveApi<Errors>(boot, "ObservabilityModule", "Errors").record(entry),
   };
   const log = {
     line: (text: string) =>
-      liveApi<Log>(boot, "ConsoleLog", "ConsoleLog").line(text),
+      liveApi<Log>(boot, "RuntimeModule", "Log").line(text),
   };
-  const settings = () => liveApi<Settings>(boot, "ServerSettingsRepo", "ServerSettingsRepo");
-  const access = () => liveApi<Access>(boot, "ProjectAccess", "ProjectAccess");
+  const settings = () => liveApi<Settings>(boot, "SettingsModule", "Settings");
+  const access = () => liveApi<Access>(boot, "ProjectsModule", "Access");
   const deps = {
     config: boot.config,
     desktop: boot.desktop,
     get authService() {
-      return liveApi<Auth>(boot, "AuthService", "AuthService");
+      return liveApi<Auth>(boot, "IdentityModule", "Auth");
     },
     hmr: boot.hmr,
     channels: boot.channels,
   };
   // Read once now, while the packaged App is current: the floor a narrower push falls to.
-  liveApi(boot, "ErrorRecorder", "ErrorRecorder");
-  liveApi(boot, "ConsoleLog", "ConsoleLog");
+  liveApi(boot, "ObservabilityModule", "Errors");
+  liveApi(boot, "RuntimeModule", "Log");
   settings();
   access();
   void deps.authService;
