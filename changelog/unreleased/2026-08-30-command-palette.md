@@ -6,7 +6,7 @@
 
 [中文版](2026-08-30-command-palette.zh.md)
 
-Ctrl+P (⌘P on macOS) opens a VS Code-style command palette: an input that filters a list of commands, ↑↓ to select, Enter to run, Escape to close. The palette is the mechanism; commands register with it instead of claiming shortcuts of their own.
+Ctrl+P or Ctrl+Shift+P (⌘P / ⌘⇧P on macOS) opens a VS Code-style command palette: an input that filters a list of commands, ↑↓ to select, Enter to run, Escape to close. The palette is the mechanism; commands register with it instead of claiming shortcuts of their own.
 
 ## Harness history
 

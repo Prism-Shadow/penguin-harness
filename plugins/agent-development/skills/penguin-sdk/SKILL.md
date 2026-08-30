@@ -401,6 +401,8 @@ HTTP, all under `/api/projects/:projectId/agents/:agentId/workflows` (Project me
 
 **Theme.** A workflow page is a separate document, so it inherits nothing from the app's stylesheet by itself. The Web App stamps `light`/`dark` on the page's root, copies its resolved palette (the gray scale, the accent pair, the font stack, the root font size) onto it, and injects `/workflow-ui.css` first in the head — a base stylesheet that styles plain HTML (headings, lists, forms, tables, code) to match the app and exposes `--wf-bg`, `--wf-fg`, `--wf-muted`, `--wf-border`, `--wf-surface`, `--wf-accent`, `--wf-accent-fg`, plus the classes `wf-primary` (a button), `wf-card`, `wf-rows`, `wf-row`, `wf-muted`. Write plain markup, take every colour and font from those variables, and the page follows the user through a theme or accent change; hardcode them and it clashes in one theme or the other. The page's own rules always win, and linking `/workflow-ui.css` yourself makes it look right when opened outside the app too.
 
+**Filling the app.** A page can be shown as the whole app — no sidebar, no chat, no tab strip — at `/app/<project>/<agent>/<workflow>`: the tab's *Fill the app* button goes there, `penguin web --app <project>/<agent>/<workflow>` opens the browser straight onto it, and the page itself can ask with `parent.postMessage({ type: "penguin:fill-app" }, "*")`. The way back is the command palette — Ctrl+P or Ctrl+Shift+P (⌘ on macOS), both, so a page may take one of them for itself but never both — whose *Exit full page* lands on that Agent's chat.
+
 ## Verify before you hand over
 
 Never declare the app done without running it:
