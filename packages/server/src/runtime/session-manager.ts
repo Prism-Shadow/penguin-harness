@@ -43,6 +43,7 @@ import {
   userText,
 } from "@prismshadow/penguin-core";
 import type {
+  AgentAssembly,
   ApproveFn,
   BackgroundCommandInfo,
   BackgroundSubagentInfo,
@@ -93,6 +94,7 @@ import { mergedNoProxy } from "../net/proxy.js";
 import { userChannelKey } from "../http/routes/events.js";
 import type { SandboxService } from "../sandbox/service.js";
 import type { AuthState, Channels, Clock, Config, Log } from "../hmr/capabilities.js";
+import type { Assembly } from "../mechanisms/agents.js";
 import type { Members, ProjectConfigStore, Projects } from "../mechanisms/projects.js";
 import type { SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";
 import type { Errors, UsageRecording } from "../mechanisms/observability.js";
@@ -2354,6 +2356,7 @@ export class SessionsModule {
   @Use() private readonly messagingRepo!: MessagingBindings;
   /** Company-mode caches: which organization owns a Session (read at every command spawn). */
   @Use() private readonly orgCache!: OrgCache;
+  @Use() private readonly assembly!: Assembly;
   @Provide() manager!: Sessions;
   @Provide() sessionService!: SessionServiceIface;
   @Provide() env!: SessionEnv;
@@ -2370,7 +2373,9 @@ export class SessionsModule {
     const orgCache = this.orgCache;
     const modelScopeAuth = this.modelScopeAuth;
 
+    const hostAssembly = this.assembly;
     const assembly: AgentAssembly = {
+      promptSections: () => hostAssembly.promptSections(),
       resolveModelApiKey: async ({ projectId, provider, modelId }) => {
         if (provider !== MODELSCOPE_PROVIDER_ID) return undefined;
         await modelScopeAuth.ensureFresh({ projectId, provider });

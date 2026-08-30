@@ -104,6 +104,7 @@ import { Scheduler, ScheduleSessionCreator, ScheduleTaskRunner } from "./runtime
 import { AgentConfigService } from "./services/agent-config-service.js";
 import { SnapshotService } from "./services/snapshot-service.js";
 import { AgentRoutes } from "./services/agent-routes.js";
+import { HostAssembly } from "./services/host-assembly.js";
 import { AgentService } from "./services/agent-service.js";
 import { MemoryService } from "./services/memory-service.js";
 import { BenchmarkService } from "./services/benchmark-service.js";
@@ -140,6 +141,9 @@ import {
   Projects,
 } from "./mechanisms/projects.js";
 import { Schedules, Scheduling, SessionIndex, SessionOrigins } from "./mechanisms/sessions.js";
+import { Workflows } from "./mechanisms/workflows.js";
+import { WorkflowService } from "./workflows/service.js";
+import { WorkflowPrompt, WorkflowRoutes } from "./workflows/routes.js";
 import {
   ErrorLog,
   Errors,
@@ -148,7 +152,14 @@ import {
   UsageStore,
 } from "./mechanisms/observability.js";
 import { TraceIndex, TraceIndexStore, Traces } from "./mechanisms/traces.js";
-import { AgentConfig, AgentLifecycle, Benchmarks, Memory, Snapshots } from "./mechanisms/agents.js";
+import {
+  AgentConfig,
+  AgentLifecycle,
+  Assembly,
+  Benchmarks,
+  Memory,
+  Snapshots,
+} from "./mechanisms/agents.js";
 import { FileReveal, WorkspaceFiles } from "./mechanisms/workspace.js";
 import { Settings, UiPrefsStore } from "./mechanisms/settings.js";
 import { MessagingBindings } from "./mechanisms/messaging.js";
@@ -372,8 +383,9 @@ export class TracesModule {}
     MemoryService,
     BenchmarkService,
     AgentRoutes,
+    HostAssembly,
   ],
-  exports: [AgentConfig, Snapshots, AgentLifecycle, Memory, Benchmarks],
+  exports: [AgentConfig, Snapshots, AgentLifecycle, Memory, Benchmarks, Assembly],
 })
 export class AgentsModule {}
 
@@ -433,6 +445,12 @@ export class CompanyModule {}
 })
 export class ApiModule {}
 
+@Module({
+  children: [WorkflowPrompt, WorkflowService, WorkflowRoutes],
+  exports: [Workflows],
+})
+export class WorkflowsModule {}
+
 /** The root: provides nothing and requires nothing; it exists so the groups have a scope to see each other in. */
 @Module({
   children: [
@@ -453,6 +471,7 @@ export class ApiModule {}
     SandboxSettingsModule,
     TerminalModule,
     MachinesModule,
+    WorkflowsModule,
     Startup,
   ],
 })
