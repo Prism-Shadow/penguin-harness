@@ -62,7 +62,7 @@ export function HarnessHistoryDialog({ open, onClose }: { open: boolean; onClose
               load.data.current.bundles.web === e.bundles.web;
             return (
               <li
-                key={`${e.pushedAt}-${i}`}
+                key={`${e.bundles.platform ?? ""}-${i}`}
                 className="rounded-md border border-gray-200 px-3 py-2 dark:border-gray-800"
               >
                 <div className="flex items-baseline justify-between gap-2">
@@ -71,7 +71,9 @@ export function HarnessHistoryDialog({ open, onClose }: { open: boolean; onClose
                   </span>
                   <span className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
                     {current ? <Badge tone="green">{t.current}</Badge> : null}
-                    <time dateTime={e.pushedAt}>{formatDateTime(e.pushedAt)}</time>
+                    {e.pushedAt ? (
+                      <time dateTime={e.pushedAt}>{formatDateTime(e.pushedAt)}</time>
+                    ) : null}
                   </span>
                 </div>
                 {e.source ? (

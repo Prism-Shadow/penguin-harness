@@ -158,7 +158,6 @@ export async function readHarnessHistory(root: string): Promise<HarnessHistoryEn
     const pushedAt = str(e.pushedAt);
     const b = (e.bundles ?? {}) as Record<string, unknown>;
     const bundles = { platform: str(b.platform), cli: str(b.cli), web: str(b.web) };
-    if (pushedAt === null) continue;
     if (bundles.platform === null && bundles.cli === null && bundles.web === null) continue;
     const src = (e.source ?? {}) as Record<string, unknown>;
     const repo = str(src.repo);
@@ -170,6 +169,27 @@ export async function readHarnessHistory(root: string): Promise<HarnessHistoryEn
     });
   }
   return entries;
+}
+
+/**
+ * The history with the committed version folded in: a runtime older than the record
+ * commits without writing a line, and a root whose harness.json predates the record has
+ * one; either way the current commit is a version the history must show.
+ */
+export function withCurrent(
+  entries: HarnessHistoryEntry[],
+  current: HarnessInfo | null,
+): HarnessHistoryEntry[] {
+  if (current === null) return entries;
+  const same = (e: HarnessHistoryEntry) =>
+    e.bundles.platform === current.bundles.platform &&
+    e.bundles.cli === current.bundles.cli &&
+    e.bundles.web === current.bundles.web;
+  if (entries.some(same)) return entries;
+  return [
+    { source: current.source, pushedAt: current.pushedAt, bundles: current.bundles },
+    ...entries,
+  ];
 }
 
 /** Records a committed version at the head of the history, keeping the newest {@link HISTORY_KEEP}. */

@@ -6,7 +6,12 @@
 import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { appendHarnessHistory, HISTORY_KEEP, readHarnessHistory } from "../src/hmr/manifest.js";
+import {
+  HISTORY_KEEP,
+  appendHarnessHistory,
+  readHarnessHistory,
+  withCurrent,
+} from "../src/hmr/manifest.js";
 import type { VersionHistoryResponse } from "../src/api/types.js";
 import { apiClient, createTestApp, loginAdmin, makeTempRoot, type TestApp } from "./helpers.js";
 
@@ -30,6 +35,23 @@ describe("harness history file", () => {
     expect(entries[HISTORY_KEEP - 1]!.bundles.platform).toBe("store/platform/p3.mjs");
   });
 
+  it("the committed version is folded in when the history lacks it (a runtime older than the record)", () => {
+    const current = {
+      source: null,
+      pushedAt: "2026-08-30T00:00:00.000Z",
+      bundles: entry(9).bundles,
+    };
+    expect(withCurrent([], current)).toEqual([
+      { source: null, pushedAt: current.pushedAt, bundles: current.bundles },
+    ]);
+    expect(withCurrent([entry(9)], current)).toEqual([entry(9)]); // already recorded: not doubled
+    expect(withCurrent([entry(1)], current).map((e) => e.bundles.platform)).toEqual([
+      "store/platform/p9.mjs",
+      "store/platform/p1.mjs",
+    ]);
+    expect(withCurrent([entry(1)], null)).toEqual([entry(1)]);
+  });
+
   it("a missing, corrupt, or partly malformed file degrades to what still parses", async () => {
     const root = await makeTempRoot();
     expect(await readHarnessHistory(root)).toEqual([]);
@@ -41,17 +63,19 @@ describe("harness history file", () => {
       JSON.stringify([
         entry(1, { repo: "git@x:y.git", revision: "v0.2.9-3-gabc" }),
         { pushedAt: "2026-01-01T00:00:00.000Z" }, // no artifact at all: not a version
-        { bundles: { platform: "store/platform/z.mjs" } }, // no time: not a record
+        { bundles: { platform: "store/platform/z.mjs" } }, // no time: a version that predates the stamp
         { ...entry(2), source: { repo: "only-half" } }, // half a provenance names nothing
       ]),
     );
     const entries = await readHarnessHistory(root);
     expect(entries.map((e) => e.bundles.platform)).toEqual([
       "store/platform/p1.mjs",
+      "store/platform/z.mjs",
       "store/platform/p2.mjs",
     ]);
     expect(entries[0]!.source).toEqual({ repo: "git@x:y.git", revision: "v0.2.9-3-gabc" });
-    expect(entries[1]!.source).toBeNull();
+    expect(entries[1]!.pushedAt).toBeNull();
+    expect(entries[2]!.source).toBeNull();
   });
 });
 
