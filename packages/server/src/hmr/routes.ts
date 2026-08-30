@@ -38,6 +38,9 @@ import type { Auth } from "../mechanisms/identity.js";
 /** Bind addresses considered safe by default; anything else needs HTTPS. */
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
 
+/** A pushed interface table larger than this is not recorded (the push itself is unaffected). */
+const IFACES_TABLE_CAP = 8 * 1024 * 1024;
+
 export function hmrRoutes(deps: HmrRouteDeps): Hono<AppEnv> {
   const routes = new Hono<AppEnv>();
   const hmr = deps.hmr;
@@ -131,6 +134,7 @@ export function hmrRoutes(deps: HmrRouteDeps): Hono<AppEnv> {
       web?: { files?: Record<string, string> };
       assets?: { files?: Record<string, string>; exec?: string[] };
       source?: { repo: string; revision: string };
+      ifaces?: string;
     };
     try {
       const gz = Buffer.from(await c.req.arrayBuffer());
@@ -176,6 +180,9 @@ export function hmrRoutes(deps: HmrRouteDeps): Hono<AppEnv> {
         // wrong-typed `source` is dropped rather than committed: readers already
         // tolerate its absence, and a malformed record on disk would outlive the push
         // that produced it.
+        ...(typeof payload.ifaces === "string" && payload.ifaces.length <= IFACES_TABLE_CAP
+          ? { ifaces: payload.ifaces }
+          : {}),
         ...(typeof payload.source?.repo === "string" &&
         typeof payload.source.revision === "string" &&
         payload.source.repo.length > 0 &&
