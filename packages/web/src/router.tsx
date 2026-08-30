@@ -22,6 +22,7 @@ import { UsagePage } from "./features/usage/usage-page";
 import { BenchmarkPage } from "./features/benchmark/benchmark-page";
 import { TerminalPage } from "./features/terminal/terminal-page";
 import { MachinesPage } from "./features/machines/machines-page";
+import { WorkflowAppPage } from "./features/workflows/workflow-app-page";
 import { PAGES, mergePages } from "./lib/pages";
 import type { PageEntry } from "./lib/pages";
 
@@ -118,6 +119,16 @@ export function AppRouter() {
           element={
             <RequireAuthBare>
               <TerminalPage />
+            </RequireAuthBare>
+          }
+        />
+        {/* One workflow's page as the whole app: outside the shell, like the terminal; the
+            command palette it mounts is the way back. */}
+        <Route
+          path="/app/:projectId/:agentId/:workflowId"
+          element={
+            <RequireAuthBare>
+              <WorkflowAppPage />
             </RequireAuthBare>
           }
         />
