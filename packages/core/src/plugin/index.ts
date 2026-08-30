@@ -47,7 +47,19 @@ export { Interface } from "../kernel/markers.js";
 
 export type * from "./sandbox.js";
 
-/** What a plugin package's default export is: the module classes to boot, each in the package's `ifaces.json`. */
+/**
+ * What a plugin package's default export is.
+ *
+ * `modules` ADD nodes under the host's root. `replaces` STAND IN for nodes the host
+ * already has, by name — any node: a component, a module, a whole group with its
+ * children — a class of the replaced node's NAME, whose manifest in the package's
+ * `ifaces.json` declares its own requires / provides / contributes / children / exports.
+ * Nothing about a replacement is checked when it is put in place; the tree it results
+ * in is checked as one, before any node runs — every requirement resolved at signature
+ * level, every provision present on the instance — so a replacement that offers less
+ * than its consumers need is refused by name, and the App does not boot.
+ */
 export interface Plugin {
-  modules: readonly ModuleClass[];
+  modules?: readonly ModuleClass[];
+  replaces?: readonly ModuleClass[];
 }

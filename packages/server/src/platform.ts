@@ -101,12 +101,7 @@ import {
   Projects,
 } from "./mechanisms/projects.js";
 import { ProjectRuns } from "./services/project-service.js";
-import {
-  Schedules,
-  Scheduling,
-  SessionIndex,
-  SessionOrigins,
-} from "./mechanisms/sessions.js";
+import { Schedules, Scheduling, SessionIndex, SessionOrigins } from "./mechanisms/sessions.js";
 import { ScheduleSessionCreator, ScheduleTaskRunner } from "./runtime/scheduler.js";
 import { SessionEnv, Sessions, SessionServiceIface } from "./runtime/session-manager.js";
 import {
@@ -117,13 +112,7 @@ import {
   UsageStore,
 } from "./mechanisms/observability.js";
 import { TraceIndex, TraceIndexStore, Traces } from "./mechanisms/traces.js";
-import {
-  AgentConfig,
-  AgentLifecycle,
-  Benchmarks,
-  Memory,
-  Snapshots,
-} from "./mechanisms/agents.js";
+import { AgentConfig, AgentLifecycle, Benchmarks, Memory, Snapshots } from "./mechanisms/agents.js";
 import { WorkspaceFiles } from "./mechanisms/workspace.js";
 import { Settings, UiPrefsStore } from "./mechanisms/settings.js";
 import { MessagingBindings } from "./mechanisms/messaging.js";
@@ -371,6 +360,7 @@ export function platformDef(
   caps: RuntimeCapabilities,
   adoptable: (group: string) => boolean,
   plugins: ModuleDef[] = [],
+  replace: ReadonlyMap<string, ModuleDef> = new Map(),
 ): ModuleDef {
   const instances = new Map<ModuleClass, object>([
     [RuntimeConfig, new RuntimeConfig(caps)],
@@ -388,5 +378,6 @@ export function platformDef(
     manifests: table.modules as ManifestTable,
     instances,
     extra: plugins,
+    replace,
   });
 }
