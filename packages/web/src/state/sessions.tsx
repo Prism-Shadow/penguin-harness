@@ -38,6 +38,7 @@ import { createStore } from "zustand/vanilla";
 import * as api from "../api/endpoints";
 import { openUserEvents } from "../api/sse";
 import { isCompanyEvent, publishCompanyEvent } from "./company";
+import { WORKFLOW_UPDATED_EVENT } from "../lib/workflow-tabs";
 import {
   FOLDER_CATEGORIES,
   SIDEBAR_PAGE_SIZE,
@@ -658,6 +659,16 @@ export function applyUserEvent(
     if (ev.type === "org_run" && ev.projectId === store.getState().projectId) {
       void store.getState().reload();
     }
+    return;
+  }
+  // A workflow of some Agent was (re)loaded: the chat page's tab strip owns that list and
+  // listens on window (it is mounted per page, this provider per app).
+  if (ev.type === "workflow_updated") {
+    window.dispatchEvent(
+      new CustomEvent(WORKFLOW_UPDATED_EVENT, {
+        detail: { projectId: ev.projectId, agentId: ev.agentId, workflow: ev.workflow },
+      }),
+    );
     return;
   }
   // A scheduled task firing may have created a new Session (new-session mode); reload the list

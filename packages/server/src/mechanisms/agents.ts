@@ -27,6 +27,7 @@ import type {
 } from "../services/workspace-files-service.js";
 import type { AgentListItem } from "../services/agent-service.js";
 import type { BenchmarkCreateInput } from "../services/benchmark-service.js";
+import type { PromptSection } from "@prismshadow/penguin-core";
 
 /** AgentConfig: the mechanism AgentConfigService implements. */
 export abstract class AgentConfig extends Interface<{
@@ -135,4 +136,9 @@ export abstract class AgentLifecycle extends Interface<{
     pluginName: string,
   ): Promise<{ installed: string | null; library: string | null }>;
   updatePlugin(projectId: string, agentId: string, pluginName: string): Promise<void>;
+}>() {}
+
+/** Assembly: the mechanism HostAssembly implements. */
+export abstract class Assembly extends Interface<{
+  promptSections(): PromptSection[];
 }>() {}

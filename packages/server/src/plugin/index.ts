@@ -15,6 +15,7 @@ export type { Terminals } from "../terminal/manager.js";
 export type { Sessions, SessionServiceIface } from "../runtime/session-manager.js";
 export type { AgentService } from "../services/agent-service.js";
 export type { AgentConfigService } from "../services/agent-config-service.js";
+export type { HostAssembly, HostAssemblySlots } from "../services/host-assembly.js";
 export type { Messaging, MessagingSlots } from "../runtime/messaging/bridge.js";
 export type {
   PluginConfig,

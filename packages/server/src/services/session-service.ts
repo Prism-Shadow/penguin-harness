@@ -15,7 +15,12 @@
  */
 import fs from "node:fs/promises";
 import { agentsDir, createAgent, isSessionMeta } from "@prismshadow/penguin-core";
-import type { ControlEnvContext, ProxyEnvPolicy, SpawnConfiner } from "@prismshadow/penguin-core";
+import type {
+  AgentAssembly,
+  ControlEnvContext,
+  ProxyEnvPolicy,
+  SpawnConfiner,
+} from "@prismshadow/penguin-core";
 import type {
   ApprovalMode,
   MessagingChannel,
@@ -98,6 +103,8 @@ export interface SessionServiceDeps {
   orgIdsOfProject?: (projectId: string) => ReadonlyMap<string, string>;
   /** Spawn-confinement getter (the sandbox module's), forwarded into core beside proxyEnv. */
   confineSpawn?: () => SpawnConfiner | null;
+  /** The host's assembly additions (core AgentAssembly), forwarded like the getters above. */
+  assembly?: AgentAssembly;
 }
 
 export class SessionService {
@@ -411,6 +418,7 @@ export class SessionService {
       ...(this.deps.controlEnv ? { controlEnv: this.deps.controlEnv } : {}),
       ...(this.deps.pathPrepend ? { pathPrepend: this.deps.pathPrepend } : {}),
       ...(this.deps.confineSpawn ? { confineSpawn: this.deps.confineSpawn } : {}),
+      ...(this.deps.assembly ? { assembly: this.deps.assembly } : {}),
     });
     let session;
     try {
