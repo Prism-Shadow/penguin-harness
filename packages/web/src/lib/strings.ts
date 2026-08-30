@@ -221,6 +221,13 @@ export const zh = {
     typesSummary: (added: number, removed: number, changed: number) =>
       `数据类型：新增 ${added}，移除 ${removed}，变化 ${changed}`,
     change: { added: "新增", removed: "移除", changed: "变化" },
+    rollback: "回滚到这个版本",
+    rollbackConfirm: "把这个版本推回去并立即切换？",
+    rollbackYes: "回滚",
+    rollbackPushing: "推送中……到达后服务器会切换。",
+    rollbackDone: "已回滚——这个版本现在是当前版本。",
+    rollbackTimeout: "服务器没有及时报告切换；请查看历史。",
+    notKept: "这个版本的产物没有保留，无法推回。",
     requires: "requires",
     provides: "provides",
     contributes: "contributes",

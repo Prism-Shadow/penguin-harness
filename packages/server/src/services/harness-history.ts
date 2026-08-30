@@ -8,6 +8,7 @@
  */
 import fsp from "node:fs/promises";
 import path from "node:path";
+import zlib from "node:zlib";
 import { Component, Interface, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type {
@@ -17,9 +18,11 @@ import type {
   IfacesSummary,
 } from "@prismshadow/penguin-core";
 import table from "../ifaces.json" with { type: "json" };
-import { readHarnessInfo } from "../hmr/manifest.js";
+import { readHarnessInfo, readManifest } from "../hmr/manifest.js";
+import { readApiToken } from "../auth/api-token.js";
 import { summarizeTable } from "../hmr/ifaces-diff.js";
-import type { Clock, Paths } from "../hmr/capabilities.js";
+import type { Clock, Config, Log, Paths } from "../hmr/capabilities.js";
+import type { HttpFetch } from "./update-check-service.js";
 
 /** How long after boot the runtime's commit of a pushed version is expected to have landed. */
 const COMMIT_SETTLE_MS = 1500;
@@ -32,7 +35,25 @@ export abstract class HarnessHistoryIface extends Interface<{
   list(): Promise<HarnessHistory>;
   /** A recorded interface table by hash, or null. */
   table(hash: string): Promise<unknown | null>;
+  /**
+   * Pushes a kept version back through the runtime's own upgrade endpoint. Resolves when
+   * the runtime has answered; false when this platform kept no artifacts for that id.
+   */
+  rollback(id: string): Promise<boolean>;
 }>() {}
+
+/** How many versions' artifacts the platform keeps for rollback (the runtime's store keeps one). */
+export const KEEP_VERSIONS = 5;
+
+/** A version's id: its content-addressed bundles, or its table for a packaged boot. */
+export function versionId(bundles: HarnessInfo["bundles"], tableHash: string | null): string {
+  const sha = (p: string | null) =>
+    p === null ? "" : p.slice(p.lastIndexOf("/") + 1).replace(/\.[a-z]+$/i, "");
+  const fromBundles = [sha(bundles.platform), sha(bundles.cli), sha(bundles.web)]
+    .filter(Boolean)
+    .join("-");
+  return fromBundles !== "" ? fromBundles : `packaged-${tableHash ?? "unknown"}`;
+}
 
 const str = (v: unknown): string | null => (typeof v === "string" && v.length > 0 ? v : null);
 
@@ -57,6 +78,8 @@ function entryOf(raw: unknown): HarnessHistoryEntry | null {
   const repo = str(src.repo);
   const revision = str(src.revision);
   return {
+    id: versionId(bundles, ifaces?.hash ?? null),
+    rollbackable: false,
     source: repo !== null && revision !== null ? { repo, revision } : null,
     pushedAt: str(e.pushedAt),
     bundles,
@@ -81,6 +104,9 @@ function sameVersion(a: HarnessHistoryEntry, b: HarnessHistoryEntry): boolean {
 export class HarnessHistoryStore implements HarnessHistoryIface {
   @Use() private readonly paths!: Paths;
   @Use() private readonly clock!: Clock;
+  @Use() private readonly config!: Config;
+  @Use() private readonly http!: HttpFetch;
+  @Use() private readonly log!: Log;
 
   private get dir(): string {
     return path.join(this.paths.root, "harness-history");
@@ -125,6 +151,8 @@ export class HarnessHistoryStore implements HarnessHistoryIface {
       await writeAtomic(tablePath, JSON.stringify(own));
     }
     const entry: HarnessHistoryEntry = {
+      id: versionId(current?.bundles ?? { platform: null, cli: null, web: null }, summary.hash),
+      rollbackable: false,
       source: current?.source ?? null,
       pushedAt: current?.pushedAt ?? this.clock.now().toISOString(),
       bundles: current?.bundles ?? { platform: null, cli: null, web: null },
@@ -138,6 +166,148 @@ export class HarnessHistoryStore implements HarnessHistoryIface {
       path.join(this.dir, "history.json"),
       JSON.stringify(next.slice(0, HISTORY_KEEP), null, 2),
     );
+    // The runtime's store keeps one rollback copy of each artifact; the platform keeps a
+    // few whole versions of its own, so the history can push one back.
+    if (current !== null) await this.keepArtifacts(entry.id);
+  }
+
+  private versionsDir(): string {
+    return path.join(this.dir, "versions");
+  }
+
+  /** Copies the committed version's artifacts under `versions/<id>/`, once, and prunes the oldest beyond KEEP_VERSIONS. */
+  private async keepArtifacts(id: string): Promise<void> {
+    const manifest = await readManifest(this.paths.root);
+    if (manifest === null) return;
+    const hmrDir = path.join(this.paths.root, "hmr");
+    const dir = path.join(this.versionsDir(), id);
+    try {
+      await fsp.access(path.join(dir, "version.json"));
+      return; // already kept
+    } catch {
+      // fall through
+    }
+    const platform = str(manifest.platform?.bundle);
+    const cli = str(manifest.cli?.bundle);
+    const web = str(manifest.web?.manifest);
+    if (platform === null || cli === null || web === null) return;
+    const tmp = `${dir}.${process.pid}.tmp`;
+    await fsp.rm(tmp, { recursive: true, force: true });
+    await fsp.mkdir(tmp, { recursive: true });
+    try {
+      await this.copyVersion(manifest, hmrDir, tmp, id);
+    } catch {
+      // The runtime already pruned a file behind a pointer, or the copy could not be
+      // written: this version is not kept, and the history line stands without it.
+      await fsp.rm(tmp, { recursive: true, force: true });
+      return;
+    }
+    await fsp.rename(tmp, dir);
+    // Prune: keep the newest KEEP_VERSIONS by the history's order.
+    const keep = new Set((await this.entries()).map((e) => e.id).slice(0, KEEP_VERSIONS));
+    for (const name of await fsp.readdir(this.versionsDir())) {
+      if (!keep.has(name))
+        await fsp.rm(path.join(this.versionsDir(), name), { recursive: true, force: true });
+    }
+  }
+
+  private async copyVersion(
+    manifest: NonNullable<Awaited<ReturnType<typeof readManifest>>>,
+    hmrDir: string,
+    tmp: string,
+    id: string,
+  ): Promise<void> {
+    const platform = str(manifest.platform?.bundle)!;
+    const cli = str(manifest.cli?.bundle)!;
+    const web = str(manifest.web?.manifest)!;
+    await fsp.copyFile(path.join(hmrDir, platform), path.join(tmp, "platform.mjs"));
+    await fsp.copyFile(path.join(hmrDir, cli), path.join(tmp, "cli.mjs"));
+    await fsp.copyFile(path.join(hmrDir, web), path.join(tmp, "web.webz"));
+    const exec: string[] = [];
+    const assetsDir = str(manifest.assets?.dir);
+    if (assetsDir !== null) {
+      const from = path.join(hmrDir, assetsDir);
+      const to = path.join(tmp, "assets");
+      for (const entry of await fsp.readdir(from, { recursive: true, withFileTypes: true })) {
+        if (!entry.isFile()) continue;
+        const abs = path.join(entry.parentPath, entry.name);
+        const rel = path.relative(from, abs).split(path.sep).join("/");
+        await fsp.mkdir(path.dirname(path.join(to, rel)), { recursive: true });
+        await fsp.copyFile(abs, path.join(to, rel));
+        if (rel.endsWith("spawn-helper") || ((await fsp.stat(abs)).mode & 0o111) !== 0)
+          exec.push(rel);
+      }
+    }
+    await fsp.writeFile(
+      path.join(tmp, "version.json"),
+      JSON.stringify({
+        id,
+        source: manifest.source ?? null,
+        assets: assetsDir === null ? null : { exec },
+      }),
+    );
+  }
+
+  private async kept(id: string): Promise<boolean> {
+    if (!/^[A-Za-z0-9_-]+$/.test(id)) return false;
+    try {
+      await fsp.access(path.join(this.versionsDir(), id, "version.json"));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async rollback(id: string): Promise<boolean> {
+    if (!(await this.kept(id))) return false;
+    const dir = path.join(this.versionsDir(), id);
+    const meta = JSON.parse(await fsp.readFile(path.join(dir, "version.json"), "utf8")) as {
+      source: { repo: string; revision: string } | null;
+      assets: { exec: string[] } | null;
+    };
+    const webz = await fsp.readFile(path.join(dir, "web.webz"));
+    const web = JSON.parse(zlib.gunzipSync(webz).toString("utf8")) as {
+      files: Record<string, string>;
+    };
+    let assets: { files: Record<string, string>; exec: string[] } | undefined;
+    if (meta.assets !== null) {
+      const from = path.join(dir, "assets");
+      const files: Record<string, string> = {};
+      for (const entry of await fsp.readdir(from, { recursive: true, withFileTypes: true })) {
+        if (!entry.isFile()) continue;
+        const abs = path.join(entry.parentPath, entry.name);
+        files[path.relative(from, abs).split(path.sep).join("/")] = (
+          await fsp.readFile(abs)
+        ).toString("base64");
+      }
+      assets = { files, exec: meta.assets.exec };
+    }
+    const body = zlib.gzipSync(
+      Buffer.from(
+        JSON.stringify({
+          platform: await fsp.readFile(path.join(dir, "platform.mjs"), "utf8"),
+          cli: await fsp.readFile(path.join(dir, "cli.mjs"), "utf8"),
+          web,
+          ...(assets ? { assets } : {}),
+          ...(meta.source ? { source: meta.source } : {}),
+        }),
+      ),
+    );
+    const token = readApiToken(this.paths.root);
+    if (token === null) throw new Error("no local api token to push with");
+    // The runtime's own door, from inside: this platform is what gets replaced, so the
+    // route that calls this answers before starting it.
+    const res = await this.http.fetch(`http://127.0.0.1:${this.config.port}/api/hmr/upgrade`, {
+      method: "POST",
+      headers: { "content-type": "application/gzip", authorization: `Bearer ${token}` },
+      body,
+    });
+    const text = await res.text();
+    if (res.status < 200 || res.status >= 300) {
+      throw new Error(`rollback to ${id}: ${res.status} ${text}`);
+    }
+    this.log.line(`[harness-history] rolled back to ${id}: ${text.slice(0, 200)}`);
+    return true;
   }
 
   /** The entries on disk, newest first; a truncated or hand-edited file degrades to what still parses. */
@@ -158,7 +328,10 @@ export class HarnessHistoryStore implements HarnessHistoryIface {
       readHarnessInfo(this.paths.root),
       this.entries(),
     ]);
-    return { current, entries };
+    const marked = await Promise.all(
+      entries.map(async (e) => ({ ...e, rollbackable: await this.kept(e.id) })),
+    );
+    return { current, entries: marked };
   }
 
   async table(hash: string): Promise<unknown | null> {

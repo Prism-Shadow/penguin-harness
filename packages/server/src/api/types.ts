@@ -3235,6 +3235,12 @@ export type { HarnessHistoryEntry, IfacesSummary } from "@prismshadow/penguin-co
 /** GET /api/version/history: the harness versions this data root has committed, newest first. */
 export type VersionHistoryResponse = HarnessHistory;
 
+/** POST /api/version/history/rollback `{ id }`: the push back has started; the swap follows. */
+export interface VersionRollbackResponse {
+  started: true;
+  id: string;
+}
+
 /** GET /api/version/history/diff?from=&to=: what changed between two stored interface tables. */
 export type VersionHistoryDiffResponse = IfacesDiff;
 export type { IfaceChange, IfacesDiff, MemberChange, ModuleChange } from "../hmr/ifaces-diff.js";
