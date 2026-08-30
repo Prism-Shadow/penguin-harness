@@ -3,18 +3,15 @@ import type { PromptSection } from "@prismshadow/penguin-core";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../auth/middleware.js";
 import type { Hono } from "hono";
-import type { Config } from "../config.js";
-import type { ProjectAccess } from "./project-access.js";
-import type { AgentConfigService } from "./agent-config-service.js";
-import type { MemoryService } from "./memory-service.js";
-import type { SnapshotService } from "./snapshot-service.js";
-import type { BenchmarkService } from "./benchmark-service.js";
-import type { TraceService } from "./trace-service.js";
+import type { Config } from "../hmr/capabilities.js";
 import { memoryRoutes } from "../http/routes/memory.js";
 import { benchmarksRoutes } from "../http/routes/benchmarks.js";
 import { agentSkillsRoutes } from "../http/routes/skills.js";
 import { agentTransferRoutes } from "../http/routes/agent-transfer.js";
 import { agentTracesRoutes } from "../http/routes/agent-traces.js";
+import type { AgentConfig, Assembly, Benchmarks, Memory, Snapshots } from "../mechanisms/agents.js";
+import type { Access } from "../mechanisms/projects.js";
+import type { Traces } from "../mechanisms/traces.js";
 
 export interface HostAssemblySlots {
   /** A section appended to every Agent's system prompt. */
@@ -61,14 +58,14 @@ export interface HostAssemblySlots {
     ],
   },
 })
-export class HostAssembly {
+export class HostAssembly implements Assembly {
   @Use() private readonly config!: Config;
-  @Use() private readonly access!: ProjectAccess;
-  @Use() private readonly agentConfig!: AgentConfigService;
-  @Use() private readonly memory!: MemoryService;
-  @Use() private readonly snapshots!: SnapshotService;
-  @Use() private readonly benchmarks!: BenchmarkService;
-  @Use() private readonly traces!: TraceService;
+  @Use() private readonly access!: Access;
+  @Use() private readonly agentConfig!: AgentConfig;
+  @Use() private readonly memory!: Memory;
+  @Use() private readonly snapshots!: Snapshots;
+  @Use() private readonly benchmarks!: Benchmarks;
+  @Use() private readonly traces!: Traces;
   @Bind("agents.memory") memoryRoutes!: Hono<AppEnv>;
   @Bind("agents.benchmarks") benchmarksRoutes!: Hono<AppEnv>;
   @Bind("agents.skills") skillsRoutes!: Hono<AppEnv>;

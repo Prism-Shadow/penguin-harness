@@ -27,7 +27,6 @@ import { bodyLimit } from "hono/body-limit";
 import { bodyLimitBytes, toAttachmentLimits } from "./services/attachment-limits.js";
 import type { DatabaseSync } from "node:sqlite";
 import type { ModuleTree } from "@prismshadow/penguin-core/kernel";
-import type { ProjectAccess } from "./services/project-access.js";
 import type { ServerConfig } from "./config.js";
 import { applyProxySettings, mergedNoProxy } from "./net/proxy.js";
 import {
@@ -173,6 +172,10 @@ import { UsageRecorder } from "./runtime/usage-recorder.js";
 import { previewRoutes } from "./http/routes/preview.js";
 import { MachinesService } from "./machines/service.js";
 import { wire } from "@prismshadow/penguin-core/kernel";
+import type { Settings } from "./mechanisms/settings.js";
+import type { Errors } from "./mechanisms/observability.js";
+import type { Access } from "./mechanisms/projects.js";
+import type { Auth } from "./mechanisms/identity.js";
 
 /**
  * What the runtime process holds after boot: the capabilities it owns for the process
@@ -333,21 +336,20 @@ export function createRuntimeApp(boot: ServerBoot): Hono<AppEnv> {
   // Nothing from the tree is captured: this app outlives every push, and each of these
   // is the current App's on the request that reads it (see liveApi).
   const errors = {
-    record: (entry: Parameters<ErrorRecorder["record"]>[0]) =>
-      liveApi<ErrorRecorder>(boot, "ErrorRecorder", "ErrorRecorder").record(entry),
+    record: (entry: Parameters<Errors["record"]>[0]) =>
+      liveApi<Errors>(boot, "ErrorRecorder", "ErrorRecorder").record(entry),
   };
   const log = {
     line: (text: string) =>
       liveApi<Log>(boot, "ConsoleLog", "ConsoleLog").line(text),
   };
-  const settings = () =>
-    liveApi<ServerSettingsRepo>(boot, "ServerSettingsRepo", "ServerSettingsRepo");
-  const access = () => liveApi<ProjectAccess>(boot, "ProjectAccess", "ProjectAccess");
+  const settings = () => liveApi<Settings>(boot, "ServerSettingsRepo", "ServerSettingsRepo");
+  const access = () => liveApi<Access>(boot, "ProjectAccess", "ProjectAccess");
   const deps = {
     config: boot.config,
     desktop: boot.desktop,
     get authService() {
-      return liveApi<AuthService>(boot, "AuthService", "AuthService");
+      return liveApi<Auth>(boot, "AuthService", "AuthService");
     },
     hmr: boot.hmr,
     channels: boot.channels,

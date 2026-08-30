@@ -85,8 +85,9 @@ import {
 import type { PricingRates, TieredRates } from "./usage-service.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "../hmr/capabilities.js";
+import type { ProjectConfigStore } from "../mechanisms/projects.js";
 
-type RawTable = Record<string, unknown>;
+export type RawTable = Record<string, unknown>;
 
 /**
  * API key masking: length <=12 -> `***`, otherwise `first4…last4`; plaintext is
@@ -251,7 +252,7 @@ const SPEED_PROBE_PROMPT =
   "Count from 1 to 50 as a comma-separated list, and nothing else. Do not think or explain.\n<think></think>";
 
 @Component()
-export class ProjectConfigService {
+export class ProjectConfigService implements ProjectConfigStore {
   /**
    * Parsed-table cache, one entry per Project, keyed by the config file's mtime as
    * recorded at read time (a fresh mtime is stored as a never-matching sentinel, see

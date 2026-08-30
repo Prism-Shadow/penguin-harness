@@ -22,12 +22,10 @@ import type {
 import type { AppEnv } from "../../auth/middleware.js";
 import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
 import { isHttpUrl } from "../../services/protocol-detect.js";
-import type { SessionsRepo } from "../../db/repos/sessions.js";
 import type { ChannelHub } from "../../runtime/channel.js";
 import type { SessionManager } from "../../runtime/session-manager.js";
-import type { ProjectAccess } from "../../services/project-access.js";
-import type { Machines } from "../../machines/service.js";
-import type { ProjectConfigService } from "../../services/project-config-service.js";
+import type { SessionIndex } from "../../mechanisms/sessions.js";
+import type { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface ModelsRouteDeps {
@@ -35,9 +33,9 @@ export interface ModelsRouteDeps {
   /** The machines this Project uses receive a credential change too (machines/service.ts). */
   machines: Machines;
   manager: SessionManager;
-  projectConfigService: ProjectConfigService;
-  access: ProjectAccess;
-  sessionsRepo: SessionsRepo;
+  projectConfigService: ProjectConfigStore;
+  access: Access;
+  sessionsRepo: SessionIndex;
 }
 
 /**

@@ -20,13 +20,13 @@ import type {
 } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { badRequest, optionalDateParam, paginationQuery, requireValidId } from "../validate.js";
-import type { ProjectAccess } from "../../services/project-access.js";
-import type { UsageService } from "../../services/usage-service.js";
+import type { UsageQueries } from "../../mechanisms/observability.js";
+import type { Access } from "../../mechanisms/projects.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface UsageRouteDeps {
-  access: ProjectAccess;
-  usageService: UsageService;
+  access: Access;
+  usageService: UsageQueries;
 }
 
 const GROUP_BYS: readonly UsageGroupBy[] = ["date", "agent", "model", "session"];

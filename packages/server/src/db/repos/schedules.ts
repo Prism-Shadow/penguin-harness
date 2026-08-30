@@ -8,7 +8,8 @@
  * only clears the disabled flag (the file becomes effective again after reconciliation).
  */
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Db } from "../database.js";
+import type { Db } from "../../hmr/capabilities.js";
+import type { Schedules } from "../../mechanisms/sessions.js";
 
 export interface ScheduleStateRow {
   projectId: string;
@@ -41,7 +42,7 @@ function mapRow(r: Record<string, unknown>): ScheduleStateRow {
 }
 
 @Component()
-export class SchedulesRepo {
+export class SchedulesRepo implements Schedules {
   @Use() private readonly db!: Db;
 
   find(projectId: string, agentId: string, name: string): ScheduleStateRow | null {

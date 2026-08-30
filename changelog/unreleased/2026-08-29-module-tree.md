@@ -30,6 +30,10 @@ The single `RuntimeModule` that exported ten unrelated things is gone: each clai
 
 `BuildDepsOverrides` — the bag of test doubles that thirteen production nodes read at boot — is deleted. A test stands in for a node instead: `bootAppDeps(config, [[SystemClock, { now }]])`, a list of **replacements** the platform boots in place of the classes they name, checked against the same table as the classes themselves. `createTestApp` keeps its option names and turns them into replacements.
 
+### Every dependency is a mechanism
+
+`packages/server/src/mechanisms/*.ts` declares the mechanisms the tree is made of — `identity` (`Users`, `AuthSessions`, `Auth`, `Admin`), `projects` (`Projects`, `Members`, `AgentIndex`, `Access`, `ProjectLifecycle`, `ProjectConfigStore`, `ModelOAuth`), `sessions` (`SessionIndex`, `Goals`, `SessionOrigins`, `Schedules`, `Scheduling`), `observability` (`ErrorLog`, `Errors`, `UsageStore`, `UsageRecording`, `UsageQueries`), `traces`, `workspace`, `agents`, `settings`, `messaging` — as interface classes with full signatures, apart from what implements them. Each implementation says so (`class UsersRepo implements Users`); every `@Use` field, every route's dependency type and every service's dependency type names the mechanism. `AuthService` requires `Users`, `AuthSessions`, `AuthState`, `Clock`, `PasswordHasher` and its own `InitialProjectProvisioner` — nothing about SQLite, nothing about the runtime. `gen-ifaces` refuses a `@Use` field typed by a component class, so the rule holds without review; the count went from 102 of 189 to 0 of 192.
+
 ## The table as a page
 
 `pnpm ifaces:page` renders `ifaces.json` into one self-contained HTML page (`dist-ifaces/index.html`): the module tree, every node's requires / provides / contributes, every interface at signature level, with the table's sha256 in the title and the JSON beside it. CI renders it for every commit, publishes it under the commit's sha on the `ifaces-pages` branch, and links it from the job summary and a pull-request comment — the page's `ifaces.json` is the table that commit builds, hash for hash.

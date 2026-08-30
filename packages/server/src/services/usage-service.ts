@@ -29,10 +29,9 @@ import type {
   UsageResponse,
   UsageSeriesPoint,
 } from "../api/types.js";
-import type { ErrorFilter, ErrorsRepo } from "../db/repos/errors.js";
+import type { ErrorFilter } from "../db/repos/errors.js";
 import { offPeakScheduledRefs } from "@prismshadow/penguin-core/model-catalog";
 import type {
-  UsageRepo,
   UsageModelSums,
   UsageGroupModelSums,
   UsageSeriesModelSums,
@@ -48,8 +47,9 @@ import {
 } from "../internal/dates.js";
 import { badRequest } from "../http/validate.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { ProjectConfigService } from "./project-config-service.js";
 import type { Clock } from "../hmr/capabilities.js";
+import type { ErrorLog, UsageQueries, UsageStore } from "../mechanisms/observability.js";
+import type { ProjectConfigStore } from "../mechanisms/projects.js";
 
 /**
  * Number of most-recent entries kept in the error detail table. Also the page size the whole
@@ -150,10 +150,10 @@ function refKey(provider: string, modelId: string): string {
 }
 
 @Component()
-export class UsageService {
-  @Use() private readonly usage!: UsageRepo;
-  @Use() private readonly errors!: ErrorsRepo;
-  @Use() private readonly projectConfig!: ProjectConfigService;
+export class UsageService implements UsageQueries {
+  @Use() private readonly usage!: UsageStore;
+  @Use() private readonly errors!: ErrorLog;
+  @Use() private readonly projectConfig!: ProjectConfigStore;
   @Use() private readonly clock!: Clock;
   private lookupPricing: PricingLookup = (projectId, provider, modelId) =>
     this.projectConfig.getPricing(projectId, provider, modelId);
