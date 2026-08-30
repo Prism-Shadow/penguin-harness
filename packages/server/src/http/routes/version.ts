@@ -29,7 +29,7 @@ import type {
   VersionHistoryResponse,
   VersionResponse,
 } from "../../api/types.js";
-import { readHarnessHistory, readHarnessInfo } from "../../hmr/manifest.js";
+import { readHarnessHistory, readHarnessInfo, withCurrent } from "../../hmr/manifest.js";
 import { HttpError } from "../errors.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { ServerConfig } from "../../config.js";
@@ -70,7 +70,10 @@ export function versionRoutes(deps: VersionRouteDeps): Hono<AppEnv> {
   app.get("/history", async (c) => {
     const root = deps.config.root;
     const [current, entries] = await Promise.all([readHarnessInfo(root), readHarnessHistory(root)]);
-    return c.json({ current, entries } satisfies VersionHistoryResponse);
+    return c.json({
+      current,
+      entries: withCurrent(entries, current),
+    } satisfies VersionHistoryResponse);
   });
 
   app.get("/update-check", async (c) => {
