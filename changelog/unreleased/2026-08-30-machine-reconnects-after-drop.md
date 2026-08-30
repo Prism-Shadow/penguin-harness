@@ -3,6 +3,7 @@
 - **Date:** 2026-08-30
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#553](https://github.com/Prism-Shadow/penguin-harness/pull/553)
 
 [中文版](2026-08-30-machine-reconnects-after-drop.zh.md)
 
