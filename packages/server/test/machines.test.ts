@@ -11,6 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { readPushedBuild } from "../src/machines/upgrade.js";
 import { machineIdentity, parseHostAliases, parseSshSettings } from "../src/machines/ssh-config.js";
 import { parseProbeOutput, posixProbe, windowsProbe } from "../src/machines/detect.js";
 import { profileFromEnv, remoteLayoutFor } from "../src/machines/layout.js";
@@ -442,5 +443,99 @@ describe("remote layout", () => {
     expect(RELEASE.dataRoot.posix).toBe("$HOME/.penguin/data");
     expect(RELEASE.defaultPort).toBe(7364);
     expect(DEV.defaultPort).toBe(7370);
+  });
+});
+
+describe("readPushedBuild", () => {
+  it("hands on the native assets and the provenance, not only the three bundles", () => {
+    // A platform resolves node-pty out of its assets directory and nowhere else; a hand-over
+    // without them left every terminal on the machine failing with "no assets directory".
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-handover-"));
+    try {
+      const hmr = path.join(root, "hmr");
+      const assets = path.join(hmr, "store", "assets", "abc");
+      fs.mkdirSync(path.join(assets, "node_modules", "node-pty", "prebuilds", "darwin-arm64"), {
+        recursive: true,
+      });
+      fs.mkdirSync(path.join(hmr, "store", "platform"), { recursive: true });
+      fs.mkdirSync(path.join(hmr, "store", "cli"), { recursive: true });
+      fs.mkdirSync(path.join(hmr, "store", "web"), { recursive: true });
+      fs.writeFileSync(path.join(hmr, "store", "platform", "p.mjs"), "platform");
+      fs.writeFileSync(path.join(hmr, "store", "cli", "c.mjs"), "cli");
+      fs.writeFileSync(
+        path.join(hmr, "store", "web", "w.webz"),
+        zlib.gzipSync(Buffer.from(JSON.stringify({ files: { "index.html": "aGk=" } }))),
+      );
+      const helper = path.join(
+        assets,
+        "node_modules",
+        "node-pty",
+        "prebuilds",
+        "darwin-arm64",
+        "spawn-helper",
+      );
+      fs.writeFileSync(helper, "bin");
+      fs.chmodSync(helper, 0o755);
+      fs.writeFileSync(path.join(assets, "node_modules", "node-pty", "package.json"), "{}");
+      fs.writeFileSync(path.join(assets, ".materialized"), "");
+      fs.writeFileSync(
+        path.join(hmr, "harness.json"),
+        JSON.stringify({
+          platform: { bundle: "store/platform/p.mjs" },
+          cli: { bundle: "store/cli/c.mjs" },
+          web: { manifest: "store/web/w.webz" },
+          assets: { dir: "store/assets/abc" },
+          source: { repo: "https://example.com/r.git", revision: "v1-3-gabc" },
+        }),
+      );
+
+      const body = readPushedBuild(root);
+      if (body === null) throw new Error("no body");
+      const payload = JSON.parse(zlib.gunzipSync(body).toString("utf8")) as {
+        platform: string;
+        assets?: { files: Record<string, string>; exec: string[] };
+        source?: { repo: string; revision: string };
+      };
+      expect(payload.platform).toBe("platform");
+      expect(Object.keys(payload.assets?.files ?? {}).sort()).toEqual([
+        "node_modules/node-pty/package.json",
+        "node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper",
+      ]);
+      // The marker is the host's bookkeeping, not an asset; the exec bit travels as a list.
+      expect(payload.assets?.exec).toEqual([
+        "node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper",
+      ]);
+      expect(payload.source).toEqual({ repo: "https://example.com/r.git", revision: "v1-3-gabc" });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("still hands on a build that was pushed without assets", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-handover-"));
+    try {
+      const hmr = path.join(root, "hmr");
+      fs.mkdirSync(path.join(hmr, "s"), { recursive: true });
+      fs.writeFileSync(path.join(hmr, "s", "p.mjs"), "p");
+      fs.writeFileSync(path.join(hmr, "s", "c.mjs"), "c");
+      fs.writeFileSync(
+        path.join(hmr, "s", "w.webz"),
+        zlib.gzipSync(Buffer.from(JSON.stringify({ files: {} }))),
+      );
+      fs.writeFileSync(
+        path.join(hmr, "harness.json"),
+        JSON.stringify({
+          platform: { bundle: "s/p.mjs" },
+          cli: { bundle: "s/c.mjs" },
+          web: { manifest: "s/w.webz" },
+        }),
+      );
+      const body = readPushedBuild(root);
+      if (body === null) throw new Error("no body");
+      const payload = JSON.parse(zlib.gunzipSync(body).toString("utf8")) as Record<string, unknown>;
+      expect("assets" in payload).toBe(false);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });
