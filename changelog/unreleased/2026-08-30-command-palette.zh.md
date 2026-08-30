@@ -6,7 +6,7 @@
 
 [English](2026-08-30-command-palette.md)
 
-Ctrl+P（macOS 上为 ⌘P）打开一个 VS Code 风格的命令面板：一个输入框筛选命令列表，↑↓ 选择，Enter 执行，Escape 关闭。面板是机制；命令向它注册，而不是各自占用快捷键。
+Ctrl+P 或 Ctrl+Shift+P（macOS 上为 ⌘P / ⌘⇧P）打开一个 VS Code 风格的命令面板：一个输入框筛选命令列表，↑↓ 选择，Enter 执行，Escape 关闭。面板是机制；命令向它注册，而不是各自占用快捷键。
 
 ## Harness 历史
 

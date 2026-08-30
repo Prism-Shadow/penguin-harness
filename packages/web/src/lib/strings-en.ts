@@ -188,7 +188,7 @@ export const en: Strings = {
     title: "Command Palette",
     placeholder: "Type to filter commands…",
     noResults: "No matching commands",
-    hint: "Ctrl+P / ⌘P to toggle · ↑↓ to select · Enter to run",
+    hint: "Ctrl+P / Ctrl+Shift+P (⌘P) to toggle · ↑↓ to select · Enter to run",
     harnessHistory: "Harness history",
   },
   workflows: {
@@ -204,6 +204,12 @@ export const en: Strings = {
     current: "current",
     restore: "Restore",
     remove: "Remove",
+    fillApp: "Fill the app",
+    fillAppHint:
+      "Show this page as the whole app; Ctrl+P / Ctrl+Shift+P opens the command palette to leave",
+    exitFullPage: "Exit full page (back to chat)",
+    exitHint: "Press Ctrl+P or Ctrl+Shift+P for the command palette to get back to the chat.",
+    noSuchPage: "This workflow does not exist or has no page.",
     removeConfirm: "Delete this workflow and all its recorded versions?",
     removeYes: "Remove",
     removing: "Removing…",

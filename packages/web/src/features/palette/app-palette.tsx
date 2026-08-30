@@ -10,10 +10,15 @@ import { S } from "../../lib/strings";
 import { HarnessHistoryOverlay } from "../harness/harness-history-overlay";
 import { CommandPalette } from "./command-palette";
 
-export function AppPalette() {
+/**
+ * `extra` is what the mount point adds ahead of the standing actions — the full-page
+ * workflow route registers its way out here, which is why it exists at all on that route.
+ */
+export function AppPalette({ extra = [] }: { extra?: readonly PaletteAction[] }) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const actions = useMemo<PaletteAction[]>(
     () => [
+      ...extra,
       {
         id: "harness-history",
         label: S.commandPalette.harnessHistory,
@@ -21,7 +26,7 @@ export function AppPalette() {
         run: () => setHistoryOpen(true),
       },
     ],
-    [],
+    [extra],
   );
   return (
     <>

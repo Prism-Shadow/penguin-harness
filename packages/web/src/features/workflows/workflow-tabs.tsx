@@ -9,6 +9,7 @@
  * editing its own workflow sees the tab update (the iframe keys on `uiRev`).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router";
 import type { WorkflowInfo, WorkflowVersion } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { Button } from "../../components/ui/button";
@@ -17,8 +18,10 @@ import { S } from "../../lib/strings";
 import { toneInk, toneStrip } from "../../lib/tone";
 import { readDocumentTheme, themeWorkflowFrame } from "../../lib/workflow-theme";
 import {
+  FILL_APP_MESSAGE,
   settleActiveTab,
   WORKFLOW_UPDATED_EVENT,
+  workflowAppPath,
   workflowTabsOf,
   workflowUiUrl,
   type WorkflowTab,
@@ -120,12 +123,15 @@ export function WorkflowFrame({
   projectId,
   agentId,
   tab,
+  bare = false,
   onChanged,
   onRemoved,
 }: {
   projectId: string;
   agentId: string;
   tab: WorkflowTab;
+  /** The page alone, no bar: the full-page route (its palette carries the actions). */
+  bare?: boolean;
   /** The workflow was reloaded or restored; the caller refetches the list. */
   onChanged: (workflow: WorkflowInfo) => void;
   /** The workflow and its versions are gone; the caller drops the tab (the list refetch confirms). */
@@ -204,14 +210,37 @@ export function WorkflowFrame({
     }
   };
 
+  // Filling the app: the bar's button, or the page asking for it itself
+  // (`parent.postMessage({ type: "penguin:fill-app" }, "*")`) — only from our own frame.
+  const navigate = useNavigate();
+  const fillApp = useCallback(
+    () => void navigate(workflowAppPath(projectId, agentId, tab.workflowId)),
+    [navigate, projectId, agentId, tab.workflowId],
+  );
+  useEffect(() => {
+    if (bare) return;
+    const onMessage = (e: MessageEvent) => {
+      if (e.source !== frameRef.current?.contentWindow) return;
+      if ((e.data as { type?: unknown } | null)?.type === FILL_APP_MESSAGE) fillApp();
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [bare, fillApp]);
+
   const historyId = `workflow-history-${tab.workflowId}`;
   return (
     <div className="flex h-full min-h-0 flex-col bg-white dark:bg-gray-950">
-      <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-gray-200 px-3 py-1.5 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400">
+      <div
+        hidden={bare}
+        className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-gray-200 px-3 py-1.5 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400"
+      >
         <span className="font-medium text-gray-800 dark:text-gray-200">{tab.name}</span>
         {tab.version !== null && <span>v{tab.version}</span>}
         <span className="font-mono">{tab.revision}</span>
         <span className="flex-1" />
+        <Button variant="secondary" size="sm" title={S.workflows.fillAppHint} onClick={fillApp}>
+          {S.workflows.fillApp}
+        </Button>
         <Button
           variant="secondary"
           size="sm"
@@ -260,7 +289,7 @@ export function WorkflowFrame({
           </Button>
         )}
       </div>
-      {tab.error !== null && (
+      {tab.error !== null && !bare && (
         <div className={`shrink-0 px-3 py-1.5 text-xs ${toneStrip.danger}`}>
           {S.workflows.loadError}: {tab.error}
         </div>
@@ -270,7 +299,7 @@ export function WorkflowFrame({
       )}
       <div
         id={historyId}
-        hidden={!historyOpen}
+        hidden={!historyOpen || bare}
         className="max-h-64 shrink-0 overflow-y-auto border-b border-gray-200 dark:border-gray-800"
       >
         {versions === null ? (

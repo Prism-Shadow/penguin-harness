@@ -20,10 +20,9 @@ describe("command palette shortcut", () => {
     expect(isCommandPaletteShortcut(key("p", { metaKey: true }), false)).toBe(false);
     expect(isCommandPaletteShortcut(key("p", { metaKey: true }), true)).toBe(true);
     expect(isCommandPaletteShortcut(key("p", { ctrlKey: true }), true)).toBe(false);
-    // The browser's own chords stay the browser's.
-    expect(isCommandPaletteShortcut(key("P", { ctrlKey: true, shiftKey: true }), false)).toBe(
-      false,
-    );
+    // Ctrl+Shift+P too: a page filling the app may own Ctrl+P, and the palette is its way out.
+    expect(isCommandPaletteShortcut(key("P", { ctrlKey: true, shiftKey: true }), false)).toBe(true);
+    expect(isCommandPaletteShortcut(key("P", { metaKey: true, shiftKey: true }), true)).toBe(true);
     expect(isCommandPaletteShortcut(key("p", { ctrlKey: true, altKey: true }), false)).toBe(false);
     expect(isCommandPaletteShortcut(key("o", { ctrlKey: true }), false)).toBe(false);
   });
