@@ -46,7 +46,6 @@ import { identityFrom } from "../terminal/identity.js";
 import { bindTerminalStream } from "../terminal/stream.js";
 import { Hono } from "hono";
 import type { AppEnv } from "../auth/middleware.js";
-import type { AuthService } from "../auth/service.js";
 import type { SessionManager } from "../runtime/session-manager.js";
 import { terminalRoutes } from "../terminal/routes.js";
 import type { Identity } from "../terminal/identity.js";
@@ -61,6 +60,7 @@ import {
 } from "./capabilities.js";
 import type { Interfaces, MembersOf } from "./capabilities.js";
 import { pluginHostFrom } from "../plugin/host.js";
+import type { Auth } from "../mechanisms/identity.js";
 
 export interface PlatformApi extends Park {
   info(): Json;
@@ -291,7 +291,7 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     }
     // Ordinary code over this App's own auth: the same object the business routes
     // authenticate with. A bare kernel has none — terminals stay fail-closed.
-    const auth = business?.api<AuthService>("AuthService", "AuthService") ?? null;
+    const auth = business?.api<Auth>("AuthService", "AuthService") ?? null;
     const identity = identityFrom(auth);
     const manager = business?.api<SessionManager>("SessionsModule", "manager") ?? null;
     // The runtime's one mid-request need of the CURRENT App is a hook installed over a

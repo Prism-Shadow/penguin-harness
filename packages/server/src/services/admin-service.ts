@@ -14,20 +14,19 @@ import type { UserInfo } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import { ADMIN_USER_ID, MIN_PASSWORD_LENGTH, toUserInfo } from "../auth/service.js";
 import type { PasswordHasher } from "../auth/password.js";
-import type { ProjectsRepo } from "../db/repos/projects.js";
-import type { AuthSessionsRepo } from "../db/repos/auth-sessions.js";
-import type { UserRow, UsersRepo } from "../db/repos/users.js";
+import type { UserRow } from "../db/repos/users.js";
 import { SEMANTIC_ID_RULE, USERNAME_PATTERN } from "./ids.js";
-import type { ProjectService } from "./project-service.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Clock } from "../hmr/capabilities.js";
+import type { Admin, AuthSessions, Users } from "../mechanisms/identity.js";
+import type { ProjectLifecycle, Projects } from "../mechanisms/projects.js";
 
 @Component()
-export class AdminService {
-  @Use() private readonly users!: UsersRepo;
-  @Use() private readonly authSessions!: AuthSessionsRepo;
-  @Use() private readonly projects!: ProjectsRepo;
-  @Use() private readonly projectService!: ProjectService;
+export class AdminService implements Admin {
+  @Use() private readonly users!: Users;
+  @Use() private readonly authSessions!: AuthSessions;
+  @Use() private readonly projects!: Projects;
+  @Use() private readonly projectService!: ProjectLifecycle;
   @Use() private readonly clock!: Clock;
   @Use() private readonly hasher!: PasswordHasher;
 

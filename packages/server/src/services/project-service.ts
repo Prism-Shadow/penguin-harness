@@ -14,14 +14,8 @@ import fs from "node:fs/promises";
 import { DEFAULT_PROJECT_ID, projectDir, provisionProjectAgents } from "@prismshadow/penguin-core";
 import type { MemberInfo, ProjectRole, ProjectSummary } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
-import type { AgentsRepo } from "../db/repos/agents.js";
-import type { ErrorsRepo } from "../db/repos/errors.js";
-import type { MembersRepo } from "../db/repos/members.js";
-import type { ProjectRow, ProjectsRepo } from "../db/repos/projects.js";
-import type { SessionsRepo } from "../db/repos/sessions.js";
-import type { SchedulesRepo } from "../db/repos/schedules.js";
-import type { UsageRepo } from "../db/repos/usage.js";
-import type { UserRow, UsersRepo } from "../db/repos/users.js";
+import type { ProjectRow } from "../db/repos/projects.js";
+import type { UserRow } from "../db/repos/users.js";
 import type { SessionManager } from "../runtime/session-manager.js";
 import {
   PROJECT_ID_MAX_LENGTH,
@@ -29,12 +23,21 @@ import {
   SEMANTIC_ID_PATTERN,
   SEMANTIC_ID_RULE,
 } from "./ids.js";
-import type { ProjectAccess } from "./project-access.js";
-import type { ProjectConfigService } from "./project-config-service.js";
-import type { TraceIndexService } from "./trace-index.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "../hmr/capabilities.js";
+import type {
+  Access,
+  AgentIndex,
+  Members,
+  ProjectConfigStore,
+  ProjectLifecycle,
+  Projects,
+} from "../mechanisms/projects.js";
+import type { Users } from "../mechanisms/identity.js";
+import type { Schedules, SessionIndex } from "../mechanisms/sessions.js";
+import type { ErrorLog, UsageStore } from "../mechanisms/observability.js";
+import type { TraceIndex } from "../mechanisms/traces.js";
 
 /** Fallback timeout for waiting on runs to settle before deleting a Project. */
 const ABORT_SETTLE_TIMEOUT_MS = 5000;
@@ -49,25 +52,25 @@ async function dirExists(path: string): Promise<boolean> {
 }
 
 @Component()
-export class ProjectService {
+export class ProjectService implements ProjectLifecycle {
   @Use() private readonly paths!: Paths;
   private get root(): string {
     return this.paths.root;
   }
-  @Use() private readonly access!: ProjectAccess;
-  @Use() private readonly users!: UsersRepo;
-  @Use() private readonly projects!: ProjectsRepo;
-  @Use() private readonly members!: MembersRepo;
-  @Use() private readonly agents!: AgentsRepo;
-  @Use() private readonly sessions!: SessionsRepo;
-  @Use() private readonly usage!: UsageRepo;
-  @Use() private readonly errors!: ErrorsRepo;
-  @Use() private readonly schedules!: SchedulesRepo;
-  @Use() private readonly projectConfig!: ProjectConfigService;
+  @Use() private readonly access!: Access;
+  @Use() private readonly users!: Users;
+  @Use() private readonly projects!: Projects;
+  @Use() private readonly members!: Members;
+  @Use() private readonly agents!: AgentIndex;
+  @Use() private readonly sessions!: SessionIndex;
+  @Use() private readonly usage!: UsageStore;
+  @Use() private readonly errors!: ErrorLog;
+  @Use() private readonly schedules!: Schedules;
+  @Use() private readonly projectConfig!: ProjectConfigStore;
   /** What destroying a Project needs of the session runtime — declared at the consumer. */
   @Use() private readonly manager!: ProjectRuns;
   /** Trace-index cleanup on Project destruction (rows describe files removed with the Project dir). */
-  @Use() private readonly traceIndex!: TraceIndexService;
+  @Use() private readonly traceIndex!: TraceIndex;
 
   // Access control lives in ProjectAccess (services/project-access.ts); these delegate so
   // in-package callers keep one entry point.

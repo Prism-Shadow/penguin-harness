@@ -8,14 +8,14 @@ import { Config, Log } from "../hmr/capabilities.js";
 import type { MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { authMiddleware, jsonOnlyWrites } from "../auth/middleware.js";
-import type { AuthService } from "../auth/service.js";
 import { HttpError, handleError } from "./errors.js";
 import { attributedProjectId } from "./attribution.js";
 import { bodyLimitBytes } from "../services/attachment-limits.js";
 import { declined } from "../hmr/hono-seam.js";
-import type { ErrorRecorder } from "../runtime/error-recorder.js";
-import type { ProjectAccess } from "../services/project-access.js";
-import type { ServerSettingsRepo } from "../db/repos/server-settings.js";
+import type { Auth } from "../mechanisms/identity.js";
+import type { Access } from "../mechanisms/projects.js";
+import type { Errors } from "../mechanisms/observability.js";
+import type { Settings } from "../mechanisms/settings.js";
 
 /** The assembled business surface: one request in, one response (or a decline) out. */
 export abstract class Http extends Interface<{
@@ -46,10 +46,10 @@ const RUNTIME_PREFIXES = ["/api/auth", "/api/desktop", "/api/hmr"];
 export class HttpModule {
   @Use() private readonly config!: Config;
   @Use() private readonly log!: Log;
-  @Use() private readonly auth!: AuthService;
-  @Use() private readonly errors!: ErrorRecorder;
-  @Use() private readonly settings!: ServerSettingsRepo;
-  @Use() private readonly access!: ProjectAccess;
+  @Use() private readonly auth!: Auth;
+  @Use() private readonly errors!: Errors;
+  @Use() private readonly settings!: Settings;
+  @Use() private readonly access!: Access;
   @Provide() http!: Http;
   setup({ contributions }: ClassCtx) {
     const errors = this.errors;
