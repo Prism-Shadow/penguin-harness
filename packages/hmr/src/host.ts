@@ -715,6 +715,21 @@ export class HmrHost<Api extends Park = Park> {
         pushedAt: new Date().toISOString(),
         blobs,
       }));
+      // The history is a record beside the store, not part of the commit: a version is
+      // committed whether or not its line could be written.
+      try {
+        await appendHarnessHistory(this.root, {
+          source,
+          pushedAt: new Date().toISOString(),
+          bundles: {
+            platform: `store/platform/${platformSha}.mjs`,
+            cli: `store/cli/${cliSha}.mjs`,
+            web: `store/web/${webSha}.webz`,
+          },
+        });
+      } catch (err) {
+        this.warn(`harness history not recorded: ${errMsg(err)}`);
+      }
       return true;
     } catch (err) {
       this.warn(`update not persisted (filesystem unavailable?): ${errMsg(err)}`);
