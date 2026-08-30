@@ -198,6 +198,20 @@ export const zh = {
     hint: "Ctrl+P / ⌘P 切换 · ↑↓ 选择 · Enter 执行",
     harnessHistory: "Harness 历史",
   },
+  workflows: {
+    tabsLabel: "聊天与工作流",
+    chatTab: "聊天",
+    brokenMark: "当前文件加载失败",
+    reload: "重新加载",
+    reloading: "加载中…",
+    history: "历史",
+    loadError: "加载失败",
+    loadingHistory: "加载历史…",
+    noHistory: "还没有记录过版本。",
+    current: "当前",
+    restore: "恢复",
+    fileCount: (n: number) => `${n} 个文件`,
+  },
   harnessHistory: {
     title: "Harness 历史",
     pageDesc:
