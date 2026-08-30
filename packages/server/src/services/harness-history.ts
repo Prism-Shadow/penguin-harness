@@ -20,6 +20,7 @@ import type {
 import table from "../ifaces.json" with { type: "json" };
 import { readHarnessInfo, readManifest } from "../hmr/manifest.js";
 import { readApiToken } from "../auth/api-token.js";
+import { loopbackHostRoles } from "./preview-token.js";
 import { summarizeTable } from "../hmr/ifaces-diff.js";
 import type { Clock, Config, Log, Paths } from "../hmr/capabilities.js";
 import type { HttpFetch } from "./update-check-service.js";
@@ -260,6 +261,19 @@ export class HarnessHistoryStore implements HarnessHistoryIface {
 
   async rollback(id: string): Promise<boolean> {
     if (!(await this.kept(id))) return false;
+    try {
+      return await this.push(id);
+    } catch (err) {
+      // The caller has already answered (the swap replaces it); the log is where a failed
+      // push back is seen.
+      this.log.line(
+        `[harness-history] rollback to ${id} failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      throw err;
+    }
+  }
+
+  private async push(id: string): Promise<boolean> {
     const dir = path.join(this.versionsDir(), id);
     const meta = JSON.parse(await fsp.readFile(path.join(dir, "version.json"), "utf8")) as {
       source: { repo: string; revision: string } | null;
@@ -297,7 +311,10 @@ export class HarnessHistoryStore implements HarnessHistoryIface {
     if (token === null) throw new Error("no local api token to push with");
     // The runtime's own door, from inside: this platform is what gets replaced, so the
     // route that calls this answers before starting it.
-    const res = await this.http.fetch(`http://127.0.0.1:${this.config.port}/api/hmr/upgrade`, {
+    // Addressed to the App host: on a loopback bind the two loopback names play different
+    // roles (services/preview-token.ts), and only the App one serves the API.
+    const host = loopbackHostRoles(this.config.host)?.app ?? this.config.host;
+    const res = await this.http.fetch(`http://${host}:${this.config.port}/api/hmr/upgrade`, {
       method: "POST",
       headers: { "content-type": "application/gzip", authorization: `Bearer ${token}` },
       body,
