@@ -1,6 +1,753 @@
-{
- "hash": "da6f9037c321361f88c7067d753655ce8d67e6cb3e826a325a248c0ce0e84ebc",
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>module tree · 15aca4016ff4</title>
+<style>
+:root { color-scheme: light dark; --ink: #1f2328; --muted: #6a737d; --line: #d0d7de; --bg: #fff; --panel: #f6f8fa; --accent: #0969da; --mod: #8250df; --comp: #1a7f37; }
+@media (prefers-color-scheme: dark) { :root { --ink: #e6edf3; --muted: #8b949e; --line: #30363d; --bg: #0d1117; --panel: #161b22; --accent: #58a6ff; --mod: #d2a8ff; --comp: #3fb950; } }
+* { box-sizing: border-box; }
+body { margin: 0; font: 14px/1.45 system-ui, sans-serif; color: var(--ink); background: var(--bg); }
+header { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: baseline; padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 2; }
+header h1 { font-size: 16px; margin: 0; }
+header code, .hash { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.hash { color: var(--muted); }
+header a { color: var(--accent); text-decoration: none; }
+header input { margin-left: auto; padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); min-width: 220px; }
+main { display: grid; grid-template-columns: minmax(280px, 380px) 1fr; min-height: calc(100vh - 50px); }
+nav { border-right: 1px solid var(--line); padding: 12px 8px; overflow: auto; max-height: calc(100vh - 50px); position: sticky; top: 50px; }
+nav ul { list-style: none; margin: 0; padding-left: 16px; }
+nav > ul { padding-left: 4px; }
+nav li { margin: 1px 0; }
+nav button { all: unset; cursor: pointer; padding: 2px 6px; border-radius: 4px; display: inline-block; }
+nav button:hover, nav button.current { background: var(--panel); }
+nav button.current { outline: 1px solid var(--line); }
+.kind { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; margin-right: 6px; padding: 0 4px; border-radius: 3px; border: 1px solid; }
+.kind.module { color: var(--mod); border-color: var(--mod); }
+.kind.component { color: var(--comp); border-color: var(--comp); }
+.kind.iface { color: var(--accent); border-color: var(--accent); }
+.kind.slot { color: var(--muted); border-color: var(--muted); }
+section { padding: 16px 24px; max-width: 1100px; }
+section h2 { margin: 0 0 4px; font-size: 20px; }
+section h3 { margin: 18px 0 6px; font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.muted { color: var(--muted); }
+table { border-collapse: collapse; width: 100%; }
+td, th { text-align: left; vertical-align: top; padding: 4px 8px; border-bottom: 1px solid var(--line); font-size: 13px; }
+th { color: var(--muted); font-weight: 500; }
+pre, code.sig { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; white-space: pre-wrap; word-break: break-word; margin: 0; }
+pre { background: var(--panel); padding: 10px 12px; border-radius: 6px; overflow: auto; }
+a.ref { color: var(--accent); text-decoration: none; border-bottom: 1px dotted; }
+.opaque { color: var(--muted); font-style: italic; }
+.hidden { display: none; }
+details { margin: 4px 0; }
+summary { cursor: pointer; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>module tree</h1>
+  <span class="hash" title="sha256 of the interface table">15aca4016ff4f4f95831b3e39e818c9d52c5503ffdbd4863c8ef4ace0a18545b</span>
+  <a href="ifaces.json">ifaces.json</a>
+  <a href="https://github.com/Prism-Shadow/penguin-harness/commit/8e4edb2ea6655c548a7a4b0b4e952670fab294e7"><code>8e4edb2</code> 543/merge</a>
+  <input id="q" type="search" placeholder="filter nodes and interfaces">
+</header>
+<main>
+  <nav id="tree"></nav>
+  <section id="detail"><p class="muted">Pick a node or an interface.</p></section>
+</main>
+<script id="data" type="application/json">{
+ "hash": "15aca4016ff4f4f95831b3e39e818c9d52c5503ffdbd4863c8ef4ace0a18545b",
  "ifaces": {
+  "@prismshadow/penguin-server#AdminRoutes": {
+   "name": "AdminRoutes",
+   "methods": {},
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#AdminService": {
+   "name": "AdminService",
+   "methods": {
+    "listUsers": {
+     "params": [],
+     "returns": {
+      "data": {
+       "$ref": "typescript#Array<UserInfo>"
+      }
+     }
+    },
+    "createUser": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#UserInfo"
+       }
+      }
+     }
+    },
+    "resetPassword": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "void": true
+      }
+     }
+    },
+    "deleteUser": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "void": true
+      }
+     }
+    }
+   },
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#AgentConfigService": {
+   "name": "AgentConfigService",
+   "methods": {
+    "exists": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": "boolean"
+      }
+     }
+    },
+    "requireExists": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "void": true
+      }
+     }
+    },
+    "readCardMeta": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "name?": "string",
+        "description?": "string",
+        "toolCount": "number",
+        "version": "number",
+        "kernelOutdated": "boolean"
+       }
+      }
+     }
+    },
+    "getConfig": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#AgentConfigView"
+       }
+      }
+     }
+    },
+    "updateConfig": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#AgentConfigUpdateRequest"
+       }
+      }
+     ],
+     "returns": {
+      "promise": {
+       "void": true
+      }
+     }
+    },
+    "resetConfig": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "void": true
+      }
+     }
+    },
+    "kernelUpdate": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#AgentKernelUpdateResponse"
+       }
+      }
+     }
+    },
+    "insertTemplatePlaceholder": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": "'vault'|'skills'|'schedules'"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#AgentConfigView"
+       }
+      }
+     }
+    },
+    "getVault": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#VaultResponse"
+       }
+      }
+     }
+    },
+    "updateVault": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#VaultUpdateRequest"
+       }
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#VaultResponse"
+       }
+      }
+     }
+    }
+   },
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#AgentService": {
+   "name": "AgentService",
+   "methods": {
+    "listAgents": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "$ref": "typescript#Array<AgentListItem>"
+       }
+      }
+     }
+    },
+    "deleteAgent": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "void": true
+      }
+     }
+    },
+    "createAgent": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": "string|undefined"
+      },
+      {
+       "data": "string|undefined"
+      },
+      {
+       "data": [
+        {
+         "$ref": "typescript#ReadonlyArray<string>"
+        },
+        "|",
+        "undefined"
+       ]
+      },
+      {
+       "data": [
+        {
+         "path": "string",
+         "names": {
+          "$ref": "typescript#ReadonlyArray<string>"
+         }
+        },
+        "|",
+        "undefined"
+       ]
+      },
+      {
+       "maybe": {
+        "opaque": "Buffer"
+       }
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#AgentListItem"
+       }
+      }
+     }
+    }
+   },
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#AgentsRepo": {
+   "name": "AgentsRepo",
+   "methods": {
+    "insertOrIgnore": {
+     "params": [
+      {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#AgentRow"
+       }
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "exists": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "data": "boolean"
+     }
+    },
+    "list": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "data": {
+       "$ref": "typescript#Array<AgentRow>"
+      }
+     }
+    },
+    "delete": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "deleteByProject": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    }
+   },
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#AuthService": {
+   "name": "AuthService",
+   "methods": {
+    "mintFirstLogin": {
+     "params": [],
+     "returns": {
+      "data": "null|string"
+     }
+    },
+    "adminPasswordIs": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": "boolean"
+      }
+     }
+    },
+    "seedAdmin": {
+     "params": [],
+     "returns": {
+      "promise": {
+       "void": true
+      }
+     }
+    },
+    "redeemFirstLogin": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "data": "null|string"
+     }
+    },
+    "adminPasswordIsInitial": {
+     "params": [],
+     "returns": {
+      "data": "boolean"
+     }
+    },
+    "login": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "user": {
+         "$ref": "@prismshadow/penguin-server#UserInfo"
+        },
+        "token": "string"
+       }
+      }
+     }
+    },
+    "loginDesktop": {
+     "params": [],
+     "returns": {
+      "data": {
+       "user": {
+        "$ref": "@prismshadow/penguin-server#UserInfo"
+       },
+       "token": "string"
+      }
+     }
+    },
+    "changePassword": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "void": true
+      }
+     }
+    },
+    "setInitialPassword": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "void": true
+      }
+     }
+    },
+    "logout": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "localApiToken": {
+     "params": [],
+     "returns": {
+      "data": "null|string"
+     }
+    },
+    "authenticateApiToken": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "data": [
+       "null",
+       "|",
+       {
+        "user": {
+         "$ref": "@prismshadow/penguin-server#UserRow"
+        },
+        "via": {
+         "$ref": "@prismshadow/penguin-server#SessionVia"
+        }
+       }
+      ]
+     }
+    },
+    "authenticateWithMeta": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "data": [
+       "null",
+       "|",
+       {
+        "user": {
+         "$ref": "@prismshadow/penguin-server#UserRow"
+        },
+        "via": {
+         "$ref": "@prismshadow/penguin-server#SessionVia"
+        },
+        "renewed": "boolean"
+       }
+      ]
+     }
+    }
+   },
+   "fields": {
+    "sessionTtlMs": {
+     "data": "number"
+    }
+   },
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#AuthSessionsRepo": {
+   "name": "AuthSessionsRepo",
+   "methods": {
+    "issue": {
+     "params": [
+      {
+       "data": {
+        "userId": "string",
+        "via": {
+         "$ref": "@prismshadow/penguin-server#SessionViaValue"
+        },
+        "now": {
+         "$ref": "typescript#Date"
+        },
+        "ttlMs": "number",
+        "maxTtlMs?": "number"
+       }
+      }
+     ],
+     "returns": {
+      "data": {
+       "token": "string",
+       "expiresAt": "string"
+      }
+     }
+    },
+    "insert": {
+     "params": [
+      {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#AuthSessionRow"
+       }
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "findByTokenHash": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "data": [
+       "null",
+       "|",
+       {
+        "$ref": "@prismshadow/penguin-server#AuthSessionRow"
+       }
+      ]
+     }
+    },
+    "touch": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "delete": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "deleteExpired": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "deleteByUser": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "deleteByUserAndVia": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#SessionViaValue"
+       }
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    }
+   },
+   "slots": {}
+  },
   "@prismshadow/penguin-server#AuthState": {
    "name": "AuthState",
    "methods": {},
@@ -10,6 +757,137 @@
     },
     "apiToken": {
      "data": "null|string"
+    }
+   },
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#BenchmarkService": {
+   "name": "BenchmarkService",
+   "methods": {
+    "list": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#BenchmarksResponse"
+       }
+      }
+     }
+    },
+    "listCases": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#BenchmarkCasesResponse"
+       }
+      }
+     }
+    },
+    "listCaseFiles": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#CaseMaterial"
+       }
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#WorkspaceFilesResponse"
+       }
+      }
+     }
+    },
+    "readCaseFile": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#CaseMaterial"
+       }
+      },
+      {
+       "data": [
+        {
+         "$ref": "@prismshadow/penguin-server#WorkspaceFileReadOptions"
+        },
+        "|",
+        "undefined"
+       ]
+      }
+     ],
+     "returns": {
+      "promise": {
+       "object": {
+        "data": {
+         "opaque": "Buffer"
+        },
+        "fileName": {
+         "data": "string"
+        },
+        "contentType": {
+         "data": "string"
+        },
+        "scriptable": {
+         "data": "false|'html'|'svg'"
+        },
+        "truncated": {
+         "data": "boolean"
+        }
+       },
+       "optional": [
+        "truncated"
+       ]
+      }
+     }
     }
    },
    "slots": {}
@@ -172,6 +1050,262 @@
    },
    "slots": {}
   },
+  "@prismshadow/penguin-server#ErrorRecorder": {
+   "name": "ErrorRecorder",
+   "methods": {
+    "record": {
+     "params": [
+      {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#ErrorRecordArgs"
+       }
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    }
+   },
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#ErrorsRepo": {
+   "name": "ErrorsRepo",
+   "methods": {
+    "insert": {
+     "params": [
+      {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#ErrorRecordInsert"
+       }
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "summary": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": [
+        {
+         "$ref": "@prismshadow/penguin-server#ErrorFilter"
+        },
+        "|",
+        "undefined"
+       ]
+      }
+     ],
+     "returns": {
+      "data": {
+       "$ref": "@prismshadow/penguin-server#ErrorSummary"
+      }
+     }
+    },
+    "topCode": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": [
+        {
+         "$ref": "@prismshadow/penguin-server#ErrorFilter"
+        },
+        "|",
+        "undefined"
+       ]
+      }
+     ],
+     "returns": {
+      "data": [
+       "null",
+       "|",
+       {
+        "$ref": "@prismshadow/penguin-server#ErrorCodeCount"
+       }
+      ]
+     }
+    },
+    "recent": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": [
+        {
+         "$ref": "@prismshadow/penguin-server#ErrorFilter"
+        },
+        "|",
+        "undefined"
+       ]
+      },
+      {
+       "data": "number|undefined"
+      },
+      {
+       "data": "number|undefined"
+      }
+     ],
+     "returns": {
+      "data": {
+       "$ref": "typescript#Array<ErrorItem>"
+      }
+     }
+    },
+    "deleteByAgent": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "deleteByProject": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    }
+   },
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#EventsRoutes": {
+   "name": "EventsRoutes",
+   "methods": {},
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#FeishuMessaging": {
+   "name": "FeishuMessaging",
+   "methods": {},
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#GoalsRepo": {
+   "name": "GoalsRepo",
+   "methods": {
+    "create": {
+     "params": [
+      {
+       "data": {
+        "sessionId": "string",
+        "projectId": "string",
+        "agentId": "string",
+        "objective": "string",
+        "budget": "number"
+       }
+      }
+     ],
+     "returns": {
+      "data": "number"
+     }
+    },
+    "progress": {
+     "params": [
+      {
+       "data": "number"
+      },
+      {
+       "data": "number"
+      },
+      {
+       "data": "number"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "finish": {
+     "params": [
+      {
+       "data": "number"
+      },
+      {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#GoalRowStatus"
+       }
+      },
+      {
+       "data": "number"
+      },
+      {
+       "data": "number"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "latestForSession": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "data": [
+       "null",
+       "|",
+       {
+        "$ref": "@prismshadow/penguin-server#GoalStateRow"
+       }
+      ]
+     }
+    },
+    "deleteBySession": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "deleteByAgent": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "deleteByProject": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "abortOrphanedActive": {
+     "params": [],
+     "returns": {
+      "data": "number"
+     }
+    }
+   },
+   "slots": {}
+  },
   "@prismshadow/penguin-server#Hmr": {
    "name": "Hmr",
    "methods": {
@@ -210,6 +1344,44 @@
     }
    },
    "slots": {}
+  },
+  "@prismshadow/penguin-server#HostAssembly": {
+   "name": "HostAssembly",
+   "methods": {
+    "promptSections": {
+     "params": [],
+     "returns": {
+      "data": {
+       "$ref": "typescript#Array<PromptSection>"
+      }
+     }
+    },
+    "toolFactories": {
+     "params": [],
+     "returns": {
+      "opaque": "__type"
+     }
+    }
+   },
+   "slots": {
+    "promptSections": {
+     "data": {
+      "title": "string",
+      "text": "string"
+     }
+    },
+    "tools": {
+     "data": {
+      "name": "string",
+      "definition": {
+       "$ref": "@prismshadow/penguin-core#ToolDefinitionConfig"
+      }
+     },
+     "code": {
+      "opaque": "BuiltinToolFactory"
+     }
+    }
+   }
   },
   "@prismshadow/penguin-server#Http": {
    "name": "Http",
@@ -261,6 +1433,11 @@
      }
     }
    },
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#InstallRoutes": {
+   "name": "InstallRoutes",
+   "methods": {},
    "slots": {}
   },
   "@prismshadow/penguin-server#Log": {
@@ -328,6 +1505,237 @@
          }
         }
        ]
+      }
+     }
+    }
+   },
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#MeRoutes": {
+   "name": "MeRoutes",
+   "methods": {},
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#MembersRepo": {
+   "name": "MembersRepo",
+   "methods": {
+    "insert": {
+     "params": [
+      {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#MemberRow"
+       }
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "isMember": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "data": "boolean"
+     }
+    },
+    "list": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "data": {
+       "$ref": "typescript#Array<MemberRow>"
+      }
+     }
+    },
+    "delete": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    }
+   },
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#MemoryService": {
+   "name": "MemoryService",
+   "methods": {
+    "overview": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#MemoryOverviewResponse"
+       }
+      }
+     }
+    },
+    "insertTemplatePlaceholder": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#MemoryOverviewResponse"
+       }
+      }
+     }
+    },
+    "listScopes": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "$ref": "typescript#Array<MemoryScopeInfo>"
+       }
+      }
+     }
+    },
+    "listFiles": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#MemoryFilesResponse"
+       }
+      }
+     }
+    },
+    "readFile": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#MemoryFileResponse"
+       }
+      }
+     }
+    },
+    "exportScope": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#MemoryScopeExport"
+       }
+      }
+     }
+    },
+    "importScope": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": {
+        "mode": {
+         "$ref": "@prismshadow/penguin-server#MemoryImportMode"
+        },
+        "confirm": "boolean",
+        "payload": "unknown"
+       }
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#MemoryImportResponse"
+       }
+      }
+     }
+    },
+    "deleteFile": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "void": true
       }
      }
     }
@@ -450,6 +1858,182 @@
     }
    }
   },
+  "@prismshadow/penguin-server#MessagingBindingsRepo": {
+   "name": "MessagingBindingsRepo",
+   "methods": {
+    "find": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "data": [
+       "null",
+       "|",
+       {
+        "$ref": "@prismshadow/penguin-server#MessagingBindingRow"
+       }
+      ]
+     }
+    },
+    "findEnabled": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "data": [
+       "null",
+       "|",
+       {
+        "$ref": "@prismshadow/penguin-server#MessagingBindingRow"
+       }
+      ]
+     }
+    },
+    "listForSession": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "data": {
+       "$ref": "typescript#Array<MessagingBindingRow>"
+      }
+     }
+    },
+    "findEnabledByAccount": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "data": [
+       "null",
+       "|",
+       {
+        "$ref": "@prismshadow/penguin-server#MessagingBindingRow"
+       }
+      ]
+     }
+    },
+    "listAll": {
+     "params": [],
+     "returns": {
+      "data": {
+       "$ref": "typescript#Array<MessagingBindingRow>"
+      }
+     }
+    },
+    "upsert": {
+     "params": [
+      {
+       "data": {
+        "sessionId": "string",
+        "channel": "string",
+        "accountId": "string",
+        "config": {
+         "$ref": "typescript#Record<string,unknown>"
+        },
+        "linePerMessage?": "boolean",
+        "finalReplyOnly?": "boolean",
+        "renderMarkdown?": "boolean"
+       }
+      }
+     ],
+     "returns": {
+      "data": {
+       "$ref": "@prismshadow/penguin-server#MessagingBindingRow"
+      }
+     }
+    },
+    "setEnabled": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": "boolean"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "recordChat": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": "boolean"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "recordInboundWatermark": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": "null|string"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "delete": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "deleteSession": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    }
+   },
+   "slots": {}
+  },
   "@prismshadow/penguin-server#MessagingTaskRunner": {
    "name": "MessagingTaskRunner",
    "methods": {
@@ -488,6 +2072,100 @@
         "sessionId": "string",
         "queued": "boolean"
        }
+      }
+     }
+    }
+   },
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#ModelOAuthService": {
+   "name": "ModelOAuthService",
+   "methods": {
+    "start": {
+     "params": [
+      {
+       "data": {
+        "projectId": "string",
+        "userId": "string",
+        "provider": "string",
+        "mode": {
+         "$ref": "@prismshadow/penguin-server#ModelOAuthMode"
+        },
+        "callbackOrigin": "string"
+       }
+      }
+     ],
+     "returns": {
+      "data": {
+       "$ref": "@prismshadow/penguin-server#ModelOAuthStartResult"
+      }
+     }
+    },
+    "deposit": {
+     "params": [
+      {
+       "data": {
+        "flowId": "string",
+        "projectId": "string",
+        "code": "string"
+       }
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "poll": {
+     "params": [
+      {
+       "data": {
+        "flowId": "string",
+        "userId": "string",
+        "projectId": "string"
+       }
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "status": {
+         "$ref": "@prismshadow/penguin-server#ModelOAuthStatus"
+        },
+        "provider": "string",
+        "error?": {
+         "$ref": "@prismshadow/penguin-server#ModelOAuthErrorCode"
+        },
+        "applied?": "number"
+       }
+      }
+     }
+    },
+    "complete": {
+     "params": [
+      {
+       "data": {
+        "flowId": "string",
+        "userId": "string",
+        "projectId": "string",
+        "code": "string"
+       }
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": [
+        {
+         "ok": "true",
+         "applied": "number"
+        },
+        "|",
+        {
+         "ok": "false",
+         "error": {
+          "$ref": "@prismshadow/penguin-server#ModelOAuthErrorCode"
+         }
+        }
+       ]
       }
      }
     }
@@ -540,6 +2218,503 @@
    },
    "slots": {}
   },
+  "@prismshadow/penguin-server#ProjectAccess": {
+   "name": "ProjectAccess",
+   "methods": {
+    "find": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "data": [
+       "null",
+       "|",
+       [
+        {
+         "$ref": "@prismshadow/penguin-server#ProjectRow"
+        },
+        "&",
+        {
+         "role": {
+          "$ref": "@prismshadow/penguin-server#ProjectRole"
+         }
+        }
+       ]
+      ]
+     }
+    },
+    "requireProjectAccess": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "data": [
+       {
+        "$ref": "@prismshadow/penguin-server#ProjectRow"
+       },
+       "&",
+       {
+        "role": {
+         "$ref": "@prismshadow/penguin-server#ProjectRole"
+        }
+       }
+      ]
+     }
+    },
+    "canAccess": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "data": "boolean"
+     }
+    },
+    "requireProjectOwner": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "data": {
+       "$ref": "@prismshadow/penguin-server#ProjectRow"
+      }
+     }
+    },
+    "accessibleProjectIds": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "data": {
+       "$ref": "typescript#Array<string>"
+      }
+     }
+    },
+    "listProjects": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "$ref": "typescript#Array<ProjectSummary>"
+       }
+      }
+     }
+    }
+   },
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#ProjectAdminRoutes": {
+   "name": "ProjectAdminRoutes",
+   "methods": {},
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#ProjectConfigService": {
+   "name": "ProjectConfigService",
+   "methods": {
+    "readRaw": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#RawTable"
+       }
+      }
+     }
+    },
+    "loadConfig": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "$ref": "@prismshadow/penguin-core#ProjectConfig"
+       }
+      }
+     }
+    },
+    "writeRaw": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#RawTable"
+       }
+      }
+     ],
+     "returns": {
+      "promise": {
+       "void": true
+      }
+     }
+    },
+    "writeInitialConfig": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "void": true
+      }
+     }
+    },
+    "ensurePresetModels": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "void": true
+      }
+     }
+    },
+    "getName": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": "undefined|string"
+      }
+     }
+    },
+    "setName": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "void": true
+      }
+     }
+    },
+    "getDefaultModelRef": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": [
+        "undefined",
+        "|",
+        {
+         "$ref": "@prismshadow/penguin-core#ModelRef"
+        }
+       ]
+      }
+     }
+    },
+    "setDefaultModelRef": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#ModelRefDto"
+       }
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#ModelRefDto"
+       }
+      }
+     }
+    },
+    "getChatDefaults": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#ChatDefaultsDto"
+       }
+      }
+     }
+    },
+    "setChatDefaults": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#ChatDefaultsDto"
+       }
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#ChatDefaultsDto"
+       }
+      }
+     }
+    },
+    "getCommandPolicy": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#CommandPolicyDto"
+       }
+      }
+     }
+    },
+    "setCommandPolicy": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": {
+        "enabled?": "boolean",
+        "rules": {
+         "$ref": "typescript#Array<{ name: string; pattern: string; description?: string | undefined; enabled?: boolean | undefined; }>"
+        }
+       }
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#CommandPolicyDto"
+       }
+      }
+     }
+    },
+    "getPricing": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": [
+        "undefined",
+        "|",
+        {
+         "$ref": "@prismshadow/penguin-server#PricingRates"
+        }
+       ]
+      }
+     }
+    },
+    "detectVision": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#ModelVisionDetectRequest"
+       }
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#ModelVisionDetectResponse"
+       }
+      }
+     }
+    },
+    "testModel": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#ModelTestRequest"
+       }
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#ModelTestResponse"
+       }
+      }
+     }
+    },
+    "detectProtocol": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#ModelProtocolDetectRequest"
+       }
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#ModelProtocolDetectResponse"
+       }
+      }
+     }
+    },
+    "listEndpointModels": {
+     "params": [
+      {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#EndpointModelListRequest"
+       }
+      },
+      {
+       "maybe": {
+        "fn": {
+         "params": [
+          {
+           "data": {
+            "$ref": "@prismshadow/penguin-core#ListEndpointModelsOptions"
+           }
+          }
+         ],
+         "returns": {
+          "promise": {
+           "data": {
+            "$ref": "typescript#Array<string>"
+           }
+          }
+         }
+        }
+       }
+      },
+      {
+       "data": "number|undefined"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#EndpointModelListResponse"
+       }
+      }
+     }
+    },
+    "getModels": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#ModelsResponse"
+       }
+      }
+     }
+    },
+    "updateModels": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#ModelsUpdateRequest"
+       }
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#ModelsResponse"
+       }
+      }
+     }
+    },
+    "setGroupApiKey": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": "number"
+      }
+     }
+    }
+   },
+   "slots": {}
+  },
   "@prismshadow/penguin-server#ProjectRuns": {
    "name": "ProjectRuns",
    "methods": {
@@ -558,6 +2733,305 @@
      }
     }
    },
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#ProjectService": {
+   "name": "ProjectService",
+   "methods": {
+    "requireProjectAccess": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "data": [
+       {
+        "$ref": "@prismshadow/penguin-server#ProjectRow"
+       },
+       "&",
+       {
+        "role": {
+         "$ref": "@prismshadow/penguin-server#ProjectRole"
+        }
+       }
+      ]
+     }
+    },
+    "canAccess": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "data": "boolean"
+     }
+    },
+    "requireProjectOwner": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "data": {
+       "$ref": "@prismshadow/penguin-server#ProjectRow"
+      }
+     }
+    },
+    "accessibleProjectIds": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "data": {
+       "$ref": "typescript#Array<string>"
+      }
+     }
+    },
+    "listProjects": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "$ref": "typescript#Array<ProjectSummary>"
+       }
+      }
+     }
+    },
+    "createProject": {
+     "params": [
+      {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#UserRow"
+       }
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": "string|undefined"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#ProjectSummary"
+       }
+      }
+     }
+    },
+    "provisionInitialProject": {
+     "params": [
+      {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#UserRow"
+       }
+      },
+      {
+       "data": "boolean"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "void": true
+      }
+     }
+    },
+    "renameProject": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#ProjectSummary"
+       }
+      }
+     }
+    },
+    "deleteProject": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "void": true
+      }
+     }
+    },
+    "destroyProject": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "void": true
+      }
+     }
+    },
+    "listMembers": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "data": {
+       "$ref": "typescript#Array<MemberInfo>"
+      }
+     }
+    },
+    "addMember": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "data": {
+       "$ref": "@prismshadow/penguin-server#MemberInfo"
+      }
+     }
+    },
+    "removeMember": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    }
+   },
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#ProjectsRepo": {
+   "name": "ProjectsRepo",
+   "methods": {
+    "insert": {
+     "params": [
+      {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#ProjectRow"
+       }
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "findById": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "data": [
+       "null",
+       "|",
+       {
+        "$ref": "@prismshadow/penguin-server#ProjectRow"
+       }
+      ]
+     }
+    },
+    "listAll": {
+     "params": [],
+     "returns": {
+      "data": {
+       "$ref": "typescript#Array<ProjectRow>"
+      }
+     }
+    },
+    "listAccessible": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "data": {
+       "$ref": "typescript#Array<AccessibleProjectRow>"
+      }
+     }
+    },
+    "listByOwner": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "data": {
+       "$ref": "typescript#Array<ProjectRow>"
+      }
+     }
+    },
+    "delete": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    }
+   },
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#ProjectsRoutes": {
+   "name": "ProjectsRoutes",
+   "methods": {},
    "slots": {}
   },
   "@prismshadow/penguin-server#Proxy": {
@@ -642,6 +3116,11 @@
      }
     }
    },
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#QqMessaging": {
+   "name": "QqMessaging",
+   "methods": {},
    "slots": {}
   },
   "@prismshadow/penguin-server#ResourceGroups": {
@@ -824,6 +3303,420 @@
      }
     }
    },
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#Scheduler": {
+   "name": "Scheduler",
+   "methods": {
+    "start": {
+     "params": [],
+     "returns": {
+      "promise": {
+       "void": true
+      }
+     }
+    },
+    "stop": {
+     "params": [],
+     "returns": {
+      "void": true
+     }
+    },
+    "tickOnce": {
+     "params": [],
+     "returns": {
+      "promise": {
+       "void": true
+      }
+     }
+    },
+    "reconcileAgent": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "void": true
+      }
+     }
+    },
+    "listAgent": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "entries": {
+         "$ref": "typescript#Array<ScheduleEntryView>"
+        },
+        "invalid": {
+         "$ref": "typescript#Array<{ name: string; error: string; }>"
+        }
+       }
+      }
+     }
+    },
+    "dropEntry": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    }
+   },
+   "fields": {
+    "files": {
+     "opaque": "Scheduler.files"
+    }
+   },
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#SchedulerRoutes": {
+   "name": "SchedulerRoutes",
+   "methods": {},
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#SchedulesRepo": {
+   "name": "SchedulesRepo",
+   "methods": {
+    "find": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "data": [
+       "null",
+       "|",
+       {
+        "$ref": "@prismshadow/penguin-server#ScheduleStateRow"
+       }
+      ]
+     }
+    },
+    "listByAgent": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "data": {
+       "$ref": "typescript#Array<ScheduleStateRow>"
+      }
+     }
+    },
+    "registerOrSync": {
+     "params": [
+      {
+       "data": {
+        "projectId": "string",
+        "agentId": "string",
+        "name": "string",
+        "startAtMs": "number",
+        "defHash": "string",
+        "creatorUserId": "null|string"
+       }
+      }
+     ],
+     "returns": {
+      "data": {
+       "row": {
+        "$ref": "@prismshadow/penguin-server#ScheduleStateRow"
+       },
+       "fresh": "boolean"
+      }
+     }
+    },
+    "markSlot": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": "number"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "markFired": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": "boolean"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "markMissed": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "markInvalid": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "delete": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "deleteMissing": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": {
+        "$ref": "typescript#Array<string>"
+       }
+      }
+     ],
+     "returns": {
+      "data": {
+       "$ref": "typescript#Array<string>"
+      }
+     }
+    },
+    "deleteByAgent": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "deleteByProject": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    }
+   },
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#ServerSettingsRepo": {
+   "name": "ServerSettingsRepo",
+   "methods": {
+    "get": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "data": "null|string"
+     }
+    },
+    "set": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "getProxyForApp": {
+     "params": [],
+     "returns": {
+      "data": "boolean"
+     }
+    },
+    "setProxyForApp": {
+     "params": [
+      {
+       "data": "boolean"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "getProxyForAgent": {
+     "params": [],
+     "returns": {
+      "data": "boolean"
+     }
+    },
+    "setProxyForAgent": {
+     "params": [
+      {
+       "data": "boolean"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "getProxyUrl": {
+     "params": [],
+     "returns": {
+      "data": "null|string"
+     }
+    },
+    "setProxyUrl": {
+     "params": [
+      {
+       "data": "null|string"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "getAttachmentMaxMb": {
+     "params": [],
+     "returns": {
+      "data": "number"
+     }
+    },
+    "setAttachmentMaxMb": {
+     "params": [
+      {
+       "data": "number"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "getAttachmentTotalMb": {
+     "params": [],
+     "returns": {
+      "data": "number"
+     }
+    },
+    "setAttachmentTotalMb": {
+     "params": [
+      {
+       "data": "number"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "getAttachmentLimitsMb": {
+     "params": [],
+     "returns": {
+      "data": {
+       "attachmentMaxMb": "number",
+       "attachmentTotalMb": "number"
+      }
+     }
+    }
+   },
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#SessionApiRoutes": {
+   "name": "SessionApiRoutes",
+   "methods": {},
    "slots": {}
   },
   "@prismshadow/penguin-server#SessionEnv": {
@@ -1039,6 +3932,45 @@
       "promise": {
        "data": "number"
       }
+     }
+    }
+   },
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#SessionSources": {
+   "name": "SessionSources",
+   "methods": {
+    "set": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "null|'subagent'|'schedule'"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "get": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "data": "undefined|null|'subagent'|'schedule'"
+     }
+    },
+    "delete": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "void": true
      }
     }
    },
@@ -1595,3048 +4527,7 @@
    },
    "slots": {}
   },
-  "@prismshadow/penguin-server#Terminals": {
-   "name": "Terminals",
-   "methods": {
-    "create": {
-     "params": [
-      {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#CreateTerminalRequest"
-       }
-      }
-     ],
-     "returns": {
-      "promise": {
-       "opaque": "TerminalSession"
-      }
-     }
-    },
-    "adopt": {
-     "params": [
-      {
-       "data": {
-        "$ref": "typescript#ReadonlyArray<string>"
-       }
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    },
-    "quiesce": {
-     "params": [],
-     "returns": {
-      "void": true
-     }
-    },
-    "handleIds": {
-     "params": [],
-     "returns": {
-      "data": {
-       "$ref": "typescript#Array<string>"
-      }
-     }
-    },
-    "require": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "opaque": "TerminalSession"
-     }
-    },
-    "get": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "maybe": {
-       "opaque": "TerminalSession"
-      }
-     }
-    },
-    "list": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "array": {
-       "opaque": "TerminalSession"
-      }
-     }
-    },
-    "listInfo": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "data": {
-       "$ref": "typescript#Array<TerminalSessionInfo>"
-      }
-     }
-    },
-    "kill": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    },
-    "disposeAll": {
-     "params": [],
-     "returns": {
-      "void": true
-     }
-    }
-   },
-   "slots": {}
-  },
-  "@prismshadow/penguin-server#UpdateCheck": {
-   "name": "UpdateCheck",
-   "methods": {
-    "check": {
-     "params": [
-      {
-       "data": "boolean|undefined"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#UpdateCheckResponse"
-       }
-      }
-     }
-    }
-   },
-   "slots": {}
-  },
-  "@prismshadow/penguin-server#WebShell": {
-   "name": "WebShell",
-   "methods": {
-    "contributions": {
-     "params": [],
-     "returns": {
-      "data": {
-       "$ref": "@prismshadow/penguin-server#ContributionsResponse"
-      }
-     }
-    }
-   },
-   "slots": {
-    "pages": {
-     "data": {
-      "key": "string",
-      "path": "string",
-      "nav": "'none'|'main'",
-      "admin": "boolean",
-      "renderer": {
-       "$ref": "@prismshadow/penguin-server#RendererRef"
-      }
-     }
-    },
-    "agentTabs": {
-     "data": {
-      "key": "string",
-      "order": "number",
-      "renderer": {
-       "$ref": "@prismshadow/penguin-server#RendererRef"
-      }
-     }
-    },
-    "sessionTabs": {
-     "data": {
-      "key": "string",
-      "renderer": {
-       "$ref": "@prismshadow/penguin-server#RendererRef"
-      }
-     }
-    }
-   }
-  },
-  "@prismshadow/penguin-server#WorkspaceFiles": {
-   "name": "WorkspaceFiles",
-   "methods": {
-    "list": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#WorkspaceFilesResponse"
-       }
-      }
-     }
-    },
-    "read": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": [
-        {
-         "$ref": "@prismshadow/penguin-server#WorkspaceFileReadOptions"
-        },
-        "|",
-        "undefined"
-       ]
-      }
-     ],
-     "returns": {
-      "promise": {
-       "object": {
-        "data": {
-         "opaque": "Buffer"
-        },
-        "fileName": {
-         "data": "string"
-        },
-        "contentType": {
-         "data": "string"
-        },
-        "scriptable": {
-         "data": "false|'html'|'svg'"
-        },
-        "truncated": {
-         "data": "boolean"
-        }
-       },
-       "optional": [
-        "truncated"
-       ]
-      }
-     }
-    },
-    "write": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "opaque": "Buffer"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "void": true
-      }
-     }
-    },
-    "statExisting": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": {
-        "$ref": "typescript#Array<string>"
-       }
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "$ref": "typescript#Array<string>"
-       }
-      }
-     }
-    }
-   },
-   "slots": {}
-  },
-  "admin#AdminService": {
-   "name": "AdminService",
-   "methods": {
-    "listUsers": {
-     "params": [],
-     "returns": {
-      "data": {
-       "$ref": "typescript#Array<UserInfo>"
-      }
-     }
-    },
-    "createUser": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#UserInfo"
-       }
-      }
-     }
-    },
-    "resetPassword": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "void": true
-      }
-     }
-    },
-    "deleteUser": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "void": true
-      }
-     }
-    }
-   },
-   "slots": {}
-  },
-  "admin-api#AdminRoutes": {
-   "name": "AdminRoutes",
-   "methods": {},
-   "slots": {}
-  },
-  "agent-config#AgentConfigService": {
-   "name": "AgentConfigService",
-   "methods": {
-    "exists": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": "boolean"
-      }
-     }
-    },
-    "requireExists": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "void": true
-      }
-     }
-    },
-    "readCardMeta": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "name?": "string",
-        "description?": "string",
-        "toolCount": "number",
-        "version": "number",
-        "kernelOutdated": "boolean"
-       }
-      }
-     }
-    },
-    "getConfig": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#AgentConfigView"
-       }
-      }
-     }
-    },
-    "updateConfig": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#AgentConfigUpdateRequest"
-       }
-      }
-     ],
-     "returns": {
-      "promise": {
-       "void": true
-      }
-     }
-    },
-    "resetConfig": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "void": true
-      }
-     }
-    },
-    "kernelUpdate": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#AgentKernelUpdateResponse"
-       }
-      }
-     }
-    },
-    "insertTemplatePlaceholder": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": "'vault'|'skills'|'schedules'"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#AgentConfigView"
-       }
-      }
-     }
-    },
-    "getVault": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#VaultResponse"
-       }
-      }
-     }
-    },
-    "updateVault": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#VaultUpdateRequest"
-       }
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#VaultResponse"
-       }
-      }
-     }
-    }
-   },
-   "slots": {}
-  },
-  "agent-service#AgentService": {
-   "name": "AgentService",
-   "methods": {
-    "listAgents": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "$ref": "typescript#Array<AgentListItem>"
-       }
-      }
-     }
-    },
-    "deleteAgent": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "void": true
-      }
-     }
-    },
-    "createAgent": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": "string|undefined"
-      },
-      {
-       "data": "string|undefined"
-      },
-      {
-       "data": [
-        {
-         "$ref": "typescript#ReadonlyArray<string>"
-        },
-        "|",
-        "undefined"
-       ]
-      },
-      {
-       "data": [
-        {
-         "path": "string",
-         "names": {
-          "$ref": "typescript#ReadonlyArray<string>"
-         }
-        },
-        "|",
-        "undefined"
-       ]
-      },
-      {
-       "maybe": {
-        "opaque": "Buffer"
-       }
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#AgentListItem"
-       }
-      }
-     }
-    }
-   },
-   "slots": {}
-  },
-  "agents#HostAssembly": {
-   "name": "HostAssembly",
-   "methods": {
-    "promptSections": {
-     "params": [],
-     "returns": {
-      "data": {
-       "$ref": "typescript#Array<PromptSection>"
-      }
-     }
-    },
-    "toolFactories": {
-     "params": [],
-     "returns": {
-      "opaque": "__type"
-     }
-    }
-   },
-   "slots": {
-    "promptSections": {
-     "data": {
-      "title": "string",
-      "text": "string"
-     }
-    },
-    "tools": {
-     "data": {
-      "name": "string",
-      "definition": {
-       "$ref": "@prismshadow/penguin-core#ToolDefinitionConfig"
-      }
-     },
-     "code": {
-      "opaque": "BuiltinToolFactory"
-     }
-    }
-   }
-  },
-  "agents-repo#AgentsRepo": {
-   "name": "AgentsRepo",
-   "methods": {
-    "insertOrIgnore": {
-     "params": [
-      {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#AgentRow"
-       }
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    },
-    "exists": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "data": "boolean"
-     }
-    },
-    "list": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "data": {
-       "$ref": "typescript#Array<AgentRow>"
-      }
-     }
-    },
-    "delete": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    },
-    "deleteByProject": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    }
-   },
-   "slots": {}
-  },
-  "auth#AuthService": {
-   "name": "AuthService",
-   "methods": {
-    "mintFirstLogin": {
-     "params": [],
-     "returns": {
-      "data": "null|string"
-     }
-    },
-    "adminPasswordIs": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": "boolean"
-      }
-     }
-    },
-    "seedAdmin": {
-     "params": [],
-     "returns": {
-      "promise": {
-       "void": true
-      }
-     }
-    },
-    "redeemFirstLogin": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "data": "null|string"
-     }
-    },
-    "adminPasswordIsInitial": {
-     "params": [],
-     "returns": {
-      "data": "boolean"
-     }
-    },
-    "login": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "user": {
-         "$ref": "@prismshadow/penguin-server#UserInfo"
-        },
-        "token": "string"
-       }
-      }
-     }
-    },
-    "loginDesktop": {
-     "params": [],
-     "returns": {
-      "data": {
-       "user": {
-        "$ref": "@prismshadow/penguin-server#UserInfo"
-       },
-       "token": "string"
-      }
-     }
-    },
-    "changePassword": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "void": true
-      }
-     }
-    },
-    "setInitialPassword": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "void": true
-      }
-     }
-    },
-    "logout": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    },
-    "localApiToken": {
-     "params": [],
-     "returns": {
-      "data": "null|string"
-     }
-    },
-    "authenticateApiToken": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "data": [
-       "null",
-       "|",
-       {
-        "user": {
-         "$ref": "@prismshadow/penguin-server#UserRow"
-        },
-        "via": {
-         "$ref": "@prismshadow/penguin-server#SessionVia"
-        }
-       }
-      ]
-     }
-    },
-    "authenticateWithMeta": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "data": [
-       "null",
-       "|",
-       {
-        "user": {
-         "$ref": "@prismshadow/penguin-server#UserRow"
-        },
-        "via": {
-         "$ref": "@prismshadow/penguin-server#SessionVia"
-        },
-        "renewed": "boolean"
-       }
-      ]
-     }
-    }
-   },
-   "fields": {
-    "sessionTtlMs": {
-     "data": "number"
-    }
-   },
-   "slots": {}
-  },
-  "auth-sessions-repo#AuthSessionsRepo": {
-   "name": "AuthSessionsRepo",
-   "methods": {
-    "issue": {
-     "params": [
-      {
-       "data": {
-        "userId": "string",
-        "via": {
-         "$ref": "@prismshadow/penguin-server#SessionViaValue"
-        },
-        "now": {
-         "$ref": "typescript#Date"
-        },
-        "ttlMs": "number",
-        "maxTtlMs?": "number"
-       }
-      }
-     ],
-     "returns": {
-      "data": {
-       "token": "string",
-       "expiresAt": "string"
-      }
-     }
-    },
-    "insert": {
-     "params": [
-      {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#AuthSessionRow"
-       }
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    },
-    "findByTokenHash": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "data": [
-       "null",
-       "|",
-       {
-        "$ref": "@prismshadow/penguin-server#AuthSessionRow"
-       }
-      ]
-     }
-    },
-    "touch": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    },
-    "delete": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    },
-    "deleteExpired": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    },
-    "deleteByUser": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    },
-    "deleteByUserAndVia": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#SessionViaValue"
-       }
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    }
-   },
-   "slots": {}
-  },
-  "benchmarks#BenchmarkService": {
-   "name": "BenchmarkService",
-   "methods": {
-    "list": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#BenchmarksResponse"
-       }
-      }
-     }
-    },
-    "listCases": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#BenchmarkCasesResponse"
-       }
-      }
-     }
-    },
-    "listCaseFiles": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#CaseMaterial"
-       }
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#WorkspaceFilesResponse"
-       }
-      }
-     }
-    },
-    "readCaseFile": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#CaseMaterial"
-       }
-      },
-      {
-       "data": [
-        {
-         "$ref": "@prismshadow/penguin-server#WorkspaceFileReadOptions"
-        },
-        "|",
-        "undefined"
-       ]
-      }
-     ],
-     "returns": {
-      "promise": {
-       "object": {
-        "data": {
-         "opaque": "Buffer"
-        },
-        "fileName": {
-         "data": "string"
-        },
-        "contentType": {
-         "data": "string"
-        },
-        "scriptable": {
-         "data": "false|'html'|'svg'"
-        },
-        "truncated": {
-         "data": "boolean"
-        }
-       },
-       "optional": [
-        "truncated"
-       ]
-      }
-     }
-    }
-   },
-   "slots": {}
-  },
-  "errors#ErrorRecorder": {
-   "name": "ErrorRecorder",
-   "methods": {
-    "record": {
-     "params": [
-      {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#ErrorRecordArgs"
-       }
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    }
-   },
-   "slots": {}
-  },
-  "errors-repo#ErrorsRepo": {
-   "name": "ErrorsRepo",
-   "methods": {
-    "insert": {
-     "params": [
-      {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#ErrorRecordInsert"
-       }
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    },
-    "summary": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": [
-        {
-         "$ref": "@prismshadow/penguin-server#ErrorFilter"
-        },
-        "|",
-        "undefined"
-       ]
-      }
-     ],
-     "returns": {
-      "data": {
-       "$ref": "@prismshadow/penguin-server#ErrorSummary"
-      }
-     }
-    },
-    "topCode": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": [
-        {
-         "$ref": "@prismshadow/penguin-server#ErrorFilter"
-        },
-        "|",
-        "undefined"
-       ]
-      }
-     ],
-     "returns": {
-      "data": [
-       "null",
-       "|",
-       {
-        "$ref": "@prismshadow/penguin-server#ErrorCodeCount"
-       }
-      ]
-     }
-    },
-    "recent": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": [
-        {
-         "$ref": "@prismshadow/penguin-server#ErrorFilter"
-        },
-        "|",
-        "undefined"
-       ]
-      },
-      {
-       "data": "number|undefined"
-      },
-      {
-       "data": "number|undefined"
-      }
-     ],
-     "returns": {
-      "data": {
-       "$ref": "typescript#Array<ErrorItem>"
-      }
-     }
-    },
-    "deleteByAgent": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    },
-    "deleteByProject": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    }
-   },
-   "slots": {}
-  },
-  "events#EventsRoutes": {
-   "name": "EventsRoutes",
-   "methods": {},
-   "slots": {}
-  },
-  "goals-repo#GoalsRepo": {
-   "name": "GoalsRepo",
-   "methods": {
-    "create": {
-     "params": [
-      {
-       "data": {
-        "sessionId": "string",
-        "projectId": "string",
-        "agentId": "string",
-        "objective": "string",
-        "budget": "number"
-       }
-      }
-     ],
-     "returns": {
-      "data": "number"
-     }
-    },
-    "progress": {
-     "params": [
-      {
-       "data": "number"
-      },
-      {
-       "data": "number"
-      },
-      {
-       "data": "number"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    },
-    "finish": {
-     "params": [
-      {
-       "data": "number"
-      },
-      {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#GoalRowStatus"
-       }
-      },
-      {
-       "data": "number"
-      },
-      {
-       "data": "number"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    },
-    "latestForSession": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "data": [
-       "null",
-       "|",
-       {
-        "$ref": "@prismshadow/penguin-server#GoalStateRow"
-       }
-      ]
-     }
-    },
-    "deleteBySession": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    },
-    "deleteByAgent": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    },
-    "deleteByProject": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    },
-    "abortOrphanedActive": {
-     "params": [],
-     "returns": {
-      "data": "number"
-     }
-    }
-   },
-   "slots": {}
-  },
-  "install#InstallRoutes": {
-   "name": "InstallRoutes",
-   "methods": {},
-   "slots": {}
-  },
-  "me#MeRoutes": {
-   "name": "MeRoutes",
-   "methods": {},
-   "slots": {}
-  },
-  "members-repo#MembersRepo": {
-   "name": "MembersRepo",
-   "methods": {
-    "insert": {
-     "params": [
-      {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#MemberRow"
-       }
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    },
-    "isMember": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "data": "boolean"
-     }
-    },
-    "list": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "data": {
-       "$ref": "typescript#Array<MemberRow>"
-      }
-     }
-    },
-    "delete": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    }
-   },
-   "slots": {}
-  },
-  "memory#MemoryService": {
-   "name": "MemoryService",
-   "methods": {
-    "overview": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#MemoryOverviewResponse"
-       }
-      }
-     }
-    },
-    "insertTemplatePlaceholder": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#MemoryOverviewResponse"
-       }
-      }
-     }
-    },
-    "listScopes": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "$ref": "typescript#Array<MemoryScopeInfo>"
-       }
-      }
-     }
-    },
-    "listFiles": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#MemoryFilesResponse"
-       }
-      }
-     }
-    },
-    "readFile": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#MemoryFileResponse"
-       }
-      }
-     }
-    },
-    "exportScope": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#MemoryScopeExport"
-       }
-      }
-     }
-    },
-    "importScope": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": {
-        "mode": {
-         "$ref": "@prismshadow/penguin-server#MemoryImportMode"
-        },
-        "confirm": "boolean",
-        "payload": "unknown"
-       }
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#MemoryImportResponse"
-       }
-      }
-     }
-    },
-    "deleteFile": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "void": true
-      }
-     }
-    }
-   },
-   "slots": {}
-  },
-  "messaging-feishu#FeishuMessaging": {
-   "name": "FeishuMessaging",
-   "methods": {},
-   "slots": {}
-  },
-  "messaging-qq#QqMessaging": {
-   "name": "QqMessaging",
-   "methods": {},
-   "slots": {}
-  },
-  "messaging-repo#MessagingBindingsRepo": {
-   "name": "MessagingBindingsRepo",
-   "methods": {
-    "find": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "data": [
-       "null",
-       "|",
-       {
-        "$ref": "@prismshadow/penguin-server#MessagingBindingRow"
-       }
-      ]
-     }
-    },
-    "findEnabled": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "data": [
-       "null",
-       "|",
-       {
-        "$ref": "@prismshadow/penguin-server#MessagingBindingRow"
-       }
-      ]
-     }
-    },
-    "listForSession": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "data": {
-       "$ref": "typescript#Array<MessagingBindingRow>"
-      }
-     }
-    },
-    "findEnabledByAccount": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "data": [
-       "null",
-       "|",
-       {
-        "$ref": "@prismshadow/penguin-server#MessagingBindingRow"
-       }
-      ]
-     }
-    },
-    "listAll": {
-     "params": [],
-     "returns": {
-      "data": {
-       "$ref": "typescript#Array<MessagingBindingRow>"
-      }
-     }
-    },
-    "upsert": {
-     "params": [
-      {
-       "data": {
-        "sessionId": "string",
-        "channel": "string",
-        "accountId": "string",
-        "config": {
-         "$ref": "typescript#Record<string,unknown>"
-        },
-        "linePerMessage?": "boolean",
-        "finalReplyOnly?": "boolean",
-        "renderMarkdown?": "boolean"
-       }
-      }
-     ],
-     "returns": {
-      "data": {
-       "$ref": "@prismshadow/penguin-server#MessagingBindingRow"
-      }
-     }
-    },
-    "setEnabled": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": "boolean"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    },
-    "recordChat": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": "boolean"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    },
-    "recordInboundWatermark": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": "null|string"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    },
-    "delete": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    },
-    "deleteSession": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    }
-   },
-   "slots": {}
-  },
-  "messaging-telegram#TelegramMessaging": {
-   "name": "TelegramMessaging",
-   "methods": {},
-   "slots": {}
-  },
-  "model-oauth#ModelOAuthService": {
-   "name": "ModelOAuthService",
-   "methods": {
-    "start": {
-     "params": [
-      {
-       "data": {
-        "projectId": "string",
-        "userId": "string",
-        "provider": "string",
-        "mode": {
-         "$ref": "@prismshadow/penguin-server#ModelOAuthMode"
-        },
-        "callbackOrigin": "string"
-       }
-      }
-     ],
-     "returns": {
-      "data": {
-       "$ref": "@prismshadow/penguin-server#ModelOAuthStartResult"
-      }
-     }
-    },
-    "deposit": {
-     "params": [
-      {
-       "data": {
-        "flowId": "string",
-        "projectId": "string",
-        "code": "string"
-       }
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    },
-    "poll": {
-     "params": [
-      {
-       "data": {
-        "flowId": "string",
-        "userId": "string",
-        "projectId": "string"
-       }
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "status": {
-         "$ref": "@prismshadow/penguin-server#ModelOAuthStatus"
-        },
-        "provider": "string",
-        "error?": {
-         "$ref": "@prismshadow/penguin-server#ModelOAuthErrorCode"
-        },
-        "applied?": "number"
-       }
-      }
-     }
-    },
-    "complete": {
-     "params": [
-      {
-       "data": {
-        "flowId": "string",
-        "userId": "string",
-        "projectId": "string",
-        "code": "string"
-       }
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": [
-        {
-         "ok": "true",
-         "applied": "number"
-        },
-        "|",
-        {
-         "ok": "false",
-         "error": {
-          "$ref": "@prismshadow/penguin-server#ModelOAuthErrorCode"
-         }
-        }
-       ]
-      }
-     }
-    }
-   },
-   "slots": {}
-  },
-  "project-access#ProjectAccess": {
-   "name": "ProjectAccess",
-   "methods": {
-    "find": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "data": [
-       "null",
-       "|",
-       [
-        {
-         "$ref": "@prismshadow/penguin-server#ProjectRow"
-        },
-        "&",
-        {
-         "role": {
-          "$ref": "@prismshadow/penguin-server#ProjectRole"
-         }
-        }
-       ]
-      ]
-     }
-    },
-    "requireProjectAccess": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "data": [
-       {
-        "$ref": "@prismshadow/penguin-server#ProjectRow"
-       },
-       "&",
-       {
-        "role": {
-         "$ref": "@prismshadow/penguin-server#ProjectRole"
-        }
-       }
-      ]
-     }
-    },
-    "canAccess": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "data": "boolean"
-     }
-    },
-    "requireProjectOwner": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "data": {
-       "$ref": "@prismshadow/penguin-server#ProjectRow"
-      }
-     }
-    },
-    "accessibleProjectIds": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "data": {
-       "$ref": "typescript#Array<string>"
-      }
-     }
-    },
-    "listProjects": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "$ref": "typescript#Array<ProjectSummary>"
-       }
-      }
-     }
-    }
-   },
-   "slots": {}
-  },
-  "project-admin#ProjectAdminRoutes": {
-   "name": "ProjectAdminRoutes",
-   "methods": {},
-   "slots": {}
-  },
-  "project-config#ProjectConfigService": {
-   "name": "ProjectConfigService",
-   "methods": {
-    "readRaw": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#RawTable"
-       }
-      }
-     }
-    },
-    "loadConfig": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "$ref": "@prismshadow/penguin-core#ProjectConfig"
-       }
-      }
-     }
-    },
-    "writeRaw": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#RawTable"
-       }
-      }
-     ],
-     "returns": {
-      "promise": {
-       "void": true
-      }
-     }
-    },
-    "writeInitialConfig": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "void": true
-      }
-     }
-    },
-    "ensurePresetModels": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "void": true
-      }
-     }
-    },
-    "getName": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": "undefined|string"
-      }
-     }
-    },
-    "setName": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "void": true
-      }
-     }
-    },
-    "getDefaultModelRef": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": [
-        "undefined",
-        "|",
-        {
-         "$ref": "@prismshadow/penguin-core#ModelRef"
-        }
-       ]
-      }
-     }
-    },
-    "setDefaultModelRef": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#ModelRefDto"
-       }
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#ModelRefDto"
-       }
-      }
-     }
-    },
-    "getChatDefaults": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#ChatDefaultsDto"
-       }
-      }
-     }
-    },
-    "setChatDefaults": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#ChatDefaultsDto"
-       }
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#ChatDefaultsDto"
-       }
-      }
-     }
-    },
-    "getCommandPolicy": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#CommandPolicyDto"
-       }
-      }
-     }
-    },
-    "setCommandPolicy": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": {
-        "enabled?": "boolean",
-        "rules": {
-         "$ref": "typescript#Array<{ name: string; pattern: string; description?: string | undefined; enabled?: boolean | undefined; }>"
-        }
-       }
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#CommandPolicyDto"
-       }
-      }
-     }
-    },
-    "getPricing": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": [
-        "undefined",
-        "|",
-        {
-         "$ref": "@prismshadow/penguin-server#PricingRates"
-        }
-       ]
-      }
-     }
-    },
-    "detectVision": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#ModelVisionDetectRequest"
-       }
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#ModelVisionDetectResponse"
-       }
-      }
-     }
-    },
-    "testModel": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#ModelTestRequest"
-       }
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#ModelTestResponse"
-       }
-      }
-     }
-    },
-    "detectProtocol": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#ModelProtocolDetectRequest"
-       }
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#ModelProtocolDetectResponse"
-       }
-      }
-     }
-    },
-    "listEndpointModels": {
-     "params": [
-      {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#EndpointModelListRequest"
-       }
-      },
-      {
-       "maybe": {
-        "fn": {
-         "params": [
-          {
-           "data": {
-            "$ref": "@prismshadow/penguin-core#ListEndpointModelsOptions"
-           }
-          }
-         ],
-         "returns": {
-          "promise": {
-           "data": {
-            "$ref": "typescript#Array<string>"
-           }
-          }
-         }
-        }
-       }
-      },
-      {
-       "data": "number|undefined"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#EndpointModelListResponse"
-       }
-      }
-     }
-    },
-    "getModels": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#ModelsResponse"
-       }
-      }
-     }
-    },
-    "updateModels": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#ModelsUpdateRequest"
-       }
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#ModelsResponse"
-       }
-      }
-     }
-    },
-    "setGroupApiKey": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": "number"
-      }
-     }
-    }
-   },
-   "slots": {}
-  },
-  "project-service#ProjectService": {
-   "name": "ProjectService",
-   "methods": {
-    "requireProjectAccess": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "data": [
-       {
-        "$ref": "@prismshadow/penguin-server#ProjectRow"
-       },
-       "&",
-       {
-        "role": {
-         "$ref": "@prismshadow/penguin-server#ProjectRole"
-        }
-       }
-      ]
-     }
-    },
-    "canAccess": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "data": "boolean"
-     }
-    },
-    "requireProjectOwner": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "data": {
-       "$ref": "@prismshadow/penguin-server#ProjectRow"
-      }
-     }
-    },
-    "accessibleProjectIds": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "data": {
-       "$ref": "typescript#Array<string>"
-      }
-     }
-    },
-    "listProjects": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "$ref": "typescript#Array<ProjectSummary>"
-       }
-      }
-     }
-    },
-    "createProject": {
-     "params": [
-      {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#UserRow"
-       }
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": "string|undefined"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#ProjectSummary"
-       }
-      }
-     }
-    },
-    "provisionInitialProject": {
-     "params": [
-      {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#UserRow"
-       }
-      },
-      {
-       "data": "boolean"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "void": true
-      }
-     }
-    },
-    "renameProject": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#ProjectSummary"
-       }
-      }
-     }
-    },
-    "deleteProject": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "void": true
-      }
-     }
-    },
-    "destroyProject": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "void": true
-      }
-     }
-    },
-    "listMembers": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "data": {
-       "$ref": "typescript#Array<MemberInfo>"
-      }
-     }
-    },
-    "addMember": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "data": {
-       "$ref": "@prismshadow/penguin-server#MemberInfo"
-      }
-     }
-    },
-    "removeMember": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    }
-   },
-   "slots": {}
-  },
-  "projects#ProjectsRoutes": {
-   "name": "ProjectsRoutes",
-   "methods": {},
-   "slots": {}
-  },
-  "projects-repo#ProjectsRepo": {
-   "name": "ProjectsRepo",
-   "methods": {
-    "insert": {
-     "params": [
-      {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#ProjectRow"
-       }
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    },
-    "findById": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "data": [
-       "null",
-       "|",
-       {
-        "$ref": "@prismshadow/penguin-server#ProjectRow"
-       }
-      ]
-     }
-    },
-    "listAll": {
-     "params": [],
-     "returns": {
-      "data": {
-       "$ref": "typescript#Array<ProjectRow>"
-      }
-     }
-    },
-    "listAccessible": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "data": {
-       "$ref": "typescript#Array<AccessibleProjectRow>"
-      }
-     }
-    },
-    "listByOwner": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "data": {
-       "$ref": "typescript#Array<ProjectRow>"
-      }
-     }
-    },
-    "delete": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    }
-   },
-   "slots": {}
-  },
-  "scheduler#Scheduler": {
-   "name": "Scheduler",
-   "methods": {
-    "start": {
-     "params": [],
-     "returns": {
-      "promise": {
-       "void": true
-      }
-     }
-    },
-    "stop": {
-     "params": [],
-     "returns": {
-      "void": true
-     }
-    },
-    "tickOnce": {
-     "params": [],
-     "returns": {
-      "promise": {
-       "void": true
-      }
-     }
-    },
-    "reconcileAgent": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "void": true
-      }
-     }
-    },
-    "listAgent": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "data": {
-        "entries": {
-         "$ref": "typescript#Array<ScheduleEntryView>"
-        },
-        "invalid": {
-         "$ref": "typescript#Array<{ name: string; error: string; }>"
-        }
-       }
-      }
-     }
-    },
-    "dropEntry": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    }
-   },
-   "fields": {
-    "files": {
-     "opaque": "Scheduler.files"
-    }
-   },
-   "slots": {}
-  },
-  "scheduler-api#SchedulerRoutes": {
-   "name": "SchedulerRoutes",
-   "methods": {},
-   "slots": {}
-  },
-  "schedules-repo#SchedulesRepo": {
-   "name": "SchedulesRepo",
-   "methods": {
-    "find": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "data": [
-       "null",
-       "|",
-       {
-        "$ref": "@prismshadow/penguin-server#ScheduleStateRow"
-       }
-      ]
-     }
-    },
-    "listByAgent": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "data": {
-       "$ref": "typescript#Array<ScheduleStateRow>"
-      }
-     }
-    },
-    "registerOrSync": {
-     "params": [
-      {
-       "data": {
-        "projectId": "string",
-        "agentId": "string",
-        "name": "string",
-        "startAtMs": "number",
-        "defHash": "string",
-        "creatorUserId": "null|string"
-       }
-      }
-     ],
-     "returns": {
-      "data": {
-       "row": {
-        "$ref": "@prismshadow/penguin-server#ScheduleStateRow"
-       },
-       "fresh": "boolean"
-      }
-     }
-    },
-    "markSlot": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": "number"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    },
-    "markFired": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": "boolean"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    },
-    "markMissed": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    },
-    "markInvalid": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    },
-    "delete": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    },
-    "deleteMissing": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": {
-        "$ref": "typescript#Array<string>"
-       }
-      }
-     ],
-     "returns": {
-      "data": {
-       "$ref": "typescript#Array<string>"
-      }
-     }
-    },
-    "deleteByAgent": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    },
-    "deleteByProject": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    }
-   },
-   "slots": {}
-  },
-  "session-api#SessionApiRoutes": {
-   "name": "SessionApiRoutes",
-   "methods": {},
-   "slots": {}
-  },
-  "session-sources#SessionSources": {
-   "name": "SessionSources",
-   "methods": {
-    "set": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "null|'subagent'|'schedule'"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    },
-    "get": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "data": "undefined|null|'subagent'|'schedule'"
-     }
-    },
-    "delete": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    }
-   },
-   "slots": {}
-  },
-  "sessions-repo#SessionsRepo": {
+  "@prismshadow/penguin-server#SessionsRepo": {
    "name": "SessionsRepo",
    "methods": {
     "insert": {
@@ -4877,130 +4768,12 @@
    },
    "slots": {}
   },
-  "settings-repo#ServerSettingsRepo": {
-   "name": "ServerSettingsRepo",
-   "methods": {
-    "get": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "data": "null|string"
-     }
-    },
-    "set": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    },
-    "getProxyForApp": {
-     "params": [],
-     "returns": {
-      "data": "boolean"
-     }
-    },
-    "setProxyForApp": {
-     "params": [
-      {
-       "data": "boolean"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    },
-    "getProxyForAgent": {
-     "params": [],
-     "returns": {
-      "data": "boolean"
-     }
-    },
-    "setProxyForAgent": {
-     "params": [
-      {
-       "data": "boolean"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    },
-    "getProxyUrl": {
-     "params": [],
-     "returns": {
-      "data": "null|string"
-     }
-    },
-    "setProxyUrl": {
-     "params": [
-      {
-       "data": "null|string"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    },
-    "getAttachmentMaxMb": {
-     "params": [],
-     "returns": {
-      "data": "number"
-     }
-    },
-    "setAttachmentMaxMb": {
-     "params": [
-      {
-       "data": "number"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    },
-    "getAttachmentTotalMb": {
-     "params": [],
-     "returns": {
-      "data": "number"
-     }
-    },
-    "setAttachmentTotalMb": {
-     "params": [
-      {
-       "data": "number"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    },
-    "getAttachmentLimitsMb": {
-     "params": [],
-     "returns": {
-      "data": {
-       "attachmentMaxMb": "number",
-       "attachmentTotalMb": "number"
-      }
-     }
-    }
-   },
-   "slots": {}
-  },
-  "skill-library#SkillLibraryRoutes": {
+  "@prismshadow/penguin-server#SkillLibraryRoutes": {
    "name": "SkillLibraryRoutes",
    "methods": {},
    "slots": {}
   },
-  "snapshots#SnapshotService": {
+  "@prismshadow/penguin-server#SnapshotService": {
    "name": "SnapshotService",
    "methods": {
     "currentVersion": {
@@ -5084,72 +4857,38 @@
    },
    "slots": {}
   },
-  "startup#Startup": {
+  "@prismshadow/penguin-server#Startup": {
    "name": "Startup",
    "methods": {},
    "slots": {}
   },
-  "trace-index#TraceIndexService": {
-   "name": "TraceIndexService",
+  "@prismshadow/penguin-server#TelegramMessaging": {
+   "name": "TelegramMessaging",
+   "methods": {},
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#Terminals": {
+   "name": "Terminals",
    "methods": {
-    "reconcileAgent": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      },
-      {
-       "data": [
-        {
-         "force?": "boolean"
-        },
-        "|",
-        "undefined"
-       ]
-      }
-     ],
-     "returns": {
-      "promise": {
-       "void": true
-      }
-     }
-    },
-    "reconcileProject": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": [
-        {
-         "force?": "boolean"
-        },
-        "|",
-        "undefined"
-       ]
-      }
-     ],
-     "returns": {
-      "promise": {
-       "void": true
-      }
-     }
-    },
-    "registerImportedFile": {
+    "create": {
      "params": [
       {
        "data": {
-        "projectId": "string",
-        "agentId": "string",
-        "sessionId": "string",
-        "fileIndex": "number",
-        "date": "string",
-        "sizeBytes": "number",
-        "records": {
-         "$ref": "typescript#Array<OmniMessage<OmniPayload>>"
-        }
+        "$ref": "@prismshadow/penguin-server#CreateTerminalRequest"
+       }
+      }
+     ],
+     "returns": {
+      "promise": {
+       "opaque": "TerminalSession"
+      }
+     }
+    },
+    "adopt": {
+     "params": [
+      {
+       "data": {
+        "$ref": "typescript#ReadonlyArray<string>"
        }
       }
      ],
@@ -5157,11 +4896,71 @@
       "void": true
      }
     },
-    "removeSession": {
+    "quiesce": {
+     "params": [],
+     "returns": {
+      "void": true
+     }
+    },
+    "handleIds": {
+     "params": [],
+     "returns": {
+      "data": {
+       "$ref": "typescript#Array<string>"
+      }
+     }
+    },
+    "require": {
      "params": [
       {
        "data": "string"
       },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "opaque": "TerminalSession"
+     }
+    },
+    "get": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "maybe": {
+       "opaque": "TerminalSession"
+      }
+     }
+    },
+    "list": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "array": {
+       "opaque": "TerminalSession"
+      }
+     }
+    },
+    "listInfo": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "data": {
+       "$ref": "typescript#Array<TerminalSessionInfo>"
+      }
+     }
+    },
+    "kill": {
+     "params": [
       {
        "data": "string"
       },
@@ -5173,42 +4972,16 @@
       "void": true
      }
     },
-    "removeAgent": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": "string"
-      }
-     ],
+    "disposeAll": {
+     "params": [],
      "returns": {
       "void": true
-     }
-    },
-    "removeProject": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    }
-   },
-   "fields": {
-    "counters": {
-     "data": {
-      "gateStats": "number",
-      "dirScans": "number",
-      "headReads": "number"
      }
     }
    },
    "slots": {}
   },
-  "trace-index-repo#TraceIndexRepo": {
+  "@prismshadow/penguin-server#TraceIndexRepo": {
    "name": "TraceIndexRepo",
    "methods": {
     "upsertFile": {
@@ -5433,7 +5206,126 @@
    },
    "slots": {}
   },
-  "traces#TraceService": {
+  "@prismshadow/penguin-server#TraceIndexService": {
+   "name": "TraceIndexService",
+   "methods": {
+    "reconcileAgent": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": [
+        {
+         "force?": "boolean"
+        },
+        "|",
+        "undefined"
+       ]
+      }
+     ],
+     "returns": {
+      "promise": {
+       "void": true
+      }
+     }
+    },
+    "reconcileProject": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": [
+        {
+         "force?": "boolean"
+        },
+        "|",
+        "undefined"
+       ]
+      }
+     ],
+     "returns": {
+      "promise": {
+       "void": true
+      }
+     }
+    },
+    "registerImportedFile": {
+     "params": [
+      {
+       "data": {
+        "projectId": "string",
+        "agentId": "string",
+        "sessionId": "string",
+        "fileIndex": "number",
+        "date": "string",
+        "sizeBytes": "number",
+        "records": {
+         "$ref": "typescript#Array<OmniMessage<OmniPayload>>"
+        }
+       }
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "removeSession": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "removeAgent": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "removeProject": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    }
+   },
+   "fields": {
+    "counters": {
+     "data": {
+      "gateStats": "number",
+      "dirScans": "number",
+      "headReads": "number"
+     }
+    }
+   },
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#TraceService": {
    "name": "TraceService",
    "methods": {
     "deleteSessionTraces": {
@@ -5714,7 +5606,7 @@
    },
    "slots": {}
   },
-  "ui-prefs-repo#UiPrefsRepo": {
+  "@prismshadow/penguin-server#UiPrefsRepo": {
    "name": "UiPrefsRepo",
    "methods": {
     "get": {
@@ -5743,49 +5635,27 @@
    },
    "slots": {}
   },
-  "usage#UsageService": {
-   "name": "UsageService",
+  "@prismshadow/penguin-server#UpdateCheck": {
+   "name": "UpdateCheck",
    "methods": {
-    "query": {
+    "check": {
      "params": [
       {
-       "data": "string"
-      },
-      {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#UsageQuery"
-       }
+       "data": "boolean|undefined"
       }
      ],
      "returns": {
       "promise": {
        "data": {
-        "$ref": "@prismshadow/penguin-server#UsageResponse"
+        "$ref": "@prismshadow/penguin-server#UpdateCheckResponse"
        }
-      }
-     }
-    },
-    "queryErrors": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#UsageErrorsQuery"
-       }
-      }
-     ],
-     "returns": {
-      "data": {
-       "$ref": "@prismshadow/penguin-server#UsageErrorsPage"
       }
      }
     }
    },
    "slots": {}
   },
-  "usage-recorder#UsageRecorder": {
+  "@prismshadow/penguin-server#UsageRecorder": {
    "name": "UsageRecorder",
    "methods": {
     "record": {
@@ -5810,7 +5680,7 @@
    },
    "slots": {}
   },
-  "usage-repo#UsageRepo": {
+  "@prismshadow/penguin-server#UsageRepo": {
    "name": "UsageRepo",
    "methods": {
     "insert": {
@@ -5961,7 +5831,49 @@
    },
    "slots": {}
   },
-  "users-repo#UsersRepo": {
+  "@prismshadow/penguin-server#UsageService": {
+   "name": "UsageService",
+   "methods": {
+    "query": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#UsageQuery"
+       }
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#UsageResponse"
+       }
+      }
+     }
+    },
+    "queryErrors": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#UsageErrorsQuery"
+       }
+      }
+     ],
+     "returns": {
+      "data": {
+       "$ref": "@prismshadow/penguin-server#UsageErrorsPage"
+      }
+     }
+    }
+   },
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#UsersRepo": {
    "name": "UsersRepo",
    "methods": {
     "insert": {
@@ -6035,7 +5947,153 @@
    },
    "slots": {}
   },
-  "workspace-files#WorkspaceFilesService": {
+  "@prismshadow/penguin-server#WebShell": {
+   "name": "WebShell",
+   "methods": {
+    "contributions": {
+     "params": [],
+     "returns": {
+      "data": {
+       "$ref": "@prismshadow/penguin-server#ContributionsResponse"
+      }
+     }
+    }
+   },
+   "slots": {
+    "pages": {
+     "data": {
+      "key": "string",
+      "path": "string",
+      "nav": "'none'|'main'",
+      "admin": "boolean",
+      "renderer": {
+       "$ref": "@prismshadow/penguin-server#RendererRef"
+      }
+     }
+    },
+    "agentTabs": {
+     "data": {
+      "key": "string",
+      "order": "number",
+      "renderer": {
+       "$ref": "@prismshadow/penguin-server#RendererRef"
+      }
+     }
+    },
+    "sessionTabs": {
+     "data": {
+      "key": "string",
+      "renderer": {
+       "$ref": "@prismshadow/penguin-server#RendererRef"
+      }
+     }
+    }
+   }
+  },
+  "@prismshadow/penguin-server#WorkspaceFiles": {
+   "name": "WorkspaceFiles",
+   "methods": {
+    "list": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#WorkspaceFilesResponse"
+       }
+      }
+     }
+    },
+    "read": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "data": [
+        {
+         "$ref": "@prismshadow/penguin-server#WorkspaceFileReadOptions"
+        },
+        "|",
+        "undefined"
+       ]
+      }
+     ],
+     "returns": {
+      "promise": {
+       "object": {
+        "data": {
+         "opaque": "Buffer"
+        },
+        "fileName": {
+         "data": "string"
+        },
+        "contentType": {
+         "data": "string"
+        },
+        "scriptable": {
+         "data": "false|'html'|'svg'"
+        },
+        "truncated": {
+         "data": "boolean"
+        }
+       },
+       "optional": [
+        "truncated"
+       ]
+      }
+     }
+    },
+    "write": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": "string"
+      },
+      {
+       "opaque": "Buffer"
+      }
+     ],
+     "returns": {
+      "promise": {
+       "void": true
+      }
+     }
+    },
+    "statExisting": {
+     "params": [
+      {
+       "data": "string"
+      },
+      {
+       "data": {
+        "$ref": "typescript#Array<string>"
+       }
+      }
+     ],
+     "returns": {
+      "promise": {
+       "data": {
+        "$ref": "typescript#Array<string>"
+       }
+      }
+     }
+    }
+   },
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#WorkspaceFilesService": {
    "name": "WorkspaceFilesService",
    "methods": {
     "statExisting": {
@@ -8657,41 +8715,12 @@
   "typescript#Record<string,unknown>": "unknown"
  },
  "modules": {
-  "admin": {
-   "name": "admin",
-   "requires": {
-    "users": {
-     "iface": "users-repo#UsersRepo",
-     "from": "users-repo"
-    },
-    "authSessions": {
-     "iface": "auth-sessions-repo#AuthSessionsRepo",
-     "from": "auth-sessions-repo"
-    },
-    "projects": {
-     "iface": "projects-repo#ProjectsRepo",
-     "from": "projects-repo"
-    },
-    "projectService": {
-     "iface": "project-service#ProjectService",
-     "from": "project-service"
-    },
-    "overrides": {
-     "iface": "@prismshadow/penguin-server#Overrides"
-    }
-   },
-   "provides": {
-    "AdminService": "admin#AdminService"
-   },
-   "contributes": {},
-   "children": []
-  },
-  "admin-api": {
-   "name": "admin-api",
+  "AdminRoutes": {
+   "name": "AdminRoutes",
    "requires": {
     "admin": {
-     "iface": "admin#AdminService",
-     "from": "admin"
+     "iface": "@prismshadow/penguin-server#AdminService",
+     "from": "AdminService"
     },
     "desktop": {
      "iface": "@prismshadow/penguin-server#Desktop"
@@ -8700,15 +8729,15 @@
      "iface": "@prismshadow/penguin-server#Proxy"
     },
     "settings": {
-     "iface": "settings-repo#ServerSettingsRepo",
-     "from": "settings-repo"
+     "iface": "@prismshadow/penguin-server#ServerSettingsRepo",
+     "from": "ServerSettingsRepo"
     }
    },
    "provides": {
-    "AdminRoutes": "admin-api#AdminRoutes"
+    "AdminRoutes": "@prismshadow/penguin-server#AdminRoutes"
    },
    "contributes": {
-    "http.routes": [
+    "HttpModule.routes": [
      {
       "id": "admin-api.users",
       "prefix": "/api/admin/users",
@@ -8725,80 +8754,269 @@
    },
    "children": []
   },
-  "agent-config": {
-   "name": "agent-config",
+  "AdminService": {
+   "name": "AdminService",
+   "requires": {
+    "users": {
+     "iface": "@prismshadow/penguin-server#UsersRepo",
+     "from": "UsersRepo"
+    },
+    "authSessions": {
+     "iface": "@prismshadow/penguin-server#AuthSessionsRepo",
+     "from": "AuthSessionsRepo"
+    },
+    "projects": {
+     "iface": "@prismshadow/penguin-server#ProjectsRepo",
+     "from": "ProjectsRepo"
+    },
+    "projectService": {
+     "iface": "@prismshadow/penguin-server#ProjectService",
+     "from": "ProjectService"
+    },
+    "overrides": {
+     "iface": "@prismshadow/penguin-server#Overrides"
+    }
+   },
+   "provides": {
+    "AdminService": "@prismshadow/penguin-server#AdminService"
+   },
+   "contributes": {},
+   "children": []
+  },
+  "AgentConfigService": {
+   "name": "AgentConfigService",
    "requires": {
     "config": {
      "iface": "@prismshadow/penguin-server#Config"
     }
    },
    "provides": {
-    "AgentConfigService": "agent-config#AgentConfigService"
+    "AgentConfigService": "@prismshadow/penguin-server#AgentConfigService"
    },
    "contributes": {},
    "children": []
   },
-  "agent-service": {
-   "name": "agent-service",
+  "AgentService": {
+   "name": "AgentService",
    "requires": {
     "config": {
      "iface": "@prismshadow/penguin-server#Config"
     },
     "agents": {
-     "iface": "agents-repo#AgentsRepo",
-     "from": "agents-repo"
+     "iface": "@prismshadow/penguin-server#AgentsRepo",
+     "from": "AgentsRepo"
     },
     "agentConfig": {
-     "iface": "agent-config#AgentConfigService",
-     "from": "agent-config"
+     "iface": "@prismshadow/penguin-server#AgentConfigService",
+     "from": "AgentConfigService"
     },
     "snapshots": {
-     "iface": "snapshots#SnapshotService",
-     "from": "snapshots"
+     "iface": "@prismshadow/penguin-server#SnapshotService",
+     "from": "SnapshotService"
     }
    },
    "provides": {
-    "AgentService": "agent-service#AgentService"
+    "AgentService": "@prismshadow/penguin-server#AgentService"
    },
    "contributes": {},
    "children": []
   },
-  "agents": {
-   "name": "agents",
+  "AgentsRepo": {
+   "name": "AgentsRepo",
+   "requires": {
+    "db": {
+     "iface": "@prismshadow/penguin-server#Db"
+    }
+   },
+   "provides": {
+    "AgentsRepo": "@prismshadow/penguin-server#AgentsRepo"
+   },
+   "contributes": {},
+   "children": []
+  },
+  "AuthService": {
+   "name": "AuthService",
+   "requires": {
+    "users": {
+     "iface": "@prismshadow/penguin-server#UsersRepo",
+     "from": "UsersRepo"
+    },
+    "authSessions": {
+     "iface": "@prismshadow/penguin-server#AuthSessionsRepo",
+     "from": "AuthSessionsRepo"
+    },
+    "state": {
+     "iface": "@prismshadow/penguin-server#AuthState"
+    },
+    "provisioner": {
+     "iface": "@prismshadow/penguin-server#InitialProjectProvisioner"
+    },
+    "config": {
+     "iface": "@prismshadow/penguin-server#Config"
+    },
+    "overrides": {
+     "iface": "@prismshadow/penguin-server#Overrides"
+    }
+   },
+   "provides": {
+    "AuthService": "@prismshadow/penguin-server#AuthService"
+   },
+   "contributes": {},
+   "children": []
+  },
+  "AuthSessionsRepo": {
+   "name": "AuthSessionsRepo",
+   "requires": {
+    "db": {
+     "iface": "@prismshadow/penguin-server#Db"
+    }
+   },
+   "provides": {
+    "AuthSessionsRepo": "@prismshadow/penguin-server#AuthSessionsRepo"
+   },
+   "contributes": {},
+   "children": []
+  },
+  "BenchmarkService": {
+   "name": "BenchmarkService",
+   "requires": {
+    "config": {
+     "iface": "@prismshadow/penguin-server#Config"
+    },
+    "workspaceFiles": {
+     "iface": "@prismshadow/penguin-server#WorkspaceFilesService",
+     "from": "WorkspaceFilesService"
+    }
+   },
+   "provides": {
+    "BenchmarkService": "@prismshadow/penguin-server#BenchmarkService"
+   },
+   "contributes": {},
+   "children": []
+  },
+  "ErrorRecorder": {
+   "name": "ErrorRecorder",
+   "requires": {
+    "errors": {
+     "iface": "@prismshadow/penguin-server#ErrorsRepo",
+     "from": "ErrorsRepo"
+    },
+    "overrides": {
+     "iface": "@prismshadow/penguin-server#Overrides"
+    }
+   },
+   "provides": {
+    "ErrorRecorder": "@prismshadow/penguin-server#ErrorRecorder"
+   },
+   "contributes": {},
+   "children": []
+  },
+  "ErrorsRepo": {
+   "name": "ErrorsRepo",
+   "requires": {
+    "db": {
+     "iface": "@prismshadow/penguin-server#Db"
+    }
+   },
+   "provides": {
+    "ErrorsRepo": "@prismshadow/penguin-server#ErrorsRepo"
+   },
+   "contributes": {},
+   "children": []
+  },
+  "EventsRoutes": {
+   "name": "EventsRoutes",
+   "requires": {
+    "channels": {
+     "iface": "@prismshadow/penguin-server#Channels",
+     "from": "RuntimeModule"
+    }
+   },
+   "provides": {
+    "EventsRoutes": "@prismshadow/penguin-server#EventsRoutes"
+   },
+   "contributes": {
+    "HttpModule.routes": [
+     {
+      "id": "EventsRoutes.routes",
+      "prefix": "/api/events",
+      "auth": "user",
+      "order": 60
+     }
+    ]
+   },
+   "children": []
+  },
+  "FeishuMessaging": {
+   "name": "FeishuMessaging",
+   "requires": {
+    "overrides": {
+     "iface": "@prismshadow/penguin-server#Overrides",
+     "from": "RuntimeModule"
+    }
+   },
+   "provides": {
+    "FeishuMessaging": "@prismshadow/penguin-server#FeishuMessaging"
+   },
+   "contributes": {
+    "MessagingModule.connectors": [
+     {
+      "id": "messaging-feishu.connector",
+      "channel": "feishu"
+     }
+    ]
+   },
+   "children": []
+  },
+  "GoalsRepo": {
+   "name": "GoalsRepo",
+   "requires": {
+    "db": {
+     "iface": "@prismshadow/penguin-server#Db"
+    }
+   },
+   "provides": {
+    "GoalsRepo": "@prismshadow/penguin-server#GoalsRepo"
+   },
+   "contributes": {},
+   "children": []
+  },
+  "HostAssembly": {
+   "name": "HostAssembly",
    "requires": {
     "config": {
      "iface": "@prismshadow/penguin-server#Config"
     },
     "access": {
-     "iface": "project-access#ProjectAccess",
-     "from": "project-access"
+     "iface": "@prismshadow/penguin-server#ProjectAccess",
+     "from": "ProjectAccess"
     },
     "agentConfig": {
-     "iface": "agent-config#AgentConfigService",
-     "from": "agent-config"
+     "iface": "@prismshadow/penguin-server#AgentConfigService",
+     "from": "AgentConfigService"
     },
     "memory": {
-     "iface": "memory#MemoryService",
-     "from": "memory"
+     "iface": "@prismshadow/penguin-server#MemoryService",
+     "from": "MemoryService"
     },
     "snapshots": {
-     "iface": "snapshots#SnapshotService",
-     "from": "snapshots"
+     "iface": "@prismshadow/penguin-server#SnapshotService",
+     "from": "SnapshotService"
     },
     "benchmarks": {
-     "iface": "benchmarks#BenchmarkService",
-     "from": "benchmarks"
+     "iface": "@prismshadow/penguin-server#BenchmarkService",
+     "from": "BenchmarkService"
     },
     "traces": {
-     "iface": "traces#TraceService",
-     "from": "traces"
+     "iface": "@prismshadow/penguin-server#TraceService",
+     "from": "TraceService"
     }
    },
    "provides": {
-    "HostAssembly": "agents#HostAssembly"
+    "HostAssembly": "@prismshadow/penguin-server#HostAssembly"
    },
    "contributes": {
-    "http.routes": [
+    "HttpModule.routes": [
      {
       "id": "agents.memory",
       "prefix": "/api/projects/:projectId/agents/:agentId/memory",
@@ -8833,171 +9051,32 @@
    },
    "children": []
   },
-  "agents-repo": {
-   "name": "agents-repo",
-   "requires": {
-    "db": {
-     "iface": "@prismshadow/penguin-server#Db"
-    }
-   },
-   "provides": {
-    "AgentsRepo": "agents-repo#AgentsRepo"
-   },
-   "contributes": {},
-   "children": []
-  },
-  "auth": {
-   "name": "auth",
-   "requires": {
-    "users": {
-     "iface": "users-repo#UsersRepo",
-     "from": "users-repo"
-    },
-    "authSessions": {
-     "iface": "auth-sessions-repo#AuthSessionsRepo",
-     "from": "auth-sessions-repo"
-    },
-    "state": {
-     "iface": "@prismshadow/penguin-server#AuthState"
-    },
-    "provisioner": {
-     "iface": "@prismshadow/penguin-server#InitialProjectProvisioner"
-    },
-    "config": {
-     "iface": "@prismshadow/penguin-server#Config"
-    },
-    "overrides": {
-     "iface": "@prismshadow/penguin-server#Overrides"
-    }
-   },
-   "provides": {
-    "AuthService": "auth#AuthService"
-   },
-   "contributes": {},
-   "children": []
-  },
-  "auth-sessions-repo": {
-   "name": "auth-sessions-repo",
-   "requires": {
-    "db": {
-     "iface": "@prismshadow/penguin-server#Db"
-    }
-   },
-   "provides": {
-    "AuthSessionsRepo": "auth-sessions-repo#AuthSessionsRepo"
-   },
-   "contributes": {},
-   "children": []
-  },
-  "benchmarks": {
-   "name": "benchmarks",
-   "requires": {
-    "config": {
-     "iface": "@prismshadow/penguin-server#Config"
-    },
-    "workspaceFiles": {
-     "iface": "workspace-files#WorkspaceFilesService",
-     "from": "workspace-files"
-    }
-   },
-   "provides": {
-    "BenchmarkService": "benchmarks#BenchmarkService"
-   },
-   "contributes": {},
-   "children": []
-  },
-  "errors": {
-   "name": "errors",
-   "requires": {
-    "errors": {
-     "iface": "errors-repo#ErrorsRepo",
-     "from": "errors-repo"
-    },
-    "overrides": {
-     "iface": "@prismshadow/penguin-server#Overrides"
-    }
-   },
-   "provides": {
-    "ErrorRecorder": "errors#ErrorRecorder"
-   },
-   "contributes": {},
-   "children": []
-  },
-  "errors-repo": {
-   "name": "errors-repo",
-   "requires": {
-    "db": {
-     "iface": "@prismshadow/penguin-server#Db"
-    }
-   },
-   "provides": {
-    "ErrorsRepo": "errors-repo#ErrorsRepo"
-   },
-   "contributes": {},
-   "children": []
-  },
-  "events": {
-   "name": "events",
-   "requires": {
-    "channels": {
-     "iface": "@prismshadow/penguin-server#Channels",
-     "from": "runtime"
-    }
-   },
-   "provides": {
-    "EventsRoutes": "events#EventsRoutes"
-   },
-   "contributes": {
-    "http.routes": [
-     {
-      "id": "events.routes",
-      "prefix": "/api/events",
-      "auth": "user",
-      "order": 60
-     }
-    ]
-   },
-   "children": []
-  },
-  "goals-repo": {
-   "name": "goals-repo",
-   "requires": {
-    "db": {
-     "iface": "@prismshadow/penguin-server#Db"
-    }
-   },
-   "provides": {
-    "GoalsRepo": "goals-repo#GoalsRepo"
-   },
-   "contributes": {},
-   "children": []
-  },
-  "http": {
-   "name": "http",
+  "HttpModule": {
+   "name": "HttpModule",
    "requires": {
     "config": {
      "iface": "@prismshadow/penguin-server#Config",
-     "from": "runtime"
+     "from": "RuntimeModule"
     },
     "log": {
      "iface": "@prismshadow/penguin-server#Log",
-     "from": "runtime"
+     "from": "RuntimeModule"
     },
     "auth": {
-     "iface": "auth#AuthService",
-     "from": "auth"
+     "iface": "@prismshadow/penguin-server#AuthService",
+     "from": "AuthService"
     },
     "errors": {
-     "iface": "errors#ErrorRecorder",
-     "from": "errors"
+     "iface": "@prismshadow/penguin-server#ErrorRecorder",
+     "from": "ErrorRecorder"
     },
     "settings": {
-     "iface": "settings-repo#ServerSettingsRepo",
-     "from": "settings-repo"
+     "iface": "@prismshadow/penguin-server#ServerSettingsRepo",
+     "from": "ServerSettingsRepo"
     },
     "access": {
-     "iface": "project-access#ProjectAccess",
-     "from": "project-access"
+     "iface": "@prismshadow/penguin-server#ProjectAccess",
+     "from": "ProjectAccess"
     }
    },
    "provides": {
@@ -9006,21 +9085,21 @@
    "contributes": {},
    "children": []
   },
-  "install": {
-   "name": "install",
+  "InstallRoutes": {
+   "name": "InstallRoutes",
    "requires": {
     "config": {
      "iface": "@prismshadow/penguin-server#Config",
-     "from": "runtime"
+     "from": "RuntimeModule"
     }
    },
    "provides": {
-    "InstallRoutes": "install#InstallRoutes"
+    "InstallRoutes": "@prismshadow/penguin-server#InstallRoutes"
    },
    "contributes": {
-    "http.routes": [
+    "HttpModule.routes": [
      {
-      "id": "install.routes",
+      "id": "InstallRoutes.routes",
       "prefix": "/api/install",
       "auth": "none",
       "order": 5
@@ -9029,29 +9108,29 @@
    },
    "children": []
   },
-  "machines": {
-   "name": "machines",
+  "MachinesModule": {
+   "name": "MachinesModule",
    "requires": {
     "config": {
      "iface": "@prismshadow/penguin-server#Config",
-     "from": "runtime"
+     "from": "RuntimeModule"
     },
     "hmr": {
      "iface": "@prismshadow/penguin-server#Hmr",
-     "from": "runtime"
+     "from": "RuntimeModule"
     },
     "overrides": {
      "iface": "@prismshadow/penguin-server#Overrides",
-     "from": "runtime"
+     "from": "RuntimeModule"
     }
    },
    "provides": {
     "machines": "@prismshadow/penguin-server#Machines"
    },
    "contributes": {
-    "http.routes": [
+    "HttpModule.routes": [
      {
-      "id": "machines.routes",
+      "id": "MachinesModule.routes",
       "prefix": "/api/machines",
       "auth": "user",
       "order": 50
@@ -9060,37 +9139,37 @@
    },
    "children": []
   },
-  "me": {
-   "name": "me",
+  "MeRoutes": {
+   "name": "MeRoutes",
    "requires": {
     "config": {
      "iface": "@prismshadow/penguin-server#Config",
-     "from": "runtime"
+     "from": "RuntimeModule"
     },
     "desktop": {
      "iface": "@prismshadow/penguin-server#Desktop",
-     "from": "runtime"
+     "from": "RuntimeModule"
     },
     "auth": {
-     "iface": "auth#AuthService",
-     "from": "auth"
+     "iface": "@prismshadow/penguin-server#AuthService",
+     "from": "AuthService"
     },
     "prefs": {
-     "iface": "ui-prefs-repo#UiPrefsRepo",
-     "from": "ui-prefs-repo"
+     "iface": "@prismshadow/penguin-server#UiPrefsRepo",
+     "from": "UiPrefsRepo"
     },
     "settings": {
-     "iface": "settings-repo#ServerSettingsRepo",
-     "from": "settings-repo"
+     "iface": "@prismshadow/penguin-server#ServerSettingsRepo",
+     "from": "ServerSettingsRepo"
     }
    },
    "provides": {
-    "MeRoutes": "me#MeRoutes"
+    "MeRoutes": "@prismshadow/penguin-server#MeRoutes"
    },
    "contributes": {
-    "http.routes": [
+    "HttpModule.routes": [
      {
-      "id": "me.routes",
+      "id": "MeRoutes.routes",
       "prefix": "/api/me",
       "auth": "user",
       "order": 10
@@ -9099,82 +9178,95 @@
    },
    "children": []
   },
-  "members-repo": {
-   "name": "members-repo",
+  "MembersRepo": {
+   "name": "MembersRepo",
    "requires": {
     "db": {
      "iface": "@prismshadow/penguin-server#Db"
     }
    },
    "provides": {
-    "MembersRepo": "members-repo#MembersRepo"
+    "MembersRepo": "@prismshadow/penguin-server#MembersRepo"
    },
    "contributes": {},
    "children": []
   },
-  "memory": {
-   "name": "memory",
+  "MemoryService": {
+   "name": "MemoryService",
    "requires": {
     "config": {
      "iface": "@prismshadow/penguin-server#Config"
     },
     "agentConfigService": {
-     "iface": "agent-config#AgentConfigService",
-     "from": "agent-config"
+     "iface": "@prismshadow/penguin-server#AgentConfigService",
+     "from": "AgentConfigService"
     }
    },
    "provides": {
-    "MemoryService": "memory#MemoryService"
+    "MemoryService": "@prismshadow/penguin-server#MemoryService"
    },
    "contributes": {},
    "children": []
   },
-  "messaging": {
-   "name": "messaging",
+  "MessagingBindingsRepo": {
+   "name": "MessagingBindingsRepo",
+   "requires": {
+    "db": {
+     "iface": "@prismshadow/penguin-server#Db"
+    }
+   },
+   "provides": {
+    "MessagingBindingsRepo": "@prismshadow/penguin-server#MessagingBindingsRepo"
+   },
+   "contributes": {},
+   "children": []
+  },
+  "MessagingModule": {
+   "name": "MessagingModule",
    "requires": {
     "config": {
      "iface": "@prismshadow/penguin-server#Config",
-     "from": "runtime"
+     "from": "RuntimeModule"
     },
     "channels": {
      "iface": "@prismshadow/penguin-server#Channels",
-     "from": "runtime"
+     "from": "RuntimeModule"
     },
     "overrides": {
      "iface": "@prismshadow/penguin-server#Overrides",
-     "from": "runtime"
+     "from": "RuntimeModule"
     },
     "log": {
      "iface": "@prismshadow/penguin-server#Log",
-     "from": "runtime"
+     "from": "RuntimeModule"
     },
     "messagingRepo": {
-     "iface": "messaging-repo#MessagingBindingsRepo",
-     "from": "messaging-repo"
+     "iface": "@prismshadow/penguin-server#MessagingBindingsRepo",
+     "from": "MessagingBindingsRepo"
     },
     "sessionsRepo": {
-     "iface": "sessions-repo#SessionsRepo",
-     "from": "sessions-repo"
+     "iface": "@prismshadow/penguin-server#SessionsRepo",
+     "from": "SessionsRepo"
     },
     "workspaceFiles": {
-     "iface": "workspace-files#WorkspaceFilesService",
-     "from": "workspace-files"
+     "iface": "@prismshadow/penguin-server#WorkspaceFilesService",
+     "from": "WorkspaceFilesService"
     },
     "settings": {
-     "iface": "settings-repo#ServerSettingsRepo",
-     "from": "settings-repo"
+     "iface": "@prismshadow/penguin-server#ServerSettingsRepo",
+     "from": "ServerSettingsRepo"
     },
     "runner": {
      "iface": "@prismshadow/penguin-server#MessagingTaskRunner",
-     "from": "sessions"
+     "from": "SessionsModule"
     },
     "errors": {
-     "iface": "errors#ErrorRecorder",
-     "from": "errors"
+     "iface": "@prismshadow/penguin-server#ErrorRecorder",
+     "from": "ErrorRecorder"
     },
     "access": {
-     "iface": "project-access#ProjectAccess",
-     "from": "project-access"
+     "iface": "@prismshadow/penguin-server#ProjectAccess",
+     "from": "ProjectAccess"
     }
    },
    "provides": {
@@ -9182,7 +9274,7 @@
     "qqScan": "@prismshadow/penguin-server#QQScan"
    },
    "contributes": {
-    "http.routes": [
+    "HttpModule.routes": [
      {
       "id": "messaging.session-routes",
       "prefix": "/api/sessions",
@@ -9192,201 +9284,125 @@
     ]
    },
    "children": [
-    "messaging-feishu",
-    "messaging-telegram",
-    "messaging-qq"
+    "FeishuMessaging",
+    "TelegramMessaging",
+    "QqMessaging"
    ]
   },
-  "messaging-feishu": {
-   "name": "messaging-feishu",
-   "requires": {
-    "overrides": {
-     "iface": "@prismshadow/penguin-server#Overrides",
-     "from": "runtime"
-    }
-   },
-   "provides": {
-    "FeishuMessaging": "messaging-feishu#FeishuMessaging"
-   },
-   "contributes": {
-    "messaging.connectors": [
-     {
-      "id": "messaging-feishu.connector",
-      "channel": "feishu"
-     }
-    ]
-   },
-   "children": []
-  },
-  "messaging-qq": {
-   "name": "messaging-qq",
-   "requires": {
-    "overrides": {
-     "iface": "@prismshadow/penguin-server#Overrides",
-     "from": "runtime"
-    }
-   },
-   "provides": {
-    "QqMessaging": "messaging-qq#QqMessaging"
-   },
-   "contributes": {
-    "messaging.connectors": [
-     {
-      "id": "messaging-qq.connector",
-      "channel": "qq"
-     }
-    ]
-   },
-   "children": []
-  },
-  "messaging-repo": {
-   "name": "messaging-repo",
-   "requires": {
-    "db": {
-     "iface": "@prismshadow/penguin-server#Db"
-    }
-   },
-   "provides": {
-    "MessagingBindingsRepo": "messaging-repo#MessagingBindingsRepo"
-   },
-   "contributes": {},
-   "children": []
-  },
-  "messaging-telegram": {
-   "name": "messaging-telegram",
-   "requires": {
-    "overrides": {
-     "iface": "@prismshadow/penguin-server#Overrides",
-     "from": "runtime"
-    }
-   },
-   "provides": {
-    "TelegramMessaging": "messaging-telegram#TelegramMessaging"
-   },
-   "contributes": {
-    "messaging.connectors": [
-     {
-      "id": "messaging-telegram.connector",
-      "channel": "telegram"
-     }
-    ]
-   },
-   "children": []
-  },
-  "model-oauth": {
-   "name": "model-oauth",
+  "ModelOAuthService": {
+   "name": "ModelOAuthService",
    "requires": {
     "projectConfig": {
-     "iface": "project-config#ProjectConfigService",
-     "from": "project-config"
+     "iface": "@prismshadow/penguin-server#ProjectConfigService",
+     "from": "ProjectConfigService"
     }
    },
    "provides": {
-    "ModelOAuthService": "model-oauth#ModelOAuthService"
+    "ModelOAuthService": "@prismshadow/penguin-server#ModelOAuthService"
    },
    "contributes": {},
    "children": []
   },
-  "platform": {
-   "name": "platform",
+  "PlatformModule": {
+   "name": "PlatformModule",
    "requires": {},
    "provides": {},
    "contributes": {},
    "children": [
-    "runtime",
-    "users-repo",
-    "auth-sessions-repo",
-    "settings-repo",
-    "ui-prefs-repo",
-    "sessions-repo",
-    "goals-repo",
-    "projects-repo",
-    "members-repo",
-    "agents-repo",
-    "usage-repo",
-    "schedules-repo",
-    "trace-index-repo",
-    "messaging-repo",
-    "errors-repo",
-    "session-sources",
-    "errors",
-    "usage-recorder",
-    "usage",
-    "project-config",
-    "model-oauth",
-    "trace-index",
-    "traces",
-    "workspace-files",
-    "project-access",
-    "project-service",
-    "auth",
-    "admin",
-    "scheduler",
-    "agent-config",
-    "snapshots",
-    "agent-service",
-    "memory",
-    "benchmarks",
-    "agents",
-    "workspace",
-    "sandbox",
-    "sessions",
-    "messaging",
-    "machines",
-    "projects",
-    "scheduler-api",
-    "project-admin",
-    "admin-api",
-    "me",
-    "version",
-    "install",
-    "events",
-    "skill-library",
-    "terminal",
-    "session-api",
-    "web",
-    "http",
-    "startup"
+    "RuntimeModule",
+    "UsersRepo",
+    "AuthSessionsRepo",
+    "ServerSettingsRepo",
+    "UiPrefsRepo",
+    "SessionsRepo",
+    "GoalsRepo",
+    "ProjectsRepo",
+    "MembersRepo",
+    "AgentsRepo",
+    "UsageRepo",
+    "SchedulesRepo",
+    "TraceIndexRepo",
+    "MessagingBindingsRepo",
+    "ErrorsRepo",
+    "SessionSources",
+    "ErrorRecorder",
+    "UsageRecorder",
+    "UsageService",
+    "ProjectConfigService",
+    "ModelOAuthService",
+    "TraceIndexService",
+    "TraceService",
+    "WorkspaceFilesService",
+    "ProjectAccess",
+    "ProjectService",
+    "AuthService",
+    "AdminService",
+    "Scheduler",
+    "AgentConfigService",
+    "SnapshotService",
+    "AgentService",
+    "MemoryService",
+    "BenchmarkService",
+    "HostAssembly",
+    "WorkspaceModule",
+    "SandboxModule",
+    "SessionsModule",
+    "MessagingModule",
+    "MachinesModule",
+    "ProjectsRoutes",
+    "SchedulerRoutes",
+    "ProjectAdminRoutes",
+    "AdminRoutes",
+    "MeRoutes",
+    "VersionModule",
+    "InstallRoutes",
+    "EventsRoutes",
+    "SkillLibraryRoutes",
+    "TerminalModule",
+    "SessionApiRoutes",
+    "WebModule",
+    "HttpModule",
+    "Startup"
    ]
   },
-  "project-access": {
-   "name": "project-access",
+  "ProjectAccess": {
+   "name": "ProjectAccess",
    "requires": {
     "projects": {
-     "iface": "projects-repo#ProjectsRepo",
-     "from": "projects-repo"
+     "iface": "@prismshadow/penguin-server#ProjectsRepo",
+     "from": "ProjectsRepo"
     },
     "members": {
-     "iface": "members-repo#MembersRepo",
-     "from": "members-repo"
+     "iface": "@prismshadow/penguin-server#MembersRepo",
+     "from": "MembersRepo"
     },
     "projectConfig": {
-     "iface": "project-config#ProjectConfigService",
-     "from": "project-config"
+     "iface": "@prismshadow/penguin-server#ProjectConfigService",
+     "from": "ProjectConfigService"
     }
    },
    "provides": {
-    "ProjectAccess": "project-access#ProjectAccess"
+    "ProjectAccess": "@prismshadow/penguin-server#ProjectAccess"
    },
    "contributes": {},
    "children": []
   },
-  "project-admin": {
-   "name": "project-admin",
+  "ProjectAdminRoutes": {
+   "name": "ProjectAdminRoutes",
    "requires": {
     "projectService": {
-     "iface": "project-service#ProjectService",
-     "from": "project-service"
+     "iface": "@prismshadow/penguin-server#ProjectService",
+     "from": "ProjectService"
     },
     "desktop": {
      "iface": "@prismshadow/penguin-server#Desktop"
     }
    },
    "provides": {
-    "ProjectAdminRoutes": "project-admin#ProjectAdminRoutes"
+    "ProjectAdminRoutes": "@prismshadow/penguin-server#ProjectAdminRoutes"
    },
    "contributes": {
-    "http.routes": [
+    "HttpModule.routes": [
      {
       "id": "project-admin.projects",
       "prefix": "/api/projects",
@@ -9403,96 +9419,109 @@
    },
    "children": []
   },
-  "project-config": {
-   "name": "project-config",
+  "ProjectConfigService": {
+   "name": "ProjectConfigService",
    "requires": {
     "config": {
      "iface": "@prismshadow/penguin-server#Config"
     }
    },
    "provides": {
-    "ProjectConfigService": "project-config#ProjectConfigService"
+    "ProjectConfigService": "@prismshadow/penguin-server#ProjectConfigService"
    },
    "contributes": {},
    "children": []
   },
-  "project-service": {
-   "name": "project-service",
+  "ProjectService": {
+   "name": "ProjectService",
    "requires": {
     "config": {
      "iface": "@prismshadow/penguin-server#Config"
     },
     "access": {
-     "iface": "project-access#ProjectAccess",
-     "from": "project-access"
+     "iface": "@prismshadow/penguin-server#ProjectAccess",
+     "from": "ProjectAccess"
     },
     "users": {
-     "iface": "users-repo#UsersRepo",
-     "from": "users-repo"
+     "iface": "@prismshadow/penguin-server#UsersRepo",
+     "from": "UsersRepo"
     },
     "projects": {
-     "iface": "projects-repo#ProjectsRepo",
-     "from": "projects-repo"
+     "iface": "@prismshadow/penguin-server#ProjectsRepo",
+     "from": "ProjectsRepo"
     },
     "members": {
-     "iface": "members-repo#MembersRepo",
-     "from": "members-repo"
+     "iface": "@prismshadow/penguin-server#MembersRepo",
+     "from": "MembersRepo"
     },
     "agents": {
-     "iface": "agents-repo#AgentsRepo",
-     "from": "agents-repo"
+     "iface": "@prismshadow/penguin-server#AgentsRepo",
+     "from": "AgentsRepo"
     },
     "sessions": {
-     "iface": "sessions-repo#SessionsRepo",
-     "from": "sessions-repo"
+     "iface": "@prismshadow/penguin-server#SessionsRepo",
+     "from": "SessionsRepo"
     },
     "usage": {
-     "iface": "usage-repo#UsageRepo",
-     "from": "usage-repo"
+     "iface": "@prismshadow/penguin-server#UsageRepo",
+     "from": "UsageRepo"
     },
     "errors": {
-     "iface": "errors-repo#ErrorsRepo",
-     "from": "errors-repo"
+     "iface": "@prismshadow/penguin-server#ErrorsRepo",
+     "from": "ErrorsRepo"
     },
     "schedules": {
-     "iface": "schedules-repo#SchedulesRepo",
-     "from": "schedules-repo"
+     "iface": "@prismshadow/penguin-server#SchedulesRepo",
+     "from": "SchedulesRepo"
     },
     "goals": {
-     "iface": "goals-repo#GoalsRepo",
-     "from": "goals-repo"
+     "iface": "@prismshadow/penguin-server#GoalsRepo",
+     "from": "GoalsRepo"
     },
     "projectConfig": {
-     "iface": "project-config#ProjectConfigService",
-     "from": "project-config"
+     "iface": "@prismshadow/penguin-server#ProjectConfigService",
+     "from": "ProjectConfigService"
     },
     "manager": {
      "iface": "@prismshadow/penguin-server#ProjectRuns"
     },
     "traceIndex": {
-     "iface": "trace-index#TraceIndexService",
-     "from": "trace-index"
+     "iface": "@prismshadow/penguin-server#TraceIndexService",
+     "from": "TraceIndexService"
     }
    },
    "provides": {
-    "ProjectService": "project-service#ProjectService"
+    "ProjectService": "@prismshadow/penguin-server#ProjectService"
    },
    "contributes": {},
    "children": []
   },
-  "projects": {
-   "name": "projects",
+  "ProjectsRepo": {
+   "name": "ProjectsRepo",
    "requires": {
-    "access": {
-     "iface": "project-access#ProjectAccess",
-     "from": "project-access"
+    "db": {
+     "iface": "@prismshadow/penguin-server#Db"
     }
    },
    "provides": {
-    "ProjectsRoutes": "projects#ProjectsRoutes"
+    "ProjectsRepo": "@prismshadow/penguin-server#ProjectsRepo"
+   },
+   "contributes": {},
+   "children": []
+  },
+  "ProjectsRoutes": {
+   "name": "ProjectsRoutes",
+   "requires": {
+    "access": {
+     "iface": "@prismshadow/penguin-server#ProjectAccess",
+     "from": "ProjectAccess"
+    }
+   },
+   "provides": {
+    "ProjectsRoutes": "@prismshadow/penguin-server#ProjectsRoutes"
    },
    "contributes": {
-    "http.routes": [
+    "HttpModule.routes": [
      {
       "id": "projects.dirs",
       "prefix": "/api/projects/:projectId/dirs",
@@ -9509,21 +9538,29 @@
    },
    "children": []
   },
-  "projects-repo": {
-   "name": "projects-repo",
+  "QqMessaging": {
+   "name": "QqMessaging",
    "requires": {
-    "db": {
-     "iface": "@prismshadow/penguin-server#Db"
+    "overrides": {
+     "iface": "@prismshadow/penguin-server#Overrides",
+     "from": "RuntimeModule"
     }
    },
    "provides": {
-    "ProjectsRepo": "projects-repo#ProjectsRepo"
+    "QqMessaging": "@prismshadow/penguin-server#QqMessaging"
    },
-   "contributes": {},
+   "contributes": {
+    "MessagingModule.connectors": [
+     {
+      "id": "messaging-qq.connector",
+      "channel": "qq"
+     }
+    ]
+   },
    "children": []
   },
-  "runtime": {
-   "name": "runtime",
+  "RuntimeModule": {
+   "name": "RuntimeModule",
    "requires": {},
    "provides": {
     "config": "@prismshadow/penguin-server#Config",
@@ -9540,8 +9577,8 @@
    "contributes": {},
    "children": []
   },
-  "sandbox": {
-   "name": "sandbox",
+  "SandboxModule": {
+   "name": "SandboxModule",
    "requires": {},
    "provides": {
     "sandbox": "@prismshadow/penguin-server#Sandbox"
@@ -9559,23 +9596,23 @@
     }
    }
   },
-  "scheduler": {
-   "name": "scheduler",
+  "Scheduler": {
+   "name": "Scheduler",
    "requires": {
     "config": {
      "iface": "@prismshadow/penguin-server#Config"
     },
     "repo": {
-     "iface": "schedules-repo#SchedulesRepo",
-     "from": "schedules-repo"
+     "iface": "@prismshadow/penguin-server#SchedulesRepo",
+     "from": "SchedulesRepo"
     },
     "projects": {
-     "iface": "projects-repo#ProjectsRepo",
-     "from": "projects-repo"
+     "iface": "@prismshadow/penguin-server#ProjectsRepo",
+     "from": "ProjectsRepo"
     },
     "sessions": {
-     "iface": "sessions-repo#SessionsRepo",
-     "from": "sessions-repo"
+     "iface": "@prismshadow/penguin-server#SessionsRepo",
+     "from": "SessionsRepo"
     },
     "runner": {
      "iface": "@prismshadow/penguin-server#ScheduleTaskRunner"
@@ -9584,12 +9621,12 @@
      "iface": "@prismshadow/penguin-server#ScheduleSessionCreator"
     },
     "projectConfig": {
-     "iface": "project-config#ProjectConfigService",
-     "from": "project-config"
+     "iface": "@prismshadow/penguin-server#ProjectConfigService",
+     "from": "ProjectConfigService"
     },
     "errors": {
-     "iface": "errors#ErrorRecorder",
-     "from": "errors"
+     "iface": "@prismshadow/penguin-server#ErrorRecorder",
+     "from": "ErrorRecorder"
     },
     "channels": {
      "iface": "@prismshadow/penguin-server#Channels"
@@ -9599,45 +9636,45 @@
     }
    },
    "provides": {
-    "Scheduler": "scheduler#Scheduler"
+    "Scheduler": "@prismshadow/penguin-server#Scheduler"
    },
    "contributes": {},
    "children": []
   },
-  "scheduler-api": {
-   "name": "scheduler-api",
+  "SchedulerRoutes": {
+   "name": "SchedulerRoutes",
    "requires": {
     "config": {
      "iface": "@prismshadow/penguin-server#Config"
     },
     "agentConfig": {
-     "iface": "agent-config#AgentConfigService",
-     "from": "agent-config"
+     "iface": "@prismshadow/penguin-server#AgentConfigService",
+     "from": "AgentConfigService"
     },
     "projectConfig": {
-     "iface": "project-config#ProjectConfigService",
-     "from": "project-config"
+     "iface": "@prismshadow/penguin-server#ProjectConfigService",
+     "from": "ProjectConfigService"
     },
     "access": {
-     "iface": "project-access#ProjectAccess",
-     "from": "project-access"
+     "iface": "@prismshadow/penguin-server#ProjectAccess",
+     "from": "ProjectAccess"
     },
     "scheduler": {
-     "iface": "scheduler#Scheduler",
-     "from": "scheduler"
+     "iface": "@prismshadow/penguin-server#Scheduler",
+     "from": "Scheduler"
     },
     "schedulesRepo": {
-     "iface": "schedules-repo#SchedulesRepo",
-     "from": "schedules-repo"
+     "iface": "@prismshadow/penguin-server#SchedulesRepo",
+     "from": "SchedulesRepo"
     }
    },
    "provides": {
-    "SchedulerRoutes": "scheduler-api#SchedulerRoutes"
+    "SchedulerRoutes": "@prismshadow/penguin-server#SchedulerRoutes"
    },
    "contributes": {
-    "http.routes": [
+    "HttpModule.routes": [
      {
-      "id": "scheduler-api.routes",
+      "id": "SchedulerRoutes.routes",
       "prefix": "/api/projects/:projectId/agents/:agentId/schedules",
       "auth": "user",
       "order": 200
@@ -9646,112 +9683,125 @@
    },
    "children": []
   },
-  "schedules-repo": {
-   "name": "schedules-repo",
+  "SchedulesRepo": {
+   "name": "SchedulesRepo",
    "requires": {
     "db": {
      "iface": "@prismshadow/penguin-server#Db"
     }
    },
    "provides": {
-    "SchedulesRepo": "schedules-repo#SchedulesRepo"
+    "SchedulesRepo": "@prismshadow/penguin-server#SchedulesRepo"
    },
    "contributes": {},
    "children": []
   },
-  "session-api": {
-   "name": "session-api",
+  "ServerSettingsRepo": {
+   "name": "ServerSettingsRepo",
    "requires": {
-    "config": {
-     "iface": "@prismshadow/penguin-server#Config",
-     "from": "runtime"
-    },
-    "channels": {
-     "iface": "@prismshadow/penguin-server#Channels",
-     "from": "runtime"
-    },
-    "manager": {
-     "iface": "@prismshadow/penguin-server#Sessions",
-     "from": "sessions"
-    },
-    "sessionService": {
-     "iface": "@prismshadow/penguin-server#SessionServiceIface",
-     "from": "sessions"
-    },
-    "agentConfig": {
-     "iface": "agent-config#AgentConfigService",
-     "from": "agent-config"
-    },
-    "agents": {
-     "iface": "agent-service#AgentService",
-     "from": "agent-service"
-    },
-    "messaging": {
-     "iface": "@prismshadow/penguin-server#Messaging",
-     "from": "messaging"
-    },
-    "schedulesRepo": {
-     "iface": "schedules-repo#SchedulesRepo",
-     "from": "schedules-repo"
-    },
-    "access": {
-     "iface": "project-access#ProjectAccess",
-     "from": "project-access"
-    },
-    "projectConfig": {
-     "iface": "project-config#ProjectConfigService",
-     "from": "project-config"
-    },
-    "modelOAuth": {
-     "iface": "model-oauth#ModelOAuthService",
-     "from": "model-oauth"
-    },
-    "traceIndex": {
-     "iface": "trace-index#TraceIndexService",
-     "from": "trace-index"
-    },
-    "traces": {
-     "iface": "traces#TraceService",
-     "from": "traces"
-    },
-    "workspaceFiles": {
-     "iface": "workspace-files#WorkspaceFilesService",
-     "from": "workspace-files"
-    },
-    "previewTokens": {
-     "iface": "@prismshadow/penguin-server#PreviewTokens",
-     "from": "workspace"
-    },
-    "settings": {
-     "iface": "settings-repo#ServerSettingsRepo",
-     "from": "settings-repo"
-    },
-    "sessionsRepo": {
-     "iface": "sessions-repo#SessionsRepo",
-     "from": "sessions-repo"
-    },
-    "goalsRepo": {
-     "iface": "goals-repo#GoalsRepo",
-     "from": "goals-repo"
-    },
-    "sources": {
-     "iface": "session-sources#SessionSources",
-     "from": "session-sources"
-    },
-    "errorsRepo": {
-     "iface": "errors-repo#ErrorsRepo",
-     "from": "errors-repo"
-    },
-    "usage": {
-     "iface": "usage#UsageService",
-     "from": "usage"
+    "db": {
+     "iface": "@prismshadow/penguin-server#Db"
     }
    },
    "provides": {
-    "SessionApiRoutes": "session-api#SessionApiRoutes"
+    "ServerSettingsRepo": "@prismshadow/penguin-server#ServerSettingsRepo"
+   },
+   "contributes": {},
+   "children": []
+  },
+  "SessionApiRoutes": {
+   "name": "SessionApiRoutes",
+   "requires": {
+    "config": {
+     "iface": "@prismshadow/penguin-server#Config",
+     "from": "RuntimeModule"
+    },
+    "channels": {
+     "iface": "@prismshadow/penguin-server#Channels",
+     "from": "RuntimeModule"
+    },
+    "manager": {
+     "iface": "@prismshadow/penguin-server#Sessions",
+     "from": "SessionsModule"
+    },
+    "sessionService": {
+     "iface": "@prismshadow/penguin-server#SessionServiceIface",
+     "from": "SessionsModule"
+    },
+    "agentConfig": {
+     "iface": "@prismshadow/penguin-server#AgentConfigService",
+     "from": "AgentConfigService"
+    },
+    "agents": {
+     "iface": "@prismshadow/penguin-server#AgentService",
+     "from": "AgentService"
+    },
+    "messaging": {
+     "iface": "@prismshadow/penguin-server#Messaging",
+     "from": "MessagingModule"
+    },
+    "schedulesRepo": {
+     "iface": "@prismshadow/penguin-server#SchedulesRepo",
+     "from": "SchedulesRepo"
+    },
+    "access": {
+     "iface": "@prismshadow/penguin-server#ProjectAccess",
+     "from": "ProjectAccess"
+    },
+    "projectConfig": {
+     "iface": "@prismshadow/penguin-server#ProjectConfigService",
+     "from": "ProjectConfigService"
+    },
+    "modelOAuth": {
+     "iface": "@prismshadow/penguin-server#ModelOAuthService",
+     "from": "ModelOAuthService"
+    },
+    "traceIndex": {
+     "iface": "@prismshadow/penguin-server#TraceIndexService",
+     "from": "TraceIndexService"
+    },
+    "traces": {
+     "iface": "@prismshadow/penguin-server#TraceService",
+     "from": "TraceService"
+    },
+    "workspaceFiles": {
+     "iface": "@prismshadow/penguin-server#WorkspaceFilesService",
+     "from": "WorkspaceFilesService"
+    },
+    "previewTokens": {
+     "iface": "@prismshadow/penguin-server#PreviewTokens",
+     "from": "WorkspaceModule"
+    },
+    "settings": {
+     "iface": "@prismshadow/penguin-server#ServerSettingsRepo",
+     "from": "ServerSettingsRepo"
+    },
+    "sessionsRepo": {
+     "iface": "@prismshadow/penguin-server#SessionsRepo",
+     "from": "SessionsRepo"
+    },
+    "goalsRepo": {
+     "iface": "@prismshadow/penguin-server#GoalsRepo",
+     "from": "GoalsRepo"
+    },
+    "sources": {
+     "iface": "@prismshadow/penguin-server#SessionSources",
+     "from": "SessionSources"
+    },
+    "errorsRepo": {
+     "iface": "@prismshadow/penguin-server#ErrorsRepo",
+     "from": "ErrorsRepo"
+    },
+    "usage": {
+     "iface": "@prismshadow/penguin-server#UsageService",
+     "from": "UsageService"
+    }
+   },
+   "provides": {
+    "SessionApiRoutes": "@prismshadow/penguin-server#SessionApiRoutes"
    },
    "contributes": {
-    "http.routes": [
+    "HttpModule.routes": [
      {
       "id": "session-api.model-oauth-callback",
       "prefix": "/api/projects/:projectId/model-oauth/callback",
@@ -9822,89 +9872,89 @@
    },
    "children": []
   },
-  "session-sources": {
-   "name": "session-sources",
+  "SessionSources": {
+   "name": "SessionSources",
    "requires": {},
    "provides": {
-    "SessionSources": "session-sources#SessionSources"
+    "SessionSources": "@prismshadow/penguin-server#SessionSources"
    },
    "contributes": {},
    "children": []
   },
-  "sessions": {
-   "name": "sessions",
+  "SessionsModule": {
+   "name": "SessionsModule",
    "requires": {
     "config": {
      "iface": "@prismshadow/penguin-server#Config",
-     "from": "runtime"
+     "from": "RuntimeModule"
     },
     "channels": {
      "iface": "@prismshadow/penguin-server#Channels",
-     "from": "runtime"
+     "from": "RuntimeModule"
     },
     "authState": {
      "iface": "@prismshadow/penguin-server#AuthState",
-     "from": "runtime"
+     "from": "RuntimeModule"
     },
     "overrides": {
      "iface": "@prismshadow/penguin-server#Overrides",
-     "from": "runtime"
+     "from": "RuntimeModule"
     },
     "log": {
      "iface": "@prismshadow/penguin-server#Log",
-     "from": "runtime"
+     "from": "RuntimeModule"
     },
     "settings": {
-     "iface": "settings-repo#ServerSettingsRepo",
-     "from": "settings-repo"
+     "iface": "@prismshadow/penguin-server#ServerSettingsRepo",
+     "from": "ServerSettingsRepo"
     },
     "sessionsRepo": {
-     "iface": "sessions-repo#SessionsRepo",
-     "from": "sessions-repo"
+     "iface": "@prismshadow/penguin-server#SessionsRepo",
+     "from": "SessionsRepo"
     },
     "goalsRepo": {
-     "iface": "goals-repo#GoalsRepo",
-     "from": "goals-repo"
+     "iface": "@prismshadow/penguin-server#GoalsRepo",
+     "from": "GoalsRepo"
     },
     "sources": {
-     "iface": "session-sources#SessionSources",
-     "from": "session-sources"
+     "iface": "@prismshadow/penguin-server#SessionSources",
+     "from": "SessionSources"
     },
     "recorder": {
-     "iface": "usage-recorder#UsageRecorder",
-     "from": "usage-recorder"
+     "iface": "@prismshadow/penguin-server#UsageRecorder",
+     "from": "UsageRecorder"
     },
     "errors": {
-     "iface": "errors#ErrorRecorder",
-     "from": "errors"
+     "iface": "@prismshadow/penguin-server#ErrorRecorder",
+     "from": "ErrorRecorder"
     },
     "projectConfig": {
-     "iface": "project-config#ProjectConfigService",
-     "from": "project-config"
+     "iface": "@prismshadow/penguin-server#ProjectConfigService",
+     "from": "ProjectConfigService"
     },
     "traceIndex": {
-     "iface": "trace-index#TraceIndexService",
-     "from": "trace-index"
+     "iface": "@prismshadow/penguin-server#TraceIndexService",
+     "from": "TraceIndexService"
     },
     "sandbox": {
      "iface": "@prismshadow/penguin-server#Sandbox",
-     "from": "sandbox"
+     "from": "SandboxModule"
     },
     "projectsRepo": {
-     "iface": "projects-repo#ProjectsRepo",
-     "from": "projects-repo"
+     "iface": "@prismshadow/penguin-server#ProjectsRepo",
+     "from": "ProjectsRepo"
     },
     "membersRepo": {
-     "iface": "members-repo#MembersRepo",
-     "from": "members-repo"
+     "iface": "@prismshadow/penguin-server#MembersRepo",
+     "from": "MembersRepo"
     },
     "messagingRepo": {
-     "iface": "messaging-repo#MessagingBindingsRepo",
-     "from": "messaging-repo"
+     "iface": "@prismshadow/penguin-server#MessagingBindingsRepo",
+     "from": "MessagingBindingsRepo"
     },
     "assembly": {
-     "iface": "agents#HostAssembly",
-     "from": "agents"
+     "iface": "@prismshadow/penguin-server#HostAssembly",
+     "from": "HostAssembly"
     }
    },
    "provides": {
@@ -9915,42 +9965,29 @@
    "contributes": {},
    "children": []
   },
-  "sessions-repo": {
-   "name": "sessions-repo",
+  "SessionsRepo": {
+   "name": "SessionsRepo",
    "requires": {
     "db": {
      "iface": "@prismshadow/penguin-server#Db"
     }
    },
    "provides": {
-    "SessionsRepo": "sessions-repo#SessionsRepo"
+    "SessionsRepo": "@prismshadow/penguin-server#SessionsRepo"
    },
    "contributes": {},
    "children": []
   },
-  "settings-repo": {
-   "name": "settings-repo",
-   "requires": {
-    "db": {
-     "iface": "@prismshadow/penguin-server#Db"
-    }
-   },
-   "provides": {
-    "ServerSettingsRepo": "settings-repo#ServerSettingsRepo"
-   },
-   "contributes": {},
-   "children": []
-  },
-  "skill-library": {
-   "name": "skill-library",
+  "SkillLibraryRoutes": {
+   "name": "SkillLibraryRoutes",
    "requires": {},
    "provides": {
-    "SkillLibraryRoutes": "skill-library#SkillLibraryRoutes"
+    "SkillLibraryRoutes": "@prismshadow/penguin-server#SkillLibraryRoutes"
    },
    "contributes": {
-    "http.routes": [
+    "HttpModule.routes": [
      {
-      "id": "skill-library.routes",
+      "id": "SkillLibraryRoutes.routes",
       "prefix": "/api/skills",
       "auth": "user",
       "order": 70
@@ -9959,68 +9996,89 @@
    },
    "children": []
   },
-  "snapshots": {
-   "name": "snapshots",
+  "SnapshotService": {
+   "name": "SnapshotService",
    "requires": {
     "config": {
      "iface": "@prismshadow/penguin-server#Config"
     }
    },
    "provides": {
-    "SnapshotService": "snapshots#SnapshotService"
+    "SnapshotService": "@prismshadow/penguin-server#SnapshotService"
    },
    "contributes": {},
    "children": []
   },
-  "startup": {
-   "name": "startup",
+  "Startup": {
+   "name": "Startup",
    "requires": {
     "goals": {
-     "iface": "goals-repo#GoalsRepo",
-     "from": "goals-repo"
+     "iface": "@prismshadow/penguin-server#GoalsRepo",
+     "from": "GoalsRepo"
     },
     "scheduler": {
-     "iface": "scheduler#Scheduler",
-     "from": "scheduler"
+     "iface": "@prismshadow/penguin-server#Scheduler",
+     "from": "Scheduler"
     },
     "sessionService": {
      "iface": "@prismshadow/penguin-server#SessionServiceIface",
-     "from": "sessions"
+     "from": "SessionsModule"
     },
     "errors": {
-     "iface": "errors#ErrorRecorder",
-     "from": "errors"
+     "iface": "@prismshadow/penguin-server#ErrorRecorder",
+     "from": "ErrorRecorder"
     }
    },
    "provides": {
-    "Startup": "startup#Startup"
+    "Startup": "@prismshadow/penguin-server#Startup"
    },
    "contributes": {},
    "children": []
   },
-  "terminal": {
-   "name": "terminal",
+  "TelegramMessaging": {
+   "name": "TelegramMessaging",
+   "requires": {
+    "overrides": {
+     "iface": "@prismshadow/penguin-server#Overrides",
+     "from": "RuntimeModule"
+    }
+   },
+   "provides": {
+    "TelegramMessaging": "@prismshadow/penguin-server#TelegramMessaging"
+   },
+   "contributes": {
+    "MessagingModule.connectors": [
+     {
+      "id": "messaging-telegram.connector",
+      "channel": "telegram"
+     }
+    ]
+   },
+   "children": []
+  },
+  "TerminalModule": {
+   "name": "TerminalModule",
    "requires": {
     "hmr": {
      "iface": "@prismshadow/penguin-server#Hmr",
-     "from": "runtime"
+     "from": "RuntimeModule"
     },
     "resourceGroups": {
      "iface": "@prismshadow/penguin-server#ResourceGroups",
-     "from": "runtime"
+     "from": "RuntimeModule"
     },
     "auth": {
-     "iface": "auth#AuthService",
-     "from": "auth"
+     "iface": "@prismshadow/penguin-server#AuthService",
+     "from": "AuthService"
     }
    },
    "provides": {
     "terminals": "@prismshadow/penguin-server#Terminals"
    },
    "contributes": {
-    "http.routes": [
+    "HttpModule.routes": [
      {
-      "id": "terminal.routes",
+      "id": "TerminalModule.routes",
       "prefix": "/",
       "auth": "none",
       "order": 0
@@ -10035,165 +10093,165 @@
     }
    }
   },
-  "trace-index": {
-   "name": "trace-index",
+  "TraceIndexRepo": {
+   "name": "TraceIndexRepo",
+   "requires": {
+    "db": {
+     "iface": "@prismshadow/penguin-server#Db"
+    }
+   },
+   "provides": {
+    "TraceIndexRepo": "@prismshadow/penguin-server#TraceIndexRepo"
+   },
+   "contributes": {},
+   "children": []
+  },
+  "TraceIndexService": {
+   "name": "TraceIndexService",
    "requires": {
     "config": {
      "iface": "@prismshadow/penguin-server#Config"
     },
     "repo": {
-     "iface": "trace-index-repo#TraceIndexRepo",
-     "from": "trace-index-repo"
+     "iface": "@prismshadow/penguin-server#TraceIndexRepo",
+     "from": "TraceIndexRepo"
     },
     "sources": {
-     "iface": "session-sources#SessionSources",
-     "from": "session-sources"
+     "iface": "@prismshadow/penguin-server#SessionSources",
+     "from": "SessionSources"
     }
    },
    "provides": {
-    "TraceIndexService": "trace-index#TraceIndexService"
+    "TraceIndexService": "@prismshadow/penguin-server#TraceIndexService"
    },
    "contributes": {},
    "children": []
   },
-  "trace-index-repo": {
-   "name": "trace-index-repo",
-   "requires": {
-    "db": {
-     "iface": "@prismshadow/penguin-server#Db"
-    }
-   },
-   "provides": {
-    "TraceIndexRepo": "trace-index-repo#TraceIndexRepo"
-   },
-   "contributes": {},
-   "children": []
-  },
-  "traces": {
-   "name": "traces",
+  "TraceService": {
+   "name": "TraceService",
    "requires": {
     "config": {
      "iface": "@prismshadow/penguin-server#Config"
     },
     "index": {
-     "iface": "trace-index#TraceIndexService",
-     "from": "trace-index"
+     "iface": "@prismshadow/penguin-server#TraceIndexService",
+     "from": "TraceIndexService"
     },
     "sessions": {
-     "iface": "sessions-repo#SessionsRepo",
-     "from": "sessions-repo"
+     "iface": "@prismshadow/penguin-server#SessionsRepo",
+     "from": "SessionsRepo"
     },
     "sources": {
-     "iface": "session-sources#SessionSources",
-     "from": "session-sources"
+     "iface": "@prismshadow/penguin-server#SessionSources",
+     "from": "SessionSources"
     }
    },
    "provides": {
-    "TraceService": "traces#TraceService"
+    "TraceService": "@prismshadow/penguin-server#TraceService"
    },
    "contributes": {},
    "children": []
   },
-  "ui-prefs-repo": {
-   "name": "ui-prefs-repo",
+  "UiPrefsRepo": {
+   "name": "UiPrefsRepo",
    "requires": {
     "db": {
      "iface": "@prismshadow/penguin-server#Db"
     }
    },
    "provides": {
-    "UiPrefsRepo": "ui-prefs-repo#UiPrefsRepo"
+    "UiPrefsRepo": "@prismshadow/penguin-server#UiPrefsRepo"
    },
    "contributes": {},
    "children": []
   },
-  "usage": {
-   "name": "usage",
+  "UsageRecorder": {
+   "name": "UsageRecorder",
    "requires": {
     "usage": {
-     "iface": "usage-repo#UsageRepo",
-     "from": "usage-repo"
+     "iface": "@prismshadow/penguin-server#UsageRepo",
+     "from": "UsageRepo"
+    },
+    "overrides": {
+     "iface": "@prismshadow/penguin-server#Overrides"
+    }
+   },
+   "provides": {
+    "UsageRecorder": "@prismshadow/penguin-server#UsageRecorder"
+   },
+   "contributes": {},
+   "children": []
+  },
+  "UsageRepo": {
+   "name": "UsageRepo",
+   "requires": {
+    "db": {
+     "iface": "@prismshadow/penguin-server#Db"
+    }
+   },
+   "provides": {
+    "UsageRepo": "@prismshadow/penguin-server#UsageRepo"
+   },
+   "contributes": {},
+   "children": []
+  },
+  "UsageService": {
+   "name": "UsageService",
+   "requires": {
+    "usage": {
+     "iface": "@prismshadow/penguin-server#UsageRepo",
+     "from": "UsageRepo"
     },
     "errors": {
-     "iface": "errors-repo#ErrorsRepo",
-     "from": "errors-repo"
+     "iface": "@prismshadow/penguin-server#ErrorsRepo",
+     "from": "ErrorsRepo"
     },
     "projectConfig": {
-     "iface": "project-config#ProjectConfigService",
-     "from": "project-config"
+     "iface": "@prismshadow/penguin-server#ProjectConfigService",
+     "from": "ProjectConfigService"
     },
     "overrides": {
      "iface": "@prismshadow/penguin-server#Overrides"
     }
    },
    "provides": {
-    "UsageService": "usage#UsageService"
+    "UsageService": "@prismshadow/penguin-server#UsageService"
    },
    "contributes": {},
    "children": []
   },
-  "usage-recorder": {
-   "name": "usage-recorder",
-   "requires": {
-    "usage": {
-     "iface": "usage-repo#UsageRepo",
-     "from": "usage-repo"
-    },
-    "overrides": {
-     "iface": "@prismshadow/penguin-server#Overrides"
-    }
-   },
-   "provides": {
-    "UsageRecorder": "usage-recorder#UsageRecorder"
-   },
-   "contributes": {},
-   "children": []
-  },
-  "usage-repo": {
-   "name": "usage-repo",
+  "UsersRepo": {
+   "name": "UsersRepo",
    "requires": {
     "db": {
      "iface": "@prismshadow/penguin-server#Db"
     }
    },
    "provides": {
-    "UsageRepo": "usage-repo#UsageRepo"
+    "UsersRepo": "@prismshadow/penguin-server#UsersRepo"
    },
    "contributes": {},
    "children": []
   },
-  "users-repo": {
-   "name": "users-repo",
-   "requires": {
-    "db": {
-     "iface": "@prismshadow/penguin-server#Db"
-    }
-   },
-   "provides": {
-    "UsersRepo": "users-repo#UsersRepo"
-   },
-   "contributes": {},
-   "children": []
-  },
-  "version": {
-   "name": "version",
+  "VersionModule": {
+   "name": "VersionModule",
    "requires": {
     "config": {
      "iface": "@prismshadow/penguin-server#Config",
-     "from": "runtime"
+     "from": "RuntimeModule"
     },
     "overrides": {
      "iface": "@prismshadow/penguin-server#Overrides",
-     "from": "runtime"
+     "from": "RuntimeModule"
     }
    },
    "provides": {
     "updateCheck": "@prismshadow/penguin-server#UpdateCheck"
    },
    "contributes": {
-    "http.routes": [
+    "HttpModule.routes": [
      {
-      "id": "version.routes",
+      "id": "VersionModule.routes",
       "prefix": "/api/version",
       "auth": "user",
       "order": 20
@@ -10202,14 +10260,14 @@
    },
    "children": []
   },
-  "web": {
-   "name": "web",
+  "WebModule": {
+   "name": "WebModule",
    "requires": {},
    "provides": {
     "web": "@prismshadow/penguin-server#WebShell"
    },
    "contributes": {
-    "http.routes": [
+    "HttpModule.routes": [
      {
       "id": "web.contributions",
       "prefix": "/api/contributions",
@@ -10220,12 +10278,21 @@
    },
    "children": []
   },
-  "workspace": {
-   "name": "workspace",
+  "WorkspaceFilesService": {
+   "name": "WorkspaceFilesService",
+   "requires": {},
+   "provides": {
+    "WorkspaceFilesService": "@prismshadow/penguin-server#WorkspaceFilesService"
+   },
+   "contributes": {},
+   "children": []
+  },
+  "WorkspaceModule": {
+   "name": "WorkspaceModule",
    "requires": {
     "sessionsRepo": {
-     "iface": "sessions-repo#SessionsRepo",
-     "from": "sessions-repo"
+     "iface": "@prismshadow/penguin-server#SessionsRepo",
+     "from": "SessionsRepo"
     }
    },
    "provides": {
@@ -10233,7 +10300,7 @@
     "previewTokens": "@prismshadow/penguin-server#PreviewTokens"
    },
    "contributes": {
-    "http.routes": [
+    "HttpModule.routes": [
      {
       "id": "workspace.preview",
       "prefix": "/preview",
@@ -10243,15 +10310,125 @@
     ]
    },
    "children": []
-  },
-  "workspace-files": {
-   "name": "workspace-files",
-   "requires": {},
-   "provides": {
-    "WorkspaceFilesService": "workspace-files#WorkspaceFilesService"
-   },
-   "contributes": {},
-   "children": []
   }
  }
 }
+</script>
+<script>
+const T = JSON.parse(document.getElementById("data").textContent);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const short = (key) => key.slice(key.indexOf("#") + 1);
+const ref = (key, kind) => '<a class="ref" href="#' + kind + ':' + encodeURIComponent(key) + '" title="' + esc(key) + '">' + esc(short(key)) + "</a>";
+const isComponent = (m) => Object.entries(m.provides).length === 1 && Object.entries(m.provides).every(([alias, key]) => key === m.name + "#" + alias);
+
+// --- TypeExpr → TypeScript-ish text (mirrors core kernel/sig.ts) ---
+function data(d) {
+  if (typeof d === "string") return esc(d);
+  if (Array.isArray(d)) return d.map((x) => (typeof x === "string" && /^(\|\s*|\[\]|\?)$/.test(x) ? esc(x) : data(x))).join(" ");
+  if (d && typeof d === "object") {
+    if ("$ref" in d) return ref(d.$ref, "type");
+    const parts = Object.entries(d).map(([k, v]) => esc(k) + ": " + data(v));
+    return "{ " + parts.join("; ") + " }";
+  }
+  return esc(JSON.stringify(d));
+}
+function expr(e) {
+  if (!e || typeof e !== "object") return esc(String(e));
+  if ("data" in e) return data(e.data);
+  if ("$ref" in e) return ref(e.$ref, "type");
+  if ("iface" in e) return ref(e.iface, "iface");
+  if ("opaque" in e) return '<span class="opaque">' + esc(e.opaque) + "</span>";
+  if ("void" in e) return "void";
+  if ("promise" in e) return "Promise&lt;" + expr(e.promise) + "&gt;";
+  if ("stream" in e) return "AsyncIterable&lt;" + expr(e.stream) + "&gt;";
+  if ("array" in e) return "(" + expr(e.array) + ")[]";
+  if ("maybe" in e) return expr(e.maybe) + " | undefined";
+  if ("oneOf" in e) return e.oneOf.map(expr).join(" | ");
+  if ("fn" in e) return "(" + sigParams(e.fn) + ") =&gt; " + expr(e.fn.returns);
+  if ("object" in e) {
+    const opt = new Set(e.optional ?? []);
+    return "{ " + Object.entries(e.object).map(([k, v]) => esc(k) + (opt.has(k) ? "?" : "") + ": " + expr(v)).join("; ") + " }";
+  }
+  return esc(JSON.stringify(e));
+}
+const sigParams = (sig) => sig.params.map((p, i) => "p" + i + ("maybe" in p ? "?" : "") + ": " + expr("maybe" in p ? p.maybe : p)).join(", ");
+const method = (name, sig) => esc(name) + "(" + sigParams(sig) + "): " + expr(sig.returns);
+
+// --- tree ---
+const modules = T.modules;
+const childOf = new Set(Object.values(modules).flatMap((m) => m.children.filter((c) => c !== "*")));
+const roots = Object.keys(modules).filter((n) => !childOf.has(n));
+function node(name) {
+  const m = modules[name];
+  if (!m) return "<li><button disabled>" + esc(name) + " (not in this table)</button></li>";
+  const kind = isComponent(m) ? "component" : "module";
+  const kids = m.children.map((c) => (c === "*" ? '<li><span class="kind slot">slot</span><span class="muted">extension modules</span></li>' : node(c))).join("");
+  return "<li data-name=\"" + esc(name) + "\"><button data-go=\"node:" + encodeURIComponent(name) + "\"><span class=\"kind " + kind + "\">" + kind[0] + "</span>" + esc(name) + "</button>" + (kids ? "<ul>" + kids + "</ul>" : "") + "</li>";
+}
+const ifaceKeys = Object.keys(T.ifaces).sort();
+document.getElementById("tree").innerHTML =
+  "<ul>" + roots.map(node).join("") + "</ul>" +
+  "<h3 class=\"muted\" style=\"margin:14px 6px 4px;font-size:12px\">interfaces (" + ifaceKeys.length + ")</h3><ul>" +
+  ifaceKeys.map((k) => "<li data-name=\"" + esc(k) + "\"><button data-go=\"iface:" + encodeURIComponent(k) + "\"><span class=\"kind iface\">i</span>" + esc(short(k)) + "</button></li>").join("") + "</ul>";
+
+// --- detail ---
+function showNode(name) {
+  const m = modules[name];
+  const kind = isComponent(m) ? "component" : "module";
+  const req = Object.entries(m.requires);
+  const prov = Object.entries(m.provides);
+  const contrib = Object.entries(m.contributes);
+  const providers = Object.entries(modules).filter(([, o]) => Object.values(o.requires).some((r) => r.from === name)).map(([n]) => n);
+  return "<h2><span class=\"kind " + kind + "\">" + kind + "</span>" + esc(name) + "</h2>" +
+    (m.context ? "<p class=\"muted\">parks context v" + esc(m.context.version) + "</p>" : "") +
+    "<h3>requires (" + req.length + ")</h3>" + (req.length ? "<table><tr><th>field</th><th>interface</th><th>from</th></tr>" +
+      req.map(([f, r]) => "<tr><td><code>" + esc(f) + "</code></td><td>" + ref(r.iface, "iface") + "</td><td>" + (r.from ? '<a class="ref" href="#node:' + encodeURIComponent(r.from) + '">' + esc(r.from) + "</a>" : "<span class=\"muted\">by structure</span>") + "</td></tr>").join("") + "</table>" : "<p class=\"muted\">nothing</p>") +
+    "<h3>provides (" + prov.length + ")</h3>" + (prov.length ? "<table><tr><th>alias</th><th>interface</th></tr>" +
+      prov.map(([a, k]) => "<tr><td><code>" + esc(a) + "</code></td><td>" + ref(k, "iface") + "</td></tr>").join("") + "</table>" : "<p class=\"muted\">nothing</p>") +
+    "<h3>contributes (" + contrib.length + ")</h3>" + (contrib.length ? contrib.map(([slot, items]) =>
+      "<details open><summary><code>" + esc(slot) + "</code> × " + items.length + "</summary><pre>" + esc(JSON.stringify(items, null, 2)) + "</pre></details>").join("") : "<p class=\"muted\">nothing</p>") +
+    (m.children.length ? "<h3>children (" + m.children.length + ")</h3><p>" + m.children.map((c) => c === "*" ? "<span class=\"muted\">+ extension modules</span>" : '<a class="ref" href="#node:' + encodeURIComponent(c) + '">' + esc(c) + "</a>").join(", ") + "</p>" : "") +
+    (providers.length ? "<h3>wired into</h3><p>" + providers.map((n) => '<a class="ref" href="#node:' + encodeURIComponent(n) + '">' + esc(n) + "</a>").join(", ") + "</p>" : "");
+}
+function showIface(key) {
+  const d = T.ifaces[key];
+  if (!d) return "<h2>" + esc(key) + "</h2><p class=\"muted\">not in this table</p>";
+  const methods = Object.entries(d.methods);
+  const fields = Object.entries(d.fields ?? {});
+  const slots = Object.entries(d.slots ?? {});
+  const providedBy = Object.entries(modules).filter(([, m]) => Object.values(m.provides).includes(key)).map(([n]) => n);
+  const requiredBy = Object.entries(modules).filter(([, m]) => Object.values(m.requires).some((r) => r.iface === key)).map(([n]) => n);
+  return "<h2><span class=\"kind iface\">interface</span>" + esc(d.name) + "</h2><p class=\"hash\">" + esc(key) + "</p>" +
+    "<pre>" + [...methods.map(([n, s]) => method(n, s)), ...fields.map(([n, e]) => esc(n) + ("maybe" in e ? "?" : "") + ": " + expr("maybe" in e ? e.maybe : e))].join("\n") + (methods.length + fields.length ? "" : "<span class=\"muted\">(no members)</span>") + "</pre>" +
+    (slots.length ? "<h3>slots</h3><table><tr><th>slot</th><th>data</th><th>code</th></tr>" + slots.map(([n, s]) => "<tr><td><code>" + esc(n) + "</code></td><td><code class=\"sig\">" + expr(s.data ?? s) + "</code></td><td>" + (s.code ? '<code class="sig">' + expr(s.code) + "</code>" : "<span class=\"muted\">—</span>") + "</td></tr>").join("") + "</table>" : "") +
+    "<h3>provided by</h3><p>" + (providedBy.length ? providedBy.map((n) => '<a class="ref" href="#node:' + encodeURIComponent(n) + '">' + esc(n) + "</a>").join(", ") : "<span class=\"muted\">no module — a consumer-declared shape</span>") + "</p>" +
+    "<h3>required by</h3><p>" + (requiredBy.length ? requiredBy.map((n) => '<a class="ref" href="#node:' + encodeURIComponent(n) + '">' + esc(n) + "</a>").join(", ") : "<span class=\"muted\">nobody</span>") + "</p>";
+}
+function showType(key) {
+  const t = T.types[key];
+  return "<h2><span class=\"kind slot\">type</span>" + esc(short(key)) + "</h2><p class=\"hash\">" + esc(key) + "</p><pre>" + (t === undefined ? "<span class=\"muted\">host-declared: compared by name</span>" : data(t)) + "</pre>";
+}
+function route() {
+  const h = decodeURIComponent(location.hash.slice(1));
+  const i = h.indexOf(":");
+  const kind = h.slice(0, i), key = h.slice(i + 1);
+  const el = document.getElementById("detail");
+  el.innerHTML = kind === "node" && modules[key] ? showNode(key) : kind === "iface" ? showIface(key) : kind === "type" ? showType(key) : el.innerHTML;
+  document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("current", b.dataset.go === kind + ":" + encodeURIComponent(key)));
+}
+document.getElementById("tree").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-go]");
+  if (b) location.hash = b.dataset.go;
+});
+document.getElementById("q").addEventListener("input", (e) => {
+  const q = e.target.value.trim().toLowerCase();
+  document.querySelectorAll("nav li[data-name]").forEach((li) => {
+    li.classList.toggle("hidden", q !== "" && !li.dataset.name.toLowerCase().includes(q) && !li.querySelector("li[data-name]:not(.hidden)"));
+  });
+});
+window.addEventListener("hashchange", route);
+if (!location.hash && roots[0]) location.hash = "node:" + encodeURIComponent(roots[0]);
+route();
+</script>
+</body>
+</html>
