@@ -19,6 +19,14 @@ const owners = new Map<string, string>();
 
 /** The machines whose terminals belong in the list, published by SessionsProvider. */
 let machineIds: readonly string[] = [];
+/**
+ * Whether that publication has happened at all. Before it, an empty `machineIds` means
+ * "not asked yet", not "no machines" — and the two must not be confused by anything that
+ * treats the list as the whole truth. A fresh page sits in that state for as long as it
+ * takes to reach the machines (a forward does not survive a reload), which is exactly
+ * when a Project's terminals are all elsewhere.
+ */
+let published = false;
 
 /** Records where a terminal lives. `null` (this machine) is stored as absence, not a value. */
 export function rememberTerminalMachine(terminalId: string, machineId: string | null): void {
@@ -34,6 +42,8 @@ export function machineForTerminal(terminalId: string): string | null {
 /** Forgets everything — for a sign-out, where the whole list is about to be rebuilt. */
 export function forgetTerminalMachines(): void {
   owners.clear();
+  machineIds = [];
+  published = false;
 }
 
 /**
@@ -43,6 +53,16 @@ export function forgetTerminalMachines(): void {
  */
 export function setTerminalMachines(ids: readonly string[]): void {
   machineIds = [...ids];
+  published = true;
+}
+
+/**
+ * Whether the machine set is known yet. A caller that would DISCARD something on the
+ * strength of a terminal's absence has to wait for this; one that merely displays what it
+ * can does not.
+ */
+export function terminalMachinesPublished(): boolean {
+  return published;
 }
 
 /** Every source the terminal list asks: this server first, then each machine. */

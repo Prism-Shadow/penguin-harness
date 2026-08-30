@@ -114,12 +114,18 @@ export async function createShellInDock(position?: DockPosition): Promise<void> 
  * every live shell is already tabbed somewhere (or none exists) is a new one created.
  */
 export async function openTerminalInDock(position?: DockPosition): Promise<void> {
-  const listed = await fetchJson<{ terminals: TerminalInfo[] }>("/api/terminals").catch(() => null);
-  const live = (listed?.terminals ?? liveTerminals()).filter((t) => t.alive);
-  const adoptable = unownedTerminals(live.map((t) => t.id)).at(-1);
+  // Through the list, not a bare fetch of this server's collection: a terminal is a pty on
+  // ONE machine, and `/api/terminals` asked without a machine answers for this one alone —
+  // so a conversation on a machine would never find the shell it already has there, and
+  // would spawn a second one beside it on every open.
+  await refreshTerminals();
+  const live = liveTerminals().filter((t) => t.alive);
+  // And it has to be a shell on the machine this conversation's files are on, for the same
+  // reason createShellInDock creates one there.
+  const here = live.filter((t) => machineForTerminal(t.id) === workspaceMachine);
+  const adoptable = unownedTerminals(here.map((t) => t.id)).at(-1);
   if (adoptable !== undefined) {
     addTerminalTab(adoptable, position);
-    void refreshTerminals();
     return;
   }
   await createShellInDock(position);
