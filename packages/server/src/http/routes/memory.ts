@@ -24,17 +24,16 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { ProjectAccess } from "../../services/project-access.js";
-
-import type { MemoryService } from "../../services/memory-service.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface MemoryRouteDeps {
-  memoryService: MemoryService;
-  access: ProjectAccess;
+  memoryService: Memory;
+  access: Access;
 }
 import type { MemoryImportMode } from "../../api/types.js";
 import { optionalBoolean, optionalEnum, pathParam, readJson, requireValidId } from "../validate.js";
+import type { Memory } from "../../mechanisms/agents.js";
+import type { Access } from "../../mechanisms/projects.js";
 
 const IMPORT_MODES: readonly MemoryImportMode[] = ["skip", "overwrite", "replace"];
 

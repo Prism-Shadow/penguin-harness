@@ -78,6 +78,8 @@ import { TerminalModule } from "./terminal/manager.js";
 import { SessionApiRoutes } from "./http/routes/sessions.js";
 import { HttpModule } from "./http/app.js";
 import { WebModule } from "./http/routes/contributions.js";
+import type { Scheduling } from "./mechanisms/sessions.js";
+import type { Errors } from "./mechanisms/observability.js";
 
 /**
  * The platform's module tree: the root module and its children, in one place.
@@ -96,9 +98,9 @@ import { WebModule } from "./http/routes/contributions.js";
  */
 @Component()
 export class Startup {
-  @Use() private readonly scheduler!: Scheduler;
+  @Use() private readonly scheduler!: Scheduling;
   @Use(SessionsModule) private readonly sessionService!: SessionServiceIface;
-  @Use() private readonly errors!: ErrorRecorder;
+  @Use() private readonly errors!: Errors;
 
   async setup() {
     // Schedule scheduler: startup reconciliation (missed, don't backfill) + periodic scan.

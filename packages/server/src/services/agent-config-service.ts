@@ -69,6 +69,7 @@ import {
 import { maskApiKey } from "./project-config-service.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "../hmr/capabilities.js";
+import type { AgentConfig } from "../mechanisms/agents.js";
 
 const COMPACTION_MODES = ["summarize", "discard"] as const;
 
@@ -86,7 +87,7 @@ export interface AgentConfigView {
 }
 
 @Component()
-export class AgentConfigService {
+export class AgentConfigService implements AgentConfig {
   @Use() private readonly paths!: Paths;
   private get root(): string {
     return this.paths.root;

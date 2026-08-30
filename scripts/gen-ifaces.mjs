@@ -974,10 +974,10 @@ for (const project of projects) {
 }
 
 for (const w of warnings) console.warn(`gen-ifaces: warning: ${w}`);
-if (implementationDeps.length > 0)
-  console.warn(
-    `gen-ifaces: ${implementationDeps.length} @Use fields depend on an implementation class rather than an interface (first: ${implementationDeps[0]}); declare those mechanisms as interface classes`,
-  );
+// A node depends on mechanisms, never on implementations: a `@Use` field typed by a
+// @Component class is refused. The component implements an interface class; require that.
+for (const dep of implementationDeps)
+  errors.push(`${dep}: a @Use field names an implementation; require the interface it implements`);
 if (errors.length > 0) {
   for (const e of errors) console.error(`gen-ifaces: error: ${e}`);
   process.exit(1);
