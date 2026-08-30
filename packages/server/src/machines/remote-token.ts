@@ -7,7 +7,8 @@
  * whose admin password a person has set. One command over the shared connection.
  */
 import { execFailureText } from "./transport/index.js";
-import { REMOTE_PENGUIN } from "./commands.js";
+import { remotePenguin } from "./commands.js";
+import type { RemoteLayout } from "./layout.js";
 import type { RemoteTarget } from "./commands.js";
 import type { ExecResult } from "./transport/index.js";
 
@@ -24,11 +25,11 @@ type RemoteTokenOutcome =
  * The command that asks for a token. `--ttl-seconds` is deliberately short: this is used
  * immediately, and a token still lying in a log an hour from now is worth nothing.
  */
-export function authTokenCommand(ttlSeconds = 3600): string {
+export function authTokenCommand(layout: RemoteLayout, ttlSeconds = 3600): string {
   if (!Number.isInteger(ttlSeconds) || ttlSeconds < 1) throw new Error(`bad ttl ${ttlSeconds}`);
   // `--mark` is what makes the output parseable: without it the CLI prints the bare token,
   // and parseToken has no anchor to find it by in a shell that may print a banner of its own.
-  return `${REMOTE_PENGUIN} auth token --ttl-seconds ${ttlSeconds} --mark 2>&1`;
+  return `${remotePenguin(layout)} auth token --ttl-seconds ${ttlSeconds} --mark 2>&1`;
 }
 
 /**
@@ -50,6 +51,7 @@ export function parseToken(output: string): string | null {
 /** Asks a machine's CLI for a session token, over the connection that is already open. */
 export async function mintTokenOnRemote(
   target: RemoteTarget,
+  layout: RemoteLayout,
   runOn: (target: RemoteTarget, command: string) => Promise<ExecResult>,
   ttlSeconds = 3600,
 ): Promise<RemoteTokenOutcome> {
@@ -60,7 +62,7 @@ export async function mintTokenOnRemote(
   // whose connection dropped answers "internal error" instead of "could not sign in there".
   let result: ExecResult;
   try {
-    result = await runOn(target, authTokenCommand(ttlSeconds));
+    result = await runOn(target, authTokenCommand(layout, ttlSeconds));
   } catch (err) {
     return { kind: "failed", detail: err instanceof Error ? err.message : String(err) };
   }

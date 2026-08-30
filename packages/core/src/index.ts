@@ -25,7 +25,7 @@ export * from "./interfaces/index.js";
 export type * from "./version-info.js";
 
 // Only the default server port leaves internal: the CLI / server default-port source of truth.
-export { DEFAULT_SERVER_PORT } from "./internal/ports.js";
+export { DEFAULT_DEV_SERVER_PORT, DEFAULT_SERVER_PORT } from "./internal/ports.js";
 
 // Submodules
 export * from "./state/index.js";

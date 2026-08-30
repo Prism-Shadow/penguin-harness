@@ -14,9 +14,12 @@
  */
 import { describe, expect, it } from "vitest";
 import { authTokenCommand, mintTokenOnRemote, parseToken } from "../src/machines/remote-token.js";
+import { remoteLayoutFor } from "../src/machines/layout.js";
 import type { ExecResult } from "../src/machines/transport/index.js";
 
 const ok = (stdout: string): ExecResult => ({ code: 0, stdout, stderr: "", timedOut: false });
+
+const RELEASE = remoteLayoutFor("release");
 
 describe("parseToken", () => {
   it("takes the first line after the marker, not a shell banner before it", () => {
@@ -28,13 +31,13 @@ describe("parseToken", () => {
   });
 
   it("asks for a bounded lifetime, and refuses a nonsensical one", () => {
-    expect(authTokenCommand(60)).toContain("--ttl-seconds 60");
+    expect(authTokenCommand(RELEASE, 60)).toContain("--ttl-seconds 60");
     // The command the CLI actually has, and `--mark` — without it the token comes back bare
     // and parseToken has nothing to anchor on.
-    expect(authTokenCommand(60)).toContain("auth token");
-    expect(authTokenCommand(60)).toContain("--mark");
-    expect(authTokenCommand(60)).not.toContain("server auth-token");
-    expect(() => authTokenCommand(0)).toThrow();
+    expect(authTokenCommand(RELEASE, 60)).toContain("auth token");
+    expect(authTokenCommand(RELEASE, 60)).toContain("--mark");
+    expect(authTokenCommand(RELEASE, 60)).not.toContain("server auth-token");
+    expect(() => authTokenCommand(RELEASE, 0)).toThrow();
   });
 });
 
@@ -42,14 +45,14 @@ describe("mintTokenOnRemote", () => {
   it("reads a machine too old to know the command as 'ask another way'", async () => {
     // Separate from a failure on purpose: the caller still has the seeded-password path, and
     // treating this as fatal would strand every machine carrying an older build.
-    const outcome = await mintTokenOnRemote({ alias: "nas", user: "me" }, async () =>
+    const outcome = await mintTokenOnRemote({ alias: "nas", user: "me" }, RELEASE, async () =>
       ok("penguin: unknown command 'auth-token'"),
     );
     expect(outcome.kind).toBe("unsupported");
   });
 
   it("does not read a timeout as an old build", async () => {
-    const outcome = await mintTokenOnRemote({ alias: "nas", user: "me" }, async () => ({
+    const outcome = await mintTokenOnRemote({ alias: "nas", user: "me" }, RELEASE, async () => ({
       code: 255,
       stdout: "",
       stderr: "",
@@ -63,7 +66,7 @@ describe("mintTokenOnRemote", () => {
     // token is a returned outcome, and signInOn reads outcomes to decide whether to fall back
     // to the password path — a throw skips that fallback and surfaces as a 500 on a machine
     // that merely lost its tunnel.
-    const outcome = await mintTokenOnRemote({ alias: "nas", user: "me" }, () => {
+    const outcome = await mintTokenOnRemote({ alias: "nas", user: "me" }, RELEASE, () => {
       throw new Error("write after end");
     });
     expect(outcome).toEqual({ kind: "failed", detail: "write after end" });

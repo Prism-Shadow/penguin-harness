@@ -12,12 +12,7 @@
  */
 import fs from "node:fs";
 import os from "node:os";
-import {
-  DEFAULT_PROJECT_ID,
-  DEFAULT_SERVER_PORT,
-  VERSION,
-  loadProjectConfig,
-} from "@prismshadow/penguin-core";
+import { DEFAULT_PROJECT_ID, VERSION, loadProjectConfig } from "@prismshadow/penguin-core";
 import type { ProjectConfig } from "@prismshadow/penguin-core";
 import type { MachineInfo, MachineJob, MachineServerStatus } from "../api/types.js";
 import { readServerLock } from "../lock.js";
@@ -41,6 +36,8 @@ import { syncModelsToMachine } from "./models-sync.js";
 import type { LocalModels } from "./models-sync.js";
 import { machineApi } from "./machine-api.js";
 import { startRemoteServer, stopRemoteServer } from "./server-control.js";
+import { currentRemoteLayout } from "./layout.js";
+import type { RemoteLayout } from "./layout.js";
 import type { MachinesRepo } from "../db/repos/machines.js";
 
 /** Why an install was refused before any ssh ran. */
@@ -63,6 +60,10 @@ export interface MachinesEffects {
   runOn: (target: RemoteTarget, command: string) => Promise<ExecResult>;
   startServer: (target: RemoteTarget, port: number) => ReturnType<typeof startRemoteServer>;
   stopServer: (target: RemoteTarget) => ReturnType<typeof stopRemoteServer>;
+  mintToken: (
+    target: RemoteTarget,
+    runOn: MachinesEffects["runOn"],
+  ) => ReturnType<typeof mintTokenOnRemote>;
   upgrade: typeof upgradeRemote;
   /** This server's own Project config, credentials in plaintext — the source of a model sync. */
   loadConfig: (projectId: string) => Promise<ProjectConfig>;
@@ -116,6 +117,8 @@ export class MachinesService {
   readonly #effects: MachinesEffects;
   readonly #assets: () => string | null;
   readonly #machineId: string;
+  /** Which installation on each machine this instance reaches — its profile's (layout.ts). */
+  readonly #layout: RemoteLayout;
 
   constructor(
     private readonly dataRoot: string,
@@ -123,9 +126,11 @@ export class MachinesService {
     private readonly repo: MachinesRepo,
     effects: Partial<MachinesEffects> = {},
     assets: () => string | null = () => null,
+    layout: RemoteLayout = currentRemoteLayout(),
   ) {
     this.#assets = assets;
     this.#machineId = machineId;
+    this.#layout = layout;
     this.#effects = {
       listAliases: listHostAliases,
       resolveTarget,
@@ -133,8 +138,9 @@ export class MachinesService {
       install: installOnRemote,
       probe: probeServerState,
       runOn: (target, command) => connectionTo(target).exec(command),
-      startServer: (target, port) => startRemoteServer(target, port, this.#effects.runOn),
-      stopServer: (target) => stopRemoteServer(target, this.#effects.runOn),
+      startServer: (target, port) => startRemoteServer(target, port, layout, this.#effects.runOn),
+      stopServer: (target) => stopRemoteServer(target, layout, this.#effects.runOn),
+      mintToken: (target, runOn) => mintTokenOnRemote(target, layout, runOn),
       upgrade: upgradeRemote,
       loadConfig: (projectId) => loadProjectConfig(dataRoot, projectId),
       forward: ({ target, remotePort }) => connectionTo(target).forward(remotePort),
@@ -214,7 +220,7 @@ export class MachinesService {
     const address = `ssh:${target.alias}`;
     const held = this.#sessions.get(address);
     if (held !== undefined && Date.now() - held.at < SESSION_REUSE_MS) return held;
-    const minted = await mintTokenOnRemote(target, this.#effects.runOn);
+    const minted = await this.#effects.mintToken(target, this.#effects.runOn);
     if (minted.kind !== "minted") return { detail: minted.detail };
     const session = { cookie: `${SESSION_COOKIE}=${minted.token}`, at: Date.now() };
     this.#sessions.set(address, session);
@@ -394,7 +400,7 @@ export class MachinesService {
           });
           continue;
         }
-        const probe = await this.#effects.probe(target, this.#effects.runOn);
+        const probe = await this.#effects.probe(target, this.#layout, this.#effects.runOn);
         const state = probe.state;
         this.#statuses.set(machine.id, {
           state: state.kind,
@@ -429,7 +435,7 @@ export class MachinesService {
    * having worked.
    */
   async #refreshStatus(address: string, target: RemoteTarget): Promise<void> {
-    const probe = await this.#effects.probe(target, this.#effects.runOn);
+    const probe = await this.#effects.probe(target, this.#layout, this.#effects.runOn);
     const state = probe.state;
     this.#statuses.set(address, {
       state: state.kind,
@@ -508,6 +514,7 @@ export class MachinesService {
         plan,
         onProgress: say,
         assets: this.#assets,
+        layout: this.#layout,
         ...(replaceProgram ? { forceInstaller: true } : {}),
       });
       if (outcome.kind === "failed") {
@@ -592,7 +599,7 @@ export class MachinesService {
     // connect, which said "already connected" again, forever. Reconnecting (to retry a sync
     // that failed, or pick up a new key) now costs one probe and stays honest.
     say("Asking what is running there…");
-    const probed = await this.#effects.probe(target, this.#effects.runOn);
+    const probed = await this.#effects.probe(target, this.#layout, this.#effects.runOn);
     if (probed.state.kind === "unreachable") {
       // The same dead end an install reaches, and the same way out: the machine cannot
       // answer because the CLI in its store is not one this server can talk to, and the
@@ -611,12 +618,12 @@ export class MachinesService {
       remotePort = probed.state.port;
       say(`Its server is already up on port ${remotePort}.`);
     } else {
-      remotePort = this.repo.get(address)?.remotePort ?? DEFAULT_SERVER_PORT;
+      remotePort = this.repo.get(address)?.remotePort ?? this.#layout.defaultPort;
       say(`Starting its server on port ${remotePort}…`);
       const started = await this.#effects.startServer(target, remotePort);
       if (!started.ok) return { ok: false, step: "start its server", message: started.detail };
       // A machine mints its id when its server starts, so one that was down had none.
-      const again = await this.#effects.probe(target, this.#effects.runOn);
+      const again = await this.#effects.probe(target, this.#layout, this.#effects.runOn);
       this.#rememberMachineId(address, again.machineId);
     }
 
@@ -763,7 +770,7 @@ export class MachinesService {
     target: RemoteTarget,
     say: (line: string) => void,
   ): Promise<UpgradeOutcome> {
-    const probed = await this.#effects.probe(target, this.#effects.runOn);
+    const probed = await this.#effects.probe(target, this.#layout, this.#effects.runOn);
     if (probed.state.kind === "unreachable") {
       return { kind: "failed", step: "reach", detail: probed.state.detail };
     }
@@ -796,7 +803,7 @@ export class MachinesService {
     target: RemoteTarget,
     say: (line: string) => void,
   ): Promise<{ ok: true; port: number } | { ok: false; detail: string }> {
-    const before = await this.#effects.probe(target, this.#effects.runOn);
+    const before = await this.#effects.probe(target, this.#layout, this.#effects.runOn);
     if (before.state.kind === "unreachable") return { ok: false, detail: before.state.detail };
     if (before.state.kind !== "running") {
       return { ok: false, detail: "no server is running on that machine." };
@@ -862,7 +869,7 @@ export class MachinesService {
     target: RemoteTarget,
     say: (line: string) => void,
   ): Promise<void> {
-    const before = await this.#effects.probe(target, this.#effects.runOn);
+    const before = await this.#effects.probe(target, this.#layout, this.#effects.runOn);
     if (before.state.kind !== "running") {
       say("Its server was not running; the new build will be used when it next starts.");
       return;

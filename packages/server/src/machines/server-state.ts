@@ -6,7 +6,8 @@
  * carries no parser for a shell's output. ssh's own failure is not a separate condition —
  * it IS the answer "cannot reach this machine", carrying OpenSSH's diagnostic.
  */
-import { REMOTE_PENGUIN } from "./commands.js";
+import { remotePenguin } from "./commands.js";
+import type { RemoteLayout } from "./layout.js";
 import { jsonAnswer } from "./answer.js";
 import type { RemoteTarget } from "./commands.js";
 import type { ExecResult } from "./transport/index.js";
@@ -17,8 +18,8 @@ import type { MachineStatus } from "../machine-status.js";
  * that is not there) comes back as text rather than being swallowed by the shared shell,
  * which merges the streams and reports an empty stderr.
  */
-export function readServerStateCommand(): string {
-  return `${REMOTE_PENGUIN} server status 2>&1`;
+export function readServerStateCommand(layout: RemoteLayout): string {
+  return `${remotePenguin(layout)} server status 2>&1`;
 }
 
 type MachineServerState =
@@ -80,9 +81,10 @@ export function parseProbe(stdout: string): MachineProbe {
  */
 export async function probeServerState(
   target: RemoteTarget,
+  layout: RemoteLayout,
   exec: (target: RemoteTarget, command: string) => Promise<ExecResult>,
 ): Promise<MachineProbe> {
-  const result = await exec(target, readServerStateCommand());
+  const result = await exec(target, readServerStateCommand(layout));
   if (result.code !== 0) {
     // stdout as the fallback, not just stderr: over the shared shell the two streams are
     // merged and stderr arrives empty (ssh-session.ts), so reading only stderr threw away

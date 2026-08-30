@@ -13,7 +13,8 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { readPushedBuild } from "../src/machines/upgrade.js";
 import { machineIdentity, parseHostAliases, parseSshSettings } from "../src/machines/ssh-config.js";
-import { parseProbeOutput, POSIX_PROBE, WINDOWS_PROBE } from "../src/machines/detect.js";
+import { parseProbeOutput, posixProbe, windowsProbe } from "../src/machines/detect.js";
+import { profileFromEnv, remoteLayoutFor } from "../src/machines/layout.js";
 import { parseProbe } from "../src/machines/server-state.js";
 import {
   cmdQuote,
@@ -26,6 +27,9 @@ import {
 } from "../src/machines/commands.js";
 import { refusalDetail } from "../src/machines/upgrade.js";
 import { resolvePushPlan } from "../src/machines/install-server.js";
+
+const RELEASE = remoteLayoutFor("release");
+const DEV = remoteLayoutFor("dev");
 
 describe("parseHostAliases", () => {
   const noIncludes = () => [];
@@ -115,13 +119,18 @@ describe("machineIdentity", () => {
 
 describe("identity probe", () => {
   it("asks in each shell's own dialect — sh cannot read the Windows one and vice versa", () => {
-    expect(POSIX_PROBE).toContain("uname -s -m");
-    expect(POSIX_PROBE).toContain('"$HOME/.penguin/lib/package.json"');
-    expect(POSIX_PROBE).toContain(".penguin/data/hmr/harness.json");
-    expect(WINDOWS_PROBE).toContain("%PROCESSOR_ARCHITECTURE%");
-    expect(WINDOWS_PROBE).toContain("%USERPROFILE%\\.penguin\\lib\\package.json");
-    expect(WINDOWS_PROBE).toContain("%USERPROFILE%\\.penguin\\data\\hmr\\harness.json");
-    expect(WINDOWS_PROBE).not.toContain(";");
+    expect(posixProbe(RELEASE)).toContain("uname -s -m");
+    expect(posixProbe(RELEASE)).toContain('"$HOME/.penguin/lib/package.json"');
+    expect(posixProbe(RELEASE)).toContain(".penguin/data/hmr/harness.json");
+    expect(windowsProbe(RELEASE)).toContain("%PROCESSOR_ARCHITECTURE%");
+    expect(windowsProbe(RELEASE)).toContain("%USERPROFILE%\\.penguin\\lib\\package.json");
+    expect(windowsProbe(RELEASE)).toContain("%USERPROFILE%\\.penguin\\data\\hmr\\harness.json");
+    expect(windowsProbe(RELEASE)).not.toContain(";");
+    // The dev profile asks after ITS installation, never the release one beside it.
+    expect(posixProbe(DEV)).toContain('"$HOME/.penguin-dev/lib/package.json"');
+    expect(posixProbe(DEV)).toContain('"$HOME/.penguin-dev/data/hmr/harness.json"');
+    expect(posixProbe(DEV)).not.toContain("$HOME/.penguin/");
+    expect(windowsProbe(DEV)).toContain("%USERPROFILE%\\.penguin-dev\\lib\\package.json");
   });
 
   it("reads identity, installed version and pushed state from the three sections", () => {
@@ -231,20 +240,29 @@ describe("ssh / scp invocations", () => {
   });
 
   it("takes the installer on stdin, so a POSIX install costs ONE ssh handshake", () => {
-    expect(runInstallScriptCommand("v0.2.4", { platform: "linux" })).toEqual({
-      command: "PENGUIN_VERSION='v0.2.4' sh -s",
+    expect(runInstallScriptCommand("v0.2.4", { platform: "linux" }, RELEASE)).toEqual({
+      command: `PENGUIN_INSTALL_DIR="$HOME/.penguin" PENGUIN_VERSION='v0.2.4' sh -s`,
       scriptOnStdin: true,
     });
+    // The dev profile installs beside the release program, never over it.
+    expect(runInstallScriptCommand("v0.2.4", { platform: "linux" }, DEV).command).toContain(
+      'PENGUIN_INSTALL_DIR="$HOME/.penguin-dev"',
+    );
   });
 
   it("runs a Windows remote's copy from a path, and deletes it in the same command", () => {
     expect(
-      runInstallScriptCommand("v0.2.4", {
-        platform: "win32",
-        scriptPath: "%USERPROFILE%\\penguin-ab12.ps1",
-      }),
+      runInstallScriptCommand(
+        "v0.2.4",
+        {
+          platform: "win32",
+          scriptPath: "%USERPROFILE%\\penguin-ab12.ps1",
+        },
+        RELEASE,
+      ),
     ).toEqual({
       command:
+        'set "PENGUIN_INSTALL_DIR=%USERPROFILE%\\.penguin" & ' +
         'powershell -NoProfile -ExecutionPolicy Bypass -File "%USERPROFILE%\\penguin-ab12.ps1"' +
         ' -Version "v0.2.4" & del /q "%USERPROFILE%\\penguin-ab12.ps1"',
       scriptOnStdin: false,
@@ -256,10 +274,13 @@ describe("ssh / scp invocations", () => {
     // from THERE. Extracting into the data root instead lands them one directory above where
     // hmr/host.ts reads them: the machine keeps answering with whatever it already had, and
     // the replication reports success while achieving nothing.
-    expect(unpackStoreCommand("linux")).toBe(
+    expect(unpackStoreCommand("linux", RELEASE)).toBe(
       'mkdir -p "$HOME/.penguin/data/hmr" && tar -xzf - -C "$HOME/.penguin/data/hmr"',
     );
-    expect(unpackStoreCommand("win32")).toBe(
+    expect(unpackStoreCommand("linux", DEV)).toBe(
+      'mkdir -p "$HOME/.penguin-dev/data/hmr" && tar -xzf - -C "$HOME/.penguin-dev/data/hmr"',
+    );
+    expect(unpackStoreCommand("win32", RELEASE)).toBe(
       '(if not exist "%USERPROFILE%\\.penguin\\data\\hmr" mkdir "%USERPROFILE%\\.penguin\\data\\hmr") & tar -xzf - -C "%USERPROFILE%\\.penguin\\data\\hmr"',
     );
   });
@@ -389,6 +410,28 @@ describe("reading what `penguin server status` answered", () => {
   it("says it cannot tell rather than 'stopped' when there is no answer at all", () => {
     const said = "error: unknown command 'status'";
     expect(parseProbe(said).state).toEqual({ kind: "unreachable", detail: said });
+  });
+});
+
+describe("remote layout", () => {
+  it("is the release installation unless PENGUIN_PROFILE says dev", () => {
+    expect(profileFromEnv({})).toBe("release");
+    expect(profileFromEnv({ PENGUIN_PROFILE: "release" })).toBe("release");
+    expect(profileFromEnv({ PENGUIN_PROFILE: "dev" })).toBe("dev");
+    expect(profileFromEnv({ PENGUIN_PROFILE: "anything-else" })).toBe("release");
+  });
+
+  it("keeps the two profiles apart on every axis: program, data root, port", () => {
+    expect(RELEASE.programDir.posix).not.toBe(DEV.programDir.posix);
+    expect(RELEASE.dataRoot.posix).not.toBe(DEV.dataRoot.posix);
+    expect(RELEASE.programDir.win).not.toBe(DEV.programDir.win);
+    expect(RELEASE.defaultPort).not.toBe(DEV.defaultPort);
+    // The release layout is the installer's own default, so an install this side made and
+    // one a person made by hand are the same installation.
+    expect(RELEASE.programDir.posix).toBe("$HOME/.penguin");
+    expect(RELEASE.dataRoot.posix).toBe("$HOME/.penguin/data");
+    expect(RELEASE.defaultPort).toBe(7364);
+    expect(DEV.defaultPort).toBe(7370);
   });
 });
 
