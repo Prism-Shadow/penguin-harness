@@ -107,6 +107,7 @@ describe("GET /api/version", () => {
       source: { repo: "https://example.com/penguin.git", revision: "v0.2.3-7-gabc1234" },
       pushedAt: "2026-08-20T10:15:00.000Z",
       bundles: { platform: null, cli: "store/cli/abc123.mjs", web: null },
+      ifaces: null,
     });
   });
 });

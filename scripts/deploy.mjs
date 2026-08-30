@@ -296,6 +296,7 @@ async function main() {
   const auth = await authHeaders();
   const platform = await fsp.readFile(PLATFORM_BUNDLE);
   const cli = await fsp.readFile(CLI_BUNDLE);
+  const ifaces = await fsp.readFile(path.join(ROOT, "packages/server/src/ifaces.json"), "utf8");
   const mapValues = (o, f) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, f(v)]));
   const body = (part) => ({
     platform: part(platform, "utf8"),
@@ -303,6 +304,9 @@ async function main() {
     web: { files: mapValues(files, (b) => part(b, "base64")) },
     assets: { files: mapValues(assets.files, (b) => part(b, "base64")), exec: assets.exec },
     ...(source === null ? {} : { source }),
+    // The table the platform was built from, so the target's history can say what
+    // this push changed at interface level.
+    ifaces,
   });
   // Content-addressed transfer, the way git pushes: name every part by its sha256, ask the
   // target which blobs it lacks, PUT only those (raw), then push a body of names. A target
