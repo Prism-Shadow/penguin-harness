@@ -13,6 +13,7 @@
  */
 import type { TerminalInfo } from "./terminal-view";
 import { pruneTerminalTabs } from "../dock/dock-state";
+import { terminalMachinesPublished } from "../../lib/terminal-machines";
 import { apiUrl } from "../../lib/server-context";
 import { rememberTerminalMachine, terminalSources, terminalUrl } from "../../lib/terminal-machines";
 
@@ -135,7 +136,18 @@ export function refreshTerminals(): Promise<void> {
         if (!listed.has(id)) pendingKills.delete(id); // fully gone: nothing left to hide
       }
       const live = data.terminals.filter((t) => t.alive && !isPendingKill(t.id));
-      pruneTerminalTabs(new Set(live.map((t) => t.id)));
+      // Pruning is the one thing here that DESTROYS something: it drops terminal tabs out
+      // of every conversation's stored arrangement. So it may only act on a complete
+      // picture — every source answered, and the machine set already published. Neither
+      // holds on a fresh page: the machines are published once they have been reached, and
+      // a forward does not survive a reload, so an early refresh sees this server alone.
+      // Pruning on that would delete the tabs of terminals that are alive on a machine, and
+      // storage does not get them back. Displaying the short list meanwhile is fine and is
+      // what the caller below does — a pane whose bytes cannot arrive is not usable yet,
+      // but it is not gone either, and the next complete refresh restores it.
+      if (terminalMachinesPublished() && answers.every((a) => a.res.ok)) {
+        pruneTerminalTabs(new Set(live.map((t) => t.id)));
+      }
       commit(live);
     } catch {
       // Network hiccup: the next poll/focus refresh will catch up.

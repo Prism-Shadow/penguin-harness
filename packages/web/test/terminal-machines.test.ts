@@ -13,6 +13,7 @@ import {
   machineForTerminal,
   rememberTerminalMachine,
   setTerminalMachines,
+  terminalMachinesPublished,
   terminalIdInPath,
   terminalSources,
   terminalUrl,
@@ -21,8 +22,9 @@ import {
 const REMOTE = "AtZ2EEKC5jxZipMN";
 
 afterEach(() => {
-  forgetTerminalMachines();
   setTerminalMachines([]);
+  // Last: it clears the published flag too, so every test starts from "not asked yet".
+  forgetTerminalMachines();
 });
 
 describe("where a terminal lives", () => {
@@ -85,6 +87,28 @@ describe("which servers the list asks", () => {
   });
 
   it("is this one alone when no machine is reachable", () => {
+    expect(terminalSources()).toEqual([null]);
+  });
+});
+
+describe("whether the machine set is known yet", () => {
+  it("is false until SessionsProvider publishes, and an empty publication still counts", () => {
+    // The distinction the guard rests on: before the publication an empty source list means
+    // "not asked yet", and a caller that would discard something on a terminal's absence
+    // must not act on it. A Project with no machines publishes [] and is then known.
+    expect(terminalMachinesPublished()).toBe(false);
+    setTerminalMachines([]);
+    expect(terminalMachinesPublished()).toBe(true);
+    setTerminalMachines([REMOTE]);
+    expect(terminalMachinesPublished()).toBe(true);
+  });
+
+  it("goes back to unknown on sign-out, so the next page waits again", () => {
+    setTerminalMachines([REMOTE]);
+    forgetTerminalMachines();
+    expect(terminalMachinesPublished()).toBe(false);
+    // And the sources shrink back to this server alone, rather than addressing a machine
+    // the next account may not have.
     expect(terminalSources()).toEqual([null]);
   });
 });
