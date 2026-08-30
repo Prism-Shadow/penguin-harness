@@ -99,8 +99,62 @@ export function parseSkillFrontmatter(content: string): SkillMetadata | null {
   };
 }
 
-/** Root directory of library files: the package's `skills/` (both dist/ and src/ sit one level below the package root, so one level up reaches it). */
-const SKILLS_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "skills");
+/**
+ * Where the library's files are, tried in order and the first that exists taken:
+ *
+ * 1. `PENGUIN_SKILLS_DIR` — an explicit location.
+ * 2. `<this file>/../skills` — the package's own `skills/` (dist/ and src/ both sit one level
+ *    below the package root), and equally the desktop app, whose bundle is `<app>/dist/…`
+ *    beside a `<app>/skills` copy.
+ * 3. Relative to the process entry (`process.argv[1]`): a hot-pushed bundle runs out of
+ *    `<root>/hmr/store/<kind>/` and carries no library beside it, so candidate 2 names a
+ *    `store/skills` that never exists — but the entry that loaded it names the installation.
+ *    `<program>/lib/dist/penguin-hmr.js` puts the shipped copy at
+ *    `<program>/lib/node_modules/@prismshadow/penguin-skills/skills`; a desktop app's
+ *    `<app>/dist/server.js` puts it at `<app>/skills`.
+ *
+ * Without 3, a pushed version booting a FRESH data root — a remote install from the Machines
+ * page, above all — died on its first skill scan with `ENOENT … store/skills`, while a root
+ * whose default Project already existed never noticed. Resolved once, on first use.
+ */
+export function resolveSkillsRoot(opts: {
+  env: NodeJS.ProcessEnv;
+  here: string;
+  entry: string | undefined;
+  exists: (dir: string) => boolean;
+}): string {
+  const explicit = opts.env.PENGUIN_SKILLS_DIR?.trim();
+  const packaged = path.resolve(opts.here, "..", "skills");
+  const candidates = [
+    ...(explicit ? [explicit] : []),
+    packaged,
+    ...(opts.entry
+      ? [
+          path.resolve(
+            path.dirname(opts.entry),
+            "..",
+            "node_modules",
+            "@prismshadow",
+            "penguin-skills",
+            "skills",
+          ),
+          path.resolve(path.dirname(opts.entry), "..", "skills"),
+        ]
+      : []),
+  ];
+  return candidates.find((dir) => opts.exists(dir)) ?? packaged;
+}
+
+let skillsRoot: string | null = null;
+function SKILLS_ROOT_DIR(): string {
+  skillsRoot ??= resolveSkillsRoot({
+    env: process.env,
+    here: path.dirname(fileURLToPath(import.meta.url)),
+    entry: process.argv[1],
+    exists: (dir) => fs.existsSync(dir),
+  });
+  return skillsRoot;
+}
 
 /** Character rule for Skill names (directory names): prevents path traversal (exported for the server's archive-install validation). */
 export const SKILL_NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
@@ -139,7 +193,7 @@ function readSkillFiles(dir: string): Record<string, string> | undefined {
  * SKILL.md links to) are collected into `files`, omitted when there are none.
  */
 function readSkillDir(name: string): LibrarySkill | undefined {
-  const dir = path.join(SKILLS_ROOT, name);
+  const dir = path.join(SKILLS_ROOT_DIR(), name);
   let content: string;
   try {
     content = fs.readFileSync(path.join(dir, "SKILL.md"), "utf8");
@@ -171,7 +225,7 @@ function readSkillDir(name: string): LibrarySkill | undefined {
 /** Reads all Skills in the library (one per subdirectory under `skills/`), sorted by name. */
 export function loadLibrarySkills(): LibrarySkill[] {
   const skills: LibrarySkill[] = [];
-  for (const entry of fs.readdirSync(SKILLS_ROOT, { withFileTypes: true })) {
+  for (const entry of fs.readdirSync(SKILLS_ROOT_DIR(), { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
     const skill = readSkillDir(entry.name);
     if (skill) skills.push(skill);

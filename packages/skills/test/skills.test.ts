@@ -16,6 +16,7 @@ import {
   loadPreinstalledSkills,
   loadSkillGroups,
   parseSkillFrontmatter,
+  resolveSkillsRoot,
   type LibrarySkill,
   type SkillGroupInfo,
 } from "../src/index.js";
@@ -477,5 +478,55 @@ describe("parseSkillFrontmatter", () => {
       version: 1,
       updated: "",
     });
+  });
+});
+
+describe("resolveSkillsRoot", () => {
+  const here = "/root/hmr/store/cli";
+  const shipped = path.resolve("/opt/penguin/lib/node_modules/@prismshadow/penguin-skills/skills");
+
+  it("takes the package's own skills/ when it exists (source, npm, desktop app)", () => {
+    const root = resolveSkillsRoot({
+      env: {},
+      here: "/pkg/dist",
+      entry: "/pkg/dist/server.js",
+      exists: (dir) => dir === path.resolve("/pkg/skills"),
+    });
+    expect(root).toBe(path.resolve("/pkg/skills"));
+  });
+
+  it("a hot-pushed bundle falls through to the installation its entry names", () => {
+    // store/cli/x.mjs has no skills beside it; penguin-hmr.js does, via node_modules.
+    const root = resolveSkillsRoot({
+      env: {},
+      here,
+      entry: "/opt/penguin/lib/dist/penguin-hmr.js",
+      exists: (dir) => dir === shipped,
+    });
+    expect(root).toBe(shipped);
+  });
+
+  it("a pushed bundle inside the desktop app finds <app>/skills through the shell's entry", () => {
+    const root = resolveSkillsRoot({
+      env: {},
+      here,
+      entry: "/app/dist/server.js",
+      exists: (dir) => dir === path.resolve("/app/skills"),
+    });
+    expect(root).toBe(path.resolve("/app/skills"));
+  });
+
+  it("PENGUIN_SKILLS_DIR wins, and nothing existing falls back to the package layout", () => {
+    expect(
+      resolveSkillsRoot({
+        env: { PENGUIN_SKILLS_DIR: "/srv/skills" },
+        here,
+        entry: undefined,
+        exists: () => true,
+      }),
+    ).toBe("/srv/skills");
+    expect(resolveSkillsRoot({ env: {}, here, entry: undefined, exists: () => false })).toBe(
+      path.resolve(here, "..", "skills"),
+    );
   });
 });
