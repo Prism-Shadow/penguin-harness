@@ -70,6 +70,7 @@ import {
   agentIdFromSnapshotName,
   fileToBase64,
 } from "./snapshot-file";
+import { InstallFromGistDialog } from "./install-dialog";
 import { HiddenFileInput } from "../../components/ui/hidden-file-input";
 import { WorkspaceSelect } from "../chat/workspace-select";
 import { SkillPickList } from "../skills/skill-pick-list";
@@ -179,6 +180,7 @@ export function AgentsPage() {
    * rejects the combination.
    */
   const [snapshotFile, setSnapshotFile] = useState<File | null>(null);
+  const [installOpen, setInstallOpen] = useState(false);
 
   /** Open the create dialog: don't keep the previous draft, always start from an empty form. */
   const openCreate = () => {
@@ -443,6 +445,9 @@ export function AgentsPage() {
                   placeholder={S.agent.searchPlaceholder}
                 />
               </div>
+              <Button size="sm" onClick={() => setInstallOpen(true)}>
+                {S.agent.installFromGist}
+              </Button>
               <CreateButtons onAi={() => setAiOpen(true)} onManual={openCreate} />
             </div>
           </div>
@@ -463,6 +468,14 @@ export function AgentsPage() {
             />
           )}
         </div>
+        {projectId && (
+          <InstallFromGistDialog
+            open={installOpen}
+            onClose={() => setInstallOpen(false)}
+            projectId={projectId}
+            onInstalled={() => void reloadAgents()}
+          />
+        )}
 
         {agentsLoading ? (
           /* Same single-column row styling as the real list (space-y-3 + px-5 py-4), with a

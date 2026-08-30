@@ -61,7 +61,7 @@ import { ConsoleLog, SystemClock } from "../src/hmr/capabilities.js";
 import { hashPassword, ScryptHasher } from "../src/auth/password.js";
 import { CoreSessionLoaders, DefaultTitleGenerators } from "../src/runtime/session-manager.js";
 import type { TitleNotifier } from "../src/runtime/title-generator.js";
-import { UpdateCheckService } from "../src/services/update-check-service.js";
+import { GlobalFetch, UpdateCheckService } from "../src/services/update-check-service.js";
 import { RevealService } from "../src/services/reveal-path.js";
 import { DefaultMessagingTuning } from "../src/runtime/messaging/bridge.js";
 import { FeishuSdkProvider } from "../src/runtime/messaging/feishu-connector.js";
@@ -239,6 +239,8 @@ export interface TestAppOptions {
   titles?: TitleNotifier;
   /** Test double: update-check service with a stubbed fetch/clock (avoids real network calls). */
   updateCheck?: UpdateCheckService;
+  /** Test double: the server's outbound fetch (GitHub gists in the package tests). */
+  fetch?: (input: string, init?: RequestInit) => Promise<Response>;
   /** Test double: the Feishu connector's SDK (avoids real Lark network / long connections). */
   feishuSdk?: FeishuSdk;
   /** Test double: the Telegram connector's Bot API transport. */
@@ -306,6 +308,7 @@ export function replacementsFor(o: TestAppOptions): Replacements {
   }
   if (o.updateCheck) out.push([UpdateCheckService, o.updateCheck]);
   if (o.reveal) out.push([RevealService, { reveal: o.reveal }]);
+  if (o.fetch) out.push([GlobalFetch, { fetch: o.fetch }]);
   if (o.feishuSdk) out.push([FeishuSdkProvider, { feishuSdk: { sdk: o.feishuSdk } }]);
   if (o.telegramTransport)
     out.push([
