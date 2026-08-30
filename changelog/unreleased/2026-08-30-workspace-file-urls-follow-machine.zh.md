@@ -3,6 +3,7 @@
 - **Date:** 2026-08-30
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#554](https://github.com/Prism-Shadow/penguin-harness/pull/554)
 
 [English](2026-08-30-workspace-file-urls-follow-machine.md)
 
