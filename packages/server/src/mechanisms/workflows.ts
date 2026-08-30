@@ -96,4 +96,6 @@ export abstract class Workflows extends Interface<{
     workflowId: string,
     revision: string,
   ): Promise<WorkflowInfo>;
+  /** Deletes the folder and its recorded versions; the instance goes with them. */
+  remove(projectId: string, agentId: string, workflowId: string): Promise<void>;
 }>() {}

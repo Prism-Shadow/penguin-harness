@@ -28,6 +28,7 @@ import type {
 } from "@prismshadow/penguin-core/kernel";
 import { userText } from "@prismshadow/penguin-core";
 import table from "../ifaces.json" with { type: "json" };
+import type { ServerEvent } from "../api/types.js";
 import type { Channels, Clock, Log, Paths } from "../hmr/capabilities.js";
 import { userChannelKey } from "../http/routes/events.js";
 import type { Members, Projects } from "../mechanisms/projects.js";
@@ -183,8 +184,7 @@ export class WorkflowService implements Workflows {
     const alive = new Set(folders.map((f) => key(projectId, agentId, f.id)));
     for (const [k, l] of this.loaded) {
       if (k.startsWith(`${projectId}/${agentId}/`) && !alive.has(k)) {
-        l.tree?.dispose();
-        this.loaded.delete(k);
+        this.forget(projectId, agentId, l.folder.id);
       }
     }
     return out;
@@ -250,6 +250,16 @@ export class WorkflowService implements Workflows {
     );
     if (!restored) throw new WorkflowNotFound("no such version");
     return this.reload(projectId, agentId, workflowId);
+  }
+
+  async remove(projectId: string, agentId: string, workflowId: string): Promise<void> {
+    const folder = await this.folder(projectId, agentId, workflowId);
+    await fs.promises.rm(folder.dir, { recursive: true, force: true });
+    await fs.promises.rm(path.join(historyDir(this.paths.root, projectId, agentId), workflowId), {
+      recursive: true,
+      force: true,
+    });
+    this.forget(projectId, agentId, workflowId);
   }
 
   // ---- internals ------------------------------------------------------------------
@@ -361,9 +371,23 @@ export class WorkflowService implements Workflows {
     };
   }
 
-  /** Users of the Project (owner + members) hear that a workflow changed. */
+  /** Drops a workflow's instance and tells the Project's users it is gone. */
+  private forget(projectId: string, agentId: string, workflowId: string): void {
+    const k = key(projectId, agentId, workflowId);
+    const t = this.pending.get(k);
+    if (t) clearTimeout(t);
+    this.pending.delete(k);
+    this.loaded.get(k)?.tree?.dispose();
+    this.loaded.delete(k);
+    this.publish(projectId, { type: "workflow_removed", projectId, agentId, workflowId });
+  }
+
   private notify(projectId: string, agentId: string, workflow: WorkflowInfo): void {
-    const event = { type: "workflow_updated" as const, projectId, agentId, workflow };
+    this.publish(projectId, { type: "workflow_updated", projectId, agentId, workflow });
+  }
+
+  /** Users of the Project (owner + members) hear about the change. */
+  private publish(projectId: string, event: ServerEvent): void {
     const users = new Set(this.members.list(projectId).map((m) => m.userId));
     const owner = this.projects.findById(projectId)?.ownerUserId;
     if (owner) users.add(owner);
@@ -404,8 +428,7 @@ export class WorkflowService implements Workflows {
         this.pending.delete(k);
         void this.reload(projectId, agentId, workflowId).catch((err) => {
           if (err instanceof WorkflowNotFound) {
-            this.loaded.get(k)?.tree?.dispose();
-            this.loaded.delete(k);
+            this.forget(projectId, agentId, workflowId);
             return;
           }
           this.log.line(`[workflows] ${k}: ${messageOf(err)}`);

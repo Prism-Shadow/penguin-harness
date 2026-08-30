@@ -1914,6 +1914,10 @@ export function ChatPage() {
             agentId={agentId}
             tab={workflowTabs.activeTab}
             onChanged={() => void workflowTabs.refresh()}
+            onRemoved={() => {
+              workflowTabs.setActive(null);
+              void workflowTabs.refresh();
+            }}
           />
         </div>
       )}
