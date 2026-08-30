@@ -68,7 +68,7 @@ const storeAt = (root: string) =>
   wire(HarnessHistoryStore, {
     paths: { root },
     clock: { now: () => new Date("2026-08-30T12:00:00Z") },
-    config: { port: 7364 },
+    config: { port: 7364, host: "127.0.0.1" },
     log: { line: () => {} },
     http: {
       fetch: async (url: string, init?: RequestInit) => {
@@ -169,7 +169,7 @@ describe("harness history store", () => {
     posted.length = 0;
     expect(await store.rollback("p1-c1-w1")).toBe(true);
     expect(posted).toHaveLength(1);
-    expect(posted[0]!.url).toBe("http://127.0.0.1:7364/api/hmr/upgrade");
+    expect(posted[0]!.url).toBe("http://localhost:7364/api/hmr/upgrade");
     expect((posted[0]!.init.headers as Record<string, string>).authorization).toBe("Bearer tok-1");
     const payload = JSON.parse(
       zlib.gunzipSync(posted[0]!.init.body as Buffer).toString("utf8"),
