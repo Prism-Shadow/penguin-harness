@@ -176,10 +176,25 @@ describe("workflows", () => {
     });
   });
 
+  it("removes the folder and its recorded versions on request", async () => {
+    await list();
+    expect((await owner.delete(`${BASE}/demo`)).status).toBe(204);
+    expect(await list()).toEqual([]);
+    await expect(fs.stat(dir)).rejects.toThrow();
+    expect((await owner.get(`${BASE}/demo/api/`)).status).toBe(404);
+    expect((await owner.delete(`${BASE}/demo`)).status).toBe(404);
+    const history = (await (await owner.get(`${BASE}/demo/history`)).json()) as {
+      versions: WorkflowVersion[];
+    };
+    expect(history.versions).toEqual([]);
+  });
+
   it("is scoped to the Project's users", async () => {
     const other = apiClient(t.app, (await provisionUser(t.app, "other")).cookie);
     expect((await other.get(BASE)).status).toBe(404);
     expect((await other.get(`${BASE}/demo/ui/`)).status).toBe(404);
+    expect((await other.delete(`${BASE}/demo`)).status).toBe(404);
+    expect((await owner.get(`${BASE}/demo/ui/`)).status).toBe(200);
     expect((await owner.get(`${BASE}/nope/ui/`)).status).toBe(404);
     expect((await owner.get(`${BASE}/nope/api/`)).status).toBe(404);
   });
