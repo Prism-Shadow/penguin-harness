@@ -16,6 +16,7 @@ import "@xterm/xterm/css/xterm.css";
 // Types only (erased at compile time): the xterm runtime stays behind loadXterm() below.
 import type { ITheme, Terminal as XTerminal } from "@xterm/xterm";
 import { TerminalOpcode, decodeFrame, encodeFrame, encodeResize } from "./terminal-frames";
+import { openTerminalLink } from "./terminal-links";
 import { useTheme } from "../../state/theme";
 
 /**
@@ -244,10 +245,18 @@ export function TerminalView({ ensure, onStatus, onInfo, onTitle, className }: T
         lineHeight: 1.2,
         scrollback: 5000,
         theme: terminalTheme(darkRef.current),
+        // OSC 8 hyperlinks — how a program that knows the terminal is capable writes a link.
+        // Without a handler xterm falls back to a confirm() warning and the link is
+        // effectively dead (terminal-links.ts).
+        linkHandler: {
+          activate: (_event, text) => openTerminalLink(text),
+        },
       });
       const fit = new FitAddon();
       term.loadAddon(fit);
-      term.loadAddon(new WebLinksAddon());
+      // The addon's built-in handler opens a blank window and then navigates it, which
+      // inside the desktop shell reads as a link to about:blank (terminal-links.ts).
+      term.loadAddon(new WebLinksAddon((_event, uri) => openTerminalLink(uri)));
       termRef.current = term;
       term.open(container);
       fit.fit();
