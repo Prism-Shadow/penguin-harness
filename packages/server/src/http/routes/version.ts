@@ -29,6 +29,7 @@ import type {
   VersionHistoryDiffResponse,
   VersionHistoryResponse,
   VersionResponse,
+  VersionRollbackResponse,
 } from "../../api/types.js";
 import { diffIfaces } from "../../hmr/ifaces-diff.js";
 import type { HarnessHistoryIface } from "../../services/harness-history.js";
@@ -88,6 +89,20 @@ export function versionRoutes(deps: VersionRouteDeps): Hono<AppEnv> {
     const [from, to] = await Promise.all([load(c.req.query("from")), load(c.req.query("to"))]);
     const asTable = (t: unknown) => t as Parameters<typeof diffIfaces>[0];
     return c.json(diffIfaces(asTable(from), asTable(to)) satisfies VersionHistoryDiffResponse);
+  });
+
+  /** Pushes a kept version back through the runtime (admin). Answers before the swap: this platform is what gets replaced. */
+  app.post("/history/rollback", async (c) => {
+    if (!c.get("user").isAdmin) throw new HttpError(403, "forbidden", "Rollback is admin-only.");
+    const { id } = (await c.req.json().catch(() => ({}))) as { id?: unknown };
+    if (typeof id !== "string" || !/^[A-Za-z0-9_-]+$/.test(id))
+      throw new HttpError(400, "bad_request", "`id` names a recorded version.");
+    const entries = (await deps.history.list()).entries;
+    const target = entries.find((e) => e.id === id);
+    if (target === undefined || !target.rollbackable)
+      throw new HttpError(404, "not_found", "No kept artifacts for that version.");
+    void deps.history.rollback(id).catch(() => undefined);
+    return c.json({ started: true, id } satisfies VersionRollbackResponse, 202);
   });
 
   app.get("/update-check", async (c) => {
