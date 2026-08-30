@@ -146,21 +146,27 @@ export function checkTree(
               (name) => name !== mf.name && requirable(name),
             );
       const matches: string[] = [];
+      // Providers that DECLARE this very interface (the same table entry): when exactly
+      // one does, it wins over the others that merely have the shape.
+      const declared: string[] = [];
       let lastMismatch: { from: string; method: string; why: string } | null = null;
       for (const from of candidates) {
         if (!requirable(from)) continue;
         const offered = provides[from];
         if (offered === undefined) continue;
+        let satisfied = false;
         for (const decl of Object.values(offered)) {
           const gaps = satisfies(decl, required, table);
           if (gaps.length === 0) {
-            matches.push(from);
-            break;
+            satisfied = true;
+            if (decl === required) declared.push(from);
+            continue;
           }
           lastMismatch = { from, method: gaps[0]!.method, why: gaps[0]!.why };
         }
+        if (satisfied) matches.push(from);
       }
-      if (matches.length === 1) continue;
+      if (matches.length === 1 || declared.length === 1) continue;
       if (need.from !== undefined) {
         const from = need.from;
         if (!requirable(from) || provides[from] === undefined) {

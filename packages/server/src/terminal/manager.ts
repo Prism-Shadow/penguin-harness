@@ -12,7 +12,7 @@
  *   whatever it is running) alive — that is the entire point of a server-side terminal.
  */
 import fsp from "node:fs/promises";
-import type { Resources, Opaque, ClassCtx, Json } from "@prismshadow/penguin-core/kernel";
+import type { Resources } from "@prismshadow/penguin-core/kernel";
 import path from "node:path";
 import { HttpError } from "../http/errors.js";
 import { spawnHelperHint } from "./spawn-helper.js";
@@ -22,10 +22,13 @@ import {
   type CreateTerminalSessionOptions,
   type TerminalSessionInfo,
 } from "./session.js";
-import { Interface, Bind, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
+import { Interface } from "@prismshadow/penguin-core/kernel";
+import type { Opaque } from "@prismshadow/penguin-core/kernel";
+import { Bind, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../auth/middleware.js";
 import type { Hono } from "hono";
-import { Hmr, ResourceGroups, RuntimeModule } from "../hmr/capabilities.js";
+import type { ClassCtx, Json } from "@prismshadow/penguin-core/kernel";
+import { Hmr, ResourceGroups } from "../hmr/capabilities.js";
 import { terminalRoutes } from "./routes.js";
 import { identityFrom } from "./identity.js";
 import type { AuthService } from "../auth/service.js";
@@ -315,8 +318,8 @@ export type _Check = TerminalManager extends Terminals ? true : never;
   },
 })
 export class TerminalModule {
-  @Use(RuntimeModule) private readonly hmr!: Hmr;
-  @Use(RuntimeModule) private readonly resourceGroups!: ResourceGroups;
+  @Use() private readonly hmr!: Hmr;
+  @Use() private readonly resourceGroups!: ResourceGroups;
   @Use() private readonly auth!: AuthService;
   @Provide() terminals!: Terminals;
   @Bind("TerminalModule.routes") routes!: ReturnType<typeof terminalRoutes>;

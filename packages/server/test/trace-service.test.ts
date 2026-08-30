@@ -278,7 +278,7 @@ describe("trace-service", () => {
           usage: rows,
           errors: wire(ErrorsRepo, { db }),
           lookupPricing: lookup,
-          now: () => new Date(),
+          clock: { now: () => new Date() },
         });
         const res = await center.query(P, { groupBy: "session" });
         expect(res.groups.find((g) => g.key === S)?.cost).toBeCloseTo(a.cost!, 12);

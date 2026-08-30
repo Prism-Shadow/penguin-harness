@@ -55,7 +55,7 @@ import { formatLocalDate } from "../internal/dates.js";
 import { HttpError } from "../http/errors.js";
 import type { ErrorsRepo } from "../db/repos/errors.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Overrides } from "../hmr/capabilities.js";
+import type { Clock } from "../hmr/capabilities.js";
 
 /** Capture-site source (maps one-to-one to error_records.source). */
 export type ErrorSource =
@@ -114,18 +114,13 @@ export class ErrorRecorder {
   private readonly lastSeen = new Map<string, number>();
 
   @Use() private readonly errors!: ErrorsRepo;
-  @Use() private readonly overrides!: Overrides;
-  private now: () => Date = () => new Date();
-
-  setup(): void {
-    this.now = this.overrides.value().now ?? this.now;
-  }
+  @Use() private readonly clock!: Clock;
 
   /** Record an error (synchronous, fails silently; same-window duplicates are dropped outright, see file header). */
   record(args: ErrorRecordArgs): void {
     try {
       const http = args.err instanceof HttpError ? args.err : null;
-      const now = this.now();
+      const now = this.clock.now();
       const projectId = args.ctx?.projectId ?? null;
       const code = args.code ?? http?.code ?? "internal";
       // Short-window dedup: coarse-grained to "same kind of error for the same Project"; repeats within the window aren't persisted.

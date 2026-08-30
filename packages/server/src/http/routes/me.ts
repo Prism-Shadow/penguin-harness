@@ -52,7 +52,7 @@ import {
 } from "../../services/attachment-limits.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
-import { Config, Desktop, RuntimeModule } from "../../hmr/capabilities.js";
+import { Config, Desktop } from "../../hmr/capabilities.js";
 
 /** Nickname bounds, counted in user-perceived code points so a CJK name is 32 characters, not 96. */
 const DISPLAY_NAME_MIN = 1;
@@ -265,8 +265,8 @@ export function meRoutes(deps: MeRouteDeps): Hono<AppEnv> {
   },
 })
 export class MeRoutes {
-  @Use(RuntimeModule) private readonly config!: Config;
-  @Use(RuntimeModule) private readonly desktop!: Desktop;
+  @Use() private readonly config!: Config;
+  @Use() private readonly desktop!: Desktop;
   @Use() private readonly auth!: AuthService;
   @Use() private readonly prefs!: UiPrefsRepo;
   @Use() private readonly settings!: ServerSettingsRepo;

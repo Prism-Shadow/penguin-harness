@@ -466,7 +466,7 @@ describe("default_project presets", () => {
     // First have the "CLI" write a config with a single custom model, then admin seeding adopts it.
     t = await createTestApp({
       beforeSeed: async (root) => {
-        await wire(ProjectConfigService, { config: { root } }).writeRaw("default_project", {
+        await wire(ProjectConfigService, { paths: { root } }).writeRaw("default_project", {
           default_model: { provider: "custom", model_id: "cli-model" },
           models: [{ provider: "custom", model_id: "cli-model", context_window: 1234 }],
         });

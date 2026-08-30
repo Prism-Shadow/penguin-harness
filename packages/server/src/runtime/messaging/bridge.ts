@@ -77,13 +77,13 @@ import type {
   MessagingBindingRow,
   MessagingBindingsRepo,
 } from "../../db/repos/messaging-bindings.js";
-import { INLINE_IMAGE_MAX_BYTES, toAttachmentLimits } from "../../services/attachment-limits.js";
+import { INLINE_IMAGE_MAX_BYTES } from "../../services/attachment-limits.js";
 import type { AttachmentLimits } from "../../services/attachment-limits.js";
 import { attachFilesToInput, removeAttachments } from "../../services/task-attachments.js";
 import type { AttachedFiles, TaskAttachment } from "../../services/task-attachments.js";
 import type { ChannelEvent, ChannelHub } from "../channel.js";
-import type { ErrorSink, ErrorRecorder } from "../error-recorder.js";
-import { recallStoreOf, SessionsModule } from "../session-manager.js";
+import type { ErrorSink } from "../error-recorder.js";
+import { recallStoreOf } from "../session-manager.js";
 import type { RecallStore } from "../session-manager.js";
 import type {
   MessagingChannelConnector,
@@ -97,23 +97,31 @@ import { messagingErrorKind } from "./error-kind.js";
 import { chunkMarkdown } from "./markdown.js";
 import { MessagingMediaTooLargeError, MessagingPermissionError, isImageFileName } from "./media.js";
 import { replyFileMentions } from "./reply-files.js";
-import { Interface, Bind, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
-import type { Slot, ClassCtx } from "@prismshadow/penguin-core/kernel";
-import { QQScanService, createQQScanTransport } from "./qq-scan.js";
+import { Component, Interface } from "@prismshadow/penguin-core/kernel";
+import type { Slot } from "@prismshadow/penguin-core/kernel";
+import type { QQScanTransportHandle } from "./qq-scan.js";
+import { QQScanService } from "./qq-scan.js";
+import { Bind, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../../auth/middleware.js";
 import { Hono } from "hono";
-import { Channels, Config, Log, Overrides, RuntimeModule } from "../../hmr/capabilities.js";
+import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { WorkspaceModule } from "../../http/routes/preview.js";
+import { SessionsModule } from "../session-manager.js";
 import { FeishuMessaging } from "./feishu-connector.js";
 import { TelegramMessaging } from "./telegram-connector.js";
 import { QqMessaging } from "./qq-connector.js";
 import { WechatMessaging } from "./wechat-connector.js";
-import { WeChatScanService, createWeChatScanTransport } from "./wechat-scan.js";
+import { WeChatScanService } from "./wechat-scan.js";
+import type { WeChatScanTransportHandle } from "./wechat-scan.js";
+import { createQQScanTransport } from "./qq-scan.js";
+import { toAttachmentLimits } from "../../services/attachment-limits.js";
+import type { ErrorRecorder } from "../error-recorder.js";
 import type { SessionsRepo } from "../../db/repos/sessions.js";
 import type { WorkspaceFilesService } from "../../services/workspace-files-service.js";
 import type { ProjectAccess } from "../../services/project-access.js";
 import { sessionMessagingRoutes } from "../../http/routes/messaging.js";
 import type { ServerSettingsRepo } from "../../db/repos/server-settings.js";
+import type { Channels, Clock, Log, Paths } from "../../hmr/capabilities.js";
 
 /**
  * Max characters per outbound text message, shared by every channel: it must sit under
@@ -1887,7 +1895,7 @@ export abstract class QQScan extends Interface<
 
 export interface MessagingSlots {
   /** A channel connector: which channel it speaks (static), and the connector (code). */
-  connectors: Slot<{ channel: "feishu" | "telegram" | "qq" | "wechat" }, MessagingChannelConnector>;
+  connectors: Slot<{ channel: "feishu" | "telegram" | "qq" }, MessagingChannelConnector>;
 }
 
 @Module({
@@ -1904,10 +1912,13 @@ export interface MessagingSlots {
   children: [FeishuMessaging, TelegramMessaging, QqMessaging, WechatMessaging],
 })
 export class MessagingModule {
-  @Use(RuntimeModule) private readonly config!: Config;
-  @Use(RuntimeModule) private readonly channels!: Channels;
-  @Use(RuntimeModule) private readonly overrides!: Overrides;
-  @Use(RuntimeModule) private readonly log!: Log;
+  @Use() private readonly paths!: Paths;
+  @Use() private readonly channels!: Channels;
+  @Use() private readonly clock!: Clock;
+  @Use() private readonly tuning!: MessagingTuning;
+  @Use() private readonly qqScanTransport!: QQScanTransportHandle;
+  @Use() private readonly wechatScanTransport!: WeChatScanTransportHandle;
+  @Use() private readonly log!: Log;
   @Use() private readonly messagingRepo!: MessagingBindingsRepo;
   @Use() private readonly sessionsRepo!: SessionsRepo;
   @Use() private readonly workspaceFiles!: WorkspaceFilesService;
@@ -1919,14 +1930,15 @@ export class MessagingModule {
   @Provide() qqScan!: QQScan;
   @Bind("messaging.session-routes") sessionRoutesRoutes!: Hono<AppEnv>;
   async setup({ contributions, effect }: ClassCtx) {
-    const overrides = this.overrides.value();
+    const { lineDelayMs, inboundImageBudgetBytes } = this.tuning;
+    const now = () => this.clock.now().getTime();
     const messagingRepo = this.messagingRepo;
     const sessionsRepo = this.sessionsRepo;
     const messaging = new MessagingBridge({
       repo: messagingRepo,
       sessions: sessionsRepo,
       files: this.workspaceFiles,
-      root: this.config.root,
+      root: this.paths.root,
       attachmentLimits: () => toAttachmentLimits(this.settings.getAttachmentLimitsMb()),
       channels: this.channels as ChannelHub,
       runner: this.runner,
@@ -1935,23 +1947,14 @@ export class MessagingModule {
       connectors: (contributions.connectors ?? []).map((c) => c.code as MessagingChannelConnector),
       errors: this.errors,
       log: (line) => this.log.line(line),
-      ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}),
-      ...(overrides.messagingLineDelayMs !== undefined
-        ? { lineDelayMs: overrides.messagingLineDelayMs }
-        : {}),
-      ...(overrides.messagingInboundImageBudgetBytes !== undefined
-        ? { inboundImageBudgetBytes: overrides.messagingInboundImageBudgetBytes }
-        : {}),
+      now,
+      ...(lineDelayMs !== undefined ? { lineDelayMs } : {}),
+      ...(inboundImageBudgetBytes !== undefined ? { inboundImageBudgetBytes } : {}),
     });
-    const qqScan = new QQScanService(overrides.qqScanTransport ?? createQQScanTransport(), {
-      ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}),
-    });
+    const qqScan = new QQScanService(this.qqScanTransport.transport, { now });
     // Same shape as the QQ one: what it holds is the handle that collects a bot token
     // rather than a key that decrypts a secret, and is equally not worth persisting.
-    const wechatScan = new WeChatScanService(
-      overrides.wechatScanTransport ?? createWeChatScanTransport(),
-      { ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}) },
-    );
+    const wechatScan = new WeChatScanService(this.wechatScanTransport.transport, { now });
     // Connect every enabled binding; only active while this App is.
     await messaging.start();
     effect(() => messaging.stop());
@@ -1967,3 +1970,16 @@ export class MessagingModule {
     });
   }
 }
+
+/**
+ * The pacing and budgets the messaging bridge and its connectors run with. Every field is
+ * optional: absent, a connector applies its own default; a test stands in zeros.
+ */
+export abstract class MessagingTuning extends Interface<{
+  lineDelayMs?: number;
+  inboundImageBudgetBytes?: number;
+  qqTailFlushMs?: number;
+  retryDelayMs?: (failures: number) => number;
+}>() {}
+@Component()
+export class DefaultMessagingTuning implements MessagingTuning {}
