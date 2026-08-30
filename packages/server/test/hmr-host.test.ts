@@ -211,6 +211,10 @@ describe("HmrHost.ensure(): single-flight first boot", () => {
     const push = await pushPlatform(t.app, cookie, platformServing(["/api/demo/ping"], "pushed"));
     expect(push.status).toBe(200);
     expect(((await push.json()) as { persisted: boolean }).persisted).toBe(true);
+    // The commit is also a line of the harness history, naming the same bundles.
+    const history = await readHarnessHistory(t.root);
+    expect(history).toHaveLength(1);
+    expect(history[0]!.bundles).toEqual((await readHarnessInfo(t.root))!.bundles);
 
     const root = t.root;
     freshRoot = root;
